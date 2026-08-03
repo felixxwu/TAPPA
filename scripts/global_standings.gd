@@ -555,7 +555,7 @@ func _on_choose_name_pressed() -> void:
 			UITheme.focus_grab(_continue_button))
 
 
-# Sign in without leaving the page: the AccountMenu opens as an overlay (a third
+# Sign in without leaving the page: the AccountMenu opens as an overlay (the second
 # host beside Settings and the title screen), and on success the page re-runs
 # submit-and-fetch in place — the player does not lose the time they just set.
 func _on_sign_in_pressed() -> void:

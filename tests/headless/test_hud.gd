@@ -39,9 +39,16 @@ func before_each() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	car.linear_velocity = Vector3.ZERO
 	car.angular_velocity = Vector3.ZERO
+	# Forced induction is off by default so the boost bar is hidden unless a test fits a
+	# part. Reset here rather than save/restore per test: an early return or a failing
+	# await in a test would otherwise leak a fitted turbo into the shared autoload.
+	cfg.turbo_enabled = false
+	cfg.supercharger_boost_gain = 0.0
 	var engine: EngineSim = car.drivetrain.engine
 	engine.auto = true
 	engine.gear = 1
+	engine.boost = 0.0
+	engine.sc_boost = 0.0
 	car.damage.field(1000.0, 1000.0)  # a healthy, mortal car
 	# Force the diagnostic readout + stage widgets back to hidden (tests show them).
 	var hud = _scene.get_node("HUD")
@@ -137,9 +144,10 @@ func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
 func test_boost_text_formatting() -> void:
 	# Pure formatter for the debug boost readout: N/A on an NA engine, else a
 	# percentage of full boost. (Logic, not tuned values — the percentages are
-	# derived from the boost fraction passed in.)
+	# derived from the boost fraction passed in.) The flag means "forced induction
+	# fitted", so it covers a supercharger's belt boost as well as a turbo's.
 	const Hud = preload("res://scripts/hud.gd")
-	assert_eq(Hud.boost_text(false, 0.0), "Boost N/A", "no turbo shows N/A")
+	assert_eq(Hud.boost_text(false, 0.0), "Boost N/A", "no turbo or blower shows N/A")
 	assert_eq(Hud.boost_text(false, 0.9), "Boost N/A", "NA ignores any stray boost value")
 	assert_eq(Hud.boost_text(true, 0.0), "Boost 0%", "a spooled-down turbo reads 0%")
 	assert_eq(Hud.boost_text(true, 0.5), "Boost 50%", "half boost reads 50%")
@@ -365,27 +373,112 @@ func test_finish_panel_next_button_is_keyboard_navigable() -> void:
 	assert_eq(fired[0], 1, "pressing NEXT emits finish_next_pressed")
 
 
-# The health gauge shows the absolute HP value and reserves "0" for a genuine
-# wreck (hp == 0). Any positive HP rounds UP to at least 1, so a nearly-dead-but-
-# alive car never reads 0 and leaves the player wondering why nothing happens.
-# Regression guard for the HUD rounding down to 0 while the car was still drivable.
-func test_health_readout_reserves_zero_for_a_real_wreck() -> void:
+# The caption lives INSIDE the bar and carries no number — the fill is the reading.
+# Regression guard for the label drifting back out of the bar or regrowing a value.
+func test_health_caption_sits_inside_the_bar_and_carries_no_number() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var label: Label = hud.get_node("HPLabel")
+	var bar := hud.get_node("HPBar") as ProgressBar
+	var label := hud.get_node("HPBar/HPLabel") as Label
+	assert_eq(label.get_parent(), bar, "the caption is a child of the bar, not a sibling above it")
 	var dmg: DamageModel = car.damage
+	dmg.field(1000.0, 1000.0)
+	await get_tree().process_frame
+	var full_text := label.text
+	dmg.hp = 0.4  # a sliver of HP: the caption must not react to the value at all
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(label.text, full_text, "the caption is static — it holds no HP number")
+	assert_false(label.text.strip_edges().is_empty(), "but it still names the gauge")
 
-	# A sliver of HP (well under 0.5, which naive rounding shows as 0).
-	dmg.field(1000.0, 0.4)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(label.text, "HEALTH 1", "a still-alive car never reads 0")
 
-	# A genuine wreck (0 HP) is the only thing that reads 0.
-	dmg.hp = 0.0
+# The bar is tinted with self_modulate, NOT modulate, so grading the fill toward red
+# at low HP can't drag the caption's colour along with it and hurt legibility.
+func test_health_grading_does_not_tint_the_caption() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("HPBar") as ProgressBar
+	var dmg: DamageModel = car.damage
+	dmg.field(1000.0, 1000.0)
 	await get_tree().process_frame
+	var healthy: Color = bar.self_modulate
+	dmg.hp = 50.0
 	await get_tree().process_frame
-	assert_eq(label.text, "HEALTH 0", "0 is reserved for hp == 0")
+	assert_ne(bar.self_modulate, healthy, "the fill grades with health")
+	assert_eq(bar.modulate, Color.WHITE, "grading goes through self_modulate, sparing the child caption")
+
+
+# --- Boost gauge (features/forced-induction.md) --------------------------------
+# Same shape as the HP gauge: a bar whose fill IS the reading, with a static caption
+# inside it. Shown only on a car with forced induction fitted.
+
+func test_boost_gauge_hidden_on_a_naturally_aspirated_car() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("BoostBar") as ProgressBar
+	# before_each leaves the car naturally aspirated.
+	await get_tree().process_frame
+	assert_false(bar.visible, "an NA car shows no always-empty boost bar")
+
+
+func test_boost_gauge_caption_sits_inside_the_bar() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("BoostBar") as ProgressBar
+	var label := hud.get_node("BoostBar/BoostLabel") as Label
+	assert_eq(label.get_parent(), bar, "the caption is a child of the bar")
+	assert_false(label.text.strip_edges().is_empty(), "and it names the gauge")
+
+
+func test_boost_gauge_tracks_turbo_and_blower_boost() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("BoostBar") as ProgressBar
+	var engine: EngineSim = car.drivetrain.engine
+	# Turbo fitted: the bar appears and its fill follows the shaft's boost fraction.
+	Config.data.turbo_enabled = true
+	Config.data.supercharger_boost_gain = 0.0
+	engine.boost = 0.5
+	engine.sc_boost = 0.0
+	await get_tree().process_frame
+	assert_true(bar.visible, "a fitted turbo reveals the boost bar")
+	assert_almost_eq(bar.value, 0.5, 0.001, "the fill tracks turbo boost")
+	# Blower fitted instead: the SAME bar reports belt boost (they share a slot).
+	Config.data.turbo_enabled = false
+	Config.data.supercharger_boost_gain = 0.9
+	engine.boost = 0.0
+	engine.sc_boost = 0.75
+	await get_tree().process_frame
+	assert_true(bar.visible, "a fitted supercharger reveals the same bar")
+	assert_almost_eq(bar.value, 0.75, 0.001, "the fill tracks belt boost")
+
+
+func test_has_forced_induction_covers_both_parts() -> void:
+	# The predicate lives on GameConfig, next to the fields whose encoding it interprets —
+	# EngineSim gates the belt sim on it too, so it must not be a HUD-private rule.
+	var cfg := GameConfig.new()
+	assert_false(cfg.has_forced_induction(), "a bare config is naturally aspirated")
+	cfg.turbo_enabled = true
+	assert_true(cfg.has_forced_induction(), "a turbo counts")
+	cfg.turbo_enabled = false
+	cfg.supercharger_boost_gain = 0.5
+	assert_true(cfg.has_forced_induction(), "a blower with real belt boost counts")
+	assert_true(cfg.has_supercharger_physics(), "and its belt physics are live")
+	cfg.supercharger_boost_gain = 0.0
+	cfg.supercharger_enabled = true
+	assert_false(cfg.has_forced_induction(),
+		"an audio-only stock blower (no gain) does NOT — it makes no boost to show")
+	assert_false(cfg.has_supercharger_physics(), "nor does it run the belt sim")
+
+
+# The captions sit ON the coloured fill, so they opt OUT of the house drop shadow (the
+# one documented exception — features/ui-design-system.md). The shadow comes from the
+# PROJECT-WIDE theme, not a per-label property, so overriding font_color alone leaves it
+# in place; this guards the override that actually switches it off.
+func test_gauge_captions_have_no_drop_shadow() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	for path in ["HPBar/HPLabel", "BoostBar/BoostLabel"]:
+		var cap := hud.get_node(path) as Label
+		assert_eq(cap.get_theme_color("font_shadow_color").a, 0.0,
+			"%s draws no drop shadow" % path)
 
 
 func test_elapsed_label_keeps_updating_as_the_clock_runs() -> void:

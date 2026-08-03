@@ -23,7 +23,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/cloud/auth_service.gd` | `AuthService` — sign-in, token refresh, credential storage, error mapping. |
 | `scripts/cloud/cloud_sync.gd` | `CloudSync` — Firestore document encoding, the conflict model, debounce/backoff. |
 | `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). |
-| `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by Settings and by the title screen. |
+| `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page (and, as an inline overlay, by the standings page's sign-in prompt). |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see [global-leaderboards.md](global-leaderboards.md)). |
 | `firestore.rules` | Security rules, kept in git rather than only in the console. **One collection, `stage_times`, is world-readable — see below and [global-leaderboards.md](global-leaderboards.md).** |
@@ -317,23 +317,28 @@ only about sync status.
 already works:
 
 - **Settings → Account** (`settings_menu.gd`: `_build_account_page`,
-  `show_account`, an entry in `_pages` and in the category grid).
-- **Title screen → Account** (`hq_overlays.gd::build_title_overlay` →
-  `hq.gd::_open_account_overlay`), directly under Start. A player reinstalling or
-  moving to a new device needs it *before* starting a fresh career, so burying it
-  in Settings would be the wrong place.
+  `show_account`, an entry in `_pages` and in the category grid). This is the
+  canonical route, reachable from the title screen's Settings button before any
+  career is started — which is the reinstall / new-device case.
+- **Standings → sign in** (`global_standings.gd`), which mounts the same widget as
+  an inline overlay so a player can sign in without leaving the leaderboard.
+
+There used to be a **third** host: a dedicated Account button on the title row with
+its own modal layer (`hq.gd::_open_account_overlay`). It was removed — the Settings
+page already covers the same need from the same screen, and two routes into one
+optional-cloud-save form is one more than the title screen needs. Free Roam took the
+slot (see [menus.md](menus.md)).
 
 Signed out: Google (hidden when unconfigured) / sign in with email / create an
 account. There is deliberately no "continue without an account" button — that is
 what closing the page does, and the Back button already says so. Signed in:
 identity, sync status, leaderboard name, Sync now, Sign out.
 
-**Row budget.** The title-screen host (`hq.gd::_open_account_overlay`) puts
-`AccountMenu` in a CENTRED `VBoxContainer` with the overlay's Back button
-BELOW it, so any content that overflows a small screen pushes Back off the
-bottom where it cannot be pressed. `AccountMenu._build_main` carries a "ROW
-BUDGET" comment on this account, and every row it adds has had to justify
-itself against it:
+**Row budget.** A host that puts `AccountMenu` in a CENTRED `VBoxContainer` with its
+Back button BELOW the widget lets any content that overflows a small screen push Back
+off the bottom, where it cannot be pressed — the shape the old title-screen host had.
+`AccountMenu._build_main` carries a "ROW BUDGET" comment on this account, and every row
+it adds has had to justify itself against it:
 
 - `_ready()` uses `UITheme.GAP_TIGHT` rather than `UITheme.GAP` for the page's
   own separation — this page stacks more rows than any other menu.

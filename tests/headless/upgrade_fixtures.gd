@@ -6,7 +6,7 @@ extends RefCounted
 # logic test. Always restore() in teardown.
 #
 # The fixture parts cover every EFFECT shape the apply / effective_meta pipeline
-# reads: install_turbo, mass_mult (both a reduction < 1 and a `free` ballast > 1),
+# reads: install_turbo, install_supercharger, mass_mult (both a reduction < 1 and a `free` ballast > 1),
 # unlocks_aero_tuning + downforce, and unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
 # their real constant ids (UpgradeLibrary.ENGINE_SWAP_TOKEN_ID / MYSTERY_BOX_ID) —
 # these are referenced by constant across the save / reward code (like the engine
@@ -33,6 +33,18 @@ static func upgrades() -> Array[Dictionary]:
 				"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
 				"turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
 				"engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
+			}},
+		},
+		{
+			# Third turbo-slot part, prerequisite-gated behind fx_turbo_big, covering the
+			# install_supercharger effect shape (belt boost + rpm-scaled drag).
+			"id": "fx_supercharger", "name": "Fixture Supercharger", "menu_label": "Supercharger",
+			"slot": "turbo", "tier": 2, "consumable": false,
+			"requires_upgrade_id": "fx_turbo_big",
+			"effect": {"install_supercharger": {
+				"supercharger_boost_gain": 1.0, "supercharger_rpm_ref": 4200.0,
+				"supercharger_parasitic_coef": 9.0,
+				"engine_supercharger_whine_gain": 0.06,
 			}},
 		},
 		{

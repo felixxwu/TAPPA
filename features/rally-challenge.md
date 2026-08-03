@@ -205,8 +205,8 @@ see [menus.md](menus.md) → "GARAGE"; Settings moved to the title screen's
 own horizontal cursor row). **Challenge** opens
 `_open_challenge_overlay()`: a modal `CanvasLayer` over the garage (built
 once in `_ready` via `HqOverlays.build_challenge_overlay`, hidden until
-opened — the same "modal layer, not a `View` enum entry" shape
-`_open_account_overlay` uses over the title). Opening it first discards any
+opened — a "modal layer, not a `View` enum entry" shape, the same one the
+since-removed title-screen Account overlay used). Opening it first discards any
 stale stored run (`ChallengeSession.has_stale_run` / `discard_stale_run`, so
 a rolled-over period shows a fresh entry rather than a dead Resume button).
 

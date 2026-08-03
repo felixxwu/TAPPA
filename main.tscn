@@ -195,21 +195,33 @@ text = "STAGE COMPLETE"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="HPLabel" type="Label" parent="HUD" unique_id=1044419650]
+[node name="BoostBar" type="ProgressBar" parent="HUD" unique_id=1044419653]
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -50.0
-offset_top = -34.0
+offset_top = -42.0
 offset_right = 50.0
-offset_bottom = -20.0
+offset_bottom = -26.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_font_sizes/font_size = 10
-text = "Health"
+max_value = 1.0
+step = 0.001
+value = 0.0
+show_percentage = false
+
+[node name="BoostLabel" type="Label" parent="HUD/BoostBar" unique_id=1044419654]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 11
+text = "BOOST"
 horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="HPBar" type="ProgressBar" parent="HUD" unique_id=1044419651]
 anchors_preset = 7
@@ -218,7 +230,7 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -50.0
-offset_top = -18.0
+offset_top = -22.0
 offset_right = 50.0
 offset_bottom = -6.0
 grow_horizontal = 2
@@ -227,6 +239,17 @@ max_value = 1.0
 step = 0.001
 value = 1.0
 show_percentage = false
+
+[node name="HPLabel" type="Label" parent="HUD/HPBar" unique_id=1044419650]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 11
+text = "HEALTH"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="ImpactFlash" type="ColorRect" parent="HUD" unique_id=1044419652]
 anchors_preset = 15

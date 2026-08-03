@@ -267,8 +267,9 @@ appears when the repair moved health by **at least `RepairReveal.MIN_SHOW_GAIN_P
 percentage points** (2, via `RepairReveal.worth_showing`) — a smaller touch-up (e.g.
 wheels-only on a near-full car) still applies to the save but doesn't interrupt the
 player. Note the two numbers are deliberately different: the **card** reports
-absolute HP (`health_gain_hp`, matching the HUD's `Health NN` readout, which is also
-absolute), while the **gate** stays proportional (`health_gain_pct`) — whether a
+absolute HP (`health_gain_hp` — the repair card is now the only place an absolute HP
+figure is shown; the in-run HUD gauge is a bar with a static caption), while the
+**gate** stays proportional (`health_gain_pct`) — whether a
 repair is worth interrupting for is a question about how much of the car it fixed,
 and 20 HP means very different things on a fragile car and a heavy one. Headless runs drain
 the summary without building the popup.
@@ -288,13 +289,15 @@ UI for the player's attention.
 ## In-run HUD (see [hud.md](hud.md))
 
 `hud.gd` reads `car.damage` each frame: a colour-graded **health bar** (`HPBar`,
-green → amber → red) under a **`Health NN`** label (`HPLabel` — the absolute HP
-value), a low-health **warning pulse** below
-`hud_low_hp_warn_frac`, and a red **impact flash** (`ImpactFlash`) sized to each
-HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off. The readout
-**reserves `0` for a genuine wreck** (`hp == 0`): any positive HP rounds UP to at
-least `1`, so the label never reads `0` on a still-drivable car (which would look
-like a broken wreck trigger).
+green → amber → red) whose fill is the whole reading, with a **static `HEALTH`
+caption centred inside it** (`HPLabel`, a child of the bar — no absolute HP number,
+which was redundant beside a bar showing the same thing); a low-health **warning
+pulse** below `hud_low_hp_warn_frac`; and a red **impact flash** (`ImpactFlash`)
+sized to each HP-losing hit. The grade is applied via **`self_modulate`** so it
+doesn't tint the caption. The gauge is hidden when `hud_hp_enabled` is off. Because
+there is no longer a number to round, the old "reserve `0` for a genuine wreck"
+rounding rule is gone with it — a nearly-dead car simply shows a nearly-empty bar.
+A **boost bar** sits directly above, built the same way — see [hud.md](hud.md).
 
 ## Config knobs (`GameConfig`, *Damage* group)
 

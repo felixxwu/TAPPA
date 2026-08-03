@@ -14,8 +14,10 @@ On-screen readout plus two interactive mode buttons.
 | `RPMLabel` | `"<n> rpm"` | `engine.rpm()` |
 
 The `SpeedLabel` / `GearLabel` / `RPMLabel` trio, plus a code-built `BoostLabel`
-(turbo boost as a percentage of full boost, or `Boost N/A` on a non-turbo engine —
-formatted by the pure `hud.gd::boost_text`) and a code-built `SeedLabel` (the
+(boost as a percentage of full boost, or `Boost N/A` on a naturally-aspirated engine —
+formatted by the pure `hud.gd::boost_text`; it reads
+`maxf(engine.boost, engine.sc_boost)` so a **supercharger**'s belt boost shows on the
+same gauge as a turbo's, see [forced-induction.md](forced-induction.md)) and a code-built `SeedLabel` (the
 current world seed, `Config.data.track_seed`, formatted by the pure
 `hud.gd::seed_text` — for identifying/reproducing a run), is a **dev diagnostic**: hidden by
 default and toggled with **H** (`toggle_debug_arrows`) — the same gate as the debug
@@ -28,19 +30,44 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
-| `HPBar` (+ `HPLabel`) | `Health NN` over a bar | `car.damage` (colour-graded green→amber→red) |
+| `BoostBar` (+ child `BoostLabel`) | `BOOST` caption inside a bar whose fill is the live boost fraction | `car.drivetrain.engine` (blue; hidden on an NA car) |
+| `HPBar` (+ child `HPLabel`) | `HEALTH` caption inside a bar whose fill is `hp / max_hp` | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
 
 ## Damage gauge
 
 The `HPBar`/`HPLabel`/`ImpactFlash` are driven by `_update_damage(delta)` (called
 from `_process`) off the car's `DamageModel` (see [damage.md](damage.md)): the bar
-tracks `hp / max_hp` and is hue-graded from green (full) to red (empty), under a
-**`Health NN`** label (the absolute HP value); below `hud_low_hp_warn_frac` it
-pulses a low-health warning. Any HP drop since the previous
+tracks `hp / max_hp` and is hue-graded from green (full) to red (empty). `HPLabel`
+is a **child of the bar**, centred inside it, and is a **static `HEALTH` caption** —
+the fill *is* the reading, so it carries no number (an absolute HP figure was
+redundant next to a bar showing the same thing). Because the caption is a child, the
+grade is applied with **`self_modulate`, not `modulate`** — the latter would drag the
+text's colour along with the fill and make it pulse red at low HP. Below
+`hud_low_hp_warn_frac` the bar pulses a low-health warning. Any HP drop since the previous
 frame bumps the red `ImpactFlash` overlay (sized to the loss), which fades back
 out each frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for
 every car (the starter is a normal wreckable car like any other).
+
+## Boost gauge
+
+`BoostBar` sits **directly above** the HP bar and is built the same way: a
+`ProgressBar` whose fill is the whole reading, with a static `BOOST` caption as a
+centred child and the tint applied via `self_modulate`. `_update_boost_gauge(fitted,
+live_boost)` (called from `_process`) sets `value` to
+`maxf(engine.boost, engine.sc_boost)` — turbo and supercharger share one upgrade
+slot, so at most one is ever live and one bar covers both (see
+[forced-induction.md](forced-induction.md)). The bar is **hidden entirely** on a
+naturally-aspirated car rather than sitting permanently at zero; the pure static
+`hud.gd::has_forced_induction(cfg)` is the test (`turbo_enabled` or a non-zero
+`supercharger_boost_gain`, so a stock blown engine's audio-only flag doesn't
+summon an empty gauge). Its tint is a **fixed blue** at the same saturation/value
+as the health bar's grade (`_BOOST_HUE` / `_BOOST_SAT` / `_BOOST_VAL`), so the two
+gauges read as one family and only the hue tells them apart — fixed rather than
+graded because boost has no "danger" end.
+
+The `H` debug overlay's separate textual `Boost NN%` readout still exists alongside
+it (`boost_text`, see [debug-tools.md](debug-tools.md)) for exact numbers.
 
 ## Stage flow widgets
 
@@ -144,9 +171,12 @@ The `ElapsedLabel` run timer is anchored to the **top centre**
 it sits in the middle of the screen regardless of viewport width, with the
 `StageDeltaLabel` pace popup tucked just below it. The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
-(see [menus.md](menus.md)), not the HUD. The `HPBar`/`HPLabel` health gauge is
-anchored to the **bottom centre** of the viewport (`anchor_top/bottom = 1.0`,
-`anchor_left/right = 0.5`, `grow_horizontal = 2`).
+(see [menus.md](menus.md)), not the HUD. The `HPBar` health gauge and the
+`BoostBar` stacked just above it are anchored to the **bottom centre** of the
+viewport (`anchor_top/bottom = 1.0`, `anchor_left/right = 0.5`,
+`grow_horizontal = 2`); each one's caption fills its parent bar
+(`anchors_preset = 15`, centred both ways), so the pair grows and shrinks as one
+unit.
 
 ## Build version
 

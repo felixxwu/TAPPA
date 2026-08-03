@@ -44,10 +44,13 @@ extends RefCounted
 #                     (features/engine-audio.md): octave-down crossfade, master level,
 #                     broadband-noise level (dB, converted to linear here), and the
 #                     post-soft-clip trim.
-#   * turbo_* / supercharger_enabled / engine_turbo_*_gain / engine_supercharger_whine_gain
+#   * turbo_* / supercharger_* / engine_turbo_*_gain / engine_supercharger_whine_gain
 #                     — FORCED INDUCTION (features/forced-induction.md), all optional:
 #                     an NA engine omits them and apply() defaults to OFF/zero, so the
-#                     turbo sim is skipped and no boost/whine audio plays.
+#                     turbo sim is skipped and no boost/whine audio plays. A stock BLOWN
+#                     engine sets supercharger_enabled for the whine but leaves
+#                     supercharger_boost_gain at 0 (its power is baked into peak_torque) —
+#                     only the supercharger UPGRADE turns the belt physics on.
 
 # Standard firing tables: crank angles (degrees) over the 720° four-stroke cycle,
 # shared across engines of the same layout. Even spacing sounds smooth; the uneven
@@ -75,7 +78,7 @@ const ENGINES: Array[Dictionary] = [
 	{
 		"id": "mazda_20_i4", "name": "2.0 Skyactiv-G i4", "layout": "i4", "displacement_l": 2.0, "mass": 110.0,
 		"redline_rpm": 7500.0, "peak_torque": 205.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
-		"engine_friction_base": 25.0,  # i4 2.0L
+		"engine_friction_base": 20.0,  # i4 2.0L
 		"low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 5, "shift_time": 0.30,  # ND 6-speed manual
 	},
@@ -251,6 +254,15 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 	cfg.turbo_antilag = engine.get("turbo_antilag", false)
 	cfg.turbo_antilag_drive = engine.get("turbo_antilag_drive", 0.0)
 	cfg.supercharger_enabled = engine.get("supercharger_enabled", false)
+	# A STOCK blown engine bakes its power into peak_torque, so the gain defaults to 0
+	# (audio-only) and only the supercharger UPGRADE turns the belt physics on. Hard-
+	# resetting the GAIN is what makes an engine swap drop a previously-fitted blower —
+	# with the gain at 0 the belt sim is inert whatever the other two say. rpm_ref is
+	# deliberately self-defaulting (it carries over rather than resetting), since it is
+	# meaningless while the gain is 0 and is rewritten whenever a blower is fitted.
+	cfg.supercharger_boost_gain = engine.get("supercharger_boost_gain", 0.0)
+	cfg.supercharger_rpm_ref = engine.get("supercharger_rpm_ref", cfg.supercharger_rpm_ref)
+	cfg.supercharger_parasitic_coef = engine.get("supercharger_parasitic_coef", 0.0)
 	cfg.engine_turbo_whistle_gain = engine.get("engine_turbo_whistle_gain", 0.0)
 	cfg.engine_turbo_bov_gain = engine.get("engine_turbo_bov_gain", 0.0)
 	cfg.engine_turbo_antilag_bang_gain = engine.get("engine_turbo_antilag_bang_gain", 0.0)

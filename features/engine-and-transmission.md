@@ -57,11 +57,14 @@ friction = engine_friction_base + engine_friction_slope × rpm / 1000
 crank    = throttle × peak_torque × global_torque_scale × _torque_fraction(rpm) − friction
 ```
 
-A turbo (stock, or fitted via the `turbo_small`/`turbo_large` upgrade) further
-multiplies the throttle torque term by `(1 + boost × turbo_boost_gain)`,
-reshaping the delivered curve without altering `_torque_fraction` or the
-published `peak_torque` figure itself — see
-[forced-induction.md](forced-induction.md) for the inertia-based boost model.
+Forced induction (stock, or fitted via the `turbo_small` / `turbo_large` /
+`supercharger` upgrades, which share one slot) further multiplies the throttle
+torque term — by `(1 + boost × turbo_boost_gain)` for a turbo, or
+`(1 + sc_boost × supercharger_boost_gain)` for a blower — reshaping the
+delivered curve without altering `_torque_fraction` or the published
+`peak_torque` figure itself. See [forced-induction.md](forced-induction.md) for
+the turbo's inertia-based boost model and the supercharger's stateless,
+rpm-linear belt drive.
 
 `global_torque_scale` (shipped at **0.5**) is a **hidden** global de-rate on the
 drive torque every car makes. It scales acceleration for the whole field at once

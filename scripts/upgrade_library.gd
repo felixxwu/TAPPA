@@ -66,6 +66,25 @@ const UPGRADES: Array[Dictionary] = [
 		}},
 	},
 	{
+		# Top of the forced-induction ladder, prerequisite-gated behind Big Turbo the
+		# same way Big Turbo sits behind Small (per-car). Its peak gain is only a LITTLE
+		# above Big Turbo's — the real advantage is that there's nothing to spool, so
+		# belt boost is linear in rpm and arrives instantly
+		# (EngineSim.supercharger_boost_fraction) — paid for with drag that GROWS with
+		# revs (supercharger_parasitic_coef, N·m per 1000 rpm) rather than the turbo's
+		# constant backpressure. Whistle/BOV gains are left alone: apply() clears
+		# turbo_enabled so neither layer can fire.
+		"id": "supercharger", "name": "Supercharger", "menu_label": "Supercharger", "slot": "turbo", "tier": 1,
+		"requires_upgrade_id": "turbo_large", "consumable": false,
+		"effect": {"install_supercharger": {
+			"supercharger_boost_gain": 0.9, "supercharger_rpm_ref": 4200.0,
+			"supercharger_parasitic_coef": 9.0,
+			# Louder than the turbos' whistle gains: the blower whine is the signature
+			# sound of the part, and it's the only forced-induction layer a blown car has.
+			"engine_supercharger_whine_gain": 0.06,
+		}},
+	},
+	{
 		"id": "aero_kit", "name": "Aero Kit", "slot": "aero",
 		"tier": 1, "consumable": false,
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
@@ -182,14 +201,38 @@ static func is_enabled(owned_car: Dictionary, item_id: String) -> bool:
 # The single source of truth for what each `effect` key DOES, so apply() (live cfg)
 # and effective_meta() (power-to-weight inputs) can't silently drift — adding an
 # effect means adding one row here. Each row:
-#   field    — the target GameConfig / meta field ("" for turbo / flag-only)
-#   op       — "mult" (field *= val), "add" (field += val), "install_turbo"
-#              (special: enable + splat the sub-dict), or "flag" (gates a tuning
-#              slider, no config effect)
+#   field    — the target GameConfig / meta field ("" for induction / flag-only)
+#   op       — "mult" (field *= val), "add" (field += val), "install_induction"
+#              (special: enable one flag, clear the rival's, splat the sub-dict), or
+#              "flag" (gates a tuning slider, no config effect)
 #   feeds_pw — whether it changes a power-to-weight input (mass / torque), so
 #              effective_meta must mirror it; the rest are cfg-only.
+#
+# FORCED-INDUCTION rows carry three more keys so the two parts share ONE op rather than a
+# copied match arm each (a third induction type would then be a row, not more branches):
+#   enable    — the cfg flag this part switches ON
+#   clears    — {field: value} the RIVAL part's state is reset to. Turbo and supercharger
+#               share the "turbo" slot, so fitting one must un-fit the other. Slot
+#               exclusivity in Save._enable_exclusive already means only one can be
+#               ENABLED, and the baseline may carry the other from the stock engine — but
+#               making the clear SYMMETRIC here keeps it structural rather than resting on
+#               that convention, so a future stock engine authoring a real
+#               supercharger_boost_gain can't stack both multipliers under a fitted turbo.
+#               Values are written as authored (typed), not coerced from a bare `false`.
+#   gain_key  — the sub-dict key effective_meta reads to rate the car at peak boost.
 const EFFECTS := {
-	"install_turbo":       {"field": "", "op": "install_turbo", "feeds_pw": true},
+	"install_turbo": {
+		"field": "", "op": "install_induction", "feeds_pw": true,
+		"enable": "turbo_enabled", "gain_key": "turbo_boost_gain",
+		# A turbo cancels the blower BOTH ways: the audio flag and the belt gain that
+		# switches its physics on (game_config.has_supercharger_physics).
+		"clears": {"supercharger_enabled": false, "supercharger_boost_gain": 0.0},
+	},
+	"install_supercharger": {
+		"field": "", "op": "install_induction", "feeds_pw": true,
+		"enable": "supercharger_enabled", "gain_key": "supercharger_boost_gain",
+		"clears": {"turbo_enabled": false},
+	},
 	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
 	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false},
 	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false},
@@ -212,8 +255,13 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 			var val: Variant = effect[key]
 			var desc: Dictionary = EFFECTS.get(key, {})
 			match desc.get("op", ""):
-				"install_turbo":
-					cfg.turbo_enabled = true
+				"install_induction":
+					# Turn this part on, turn its slot rival off, then stamp the authored
+					# fields. Order matters only in that `clears` runs BEFORE the splat, so
+					# a part is free to author the very field it nominally clears.
+					cfg.set(String(desc["enable"]), true)
+					for ckey in (desc["clears"] as Dictionary):
+						cfg.set(ckey, (desc["clears"] as Dictionary)[ckey])
 					for tkey in (val as Dictionary):
 						cfg.set(tkey, (val as Dictionary)[tkey])
 				"mult":
@@ -262,9 +310,10 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 		var stock_eng := EngineLibrary.by_id(stock_id)
 		out["mass"] = EngineSwap.recompute_mass(
 			float(out["mass"]), float(stock_eng.get("mass", 0.0)), float(eng.get("mass", 0.0)))
-	# Resolve the turbo boost gain: the stock engine's, overridden by an installed
-	# turbo upgrade. Rated "at peak boost" — the displayed HP + power-to-weight
-	# eligibility reflect the full boosted torque (features/forced-induction.md).
+	# Resolve the forced-induction boost gain: the stock engine's turbo, overridden by an
+	# installed induction upgrade (turbo OR supercharger). Rated "at peak boost" — the
+	# displayed HP + power-to-weight eligibility reflect the full boosted torque
+	# (features/forced-induction.md).
 	var boost_gain := float(eng.get("turbo_boost_gain", 0.0))
 	# Mirror only the power-to-weight-feeding effects (EFFECTS[*].feeds_pw), from the
 	# same table apply() uses, so the two can't drift.
@@ -278,8 +327,13 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 				"mult":
 					var f: String = desc["field"]
 					out[f] = float(out.get(f, 0.0)) * float(effect[key])
-				"install_turbo":
-					boost_gain = float((effect[key] as Dictionary).get("turbo_boost_gain", boost_gain))
+				"install_induction":
+					# Whichever induction part is fitted REPLACES the other (same slot, and
+					# apply() clears the rival), so its authored gain supersedes the stock
+					# engine's. Which sub-key holds that gain comes from the descriptor, so
+					# this arm never needs to know which part it is looking at.
+					boost_gain = float((effect[key] as Dictionary).get(
+						String(desc["gain_key"]), boost_gain))
 	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + boost_gain)
 	# Detune scales the torque feeding power-to-weight, after the boost rating.
 	var detune := clampf(float(owned_car.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)

@@ -23,7 +23,7 @@ func build_title_overlay() -> void:
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(spacer)
 
-	# Title screen is a horizontal row of buttons (Start / Account / Settings, plus
+	# Title screen is a horizontal row of buttons (Start / Settings / Free Roam, plus
 	# Exit Game on non-web builds) over the parked-collection backdrop — no title/
 	# subtitle text. Same diegetic idiom as the garage row and lift hub: FOCUS_NONE
 	# buttons over a single left/right ButtonCursor (_title_cursor), not native focus —
@@ -45,14 +45,17 @@ func build_title_overlay() -> void:
 		_hq._title_exit_button = exit_btn
 		buttons.append(exit_btn)
 		acts.append(_hq._on_exterior_exit)
-	# Account (optional cloud save) sits next to Start: a player reinstalling or moving
-	# to a new device needs it BEFORE they start a fresh career, so burying it in
-	# Settings would be the wrong place. Also mirrored as a Settings page.
-	var account := _hq._station_button("Account", _hq._open_account_overlay)
-	actions.add_child(account)
-	_hq._title_account_button = account
-	buttons.append(account)
-	acts.append(_hq._open_account_overlay)
+	# Free Roam: a session-less drive in any catalogue car. It lives HERE, not in the
+	# garage, because it isn't a career action — it needs no owned car, no session and no
+	# lift, so making the player walk into the garage to reach it was a detour through
+	# state it doesn't use. Back out of its picker returns to this screen
+	# (CarparkMode.FREEROAM in _carpark_back). This slot used to hold Account, which is
+	# reachable as a Settings page instead — one route, not two.
+	var free_roam := _hq._station_button("Free Roam", _hq._enter_free_roam)
+	actions.add_child(free_roam)
+	_hq._title_free_roam_button = free_roam
+	buttons.append(free_roam)
+	acts.append(_hq._enter_free_roam)
 	# Settings: the shared camera/controls page. Moved here from the garage action row —
 	# Back from it now always returns to the title (see _on_settings_action / the
 	# SETTINGS branch in _unhandled_input).
@@ -108,13 +111,12 @@ func build_garage_overlay() -> void:
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(spacer)
 
-	# The bottom action row is rebuilt IN PLACE by hq._refresh_garage_row() — two
-	# levels share this one HBoxContainer/ButtonCursor (top: Back/Drive/Garage/Mystery
-	# Box; after Drive: Back/Career/Free Roam/Online), same camera position, no
-	# view/scene change. FOCUS_NONE + hand-painted like the tuning hub, since the
+	# The bottom action row is rebuilt IN PLACE by hq._refresh_garage_row():
+	# Back / Career / Garage / Mystery Box (N) / Online, ONE level (Mystery Box appears
+	# only when one is held). FOCUS_NONE + hand-painted like the tuning hub, since the
 	# garage is a spatially-navigated 3D station, not a native focus graph. (Repair
-	# lives on the tuning-lift HUB row — see build_lift_overlay. Settings moved to
-	# the title screen — see build_title_overlay.)
+	# lives on the tuning-lift HUB row — see build_lift_overlay. Settings and Free Roam
+	# live on the title screen — see build_title_overlay.)
 	_hq._garage_actions_row = HBoxContainer.new()
 	_hq._garage_actions_row.add_theme_constant_override("separation", 8)
 	root.add_child(_hq._garage_actions_row)
@@ -493,8 +495,8 @@ func build_settings_overlay() -> void:
 
 
 # --- Rally Challenge entry point (Daily/Weekly/Monthly) ------------------------
-# A modal overlay over the GARAGE (same treatment as build_account_overlay's modal
-# over the title), opened by the garage row's Challenge button and built lazily on
+# A modal overlay over the GARAGE (built on the shared _make_modal_overlay contract —
+# scrolled body, pinned footer), opened by the garage row's Online button and built lazily on
 # first open (_hq._open_challenge_overlay). See spec §7 and features/rally-challenge.md.
 # A flat widget list -> native focus + MenuNav, not the diegetic ButtonCursor idiom
 # the 3D stations use, since this whole screen is a plain menu page.
@@ -620,8 +622,8 @@ func build_challenge_overlay() -> void:
 	# Framework: WASD + arrow + gamepad focus nav for this flat page — the kind tabs,
 	# then Back/Start below. Native left/right focus-neighbour movement (menu_nav.gd)
 	# carries the player across the tab row; up/down reaches Back/Start. on_back closes
-	# the overlay back to the garage, same as _close_account_overlay's Back button does
-	# for the title. (_open_challenge_overlay re-grabs the CURRENT kind's tab explicitly
+	# the overlay back to the garage, the same way every other modal overlay's Back
+	# restores its host. (_open_challenge_overlay re-grabs the CURRENT kind's tab explicitly
 	# on every open, so `first` here only matters as MenuNav's own fallback.)
 	MenuNav.attach(nav_root, {first = _hq._challenge_kind_buttons[0], on_back = _hq._close_challenge_overlay})
 

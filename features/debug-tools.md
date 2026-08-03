@@ -40,11 +40,12 @@ active) is skipped.
 - `drivetrain.readouts` — per-wheel `{normal, demand, applied}` data,
 - `car.downforce_readouts` — `[global_point, force_vector]` pairs.
 
-The same **H** toggle also reveals the HUD's speed / gear / rpm / **turbo boost**
+The same **H** toggle also reveals the HUD's speed / gear / rpm / **boost**
 readout (hidden by default — a dev diagnostic; see [hud.md](hud.md)). The boost line
 reads the live boost pressure as a percentage of full boost (`hud.gd`'s pure
-`boost_text` off `EngineSim.boost`), or `Boost N/A` on a naturally-aspirated engine
-(`turbo_enabled` false) — see [forced-induction.md](forced-induction.md). A **seed**
+`boost_text` off `maxf(EngineSim.boost, EngineSim.sc_boost)`, so a supercharger's belt
+boost shares the gauge), or `Boost N/A` on a naturally-aspirated engine (no turbo and
+no blower gain) — see [forced-induction.md](forced-induction.md). A **seed**
 line below it shows the current world seed (`Config.data.track_seed`, via the pure
 `seed_text`) so a generated stage can be identified and reproduced. It also shows a transparent overlay of
 the chassis collision hull (a chamfered octagon — see

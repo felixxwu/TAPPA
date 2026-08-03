@@ -128,7 +128,7 @@ func rebuild() -> void:
 
 
 # ROW BUDGET. This page is hosted in a CENTRED VBox that also carries the host's Back
-# button below it (hq.gd._open_account_overlay), so anything that overflows the screen
+# button below it (a host that pins Back below the widget), so anything that overflows the screen
 # pushes Back off the bottom where it cannot be pressed. Every row here has to earn its
 # place: prefer merging a value onto the control that changes it, or onto a related
 # row, over adding a line of its own.

@@ -284,7 +284,8 @@ func _set_drivetrain(instance_id: int, mode: int) -> void:
 # None + one button per catalogue part in this slot (in catalogue order). None is always
 # available (the "off" state); each part is greyed until that kit is fitted to this car,
 # and the active option is bracketed. The button label is the part's `menu_label` if
-# present (Turbo's short Small / Big), else its full `name`.
+# present (the turbo slot's short Small / Big / Supercharger), else its full `name`. The row
+# is an HFlowContainer, so a slot with more options than fit simply wraps to the next line.
 func _make_option_selector(slot: String, instance_id: int, installed: Array) -> Control:
 	# A single HFlowContainer (label + every option button as flowed siblings), not an
 	# HBoxContainer wrapping a nested HFlowContainer — see _make_drivetrain_selector for

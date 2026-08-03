@@ -30,6 +30,10 @@ var omega_turbo := 0.0  # rad/s turbo shaft speed
 var boost := 0.0  # 0..1 boost fraction
 var bov_event := false  # set the substep a blow-off vents (lift while boosted)
 var antilag_active := false  # true while anti-lag bangs (off-throttle, still boosted)
+# Supercharger belt boost (0..1). Unlike the turbo this carries NO state — being
+# crank-driven it is a pure function of the current rpm, recomputed every substep
+# and inert (0) whenever supercharger_boost_gain is 0. See forced-induction.md.
+var sc_boost := 0.0
 var _prev_throttle := 0.0  # for the blow-off lift edge
 var _prev_shifting := false  # for the blow-off shift edge (driver lifts to change gear)
 # Damage fraction 0..1 (0 = healthy), set each tick by car.gd. Drives the stochastic
@@ -167,6 +171,7 @@ func reset() -> void:
 	_misfire_timer = 0.0
 	omega_turbo = 0.0
 	boost = 0.0
+	sc_boost = 0.0
 	bov_event = false
 	antilag_active = false
 	_prev_throttle = 0.0
@@ -193,11 +198,28 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	# the turbo — always-on, not gated on boost or rpm. Off boost it just bogs the engine;
 	# once boost is up the delivered torque swamps it. Big turbo + small engine = big
 	# fraction of peak torque, so it struggles to climb the low range. See forced-induction.md.
-	var friction := cfg.engine_friction_base + cfg.engine_friction_slope * rpm() / 1000.0 + cfg.turbo_parasitic_friction
+	# A belt-driven supercharger instead costs drag that GROWS with rpm (it takes more
+	# to spin the faster it turns) — the mirror image of the turbo's constant term. Both
+	# the drag and the boost are skipped outright on an engine with no blower fitted, so
+	# an NA/turbo car pays one bool check rather than a call and a divide per substep.
+	#
+	# rpm() is hoisted once here and reused for the whole substep: omega is not touched
+	# again until the integration at the very bottom, so every reader below would compute
+	# the same value, and this runs 8 substeps x 60 Hz per car.
+	var r := rpm()
+	var blown := cfg.has_supercharger_physics()
+	var friction := (
+		cfg.engine_friction_base
+		+ cfg.engine_friction_slope * r / 1000.0
+		+ cfg.turbo_parasitic_friction
+		+ (supercharger_parasitic(r, cfg.supercharger_parasitic_coef) if blown else 0.0)
+	)
 	var crank := -friction
 	# Turbo: integrate the shaft (real inertia) and derive boost BEFORE building
 	# crank torque, so the boost multiplier reflects this substep. NA engines skip it.
 	_step_turbo(cfg, h, throttle_in)
+	# Belt boost is stateless — straight off this substep's rpm, no spool.
+	sc_boost = supercharger_boost_fraction(r, cfg.supercharger_rpm_ref) if blown else 0.0
 	if throttle > 0.001 and shift_timer <= 0.0 and not fuel_cut:
 		# global_torque_scale is a hidden global de-rate: it scales the torque the
 		# engine actually delivers without altering cfg.peak_torque, so the stats
@@ -205,7 +227,13 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 		# The turbo multiplies delivered torque by boost_torque_factor(): a shaping
 		# exponent (turbo_boost_response) bends the delivery toward full spool so lag
 		# is felt (see features/forced-induction.md); response 1.0 = the old linear gain.
-		crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) * boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
+		# The two forced-induction paths MULTIPLY, but the turbo and supercharger parts
+		# share one upgrade slot so in practice only one is ever non-unity.
+		crank += (
+			throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(r)
+			* boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
+			* (1.0 + sc_boost * cfg.supercharger_boost_gain)
+		)
 
 	var gr := ratio()
 	var input_omega := driveline_omega * gr
@@ -279,6 +307,35 @@ static func boost_fraction(turbo_omega: float, omega_ref: float) -> float:
 # power (lag felt more) without changing peak power. Pure/static so it's unit-testable.
 static func boost_torque_factor(boost_frac: float, gain: float, response: float) -> float:
 	return 1.0 + pow(clampf(boost_frac, 0.0, 1.0), maxf(response, 0.0)) * gain
+
+
+# THE forced-induction reading (0..1) for anything that wants "how much boost is this
+# engine making right now" — a gauge, telemetry, a second readout. Turbo and supercharger
+# share the one "turbo" upgrade slot, so at most one of the two is ever non-zero and the
+# max is simply whichever is live.
+#
+# NOTE the audio bridges (engine_audio.gd / car_preview_audio.gd) deliberately pass the
+# raw `boost` field instead: it drives the turbo WHISTLE and blow-off valve, layers a
+# blown car does not have (install_supercharger clears turbo_enabled precisely so they
+# cannot fire). Feeding belt boost in would make a supercharged car whistle and vent like
+# a turbo. The supercharger's own whine is rpm-pitched, not boost-driven.
+func boost_reading() -> float:
+	return maxf(boost, sc_boost)
+
+
+# Belt boost fraction: LINEAR in rpm, saturating at 1.0 from rpm_ref up. A positive-
+# displacement blower is geared to the crank, so its pressure ratio tracks engine speed
+# directly — there is no shaft to spool, hence no inertia, no lag and no threshold.
+static func supercharger_boost_fraction(engine_rpm: float, rpm_ref: float) -> float:
+	if rpm_ref <= 0.0:
+		return 0.0
+	return clampf(engine_rpm / rpm_ref, 0.0, 1.0)
+
+
+# Belt drag on the crank (N·m), affine in rpm the way the base engine friction is: the
+# coefficient is authored per 1000 rpm. Grows with revs, unlike turbo backpressure.
+static func supercharger_parasitic(engine_rpm: float, coef: float) -> float:
+	return coef * maxf(engine_rpm, 0.0) / 1000.0
 
 
 # Exhaust energy available to spin the shaft: proportional to mass flow (throttle *

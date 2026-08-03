@@ -42,7 +42,14 @@ func _ready() -> void:
 # Start (or restart) a rev for the given engine. A call mid-preview cancels the
 # previous one: the engine is rebuilt from idle and the generator buffer flushed,
 # so flicking the lineup plays a clean series of little revs.
-func rev(engine_id: String) -> void:
+#
+# `owned_car` is the highlighted car's save dict (optional, {} for a bare engine
+# audition): passing it applies that car's FITTED UPGRADES on top of the stock
+# engine, in the same order as the fielded-car pipeline, so a turbo or supercharger
+# the player bolted on is actually heard here — both its extra torque (the flywheel
+# climbs harder) and its own audio layer (whistle / BOV / blower whine). Without it
+# the preview would only ever play the factory engine. See features/engine-audio.md.
+func rev(engine_id: String, owned_car: Dictionary = {}) -> void:
 	var engine := EngineLibrary.by_id(engine_id)
 	if engine.is_empty():
 		return
@@ -50,6 +57,8 @@ func rev(engine_id: String) -> void:
 	# the active car's tuning through the global.
 	_cfg = Config.data.duplicate(true)
 	EngineLibrary.apply(engine, _cfg)
+	if not owned_car.is_empty():
+		UpgradeLibrary.apply(owned_car, _cfg)
 	_engine = EngineSim.new(_cfg)
 	_engine.gear = 0  # neutral: clutch open, the flywheel revs freely (no load)
 	_synth = EngineAudioSynth.new(_cfg, MIX_RATE)
@@ -98,5 +107,9 @@ func _fill_audio() -> void:
 	var turbo_spin := _engine.omega_turbo / _cfg.turbo_omega_ref if _cfg.turbo_omega_ref > 0.0 else 0.0
 	var bov := _engine.bov_event
 	_engine.bov_event = false
+	# Raw `boost`, deliberately NOT EngineSim.boost_reading(): this argument drives the
+	# turbo WHISTLE and blow-off valve, layers a supercharged car does not have (its whine
+	# is rpm-pitched, and install_supercharger clears turbo_enabled so neither can fire).
+	# Feeding belt boost in would make a blown car whistle and vent like a turbo.
 	_synth.fill(_scratch, _engine.rpm(), _engine.throttle, _engine.shift_timer > 0.0, n, _engine.fuel_cut, _engine.limiting, _engine.boost, turbo_spin, bov, _engine.antilag_active)
 	_playback.push_buffer(_scratch)

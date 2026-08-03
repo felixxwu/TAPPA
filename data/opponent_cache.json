@@ -1,6 +1,6 @@
 {
   "entries": {
-    "american_muscle|c3f8ff451b77d433|1a80070341d2d9f5": [
+    "american_muscle|c3f8ff451b77d433|18c3784d226ffba0": [
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
@@ -137,7 +137,7 @@
         "wreck_side": 1.0
       }
     ],
-    "coastal_sprint|ca95ad99b17575a8|1a80070341d2d9f5": [
+    "coastal_sprint|ca95ad99b17575a8|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -274,7 +274,7 @@
         "wreck_side": 1.0
       }
     ],
-    "front_runners|751109e797ea1c8e|1a80070341d2d9f5": [
+    "front_runners|751109e797ea1c8e|18c3784d226ffba0": [
       {
         "car_id": "focus",
         "car_name": "Fjord Focal",
@@ -411,7 +411,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gc_fishermens_run|00ed652c09a97f6b|1a80070341d2d9f5": [
+    "gc_fishermens_run|00ed652c09a97f6b|18c3784d226ffba0": [
       {
         "car_id": "twingo",
         "car_name": "Rondel Twist",
@@ -548,7 +548,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gc_island_gp|9d0e192cfde127a7|1a80070341d2d9f5": [
+    "gc_island_gp|9d0e192cfde127a7|18c3784d226ffba0": [
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
@@ -685,7 +685,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gc_island_hop|2b95a57db3388395|1a80070341d2d9f5": [
+    "gc_island_hop|2b95a57db3388395|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -822,7 +822,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gc_salt_flats|da57d7bacc3664ea|1a80070341d2d9f5": [
+    "gc_salt_flats|da57d7bacc3664ea|18c3784d226ffba0": [
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
@@ -959,7 +959,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gc_showdown|ea392b5791fcf233|1a80070341d2d9f5": [
+    "gc_showdown|ea392b5791fcf233|18c3784d226ffba0": [
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
@@ -1096,7 +1096,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_ancient_ruins|d0acee59e8b442f9|1a80070341d2d9f5": [
+    "gr_ancient_ruins|d0acee59e8b442f9|18c3784d226ffba0": [
       {
         "car_id": "beast",
         "car_name": "The Beast",
@@ -1233,7 +1233,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_dust_devils|8211440a77658cd2|1a80070341d2d9f5": [
+    "gr_dust_devils|8211440a77658cd2|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -1370,7 +1370,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_marble_quarry|00699a66d2804843|1a80070341d2d9f5": [
+    "gr_marble_quarry|00699a66d2804843|18c3784d226ffba0": [
       {
         "car_id": "beast",
         "car_name": "The Beast",
@@ -1507,7 +1507,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_mountain_pass|2c7888de00d18253|1a80070341d2d9f5": [
+    "gr_mountain_pass|2c7888de00d18253|18c3784d226ffba0": [
       {
         "car_id": "viper",
         "car_name": "Swerve Serpent RT/10",
@@ -1644,7 +1644,7 @@
         "wreck_side": -1.0
       }
     ],
-    "gr_olive_coast|cc911862d4a06b88|1a80070341d2d9f5": [
+    "gr_olive_coast|cc911862d4a06b88|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -1781,7 +1781,7 @@
         "wreck_side": -1.0
       }
     ],
-    "gr_showdown|8b8f5bb23ebeaf96|1a80070341d2d9f5": [
+    "gr_showdown|8b8f5bb23ebeaf96|18c3784d226ffba0": [
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
@@ -1918,7 +1918,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_thermopylae|1f0d3b8d56474895|1a80070341d2d9f5": [
+    "gr_thermopylae|1f0d3b8d56474895|18c3784d226ffba0": [
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
@@ -2055,7 +2055,7 @@
         "wreck_side": 1.0
       }
     ],
-    "grand_tour|a5ddb4c5295d5135|1a80070341d2d9f5": [
+    "grand_tour|a5ddb4c5295d5135|18c3784d226ffba0": [
       {
         "car_id": "viper",
         "car_name": "Swerve Serpent RT/10",
@@ -2192,7 +2192,7 @@
         "wreck_side": 1.0
       }
     ],
-    "hc_headland_dash|387ea4efcdae741c|1a80070341d2d9f5": [
+    "hc_headland_dash|387ea4efcdae741c|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -2329,7 +2329,7 @@
         "wreck_side": 1.0
       }
     ],
-    "hc_lakeside_kei|599087ed26f52b23|1a80070341d2d9f5": [
+    "hc_lakeside_kei|599087ed26f52b23|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -2466,7 +2466,7 @@
         "wreck_side": 1.0
       }
     ],
-    "hc_showdown|aa856c185769a442|1a80070341d2d9f5": [
+    "hc_showdown|aa856c185769a442|18c3784d226ffba0": [
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
@@ -2603,7 +2603,7 @@
         "wreck_side": -1.0
       }
     ],
-    "hc_v12_promenade|847b7fbda5097b6b|1a80070341d2d9f5": [
+    "hc_v12_promenade|847b7fbda5097b6b|18c3784d226ffba0": [
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
@@ -2740,7 +2740,7 @@
         "wreck_side": 1.0
       }
     ],
-    "hm_forest_gt|5cfb8e807d5742c9|1a80070341d2d9f5": [
+    "hm_forest_gt|5cfb8e807d5742c9|18c3784d226ffba0": [
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
@@ -2877,7 +2877,7 @@
         "wreck_side": 1.0
       }
     ],
-    "hm_hatch_cup|5c2b61d5a0a1c3ed|1a80070341d2d9f5": [
+    "hm_hatch_cup|5c2b61d5a0a1c3ed|18c3784d226ffba0": [
       {
         "car_id": "twingo",
         "car_name": "Rondel Twist",
@@ -3014,7 +3014,7 @@
         "wreck_side": 1.0
       }
     ],
-    "hm_timber_trophy|d6c66cb07e874a4b|1a80070341d2d9f5": [
+    "hm_timber_trophy|d6c66cb07e874a4b|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -3151,7 +3151,7 @@
         "wreck_side": -1.0
       }
     ],
-    "rising_sun|c0db908602196fd4|1a80070341d2d9f5": [
+    "rising_sun|c0db908602196fd4|18c3784d226ffba0": [
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
@@ -3288,7 +3288,7 @@
         "wreck_side": 1.0
       }
     ],
-    "rwd_masters|446b3f8234376660|1a80070341d2d9f5": [
+    "rwd_masters|446b3f8234376660|18c3784d226ffba0": [
       {
         "car_id": "viper",
         "car_name": "Swerve Serpent RT/10",
@@ -3425,7 +3425,7 @@
         "wreck_side": 1.0
       }
     ],
-    "shakedown|66966f054953d430|1a80070341d2d9f5": [
+    "shakedown|66966f054953d430|18c3784d226ffba0": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
@@ -3562,7 +3562,7 @@
         "wreck_side": 1.0
       }
     ],
-    "shitbox_cup|dc69aed6f16fdfe6|1a80070341d2d9f5": [
+    "shitbox_cup|dc69aed6f16fdfe6|18c3784d226ffba0": [
       {
         "car_id": "acty",
         "car_name": "Honcho Actus",
@@ -3699,7 +3699,7 @@
         "wreck_side": 1.0
       }
     ],
-    "the_showdown|db3318abbd88e673|1a80070341d2d9f5": [
+    "the_showdown|db3318abbd88e673|18c3784d226ffba0": [
       {
         "car_id": "beast",
         "car_name": "The Beast",
@@ -3837,6 +3837,6 @@
       }
     ]
   },
-  "source_hash": "e788d4682adcaba0049aa7ccf9d81f7ed166e8bdddaec1f3d31eaa00fceec064",
+  "source_hash": "0183328c930b61bfe56664ba24cde38999859c4f79ca20ac30041f1d30c7d2dc",
   "version": 1
 }

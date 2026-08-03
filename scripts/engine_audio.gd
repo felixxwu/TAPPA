@@ -228,6 +228,10 @@ func _timed_process(_delta: float) -> void:
 	# each blow-off fires exactly once and re-arms (the synth edge-detects it).
 	var bov := engine.bov_event
 	engine.bov_event = false
+	# Raw `boost`, deliberately NOT EngineSim.boost_reading(): this argument drives the
+	# turbo WHISTLE and blow-off valve, layers a supercharged car does not have (its whine
+	# is rpm-pitched, and install_supercharger clears turbo_enabled so neither can fire).
+	# Feeding belt boost in would make a blown car whistle and vent like a turbo.
 	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active)
 	_scratch_silent = false
 	_playback.push_buffer(_scratch)

@@ -1,18 +1,19 @@
 # Forced Induction (Turbo & Supercharger)
 
-**Sources:** `scripts/engine.gd` (`EngineSim` — turbo shaft sim),
-`scripts/game_config.gd` (`turbo_*` / `supercharger_enabled` fields),
+**Sources:** `scripts/engine.gd` (`EngineSim` — turbo shaft sim +
+`supercharger_boost_fraction` / `supercharger_parasitic`),
+`scripts/game_config.gd` (`turbo_*` / `supercharger_*` fields),
 `scripts/engine_library.gd` (`EngineLibrary.apply` — stock wiring),
-`scripts/upgrade_library.gd` (`turbo_small` / `turbo_large` upgrades,
-`effective_meta`), `scripts/engine_audio_synth.gd` /
+`scripts/upgrade_library.gd` (`turbo_small` / `turbo_large` / `supercharger`
+upgrades, `effective_meta`), `scripts/engine_audio_synth.gd` /
 `scripts/engine_audio.gd` (whistle / BOV / anti-lag / whine audio).
 
 Turbo and supercharger are both properties of the **engine**, not the car —
 same pattern as the torque curve and gearbox (see
-[engine-and-transmission.md](engine-and-transmission.md)). A turbo can arrive
+[engine-and-transmission.md](engine-and-transmission.md)). Either can arrive
 two ways: baked into a stock `EngineLibrary` entry, or bolted on later via the
-`turbo_small` / `turbo_large` upgrade items. A supercharger is **always**
-stock — it is never an upgrade.
+`turbo_small` / `turbo_large` / `supercharger` upgrade items, which all share
+one `"turbo"` slot so **at most one is ever live**.
 
 ## Config fields (`game_config.gd`, `@export_group("Engine & Transmission")`)
 
@@ -28,15 +29,18 @@ stock — it is never an upgrade.
 | `turbo_drag_coef` | Bearing/aero drag on the shaft (∝ ω²) — sets steady-state speed for a given flow and the off-throttle bleed rate. |
 | `turbo_antilag` | Anti-lag switch: keeps the shaft spinning off-throttle + triggers exhaust bangs. |
 | `turbo_antilag_drive` | Residual exhaust drive injected off-throttle when anti-lag is on. |
-| `supercharger_enabled` | Belt-driven supercharger flag — audio-only (see below). |
+| `supercharger_enabled` | Belt-driven supercharger flag. Drives the whine audio layer; on a **stock** blown engine that is all it does (`supercharger_boost_gain` stays 0 because the power is already baked into `peak_torque`). |
+| `supercharger_boost_gain` | Torque multiplier at full belt boost: `delivered = na_torque * (1 + sc_boost * supercharger_boost_gain)`. **0 = no physics** — the switch that separates the audio-only stock flag from the supercharger upgrade. |
+| `supercharger_rpm_ref` | Engine rpm at which belt boost saturates at 1.0. Boost is **linear in rpm** with no shaft state — there is nothing to spool. |
+| `supercharger_parasitic_coef` | Belt drag on the crank, in N·m **per 1000 rpm**. Unlike the turbo's constant backpressure this grows *with* revs (the blower takes more to spin the faster it turns), so the top end pays for the instant bottom-end response. 0 = no penalty. |
 | `engine_turbo_whistle_gain` / `engine_turbo_bov_gain` / `engine_turbo_antilag_bang_gain` / `engine_supercharger_whine_gain` | Independent audio mix levels for the four forced-induction sound layers (−1..1; negative = phase-inverted). |
 | `engine_turbo_whistle_freq_min` / `engine_turbo_whistle_freq_max` / `engine_turbo_whistle_q` / `engine_turbo_air_mix` | Spool-whistle character: band-pass sweep range (Hz), resonance (airy↔tonal), and broadband air-rush blend. |
 
 All of these are written by `EngineLibrary.apply()` (stock, from a catalog
 entry's optional keys, defaulting to OFF/zero when absent — see
 [engine-and-transmission.md](engine-and-transmission.md)) or by the
-`install_turbo` upgrade effect (`UpgradeLibrary.apply`, below) — never edited
-directly on a live `Car`.
+`install_turbo` / `install_supercharger` upgrade effects (`UpgradeLibrary.apply`,
+below) — never edited directly on a live `Car`.
 
 ## The turbo shaft sim (`EngineSim._step_turbo`, `scripts/engine.gd`)
 
@@ -127,10 +131,13 @@ the dump valve. It's a pure edge-trigger flag read once by the audio bridge
 
 ## Upgrade tiers (`UpgradeLibrary`, `scripts/upgrade_library.gd`)
 
-Two non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
-/ `engine_stage2` power upgrades. Each also carries a short `menu_label` (the
-`UpgradesMenu` selector shows "Small" / "Big" rather than the full name) and a
-`turbo_parasitic_friction` term (the always-on backpressure N·m):
+Three non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
+/ `engine_stage2` power upgrades — the two turbos below plus the
+`supercharger` (see [Supercharger](#supercharger-belt-drive)), which is
+prerequisite-gated behind `turbo_large`. Each also carries a `menu_label` (the
+`UpgradesMenu` selector shows "Small" / "Big" / "Supercharger" rather than the
+full name) and a `turbo_parasitic_friction` term (the always-on backpressure
+N·m):
 
 ```gdscript
 {
@@ -163,18 +170,31 @@ that car already has Small Turbo fitted (per-car, not garage-wide — each car
 climbs its own turbo ladder) — see `upgrade-catalogue.md`'s
 "Prerequisite gate" and `reward-system.md`'s upgrade-draw section.
 
-`UpgradeLibrary.apply()` handles the shared `"install_turbo"` effect key
-generically: it sets `cfg.turbo_enabled = true`, then copies every key/value
-in the effect's nested dict straight onto `cfg` with `cfg.set(tkey, val)` —
-so a turbo upgrade is just "turn the sim on and stamp these turbo_* fields",
-the same mechanism whether it's the small or big tier (or a future one):
+`UpgradeLibrary.apply()` handles **both** induction effect keys through ONE
+`"install_induction"` op, with everything that differs between them living in the
+`EFFECTS` descriptor row rather than in a branch — `enable` (the flag this part
+switches on), `clears` (the rival part's state, as `{field: value}`) and `gain_key`
+(the sub-key `effective_meta` rates power-to-weight from):
 
 ```gdscript
-"install_turbo":
-    cfg.turbo_enabled = true
+"install_induction":
+    cfg.set(String(desc["enable"]), true)
+    for ckey in (desc["clears"] as Dictionary):
+        cfg.set(ckey, (desc["clears"] as Dictionary)[ckey])
     for tkey in (val as Dictionary):
         cfg.set(tkey, (val as Dictionary)[tkey])
 ```
+
+So an induction upgrade is just "switch this on, switch the other off, stamp these
+fields" — the same mechanism for the small turbo, the big turbo, the supercharger, or a
+future fourth part, which is a table row rather than another `match` arm.
+
+**The `clears` is symmetric, on purpose.** Fitting the blower zeroes `turbo_enabled`;
+fitting a turbo zeroes *both* `supercharger_enabled` and `supercharger_boost_gain`.
+Slot exclusivity (`Save._enable_exclusive`) already means only one of the two can be
+ENABLED, and `EngineLibrary.apply` rebuilds the baseline first — but relying on that
+would leave the two multipliers free to stack the moment a stock engine authored a real
+`supercharger_boost_gain`. The table makes it structural instead of circumstantial.
 
 Only one `"turbo"`-slot part can be fitted+enabled at a time
 (`UpgradeLibrary.SLOTS`), so a car can't stack `turbo_small` and
@@ -209,17 +229,71 @@ real on-track physics. `RallyLibrary._best_eligible_car` boosts the same way,
 so the "fastest possible car" bound rivals are clamped against reflects the
 same forced induction.
 
-## Supercharger
+## Supercharger (belt drive)
 
-A supercharger is **intrinsic to the engine, never an upgrade** — there is no
-`UPGRADES` entry for it and no install effect. `cfg.supercharger_enabled` is
-set only by `EngineLibrary.apply()` from a stock catalog entry's
-`supercharger_enabled` key. It carries **no physics**: a supercharged
-engine's forced-induction power gain is already baked into its authored
-`peak_torque` figure (real superchargers are always-on, so there's no boost
-curve or lag to simulate — the engine simply makes its published torque).
-`supercharger_enabled` exists purely to drive the belt-driven whine audio
-layer (below); it does not touch `EngineSim` at all.
+A supercharger arrives **two ways**, and which one it is decides whether it
+carries physics:
+
+- **Stock, on a catalog engine** — `EngineLibrary.apply()` copies the entry's
+  `supercharger_enabled` key. The gain stays 0, so the belt physics never
+  engage: the engine's forced-induction power is already baked into its
+  authored `peak_torque`, and the flag drives nothing but the whine audio
+  layer (below). This is exactly the pre-existing audio-only behaviour.
+- **As the `supercharger` upgrade** — the top rung of the `"turbo"` slot,
+  prerequisite-gated behind `turbo_large`. Its `install_supercharger` effect
+  authors a non-zero `supercharger_boost_gain` (plus `supercharger_rpm_ref`
+  and `supercharger_parasitic_coef`), which turns on the belt sim below.
+
+The belt sim is deliberately **stateless** — that's the whole character of a
+blower. Two pure statics on `EngineSim`, both called from `step()`:
+
+```gdscript
+# Boost: LINEAR in rpm, saturating at rpm_ref. No shaft, no inertia, no lag.
+static func supercharger_boost_fraction(engine_rpm: float, rpm_ref: float) -> float:
+    if rpm_ref <= 0.0:
+        return 0.0
+    return clampf(engine_rpm / rpm_ref, 0.0, 1.0)
+
+# Belt drag on the crank (N·m), authored per 1000 rpm — grows WITH revs.
+static func supercharger_parasitic(engine_rpm: float, coef: float) -> float:
+    return coef * maxf(engine_rpm, 0.0) / 1000.0
+```
+
+`step()` recomputes `sc_boost` from the current rpm every substep (gated on
+`GameConfig.has_supercharger_physics()` — the shared predicate, so the engine and the
+HUD can't disagree about what counts as a fitted blower), adds the belt drag to the same
+friction sum as `turbo_parasitic_friction`, and folds the gain into the torque line
+alongside the turbo's factor. The gate skips BOTH the drag and the boost, so a car
+without a blower pays one bool check per substep rather than a call and a divide:
+
+```gdscript
+crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) \
+    * boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response) \
+    * (1.0 + sc_boost * cfg.supercharger_boost_gain)
+```
+
+The two forced-induction paths multiply, but because turbo and blower share
+one upgrade slot only one is ever non-unity in practice — and
+`install_supercharger` explicitly clears `turbo_enabled` so the whistle, BOV
+and anti-lag layers can't fire on a blown car.
+
+**How it plays against Big Turbo.** Its peak gain is only a little higher, so
+the two are close on paper; the real advantage is the *shape* — full boost the
+instant the revs are there, with no threshold and no bleed-down. The cost is
+drag proportional to rpm, so the blower gives up at the top of the rev range
+what it hands you at the bottom, where the big turbo is still spooling.
+
+`sc_boost` is reset in `EngineSim.reset()`. Consumers do **not** combine the two
+readings themselves — `EngineSim.boost_reading()` is the single 0..1 forced-induction
+reading (`maxf(boost, sc_boost)`; only one can be live, so the max is whichever it is),
+and the HUD's boost bar plus its debug readout both go through it together with
+`GameConfig.has_forced_induction()`.
+
+**The audio bridges deliberately do NOT.** `engine_audio.gd` and `car_preview_audio.gd`
+pass the raw `boost` field into the synth, because that argument drives the turbo
+**whistle** and **blow-off valve** — layers a blown car does not have (`install_turbo`'s
+mirror image clears `turbo_enabled`, so neither can fire). Feeding belt boost in would
+make a supercharged car whistle and vent like a turbo; its own whine is rpm-pitched.
 
 ## Audio (`scripts/engine_audio_synth.gd`, bridged by `scripts/engine_audio.gd`)
 
@@ -288,13 +362,21 @@ config behaves exactly as before), `tests/headless/test_engine_audio.gd`
 supercharger whine only when enabled), `tests/headless/test_engine_library.gd`
 / `tests/headless/test_upgrade_library.gd` (catalog entries load, `apply()`
 writes the fields, `install_turbo` sets `turbo_enabled` + stamps the effect
-dict, `effective_meta` rates at peak boost).
+dict, `install_supercharger` sets the blower + CLEARS the turbo, `effective_meta`
+rates at peak boost for both), and
+`tests/headless/test_car_preview_audio.gd` (the HQ lineup rev hears a fitted
+turbo / blower, and a stock-engine audition doesn't inherit the fielded car's).
+The blower's own physics live in `test_turbo.gd`'s supercharger block: boost
+linear in rpm and saturating, drag affine in rpm, full boost on the FIRST
+substep (no spool), boost tracking the revs both ways, inert without an
+authored gain, and `reset()` clearing it.
 
 ## Related config
 
 `turbo_enabled`, `turbo_inertia`, `turbo_omega_ref`, `turbo_boost_gain`,
 `turbo_drive_gain`, `turbo_drag_coef`, `turbo_antilag`, `turbo_antilag_drive`,
-`supercharger_enabled`, `engine_turbo_whistle_gain`, `engine_turbo_bov_gain`,
+`supercharger_enabled`, `supercharger_boost_gain`, `supercharger_rpm_ref`,
+`supercharger_parasitic_coef`, `engine_turbo_whistle_gain`, `engine_turbo_bov_gain`,
 `engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`. See
 [configuration.md](configuration.md), [engine-and-transmission.md](engine-and-transmission.md),
 [engine-audio.md](engine-audio.md), and [upgrade-catalogue.md](upgrade-catalogue.md).

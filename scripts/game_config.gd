@@ -322,9 +322,42 @@ var peak_torque_rpm := 4500.0
 @export var turbo_antilag := false
 ## Residual exhaust drive injected off-throttle when anti-lag is on (keeps omega up).
 @export var turbo_antilag_drive := 0.0
-## Whether this engine has a belt-driven supercharger. Audio-only: its power gain
-## is already baked into the engine's authored peak_torque, so the sim is unchanged.
+## Whether this engine has a belt-driven supercharger. Drives the whine audio layer,
+## and — when supercharger_boost_gain is > 0 — the belt-drive boost physics below. A
+## STOCK supercharged engine leaves the gain at 0 (its power is already baked into the
+## authored peak_torque); only the supercharger UPGRADE authors a gain, so the flag on
+## its own stays audio-only exactly as before. See features/forced-induction.md.
 @export var supercharger_enabled := false
+## Torque multiplier at full belt boost: delivered = na_torque * (1 + sc_boost * this).
+## 0 = no physics (audio-only / stock blown engine). Balance placeholder.
+@export var supercharger_boost_gain := 0.0
+## Engine rpm at which belt boost saturates at 1.0. Because the blower is crank-driven,
+## boost is LINEAR in rpm with no shaft inertia — full boost arrives the instant the
+## revs are there, which is the whole character of a supercharger vs. a turbo.
+@export var supercharger_rpm_ref := 4000.0
+## Belt drag the blower costs the crank, in N·m per 1000 rpm — unlike a turbo's constant
+## backpressure this grows WITH revs (the blower takes more to spin the faster it turns),
+## so the top end pays for the instant bottom-end response. 0 = no penalty.
+@export var supercharger_parasitic_coef := 0.0
+
+
+# Forced-induction predicates. These live HERE, next to the fields whose encoding they
+# interpret, because more than one layer needs the same answer: EngineSim gates the belt
+# sim on the first, and the HUD hides its boost bar on the second. The "a non-zero GAIN,
+# not merely the supercharger_enabled flag, is what means real physics" rule is subtle
+# (the flag alone is a stock engine's audio-only blower), so it is stated once rather than
+# re-derived per caller. See features/forced-induction.md.
+
+## Whether the belt-drive physics are live: a STOCK blown engine sets supercharger_enabled
+## for the whine but leaves the gain at 0, so the flag alone must not switch the sim on.
+func has_supercharger_physics() -> bool:
+	return supercharger_boost_gain > 0.0
+
+
+## Whether this engine makes boost at all, by either route — the question "is there a
+## boost reading worth showing / simulating", not "which part is fitted".
+func has_forced_induction() -> bool:
+	return turbo_enabled or has_supercharger_physics()
 ## Seconds the HQ car-lineup preview holds the throttle when a car is highlighted:
 ## a free-revving (neutral, no-load) EngineSim climbs for this long, then releases
 ## and falls back to idle so the player hears each car's engine as they flick the
@@ -899,16 +932,6 @@ var peak_torque_rpm := 4500.0
 ## lift posts (x = hq_lift_pos.x ± hq_lift_size.x/2, z = hq_lift_pos.z ± the same).
 @export var hq_lift_cam_eye := Vector3(1.1, 1.9, 4.0)
 @export var hq_lift_cam_look := Vector3(5.0, 1.15, -1.0)
-## DRIVE-level camera (the garage row after pressing Drive): a low 3/4 FRONT hero
-## shot of the selected car sitting on the LOWERED lift, rather than the wide
-## garage-station view. The eye is an OFFSET from hq_lift_pos — the lift car noses
-## toward −Z, so the negative Z puts the camera in front of it and the negative X
-## swings round to its front-left for the three-quarter angle. Kept near the ground
-## on purpose, and inside the garage shell (back wall at −hq_garage_size.y / 2).
-@export var hq_drive_cam_offset := Vector3(-2.2, 0.75, -3.4)
-## Height above the lift's base the DRIVE-level camera looks at (bonnet height, so
-## the low shot points up the car's face rather than at the floor).
-@export var hq_drive_cam_look_height := 0.7
 ## Fraction of the screen width the tuning menu panel occupies (anchored right).
 @export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
 ## Fraction of the screen width an OPEN tuning/upgrades page occupies, centred

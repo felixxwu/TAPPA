@@ -265,7 +265,7 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 
 # --- Keyboard / gamepad navigation -------------------------------------------
 
-# The title row (Start / Account / Settings, plus Exit Game on desktop) is a single
+# The title row (Start / Settings / Free Roam, plus Exit Game on desktop) is a single
 # left/right ButtonCursor, same diegetic idiom as the garage row and lift hub —
 # menu_left/menu_right move the cursor, menu_select fires the item under it.
 func test_hq_title_is_a_left_right_cursor() -> void:
@@ -273,7 +273,7 @@ func test_hq_title_is_a_left_right_cursor() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
-	# Order is exit-left / proceed-right: [Exit Game] Account Settings [Start], with
+	# Order is exit-left / proceed-right: [Exit Game] Free Roam Settings [Start], with
 	# Exit Game absent on web. Asserted by BUTTON IDENTITY at each step rather than by
 	# literal index, so the web build (one fewer stop) walks the same path.
 	var cursor: Array = hq._title_cursor.buttons
@@ -874,16 +874,16 @@ func test_hq_start_flies_into_the_garage() -> void:
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in the garage")
 
 
-# The garage overlay's TOP level is a left/right cursor over Back (0) / Drive (1) /
-# Garage (2) / Mystery Box (3), wrapping at both ends, with select firing the item
-# under the cursor. (Repair lives on the tuning-lift HUB row; Settings moved to the
-# title screen — neither is on the garage row anymore. Career/Free Roam/Online now
-# live one level down, behind Drive — see test_hq_garage_drive_level_is_a_left_right_cursor.)
+# The garage overlay is ONE left/right cursor over Back (0) / Career (1) / Garage (2) /
+# [Mystery Box] / Online (last), wrapping at both ends, with select firing the item under
+# the cursor. (Repair lives on the tuning-lift HUB row; Settings and Free Roam live on the
+# title screen — none of the three is on the garage row. The old "Drive" sub-level that
+# used to hide Career/Online behind an extra press is gone.)
 func test_hq_garage_is_a_left_right_cursor() -> void:
 	# A held box + a second, non-maxed car keeps Mystery Box ENABLED, so the cursor
 	# can actually land on it (ButtonCursor skips disabled stops, same as it would
 	# skip any other unavailable action) — a fresh, box-less profile would otherwise
-	# jump straight over it from Garage to Back.
+	# jump straight over it.
 	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
 	_save.grant_car("fx_rwd_coupe")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -891,121 +891,76 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	assert_eq(hq._view, hq.View.GARAGE, "start lands in the garage")
-	assert_false(hq._garage_showing_drive, "opening the garage always starts on the TOP level")
-	# ORDER CHANGED DELIBERATELY: was `< Back | Drive | Garage | Mystery Box`. The house
-	# rule is exit-left / proceed-right (features/menus.md → "Button order"), so Drive —
-	# the proceeding action — moved to the END. Mystery Box is omitted when none is held,
-	# so Drive's index is not a constant; ask _garage_drive_index rather than assume.
-	var last: int = hq._garage_cursor.buttons.size() - 1
-	assert_eq(hq._garage_drive_index, last, "Drive is the LAST stop on the row")
-	assert_eq(hq._garage_focus, hq._garage_drive_index, "the garage cursor starts on Drive")
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
+	# Mystery Box is omitted when none is held, so no index in this row is a constant —
+	# ask the cursor's own array rather than assuming positions.
+	var cursor: Array = hq._garage_cursor.buttons
+	var last: int = cursor.size() - 1
+	assert_eq(hq._garage_career_index, 1, "Career is the first stop after Back")
+	assert_eq(hq._garage_focus, hq._garage_career_index, "the garage cursor starts on Career")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, last, "left from Back wraps back onto Drive")
+	assert_eq(hq._garage_focus, 0, "left from Career reaches Back")
+	hq._move_garage_focus(-1)
+	assert_eq(hq._garage_focus, last, "left from Back wraps to the end of the row")
 	# Every stop is reachable and distinct.
 	var seen: Array = []
-	for _i in hq._garage_cursor.buttons.size():
+	for _i in cursor.size():
 		assert_false(seen.has(hq._garage_focus), "each step lands on a new stop")
 		seen.append(hq._garage_focus)
 		hq._move_garage_focus(1)
+	assert_eq(seen.size(), cursor.size(), "every button in the row is reachable")
+
+	# Select on Career opens the map — no intermediate level to pass through.
+	hq._garage_focus = hq._garage_career_index
+	hq._activate_garage_focus()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.TABLE, "select on Career opens the map directly")
 
 	# Select on Garage opens the car park -> tuning lift.
-	hq._garage_focus = 1  # Back(0) | Garage(1) | ...
+	hq._go_to(hq.View.GARAGE)
+	hq._garage_focus = 2  # Back(0) | Career(1) | Garage(2) | ...
 	hq._activate_garage_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "select on Garage opens the car park")
 
 	# Back-to-garage, then select on the Back item leaves for the exterior.
 	hq._go_to(hq.View.GARAGE)
-	assert_eq(hq._garage_focus, hq._garage_drive_index,
-		"re-entering the garage re-seats the cursor on Drive")
+	assert_eq(hq._garage_focus, hq._garage_career_index,
+		"re-entering the garage re-seats the cursor on Career")
 	hq._garage_focus = 0
 	hq._activate_garage_focus()
 	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
 
 
-# Pressing Drive swaps the SAME row (same station, closer camera) to Back (0) / Career (1) /
-# Free Roam (2) / Online (3) — also a left/right cursor, wrapping. Back on THIS level
-# goes back up to the TOP level, not out to the exterior.
-func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
+# menu_back on the garage row leaves the station outright. There is no longer a
+# sub-level for it to step up into, so this is the only behaviour it has.
+func test_hq_garage_menu_back_leaves_for_the_exterior() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-
-	hq._garage_focus = hq._garage_drive_index
-	hq._activate_garage_focus()
-	assert_true(hq._garage_showing_drive, "Drive switches to the DRIVE level")
-	assert_eq(hq._view, hq.View.GARAGE, "Drive does NOT change the view/station")
-	assert_eq(hq._garage_focus, 1, "the DRIVE level starts on Career, its primary action")
-
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 2, "right moves to Free Roam")
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 3, "right moves to Online")
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
-
-	# Select on Career opens the map.
-	hq._garage_focus = 1
-	hq._activate_garage_focus()
-	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.TABLE, "select on Career opens the map")
-
-	# Back up to the TOP level from the DRIVE level's own Back (0), not out to the exterior.
-	hq._go_to(hq.View.GARAGE)
-	hq._garage_focus = hq._garage_drive_index
-	hq._activate_garage_focus()  # Drive -> DRIVE level
-	hq._garage_focus = 0
-	hq._activate_garage_focus()  # DRIVE level's Back
-	assert_false(hq._garage_showing_drive, "Back on the DRIVE level returns to the TOP level")
-	assert_eq(hq._view, hq.View.GARAGE, "still in the garage, not the exterior")
-	assert_eq(hq._garage_focus, hq._garage_drive_index, "the cursor re-seats on Drive")
+	assert_eq(hq._view, hq.View.GARAGE, "setup: in the garage")
+	var back := InputEventAction.new()
+	back.action = "menu_back"
+	back.pressed = true
+	hq._unhandled_input(back)
+	assert_eq(hq._view, hq.View.EXTERIOR, "menu_back leaves the garage for the exterior")
 
 
-# Drive keeps the garage STATION but re-frames it: the camera eases in to a low
-# three-quarter FRONT shot of the car on the (lowered) lift, and backing out to the
-# TOP level restores the wide shell framing. Asserted on _station_xform (the tween's
-# target) so it doesn't depend on the move having finished, and on the SHAPE of the
-# framing — in front of the car, off to one side, near the ground — rather than on
-# the authored offsets themselves.
-func test_hq_drive_level_frames_the_lift_car_from_a_low_front_three_quarter() -> void:
+# The garage station has ONE framing now — the wide shell view. The low 3/4 hero shot
+# that used to come with the "Drive" sub-level went with it, so entering Career or
+# Garage must not re-pose the station camera behind the player's back.
+func test_hq_garage_has_a_single_station_framing() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	var wide: Transform3D = hq._station_xform(hq.View.GARAGE)
-
-	hq._garage_focus = hq._garage_drive_index  # Drive is last in the row now
-	hq._activate_garage_focus()
-	assert_true(is_instance_valid(hq._lift_car), "the garage station has a car on the lift to frame")
-	var drive: Transform3D = hq._station_xform(hq.View.GARAGE)
-	assert_ne(drive.origin, wide.origin, "Drive re-frames the garage station")
-
-	var lift: Vector3 = Config.data.hq_lift_pos
-	# The lift car noses toward -Z (identity rotation; the car park rotates its markers
-	# by PI to nose them the other way), so "in front of the car" is the -Z side.
-	assert_lt(drive.origin.z, lift.z, "the drive camera sits in FRONT of the car (-Z side)")
-	assert_true(absf(drive.origin.x - lift.x) > 0.1,
-		"and off to one side, so it's a three-quarter view rather than dead-on")
-	assert_lt(absf(drive.origin.x - lift.x), absf(drive.origin.z - lift.z),
-		"but more in front than beside it — a front 3/4, not a side-on shot")
-	assert_lt(drive.origin.y, wide.origin.y, "it drops nearer the ground than the wide shell view")
-	assert_lt(drive.origin.distance_to(lift), wide.origin.distance_to(lift),
-		"and moves closer to the lift")
-	# The shot actually points at the car, not past it.
-	var to_car: Vector3 = (Vector3(lift.x, drive.origin.y, lift.z) - drive.origin).normalized()
-	assert_gt(to_car.dot(-drive.basis.z), 0.9, "the camera looks at the car on the lift")
-
-	# The car stays DOWN — the drive shot is of the lowered lift, not the raised bay.
-	assert_false(hq._lift_raised, "the lift stays lowered for the drive framing")
-
-	hq._garage_focus = 0
-	hq._activate_garage_focus()  # DRIVE level's Back
-	var restored: Transform3D = hq._station_xform(hq.View.GARAGE)
-	assert_eq(restored.origin, wide.origin,
-		"backing out to the TOP level restores the wide garage framing")
+	assert_true(is_instance_valid(hq._lift_car), "setup: a car stands on the lift")
+	# Walk the row: no stop may change what the GARAGE station's framing is.
+	for i in hq._garage_cursor.buttons.size():
+		hq._garage_focus = i
+		assert_eq(hq._station_xform(hq.View.GARAGE).origin, wide.origin,
+			"the garage framing is the same wherever the cursor sits")
 
 
 # The map table deliberately KEEPS the car standing on the lift (every other station
@@ -1036,9 +991,9 @@ func test_opening_the_map_keeps_the_lift_car_but_the_car_park_still_gets_it_back
 
 # --- Rally Challenge entry point (spec §7) -----------------------------------
 
-# The DRIVE level's Online button (renamed from Challenge) opens a modal,
+# The garage row's Online button (renamed from Challenge) opens a modal,
 # keyboard/gamepad-navigable entry screen over the garage, and Back closes it back
-# to the garage (at the DRIVE level, where it was opened from).
+# to the garage. Online is the LAST stop on the row (the proceeding action).
 func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1046,11 +1001,9 @@ func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	hq._on_exterior_start()
 	assert_false(hq._challenge_layer.visible, "the challenge overlay starts hidden")
 
-	hq._garage_focus = hq._garage_drive_index
-	hq._activate_garage_focus()  # Drive -> DRIVE level
-	hq._garage_focus = 3
-	hq._activate_garage_focus()  # Online
-	assert_true(hq._challenge_layer.visible, "Online on the DRIVE level opens the entry screen")
+	hq._garage_focus = hq._garage_cursor.buttons.size() - 1  # Online, last in the row
+	hq._activate_garage_focus()
+	assert_true(hq._challenge_layer.visible, "Online on the garage row opens the entry screen")
 	assert_false(hq._garage_layer.visible, "the garage hides behind the modal challenge overlay")
 
 	await get_tree().process_frame  # deferred MenuNav focus grab
@@ -1967,7 +1920,8 @@ func test_hq_free_roam_lists_whole_catalogue_and_paginates() -> void:
 	# Back returns to the garage.
 	hq._car_back()
 	assert_ne(hq._carpark_mode, hq.CarparkMode.FREEROAM, "backing out clears free-roam mode")
-	assert_eq(hq._view, hq.View.GARAGE, "Back from Free Roam returns to the garage")
+	# Free Roam is entered from the TITLE screen, so Back returns there — not the garage.
+	assert_eq(hq._view, hq.View.EXTERIOR, "Back from Free Roam returns to the title screen")
 
 
 func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
@@ -3392,7 +3346,8 @@ func test_the_garage_row_ignores_select_while_a_modal_is_open() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	assert_false(hq._garage_showing_drive, "setup: on the TOP level, cursor on Drive")
+	assert_eq(hq._view, hq.View.GARAGE, "setup: on the garage row, cursor on Career")
+	var seated: int = hq._garage_focus
 
 	ConfirmPopup.open(hq, "Busy", "Something is on screen", [{"label": "OK", "callback": Callable()}], 0)
 	await get_tree().process_frame
@@ -3401,8 +3356,10 @@ func test_the_garage_row_ignores_select_while_a_modal_is_open() -> void:
 	press.pressed = true
 	hq._unhandled_input(press)
 
-	assert_false(hq._garage_showing_drive,
+	# Career (the seated action) would have flown to the map table; nothing moved.
+	assert_eq(hq._view, hq.View.GARAGE,
 		"select did not reach the garage row while the modal was up")
+	assert_eq(hq._garage_focus, seated, "and the cursor did not move either")
 
 
 func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> void:
@@ -5021,3 +4978,36 @@ func test_a_stale_reveal_token_cannot_touch_a_newer_sequences_state() -> void:
 		"the stale coroutine's abort must not mutate the new sequence's queue")
 	assert_true(hq._revealing,
 		"nor may a stale coroutine's abort clear the new sequence's _revealing flag")
+
+
+# Free Roam is a TITLE-screen action, not a garage one: it needs no owned car, session
+# or lift, so routing the player through the garage to reach it was a detour. Account
+# gave up that slot — it is reachable as a Settings page instead, one route not two.
+func test_free_roam_is_on_the_title_row_and_account_is_not() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
+	assert_not_null(hq._title_free_roam_button, "the title screen has a Free Roam button")
+	assert_true(hq._title_cursor.buttons.has(hq._title_free_roam_button),
+		"Free Roam is a stop on the title's left/right cursor, not pointer-only")
+	for b: Button in hq._title_cursor.buttons:
+		assert_false(b.text.to_upper().contains("ACCOUNT"),
+			"the title row no longer carries Account — Settings hosts the only route")
+	# Firing it from the title drops straight into the free-roam picker.
+	hq._title_focus = hq._title_cursor.buttons.find(hq._title_free_roam_button)
+	hq._activate_title_focus()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.CARPARK, "Free Roam from the title opens the car park")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.FREEROAM, "in free-roam mode")
+
+
+# ...and it is NOT on the garage row any more.
+func test_free_roam_is_not_on_the_garage_row() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	for b: Button in hq._garage_cursor.buttons:
+		assert_false(b.text.to_upper().contains("FREE ROAM"),
+			"the garage row no longer carries Free Roam (it lives on the title screen)")

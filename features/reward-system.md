@@ -57,7 +57,8 @@ an eligible part, since not every tier has one; `_parts_at_or_below` also skips
 **`free` parts** — the ballast is always available, so it's never a reward —
 and any part whose `requires_upgrade_id` **prerequisite isn't yet fitted to the
 driven car** (per-car, not garage-wide), via `UpgradeLibrary.prerequisite_met`;
-e.g. Big Turbo stays out of the pool until that car has Small Turbo — see
+e.g. Big Turbo stays out of the pool until that car has Small Turbo, and the
+Supercharger until it has Big Turbo — see
 `upgrade-catalogue.md`'s "Prerequisite gate") **plus
 the
 engine swap token as a low-weight entry** (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, a

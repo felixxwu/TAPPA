@@ -162,7 +162,7 @@ func test_a_failed_cloud_call_tells_the_player_why() -> void:
 # --- Signed-in main view (row-budget compaction) -------------------------------
 # scripts/account_menu.gd's ROW BUDGET comment above _build_main: this page is
 # hosted in a CENTRED VBox that also carries the host's Back button below it
-# (hq.gd._open_account_overlay), so anything that overflows the screen pushes
+# (a host that pins Back below the widget), so anything that overflows the screen pushes
 # Back off the bottom where it cannot be pressed. These tests assert the
 # behaviour that compaction must preserve, not the wording it landed on.
 
@@ -197,7 +197,7 @@ func test_leaderboard_name_rides_on_the_button_not_a_separate_label() -> void:
 func test_signed_in_main_view_row_count_is_bounded() -> void:
 	# Regression guard, not a pin on the exact count: the whole point of this
 	# compaction was fitting above a Back button that lives OUTSIDE this menu
-	# (hq.gd._open_account_overlay) on small screens. A generous but finite bound
+	# (a host that pins Back below the widget) on small screens. A generous but finite bound
 	# stops the page quietly creeping back up to where Back is unreachable again.
 	_sign_in_fake()
 	var row_count := _menu.get_child_count()

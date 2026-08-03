@@ -36,10 +36,11 @@ prerequisite. `UpgradeLibrary.requires_upgrade_id(id)` reads the field;
 draw pool until the driven car has its prerequisite fitted. The gate is
 deliberately **per-car, not garage-wide** — upgrades are car-bound, so every
 car has to climb its own ladder; a sibling car owning Small Turbo does not
-unlock Big Turbo elsewhere. **Big Turbo (`turbo_large`)**
-is the one entry that currently uses this: it requires `turbo_small` and sits
-at ordinary tier 1 (the old tier-2 difficulty gate it used to carry is gone —
-see `reward-system.md`).
+unlock Big Turbo elsewhere. The **forced-induction ladder** is what uses this:
+**Big Turbo (`turbo_large`)** requires `turbo_small`, and the
+**Supercharger (`supercharger`)** requires `turbo_large` — all three sit at
+ordinary tier 1 (the old tier-2 difficulty gate Big Turbo used to carry is
+gone — see `reward-system.md`), so the chain, not difficulty, is the gate.
 
 The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
 `unlocks_drivetrain_swap` flag (skipped by `apply`, like the other `unlocks_*` gates).
@@ -71,8 +72,10 @@ rally class (a p/w lever alongside engine detune). Weight Reduction is the slot'
 **earned** reward-pool option — the "lightweight" performance drop, greyed until won.
 The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
 earn-gated option row — see below.
-Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
-tier 1 + prerequisite-gated on the same car having `turbo_small`, see above), an aero kit, the three **weight** parts above,
+Current set: three **forced-induction kits** (turbo slot — `turbo_small` tier 1,
+`turbo_large` tier 1 + prerequisite-gated on the same car having `turbo_small`, and
+`supercharger` tier 1 + prerequisite-gated on `turbo_large`, see above; the blower's
+belt physics are in [forced-induction.md](forced-induction.md)), an aero kit, the three **weight** parts above,
 the drivetrain swap kit, and two consumables — the **engine
 swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
 `slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
@@ -125,8 +128,9 @@ to read like the drivetrain picker: `SLOT:` on the left, then `Stock` + one butt
 catalogue part in that slot on the right. `Stock` is always selectable (the "off" state —
 the car's un-upgraded factory config, hence the label rather than `None`); each part option
 is **greyed until that kit is fitted** to this car, and the active one is
-bracketed **and painted the house accent green** so the current pick stands out. The turbo slot has two parts — `Stock` / `Small` / `Big` (`turbo_small` /
-`turbo_large`, shown by their short `menu_label`); the single-part slots read `Stock` /
+bracketed **and painted the house accent green** so the current pick stands out. The turbo slot has three parts — `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
+`turbo_large` / `supercharger`, shown by their `menu_label`; the row is an
+`HFlowContainer`, so options wrap rather than clip); the single-part slots read `Stock` /
 `<Kit>` (e.g. `Aero: Stock / Aero Kit`, using the part's full `name`). Under the hood it's
 the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
 `UpgradesMenu._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
@@ -157,8 +161,17 @@ parameters (`turbo_boost_gain`, `turbo_inertia`, `turbo_omega_ref`,
 sets `turbo_enabled = true` and copies those onto `cfg`, so fitting a turbo (or a
 bigger one over a stock turbo) reshapes the delivered torque curve dynamically —
 the full model lives in `features/forced-induction.md`. The old flat
-`peak_torque_mult` stage kits are gone. **Superchargers are never upgrades** — they
-are an intrinsic engine property (`features/forced-induction.md`).
+`peak_torque_mult` stage kits are gone. The **`supercharger`** part is the same
+shape under a sibling key, `install_supercharger`, and both keys run the SAME
+`install_induction` op — the flag each one enables, the rival state each one **clears**
+(symmetrically: a turbo cancels the blower's gain too) and the sub-key that feeds
+power-to-weight are all descriptor DATA, not branches. `apply` sets
+`supercharger_enabled = true`, clears `turbo_enabled` (a blown car has no
+turbo — they share the slot) and copies the belt fields
+(`supercharger_boost_gain` / `supercharger_rpm_ref` /
+`supercharger_parasitic_coef` and the whine gain) onto `cfg`. A *stock* blown
+engine still carries no physics — it leaves the gain at 0 and the flag is
+audio-only (`features/forced-induction.md`).
 
 ## Effect-application pipeline
 

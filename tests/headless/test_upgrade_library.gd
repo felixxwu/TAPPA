@@ -164,10 +164,41 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(car), "a re-enabled aero kit unlocks aero tuning again")
 
 
-func test_no_supercharger_upgrade_exists() -> void:
-	# Superchargers are intrinsic engine properties, never an upgrade.
-	for item in UpgradeLibrary.UPGRADES:
-		assert_false(String(item["id"]).contains("supercharger"), "no supercharger in the upgrade catalogue")
+func test_install_supercharger_writes_blower_fields_and_clears_the_turbo() -> void:
+	var cfg := GameConfig.new()
+	# Start from a turbo'd baseline: the blower shares the slot, so fitting it must
+	# take the turbo sim OFF rather than stacking both forced-induction paths.
+	cfg.turbo_enabled = true
+	cfg.turbo_boost_gain = 0.5
+	var owned := {"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": []}
+	UpgradeLibrary.apply(owned, cfg)
+	assert_true(cfg.supercharger_enabled, "installing a blower enables it on the config")
+	assert_gt(cfg.supercharger_boost_gain, 0.0, "the blower upgrade sets a belt boost gain")
+	assert_gt(cfg.supercharger_parasitic_coef, 0.0, "and an rpm-scaled belt drag")
+	assert_false(cfg.turbo_enabled, "a blower replaces the turbo instead of stacking with it")
+
+
+func test_install_turbo_clears_the_blower_the_other_way_round() -> void:
+	# The exclusivity is SYMMETRIC (EFFECTS[*].clears), not just blower-clears-turbo:
+	# fitting a turbo onto a baseline that carries belt boost must cancel it, or the two
+	# torque multipliers would stack.
+	var cfg := GameConfig.new()
+	cfg.supercharger_enabled = true
+	cfg.supercharger_boost_gain = 0.9
+	var owned := {"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
+	UpgradeLibrary.apply(owned, cfg)
+	assert_true(cfg.turbo_enabled, "the turbo is fitted")
+	assert_eq(cfg.supercharger_boost_gain, 0.0, "and the blower's belt boost is cancelled")
+	assert_false(cfg.supercharger_enabled, "including its audio flag")
+
+
+func test_effective_meta_rates_the_blower_at_peak_boost() -> void:
+	var base := {"peak_torque": 300.0, "redline": 7000.0, "mass": 1200.0, "engine": ""}
+	var na := UpgradeLibrary.effective_meta({"installed_upgrades": [], "disabled_upgrades": []}, base)
+	var blown := UpgradeLibrary.effective_meta(
+		{"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": []}, base)
+	assert_gt(float(blown["peak_torque"]), float(na["peak_torque"]),
+		"a fitted blower rates the car at a higher (boosted) peak torque")
 
 
 func test_install_turbo_writes_turbo_fields_onto_config() -> void:

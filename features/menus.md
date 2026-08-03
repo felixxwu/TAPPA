@@ -35,8 +35,8 @@ rightmost.** Everything else sits between them. This is a house rule, not a per-
 choice — apply it to every new row without asking.
 
 Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car | Start`),
-`hq_overlays.gd::build_title_overlay` (`Exit Game | Account | Settings | Start`),
-`hq.gd::_refresh_garage_row` TOP level (`< Back | Garage | Mystery Box | Drive`),
+`hq_overlays.gd::build_title_overlay` (`Exit Game | Free Roam | Settings | Start`),
+`hq.gd::_refresh_garage_row` (`< Back | Career | Garage | Mystery Box | Online`),
 `build_detail_overlay` (`< Map | Enter Rally >`), `build_challenge_overlay`
 (`< Back | Start`).
 
@@ -52,7 +52,7 @@ Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car |
    index, and several rows have CONDITIONAL members — "Exit Game" is skipped on web,
    "Mystery Box" is omitted when none is held. So "the proceeding action is last" is a
    different index per platform and per save state. Compute it
-   (`hq.gd::_title_start_index`, `hq.gd::_garage_drive_index`) rather than hardcoding,
+   (`hq.gd::_title_start_index`, `hq.gd::_garage_career_index`) rather than hardcoding,
    and have tests assert by button IDENTITY rather than by literal index.
 
 **Vertical columns are a separate convention and are deliberately NOT changed by this
@@ -370,30 +370,31 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   copy of the same panel (`start_line.gd`) passes no `on_wheels`, so `TuningPanel` hides
   the button there (a no-op button would be confusing pre-rally). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over a side-by-side row with TWO levels
-  (`_garage_showing_drive`, `_refresh_garage_row`), seated on the primary action on
-  entry (`menu_back` shortcuts to the exterior). The TOP level is
-  **Back / Drive / Garage / Mystery Box (N)**; **Drive** (`_enter_garage_drive_level`)
-  swaps the SAME row to **Back / Career / Free Roam / Online**, whose Back
-  (`_garage_back_to_top`) goes back up a level rather than out to the exterior.
-  Pressing Drive does not change the station (still `View.GARAGE`) but it DOES
-  re-frame it: the camera eases from the wide shell view to a low three-quarter
-  FRONT hero shot of the selected car on the lowered lift, and backing out restores
-  the wide framing. Both framings come from the one `_station_xform(View.GARAGE)`
-  branch (the drive pose via `_drive_cam_xform`, posed off `hq_lift_pos` +
-  `hq_drive_cam_offset` / `hq_drive_cam_look_height` so it's stable while the lower
-  tween is still settling the car); with an empty garage there's no lift car to
-  frame and it falls back to the wide view.
+  `_activate_garage_focus`) over a **single** side-by-side row (`_refresh_garage_row`),
+  seated on **Career** (`_garage_career_index`) on entry, with `menu_back` leaving for
+  the exterior exactly as the row's own Back button does. The row is
+  **Back / Career / Garage / Mystery Box (N) / Online** — Mystery Box appears only when
+  one is held, so **no index in the row is a constant** (ask `_garage_career_index` /
+  the cursor's `buttons` array, never a literal). `_station_xform(View.GARAGE)` has one
+  framing, the wide shell view.
+
+  *This row used to be TWO levels:* a **Drive** button swapped it for
+  Back / Career / Free Roam / Online, with its own Back going up a level and its own
+  low 3/4 hero-shot framing. That bought an extra press in and an extra press back on
+  the way to every stage, so it was flattened — Career and Online sit alongside Garage,
+  **Free Roam moved to the title screen** (it needs no owned car, session or lift), and
+  the drive-level camera pose (`_drive_cam_xform`, `hq_drive_cam_*`) went with it.
   **Garage** (`_open_garage_picker`) opens the car park in GARAGE mode (`CarparkMode.GARAGE`,
   parking the whole owned collection); Select (`_on_start_pressed` → `_select_garage_car`)
   commits the focused car as the selected car and drops straight into the tuning lift bay
   for it, while Back returns to the garage. **Free Roam** (`_enter_free_roam`,
-  `CarparkMode.FREEROAM`) parks the WHOLE catalogue as base-model previews (`_all_car_previews`,
+  `CarparkMode.FREEROAM`, reached from the **title screen**) parks the WHOLE catalogue as base-model previews (`_all_car_previews`,
   owned or not); Start (`_start_free_roam` → `_launch_free_roam`) drops into a session-less
   drive in the picked car — an owned car fields its tuned instance, a not-yet-owned preview
   fields the base model via `RallySession.free_roam_model_id` (see the free-roam machinery
-  below and `world.gd`) — Back returns to the garage. **Settings no longer lives on this
-  row** — it moved to the title screen (see the EXTERIOR section below), since Settings
+  below and `world.gd`) — and Back returns to the **title screen**, which is where Free Roam
+  is now entered from. **Neither Settings nor Free Roam lives on this
+  row** — both moved to the title screen (see the EXTERIOR section below), since Settings
   from the garage and Settings from the title now always return to the same place
   (EXTERIOR), so there's no reason to offer it twice. Both of these
   manual rows, plus the title row (see below), share a small **`ButtonCursor`** helper
@@ -543,10 +544,12 @@ Covered by `tests/headless/test_text_field.gd`.
 
 ## Account page (`account_menu.gd`)
 
-`AccountMenu` is the optional cloud-save UI — one builder with **two hosts**,
-the same arrangement `SettingsMenu` uses: a category page inside Settings
-(`show_account`), and a standalone modal overlay from the title screen
-(`hq.gd::_open_account_overlay`). It exposes `at_root()` / `go_back()` so both
+`AccountMenu` is the optional cloud-save UI — one builder with **two hosts**: a
+category page inside Settings (`show_account`, the canonical route) and an inline
+overlay on the standings page's sign-in prompt (`global_standings.gd`). It used to
+have a third, a dedicated title-row Account button with its own modal layer; that was
+removed as a duplicate of the Settings page (see [cloud-save.md](cloud-save.md)).
+It exposes `at_root()` / `go_back()` so its
 hosts treat its sub-forms exactly like Settings sub-pages —
 `SettingsMenu.go_back()` gives it first refusal before backing out of the page.
 See [cloud-save.md](cloud-save.md).
@@ -735,7 +738,7 @@ pan). Plain `_make_overlay` stays as-is for those; **never** wrap a passthrough 
 Pages on this shape: the rally detail card (`build_detail_overlay` — its `< Map` stays
 `FOCUS_NONE` because the panel has no MenuNav; `hq._unhandled_input` drives it from the
 TABLE view), the challenge entry screen (`build_challenge_overlay`), Settings
-(`build_settings_overlay`), the account overlay (`hq._open_account_overlay`), the Android
+(`build_settings_overlay`), the Android
 app notice (`hq._show_android_app_notice`), and the car-park Change-Upgrades popup
 (`hq._show_upgrades_popup`, whose Done is additionally p/w-gated).
 
@@ -798,7 +801,7 @@ white bay dividers (one bay per `carpark_page_size`, `menu_car_spacing` wide) ge
 procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
 its own marked bay.
 
-**EXTERIOR (boot/title).** A side-by-side row of **Start / Account / Settings** and —
+**EXTERIOR (boot/title).** A side-by-side row of **Start / Settings / Free Roam** and —
 on non-web builds only — **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`;
 skipped on web, where the tab owns the process lifecycle), sitting at the bottom (in
 that left-to-right order) over an establishing shot of the
@@ -851,15 +854,23 @@ left/right cursor (`_title_cursor`/`_title_focus`), painted by `UITheme.mark_foc
 and driven by `menu_left`/`menu_right`/`menu_select` in the EXTERIOR branch of
 `_unhandled_input` (mirroring the GARAGE branch exactly). The cursor re-seats on **Start**
 (index 0) every time `_go_to(View.EXTERIOR)` runs. Start (`_on_exterior_start`) flies the
-camera into the garage; **Account** (`_open_account_overlay`) opens the optional-cloud-save
-modal — it sits right after Start (a player reinstalling or moving devices needs it
-*before* starting a fresh career, so burying it in Settings would be the wrong place);
+camera into the garage; **Free Roam** (`_enter_free_roam`, `CarparkMode.FREEROAM`) opens
+the whole-catalogue car park for a session-less drive — it lives here rather than in the
+garage because it needs no owned car, no session and no lift, so reaching it through the
+garage was a detour through state it doesn't use, and backing out of its picker returns
+to this screen (`CarparkMode.FREEROAM` in `_carpark_back`);
 **Settings** (`_open_settings(false)`) opens the shared camera/controls page — it moved
 here from the garage action row (see the GARAGE section above), and because it now only
 ever opens from the title, backing out of it (`_on_settings_action`) always returns to
 EXTERIOR, never the garage; **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`)
 quits the app — it's built only on non-web builds, since a browser tab owns its own
-lifecycle. (Free roam is reached via the tuning bay's Test Drive button, not here.)
+lifecycle.
+
+**Account is deliberately NOT on this row.** It used to sit next to Start, but it is
+also a **Settings page** (`settings_menu.gd::show_account`), and two routes to one
+optional-cloud-save form is one more than the screen needs — Free Roam took the slot.
+The reinstall/new-device case it existed for is still served: Settings is right there on
+the same row, before any career is started.
 
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
@@ -977,10 +988,10 @@ garage the car rests **lowered on the ground** at its calculated settled ride he
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view) for the currently-selected car. A HUD hint + Back (to the exterior) +
 convenience buttons sit on top: the garage station row is **Back / Career / Garage /
-Free Roam / Challenge**. **Garage** (`_open_garage_picker`) opens the **car park** to pick
-which owned car to work on, then drops into the tuning bay for it (see below); **Free
-Roam** (`_enter_free_roam`) opens the car park across the WHOLE catalogue for a
-session-less drive in any car (owned or not). Because `car.tscn` embeds **all** the
+Mystery Box (N) / Online**. **Garage** (`_open_garage_picker`) opens the **car park** to pick
+which owned car to work on, then drops into the tuning bay for it (see below). **Free
+Roam** (`_enter_free_roam`) — reached from the **title screen**, not here — opens the car
+park across the WHOLE catalogue for a session-less drive in any car (owned or not). Because `car.tscn` embeds **all** the
 authored car glb bodies (it reveals one and hides the rest — `car.gd` →
 `_apply_model_visibility`), every parked prop is heavy to build, and Free Roam builds the
 whole catalogue at once. Two mitigations keep the click from hitching: (1) each frozen

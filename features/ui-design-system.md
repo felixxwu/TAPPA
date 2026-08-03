@@ -15,7 +15,8 @@ game: a retro arcade / terminal aesthetic.
   line up while the lettering keeps a characterful, slightly informal feel.
 - **Pure-black, sharp-cornered panels** — no rounded corners, no gradients, no
   blur.
-- **Crisp white text with a hard drop shadow** (the chunky terminal look).
+- **Crisp white text with a hard drop shadow** (the chunky terminal look). One
+  documented exception — see "Gauge captions" below.
 - A **tight accent palette**: **green** = active / selected / positive,
   **gold** = money / reward, **red** = danger / run timer / warning.
 
@@ -169,8 +170,9 @@ system has ONE source of truth: tune the palette / type scale there, re-run this
 and the whole game restyles. It writes styleboxes and colours for Label, Button,
 PanelContainer / Panel / PopupPanel, HSlider, and ProgressBar. The `.tres` is
 wired as the project default theme via `project.godot` `gui/theme/custom`, so
-every Control inherits the font, styleboxes, text colour and drop shadow. Run it
-headless:
+every Control inherits the font, styleboxes, text colour and drop shadow — which is
+why opting OUT of the shadow takes a per-node override, not a property on the label
+(see "Gauge captions"). Run it headless:
 
 ```
 godot --headless --script tools/build_ui_theme.gd
@@ -181,3 +183,28 @@ godot --headless --script tools/build_ui_theme.gd
 `fonts/SyneMono.ttf` is the UI face — a hand-drawn monospace bundled under the SIL
 Open Font License (`fonts/SyneMono-OFL.txt`). To try a different face, drop a TTF
 in `fonts/`, point `UITheme.FONT_PATH` at it, and re-run the theme generator.
+
+
+## Gauge captions — the one drop-shadow exception
+
+The two in-run HUD bars (`HPBar` / `BoostBar`, see [hud.md](hud.md)) put their caption
+**inside** the bar, sitting directly on the coloured fill. There the house drop shadow
+works against legibility rather than for it: at caption size a hard black edge thickens
+the glyphs and muddies them against a saturated fill instead of separating them from it.
+So these two labels — and only these two — draw **plain ink with no shadow**
+(`hud.gd::_style_gauge_captions`).
+
+Two things to know if you add another caption-on-fill widget:
+
+- The shadow is **not** a per-label property you can leave unset. It comes from the
+  project-wide theme (`theme/ui_theme.tres` → `Label/colors/font_shadow_color`), so a
+  label inherits it by default and overriding `font_color` alone does nothing to it. It
+  has to be overridden to transparent:
+  `add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))`.
+- Tint the **bar**, not the pair. Both bars colour themselves with `self_modulate`
+  rather than `modulate`, because `modulate` propagates to children and would drag the
+  caption's colour along with the fill (turning the HEALTH caption red as health drops).
+
+Guarded by `test_hud.gd::test_gauge_captions_have_no_drop_shadow` and
+`test_health_grading_does_not_tint_the_caption`, so neither decision can silently
+regress.

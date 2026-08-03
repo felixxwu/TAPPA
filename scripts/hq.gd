@@ -3,13 +3,15 @@ extends Node3D
 # HQ — the meta-game hub (todo/menus.md location 1), now a DIEGETIC 3D space the
 # camera flies through (todo/diegetic-hq.md) instead of flat overlay screens. One
 # world; the camera moves between "stations":
-#   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park, with
-#     a Start button (plus Exit Game on non-web builds). Start flies the camera into
-#     the garage. (Settings lives on the garage action row.)
+#   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park, with a
+#     row of Exit Game (non-web) / FREE ROAM / Settings / Start. Start flies the camera
+#     into the garage; FREE ROAM opens the car park to pick any catalogue car and drive
+#     session-lessly (it needs no owned car or session, so it belongs here rather than
+#     behind the garage).
 #   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
 #     The player's SELECTED car is raised on the lift here. Tap the table to see the
-#     rallies; tap the lift to tune. Its action row also carries FREE ROAM, which opens
-#     the car park to pick a car and drive session-lessly.
+#     rallies; tap the lift to tune. Its action row is ONE level:
+#     Back / Career / Garage / Mystery Box (N) / Online.
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
 #   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
@@ -120,7 +122,7 @@ var _selected_instance_id := -1
 #   RALLY    (default) — cars eligible for the chosen rally; Start launches the rally.
 #   GARAGE   (garage's "Garage" button) — ALL owned cars; Select picks the car to tune
 #            and takes the player straight to the tuning lift bay.
-#   FREEROAM (garage's "Free Roam" button) — the WHOLE catalogue as base-model previews;
+#   FREEROAM (the TITLE screen's "Free Roam" button) — the WHOLE catalogue as base-model previews;
 #            Start drops into a session-less drive in the picked car (owned or not).
 #   SWAP     (_enter_engine_swap) — OTHER owned cars; Select picks an engine-swap partner.
 #   STARTER  (first run) — preview cars (garage empty); Select grants the first car.
@@ -295,8 +297,6 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 # Optional cloud save, reachable from the title screen as well as from Settings —
 # a player restoring a career on a new device shouldn't have to find it in a
 # submenu. Null while closed. See features/cloud-save.md.
-var _account_layer: CanvasLayer
-var _account_menu: AccountMenu
 # Rally Challenge entry point (Daily/Weekly/Monthly, spec §7): a modal overlay over
 # the garage, opened from the garage row's Challenge button, built as a dark detail-
 # card sibling to the rally-detail panel (build_detail_overlay's MODAL_DIM + header +
@@ -382,7 +382,7 @@ var _title_start_button: Button  # EXTERIOR title Start — first cursor stop
 # another class now) and read by tests, so GDScript's in-class "unused" check can't see
 # their use — silence it rather than reintroduce a dead in-class reference.
 @warning_ignore("unused_private_class_variable")
-var _title_account_button: Button  # EXTERIOR title Account (optional cloud save)
+var _title_free_roam_button: Button  # EXTERIOR title Free Roam (session-less drive)
 @warning_ignore("unused_private_class_variable")
 var _title_settings_button: Button  # EXTERIOR title Settings
 @warning_ignore("unused_private_class_variable")
@@ -393,7 +393,7 @@ var _no_eligible_label: Label
 # Car-park damage UI: the "wrecked beyond repair" note on a wrecked focused car.
 var _car_warning_label: Label
 
-# Title screen cursor: a single left/right cursor over Start / Account / Settings /
+# Title screen cursor: a single left/right cursor over Start / Settings / Free Roam /
 # (Exit Game). Same diegetic-station idiom as the garage row and lift hub — FOCUS_NONE
 # buttons highlighted by hand — now that EXTERIOR is a horizontal action row rather
 # than a native-focus vertical list. hq keeps the index (_title_focus, read by tests);
@@ -407,16 +407,16 @@ var _title_focus := 0           # which title button the cursor sits on (starts 
 # the index (_garage_focus, read by tests); the ButtonCursor owns the shared
 # wrap/paint/fire behaviour (scripts/button_cursor.gd).
 #
-# TWO LEVELS share this one row/cursor (rebuilt in place by _refresh_garage_row —
-# same camera position, no view/scene change): the TOP level (Back / Drive /
-# Garage / Mystery Box (N)) and, after pressing Drive, the DRIVE level (Back /
-# Career / Free Roam / Online). _garage_showing_drive tracks which is current;
-# entering the GARAGE view always resets to the top level (_go_to's View.GARAGE case).
+# ONE level, one row: Back / Career / Garage / Mystery Box (N) / Online. This used to be
+# two levels — a "Drive" button that swapped the row for Career / Free Roam / Online —
+# which bought nothing but an extra press and an extra Back for every trip to a stage.
+# Career and Online are flat alongside Garage now, and Free Roam moved to the title
+# screen (it needs no garage state at all). See features/menus.md.
 var _garage_cursor := ButtonCursor.new()
-var _garage_focus := 1          # which garage action the cursor sits on (defaults to Drive)
-var _garage_showing_drive := false
-# Drive's index in the TOP-level row, recomputed on every rebuild (see _refresh_garage_row).
-var _garage_drive_index := 1
+var _garage_focus := 1          # which garage action the cursor sits on (defaults to Career)
+# Career's index in the row, recomputed on every rebuild (see _refresh_garage_row) —
+# Mystery Box is omitted when none is held, so no index in this row is a constant.
+var _garage_career_index := 1
 var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
 
 # Tuning-lift overlay widgets.
@@ -1123,65 +1123,8 @@ func _dismiss_android_app_notice() -> void:
 	_refresh_title_focus()
 
 
-# --- Account overlay ---------------------------------------------------------
-# The title-screen route into optional cloud save. Same AccountMenu widget the
-# Settings page mounts; here it gets its own modal layer over the title so a
-# returning player can sign in before touching anything else.
-
-func _open_account_overlay() -> void:
-	if _account_layer != null:
-		return
-	_title_layer.visible = false
-	# Scrolled body + pinned Back (_make_modal_overlay). AccountMenu.rebuild splices
-	# arbitrary server error text into the page, so its height is not something this
-	# screen controls — the exit has to live outside the scrolling part.
-	var made := _make_modal_overlay()
-	_account_layer = made[0]
-	var body: VBoxContainer = made[1]
-	var footer: HBoxContainer = made[2]
-	var root: VBoxContainer = made[3]
-	body.alignment = BoxContainer.ALIGNMENT_CENTER
-	# A dark backing so the account text reads over the busy 3D garage/car-park
-	# behind it — same UITheme.MODAL_DIM treatment build_detail_overlay/
-	# build_challenge_overlay use, just missing here until now.
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = UITheme.MODAL_DIM
-	_account_layer.add_child(bg)
-	_account_layer.move_child(bg, 0)
-
-	_account_menu = AccountMenu.new()
-	_account_menu.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_account_menu.custom_minimum_size = Vector2(_modal_body_width(420.0), 0)
-	body.add_child(_account_menu)
-
-	# Focusable and pinned: down-nav off the last AccountMenu row crosses the container
-	# boundary into the footer by geometry, the same way build_settings_overlay's
-	# bottom button is reached.
-	var back := Button.new()
-	back.text = "< Back"
-	back.focus_mode = Control.FOCUS_ALL
-	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	back.custom_minimum_size = Vector2(220, 44)
-	back.pressed.connect(_close_account_overlay)
-	footer.alignment = BoxContainer.ALIGNMENT_CENTER
-	footer.add_child(back)
-
-	UITheme.enforce(root)
-
-
-func _close_account_overlay() -> void:
-	if _account_layer == null:
-		return
-	_account_layer.queue_free()
-	_account_layer = null
-	_account_menu = null
-	_title_layer.visible = _view == View.EXTERIOR
-	_refresh_title_focus()
-
-
 # --- Rally Challenge overlay (Daily/Weekly/Monthly, spec §7) -----------------
-# A modal over the GARAGE, mirroring _open_account_overlay's modal-over-title shape:
+# A modal over the GARAGE: same shape the (now-removed) title-screen Account overlay had —
 # _challenge_layer built once in _ready (build_challenge_overlay), shown/hidden here
 # rather than folded into the View enum / _update_overlays switch.
 
@@ -1781,8 +1724,7 @@ func _go_to(view: int, snap := false) -> void:
 	if view == View.GARAGE:
 		_ensure_lift_car()
 		_lower_lift_car()
-		_garage_showing_drive = false  # always land on the TOP level entering fresh
-		_refresh_garage_row(true)  # seat the cursor on Drive each time we enter
+		_refresh_garage_row(true)  # seat the cursor on Career each time we enter
 	elif view == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	elif view == View.TABLE:
@@ -2798,21 +2740,22 @@ func _lift_hub() -> void:
 	_refresh_lift_ui()
 
 
-# Move the title's left/right cursor between Start (0), Account (1), Settings (2)
-# and Exit Game (3, non-web only), wrapping at the ends, and repaint it.
+# Move the title's left/right cursor across the row — Exit Game (non-web only) / Free
+# Roam / Settings / Start — wrapping at the ends, and repaint it. Deliberately described
+# by CONTENTS, not indices: Exit Game is absent on web, so every position shifts.
 func _move_title_focus(step: int) -> void:
 	_title_focus = _title_cursor.wrapped(_title_focus, step)
 	_refresh_title_focus()
 
 
-# Fire the title action the cursor sits on: 0 starts the run, 1 opens the Account
-# overlay, 2 opens Settings, 3 (non-web) quits the game.
+# Fire the title action the cursor sits on (Start flies into the garage, Free Roam opens
+# the whole-catalogue picker, Settings opens the shared page, Exit Game quits).
 func _activate_title_focus() -> void:
 	_title_cursor.activate(_title_focus)
 
 
 # Paint the manual title cursor (EXTERIOR is a spatially-navigated 3D station like the
-# garage, so Start / Account / Settings / Exit Game are highlighted by hand).
+# garage, so the whole row is highlighted by hand rather than via native focus).
 # Start's position in the title row. COMPUTED, not a literal: the row is ordered
 # exit-left / proceed-right (features/menus.md → "Button order") so Start is last — but
 # "Exit Game" is skipped entirely on web, so "last" is a different index per platform.
@@ -2845,108 +2788,72 @@ func _refresh_garage_focus() -> void:
 	_garage_cursor.refresh(_garage_focus)
 
 
-# Back out of the DRIVE level to the TOP level (Back/Drive/Garage/Mystery Box) — the
-# garage row's own "go up a level" action, distinct from the TOP level's Back (which
-# leaves the garage station for the exterior). Pulls the camera back out to the wide
-# garage framing it came from (still the same station; see _station_xform).
-func _garage_back_to_top() -> void:
-	_garage_showing_drive = false
-	_refresh_garage_row(true)  # seat back on Drive
-	_move_camera_to(_station_xform(View.GARAGE), false)
-
-
-# Enter the DRIVE level (Career/Free Roam/Online): the row's contents change, and the
-# camera eases in to a low 3/4 front shot of the car on the lift — no view/scene
-# change, still View.GARAGE. Seats the cursor on Career (1), the primary action,
-# not Back (0).
-func _enter_garage_drive_level() -> void:
-	_garage_showing_drive = true
-	_garage_focus = 1
-	_refresh_garage_row()
-	_move_camera_to(_station_xform(View.GARAGE), false)
-
-
-# Rebuild the garage action row's buttons + ButtonCursor for whichever level is
-# current (_garage_showing_drive) — TOP: Back / Drive / Garage / Mystery Box (N);
-# DRIVE: Back / Career / Free Roam / Online. Called on every level switch and
-# whenever the Mystery Box button's count/enabled-state needs a repaint (e.g. after
-# opening one). Frees the row's previous children each time (a plain HBoxContainer,
-# not a MenuNav host, so nothing analogous to UpgradesMenu.rebuild()'s "preserve the
-# MenuNav child" carve-out is needed here).
-func _refresh_garage_row(seat_on_drive := false) -> void:
+# Rebuild the garage action row's buttons + ButtonCursor: Back / Career / Garage /
+# Mystery Box (N) / Online. Called on entry and whenever the Mystery Box button's
+# count/enabled-state needs a repaint (e.g. after opening one). Frees the row's previous
+# children each time (a plain HBoxContainer, not a MenuNav host, so nothing analogous to
+# UpgradesMenu.rebuild()'s "preserve the MenuNav child" carve-out is needed here).
+#
+# This row used to be TWO levels — a "Drive" button that swapped it for Career / Free
+# Roam / Online — but that only added a press in and a press back on the way to every
+# stage. Career and Online sit flat alongside Garage now; Free Roam moved to the title
+# screen, since it needs no garage state (see HqOverlays.build_title_overlay).
+func _refresh_garage_row(seat_on_career := false) -> void:
 	for c in _garage_actions_row.get_children():
 		c.queue_free()
 	var buttons: Array[Button] = []
 	var actions: Array[Callable] = []
-	if _garage_showing_drive:
-		var on_back := _garage_back_to_top
-		var back := _station_button("< Back", on_back)
-		_garage_actions_row.add_child(back)
-		buttons.append(back); actions.append(on_back)
-		# Convenience button mirroring the clickable 3D table.
-		var to_table := _station_button("Career", _enter_table)
-		_garage_actions_row.add_child(to_table)
-		buttons.append(to_table); actions.append(_enter_table)
-		# Free Roam: open the car park across the WHOLE catalogue (owned or not) and
-		# drop into a session-less drive in the picked car.
-		var to_free := _station_button("Free Roam", _enter_free_roam)
-		_garage_actions_row.add_child(to_free)
-		buttons.append(to_free); actions.append(_enter_free_roam)
-		# Online: the Daily/Weekly/Monthly seeded Rally Challenge entry point (renamed
-		# from "Challenge" — a modal overlay over the garage, see build_challenge_overlay
-		# / _open_challenge_overlay).
-		var to_online := _station_button("Online", _open_challenge_overlay)
-		_garage_actions_row.add_child(to_online)
-		buttons.append(to_online); actions.append(_open_challenge_overlay)
-	else:
-		var on_back := func() -> void: _go_to(View.EXTERIOR)
-		var back := _station_button("< Back", on_back)
-		_garage_actions_row.add_child(back)
-		buttons.append(back); actions.append(on_back)
-		# Garage: open the car park to pick which owned car to work on, then drop
-		# straight into the tuning lift bay for that car (_open_garage_picker).
-		var to_garage := _station_button("Garage", _open_garage_picker)
-		_garage_actions_row.add_child(to_garage)
-		buttons.append(to_garage); actions.append(_open_garage_picker)
-		# Mystery Box: a garage-wide reward action, not per-car — moved here from the
-		# Lift's Upgrades page (see _on_open_mystery_box). OMITTED entirely with none
-		# held (not shown disabled) — same "hide, don't grey out" convention the row
-		# used at the Lift before it moved. Disabled + explains why only when a box
-		# IS held but there's nowhere for the gift to land.
-		var boxes := Save.mystery_boxes_owned()
-		if boxes > 0:
-			var to_box := _station_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
-			if not RewardSystem.any_car_has_room(Save.profile):
-				to_box.disabled = true
-				to_box.tooltip_text = "Every car in the garage is fully upgraded"
-			else:
-				to_box.tooltip_text = "Open a mystery box — fits a random upgrade to one of your cars"
-			_garage_actions_row.add_child(to_box)
-			buttons.append(to_box); actions.append(_on_open_mystery_box)
-		# Drive LAST: it is the proceeding action, and the house order puts those on the
-		# right (features/menus.md → "Button order"). It switches this SAME row to
-		# Career/Free Roam/Online (_enter_garage_drive_level) — no camera move beyond the
-		# level's own re-framing, no view change.
-		var to_drive := _station_button("Drive", _enter_garage_drive_level)
-		_garage_actions_row.add_child(to_drive)
-		buttons.append(to_drive); actions.append(_enter_garage_drive_level)
-		# Where Drive ended up. Mystery Box is omitted entirely when none is held, so this
-		# is NOT a constant — asked of the array the cursor actually indexes into rather
-		# than re-derived from the row's construction order, so adding or moving a button
-		# can't silently desync it.
-		_garage_drive_index = buttons.find(to_drive)
+	var on_back := func() -> void: _go_to(View.EXTERIOR)
+	var back := _station_button("< Back", on_back)
+	_garage_actions_row.add_child(back)
+	buttons.append(back); actions.append(on_back)
+	# Career: the rally table — a convenience button mirroring the clickable 3D table.
+	var to_table := _station_button("Career", _enter_table)
+	_garage_actions_row.add_child(to_table)
+	buttons.append(to_table); actions.append(_enter_table)
+	# Where Career ended up. Mystery Box is omitted entirely when none is held, so no
+	# index here is a constant — asked of the array the cursor actually indexes into
+	# rather than re-derived from the construction order, so adding or moving a button
+	# can't silently desync it.
+	_garage_career_index = buttons.find(to_table)
+	# Garage: open the car park to pick which owned car to work on, then drop
+	# straight into the tuning lift bay for that car (_open_garage_picker).
+	var to_garage := _station_button("Garage", _open_garage_picker)
+	_garage_actions_row.add_child(to_garage)
+	buttons.append(to_garage); actions.append(_open_garage_picker)
+	# Mystery Box: a garage-wide reward action, not per-car — moved here from the
+	# Lift's Upgrades page (see _on_open_mystery_box). Sits next to Garage because it
+	# acts on the collection, not on a drive. OMITTED entirely with none held (not shown
+	# disabled) — same "hide, don't grey out" convention the row used at the Lift before
+	# it moved. Disabled + explains why only when a box IS held but there's nowhere for
+	# the gift to land.
+	var boxes := Save.mystery_boxes_owned()
+	if boxes > 0:
+		var to_box := _station_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
+		if not RewardSystem.any_car_has_room(Save.profile):
+			to_box.disabled = true
+			to_box.tooltip_text = "Every car in the garage is fully upgraded"
+		else:
+			to_box.tooltip_text = "Open a mystery box — fits a random upgrade to one of your cars"
+		_garage_actions_row.add_child(to_box)
+		buttons.append(to_box); actions.append(_on_open_mystery_box)
+	# Online LAST: the Daily/Weekly/Monthly seeded Rally Challenge entry point (a modal
+	# overlay over the garage, see build_challenge_overlay / _open_challenge_overlay).
+	var to_online := _station_button("Online", _open_challenge_overlay)
+	_garage_actions_row.add_child(to_online)
+	buttons.append(to_online); actions.append(_open_challenge_overlay)
 	_garage_cursor.setup(buttons, actions)
 	# Seat BEFORE the settle so the row is painted once, with the right cursor. Doing this
 	# in the caller instead meant this function painted a stale focus that was immediately
 	# overwritten and repainted (ButtonCursor.refresh walks every button each time).
-	if seat_on_drive:
-		_garage_focus = _garage_drive_index
+	if seat_on_career:
+		_garage_focus = _garage_career_index
 	_garage_focus = _garage_cursor.settled(_garage_focus)
 	_refresh_garage_focus()
 	# Freshly-built buttons start life with raw (non-uppercase) text — _normalize_menus
 	# (UITheme.enforce) is what applies the house rules, and it only runs on a view
-	# change/dynamic-text refresh elsewhere; a level switch (Drive <-> top) doesn't go
-	# through _go_to, so it has to re-apply the rules itself here.
+	# change/dynamic-text refresh elsewhere; a Mystery Box repaint doesn't go through
+	# _go_to, so it has to re-apply the rules itself here.
 	_normalize_menus()
 
 
@@ -3208,8 +3115,10 @@ func _test_drive() -> void:
 
 # Free Roam: open the car park across the WHOLE catalogue (owned cars and not) as base-
 # model previews, framed on the currently-selected car's model. Start drops into a
-# session-less drive in the picked car (see _start_free_roam); Back returns to the garage.
-# Entered from the GARAGE action row's Free Roam button (see _build_garage_overlay).
+# session-less drive in the picked car (see _start_free_roam); Back returns to the TITLE
+# screen, which is where it is entered from (the EXTERIOR title row's Free Roam button —
+# see HqOverlays.build_title_overlay). It deliberately needs no owned car, session or
+# lift, which is why it doesn't live in the garage.
 func _enter_free_roam() -> void:
 	_carpark_mode = CarparkMode.FREEROAM
 	var previews := _all_car_previews()
@@ -3258,8 +3167,12 @@ func _car_back() -> void:
 	match mode:
 		CarparkMode.STARTER:
 			_go_to(View.EXTERIOR)
-		CarparkMode.GARAGE, CarparkMode.FREEROAM:
+		CarparkMode.GARAGE:
 			_go_to(View.GARAGE)
+		CarparkMode.FREEROAM:
+			# Free Roam is entered from the TITLE screen now, not the garage, so backing
+			# out of its picker returns there (see HqOverlays.build_title_overlay).
+			_go_to(View.EXTERIOR)
 		CarparkMode.SWAP, CarparkMode.WHEELS:
 			_enter_lift()
 		CarparkMode.CHALLENGE:
@@ -4011,7 +3924,7 @@ func _focus_changed(snap := false) -> void:
 	# Let the player hear the focused car: rev its (possibly swapped) engine. Fires
 	# on every flick and on the initial lineup show; a new rev cancels the previous.
 	if not entry.is_empty():
-		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))))
+		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))), owned)
 	var stats := _car_stats_text(owned, entry)
 	var display_owned: Dictionary = Save.get_car(_selected_instance_id)
 	var display_name: String = (EngineSwap.display_name(entry, display_owned)
@@ -4033,14 +3946,16 @@ func _focus_changed(snap := false) -> void:
 	_move_camera_to(_camera_target_xform(), snap)
 
 
-# Rev the focused car's engine as a short preview (lazily builds the player).
-func _preview_rev(engine_id: String) -> void:
+# Rev the focused car's engine as a short preview (lazily builds the player). The owned
+# car goes along so its FITTED upgrades (turbo / supercharger) are heard, not just the
+# factory engine — see CarPreviewAudio.rev.
+func _preview_rev(engine_id: String, owned_car: Dictionary = {}) -> void:
 	if engine_id.is_empty():
 		return
 	if _preview_audio == null:
 		_preview_audio = CarPreviewAudio.new()
 		add_child(_preview_audio)
-	_preview_audio.rev(engine_id)
+	_preview_audio.rev(engine_id, owned_car)
 
 
 # The two-way power-to-weight preview shown only while picking an engine-swap partner.
@@ -4349,13 +4264,10 @@ func _look_xform(eye: Vector3, look: Vector3) -> Transform3D:
 func _station_xform(view: int) -> Transform3D:
 	var cfg: GameConfig = Config.data
 	match view:
-		# The garage station has TWO framings: the wide shell view on the TOP level,
-		# and — once Drive is pressed — a low 3/4 front hero shot of the car on the
-		# lowered lift. Same station (no view change), different camera.
-		View.GARAGE:
-			if _garage_showing_drive and is_instance_valid(_lift_car):
-				return _drive_cam_xform()
-			return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
+		# One framing now the garage row is a single level: the wide shell view. (The
+		# low 3/4 hero shot that used to come with the "Drive" sub-level went with it —
+		# see _refresh_garage_row.)
+		View.GARAGE: return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
 		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
 		View.LIFT: return _look_xform(cfg.hq_lift_cam_eye, cfg.hq_lift_cam_look)
 		View.CARPARK: return _camera_target_xform()
@@ -4365,18 +4277,6 @@ func _station_xform(view: int) -> Transform3D:
 		_:
 			var anchor := _first_car_anchor()
 			return _look_xform(anchor + cfg.hq_exterior_cam_eye, anchor + cfg.hq_exterior_cam_look)
-
-
-# The DRIVE level's framing: a low three-quarter FRONT shot of the car resting on the
-# lowered lift. Posed relative to hq_lift_pos rather than the car node so it's stable
-# while the lower tween is still settling the car's Y (and so it still reads sanely
-# for a car whose ride height differs). Only used while a lift car exists — with an
-# empty garage _station_xform falls back to the wide station view.
-func _drive_cam_xform() -> Transform3D:
-	var cfg: GameConfig = Config.data
-	var base := Vector3(cfg.hq_lift_pos.x, 0.0, cfg.hq_lift_pos.z)
-	return _look_xform(base + cfg.hq_drive_cam_offset,
-		base + Vector3.UP * cfg.hq_drive_cam_look_height)
 
 
 func _focused_car_pos() -> Vector3:
@@ -4621,15 +4521,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# action behind the popup. That's how opening a mystery box could spend a second box
 	# whose reveal was then refused for stacking — the spend is not undoable, so the
 	# station must simply not listen while a modal is up. Guarded here, alongside the
-	# account/challenge overlays, which own input the same way.
+	# challenge overlay, which owns input the same way.
 	if ConfirmPopup.any_open(get_tree()) != null:
-		return
-	# The account overlay is modal over the title screen: it owns Back until closed.
-	if _account_layer != null:
-		if event.is_action_pressed("menu_back") or event.is_action_pressed("ui_cancel"):
-			if not _account_menu.go_back():
-				_close_account_overlay()
-			get_viewport().set_input_as_handled()
 		return
 	# The challenge overlay is modal over the garage: it owns focus nav entirely via its
 	# own MenuNav (attached in build_challenge_overlay), including left/right — the kind
@@ -4661,11 +4554,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				elif not _settings_menu.go_back():
 					_go_to(View.EXTERIOR)
 		View.GARAGE:
-			# The bottom action row is a single left/right cursor (two levels share it —
-			# see _refresh_garage_row); select fires it. menu_back on the TOP level
-			# shortcuts to the exterior; on the DRIVE level it goes up one level instead
-			# (mirroring the Back button's own action at each level), same as any other
-			# nested menu's Back convention.
+			# The bottom action row is a single left/right cursor (one level — see
+			# _refresh_garage_row); select fires it, and menu_back leaves the station
+			# for the exterior, mirroring the row's own Back button.
 			if event.is_action_pressed("menu_left"):
 				_move_garage_focus(-1)
 			elif event.is_action_pressed("menu_right"):
@@ -4673,10 +4564,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.is_action_pressed("menu_select"):
 				_activate_garage_focus()
 			elif event.is_action_pressed("menu_back"):
-				if _garage_showing_drive:
-					_garage_back_to_top()
-				else:
-					_go_to(View.EXTERIOR)
+				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
 				# Hub: left/right move the cursor between Back / Upgrades / Tuning /

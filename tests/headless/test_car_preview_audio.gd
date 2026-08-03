@@ -10,6 +10,7 @@ var _preview: CarPreviewAudio
 
 func before_each() -> void:
 	CarFixtures.install()
+	UpgradeFixtures.install()
 	# Not added to the tree: rev() then skips the audio-server reset, and _advance()
 	# runs the sim/envelope directly, so no audio device is needed.
 	_preview = CarPreviewAudio.new()
@@ -17,6 +18,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	_preview.free()
+	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 
@@ -65,3 +67,40 @@ func test_new_rev_cancels_the_previous_one() -> void:
 func test_unknown_engine_id_is_a_no_op() -> void:
 	_preview.rev("does_not_exist")
 	assert_false(_preview._active, "an unknown engine id starts no rev")
+
+
+func test_fitted_forced_induction_is_heard_in_the_preview() -> void:
+	# The preview must reflect the car's FITTED upgrades, not just the factory engine —
+	# otherwise a turbo or supercharger the player bolted on is silent in the lineup.
+	var blown := {"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": []}
+	_preview.rev("fx_i4", blown)
+	assert_true(_preview._cfg.supercharger_enabled, "the fitted blower reaches the preview config")
+	assert_gt(_preview._cfg.supercharger_boost_gain, 0.0, "with its belt boost physics")
+	assert_gt(_preview._cfg.engine_supercharger_whine_gain, 0.0, "and its whine audio layer")
+	var turbo := {"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
+	_preview.rev("fx_i4", turbo)
+	assert_true(_preview._cfg.turbo_enabled, "a fitted turbo reaches the preview config too")
+
+
+func test_bare_engine_audition_ignores_upgrades() -> void:
+	# Called without an owned car (or with a car that has nothing fitted), the preview
+	# is the stock engine — no leakage from whatever the fielded car happens to have.
+	var prev_gain: float = Config.data.supercharger_boost_gain
+	var prev_turbo: bool = Config.data.turbo_enabled
+	Config.data.supercharger_boost_gain = 1.0  # a blown car currently in the field
+	Config.data.turbo_enabled = true
+	_preview.rev("fx_i4")
+	assert_eq(_preview._cfg.supercharger_boost_gain, 0.0,
+		"a stock-engine audition doesn't inherit the fielded car's blower")
+	assert_false(_preview._cfg.turbo_enabled, "nor its turbo")
+	# Config.data is a shared autoload — put it back so no later test inherits this.
+	Config.data.supercharger_boost_gain = prev_gain
+	Config.data.turbo_enabled = prev_turbo
+
+
+func test_a_disabled_part_is_not_heard() -> void:
+	# Toggling a fitted part off in the garage must silence it here as well, the same
+	# way it goes inert on the fielded car.
+	var off := {"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": ["fx_supercharger"]}
+	_preview.rev("fx_i4", off)
+	assert_eq(_preview._cfg.supercharger_boost_gain, 0.0, "a switched-off blower stays silent")
