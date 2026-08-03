@@ -71,51 +71,70 @@ for each).
 	 `engine.update_auto` handles upshifts based on ground speed.
    - *Manual:* W accelerates (or reverses in R gear); S brakes / reverses.
    - Near-zero speed engages a parking brake.
-3. **Steering:** the raw input is first smoothed once into a single `_steer`
-   value (eased toward the input at the same angular rate the wheels turn,
-   `steer_speed / steer_limit`), so a keyboard's instant 0→1 doesn't jerk; both
-   the wheel-angle target and the yaw assist torque read this same value, keeping
-   them 1:1. Front wheels caster toward the direction of travel
-   (`steer_travel_alignment`), blended with the smoothed input up to `steer_limit`
-   at `steer_speed`. The input steering offset is **physically bounded** by the
-   front tire's optimum slip angle (`Car.optimum_steer_limit`), not a tuned speed
-   ramp: the normalized slip a steering offset θ induces is `sin(θ)·speed/v_ref`
-   (`v_ref` floored at `tire_norm_floor`), so the largest offset that keeps the
-   tire on its grip peak is `sin(θ) = slip_peak·v_ref/speed`, which pins to
-   `asin(slip_peak)` — the surface's optimum slip angle (≈8° tarmac, ≈18° gravel),
-   speed-independent — because capping at the optimum is also the tightest
-   achievable turn. `slip_peak` is the surface under the steering axle
-   (`Drivetrain.steering_axle_slip_peak`). Below `STEER_LOCK_BLEND_END_SPEED`
-   (50 km/h) the effective cap blends **linearly** from the full mechanical
-   `steer_limit` at standstill down to that slip-based cap, so parking-speed turning
-   keeps full bite; above 50 km/h it is purely slip-based.
-   The steer-assist yaw torque is scaled by the same reduction
-   (`Car.steer_authority` = cap ÷ `steer_limit`) so the smaller wheel angle is
-   actually felt — in this arcade model the assist provides most of the turning
-   authority and would otherwise mask it. The travel-alignment countersteer and
-   spin protection are deliberately NOT scaled, so slides still catch. The
-   alignment fraction is scaled linearly with speed — 0 at
-   standstill ramping to its full configured value at `steer_assist_min_speed`
-   (≈30 km/h) — so it never snaps in suddenly at low speed. A direct yaw torque
-   (`steer_assist_torque`, authored **per car** in `CarLibrary` and overlaid onto
-   the config by `apply_car()`; the global `GameConfig` value is a 0 fallback, so
-   only cars that author a value get the aid) fights understeer,
-   faded in linearly from 0 at standstill to full at `steer_assist_min_speed`
-   (≈30 km/h) — rather than switched on abruptly at that threshold — so it ramps
-   up smoothly without making low-speed handling twitchy. It also tapers with the
-   car's slip angle: full when the car points along its travel direction, fading
-   linearly to zero once it has rotated the surface's optimum slip angle
-   (`asin(slip_peak)`, ≈8–18°) into the turn — the aid rotates the car in until the
-   tires reach peak grip, then stops adding, so it won't keep over-rotating it into a
-   spin. **Spin protection** (`spin_assist_torque`) is the recovery counterpart:
-   once the car has rotated further than `spin_assist_angle` (≈35°) away from its
-   travel direction, a corrective yaw torque pulls the nose back toward the travel
-   direction, ramping in linearly from 0 at the threshold to full at twice it and
-   sharing the steer assist's speed fade-in. A yaw-rate damping term
-   (`SPIN_ASSIST_DAMPING`) settles the slide instead of oscillating. Suppressed
-   while the handbrake is held (so deliberate drifts work), and only active while
-   travelling nose-forward — it prevents reaching a spin rather than unwinding a
-   completed one.
+3. **Steering — a grip servo, not an angle:** steering input is the **share of the front
+   tires' available cornering grip** the driver is asking for; `Car._update_steering` works
+   the wheel angle until the tires deliver it. It runs **after** `drivetrain.step()` so it
+   closes its loop on this tick's own tire measurements. See
+   [todo/grip-servo-steering.md](../todo/grip-servo-steering.md) for the full derivation and
+   the three things driving corrected.
+   - **The zero point.** There is one wheel angle at which the front tires do no sideways
+     work: pointing them along the direction they are already travelling. `null = steering +
+     slip_angle`, from each front wheel's OWN measured slip angle
+     (`Drivetrain.front_axle_state()`, load-weighted by normal force — the loaded outer tire
+     dominates, since it does most of the work). Every command is measured out from there,
+     which is why countersteer needs no rule: releasing the wheel targets the null and the
+     slide catches. It also makes the controller **stateless** — the current offset from the
+     null is just `|slip_angle|`, re-measured every tick, so there is nothing to wind up.
+   - **The setpoint is the LATERAL budget**, not total usage: `steer_demand * lat_available`,
+     where `lat_available = sqrt(1 - long_used²)` from the *measured* longitudinal slip. The
+     wheel angle only moves the lateral component, so charging the driver for longitudinal
+     spend would mean a pinned pedal drives the wheels straight.
+   - **The step is `error * slip_peak`** (`Car.grip_servo_step`) — the usage error converted
+     into radians, a Newton step of gain 1. Requiring that a tick never move further than the
+     remaining angular error collapses any gain term to exactly this, so **there is no gain
+     knob**; it self-scales with the surface and the frame rate. Its small-angle approximation
+     errs toward under-correcting, which is the safe direction.
+   - **At rest the null is undefined** — `atan2(0, 0)` is 0, so `null == steering` and released
+     wheels would stay cocked. Below `tire_norm_floor` the null fades toward straight ahead
+     (the same floor at which the tire model stops treating slip as meaningful), so parked
+     wheels centre themselves. Confined to the zero-input branch: pinning the null while a
+     demand is held would stop it walking out to full lock at a standstill.
+   - **`steer_limit`** is the mechanical stop and the only hard bound; **`steer_speed`** is the
+     rate limit and the ONLY rate in the system — the model of how fast a hand can turn the
+     wheel, and also the input smoothing (there is no separate easing stage). Because the servo
+     only has to cover the tire's slip angle (~8.6° on tarmac) rather than most of full lock,
+     it is the dominant feel parameter and is tuned well below a lock-to-lock rate.
+   - **Damage toe rides inside the loop.** `_apply_wheel_toe` bends each wheel on top of the
+     servo's angle and the drivetrain measures in that toed frame, so the servo corrects the
+     symmetric front component exactly as a real driver holds a correction on a car with bent
+     alignment — it tracks straight with the wheels visibly off-centre. Rear toe is beyond its
+     authority and a front pair bent opposite ways nets out of the load-weighted average, so a
+     damaged car still crabs and scrubs. See [damage.md](damage.md).
+   - **Longitudinal and lateral demand share one circle.** Every input is 0% or 100% on a
+     keyboard or touch screen, so `Car.longitudinal_demand_scale` scales the longitudinal side
+     to fit: a pedal alone is untouched, a pedal pinned with full steering scales to 0.71 (the
+     friction-circle optimum). The **brake** always counts; the **throttle** counts only when
+     the steered axle is also driven (`Drivetrain.front_axle_driven()` — FWD/AWD, not RWD), so
+     RWD power-oversteer is untouched. Only the longitudinal side is scaled, because
+     `lat_available` already limits the lateral side and scaling both would double-count.
+     Trail braking and power-out emerge from this rather than being scripted. It is demand
+     arbitration, **not** ABS or traction control: pedal torque is untouched when the player
+     isn't steering, so lockup and wheelspin remain.
+   - **Spin protection** (`spin_assist_torque`) is now the ONLY steering aid, and solves what
+     the servo cannot: a player who holds steering *into* a slide until the car rotates past
+     recovery. Once the car has rotated further than `spin_assist_angle` from its travel
+     direction, a corrective yaw torque pulls the nose back, ramping in linearly from 0 at the
+     threshold to full at twice it, with a yaw-rate damping term (`SPIN_ASSIST_DAMPING`) so the
+     slide settles instead of oscillating. Suppressed while the handbrake is held (so
+     deliberate drifts work), and gated by `Car._chassis_slip_angle`'s own 2 m/s
+     forward-motion floor, which keeps it out of low-speed manoeuvring — it prevents reaching a
+     spin rather than unwinding a completed one.
+
+   **Deleted with this redesign** (do not look for them): the `_steer` input-smoothing stage,
+   `steer_travel_alignment`, `Car.optimum_steer_limit`, `steer_lock_blend_end_speed`,
+   `Car.steer_authority`, `Car.optimum_slip_angle`, `Drivetrain.steering_axle_slip_peak`,
+   `steer_assist_min_speed`, and the understeer aid `_apply_steer_assist` /
+   `steer_assist_torque` (which was already `0` on every shipped car).
 4. **Aero forces:**
    - *Drag:* `-velocity * |velocity| * drag_coefficient` (quadratic). `linear_damp`
 	 is forced to 0 so this is the only speed-dependent linear loss. The body's

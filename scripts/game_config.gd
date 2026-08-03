@@ -54,37 +54,26 @@ var peak_torque_rpm := 4500.0
 ## (this default is only the fallback when a spec omits them); the aero_kit upgrade
 ## adds on top of the car's value.
 @export_range(-2.0, 2.0) var downforce_rear := 0.0
-## Mechanical max steering offset (radians) from the car's direction of travel —
-## the full-lock wheel angle available at low speed. At speed the effective limit
-## is bounded BELOW this by the tire's optimum slip angle (Car.optimum_steer_limit),
-## so a full-lock input pins the front tires on their grip peak instead of
-## scrubbing past it — derived from the surface under the steering axle
-## (asin(slip_peak): ≈8° tarmac, ≈18° gravel), not a tuned speed ramp.
+## MECHANICAL max steering offset (radians) — the wheel's physical stop, and now the only
+## bound on the wheel angle. The grip servo (Car._update_steering) finds the peak-grip angle
+## by MEASURING the front tires rather than predicting a cap, so there is no longer a
+## slip-derived limit or a low-speed blend to configure.
 @export_range(0.0, 1.2) var steer_limit := 0.8
+## How fast the front wheels can turn (rad/s) — the model of how fast a hand can turn the
+## wheel, and the ONLY rate in the steering system (it is also the input smoothing; there is
+## no separate easing stage). The grip servo needs to cover only the tire's slip angle
+## (~8.6° on tarmac) rather than most of full lock, so this is the dominant feel parameter
+## and is tuned much lower than a lock-to-lock rate would be.
 @export var steer_speed := 5.0
-## How much the front wheels caster toward the direction of travel: 1.0 = fully
-## track it (automatic countersteer), 0.0 = steering input only.
-@export_range(0.0, 1.0) var steer_travel_alignment := 0.8
-## Speed (m/s) at/above which the low-speed steer-lock blend is fully into the
-## slip-based cap. Below it, optimum_steer_limit() blends linearly from the full
-## mechanical steer_limit at standstill up to the slip-based cap at this speed, so
-## parking-speed turning keeps real bite. 40 km/h ≈ 11.111 m/s.
-@export var steer_lock_blend_end_speed := 40.0 / 3.6
-## Yaw torque (N·m) applied while steering to fight understeer — a steering aid,
-## not a physical force. This is only the neutral baseline / fallback: the value
-## is authored PER CAR (CarLibrary "steer_assist_torque") and overlaid onto cfg by
-## car.gd apply_car(), so the shipped roster drives it, not this global. Kept at 0
-## so a car that authors no value gets no assist.
-@export_range(0.0, 10000.0) var steer_assist_torque := 0.0
-## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
-## the car is too slow for understeer to matter and the aid only makes low-speed
-## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
-@export_range(0.0, 50.0) var steer_assist_min_speed := 13
+## Steering demand below which the wheels servo to their zero-lateral-slip angle (pointing
+## along their own travel — automatic countersteer). A deadzone rather than an exact-zero
+## test because analogue sticks and the touch slider never return exactly 0.
+@export_range(0.0, 0.5) var steer_deadzone := 0.02
 ## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
 ## the direction of travel once the car has rotated further than
-## spin_assist_angle into a slide — the counterpart to steer_assist_torque
-## (which stops ADDING rotation past the surface's optimum slip angle; this one
-## actively takes rotation away). Includes yaw-rate damping so it settles the slide
+## spin_assist_angle into a slide. The one remaining steering aid, and it solves what
+## the grip servo cannot: a player who holds steering INTO a slide until the car
+## rotates past recovery. Includes yaw-rate damping so it settles the slide
 ## rather than oscillating. Suppressed while the handbrake is held so
 ## deliberate drifts stay possible. 0 disables. An anti-spin aid, not a
 ## physical force.

@@ -270,105 +270,19 @@ func test_front_wheels_caster_toward_travel_direction() -> void:
 	assert_almost_eq(_car.steering, 0.0, 0.1, "fronts straight when travel matches heading")
 
 
-func test_travel_alignment_zero_disables_castering() -> void:
+func test_low_speed_full_input_reaches_the_mechanical_stop() -> void:
+	# Replaces the old alignment/steer-lock-blend tests. There is no low-speed exception
+	# any more: creeping along, the tires generate almost no slip however far the wheels
+	# are turned, so the servo is permanently under its target and integrates out to the
+	# mechanical stop. Parking-speed bite now falls out of the control law instead of a
+	# speed-blended cap.
 	var cfg: GameConfig = Config.data
-	var saved := cfg.steer_travel_alignment
-	cfg.steer_travel_alignment = 0.0
-	var forward := -_car.global_transform.basis.z
-	var left := -_car.global_transform.basis.x
-	_car.linear_velocity = (forward + left).normalized() * 15.0
-	await _wait_physics(15)
-	cfg.steer_travel_alignment = saved
-	assert_almost_eq(_car.steering, 0.0, 0.02,
-		"at alignment 0 a slide must not steer the fronts without input")
-
-
-func test_travel_alignment_scales_down_at_low_speed() -> void:
-	# The alignment is faded in linearly with speed up to steer_assist_min_speed
-	# (≈30 km/h ≈ 8.333 m/s), so the same slide angle casters the fronts far less
-	# when slow than when fast. Drive an identical 45° slide at 4 m/s (partial
-	# scale) and at 15 m/s (scale clamped to 1.0); low-speed steering must be
-	# clearly smaller.
-	var slide := (-_car.global_transform.basis.z - _car.global_transform.basis.x).normalized()
-	_car.linear_velocity = slide * 15.0
-	await _wait_physics(15)
-	var fast_steer := absf(_car.steering)
-
-	# Reset to the spawn transform, then repeat the slide at low speed.
-	_car._reset()  # reset is menu-only now (no input action); call the logic directly
-	await _wait_physics(120)
-	slide = (-_car.global_transform.basis.z - _car.global_transform.basis.x).normalized()
-	_car.linear_velocity = slide * 4.0
-	await _wait_physics(15)
-	var slow_steer := absf(_car.steering)
-
-	assert_lt(slow_steer, fast_steer * 0.7,
-		"low-speed alignment must be scaled down relative to high speed")
-
-
-func test_steer_assist_suppressed_below_min_speed() -> void:
-	# Below steer_assist_min_speed the assist is suppressed, so at a standstill
-	# (where the front tires can generate no turn) a large assist torque must
-	# leave the car's heading essentially unchanged.
-	var cfg: GameConfig = Config.data
-	var saved := cfg.steer_assist_torque
-	cfg.steer_assist_torque = 5000.0
-	_car.linear_velocity = Vector3.ZERO
-	_car.angular_velocity = Vector3.ZERO
-	var start_yaw := _car.rotation.y
+	_car.linear_velocity = -_car.global_transform.basis.z * 0.5
 	Input.action_press("steer_left")
 	await _wait_physics(60)
 	Input.action_release("steer_left")
-	cfg.steer_assist_torque = saved
-	var yaw_delta := absf(wrapf(_car.rotation.y - start_yaw, -PI, PI))
-	assert_lt(yaw_delta, 0.02, "steer assist does not yaw a stationary car")
-
-
-func test_steer_assist_tapers_with_slip_angle() -> void:
-	# The assist fades linearly with how far the car has already rotated into the
-	# turn: full at zero slip, nothing once the car has rotated past the surface's
-	# optimum slip angle (asin(slip_peak), ≈8–18°). Steering left, measure the yaw
-	# the assist adds (torque on minus off, over a short window) when the car points
-	# along its travel vs. when it has slipped 45° — well past any surface optimum —
-	# so the slipped contribution must taper to near nothing.
-	var cfg: GameConfig = Config.data
-	var saved_torque := cfg.steer_assist_torque
-
-	var aligned := await _steer_assist_yaw_gain(0.0)
-	var slipped := await _steer_assist_yaw_gain(deg_to_rad(45.0))
-
-	cfg.steer_assist_torque = saved_torque
-
-	assert_gt(aligned, 0.03,
-		"aligned: the assist must add left yaw when the car points along its travel")
-	assert_lt(absf(slipped), aligned * 0.3,
-		"slipped past the optimum slip angle: the assist contribution must taper away")
-
-
-# Left-steer yaw rate the assist adds (torque 8000 minus torque 0) over a short
-# window, with the car driving at 20 m/s but already slipped the given angle INTO
-# the turn (travel to the right of the nose). Differencing the two torque runs
-# isolates the assist from the identical front-wheel/grip yaw in both.
-func _steer_assist_yaw_gain(slip_into_turn: float) -> float:
-	var off := await _left_steer_yaw_rate(slip_into_turn, 0.0)
-	var on := await _left_steer_yaw_rate(slip_into_turn, 8000.0)
-	return on - off
-
-
-func _left_steer_yaw_rate(slip_into_turn: float, torque: float) -> float:
-	var cfg: GameConfig = Config.data
-	cfg.steer_assist_torque = torque
-	# Reset to the spawn pose so both torque runs start from an identical state.
-	_car._reset()  # reset is menu-only now (no input action); call the logic directly
-	await _wait_physics(120)
-	var forward := -_car.global_transform.basis.z
-	var right := _car.global_transform.basis.x
-	_car.linear_velocity = (forward * cos(slip_into_turn) + right * sin(slip_into_turn)) * 20.0
-	_car.angular_velocity = Vector3.ZERO
-	Input.action_press("steer_left")
-	await _wait_physics(12)
-	Input.action_release("steer_left")
-	return _car.angular_velocity.y
+	assert_almost_eq(_car.steering, cfg.steer_limit, cfg.steer_limit * 0.1,
+		"at creep, full input servos out to the mechanical steer limit")
 
 
 # --- Spin protection assist ---------------------------------------------------

@@ -31,11 +31,6 @@ const LEVEL_ASSIST_DAMPING := 0.35
 # to the travel direction instead of oscillating.
 const SPIN_ASSIST_DAMPING := 0.35
 
-# The steer-lock blend-end speed now lives on GameConfig (cfg.steer_lock_blend_end_speed);
-# the live physics reads it from cfg. This mirror of the config DEFAULT is kept only so
-# tests can reference the neutral value without instancing a GameConfig.
-static var STEER_LOCK_BLEND_END_SPEED := GameConfig.new().steer_lock_blend_end_speed
-
 
 # Contacts the chassis reports per physics tick for the damage model. The car only
 # ever touches a few obstacles at once; a small cap keeps contact monitoring cheap.
@@ -245,15 +240,6 @@ func end_replay() -> void:
 	if drivetrain != null:
 		drivetrain.replay_omega = {}
 
-# Smoothed steering input. Raw steer_input snaps 0->1 on a keyboard; easing it
-# gives one smooth -1..1 source that BOTH the wheel-angle target and the yaw
-# assist torque read, so the two stay 1:1 instead of the torque slamming to full
-# the instant a key is pressed.
-var _steer := 0.0
-
-# Reusable return buffer for _update_steering (see _inputs_scratch) — filled and
-# returned every physics tick so it allocates no Dictionary.
-var _steer_scratch := {"slip_angle": 0.0, "travel_angle": 0.0, "slip_peak": 0.0}
 
 
 func _ready() -> void:
@@ -338,45 +324,6 @@ func _ready() -> void:
 	engine_smoke_local = cfg.engine_smoke_offset
 
 
-# Terrain surface height at a world position, used to seat the spawn above the
-# ground. Looks for a sibling that exposes height_at (the hilly Floor in the
-# main scene); on the flat test fixtures (a WorldBoundary at y=0) there is none,
-# so it falls back to 0.
-# The front tire's peak-grip slip angle (radians) for a surface whose normalized
-# optimum slip is slip_peak — asin because the normalized lateral slip fed to the
-# tire model is sin(slip angle) (see Drivetrain._tire_force). ≈8° on tarmac
-# (slip_peak 0.14), ≈18° on gravel (0.31). Both steering aids key off this.
-static func optimum_slip_angle(slip_peak: float) -> float:
-	return asin(clampf(slip_peak, 0.0, 1.0))
-
-
-# The effective input steer limit (radians): the largest steering offset from the
-# travel direction that keeps the front tire at or below its optimum slip, so a
-# full-lock input pins the tire on its grip peak (max cornering) rather than
-# scrubbing past it. The slip-based cap is derived from the tire model, not a tuned
-# ramp: the normalized slip a steering offset θ induces is sin(θ)·speed/v_ref
-# (v_ref floored at tire_norm_floor), so the optimum is sin(θ) = slip_peak·v_ref/speed.
-# slip_peak is the surface under the steering axle. Below STEER_LOCK_BLEND_END_SPEED
-# the return blends linearly from the full mechanical steer_limit at standstill
-# (tight parking-speed turning) to that slip-based cap, so low-speed steering keeps
-# real bite; above it the cap is purely slip-based (pinned to asin(slip_peak)).
-static func optimum_steer_limit(cfg: GameConfig, speed: float, slip_peak: float) -> float:
-	var v_ref := maxf(speed, cfg.tire_norm_floor)
-	var sin_opt := clampf(slip_peak * v_ref / maxf(speed, 0.001), 0.0, 1.0)
-	var slip_based := minf(cfg.steer_limit, asin(sin_opt))
-	var blend := clampf(speed / cfg.steer_lock_blend_end_speed, 0.0, 1.0)
-	return lerpf(cfg.steer_limit, slip_based, blend)
-
-
-# Fraction the steering aids are scaled by relative to full lock — the felt
-# authority. As speed rises the physical steer limit shrinks toward the optimum
-# angle, so the steer-assist torque tapers by the same ratio (otherwise the assist
-# would mask the smaller wheel angle). 1.0 at creep, →asin(slip_peak)/steer_limit
-# at speed.
-static func steer_authority(cfg: GameConfig, speed: float, slip_peak: float) -> float:
-	if cfg.steer_limit <= 0.0:
-		return 1.0
-	return optimum_steer_limit(cfg, speed, slip_peak) / cfg.steer_limit
 
 
 # First sibling exposing `method` (the Floor in the main scene; null on the flat
@@ -390,6 +337,10 @@ func _sibling_with_method(method: String) -> Node:
 	return null
 
 
+# Terrain surface height at a world position, used to seat the spawn above the
+# ground. Looks for a sibling that exposes height_at (the hilly Floor in the
+# main scene); on the flat test fixtures (a WorldBoundary at y=0) there is none,
+# so it falls back to 0.
 func _ground_height_at(pos: Vector3) -> float:
 	var floor_node := _sibling_with_method("height_at")
 	return floor_node.height_at(pos.x, pos.z) if floor_node != null else 0.0
@@ -489,14 +440,22 @@ func _timed_physics_process(delta: float) -> void:
 	var speed := linear_velocity.length()
 	# Resolve the continuous driver controls (throttle/brake split, driven
 	# direction, foot brake, handbrake, clutch) into the drivetrain step inputs.
-	var inputs := _resolve_drive_inputs(engine, speed)
+	# Read the steering axis before resolving the pedals: longitudinal effort and cornering
+	# spend ONE friction budget, so _resolve_drive_inputs needs the steering demand to
+	# arbitrate between them (see longitudinal_demand_scale). steer_input keeps the sign.
+	var steer_input := _axis_input("steer_right", "steer_left", ai_steer)
+	var steer_demand := absf(steer_input)
+	var inputs := _resolve_drive_inputs(engine, speed, steer_demand)
 	var drive: float = inputs["drive"]
 	var brake_input: float = inputs["brake_input"]
 	var handbrake: bool = inputs["handbrake"]
 	var declutch: bool = inputs["declutch"]
+
 	# Stiction hold: a fully-pinned axle (handbrake or the low-speed parking brake)
-	# should stop the car creeping down a slope. See _apply_parking_hold.
-	_apply_parking_hold(handbrake or brake_input >= 1.0, speed, delta)
+	# should stop the car creeping down a slope. Reads `pinned` — the driver's brake demand
+	# BEFORE the grip arbitration scaled it — so holding brake AND steering at a standstill
+	# still anchors the car. See _resolve_drive_inputs and _apply_parking_hold.
+	_apply_parking_hold(handbrake or bool(inputs["pinned"]), speed, delta)
 	# Damage misfire: feed the engine its misfire intensity so it cuts fuel in
 	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
 	# cuts; ramps to 1 at 0 HP). See features/damage.md.
@@ -520,20 +479,15 @@ func _timed_physics_process(delta: float) -> void:
 	# Quadratic aero drag + speed-squared per-axle downforce (and the debug readout).
 	_apply_aero()
 
-	# Shared speed fade-in (0 at standstill up to full at steer_assist_min_speed),
-	# used by the steering alignment and both yaw assists. Computed once here rather
-	# than three times a tick; matches the previous per-helper expression exactly
-	# (no div-by-zero guard, as before).
-	var steer_fade := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
-	# Point the front wheels (caster toward travel + input steer, damage toe),
-	# then the yaw aids that key off the travel geometry it returns.
-	var angles := _update_steering(delta, speed, steer_fade)
-	# Direct yaw torque while steering, to fight understeer when the front tires
-	# alone can't rotate the car (faded in with speed, tapered as the car rotates in).
-	_apply_steer_assist(speed, steer_fade, angles["travel_angle"], angles["slip_peak"])
-	# Slide-recovery counterpart: pulls the nose back once the car has rotated
-	# past spin_assist_angle from its travel direction. Accumulates onto the readout.
-	_apply_spin_protection(steer_fade, angles["slip_angle"], handbrake)
+	# Servo the front wheels onto the commanded share of their available grip, then lay
+	# the damage toe on top. Runs AFTER drivetrain.step() so it closes its loop on this
+	# tick's own tire measurements — see _update_steering.
+	_update_steering(delta, steer_input, steer_demand)
+	# Slide-recovery aid: pulls the nose back once the car has rotated past
+	# spin_assist_angle from its travel direction. Sets the assist readout. Its own 2 m/s
+	# forward-motion floor lives in _chassis_slip_angle, which returns 0 below it — that
+	# replaces the speed fade the deleted understeer assist used to share.
+	_apply_spin_protection(_chassis_slip_angle(), handbrake)
 	# Self-righting assist while any wheel is airborne.
 	_apply_level_assist()
 
@@ -601,14 +555,16 @@ func _step_replay(delta: float) -> void:
 # fields immediately.
 var _replay_omega_scratch := {}
 
-var _inputs_scratch := {"drive": 0.0, "brake_input": 0.0, "handbrake": false, "declutch": false}
+var _inputs_scratch := {
+	"drive": 0.0, "brake_input": 0.0, "handbrake": false, "declutch": false, "pinned": false,
+}
 
 # Resolve the driver's continuous controls into the drivetrain step's inputs: the
 # throttle/brake pedal split, the driven direction (drive), foot brake, handbrake
 # and clutch (declutch). Handles the automatic vs manual gearbox logic and the
 # locked / scripted-AI / finish-stop special cases. Returns
 # {drive, brake_input, handbrake, declutch} (a reused buffer; read it immediately).
-func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
+func _resolve_drive_inputs(engine, speed: float, steer_demand: float) -> Dictionary:
 	# Neutralise driver input while locked; the forced handbrake below holds the
 	# car on a slope without freezing the whole simulation.
 	var throttle := _axis_input("brake_reverse", "accelerate", ai_throttle)
@@ -617,6 +573,10 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 	var moving_forward := linear_velocity.dot(-global_transform.basis.z) > 1.0
 	var drive := 0.0
 	var brake_input := 0.0
+	# Whether the brake below is a synthesized HOLD (parking brake / finish stop) rather than
+	# the driver's pedal. Steering must never bleed a hold off — the car would creep down a
+	# slope the moment the player turned the wheel.
+	var brake_hold := false
 	if engine.auto:
 		# Automatic: the box picks forward gears; reverse engages from a stop.
 		if rev_pedal > 0.0 and moving_forward:
@@ -633,6 +593,7 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 				brake_input = 1.0
 		elif speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
+			brake_hold = true
 		# Shift on actual forward ground speed (wheelspin-immune), not revs.
 		engine.update_auto(drive, maxf(linear_velocity.dot(-global_transform.basis.z), 0.0))
 	else:
@@ -646,6 +607,7 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 			brake_input = rev_pedal
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
+			brake_hold = true
 	var handbrake := ai_handbrake if ai_controlled else (is_held() or Input.is_action_pressed("handbrake"))
 	# Declutch normally follows the handbrake (a held handbrake opens the clutch so the
 	# engine can rev free — used for launches). The finish stop is the exception.
@@ -657,10 +619,39 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 		# the open handbrake clutch. Release the foot brake once stopped.
 		declutch = false
 		brake_input = 1.0 if speed > config.finish_stop_speed else 0.0
+		brake_hold = true
+	_inputs_scratch["handbrake"] = handbrake
+	# Longitudinal effort and cornering spend ONE friction budget on the front tires, and on a
+	# keyboard or a touch screen every input is 0% or 100% — so the player cannot express the
+	# compromise a progressive pedal allows, and a pinned pedal leaves the steering nothing to
+	# work with. Scale the longitudinal side to fit. Done HERE, at the one point that owns the
+	# final pedal values, so the synthesized holds below can simply opt out locally instead of
+	# exporting a flag for the caller to re-check.
+	#
+	# The BRAKE always counts, because braking always acts on the steered axle. The THROTTLE
+	# counts only when that axle is also driven (FWD/AWD) — on RWD the throttle cannot take
+	# cornering grip from the front tires, so it is left alone and power-oversteer behaviour is
+	# untouched. The handbrake is excluded either way: it wants the rears to break away while
+	# the fronts keep full bite.
+	# Whether the axle is PINNED, decided from the driver's demand BEFORE the grip
+	# arbitration below scales it. The stiction hold asks "should a stationary car be
+	# anchored", and the arbitration exists only to free up CORNERING grip on a moving car —
+	# it has nothing to say about that. Deciding it here (rather than letting the caller test
+	# the post-scale value) is what stops a player who holds brake AND steering at a
+	# standstill from silently losing the anchor and creeping down a slope.
+	var pinned := brake_input >= 1.0
+	if not brake_hold:
+		var front_driven := drivetrain.front_axle_driven()
+		var long_scale := longitudinal_demand_scale(
+			brake_input + (drive if front_driven else 0.0), steer_demand)
+		if long_scale < 1.0:
+			brake_input *= long_scale
+			if front_driven:
+				drive *= long_scale
 	_inputs_scratch["drive"] = drive
 	_inputs_scratch["brake_input"] = brake_input
-	_inputs_scratch["handbrake"] = handbrake
 	_inputs_scratch["declutch"] = declutch
+	_inputs_scratch["pinned"] = pinned
 	return _inputs_scratch
 
 
@@ -759,113 +750,196 @@ func _resolve_wind(cfg: GameConfig) -> void:
 	_wind_dir = Crosswind.direction(float(wind.get(Crosswind.DIR_KEY, 0.0)))
 
 
-# Point the front wheels: caster toward the direction of travel (blended in by
-# steer_travel_alignment; at 1.0 they fully track it, making countersteer in a
-# slide automatic) faded in linearly with speed (0 at standstill up to full at
-# steer_assist_min_speed) so it doesn't snap in at low speed, offset by the
-# speed-scaled input steer. Smooths the raw input into `_steer`, sets `steering`,
-# and lays the persisted damage toe on top. Returns the travel geometry
-# {slip_angle, travel_angle} the yaw assists key off.
-func _update_steering(delta: float, speed: float, align_scale: float) -> Dictionary:
-	# Returns _steer_scratch, a reused buffer (no per-tick Dictionary alloc);
-	# the sole caller unpacks its fields immediately.
-	var cfg: GameConfig = config
+# How much to scale the LONGITUDINAL demand (brake, and throttle on a driven front axle) so
+# that it and the steering demand together fit ONE friction budget. 1.0 while the pair is
+# inside the circle; below 1.0 once they would exceed it.
+#
+# Both inputs arrive as 0% or 100% on a keyboard and on the touch controls, so the player
+# cannot ask for the partial brake or partial throttle a progressive pedal would give — and
+# the steering servo measures what longitudinal slip has ALREADY spent, so a pinned pedal
+# leaves nothing for cornering and the car simply refuses to turn in. Scaling the
+# longitudinal side is the fix, and it needs no tuning knob: a pedal alone is untouched, and
+# a pedal pinned WITH full steering scales to 0.71 — not an invented compromise but the
+# actual optimum on a friction circle, and what a driver with progressive pedals does.
+#
+# Only the LONGITUDINAL side is scaled. The lateral side is already limited by the servo's
+# own lat_available term (what the ellipse has left after the measured longitudinal spend),
+# so scaling the steering demand as well would double-count: at 0.71 longitudinal the tires
+# have 0.71 of lateral budget, and the player asking for everything should get all of it.
+#
+# Trail braking and power-out both fall out for free: as steering winds on the pedal bleeds
+# off, and as it unwinds the pedal returns.
+#
+# Pure and static so the arbitration is testable on its own.
+static func longitudinal_demand_scale(long_demand: float, steer_demand: float) -> float:
+	var mag := Vector2(long_demand, steer_demand).length()
+	return 1.0 / mag if mag > 1.0 else 1.0
+
+
+# One tick's correction, in RADIANS, for a usage error in fractions-of-peak.
+#
+# THERE IS NO GAIN TO TUNE, and that is derived rather than chosen. Requiring that one tick's
+# movement never exceed the remaining angular error gives E >= steer_speed * delta / slip_peak
+# for a gain divisor E; substituting that bound back in collapses the whole term to exactly
+# `error * slip_peak` — the usage error converted into radians, a Newton step of gain 1. It
+# self-scales with the surface (gravel's larger slip_peak takes proportionally larger steps)
+# and with the frame rate, so there is nothing to mis-set.
+#
+# The small-angle approximation behind it (slip = sin θ ≈ θ) errs SAFELY: at a 30° slip angle
+# in a deep slide the step under-corrects by ~13%, converging slower rather than overshooting.
+# Do not "correct" that with a 1/cos term without a reason.
+#
+# Pure and static because the loop's stability lives entirely in this shape — proportional to
+# the error (so it cannot dither at the setpoint), zero at zero error, and sign-reversing on
+# overshoot — and that is testable without a car or a physics tick.
+static func grip_servo_step(usage_error: float, slip_peak: float) -> float:
+	return usage_error * slip_peak
+
+
+# The yaw of the car's TRAVEL direction relative to its nose (radians, positive left), or 0
+# when the car is slower than 2 m/s or not travelling nose-forward. Only the spin-protection
+# aid reads this — the steering servo uses each front wheel's OWN slip angle instead, which
+# is the fix for the chassis-referenced steering this replaced (the front axle's velocity
+# direction differs from the centre of mass's by the yaw-rate term).
+#
+# The 2 m/s floor is what keeps spin protection out of low-speed manoeuvring, replacing the
+# speed fade it used to share with the deleted understeer assist.
+func _chassis_slip_angle() -> float:
 	# transposed(), not inverse(): a rigid body's basis is orthonormal (this node is
 	# never scaled), so the transpose IS the inverse — and it skips the determinant
 	# + cofactor work inverse() does, every physics tick.
 	var local_vel := global_transform.basis.transposed() * linear_velocity
-	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection
-	var travel_angle := 0.0
-	if Vector2(local_vel.x, local_vel.z).length() > 2.0 and local_vel.z < 0.0:
-		# Yaw of the travel direction relative to the car's forward (-Z),
-		# positive to the left like VehicleWheel3D steering. Clamped so a deep
-		# slide can't spin the wheels to extreme angles. Only applied when
-		# moving forwards; when slow or reversing, plain input steering.
-		slip_angle = atan2(-local_vel.x, -local_vel.z)
-		travel_angle = clampf(slip_angle, -PI / 3.0, PI / 3.0)
-	var steer_input := _axis_input("steer_right", "steer_left", ai_steer)
-	# Ramp the travel alignment in linearly from 0 at standstill to its full
-	# configured value at steer_assist_min_speed (≈30 km/h), so it doesn't fight
-	# low-speed input steering yet returns smoothly with no sudden jump as speed
-	# builds. Shares the threshold with the steer-assist torque ramp below.
-	# align_scale is the shared speed fade computed once in _timed_physics_process.
-	# Smooth the raw input once, at the same angular rate the wheels turn
-	# (steer_speed rad/s over steer_limit rad of travel), so a keyboard's instant
-	# 0->1 eases in. Both the wheel-angle target below and the assist torque read
-	# this same _steer, keeping them 1:1.
-	var assist_rate := (cfg.steer_speed / cfg.steer_limit) if cfg.steer_limit > 0.0 else cfg.steer_speed
-	_steer = move_toward(_steer, steer_input, assist_rate * delta)
-	# Physical max steering offset: bound the input term so the front tire sits at
-	# its optimum slip angle (peak grip) for the surface underneath the steering
-	# axle rather than scrubbing past it. Opens up to the mechanical steer_limit at
-	# low speed (no slip) and pins to the surface optimum at speed — surface- and
-	# speed-derived from the tire model, no tuned ramp. Only the input term is
-	# bounded; the travel-alignment countersteer keeps full authority so slides
-	# still catch. See features/car-physics.md.
-	var slip_peak := drivetrain.steering_axle_slip_peak(cfg)
-	var effective_steer_limit := optimum_steer_limit(cfg, speed, slip_peak)
-	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + _steer * effective_steer_limit
-	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
+	# length_squared against 2 m/s squared: the threshold does not need the sqrt.
+	if Vector2(local_vel.x, local_vel.z).length_squared() <= 4.0 or local_vel.z >= 0.0:
+		return 0.0
+	return atan2(-local_vel.x, -local_vel.z)
+
+
+# Steer the front wheels by SERVOING THE MEASURED GRIP the tires are using, rather than
+# pointing them at an angle derived from the input. `steer_demand` is the 0..1 share of the
+# front tires' available cornering grip the driver is asking for (already through
+# share_friction_demand); `steer_input` carries only the direction.
+#
+# The system this replaced was open-loop and systematically left grip unused: it capped the
+# wheel angle at a PREDICTED limit (from cfg.steer_limit and a nominal surface slip_peak),
+# referenced the CHASSIS slip angle rather than each front wheel's, and followed only
+# steer_travel_alignment (0.8) of the travel direction. Front tires would sit at ~80% of
+# peak while the player asked for everything, which reads as understeer with grip in
+# reserve. Nothing here predicts the limit; it is measured and converged on.
+#
+# THE ZERO POINT. There is exactly one wheel angle at which the front tires do no sideways
+# work: pointing them along the direction they are already travelling. Every command is
+# measured out from there, which is why countersteer needs no rule of its own — releasing
+# the wheel targets the null, the tires stop being asked for side force, and the slide
+# catches. It also makes the controller STATELESS: the current offset from the null is just
+# |slip_angle|, re-measured every tick, so there is no integrator to store or wind up. The
+# wheel angle IS the integrator.
+#
+# THE SETPOINT IS A SHARE OF THE LATERAL BUDGET, not of total usage: the wheel angle only
+# moves the lateral component, so charging the driver for longitudinal spend would mean a
+# pinned brake (or full throttle on a FWD car) turns a request of 60% into negative error and
+# drives the wheels straight. The drivetrain reports that budget (front_axle_state's
+# lat_used / lat_available) because it is tire-model maths — and it agrees with
+# longitudinal_demand_scale: a pedal scaled to 0.71 leaves sqrt(1 - 0.5) = 0.71 of lateral
+# budget, the same share of the circle.
+#
+# THE STEP is grip_servo_step(error) — see there for why it carries no gain.
+#
+# cfg.steer_speed appears exactly once, as the rate limit — the model of how fast
+# a hand can turn the wheel, and the only rate in the system. Because it now only has to
+# cover the slip angle (~8.6° on tarmac) rather than most of full lock, it is the dominant
+# feel parameter; expect to retune it DOWNWARD in config/game_config.tres.
+func _update_steering(delta: float, steer_input: float, steer_demand: float) -> void:
+	var cfg: GameConfig = config
+	var front := drivetrain.front_axle_state(cfg)
+	var target := 0.0
+	if not bool(front["in_contact"]) or float(front["slip_peak"]) <= 0.0:
+		# Nothing to servo on: no front wheel is on the ground. Fall back to mapping the
+		# input straight onto the wheel angle — holding the last angle instead would freeze
+		# the wheels mid-jump, which players read as a bug.
+		target = steer_input * cfg.steer_limit
+	else:
+		var slip_peak: float = front["slip_peak"]
+		var slip_angle: float = front["slip_angle"]
+		# The null: point the wheels along their own travel and lateral slip goes to zero.
+		var null_angle: float = steering + slip_angle
+		if steer_demand <= cfg.steer_deadzone:
+			# NOT "minimise usage" — that has no unique solution, since a driven front axle
+			# under power never reaches zero COMBINED usage. The null is defined by LATERAL
+			# slip alone, which does reach zero at any throttle setting.
+			#
+			# But "along the direction of travel" is UNDEFINED at rest, and the degenerate
+			# answer is a fixed point: atan2(0, 0) is 0, so the null equals the current angle
+			# and released wheels would simply stay wherever they were left, cocked. As the
+			# reference speed vanishes the travel direction degenerates to the car's own
+			# forward axis, so fade the null toward straight ahead. Below the floor the raw
+			# angle is also dominated by suspension jitter, and this multiplies that away.
+			#
+			# The threshold is tire_norm_floor — the SAME speed at which the tire model itself
+			# stops treating slip as meaningful (Drivetrain._tire_force) — so this is the
+			# existing physical floor applied consistently, not a new steering exception. It is
+			# deliberately confined to THIS branch: the demand branch below needs no travel
+			# reference to push further from where it already is, and pinning its null would
+			# stop it walking out to full lock at a standstill.
+			var travel := 1.0
+			if cfg.tire_norm_floor > 0.0:
+				travel = clampf(absf(float(front["v_long"])) / cfg.tire_norm_floor, 0.0, 1.0)
+			target = null_angle * travel
+		else:
+			# Both sides are fractions of peak grip, and the drivetrain measured them — the
+			# lateral budget already accounts for what braking or driving has spent.
+			var setpoint: float = steer_demand * float(front["lat_available"])
+			var step: float = grip_servo_step(setpoint - float(front["lat_used"]), slip_peak)
+			# null_angle anchors this branch too, not just the centring one: the target is the
+			# null plus the offset the tires should be at. slip_angle appears twice on purpose —
+			# once inside null_angle with its own sign, once as the CURRENT offset magnitude the
+			# step adds to — so expanding gives steering + step when the wheel is already on the
+			# commanded side, and a jump across the null when it is not (a flick from full right
+			# to full left goes the right way immediately instead of crawling).
+			target = null_angle + signf(steer_input) * (absf(slip_angle) + step)
+	steering = clampf(
+		move_toward(steering, target, cfg.steer_speed * delta),
+		-cfg.steer_limit, cfg.steer_limit)
 	# Damage wheel misalignment: bend each wheel physically by its persisted toe on
 	# TOP of the base steer. The pull/crab of a damaged car then comes from the
 	# physics alone — the drivetrain tire model reads wheel.steering for the force
-	# direction (and the wheel visual off it too). No synthetic steer bias. See
-	# features/damage.md / DamageModel.nudge_wheels.
+	# direction (and the wheel visual off it too). No synthetic steer bias.
+	#
+	# The toe is INSIDE the servo loop by construction: the drivetrain measures slip in the
+	# toed wheel's frame, so the servo sees a bent front axle's lateral slip as error and
+	# corrects it — exactly as a real driver holds a correction on a car with bent alignment,
+	# which then tracks straight with the wheel visibly off-centre. Of the four wheels
+	# DamageModel.nudge_wheels bends (independent random sign each), the servo can only reach
+	# the symmetric front component: REAR toe is beyond its authority, and a front pair bent
+	# in opposite directions nets out of the load-weighted average. So a damaged car still
+	# crabs and scrubs. See features/damage.md.
 	_apply_wheel_toe()
-	_steer_scratch["slip_angle"] = slip_angle
-	_steer_scratch["travel_angle"] = travel_angle
-	_steer_scratch["slip_peak"] = slip_peak
-	return _steer_scratch
-
-
-# Direct yaw torque about the car's up axis while steering, to fight understeer
-# when the front tires alone can't rotate the car. Faded in linearly from 0 at
-# standstill to full at steer_assist_min_speed (rather than switched on abruptly),
-# and tapered off as the car rotates into the turn so it stops adding torque once
-# turned enough (no over-rotation/spin). Sets the combined assist readout.
-func _apply_steer_assist(speed: float, assist_scale: float, travel_angle: float, slip_peak: float) -> void:
-	var cfg: GameConfig = config
-	# assist_scale is the shared speed fade computed once in _timed_physics_process.
-	# travel_angle is the slip angle (travel direction relative to the car's nose);
-	# steering into a slide rotates the car so its nose leads the travel direction,
-	# the same sign as steer_input. -travel_angle * sign(_steer) is therefore how far
-	# the car has already rotated in the steering direction. Full assist at 0, fading
-	# linearly to none once the car has rotated by the surface's optimum slip angle —
-	# the assist rotates the car in until the tires hit peak grip, then stops adding.
-	var rotated_into_turn := -travel_angle * signf(_steer)
-	var max_angle := optimum_slip_angle(slip_peak)
-	var angle_scale := 1.0
-	if max_angle > 0.0:
-		angle_scale = clampf(1.0 - rotated_into_turn / max_angle, 0.0, 1.0)
-	# Scale by the same speed-dependent authority as the wheel-angle limit, so a
-	# reduced high-speed steer cap is actually felt (the assist otherwise provides
-	# most of the turning authority and would mask the smaller wheel angle).
-	var authority := steer_authority(cfg, speed, slip_peak)
-	var steer_assist_yaw := _steer * cfg.steer_assist_torque * assist_scale * angle_scale * authority
-	apply_torque(global_transform.basis.y * steer_assist_yaw)
-	# Reset the combined assist readout each tick; spin protection accumulates onto it.
-	steer_assist_readout = steer_assist_yaw
 
 
 # Spin protection: once the car has rotated further than spin_assist_angle away
 # from its direction of travel, a corrective yaw torque pulls the nose back toward
-# the travel direction — the slide-recovery counterpart to the steer assist (which
-# merely stops adding rotation past its taper). slip_angle's sign points toward the
-# travel direction (positive left), so torquing along sign(slip_angle) always
-# rotates the nose back. Ramps in linearly from 0 at the threshold to full at twice
-# it, shares the steer assist's speed fade-in (assist_scale) so it stays out of
-# low-speed manoeuvring, and carries a yaw-rate damping term so the slide settles
-# instead of oscillating nose-side-to-side. Suppressed while the handbrake is held,
-# so deliberate handbrake drifts stay possible. Only active while travelling
-# nose-forward (slip_angle is 0 past 90° / when reversing — the aid prevents
-# reaching a spin, it doesn't unwind a completed one).
-func _apply_spin_protection(assist_scale: float, slip_angle: float, handbrake: bool) -> void:
+# the travel direction. slip_angle's sign points toward the travel direction
+# (positive left), so torquing along sign(slip_angle) always rotates the nose back.
+# Ramps in linearly from 0 at the threshold to full at twice it, and carries a yaw-rate
+# damping term so the slide settles instead of oscillating nose-side-to-side. Suppressed
+# while the handbrake is held, so deliberate handbrake drifts stay possible.
+#
+# It is the ONE steering aid left, and it solves a problem the grip servo cannot: the servo
+# only ever holds the front tires at the commanded share of their grip, so it does nothing
+# about a player who holds steering INTO a slide until the car rotates past recovery.
+#
+# Low-speed manoeuvring is kept clear by _chassis_slip_angle's own 2 m/s forward-motion
+# floor — it returns 0 below that, and 0 past 90° / when reversing — which replaces the
+# speed fade this used to share with the deleted understeer assist. The aid prevents
+# reaching a spin; it doesn't unwind a completed one.
+func _apply_spin_protection(slip_angle: float, handbrake: bool) -> void:
 	var cfg: GameConfig = config
+	# Reset the readout each tick (the deleted steer assist used to own this).
+	steer_assist_readout = 0.0
 	if cfg.spin_assist_torque > 0.0 and cfg.spin_assist_angle > 0.0 and not handbrake:
 		var excess := absf(slip_angle) - cfg.spin_assist_angle
 		if excess > 0.0:
-			# assist_scale is the shared speed fade computed once in _timed_physics_process.
-			var spin_scale := clampf(excess / cfg.spin_assist_angle, 0.0, 1.0) * assist_scale
+			var spin_scale := clampf(excess / cfg.spin_assist_angle, 0.0, 1.0)
 			var up := global_transform.basis.y
 			var yaw_rate := angular_velocity.dot(up)
 			var spin_assist_yaw := spin_scale * cfg.spin_assist_torque \
@@ -1198,7 +1272,6 @@ func reset_to(xform: Transform3D) -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	steering = 0.0
-	_steer = 0.0
 	drivetrain.rear_omega = 0.0
 	for wheel in drivetrain.front_omega:
 		drivetrain.front_omega[wheel] = 0.0
@@ -1362,7 +1435,6 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
 	# Per-car steer-assist yaw torque (understeer aid). SET (not added) so a spec of
 	# 0 means no assist — no hidden global baseline. Only the focus authors a value.
-	cfg.steer_assist_torque = spec.get("steer_assist_torque", 0.0)
 	# Per-car default brake bias (front share of foot-brake torque). This is the
 	# baseline the brake-bias tuning slider re-centres on (TuningLibrary.apply, run
 	# after); at neutral the car keeps this default. Omit to inherit the

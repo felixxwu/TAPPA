@@ -100,6 +100,12 @@ circle, and the weighting puts both axes on the same scale. The divisor is the c
 own `slip_peak`, which is surface-dependent (gravel peaks at a larger slip angle than
 tarmac), so the same reading means the same thing on any surface.
 
+**This readout is now load-bearing, not just diagnostic.** The same per-wheel slip state
+drives grip-servo steering (`Drivetrain.front_axle_state()` →
+[car-physics.md](car-physics.md) → Steering), and the choice of a **slip** basis over a force
+basis is what makes that servo stable. If you change `grip_fraction`, you change how the car
+steers — see [todo/grip-servo-steering.md](../todo/grip-servo-steering.md).
+
 Unlike the speed / gear / rpm / boost / seed readouts, this one does **not** keep
 refreshing while hidden — `Drivetrain.readouts` is only populated while
 `publish_readouts` is on, which the car ties to the force-arrow overlay's visibility

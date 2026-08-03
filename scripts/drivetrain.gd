@@ -73,9 +73,20 @@ class WheelContact extends RefCounted:
 	var mu: float
 	var impulse_long: float
 	var impulse_lat: float
+	# Reference speed the slip velocities are normalized against, and the lateral slip and
+	# slip angle that follow from it. All three depend only on the CHASSIS velocity at this
+	# contact, which is fixed for the whole tick, so they are computed once in step()'s setup
+	# rather than per substep — see _tire_force, which recomputes only the longitudinal side.
+	var v_ref: float
+	var slip_lat_norm: float
+	var slip_angle: float
 	# How far up the grip curve the LAST substep left this tire (see grip_fraction).
 	# Recorded for the debug readout only; nothing in the solver reads it back.
 	var slip_use: float
+	# The last substep's normalized longitudinal slip (the slip ratio). Unlike the lateral
+	# side this DOES evolve across substeps, because it is measured against the wheel's
+	# spin. Recorded for readers outside the solver — see front_axle_state.
+	var slip_long_norm: float
 
 var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
 var _contacts: Array = []           # the in-contact subset this tick (reused)
@@ -89,6 +100,13 @@ var all_wheels: Array = []
 # so the hot per-contact path allocates no Dictionary. Callers read its fields
 # immediately (before the next call overwrites them), which they all do.
 var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0}
+
+# Reusable return buffer for front_axle_state() — see there. Same no-allocation contract
+# as _surf_scratch: filled and returned every call, read immediately by the caller.
+var _front_scratch := {
+	in_contact = false, slip_angle = 0.0, slip_lat_norm = 0.0, slip_long_norm = 0.0, slip_peak = 0.0,
+	v_long = 0.0, lat_used = 0.0, lat_available = 0.0,
+}
 
 # Memoised weather μ multiplier for surface_tire_params (the per-contact hot path,
 # called once per wheel per physics tick). WeatherLibrary.grip_mult does a table
@@ -166,9 +184,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		)
 		c.impulse_long = 0.0
 		c.impulse_lat = 0.0
-		# The contexts are POOLED, so clear last tick's reading — a wheel that goes
-		# airborne and comes back must not inherit its old number.
-		c.slip_use = 0.0
+		prime_contact_slip(cfg, c)
 		_contacts.append(c)
 
 	var h := delta / float(SPIN_SUBSTEPS)
@@ -332,6 +348,15 @@ func wheel_omega(wheel: VehicleWheel3D) -> float:
 	return _omega_of(wheel)
 
 
+# Whether the engine powers the STEERING axle — i.e. whether throttle and steering are
+# competing for the same tires' grip. True on FWD and AWD, false on RWD, where the front
+# tires only ever corner and the throttle cannot take cornering grip away from them.
+func front_axle_driven() -> bool:
+	# Delegates to the per-wheel predicate rather than re-deriving the drive-mode truth
+	# table, so a new drive mode can't be taught to one and not the other.
+	return not front_wheels.is_empty() and is_wheel_driven(front_wheels[0])
+
+
 # Whether the engine currently powers this wheel, per the drive mode. Undriven
 # wheels free-roll, so they never fling dirt no matter how fast they turn — the
 # wheel-dust system uses this to gate emission to the driven axle(s).
@@ -386,6 +411,100 @@ static func grip_fraction(slip: float, slip_peak: float) -> float:
 	return slip / slip_peak
 
 
+# The steering axle's slip state, as ONE set of numbers for the steering servo to close
+# its loop on (car.gd `_update_steering`). Load-weighted across the front wheels in
+# contact: each field is weighted by that wheel's normal force.
+#
+# Load weighting, not a plain average. The loaded outer tire generates most of the
+# cornering force, so it is the one the servo should track; a plain average lets a
+# nearly-airborne inner wheel drag the reading down (outer 95% at 4000 N with inner 60% at
+# 800 N averages to 77%), and the servo would then turn in further and saturate the outer
+# tire past peak. On an evenly loaded axle this degrades to a plain average.
+#
+# Deliberately NOT sourced from `readouts`: that dict is gated on publish_readouts (the
+# debug overlay's visibility), and steering needs these numbers every tick in every build.
+# Both read the same WheelContact fields, so the debug grip grid and the servo cannot
+# disagree about what the tires are doing.
+#
+# Returns a reused scratch dict (no per-tick allocation — same pattern as _surf_scratch);
+# the caller reads its fields immediately. `in_contact` false means no front wheel is on
+# the ground (or step() has not run this tick), and every other field is 0 — the caller
+# must fall back rather than servo on nothing.
+func front_axle_state(cfg: GameConfig) -> Dictionary:
+	var weight := 0.0
+	_front_scratch.slip_angle = 0.0
+	_front_scratch.slip_lat_norm = 0.0
+	_front_scratch.slip_long_norm = 0.0
+	_front_scratch.slip_peak = 0.0
+	_front_scratch.v_long = 0.0
+	for c in _contacts:
+		if c.wheel.use_as_traction:
+			continue
+		var w: float = c.n_force
+		if w <= 0.0:
+			continue
+		weight += w
+		_front_scratch.slip_angle += c.slip_angle * w
+		_front_scratch.slip_lat_norm += c.slip_lat_norm * w
+		_front_scratch.slip_long_norm += c.slip_long_norm * w
+		_front_scratch.slip_peak += c.slip_peak * w
+		_front_scratch.v_long += c.v_long * w
+	_front_scratch.in_contact = weight > 0.0
+	_front_scratch.lat_used = 0.0
+	_front_scratch.lat_available = 0.0
+	if weight > 0.0:
+		_front_scratch.slip_angle /= weight
+		_front_scratch.slip_lat_norm /= weight
+		_front_scratch.slip_long_norm /= weight
+		_front_scratch.slip_peak /= weight
+		_front_scratch.v_long /= weight
+		# Budget accounting, as fractions of peak grip. This is TIRE-MODEL maths, so it lives
+		# here rather than in the steering servo that consumes it: the ellipse weighting must
+		# match what _tire_force actually applies, and having the servo re-derive it from
+		# traction_ellipse_ratio meant two formulas in two files kept in step by comment alone.
+		if _front_scratch.slip_peak > 0.0:
+			var long_used: float = absf(
+				_front_scratch.slip_long_norm * cfg.traction_ellipse_ratio) / _front_scratch.slip_peak
+			_front_scratch.lat_used = absf(_front_scratch.slip_lat_norm) / _front_scratch.slip_peak
+			_front_scratch.lat_available = sqrt(maxf(0.0, 1.0 - long_used * long_used))
+	return _front_scratch
+
+
+# Resolve the CHASSIS-derived half of a contact's slip state: the reference speed the slip
+# velocities are normalized against, the normalized lateral slip, and the wheel's own slip
+# angle. All three depend only on `v_long` / `s_lat`, which are fixed for the whole tick
+# (the spin substeps evolve only the wheel side), so they are resolved once here instead of
+# 8x per wheel inside _tire_force.
+#
+# _tire_force REQUIRES this to have been called for the contact — it reads `c.v_ref` and
+# `c.slip_lat_norm` and would divide by zero without them. Hence a named method rather than
+# inline setup in step(): any other caller building a bare WheelContact (the peak-slip-angle
+# sweep in test_drivetrain.gd) must prime it the same way, and can't silently drift.
+#
+# THE SLIP ANGLE IS REVERSE-SAFE, and that is the whole reason for the sign juggling.
+# Lateral slip is zero whenever the velocity is PARALLEL to the wheel — which is the case
+# both when the patch runs forward along it and when it runs backward along it. A plain
+# atan2(s_lat, v_long) only finds the forward solution: reversing, it reports ~±PI (the
+# velocity is anti-parallel), so a servo driving that to zero would try to spin the wheel
+# half a turn and slam into the steering stop, in a direction set by the sign of a
+# near-zero s_lat. Folding sign(v_long) in picks the NEARER of the two solutions, so it is
+# unchanged going forwards and correct going backwards — no reverse special case anywhere.
+# At v_long == 0 it yields 0 (signf(0.0) is 0.0): no wheel angle can zero the lateral slip
+# of a purely sideways-sliding patch, and reporting "no correction" is the safe answer.
+func prime_contact_slip(cfg: GameConfig, c: WheelContact) -> void:
+	# Floored so we never divide by ~0 at creep, exactly as before the hoist.
+	c.v_ref = maxf(sqrt(c.v_long * c.v_long + c.s_lat * c.s_lat), cfg.tire_norm_floor)
+	c.slip_lat_norm = c.s_lat / c.v_ref
+	# Positive to the LEFT, matching VehicleWheel3D.steering (s_lat > 0 means the contact
+	# patch is travelling left relative to the wheel — see wheel_side). This is what the
+	# steering servo's "null angle" is built from; see front_axle_state.
+	c.slip_angle = atan2(c.s_lat * signf(c.v_long), absf(c.v_long))
+	# The contexts are POOLED, so clear last tick's per-substep readings — a wheel that goes
+	# airborne and comes back must not inherit its old numbers.
+	c.slip_use = 0.0
+	c.slip_long_norm = 0.0
+
+
 # Tire force for one contact at the given wheel surface speed, as
 # (longitudinal, lateral) newtons. h is the substep duration for the
 # stability caps; the contact context c is fixed for the tick. cfg is passed in
@@ -395,27 +514,26 @@ func _tire_force(cfg: GameConfig, c: WheelContact, surface_vel: float, h: float)
 	# wheel surface running ahead of the ground (wheelspin) -> force forward.
 	var s_long_v: float = surface_vel - c.v_long
 	var s_lat_v: float = c.s_lat
-	# Normalize slip velocities into dimensionless slip before the grip curve, so
-	# grip peaks at a constant slip *angle* (lateral) / slip *ratio* (long) rather
-	# than a constant slip *speed*. Reference is the patch's planar ground speed
-	# (sqrt of the two ground-velocity components — s_lat_v IS the lateral ground
-	# velocity, c.v_long the longitudinal one), floored so we never divide by ~0
-	# at creep. s_lat / v_ref is then sin(slip angle), s_long / v_ref the slip
-	# ratio; both stay bounded when the car is barely moving.
-	var v_ref: float = maxf(sqrt(c.v_long * c.v_long + s_lat_v * s_lat_v), cfg.tire_norm_floor)
-	var s_long := s_long_v / v_ref
-	var s_lat := s_lat_v / v_ref
+	# Normalizing the slip velocities before the grip curve is what makes grip peak at a
+	# constant slip *angle* (lateral) / slip *ratio* (long) rather than a constant slip
+	# *speed*. The reference speed and the lateral side are fixed for the tick and were
+	# resolved in step()'s setup (c.v_ref, c.slip_lat_norm); only the longitudinal side
+	# evolves here, because it is measured against the wheel's spin.
+	var s_long := s_long_v / c.v_ref
+	var s_lat: float = c.slip_lat_norm
 	# Traction ellipse via scaled slip space: weight longitudinal slip by the
 	# ratio, take the grip curve on the combined magnitude, then unscale the
 	# longitudinal force component (max long force = μN / ratio).
 	var er: float = cfg.traction_ellipse_ratio
 	var scaled := Vector2(s_long * er, s_lat)
 	var s := scaled.length()
-	# Record how far up the grip curve this slip is, for the debug grip readout. Set
-	# BEFORE the early-out so a tire at rest reports 0 rather than keeping a stale number,
-	# and unconditionally (not behind publish_readouts) because it's one divide — cheaper
-	# than the branch, and the value is the substep's own state either way.
+	# Record the slip state for readers outside the solver — the debug grip readout and the
+	# steering servo. Set BEFORE the early-out so a tire at rest reports 0 rather than keeping
+	# a stale number, and unconditionally (not behind publish_readouts) because it is a divide
+	# — cheaper than branching, and the steering needs it in every build, not just while the
+	# debug overlay is up.
 	c.slip_use = grip_fraction(s, c.slip_peak)
+	c.slip_long_norm = s_long
 	if s < 0.0001:
 		return Vector2.ZERO
 	var f_scaled: Vector2 = scaled / s * c.mu * c.n_force * _grip_curve(c.slip_peak, c.slide_ratio, s)
@@ -482,20 +600,6 @@ func _surface_blend(grass: float, gravel: float, tarmac: float, s: Vector2) -> f
 	var road := lerpf(gravel, tarmac, s.y)
 	return lerpf(grass, road, s.x)
 
-
-# The normalized optimum slip (slip_peak) the STEERING axle is currently on,
-# averaged over the front wheels in ground contact. This is what the steering
-# aids key off to bound the front tires to their peak-grip slip angle
-# (asin(slip_peak)) for the surface underneath them. Falls back to the global
-# tire_slip_peak when no front wheel is grounded (airborne) or off terrain.
-func steering_axle_slip_peak(cfg: GameConfig) -> float:
-	var total := 0.0
-	var n := 0
-	for wheel in front_wheels:
-		if wheel.is_in_contact():
-			total += surface_tire_params(cfg, wheel.get_contact_point()).slip_peak
-			n += 1
-	return (total / n) if n > 0 else cfg.tire_slip_peak
 
 
 # Grip fraction (0..1 of μN) for a combined NORMALIZED slip s (dimensionless,

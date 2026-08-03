@@ -72,8 +72,19 @@ Deck / PlayStation, button glyphs follow the SDL standard layout):
 - **Throttle / brake on the analog triggers** — RT accelerates, LT brakes /
   reverses. Because `car.gd` reads them through `Input.get_axis(...)`, trigger
   pressure gives *proportional* throttle and braking, not on/off.
+  - A trigger held with steering is arbitrated rather than obeyed literally: longitudinal
+    effort and cornering share one friction budget, so `Car.longitudinal_demand_scale` bleeds
+    the pedal off as steering winds on (the brake always, the throttle only on a driven front
+    axle). This exists because keyboard and touch inputs are 0% or 100% and cannot express the
+    compromise a real pedal can — a pinned pedal would otherwise leave the steering no grip to
+    work with. Trail braking and power-out emerge from it. It is **not** ABS or traction
+    control: with no steering input the pedal is untouched, so lockup and wheelspin remain.
 - **Steering on the left stick X axis** — also read via `get_axis`, so stick
-  deflection steers proportionally (the 0.2 deadzone ignores stick drift).
+  deflection steers proportionally (the 0.2 deadzone ignores stick drift). Note what
+  "proportionally" now means: steering input is a **demand on the front tires' available
+  cornering grip**, not a wheel angle — half deflection asks for half of the grip they have
+  left, and full deflection asks for all of it. See
+  [car-physics.md](car-physics.md) → Steering.
 - **Bumpers are the shift paddles** (manual gearbox), face buttons cover the
   remaining toggles, and the D-pad cycles drive mode.
 

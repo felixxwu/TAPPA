@@ -140,6 +140,23 @@ on the `VehicleWheel3D` nodes themselves.
   it re-asserts over the body's per-frame overwrite of the front wheels. No node
   rotation and no re-parenting. Because the wheel *visual* is also rebuilt off
   `wheel.steering` (`drivetrain._update_visuals`), the bend is **visible** for free.
+- **The steering servo cancels part of it, on purpose.** Since grip-servo steering
+  ([car-physics.md](car-physics.md) → Steering) closes its loop on slip measured in the
+  **toed** wheel's frame, the toe is inside the loop: the servo sees a bent front axle's
+  lateral slip as error and corrects it — which is what a real driver does on a car with bent
+  alignment, holding a correction so it tracks straight with the wheels visibly off-centre.
+  Of the four contributions `nudge_wheels` creates (independent random sign each), the servo
+  can only reach one:
+
+  | Contribution | Servo authority | Outcome |
+  |---|---|---|
+  | Rear toe (2 wheels) | none — the front servo cannot reach it | survives fully; the car crabs and pulls |
+  | Front pair bent opposite ways (~50% of cases) | ~none — it nets out of the load-weighted average | survives fully; scrub and drag |
+  | Front pair bent the same way (~50%) | cancels the average | the pull goes; the **wheels sit visibly off-centre** |
+
+  So a damaged car still crabs and scrubs, and the pull is still emergent physics with no
+  synthetic steer bias — the *cue* just shifts from "the car wanders" to "the wheels are
+  cocked and the rear still crabs". Do **not** try to exclude the toe from the measurement.
 - **Persistence.** `wheel_toe` lives on the **OwnedCar** (a 4-float array ordered
   like `WHEEL_NAMES`), persisted at each event boundary alongside HP
   (`world.gd._on_session_event_completed` → `Save.set_wheel_toe`), so a car carries

@@ -16,6 +16,16 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
   the debug overlays: `normal`, `demand`, `applied`, and `grip` — how far up its grip
   curve the tire is, slip over `slip_peak` via the pure static `grip_fraction`, which
   the HUD's 2x2 grip grid reads; see [debug-tools.md](debug-tools.md)).
+- Exposes `front_axle_state()` — the steering axle's slip state as ONE load-weighted set of
+  numbers (`slip_angle`, `slip_lat`, `slip_long`, `slip_peak`, `v_long`, `in_contact`),
+  weighted by each front wheel's normal force so the loaded outer tire dominates. This is what
+  the grip-servo steering closes its loop on ([car-physics.md](car-physics.md) → Steering).
+  Deliberately NOT sourced from `readouts`, which is gated on `publish_readouts` (the debug
+  overlay's visibility) — steering needs these numbers every tick in every build. Both read
+  the same `WheelContact` fields, so the debug grid and the servo cannot disagree.
+- `front_axle_driven()` — whether the steered axle is also driven (FWD/AWD, not RWD), i.e.
+  whether throttle and steering compete for the same tires' grip. Used by the
+  longitudinal-demand arbitration.
 
 ## Main entry: `step(delta, throttle, brake, handbrake)`
 

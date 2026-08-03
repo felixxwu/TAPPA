@@ -30,11 +30,9 @@ the `.tres` requires a scene reload to take effect.
 | `drag_coefficient` | 0.4 | Quadratic aero drag (top-speed limiter) |
 | `hitbox_chamfer_fraction` | 0.333 | Fraction of body width cut off each vertical corner of the collision hull, chamfering it into an elongated octagon (equal inset on X + Z → 45° corners, regular octagon at the nose). Only affects obstacle contacts + damage impulses, not grip/speed. 0 = plain box (range 0.0–0.5) |
 | `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Set **per-car** by `apply_car` from the CarLibrary spec (these defaults are just the fallback); every car has a small rear value |
-| `steer_limit` | 0.8 rad | Mechanical max steer angle from travel direction (full lock at low speed); at speed the effective cap is bounded by the tire's optimum slip angle (`Car.optimum_steer_limit`), derived from the surface, not a tuned ramp |
-| `steer_speed` | 5.0 | Steering responsiveness (rad/s) |
-| `steer_travel_alignment` | 1.0 | Auto-countersteer fraction (0..1) |
-| `steer_assist_torque` | 0.0 | Yaw torque vs understeer (N·m); scaled at speed by `Car.steer_authority` (cap ÷ `steer_limit`). Authored **per car** in `CarLibrary` (overlaid by `apply_car()`); this global is a 0 fallback |
-| `steer_assist_min_speed` | 8.333 | Min speed (m/s ≈30 km/h) before steer assist applies |
+| `steer_limit` | 0.8 rad | The wheel's MECHANICAL stop, and the only bound on the angle. The grip servo measures the peak-grip angle rather than predicting a cap, so there is no slip-derived limit or low-speed blend to configure |
+| `steer_speed` | 2.0 (`.tres`) | Rate limit (rad/s) — the model of how fast a hand can turn the wheel, and the ONLY rate in the steering system (it is also the input smoothing). The servo covers just the tire's slip angle (~8.6° on tarmac), not full lock, so this is the dominant feel parameter and is tuned far below a lock-to-lock rate |
+| `steer_deadzone` | 0.02 | Steering demand below which the wheels servo to their zero-lateral-slip angle (auto-countersteer). A deadzone, not an exact-zero test, because sticks and the touch slider never return 0 |
 | `spin_assist_torque` | 6000.0 | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held; 0 disables |
 | `spin_assist_angle` | 0.611 rad | Slip angle (≈35°) where spin protection starts; ramps to full at twice this angle |
 | `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
@@ -51,6 +49,11 @@ the `.tres` requires a scene reload to take effect.
 | `suspension_travel_rear` | 0.0 | Rear travel override; 0 = inherit `suspension_travel` |
 | `suspension_stiffness` | 10.0 | Overall spring rate; split front/rear by `weight_front` (`axle_stiffness`), dampers derived per axle |
 | `weight_front` | 0.5 | Static front-axle weight fraction; drives the centre of mass AND the spring-rate split |
+
+Four steering knobs were **removed** by grip-servo steering — `steer_travel_alignment`,
+`steer_lock_blend_end_speed`, `steer_assist_torque` and `steer_assist_min_speed` — because the
+servo measures the grip limit instead of predicting it. See
+[car-physics.md](car-physics.md) → Steering.
 
 ### Engine & Transmission
 | Property | Default | Purpose |
@@ -210,6 +213,6 @@ only writer of these fields. See
 ## Current overrides in `game_config.tres`
 
 The committed `.tres` differs from script defaults in places, e.g.
-`auto_gearbox = true`, `drag_coefficient = 2.645`, `steer_limit = 0.5`,
-`steer_assist_torque = 5000.0`, `upshift_redline_fraction = 0.7`. Check the file
+`auto_gearbox = true`, `drag_coefficient = 2.645`, `steer_speed = 2.0`,
+`engine_nitrous_hiss_gain = 0.25`, `upshift_redline_fraction = 0.7`. Check the file
 for the authoritative values.

@@ -32,6 +32,13 @@ torque scale, default `1.0` (full power), stored in the same `tuning` bag but
 | `brake_bias` | −1 rearward ↔ +1 forward | the front/rear `brake_bias` split (drivetrain) | always available |
 | `aero_balance` | −1 front ↔ +1 rear | shifts `downforce_front`/`_rear` | the **aero** upgrade (`unlocks_aero_tuning`) |
 
+**`grip_balance` changed character with grip-servo steering** ([car-physics.md](car-physics.md)
+→ Steering). It trims each axle's **μ** — the force a tire makes at a given slip — not
+`slip_peak`, which is *where* that peak sits. The steering servo targets **slip**, so front
+grip tuning no longer changes how far the car can turn; it changes how much force the car gets
+for turning that far. The slider still shifts the understeer/oversteer balance, but the felt
+mechanism is force, not angle.
+
 **`engine_detune`** ([engine-swap.md](engine-swap.md)) is stored in the per-car
 `tuning` bag alongside the three handling axes, and `TuningLibrary.apply` still
 reads it and applies it **last** (after grip/brake/aero) — a direct `0–100%`

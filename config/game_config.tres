@@ -4,6 +4,8 @@
 
 [resource]
 script = ExtResource("1")
+steer_speed = 2.0
+steer_deadzone = 0.02
 turbo_boost_response = 3.0
 engine_mix_rate_web_touch = 11025.0
 distant_terrain_enabled = false
@@ -79,6 +81,7 @@ engine_audio_ref_distance_m = 8.0
 engine_audio_max_attenuation_db = -60.0
 engine_harmonics = 6
 engine_noise_level = 0.001
+engine_nitrous_hiss_gain = 0.25
 engine_smoothing_rate = 1000.0
 engine_limiter_crackle = 0.015
 engine_soft_clip_drive = 30.0

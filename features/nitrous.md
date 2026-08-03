@@ -208,12 +208,18 @@ highlighted car's fitted upgrades before revving, so a nitrous-equipped car
 *has* nitrous there — but with no throttle-and-button input there is no delivery,
 and the preview passes the nitrous args hard-false anyway.
 
-**Not yet wired:** the mix level is the local constant
-`engine_audio_synth.gd` → `NITROUS_HISS_GAIN`, standing in for a
-`GameConfig.engine_nitrous_hiss_gain` field alongside
-`engine_supercharger_whine_gain`. Once that field exists the constant becomes the
-cached config gain. Filtered noise carries a lower RMS than a tonal wavetable, so
-the levels sit nearer `TURBO_WHISTLE_LEVEL` than `TURBO_TONE_LEVEL`.
+**Mix level:** `GameConfig.engine_nitrous_hiss_gain`, cached into
+`engine_audio_synth.gd` → `_nitrous_hiss_gain` by `configure()`. The local
+`NITROUS_HISS_GAIN` constant is only the fallback for a bare synth with no config applied
+(i.e. a test). Filtered noise carries a lower RMS than a tonal wavetable, so the layer levels
+sit nearer `TURBO_WHISTLE_LEVEL` than `TURBO_TONE_LEVEL`.
+
+It ships at **0.25** in `config/game_config.tres`, down from the `0.7` script default. Worth
+knowing why, because 0.7 sounded fine in isolation: `engine_turbo_whistle_gain` and
+`engine_supercharger_whine_gain` both ship at **0**, so nitrous is the only layer of that
+family actually audible, and a level chosen against its siblings-on-paper was far too loud
+against the engine alone. Retune it in the `.tres`, and judge it against the mix it actually
+plays in.
 
 
 ## Also not yet implemented

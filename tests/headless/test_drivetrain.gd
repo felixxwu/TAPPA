@@ -264,6 +264,10 @@ func _peak_lateral_slip_angle_deg(v: float, slip_peak := -1.0, slide_ratio := -1
 		c.n_force = 4000.0
 		c.slip_peak = slip_peak
 		c.slide_ratio = slide_ratio
+		# _tire_force reads the chassis-derived slip state (v_ref, slip_lat_norm) that step()
+		# normally resolves once per tick; a bare contact must be primed the same way or the
+		# normalization divides by zero.
+		dt.prime_contact_slip(cfg, c)
 		# surface_vel = v_long -> zero longitudinal slip, pure lateral.
 		var f_lat: float = absf(dt._tire_force(cfg, c, c.v_long, 1.0 / 60.0).y)
 		if f_lat > best_f:

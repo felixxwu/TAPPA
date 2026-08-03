@@ -177,11 +177,12 @@ func test_downforce_arrows_drawn_at_speed() -> void:
 
 
 func test_assist_arrow_reflects_combined_yaw_assist() -> void:
-	# The single yellow assist arrow is driven by car.steer_assist_readout (steer
-	# assist + spin protection, summed as a signed yaw scalar). Verify the logic
-	# that must hold for ANY tuning: steering at speed produces an assist torque
-	# whose sign matches the steer direction, and the overlay draws an extra
-	# arrow when that torque is non-zero (vs none when the aid is switched off).
+	# The single yellow assist arrow is driven by car.steer_assist_readout, which is now
+	# spin protection alone — the understeer steer assist was deleted with the move to
+	# grip-servo steering (its torque was 0 on every shipped car). Verify the logic that
+	# must hold for ANY tuning: a slide past the spin threshold produces a corrective yaw
+	# torque whose sign points back toward the travel direction, and the overlay draws an
+	# extra arrow when that torque is non-zero (vs none when the aid is switched off).
 	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	var car: VehicleBody3D = scene.get_node("Car")
@@ -200,30 +201,34 @@ func test_assist_arrow_reflects_combined_yaw_assist() -> void:
 	Input.action_release("toggle_debug_arrows")
 
 	var cfg: GameConfig = Config.data
-	var saved_steer := cfg.steer_assist_torque
 	var saved_spin := cfg.spin_assist_torque
-	# Isolate the steer-assist term with a known positive torque; drive forward
-	# above the assist speed threshold and steer left.
-	cfg.steer_assist_torque = 20000.0
-	cfg.spin_assist_torque = 0.0
-	Input.action_press("steer_left")
+	var saved_angle := cfg.spin_assist_angle
+	cfg.spin_assist_torque = 20000.0
+	cfg.spin_assist_angle = deg_to_rad(20.0)
+	# Hold a slide with the travel direction well to the LEFT of the nose (the car has
+	# rotated right, past the threshold), so the aid must add LEFT (positive) yaw. The slide
+	# is re-derived from the CURRENT basis every tick on purpose: pinning a fixed world
+	# direction lets the aid rotate the nose back under it, which drops the slip below the
+	# threshold and switches the very torque we are sampling off before we read it.
 	for i in 30:
-		car.linear_velocity = -car.global_transform.basis.z * 30.0
+		car.linear_velocity = (-car.global_transform.basis.z
+			- car.global_transform.basis.x).normalized() * 30.0
 		await get_tree().physics_frame
 	var assist_on_verts := _surface_vertex_count(overlay)
-	assert_gt(car.steer_assist_readout, 0.0, "steering left yields a positive (nose-left) assist torque")
+	assert_gt(car.steer_assist_readout, 0.0,
+		"a slide with travel to the left yields a positive (nose-left) corrective torque")
 
 	# Switch the aid off: readout collapses to zero and the assist arrow drops out.
-	cfg.steer_assist_torque = 0.0
+	cfg.spin_assist_torque = 0.0
 	for i in 30:
-		car.linear_velocity = -car.global_transform.basis.z * 30.0
+		car.linear_velocity = (-car.global_transform.basis.z
+			- car.global_transform.basis.x).normalized() * 30.0
 		await get_tree().physics_frame
 	var assist_off_verts := _surface_vertex_count(overlay)
 	assert_almost_eq(car.steer_assist_readout, 0.0, 0.001, "no assist torque when the aid is disabled")
 
-	Input.action_release("steer_left")
-	cfg.steer_assist_torque = saved_steer
 	cfg.spin_assist_torque = saved_spin
+	cfg.spin_assist_angle = saved_angle
 	Input.action_press("toggle_debug_arrows")
 	await get_tree().physics_frame
 	await get_tree().physics_frame

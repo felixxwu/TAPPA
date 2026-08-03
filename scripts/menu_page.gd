@@ -143,7 +143,10 @@ func _ready() -> void:
 # is short (DESIGN_HEIGHT 360, and 288 on the web-touch tier — see display_stretch.gd), so
 # this is a real case, not a theoretical one.
 func _sync_body_height() -> void:
-	if _scroll == null or _body == null:
+	# Every part is optional here because this can be called DURING construction: the
+	# "fixed_height" opt runs set_body_fixed_height before _actions exists, and _ready()
+	# re-runs the whole thing once everything is built anyway.
+	if _scroll == null or _body == null or _actions == null:
 		return
 	# A page that pinned its height gets exactly that, whatever its content currently is;
 	# everything else hugs. See set_body_fixed_height.
