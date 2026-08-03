@@ -178,7 +178,8 @@ until the player drags the detune slider back under the cap. With no limit set (
 lift), the button stays a plain **Back** and closes freely.
 
 **Every part slot is an earn-gated option selector** (`UpgradesMenu._make_option_selector`), built
-to read like the drivetrain picker: `SLOT:` on the left, then `Stock` + one button per
+to read like the drivetrain picker: the slot name on the left (**no trailing colon** — this
+page's own detune row has none, and neither does any Tuning row), then `Stock` + one button per
 catalogue part in that slot on the right. `Stock` is always selectable (the "off" state —
 the car's un-upgraded factory config, hence the label rather than `None`); each part option
 is **greyed until that kit is fitted** to this car, and the active one is

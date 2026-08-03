@@ -664,11 +664,16 @@ func test_the_tuning_panel_offers_wheels_and_its_menu_nav() -> void:
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.TUNE)
 	await get_tree().process_frame
+	# The button is not a CHILD of the panel: TuningPanel builds its actions and the HOST
+	# places them in the page's bottom action row (see TuningPanel.action_buttons /
+	# HqOverlays.build_lift_overlay), so ask the panel for them rather than walking it.
 	var found: Button = null
-	for child in hq._tune_panel.get_children():
-		if child is Button and String((child as Button).text).to_lower().contains("wheel"):
-			found = child
-	assert_not_null(found, "the tuning panel has a Wheels button")
+	for b in hq._tune_panel.action_buttons():
+		if String(b.text).to_lower().contains("wheel"):
+			found = b
+	assert_not_null(found, "the tuning panel offers a Wheels button")
+	assert_true(found.is_inside_tree(),
+		"...and the host has actually parented it, so it is on screen and gets freed")
 	assert_eq(found.focus_mode, Control.FOCUS_ALL,
 		"the Wheels button is keyboard/gamepad focusable")
 	var nav: MenuNav = null

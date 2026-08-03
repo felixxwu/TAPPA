@@ -111,8 +111,9 @@ no neighbour competes for the frame. `_camera_target_xform` swaps in the low sid
   This is load-bearing: the node survives in `_car_cache` under an unchanged
   `owned.hash()` (nothing was saved) and the lift borrows that *same* node, so an
   uncommitted preview would otherwise reappear on the lift.
-- **Damage never gates it.** `_refresh_focus_damage` exempts `WHEELS` (alongside
-  `GARAGE`) — a wrecked car can always be re-shod.
+- **Damage never gates it.** `_refresh_focus_damage` exempts `WHEELS` — now the only
+  exemption from the wrecked-car gate, since the GARAGE picker mode it used to sit
+  beside is gone — a wrecked car can always be re-shod.
 
 ## Navigation
 
@@ -128,4 +129,7 @@ The car park is a spatially-navigated 3D view, so this follows the
   they cycle styles for free. Tap-to-focus (`_focus_car_at`) is a no-op here.
 - The Tuning menu's **Wheels** button is a native `FOCUS_ALL` button (like the
   handling sliders and Reset to neutral), so it's reachable by keyboard/gamepad and
-  not only by pointer.
+  not only by pointer. It sits in the Tuning page's **bottom action row** beside
+  `< Back` and Reset — `TuningPanel` builds it but the HOST parents it
+  (`TuningPanel.action_buttons()`; see [tuning.md](tuning.md)) — not as a full-width row
+  inside the panel body.

@@ -959,14 +959,18 @@ func has_nitrous() -> bool:
 ## then look target — the look is offset toward +X of the car so it sits LEFT of
 ## frame, leaving the right side clear for the menu panel.
 ##
-## A REAR THREE-QUARTER shot, not the near-straight-on rear it used to be. The lift
-## car sits at hq_lift_pos nosing −Z, so +Z is behind it: the eye swings ~30° off
-## that rear axis (was ~11°, which read as flat-on) and sits closer in — enough to
-## show the flank and the back together. It stays on the −X side because +X runs
-## straight into the garage's side wall, and clears the centre pillar (x≈0) and the
-## lift posts (x = hq_lift_pos.x ± hq_lift_size.x/2, z = hq_lift_pos.z ± the same).
-@export var hq_lift_cam_eye := Vector3(1.1, 1.9, 4.0)
-@export var hq_lift_cam_look := Vector3(5.0, 1.15, -1.0)
+## A FRONT THREE-QUARTER shot (it used to be the rear three-quarter). The lift car sits
+## at hq_lift_pos nosing −Z, so the eye moves round to −Z — in FRONT of the car — about
+## 35° off that nose axis, which shows the face and the near flank together. The front
+## is the readable end of a car: it carries the grille, lights and stance that say which
+## car this is, and the bay is where you choose one (the selector chevrons).
+##
+## It stays on the −X side because +X leaves only ~0.7 m to the garage's side wall, and
+## sits ~1.7 m clear of the back wall (garage is hq_garage_size, centred on origin). The
+## sight line passes OUTSIDE the front-left lift post (posts at
+## x = hq_lift_pos.x ± hq_lift_size.x/2, z = hq_lift_pos.z ± the same).
+@export var hq_lift_cam_eye := Vector3(1.75, 1.5, -4.3)
+@export var hq_lift_cam_look := Vector3(4.0, 1.0, -1.0)
 ## Fraction of the screen width the tuning menu panel occupies (anchored right).
 @export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
 ## Fraction of the screen width an OPEN tuning/upgrades page occupies, centred

@@ -163,12 +163,17 @@ func build_detail_overlay() -> void:
 	_hq._detail_layer = made[0]
 	var root: VBoxContainer = made[1]
 	var footer: HBoxContainer = made[2]
-	# A solid backing so the detail reads as a panel over the map.
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = UITheme.MODAL_DIM
-	_hq._detail_layer.add_child(bg)
-	_hq._detail_layer.move_child(bg, 0)
+	# NO full-rect backing here: MenuPage's body box IS the panel, and it hugs its contents
+	# so the map stays visible around it. A full-screen ColorRect behind it would paint over
+	# the whole map table and undo that.
+
+	# A WIDTH FLOOR, for the same reason the challenge screen has one: this page is re-filled
+	# per rally (build_detail_overlay runs once, _show_rally_detail rewrites it), and rally
+	# names, restriction strings and star counts all differ in length — so a box that only
+	# hugs its contents is a different width for every pin you open. Floored so it reads as
+	# one panel you keep opening rather than a new one each time.
+	var page := made[3] as MenuPage
+	page.set_body_width(_hq._modal_body_width(420.0))  # clamped to the current logical canvas
 
 	# Everything below is uppercased + locked to one font size by UITheme.enforce
 	# (via _normalize_menus on each view change), so hierarchy comes from layout,
@@ -182,9 +187,17 @@ func build_detail_overlay() -> void:
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(titles)
+	# AUTOWRAP both: set_body_width is only a FLOOR, so a non-wrapping label that wants more
+	# still widens the box past it. A long rally name ("Archipelago Trial - 3 stages") is
+	# exactly that, which would leave the width floored but still varying per pin. Everything
+	# else in this page already wraps (_detail_wrap_label).
 	_hq._detail_title = _hq._label("", 30)
+	_hq._detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_child(_hq._detail_title)
 	_hq._detail_region = _hq._label("", 16)
+	_hq._detail_region.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._detail_region.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hq._detail_region.add_theme_color_override("font_color", UITheme.MUTED)
 	titles.add_child(_hq._detail_region)
 	_hq._detail_special = _hq._label("SPECIAL EVENT", 16)
@@ -247,55 +260,28 @@ func build_detail_overlay() -> void:
 
 
 func build_lift_overlay() -> void:
-	var frac: float = Config.data.hq_lift_menu_centered_width_frac
 	_hq._lift_layer = CanvasLayer.new()
 	_hq.add_child(_hq._lift_layer)
 
-	# --- The sub-menu panel (shown on the TUNE / UPGRADES pages) ---
-	# Centred horizontally and wide (hq_lift_menu_centered_width_frac) so an open page
-	# uses most of the screen; the car description hides while it's up (_refresh_lift_ui).
-	_hq._lift_menu_bg = ColorRect.new()
-	_hq._lift_menu_bg.anchor_left = (1.0 - frac) * 0.5
-	_hq._lift_menu_bg.anchor_right = 1.0 - (1.0 - frac) * 0.5
-	_hq._lift_menu_bg.anchor_top = 0.0
-	_hq._lift_menu_bg.anchor_bottom = 1.0
-	_hq._lift_menu_bg.color = UITheme.MODAL_DIM
-	# Clip: a row that needs more width than the panel (e.g. a slot's option buttons)
-	# must never visually spill past the dark background into the 3D scene behind it —
-	# ColorRect doesn't clip children by default. Content is also wrapped (see the
-	# HFlowContainer button rows in upgrades_menu.gd) so clipping is a safety net, not
-	# how overflow is normally handled.
-	_hq._lift_menu_bg.clip_contents = true
-	_hq._lift_layer.add_child(_hq._lift_menu_bg)
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# 12, not 20: the logical UI canvas is only a few hundred units wide (see
-	# hq_lift_menu_centered_width_frac), so a 20-unit inset on each side was itself a
-	# meaningful bite out of the content width a wide row (the detune slider, a 4-option
-	# slot row) needed.
-	for side in ["left", "top", "right", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 12)
-	_hq._lift_menu_bg.add_child(margin)
-
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 10)
-	margin.add_child(root)
+	# --- The sub-menu page (shown on the TUNE / UPGRADES pages) ---
+	# The house page shape, from the shared MenuPage widget: a body box that HUGS its
+	# contents with a gap to the screen edges, and the page's actions in one horizontal row
+	# gapped below it. See menu_page.gd for why those two are rules rather than per-screen
+	# choices. This screen used to hand-roll a full-height ColorRect, which both painted a
+	# black field over the whole bay and enclosed the action row so the buttons read as body
+	# content.
+	#
+	var page := MenuPage.new({"margin": 12.0})
+	_hq._lift_layer.add_child(page)
+	_hq._lift_menu_bg = page.panel()
+	var root: VBoxContainer = page.body()
 
 	_hq._lift_menu_title = _hq._label("", 22)
 	root.add_child(_hq._lift_menu_title)
 
-	# A scroll container is kept as a safety net for very short screens, but with each
-	# menu on its own page (no hub controls or tab strip above it) the content is
-	# meant to fit without scrolling.
-	var scroll := TouchScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root.add_child(scroll)
-	var content := VBoxContainer.new()
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 10)
-	scroll.add_child(content)
+	# MenuPage already wraps the body in a scroll safety net for very short logical
+	# canvases, so the page's rows go straight into its body.
+	var content := root
 
 	_hq._tune_panel = TuningPanel.new()
 	content.add_child(_hq._tune_panel)
@@ -312,16 +298,26 @@ func build_lift_overlay() -> void:
 	# inert while hidden (_menu_visible). The UpgradesMenu self-attaches its own nav.
 	MenuNav.attach(_hq._tune_panel)
 
-	# The shared "< Back" for both sub-pages. Focusable so keyboard/gamepad can reach it:
-	# it lives in `root` (a sibling of the scroll, below the page content), and the box
-	# MenuNavs drive focus across container boundaries by geometry, so down-nav off the
-	# last slider / upgrade row lands here. It's also the focus fallback for a page whose
-	# body has no focusable control (a fresh car's Upgrades page — see _open_lift_page).
-	_hq._lift_back_button = Button.new()
-	_hq._lift_back_button.text = "< Back"
-	_hq._lift_back_button.focus_mode = Control.FOCUS_ALL
-	_hq._lift_back_button.pressed.connect(_hq._lift_hub)
-	root.add_child(_hq._lift_back_button)
+	# A sub-page's ACTIONS go along the bottom in ONE horizontal row, OUTSIDE the body box
+	# and gapped off it — MenuPage owns that row. Its visibility is gated with the page
+	# (_refresh_lift_ui), since it is a sibling of the box rather than a child of it.
+	_hq._lift_page_actions = page.actions()
+
+	# "< Back" leads the row (leaving is always leftmost — features/menus.md -> Button
+	# order). Focusable so keyboard/gamepad can reach it, and it is the focus fallback for a
+	# page whose body has no focusable control (a fresh car's Upgrades page — see
+	# _open_lift_page).
+	_hq._lift_back_button = UITheme.row_button("< Back", _hq._lift_hub)
+	_hq._lift_back_button.focus_mode = Control.FOCUS_ALL  # these pages navigate by native focus
+	_hq._lift_page_actions.add_child(_hq._lift_back_button)
+
+	# The TUNE page's own actions (Reset to neutral / Wheels) sit beside Back in the same
+	# row. TuningPanel builds them but never parents them, precisely so they can land here;
+	# _refresh_lift_ui shows them only while the TUNE page is up, since they act on the
+	# sliders. Kept in one array so that gating is a loop, not a list of named buttons.
+	_hq._tune_action_buttons = _hq._tune_panel.action_buttons()
+	for b in _hq._tune_action_buttons:
+		_hq._lift_page_actions.add_child(b)
 
 	# --- The bottom column: car-description info panel + (on the HUB) the Tuning /
 	# Upgrades buttons and Test Drive. Spans the full page width (the sub-menu
@@ -337,21 +333,72 @@ func build_lift_overlay() -> void:
 	left_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hq._lift_layer.add_child(left_col)
 
-	_hq._lift_info_panel = PanelContainer.new()
+	# The car readout: TWO stacked rows of equal-height boxes, above the hub button row.
+	#
+	#   [ < ] [ MAZDA MX-5 (TURBO) ] [ > ]      <- the car SELECTOR
+	#   [ RWD · 1,010 KG · 180 HP        ]      <- that car's stats
+	#
+	# The chevrons are how you change the car on the lift without leaving the bay
+	# (_cycle_lift_car, also driven by menu_up/menu_down — see hq._unhandled_input). They
+	# replace the old "back out to the garage and reopen the Garage picker" round-trip,
+	# which is why the Garage button now drops straight onto the lift.
+	#
+	# Each box is a separate panel rather than one panel with two lines of text, so the
+	# selector row reads as a control (matching the hub buttons' height and spacing
+	# exactly) while the stats stay a passive readout under it.
+	_hq._lift_info_panel = VBoxContainer.new()
 	var info_panel := _hq._lift_info_panel
-	info_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	info_panel.add_theme_constant_override("separation", UITheme.GAP)
 	info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Solid black, sharp-cornered house panel (design system).
-	info_panel.add_theme_stylebox_override("panel", UITheme.panel_box(0.82, 14))
 	left_col.add_child(info_panel)
-	var info := VBoxContainer.new()
-	info.add_theme_constant_override("separation", 4)
-	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	info_panel.add_child(info)
+
+	# Row 1: < | name | >. Hugs its content on the left so the raised car stays in view.
+	var selector := HBoxContainer.new()
+	selector.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	selector.add_theme_constant_override("separation", UITheme.GAP)
+	selector.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_panel.add_child(selector)
+
+	# Clickable chevrons. FOCUS_NONE like every other diegetic-station button — the bay
+	# navigates by manual cursor, not native focus, so these are pointer affordances for
+	# an action the keyboard/gamepad reaches with up/down. Both are hidden outright when
+	# there is only one car to cycle (_refresh_lift_car_label).
+	_hq._lift_prev_button = _hq._station_button("<", _hq._cycle_lift_car.bind(-1))
+	selector.add_child(_hq._lift_prev_button)
+
+	# The name sits in a box of its own, matched to the chevrons' height so the three
+	# read as one control. Not clickable: there is nothing for a press on the name to do
+	# that the chevrons either side don't already say more clearly.
+	var name_box := PanelContainer.new()
+	name_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_box.custom_minimum_size.y = UITheme.MENU_ROW_H
+	name_box.add_theme_stylebox_override("panel", UITheme.readout_box())
+	selector.add_child(name_box)
 	_hq._lift_car_label = _hq._label("", 14)
-	_hq._lift_car_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hq._lift_car_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.add_child(_hq._lift_car_label)
+	_hq._lift_car_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_box.add_child(_hq._lift_car_label)
+
+	_hq._lift_next_button = _hq._station_button(">", _hq._cycle_lift_car.bind(1))
+	selector.add_child(_hq._lift_next_button)
+
+	# The selector is the HUB's second cursor row. Same contract as the actions row below
+	# it: each button's `pressed` callable is also the cursor's action for that index, so a
+	# click and a keyboard/gamepad select can't drift apart.
+	_hq._lift_selector_cursor.setup(
+		[_hq._lift_prev_button, _hq._lift_next_button],
+		[_hq._cycle_lift_car.bind(-1), _hq._cycle_lift_car.bind(1)])
+
+	# Row 2: the stats line for whichever car the selector landed on.
+	var stats_box := PanelContainer.new()
+	stats_box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats_box.custom_minimum_size.y = UITheme.MENU_ROW_H
+	stats_box.add_theme_stylebox_override("panel", UITheme.readout_box())
+	info_panel.add_child(stats_box)
+	_hq._lift_car_stats_label = _hq._label("", 14)
+	_hq._lift_car_stats_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stats_box.add_child(_hq._lift_car_stats_label)
 
 	# The hub controls UNDER the car description: a SINGLE bottom row holding Back, the
 	# Tuning / Upgrades buttons, and a Test Drive button. Shown only on the HUB page
@@ -362,11 +409,12 @@ func build_lift_overlay() -> void:
 	_hq._lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_col.add_child(_hq._lift_hub_controls)
 
-	# Back / Tuning / Upgrades / Test Drive form a single left/right ButtonCursor
-	# (_hub_focus). As with the garage row, each button's pressed callable is also the
-	# cursor's action for that index, so a click and a keyboard/gamepad select agree.
-	# (No Change Car here: pick a different car via the garage's Garage button, which
-	# reopens the car park.)
+	# Back / Upgrades / Tuning / Test Drive form the HUB's ACTIONS row — a left/right
+	# ButtonCursor (_hub_focus), the lower of the page's two cursor rows (see LiftRow). As
+	# with the garage row, each button's pressed callable is also the cursor's action for
+	# that index, so a click and a keyboard/gamepad select agree.
+	# (No Change Car button here: changing the car is the SELECTOR row above, whose
+	# chevrons swap it in place — see _cycle_lift_car.)
 	var on_back := func() -> void: _hq._go_to(HqController.View.GARAGE)
 	var to_tune_cb := _hq._open_lift_page.bind(HqController.LiftPage.TUNE)
 	var to_upgrades_cb := _hq._open_lift_page.bind(HqController.LiftPage.UPGRADES)
@@ -534,13 +582,21 @@ func build_challenge_overlay() -> void:
 	_hq._challenge_layer = made[0]
 	var root: VBoxContainer = made[1]
 	var footer: HBoxContainer = made[2]
-	var nav_root: VBoxContainer = made[3]
-	# A solid backing so this reads as a panel over the garage, same as build_detail_overlay.
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = UITheme.MODAL_DIM
-	_hq._challenge_layer.add_child(bg)
-	_hq._challenge_layer.move_child(bg, 0)
+	var nav_root: Control = made[3]  # the MenuPage itself — for MenuNav.attach / UITheme.enforce
+	# NO full-rect backing: MenuPage's body box IS the panel and it hugs its contents, so the
+	# garage stays visible around it — a full-screen ColorRect behind it would undo that.
+
+	# FIXED SIZE on both axes, unlike the other pages built on this shape. This screen swaps
+	# its own content in place: the Daily / Weekly / Monthly tabs each have a different amount
+	# to say (a longer ceiling subtitle, an extra "Needs tune:" line, a different number of
+	# leaderboard rows), so a box that hugs its contents re-fits on every tab press and the
+	# panel jumps around under the player — moving the very tabs being clicked. Sized for the
+	# largest of the three views and pinned there. See MenuPage.set_body_fixed_height.
+	var page := nav_root as MenuPage
+	page.set_body_width(_hq._modal_body_width(420.0))  # clamped to the current logical canvas
+	# EXACT, not a floor — a floor only stops the box getting smaller, so content taller than
+	# it still grew the box and the panel kept jumping. Content taller than the pin scrolls.
+	page.set_body_fixed_height(210.0)
 
 	# --- Header: title ("Daily Challenge") + ceiling subtitle underneath, mirroring
 	# _detail_title/_detail_region's two-line shape.
@@ -550,9 +606,20 @@ func build_challenge_overlay() -> void:
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(titles)
+	# Both AUTOWRAP, which is what actually holds the panel's width steady. set_body_width is
+	# only a FLOOR — a child that demands more still widens the box — and these two are the
+	# only labels here that don't wrap: "Daily/Weekly/Monthly Challenge" are three different
+	# lengths, and each kind's ceiling subtitle differs too, so their min width was setting
+	# the panel's width and the box grew and shrank by a few px per tab. The info rows below
+	# already wrap (_challenge_info_row -> _detail_wrap_label), which is why they never did
+	# this.
 	_hq._challenge_title_label = _hq._label("", 30)
+	_hq._challenge_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._challenge_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_child(_hq._challenge_title_label)
 	_hq._challenge_subtitle_label = _hq._label("", 16)
+	_hq._challenge_subtitle_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._challenge_subtitle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hq._challenge_subtitle_label.add_theme_color_override("font_color", UITheme.MUTED)
 	titles.add_child(_hq._challenge_subtitle_label)
 

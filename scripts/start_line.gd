@@ -893,11 +893,29 @@ func _build_menu_overlay(title: String, component: Control, on_back: Callable, c
 	panel.add_child(col)
 	col.add_child(UITheme.title(title))
 	col.add_child(component)
-	var back := UITheme.button("Back")
-	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+
+	# The page's ACTIONS go along the bottom in ONE horizontal row, gapped off the body
+	# above — the same shape the bottom row of every other menu uses (the start line's own
+	# Exit/Upgrades/Tune/Start row, the garage row, the tuning-lift hub). Back leads, the
+	# component's own actions follow, so "leaving" is always the leftmost item.
+	var gap := Control.new()
+	gap.custom_minimum_size.y = UITheme.GAP
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(gap)
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", UITheme.GAP)
+	col.add_child(actions)
+	var back := UITheme.row_button("Back", Callable())
+	back.focus_mode = Control.FOCUS_ALL  # these pages navigate by native focus (MenuNav)
 	if connect_back:
 		back.pressed.connect(on_back)
-	col.add_child(back)
+	actions.add_child(back)
+	# A component may contribute its own actions (TuningPanel's Reset / Wheels). It builds
+	# them but never parents them, precisely so they can land in this row.
+	if component.has_method("action_buttons"):
+		for b in component.action_buttons():
+			actions.add_child(b)
 	_menu_last_back = back
 	UITheme.enforce(layer)
 	return layer

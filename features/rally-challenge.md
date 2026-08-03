@@ -439,14 +439,16 @@ Two earlier designs were both WRONG and have been removed:
   explanation) and duplicated the p/w enforcement a career rally already does through
   the close-button gate (`UpgradesMenu.bind_close_button` / `_pw_limit`). Removed; the
   ceiling is enforced by that one shared mechanism.
-- **Excluding the car everywhere else.** A later fix made the garage picker, the
+- **Excluding the car everywhere else.** A later fix made the garage's car picking, the
   engine-swap partner list, the career rally lineup and the reward reveal's "Repair
   now" offer all skip the locked car. That made an owned car unusable across the whole
   game, which was never the intent. All four exclusions are gone.
 
 `DrivingContext.is_car_locked` / `Save.is_challenge_locked` remain as the predicate
 for "is this run committed to this car", and both carry comments saying not to use
-them to gate anything outside the run. "You can't switch cars mid-run" needs no
+them to gate anything outside the run. The full "a challenge locks the RUN, not the car"
+rationale now lives in `hq.gd` → `_swap_targets` (the engine-swap partner list), which
+`_build_eligible_lineup` points at rather than restating. "You can't switch cars mid-run" needs no
 enforcement of its own — `ChallengeSession.start` already refuses while a run is
 active, and the entry screen shows Resume plus the single committed car rather than a
 picker.

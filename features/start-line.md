@@ -30,6 +30,12 @@ Phases (`StartLine.Seq`), driven in `_process`:
      full 0–100 % since eligibility is enforced at Start).
    - **Upgrades** opens the shared `UpgradesMenu` (swap parts/engine for this race; edits
      re-field via `car.refit_upgrades()`; Back/Done gated on the rally's p/w cap).
+   - Both overlays are built by `_build_menu_overlay`, which ends the page with ONE centred
+     horizontal **bottom action row** gapped off the body: a compact `UITheme.row_button`
+     **Back** leads it, then any actions the hosted component contributes — picked up
+     generically via `component.has_method("action_buttons")`, which is how `TuningPanel`'s
+     Reset to neutral lands there (Wheels stays hidden here, no `on_wheels` is wired). See
+     [ui-design-system.md](ui-design-system.md) → *A page's actions go in ONE bottom row*.
 2. **FLY_IN** — on Start, the single camera lerps (eased, `start_reveal_fly_seconds`) from
    its captured orbit pose to a fixed **low 3/4 shot ahead of the start line, facing the car
    on the line** (`start_reveal_cam_front_m` ahead, `start_reveal_cam_side_m` to the side,

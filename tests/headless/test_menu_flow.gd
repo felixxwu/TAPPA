@@ -512,10 +512,11 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	RallyLibrary.reset()
 
 
-# The tuning hub is a manual left/right cursor over Upgrades / Tuning / Wheels /
-# Test Drive;
-# select fires the focused item, opening a page (native focus).
-func test_hq_lift_hub_has_an_up_down_cursor() -> void:
+# The tuning hub's ACTIONS row is a manual left/right cursor over Back / Upgrades /
+# Tuning / Test Drive; select fires the focused item, opening a page (native focus).
+# (The car-selector row ABOVE it, and up/down between the two, are covered by
+# test_hq_lift_selector_is_a_second_cursor_row.)
+func test_hq_lift_actions_row_is_a_left_right_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -550,6 +551,114 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	await get_tree().process_frame
 	assert_true(hq.get_viewport().gui_get_focus_owner() is HSlider,
 		"opening the Tune page focuses a tuning slider for keyboard/gamepad")
+
+
+# The lift HUB is TWO cursor rows: the car SELECTOR (< name >) above, the ACTIONS row
+# (Back / Upgrades / Tuning / Test Drive) below. up/down move between them, left/right
+# within whichever is active, and select fires that row's item. Exactly one row is ever
+# highlighted, so a press is never ambiguous.
+func test_hq_lift_selector_is_a_second_cursor_row() -> void:
+	_save.grant_car("fx_fwd_hatch")  # a second car, so the selector has somewhere to go
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_eq(hq._lift_row, hq.LiftRow.ACTIONS, "the bay opens on the actions row")
+
+	# Up reaches the selector; left/right then walk the chevrons, NOT the actions row.
+	hq._move_lift_row(hq.LiftRow.SELECTOR)
+	assert_eq(hq._lift_row, hq.LiftRow.SELECTOR, "up moves the cursor onto the car selector")
+	var actions_before: int = hq._hub_focus
+	assert_eq(hq._lift_selector_focus, 0, "it lands on the first chevron")
+	hq._move_hub_focus(1)
+	assert_eq(hq._lift_selector_focus, 1, "right moves along the selector row")
+	assert_eq(hq._hub_focus, actions_before,
+		"...and leaves the actions row's own cursor where it was")
+	hq._move_hub_focus(1)
+	assert_eq(hq._lift_selector_focus, 0, "right from the last chevron wraps")
+
+	# Down returns to the actions row, still seated where it was left.
+	hq._move_lift_row(hq.LiftRow.ACTIONS)
+	assert_eq(hq._lift_row, hq.LiftRow.ACTIONS, "down returns to the actions row")
+	assert_eq(hq._hub_focus, actions_before, "the actions cursor is where it was left")
+	hq._move_hub_focus(1)
+	assert_ne(hq._hub_focus, actions_before, "and left/right drives the actions row again")
+
+
+# Selecting a chevron — by cursor OR by click, which share one callable — puts a
+# different owned car on the lift and redraws the readout for it.
+func test_hq_lift_selector_cycles_the_car_on_the_lift() -> void:
+	_save.grant_car("fx_fwd_hatch")
+	_save.grant_car("fx_rwd_coupe")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	var first: int = _save.selected_instance_id()
+	assert_eq(hq._lift_car_instance_id, first, "the selected car is the one on the lift")
+
+	# A cursor select on the "next" chevron.
+	hq._move_lift_row(hq.LiftRow.SELECTOR)
+	hq._lift_selector_focus = 1
+	hq._activate_hub_focus()
+	await get_tree().process_frame
+	var second: int = _save.selected_instance_id()
+	assert_ne(second, first, "selecting a chevron selects a different car")
+	assert_eq(hq._lift_car_instance_id, second, "and that car is the one now on the lift")
+	# UITheme.enforce uppercases every label, so compare through the same helper rather
+	# than against the raw display name.
+	assert_eq(hq._lift_car_label.text, UITheme.caps(EngineSwap.display_name(
+		CarLibrary.by_id(String(_save.selected_car().get("model_id", ""))), _save.selected_car())),
+		"the nameplate names the car that is on the lift")
+
+	# A CLICK on the other chevron goes back — same path, so the two can't disagree.
+	hq._lift_prev_button.pressed.emit()
+	await get_tree().process_frame
+	assert_eq(_save.selected_instance_id(), first, "the other chevron walks back to the first car")
+	assert_eq(hq._lift_car_instance_id, first, "and the lift follows")
+
+
+# Cycling walks the WHOLE collection rather than flipping between two cars. Regression:
+# Save.set_selected_car promotes the selected car to the front of profile["cars"], so
+# cycling by list position renumbered the list on every press and ping-ponged.
+func test_hq_lift_selector_tours_every_owned_car() -> void:
+	_save.grant_car("fx_fwd_hatch")
+	_save.grant_car("fx_rwd_coupe")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	var owned: int = _save.profile["cars"].size()
+	assert_gt(owned, 2, "setup: more than two cars, so ping-ponging is detectable")
+
+	var seen := {}
+	for _i in owned:
+		seen[_save.selected_instance_id()] = true
+		hq._cycle_lift_car(1)
+		await get_tree().process_frame
+	assert_eq(seen.size(), owned, "stepping forward once per car visits every one of them")
+
+
+# With a single car there is nothing to cycle to: the chevrons are hidden AND disabled, and
+# up must not strand the cursor on a button that isn't on screen.
+func test_hq_lift_selector_is_unreachable_with_one_car() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(_save.profile["cars"].size(), 1, "setup: the starter car alone")
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_false(hq._lift_prev_button.visible, "nothing to cycle to, so no chevrons are drawn")
+	assert_true(hq._lift_prev_button.disabled, "and they are not cursor stops either")
+
+	hq._move_lift_row(hq.LiftRow.SELECTOR)
+	assert_eq(hq._lift_row, hq.LiftRow.ACTIONS, "up is a no-op with an empty selector row")
+	# The single car still reads out normally.
+	assert_ne(hq._lift_car_label.text, "", "the nameplate still names the car")
+	assert_ne(hq._lift_car_stats_label.text, "", "and the stats row is still filled")
 
 
 # Regression: the Upgrades page must seat keyboard/gamepad focus on a real control.
@@ -669,10 +778,15 @@ func test_hq_tune_slider_changes_on_left_right_without_selecting() -> void:
 	assert_lt(slider.value, mid, "menu_left lowers the focused slider's value")
 
 
-# Regression: the shared "< Back" button on a sub-page lives outside the scroll
-# container (a different node level), but must still be reachable by keyboard/gamepad —
-# menu_down off the last slider walks through Reset and lands on Back.
-func test_hq_tune_page_can_navigate_down_to_back_button() -> void:
+# Regression: a sub-page's bottom action row lives OUTSIDE the scroll container (a
+# different node level), but must still be reachable by keyboard/gamepad. menu_down off
+# the last slider lands in the row, and menu_left walks along it to "< Back".
+#
+# This used to be a straight vertical walk (Reset / Wheels / Back were three stacked
+# full-width rows, so menu_down passed through each). They share ONE horizontal row now,
+# so reaching Back is down-then-left — the row is the bottom of the page, and further
+# menu_down has nowhere to go.
+func test_hq_tune_page_can_navigate_down_to_the_action_row() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -682,14 +796,28 @@ func test_hq_tune_page_can_navigate_down_to_back_button() -> void:
 	await get_tree().process_frame
 	assert_true(hq.get_viewport().gui_get_focus_owner() is HSlider, "starts on a slider")
 	assert_eq(hq._lift_back_button.focus_mode, Control.FOCUS_ALL, "the Back button is focusable")
-	var reached := false
-	for i in range(8):
-		if hq.get_viewport().gui_get_focus_owner() == hq._lift_back_button:
-			reached = true
+	var row: Node = hq._lift_back_button.get_parent()
+
+	# Down out of the sliders lands SOMEWHERE in the bottom action row.
+	var in_row := false
+	for _i in 8:
+		var focused: Node = hq.get_viewport().gui_get_focus_owner()
+		if focused != null and focused.get_parent() == row:
+			in_row = true
 			break
 		_press_action("menu_down")
 		await get_tree().process_frame
-	assert_true(reached, "menu_down from the sliders reaches the shared Back button")
+	assert_true(in_row, "menu_down from the sliders reaches the bottom action row")
+
+	# And Back is reachable along it — it leads the row, so left gets there.
+	var reached := false
+	for _i in 8:
+		if hq.get_viewport().gui_get_focus_owner() == hq._lift_back_button:
+			reached = true
+			break
+		_press_action("menu_left")
+		await get_tree().process_frame
+	assert_true(reached, "menu_left along the action row reaches the shared Back button")
 
 
 func _press_action(action: String) -> void:
@@ -915,12 +1043,13 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.TABLE, "select on Career opens the map directly")
 
-	# Select on Garage opens the car park -> tuning lift.
+	# Select on Garage goes straight to the tuning lift bay (there is no car-pick step in
+	# between any more — the bay's own selector chevrons change the car in place).
 	hq._go_to(hq.View.GARAGE)
 	hq._garage_focus = 2  # Back(0) | Career(1) | Garage(2) | ...
 	hq._activate_garage_focus()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.CARPARK, "select on Garage opens the car park")
+	assert_eq(hq._view, hq.View.LIFT, "select on Garage opens the tuning lift bay")
 
 	# Back-to-garage, then select on the Back item leaves for the exterior.
 	hq._go_to(hq.View.GARAGE)
@@ -994,6 +1123,42 @@ func test_opening_the_map_keeps_the_lift_car_but_the_car_park_still_gets_it_back
 # The garage row's Online button (renamed from Challenge) opens a modal,
 # keyboard/gamepad-navigable entry screen over the garage, and Back closes it back
 # to the garage. Online is the LAST stop on the row (the proceeding action).
+# The challenge screen must NOT resize as the player switches Daily / Weekly / Monthly. Each
+# kind has a different amount to say, and MenuPage's body box hugs its contents by default —
+# so without a pinned size the panel re-fits on every tab press and jumps around under the
+# player, moving the very tabs being clicked. Pinned via set_body_width/set_body_fixed_height
+# in build_challenge_overlay.
+func test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._open_challenge_overlay()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var page: MenuPage = null
+	for child in hq._challenge_layer.find_children("*", "MenuPage", true, false):
+		page = child
+	assert_not_null(page, "the challenge screen is built on the shared MenuPage shape")
+	var box := page.panel()
+
+	var sizes: Array = []
+	for kind in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
+		hq._challenge_kind = kind
+		hq._refresh_challenge_overlay()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		sizes.append(box.size)
+
+	for i in range(1, sizes.size()):
+		assert_almost_eq(sizes[i].x, sizes[0].x, 1.0,
+			"the panel keeps its width when the kind changes (%s vs %s)" % [sizes[i], sizes[0]])
+		assert_almost_eq(sizes[i].y, sizes[0].y, 1.0,
+			"the panel keeps its height when the kind changes (%s vs %s)" % [sizes[i], sizes[0]])
+	assert_gt(sizes[0].x, 0.0, "sanity: the panel actually laid out")
+	assert_gt(sizes[0].y, 0.0, "sanity: the panel actually laid out")
+
+
 func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1013,13 +1178,13 @@ func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 
 	# Back (via the screen's own MenuNav, wired with on_back = _close_challenge_overlay)
 	# closes the modal and returns to the garage.
+	# Found by SEARCHING the layer, not by child index: the overlay's node order is not a
+	# contract (it used to carry a full-rect MODAL_DIM backing as child 0, which went away
+	# when the page moved to MenuPage — whose body box hugs its contents, so a full-screen
+	# backing would have painted over the garage it is meant to float above).
 	var nav: MenuNav = null
-	# The dark MODAL_DIM backing is child 0 (build_challenge_overlay, mirroring
-	# build_detail_overlay); the actual root VBoxContainer MenuNav.attach() adds itself to
-	# is child 1.
-	for child in hq._challenge_layer.get_child(1).get_children():
-		if child is MenuNav:
-			nav = child
+	for child in hq._challenge_layer.find_children("*", "MenuNav", true, false):
+		nav = child
 	assert_not_null(nav, "the challenge screen has MenuNav attached")
 	nav._unhandled_input(_press("menu_back"))
 	assert_false(hq._challenge_layer.visible, "menu_back closes the challenge overlay")
@@ -1056,10 +1221,11 @@ func test_hq_challenge_kind_tabs_are_focusable_and_left_right_navigable() -> voi
 	# Drive REAL focus-neighbour navigation through MenuNav's own _unhandled_input (the
 	# same path a keyboard/gamepad press takes in the real game), not a direct call into
 	# hq — there is no hq-level interception of menu_left/menu_right anymore.
+	# Searched, not indexed — see the sibling test: the overlay's child order is not a
+	# contract.
 	var nav: MenuNav = null
-	for child in hq._challenge_layer.get_child(1).get_children():
-		if child is MenuNav:
-			nav = child
+	for child in hq._challenge_layer.find_children("*", "MenuNav", true, false):
+		nav = child
 	assert_not_null(nav, "the challenge screen has MenuNav attached")
 
 	nav._unhandled_input(_press("menu_right"))
@@ -1335,34 +1501,28 @@ func test_hq_free_roam_randomises_water_relief_and_location() -> void:
 			"free-roam location is a real RegionLibrary region")
 
 
-# The garage "Garage" button opens the car park to pick which owned car to work on:
-# the whole owned collection is parked, Back returns to the garage, and Select drops
-# into the tuning lift bay for the chosen car.
-func test_hq_garage_button_opens_the_car_park_to_pick_a_car() -> void:
+# The garage "Garage" button goes STRAIGHT into the tuning lift bay for the selected car.
+# It used to open the car park first to pick a car; the lift's own selector chevrons change
+# the car in place now (test_hq_lift_selector_cycles_the_car_on_the_lift), so that
+# intermediate pick was a press in and a press back on the way to the only screen anyone
+# wanted. Back from the bay returns to the garage.
+func test_hq_garage_button_goes_straight_to_the_tuning_bay() -> void:
 	_save.grant_car("fx_fwd_hatch")  # a second car so the collection isn't just the starter
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 
-	hq._open_garage_picker()
-	await _await_lineup(hq)
-	assert_eq(hq._view, hq.View.CARPARK, "Garage drops into the car park")
-	assert_eq(hq._carpark_mode, hq.CarparkMode.GARAGE, "the car park is in garage mode")
-	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
-		"the whole owned collection is parked to pick from")
-
-	# Selecting the focused car commits it and enters the tuning lift bay.
-	hq._on_start_pressed()
+	hq._enter_lift()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.LIFT, "selecting a car opens the tuning lift bay")
-	assert_ne(hq._carpark_mode, hq.CarparkMode.GARAGE, "garage mode is cleared on the way to the bay")
+	assert_eq(hq._view, hq.View.LIFT, "Garage opens the tuning lift bay with no car pick first")
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it lands on the hub")
+	assert_eq(hq._lift_car_instance_id, _save.selected_instance_id(),
+		"the car on the lift is the currently selected one")
 
-	# Back from the picker returns to the garage.
-	hq._open_garage_picker()
-	await _await_lineup(hq)
-	hq._car_back()
-	assert_ne(hq._carpark_mode, hq.CarparkMode.GARAGE, "backing out clears garage mode")
-	assert_eq(hq._view, hq.View.GARAGE, "Back from the garage car pick returns to the garage")
+	# The bay's own Back returns to the garage.
+	hq._go_to(hq.View.GARAGE)
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.GARAGE, "Back from the bay returns to the garage")
 
 
 # The run scene fields the owned car the player picked for free roam, with no active
@@ -4186,7 +4346,11 @@ func _lock_car_in_a_challenge(id: int) -> void:
 	assert_true(DrivingContext.is_car_locked(id), "setup: the run is committed to that car")
 
 
-func test_challenge_committed_car_is_still_offered_in_the_garage_picker() -> void:
+# A challenge locks the RUN to the car it started with; it does not RESERVE the car. So a
+# committed car stays fully usable elsewhere — here, as an engine-swap partner. (This used
+# to be asserted against the garage car picker, which no longer exists; the contract it
+# guards does, so it moved to a surface that survives.)
+func test_challenge_committed_car_is_still_offered_as_a_swap_partner() -> void:
 	var locked: Dictionary = _save.grant_car("fx_fwd_hatch")
 	var locked_id := int(locked["instance_id"])
 	_lock_car_in_a_challenge(locked_id)
@@ -4194,15 +4358,16 @@ func test_challenge_committed_car_is_still_offered_in_the_garage_picker() -> voi
 	add_child_autofree(hq)
 	await get_tree().process_frame
 
-	hq._open_garage_picker()
-	await _await_lineup(hq)
-	var parked_ids: Array = []
-	for car in hq._eligible:
-		parked_ids.append(int(car.get("instance_id", -1)))
-	assert_true(parked_ids.has(locked_id),
-		"the car an active run is committed to is STILL parked in the garage — the run is locked to it, the car is not reserved")
-	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
-		"every owned car is parked; a live run excludes none of them")
+	# Swap partners are the OTHER owned cars, judged from some car that isn't the locked
+	# one, so the locked car can legitimately appear in the list.
+	var others: Array = hq._other_owned_cars(locked_id)
+	assert_false(others.is_empty(), "setup: there is another owned car to swap from")
+	var from_id := int(others[0].get("instance_id", -1))
+	var partner_ids: Array = []
+	for car in hq._swap_targets(from_id):
+		partner_ids.append(int(car.get("instance_id", -1)))
+	assert_true(partner_ids.has(locked_id),
+		"the car an active run is committed to is STILL a valid swap partner — the run is locked to it, the car is not reserved")
 
 	# And the challenge still resumes on it — commitment and availability coexist.
 	var run := ChallengeSession.resumable_run(Save.profile, int(Time.get_unix_time_from_system()))

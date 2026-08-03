@@ -269,7 +269,8 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   (which spends the token). It forces the lift prop to respawn with the new
   engine, and returns to the lift's Upgrades page. **Back**
   (`_car_back`) returns to the lift with no change (each car-park mode's Back returns
-  to its own origin — the garage picker to the garage, the starter picker to the exterior).
+  to its own origin — the starter picker to the exterior, the challenge picker to the
+  garage).
   While picking a partner, `hq._refresh_swap_preview()` (called from
   `_focus_changed`) shows a two-way hp/tonne preview in a `RichTextLabel`
   (`hq._swap_preview_label`) below the stats panel: since a swap EXCHANGES
@@ -291,7 +292,8 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   overlay's **gated Done button** (red, blocks closing and Esc while over the
   cap — the start-line Upgrades overlay and the car-park Change-Upgrades popup
   pass a `pw_limit`; the HQ lift omits it, keeping a plain Back for free tuning).
-  The tuning panel's **Reset to neutral** no longer touches detune — it clears
+  The tuning panel's **Reset to neutral** (now a button in the Tuning page's bottom
+  action row, see [tuning.md](tuning.md)) no longer touches detune — it clears
   only the handling axes and **preserves** `tuning.engine_detune`.
 - **Car-park detune-to-enter prompt** — an owned car OVER a rally's `pw_max`
   cap still parks in the rally car-select lineup and LOOKS eligible there (no
@@ -320,7 +322,7 @@ button on the Upgrades page (native-focus regime — see
 [menus.md](menus.md) → "Menu navigation"), so it's reachable by
 keyboard/gamepad exactly like every other upgrades-menu button, with no extra
 wiring. Once pressed, the car park it opens is the SAME diegetic 3D station
-used by the garage picker and the starter picker — it reuses that station's existing
+used by the wheel view and the starter picker — it reuses that station's existing
 `menu_left`/`menu_right` (cycle the focused car), `menu_select` (confirm via
 `_on_start_pressed` → `_select_swap_target`), and `menu_back` (`_car_back`,
 which returns to the lift when `_carpark_swap_mode` is set) handlers in

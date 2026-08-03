@@ -122,8 +122,6 @@ var _selected_rally_id := ""
 var _selected_instance_id := -1
 # The car park serves several jobs, one at a time (never overlapping):
 #   RALLY    (default) — cars eligible for the chosen rally; Start launches the rally.
-#   GARAGE   (garage's "Garage" button) — ALL owned cars; Select picks the car to tune
-#            and takes the player straight to the tuning lift bay.
 #   FREEROAM (the TITLE screen's "Free Roam" button) — the WHOLE catalogue as base-model previews;
 #            Start drops into a session-less drive in the picked car (owned or not).
 #   SWAP     (_enter_engine_swap) — OTHER owned cars; Select picks an engine-swap partner.
@@ -143,7 +141,7 @@ var _selected_instance_id := -1
 #            RallySession.start_rally (see _begin_challenge_start).
 # One enum instead of mutually-exclusive booleans: entering a job sets the mode
 # (which inherently clears the others), and every exit/commit/back returns to RALLY.
-enum CarparkMode { RALLY, GARAGE, FREEROAM, SWAP, STARTER, WHEELS, CHALLENGE }
+enum CarparkMode { RALLY, FREEROAM, SWAP, STARTER, WHEELS, CHALLENGE }
 var _carpark_mode := CarparkMode.RALLY
 
 # Cosmetic wheel-swap state, live only in CarparkMode.WHEELS. _wheel_options is the
@@ -422,16 +420,42 @@ var _garage_career_index := 1
 var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
 
 # Tuning-lift overlay widgets.
-var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
-var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
+var _lift_info_panel: VBoxContainer  # bottom-left car readout: selector row + stats row (hidden when a sub-menu is open)
+var _lift_car_label: Label      # the selected car's name, in the selector row's middle box
+var _lift_car_stats_label: Label  # that car's stats, on the row under the selector
+var _lift_prev_button: Button   # the selector's "<" — previous owned car onto the lift
+var _lift_next_button: Button   # the selector's ">" — next owned car onto the lift
 var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Upgrades/Tuning + Test Drive buttons
-# The HUB's Back / Upgrades / Tuning / Test Drive row is a left/right ButtonCursor, same
-# as the garage: hq keeps the index (_hub_focus, read by tests), the cursor the behaviour.
+
+# The HUB page is a TWO-ROW manual cursor, which is why there are two ButtonCursors and a
+# row index rather than one flat row:
+#
+#   SELECTOR row:  [ < ]  CAR NAME  [ > ]      _lift_selector_cursor / _lift_selector_focus
+#   ACTIONS row:   < Back | Upgrades | Tuning | Test Drive    _hub_cursor / _hub_focus
+#
+# left/right move WITHIN the active row, up/down move BETWEEN the rows, select fires the
+# active row's item. Only the active row paints a highlight (_refresh_hub_focus), so there
+# is never any doubt which of the two a press will hit. As elsewhere in the diegetic HQ,
+# hq owns the indices (tests read them) and ButtonCursor owns the behaviour.
+enum LiftRow { SELECTOR, ACTIONS }
+var _lift_row: int = LiftRow.ACTIONS  # which row the cursor is on
 var _hub_cursor := ButtonCursor.new()
 var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Upgrades, 2 = Tune, 3 = Test Drive)
-var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
+var _lift_selector_cursor := ButtonCursor.new()
+var _lift_selector_focus := 0   # which chevron the cursor sits on (0 = prev, 1 = next)
+# The body box of the sub-menu page (TUNE/UPGRADES). The page itself is a MenuPage — the
+# shared house shape: a box that HUGS its contents with a gap to the screen edges, plus a
+# gapped horizontal action row below it (see menu_page.gd). Only the box is held here,
+# because its visibility is what shows/hides the page; reach the page as its parent.
+var _lift_menu_bg: PanelContainer
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
-var _lift_back_button: Button   # the shared "< Back" on a sub-menu page (TUNE/UPGRADES)
+# A sub-page's bottom ACTION ROW: "< Back" always, plus the TUNE page's own actions (see
+# HqOverlays.build_lift_overlay). It is a SIBLING of the body box rather than a child — that
+# is what makes the gap between body and actions read as a gap — so its visibility is gated
+# with the page rather than riding on _lift_menu_bg's.
+var _lift_page_actions: HBoxContainer
+var _lift_back_button: Button   # the shared "< Back", leading the row above
+var _tune_action_buttons: Array[Button] = []  # TuningPanel's Reset / Wheels, placed in the row above
 var _tune_panel: TuningPanel         # the TUNE menu (sliders) — shared with the start line
 var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu component)
 
@@ -974,7 +998,10 @@ func _make_overlay(margin := 24.0) -> Array:
 	return [layer, root]
 
 
-# THE MODAL PAGE SHAPE: a scrolled body with the exit control PINNED below it.
+# THE MODAL PAGE SHAPE: a content-hugging body box with the exit control PINNED in a
+# horizontal action row below it. Delegates to MenuPage — read menu_page.gd for the layout
+# rules; this wrapper exists to keep the existing callers' return contract.
+#
 # Returns [layer, body, footer, root] — put variable-height content in `body`, put the
 # control that LEAVES the page (Back / Done / Close) in `footer`, and hand `root` to
 # MenuNav.attach / UITheme.enforce as before.
@@ -999,34 +1026,16 @@ func _make_overlay(margin := 24.0) -> Array:
 # would eat those picks (and its drag gesture would fight the map pan), so plain
 # _make_overlay stays exactly as it was — do NOT wrap a passthrough overlay in this.
 func _make_modal_overlay(margin := 24.0) -> Array:
-	var made := _make_overlay(margin)
-	var layer: CanvasLayer = made[0]
-	var root: VBoxContainer = made[1]
-
-	var scroll := TouchScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root.add_child(scroll)
-
-	# EXPAND_FILL vertically so short content still fills (and can centre itself via
-	# `alignment`) instead of collapsing to the top of the scroll viewport.
-	var body := VBoxContainer.new()
-	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 12)
-	scroll.add_child(body)
-
-	# The pinned exit row: a sibling BELOW the scroll, so it never moves. Controls put
-	# here must be FOCUS_ALL — MenuNav drives focus across container boundaries by
-	# geometry, so down-nav off the last body row lands here (the same arrangement
-	# build_settings_overlay and build_lift_overlay already rely on), and
-	# MenuNav._enable_scroll_follow sets follow_focus on the scroll so walking back UP
-	# into the body reveals the row the cursor moved onto.
-	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 8)
-	root.add_child(footer)
-
-	return [layer, body, footer, root]
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	# MenuPage is the shared implementation of this shape — a content-hugging body box with
+	# a gapped horizontal action row under it (see menu_page.gd for the two layout rules and
+	# why they are not per-screen choices). This wrapper survives so the three existing
+	# callers keep their [layer, body, footer, root] contract; new pages should build a
+	# MenuPage directly.
+	var page := MenuPage.new({"margin": margin})
+	layer.add_child(page)
+	return [layer, page.body(), page.actions(), page]
 
 
 # The widest a centred modal column may ask for on the CURRENT logical canvas. The frame's
@@ -1133,7 +1142,7 @@ func _show_android_app_notice() -> void:
 	_android_notice_layer = made[0]
 	var root_box: VBoxContainer = made[1]
 	var footer: HBoxContainer = made[2]
-	var root: VBoxContainer = made[3]
+	var root: Control = made[3]  # the MenuPage itself — for MenuNav.attach / UITheme.enforce
 	root_box.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var msg := Label.new()
@@ -2018,35 +2027,6 @@ func _await_cloud_restore() -> void:
 	await busy.end()
 
 
-# Garage: open the car park to pick which owned car to work on. Parks the WHOLE owned
-# collection and frames the currently-selected car; Select commits that car and drops
-# straight into the tuning lift bay (see _select_garage_car), Back returns to the garage.
-# Entered from the GARAGE action row's Garage button (see _build_garage_overlay).
-func _open_garage_picker() -> void:
-	_carpark_mode = CarparkMode.GARAGE
-	var cars: Array = []
-	for car in Save.profile.get("cars", []):
-		# NO challenge-lock exclusion here. A challenge locks the RUN to the car it
-		# started with; it does not reserve the car. It stays fully usable in the
-		# garage, career and free roam between stages — including repairs and
-		# upgrades, which the design deliberately accepts (a challenge is a time
-		# competition, not a survival one).
-		cars.append(car)
-	# Open framed on the currently-selected car (on whatever page it lands), defaulting
-	# to the first parked car.
-	_build_lineup(cars, _index_of_instance(cars, Save.selected_instance_id()))
-	_rally_banner.text = "Garage — pick a car"
-	_no_eligible_label.visible = false
-	_start_button.text = "Select Car"
-	_start_button.disabled = _lineup.is_empty()
-	_view = View.CARPARK
-	_detail_open = false
-	_update_overlays()
-	# Fly (don't snap) — a tween carries the player smoothly from the garage into the
-	# car-select shot.
-	_focus_changed(false)
-
-
 # The index of the owned car `id` within `cars`, or 0 (the first car) when not present —
 # used to seat the car-park cursor on a specific car when opening a picker.
 func _index_of_instance(cars: Array, id: int) -> int:
@@ -2670,6 +2650,7 @@ func _hide_detail() -> void:
 func _enter_lift() -> void:
 	_ensure_lift_car()
 	_lift_page = LiftPage.HUB
+	_lift_row = LiftRow.ACTIONS  # ...on the actions row, not the car selector above it
 	_hub_focus = 1  # the cursor starts on Upgrades each time we enter the bay
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
@@ -2867,11 +2848,13 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	# rather than re-derived from the construction order, so adding or moving a button
 	# can't silently desync it.
 	_garage_career_index = buttons.find(to_table)
-	# Garage: open the car park to pick which owned car to work on, then drop
-	# straight into the tuning lift bay for that car (_open_garage_picker).
-	var to_garage := _station_button("Garage", _open_garage_picker)
+	# Garage: straight into the tuning lift bay for the currently selected car. This used to
+	# open the car park FIRST to pick a car, but the lift's own selector chevrons change the
+	# car on the lift in place now (_cycle_lift_car), which made the picker a press in and a
+	# press back on the way to the only screen anyone wanted.
+	var to_garage := _station_button("Garage", _enter_lift)
 	_garage_actions_row.add_child(to_garage)
-	buttons.append(to_garage); actions.append(_open_garage_picker)
+	buttons.append(to_garage); actions.append(_enter_lift)
 	# Mystery Box: a garage-wide reward action, not per-car — moved here from the
 	# Lift's Upgrades page (see _on_open_mystery_box). Sits next to Garage because it
 	# acts on the collection, not on a drive. OMITTED entirely with none held (not shown
@@ -2915,23 +2898,59 @@ func _refresh_wreck_safety_net() -> void:
 	Save.ensure_wreck_safety_net()
 
 
-# Move the HUB's left/right cursor between Back (0), Tuning (1), Upgrades (2) and
-# Test Drive (3), wrapping at the ends, and repaint it.
+# Move the cursor left/right WITHIN the row it currently sits on: between the two chevrons
+# on the selector row, or between Back (0), Upgrades (1), Tuning (2) and Test Drive (3) on
+# the actions row. Wraps at the ends of that row and repaints.
 func _move_hub_focus(step: int) -> void:
-	_hub_focus = _hub_cursor.wrapped(_hub_focus, step)
+	if _lift_row == LiftRow.SELECTOR:
+		_lift_selector_focus = _lift_selector_cursor.wrapped(_lift_selector_focus, step)
+	else:
+		_hub_focus = _hub_cursor.wrapped(_hub_focus, step)
 	_refresh_hub_focus()
 
 
-# Fire the hub item the cursor sits on: 0 backs out to the garage, 1/2 open the Tuning /
-# Upgrades pages, 3 launches a Test Drive (free roam with the car on the lift).
+# Move the cursor BETWEEN the HUB's two rows (up to the car selector, down to the actions).
+# A no-op toward a row with no live stops — with a single car owned the chevrons are hidden
+# AND disabled (_refresh_lift_car_label), so up must not strand the cursor on a button that
+# isn't on screen.
+func _move_lift_row(row: int) -> void:
+	if row == _lift_row:
+		return
+	if row == LiftRow.SELECTOR and not _selector_has_stops():
+		return
+	_lift_row = row
+	# Re-seat onto a live item in the row we just arrived at.
+	if _lift_row == LiftRow.SELECTOR:
+		_lift_selector_focus = _lift_selector_cursor.settled(_lift_selector_focus)
+	else:
+		_hub_focus = _hub_cursor.settled(_hub_focus)
+	_refresh_hub_focus()
+
+
+# Is the car selector navigable? False when there is nothing to cycle to, in which case the
+# HUB collapses to its single actions row.
+func _selector_has_stops() -> bool:
+	return is_instance_valid(_lift_prev_button) and not _lift_prev_button.disabled
+
+
+# Fire the item the cursor sits on, in whichever row it sits: a chevron swaps the car on the
+# lift, or on the actions row 0 backs out to the garage, 1/2 open the Upgrades / Tuning
+# pages, 3 launches a Test Drive (free roam with the car on the lift).
 func _activate_hub_focus() -> void:
-	_hub_cursor.activate(_hub_focus)
+	if _lift_row == LiftRow.SELECTOR:
+		_lift_selector_cursor.activate(_lift_selector_focus)
+	else:
+		_hub_cursor.activate(_hub_focus)
 
 
-# Paint the manual hub cursor (the hub uses left/right + select, not native focus, so the
-# Back / Upgrades / Tuning / Test Drive buttons are highlighted by hand instead).
+# Paint the manual HUB cursor (the hub uses left/right + up/down + select, not native focus,
+# so its buttons are highlighted by hand). Exactly ONE row carries a highlight: the inactive
+# row is repainted at an out-of-range index, which clears every button in it — otherwise
+# both rows would show a cursor and neither would look active.
 func _refresh_hub_focus() -> void:
-	_hub_cursor.refresh(_hub_focus)
+	var on_selector := _lift_row == LiftRow.SELECTOR
+	_lift_selector_cursor.refresh(_lift_selector_focus if on_selector else -1)
+	_hub_cursor.refresh(-1 if on_selector else _hub_focus)
 
 
 # Seat the sub-page cursor: the body's first focusable control, or the shared Back
@@ -2954,8 +2973,9 @@ func _ensure_lift_car() -> void:
 	# The id/hash match alone is NOT enough to skip re-showing it: _lift_car shares its
 	# node with _car_cache (see _spawn_lift_car), and the garage picker's parked lineup
 	# borrows that very node while open (_obtain_parked_car) then HIDES + STOWS it on the
-	# way out (_release_page_props / _clear_lineup, called by _select_garage_car before
-	# _enter_lift). Reselecting the SAME car hits this id/hash match with the node still
+	# way out (_release_page_props / _clear_lineup, called by _car_back before _enter_lift
+	# on the modes that return to the bay). Reselecting the SAME car — or arriving back on
+	# the lift — hits this id/hash match with the node still
 	# stowed off-screen from that hide — the "car vanishes from the lift" bug. Requiring
 	# `.visible` too forces the fall-through spawn path below, whose _car_cache hit just
 	# reconfigures (not rebuilds) the node back onto the lift — cheap, and correct.
@@ -3051,6 +3071,7 @@ func _refresh_lift_ui() -> void:
 	_lift_hub_controls.visible = _lift_page == LiftPage.HUB
 	_lift_info_panel.visible = _lift_page == LiftPage.HUB
 	_lift_menu_bg.visible = _lift_page != LiftPage.HUB
+	_lift_page_actions.visible = _lift_page != LiftPage.HUB
 	_tune_panel.visible = _lift_page == LiftPage.TUNE
 	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
@@ -3062,6 +3083,11 @@ func _refresh_lift_ui() -> void:
 	# (the change lands on next fielding), so preserve that behaviour.
 	_tune_panel.setup(_lift_owned, Callable(), _enter_wheel_swap)
 	_tune_panel.refresh()
+	# The TUNE page's actions act on the sliders, so they show only while that page is up —
+	# they share the bottom row with a "< Back" that belongs to both pages. Set AFTER
+	# setup(), which reasserts the Wheels button's own visibility every refresh.
+	for b in _tune_action_buttons:
+		b.visible = _lift_page == LiftPage.TUNE
 	# NO_LIMIT is deliberate and explicit, not an omitted argument: the garage isn't a
 	# commitment point (nothing launches from the lift), so no p/w ceiling gate belongs
 	# here — the gate lives at the start line / car park where a car is actually
@@ -3083,11 +3109,53 @@ func _on_lift_upgrade_changed() -> void:
 	_refresh_lift_car_label()
 
 
-# Set the lift's car-label to the current owned car's display name + stats line.
+# Fill the lift's two readout rows for the current owned car — the name in the selector
+# row's middle box, its stats on the row below — and gate the chevrons on there being
+# something to cycle to. With one car owned they are hidden AND disabled: hidden so the row
+# reads as a plain nameplate, disabled so neither cursor nor click can reach a button that
+# isn't on screen (ButtonCursor skips disabled stops, but knows nothing of visibility).
 func _refresh_lift_car_label() -> void:
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
-	_lift_car_label.text = "%s\n%s" % [
-		EngineSwap.display_name(entry, _lift_owned), _car_stats_text(_lift_owned, entry)]
+	_lift_car_label.text = EngineSwap.display_name(entry, _lift_owned)
+	_lift_car_stats_label.text = _car_stats_text(_lift_owned, entry)
+	var cyclable: bool = _lift_cycle_order().size() > 1
+	for chevron in [_lift_prev_button, _lift_next_button]:
+		chevron.visible = cyclable
+		chevron.disabled = not cyclable
+	# Never leave the cursor stranded on a chevron that just went away (the last other car
+	# was sold / wrecked out from under it).
+	if not cyclable and _lift_row == LiftRow.SELECTOR:
+		_lift_row = LiftRow.ACTIONS
+
+
+# The owned cars in the order the lift's chevrons walk them, by ASCENDING instance_id — the
+# order they were acquired, which is stable.
+#
+# Deliberately NOT profile["cars"] order: Save.set_selected_car promotes the selected car to
+# the FRONT of that array, so cycling by list position would renumber the list on every
+# press and ping-pong between two cars instead of touring the collection.
+func _lift_cycle_order() -> Array:
+	var ids: Array = []
+	for car in Save.profile.get("cars", []):
+		ids.append(int(car.get("instance_id", -1)))
+	ids.sort()
+	return ids
+
+
+# Put the previous (-1) / next (+1) owned car on the lift, wrapping at both ends. Fired by
+# the selector chevrons — by click, or by a cursor select with the selector row active.
+func _cycle_lift_car(step: int) -> void:
+	var ids := _lift_cycle_order()
+	if ids.size() < 2:
+		return
+	var here := ids.find(Save.selected_instance_id())
+	if here < 0:
+		here = 0
+	Save.set_selected_car(int(ids[wrapi(here + step, 0, ids.size())]))
+	# _ensure_lift_car's id/hash key respawns the prop for the newly selected car; the
+	# refresh redraws the name, stats, sliders and upgrade rows to match it.
+	_ensure_lift_car()
+	_refresh_lift_ui()
 
 
 # Every owned car other than `current_id`. Used by engine-swap (_swap_targets), which
@@ -3110,8 +3178,11 @@ func _swap_targets(current_id: int) -> Array:
 		return []
 	var out: Array = []
 	for car in _other_owned_cars(current_id):
-		# NO challenge-lock exclusion — see _open_garage_picker. A car fielded by an
-		# active run is still a valid swap partner.
+		# NO challenge-lock exclusion. A challenge locks the RUN to the car it started
+		# with; it does not RESERVE the car. It stays fully usable in the garage, career
+		# and free roam between stages — including upgrades and engine swaps — which the
+		# design deliberately accepts (a challenge is a time competition, not a survival
+		# one). So a car fielded by an active run is still a valid swap partner.
 		out.append(car)
 	return out
 
@@ -3218,8 +3289,6 @@ func _car_back() -> void:
 	match mode:
 		CarparkMode.STARTER:
 			_go_to(View.EXTERIOR)
-		CarparkMode.GARAGE:
-			_go_to(View.GARAGE)
 		CarparkMode.FREEROAM:
 			# Free Roam is entered from the TITLE screen now, not the garage, so backing
 			# out of its picker returns there (see HqOverlays.build_title_overlay).
@@ -3553,8 +3622,8 @@ func _build_eligible_lineup() -> void:
 	var needs_detune := {}
 	var needs_drivetrain := {}
 	for car in Save.profile.get("cars", []):
-		# NO challenge-lock exclusion — see _open_garage_picker. A car fielded by an
-		# active challenge run can still be entered into a career rally.
+		# NO challenge-lock exclusion (the rationale is spelled out in _swap_targets): a
+		# car fielded by an active challenge run can still be entered into a career rally.
 		var plan := _entry_plan(rally, car)
 		if not bool(plan["eligible"]):
 			continue
@@ -4058,12 +4127,10 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 # over-powered car looks eligible here; the over-limit prompt only surfaces as a
 # confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
-	# Garage mode just picks the car for the lift, so a wrecked car is still a valid
-	# pick (you can still look at it). WHEELS is purely COSMETIC — a wrecked car
-	# can always be re-shod, so damage must never gate it either. Never gate Select on
-	# damage in those modes; nor when the focused car isn't wrecked.
-	if _carpark_mode == CarparkMode.GARAGE or _carpark_mode == CarparkMode.WHEELS \
-			or not Save.car_is_wrecked(owned):
+	# WHEELS is purely COSMETIC — a wrecked car can always be re-shod, so damage must never
+	# gate it. Never gate Select on damage in that mode; nor when the focused car isn't
+	# wrecked.
+	if _carpark_mode == CarparkMode.WHEELS or not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
 		return
@@ -4398,9 +4465,6 @@ func _on_start_pressed() -> void:
 		CarparkMode.WHEELS:  # fit the previewed cosmetic wheels (free, no confirm)
 			_commit_wheels()
 			return
-		CarparkMode.GARAGE:  # select the focused car and drop into the tuning bay
-			_select_garage_car()
-			return
 		CarparkMode.FREEROAM:  # launch a session-less drive in the focused car
 			await _start_free_roam()
 			return
@@ -4461,18 +4525,6 @@ func _proceed_with_start() -> void:
 	if not _start_preflight(_proceed_with_start, _selected_instance_id):
 		return
 	await _begin_rally_start()
-
-
-# Commit the focused car as the new selected car (the one raised on the lift) and
-# enter the tuning bay. Any owned car is selectable here — even a wrecked one can
-# sit on the lift to be repaired / tuned.
-func _select_garage_car() -> void:
-	if _selected_instance_id >= 0:
-		Save.set_selected_car(_selected_instance_id)
-	_clear_lineup()
-	_selected_instance_id = -1
-	_carpark_mode = CarparkMode.RALLY
-	_enter_lift()  # a different car is selected — _ensure_lift_car's id/hash key respawns it
 
 
 # Confirm the highlighted car as the engine-swap partner: exchange engines, then
@@ -4635,9 +4687,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
-				# Hub: left/right move the cursor between Back / Upgrades / Tuning /
-				# Test Drive; select fires it; menu_back is a shortcut to the garage.
-				if event.is_action_pressed("menu_left"):
+				# Hub: two cursor rows (see LiftRow). up/down move between the car
+				# selector and the actions row, left/right move within whichever row is
+				# active, select fires it, menu_back is a shortcut to the garage.
+				if event.is_action_pressed("menu_up"):
+					_move_lift_row(LiftRow.SELECTOR)
+				elif event.is_action_pressed("menu_down"):
+					_move_lift_row(LiftRow.ACTIONS)
+				elif event.is_action_pressed("menu_left"):
 					_move_hub_focus(-1)
 				elif event.is_action_pressed("menu_right"):
 					_move_hub_focus(1)

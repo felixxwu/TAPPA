@@ -131,6 +131,38 @@ Specific design-system touches:
 - **Wreck screen** (`wreck_screen.gd`) — red heading on a dim black backdrop.
 - **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
 
+## A passive readout in a row of buttons (`UITheme.readout_box`)
+
+A read-only value that has to sit *inside* a row of buttons — the tuning lift's car
+nameplate between its `<` / `>` chevrons, and the stats row under it — wears
+`UITheme.readout_box()` rather than a hand-built panel. It returns the theme's own
+**Button "normal"** stylebox, so the readout cannot drift from the buttons beside it.
+Rebuilding one from `panel_box()` is NOT equivalent: a panel is fully padded (14px all
+round) and may be translucent to float over the 3D world, while a button is pure black
+with tight 4px vertical margins — so a hand-built readout came out visibly **taller** than
+its neighbours and a slightly different shade. Pair it with
+`custom_minimum_size.y = UITheme.MENU_ROW_H` so the heights match too (house rule 3 pins
+buttons to exactly that). See `hq_overlays.gd` → `build_lift_overlay` for the two-row
+example.
+
+## A page's actions go in ONE bottom row
+
+Every menu page ends in a **single horizontal action row**, centred, separated by
+`UITheme.GAP` and preceded by a gap spacer that lifts it off the body above. **`< Back`
+leads** it — leaving is always the leftmost item — and the page's own actions follow. A
+page that stacked its actions as full-width bars *inside* its body read as a different
+kind of screen, so that shape is gone.
+
+The consequence for a reusable component: it **builds** its action buttons but does not
+parent them, and exposes them for the host to place. `TuningPanel`
+(`scripts/tuning_panel.gd` → `action_buttons()`) does exactly this with **Reset to
+neutral** and **Wheels**; its hosts —`hq_overlays.gd` → `build_lift_overlay` (into
+`_lift_page_actions`) and `start_line.gd` → `_build_menu_overlay` (which picks them up
+generically via `component.has_method("action_buttons")`) — add them beside their own
+Back. A host MUST add them to a container, or they are never shown and never freed.
+`< Back` on these pages is a compact `UITheme.row_button` with `focus_mode = FOCUS_ALL`,
+since sub-pages navigate by native focus (`MenuNav`).
+
 ## Sizing a scrolled body (`UITheme.fit_body_scroll`)
 
 Modals put their autowrapped body `Label` inside a `TouchScrollContainer` so a long

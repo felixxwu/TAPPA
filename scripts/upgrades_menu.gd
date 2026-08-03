@@ -310,7 +310,10 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 	var row := HFlowContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var label := Label.new()
-	label.text = "%s:" % slot.capitalize()
+	# No trailing colon: this page's OWN detune row has none, and neither does any row on
+	# the Tuning page beside it, so a colon here was the odd one out rather than a
+	# convention.
+	label.text = slot.capitalize()
 	label.add_theme_font_size_override("font_size", 15)
 	# See _make_drivetrain_selector: expand-fill pushes the option buttons flush right.
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -433,11 +436,22 @@ func _clear_slot(instance_id: int, slot: String) -> void:
 # mass (e.g. "+500kg" / "-200kg"); Stock is the no-change default. Ballast options are
 # `free` (always selectable); the lightweight option greys until won as a reward.
 func _make_weight_selector(instance_id: int, installed: Array) -> Control:
-	# A single HFlowContainer, not a nested HBox+HFlow pair — see _make_drivetrain_selector.
-	var row := HFlowContainer.new()
+	# An HBoxContainer, NOT a flow container: this is the widest slot row (four ballast /
+	# stock / lightweight options), so it is the one that wraps first — and a weight ladder
+	# reads as a ladder only while it is one continuous line from heaviest to lightest.
+	# Broken across two lines the ordering stops being legible. So the row keeps its options
+	# on one line and asks for the width it needs; MenuPage's body box hugs its contents, so
+	# the box widens to fit rather than the row folding.
+	#
+	# The nesting warning in _make_drivetrain_selector still stands — what broke the slot
+	# rows' vertical stacking there was a WRAPPING container nested inside a fixed-line one.
+	# A plain HBox has no wrap to change its height mid-layout, so it stacks fine.
+	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var label := Label.new()
-	label.text = "Weight:"
+	# No trailing colon — matching every other row on this page and the Tuning page (this one
+	# was missed when the rest were changed).
+	label.text = "Weight"
 	label.add_theme_font_size_override("font_size", 15)
 	# See _make_drivetrain_selector: expand-fill pushes the option buttons flush right.
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL

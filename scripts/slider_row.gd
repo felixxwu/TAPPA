@@ -13,6 +13,18 @@ extends RefCounted
 # value via set_value_no_signal, and writes `value_label` / grey state itself. The
 # host owns MenuNav (the two hosts drive nav differently), so it stays out of here.
 
+# The slider column's floor. A slider is a CONTINUOUS control — you aim the handle at a
+# proportion — so below a certain length it stops being usable: the travel is too short to
+# place a value with any precision, and on touch the handle is most of the track. EXPAND_FILL
+# alone doesn't protect that, because it only claims space that already exists: inside a
+# container sized to its contents (MenuPage's body box hugs them — see menu_page.gd) the row
+# gets no more width than it demands, so the slider collapses to the handle. This floor is
+# what makes the row DEMAND a usable length, which in turn widens the box around it.
+#
+# 200 against a logical canvas only a few hundred units wide (DisplayStretch) — so with the
+# 130 label column it asks for ~330 and still fits the narrow web-touch tier.
+const SLIDER_MIN_W := 200.0
+
 # spec keys: name, lo, hi (label texts); min, max, step (slider range, defaults
 # −1..1 step 0.05 — the handling-axis shape).
 static func build(spec: Dictionary) -> Dictionary:
@@ -51,6 +63,9 @@ static func build(spec: Dictionary) -> Dictionary:
 	var slider_col := VBoxContainer.new()
 	slider_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# Never shorter than SLIDER_MIN_W — read its comment for why EXPAND_FILL isn't enough.
+	# On the column (not the slider) so the extremity labels under it share the same width.
+	slider_col.custom_minimum_size.x = SLIDER_MIN_W
 	slider_col.add_theme_constant_override("separation", 2)
 	row.add_child(slider_col)
 

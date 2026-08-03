@@ -354,14 +354,27 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   target). `menu_back`
   exits to the garage. Clicking a pin with the pointer still works (`_on_rally_pin`),
   and mouse drag still pans the map (selection re-tracks the centre as it
-  slides); the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
-  `UITheme.mark_focused`) over **Back / Upgrades / Tuning / Test Drive** (its buttons
-  sit side by side in one row), fired with select (`_activate_hub_focus`); the cursor
-  seats on Tuning on entry (`menu_back` is also a shortcut back to the garage). **Test
-  Drive** (`_test_drive`) launches free roam with the car already on the lift — no car
-  picker, since we're already focused on one; it delegates to `_start_free_roam` (see
-  below). There is no longer a Change Car button on this row — to work on a different car,
-  go back to the garage and reopen the **Garage** picker, which brings up the car park.
+  slides); the **tuning hub** is a **two-row** manual cursor, so it binds all four
+  directions (`enum LiftRow { SELECTOR, ACTIONS }`, `_lift_row` says which row holds the
+  cursor):
+
+  ```
+  SELECTOR row:  [ < ]  CAR NAME  [ > ]                 _lift_selector_cursor / _lift_selector_focus
+  ACTIONS row:   < Back | Upgrades | Tuning | Test Drive  _hub_cursor / _hub_focus
+  ```
+
+  `menu_up`/`menu_down` move BETWEEN the rows (`_move_lift_row`), `menu_left`/`menu_right`
+  move WITHIN whichever row is active (`_move_hub_focus`), and `menu_select` fires the
+  active row's item (`_activate_hub_focus`). `_refresh_hub_focus` paints **exactly one**
+  row: the inactive cursor is refreshed at an out-of-range index, which clears every button
+  in it, so there is never doubt which row a press will hit. `_enter_lift` seats
+  `_lift_row = LiftRow.ACTIONS` with the cursor on Upgrades (`menu_back` is also a shortcut
+  back to the garage). **Test Drive** (`_test_drive`) launches free roam with the car
+  already on the lift — no car picker, since we're already focused on one; it delegates to
+  `_start_free_roam` (see below). To work on a **different** car you don't leave the bay:
+  the selector chevrons put the previous / next owned car on the lift in place
+  (`_cycle_lift_car`, also clickable), which is why there is no Change Car button and why
+  the garage's **Garage** button no longer opens a picker first.
   (There is no **Repair** button on this row — repair kits are gone and damage is
   one-way; see [damage.md](damage.md).) **Wheels** no longer lives on this hub row — it's a
   button inside the **Tuning** page itself (`tuning_panel.gd`, `TuningPanel._wheels_button`,
@@ -384,10 +397,13 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   the way to every stage, so it was flattened — Career and Online sit alongside Garage,
   **Free Roam moved to the title screen** (it needs no owned car, session or lift), and
   the drive-level camera pose (`_drive_cam_xform`, `hq_drive_cam_*`) went with it.
-  **Garage** (`_open_garage_picker`) opens the car park in GARAGE mode (`CarparkMode.GARAGE`,
-  parking the whole owned collection); Select (`_on_start_pressed` → `_select_garage_car`)
-  commits the focused car as the selected car and drops straight into the tuning lift bay
-  for it, while Back returns to the garage. **Free Roam** (`_enter_free_roam`,
+  **Garage** (`_enter_lift`) drops **straight into the tuning lift bay** for the currently
+  selected car. It used to open the car park FIRST (a `CarparkMode.GARAGE` mode, parking the
+  whole owned collection, whose Select committed the focused car and then entered the bay);
+  the lift's own **selector chevrons** change the car on the lift in place now
+  (`_cycle_lift_car` — see LIFT below), which made that picker a press in and a press back
+  on the way to the only screen anyone wanted. The mode, `_open_garage_picker` and
+  `_select_garage_car` are all gone. **Free Roam** (`_enter_free_roam`,
   `CarparkMode.FREEROAM`, reached from the **title screen**) parks the WHOLE catalogue as base-model previews (`_all_car_previews`,
   owned or not); Start (`_start_free_roam` → `_launch_free_roam`) drops into a session-less
   drive in the picked car — an owned car fields its tuned instance, a not-yet-owned preview
@@ -818,7 +834,7 @@ trickle out **after** the loading cover lifts, landing as the "big lag spike rig
 after the game first loads" for a player with several owned cars. Awaiting
 `lineup_built` keeps that whole page's worth of cold-instantiate cost **behind the
 cover**, where a brief wait reads as loading rather than gameplay jank, and it warms
-`_car_cache` for every parked car so the garage picker and tuning lift (above) start
+`_car_cache` for every parked car so the car park and tuning lift (above) start
 from a hit, not a cold build.
 
 **A car that fails to spawn must never hang boot forever (regression, fixed).**
@@ -965,7 +981,7 @@ toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a r
 
 The lift and the car park **share the same `_car_cache`** (`hq.gd` → `_spawn_lift_car`
 checks `_car_cache` before building, exactly like `_obtain_parked_car`): a car already
-warmed by the parked lineup — the garage picker you just came from, the title screen, or
+warmed by the parked lineup — the title screen, an engine-swap pick, or
 Free Roam — is *borrowed* onto the lift by reconfiguring its transform/process-mode
 rather than paying `CarProp.spawn` again (the expensive step: `car.tscn` embeds every
 car glb, so instantiating it — even to immediately prune 8 unused bodies — is the "small
@@ -975,21 +991,21 @@ the departing lift car is the node `_car_cache` tracks for it, it's hidden + sto
 lift visit reuses it. GARAGE/LIFT and CARPARK are mutually exclusive views, so handing
 the one live node back and forth between the two contexts is safe — but it means
 `_ensure_lift_car`'s id/hash "already there, no-op" fast path must also check
-`_lift_car.visible`: the garage picker (`_open_garage_picker`) borrows the lift's node
-into its parked lineup without going through `_go_to` (so `_clear_lift_car` never runs
-while the picker is open), and `_select_garage_car` hides + stows that lineup
-(`_clear_lineup`) on the way back to the lift — so reselecting the SAME car used to hit
-the id/hash match while the shared node was still stowed off-screen, vanishing from the
-lift instead of staying shown. Requiring `.visible` too forces the fall-through spawn
-path, whose cache hit just repositions the node back onto the lift. See
+`_lift_car.visible`: a car-park mode that returns to the lift (engine-swap, wheels)
+borrows the lift's node into its parked lineup and then hides + stows that lineup
+(`_clear_lineup`) on the way back — so returning with the SAME car used to hit the id/hash
+match while the shared node was still stowed off-screen, vanishing from the lift instead of
+staying shown. Requiring `.visible` too forces the fall-through spawn path, whose cache hit
+just repositions the node back onto the lift. (This bit the retired GARAGE-mode picker
+first, which is where the guard came from.) See
 [tuning.md](tuning.md) → *The tuning lift (UI)*. In the
 garage the car rests **lowered on the ground** at its calculated settled ride height
 (`car.gd` → `settled_ride_height`; see [tuning.md](tuning.md)).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view) for the currently-selected car. A HUD hint + Back (to the exterior) +
 convenience buttons sit on top: the garage station row is **Back / Career / Garage /
-Mystery Box (N) / Online**. **Garage** (`_open_garage_picker`) opens the **car park** to pick
-which owned car to work on, then drops into the tuning bay for it (see below). **Free
+Mystery Box (N) / Online**. **Garage** (`_enter_lift`) drops straight into the **tuning bay**
+for the selected car — the car is changed there, on the lift (see below). **Free
 Roam** (`_enter_free_roam`) — reached from the **title screen**, not here — opens the car
 park across the WHOLE catalogue for a session-less drive in any car (owned or not). Because `car.tscn` embeds **all** the
 authored car glb bodies (it reveals one and hides the rest — `car.gd` →
@@ -1016,26 +1032,53 @@ screen now (see the EXTERIOR section above).
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
-The car is framed to one side (`hq_lift_cam_*`) as a **rear three-quarter** shot —
-the eye sits ~30° off the car's rear axis (it noses −Z, so +Z is behind it) and close
-enough to show flank and back together, on the −X side because +X runs into the garage
-wall. The bay opens on a **HUB page**
-(`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
-full page width, and UNDER it **Upgrades** and **Tuning** buttons plus a
-**Test Drive** button (the hub's left/right `ButtonCursor` — `_hub_focus` — no longer
-carries Wheels; see below). To put a **different** car on the lift, go **Back** to the garage and reopen the
-**Garage** picker (`_open_garage_picker`, GARAGE mode): the whole owned collection is
-parked, and **Select Car** (`_on_start_pressed` → `_select_garage_car`) sets the
-**selected car** (`Save.set_selected_car`) and enters the bay for it, spawning it on the
-lift — a wrecked car is pickable too (it can sit on the lift to be repaired). **Test
+The car is framed to one side (`hq_lift_cam_*`) as a **front three-quarter** shot — the eye
+sits ~35° off the car's nose axis (it noses −Z, so the eye is round at −Z, in FRONT of it),
+close enough to show face and near flank together, and on the −X side because +X leaves only
+~0.7 m to the garage's side wall. The front is the readable end of a car (grille, lights,
+stance) and the bay is where you pick one, so that's the end the shot leads with; it used to
+be the mirrored **rear** three-quarter. See the export's doc comment in `game_config.gd` for
+the full framing reasoning.
+
+The bay opens on a **HUB page**
+(`LiftPage.HUB`): a **bottom-left** readout of TWO equal-height boxed rows
+(`_lift_info_panel`, a `VBoxContainer`) — row 1 the **car selector**
+`[ < ] [ CAR NAME ] [ > ]` (`_lift_prev_button` / a boxed `_lift_car_label` /
+`_lift_next_button`), row 2 the car's **stats line** (`_lift_car_stats_label`) — and UNDER
+it the actions row: **< Back / Upgrades / Tuning / Test Drive**. (It was one panel holding a
+single "name\nstats" label.) Both boxes wear `UITheme.readout_box()` with
+`custom_minimum_size.y = UITheme.MENU_ROW_H` so a passive readout matches the buttons beside
+it in height and shade — see [ui-design-system.md](ui-design-system.md). The two rows are
+the hub's two cursor rows (see *Menu navigation* above).
+
+To put a **different** car on the lift you stay in the bay: `< ` / `>` fire
+`_cycle_lift_car(±1)` (the same callable the cursor activates), which sets the **selected
+car** (`Save.set_selected_car`) and respawns the prop + refreshes the whole page. They walk
+`_lift_cycle_order()` — the owned cars sorted by **ascending `instance_id`** (acquisition
+order, which is stable). That is deliberately **not** `profile["cars"]` order:
+`Save.set_selected_car` promotes the selected car to the FRONT of that array, so cycling by
+list position would renumber the list on every press and ping-pong between two cars instead
+of touring the collection. A wrecked car is cyclable too (it can sit on the lift). With only
+**one** car owned there is nothing to cycle to, so `_refresh_lift_car_label` sets both
+chevrons `visible = false` **and** `disabled = true` — hidden so the row reads as a plain
+nameplate, disabled because `ButtonCursor` skips disabled stops but knows nothing of
+visibility — and forces `_lift_row` back to `ACTIONS`; `_move_lift_row` is then a no-op
+toward the empty selector row (`_selector_has_stops`). **Test
 Drive** (`_test_drive`) launches free roam with the car already on the lift — no picker,
 delegating to `_start_free_roam`. Each menu button opens that menu as its **own full-height
 page** — a solid panel **centred horizontally** and wide
 (`hq_lift_menu_centered_width_frac`, using most of the screen); the car-description
-panel **hides** while a sub-menu is open so the page has room — with a **< Back** that
-returns to the hub; the hub's own Back returns to the garage. Because the hub controls
-and page chrome live on the hub, each menu page gets the **full panel height to
-itself** and doesn't need to scroll. The two pages:
+panel **hides** while a sub-menu is open so the page has room. Every sub-page ends in ONE
+centred horizontal **bottom action row** (`_lift_page_actions`, gapped off the body above):
+**< Back** leads it (`_lift_back_button` → the hub; the hub's own Back returns to the garage),
+and the TUNE page's own actions — `TuningPanel.action_buttons()`, i.e. **Reset to neutral**
+and **Wheels** (`_tune_action_buttons`) — follow it. `_refresh_lift_ui` shows those only while
+`_lift_page == LiftPage.TUNE`, set **after** `_tune_panel.setup` (which reasserts the Wheels
+button's own visibility every refresh). The row lives inside `_lift_menu_bg`, so it hides with
+the rest of the page on the HUB and needs no gating of its own. See
+[ui-design-system.md](ui-design-system.md) → *A page's actions go in ONE bottom row*. Because
+the hub controls and page chrome live on the hub, each menu page gets the **full panel height
+to itself** and doesn't need to scroll. The two pages:
 
 ### Upgrades / Tune panel width
 
@@ -1063,8 +1106,9 @@ skips either one will look fine in a throwaway test and still wrap in the real g
 
 - **Tune** (`LiftPage.TUNE`) — a slider per handling tuning axis (grip / brake-bias /
   aero; aero is greyed with a "needs Aero Kit" note until the kit is fitted — grip and
-  brake bias are always tunable) plus **Reset to neutral** (which
-  clears only the handling axes and **preserves** engine detune); each change saves via
+  brake bias are always tunable). **Reset to neutral** and **Wheels** sit in the page's
+  bottom action row, not in the body; Reset clears only the handling axes and
+  **preserves** engine detune. Each change saves via
   `Save.set_tuning`. The engine-detune slider is NOT here — it moved to the **Upgrades**
   page's `UpgradesMenu` (detune is a power / power-to-weight knob, not a handling axis).
   The slider holding the cursor lights up (its row wraps in a panel painted by
@@ -1268,7 +1312,7 @@ freshly-built car pays the per-frame stream + settle. `_release_page_props` **hi
 stows off-screen** the parked page's cars instead of freeing them (they stay parented to
 HQ, frozen; stowed so a hidden car can't intercept a tap-to-focus ray meant for the next
 page's car at the same bay); the cache is shared across every car-park lineup (car-select,
-garage picker, engine-swap, starter, Free Roam, title), **evicts** entries for cars no
+engine-swap, wheels, starter, Free Roam, title), **evicts** entries for cars no
 longer offered (`_evict_unowned_cached_cars`, run each build), and is freed wholesale with the HQ node
 on exit-to-race. `◄ ►` (or
 `menu_left`/`menu_right`) move the focus and the camera eases to a **front 3/4 hero
@@ -1336,7 +1380,7 @@ ring: `_cycle_focus` → `_lineup.advance(step)` moves the cursor car-by-car and
 crosses a page boundary, flips the page and re-spawns its props (snapping the camera);
 past the very first / last car it wraps around (a single page wraps within itself). The
 `(n of N)` label counts across the WHOLE list (`_lineup.global_index()` / `total()`). This
-is the same machinery for rally car-select, the garage picker, engine-swap, the starter
+is the same machinery for rally car-select, engine-swap, the starter
 picker, Free Roam and the title backdrop, so they all page identically.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)

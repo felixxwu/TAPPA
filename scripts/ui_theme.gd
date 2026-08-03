@@ -203,6 +203,25 @@ static func panel_box(alpha: float = 1.0, pad: int = 14) -> StyleBoxFlat:
 	return box
 
 
+# The box a passive READOUT wears when it has to sit in a row of buttons and read as the
+# same kind of surface — the tuning lift's car nameplate and stats rows, which flank and
+# sit under the selector chevrons.
+#
+# Taken from the theme's own Button "normal" stylebox rather than rebuilt from
+# `panel_box`, because the two are NOT interchangeable: a panel is fully-padded (14px all
+# round) and may be translucent to float over the 3D world, while a button is pure black
+# with tight 4px vertical margins. Built by hand, a readout ends up visibly taller than
+# the buttons beside it and a slightly different shade — so it borrows the real thing and
+# cannot drift from it. Pair with `custom_minimum_size.y = MENU_ROW_H` to match their
+# height as well (see UITheme.enforce, which pins buttons to exactly that).
+static func readout_box() -> StyleBox:
+	var t := theme()
+	if t == null:
+		return panel_box()
+	var box := t.get_stylebox("normal", "Button")
+	return box if box != null else panel_box()
+
+
 # A PanelContainer wearing `panel_box`. Drop children straight in.
 static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 	var p := PanelContainer.new()

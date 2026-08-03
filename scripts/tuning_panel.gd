@@ -14,6 +14,9 @@ var _sliders: Dictionary = {}        # axis -> HSlider
 var _slider_rows: Dictionary = {}    # axis -> row PanelContainer (greyed when locked)
 var _slider_values: Dictionary = {}  # axis -> value Label
 var _built := false
+# The two action buttons. Built here, PLACED BY THE HOST in its bottom action row —
+# see action_buttons().
+var _reset_button: Button   # reset every axis to neutral — see _reset
 var _wheels_button: Button  # cosmetic wheel styles — see _on_wheels_pressed
 
 
@@ -54,21 +57,34 @@ func _build() -> void:
 	]:
 		add_child(_make_slider_row(spec))
 
-	var reset := Button.new()
-	reset.text = "Reset to neutral"
-	reset.focus_mode = Control.FOCUS_ALL
-	reset.pressed.connect(_reset)
-	add_child(reset)
+	# The ACTIONS are built here but deliberately NOT added as children: the host lays
+	# them out along the bottom of its page, in one horizontal row gapped off this body,
+	# beside its own Back button (see action_buttons). Every menu in the game ends in that
+	# same row — the lift hub, the garage, the start line — so a page that stacked its
+	# actions full-width inside the body read as a different kind of screen.
+	_reset_button = Button.new()
+	_reset_button.text = "Reset to neutral"
+	_reset_button.focus_mode = Control.FOCUS_ALL
+	_reset_button.pressed.connect(_reset)
 
 	# Wheels: cosmetic wheel styles. Leaves the lift for the solo car-park view, where
 	# the car sits SETTLED on its suspension under a side-on camera (the lift holds it
 	# raised, and wheels are judged by stance). See features/wheel-customization.md.
-	# Lives here (not the lift hub row) so it's reached from inside the Tuning menu.
+	# Reached from inside the Tuning menu rather than the lift hub row.
 	_wheels_button = Button.new()
 	_wheels_button.text = "Wheels"
 	_wheels_button.focus_mode = Control.FOCUS_ALL
 	_wheels_button.pressed.connect(_on_wheels_pressed)
-	add_child(_wheels_button)
+
+
+# This panel's action buttons, for the HOST to place in its bottom action row (in order,
+# left to right). They are not children of the panel — see _build. Hosts must add them to
+# a container, or they are never freed and never shown.
+func action_buttons() -> Array[Button]:
+	if not _built:
+		_build()
+		_built = true
+	return [_reset_button, _wheels_button]
 
 
 func _on_wheels_pressed() -> void:

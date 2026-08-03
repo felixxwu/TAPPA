@@ -177,6 +177,7 @@ are the ones a feature doc points at directly.
 |----------|---------|---------|
 | `menu_camera_offset` | (2.6, 1.5, 6.2) | Car-park camera position relative to the focused car — the front-3/4 hero shot |
 | `menu_camera_look_height` | 0.7 | Height (m) above the car's origin that camera looks at |
+| `hq_lift_cam_eye` / `hq_lift_cam_look` | see `game_config.gd` | Tuning-bay camera pose — a **front three-quarter** of the raised car (the lift car noses −Z, so the eye sits round at −Z, ~35° off the nose axis, on the −X side because +X is nearly against the garage wall). Nothing overrides these in `game_config.tres`; the export's doc comment carries the full framing reasoning ([tuning.md](tuning.md)) |
 | `hq_wheel_cam_offset` | (6.4, 0.9, 0.6) | Camera position for the **cosmetic wheel view** — low and side-on, so the settled car's flank and both wheels fill the frame ([wheel-customization.md](wheel-customization.md)) |
 | `hq_wheel_cam_look_height` | 0.45 | Look height for that view — wheel height, not window height |
 

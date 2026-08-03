@@ -152,8 +152,20 @@ the car. **Reset to neutral** clears only the three handling axes back to `0`
 and **preserves** `tuning.engine_detune` (detune is now owned by the upgrades
 menu, so tuning no longer resets it to full power).
 
-Below Reset to neutral sits a **Wheels** button (`_wheels_button`, native
-`FOCUS_ALL` like the sliders and Reset) that fires `on_wheels()` when pressed — the
+### The action buttons live in the HOST's bottom row
+
+`TuningPanel` **builds** its two action buttons — **Reset to neutral** (`_reset_button`) and
+**Wheels** (`_wheels_button`) — but deliberately does **not** parent them. It exposes them via
+`action_buttons() -> Array[Button]` (in left-to-right order) and the HOST places them in the
+page's single centred bottom action row, beside that page's own `< Back`: `hq_overlays.gd` →
+`build_lift_overlay` adds them to `_lift_page_actions` (kept as `hq._tune_action_buttons` so
+gating is a loop, not named buttons), and `start_line.gd` → `_build_menu_overlay` picks them up
+generically via `component.has_method("action_buttons")`. They used to be full-width rows
+stacked inside the panel's own body, which made the page read as a different kind of screen —
+see [ui-design-system.md](ui-design-system.md) → *A page's actions go in ONE bottom row*. A host
+that never adds them shows them nowhere and never frees them.
+
+The **Wheels** button (native `FOCUS_ALL` like the sliders and Reset) fires `on_wheels()` — the
 HQ lift wires it to `_enter_wheel_swap`, leaving the lift for the car park's solo
 wheel view (see [wheel-customization.md](wheel-customization.md)). It moved here
 from the lift hub row so Wheels is reached *through* Tuning rather than sitting
@@ -208,17 +220,25 @@ the car rests on (`hq_environment.gd` → `_build_lift`, sized by `hq_lift_platf
 — a short strip that spans post-to-post but tucks into the gap between the wheels)
 rides up and down **with** the car; both are tweened in parallel by
 `hq.gd` → `_apply_lift_height`. Clicking the lift flies
-the camera to the bay, framing the car to one side as a rear three-quarter shot
-(`hq_lift_cam_*` — see game_config.gd for why it sits on the −X side). The bay opens on
-a **hub** (`LiftPage.HUB`): the car's name/description bottom-left beside the car, with
-**Tuning** / **Upgrades** buttons and a **Test Drive** button under it (to swap which car
-is on the lift, go back to the garage and reopen the **Garage** picker). Each button opens that menu as its own
-full-height page (a panel on the other side, `hq_lift_menu_width_frac`, so the car
-stays in view); a **< Back** returns to the hub, and the hub's Back returns to the
+the camera to the bay, framing the car as a **front** three-quarter shot
+(`hq_lift_cam_*` — see the export's doc comment in `game_config.gd` for why the eye sits round
+at −Z, in front of the nose-out car, and on the −X side). The bay opens on
+a **hub** (`LiftPage.HUB`): bottom-left, TWO boxed readout rows — the **car selector**
+`[ < ] [ CAR NAME ] [ > ]` over the car's **stats line** — with the actions row
+**< Back / Upgrades / Tuning / Test Drive** under them. The chevrons put the previous / next
+owned car on the lift **in place** (`hq.gd` → `_cycle_lift_car`), so swapping cars no longer
+means backing out to the garage; the hub is a two-row cursor (up/down between rows, left/right
+within one) — see [menus.md](menus.md) → *Menu navigation* and *LIFT*. Each menu button opens
+that menu as its own full-height page (centred and wide, `hq_lift_menu_centered_width_frac`,
+with the car readout hidden while it's up); the page's bottom action row leads with a
+**< Back** that returns to the hub, and the hub's Back returns to the
 garage. Splitting the menus onto their own pages keeps each one from needing to scroll.
 
 - **Tune** (`LiftPage.TUNE`) — one row per axis (locked axes greyed with a "needs X
-  kit" note) plus **Reset to neutral**. Each row uses horizontal space: a left column
+  kit" note), with **Reset to neutral** and **Wheels** in the page's bottom action row
+  beside `< Back` (shown only while this page is up — `hq.gd` → `_refresh_lift_ui`, set
+  after `_tune_panel.setup`, which reasserts the Wheels button's own visibility on every
+  refresh). Each row uses horizontal space: a left column
   with the axis name above its current value, beside a right column with the slider above
   its two extremity labels. Each change saves immediately via `Save.set_tuning`.
 - **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
