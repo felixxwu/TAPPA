@@ -12,6 +12,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `shift_up` | E | — | Right bumper (RB/R1) | Manual upshift |
 | `shift_down` | Q | — | Left bumper (LB/L1) | Manual downshift |
 | `handbrake` | Space | — | A / Cross (South) | Rear-axle handbrake (drift) |
+| `nitrous` | Left Shift | — | X / Square (West) | Held: spray nitrous while on throttle (see [nitrous.md](nitrous.md)) |
 | `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |

@@ -91,6 +91,10 @@ const MENU_ROW_H := 30
 const BUTTON_MIN_W := 180
 
 # --- Spacing -----------------------------------------------------------------
+# Inner padding of a house panel (UITheme.panel / panel_box). Named so a caller wanting a
+# different padding can still fall back to the shipped one — see MenuPage's "padding" opt.
+const PANEL_PAD := 14
+
 const GAP_TIGHT := 6
 const GAP := 10
 const GAP_WIDE := 16
@@ -194,7 +198,7 @@ static func _role_color(role: String) -> Color:
 
 # A pure-black, sharp-cornered panel box (rule 4). Defaults to fully opaque;
 # `alpha` can soften a panel that floats over the 3D world.
-static func panel_box(alpha: float = 1.0, pad: int = 14) -> StyleBoxFlat:
+static func panel_box(alpha: float = 1.0, pad: int = PANEL_PAD) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = Color(0.0, 0.0, 0.0, alpha)
 	for side in ["left", "top", "right", "bottom"]:
@@ -347,6 +351,14 @@ static func button(text: String) -> Button:
 # side by side — four of them need ~750 logical units against a canvas ~556 wide at
 # the design height (~445 on the 288 web-touch tier), so the row runs off both edges.
 # Height and uppercasing are left to `enforce()`, which every menu runs after building.
+# An invisible row that eats all the leftover vertical space, pushing whatever follows it to
+# the bottom of its container. Four hq_overlays screens hand-rolled this same three-liner.
+static func vspacer() -> Control:
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return spacer
+
 static func row_button(text: String, on_press: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -450,11 +462,24 @@ static func first_focusable(root: Node, cls := "") -> Control:
 		# button under a queued row isn't itself is_queued_for_deletion() (only the
 		# explicitly-freed ancestor is), so we must walk up — otherwise a deferred grab
 		# lands on a doomed button and loses focus when its parent is freed next frame.
-		if c != null and not in_dying_subtree(c) \
-				and c.focus_mode != Control.FOCUS_NONE and c.is_visible_in_tree() \
-				and not (c is BaseButton and (c as BaseButton).disabled):
+		if is_focusable(c):
 			return c
 	return null
+
+
+# Whether a control can actually take the keyboard/gamepad cursor RIGHT NOW: focusable,
+# visible, not a disabled button, and not inside a subtree that's about to be freed.
+#
+# That last clause is the subtle one, and it is why this is shared rather than re-derived:
+# a rebuilt menu (e.g. the HQ upgrades page) queue_frees its old ROW containers and adds
+# fresh ones in the SAME frame. A button under a queued row is NOT itself
+# is_queued_for_deletion() — only the explicitly-freed ancestor is — so the check must walk
+# UP the tree, or a deferred grab lands on a doomed button and focus is lost when its parent
+# goes next frame. Every hand-rolled copy of this predicate got that part wrong or omitted it.
+static func is_focusable(c: Control) -> bool:
+	return c != null and not in_dying_subtree(c) \
+		and c.focus_mode != Control.FOCUS_NONE and c.is_visible_in_tree() \
+		and not (c is BaseButton and (c as BaseButton).disabled)
 
 
 # True if `node` or any of its ancestors is queued for deletion — i.e. it's part of a

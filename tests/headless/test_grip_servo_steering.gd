@@ -81,16 +81,44 @@ func test_half_input_uses_less_grip_than_full_input() -> void:
 
 
 func test_zero_input_points_the_fronts_along_their_travel() -> void:
-	# The zero point: with no demand the wheels servo to the angle where the front tires do
-	# no sideways work, which is what makes countersteer automatic. Assert the LATERAL slip
-	# collapses — deliberately not the combined slip, which a driven axle never zeroes.
-	var forward := -_car.global_transform.basis.z
-	var left := -_car.global_transform.basis.x
-	_car.linear_velocity = (forward + left).normalized() * 18.0
-	await _wait_physics(40)
-	var lateral := absf(float(_car.drivetrain.front_axle_state(Config.data)["slip_lat_norm"]))
-	assert_lt(lateral, 0.06,
-		"released steering drives front LATERAL slip toward zero (got %.3f)" % lateral)
+	# The zero point: with no demand the wheels servo to the angle where the front tires do no
+	# sideways work, which is what makes countersteer automatic.
+	#
+	# Asserted as a RELATIONSHIP (released < held), not against an absolute slip figure. An
+	# earlier version pinned `< 0.06` and a `steer_speed` retune broke it — exactly the
+	# tunable-sensitivity CLAUDE.md warns about, since how far the servo gets in a fixed window
+	# depends on the rate limit. Deliberately the LATERAL component, not the combined slip,
+	# which a driven axle never zeroes.
+	# Steer AWAY from the travel direction for the contrast case. Holding INTO a forward-left
+	# slide is not a contrast at all: steering left also points the wheels toward their travel,
+	# so it lands in the same place as releasing and the comparison measures nothing.
+	var against := await _slide_lateral_slip("steer_right")
+	var released := await _slide_lateral_slip("")
+	assert_lt(released, against,
+		"releasing seeks the null; steering away from travel does not (%.3f vs %.3f)"
+			% [released, against])
+
+
+# Front lateral slip after a fixed 40-tick forward-left slide, optionally holding `action`.
+# Resets to the spawn pose first so both runs start identical — comparing two PHASES of one
+# run instead would measure the yaw the car accumulated, not what the servo did.
+func _slide_lateral_slip(action: String) -> float:
+	_car._reset()  # reset is menu-only now (no input action); call the logic directly
+	await _wait_physics(120)
+	# A SHALLOW slide (~15 deg), deliberately. At 45 deg the zero-lateral-slip angle is outside
+	# steer_limit, so the servo pins the wheels at the stop and steering input cannot move them
+	# to either side of the null — both runs then read identically and the test proves nothing.
+	# Shallow enough that the null is reachable, the input has somewhere to go.
+	var slide := (-_car.global_transform.basis.z
+		- _car.global_transform.basis.x * 0.27).normalized()
+	if action != "":
+		Input.action_press(action)
+	for i in 40:
+		_car.linear_velocity = slide * 18.0
+		await get_tree().physics_frame
+	if action != "":
+		Input.action_release(action)
+	return absf(float(_car.drivetrain.front_axle_state(Config.data)["slip_lat_norm"]))
 
 
 func test_standstill_full_input_reaches_the_mechanical_stop() -> void:

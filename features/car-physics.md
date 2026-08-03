@@ -120,7 +120,12 @@ for each).
      Trail braking and power-out emerge from this rather than being scripted. It is demand
      arbitration, **not** ABS or traction control: pedal torque is untouched when the player
      isn't steering, so lockup and wheelspin remain.
-   - **Spin protection** (`spin_assist_torque`) is now the ONLY steering aid, and solves what
+   - **Spin protection** (`spin_assist_torque`) is **off by default** (`0.0`) — a deliberate
+     choice: the grip servo plus a lowered centre of mass (`com_height`) and the grounded
+     anti-roll bar (`level_assist_grounded = 1.0`) keep the car recoverable without a yaw aid,
+     so slides are resolved by tyre physics rather than by scripted torque. The code below is
+     retained and still correct if a car or difficulty setting ever wants it back. When
+     enabled it solves what
      the servo cannot: a player who holds steering *into* a slide until the car rotates past
      recovery. Once the car has rotated further than `spin_assist_angle` from its travel
      direction, a corrective yaw torque pulls the nose back, ramping in linearly from 0 at the
@@ -322,9 +327,28 @@ front-axle weight fraction (0.50 = 50/50, >0.5 nose-heavy, <0.5 tail-heavy).
 along the wheelbase: for static balance the CoM sits behind the front axle by
 `wheelbase × rear_fraction`, so from the wheelbase-centred body origin (front axle at
 −Z, rear at +Z) the offset is `center_of_mass.z = wheelbase × (rear_frac − 0.5)`
-(+Z = rearward). Only the front/rear split is authored; the CoM height stays at the
-body origin (`y = 0`) — published CoG-height data is scarce and the low
-`wheel_roll_influence` (0.1) damps its effect anyway.
+(+Z = rearward). Only the front/rear split is authored per car; the CoM **height** is
+global, from `GameConfig.com_height` (−0.25 m, i.e. below the body origin).
+
+### CoG height and the rollover threshold
+
+The height matters because the roll lever a tyre force acts through is the vertical
+CoM-to-contact-patch distance (see `wheel_roll_influence` below), which sets the static
+rollover threshold `track / (2 × CoG height)`. A real car slides before it tips because
+that lands at ~1.4 g while its tyres only make ~1 g. The body origin sits high —
+`settled_ride_height` is ~1 m drooped with the shipped 0.6 m suspension travel, ~0.75 m
+settled — so leaving the CoM at `y = 0` gave a ~0.8–0.9 g threshold against 1.21–1.6 m
+authored tracks, and cars tipped over as soon as grip rose. `com_height` lowers it to a
+real car's ~0.5 m and restores the margin. This is the reason the shipped
+`wheel_roll_influence` is **1** (the physical setting — tyre forces act at the contact
+patch); the `0.1` script default is a legacy arcade fudge that faked rollover-immunity
+by pretending the tyres pushed at hub height, and is only needed when the CoG is too
+high. Note the two knobs are not orthogonal below 1: `com_height` is applied outside the
+`wheel_roll_influence` scaling, so at a low influence an over-lowered CoM can drive the
+lever through zero and make the car lean *into* corners. At `influence = 1` they compose
+correctly. Shortening `suspension_travel` also lowers the CoG, since it is most of what
+jacks the body up. A per-car CoG height (a `CarLibrary` field) would be the next step if
+tall vans should roll more than low coupes.
 
 This is **not cosmetic**: `Drivetrain.wheel_normal_force()` derives each wheel's grip
 from its actual suspension compression, and the suspension settles around wherever the

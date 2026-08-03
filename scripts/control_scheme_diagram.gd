@@ -5,11 +5,14 @@ extends Control
 # layout: a landscape "phone" with the slider / steer buttons / pedals / tilt
 # motif of that scheme. Set `scheme` then add it to the tree; it redraws on resize.
 
-# Pedal/steer/accent colours — green gas, red brake, blue steering.
+# Pedal/steer/accent colours. Gas and brake come from the house palette (UITheme) rather
+# than being re-typed here, so the diagram's green/red can't drift from the green/red every
+# other menu uses; only the blue steering accent and the shades are local, since the palette
+# has no blue.
 const _SCREEN_BG := Color(0.09, 0.11, 0.15, 1.0)
 const _BORDER := Color(1, 1, 1, 0.45)
-const _GAS := Color(0.38, 0.78, 0.42, 0.9)
-const _BRAKE := Color(0.86, 0.40, 0.34, 0.9)
+static var _GAS: Color = Color(UITheme.GREEN, 0.9)
+static var _BRAKE: Color = Color(UITheme.RED, 0.9)
 const _STEER := Color(0.62, 0.74, 1.0, 0.9)
 const _SHADE := Color(0.62, 0.74, 1.0, 0.18)
 const _TEXT := Color(1, 1, 1, 0.92)

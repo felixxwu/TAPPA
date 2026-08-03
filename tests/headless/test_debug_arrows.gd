@@ -213,6 +213,12 @@ func test_assist_arrow_reflects_combined_yaw_assist() -> void:
 	for i in 30:
 		car.linear_velocity = (-car.global_transform.basis.z
 			- car.global_transform.basis.x).normalized() * 30.0
+		# Pin the yaw rate to zero every tick. The aid's torque is
+		# `scale * torque * (sign(slip_angle) - yaw_rate * SPIN_ASSIST_DAMPING)`, so once the
+		# car is rotating fast the damping term can exceed 1 and FLIP the sign — which a
+		# `steer_speed` retune was enough to trigger. Zeroing the yaw isolates the sign of the
+		# corrective term itself, which is what this test is about.
+		car.angular_velocity = Vector3.ZERO
 		await get_tree().physics_frame
 	var assist_on_verts := _surface_vertex_count(overlay)
 	assert_gt(car.steer_assist_readout, 0.0,
@@ -223,6 +229,7 @@ func test_assist_arrow_reflects_combined_yaw_assist() -> void:
 	for i in 30:
 		car.linear_velocity = (-car.global_transform.basis.z
 			- car.global_transform.basis.x).normalized() * 30.0
+		car.angular_velocity = Vector3.ZERO   # same conditions as the aid-ON run above
 		await get_tree().physics_frame
 	var assist_off_verts := _surface_vertex_count(overlay)
 	assert_almost_eq(car.steer_assist_readout, 0.0, 0.001, "no assist torque when the aid is disabled")

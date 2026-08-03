@@ -14,7 +14,7 @@
 │   └── game_config.tres   # GameConfig resource — all tuning values
 ├── scripts/               # All GDScript (see file map below)
 ├── shaders/               # ps1_models.gdshader, ps1_post_process.gdshader
-├── textures/              # checker.png
+├── textures/              # terrain, sky, sign and car textures
 ├── tests/                 # GUT tests (headless/, fixtures/)
 ├── addons/gut/            # Vendored GUT unit-test framework
 └── features/              # ← this documentation folder

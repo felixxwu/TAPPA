@@ -19,9 +19,7 @@ func build_title_overlay() -> void:
 	# collection) stays visible above them rather than being covered by a centred menu.
 	root.alignment = BoxContainer.ALIGNMENT_END
 
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(spacer)
+	root.add_child(UITheme.vspacer())
 
 	# Title screen is a horizontal row of buttons (Start / Settings / Free Roam, plus
 	# Exit Game on non-web builds) over the parked-collection backdrop — no title/
@@ -107,9 +105,7 @@ func build_garage_overlay() -> void:
 	var hint := _hq._label("GARAGE — tap the map table to choose a rally, or the lift to tune your car", 22)
 	root.add_child(hint)
 
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(spacer)
+	root.add_child(UITheme.vspacer())
 
 	# The bottom action row is rebuilt IN PLACE by hq._refresh_garage_row():
 	# Back / Career / Garage / Mystery Box (N) / Online, ONE level (Mystery Box appears
@@ -139,9 +135,7 @@ func build_table_overlay() -> void:
 	_hq._reveal_banner.visible = false
 	root.add_child(_hq._reveal_banner)
 
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(spacer)
+	root.add_child(UITheme.vspacer())
 
 	var back := Button.new()
 	back.text = "< Back to garage"
@@ -448,9 +442,7 @@ func build_car_overlay() -> void:
 	root.add_child(hint)
 
 	# Push the car nav + actions to the bottom so the 3D car park is visible above.
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(spacer)
+	root.add_child(UITheme.vspacer())
 
 	_hq._no_eligible_label = _hq._label("", 16)
 	_hq._no_eligible_label.visible = false

@@ -875,47 +875,37 @@ func _pw_limit() -> float:
 	return DrivingContext.pw_limit()
 
 
+# Body width both pre-race menu overlays use. Sized for the narrow logical UI canvas rather
+# than the window (see features/menus.md -> "Upgrades / Tune panel width"); it was previously
+# a 520.0 default that no call site used, with the real 380.0 duplicated at both of them.
+const MENU_OVERLAY_WIDTH := 380.0
+
 # Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
 # centred house panel wrapping a titled `component` and a Back button wired to `on_back`.
 func _build_menu_overlay(title: String, component: Control, on_back: Callable, connect_back := true,
-		width := 520.0) -> CanvasLayer:
+		width := MENU_OVERLAY_WIDTH) -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.layer = 6   # above the start overlay (layer 5)
 	add_child(layer)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(center)
-	var panel := UITheme.panel(UITheme.PANEL.a)
-	center.add_child(panel)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", UITheme.GAP)
-	col.custom_minimum_size = Vector2(width, 0)
-	panel.add_child(col)
-	col.add_child(UITheme.title(title))
-	col.add_child(component)
+	# MenuPage owns this shape now — a titled body box sized to its contents, with the page's
+	# ACTIONS in ONE centred horizontal row gapped off the box below it. See menu_page.gd for
+	# the two rules and why they aren't per-screen choices; this screen used to hand-roll the
+	# same CenterContainer + panel + gap-spacer + HBox stack.
+	var page := MenuPage.new({"title": title, "width": width, "alpha": UITheme.PANEL.a})
+	layer.add_child(page)
+	page.body().add_child(component)
 
-	# The page's ACTIONS go along the bottom in ONE horizontal row, gapped off the body
-	# above — the same shape the bottom row of every other menu uses (the start line's own
-	# Exit/Upgrades/Tune/Start row, the garage row, the tuning-lift hub). Back leads, the
-	# component's own actions follow, so "leaving" is always the leftmost item.
-	var gap := Control.new()
-	gap.custom_minimum_size.y = UITheme.GAP
-	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(gap)
-	var actions := HBoxContainer.new()
-	actions.alignment = BoxContainer.ALIGNMENT_CENTER
-	actions.add_theme_constant_override("separation", UITheme.GAP)
-	col.add_child(actions)
+	# Back leads, the component's own actions follow, so "leaving" is always leftmost.
 	var back := UITheme.row_button("Back", Callable())
 	back.focus_mode = Control.FOCUS_ALL  # these pages navigate by native focus (MenuNav)
 	if connect_back:
 		back.pressed.connect(on_back)
-	actions.add_child(back)
+	page.add_action(back)
 	# A component may contribute its own actions (TuningPanel's Reset / Wheels). It builds
 	# them but never parents them, precisely so they can land in this row.
 	if component.has_method("action_buttons"):
 		for b in component.action_buttons():
-			actions.add_child(b)
+			page.add_action(b)
 	_menu_last_back = back
 	UITheme.enforce(layer)
 	return layer
@@ -962,7 +952,7 @@ func _build_tune_overlay() -> void:
 	# Same 380 as the Upgrades overlay (_build_upgrades_overlay): TuningPanel's rows are
 	# the same SliderRow shape as the detune row (180px label + an expand-fill slider), so
 	# the old shared 520 floor stretched this slider bar just as unnecessarily wide.
-	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune, true, 380.0)
+	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune)
 
 
 # An edit was made in the tune panel. Re-apply ONLY the tuning to the live config
@@ -993,7 +983,7 @@ func _build_upgrades_overlay() -> void:
 	# the one detune slider) need far less room than the handling-axis sliders, and the
 	# shared 520 floor was stretching the detune slider's SIZE_EXPAND_FILL bar across the
 	# leftover width for no reason — reading as an oversized panel.
-	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false, 380.0)
+	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false)
 	_upgrades_back = _menu_last_back
 
 

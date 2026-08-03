@@ -803,6 +803,38 @@ func test_apply_car_sets_custom_center_of_mass_from_weight_front() -> void:
 		assert_almost_eq(_car.center_of_mass.x, 0.0, 0.0001, "%s CoM stays centred laterally" % spec["name"])
 
 
+func test_apply_car_takes_com_height_from_config() -> void:
+	# WIRING test (not a pinned value): whatever com_height is configured to, the CoM
+	# must sit at that height rather than at the body origin. The height is the roll
+	# lever tyre forces act through (drivetrain.gd), so a silently-ignored config field
+	# would restore the too-high CoG that makes cars tip instead of slide.
+	CarFixtures.install()
+	var original: float = _car.config.com_height
+	for height in [-0.4, -0.15, 0.0]:
+		_car.config.com_height = height
+		_car.apply_car(0)
+		assert_almost_eq(_car.center_of_mass.y, height, 0.0001,
+			"CoM y follows GameConfig.com_height (%s)" % height)
+	_car.config.com_height = original
+
+
+func test_engine_swap_preserves_com_height() -> void:
+	# The swap path re-derives weight_front and re-places the CoM through the same
+	# helper; it must not drop the configured height back to the body origin.
+	CarFixtures.install()
+	_car.config.com_height = -0.3
+	_car.apply_car(0)
+	var before := _car.center_of_mass.y
+	var mass_before := _car.mass
+	var stock := String(CarLibrary.all()[0].get("engine", ""))
+	var other := "fx_v8" if stock != "fx_v8" else "fx_i4"
+	_car._apply_engine_swap({"swapped_engine": other})
+	assert_ne(_car.mass, mass_before,
+		"sanity: the swap path actually ran and re-derived the mass")
+	assert_almost_eq(_car.center_of_mass.y, before, 0.0001,
+		"an engine swap keeps the configured CoM height")
+
+
 func test_nose_heavy_car_sits_com_forward_of_tail_heavy() -> void:
 	# Sign/direction check: a nose-heavy car's CoM is forward (-Z) of a tail-heavy
 	# one's. Compares the sign of the mapping, not the specific figures.

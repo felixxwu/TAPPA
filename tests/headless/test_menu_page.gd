@@ -93,16 +93,69 @@ func test_a_tall_body_is_capped_so_the_action_row_stays_on_screen() -> void:
 
 
 func test_the_page_insets_from_its_parent_on_every_side() -> void:
-	# The inset IS the gap to the screen edges that makes the box read as floating.
+	# The inset IS the gap to the screen edges that makes the box read as floating. Measured
+	# as real geometry rather than by reading the margin theme constants: those live on an
+	# inner MarginContainer (the page itself is a plain Control so a `dim` backdrop can cover
+	# the whole frame), so asserting the constants would pin the mechanism, not the result.
+	var page := _sized_page(400.0, 300.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var box := page.panel()
+	assert_gt(box.global_position.x - page.global_position.x, 0.0, "inset on the left")
+	assert_gt(box.global_position.y - page.global_position.y, 0.0, "inset on the top")
+	assert_gt((page.global_position.x + page.size.x) - (box.global_position.x + box.size.x),
+		0.0, "inset on the right")
+	# The bottom gap is the action row plus its own gap, so the box must end well above it.
+	assert_gt((page.global_position.y + page.size.y) - (box.global_position.y + box.size.y),
+		0.0, "inset on the bottom")
+
+
+func test_over_wide_content_does_not_paint_outside_the_box() -> void:
+	# The margin does NOT cap the box's width — see the "margin does not bind horizontally"
+	# note in menu_page.gd. What protects the screen is clipping, so that is what to assert:
+	# content wider than the frame must not paint outside its own background.
+	var page := _sized_page(400.0, 300.0, {"margin": 24.0})
+	var wide := Label.new()
+	wide.custom_minimum_size.x = 2000.0   # far wider than the 400-wide frame
+	page.body().add_child(wide)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(page.panel().clip_contents,
+		"the box clips, so an over-wide row can't bleed into the 3D scene behind it")
+
+
+# --- The optional dim backdrop (true modals) ---------------------------------
+
+func test_no_dim_backdrop_by_default() -> void:
+	# Most pages sit over a 3D station that should stay visible; only a true modal dims.
 	var page := _page()
-	for side in ["left", "top", "right", "bottom"]:
-		assert_gt(page.get_theme_constant("margin_" + side), 0,
-			"the page insets from the screen on the %s" % side)
+	assert_eq(page.find_children("*", "ColorRect", false, false).size(), 0,
+		"a plain page paints no backdrop")
 
 
-func test_the_edge_gap_is_caller_tunable() -> void:
-	var page := _page({"margin": 7.0})
-	assert_eq(page.get_theme_constant("margin_left"), 7, "a caller can set the edge gap")
+func test_a_dim_page_covers_the_WHOLE_frame() -> void:
+	# The reason MenuPage is a plain Control and not a MarginContainer: a container lays its
+	# children out inside its own margins, so a full-rect backdrop child would be inset by
+	# them and leave an undimmed border around the screen.
+	var page := _sized_page(400.0, 300.0, {"dim": true, "margin": 24.0})
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var rects := page.find_children("*", "ColorRect", false, false)
+	assert_eq(rects.size(), 1, "a dim page paints exactly one backdrop")
+	var dim := rects[0] as ColorRect
+	assert_almost_eq(dim.size.x, page.size.x, 1.0, "the backdrop spans the full width")
+	assert_almost_eq(dim.size.y, page.size.y, 1.0, "the backdrop spans the full height")
+	assert_eq(dim.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+		"the backdrop is a visual cue and must not swallow input")
+
+
+func test_the_dim_backdrop_sits_behind_the_body_box() -> void:
+	var page := _sized_page(400.0, 300.0, {"dim": true})
+	await get_tree().process_frame
+	var rects := page.find_children("*", "ColorRect", false, false)
+	assert_gt(rects.size(), 0, "precondition: the backdrop exists")
+	# Draw order is child order, so the backdrop must come before the margined column.
+	assert_eq(page.get_child(0), rects[0], "the backdrop is drawn first, behind the content")
 
 
 # --- Rule 2: actions are a gapped row BELOW the box, not inside it ----------

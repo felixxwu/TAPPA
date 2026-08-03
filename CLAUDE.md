@@ -18,7 +18,7 @@
   ever-growing map that gets more accurate every time it's used, so don't just
   silently work around a gap — close it. When citing code, prefer durable
   references — a file plus a symbol/function name (`repair_reveal.gd` →
-  `_animate`) rather than a bare line number, which rots on the next refactor.
+  `worth_showing`) rather than a bare line number, which rots on the next refactor.
 - **Menus must be keyboard + gamepad navigable.** Every menu in the game supports
   up / down / left / right / enter / back on keyboard AND controller (not just
   mouse / touch). When you ADD a new menu or CHANGE an existing one, wire its

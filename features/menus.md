@@ -456,6 +456,25 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 > `tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd` /
 > `test_pause_menu.gd`).
 
+#### A third pattern: the single-action screen
+
+A screen whose menu offers exactly **one** action needs neither framework, because there is
+nothing to move a cursor between. `scripts/wreck_screen.gd` is the one instance: its Return
+to HQ button stays `FOCUS_NONE`, and its own `_unhandled_input` fires the action on
+`menu_select` (plus a screen touch / left click, matching the start line). `MenuNav.attach`
+would add a focus ring and arrow-key handling that have nowhere to go.
+
+Two things this pattern must still do, and the reason it is written down rather than left as
+a one-off: it has to **gate on the phase** — `wreck_screen.gd` only accepts the input once
+`_seq == Seq.ORBIT`, so a press during the crash animation can't skip it — and it needs a
+test that drives the **input action**, not the button's `pressed` signal. Those are separate
+code paths, so `pressed.emit()` alone leaves the keyboard/gamepad route unexercised (see
+`test_menu_select_returns_to_hq_without_a_pointer` and
+`test_menu_select_is_ignored_before_the_menu_appears` in
+`tests/headless/test_wreck_screen.gd`).
+
+Reach for this only at one action. At two, use `MenuNav.attach`.
+
 ### Developer-only pages
 
 **Benchmark, Dev and Seed lab are hidden from players.** `_build_list_page` adds
@@ -720,8 +739,12 @@ below it as a sibling, and `root` is the outer full-rect VBox you hand to
 `MenuNav.attach` / `UITheme.enforce`. Variable-height content goes in `body`; the
 control that LEAVES the page (Back / Done / Close / "Continue") goes in `footer`.
 `hq.gd::_make_carpark_modal(build_body, build_footer)` is the same contract for the
-car-park's centred house panel (it also caps the panel to the frame height instead of
-centring it at its full minimum size, which would push the footer off screen).
+car-park's centred house panel. It is now a thin wrapper over `MenuPage`
+(`{"dim": true, "margin": 16.0, "padding": 20}`) rather than a hand-rolled stack: `MenuPage`
+gained a **`dim`** option for true modals like this one, and its `_sync_body_height` already
+budgets the box against the frame height instead of centring it at its full minimum size —
+which is what stops a tall body pushing the footer off screen. Note the footer callable is
+handed an **`HBoxContainer`** (the page's action row, outside the box), not a `VBoxContainer`.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
 fixed — `DisplayStretch.DESIGN_HEIGHT`, 360 from `project.godot`'s
@@ -1065,10 +1088,10 @@ nameplate, disabled because `ButtonCursor` skips disabled stops but knows nothin
 visibility — and forces `_lift_row` back to `ACTIONS`; `_move_lift_row` is then a no-op
 toward the empty selector row (`_selector_has_stops`). **Test
 Drive** (`_test_drive`) launches free roam with the car already on the lift — no picker,
-delegating to `_start_free_roam`. Each menu button opens that menu as its **own full-height
-page** — a solid panel **centred horizontally** and wide
-(`hq_lift_menu_centered_width_frac`, using most of the screen); the car-description
-panel **hides** while a sub-menu is open so the page has room. Every sub-page ends in ONE
+delegating to `_start_free_roam`. Each menu button opens that menu as its **own page** — a
+`MenuPage` (`scripts/menu_page.gd`) whose solid body box is **centred on both axes and sized
+to its contents**, not to a fraction of the screen; the car-description panel **hides** while
+a sub-menu is open so the page has room. Every sub-page ends in ONE
 centred horizontal **bottom action row** (`_lift_page_actions`, gapped off the body above):
 **< Back** leads it (`_lift_back_button` → the hub; the hub's own Back returns to the garage),
 and the TUNE page's own actions — `TuningPanel.action_buttons()`, i.e. **Reset to neutral**
@@ -1082,27 +1105,37 @@ to itself** and doesn't need to scroll. The two pages:
 
 ### Upgrades / Tune panel width
 
-The panel's actual content width is NOT `hq_lift_menu_centered_width_frac * window
-width` — it's that fraction of the **logical UI canvas**, which `scripts/display_stretch.gd`
+**The panel takes its width from its widest ROW, not from a configured fraction.** The lift
+sub-pages are built as a `MenuPage` with no `set_body_width` call
+(`hq_overlays.gd` → `build_lift_overlay`), so the body box hugs its contents; the only bound
+is the page margin, plus the box's `clip_contents` as a last resort. There is no
+width-fraction knob any more — a `hq_lift_menu_centered_width_frac` config field drove this
+before the `MenuPage` migration and has been removed.
+
+What still matters is **what the rows are measured against**, because it is the thing everyone
+gets wrong: the space available is the **logical UI canvas**, which `scripts/display_stretch.gd`
 lays out at `DisplayStretch.DESIGN_HEIGHT * window_aspect / Config.data.horizontal_stretch`
 (a real per-instance `content_scale_size`, not the raw window). `horizontal_stretch`
-(authored ~1.2) is a purely visual anamorphic widening applied via the stretch system,
-and it SHRINKS the logical canvas UI actually lays out against — any width measurement
-that skips the `/ horizontal_stretch` step overstates available space by that same
-factor. At the narrowest supported aspect (4:3, `project.godot`'s
-`window_width_override`/`window_height_override` = 1280×960), the true content width is
-tight enough that a busy row (`upgrades_menu.gd`'s WEIGHT slot: Stock + several parts,
-with the selected option bracketed — `_option_button` wraps the label in `[...]`, adding
-width to whichever option happens to be selected) needed more room than the shared
-`theme/ui_theme.tres` Button style's 14px content margins left, even at
-`hq_lift_menu_centered_width_frac` maxed to 1.0. The fix (see `_tighten_option_padding`
-in `upgrades_menu.gd`) duplicates each option button's stylebox with a smaller
-left/right content margin scoped to just these multi-option selector buttons — not the
-shared theme — rather than continuing to chase the panel's width_frac upward, since frac
-alone tops out below what the row needs at true 4:3. When re-measuring this by hand,
-always go through `DisplayStretch.logical_size()` (or an equivalent `/ horizontal_stretch`
-step) and replicate the actual worst-case selected/bracketed option — a measurement that
-skips either one will look fine in a throwaway test and still wrap in the real game.
+(authored ~1.2) is a purely visual anamorphic widening applied via the stretch system, and it
+SHRINKS the canvas UI actually lays out against — any measurement that skips the
+`/ horizontal_stretch` step overstates available space by that same factor.
+
+At the narrowest supported aspect (4:3, `project.godot`'s
+`window_width_override`/`window_height_override` = 1280×960) that canvas is tight enough that
+a busy row — `upgrades_menu.gd`'s WEIGHT slot: Stock plus several parts, with the selected
+option bracketed, since `_option_button` wraps the label in `[...]` and so adds width to
+whichever option happens to be selected — needed more room than the shared
+`theme/ui_theme.tres` Button style's 14px content margins left. The fix is
+`_tighten_option_padding` in `upgrades_menu.gd`: it duplicates each option button's stylebox
+with a smaller left/right content margin, scoped to just these multi-option selector buttons
+rather than the shared theme. That fix is still load-bearing — hugging the content does not
+make the row fit, it just means an over-wide row pushes the box out to the margin (and then
+clips) instead of wrapping inside a fixed fraction.
+
+When re-measuring this by hand, always go through `DisplayStretch.logical_size()` (or an
+equivalent `/ horizontal_stretch` step) and replicate the actual worst-case
+selected/bracketed option — a measurement that skips either one will look fine in a
+throwaway test and still clip in the real game.
 
 - **Tune** (`LiftPage.TUNE`) — a slider per handling tuning axis (grip / brake-bias /
   aero; aero is greyed with a "needs Aero Kit" note until the kit is fitted — grip and
@@ -1330,8 +1363,8 @@ no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrec
 (`_build_eligible_lineup` records its qualifying tune from
 `RallyLibrary.qualifying_detune` in `_detune_needed`) and **looks eligible** — no
 warning label, the plain enabled Start (saves overlay space). Pressing Start pops an
-**on-brand modal** (`_show_detune_confirm` → `_make_carpark_modal`: a full-screen
-dimmer + centred house `UITheme.panel`, NOT a native grey dialog) with a short
+**on-brand modal** (`_show_detune_confirm` → `_make_carpark_modal`, i.e. a `MenuPage` with
+`dim`: a full-screen dimmer + centred house panel, NOT a native grey dialog) with a short
 "Too powerful" message and **two left/right-navigable buttons**: **Cancel** and
 **Change Upgrades**. **Change Upgrades**
 (`_detune_change_upgrades`) opens the **Change-Upgrades popup** — the shared

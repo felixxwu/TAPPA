@@ -1,5 +1,5 @@
 class_name MenuPage
-extends MarginContainer
+extends Control
 # THE HOUSE PAGE SHAPE, as a reusable widget: a BODY BOX that hugs its own contents with a
 # gap to the screen edges, and the page's ACTION BUTTONS along the bottom in one horizontal
 # row, gapped off the body.
@@ -24,8 +24,17 @@ extends MarginContainer
 #    with the page. Leaving is leftmost (see features/menus.md → "Button order").
 #
 # The gap to the screen edges is what makes the box read as floating rather than as the
-# screen itself, so it is the whole point of the MarginContainer this extends — do not
-# anchor a MenuPage to a full rect with zero margin.
+# screen itself — do not anchor a MenuPage to a full rect with zero margin.
+#
+# CAVEAT: the margin does NOT bind horizontally. The box hugs and centres, so with content
+# narrower than the frame the centring gap dominates and the margin is invisible; with content
+# WIDER than the frame the box still grows past it, because the body's scroll has
+# horizontal_scroll_mode DISABLED and therefore propagates its content's minimum width. What
+# actually stops an over-wide row reaching the 3D scene is `clip_contents` on the box. So the
+# margin's real effect is vertical (via _sync_body_height's available-height budget) plus the
+# resting look. If a hard horizontal cap is ever needed, it needs a real mechanism — capping
+# the body's width at the call site (set_body_width + hq._modal_body_width is the existing
+# pattern) rather than relying on this opt.
 #
 # Usage:
 #     var page := MenuPage.new({"title": "Upgrades", "width": 380.0})
@@ -58,13 +67,35 @@ var _fixed_body_height := 0.0
 #   "fixed_height" (float) an exact body height; omitted lets it hug the content
 #   "alpha"  (float)   body-box background alpha (default opaque — see UITheme.panel_box)
 #   "margin" (float)   the gap to the screen edges (default UITheme.MARGIN)
+#   "padding" (float)  the body box's inner padding (default UITheme.panel_box's own)
+#   "dim"    (bool)    paint UITheme.MODAL_DIM over the WHOLE frame behind the page, for a
+#                      true modal that must read as blocking what's underneath
 func _init(opts: Dictionary = {}) -> void:
 	var margin: float = float(opts.get("margin", UITheme.MARGIN))
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "top", "right", "bottom"]:
-		add_theme_constant_override("margin_" + side, int(margin))
 	# Let anything not a control fall through to the 3D station behind the page.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# This extends a plain Control rather than a MarginContainer SO THAT a dim backdrop can
+	# cover the whole frame: a Container lays its children out inside its own margins, so a
+	# full-rect ColorRect child would be inset by them and leave an undimmed border. The
+	# margins therefore live on an inner MarginContainer, which the dim sits behind.
+	if bool(opts.get("dim", false)):
+		var dim := ColorRect.new()
+		dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+		dim.color = UITheme.MODAL_DIM
+		# IGNORE, not STOP: the dim is a visual cue. Screens that must actually block input
+		# underneath do it by routing navigation to the modal (see hq.gd _carpark_modal_open),
+		# not by relying on a rect to swallow events.
+		dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(dim)
+
+	var margins := MarginContainer.new()
+	margins.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margins.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "top", "right", "bottom"]:
+		margins.add_theme_constant_override("margin_" + side, int(margin))
+	add_child(margins)
 
 	# The column centres its two parts vertically, which is what lets the body box hug its
 	# contents instead of being stretched to the available height.
@@ -72,14 +103,14 @@ func _init(opts: Dictionary = {}) -> void:
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", UITheme.GAP)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(col)
+	margins.add_child(col)
 
 	_panel = PanelContainer.new()
 	_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER  # hug the content's height
 	_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.add_theme_stylebox_override(
-		"panel", UITheme.panel_box(float(opts.get("alpha", 1.0))))
+	_panel.add_theme_stylebox_override("panel", UITheme.panel_box(
+		float(opts.get("alpha", 1.0)), int(opts.get("padding", UITheme.PANEL_PAD))))
 	# A row that wants more width than the box must never spill past the background into
 	# the 3D scene behind it. Content is also wrapped where it can be (the HFlowContainer
 	# option rows in upgrades_menu.gd), so this is a safety net, not the mechanism.

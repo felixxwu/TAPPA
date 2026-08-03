@@ -157,7 +157,7 @@ func _ready() -> void:
 		$Floor.layers = layers
 	# Baked terrain shading — push the sun/ambient + terrain amount BEFORE the
 	# initial build (below) so it's folded into the first chunks' vertex colours.
-	cfg.apply_terrain_light($Floor as TerrainManager)
+	cfg.apply_terrain_light(_floor())
 	# Weather look override (no-op on a dry stage). Layered AFTER _apply_region_look()
 	# so rain wins over the region's clear-day palette, and after apply_terrain_light()
 	# / the tarmac_color push above so it gets the last word on the ground shading —
@@ -166,7 +166,7 @@ func _ready() -> void:
 	_apply_weather_look(cfg)
 	# Terrain LOD tunables — also before the precompute (LOD meshes + skirt are
 	# prebaked in cache_chunk) and the initial build.
-	cfg.apply_terrain_lod($Floor as TerrainManager)
+	cfg.apply_terrain_lod(_floor())
 	_mat($Car/Chassis).set_shader_parameter("albedo_color", cfg.chassis_color)
 	_mat($Car/Cabin).set_shader_parameter("albedo_color", cfg.cabin_color)
 	# Wheel materials are shared resources; setting each once covers all four.
@@ -283,13 +283,13 @@ func _ready() -> void:
 	# wheel-force debug overlay; harmless and idle until toggled on. Render times
 	# are measured on the PostProcess SubViewport — the viewport that actually
 	# does the 3D work while main.tscn is up (the root's 3D pass is disabled).
-	var perf := PerfOverlay.new($Floor as TerrainManager)
+	var perf := PerfOverlay.new(_floor())
 	perf.measure_viewport = get_node_or_null("PostProcess/View") as Viewport
 	perf.engine_audio = $Car.get_node_or_null("EngineAudio")  # live audio-overrun readout
 	add_child(perf)
 
 	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref).
-	var pause_menu := get_node_or_null("PauseMenu") as PauseMenu
+	var pause_menu := _pause_menu()
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
 			pause_menu.reset_to_track_requested.connect(_on_reset_to_track_requested)
@@ -318,7 +318,7 @@ func _ready() -> void:
 		runner.name = "BenchmarkRunner"
 		add_child(runner)
 		runner.setup($Car, _track_progress, _road_centerline,
-			get_node_or_null("PostProcess/View") as Viewport, $Floor as TerrainManager)
+			get_node_or_null("PostProcess/View") as Viewport, _floor())
 
 
 # Yield a frame so a freshly-set LoadingScreen step actually paints before the
@@ -390,7 +390,7 @@ func _prewarm_corridor() -> void:
 	var length := _road_centerline.get_baked_length()
 	if length <= 0.0:
 		return
-	var floor_tm := $Floor as TerrainManager
+	var floor_tm := _floor()
 	var cam := Camera3D.new()
 	cam.far = 400.0
 	add_child(cam)
@@ -618,7 +618,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var bake_args := TerrainManager.bake_args(cfg)
 	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
 	# group applied earlier); the cliff pass runs inside set_track → bake_track.
-	cfg.apply_cliffs($Floor as TerrainManager)
+	cfg.apply_cliffs(_floor())
 	# Baking the road into the terrain (flatten + surface split + cliffs) is the heaviest
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
@@ -649,7 +649,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# the real lake is built against in _build_lakes.
 	if cfg.water_enabled and loading != null and not _headless and water_bounds.has_area():
 		var baked: Array = LakeField.preview_cells_for(
-			($Floor as TerrainManager).baked_height_at, cfg.track_water_level_m, water_bounds)
+			_floor().baked_height_at, cfg.track_water_level_m, water_bounds)
 		loading.update_water(baked[0], baked[1], water_bounds)
 	# Retained for post-build consumers outside this call (the benchmark runner
 	# follows the same road the progress manager measures).
@@ -660,7 +660,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# height_at/light_at serve the flattened, collidable terrain. Batched with
 	# frame awaits so the loading label paints and (on web) the tab stays alive.
 	await _stage(loading, "Precomputing chunks…")
-	var floor_tm := $Floor as TerrainManager
+	var floor_tm := _floor()
 	floor_tm.set_corridor(floor_tm.corridor_coords(
 		road_centerline, Config.data.track_progress_max_dist_m))
 	# Feed loaded chunks to the loading preview (interactive path only): each cached
@@ -737,7 +737,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# centerline, road_cells and terrain built above.
 	if cfg.spectators_enabled and cfg.spectator_group_size > 0:
 		_spawn_spectators(road_centerline, foliage["road_cells"], foliage["trees"],
-			start_pos, start_heading, cfg, $Floor as TerrainManager, finish_len)
+			start_pos, start_heading, cfg, _floor(), finish_len)
 
 	# Finish + start inflatable arches straddling the road.
 	_build_arches(road_centerline, finish_len, start_pos, start_heading, cfg)
@@ -745,7 +745,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Roadside opponent wreck: if a rival crashed out of THIS event, stage their ACTUAL
 	# car by the verge — frozen (hitbox kept), smoking, with a small crowd around it
 	# (features/opponent-wrecks.md). Uses the built centerline + terrain.
-	_spawn_opponent_wreck(road_centerline, finish_len, $Floor as TerrainManager, cfg)
+	_spawn_opponent_wreck(road_centerline, finish_len, _floor(), cfg)
 
 	# Persistent per-stage managers (progress, tire marks, road paint, wheel dust,
 	# engine smoke, stage flow) + the in-stage "vs P1" pace splits.
@@ -804,7 +804,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 func _drop_submerged(points: PackedVector2Array, cfg: GameConfig) -> PackedVector2Array:
 	if not cfg.water_enabled:
 		return points
-	var tm := $Floor as TerrainManager
+	var tm := _floor()
 	var out := PackedVector2Array()
 	for p in points:
 		if tm.height_at(p.x, p.y) > cfg.track_water_level_m:
@@ -814,7 +814,7 @@ func _drop_submerged(points: PackedVector2Array, cfg: GameConfig) -> PackedVecto
 
 func _build_lakes(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	await _stage(loading, "Filling lakes…")
-	var floor_tm := $Floor as TerrainManager
+	var floor_tm := _floor()
 	# One big flat plane at the water level; terrain above it occludes it via the
 	# depth test, so no per-lake geometry or flood-fill is needed (features/lakes.md).
 	var lake := LakeField.new()
@@ -874,7 +874,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	var tree_groups := TreeScatter.partition_by_weight(trees, weights, cfg.track_seed)
 	for i in range(mix.size()):
 		var entry: Dictionary = mix[i]
-		Foliage.spawn_trees(self, tree_groups[i], $Floor as TerrainManager, true,
+		Foliage.spawn_trees(self, tree_groups[i], _floor(), true,
 			cfg.tree_render_distance_m, cfg.tree_render_fade_m,
 			load(entry["texture"]), String(entry.get("profile", "home")) == "region")
 
@@ -901,7 +901,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	var bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
 	bushes = _drop_submerged(bushes, cfg)  # keep bushes out of the lakes
-	Foliage.spawn_bushes(self, bushes, $Floor as TerrainManager,
+	Foliage.spawn_bushes(self, bushes, _floor(),
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
 	# Bushes are pass-through (no collider), so a separate proximity node makes
@@ -926,7 +926,7 @@ func _build_signs(cfg: GameConfig, result: Dictionary, loading: LoadingScreen = 
 	var sign_layout := SignLayout.plan(result["centerline"], result["pieces"])
 	var sign_field := SignField.new()
 	add_child(sign_field)
-	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())
+	sign_field.build(sign_layout, _floor(), cfg.sign_render_params())
 
 
 # Finish + start arches: the inflatable gates straddling the road
@@ -937,7 +937,7 @@ func _build_signs(cfg: GameConfig, result: Dictionary, loading: LoadingScreen = 
 # each is turned so its banner face meets the driver.
 func _build_arches(road_centerline: Curve2D, finish_len: float,
 		start_pos: Vector2, start_heading: Vector2, cfg: GameConfig) -> void:
-	var arch_terrain := $Floor as TerrainManager
+	var arch_terrain := _floor()
 	var arch_info := _arch_event_info()
 	if cfg.finish_arch_enabled:
 		if finish_len > 0.0:
@@ -959,14 +959,14 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	# otherwise discarded after set_track).
 	_track_progress = _ensure_child("TrackProgress",
 		func() -> Node: return TrackProgress.new()) as TrackProgress
-	_track_progress.setup(road_centerline, $Car, $Floor as TerrainManager, finish_len)
+	_track_progress.setup(road_centerline, $Car, _floor(), finish_len)
 
 	# Tire marks: gravel ruts laid behind the wheels while on the road
 	# (features/tire-marks.md); gated to the road half-width, so it needs the
 	# centerline + terrain.
 	_tire_marks = _ensure_child("TireMarks",
 		func() -> Node: return TireMarks.new()) as TireMarks
-	_tire_marks.setup(road_centerline, $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
+	_tire_marks.setup(road_centerline, $Car, _floor(), cfg.track_width * 0.5)
 
 	# Road paint: solid edge lines + a dashed centre line along the tarmac sections,
 	# so tarmac reads as tarmac (features/track.md). A static mesh built once from the
@@ -979,7 +979,7 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	var region_look := _current_region_look()
 	if region_look.has("road_marking_color"):
 		marking_params["color"] = region_look["road_marking_color"]
-	_road_markings.build(road_centerline, $Floor as TerrainManager, marking_params)
+	_road_markings.build(road_centerline, _floor(), marking_params)
 
 	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
 	# (features/wheel-dust.md); the surface under each wheel (gravel vs grass/tarmac)
@@ -1590,7 +1590,7 @@ func _build_start_line() -> void:
 	# stacked on top of it just fights for the same taps — the two menus overlapped and
 	# neither reliably took a press. The start line's own Exit is the way out until the
 	# countdown starts; sequence_finished re-arms pause at the hand-off.
-	var pause_menu := get_node_or_null("PauseMenu") as PauseMenu
+	var pause_menu := _pause_menu()
 	if pause_menu != null:
 		pause_menu.set_input_enabled(false)
 		if not _start_line.sequence_finished.is_connected(_on_start_line_finished):
@@ -1612,6 +1612,18 @@ func _on_start_line_finished() -> void:
 # three separate get_node_or_null("PauseMenu") lookups had already accumulated.
 func _pause_menu() -> PauseMenu:
 	return get_node_or_null("PauseMenu") as PauseMenu
+
+
+# The terrain manager, cached. `$Floor as TerrainManager` was written out at 20+ call sites
+# through this file; the node never changes identity after _ready, so the cast is pure noise
+# and a moved node path would have to be fixed 20 times. Resolved lazily rather than in
+# _ready() because several callers run during the boot sequence before _ready completes.
+var _floor_tm: TerrainManager = null
+
+func _floor() -> TerrainManager:
+	if _floor_tm == null:
+		_floor_tm = get_node_or_null("Floor") as TerrainManager
+	return _floor_tm
 
 
 # Is the pre-countdown start line still running? NOT `is_instance_valid(_start_line)` —
@@ -1782,7 +1794,7 @@ func _present_standings_overlay(_event_index: int) -> void:
 	# Camera for the cinematic replay.
 	_replay_camera = ReplayCamera.new()
 	add_child(_replay_camera)
-	_replay_camera.setup($Car, _replay_recorder, $Floor as TerrainManager,
+	_replay_camera.setup($Car, _replay_recorder, _floor(),
 		Config.data.track_water_level_m)
 	_replay_camera.current = true
 	# Stand every knocked-over prop (felled trees, toppled signs) back up so the replay
@@ -1991,7 +2003,7 @@ func cycle_car() -> void:
 	# Re-point progress tracking at the fresh car (it respawns at the start, so
 	# progress resets to the spawn offset too).
 	if _track_progress != null:
-		_track_progress.retarget(fresh, $Floor as TerrainManager)
+		_track_progress.retarget(fresh, _floor())
 	# Re-point tire marks at the fresh car and clear the outgoing car's ribbons.
 	if _tire_marks != null:
 		_tire_marks.retarget(fresh)
@@ -2183,7 +2195,7 @@ func _apply_overcast_look(background: Color, sky: Color, sun_mult: float,
 	env.fog_light_color = background
 	env.fog_density = cfg.fog_density * fog_density_mult
 	env.fog_sky_affect = fog_sky_affect
-	var tm := $Floor as TerrainManager
+	var tm := _floor()
 	var sun: Color = cfg.sun_color * sun_mult
 	sun.a = cfg.sun_color.a
 	tm.sun_color = sun

@@ -50,13 +50,7 @@ func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable()
 
 # First focusable option, for the host to seat the keyboard/gamepad cursor.
 func first_control() -> Control:
-	for node in find_children("*", "Control", true, false):
-		var c := node as Control
-		if c != null and c.focus_mode != Control.FOCUS_NONE \
-				and c.is_visible_in_tree() \
-				and not (c is BaseButton and (c as BaseButton).disabled):
-			return c
-	return null
+	return UITheme.first_focusable(self)
 
 
 # Rebuild the rows for the current _owned (focus-preserving): preserve the focused
@@ -599,10 +593,8 @@ func _swap_targets(current_id: int) -> Array:
 func _restore_focus(focus_key: String) -> void:
 	for node in find_children("*", "Control", true, false):
 		var c := node as Control
-		if c != null and not UITheme.in_dying_subtree(c) \
-				and c.has_meta("upgrade_focus_key") \
+		if c != null and c.has_meta("upgrade_focus_key") \
 				and String(c.get_meta("upgrade_focus_key")) == focus_key \
-				and c.focus_mode != Control.FOCUS_NONE and c.is_visible_in_tree() \
-				and not (c is BaseButton and (c as BaseButton).disabled):
+				and UITheme.is_focusable(c):
 			c.grab_focus()
 			return

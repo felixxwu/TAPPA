@@ -104,7 +104,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 ### 6. Config drift (`GameConfig`)
 
 - `config/game_config.tres` is authored data for the `GameConfig` resource
-  (`scripts/game_config.gd`, ~1780 lines). Check the `.tres` for properties that
+  (`scripts/game_config.gd`, ~2270 lines). Check the `.tres` for properties that
   no longer exist as `@export`s in the script (orphaned authored values) and
   `@export`s with no counterpart being exercised.
 - Reminder to surface: tuning values belong in the `.tres`, not script/scene
@@ -113,7 +113,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 
 ### 7. Oversized scripts / refactor candidates
 
-- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~3100),
+- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~4850),
   `game_config.gd`, `car.gd`, `world.gd` (each >1000). Flag scripts that have
   grown a lot since the last sweep or that mix several responsibilities — these
   are refactor candidates. Don't refactor here; note it and suggest a split.
@@ -195,9 +195,8 @@ sweep.
 - Verify the migration chain is contiguous: every version between the oldest
   supported and current has a `_migrate_step` branch, and each branch sets
   `schema_version` to exactly `from_version + 1`.
-- Check `todo/web-save-persistence.md` and `todo/reactive-save-store.md` against
-  what's landed (§5 rules apply), and confirm `features/save-persistence.md`
-  documents the current schema version.
+- Check `todo/web-save-persistence.md` against what's landed (§5 rules apply), and
+  confirm `features/save-persistence.md` documents the current schema version.
 
 ### 14. Generated data caches
 
@@ -354,7 +353,7 @@ helpers that grew a second responsibility, hand-rolled loops that a built-in or
 an existing utility already covers, dead abstractions, needless indirection.
 
 - **Fan out — don't read the tree serially.** `scripts/` alone has multi-
-  thousand-line files (`hq.gd` ~3100, `game_config.gd`, `car.gd`, `world.gd`).
+  thousand-line files (`hq.gd` ~4850, `game_config.gd`, `car.gd`, `world.gd`).
   Spawn several `Explore` / `general-purpose` subagents, each owning a slice
   (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
   the menu scripts, the terrain files), each returning candidate simplifications

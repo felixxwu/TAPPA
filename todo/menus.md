@@ -21,7 +21,8 @@
 > the **Standings overlay (overlay 7)** at results (full ranked field via
 > `RallyLibrary.build_standings`).
 >
-> **The diegetic 3D HQ has SHIPPED** (see [`todo/diegetic-hq.md`](diegetic-hq.md)):
+> **The diegetic 3D HQ has SHIPPED** (its spec has since been removed as fully landed; see
+> [`features/menus.md`](../features/menus.md) for how it works now):
 > HQ is now ONE 3D space the camera flies through — `enum View { EXTERIOR, GARAGE,
 > TABLE, CARPARK }` with `_go_to(view)` tweening between station poses, NOT flat
 > screens. Done: the **exterior/title** shot (block skyline + Start), the **garage**

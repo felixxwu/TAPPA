@@ -249,7 +249,10 @@ func test_set_scheme_releases_old_inputs() -> void:
 # `nitrous` action. Geometry is a tunable, so these assert RELATIONSHIPS only:
 # presence/absence, no overlap with any other region, and hit-test ordering.
 
-const _ALL_SCHEMES := [0, 1, 2, 3, 4, 5]
+# Derived from the production table, not hand-listed: a seventh scheme is then exercised by
+# these tests automatically instead of silently escaping them. Scheme ids are the table's
+# indices, so iterating the size covers every id.
+static var _ALL_SCHEMES: Array = range(MobileControls.SCHEMES.size())
 
 # Fit nitrous (values are arbitrary positives — has_nitrous() only needs both > 0) and
 # lay the given scheme out at a realistic phone-ish viewport.

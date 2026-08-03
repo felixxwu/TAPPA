@@ -4,11 +4,27 @@ Replace the whole front-wheel steering system with one closed loop on **measured
 front-tire grip usage**. Steering input stops meaning "point the wheels here" and starts
 meaning "work the front tires this hard".
 
-Status: **IMPLEMENTED**, two driving passes done. Three things surfaced from driving that
-the design had wrong or missing — see [At rest the null is undefined](#at-rest-the-null-is-undefined),
-[Throttle gives way too](#throttle-gives-way-too-on-a-driven-steered-axle), and the
-`steer_speed` note in [Config surface](#config-surface). Not yet balance-checked against
-`LapTimeModel`.
+Status: **IMPLEMENTED**, full suite green (2229/2229). Not yet balance-checked against
+`LapTimeModel` — see Consequences.
+
+Five things the design got wrong or missed, all found after it was written, each recorded in
+its own section below rather than quietly patched:
+
+- Driving found the wheels stayed cocked at rest ([At rest the null is undefined](#at-rest-the-null-is-undefined))
+  and that a driven front axle lost nearly all steering under power
+  ([Throttle gives way too](#throttle-gives-way-too-on-a-driven-steered-axle)).
+- Reasoning about the throttle case exposed that the steering demand was being scaled TWICE —
+  once by the arbitration and again by `lat_available` — under-steering every braking corner by
+  a factor of 0.71 (see Input demand).
+- Code review found the null angle was wrong in reverse, swinging the wheels to full lock
+  ([Reverse needs NO special case](#reverse-needs-no-special-case)), and that the substep hoist
+  left an existing `test_drivetrain` helper silently computing NaN (see prime_contact_slip).
+- The demand scaling also cost the stiction hold its anchor
+  ([The stiction hold reads the pre-scale brake](#the-stiction-hold-reads-the-pre-scale-brake)).
+
+The pattern is worth noting for the next change here: every one of these was invisible to
+reasoning about the control law in isolation, and surfaced only from driving it or from an
+adversarial read of the signed geometry.
 
 ## Dependency
 
@@ -325,9 +341,20 @@ the opposite of this work's goal.
 `WheelContact` already carries `v_long`, `s_lat`, `n_force`, `slip_peak` and `slip_use`.
 Add:
 
-- `WheelContact.slip_angle` — `atan2(s_lat, v_long)`, and `WheelContact.s_long_norm` — the
-  normalised longitudinal slip `_tire_force` already computes. Both stored unconditionally
-  alongside `slip_use` (same reasoning: cheaper than the branch).
+- `Drivetrain.prime_contact_slip(cfg, c)` — resolves the chassis-derived half of a contact's
+  slip state (`v_ref`, `slip_lat_norm`, `slip_angle`), called once per contact per tick from
+  `step()`'s setup. All three depend only on `v_long` / `s_lat`, which are fixed for the whole
+  tick (the spin substeps evolve only the wheel side), so computing them inside `_tire_force`
+  wasted ~28 `sqrt` + 28 `atan2` calls per tick across the 8 substeps.
+  **`_tire_force` now REQUIRES a primed contact** — it reads `c.v_ref` and divides by zero
+  otherwise. That is why this is a named method rather than inline setup: any other caller
+  building a bare `WheelContact` must prime it the same way. The peak-slip-angle sweep in
+  `test_drivetrain.gd` does exactly that, and when it wasn't primed the normalisation produced
+  a NaN which — because NaN fails every comparison, including the `s < 0.0001` early-out —
+  made the helper silently return `0.0` instead of erroring.
+- `WheelContact.slip_long_norm` — the normalised longitudinal slip. Unlike the lateral side
+  this genuinely does evolve per substep (it is measured against the wheel's spin), so it
+  stays in `_tire_force`.
 - `Drivetrain.front_axle_state() -> Dictionary` — walks `_contacts` for non-traction
   wheels, load-weighting the fields above, returning a **reused scratch dict** (same
   pattern as `_surf_scratch` / `_steer_scratch`) so the per-tick path allocates nothing.
@@ -426,9 +453,15 @@ Kept: `steer_limit`, `steer_speed`, `_apply_wheel_toe`, `_apply_level_assist`, a
 `steer_assist_min_speed` fade via `assist_scale`. Re-gate it on the 2 m/s forward-motion
 floor that the slip-angle calculation already carries. It solves a problem the servo does
 not — the player holding steering *into* a slide until the car rotates past recovery. It is
-live and strong (`spin_assist_torque` defaults to `10000.0` in `game_config.gd`, not
-overridden in the `.tres`; `config/game_config.tres` sets `spin_assist_angle = 0.6`), so
-deleting it would be a large, separate handling change.
+live and strong when this was written (`spin_assist_torque` then defaulted to `10000.0`), so
+deleting it would have been a large, separate handling change.
+
+**Since superseded:** `spin_assist_torque` now ships at **0.0**, i.e. spin protection is
+deliberately OFF. A lowered centre of mass (`GameConfig.com_height`) plus the grounded
+anti-roll bar (`level_assist_grounded = 1.0`) keep the car recoverable through tyre physics,
+so the yaw aid is no longer wanted. The code is retained, not deleted — it is still the only
+thing that addresses the case the servo cannot (a player holding steering *into* a slide),
+so it can be switched back on per car or per difficulty.
 
 ## Config surface
 
@@ -537,7 +570,7 @@ justifies a **full** `./run_tests.sh`.
 
 [`features/car-physics.md`](../features/car-physics.md) (the steering section and both
 assists), [`features/drivetrain-and-tires.md`](../features/drivetrain-and-tires.md)
-(`front_axle_state`, `slip_angle`, `s_long_norm`),
+(`front_axle_state`, `prime_contact_slip`, `slip_angle`, `slip_long_norm`),
 [`features/configuration.md`](../features/configuration.md) (the four removed knobs),
 [`features/controls.md`](../features/controls.md) (steering input now means grip demand;
 brake and steer share the circle),

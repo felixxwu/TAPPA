@@ -924,9 +924,12 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 # damping term so the slide settles instead of oscillating nose-side-to-side. Suppressed
 # while the handbrake is held, so deliberate handbrake drifts stay possible.
 #
-# It is the ONE steering aid left, and it solves a problem the grip servo cannot: the servo
-# only ever holds the front tires at the commanded share of their grip, so it does nothing
-# about a player who holds steering INTO a slide until the car rotates past recovery.
+# OFF BY DEFAULT: spin_assist_torque ships at 0.0, so this whole function is inert unless
+# something raises it. That is deliberate — the grip servo, a lowered centre of mass
+# (GameConfig.com_height) and the grounded anti-roll bar (level_assist_grounded) keep the car
+# recoverable through tyre physics instead of scripted yaw torque. Kept because it is still
+# the only thing that addresses the case the servo cannot: a player who holds steering INTO a
+# slide until the car rotates past recovery. Do not delete it on the grounds of being unused.
 #
 # Low-speed manoeuvring is kept clear by _chassis_slip_angle's own 2 m/s forward-motion
 # floor — it returns 0 below that, and 0 past 90° / when reversing — which replaces the
@@ -1669,9 +1672,12 @@ func _reconfigure_engine_audio() -> void:
 # +Z = rearward. Switching to CUSTOM overrides Godot's AUTO (which derives a centred
 # CoM from the symmetric collision box). Feeds the static load split onto each axle
 # via the settling suspension -> Drivetrain.wheel_normal_force -> tyre grip balance.
+# Height comes from GameConfig.com_height (negative = below the body origin): the roll
+# lever a tyre force gets is the vertical CoM-to-contact-patch distance, so this sets
+# the static rollover threshold track / (2 x CoG height). See features/car-physics.md.
 func _set_center_of_mass(wheelbase: float, weight_front: float) -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = Vector3(0.0, 0.0, wheelbase * (0.5 - weight_front))
+	center_of_mass = Vector3(0.0, config.com_height, wheelbase * (0.5 - weight_front))
 
 
 # Car-local emit point for the engine smoke (features/engine-smoke.md), pinned to the

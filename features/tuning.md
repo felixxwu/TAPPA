@@ -236,8 +236,9 @@ a **hub** (`LiftPage.HUB`): bottom-left, TWO boxed readout rows — the **car se
 owned car on the lift **in place** (`hq.gd` → `_cycle_lift_car`), so swapping cars no longer
 means backing out to the garage; the hub is a two-row cursor (up/down between rows, left/right
 within one) — see [menus.md](menus.md) → *Menu navigation* and *LIFT*. Each menu button opens
-that menu as its own full-height page (centred and wide, `hq_lift_menu_centered_width_frac`,
-with the car readout hidden while it's up); the page's bottom action row leads with a
+that menu as its own page — a `MenuPage` whose body box is centred and sized to its contents
+(see [menus.md](menus.md) → *Upgrades / Tune panel width*), with the car readout hidden while
+it's up; the page's bottom action row leads with a
 **< Back** that returns to the hub, and the hub's Back returns to the
 garage. Splitting the menus onto their own pages keeps each one from needing to scroll.
 

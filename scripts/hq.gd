@@ -4114,11 +4114,13 @@ func _refresh_swap_preview() -> void:
 
 # One preview row: "Name:  before → after hp/tonne ↑" with a coloured arrow.
 func _swap_preview_row(car_name: String, before: float, after: float) -> String:
-	var arrow := "[color=#888]—[/color]"
+	# Palette colours, not hand-typed hex: to_html(false) drops the alpha byte, which BBCode's
+	# [color=#rrggbb] wants. Keeps the up/down/neutral semantics in one place (UITheme).
+	var arrow := "[color=#%s]—[/color]" % UITheme.INK_DIM.to_html(false)
 	if after > before + 0.5:
-		arrow = "[color=#5fd35f]↑[/color]"
+		arrow = "[color=#%s]↑[/color]" % UITheme.GREEN.to_html(false)
 	elif after < before - 0.5:
-		arrow = "[color=#e05555]↓[/color]"
+		arrow = "[color=#%s]↓[/color]" % UITheme.RED.to_html(false)
 	return "[center]%s:  %.0f → %.0f hp/tonne %s[/center]" % [car_name, before, after, arrow]
 
 
@@ -4153,51 +4155,27 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 # it) so the footer is on screen even when the body is taller than the canvas — which the
 # upgrades list, on the 288-high tier, routinely is.
 func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Control:
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var dim := ColorRect.new()
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.color = UITheme.MODAL_DIM
-	root.add_child(dim)
-	# A margined full-rect row rather than a CenterContainer: a CenterContainer hands its
-	# child the child's full MINIMUM size, so a panel taller than the frame would simply
-	# overhang the top and bottom of the screen — taking the pinned footer with it, which
-	# is the exact failure this shape exists to prevent. The panel instead gets the frame
-	# height (minus margins) as its budget and the scroll inside it absorbs the overflow.
-	# Horizontally it still hugs its content and centres (SIZE_SHRINK_CENTER).
-	var center := MarginContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "top", "right", "bottom"]:
-		center.add_theme_constant_override("margin_" + side, 16)
-	root.add_child(center)
-	var row := HBoxContainer.new()
-	# BoxContainer packs non-expanding children from the start, so centring is the row's
-	# alignment, not a size flag on the panel.
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	center.add_child(row)
-	var panel := UITheme.panel(1.0, 20)
-	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	row.add_child(panel)
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", UITheme.GAP)
-	panel.add_child(outer)
-	var scroll := TouchScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	outer.add_child(scroll)
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", UITheme.GAP)
-	scroll.add_child(vbox)
-	build_body.call(vbox)
+	# MenuPage is the shared implementation of this shape. It used to be hand-rolled here
+	# because MenuPage had no dim backdrop and this is a true modal — it must read as blocking
+	# the car park underneath — but `dim` now covers that, so the bespoke copy is gone.
+	#
+	# The reason the old version explained at length for NOT using a CenterContainer (a
+	# CenterContainer hands its child the child's full MINIMUM size, so a panel taller than the
+	# frame overhangs top and bottom and takes the pinned footer off-screen with it) is exactly
+	# what MenuPage._sync_body_height solves: it budgets the box against the frame height and
+	# lets the scroll inside absorb the overflow, so the action row stays reachable.
+	#
+	# margin 16 + padding 20 keep the previous geometry; the caller's `chrome` figure for
+	# _modal_body_width is derived from them (20 either side + 16 either side = 72).
+	var page := MenuPage.new({"dim": true, "margin": 16.0, "padding": 20})
+	build_body.call(page.body())
 	if build_footer.is_valid():
-		var footer := VBoxContainer.new()
-		footer.add_theme_constant_override("separation", UITheme.GAP)
-		outer.add_child(footer)
-		build_footer.call(footer)
-	_car_layer.add_child(root)
-	return root
+		# The footer row is now OUTSIDE the box (MenuPage's rule 2), which also means it can no
+		# longer be pushed off the bottom by a growing body — the failure the old comment here
+		# was guarding against by hand.
+		build_footer.call(page.actions())
+	_car_layer.add_child(page)
+	return page
 
 
 # An over-powered focused car (parked because a detune would duck it under the rally's
@@ -4247,7 +4225,7 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 				vbox.add_child(UITheme.title("Upgrades"))
 				_upgrades_popup_menu = UpgradesMenu.new()
 				vbox.add_child(_upgrades_popup_menu),
-			func(footer: VBoxContainer) -> void:
+			func(footer: HBoxContainer) -> void:
 				# Done is the gated exit (bind_close_button below blocks it, AND back,
 				# while the car is over the p/w cap). It is PINNED outside the scroll:
 				# the controls the player needs in order to get under the cap are the very

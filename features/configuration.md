@@ -30,14 +30,15 @@ the `.tres` requires a scene reload to take effect.
 | `drag_coefficient` | 0.4 | Quadratic aero drag (top-speed limiter) |
 | `hitbox_chamfer_fraction` | 0.333 | Fraction of body width cut off each vertical corner of the collision hull, chamfering it into an elongated octagon (equal inset on X + Z → 45° corners, regular octagon at the nose). Only affects obstacle contacts + damage impulses, not grip/speed. 0 = plain box (range 0.0–0.5) |
 | `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Set **per-car** by `apply_car` from the CarLibrary spec (these defaults are just the fallback); every car has a small rear value |
-| `steer_limit` | 0.8 rad | The wheel's MECHANICAL stop, and the only bound on the angle. The grip servo measures the peak-grip angle rather than predicting a cap, so there is no slip-derived limit or low-speed blend to configure |
+| `steer_limit` | 1.0 rad | The wheel's MECHANICAL stop, and the only bound on the angle. The grip servo measures the peak-grip angle rather than predicting a cap, so there is no slip-derived limit or low-speed blend to configure |
 | `steer_speed` | 2.0 (`.tres`) | Rate limit (rad/s) — the model of how fast a hand can turn the wheel, and the ONLY rate in the steering system (it is also the input smoothing). The servo covers just the tire's slip angle (~8.6° on tarmac), not full lock, so this is the dominant feel parameter and is tuned far below a lock-to-lock rate |
 | `steer_deadzone` | 0.02 | Steering demand below which the wheels servo to their zero-lateral-slip angle (auto-countersteer). A deadzone, not an exact-zero test, because sticks and the touch slider never return 0 |
-| `spin_assist_torque` | 6000.0 | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held; 0 disables |
-| `spin_assist_angle` | 0.611 rad | Slip angle (≈35°) where spin protection starts; ramps to full at twice this angle |
-| `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
-| `level_assist_grounded` | 0.0 | Fraction of `level_assist_torque` kept with all four wheels planted, where the aid acts as an anti-roll bar (referenced to the wheel contact normal, not world up); 0 = airborne-only |
-| `wheel_roll_influence` | 0.1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM, 1 = contact patch |
+| `spin_assist_torque` | **0.0 (off)** | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held. **Deliberately disabled** — grip-servo steering plus the lowered `com_height` and the grounded anti-roll bar handle slides without a yaw aid. The code stays for anyone who wants it back |
+| `spin_assist_angle` | 0.6 rad (`.tres`) | Slip angle (≈34°) where spin protection starts; ramps to full at twice this angle |
+| `level_assist_torque` | 10000.0 (`.tres`) | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
+| `level_assist_grounded` | 1.0 (`.tres`) | Fraction of `level_assist_torque` kept with all four wheels planted, where the aid acts as an anti-roll bar (referenced to the wheel contact normal, not world up); 0 = airborne-only |
+| `wheel_roll_influence` | 1 (`.tres`) | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM (rollover-proof fudge), 1 = contact patch (physical) |
+| `com_height` | −0.25 (`.tres`) | Centre-of-mass height (m) relative to the body origin; negative lowers it. Sets the rollover threshold `track / (2 × CoG height)` — see car-physics.md |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
 | `wheel_friction_slip_rear` | 0.6 | Rear tire grip coefficient μ |
 | `parking_hold_grip` | 1.0 | Static-friction hold cap (`·m·g`) for a stopped, fully-braked car so it doesn't creep down a slope (`car._apply_parking_hold`); 0 disables |

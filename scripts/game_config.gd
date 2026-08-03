@@ -58,7 +58,7 @@ var peak_torque_rpm := 4500.0
 ## bound on the wheel angle. The grip servo (Car._update_steering) finds the peak-grip angle
 ## by MEASURING the front tires rather than predicting a cap, so there is no longer a
 ## slip-derived limit or a low-speed blend to configure.
-@export_range(0.0, 1.2) var steer_limit := 0.8
+@export_range(0.0, 1.2) var steer_limit := 1.0
 ## How fast the front wheels can turn (rad/s) — the model of how fast a hand can turn the
 ## wheel, and the ONLY rate in the steering system (it is also the input smoothing; there is
 ## no separate easing stage). The grip servo needs to cover only the tire's slip angle
@@ -77,17 +77,17 @@ var peak_torque_rpm := 4500.0
 ## rather than oscillating. Suppressed while the handbrake is held so
 ## deliberate drifts stay possible. 0 disables. An anti-spin aid, not a
 ## physical force.
-@export_range(0.0, 30000.0) var spin_assist_torque := 10000.0
+@export_range(0.0, 30000.0) var spin_assist_torque := 0.0
 ## Slip angle (radians) where spin protection starts. The torque ramps in
 ## linearly from 0 at this angle to full strength at twice it. Keep it above the
 ## surface's optimum slip angle (asin(slip_peak), ≈8–18°) so the two aids never
 ## fight over the same slide. 35° ≈ 0.611 rad.
-@export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(20.0)
+@export_range(0.0, 3.0) var spin_assist_angle := deg_to_rad(50.0)
 ## Self-righting assist: when one or more wheels leave the ground, a roll+pitch
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,
 ## not a physical force.
-@export_range(0.0, 30000.0) var level_assist_torque := 8000.0
+@export_range(0.0, 30000.0) var level_assist_torque := 0.0
 ## Fraction of level_assist_torque the aid keeps while ALL FOUR wheels are
 ## planted, where it acts as a cheap anti-roll bar: it resists body roll in
 ## corners and dive/squat under braking, and settles the chassis flat ON THE
@@ -104,6 +104,17 @@ var peak_torque_rpm := 4500.0
 ## from braking/throttle, rollover-proof), 1 = at the contact patch (full,
 ## physical roll and pitch).
 @export_range(0.0, 1.0) var wheel_roll_influence := 0.1
+## Centre-of-mass height (m) relative to the car body's origin — negative lowers it.
+## The body origin sits high (settled_ride_height = wheel_radius + axle_travel -
+## mount_y, ~1 m drooped with the shipped long-travel suspension), so leaving the CoM
+## there puts it far above a real car's ~0.5 m CoG. Since the roll lever a tyre force
+## gets is the vertical CoM-to-contact-patch distance (drivetrain.gd, scaled by
+## wheel_roll_influence), a too-high CoM drops the static rollover threshold
+## track / (2 x CoG height) below the ~1 g the tyres can make, and the car tips
+## instead of sliding. Lowering it here restores the real ~1.4 g margin WITHOUT
+## faking the lever via wheel_roll_influence. Global (all cars); a per-car CarLibrary
+## field would be the next step if tall vans should roll more than low coupes.
+@export_range(-1.0, 0.0) var com_height := -0.25
 ## Runtime per-axle tyre μ. apply_car() seeds BOTH from the car's single
 ## tire_compound (same rubber front and rear); the grip_balance tuning slider
 ## (TuningLibrary) then shifts them apart to trim handling. The drivetrain scales
@@ -960,16 +971,6 @@ func has_nitrous() -> bool:
 ## x = hq_lift_pos.x ± hq_lift_size.x/2, z = hq_lift_pos.z ± the same).
 @export var hq_lift_cam_eye := Vector3(1.75, 1.5, -4.3)
 @export var hq_lift_cam_look := Vector3(4.0, 1.0, -1.0)
-## Fraction of the screen width the tuning menu panel occupies (anchored right).
-@export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
-## Fraction of the screen width an OPEN tuning/upgrades page occupies, centred
-## horizontally so the menu uses more space (the car description hides while it's up).
-## The game's logical UI canvas is narrow (DisplayStretch lays every menu out against
-## ~DESIGN_HEIGHT * aspect / horizontal_stretch units — a few hundred wide, not desktop
-## pixel counts), so rows authored with generous fixed widths (slider_row.gd's 180-unit
-## label column, a 4-button option row) need most of that width just to avoid wrapping/
-## clipping — see features/menus.md "Upgrades / Tune panel width".
-@export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.97
 
 @export_group("Free Roam")
 ## Free roam (Test Drive) generation settings — hq.gd's _prepare_free_roam writes
