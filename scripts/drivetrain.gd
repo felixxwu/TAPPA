@@ -44,7 +44,9 @@ var rear_omega := 0.0  # rad/s, locked axle (both rear wheels)
 var front_omega: Dictionary = {}  # front wheel -> rad/s
 var spin_angle: Dictionary = {}  # wheel -> accumulated visual angle (rad)
 var visuals: Dictionary = {}  # wheel -> Node3D spun about the axle
-# wheel -> {normal: float, demand: Vector3, applied: Vector3} for debug arrows.
+# wheel -> {normal: float, demand: Vector3, applied: Vector3, grip: float} for the
+# debug overlays (`grip` is how far up its grip curve the tire is, 1.0 = on the limit and
+# climbing past it when sliding — see grip_fraction; the HUD's 2x2 grip grid reads it).
 # Only populated while `publish_readouts` is on (the WheelForceDebug overlay sets
 # it to its own visibility) — building these per-wheel dicts every physics tick is
 # pure waste in a normal run where nothing reads them.
@@ -71,6 +73,9 @@ class WheelContact extends RefCounted:
 	var mu: float
 	var impulse_long: float
 	var impulse_lat: float
+	# How far up the grip curve the LAST substep left this tire (see grip_fraction).
+	# Recorded for the debug readout only; nothing in the solver reads it back.
+	var slip_use: float
 
 var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
 var _contacts: Array = []           # the in-contact subset this tick (reused)
@@ -161,6 +166,9 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		)
 		c.impulse_long = 0.0
 		c.impulse_lat = 0.0
+		# The contexts are POOLED, so clear last tick's reading — a wheel that goes
+		# airborne and comes back must not inherit its old number.
+		c.slip_use = 0.0
 		_contacts.append(c)
 
 	var h := delta / float(SPIN_SUBSTEPS)
@@ -273,6 +281,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 					c.fwd * (_omega_of(c.wheel) * r - c.v_long) + c.side * c.s_lat
 				) * share / delta,
 				applied = long_force + lat_force,
+				grip = c.slip_use,
 			}
 
 	for wheel in hardpoints:
@@ -353,6 +362,30 @@ func _front_avg_omega() -> float:
 	return total / front_omega.size()
 
 
+# How far up its grip curve a tire is: its combined slip as a fraction of the slip it
+# peaks at. 1.0 = exactly on the limit, and it KEEPS CLIMBING past that — 1.5 is a tire
+# slipping half again as much as peak grip needs, i.e. sliding.
+#
+# Measured in SLIP, not in force, and that choice is the whole point. The obvious
+# alternative — the force actually generated over the μN limit — cannot exceed 1.0,
+# because _tire_force's force IS μN * _grip_curve(s) and the curve is capped at 1.0 at
+# peak. Worse, past peak the curve FALLS toward the sliding plateau, so a force-based
+# reading comes back DOWN as the tire lets go: "70%" would mean either "30% of the grip
+# still in reserve" or "already sliding, grip collapsed to 70%" — opposite situations
+# behind one number. Slip rises monotonically through the limit, so it separates them.
+#
+# `slip` is the combined magnitude in _tire_force's SCALED slip space (longitudinal
+# weighted by traction_ellipse_ratio), which is what makes one number cover combined
+# braking-and-cornering: the traction budget is an ellipse, not a circle, and the
+# weighting is what puts both axes on the same scale.
+#
+# Pure and static so the readout can be tested without a car or a physics tick.
+static func grip_fraction(slip: float, slip_peak: float) -> float:
+	if slip_peak <= 0.0:
+		return 0.0
+	return slip / slip_peak
+
+
 # Tire force for one contact at the given wheel surface speed, as
 # (longitudinal, lateral) newtons. h is the substep duration for the
 # stability caps; the contact context c is fixed for the tick. cfg is passed in
@@ -378,6 +411,11 @@ func _tire_force(cfg: GameConfig, c: WheelContact, surface_vel: float, h: float)
 	var er: float = cfg.traction_ellipse_ratio
 	var scaled := Vector2(s_long * er, s_lat)
 	var s := scaled.length()
+	# Record how far up the grip curve this slip is, for the debug grip readout. Set
+	# BEFORE the early-out so a tire at rest reports 0 rather than keeping a stale number,
+	# and unconditionally (not behind publish_readouts) because it's one divide — cheaper
+	# than the branch, and the value is the substep's own state either way.
+	c.slip_use = grip_fraction(s, c.slip_peak)
 	if s < 0.0001:
 		return Vector2.ZERO
 	var f_scaled: Vector2 = scaled / s * c.mu * c.n_force * _grip_curve(c.slip_peak, c.slide_ratio, s)

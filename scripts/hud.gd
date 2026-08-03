@@ -23,6 +23,30 @@ var _last_nitrous_pct := -999
 # so a run can be identified/reproduced.
 var _seed_label: Label
 var _last_seed := -999999
+# Per-tire grip readout, part of the H debug overlay: how far up its grip curve each tire
+# is — 100% = exactly on the limit, and it keeps climbing past that while the tire slides
+# (see Drivetrain.grip_fraction).
+#
+# Laid out as a 2x2 grid in the car's own plan view — front axle on the top row, left
+# wheel in the left column — so a reading maps onto a corner of the car without being
+# read off a label. Built in code and stacked under the seed label. Indexed by CORNER
+# (see corner_index), NOT by the order the wheels come out of the scene tree.
+var _grip_labels: Array[Label] = []
+var _last_grip_pct: Array[int] = [-999, -999, -999, -999]
+# Corner order of _grip_labels, which is also the grid's fill order (2 columns, so the
+# first two entries are the top row).
+const _GRIP_CORNERS: Array[String] = ["FL", "FR", "RL", "RR"]
+# Grid geometry: each cell is one column wide, and the whole block sits below the seed
+# label. Kept here rather than inline so the block moves as one.
+const _GRIP_TOP := 88.0
+const _GRIP_CELL_W := 76.0
+# The grid's parent, so the H toggle flips one node instead of four labels.
+var _grip_grid: GridContainer
+# Where a cell stops reading as neutral: gold approaching the limit, red at or past it.
+# Not tuning values in the GameConfig sense — they're the readout's own legend, and the
+# limit is 1.0 because that IS peak grip, the point grip_fraction is measured against.
+const _GRIP_WARN_FRAC := 0.9
+const _GRIP_LIMIT_FRAC := 1.0
 # Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
 # the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
 # stage-complete panel. Hidden until the stage flow calls the methods below.
@@ -145,6 +169,7 @@ func _ready() -> void:
 	_rpm_label.visible = false
 	_build_boost_label()
 	_build_seed_label()
+	_build_grip_grid()
 	_style_gauge_captions()
 	# Boost gauge starts hidden — _update_boost_gauge reveals it once a car with forced
 	# induction is fielded (an NA car never shows an always-empty bar). Tinted a FIXED
@@ -220,6 +245,95 @@ static func seed_text(track_seed: int) -> String:
 	return "Seed %d" % track_seed
 
 
+# Build the per-tire grip readout: four labels in a 2x2 GridContainer under the seed
+# label, one per corner of the car in _GRIP_CORNERS order.
+func _build_grip_grid() -> void:
+	var grid := GridContainer.new()
+	grid.name = "GripGrid"
+	grid.columns = 2
+	grid.offset_left = 8.0
+	grid.offset_top = _GRIP_TOP
+	grid.visible = false
+	# The grid is a diagnostic laid OVER the drive view; it must never eat a click or
+	# swallow a touch-control drag aimed at the road behind it.
+	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(grid)
+	for corner in _GRIP_CORNERS:
+		var lbl := Label.new()
+		lbl.name = "Grip" + corner
+		lbl.custom_minimum_size.x = _GRIP_CELL_W
+		lbl.add_theme_font_size_override("font_size", 14)
+		lbl.text = grip_text(corner, -1.0)
+		grid.add_child(lbl)
+		_grip_labels.append(lbl)
+	# Nothing lays this grid out for us — it hangs off the CanvasLayer, not a container —
+	# so without this its rect stays 0 tall and both rows collapse onto each other. Size it
+	# to its own contents and let the offsets above place it.
+	grid.reset_size()
+	# One parent to toggle, so the H handler doesn't flip four labels by hand.
+	_grip_grid = grid
+
+
+# Which cell of the 2x2 grid a wheel belongs in: the car's plan view, front axle on the
+# top row and the left wheel in the left column, matching _GRIP_CORNERS. `rear` is the
+# wheel's use_as_traction flag (the drivetrain's own front/rear split — see
+# Drivetrain._omega_of) and `local_x` its hardpoint offset across the car, which is
+# positive to the RIGHT in Godot's basis. Pure/static so the mapping is testable without
+# a car: getting it wrong would silently mirror or flip the whole readout, which is the
+# one bug a grid like this can hide.
+static func corner_index(rear: bool, local_x: float) -> int:
+	return (2 if rear else 0) + (1 if local_x > 0.0 else 0)
+
+
+# One grip cell's text. `fraction` is how far up its grip curve the tire is
+# (Drivetrain.grip_fraction), so it is NOT clamped to 100%: over-100 is the useful part of
+# the readout, meaning the tire is slipping past peak grip. NEGATIVE means no reading — the
+# wheel is off the ground, or the drivetrain isn't publishing readouts — and shows as a
+# dash rather than 0%, since "airborne" and "on the ground using no grip" are different
+# things to a driver.
+static func grip_text(corner: String, fraction: float) -> String:
+	if fraction < 0.0:
+		return "%s  --" % corner
+	return "%s %d%%" % [corner, roundi(fraction * 100.0)]
+
+
+# A grip cell's tint: neutral ink with grip in reserve, gold approaching the limit, red at
+# or past it (the tire is sliding). Static so the thresholds live in one place next to the
+# text they colour.
+static func grip_color(fraction: float) -> Color:
+	if fraction < 0.0:
+		return UITheme.INK
+	if fraction >= _GRIP_LIMIT_FRAC:
+		return UITheme.RED
+	if fraction >= _GRIP_WARN_FRAC:
+		# The house palette has no amber; GOLD is its warm mid-tone. Used here purely as
+		# "approaching the limit", not with its usual money/reward meaning — this is a dev
+		# diagnostic, not player-facing chrome.
+		return UITheme.GOLD
+	return UITheme.INK
+
+
+# Refresh the four grip cells from the drivetrain's per-wheel readouts. Absent wheel =
+# no contact (or readouts not being published), which reads as a dash.
+func _update_grip_grid() -> void:
+	var drivetrain: Drivetrain = car.drivetrain
+	var fractions: Array[float] = [-1.0, -1.0, -1.0, -1.0]
+	for wheel: VehicleWheel3D in drivetrain.readouts:
+		var hardpoint: Vector3 = drivetrain.hardpoints.get(wheel, Vector3.ZERO)
+		var idx := corner_index(wheel.use_as_traction, hardpoint.x)
+		fractions[idx] = float(drivetrain.readouts[wheel].get("grip", 0.0))
+	for i in _grip_labels.size():
+		# Keyed on the DISPLAYED integer percent like the boost readout: the underlying
+		# fraction moves every physics tick, so formatting unconditionally would build
+		# four Strings a frame to discover they're identical.
+		var pct := roundi(fractions[i] * 100.0) if fractions[i] >= 0.0 else -1
+		if pct == _last_grip_pct[i]:
+			continue
+		_last_grip_pct[i] = pct
+		_grip_labels[i].text = grip_text(_GRIP_CORNERS[i], fractions[i])
+		_grip_labels[i].add_theme_color_override("font_color", grip_color(fractions[i]))
+
+
 # A transient popup label built in code (no scene node): hidden until a show_*
 # call pulses it, then faded out by _tick_fade. `offsets` is (left, right, top,
 # bottom). Callers layer on colour / anchoring specifics after.
@@ -286,6 +400,7 @@ func _timed_process(_delta: float) -> void:
 		_rpm_label.visible = _debug_readout
 		_boost_label.visible = _debug_readout
 		_seed_label.visible = _debug_readout
+		_grip_grid.visible = _debug_readout
 	var engine: EngineSim = car.drivetrain.engine
 	var speed := roundi(car.linear_velocity.length() * 3.6)
 	if speed != _last_speed:
@@ -325,6 +440,11 @@ func _timed_process(_delta: float) -> void:
 	if track_seed != _last_seed:
 		_last_seed = track_seed
 		_seed_label.text = seed_text(track_seed)
+	# Unlike the readouts above, this one does NOT refresh while hidden: its source is the
+	# drivetrain's per-wheel readouts, which the car only publishes while the debug overlay
+	# is up (Drivetrain.publish_readouts), so there is nothing to read when it's off.
+	if _grip_grid.visible:
+		_update_grip_grid()
 	_update_damage(_delta)
 	# Hide each transient popup once its on-screen time elapses.
 	_stage_delta_left = _tick_fade(_stage_delta_left, _delta, _stage_delta_label)

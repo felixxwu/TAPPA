@@ -167,6 +167,106 @@ func test_seed_text_formatting() -> void:
 	assert_eq(Hud.seed_text(-7), "Seed -7", "negative seeds print verbatim")
 
 
+func test_grip_text_formatting() -> void:
+	# Pure formatter for one grip cell: the corner name plus how far up its grip curve the
+	# tire is, as a percentage, and a dash when there's no reading.
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.grip_text("FL", 0.0), "FL 0%", "a tire not slipping at all reads 0%")
+	assert_eq(Hud.grip_text("RR", 0.5), "RR 50%", "halfway to the limit reads 50%")
+	assert_eq(Hud.grip_text("FR", 1.0), "FR 100%", "right on the limit reads 100%")
+	assert_eq(Hud.grip_text("RL", 1.2), "RL 120%",
+		"past the limit is NOT clamped — a sliding tire is what the readout is for")
+	assert_eq(Hud.grip_text("FL", -1.0), "FL  --",
+		"no reading (wheel airborne) shows a dash, not 0%")
+
+
+func test_grip_colour_grades_toward_the_limit() -> void:
+	# The cell's tint is the readout's legend: neutral with grip in reserve, warm as it
+	# approaches the limit, red at or past it.
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.grip_color(0.2), UITheme.INK, "plenty of grip in reserve reads as neutral ink")
+	assert_eq(Hud.grip_color(-1.0), UITheme.INK, "no reading reads as neutral ink")
+	assert_eq(Hud.grip_color(1.0), UITheme.RED, "exactly on the limit is red")
+	assert_eq(Hud.grip_color(1.5), UITheme.RED, "past the limit stays red")
+	assert_ne(Hud.grip_color(0.95), UITheme.INK,
+		"approaching the limit is called out, not left neutral")
+	assert_ne(Hud.grip_color(0.95), UITheme.RED,
+		"approaching the limit is distinct from being at it")
+
+
+func test_grip_corner_index_maps_the_cars_plan_view() -> void:
+	# The 2x2 grid is the car seen from above: front axle on the top row, left wheel in
+	# the left column. Godot's basis X is positive to the RIGHT, and the drivetrain's
+	# rear flag is the wheel's use_as_traction.
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.corner_index(false, -0.85), 0, "front left is the top-left cell")
+	assert_eq(Hud.corner_index(false, 0.85), 1, "front right is the top-right cell")
+	assert_eq(Hud.corner_index(true, -0.85), 2, "rear left is the bottom-left cell")
+	assert_eq(Hud.corner_index(true, 0.85), 3, "rear right is the bottom-right cell")
+
+
+func test_grip_grid_is_a_2x2_of_four_corners_hidden_until_h() -> void:
+	# The grid is a dev diagnostic on the same H gate as the rest of the debug readout,
+	# and it must lay out as TWO columns — a 1x4 or 4x1 list loses the whole point of
+	# reading a corner's grip off the car's plan view.
+	var grid := _scene.get_node("HUD/GripGrid") as GridContainer
+	await get_tree().process_frame
+	assert_eq(grid.columns, 2, "the grip readout is a 2x2 grid")
+	assert_eq(grid.get_child_count(), 4, "one cell per wheel")
+	assert_false(grid.visible, "grip grid hidden on startup")
+	# Both rows must have real height — a container hanging off the CanvasLayer gets no
+	# layout from a parent, so a zero-tall rect would stack the rows on top of each other.
+	var top_left := grid.get_child(0) as Label
+	var bottom_left := grid.get_child(2) as Label
+	assert_gt(bottom_left.position.y, top_left.position.y,
+		"the rear row sits BELOW the front row")
+	assert_gt((grid.get_child(1) as Label).position.x, top_left.position.x,
+		"the right column sits right of the left column")
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Input.action_release("toggle_debug_arrows")
+	assert_true(grid.visible, "H shows the grip grid")
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Input.action_release("toggle_debug_arrows")
+	assert_false(grid.visible, "H again hides the grip grid")
+
+
+func test_grip_grid_reads_the_drivetrain_readouts_per_corner() -> void:
+	# End to end: a grip figure published for one wheel lands in that wheel's OWN cell.
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var grid := _scene.get_node("HUD/GripGrid") as GridContainer
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var drivetrain: Drivetrain = car.drivetrain
+	# Pick a real wheel and work out where its reading is SUPPOSED to land, rather than
+	# assuming a scene-tree order.
+	var wheel: VehicleWheel3D = drivetrain.all_wheels[0]
+	var expected := _corner_of(drivetrain, wheel)
+	drivetrain.readouts.clear()
+	drivetrain.readouts[wheel] = {"grip": 0.42}
+	grid.visible = true
+	hud._update_grip_grid()
+	assert_eq((grid.get_child(expected) as Label).text,
+		"%s 42%%" % ["FL", "FR", "RL", "RR"][expected],
+		"the wheel's reading lands in its own cell")
+	for i in 4:
+		if i == expected:
+			continue
+		assert_string_ends_with((grid.get_child(i) as Label).text, "--",
+			"a wheel with no readout published shows a dash")
+	drivetrain.readouts.clear()
+	grid.visible = false
+
+
+# Where a wheel's reading belongs in the grid, derived the same way the HUD does it.
+func _corner_of(drivetrain: Drivetrain, wheel: VehicleWheel3D) -> int:
+	const Hud = preload("res://scripts/hud.gd")
+	return Hud.corner_index(wheel.use_as_traction,
+		(drivetrain.hardpoints[wheel] as Vector3).x)
+
+
 func test_hud_has_no_version_label() -> void:
 	# The build version now lives on the title screen only (see test_hq.gd); the
 	# in-run HUD must not carry it.

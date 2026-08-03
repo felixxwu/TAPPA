@@ -13,7 +13,9 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
 - Tracks per-wheel spin (`front_omega`, `rear_omega`), spin angle, and `Visual`
   nodes for mesh rotation.
 - Holds `drive_mode` (RWD / AWD / FWD) and `readouts` (per-wheel force data for
-  the debug overlay).
+  the debug overlays: `normal`, `demand`, `applied`, and `grip` — how far up its grip
+  curve the tire is, slip over `slip_peak` via the pure static `grip_fraction`, which
+  the HUD's 2x2 grip grid reads; see [debug-tools.md](debug-tools.md)).
 
 ## Main entry: `step(delta, throttle, brake, handbrake)`
 

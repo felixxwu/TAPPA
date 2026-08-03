@@ -327,3 +327,55 @@ func test_higher_slip_peak_moves_optimum_angle_out() -> void:
 	var loose := _peak_lateral_slip_angle_deg(v, 0.31)   # gravel-like
 	assert_gt(loose, tight + 3.0,
 		"looser surface (bigger slip_peak) peaks at a bigger slip angle (%.1f° vs %.1f°)" % [tight, loose])
+
+
+func test_grip_fraction_is_slip_over_peak_and_climbs_past_the_limit() -> void:
+	# The debug grip readout's source: how far up its grip curve a tire is. Pure logic on
+	# synthetic slip — no catalogue car, no authored value.
+	assert_almost_eq(Drivetrain.grip_fraction(0.15, 0.15), 1.0, 1e-5,
+		"slip exactly at peak is exactly on the limit")
+	assert_almost_eq(Drivetrain.grip_fraction(0.075, 0.15), 0.5, 1e-5,
+		"half the peak slip is halfway to the limit")
+	assert_almost_eq(Drivetrain.grip_fraction(0.0, 0.15), 0.0, 1e-5,
+		"a tire not slipping is using none of its grip")
+	# The reason the readout is measured in SLIP rather than in force: it must keep
+	# climbing past the limit. A force-based reading cannot — _grip_curve caps at 1.0 and
+	# then FALLS toward the sliding plateau, so it would come back down as the tire lets
+	# go and read the same number for "grip in reserve" and "already sliding".
+	assert_gt(Drivetrain.grip_fraction(0.30, 0.15), 1.0,
+		"slip beyond peak reads OVER 100% rather than saturating there")
+	assert_gt(Drivetrain.grip_fraction(0.60, 0.15), Drivetrain.grip_fraction(0.30, 0.15),
+		"the further past the limit, the higher the reading — it never turns back down")
+	# The scale is the tire's OWN peak, so the same reading means the same thing on a
+	# loose surface (which peaks at a larger slip) as on tarmac.
+	assert_almost_eq(Drivetrain.grip_fraction(0.62, 0.31), 2.0, 1e-5,
+		"a looser surface is measured against its own bigger peak")
+
+
+func test_grip_fraction_is_safe_with_no_grip_curve() -> void:
+	# A degenerate slip_peak must not divide by zero into INF/NAN on a debug readout.
+	assert_eq(Drivetrain.grip_fraction(0.2, 0.0), 0.0, "a zero peak reports zero")
+
+
+func test_grip_readout_is_published_per_wheel_while_the_overlay_is_up() -> void:
+	# End to end through real physics ticks: the drivetrain publishes a finite, non-negative
+	# grip reading for each wheel in contact — and only once the debug overlay asks for it
+	# (the car ties publish_readouts to the overlay's visibility, so H is the real path).
+	var dt: Drivetrain = _car.drivetrain
+	assert_true(dt.readouts.is_empty(),
+		"nothing is published while the debug overlay is down")
+	Input.action_press("toggle_debug_arrows")
+	await _wait_physics(3)
+	Input.action_release("toggle_debug_arrows")
+	Input.action_press("accelerate")
+	await _wait_physics(10)
+	Input.action_release("accelerate")
+	assert_false(dt.readouts.is_empty(), "the settled car has wheels in contact")
+	for wheel: VehicleWheel3D in dt.readouts:
+		var reading: float = dt.readouts[wheel].grip
+		assert_true(is_finite(reading), "wheel grip reading is a real number")
+		assert_gte(reading, 0.0, "grip usage is never negative")
+	# Put the overlay back down so the shared input action doesn't leak into the next test.
+	Input.action_press("toggle_debug_arrows")
+	await _wait_physics(3)
+	Input.action_release("toggle_debug_arrows")

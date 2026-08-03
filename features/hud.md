@@ -34,6 +34,13 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `BoostBar` (+ child `BoostLabel`) | `BOOST` caption inside a bar whose fill is the live boost fraction | `car.drivetrain.engine` (blue; hidden on an NA car) |
 | `HPBar` (+ child `HPLabel`) | `HEALTH` caption inside a bar whose fill is `hp / max_hp` | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
+| `GripGrid` | 2x2 `FL/FR/RL/RR <n>%` — how far up its grip curve each tire is (100% = on the limit, higher = sliding) | `car.drivetrain.readouts[wheel].grip` (dev diagnostic, H gate, code-built) |
+
+`GripGrid` is code-built and stacked below the seed label, on the same **H** gate as the
+readouts above — a **2x2** grid of per-tire grip figures, one cell per corner. See
+[debug-tools.md](debug-tools.md) → "Per-tire grip grid"; it is the ONE debug readout
+that does **not** refresh while hidden, because its source
+(`Drivetrain.readouts`) isn't published while the overlay is down.
 
 ## Damage gauge
 

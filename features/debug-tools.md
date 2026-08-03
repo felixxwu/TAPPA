@@ -37,7 +37,8 @@ torque (`debug_assist_arrow_scale`, m per N·m). A zero-length arrow (no assist
 active) is skipped.
 
 `_physics_process(delta)` rebuilds the mesh each frame from:
-- `drivetrain.readouts` — per-wheel `{normal, demand, applied}` data,
+- `drivetrain.readouts` — per-wheel `{normal, demand, applied, grip}` data (the arrows
+  use the first three; `grip` feeds the HUD grid below),
 - `car.downforce_readouts` — `[global_point, force_vector]` pairs.
 
 The same **H** toggle also reveals the HUD's speed / gear / rpm / **boost**
@@ -59,6 +60,50 @@ procedural chassis/cabin boxes and any glb model body), because the hull is draw
 little smaller than the visible body and would otherwise be obscured by it. Dismissing
 the overlay restores the body by re-running the normal per-spec visibility
 (`_apply_model_visibility`). Wheels stay visible either way.
+
+## Per-tire grip grid
+
+**Source:** `hud.gd` → `_build_grip_grid` / `_update_grip_grid`, plus the pure
+`grip_text` / `grip_color` / `corner_index` statics. Revealed by the **same H toggle**
+as everything else above (`GripGrid`, a code-built `GridContainer`, stacked under the
+seed label).
+
+Four readouts laid out as the car's **plan view** — front axle on the top row, left
+wheel in the left column — so a number maps onto a corner of the car without being read
+off its label:
+
+```
+FL 62%   FR 118%
+RL 41%   RR  38%
+```
+
+Each cell is how far up its grip curve that tire is — its combined slip over the slip
+it peaks at (`Drivetrain.grip_fraction`, recorded per contact as `WheelContact.slip_use`
+and published as `readouts[wheel].grip`). **100% = exactly on the limit**, and readings
+**climb past 100%** while the tire slides; they are deliberately not clamped, because
+that's the part worth seeing. Tinted neutral with grip in reserve, **gold** approaching
+the limit, **red** at or past it. `--` means no reading: the wheel is off the ground (no
+contact, or zero normal force), which is deliberately distinguished from `0%`.
+
+**Why slip and not force.** The obvious metric — force generated over the `μN` limit —
+**cannot exceed 100%**, because `_tire_force`'s force *is* `μN * _grip_curve(s)` and the
+curve is capped at `1.0` at peak. Worse, past peak the curve *falls* toward the sliding
+plateau (`sliding_grip_ratio`), so a force-based reading comes back **down** as the tire
+lets go: "70%" would mean either "30% of the grip still in reserve" or "already sliding,
+grip has collapsed to 70%" — opposite situations behind one number. Slip rises
+monotonically through the limit, so it separates them.
+
+The slip is the combined magnitude in `_tire_force`'s **scaled** slip space, with the
+longitudinal component weighted by `traction_ellipse_ratio`. That's what lets one number
+cover combined braking-and-cornering: the traction budget is an **ellipse**, not a
+circle, and the weighting puts both axes on the same scale. The divisor is the contact's
+own `slip_peak`, which is surface-dependent (gravel peaks at a larger slip angle than
+tarmac), so the same reading means the same thing on any surface.
+
+Unlike the speed / gear / rpm / boost / seed readouts, this one does **not** keep
+refreshing while hidden — `Drivetrain.readouts` is only populated while
+`publish_readouts` is on, which the car ties to the force-arrow overlay's visibility
+(the same H toggle), so there is nothing to read when it's down.
 
 ## Skip to finish (event cheat)
 
@@ -235,5 +280,7 @@ It must be a SCENE run (like the cache baker), not `--script`: `Config`/
 ## Tests
 
 `tests/headless/test_debug_arrows.gd` — verifies the force-arrow overlay updates
-from the force readouts. `tests/headless/test_perf_overlay.gd` — verifies the
+from the force readouts. `tests/headless/test_hud.gd` — the grip grid's 2x2 layout, H
+gate, corner mapping and cell formatting; `tests/headless/test_drivetrain.gd` —
+`grip_fraction` against the friction ellipse (and its zero-load guard). `tests/headless/test_perf_overlay.gd` — verifies the
 profiler overlay toggles, samples, formats, and reads the loaded chunk count.
