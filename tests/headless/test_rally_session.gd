@@ -14,8 +14,8 @@ func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
 	# Most tests here just need "a rally with events"; install the synthetic rally
-	# roster so they don't lean on a shipped rally's identity. The showdown tests
-	# (which need the real region-ordered showdown) opt back out via RallyFixtures.restore().
+	# roster so they don't lean on a shipped rally's identity. The endgame tests (which need
+	# the real special ladder) opt back out via RallyFixtures.restore().
 	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
@@ -294,7 +294,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 		"a top-3 finish records a real catalogue car for the reveal")
 	assert_eq(bool(r["car_reward_is_new"]), not owned_before.has(reward),
 		"the is_new flag matches whether the player already owned the won car before the win")
-	assert_false(r["showdown_won"], "the shakedown is not the showdown")
+	assert_false(r["game_won"], "an ordinary rally is not the endgame")
 	# The result names the owned-car instance the player drove, so the podium's
 	# upgrade reveal can offer to fit each won part straight onto it.
 	assert_eq(int(r["car_instance_id"]), int(driven["instance_id"]),
@@ -457,60 +457,73 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 	assert_eq(RallySession.opponent_field(), field1, "the opponent field is identical across re-attempts")
 
 
-# Every region's showdown that isn't `keep_id`, marked completed in the profile.
-# Derived from the catalogue rather than hardcoding ids, so re-siting a rally into
-# a different corner can't silently stop these tests exercising what they claim to.
-func _complete_other_showdowns(keep_id: String) -> void:
-	for region in RegionLibrary.all():
-		var sd: Dictionary = RegionLibrary.showdown_of(String(region.get("id", "")))
-		var sd_id := String(sd.get("id", ""))
-		if sd_id != "" and sd_id != keep_id:
-			_save.complete_rally(sd_id, 1000)
+# Every special that isn't `keep_id`, marked completed in the profile. Derived from the
+# catalogue rather than hardcoding ids, so re-siting or re-rung-ing a special can't
+# silently stop these tests exercising what they claim to.
+func _complete_other_specials(keep_id: String) -> void:
+	for rally in RallyLibrary.all():
+		var rid := String(rally.get("id", ""))
+		if RallyLibrary.is_special(rally) and rid != keep_id:
+			_save.complete_rally(rid, 1000)
 
 
-func test_showdown_win_beat_fires_once_every_showdown_is_done() -> void:
-	# Credits now require EVERY region's showdown completed, not one designated final
-	# region (todo/one-map-four-corners.md decision 1). So win the LAST outstanding
-	# showdown: with all the others already recorded, this finish completes the set
-	# and must fire the win beat.
-	RallyFixtures.restore()  # this test needs the REAL showdown roster
-	var last := ""
-	for region in RegionLibrary.all():
-		var sd: Dictionary = RegionLibrary.showdown_of(String(region.get("id", "")))
-		if not sd.is_empty():
-			last = String(sd.get("id", ""))
-			break
-	assert_ne(last, "", "the shipped roster authors at least one showdown")
-	_complete_other_showdowns(last)
+# The id of some authored special, and of the special on the LOWEST rung (the one a player
+# reaches first, and the cheapest to make enterable in a test).
+func _lowest_special_id() -> String:
+	var best := ""
+	var best_stars := 1 << 30
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally) and int(rally.get("requires_stars", 0)) < best_stars:
+			best_stars = int(rally.get("requires_stars", 0))
+			best = String(rally["id"])
+	return best
+
+
+func test_win_beat_fires_once_every_special_is_done() -> void:
+	# Credits require EVERY special on the star ladder completed — no designated finale
+	# rally. So win the LAST outstanding special: with all the others already recorded,
+	# this finish completes the set and must fire the win beat. Which special is "last"
+	# is deliberately not pinned; any one of them completes the set when it's the only
+	# one left.
+	RallyFixtures.restore()  # this test needs the REAL roster
+	var last := _lowest_special_id()
+	assert_ne(last, "", "the shipped roster authors at least one special")
+	_complete_other_specials(last)
 	var won: Array = [false]
-	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
+	RallySession.game_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
 	_start(last)
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	var cars_before: int = _save.profile["cars"].size()
 	_report_events([10000, 10000, 10000])
-	assert_true(won[0], "completing the final outstanding showdown fires the win beat")
-	assert_eq(_save.profile["cars"].size(), cars_before, "the showdown grants no car reward")
-	assert_true(_save.rally_completed(last), "the showdown records completion")
+	assert_true(won[0], "completing the final outstanding special fires the win beat")
+	assert_eq(_save.profile["cars"].size(), cars_before, "the final special grants no car reward")
+	assert_true(_save.rally_completed(last), "the special records completion")
 
 
-func test_showdown_with_others_outstanding_completes_without_win_beat() -> void:
-	# A showdown won while ANOTHER region's showdown is still outstanding is just a
-	# normal rally win (including a car draw) — it must NOT fire the win/credits beat
-	# or flag the endgame podium. This is the counterpart to the test above: together
-	# they pin the rule "credits fire on the last showdown, whichever one that is",
-	# with no region designated as the finale.
-	RallyFixtures.restore()  # this test needs the REAL showdown roster
+func test_a_special_with_others_outstanding_completes_without_win_beat() -> void:
+	# A special won while ANOTHER is still outstanding is just a normal rally win
+	# (including a car draw) — it must NOT fire the win/credits beat or flag the endgame
+	# podium. Counterpart to the test above: together they pin "credits fire on the LAST
+	# special, whichever one that is", with none designated as the finale.
+	RallyFixtures.restore()  # this test needs the REAL roster
+	var first := _lowest_special_id()
+	var specials := 0
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			specials += 1
+	if specials < 2:
+		return  # a single-special roster has no "others outstanding" case to show
 	var won: Array = [false]
-	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
+	RallySession.game_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
 	var result_box := _capture_finish()
-	_start("the_showdown")
+	_start(first)
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	_report_events([10000, 10000, 10000])
-	assert_false(won[0], "a showdown with others outstanding does not fire the win beat")
+	assert_false(won[0], "a special with others outstanding does not fire the win beat")
 	var result: Dictionary = result_box[0]
-	assert_false(result["showdown_won"],
-		"a showdown with others outstanding must not flag the endgame/credits podium")
-	assert_true(_save.rally_completed("the_showdown"), "the showdown still records completion")
+	assert_false(result["game_won"],
+		"a special with others outstanding must not flag the endgame/credits podium")
+	assert_true(_save.rally_completed(first), "the special still records completion")
 
 
 func test_farming_rewin_grants_car_without_new_completion() -> void:

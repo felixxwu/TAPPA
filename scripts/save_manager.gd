@@ -840,7 +840,11 @@ func install_upgrade(instance_id: int, item_id: String, enabled := true) -> bool
 	if (car["installed_upgrades"] as Array).has(item_id):
 		return false  # already fitted to this car (per-car dedup)
 	car["installed_upgrades"].append(item_id)
-	if enabled:
+	# A part in a HIDDEN slot is always fitted enabled, whatever the caller asked for: it has
+	# no garage row, so installing it disabled would leave it permanently dead AND block the
+	# slot from ever being re-awarded (the dedup above). Enforced here so it holds for every
+	# route a part arrives by — the per-event draw, the challenge draw and a mystery box.
+	if enabled or UpgradeLibrary.installs_enabled(item_id):
 		_enable_exclusive(car, item_id, slot)
 	else:
 		_disable(car, item_id)
@@ -1021,9 +1025,9 @@ func _seed_reveals_if_needed() -> void:
 	save()
 
 
-# Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so region
-# unlocks — which are derived per-region from RegionLibrary.showdown_unlocked —
-# can be exercised without grinding the whole ladder.
+# Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so every
+# special's star gate (RallyLibrary.special_gate_open) is open and the whole
+# ladder can be exercised without grinding it.
 func dev_three_star_all_rallies() -> void:
 	var rallies: Dictionary = profile["rallies"]
 	for rally in RallyLibrary.all():
@@ -1036,13 +1040,13 @@ func dev_three_star_all_rallies() -> void:
 
 
 # Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
-# Drives the world-map star rating (1st → 3 stars, 2nd → 2, 3rd → 1, else 0).
+# Drives the world-map star rating via RallyLibrary.stars_for_placement (1st = the most).
 func best_placement(rally_id: String) -> int:
 	return int(profile["rallies"].get(rally_id, {}).get("best_placed", 0))
 
 
-# Number of rallies top-3'd — the single progression metric driving the
-# reward-tier ceiling and the showdown unlock. Delegates to RallyLibrary so the
-# metric has one definition.
+# Number of rallies top-3'd — the progression metric driving the CAR reward-tier ceiling.
+# (The special-event ladder keys off stars instead, see RallyLibrary.total_stars.)
+# Delegates to RallyLibrary so the metric has one definition.
 func completed_rally_count() -> int:
 	return RallyLibrary.completed_count(profile)

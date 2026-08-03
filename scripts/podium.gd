@@ -682,8 +682,8 @@ func _summary_text() -> String:
 	var placed := int(_result.get("placed", -1))
 	var combined := int(_result.get("combined_ms", -1))
 	var lines: Array[String] = ["%sFinished P%d   (%s)" % [prefix, placed, UITheme.format_time(combined)]]
-	if _result.get("showdown_won", false):
-		lines.append("THE SHOWDOWN IS WON — you've completed the game!")
+	if _result.get("game_won", false):
+		lines.append("EVERY SPECIAL EVENT IS WON — you've completed the game!")
 	elif _result.get("completed", false):
 		lines.append("Top 3 — RALLY WON!")
 	else:

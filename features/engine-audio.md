@@ -413,6 +413,55 @@ so every pre-existing call site and test keeps working unchanged.
 [forced-induction.md](forced-induction.md) for the underlying turbo/supercharger
 simulation these signals come from.
 
+## Nitrous hiss
+
+Nitrous gets its own synthesised layer — **no sample assets**, like every other
+forced-induction sound here. See [nitrous.md](nitrous.md) for the physics side.
+
+- **Trigger transient.** On the delivery edge, a solenoid crack: a decaying noise
+  burst (`_n2o_crack`, `NITROUS_CRACK_DECAY_MS`) built the same way as the BOV
+  burst, but with a **softer, ramped attack** (`_n2o_crack_attack`,
+  `NITROUS_CRACK_ATTACK_RATE`) and deliberately **no flutter LFO**.
+- **Sustain.** A broadband **hiss** while nitrous is delivering: white noise
+  through a one-pole low-pass (`_n2o_lp`, cutoff `NITROUS_HISS_LP_HZ`), amplitude
+  ramped in by `_n2o_hiss` / `NITROUS_HISS_ATTACK_RATE`, mixed at
+  `NITROUS_HISS_GAIN × NITROUS_HISS_LEVEL`. **No tonal component by design** — a
+  car can carry a turbo whistle, a supercharger whine AND nitrous at once, so the
+  nitrous layer stays pure hiss to remain identifiable against both.
+- **No power layer.** Deliberately absent: nitrous multiplies delivered torque, so
+  the rpm the sim reports already climbs faster and the existing rpm tracking makes
+  the car sound faster. A loudness layer would double-count it.
+- **Cutoff cue.** A short **descending** hiss tail (`_n2o_tail`,
+  `NITROUS_TAIL_DECAY_MS`) on driver release AND on the tank running dry. The
+  low-pass coefficient is lerped between `NITROUS_HISS_LP_HZ` and
+  `NITROUS_TAIL_LP_HZ` by the envelope, so the tail darkens as it decays. The dry
+  case is armed at full strength regardless of the current sustain level — it's the
+  cutoff the player did NOT choose, so it has to be unmistakable.
+
+The layer rides the **noise** bus (like the crackle/BOV), so `engine_volume_db`
+never scales it and it layers *under* the engine note rather than masking it; the
+final master gain and Engine bus still apply, so the audio volume sliders control
+it. It reads the shared noise table through its own rolling index `_ni_nitrous`
+(stride 13) so it stays decorrelated from the other noise layers.
+
+`fill()` gained three more trailing params — `nitrous_on`, `nitrous_trigger`,
+`nitrous_empty`, all defaulted `false`. **`nitrous_on` is the DELIVERY state, never
+"nitrous is fitted"** — that gate is what keeps the HQ garage preview silent, since
+`car_preview_audio.gd` applies the highlighted car's fitted upgrades (so its config
+DOES have nitrous) and passes the three args hard-`false`.
+
+`engine_audio.gd._timed_process` derives the edges itself: `EngineSim`'s
+`nitrous_event` / `nitrous_emptied` are per-**substep** flags cleared at the top of
+every `_step_nitrous`, so a frame of substeps has usually wiped them before audio
+runs. The bridge therefore tracks the previous delivery state (`_prev_nitrous_on`,
+from `nitrous_active and nitrous_fraction() > 0`) and ORs the sim's flags in for the
+case where the edge landed on the final substep.
+
+**Still to wire:** the mix level is currently the `NITROUS_HISS_GAIN` constant in
+`engine_audio_synth.gd`. A `GameConfig.engine_nitrous_hiss_gain` export mirroring
+`engine_supercharger_whine_gain` should replace it (cached in `_init`, like the
+other gains) so nitrous loudness is tunable from `config/game_config.tres`.
+
 ## Related config
 
 `engine_volume_db` (engine property via `EngineLibrary.volume_db`),

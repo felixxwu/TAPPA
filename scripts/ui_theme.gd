@@ -150,6 +150,15 @@ static func format_time(ms: int, negative_text: String = "--:--") -> String:
 	return "%d:%05.2f" % [minutes, seconds - minutes * 60.0]
 
 
+# "1 token" / "3 tokens" — a count with its noun, pluralised. Trivial, but it was being
+# hand-rolled at three call sites (the garage swap row's label and its locked hint, and the
+# car-park swap confirm popup), which is three chances to disagree about the wording.
+static func count_noun(n: int, noun: String, plural := "") -> String:
+	if n == 1:
+		return "1 %s" % noun
+	return "%d %s" % [n, plural if plural != "" else noun + "s"]
+
+
 # One leaderboard/standings row, identical between the standings overlay and the
 # podium's leaderboard: "> P3 — NAME (CAR) — 1:23.21", where the leading "> " and
 # a gold tint mark the player, place < 1 reads "DNF", and a wrecked entry shows

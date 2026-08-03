@@ -280,7 +280,10 @@ var peak_torque_rpm := 4500.0
 # so the engine idling never creeps the car.
 @export var clutch_engage_speed := 4.0
 @export var shift_time := 0.25  # seconds of open clutch + throttle cut per shift
-@export var auto_gearbox := false  # start in automatic mode (toggle in-game with T)
+## Default transmission mode: true = automatic. Only the DEFAULT — the player's
+## Settings -> Gearbox choice (SettingsMenu.GEARBOX_SETTING_KEY) wins once set, and
+## car.gd mirrors it onto the live engine each tick.
+@export var auto_gearbox := false
 ## Automatic-mode upshift point, as a fraction of redline. Each gear upshifts at
 ## the ground speed where it reaches this fraction of redline rpm. Must stay
 ## below the steady-state ground/redline ratio (~0.94 here) or the car never
@@ -358,6 +361,34 @@ func has_supercharger_physics() -> bool:
 ## boost reading worth showing / simulating", not "which part is fitted".
 func has_forced_induction() -> bool:
 	return turbo_enabled or has_supercharger_physics()
+
+
+## Softness of the mystery-box self-throttle. The chance of granting a box to a maxed-out
+## car is 1 / (1 + boxes_held / this), so the first box is always certain and each one banked
+## makes the next rarer. 1.0 gives the plain 1/(n+1) curve; larger values make boxes pile up
+## more readily, smaller values choke them off faster. Must stay > 0.
+@export_range(0.1, 10.0) var mystery_box_throttle := 1.0
+
+# --- Nitrous ------------------------------------------------------------------
+# A per-STAGE resource, not a permanent power level: the tank is refilled to full by
+# EngineSim.reset() (so every stage start AND every in-stage reset-to-start begins
+# full), and holding the `nitrous` action multiplies delivered crank torque while the
+# tank drains. Deliberately NOT part of effective_meta / power-to-weight, so fitting
+# nitrous can never move a car's rally eligibility — it makes events easier, it is not
+# a stat. See todo/star-gated-special-events.md and features/nitrous.md.
+
+## Extra torque fraction while nitrous is held — delivered torque is multiplied by
+## (1.0 + this). 0 = no nitrous fitted. The upgrade ladder raises this ("harder").
+@export var nitrous_boost_gain := 0.0
+
+## Seconds of nitrous a full tank holds. The upgrade ladder raises this ("longer").
+@export var nitrous_tank_seconds := 0.0
+
+## Whether nitrous is fitted and live. Mirrors has_supercharger_physics: a gain OR a
+## tank of zero means nothing to deliver, so both must be positive before the sim, the
+## HUD gauge, the audio layer or the mobile button appear.
+func has_nitrous() -> bool:
+	return nitrous_boost_gain > 0.0 and nitrous_tank_seconds > 0.0
 ## Seconds the HQ car-lineup preview holds the throttle when a car is highlighted:
 ## a free-revving (neutral, no-load) EngineSim climbs for this long, then releases
 ## and falls back to idle so the player hears each car's engine as they flick the
@@ -460,6 +491,10 @@ func has_forced_induction() -> bool:
 ## Mix level of the belt-driven supercharger whine (0 = off). Pitch tracks engine rpm.
 ## Negative values invert the layer's phase (subtractive mix).
 @export_range(-1.0, 1.0) var engine_supercharger_whine_gain := 0.0
+## Mix level of the nitrous hiss layer (0 = off). Unlike the whine this is BROADBAND noise
+## with no tonal component, and it only sounds while nitrous is actually being delivered —
+## see features/nitrous.md. Negative values invert the layer's phase (subtractive mix).
+@export_range(-1.0, 1.0) var engine_nitrous_hiss_gain := 0.7
 @export_enum("RWD", "AWD", "FWD") var drive_mode := 0  # initial layout (cycle in-game with Y)
 # AWD uses a fully locked centre diff (front + rear share one driveline speed),
 # so there is no torque-split knob.
@@ -882,7 +917,7 @@ func has_forced_induction() -> bool:
 ## New-rally reveal (hq.gd `_run_reveal_sequence`): when rallies become enterable, the
 ## map camera pans to each in turn and flips its pin from the locked to the unlocked look.
 ## `pan_time` is the beat spent travelling/settling on a pin before it flips, `hold_time`
-## how long the revealed pin is held before moving on (a showdown gets a longer beat), and
+## how long the revealed pin is held before moving on (a special gets a longer beat), and
 ## `max_queue` caps how many pins one opening parades (the rest are banner'd as "+N more"
 ## and marked seen anyway). Any input skips the whole queue. See features/menus.md.
 @export var hq_reveal_pan_time := 0.7

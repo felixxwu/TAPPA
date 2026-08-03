@@ -15,6 +15,12 @@ extends VBoxContainer
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately; the HQ has no camera so it just saves
 #     and the choice is applied on the next run.
+#   • Gearbox — pick the transmission mode (automatic / manual), persisted under
+#     SettingsMenu.GEARBOX_SETTING_KEY. This is the ONLY way to choose automatic:
+#     it replaced the old `toggle_gearbox` (T) runtime toggle, which was unreachable
+#     on touch (no mobile scheme has shift buttons) and on a controller. car.gd
+#     mirrors `gearbox_auto()` onto the live engine every tick, so a change from the
+#     pause menu applies mid-run without any signal.
 #   • Key bindings — rebind the keyboard and controller controls. Each driving
 #     action (InputRemap.ACTIONS) gets a row with a keyboard button and a controller
 #     button showing its current binding; tapping one listens for the next key /
@@ -46,6 +52,19 @@ signal page_changed(is_root: bool)
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
 const _BIND_BUTTON_W := 168.0
 
+# Save-profile key for the transmission mode (1 = automatic, 0 = manual). Stored as an
+# int so it rides the shared _refresh_selection highlight helper with the camera / fps /
+# scheme rows. Unset falls back to the authored GameConfig baseline.
+const GEARBOX_SETTING_KEY := "gearbox_auto"
+const GEARBOX_AUTO := 1
+const GEARBOX_MANUAL := 0
+const GEARBOX_OPTIONS := [
+	{"value": GEARBOX_AUTO, "name": "Automatic",
+		"desc": "The car changes gear for you — the only mode on touch controls."},
+	{"value": GEARBOX_MANUAL, "name": "Manual",
+		"desc": "You shift yourself with the shift up / shift down controls."},
+]
+
 # Test override for dev_tools_enabled(): -1 = use the real build type, 0 = force
 # off, 1 = force on. A test cannot change OS.is_debug_build(), and "players don't
 # see the dev pages" is exactly the case worth asserting.
@@ -67,6 +86,7 @@ static func dev_tools_enabled() -> bool:
 var camera_rows: Array = []
 var scheme_rows: Array = []
 var fps_rows: Array = []
+var gearbox_rows: Array = []
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
@@ -84,6 +104,7 @@ var master_value_label: Label
 var music_slider: HSlider
 var music_value_label: Label
 var _camera_page: VBoxContainer
+var _gearbox_page: VBoxContainer
 var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
 var _benchmark_page: VBoxContainer
@@ -146,6 +167,7 @@ func _build() -> void:
 	_build_audio_page()
 	_build_display_page()
 	_build_camera_page()
+	_build_gearbox_page()
 	_build_controls_page()
 	_build_schemes_page()
 	_build_benchmark_page()
@@ -156,10 +178,12 @@ func _build() -> void:
 	# Single source of truth for the swappable pages (list first — it's the
 	# default page). _show_page / focus_current_page fan out over this so adding
 	# a page only means appending it here.
-	_pages = [_list_page, _audio_page, _display_page, _camera_page, _controls_page,
-			_scheme_page, _benchmark_page, _dev_page, _account_page, _seedlab_page]
+	_pages = [_list_page, _audio_page, _display_page, _camera_page, _gearbox_page,
+			_controls_page, _scheme_page, _benchmark_page, _dev_page, _account_page,
+			_seedlab_page]
 
 	_refresh_camera_selection()
+	_refresh_gearbox_selection()
 	_refresh_scheme_selection()
 	_refresh_fps_selection()
 	_refresh_controls_selection()
@@ -172,7 +196,8 @@ func _build_list_page() -> void:
 	# overflows and scrolls.
 	_list_page = _make_page()
 	add_child(_list_page)
-	_list_page.add_child(_make_sub("Choose a category:"))
+	# No subtitle: the page is a grid of named category buttons under a SETTINGS heading, so
+	# "Choose a category:" only restated what the buttons already show.
 	var list_grid := GridContainer.new()
 	list_grid.columns = 2
 	list_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -182,6 +207,7 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Audio", show_audio))
 	list_grid.add_child(_make_nav_button("Display", show_display))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
+	list_grid.add_child(_make_nav_button("Gearbox", show_gearbox))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
 	list_grid.add_child(_make_nav_button("Account", show_account))
@@ -237,6 +263,19 @@ func _build_camera_page() -> void:
 	camera_rows.clear()
 	for entry in CameraManager.MODES:
 		_camera_page.add_child(_make_camera_row(int(entry["mode"]), entry))
+
+
+func _build_gearbox_page() -> void:
+	# Gearbox sub-page — automatic vs manual transmission. Same flat name+blurb rows as
+	# the camera / fps pages, so keyboard + gamepad nav (ui_up/ui_down + ui_accept,
+	# focus seated by focus_current_page) comes for free.
+	_gearbox_page = _make_page()
+	add_child(_gearbox_page)
+	_gearbox_page.add_child(_make_heading("Gearbox"))
+	_gearbox_page.add_child(_make_sub("Choose how you change gear:"))
+	gearbox_rows.clear()
+	for entry in GEARBOX_OPTIONS:
+		_gearbox_page.add_child(_make_gearbox_row(int(entry["value"]), entry))
 
 
 func _build_controls_page() -> void:
@@ -473,6 +512,10 @@ func show_camera() -> void:
 	_show_page(_camera_page)
 
 
+func show_gearbox() -> void:
+	_show_page(_gearbox_page)
+
+
 func show_controls() -> void:
 	_show_page(_controls_page)
 
@@ -551,6 +594,29 @@ func _refresh_selection(rows: Array, key: String, default: int) -> void:
 
 func _refresh_camera_selection() -> void:
 	_refresh_selection(camera_rows, CameraManager.SETTING_KEY, int(CameraManager.ORDER[0]))
+
+
+# Persist the transmission mode. No live-apply signal is needed: car.gd reads
+# gearbox_auto() every physics tick while the driver is in control, so flipping this
+# from the in-run pause menu takes effect as soon as the game unpauses.
+func select_gearbox(value: int) -> void:
+	Save.set_setting(GEARBOX_SETTING_KEY, value)
+	_refresh_gearbox_selection()
+
+
+# Is the transmission automatic? The saved player choice, defaulting to the authored
+# GameConfig baseline (`auto_gearbox`) while unset. Static so car.gd can ask without
+# holding a menu instance — this is the single runtime source of truth for the mode.
+static func gearbox_auto() -> bool:
+	var default := GEARBOX_AUTO if Config.data.auto_gearbox else GEARBOX_MANUAL
+	return int(Save.get_setting(GEARBOX_SETTING_KEY, default)) == GEARBOX_AUTO
+
+
+func _refresh_gearbox_selection() -> void:
+	# The default comes from the authored config rather than a constant, which is the only
+	# reason this needs its own one-liner rather than sharing camera/fps's call shape.
+	_refresh_selection(gearbox_rows, GEARBOX_SETTING_KEY,
+		GEARBOX_AUTO if Config.data.auto_gearbox else GEARBOX_MANUAL)
 
 
 func _refresh_scheme_selection() -> void:
@@ -707,10 +773,10 @@ func _complete_rally() -> void:
 
 # Dev: 3-star every rally, which also completes every region's showdown and so
 # finishes the game (regions no longer unlock in sequence — see
-# RegionLibrary.all_showdowns_completed / features/regions.md).
+# RallyLibrary.all_specials_completed / features/regions.md).
 func _three_star_all_rallies() -> void:
 	Save.dev_three_star_all_rallies()
-	_dev_status.text = "3-starred all rallies — every showdown completed."
+	_dev_status.text = "3-starred all rallies — every special event completed."
 
 
 # Grant a fresh owned instance of any car in the library (no rally required).
@@ -776,6 +842,17 @@ func _make_fps_row(value: int, entry: Dictionary) -> Button:
 	var text := _make_row_text(button)
 	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
 	fps_rows.append({"key": value, "button": button})
+	return button
+
+
+# A gearbox row: the same flat name + blurb button as the camera / fps rows; pressing
+# it picks that transmission mode.
+func _make_gearbox_row(value: int, entry: Dictionary) -> Button:
+	var button := _make_row_button(64)
+	button.pressed.connect(select_gearbox.bind(value))
+	var text := _make_row_text(button)
+	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
+	gearbox_rows.append({"key": value, "button": button})
 	return button
 
 

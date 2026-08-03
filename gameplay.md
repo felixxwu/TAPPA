@@ -26,7 +26,7 @@ roguelike**: do you risk your best car to win, or play it safe?
    rally** (top 3) → a **random car** (slot-machine reveal). Damage you took
    **carries over**.
 6. **Tune & upgrade** between rallies. Repeat, completing rallies (finish
-   **top 3**) until **all** are done, which unlocks the **final showdown**.
+   **top 3**); stars earned along the way unlock the **special-event ladder**.
 
 ## Locked decisions (from design brainstorm)
 
@@ -37,7 +37,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
 | Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP**, not destroyed — but it is a write-off and can never race again. The anti-soft-lock floor is the **Mystery Box**: wreck every car you own and you're granted one, and opening it yields a **new car** (`Save.ensure_wreck_safety_net` / `Save.open_mystery_box`). See `features/damage.md`. |
 | Rally complete | **Finish top 3** in a rally (combined time). |
-| Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
+| Special unlock | **Star total** (3 per rally won, 2 for 2nd, 1 for 3rd). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
 | Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable (a wrecked car is always re-winnable) so 100% stays reachable. Farmed rewards stay under the **same progress-tier ceiling**. |
@@ -136,7 +136,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   engine size, car type, …) on top of its p/w gate. The player must **own a
   matching car** to enter. The **difficulty tier is hidden** — the p/w requirement
   is the visible gate. The starter always keeps at least one banded entry rally plus
-  the **open-class showdown**, so it always has somewhere to race.
+  the **open-class specials**, so it always has somewhere to race.
 - A rally = **3 events**. **Combined time across all 3** sets the final rally
   time and finishing position. A rally is **completed** by finishing **top 3**.
 - After **each event** the player sees a **leaderboard**: their time vs. the AI
@@ -150,7 +150,7 @@ roguelike**: do you risk your best car to win, or play it safe?
     **auto-derived function of the seeded track** (length + corner-difficulty
     mix), **calibrated by Felix during testing** on a sample of seeds so the
     formula lands correct difficulty everywhere. A curated few (e.g. the
-    showdown) can still get hand-set targets. **Decided.** A dedicated
+    a special) can still get hand-set targets. **Decided.** A dedicated
     fine-tuning session (run sample seeds, eyeball the derived targets, adjust
     the formula's difficulty weights) is planned once the formula exists.
 - **Opponents:** each AI gets a random time in **[target, 2 × target]**. **Some
@@ -179,14 +179,14 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **Per rally completed (top 3 on combined time):** a **random car** is granted.
 - **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
   again grants its car reward again** — completion itself is recorded once (it's
-  the showdown-progress metric), but the **reward repeats** on every top-3 finish.
+  the star metric), but the **reward repeats** on every top-3 finish.
   So the car supply is **infinite**: a wrecked car can always be re-won by
   re-racing, and the player can grind any rally for replacements. **The
   progress-tier ceiling still clamps farmed rewards** (you farm at your current
   power band, not above it), so grinding builds *breadth*, not a difficulty skip.
   Per-rally upgrade drops already repeat simply by running rallies (repair kits
   no longer drop at all — see the Damage repair row in Locked decisions). This is
-  what guarantees the showdown (100% completion) is always reachable — see
+  what guarantees the ladder stays reachable — see
   *Anti-soft-lock*.
 - **Reveal as a lootbox / slot machine** — spinning reels that settle on the
   reward, so the player glimpses the breadth of cars/upgrades that exist (a
@@ -194,7 +194,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **Reward balancing (both):** tier = **f(rally difficulty)** (harder rally →
   better reward) **clamped by a progress ceiling** (early game can't yield a top
   car even on a lucky win). Progress = **number of rallies completed** — the same
-  count that drives the showdown unlock, so no separate metric is needed.
+  count that drives the CAR reward ceiling; the special ladder keys off stars.
 - **Anti-soft-lock (both, + renewable supply):** open-class rallies as the floor
   **+** reward logic that guarantees every granted car is eligible for **≥1
   still-incomplete rally** and the player is **never** left with zero enterable
@@ -203,7 +203,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   eligible for a narrow-restriction rally is **wrecked**, you can always re-win a
   replacement by re-racing. This closes the one remaining hole — that finite car
   rewards + permanent car destruction could otherwise make 100% completion (the
-  showdown) permanently unreachable.
+  a special) permanently unreachable.
 
 <!-- Upgrades implementation: `todo/upgrade-catalogue.md`. -->
 
@@ -252,14 +252,28 @@ The player should never feel alone in the rally:
 - *(These hook into the start/end flow — see `todo/stage-start-and-end.md`; the
   pre-countdown scene precedes that spec's 3-second countdown.)*
 
-## The final showdown
+## The special-event ladder
 
-- A **final showdown rally** with **extra-long events**, entered **only** once
-  **every rally on the world map is completed** (top-3 in each).
-- It should read clearly as **the main goal**; the **events-selection menu shows
-  progress toward it** (a *rallies completed / total* meter, ▰▰▱), so the player
-  always knows how close they are.
-- *(Proposed: winning the showdown is the game's "win" / credits beat.)*
+**SUPERSEDES the original "one final showdown" plan.** That design gated a single
+finale on 100% completion, which couldn't be paced — the map was either finished or
+it wasn't. It shipped instead as a LADDER of **special events** gated on the
+player's running **star total** (a rally is worth 3 stars for a win, 2 for 2nd, 1
+for 3rd), so progress is continuous and rewards both breadth and mastery: going
+back to convert a 2nd into a 1st is real progress. See
+[features/rally-roster.md](features/rally-roster.md) and
+`todo/star-gated-special-events.md`.
+
+- **Eight specials**, every 8 stars, each with **extra-long events** and
+  **open-class** entry (so the low-power starter can always race one).
+- Each one is a **door into the tech tree** rather than another loot drop: it
+  unlocks a part or a capability into the normal reward pool — the Big Turbo, the
+  Drivetrain Conversion, the Supercharger, engine swapping, then nitrous and its
+  upgrades. The player still has to WIN the part itself at an ordinary rally.
+- The map's HUD shows **progress in stars** (`Stars: N / M`), and a locked
+  special's pin shows `X/24 stars` over what it unlocks — locking hides
+  availability, never information.
+- **Win / credits beat:** completing EVERY special (whichever is last — no
+  designated finale rally).
 
 ## Foundations this implies (cross-cutting)
 
@@ -271,7 +285,7 @@ These underpin everything above and likely each become their own todo:
   type/p-w) **plus per-car max HP**. An additive pass on the existing
   `CarLibrary`; specced in `todo/save-persistence.md` › *Prerequisite*.
 - **Rally roster** — the finite curated list of rallies (seed + restriction);
-  its completion count drives both the reward ceiling and the showdown unlock.
+  its completion count drives the car reward ceiling; stars drive the ladder.
   Specced in `todo/rally-roster.md`.
 - **Meta-game UI shell** — **diegetic / in-world**: menus are 3D locations (an HQ
   garage hub with an outdoor car park for the lineup, a tuning lift that also
@@ -317,7 +331,7 @@ These underpin everything above and likely each become their own todo:
 - **Which 3 cars are starters:** a `CarLibrary` content call (the current six are
   all performance cars) — designate low-power existing cars and/or add humble
   starter chassis.
-- **Win / credits beat:** what winning the showdown actually presents (credits +
+- **Win / credits beat:** what completing every special actually presents (credits +
   a stats summary is the likely shape) — its own small spec when we get there.
 - **Quality toggle:** which single lever the Settings *quality* option drives
   (render scale, post-process, or foliage density) — `todo/settings.md`.
@@ -329,7 +343,7 @@ These underpin everything above and likely each become their own todo:
 - **Opponent count:** 10–15 per rally, thinned by DNFs.
 - **Player DNF:** only by wrecking (HP → 0); no time-cut fail-out.
 - **Starter cars:** the two unchosen starters are obtainable later as rewards.
-- **Rally completion:** finish top-3 (combined time). **Showdown:** all rallies
+- **Rally completion:** finish top-3 (combined time). **Specials:** all rallies
   completed. Rally-completion count is the single progress metric (also caps
   reward tier) — no separate points system.
 - **Reward supply:** **infinite / farmable** — re-winning a completed rally

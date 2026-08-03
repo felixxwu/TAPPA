@@ -37,8 +37,11 @@ func before_each() -> void:
 	# Hermetic input state: the touch controls only RELEASE actions they pressed
 	# themselves, so a press leaked by an earlier test would survive into the
 	# idle/region assertions here. Clear all actions up front.
-	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
+	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate", "nitrous"]:
 		Input.action_release(a)
+	# No nitrous fitted by default, so the NOS button is absent unless a test fits some.
+	Config.data.nitrous_boost_gain = 0.0
+	Config.data.nitrous_tank_seconds = 0.0
 	# Reset the shared overlay to its default scheme + forced-on state (tests below
 	# switch schemes / toggle the force flag), and re-fix the slider rect so the steer
 	# maths are deterministic regardless of the headless viewport size: centre x = 100,
@@ -55,8 +58,10 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
+	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate", "nitrous"]:
 		Input.action_release(a)
+	Config.data.nitrous_boost_gain = 0.0
+	Config.data.nitrous_tank_seconds = 0.0
 
 
 func test_visible_when_forced() -> void:
@@ -237,6 +242,156 @@ func test_set_scheme_releases_old_inputs() -> void:
 	_controls.set_scheme(MobileControls.SCHEME_SIMPLE_LR_AUTO)
 	assert_false(Input.is_action_pressed("accelerate"),
 		"switching schemes releases inputs held under the old one")
+
+
+# --- NOS button (only when nitrous is fitted) ---------------------------------
+# A small button beside the pedal column, present in every scheme, that presses the
+# `nitrous` action. Geometry is a tunable, so these assert RELATIONSHIPS only:
+# presence/absence, no overlap with any other region, and hit-test ordering.
+
+const _ALL_SCHEMES := [0, 1, 2, 3, 4, 5]
+
+# Fit nitrous (values are arbitrary positives — has_nitrous() only needs both > 0) and
+# lay the given scheme out at a realistic phone-ish viewport.
+func _fit_nitrous_and_lay_out(scheme: int, size := Vector2(1280, 720)) -> void:
+	Config.data.nitrous_boost_gain = 0.25
+	Config.data.nitrous_tank_seconds = 5.0
+	_controls.set_scheme(scheme)
+	_controls._sync_nitrous_button()
+	_controls._compute_rects(size)
+
+
+func test_nitrous_region_exists_in_every_scheme() -> void:
+	for scheme in _ALL_SCHEMES:
+		_fit_nitrous_and_lay_out(scheme)
+		assert_true(_controls._rects.has("nitrous"),
+			"scheme %d places a NOS region when nitrous is fitted" % scheme)
+		assert_true(_controls._panels.has("nitrous"),
+			"scheme %d builds a NOS panel when nitrous is fitted" % scheme)
+
+
+func test_no_nitrous_region_when_not_fitted() -> void:
+	for scheme in _ALL_SCHEMES:
+		Config.data.nitrous_boost_gain = 0.0
+		Config.data.nitrous_tank_seconds = 0.0
+		_controls.set_scheme(scheme)
+		_controls._sync_nitrous_button()
+		_controls._compute_rects(Vector2(1280, 720))
+		assert_false(_controls._rects.has("nitrous"),
+			"scheme %d has no NOS region without nitrous fitted" % scheme)
+		assert_false(_controls._panels.has("nitrous"),
+			"scheme %d builds no NOS panel without nitrous fitted" % scheme)
+
+
+func test_nitrous_does_not_overlap_other_regions() -> void:
+	# The simple scheme's halves deliberately COVER the lower screen (so the NOS button
+	# is inside one of them); ordering handles that, see the hit-test test below. Every
+	# other region — pedals, steer buttons — and the steering slider must stay clear.
+	for scheme in _ALL_SCHEMES:
+		_fit_nitrous_and_lay_out(scheme)
+		var nos: Rect2 = _controls._rects["nitrous"]
+		assert_gt(nos.size.x, 0.0, "scheme %d gives the NOS button a real width" % scheme)
+		assert_gt(nos.size.y, 0.0, "scheme %d gives the NOS button a real height" % scheme)
+		for region in _controls._rects:
+			if region == "nitrous" or region == "simple_left" or region == "simple_right":
+				continue
+			assert_false(nos.intersects(_controls._rects[region]),
+				"scheme %d: NOS does not overlap %s" % [scheme, region])
+		if _controls._has_slider():
+			assert_false(nos.intersects(_controls._slider_rect),
+				"scheme %d: NOS does not overlap the steering slider" % scheme)
+
+
+func test_nitrous_is_smaller_than_a_pedal() -> void:
+	# It's a small button, not a third pedal — relative, so retuning the pedal size or
+	# the NOS fraction keeps this honest.
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+	var nos: Rect2 = _controls._rects["nitrous"]
+	var gas: Rect2 = _controls._rects["gas"]
+	assert_lt(nos.get_area(), gas.get_area(), "the NOS button is smaller than the GAS pedal")
+
+
+func test_nitrous_wins_over_the_simple_steering_halves() -> void:
+	# THE trap: in SIMPLE_LR_AUTO the steering halves cover the whole lower screen, so a
+	# press on the NOS button lands inside a half too. It must be hit-tested FIRST, or
+	# the button would silently steer instead of firing nitrous.
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SIMPLE_LR_AUTO)
+	var nos: Rect2 = _controls._rects["nitrous"]
+	assert_eq(_controls._button_region(nos.get_center()), "nitrous",
+		"a press on the NOS button reports the NOS region, not a steering half")
+
+
+func test_nitrous_region_presses_the_nitrous_action() -> void:
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+	_controls._pointers[0] = "nitrous"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("nitrous"), "the NOS button presses the nitrous action")
+	_controls._pointers.erase(0)
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("nitrous"), "releasing the touch releases nitrous")
+
+
+func test_holding_nos_also_holds_the_throttle() -> void:
+	# There is no scenario where you want nitrous held WITHOUT throttle — the sim refuses to
+	# deliver or drain off-throttle anyway — and on touch the two buttons are adjacent, so
+	# demanding both thumbs would just make the boost feel broken.
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+	_controls._pointers[0] = "nitrous"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("nitrous"), "NOS is held")
+	assert_true(Input.is_action_pressed("accelerate"), "and it holds the throttle with it")
+	_controls._pointers.erase(0)
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("accelerate"), "releasing NOS releases the throttle too")
+
+
+func test_releasing_nos_leaves_a_separately_held_gas_alone() -> void:
+	# The throttle is an OR over the two regions, not a write, so letting go of NOS must not
+	# cut the throttle out from under a thumb that is still on GAS.
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+	_controls._pointers[0] = "gas"
+	_controls._pointers[1] = "nitrous"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"), "both held: throttle on")
+	_controls._pointers.erase(1)  # let go of NOS only
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("nitrous"), "NOS released")
+	assert_true(Input.is_action_pressed("accelerate"), "but the held GAS still drives the throttle")
+
+
+func test_nitrous_button_appears_and_vanishes_with_the_car() -> void:
+	# Nitrous is fitted per car and a car swap raises no signal, so the overlay polls:
+	# the button must appear/disappear without a scheme change.
+	assert_false(_controls._panels.has("nitrous"), "no NOS button on a car without nitrous")
+	Config.data.nitrous_boost_gain = 0.25
+	Config.data.nitrous_tank_seconds = 5.0
+	_controls._sync_nitrous_button()
+	assert_true(_controls._panels.has("nitrous"), "fitting nitrous adds the NOS button")
+	Config.data.nitrous_boost_gain = 0.0
+	Config.data.nitrous_tank_seconds = 0.0
+	_controls._sync_nitrous_button()
+	assert_false(_controls._panels.has("nitrous"), "a car without nitrous drops the button again")
+
+
+func test_switching_to_a_car_without_nitrous_releases_a_held_boost() -> void:
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+	_controls._pointers[0] = "nitrous"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("nitrous"), "nitrous held before the swap")
+	Config.data.nitrous_boost_gain = 0.0
+	Config.data.nitrous_tank_seconds = 0.0
+	_controls._sync_nitrous_button()
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("nitrous"),
+		"losing the button releases the action rather than leaving it held")
+
+
+func test_release_all_clears_nitrous() -> void:
+	_fit_nitrous_and_lay_out(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+	_controls._pointers[0] = "nitrous"
+	_controls._apply_actions()
+	_controls._release_all()
+	assert_false(Input.is_action_pressed("nitrous"), "_release_all drops a held nitrous")
 
 
 # --- Stuck-touch recovery (web watchdog reconciliation) -----------------------

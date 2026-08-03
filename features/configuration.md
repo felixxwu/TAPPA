@@ -63,7 +63,9 @@ the `.tres` requires a scene reload to take effect.
 | `clutch_max_torque` | 250.0 | Max clutch holding torque |
 | `clutch_engage_speed` | 4.0 | Coast speed below which auto-clutch opens |
 | `shift_time` | 0.25 | Clutch-open throttle cut per gear change (s); **overridden per-car** by `CarLibrary` |
-| `auto_gearbox` | false | Start in auto mode (toggle T) |
+| `auto_gearbox` | false | Start in auto mode. No runtime toggle keybind any more — the old `toggle_gearbox` (T) input action has been removed from `project.godot` entirely; gearbox mode is now a settings-menu choice (`scripts/settings_menu.gd`'s `GEARBOX_SETTING_KEY`, read via `gearbox_auto()`) |
+| `nitrous_boost_gain` | 0.0 | Extra torque fraction while nitrous is held (delivered torque × `(1 + this)`); 0 = no nitrous fitted. See [nitrous.md](nitrous.md) |
+| `nitrous_tank_seconds` | 0.0 | Seconds of nitrous a full tank holds; 0 = no nitrous fitted. `has_nitrous()` is true only when both this and `nitrous_boost_gain` are positive. See [nitrous.md](nitrous.md) |
 | `upshift_redline_fraction` | 0.90 | Auto upshift at this % of redline |
 | `engine_volume_db` | -6.0 | Master audio gain |
 | `engine_idle_gain` | 0.25 | Idle audio floor |

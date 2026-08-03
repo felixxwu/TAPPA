@@ -34,6 +34,32 @@ var antilag_active := false  # true while anti-lag bangs (off-throttle, still bo
 # crank-driven it is a pure function of the current rpm, recomputed every substep
 # and inert (0) whenever supercharger_boost_gain is 0. See forced-induction.md.
 var sc_boost := 0.0
+# Nitrous (features/nitrous.md). A per-STAGE resource: reset() refills the tank, so
+# every stage start and every reset-to-start begins full and there is no spent state to
+# carry or exploit. `nitrous_active` is written each tick by car.gd from the `nitrous`
+# action; step() multiplies delivered torque by (1 + nitrous_boost_gain) while it is
+# held and the tank has charge, draining nitrous_charge by the substep. The audio bridge
+# reads nitrous_delivering / nitrous_event / nitrous_emptied for the hiss and its cues.
+var nitrous_charge := 0.0    # seconds of nitrous left in the tank
+var nitrous_active := false  # driver is holding the nitrous action this tick
+# Whether nitrous is actually DELIVERING right now — held AND charged AND combusting.
+# Latched (not per-substep) so the audio bridge and any other reader share the ONE
+# definition in _step_nitrous rather than re-deriving a subtly different one: holding the
+# button off-throttle or under a fuel cut delivers no torque and drains nothing, so it must
+# not make a sound either.
+var nitrous_delivering := false
+var nitrous_event := false   # set the substep nitrous STARTS delivering (trigger crack)
+var nitrous_emptied := false # set the substep the tank runs dry (cutoff cue)
+var _prev_nitrous := false   # for the nitrous_event edge
+# config.has_nitrous() cached at _init/reset(), so step() pays one bool check instead of a
+# call and two property reads per substep — the same treatment the supercharger's `blown`
+# gets. reset() runs on every stage start and reset-to-start, which is when the config can
+# have been re-applied for a different car.
+#
+# SCOPE: this is a per-SUBSTEP optimisation only. Per-frame readers (nitrous_fraction, and so
+# the HUD gauge and audio) deliberately go to the live config instead, so a refit between
+# resets can never leave them showing a stale reading.
+var _has_nitrous := false
 var _prev_throttle := 0.0  # for the blow-off lift edge
 var _prev_shifting := false  # for the blow-off shift edge (driver lifts to change gear)
 # Damage fraction 0..1 (0 = healthy), set each tick by car.gd. Drives the stochastic
@@ -62,6 +88,10 @@ func _init(p_config: GameConfig) -> void:
 	config = p_config
 	omega = idle_omega()
 	auto = config.auto_gearbox
+	# Seed the cached gate here as well as in reset(): _init does not call reset(), so a
+	# freshly built engine stepped before its first reset would otherwise read as unfitted.
+	_has_nitrous = config.has_nitrous()
+	nitrous_charge = config.nitrous_tank_seconds if _has_nitrous else 0.0
 	# In benchmark mode use a fixed seed so misfires (and their smoke FX) repeat
 	# identically run-to-run; otherwise randomise so each car instance stumbles
 	# independently in normal play. See features/benchmark.md.
@@ -162,6 +192,59 @@ func select_forward(rear_omega: float) -> bool:
 	return gear >= 1
 
 
+# Resolve nitrous delivery for this substep and drain the tank. Only called when nitrous is
+# FITTED (the caller checks `_has_nitrous`). `combusting` is whether the engine is actually
+# making torque (throttle open, not mid-shift, not fuel-cut) — nitrous only flows when it
+# would do something, so the tank can't be dumped off-throttle.
+# Sets nitrous_event on the delivery edge and nitrous_emptied on the substep the tank
+# runs dry; both are one-substep flags the audio bridge consumes. Returns whether the
+# torque multiplier applies.
+func _step_nitrous(h: float, combusting: bool) -> bool:
+	nitrous_event = false
+	nitrous_emptied = false
+	var on := nitrous_active and combusting and nitrous_charge > 0.0
+	if on:
+		nitrous_event = not _prev_nitrous
+		nitrous_charge = maxf(nitrous_charge - h, 0.0)
+		nitrous_emptied = nitrous_charge <= 0.0
+	_prev_nitrous = on
+	nitrous_delivering = on
+	return on
+
+
+# Nitrous left as a 0..1 fraction of a full tank — the HUD gauge reading. 0 when no
+# nitrous is fitted (the gauge is hidden in that case; see hud.gd).
+func nitrous_fraction() -> float:
+	# Reads the LIVE config, not the cached _has_nitrous. This runs per FRAME (the HUD gauge
+	# and the audio bridge), not per substep, so the two property reads are free — and using
+	# the cache here would show a stale gauge after any live refit that re-applies the config
+	# without a reset(), as well as risking a divide by a zero tank.
+	var tank := config.nitrous_tank_seconds
+	if tank <= 0.0 or config.nitrous_boost_gain <= 0.0:
+		return 0.0
+	return clampf(nitrous_charge / tank, 0.0, 1.0)
+
+
+# Re-read the config-derived fitment caches after something has REWRITTEN the live config
+# under a already-built engine (car.gd's apply_owned / _rederive_live_config: the upgrade
+# layer runs after the drivetrain is constructed, so nitrous is installed *after* _init has
+# already cached "not fitted"). Without this the per-substep gate stays stale-false and a
+# fitted nitrous is silently dead until the next reset() — which staging happens to provide
+# for a rally, but free roam does not.
+#
+# Deliberately NOT reset(): this can run on a live body, so it must not touch omega, gear or
+# the tank's current charge. It only re-derives the gate, and tops up a tank that has just
+# appeared (a newly fitted nitrous starts full, like any stage start).
+func refresh_fitment() -> void:
+	var was_fitted := _has_nitrous
+	_has_nitrous = config.has_nitrous()
+	if _has_nitrous and not was_fitted:
+		nitrous_charge = config.nitrous_tank_seconds
+	elif not _has_nitrous:
+		nitrous_charge = 0.0
+		nitrous_delivering = false
+
+
 func reset() -> void:
 	omega = idle_omega()
 	gear = 1
@@ -174,6 +257,15 @@ func reset() -> void:
 	sc_boost = 0.0
 	bov_event = false
 	antilag_active = false
+	# A full tank at every stage start AND every reset-to-start (car.gd reset_to calls
+	# this) — the deliberate "no spent state" rule, so there is nothing to savescum.
+	_has_nitrous = config.has_nitrous()
+	nitrous_charge = config.nitrous_tank_seconds if _has_nitrous else 0.0
+	nitrous_active = false
+	nitrous_delivering = false
+	nitrous_event = false
+	nitrous_emptied = false
+	_prev_nitrous = false
 	_prev_throttle = 0.0
 	_prev_shifting = false
 
@@ -220,7 +312,16 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	_step_turbo(cfg, h, throttle_in)
 	# Belt boost is stateless — straight off this substep's rpm, no spool.
 	sc_boost = supercharger_boost_fraction(r, cfg.supercharger_rpm_ref) if blown else 0.0
-	if throttle > 0.001 and shift_timer <= 0.0 and not fuel_cut:
+	# Whether combustion is making torque this substep — hoisted because both the nitrous
+	# gate and the crank-torque block below need it, and this runs 8 substeps x 60 Hz per car.
+	var combusting := throttle > 0.001 and shift_timer <= 0.0 and not fuel_cut
+	# Nitrous: resolve + drain BEFORE the crank torque so the multiplier and the audio cues
+	# reflect this substep. Gated on the same combustion conditions as the torque below —
+	# holding the button off-throttle or under a fuel cut delivers nothing and so must not
+	# drain the tank. Skipped outright on a car with no nitrous fitted, so it pays one bool
+	# check rather than a call and two property reads per substep (as with `blown` above).
+	var nitrous_on := _step_nitrous(h, combusting) if _has_nitrous else false
+	if combusting:
 		# global_torque_scale is a hidden global de-rate: it scales the torque the
 		# engine actually delivers without altering cfg.peak_torque, so the stats
 		# panel still shows the full published figure while every car is dialled back.
@@ -229,10 +330,13 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 		# is felt (see features/forced-induction.md); response 1.0 = the old linear gain.
 		# The two forced-induction paths MULTIPLY, but the turbo and supercharger parts
 		# share one upgrade slot so in practice only one is ever non-unity.
+		# Nitrous multiplies on top of both induction paths — it is a separate system
+		# (a chemical charge, not compressed air), so it stacks rather than sharing a slot.
 		crank += (
 			throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(r)
 			* boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
 			* (1.0 + sc_boost * cfg.supercharger_boost_gain)
+			* ((1.0 + cfg.nitrous_boost_gain) if nitrous_on else 1.0)
 		)
 
 	var gr := ratio()

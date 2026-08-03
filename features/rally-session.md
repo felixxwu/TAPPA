@@ -33,7 +33,7 @@ re-implementing them.
 | Call | Effect |
 |------|--------|
 | `start_rally(rally, owned_car, event_targets_ms := [])` | seed state, build the opponent field, kick event 0. Targets are derived from each event's track when omitted; tests pass them in to skip generation. |
-| `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw **one upgrade for a non-final event** (events before the last — installed disabled + saved, emits `upgrade_revealed`; earned by finishing the event, kept on a later DNF), then always **enter `STANDINGS`** and emit `standings_ready` — every event pauses on the interstitial, including the last. |
+| `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw **one upgrade for a non-final event** (events before the last, via `RewardSystem.draw_upgrade(Save.profile, rng, owned_car)` — note there is no `rally_difficulty` param any more). The draw may return `RewardSystem.NO_REWARD` (`""`) — a maxed-out car can legitimately win nothing. On a real id: a consumable goes to inventory, everything else is `Save.install_upgrade`'d **disabled** — except the `UpgradeLibrary.HIDDEN_SLOTS` (`"nitrous"`) slot, installed **enabled** because it has no garage row to switch on (see [nitrous.md](nitrous.md)) — appends to `_upgrades_won`, and emits `upgrade_revealed`. On `NO_REWARD` nothing installs, nothing is recorded, and no reveal fires — the flow runs straight on. Either way the rally then always **enters `STANDINGS`** and emits `standings_ready` — every event pauses on the interstitial, including the last. "Every event always awards something" no longer holds. |
 | `current_event_upgrade()` | the upgrade id won for the just-completed non-final event (`""` after the final event / before any draw). Read by the standings reveal (`features/reward-system.md`). |
 | `continue_to_next_event()` | resume from the between-event standings interstitial: enters the next event, or — once `_event_index >= EVENTS_PER_RALLY` (the final event) — calls `_resolve_results()` (→ podium) instead. |
 | `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time **and the car each drove**, ranked via `build_standings`); read by the standings scene's OVERALL section. `events_completed()` gives the count for its header. |
@@ -46,7 +46,7 @@ re-implementing them.
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
 event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,
-`car_rewarded(model_id)`, `showdown_won()`.
+`car_rewarded(model_id)`, `game_won()`.
 
 `last_result()` (the podium reads it) returns the finish dict — the base
 `{placed, completed, combined_ms, dnf}` plus, for the reveal/standings:
@@ -55,7 +55,7 @@ player via `RallyLibrary.build_standings`, each entry carrying `car_id` so the
 podium can spawn the top-3 cars), `upgrades` (the per-event ids won this rally —
 recorded here, but revealed earlier on the standings screens, not the podium),
 `car_reward` (model id, `""` if none),
-`car_reward_is_new` (bool), and `showdown_won` (bool).
+`car_reward_is_new` (bool), and `game_won` (bool — renamed from `showdown_won`).
 
 `return_to_garage` is a one-shot navigation flag (not part of the result): the
 podium's final Continue sets it so HQ boots straight to the **garage** view; HQ
@@ -66,20 +66,26 @@ reads + clears it on its next `_ready`.
 On resolve: `combined = sum(event_times)`, `placed =
 RallyLibrary.placement(field, combined)`. A **top-3, non-DNF** finish records
 completion + best placement (`Save.complete_rally(id, combined, placed)`,
-idempotent; the placement drives the world-map stars) and grants a reward — a **car** for
-a normal rally (`RewardSystem.draw_car`, fires on **every** top-3 including
-re-wins → renewable supply), or the **win beat** (`showdown_won`) once this
-showdown was the LAST one outstanding across every authored region
-(`RegionLibrary.all_showdowns_completed(Save.profile)`, checked after this
-rally's completion is recorded) — a showdown win that still leaves another
-region's showdown outstanding (e.g. winning home's `the_showdown` while
-Greece's `gr_showdown` isn't done yet) instead completes and pays a normal car
-reward like any other rally; regions no longer unlock in sequence, so this
-completion doesn't "unlock" anything, it just moves the credits gate one
-region closer to satisfied (see [regions.md](regions.md)). Non-top-3 / DNF grants **no car** and leaves the rally incomplete (**no
-retry** — re-enter from the map later; damage and the opponent field persist).
-Upgrades are **not** granted here — they're awarded per non-final event in
-`report_event_result` (above) and kept regardless of the final result.
+idempotent; the placement drives the world-map stars, and — for a `special`
+rally — the star gate itself, since specials don't award stars but their
+`completed` flag is exactly what `RallyLibrary.special_gate_open` and the
+endgame check below read) and grants a reward — a **car** for a normal rally
+(`RewardSystem.draw_car`, fires on **every** top-3 including re-wins →
+renewable supply), or the **win beat** (`game_won`) once THIS finish makes
+`RallyLibrary.is_special(_rally) and RallyLibrary.all_specials_completed(Save.profile)`
+true — i.e. every special event on the star ladder is now won, checked after
+this rally's completion is recorded so the last special to fall counts itself.
+There is no designated final region any more (`RegionLibrary.all_showdowns_completed`
+is gone): winning a special while other rungs of the ladder are still
+outstanding instead completes and pays a normal car reward exactly like any
+other rally — specials pay out like ordinary rallies precisely so they can't
+soft-lock a player who needs a car (see [rally-roster.md](rally-roster.md) for
+the star ladder / `special_gate_open`, and [regions.md](regions.md) for the
+region look, which no longer gates anything). Non-top-3 / DNF grants **no car**
+and leaves the rally incomplete (**no retry** — re-enter from the map later;
+damage and the opponent field persist). Upgrades are **not** granted here —
+they're awarded per non-final event in `report_event_result` (above) and kept
+regardless of the final result.
 
 ## Scene transitions
 
@@ -243,7 +249,7 @@ the explicit invalidation seams (both are called from the existing `reset()` pat
 per-event upgrade grants (one per non-final event, fitted disabled, no slottable
 duplicate; `current_event_upgrade`; the final event awards none), wreck DNF (the
 earned upgrade is kept, instance wrecked), no-retry re-entry (state reset, field
-fixed), showdown win beat, farming re-win, the between-event pit repair (fires
+fixed), the `game_won` beat, farming re-win, the between-event pit repair (fires
 entering every event after the first, never the first, summary consumed once),
 idle-at-rest. The `RepairReveal` popup wiring is covered by
 `tests/headless/test_repair_reveal.gd`.

@@ -32,15 +32,16 @@ func _regions() -> Array[Dictionary]:
 		{"id": R_E, "name": "E"},
 	]
 
-# rallies: each region has 1 non-showdown + 1 showdown.
+# rallies: regions hold an arbitrary number of specials — two, one, and none —
+# because a region no longer gates anything (that's RallyLibrary's star ladder).
 func _rallies() -> Array[Dictionary]:
 	return [
-		{"id": "a1", "showdown": false, "region": R_A},
-		{"id": "a_sd", "showdown": true, "region": R_A},
-		{"id": "b1", "showdown": false, "region": R_B},
-		{"id": "b_sd", "showdown": true, "region": R_B},
-		{"id": "c1", "showdown": false, "region": R_C},
-		{"id": "c_sd", "showdown": true, "region": R_C},
+		{"id": "a1", "special": false, "region": R_A},
+		{"id": "a_s1", "special": true, "requires_stars": 1, "region": R_A},
+		{"id": "a_s2", "special": true, "requires_stars": 2, "region": R_A},
+		{"id": "b1", "special": false, "region": R_B},
+		{"id": "b_s1", "special": true, "requires_stars": 1, "region": R_B},
+		{"id": "c1", "special": false, "region": R_C},
 	]
 
 func before_each() -> void:
@@ -51,48 +52,27 @@ func after_each() -> void:
 	RegionLibrary.reset()
 	RallyLibrary.reset()
 
-func _profile(completed_ids: Array) -> Dictionary:
-	var rallies := {}
-	for id in completed_ids:
-		rallies[id] = {"completed": true}
-	return {"rallies": rallies}
-
 func test_grouping_round_trip() -> void:
 	assert_eq(RegionLibrary.region_for_rally("b1").get("id", ""), R_B)
 	var ids := []
 	for r in RegionLibrary.rallies_in(R_B):
 		ids.append(r["id"])
-	assert_eq(ids, ["b1", "b_sd"])
-	assert_eq(RegionLibrary.showdown_of(R_B).get("id", ""), "b_sd")
+	assert_eq(ids, ["b1", "b_s1"])
 
-func test_all_showdowns_completed_needs_every_region() -> void:
-	# N-1 of the authored showdowns done → still false; the last one flips it.
-	assert_false(RegionLibrary.all_showdowns_completed(_profile([])))
-	assert_false(RegionLibrary.all_showdowns_completed(_profile(["a_sd", "b_sd"])),
-		"one outstanding showdown keeps credits shut")
-	assert_true(RegionLibrary.all_showdowns_completed(_profile(["a_sd", "b_sd", "c_sd"])),
-		"every authored showdown completed opens credits")
-
-func test_all_showdowns_completed_skips_showdownless_regions() -> void:
-	# R_D / R_E author no rallies at all — an empty region must not make credits
-	# unreachable forever.
-	assert_true(RegionLibrary.all_showdowns_completed(_profile(["a_sd", "b_sd", "c_sd"])),
-		"a region with no authored showdown is skipped, not counted outstanding")
-
-func test_empty_region_showdown_is_not_unlocked() -> void:
-	# The vacuous-completion guard: a region with no non-showdown rallies authored
-	# must NOT read as showdown-unlocked (its rally loop would pass over nothing).
-	assert_false(RegionLibrary.showdown_unlocked(R_E, _profile([])),
-		"an empty region's showdown never reads as unlocked")
-	assert_false(RegionLibrary.showdown_unlocked("no_such_region", _profile([])),
-		"an unknown region id is rejected")
-
-func test_per_region_showdown_gate_is_independent() -> void:
-	# A's showdown opens when A's non-showdown rallies are done, regardless of B/C.
-	assert_false(RegionLibrary.showdown_unlocked(R_A, _profile([])))
-	assert_true(RegionLibrary.showdown_unlocked(R_A, _profile(["a1"])))
-	# Completing a1 does NOT open B's showdown.
-	assert_false(RegionLibrary.showdown_unlocked(R_B, _profile(["a1"])))
+func test_a_region_may_hold_any_number_of_specials() -> void:
+	# Regions don't gate progression any more, so the old "exactly one showdown
+	# per region" invariant is retired: grouping must cope with 2, 1 and 0.
+	var counts := {}
+	for region_id in [R_A, R_B, R_C, R_E]:
+		var n := 0
+		for r in RegionLibrary.rallies_in(region_id):
+			if RallyLibrary.is_special(r):
+				n += 1
+		counts[region_id] = n
+	assert_eq(counts[R_A], 2, "a region can hold several specials")
+	assert_eq(counts[R_B], 1)
+	assert_eq(counts[R_C], 0, "a region can hold no special at all")
+	assert_eq(counts[R_E], 0, "a region with no rallies groups to nothing")
 
 func test_look_of_returns_only_present_overrides() -> void:
 	assert_eq(RegionLibrary.look_of(R_A), {})  # no overrides authored

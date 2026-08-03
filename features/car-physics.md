@@ -63,7 +63,8 @@ for each).
 
 ## Per-step loop (`_physics_process`)
 
-1. **Mode inputs:** `toggle_gearbox` (T) flips `engine.auto`;
+1. **Mode inputs:** `engine.auto` is mirrored from the Gearbox setting
+   (`SettingsMenu.gearbox_auto()`, see [controls.md](controls.md));
    `shift_up`/`shift_down` (E/Q) request manual shifts.
 2. **Throttle/brake resolution:**
    - *Auto:* `engine.select_forward/select_reverse` pick a gear at low speed;

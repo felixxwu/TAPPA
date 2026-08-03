@@ -476,7 +476,7 @@ turn and flips its pin from the locked to the unlocked look.
 - **The sequence** (`_run_reveal_sequence`) builds the pending pins in their LOCKED look
   first (`_refresh_map_pins(hold_locked)`) so the flip is watchable, then per rally:
   pan → settle (`hq_reveal_pan_time`) → rebuild that pin unlocked, focus it, banner it
-  ("NEW RALLY — <name>", or "SHOWDOWN UNLOCKED" and a doubled hold for a region finale)
+  ("NEW RALLY — <name>", or "SPECIAL EVENT UNLOCKED" and a doubled hold for a special)
   → hold (`hq_reveal_hold_time`). `hq_reveal_max_queue` caps one opening's parade (the
   dev "3-star everything" cheat opens the whole roster at once); the rest are banner'd as
   "+N more" and marked seen anyway. `_finish_reveals` marks every queued id seen, saves,
@@ -1073,7 +1073,9 @@ skips either one will look fine in a throwaway test and still wrap in the real g
   No page title/subtitle — the sliders take the full height.
 - **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
   (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
-  plus one button per catalogue part in that slot, each part greyed until its kit is
+  plus one button per UNLOCKED catalogue part in that slot (star-locked parts are
+  omitted entirely, and a slot with no unlocked parts gets no row — see
+  upgrade-catalogue.md), each part greyed until its kit is
   fitted to this car and the active pick bracketed **and painted accent-green**
   (`Save.set_upgrade_enabled`; free,
   instant, at most one enabled per slot — picking one switches off a same-slot sibling).
@@ -1085,7 +1087,14 @@ skips either one will look fine in a throwaway test and still wrap in the real g
   while the lightweight (Weight Reduction) option **greys until earned**; picking a free
   ballast the car doesn't own installs it on the spot, Stock disables all weight parts.
   Nothing is consumed from an
-  unlocked pool — upgrades are car-bound. It also hosts the **engine-detune slider**
+  unlocked pool — upgrades are car-bound. A part can also grey for a **second** reason —
+  a star-gated special not yet won (`UpgradeDef.unlocked_by_rally`) — never hidden:
+  locking hides *availability*, not *information*. `_make_slot_row` shows the option
+  button either way and, when gated, applies `UITheme.MUTED` to both `font_color` and
+  `font_disabled_color` and sets its tooltip to `_star_gate_hint(item_id)` ("Locked —
+  win the N-star event"). The **`nitrous` slot is deliberately skipped** when building
+  slot rows (`UpgradeLibrary.SLOTS` iteration) — it has no garage row at all, by design;
+  see [nitrous.md](nitrous.md) for the mechanic and why it's installed pre-enabled instead. It also hosts the **engine-detune slider**
   (0–100%, step 5) at the **bottom** of the menu (below the slot rows and the engine-swap
   row) — detune lives here rather
   than on the Tune page because it's a power / power-to-weight knob (saved via
@@ -1133,10 +1142,13 @@ under the garage lighting). There is **ONE world map**: no swap arrows, no viewe
 region, no way to change maps. `_refresh_map_pins` loads that one texture and pins
 **every** rally in `RallyLibrary.all()` at once, so a corner the player hasn't earned
 is visible from the first minute — its rallies simply render locked.
-See [regions.md](regions.md) for the region look/showdown model. Every
+See [regions.md](regions.md) for the region look (it no longer gates anything —
+regions are look + waterline only; the star-gated specials are
+[rally-roster.md](rally-roster.md)'s territory). Every
 rally in the roster is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
-**state-driven flag marker** (`RallyFlag` — a small **base disk** the pin
-stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
+**state-driven marker** — an ordinary rally gets a **flag** (`RallyFlag` — a small
+**base disk** the pin stands on + a pole + waving pennant + finial bead), a star-gated
+**SPECIAL** gets a **trophy** (`RallyTrophy`, see below) — topped by a **billboarded design-system black box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
 gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
 (pure-black, Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
@@ -1146,25 +1158,53 @@ the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav
 flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
 `RallyFlag.accent_color`). **Pennant:** placed 3rd or better → a **black-and-grey
 checkered** racing flag; else **bright green** when the player owns a car eligible to
-enter (`_has_eligible_car`); else **dark grey** (no qualifying car — also the locked
-showdown). **Tip + base** (the finial bead and base disk, always one colour): **warm
+enter (`_has_eligible_car`); else **dark grey** (no qualifying car — also a locked
+special). **Tip + base** (the finial bead and base disk, always one colour): **warm
 gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. The
 stars in the box remain the exact readout.
 
-**The readout box is all-or-nothing.** A rally that isn't available yet — locked, or
-with no eligible car — gets **no box at all** (it used to get a dimmed one): a menu is
-either live at full opacity or absent. The **3D flag still stands at every pin**
-regardless, so the map keeps marking where the unavailable rallies are, greyed. An
-available pin therefore carries **two** pickable `Area3D` hit spheres bound to the same
-handler (`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the
+**A special event stands a TROPHY instead of a flag** (`RallyTrophy`, procedural like
+the flag — base coin, square plinth, stem, tapered bowl with two ring handles, finial
+bead). Two reasons it isn't just a differently-coloured flag: a special is the
+**prestige event** on its corner and shouldn't read as one more pennant, and a cup can
+show **which** medal you took where a pennant only says "podiumed". It keeps the flag's
+two axes so the map speaks one language: **cup + finial** = best result — **gold** (1st)
+/ **silver** (2nd) / **bronze** (3rd) / **plain metal** (never podiumed, including
+locked); **plinth + coin** = raceability — a deep **racing green** when an eligible car
+is owned, else **grey** (the green is *darkened* from the flag's pennant green, which
+covers far less area and would overpower the cup at plinth size). It shares the flag's
+base radius/thickness so pin spacing and hit spheres need no special case, and stands
+the same height as a flag pole (`RallyTrophy.HEIGHT` ≈ `RallyFlag.POLE_HEIGHT`) so
+`_make_pin` hangs the readout box off whichever marker it built and specials never look
+diminished beside ordinary rallies.
+
+**The readout box is all-or-nothing — except one documented exception.** A rally
+that isn't available yet — locked, or with no eligible car — gets **no box at
+all** (it used to get a dimmed one): a menu is either live at full opacity or
+absent. The **3D marker still stands at every pin** regardless, so the map keeps
+marking where the unavailable rallies are, greyed. An available pin therefore
+carries **two** pickable `Area3D` hit spheres bound to the same handler
+(`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the
 floating **readout box itself**, so a click on the menu enters the rally just like a
 click on the flag — while an unlocked-but-ineligible pin has only the flag sphere (no
 box to click) and no `label_panel` meta for the focus cursor to paint. Each pin also
 carries its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
-whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`): the **showdown** until
-every other rally in its region is completed, and any rally whose **`reveal_after`**
-(a GLOBAL count of completed non-showdown rallies) hasn't been met — a "coming up" hint so a region reveals
-~1–2 fresh rallies at a time rather than all at once. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
+whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`): a **special**
+until its star gate opens (`RallyLibrary.special_gate_open` — a global star-total
+comparison, no region involvement), and any rally whose **`reveal_after`**
+(a GLOBAL count of completed non-special rallies, `RallyLibrary._completed_count`)
+hasn't been met — a "coming up" hint so a region reveals ~1–2 fresh rallies at a
+time rather than all at once. **The one exception to all-or-nothing:** a locked
+special still renders a **full-opacity, non-pickable** teaser box
+(`hq._build_special_teaser_label`, via `hq._make_pin`) reading "X/24 stars" over
+"unlocks &lt;Part&gt;" (`hq._special_unlock_line`, derived from the upgrade
+catalogue's `UpgradeLibrary.unlocked_by_rally` — falling back to "unlocks engine
+swaps" for `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`) — the grey flag below already
+carries the "not yet" signal, so the teaser doesn't need dimming to read as
+locked. An unlocked special's pin names its unlock too. A progress meter sits on
+the HUD, now reading **"Stars: N / M"** (`hq._refresh_meter`, M = the roster's
+max-star total over non-special rallies) rather than a rally-completion count.
+**Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
@@ -1175,8 +1215,8 @@ default `STOP`) would swallow every touch and the 3D pins would never get a pick
 Tapping a pin opens the **rally detail** sub-panel — a **single-column card** built
 in `build_detail_overlay` (`hq_overlays.gd`) / populated in `_show_detail`. Header:
 rally name **with the stage count appended** (`"Coastal Sprint - 3 stages"`, singular
-"stage" for a one-stage rally), region tag, and a gold **SHOWDOWN** chip on showdown
-rallies. There is deliberately **no per-stage breakdown** — the old left-hand STAGES
+"stage" for a one-stage rally), region tag, and a gold **SPECIAL EVENT** chip
+(`hq._detail_special`) on special rallies. There is deliberately **no per-stage breakdown** — the old left-hand STAGES
 column (one row per event with its gravel/tarmac surface mix) was removed to free the
 full panel width on small screens; the stage count on the title is the whole story.
 **Body (full width):** the eligible-cars **restriction** (the
@@ -1447,7 +1487,8 @@ are `podium_*` `GameConfig` tunables.
 
 `last_result` carries `rally_name`, `standings` (each entry with `car_id`),
 `upgrades` (the per-event ids won, revealed on the standings not here), `car_reward`, `car_reward_is_new`, and
-`showdown_won` alongside the original `placed`/`completed`/`combined_ms`/`dnf`.
+`game_won` (renamed from `showdown_won`; see [rally-session.md](rally-session.md))
+alongside the original `placed`/`completed`/`combined_ms`/`dnf`.
 
 ## Start line (location 2)
 
@@ -1539,7 +1580,7 @@ refinements.
 ## Tests
 
 `tests/headless/test_menu_flow.gd` — HQ boots to the **exterior title** (one 3D map
-pin per rally, showdown pin locked + non-pickable); **Start flies into the garage**;
+pin per rally, a locked special pin non-pickable); **Start flies into the garage**;
 tapping the table shows the **map view**; **stars reflect best placement** (1st→3,
 3rd→1, unplayed→0); the map table **pans and clamps to its edges**, and a drag does
 **not** open the pin under the finger (selection is release + no-drag); tapping a pin

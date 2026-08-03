@@ -36,8 +36,8 @@ title-screen Settings page has no live controls, so there it just saves.)
 
 - **Drives existing input actions.** All schemes press the same actions as the
   keyboard via `Input.action_press/release` (`accelerate`, `brake_reverse`,
-  `steer_left`, `steer_right`), so `car.gd` needs no touch awareness. See
-  [controls.md](controls.md).
+  `steer_left`, `steer_right`, plus `nitrous` — see below), so `car.gd` needs no touch
+  awareness. See [controls.md](controls.md).
 - **Per-scheme layout.** `_compute_rects` lays the active scheme's hit regions out
   as fractions of the viewport (re-laid-out on `size_changed`): a right-hand pedal
   stack (BRAKE at the bottom, GAS above when present), and on the left either the
@@ -60,6 +60,40 @@ title-screen Settings page has no live controls, so there it just saves.)
   drive the controls (index -1) for desktop testing. On the web, held pointers are
   reconciled every frame against the browser's own list of fingers down, because
   mobile browsers drop `touchend` — see "Stuck-touch reconciliation" below.
+- **NOS button** (all six schemes, conditional). A **small** button — half a pedal
+  tall, a fraction of a pedal wide — sited immediately **left of the pedal column**,
+  pressing the `nitrous` action while held — **and the `accelerate` action with it**.
+  There is no scenario where you want nitrous held without throttle (the sim refuses to
+  deliver or drain off-throttle), and the two buttons are adjacent, so requiring a second
+  thumb would just make the boost feel broken. `_apply_actions` ORs the two regions rather
+  than writing the throttle, so releasing NOS leaves a separately-held GAS untouched.
+  It exists **only when nitrous is fitted to
+  the driven car** (`GameConfig.has_nitrous()`, the same gate the HUD gauge and the sim
+  use — see [nitrous.md](nitrous.md)); `_has_nitrous_button()` is the predicate, and
+  `_build` creates the panel from it. Per-scheme anchoring (`_compute_rects`):
+
+  | Scheme | Anchor | Notes |
+  |--------|--------|-------|
+  | 0 / 1 / 5 (gas pedal present) | left of **GAS** | top-aligned with the gas pedal |
+  | 2 / 3 (auto gas, no gas pedal) | left of **BRAKE** | nothing to sit left of otherwise |
+  | 4 `SIMPLE_LR_AUTO` (no pedals at all) | the slot a **bottom pedal would occupy** | keeps it in the same screen corner |
+
+  Two hazards the layout deliberately handles:
+  - **It must never eat steering.** Its width is capped by the gap between the pedal
+    column and the steering cluster (the slider's right edge, or the right steer
+    button's), so it can't overlap either; on an absurdly narrow viewport where that
+    gap closes it is **dropped** rather than drawn over the steering
+    (`_MIN_NITROUS_W`).
+  - **Scheme 4's halves cover the whole lower screen**, so the NOS rect necessarily
+    sits *inside* one of them. `_button_region` therefore tests `"nitrous"` **first**,
+    ahead of `simple_left`/`simple_right` — get that order wrong and the button
+    silently steers instead of firing nitrous.
+
+  Nitrous is fitted **per car** and a car swap raises no signal, so
+  `_sync_nitrous_button()` (called from `_timed_process`) polls `has_nitrous()` each
+  frame and rebuilds when it flips — releasing a held `nitrous` first, so a boost can't
+  survive into a car that has none. That's why the button tracks the *car*, not just
+  the scheme.
 - Held actions are tracked in `_action_held` so they only press/release on
   transitions; `_release_all()` (on scheme switch + `_exit_tree`) clears everything
   so no phantom input lingers.
@@ -212,7 +246,11 @@ car, which is all the protection that was needed.
 `tests/headless/test_mobile_controls.gd` — visibility gating, the default scheme
 (gas / brake / analog slider, recentring, multitouch), steer buttons, the auto-gas
 throttle-unless-braking rule, the simple both-sides-brake, the pure `tilt_steer`
-maths, scheme switching releasing old inputs, and the stuck-touch reconciliation
+maths, scheme switching releasing old inputs, the **NOS button** (present in every
+scheme when nitrous is fitted / absent when it isn't, holding the throttle with it while
+leaving a separately-held GAS alone, overlapping no other region,
+hit-tested ahead of the simple steering halves, appearing and vanishing with the car,
+and releasing its action when the car loses nitrous), and the stuck-touch reconciliation
 above (a lost finger clears its button / recentres the slider, held fingers and the
 mouse pointer survive, no snapshot means no reconciliation, and — the regression — a
 stale drag that resurrects a lifted finger is reconciled away within the frame rather

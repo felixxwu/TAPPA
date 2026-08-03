@@ -40,7 +40,7 @@ const ACTIONS := [
 	{"action": "shift_up", "name": "Shift up"},
 	{"action": "shift_down", "name": "Shift down"},
 	{"action": "handbrake", "name": "Handbrake"},
-	{"action": "toggle_gearbox", "name": "Toggle gearbox"},
+	{"action": "nitrous", "name": "Nitrous"},
 	{"action": "cycle_camera", "name": "Cycle camera"},
 	{"action": "pause", "name": "Pause"},
 ]

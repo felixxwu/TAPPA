@@ -24,6 +24,33 @@ slot's **free ballast** parts (`ballast_large` / `ballast_small` — see
 so a car can qualify for a lower class by adding weight as well as by cutting
 power.
 
+**Capability gate.** Tokens drop and bank from the very start, but cannot be
+SPENT until the 32-star special is won
+(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "sp_archipelago_trial"`, predicate
+`RallyLibrary.engine_swaps_unlocked(profile)`). Separating the capability from
+the currency is deliberate: a visible stack of tokens you cannot use yet is a
+stronger pull toward the event than any prize description, so the locked UI names
+the banked tokens rather than hiding them.
+
+Three consumers:
+
+- `RewardSystem._box_gate_open` — waives the mystery-box token threshold while
+  swapping is locked, so tokens don't also gate boxes before they're spendable.
+- `UpgradesMenu._rebuild` — the swap row is **absent entirely** while the
+  capability is locked, on the same rule that hides star-locked part options: a
+  permanently-disabled row only raises "when do I get this?", which the garage
+  cannot answer. It appears the moment the gating special is won. (Trade-off: a
+  player banking tokens beforehand gets no in-garage explanation of what they are
+  for — the map pin advertises the unlock instead.)
+- `hq._show_swap_confirm` — the car-park station's confirm popup, which is
+  reachable independently of the (now hidden) garage row, so it re-checks rather
+  than trusting the caller, and is where the locked explanation still lives. Its OK button is disabled on `_pending_swap.is_empty()`, which is
+  set on exactly the one path where a swap can proceed — so a locked (or
+  tokenless) popup can't present a live button that silently no-ops.
+
+`Save.swap_engines` itself does not check the gate; both entry points do, and it
+stays a pure mutator.
+
 Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): slottable
 upgrades permanently change a car's baseline. The engine swap token is a
 consumable (spent per swap), but the swap itself is not permanent — it just
@@ -144,7 +171,8 @@ When non-stock:
    <br>(The rebuild uses the spec's stock `drive_mode`, but `apply_owned` sets
    `_owned_drive_override` from `UpgradeLibrary.resolve_drive_override` *before*
    this step, and `_rebuild_drivetrain` honours it — so a player's chosen
-   drivetrain (Drivetrain Swap kit) still wins after an engine swap. See
+   drivetrain (Drivetrain Conversion kit — `UpgradeLibrary`'s `drivetrain_swap`
+   item, renamed from "Drivetrain Swap") still wins after an engine swap. See
    [drivetrain-and-tires.md](drivetrain-and-tires.md).)
    reconfigures the engine audio voice (`EngineAudio.reconfigure`) so the
    sound matches the new cylinder count/firing order

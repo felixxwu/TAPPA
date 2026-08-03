@@ -26,15 +26,15 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
 | [global-leaderboards.md](global-leaderboards.md) | Optional per-stage world leaderboards — `Leaderboard`, `FirestoreCodec`, the standings interstitial's page 2, the one world-readable Firestore collection |
-| [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, showdown gating) |
+| [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, the star total + the special-event ladder gating) |
 | [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm) — the `WeatherLibrary` table that is the single source of truth for every condition, `RallyLibrary.event_weather`, the `GameConfig` blocks it names, and the `RallySession.apply_event_config` funnel that seats it |
-| [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, the HQ table's diegetic region swap, sequential unlock + per-region showdown + final-region credits |
-| [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, consumables, tuning gates) |
+| [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, per-corner waterlines. Regions gate NOTHING any more — look + `water_level` only |
+| [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, consumables, tuning gates, the per-car prerequisite + star (`unlocked_by_rally`) gates, and the two flavours of `max_potential_meta`) |
 | [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars (gated on 100% HP), engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
-| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (tier clamp, per-event upgrade, per-rally car with anti-soft-lock) |
+| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (flat star-gated per-event upgrade pool that may award nothing, the mystery-box roll, per-rally car draw with its tier clamp + anti-soft-lock) |
 | [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, wreck/DNF, no-retry) |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeSession` autoload (resume persistence, per-stage flow, placement reward), the HQ entry-point screen |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
@@ -46,6 +46,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (stateless rpm-linear belt drive, rpm-scaled drag) — engine property, stock or via the shared-slot `turbo_small` / `turbo_large` / `supercharger` upgrade ladder |
+| [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
@@ -106,7 +107,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/hq.gd` (tuning lift) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`), `scripts/hq.gd` (`CarparkMode.WHEELS`) |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |
-| Reward draws | `scripts/reward_system.gd` (`RewardSystem` — tier clamp, upgrade/car draws) |
+| Reward draws | `scripts/reward_system.gd` (`RewardSystem` — upgrade/car draws; the tier clamp is car-draw-only) |
 | Rally session | `scripts/rally_session.gd` (`RallySession` autoload — event-flow orchestration) |
 | Event replay | `scripts/replay_recorder.gd` (`ReplayRecorder`), `scripts/replay_camera.gd` (`ReplayCamera`), `scripts/car.gd` (`replay_playback`) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |

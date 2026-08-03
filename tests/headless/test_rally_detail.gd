@@ -39,6 +39,17 @@ func _pw(model_id: String) -> float:
 	return CarLibrary.power_to_weight(meta) * CarLibrary.KW_KG_TO_HP_TONNE
 
 
+# The car's power-to-weight at its upgrade CEILING — the meta the pw_min floor is actually
+# judged against (RallyLibrary.is_eligible's floor_meta). A floor above THIS is genuinely
+# unreachable; a floor merely above the car's current p/w is not, because the ceiling now
+# counts catalogue parts the car doesn't own yet. Tests that want "too weak, full stop" must
+# build their band off this, not off _pw() times a guessed multiple.
+func _ceiling_pw(model_id: String) -> float:
+	var entry := CarLibrary.by_id(model_id)
+	var maxed := UpgradeLibrary.max_potential_meta(_owned(model_id), entry)
+	return CarLibrary.power_to_weight(maxed) * CarLibrary.KW_KG_TO_HP_TONNE
+
+
 func test_empty_roster_counts_nothing() -> void:
 	var summary: Dictionary = _hq._eligibility_summary({"restriction": {}}, [])
 	assert_eq(summary["total"], 0, "no owned cars means nothing to count")
@@ -165,9 +176,11 @@ func test_entry_plan_over_cap_car_qualifies_via_detune() -> void:
 
 
 func test_below_band_floor_is_ineligible() -> void:
-	# A rally whose p/w BAND floor sits above the car's MAX potential: the car is too weak
-	# even fully maxed, so it can't enter (there is no eligible-but-underpowered state).
-	var rally := {"restriction": {"pw_min": _pw("fx_light_rwd") * 3.0}}
+	# A rally whose p/w BAND floor sits above the car's upgrade CEILING: too weak even fully
+	# maxed out, so it can't enter (there is no eligible-but-underpowered state). Derived from
+	# the ceiling, not from the car's current p/w — the floor is judged against what the car
+	# COULD become, so a band it can grow into is not a lockout.
+	var rally := {"restriction": {"pw_min": _ceiling_pw("fx_light_rwd") * 1.5}}
 	var plan: Dictionary = _hq._entry_plan(rally, _owned("fx_light_rwd"))
 	assert_false(plan["eligible"], "below the band floor even at max potential → ineligible")
 	var summary: Dictionary = _hq._eligibility_summary(rally, [_owned("fx_light_rwd")])
@@ -202,7 +215,7 @@ func test_pin_unavailable_when_the_only_car_is_below_the_band_floor() -> void:
 	# same as owning no car.
 	var saved: Array = Save.profile.get("cars", [])
 	Save.profile["cars"] = [_owned("fx_light_rwd")]
-	var high_rally := {"restriction": {"pw_min": _pw("fx_light_rwd") * 3.0}}
+	var high_rally := {"restriction": {"pw_min": _ceiling_pw("fx_light_rwd") * 1.5}}
 	assert_false(_hq._has_eligible_car(high_rally),
 		"a below-floor-only roster leaves the pin unavailable")
 	assert_true(_hq._has_eligible_car({"restriction": {}}),

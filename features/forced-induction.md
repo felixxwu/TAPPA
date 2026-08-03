@@ -11,6 +11,17 @@ upgrades, `effective_meta`), `scripts/engine_audio_synth.gd` /
 Turbo and supercharger are both properties of the **engine**, not the car —
 same pattern as the torque curve and gearbox (see
 [engine-and-transmission.md](engine-and-transmission.md)). Either can arrive
+Note: [nitrous](nitrous.md) is a **third**, non-exclusive power layer — its own
+`"nitrous"` slot (`UpgradeLibrary.SLOTS`), so a car can carry turbo-or-blower
+AND nitrous at once. It's a torque multiplier in the live sim only
+(`install_nitrous`, `EFFECTS["install_nitrous"].feeds_pw == false`), so unlike
+`install_turbo`/`install_supercharger` (`feeds_pw: true`) it never changes a
+car's displayed power-to-weight or rally eligibility — it makes a stage
+easier to drive, it isn't a stat.
+
+Turbo and supercharger are both properties of the **engine**, not the car —
+same pattern as the torque curve and gearbox (see
+[engine-and-transmission.md](engine-and-transmission.md)). Either can arrive
 two ways: baked into a stock `EngineLibrary` entry, or bolted on later via the
 `turbo_small` / `turbo_large` / `supercharger` upgrade items, which all share
 one `"turbo"` slot so **at most one is ever live**.
@@ -129,46 +140,49 @@ fuel-cost, wear, or reliability consequence modelled.
 the dump valve. It's a pure edge-trigger flag read once by the audio bridge
 (below); it has no effect on the physics.
 
-## Upgrade tiers (`UpgradeLibrary`, `scripts/upgrade_library.gd`)
+## The turbo/supercharger items (`UpgradeLibrary`, `scripts/upgrade_library.gd`)
 
 Three non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
-/ `engine_stage2` power upgrades — the two turbos below plus the
-`supercharger` (see [Supercharger](#supercharger-belt-drive)), which is
-prerequisite-gated behind `turbo_large`. Each also carries a `menu_label` (the
-`UpgradesMenu` selector shows "Small" / "Big" / "Supercharger" rather than the
-full name) and a `turbo_parasitic_friction` term (the always-on backpressure
-N·m):
+/ `engine_stage2` power upgrades — `turbo_small`, `turbo_large`, and
+`supercharger` (see [Supercharger](#supercharger-belt-drive)). Each also
+carries a `menu_label` (the `UpgradesMenu` selector shows "Small" / "Big" /
+"Supercharger" rather than the full name) and a `turbo_parasitic_friction`
+term (the always-on backpressure N·m). `UpgradeLibrary.UPGRADES` no longer
+authors a `tier` field at all — that field is gone from the table entirely;
+see "Gating" below for what replaced it. Rarity within what's unlocked is an
+optional authored `weight` (`UpgradeLibrary.pool_weight`, default `1.0`), read
+by `RewardSystem.draw_upgrade`'s weighted pool — not shown here since none of
+these three currently author a non-default weight.
 
-```gdscript
-{
-    "id": "turbo_small", "name": "Small Turbo", "menu_label": "Small", "slot": "turbo", "tier": 1, "consumable": false,
-    "effect": {"install_turbo": {
-        "turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
-        "turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6, "turbo_parasitic_friction": 5.0,
-        "engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
-    }},
-},
-{
-    "id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 1,
-    "requires_upgrade_id": "turbo_small", "consumable": false,
-    "effect": {"install_turbo": {
-        "turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
-        "turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
-        "engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
-    }},
-},
-```
+(The exact `install_turbo`/`install_supercharger` numeric fields on each entry
+are authored balance placeholders — see [configuration.md](configuration.md)'s
+tuning philosophy; do not pin them in tests. Read them straight from
+`UpgradeLibrary.UPGRADES` rather than quoting a copy here, since they're
+exactly the kind of tunable value that drifts.)
 
-(These exact numbers are authored balance placeholders — see
-[configuration.md](configuration.md)'s tuning philosophy; do not pin them in
-tests.)
+### Gating
 
-Big Turbo is **prerequisite-gated** rather than difficulty-gated: it sits at
-ordinary tier 1 (same as Small Turbo) but carries `requires_upgrade_id:
-"turbo_small"`, so `RewardSystem`'s reward draw won't offer it to a car until
-that car already has Small Turbo fitted (per-car, not garage-wide — each car
-climbs its own turbo ladder) — see `upgrade-catalogue.md`'s
-"Prerequisite gate" and `reward-system.md`'s upgrade-draw section.
+Each of the three carries up to two independent gates, both of which must
+pass for `RewardSystem` to offer the part in a car's reward draw
+(`RewardSystem._eligible_parts`):
+
+- **Prerequisite (per-car).** `turbo_large` requires `turbo_small` already
+  fitted to THAT car; `supercharger` requires `turbo_large`. This is the old
+  "tier" ladder's real job — `UpgradeLibrary.requires_upgrade_id` /
+  `prerequisite_met` — and is unchanged by the tier removal.
+- **Star gate (garage-wide, new).** `UpgradeLibrary.unlocked_by_rally(id)` /
+  `rally_gate_met(item_id, profile)`: an item can be absent from the reward
+  pool entirely until a particular star-gated special event has been WON
+  (top-3 finish). In the shipped table, `turbo_large` ("Big Turbo") is gated
+  on `sp_woodland_trial` and `supercharger` on `sp_lakeshore_trial` — see
+  `todo/star-gated-special-events.md`. This gates EARNING only:
+  `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the
+  gate, so a part already fitted keeps working even if the gate that unlocked
+  it were somehow revisited.
+
+Both gates are evaluated together, so `turbo_large` isn't offered to a car
+until it already carries `turbo_small` AND the `sp_woodland_trial` special has
+been won — whichever comes later in a given playthrough.
 
 `UpgradeLibrary.apply()` handles **both** induction effect keys through ONE
 `"install_induction"` op, with everything that differs between them living in the

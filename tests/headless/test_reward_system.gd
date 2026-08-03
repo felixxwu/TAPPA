@@ -6,14 +6,12 @@ extends GutTest
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
-# NOTE: no UpgradeFixtures here. RewardSystem.draw_upgrade() (scripts/reward_system.gd)
-# iterates UpgradeLibrary.UPGRADES directly rather than the override-aware
-# UpgradeLibrary.all(), so an installed UpgradeFixtures override desyncs from what
-# draw_upgrade actually returns — by_id()/is_consumable() (which DO respect the
-# override) then can't find the drawn id, throwing on the returned dict. Until
-# draw_upgrade is changed to go through the override-aware accessors, these
-# upgrade-draw tests stay against the real shipped UPGRADES table; only the car
-# roster below is synthetic.
+# NOTE: no UpgradeFixtures here — but the reason has changed. The draw's pool builder
+# (RewardSystem._eligible_parts) now goes through the override-aware UpgradeLibrary.all(),
+# so a fixture override would no longer desync from what the draw returns. These tests stay
+# on the shipped table because several of them assert CATALOGUE CONTRACTS (a real gated part
+# exists and is withheld; the token is a real consumable) rather than draw logic. Only the
+# car roster below is synthetic. A new draw-logic test is free to install fixtures.
 func before_each() -> void:
 	CarFixtures.install()
 
@@ -30,11 +28,11 @@ func _rng(seed_value: int) -> RandomNumberGenerator:
 
 func test_free_parts_are_never_drawn_as_a_reward() -> void:
 	# Free parts (ballast) are always available and must never appear in the reward draw
-	# pool at any tier. Iterates the pool as opaque output — no specific id pinned.
-	for tier in range(1, RewardSystem.MAX_TIER + 1):
-		for id in RewardSystem._parts_at_or_below(tier):
-			assert_false(UpgradeLibrary.is_free(id),
-				"a free part must not be drawable as a reward (tier %d: %s)" % [tier, id])
+	# pool. Iterates the pool as opaque output — no specific id pinned. Every star gate is
+	# forced open (a profile with every rally won) so the whole catalogue is in scope.
+	for id in RewardSystem._eligible_parts(_all_completed_profile()):
+		assert_false(UpgradeLibrary.is_free(id),
+			"a free part must not be drawable as a reward: %s" % id)
 
 
 # Build a profile with the given completed rally ids and owned model ids.
@@ -49,6 +47,16 @@ func _profile(completed: Array, owned: Array) -> Dictionary:
 			"installed_upgrades": [], "tuning": {}})
 		n += 1
 	return {"rallies": rallies, "cars": cars}
+
+
+# A profile with EVERY rally on the roster won 1st. Used to force every star gate open so
+# a test can exercise the rest of the draw against the whole catalogue — the star gate
+# gets its own dedicated test rather than silently shrinking every other pool.
+func _all_completed_profile() -> Dictionary:
+	var rallies := {}
+	for rally in RallyLibrary.all():
+		rallies[rally["id"]] = {"completed": true, "best_combined_ms": 1000, "best_placed": 1}
+	return {"rallies": rallies, "cars": []}
 
 
 # --- Tier clamp --------------------------------------------------------------
@@ -73,18 +81,17 @@ func test_target_tier_never_exceeds_ceiling() -> void:
 
 # --- Upgrade draw ------------------------------------------------------------
 
-func test_draw_upgrade_returns_parts_at_target_tier_with_rare_consumables() -> void:
-	var profile := _profile(["shakedown", "coastal_sprint"], [])  # ceiling 2
+func test_draw_upgrade_returns_parts_with_rare_consumables() -> void:
+	var profile := _all_completed_profile()
 	var consumables := 0
 	var parts := 0
 	for i in 300:
-		var id: String = RewardSystem.draw_upgrade(2, profile, _rng(i))
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i))
 		assert_false(UpgradeLibrary.by_id(id).is_empty(), "draw returns a real catalogue item")
 		if UpgradeLibrary.is_consumable(id):
 			consumables += 1
 		else:
 			parts += 1
-			assert_lte(int(UpgradeLibrary.by_id(id)["tier"]), 2, "drawn part never exceeds the target tier")
 	assert_gt(consumables, 0, "the rare consumables do appear")
 	# Not `parts > consumables`: that pins the shipped catalogue's part-vs-consumable
 	# weighting (a designer retuning ENGINE_SWAP_TOKEN_DROP_WEIGHT
@@ -95,10 +102,10 @@ func test_draw_upgrade_returns_parts_at_target_tier_with_rare_consumables() -> v
 
 func test_draw_upgrade_can_award_an_engine_swap_token() -> void:
 	# The token is a member of the per-event pool (membership, NOT its weight).
-	var profile := _profile(["shakedown", "coastal_sprint"], [])  # ceiling 2
+	var profile := _all_completed_profile()
 	var saw_token := false
 	for i in 300:
-		var id: String = RewardSystem.draw_upgrade(2, profile, _rng(i))
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i))
 		if id == UpgradeLibrary.ENGINE_SWAP_TOKEN_ID:
 			saw_token = true
 	assert_true(saw_token, "the engine swap token can be drawn from the pool")
@@ -108,10 +115,7 @@ func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
 	# Fit one eligible part to the driven car: it must never be drawn again for
 	# that car, while other parts still are. Derived from the live catalogue so a
 	# retune of tiers/parts doesn't break the test.
-	var all_ids := []
-	for rally in RallyLibrary.RALLIES:
-		all_ids.append(rally["id"])
-	var profile := _profile(all_ids, [])  # everything completed -> ceiling at max
+	var profile := _all_completed_profile()
 	var fitted := ""
 	for item in UpgradeLibrary.UPGRADES:
 		if not item["consumable"]:
@@ -120,42 +124,66 @@ func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
 	var driven := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [fitted], "tuning": {}}
 	for i in 200:
-		var id: String = RewardSystem.draw_upgrade(4, profile, _rng(i), driven)
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i), driven)
 		assert_ne(id, fitted, "a part already fitted to the driven car is never drawn")
 
 
 # Contract test (not a logic test): Big Turbo is authored with requires_upgrade_id
-# "turbo_small" (replacing its old tier-2 difficulty gate — see upgrade_library.gd),
-# so _parts_at_or_below must honor that wiring against the real catalogue: excluded
-# from the pool until THE DRIVEN CAR has Small Turbo fitted, present once it does.
-func test_parts_at_or_below_excludes_big_turbo_until_small_turbo_is_owned() -> void:
+# "turbo_small", so _eligible_parts must honor that wiring against the real catalogue:
+# excluded from the pool until THE DRIVEN CAR has Small Turbo fitted, present once it
+# does. Star gates are forced open so only the prerequisite is under test.
+func test_eligible_parts_excludes_big_turbo_until_small_turbo_is_owned() -> void:
+	var profile := _all_completed_profile()
 	var without := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [], "tuning": {}}
-	for t in range(1, RewardSystem.MAX_TIER + 1):
-		assert_does_not_have(RewardSystem._parts_at_or_below(t, [], without), "turbo_large",
-			"Big Turbo stays out of the pool until this car has its prerequisite")
+	assert_does_not_have(RewardSystem._eligible_parts(profile, [], without), "turbo_large",
+		"Big Turbo stays out of the pool until this car has its prerequisite")
 	var with_small := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": ["turbo_small"], "tuning": {}}
-	var found := false
-	for t in range(1, RewardSystem.MAX_TIER + 1):
-		if RewardSystem._parts_at_or_below(t, [], with_small).has("turbo_large"):
-			found = true
-	assert_true(found, "Big Turbo becomes drawable once this car has Small Turbo")
+	assert_has(RewardSystem._eligible_parts(profile, [], with_small), "turbo_large",
+		"Big Turbo becomes drawable once this car has Small Turbo")
 
 
-func test_draw_upgrade_falls_back_to_consumables_when_car_has_everything() -> void:
-	# With EVERY non-consumable part already on the driven car, the only things
-	# left to award are the consumables — the draw still always pays out.
-	var all_parts := []
-	for item in UpgradeLibrary.UPGRADES:
-		if not item["consumable"]:
-			all_parts.append(String(item["id"]))
-	var driven := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
-		"installed_upgrades": all_parts, "tuning": {}}
+# --- The retired "always pays out" guarantee ---------------------------------
+# The draw used to be backstopped by the swap token, so it could never come up empty.
+# That is deliberately GONE: a maxed car now yields a mystery box or NOTHING.
+
+func test_a_car_with_parts_left_always_wins_one() -> void:
+	# The common case, and the one that must never regress: while there is something real
+	# to give, the box/nothing branches must not pre-empt it.
+	var profile := _all_completed_profile()
+	var stock := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	for i in 50:
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i), stock)
+		assert_ne(id, RewardSystem.NO_REWARD, "a car with parts left never draws nothing")
+		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID, "a car with parts left never draws a box")
+
+
+func test_a_maxed_car_with_nowhere_for_a_box_wins_nothing() -> void:
+	# Every other car also maxed, so a box has nowhere to land. Previously this fell
+	# through to the token; now it awards nothing at all.
+	var maxed := _maxed_car(1)
+	var also_maxed := _maxed_car(2)
+	var profile := _profile_with_inventory([maxed, also_maxed],
+		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD})
 	for i in 20:
-		var id: String = RewardSystem.draw_upgrade(4, _profile([], []), _rng(i), driven)
-		assert_true(UpgradeLibrary.is_consumable(id),
-			"with every part fitted, the draw falls back to a consumable")
+		assert_eq(RewardSystem.draw_upgrade(profile, _rng(i), maxed), RewardSystem.NO_REWARD,
+			"a maxed car with nowhere for a box to land wins nothing")
+
+
+func test_box_chance_falls_as_boxes_pile_up_and_the_first_is_certain() -> void:
+	# The SHAPE only — monotonically decreasing, and certain at zero held. The specific
+	# fractions are a consequence of the 1/(owned+1) curve, not something to pin.
+	var chance := func(n: int) -> float:
+		return RewardSystem._box_chance(_profile_with_inventory([], {UpgradeLibrary.MYSTERY_BOX_ID: n}))
+	assert_eq(chance.call(0), 1.0, "the first box is guaranteed")
+	var prev: float = chance.call(0)
+	for n in range(1, 6):
+		var cur: float = chance.call(n)
+		assert_lt(cur, prev, "each banked box makes the next rarer (n=%d)" % n)
+		assert_gt(cur, 0.0, "the chance never reaches zero")
+		prev = cur
 
 
 func test_engine_swap_token_is_a_real_consumable() -> void:
@@ -169,9 +197,9 @@ func test_engine_swap_token_is_a_real_consumable() -> void:
 
 # --- Mystery box ---------------------------------------------------------------
 
-# Build a synthetic "maxed" owned_car (every non-consumable, non-free part in the
-# real catalogue up to MAX_TIER installed) — derived from the live catalogue so a
-# retune of parts/tiers doesn't break the test.
+# Build a synthetic "maxed" owned_car (every non-consumable, non-free part in the real
+# catalogue installed) — derived from the live catalogue so a retune of parts doesn't
+# break the test.
 func _maxed_car(instance_id: int) -> Dictionary:
 	var all_parts := []
 	for item in UpgradeLibrary.UPGRADES:
@@ -194,9 +222,10 @@ func test_draw_upgrade_awards_mystery_box_when_maxed_token_rich_and_room_exists(
 		"installed_upgrades": [], "tuning": {}}
 	var profile := _profile_with_inventory([maxed, roomy],
 		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD})
+	# No boxes banked yet, so the 1/(owned+1) roll is certain.
 	for i in 10:
-		assert_eq(RewardSystem.draw_upgrade(4, profile, _rng(i), maxed), UpgradeLibrary.MYSTERY_BOX_ID,
-			"a maxed, token-rich car with somewhere for the box to land always draws a mystery box")
+		assert_eq(RewardSystem.draw_upgrade(profile, _rng(i), maxed), UpgradeLibrary.MYSTERY_BOX_ID,
+			"a maxed, token-rich car with somewhere for the box to land draws its first box")
 
 
 func test_draw_upgrade_skips_mystery_box_below_token_threshold() -> void:
@@ -205,10 +234,25 @@ func test_draw_upgrade_skips_mystery_box_below_token_threshold() -> void:
 		"installed_upgrades": [], "tuning": {}}
 	var profile := _profile_with_inventory([maxed, roomy],
 		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD - 1})
+	# The token threshold only bites once engine SWAPPING is unlocked — before then tokens
+	# are inert, so gating a box on hoarding them would gate on an unusable currency.
+	profile["rallies"][RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY] = {"completed": true, "best_placed": 1}
 	for i in 20:
-		var id: String = RewardSystem.draw_upgrade(4, profile, _rng(i), maxed)
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i), maxed)
 		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID,
-			"below the token threshold, the normal draw pool still applies")
+			"below the token threshold, no box is granted")
+
+
+func test_token_threshold_is_waived_while_engine_swaps_are_locked() -> void:
+	# Tokens can't be spent yet, so requiring a stack of them would be gating on a
+	# currency the player has no deliberate use for.
+	var maxed := _maxed_car(1)
+	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	var profile := _profile_with_inventory([maxed, roomy], {})  # no tokens, swaps locked
+	assert_false(RallyLibrary.engine_swaps_unlocked(profile), "setup: swapping is locked")
+	assert_eq(RewardSystem.draw_upgrade(profile, _rng(0), maxed), UpgradeLibrary.MYSTERY_BOX_ID,
+		"with swapping locked the box needs no token stack")
 
 
 func test_draw_upgrade_skips_mystery_box_when_no_other_car_has_room() -> void:
@@ -217,21 +261,44 @@ func test_draw_upgrade_skips_mystery_box_when_no_other_car_has_room() -> void:
 	var profile := _profile_with_inventory([maxed, also_maxed],
 		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD})
 	for i in 20:
-		var id: String = RewardSystem.draw_upgrade(4, profile, _rng(i), maxed)
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i), maxed)
 		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID,
-			"with every other car also maxed, there's nowhere for a box to land — falls through")
+			"with every other car also maxed, there's nowhere for a box to land")
 
 
-func test_car_has_nothing_left_checks_max_tier_not_target_tier() -> void:
-	# A car maxed against the catalogue ceiling reads as "nothing left" even with a
-	# LOW progress ceiling (fresh profile, 0 completed) — MAX_TIER, not target_tier.
+func test_car_has_nothing_left_uses_the_gated_pool() -> void:
 	var maxed := _maxed_car(1)
-	assert_true(RewardSystem._car_has_nothing_left(maxed),
-		"a car with every part up to MAX_TIER installed has nothing left, regardless of progress")
+	assert_true(RewardSystem._car_has_nothing_left(_all_completed_profile(), maxed),
+		"a car with every part installed has nothing left")
 	var not_maxed := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [], "tuning": {}}
-	assert_false(RewardSystem._car_has_nothing_left(not_maxed),
+	assert_false(RewardSystem._car_has_nothing_left(_all_completed_profile(), not_maxed),
 		"a bone-stock car still has plenty left to gain")
+
+
+func test_star_gated_parts_are_absent_from_the_pool_until_their_event_is_won() -> void:
+	# The gate itself, against the real catalogue: SOME part is authored behind a special,
+	# and a profile that has won nothing must not offer it. No specific id is pinned.
+	var fresh := _profile([], [])
+	# Must be a part gated ONLY by a star gate: the first gated entry in the catalogue also
+	# carries a requires_upgrade_id, so picking it would let prerequisite_met satisfy the
+	# assertion and the star gate would go untested.
+	var gated := ""
+	for item in UpgradeLibrary.all():
+		var id := String(item["id"])
+		if UpgradeLibrary.unlocked_by_rally(id) != "" and UpgradeLibrary.requires_upgrade_id(id) == "":
+			gated = id
+			break
+	if gated == "":
+		pass_test("no purely star-gated part authored; nothing to assert")
+		return
+	var car := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	assert_does_not_have(RewardSystem._eligible_parts(fresh, [], car), gated,
+		"a star-gated part is absent before its event is won")
+	assert_true(RewardSystem._eligible_parts(_all_completed_profile(), [], car).size()
+		>= RewardSystem._eligible_parts(fresh, [], car).size(),
+		"winning everything can only widen the pool, never narrow it")
 
 
 # any_car_has_room excludes NOTHING — a box is a garage-wide reward that can land on
@@ -302,7 +369,7 @@ func test_draw_car_clamped_by_progress_ceiling() -> void:
 	# drop a car above it. Synthetic open-class rally (reveal_after 0, incomplete) keeps the
 	# owned car eligible so the player is NOT stuck — the standard-draw path this asserts.
 	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
 	])
 	var starter := _lowest_tier_model()
 	var profile := _profile([], [String(starter["id"])])
@@ -321,7 +388,7 @@ func test_draw_car_difficulty_caps_below_progress_ceiling() -> void:
 	# progress ceiling) but a LOW-difficulty rally, the draw is still capped at the
 	# difficulty tier — a soft rally never pays a top car just because progress is high.
 	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
 	])
 	var completed: Array = []
 	for n in 8:  # ids need not be real — completed_count only counts them
@@ -344,7 +411,7 @@ func test_draw_car_prefers_unowned() -> void:
 	# spans the whole roster, so the draw must always return that remaining un-owned car
 	# (owned alternatives exist yet are never picked).
 	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 4},
+		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 4},
 	])
 	var completed: Array = []
 	for n in 8:
@@ -398,32 +465,39 @@ func test_draw_car_unlocks_locked_rally_when_stuck() -> void:
 	# When STUCK — no owned car can enter any incomplete, REVEALED rally — the draw grants a
 	# car that OPENS a locked rally, guaranteeing fresh progression. Synthetic roster
 	# (reveal_after 0, so the reveal-order gate doesn't interfere): a low band r_low the
-	# owned car fits, a high band r_high it doesn't. Own only the low car and complete r_low
-	# -> stuck -> the grant must be a car eligible for r_high.
+	# owned car fits, and r_high which it can never qualify for.
+	#
+	# r_high restricts by CAR TYPE, not by power band, and that choice is deliberate. Now
+	# that eligibility is judged against a car's upgrade CEILING, a power floor is no longer
+	# a lock — the player just fits parts and grows into it, so the rescue would rightly
+	# decline to fire. A car_type restriction is a real lock: no upgrade in the catalogue
+	# changes what type a car is, so a different car is genuinely the only way through.
+	var low_car := _lowest_tier_model()
+	var low_type := String(low_car.get("car_type", ""))
+	var other_type := ""
+	for entry in CarLibrary.all():
+		if String(entry.get("car_type", "")) != low_type:
+			other_type = String(entry.get("car_type", ""))
+			break
+	if other_type == "":
+		return  # single-type fixture roster: no type lock to demonstrate
 	RallyLibrary.override_for_test([
-		{"id": "r_low", "region": "home", "showdown": false, "difficulty": 1,
-			"restriction": {"pw_max": 175.0}},
-		{"id": "r_high", "region": "home", "showdown": false, "difficulty": 2,
-			"restriction": {"pw_min": 200.0}},
+		{"id": "r_low", "region": "home", "special": false, "difficulty": 1,
+			"restriction": {"car_type": low_type}},
+		{"id": "r_high", "region": "home", "special": false, "difficulty": 2,
+			"restriction": {"car_type": other_type}},
 	])
 	var r_low := RallyLibrary.by_id("r_low")
 	var r_high := RallyLibrary.by_id("r_high")
-	# The lowest-p/w fixture car must fit r_low but miss r_high, and SOME other car must fit
-	# r_high — else the setup can't demonstrate the unlock. Guard so a fixture retune skips
-	# rather than fails.
-	var low_car := _lowest_tier_model()
-	var some_fits_high := false
-	for entry in CarLibrary.all():
-		if RallyLibrary.is_eligible(r_high, entry):
-			some_fits_high = true
-			break
-	if not (RallyLibrary.is_eligible(r_low, low_car)
-			and not RallyLibrary.is_eligible(r_high, low_car) and some_fits_high):
+	if not RallyLibrary.is_eligible(r_low, low_car):
 		RallyLibrary.reset()
 		return
+	var owned_low := {"instance_id": 1, "model_id": String(low_car["id"]), "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
 	var profile := _profile(["r_low"], [String(low_car["id"])])
-	assert_true(RallyLibrary.incomplete_rallies_enterable_by(low_car, profile).is_empty(),
-		"setup: the owned car has no incomplete rally left to enter (stuck)")
+	assert_true(RallyLibrary.incomplete_rallies_enterable_by(low_car, profile,
+		UpgradeLibrary.max_potential_meta(owned_low, low_car, profile)).is_empty(),
+		"setup: the owned car can't reach any incomplete rally even fully upgraded (stuck)")
 	for i in 20:
 		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
 		var meta := CarLibrary.by_id(String(model))
@@ -434,24 +508,42 @@ func test_draw_car_unlocks_locked_rally_when_stuck() -> void:
 	RallyLibrary.reset()
 
 
-# --- Per-region showdown gating ----------------------------------------------
+# --- Star-gated special events ------------------------------------------------
+# Replaces the old per-region showdown gate: specials are now gated on the GLOBAL star
+# total, with no relationship to a region's contents.
 
-func test_draw_excludes_a_locked_regions_showdown() -> void:
-	RegionLibrary.override_for_test([
-		{"id": "home", "name": "Home"}, {"id": "greece", "name": "Greece"},
-	])
+func test_the_eligibility_query_excludes_a_star_locked_special() -> void:
 	RallyLibrary.override_for_test([
-		{"id": "h1", "region": "home", "showdown": false, "restriction": {}},
-		{"id": "h_sd", "region": "home", "showdown": true, "restriction": {}},
-		{"id": "g_sd", "region": "greece", "showdown": true, "restriction": {}},
+		{"id": "r1", "region": "home", "special": false, "restriction": {}},
+		{"id": "sp_far", "region": "home", "special": true, "requires_stars": 99,
+			"restriction": {}},
 	])
-	# Nothing completed → greece locked, home's showdown not yet open either.
+	# Nothing completed → no stars → the special is still locked.
 	var car := {"pw": 150.0}  # synthetic; is_eligible reads restriction only
-	var out := RallyLibrary.incomplete_rallies_enterable_by(car, {"rallies": {}})
 	var ids := []
-	for r in out: ids.append(r["id"])
-	assert_does_not_have(ids, "g_sd")  # greece showdown gated
-	RegionLibrary.reset(); RallyLibrary.reset()
+	for r in RallyLibrary.incomplete_rallies_enterable_by(car, {"rallies": {}}):
+		ids.append(r["id"])
+	assert_does_not_have(ids, "sp_far", "a star-locked special is not enterable")
+	assert_has(ids, "r1", "an ordinary revealed rally still is")
+	RallyLibrary.reset()
+
+
+func test_a_special_opens_once_the_star_total_is_reached() -> void:
+	RallyLibrary.override_for_test([
+		{"id": "r1", "region": "home", "special": false, "restriction": {}},
+		{"id": "sp_near", "region": "home", "special": true, "requires_stars": 3,
+			"restriction": {}},
+	])
+	var car := {"pw": 150.0}
+	# One 1st place on the single ordinary rally = 3 stars, which clears the gate. The
+	# special itself must be excluded from the star count, so it cannot bootstrap itself.
+	var profile := {"rallies": {"r1": {"completed": true, "best_placed": 1}}}
+	assert_eq(RallyLibrary.total_stars(profile), 3, "a 1st place is worth three stars")
+	var ids := []
+	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
+		ids.append(r["id"])
+	assert_has(ids, "sp_near", "the special opens once the stars are in")
+	RallyLibrary.reset()
 
 
 # --- Duplicate-reward guards --------------------------------------------------
@@ -466,7 +558,7 @@ func test_an_exhausted_tier_steps_up_to_a_car_the_player_has_earned() -> void:
 	# Own every car at the drawn tier, but have earned a higher one: the draw must
 	# find something NEW rather than hand back a duplicate.
 	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
 	])
 	var low_tier: Array = RewardSystem._cars_at_or_below_tier(1)
 	if low_tier.size() < 1 or RewardSystem._cars_at_or_below_tier(2).size() <= low_tier.size():
@@ -486,7 +578,7 @@ func test_a_draw_does_not_repeat_the_previous_grant_when_an_alternative_exists()
 	# Pool fully owned and no higher tier earned, so a duplicate is unavoidable — but
 	# it must not be the SAME duplicate the player just received.
 	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
 	])
 	var low_tier: Array = RewardSystem._cars_at_or_below_tier(1)
 	if low_tier.size() < 2:

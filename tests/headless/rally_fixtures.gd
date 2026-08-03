@@ -7,7 +7,7 @@ extends RefCounted
 #
 # The roster spans the axes tests exercise: an open (no-restriction) workhorse
 # with events, a drive-mode + power-band gate (RWD and FWD), a country gate, an
-# intra-region reveal gate (reveal_after), and a showdown. All live in the real
+# intra-region reveal gate (reveal_after), and a star-gated SPECIAL. All live in the real
 # "home" region (a structural id RegionLibrary always ships) so region/reveal
 # grouping resolves. Events set a very low water_level so track generation never
 # has to route around lakes — a fixture stage generates fast and deterministically.
@@ -34,38 +34,40 @@ static func rallies() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
 			"id": "fx_open", "name": "Fixture Open", "region": "home",
-			"difficulty": 1, "showdown": false, "map_pos": Vector2(0.2, 0.7),
+			"difficulty": 1, "special": false, "map_pos": Vector2(0.2, 0.7),
 			"restriction": {},  # open class — the "any rally with events" workhorse
 			"events": [_event(1001), _event(1002), _event(1003)],
 		},
 		{
 			"id": "fx_rwd_band", "name": "Fixture RWD Band", "region": "home",
-			"difficulty": 2, "showdown": false, "map_pos": Vector2(0.4, 0.6),
+			"difficulty": 2, "special": false, "map_pos": Vector2(0.4, 0.6),
 			"restriction": {"drive_mode": RWD, "pw_min": 150.0, "pw_max": 270.0},
 			"events": [_event(2001), _event(2002), _event(2003)],
 		},
 		{
 			"id": "fx_fwd_band", "name": "Fixture FWD Band", "region": "home",
-			"difficulty": 1, "showdown": false, "map_pos": Vector2(0.3, 0.55),
+			"difficulty": 1, "special": false, "map_pos": Vector2(0.3, 0.55),
 			"restriction": {"drive_mode": FWD, "pw_min": 80.0, "pw_max": 140.0},
 			"events": [_event(2101), _event(2102), _event(2103)],
 		},
 		{
 			"id": "fx_country_us", "name": "Fixture US Muscle", "region": "home",
-			"difficulty": 2, "showdown": false, "map_pos": Vector2(0.5, 0.4),
+			"difficulty": 2, "special": false, "map_pos": Vector2(0.5, 0.4),
 			"restriction": {"country": "US", "pw_min": 150.0, "pw_max": 300.0},
 			"events": [_event(3001), _event(3002), _event(3003)],
 		},
 		{
 			"id": "fx_gated", "name": "Fixture Gated", "region": "home",
-			"difficulty": 3, "showdown": false, "reveal_after": 2,
+			"difficulty": 3, "special": false, "reveal_after": 2,
 			"map_pos": Vector2(0.6, 0.3),
 			"restriction": {"pw_min": 200.0, "pw_max": 320.0},
 			"events": [_event(4001), _event(4002), _event(4003)],
 		},
 		{
-			"id": "fx_showdown", "name": "Fixture Showdown", "region": "home",
-			"difficulty": 4, "showdown": true, "map_pos": Vector2(0.5, 0.1),
+			"id": "fx_showdown", "name": "Fixture Special", "region": "home",
+			# no requires_stars -> the star gate is open from the start, so a test that
+			# just wants "a special rally to run" can enter it without grinding stars.
+			"difficulty": 4, "special": true, "requires_stars": 0, "map_pos": Vector2(0.5, 0.1),
 			"restriction": {},  # open so any car can finish
 			"events": [_event(9001), _event(9002), _event(9003)],
 		},

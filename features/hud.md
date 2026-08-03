@@ -30,6 +30,7 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
+| `NitrousBar` (+ child `NitrousLabel`) | `NITROUS` caption inside a bar whose fill is the tank fraction left | `car.drivetrain.engine` (violet; hidden when no nitrous is fitted) |
 | `BoostBar` (+ child `BoostLabel`) | `BOOST` caption inside a bar whose fill is the live boost fraction | `car.drivetrain.engine` (blue; hidden on an NA car) |
 | `HPBar` (+ child `HPLabel`) | `HEALTH` caption inside a bar whose fill is `hp / max_hp` | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
@@ -68,6 +69,29 @@ graded because boost has no "danger" end.
 
 The `H` debug overlay's separate textual `Boost NN%` readout still exists alongside
 it (`boost_text`, see [debug-tools.md](debug-tools.md)) for exact numbers.
+
+## Nitrous gauge
+
+`NitrousBar` is the boost bar's twin, stacked **directly above** it (so the bottom-left
+stack reads, from the bottom edge up: health, boost, nitrous). Same construction: a
+`ProgressBar` whose fill is the whole reading, a static `NITROUS` caption as a centred
+child, and the tint applied via `self_modulate` so the caption keeps the plain ink colour.
+
+Both of its answers come from the model, not the HUD: `GameConfig.has_nitrous()` says
+whether a tank is fitted and live, and `EngineSim.nitrous_fraction()` reports the 0..1
+tank remaining for the stage (see [nitrous.md](nitrous.md)). `hud.gd::_update_nitrous_gauge(fitted, frac)`
+hides the bar **entirely** when nothing is fitted rather than parking it at zero, and
+otherwise sets `value` to the fraction. `_ready()` starts it hidden.
+
+Its tint is a **fixed violet** (`_NITROUS_HUE`) from the same `_gauge_color` family as the
+health grade and the boost blue — deliberately far from the boost hue, because nitrous and
+forced induction occupy separate upgrade slots, so a turbocharged car with nitrous shows
+**both bars at once** and they must not read as one gauge. Like the other captions,
+`NitrousLabel` opts out of the project-wide drop shadow in `_style_gauge_captions()`.
+
+The bar write is **change-gated** on the rounded integer percent (`_last_nitrous_pct`,
+`-1` = not fitted), the same pattern the boost bar uses: the drain is a continuous float,
+so writing `value` every frame would queue redraws for changes nobody can see.
 
 ## Stage flow widgets
 

@@ -15,6 +15,9 @@ var _boost_label: Label
 # was formatted under, so the label only re-formats when the readout changes.
 var _last_boost_pct := -999
 var _last_turbo := false
+# Last DISPLAYED nitrous percent (-1 = no nitrous fitted), gating the nitrous gauge
+# writes the same way _last_boost_pct gates the boost bar's.
+var _last_nitrous_pct := -999
 # Track-seed readout, part of the H debug overlay. Built in code and stacked
 # under the boost label; shows the current world seed (Config.data.track_seed)
 # so a run can be identified/reproduced.
@@ -70,6 +73,13 @@ var _pace_scroll := 0.0     # animated scroll position, eased toward _pace_curre
 # features/forced-induction.md.
 @onready var _boost_bar: ProgressBar = $BoostBar
 @onready var _boost_bar_label: Label = $BoostBar/BoostLabel
+# Nitrous gauge, directly above the boost bar and laid out identically (label inside
+# the bar). Shown only when nitrous is fitted (GameConfig.has_nitrous()); its fill is
+# the tank fraction left this stage (EngineSim.nitrous_fraction()). A turbocharged car
+# with nitrous shows BOTH bars at once, hence the distinct violet hue. See
+# features/nitrous.md.
+@onready var _nitrous_bar: ProgressBar = $NitrousBar
+@onready var _nitrous_bar_label: Label = $NitrousBar/NitrousLabel
 @onready var _impact_flash: ColorRect = $ImpactFlash
 
 # Low-HP warning pulse speed (rad/s) and the impact-flash response curve: each
@@ -80,14 +90,17 @@ const _IMPACT_FLASH_GAIN := 6.0
 const _IMPACT_FLASH_MAX := 0.6
 const _IMPACT_FLASH_DECAY := 2.0
 
-# The two bottom gauges are ONE family: same saturation and value, distinguished only by
-# hue. Both tints come from _gauge_color so retuning the family moves both — the health
-# bar GRADES its hue with remaining HP (green -> red), while boost is FIXED blue, since
-# boost has no "danger" end to grade toward.
+# The bottom gauges are ONE family: same saturation and value, distinguished only by
+# hue. Every tint comes from _gauge_color so retuning the family moves them all — the
+# health bar GRADES its hue with remaining HP (green -> red), while boost (blue) and
+# nitrous (violet) are FIXED, since neither has a "danger" end to grade toward.
 const _GAUGE_SAT := 0.8
 const _GAUGE_VAL := 0.95
 const _HP_HUE_FULL := 0.33   # hue at full health; scaled by the HP fraction, so 0 = red
 const _BOOST_HUE := 0.58
+# Violet, deliberately well away from the boost blue: nitrous and forced induction are
+# separate slots, so both bars can be on screen together and must not read as one gauge.
+const _NITROUS_HUE := 0.70
 
 # Pacenote strip geometry / feel. The current turn sits centred at the top (x = 0,
 # directly above the pace/cut popup); each upcoming turn is one _PACE_SLOT_W to the
@@ -140,6 +153,10 @@ func _ready() -> void:
 	# it keeps the plain ink colour.
 	_boost_bar.visible = false
 	_boost_bar.self_modulate = _gauge_color(_BOOST_HUE)
+	# Same deal for nitrous: hidden until _update_nitrous_gauge sees a fitted tank, and a
+	# fixed violet from the same family so it can sit alongside the boost bar unconfused.
+	_nitrous_bar.visible = false
+	_nitrous_bar.self_modulate = _gauge_color(_NITROUS_HUE)
 	# Stage widgets start hidden; StageManager reveals them at the right moments.
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
@@ -296,6 +313,14 @@ func _timed_process(_delta: float) -> void:
 		_last_turbo = turbo
 		_boost_label.text = boost_text(turbo, live_boost)
 		_update_boost_gauge(turbo, live_boost)
+	# Nitrous is gated the same way: the displayed integer percent (-1 = not fitted) is
+	# the cache key, so a continuous drain only touches the bar when the reading moves.
+	var nitrous_fitted := Config.data.has_nitrous()
+	var nitrous_frac := clampf(engine.nitrous_fraction(), 0.0, 1.0)
+	var nitrous_pct := roundi(nitrous_frac * 100.0) if nitrous_fitted else -1
+	if nitrous_pct != _last_nitrous_pct:
+		_last_nitrous_pct = nitrous_pct
+		_update_nitrous_gauge(nitrous_fitted, nitrous_frac)
 	var track_seed: int = Config.data.track_seed
 	if track_seed != _last_seed:
 		_last_seed = track_seed
@@ -322,7 +347,7 @@ static func _gauge_color(hue: float) -> Color:
 # does nothing to it — it has to be overridden to transparent per label. See
 # features/ui-design-system.md → "Gauge captions" and hud.md.
 func _style_gauge_captions() -> void:
-	for cap: Label in [_hp_label, _boost_bar_label]:
+	for cap: Label in [_hp_label, _boost_bar_label, _nitrous_bar_label]:
 		cap.add_theme_color_override("font_color", UITheme.INK)
 		cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
 
@@ -339,6 +364,17 @@ func _update_boost_gauge(fitted: bool, live_boost: float) -> void:
 	_boost_bar.visible = fitted  # the caption is a child, so it follows the bar
 	if fitted:
 		_boost_bar.value = live_boost
+
+
+# Drive the player-facing nitrous gauge, the boost bar's twin: the fill IS the tank
+# fraction left this stage, with a static "NITROUS" caption inside it, hidden entirely
+# when no nitrous is fitted rather than sitting at zero. Both answers come from the
+# MODEL — GameConfig.has_nitrous() for "is it fitted", EngineSim.nitrous_fraction() for
+# "how much is left" — and the caller change-gates both writes on the rounded percent.
+func _update_nitrous_gauge(fitted: bool, frac: float) -> void:
+	_nitrous_bar.visible = fitted  # the caption is a child, so it follows the bar
+	if fitted:
+		_nitrous_bar.value = frac
 
 
 # Drive the HP gauge + impact flash off the car's damage model. Hidden when

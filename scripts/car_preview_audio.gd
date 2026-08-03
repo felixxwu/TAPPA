@@ -111,5 +111,9 @@ func _fill_audio() -> void:
 	# turbo WHISTLE and blow-off valve, layers a supercharged car does not have (its whine
 	# is rpm-pitched, and install_supercharger clears turbo_enabled so neither can fire).
 	# Feeding belt boost in would make a blown car whistle and vent like a turbo.
-	_synth.fill(_scratch, _engine.rpm(), _engine.throttle, _engine.shift_timer > 0.0, n, _engine.fuel_cut, _engine.limiting, _engine.boost, turbo_spin, bov, _engine.antilag_active)
+	# The nitrous args are hard-FALSE for the same class of reason: rev() applies the
+	# highlighted car's fitted upgrades, so a nitrous-equipped car HAS nitrous in this
+	# config — but nobody is pressing the button in the garage. The hiss layer is gated
+	# on the DELIVERY state, not on nitrous being fitted, so the preview stays silent.
+	_synth.fill(_scratch, _engine.rpm(), _engine.throttle, _engine.shift_timer > 0.0, n, _engine.fuel_cut, _engine.limiting, _engine.boost, turbo_spin, bov, _engine.antilag_active, false, false, false)
 	_playback.push_buffer(_scratch)

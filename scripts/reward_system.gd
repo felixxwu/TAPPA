@@ -15,6 +15,13 @@ extends RefCounted
 # Highest tier any reward can reach (cars top out at reward_tier 4). The
 # tier-ceiling and difficulty-remap CURVES are GameConfig tunables in the final
 # balance pass; the values here are placeholder defaults (deferred, per spec).
+#
+# TIER IS NOW A CAR-DRAW CONCEPT ONLY. Upgrades used to carry a `tier` too, walked by
+# the old _parts_at_or_below, but the star gate (UpgradeLibrary.rally_gate_met) does that
+# job better: tier gated by rally DIFFICULTY and had gone vestigial (every part sat at
+# tier 1 bar one), whereas the gate is explicit and legible. Upgrade rarity within what's
+# unlocked is now the authored `weight` (UpgradeLibrary.pool_weight). The car ladder below
+# is untouched — it's also where the "harder rally, better prize" correlation still lives.
 const MAX_TIER := 4
 
 # The engine swap token's weight in the per-event upgrade pool, relative to a
@@ -43,7 +50,7 @@ static func _difficulty_to_tier(rally_difficulty: int) -> int:
 	return rally_difficulty
 
 
-# The clamped target tier a draw resolves at. Exposed for UI/tests.
+# The clamped tier the CAR draw resolves at (draw_car's one caller). Exposed for tests.
 static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
 	var ceiling := tier_ceiling(RallyLibrary.completed_count(profile))
 	return clampi(_difficulty_to_tier(rally_difficulty), 1, ceiling)
@@ -51,66 +58,135 @@ static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
 
 # --- Upgrade draw (per event) ------------------------------------------------
 
-# Draw one per-event upgrade item id. Pool = parts at the clamped target tier
-# (stepping down to the nearest lower tier that has an eligible part, since not
-# every tier has one) plus the engine swap token as a low-weight entry. Parts already
-# fitted to `owned_car` — the car the player just drove, which the podium offers
-# to fit the reward onto — are excluded, so the draw never awards a part the car
-# already has; with every part at/below the tier fitted, only the token remains, which
-# is what keeps the draw's "always pays out" guarantee. (The retired repair kit sat in
-# this pool too, but at weight 0 — it never actually dropped, so removing it changes
-# no outcome.)
-# Returns an item_id; the caller grants it via Save.add_item.
-static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: RandomNumberGenerator = null, owned_car: Dictionary = {}) -> String:
+# Sentinel return meaning "nothing was awarded this event". Callers must NOT install it,
+# append it to the won list, or fire a reveal — they skip straight on to the next menu.
+const NO_REWARD := ""
+
+# Draw one per-event upgrade item id, or NO_REWARD ("").
+#
+# The old "every event always pays out" guarantee is RETIRED. The rule now:
+#
+#   1. While the car still has an unlocked part left to win, award it. This is the
+#      common case and must never be pre-empted by the branches below.
+#   2. Once the car is maxed (and, if engine swapping is unlocked, the player is
+#      sitting on MYSTERY_BOX_TOKEN_THRESHOLD tokens), roll for a mystery box with
+#      probability 1/(boxes_owned + 1) — see _box_chance.
+#   3. Otherwise award NOTHING.
+#
+# Why: star-gating parts (UpgradeLibrary.rally_gate_met) makes cars read as maxed far
+# earlier than the old tier ceiling did, so a draw that always paid out would degenerate
+# into a mystery-box firehose. The swap token is still a legitimate low-weight entry in
+# the pool, but it is no longer the always-there floor that backstopped the guarantee.
+#
+# Parts already fitted to `owned_car` — the car the player just drove — are excluded, so
+# the draw never awards a part the car already has. That exclusion is also what dedups a
+# multi-reward rally: the flow controller fits each won part before the next draw.
+static func draw_upgrade(profile: Dictionary, rng: RandomNumberGenerator = null, owned_car: Dictionary = {}) -> String:
 	rng = _ensure_rng(rng)
-	if _car_has_nothing_left(owned_car) and _tokens_owned(profile) >= MYSTERY_BOX_TOKEN_THRESHOLD \
-			and _other_car_has_room(profile, owned_car):
-		return UpgradeLibrary.MYSTERY_BOX_ID
-	var tier := target_tier(rally_difficulty, profile)
-	var parts := _parts_at_or_below(tier, owned_car.get("installed_upgrades", []), owned_car)
-	# Weighted pool: each part weight 1.0, plus the swap token at its low weight. The
-	# token is what backstops the "always pays out" guarantee — with every part fitted
-	# it is the only entry left. The MYSTERY BOX is deliberately NOT in this pool: it is
-	# awarded by the gated branch above, and putting it here would hand out a box in
-	# exactly the cases that gate exists to exclude (no other car has room for one).
+	var parts := _eligible_parts(profile, owned_car.get("installed_upgrades", []), owned_car)
+	if parts.is_empty():
+		# Nothing real left to give: a box, or nothing at all.
+		if not _box_gate_open(profile, owned_car):
+			return NO_REWARD
+		return UpgradeLibrary.MYSTERY_BOX_ID if rng.randf() < _box_chance(profile) else NO_REWARD
+	# Weighted pool: each part at its authored weight (default 1.0), plus the swap token
+	# at its low weight. The MYSTERY BOX is deliberately NOT here — it is awarded by the
+	# branch above, and putting it in the pool would hand out a box in exactly the cases
+	# that gate exists to exclude (no other car has room for one).
 	var pool: Array = []
 	for item_id in parts:
-		pool.append({"id": item_id, "weight": 1.0})
+		pool.append({"id": item_id, "weight": UpgradeLibrary.pool_weight(String(item_id))})
 	pool.append({"id": UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, "weight": ENGINE_SWAP_TOKEN_DROP_WEIGHT})
 	return _weighted_pick(pool, rng)
 
 
-# Part ids at exactly `tier`, or — if that tier has no eligible part — at the
-# nearest lower tier that does. Excludes consumables (they are added
-# separately as weighted entries), `free` parts (ballast is always available, never
-# a reward), any id in `exclude` (parts already fitted to the driven car), and any
-# item whose prerequisite isn't yet fitted to `owned_car` (per-car gate, see
-# UpgradeLibrary.prerequisite_met — e.g. Big Turbo stays out of the pool until
-# THIS car has a Small Turbo). Empty when everything at/below the tier is excluded.
-static func _parts_at_or_below(tier: int, exclude: Array = [], owned_car: Dictionary = {}) -> Array:
-	for t in range(tier, 0, -1):
-		var parts: Array = []
-		for item in UpgradeLibrary.UPGRADES:
-			if item["consumable"] or bool(item.get("free", false)):
-				continue
-			if not UpgradeLibrary.prerequisite_met(String(item["id"]), owned_car):
-				continue
-			if int(item["tier"]) == t and not exclude.has(item["id"]):
-				parts.append(item["id"])
-		if not parts.is_empty():
-			return parts
-	return []
+# Draw a per-event upgrade AND deliver it to `car_instance_id`, returning what was actually
+# granted ("" / NO_REWARD when nothing was). THE one place the draw-then-grant sequence
+# lives, so both flow controllers (RallySession's rally events and ChallengeSession's stages)
+# stay in step: the empty-draw case, the consumable-vs-slotted split, and the disabled-on-
+# award convention are each expressed once. NOTE it does not control saving: Save.add_item /
+# Save.install_upgrade each persist on their own, so the caller's own Save.save() is a
+# further write rather than the only one.
+static func draw_and_grant_upgrade(car_instance_id: int, profile: Dictionary,
+		rng: RandomNumberGenerator = null) -> String:
+	var driven: Dictionary = Save.get_car(car_instance_id)
+	var item_id := draw_upgrade(profile, rng, driven)
+	if item_id == NO_REWARD:
+		return NO_REWARD
+	if UpgradeLibrary.is_consumable(item_id):
+		Save.add_item(item_id, 1, false)
+	else:
+		# Awarded parts are fitted DISABLED — the reveal overlay enables the player's pick.
+		# (A part in a HIDDEN slot overrides that inside Save.install_upgrade, since it has
+		# no garage row to be enabled from.)
+		Save.install_upgrade(car_instance_id, item_id, false)
+	return item_id
+
+
+# Every part `owned_car` could win right now. Flat — there is no tier walk any more (see
+# the header note on retiring tier). Excludes consumables (added separately as weighted
+# entries), `free` parts (ballast is always available, never a reward), any id in
+# `exclude` (already fitted to the driven car), any item whose per-car prerequisite isn't
+# fitted yet, and any item whose star gate hasn't opened.
+static func _eligible_parts(profile: Dictionary, exclude: Array = [], owned_car: Dictionary = {}) -> Array:
+	var parts: Array = []
+	for item in UpgradeLibrary.all():
+		var item_id := String(item["id"])
+		if item["consumable"] or bool(item.get("free", false)):
+			continue
+		if exclude.has(item_id):
+			continue
+		if not UpgradeLibrary.prerequisite_met(item_id, owned_car):
+			continue
+		if not UpgradeLibrary.rally_gate_met(item_id, profile):
+			continue
+		parts.append(item_id)
+	return parts
 
 
 # --- Mystery box gating (see draw_upgrade) -----------------------------------
 
-# True when `owned_car` has nothing left to gain, ever — every non-consumable,
-# non-free item it's eligible for (prerequisites met) at every tier up to the
-# absolute ceiling (MAX_TIER) is already installed. Checked against MAX_TIER,
-# not the progress-clamped target_tier, so a car isn't "maxed" just because the
-# player's progress hasn't raised the tier ceiling yet.
-static func _car_has_nothing_left(owned_car: Dictionary) -> bool:
-	return _parts_at_or_below(MAX_TIER, owned_car.get("installed_upgrades", []), owned_car).is_empty()
+# True when `owned_car` has nothing left to gain right now — every part its per-car
+# prerequisites and the CURRENT star gates allow is already installed.
+#
+# This deliberately uses the GATED pool. The old version checked the absolute tier
+# ceiling rather than the progress-clamped one, so a car wasn't "maxed" merely because
+# progress hadn't opened the tier up yet; the star gate reintroduces that same question
+# and we answer it the other way — a car with every currently-unlocked part IS maxed.
+# The accepted consequence is that cars read as maxed much earlier, so this branch is
+# reached far more often, which is exactly why the always-pays-out guarantee was retired
+# and the box roll self-throttles (_box_chance).
+static func _car_has_nothing_left(profile: Dictionary, owned_car: Dictionary) -> bool:
+	return _eligible_parts(profile, owned_car.get("installed_upgrades", []), owned_car).is_empty()
+
+
+# Whether a mystery box may even be rolled for. The car is already known to be maxed.
+#
+# The token threshold applies ONLY once engine swapping is unlocked: before then tokens
+# are inert (they can't be spent), so requiring a stack of them would gate the box on a
+# currency the player has no way to use deliberately.
+static func _box_gate_open(profile: Dictionary, owned_car: Dictionary) -> bool:
+	if not _other_car_has_room(profile, owned_car):
+		return false  # a box with nowhere to land is useless — award nothing instead
+	if not RallyLibrary.engine_swaps_unlocked(profile):
+		return true
+	return _tokens_owned(profile) >= MYSTERY_BOX_TOKEN_THRESHOLD
+
+
+# Probability of actually granting a box, given how many are already banked. The shape is
+# 1 / (1 + owned/softness), with the softness a GameConfig knob
+# (mystery_box_throttle; 1.0 = the plain 1/(owned+1) curve).
+#
+# The leading 1 is load-bearing: a literal 1/owned is undefined at zero and equals 1.0 at
+# one, so the first TWO boxes would both be certain. This way the first is guaranteed and
+# each one after is rarer, so boxes self-throttle instead of piling up.
+static func _box_chance(profile: Dictionary) -> float:
+	var softness := maxf(Config.data.mystery_box_throttle, 0.01)
+	return 1.0 / (1.0 + float(_boxes_owned(profile)) / softness)
+
+
+static func _boxes_owned(profile: Dictionary) -> int:
+	return int(profile.get("inventory", {}).get(UpgradeLibrary.MYSTERY_BOX_ID, 0))
 
 
 # Engine swap tokens held, read straight off `profile` (this module never
@@ -130,7 +206,7 @@ static func _other_car_has_room(profile: Dictionary, owned_car: Dictionary) -> b
 	for car in profile.get("cars", []):
 		if int(car.get("instance_id", -1)) == current_instance_id:
 			continue
-		if not _car_has_nothing_left(car):
+		if not _car_has_nothing_left(profile, car):
 			return true
 	return false
 
@@ -149,13 +225,13 @@ static func _other_car_has_room(profile: Dictionary, owned_car: Dictionary) -> b
 # weight for a one-car garage.
 static func any_car_has_room(profile: Dictionary) -> bool:
 	for car in profile.get("cars", []):
-		if not _car_has_nothing_left(car):
+		if not _car_has_nothing_left(profile, car):
 			return true
 	return false
 
 
 # Resolve what a mystery box grants: a uniformly random owned car among those with a
-# non-empty MAX_TIER-eligible pool, then a uniformly random item from that car's pool.
+# non-empty eligible pool, then a uniformly random item from that car's pool.
 # Returns {} when NO car has room (the opener then leaves the box unspent) — a pure
 # resolve, no Save mutation; the caller (Save) performs the actual consume/install.
 #
@@ -167,12 +243,12 @@ static func pick_mystery_box_grant(profile: Dictionary, rng: RandomNumberGenerat
 	rng = _ensure_rng(rng)
 	var candidates: Array = []
 	for car in profile.get("cars", []):
-		if not _parts_at_or_below(MAX_TIER, car.get("installed_upgrades", []), car).is_empty():
+		if not _eligible_parts(profile, car.get("installed_upgrades", []), car).is_empty():
 			candidates.append(car)
 	if candidates.is_empty():
 		return {}
 	var recipient: Dictionary = candidates[rng.randi_range(0, candidates.size() - 1)]
-	var parts := _parts_at_or_below(MAX_TIER, recipient.get("installed_upgrades", []), recipient)
+	var parts := _eligible_parts(profile, recipient.get("installed_upgrades", []), recipient)
 	var item_id: String = parts[rng.randi_range(0, parts.size() - 1)]
 	return {"instance_id": int(recipient.get("instance_id", -1)), "item_id": item_id}
 
@@ -203,10 +279,11 @@ static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: Random
 		# gameplay.md's progress clamp: reward tier = f(difficulty), capped by the
 		# progress ceiling (rallies completed), so a lucky early win at a higher-difficulty
 		# rally still can't drop a car above the player's earned tier. This is the SAME
-		# clamp the per-event upgrade draw uses (target_tier) — cars no longer key off the
-		# garage's highest owned tier, which let one d2 win open the whole roster.
+		# clamp. (The per-event UPGRADE draw no longer uses a tier at all — see the note on
+		# MAX_TIER — so this is now the car ladder's own clamp.) Cars deliberately don't key
+		# off the garage's highest owned tier, which let one d2 win open the whole roster.
 		var earned := tier_ceiling(RallyLibrary.completed_count(profile))
-		var ceiling := clampi(_difficulty_to_tier(rally_difficulty), 1, earned)
+		var ceiling := target_tier(rally_difficulty, profile)
 		pool = _cars_at_or_below_tier(ceiling)
 		# EXHAUSTED-TIER STEP-UP. The tier is min(difficulty, earned), so a difficulty-1
 		# rally always draws the tier-1 pool however far the player has come — and there
@@ -250,7 +327,7 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 # The unlock-fallback pool: non-empty ONLY when the garage is stuck — no owned
 # car (on its EFFECTIVE stats, so installed upgrades count) can enter any
 # still-incomplete rally. Then: walk the still-locked (incomplete, REVEALED — its
-# reveal_after met and, for a showdown, its region unlocked) rallies by difficulty
+# reveal_after met and, for a special, its star gate open) rallies by difficulty
 # ASCENDING and return every CarLibrary model eligible for one at the lowest
 # difficulty ANY catalogue car can actually enter, so the grant opens progression in
 # difficulty order (all tier-1/2 beaten -> a car for a difficulty-3 rally, not 4).
@@ -263,9 +340,13 @@ static func _unlock_candidates(profile: Dictionary) -> Array:
 	for car in profile.get("cars", []):
 		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 		var meta := UpgradeLibrary.effective_meta(car, entry)
-		# Judge the pw_min floor at the car's MAX potential (the player can always tune up to
-		# enter), so a car detuned/ballasted for a lower rally doesn't read as stuck.
-		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
+		# Judge the pw_min floor at the car's max potential (the player can always tune up to
+		# enter), so a car detuned/ballasted for a lower rally doesn't read as stuck. Passing
+		# `profile` selects the REACHABLE ceiling — only parts whose star gate is already
+		# open. The aspirational ceiling would conclude nobody is ever stuck (any car could
+		# in principle be turbo'd), silently disabling this rescue for a player whose turbo
+		# is locked behind an event they can't yet reach.
+		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry, profile)
 		if not RallyLibrary.incomplete_rallies_enterable_by(meta, profile, floor_meta).is_empty():
 			return []  # a new rally is already enterable — standard draw applies
 	var rallies: Dictionary = profile.get("rallies", {})

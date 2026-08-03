@@ -363,9 +363,9 @@ func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	# Three pins at known map_pos: b is "up-map" of a (smaller y), c is off to +x.
 	RallyLibrary.override_for_test([
-		{"id": "a", "name": "A", "region": "home", "showdown": false, "map_pos": Vector2(0.5, 0.8), "restriction": {}, "events": []},
-		{"id": "b", "name": "B", "region": "home", "showdown": false, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
-		{"id": "c", "name": "C", "region": "home", "showdown": false, "map_pos": Vector2(0.85, 0.5), "restriction": {}, "events": []},
+		{"id": "a", "name": "A", "region": "home", "special": false, "map_pos": Vector2(0.5, 0.8), "restriction": {}, "events": []},
+		{"id": "b", "name": "B", "region": "home", "special": false, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "c", "name": "C", "region": "home", "special": false, "map_pos": Vector2(0.85, 0.5), "restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -426,9 +426,9 @@ func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	RallyLibrary.override_for_test([
-		{"id": "easy", "name": "Easy", "region": "home", "difficulty": 1, "showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "hard", "name": "Hard", "region": "home", "difficulty": 4, "showdown": false, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
-		{"id": "mid", "name": "Mid", "region": "home", "difficulty": 2, "showdown": false, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "easy", "name": "Easy", "region": "home", "difficulty": 1, "special": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "hard", "name": "Hard", "region": "home", "difficulty": 4, "special": false, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
+		{"id": "mid", "name": "Mid", "region": "home", "difficulty": 2, "special": false, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -465,11 +465,11 @@ func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
 func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	RallyLibrary.override_for_test([
-		{"id": "open", "name": "Open", "region": "home", "showdown": false, "reveal_after": 0,
+		{"id": "open", "name": "Open", "region": "home", "special": false, "reveal_after": 0,
 			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "later", "name": "Later", "region": "home", "showdown": false, "reveal_after": 99,
+		{"id": "later", "name": "Later", "region": "home", "special": false, "reveal_after": 99,
 			"map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
-		{"id": "sd", "name": "SD", "region": "home", "showdown": true,
+		{"id": "sd", "name": "SD", "region": "home", "special": true, "requires_stars": 99,
 			"map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -484,7 +484,7 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	for pin in hq._pins:
 		by_id[String(pin.get_meta("rally_id"))] = pin
 	assert_true(by_id.has("later"), "an unrevealed rally is still pinned on the world map")
-	assert_true(by_id.has("sd"), "a gated showdown is still pinned on the world map")
+	assert_true(by_id.has("sd"), "a star-gated special is still pinned on the world map")
 
 	# ...but the unrevealed ones are disabled: flagged locked, with no pickable hit area.
 	for id in ["later", "sd"]:
@@ -1501,20 +1501,22 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 	hq._enter_table()
 	assert_eq(hq._view, hq.View.TABLE, "tapping the table drops the camera to the map view")
 	assert_true(hq._table_layer.visible, "the map HUD is shown")
-	# CHANGED DELIBERATELY: the meter used to read "Progress to the Showdown" and count
-	# only the viewed region's rallies. There is one world map now, so it counts the
-	# whole roster and no longer names a single showdown.
-	assert_string_contains(hq._map_meter.text, "RALLIES COMPLETED", "the progress meter is shown")
+	# CHANGED DELIBERATELY (twice): the meter used to read "Progress to the Showdown" for one
+	# region, then "N / M rallies completed" for the whole roster. It now reports STARS,
+	# because the star total is what gates the special events — the table HUD and the special
+	# pins must speak the same metric.
+	assert_string_contains(hq._map_meter.text, "STARS", "the star meter is shown")
 
 
-func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
+func test_hq_map_locks_a_special_until_its_star_gate_opens() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var showdown := _pin_for(hq, "the_showdown")
-	assert_true(bool(showdown.get_meta("locked")),
-		"the showdown pin is locked until every other rally is completed")
-	assert_eq(showdown.find_children("*", "Area3D", true, false).size(), 0,
+	# A fresh profile has no stars, so the highest-rung special is certainly still locked.
+	var special := _pin_for(hq, _top_special_id())
+	assert_true(bool(special.get_meta("locked")),
+		"a special pin is locked until its star gate opens")
+	assert_eq(special.find_children("*", "Area3D", true, false).size(), 0,
 		"a locked pin is not pickable (no hit area)")
 	var normal := _pin_for(hq, "shakedown")
 	assert_false(bool(normal.get_meta("locked")), "a normal rally pin is unlocked")
@@ -1530,25 +1532,67 @@ func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 	assert_eq(menu_targets, 1, "the floating menu box is itself a click target")
 
 
-func test_hq_unavailable_rally_has_no_floating_readout() -> void:
-	# All-or-nothing: a rally that can't be entered yet (the locked showdown) shows NO
-	# readout box rather than a dimmed one, while an available rally (open-class
-	# shakedown, starter eligible) shows its box at full opacity. The 3D flag stands at
-	# BOTH pins either way, so the map still marks where the unavailable rally is.
+func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
+	# All-or-nothing for ORDINARY rallies: one that can't be entered yet shows NO readout
+	# box rather than a dimmed one, while an available rally (open-class shakedown, starter
+	# eligible) shows its box at full opacity. The 3D flag stands at BOTH pins either way,
+	# so the map still marks where the unavailable rally is. (Locked SPECIALS are the one
+	# exception — see the teaser test below.)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var showdown := _pin_for(hq, "the_showdown")
+	var hidden := _unavailable_ordinary_pin(hq)
+	if hidden == null:
+		return  # every ordinary rally is currently enterable; nothing to assert
 	var shakedown := _pin_for(hq, "shakedown")
-	assert_eq(showdown.find_children("*", "Sprite3D", true, false).size(), 0,
-		"an unavailable rally has no floating menu box at all")
-	assert_false(showdown.has_meta("label_panel"),
+	assert_eq(hidden.find_children("*", "Sprite3D", true, false).size(), 0,
+		"an unavailable ordinary rally has no floating menu box at all")
+	assert_false(hidden.has_meta("label_panel"),
 		"and no panel for the focus cursor to paint")
 	assert_eq(_pin_label_sprite(shakedown).modulate, Color.WHITE,
 		"an available rally's box is shown at full opacity")
-	for pin in [showdown, shakedown]:
+	for pin in [hidden, shakedown]:
 		assert_gt((pin as Node3D).find_children("*", "MeshInstance3D", true, false).size(), 0,
 			"the 3D flag is built for available and unavailable rallies alike")
+
+
+# The id of the special on the HIGHEST rung — certain to be locked on a fresh profile,
+# without pinning which rally that is.
+func _top_special_id() -> String:
+	var best := ""
+	var best_stars := -1
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally) and int(rally.get("requires_stars", 0)) > best_stars:
+			best_stars = int(rally.get("requires_stars", 0))
+			best = String(rally["id"])
+	return best
+
+
+# Some ORDINARY rally pin that is currently locked, or null if none is.
+func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
+	for pin in hq._pins:
+		var rally := RallyLibrary.by_id(String(pin.get_meta("rally_id")))
+		if not RallyLibrary.is_special(rally) and bool(pin.get_meta("locked")):
+			return pin
+	return null
+
+
+func test_hq_locked_special_shows_a_full_opacity_teaser_box() -> void:
+	# THE documented exception to the all-or-nothing readout rule. A locked special still
+	# gets a box — at FULL opacity but non-pickable — because locking must hide
+	# availability, never information: the player should see what exists and where it is
+	# earned long before they can have it.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var pin := _pin_for(hq, _top_special_id())
+	assert_true(bool(pin.get_meta("locked")), "setup: this special is still locked")
+	assert_gt(pin.find_children("*", "Sprite3D", true, false).size(), 0,
+		"a locked special still shows its teaser box")
+	assert_eq(_pin_label_sprite(pin).modulate, Color.WHITE,
+		"the teaser is at FULL opacity, not dimmed — the box is live-looking, just not a target")
+	assert_eq(pin.find_children("*", "Area3D", true, false).size(), 0,
+		"but it is not pickable")
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:
@@ -1657,15 +1701,21 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	# Derived from the eligibility rule + owned roster (not a pinned model name), so
 	# it stays correct if cars or the rally's p/w band are retuned — what it really
 	# asserts is that HQ parks the library's enterable set, no more, no less.
+	# Derived over the player's OWNED cars (not bare catalogue specs), because eligibility
+	# is judged with a `floor_meta` — the car's upgrade CEILING — for the pw_MIN floor. A car
+	# that is currently too weak but could be upgraded into the band IS eligible, so the
+	# expectation has to be built the same way hq._entry_plan builds it or it under-counts.
 	var rally := RallyLibrary.by_id("fx_rwd_band")
 	var expected := {}
-	for model_id in ["fx_light_rwd", "fx_awd", "fx_rwd_coupe"]:  # the player's owned roster here
-		var spec := CarLibrary.by_id(model_id)
-		var frac := RallyLibrary.qualifying_detune(rally, spec)
-		var over_cap: bool = CarLibrary.power_to_weight(spec) * RallyLibrary.KW_KG_TO_HP_TONNE \
+	for car in _save.profile.get("cars", []):
+		var spec := CarLibrary.by_id(String(car.get("model_id", "")))
+		var meta := UpgradeLibrary.effective_meta(car, spec.duplicate())
+		var ceiling := UpgradeLibrary.max_potential_meta(car, spec.duplicate())
+		var frac := RallyLibrary.qualifying_detune(rally, meta)
+		var over_cap: bool = CarLibrary.power_to_weight(meta) * RallyLibrary.KW_KG_TO_HP_TONNE \
 			> float(rally["restriction"].get("pw_max", INF))
-		if RallyLibrary.is_eligible(rally, spec) or (over_cap and frac > 0.0):
-			expected[spec["name"]] = true
+		if RallyLibrary.is_eligible(rally, meta, ceiling) or (over_cap and frac > 0.0):
+			expected[String(spec["name"])] = true
 	await _await_lineup(hq)
 	var parked := {}
 	for car in hq._cars:
@@ -1969,7 +2019,7 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 	assert_gt(pw_coupe, pw_starter, "the coupe out-powers the starter (else this test proves nothing)")
 	var rallies: Array[Dictionary] = [
 		{
-			"id": "fx_capped", "name": "Fixture Capped", "difficulty": 1, "showdown": false,
+			"id": "fx_capped", "name": "Fixture Capped", "difficulty": 1, "special": false,
 			"map_pos": Vector2(0.3, 0.3),
 			"restriction": {"pw_max": (pw_starter + pw_coupe) * 0.5},
 			"events": [
@@ -1977,7 +2027,8 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 			],
 		},
 		{
-			"id": "fx_showdown", "name": "Fixture Showdown", "difficulty": 4, "showdown": true,
+			"id": "fx_showdown", "name": "Fixture Showdown", "difficulty": 4, "special": true,
+			"requires_stars": 0,
 			"map_pos": Vector2(0.7, 0.7), "restriction": {},
 			"events": [
 				{"seed": 21, "turn_count": 4}, {"seed": 22, "turn_count": 4}, {"seed": 23, "turn_count": 4},
@@ -2052,7 +2103,7 @@ func test_hq_carpark_excludes_a_car_below_the_band_floor() -> void:
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.max_potential_meta(owned, entry)) * RallyLibrary.KW_KG_TO_HP_TONNE
 	var rallies: Array[Dictionary] = [
 		{
-			"id": "fx_high_band", "name": "Fixture High Band", "difficulty": 2, "showdown": false,
+			"id": "fx_high_band", "name": "Fixture High Band", "difficulty": 2, "special": false,
 			"map_pos": Vector2(0.4, 0.4),
 			# A band whose FLOOR sits above the car's max potential -> ineligible.
 			"restriction": {"pw_min": pw * 1.5},
@@ -2528,12 +2579,12 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	assert_true(is_instance_valid(sc._reveal), "page 2's button is what collects the reward")
 	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
 		"the rally has not resumed behind the reveal")
-	# A normal slottable part is now granted fitted-disabled with a single "Next" — no
-	# Apply/Keep choice (the player enables it later in the upgrades menu). Consumables
-	# and the drivetrain kit also auto-finish.
-	if not UpgradeLibrary.is_consumable(won) and UpgradeLibrary.slot_of(won) != "" \
-			and UpgradeLibrary.slot_of(won) != "drivetrain":
-		assert_false(sc._reveal._choice_pending, "a slottable reward no longer opens Apply/Keep")
+	# A normal slottable part is granted fitted-disabled with a single "Next" — there is no
+	# Apply/Keep choice any more (the player enables it later in the upgrades menu), and the
+	# assertion below on the lone Next action is what pins that. This used to also poke a
+	# `_choice_pending` flag on the reveal, but that state went with the Apply/Keep box
+	# itself (see upgrade_reveal.gd) — so it asserted against a property that no longer
+	# exists, and only stayed green while the draw happened to hand back a consumable.
 	await get_tree().process_frame
 	# There's no separate host-side Continue button any more — the reveal's own
 	# Upgrades/Next row (UpgradeReveal._show_actions) is the only affordance, and
@@ -2802,7 +2853,7 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 	var driven_id := int(driven["instance_id"])
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
-		"rally_name": "Coastal Sprint", "showdown_won": false,
+		"rally_name": "Coastal Sprint", "game_won": false,
 		"car_reward": "fx_rwd_coupe", "car_reward_is_new": true,
 		"upgrades": ["fx_turbo_small", "fx_aero"],  # recorded, but NOT revealed here
 		"car_instance_id": driven_id,
@@ -2944,6 +2995,7 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 	var a: Dictionary = _save.selected_car()
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
+	_unlock_engine_swaps()
 	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
@@ -2968,6 +3020,7 @@ func test_engine_swap_works_on_a_damaged_car_and_leaves_hp() -> void:
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
 	_save.apply_damage(a_id, 1.0)  # lift car below 100% — no longer a blocker
 	var hp_before := float(_save.get_car(a_id)["hp"])
+	_unlock_engine_swaps()
 	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
@@ -2992,6 +3045,10 @@ func test_engine_swap_blocked_without_a_token() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	# The capability must be UNLOCKED so the missing token is genuinely what blocks the swap.
+	# Without this the confirm popup takes its star-locked branch instead, and the test would
+	# stay green even if the token check were deleted outright.
+	_unlock_engine_swaps()
 	var a: Dictionary = _save.selected_car()
 	var a_id := int(a["instance_id"])
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
@@ -3106,6 +3163,14 @@ func test_detune_slider_persists_as_fraction() -> void:
 		"a 50% slider stores a 0.5 torque fraction")
 
 
+# Engine swapping is a star-gated CAPABILITY (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY): tokens
+# drop and bank from the start but cannot be SPENT until that special is won. Tests below
+# exercise the token/partner rules, so they open the capability gate first — otherwise the
+# lock (correctly) masks everything else. `_engine_swap_lock_test` covers the locked state.
+func _unlock_engine_swaps() -> void:
+	_save.complete_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60_000, 1)
+
+
 func _find_swap_button(hq: Node3D) -> Button:
 	for row in hq._lift_upgrades_box.get_children():
 		if row.is_queued_for_deletion():
@@ -3116,12 +3181,38 @@ func _find_swap_button(hq: Node3D) -> Button:
 	return null
 
 
+func test_swap_row_is_absent_until_the_capability_special_is_won() -> void:
+	# The swap row is HIDDEN while the capability is star-locked — not shown disabled. Same
+	# rule as a star-locked part option: a permanently-dead row only raises "when do I get
+	# this?", which the garage cannot answer. Holding a partner AND tokens must not conjure
+	# it; only winning the gating special does.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_false(RallyLibrary.engine_swaps_unlocked(_save.profile), "setup: swapping is locked")
+	_save.grant_car("fx_rwd_coupe")            # a partner exists...
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 2)  # ...and tokens are banked
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	assert_null(_find_swap_button(hq),
+		"no swap row at all while locked, even with a partner and tokens in hand")
+	# Winning the gating special brings the row in, enabled.
+	_unlock_engine_swaps()
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	var btn := _find_swap_button(hq)
+	assert_not_null(btn, "winning the special brings the swap row in")
+	assert_false(btn.disabled, "and it is usable")
+
+
 func test_swap_button_disabled_without_an_eligible_partner() -> void:
 	# before_each grants a single Fixture Roadster starter — no other car to swap with, so the
 	# Swap Engine button is disabled. A token owned + a second car both present enables it.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	_unlock_engine_swaps()
 	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)  # isolate partner-presence as the variable
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -3142,6 +3233,7 @@ func test_swap_button_without_a_token_is_disabled_until_one_is_owned() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	_unlock_engine_swaps()
 	_save.grant_car("fx_rwd_coupe")  # a partner exists, but no token owned
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -3395,6 +3487,7 @@ func test_engine_swap_button_is_focusable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	_unlock_engine_swaps()
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var found := false
@@ -4798,16 +4891,19 @@ func test_tapping_a_kind_tab_selects_it_without_starting_the_challenge() -> void
 # (those are tunables) and never a shipped rally (the roster is synthetic).
 
 # A synthetic three-rally roster: one anyone can enter, one gated behind a power floor
-# nothing in the fixture garage can reach, and a showdown (locked until the rest are done).
+# nothing in the fixture garage can reach, and a SPECIAL locked behind a star gate. The
+# gate is set to exactly one 1st-place finish's worth of stars, so completing a single
+# rally opens it — the same shape the old "complete the region" gate had.
 func _install_reveal_roster() -> void:
 	RallyLibrary.override_for_test([
 		{"id": "rv_open", "name": "Reveal Open", "region": "home", "difficulty": 1,
-			"showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+			"special": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
 		{"id": "rv_hot", "name": "Reveal Hot", "region": "home", "difficulty": 2,
-			"showdown": false, "map_pos": Vector2(0.6, 0.5),
+			"special": false, "map_pos": Vector2(0.6, 0.5),
 			"restriction": {"pw_min": 5000.0}, "events": []},
-		{"id": "rv_showdown", "name": "Reveal Showdown", "region": "home", "difficulty": 3,
-			"showdown": true, "map_pos": Vector2(0.5, 0.15), "restriction": {}, "events": []},
+		{"id": "rv_special", "name": "Reveal Special", "region": "home", "difficulty": 3,
+			"special": true, "requires_stars": RallyLibrary.MAX_STARS_PER_RALLY,
+			"map_pos": Vector2(0.5, 0.15), "restriction": {}, "events": []},
 	])
 
 
@@ -4840,7 +4936,7 @@ func test_reveal_queue_holds_a_rally_until_a_car_can_enter_it() -> void:
 	var pending: Array = hq._pending_reveals()
 	assert_true(pending.has("rv_open"), "an open rally with a car that can enter it is revealed")
 	assert_false(pending.has("rv_hot"), "a rally no owned car can enter is held back")
-	assert_false(pending.has("rv_showdown"), "a locked showdown is not revealed")
+	assert_false(pending.has("rv_special"), "a star-locked special is not revealed")
 
 	_grant_featherweight()
 	assert_true(hq._pending_reveals().has("rv_hot"),
@@ -4881,10 +4977,10 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 	# clause (seeding's job is "anything already open already reads as seen", not
 	# "anything the player can currently enter") — rv_hot is unlocked (no reveal_after)
 	# even though nothing in the garage can enter it yet, so it gets silently seeded too.
-	# Only a rally that is genuinely still LOCKED at seed time — rv_showdown, gated on
-	# its region — survives the pass to become a real future reveal.
+	# Only a rally that is genuinely still LOCKED at seed time — rv_special, gated on the
+	# star total — survives the pass to become a real future reveal.
 	_install_reveal_roster()
-	_save.complete_rally("rv_open", 60_000, 1)  # career progress, no reveal flags
+	_save.complete_rally("rv_open", 60_000, 2)  # career progress (2nd: short of the star gate)
 	assert_true(_save.needs_reveal_seeding())
 	_save.save_now()
 	_save.load_or_new()  # the profile becoming live is what must trigger the backfill
@@ -4898,8 +4994,8 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 
 	# ...and a rally that was still LOCKED at seed time still gets a real reveal once it
 	# actually unlocks — seeding backfilling the open roster does not swallow that.
-	_save.complete_rally("rv_hot", 45_000, 1)  # completes region "home" -> opens its showdown
-	assert_true(hq._pending_reveals().has("rv_showdown"),
+	_save.complete_rally("rv_hot", 45_000, 1)  # a 1st place -> enough stars to open the special
+	assert_true(hq._pending_reveals().has("rv_special"),
 		"seeding never swallows a rally that was still locked at seed time")
 
 

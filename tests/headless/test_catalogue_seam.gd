@@ -56,7 +56,7 @@ func test_engine_reset_restores_the_real_catalogue() -> void:
 
 func _fake_rallies() -> Array[Dictionary]:
 	return [
-		{"id": "seam_r", "name": "Seam Rally", "region": "home", "showdown": false,
+		{"id": "seam_r", "name": "Seam Rally", "region": "home", "special": false,
 		 "restriction": {}, "events": [{"seed": 1, "turn_count": 3}]},
 	] as Array[Dictionary]
 
@@ -79,7 +79,7 @@ func test_rally_empty_override_falls_back_to_real() -> void:
 
 func _fake_upgrades() -> Array[Dictionary]:
 	return [
-		{"id": "seam_u", "name": "Seam Upgrade", "slot": "turbo", "tier": 1,
+		{"id": "seam_u", "name": "Seam Upgrade", "slot": "turbo",
 		 "consumable": false, "effect": {"mass_mult": 0.9}},
 	] as Array[Dictionary]
 

@@ -61,6 +61,31 @@ const TURBO_AIR_LP_HZ := 1800.0
 const SUPERCHARGER_BELT_HZ_PER_RPM := 0.12  # whine pitch = rpm * this (belt ratio)
 const ANTILAG_BANG_INTERVAL := 0.08  # seconds between anti-lag bangs while coasting
 
+# --- Nitrous (features/nitrous.md) -------------------------------------------
+# Nitrous is synthesised, like every other forced-induction layer here: no sample
+# assets. It is deliberately ALL HISS and NO TONE — a car can carry a turbo
+# (band-passed noise whistle), a supercharger (tonal belt whine) and nitrous at
+# once, so the nitrous layer has to stay identifiable against both. It is also
+# deliberately NOT given a "power"/loudness layer: nitrous multiplies torque, so
+# the rpm the sim reports already climbs faster and the existing rpm tracking
+# makes the car sound faster. A power layer would double-count that.
+# Filtered noise carries a lower RMS than a tonal wavetable, so these levels sit
+# nearer TURBO_WHISTLE_LEVEL (0.5) than TURBO_TONE_LEVEL (0.12).
+const NITROUS_HISS_LEVEL := 0.4    # sustained low-passed hiss while delivering
+const NITROUS_CRACK_LEVEL := 0.45  # solenoid crack on the delivery edge
+# Fallback nitrous mix level, used only until a GameConfig is applied (a bare synth in a
+# test). Real play caches GameConfig.engine_nitrous_hiss_gain into _nitrous_hiss_gain.
+const NITROUS_HISS_GAIN := 0.7
+# Low-pass cutoffs (Hz) the hiss sweeps between. The sustain sits at the bright
+# end; the cutoff cue slides down to the dark end as the tail decays, which is
+# what makes the release/dry-tank read as a DESCENDING hiss rather than a fade.
+const NITROUS_HISS_LP_HZ := 3600.0
+const NITROUS_TAIL_LP_HZ := 450.0
+const NITROUS_HISS_ATTACK_RATE := 60.0    # one-pole rate the sustain ramps in at
+const NITROUS_TAIL_DECAY_MS := 180.0      # descending cutoff-cue tail length
+const NITROUS_CRACK_DECAY_MS := 70.0      # solenoid crack tail
+const NITROUS_CRACK_ATTACK_RATE := 500.0  # softer than a BOV's instant attack
+
 # Precomputed white-noise table. The per-sample loop needs up to five independent
 # noise values (engine noise floor, crackle, turbo whistle, blow-off, anti-lag);
 # calling _rng.randf() for each is ~5 bound-method calls per sample — at 22 kHz
@@ -108,6 +133,7 @@ var _ni_crackle := 1013
 var _ni_whistle := 2039
 var _ni_bov := 3067
 var _ni_antilag := 601
+var _ni_nitrous := 1523
 var _voice_bank: Array[PackedFloat32Array] = []  # [VOICE_LOAD_TABLES] of [VOICE_TABLE_SIZE]
 var _turbo_whistle_gain := 0.0
 # Turbo whistle = resonant band-pass-filtered noise. Sweep range + resonance + the
@@ -131,12 +157,27 @@ var _turbo_antilag_bang_gain := 0.0
 var _antilag_decay := 0.0  # per-sample decay factor for the anti-lag bang (from decay_ms)
 var _supercharger := false
 var _supercharger_whine_gain := 0.0
+var _nitrous_hiss_gain := NITROUS_HISS_GAIN  # cached from config in configure()
 var _whistle_table := PackedFloat32Array()  # single-cycle whine tone (supercharger), baked once
 var _whine_phase := 0.0
 var _bov_env := 0.0  # decaying blow-off burst amplitude
 var _antilag_env := 0.0  # decaying anti-lag bang amplitude
 var _antilag_timer := 0.0  # spacing between anti-lag bangs while coasting on boost
 var _prev_bov := false  # edge-detect the blow-off event
+# Nitrous layer state. _n2o_hiss is the sustain envelope (ramps in while nitrous
+# delivers), _n2o_tail the descending cutoff cue, _n2o_crack the solenoid
+# transient (with its own soft attack ramp), _n2o_lp the shared one-pole
+# low-pass state whose coefficient is lerped by brightness.
+var _n2o_hiss := 0.0
+var _n2o_tail := 0.0
+var _n2o_crack := 0.0
+var _n2o_crack_attack := 0.0
+var _n2o_lp := 0.0
+var _n2o_lp_coeff_hi := 0.0  # bright (sustain) cutoff coefficient
+var _n2o_lp_coeff_lo := 0.0  # dark (end-of-tail) cutoff coefficient
+var _n2o_tail_decay := 0.0
+var _n2o_crack_decay := 0.0
+var _prev_nitrous := false  # edge-detect nitrous release (for the cutoff cue)
 
 
 func _init(cfg: GameConfig, mix_rate: float) -> void:
@@ -168,6 +209,13 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_antilag_decay = _decay_factor(cfg.engine_turbo_antilag_decay_ms)
 	_supercharger = cfg.supercharger_enabled
 	_supercharger_whine_gain = cfg.engine_supercharger_whine_gain
+	_nitrous_hiss_gain = cfg.engine_nitrous_hiss_gain
+	# Nitrous coefficients: rate-derived, so they are resolved here (like the
+	# air-rush LP) and the per-sample path only lerps between them.
+	_n2o_lp_coeff_hi = 1.0 - exp(-TAU * NITROUS_HISS_LP_HZ / _mix_rate)
+	_n2o_lp_coeff_lo = 1.0 - exp(-TAU * NITROUS_TAIL_LP_HZ / _mix_rate)
+	_n2o_tail_decay = _decay_factor(NITROUS_TAIL_DECAY_MS)
+	_n2o_crack_decay = _decay_factor(NITROUS_CRACK_DECAY_MS)
 	_build_whistle_table()
 	_rng.seed = 1  # deterministic for tests
 	_build_noise_table()
@@ -182,7 +230,7 @@ func _build_noise_table() -> void:
 		_noise_table[i] = _rng.randf() * 2.0 - 1.0
 
 
-func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false, boost := 0.0, turbo_spin := 0.0, bov_event := false, antilag_active := false) -> void:
+func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false, boost := 0.0, turbo_spin := 0.0, bov_event := false, antilag_active := false, nitrous_on := false, nitrous_trigger := false, nitrous_empty := false) -> void:
 	var dt := 1.0 / _mix_rate
 	var smooth := clampf(_smooth_rate * dt, 0.0, 1.0)
 	# A shift opens the clutch and cuts throttle, but the engine keeps spinning:
@@ -219,6 +267,31 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 	# are constant across a fill()), so the per-sample loop is just the cheap SVF
 	# recurrence with no transcendental. TPT/Cytomic SVF: unconditionally stable at any
 	# centre frequency. Centre freq sweeps freq_min→freq_max with shaft speed.
+	# Nitrous envelopes are armed once per buffer off the edges the caller passes.
+	# `nitrous_on` is the DELIVERY state, never "nitrous is fitted" — that's what
+	# keeps the HQ garage preview silent on a nitrous-equipped car.
+	var n2o_attack := clampf(NITROUS_HISS_ATTACK_RATE * dt, 0.0, 1.0)
+	var n2o_crack_attack := clampf(NITROUS_CRACK_ATTACK_RATE * dt, 0.0, 1.0)
+	if nitrous_trigger:
+		_n2o_crack = NITROUS_CRACK_LEVEL
+		_n2o_crack_attack = 0.0  # soft(er) attack: ramped in, unlike the BOV's instant hit
+	# Cutoff cue on BOTH a driver release and the tank running dry. The dry case is
+	# armed at full strength regardless of the current sustain level — it's the
+	# cutoff the player did NOT choose, so it has to be unmistakable.
+	if nitrous_empty or (_prev_nitrous and not nitrous_on):
+		_n2o_tail = maxf(_n2o_tail, 1.0 if nitrous_empty else _n2o_hiss)
+		_n2o_hiss = 0.0
+	_prev_nitrous = nitrous_on
+	# Nitrous, resolved once per buffer. The three envelopes can only be ARMED before the
+	# loop (the trigger/empty handling above) or grow from nitrous_on, so whether the layer
+	# can make any sound at all is knowable here — no need to re-test it per sample.
+	var n2o_active := (nitrous_on or _n2o_hiss > 0.0001 or _n2o_tail > 0.0001
+		or _n2o_crack > 0.0001)
+	var n2o_level := _nitrous_hiss_gain * NITROUS_HISS_LEVEL
+	# Just the config gain: the crack's own NITROUS_CRACK_LEVEL is already baked into the
+	# _n2o_crack envelope when it is armed on the trigger edge above.
+	var n2o_crack_gain := _nitrous_hiss_gain
+	var n2o_lp_span := _n2o_lp_coeff_hi - _n2o_lp_coeff_lo
 	var whistle_active := _turbo_whistle_gain != 0.0 and boost > 0.0
 	var svf_a1 := 0.0
 	var svf_a2 := 0.0
@@ -303,6 +376,35 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 		if _antilag_env > 0.0:
 			_ni_antilag = (_ni_antilag + 11) & NOISE_TABLE_MASK
 			noise += _noise_table[_ni_antilag] * _antilag_env
+		# Nitrous: broadband hiss, low-passed, sitting UNDER the engine note (it
+		# goes into `noise`, which _master_gain never scales, so it layers rather
+		# than masking the voice). Brightness = sustain + tail, so the release /
+		# dry-tank tail slides the cutoff DOWN as it decays — a descending hiss.
+		# No tonal component by design; see the nitrous constants above.
+		#
+		# Gated on n2o_active, resolved ONCE per buffer above: an NA car — and a nitrous car
+		# that isn't spraying — pays nothing per sample, matching whistle_active / _bov_env.
+		if n2o_active:
+			if nitrous_on:
+				_n2o_hiss = lerpf(_n2o_hiss, 1.0, n2o_attack)
+			_n2o_tail *= _n2o_tail_decay
+			_n2o_crack *= _n2o_crack_decay
+			var n2o_amp := _n2o_hiss + _n2o_tail
+			if n2o_amp > 0.0001 or _n2o_crack > 0.0001:
+				_ni_nitrous = (_ni_nitrous + 13) & NOISE_TABLE_MASK
+				var nn := _noise_table[_ni_nitrous]
+				# Both terms are non-negative by construction, so minf is enough (one
+				# compare, not two), and the cutoff blend is a hoisted span rather than a
+				# per-sample lerpf between two constants.
+				var bright := minf(n2o_amp, 1.0)
+				_n2o_lp += (_n2o_lp_coeff_lo + n2o_lp_span * bright) * (nn - _n2o_lp)
+				noise += _n2o_lp * n2o_amp * n2o_level
+				if _n2o_crack > 0.0001:
+					# Scaled by the same n2o_level as the hiss, so the config gain really is
+					# the whole layer's level — at 0 the solenoid crack goes silent too,
+					# which is what engine_nitrous_hiss_gain's "0 = off" promises.
+					_n2o_crack_attack = lerpf(_n2o_crack_attack, 1.0, n2o_crack_attack)
+					noise += nn * _n2o_crack * _n2o_crack_attack * n2o_crack_gain
 		var env := lerpf(_idle_gain, 1.0, _sm_throttle) * cut
 		# DC-block the combined signal BEFORE the soft clipper (see DC_BLOCK_R) so
 		# the positive-biased voice is centred and overdrive swings both rails

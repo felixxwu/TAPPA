@@ -8,15 +8,22 @@ authored libraries + the save profile, with no state beyond an injected RNG
 
 **Scope:** it answers *what* to grant. It does **not** own *when* a reward fires
 (the flow controller, `features/rally-session.md`) or *how* it's revealed (menus
-rig 5). The draw functions return an id; the **caller** delivers it via
-`Save.add_item` / `Save.grant_car` and then `Save.save()`. Saving immediately
-after a draw resolves is what makes the unseeded RNG savescum-proof — reloading
-can't re-roll a grant (no seeded reward RNG needed).
+rig 5). The draw functions return an id (or `RewardSystem.NO_REWARD`, `""`, for
+"nothing this time" — see below); the **caller** delivers a real id via
+`Save.add_item` / `Save.grant_car` and then `Save.save()`.
 
-## Tier model & the progress clamp
+Savescum-proofing does **not** come from that immediate save (a failed roll
+writes nothing at all, so there'd be nothing to protect). It comes from
+`rally_session.gd`'s `_event_index` / `_event_times_ms` being **pure session
+state, never persisted** (`report_event_result`) — there is no mid-rally save
+to reload into. Re-rolling a failed box means replaying the rally from event 1
+with the damage already banked, not reloading a save.
 
-Both upgrades (`UpgradeDef.tier`) and cars (`CarLibrary` `reward_tier`) carry an
-integer tier. A draw resolves at one **target tier**:
+## Tier model — a CAR-draw concept only
+
+`UpgradeDef.tier` is **gone**; upgrades are no longer tier-gated (see
+`upgrade-catalogue.md` for what replaced it). `CarLibrary`'s `reward_tier`
+survives, and cars still resolve at one **target tier**:
 
 ```
 target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
@@ -28,52 +35,92 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
   top-tier reward. The curve values are a `GameConfig` tunable in the balance
   pass (deferred).
 - `target_tier(rally_difficulty, profile)` exposes the clamp for UI/tests.
+  `challenge_session.gd` also calls `tier_ceiling()` directly to derive
+  challenge difficulty.
+
+The "harder rally → better prize" correlation now lives **only** on this car
+draw — accepted as a loss on the upgrade side (see below).
+
+## Star gate (upgrades)
+
+The best upgrades are withheld from the reward pool until the player has
+**won** a star-gated special event, replacing the old tier walk entirely.
+`UpgradeLibrary.unlocked_by_rally(id)` reads the authored gate;
+`UpgradeLibrary.rally_gate_met(item_id, profile)` (`scripts/upgrade_library.gd`
+→ `rally_gate_met`) returns `true` when the field is absent, else whether that
+rally is recorded `completed` in `profile.rallies`. `completed` already means a
+**top-3 finish** (`Save.complete_rally`), so the gate genuinely reads "was the
+event won", not merely "does the player have enough stars".
+
+The gate is about **earning** a part, never about **keeping** one:
+`UpgradeLibrary.apply` walks `installed_upgrades` and never consults the gate,
+so a part fitted before a gate closes (or that never needed one) keeps working
+regardless of the player's current star total.
+
+Gated parts, per the authored `UPGRADES` table: `turbo_large` →
+`sp_woodland_trial`, `drivetrain_swap` (renamed "Drivetrain Conversion") →
+`sp_dust_trial`, `supercharger` → `sp_lakeshore_trial`, and the nitrous ladder
+`nitrous` / `nitrous_tank` / `nitrous_shot` / `nitrous_race` →
+`the_showdown` / `hc_showdown` / `gr_showdown` / `gc_showdown` respectively.
+See `upgrade-catalogue.md` and (for the nitrous mechanic itself)
+`features/nitrous.md`.
 
 ## Upgrade draw (per event)
 
-`draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`
-checks the **mystery-box branch** first, before building the normal pool: if
-`_car_has_nothing_left(owned_car)` (every non-consumable, non-`free` part this
-car is eligible for at every tier up to `MAX_TIER` is already in
-`installed_upgrades` — checked against the absolute ceiling, not the
-progress-clamped `target_tier`, so a car isn't "maxed" just because progress
-hasn't raised the tier ceiling yet) AND the player holds at least
-`MYSTERY_BOX_TOKEN_THRESHOLD` engine swap tokens (`_tokens_owned(profile)`,
-read straight off `profile.get("inventory", {})` the same tolerant way
-`Save.engine_swap_tokens_owned()` does — `RewardSystem` never touches the
-`Save` autoload) AND `_other_car_has_room(profile, owned_car)` (some other
-owned car in `profile.cars` is NOT itself maxed — otherwise the box would have
-nowhere to land), the draw returns `UpgradeLibrary.MYSTERY_BOX_ID` instead of
-picking from the usual pool. Any one condition failing falls through to the
-unchanged normal draw. This exclusion survives ONLY here, because it gates a
-different question: the car being rewarded is by definition full, so a box is
-only worth awarding if somewhere else can receive it. `any_car_has_room(profile)`
-is the room-check exposed publicly for the HQ garage row's Mystery Box button
-(re-verified at open-time, since the garage can change between grant and open)
-and it excludes NOTHING — see *Opening it* below.
+`RewardSystem.draw_upgrade(profile, rng=null, owned_car={}) -> String` — note
+the old `rally_difficulty` parameter is **gone**, since tier no longer governs
+the pool. It can return `RewardSystem.NO_REWARD` (`""`), the sentinel for "no
+event reward" — see *Retiring "always pays out"* below.
 
-Otherwise: pool = parts at the target tier (stepping down to the nearest lower tier that has
-an eligible part, since not every tier has one; `_parts_at_or_below` also skips
-**`free` parts** — the ballast is always available, so it's never a reward —
-and any part whose `requires_upgrade_id` **prerequisite isn't yet fitted to the
-driven car** (per-car, not garage-wide), via `UpgradeLibrary.prerequisite_met`;
-e.g. Big Turbo stays out of the pool until that car has Small Turbo, and the
-Supercharger until it has Big Turbo — see
-`upgrade-catalogue.md`'s "Prerequisite gate") **plus
-the
-engine swap token as a low-weight entry** (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, a
-placeholder). The **mystery box is deliberately NOT in this pool** — it is awarded by
-the gated branch above, and adding it here would hand out a box in exactly the cases
-that gate exists to exclude. Parts **already
-fitted to `owned_car`** — the driven car the flow controller passes in — are
-**excluded**, so the draw never awards a part the car already carries. This
-exclusion is also what dedups the multi-reward draw: the flow controller fits
-each won part onto the car **before** the next draw, so re-reading the live car
-each pass stops the same part being won twice in one rally. With every part
-at/below the tier fitted, only the swap token remains — which is what keeps the draw
-always paying out. (The retired repair kit sat in this pool too, but at weight 0, so
-it never actually dropped.) Weighted pick → returns an `item_id`;
-most rolls are a part, occasionally a consumable.
+Pool building goes through `_eligible_parts(profile, exclude, owned_car)`, a
+**flat** filter (no tier walk) over `UpgradeLibrary.all()` that excludes:
+
+- consumables (added separately as weighted pool entries),
+- `free` parts (the ballast — always available, never a reward),
+- ids already in `exclude` (fitted to the driven car — this is also what
+  dedups a multi-reward rally, since the flow controller fits each won part
+  before the next draw),
+- parts whose per-car `UpgradeLibrary.prerequisite_met` fails (e.g. Big Turbo
+  stays out until that car has Small Turbo — see
+  `upgrade-catalogue.md`'s "Prerequisite gate"),
+- parts whose star gate `UpgradeLibrary.rally_gate_met` fails.
+
+**Rule, in order:**
+
+1. While `_eligible_parts` is non-empty, award a real part — weighted pick
+   over `{"id": item_id, "weight": UpgradeLibrary.pool_weight(item_id)}` for
+   every eligible part, plus the engine swap token at its own low weight
+   (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, placeholder). This is the common case and
+   must never be pre-empted by what follows.
+2. Once the car is maxed (`_eligible_parts` empty) — a mystery-box roll, gated
+   by `_box_gate_open`: requires `_other_car_has_room` (a box with nowhere to
+   land is useless, so that failing means nothing is awarded), and only once
+   `_engine_swaps_unlocked` (`RallyLibrary.engine_swaps_unlocked`) does it also
+   require `_tokens_owned(profile) >= MYSTERY_BOX_TOKEN_THRESHOLD` — before
+   that unlock, tokens are inert, so gating on them would be unfair, and a
+   pre-unlock maxed car pays out a box **more** often, not less. When the gate
+   is open, roll succeeds with probability `_box_chance = 1/(boxes_owned+1)`;
+   the `+1` is load-bearing — a literal `1/owned` is undefined at 0 and equals
+   1.0 at 1, so both would be certain, whereas `1/(owned+1)` gives 0→certain,
+   1→1/2, 2→1/3, … a self-throttling tail.
+3. Otherwise: `NO_REWARD` (`""`). No consolation token, no reveal.
+
+The **mystery box is deliberately NOT in the weighted pool** — it is only
+ever awarded by branch 2, and putting it in the pool would hand one out in
+exactly the cases that gate exists to exclude.
+
+**"Every event always awards something" is retired.** Star-gating
+(`_eligible_parts`) makes a car read as maxed much earlier than the old tier
+ceiling did, so keeping the always-pays-out guarantee would have degenerated
+into a mystery-box firehose. The swap token remains a legitimate low-weight
+**pool entry** — it still drops — but it is no longer the always-there payout
+floor that backstopped every draw.
+
+`_car_has_nothing_left(profile, owned_car)` now takes a `profile` and checks
+`_eligible_parts(profile, ...)` (the **gated** pool): a car with every
+*currently unlocked* part fitted counts as maxed, even though more parts may
+unlock later as stars accrue. `any_car_has_room(profile)` and
+`pick_mystery_box_grant(profile, rng)` also route through `_eligible_parts`.
 
 **When:** one upgrade is drawn at each **non-final event boundary** — i.e. after
 events 1 and 2 of a 3-event rally, in `RallySession.report_event_result` (not once
@@ -83,8 +130,12 @@ final event awards no upgrade (the podium reveals the **car** instead).
 
 **Delivery:** upgrades are **car-bound** — the flow controller fits each drawn
 part straight onto the driven car **disabled**
-(`Save.install_upgrade(car_instance_id, item_id, false)`) and saves immediately
-(savescum-proof); a drawn consumable goes to `Save.add_item` instead.
+(`Save.install_upgrade(car_instance_id, item_id, false)`) and saves; a drawn
+consumable goes to `Save.add_item` instead. On a `NO_REWARD` (`""`) draw, the
+flow controller skips the install/append entirely and does **not** emit
+`upgrade_revealed` — the standings interstitial still fires separately, so the
+player goes straight to it with no reward beat. See *Savescum* above for why
+none of this needs a seeded RNG.
 The reward is then revealed on **that event's standings interstitial** via the
 shared `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — same slot-machine
 spinner as the podium, anchored to the **bottom** of the screen so it doesn't
@@ -122,11 +173,11 @@ upgrade to a *different* owned car.
 rng=null) -> Dictionary`: a pure resolver (no `Save`
 mutation) that picks a uniformly random owned car — **every** car is a
 candidate, the currently selected one included — among those with a
-non-empty `MAX_TIER`-eligible pool (`_parts_at_or_below(MAX_TIER, ...)` on the
-candidate, so the recipient's own tier/prerequisite gating is respected —
-e.g. it won't hand out Big Turbo before Small Turbo), then a uniformly random
-item from that pool. Returns `{"instance_id": ..., "item_id": ...}`, or `{}`
-if no car has room.
+non-empty `_eligible_parts(profile, ...)` pool on the candidate, so the
+recipient's own prerequisite AND star gating are respected — e.g. it won't
+hand out Big Turbo before Small Turbo, or a still-star-gated part before its
+event is won — then a uniformly random item from that pool. Returns
+`{"instance_id": ..., "item_id": ...}`, or `{}` if no car has room.
 
 There used to be a "never the car it came from" exclusion here, on the
 reasoning that a box was won BY a maxed car through the rally reward loop, so
@@ -188,8 +239,9 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
    is at or below the **progress-clamped draw ceiling**:
-   `clamp(_difficulty_to_tier(rally_difficulty), 1, tier_ceiling(completed_count))`
-   — the SAME progress clamp the per-event upgrade draw uses (`gameplay.md`). So a
+   `clamp(_difficulty_to_tier(rally_difficulty), 1, tier_ceiling(completed_count))`.
+   This is now the only place `target_tier`'s clamp shape survives (the
+   per-event upgrade draw dropped tier entirely — see above). So a
    higher-difficulty rally pays a better car, but only up to the tier the player's
    **progress** (rallies completed) has earned; a lucky early win at a hard rally
    can't drop a top car. This replaces the old `max(garage_tier, difficulty)` ceiling,
@@ -198,13 +250,16 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
 2. **Unlock fallback** (`_unlock_candidates`) — takes over only when the player
    is *stuck*: every rally their garage can currently enter is already completed
    (each owned car is checked on its **effective** stats via
-   `UpgradeLibrary.effective_meta`, with a `floor_meta` of `max_potential_meta` so the
-   pw_min floor is judged at the car's max potential, against
+   `UpgradeLibrary.effective_meta`, with a `floor_meta` of
+   `UpgradeLibrary.max_potential_meta(car, entry, profile)` — passing `profile`
+   selects the REACHABLE ceiling, star gates respected, not the aspirational
+   one; see `upgrade-catalogue.md` — so the pw_min floor is judged at what the
+   car can *actually* reach right now, against
    `RallyLibrary.incomplete_rallies_enterable_by`, which is reveal-aware — a rally
    counts as enterable only once **revealed** (`rally_revealed`: its `reveal_after`
-   met, and for a showdown its own region's showdown gate open — `RegionLibrary.
-   showdown_unlocked`, not a "region unlocked" concept, which no longer exists),
-   see [regions.md](regions.md)).
+   met, and for a special its own star gate open — `RallyLibrary.special_gate_open`,
+   keyed on the global `total_stars`, not a per-region concept), see
+   [regions.md](regions.md)).
    That query also counts a rally the car can reach by **detuning** under its `pw_max`
    as enterable — the same definition `hq.gd._entry_plan` uses on the screen that
    actually gates entry. Judging it more strictly here made the reward system see
@@ -236,20 +291,32 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
    duplicates read as a broken reward even where a duplicate is the honest outcome.
 
 With every rally completed the fallback is moot and the standard draw still pays
-(a duplicate at worst), so the reward never returns empty. The upgrade draw is
-unchanged and still uses the `target_tier` clamp above.
+(a duplicate at worst), so the reward never returns empty (car draws are still
+guaranteed; the upgrade draw is not — see *Retiring "always pays out"* above).
 
-## Showdown
+## The LAST special won (was "the final showdown")
 
-The final showdown grants no reward — winning it is the game's win/credits beat,
-handled by the flow controller.
+The special that completes the set grants no car draw of its own — winning it is
+the game's win/credits beat, handled by the flow controller. Note the predicate
+is **not** "this is the top rung": `rally_session.gd` fires `game_won` when
+`RallyLibrary.is_special(_rally) and RallyLibrary.all_specials_completed(profile)`,
+so it is whichever special happens to be the last one outstanding (normally the
+top rung, since the rungs open in star order, but the rule is set-completion, not
+a designated finale). Every other special pays out exactly like an
+ordinary rally (the per-event upgrade draws plus the car draw on a top-3
+finish) — the star-gated unlock is *additional*, not a replacement.
 
 ## Tests
 
-`tests/headless/test_reward_system.gd` (injected seeded RNG): tier-ceiling
-monotonic + clamped; `target_tier` never exceeds the ceiling; upgrade draws land
-at the target tier with the swap token a rare minority; a part already fitted to
-the driven car is never drawn (the token is what's left when the car has everything); car draws never exceed
+`tests/headless/test_reward_system.gd` (injected seeded RNG): car-side
+tier-ceiling monotonic + clamped; `target_tier` never exceeds the ceiling; a
+part already fitted to the driven car is never drawn; a car with an unlocked
+part still to win always gets it (the real-reward branch is never pre-empted);
+`draw_upgrade` returns `NO_REWARD` only once a car is maxed under the gated
+pool; box probability falls as boxes accumulate and is certain at zero owned;
+the box branch skips the token requirement while swapping is locked and
+requires it once unlocked; `_other_car_has_room` failing yields nothing rather
+than a box; car draws never exceed
 the **progress ceiling** (`tier_ceiling(completed_count)`) even off a top-difficulty
 rally, and a low-difficulty rally caps the draw at its difficulty tier even when the
 progress ceiling is high; car draws prefer un-owned before falling back to a duplicate; a stuck

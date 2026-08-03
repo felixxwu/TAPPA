@@ -18,7 +18,7 @@ stages and damage carries over between them. Full design:
   (bump it when the seed roll's inputs change).
 - **`ChallengeSession`** (`scripts/challenge_session.gd`, autoload) — the
   per-run state machine, parallel to `RallySession` rather than a reuse of it
-  (no rival/`OpponentCache`, no showdown/region unlock, no
+  (no rival/`OpponentCache`, no special/star unlock, no
   `Save.complete_rally`). Read surface: `is_active()`, `car_instance_id()`,
   `kind()`, `stage_count()`, `events_completed()`, `current_stage_params()`.
   Lifecycle: `start(kind, owned_car, unix_time)`, `resume(unix_time)`,
@@ -640,11 +640,14 @@ Worth revisiting only if a between-stage garage screen is ever added.
 Two separate reward paths:
 
 - **Per-stage** (non-final stages, unchanged from career): `ChallengeSession.
-  report_event_result` calls `RewardSystem.draw_upgrade` with
-  `RewardSystem.tier_ceiling(RallyLibrary.completed_count(profile))` as the
-  synthetic `rally_difficulty` (a challenge has no authored difficulty), and
-  installs/adds the result exactly like `RallySession` does (car-bound parts
-  fitted DISABLED; consumables straight to inventory).
+  report_event_result` calls `RewardSystem.draw_upgrade(Save.profile, null,
+  driven)` — the draw takes no difficulty any more (upgrade `tier` is gone; the
+  pool is flat and star-gated, see [reward-system.md](reward-system.md)) — and
+  installs/adds the result exactly like `RallySession` does: consumables straight
+  to inventory, car-bound parts fitted DISABLED except the
+  `UpgradeLibrary.HIDDEN_SLOTS` (nitrous) slot, which fits ENABLED. The draw
+  can legitimately come back `RewardSystem.NO_REWARD` (`""`) for a maxed-out car,
+  in which case nothing installs and no reveal fires.
 - **Per-challenge** (finishing every stage, no DNF): `ChallengeSession.
   try_grant_completion_reward(result)` awaits `Cloud.challenge_leaderboard.
   fetch_final_rank` and grants iff `rank <= ceil(total_entries / 2)` —

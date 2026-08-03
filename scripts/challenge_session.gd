@@ -1,7 +1,7 @@
 extends Node
 # Autoload "ChallengeSession" — the Daily/Weekly/Monthly Rally Challenge's own
 # small state machine, parallel to RallySession rather than a reuse of it (a
-# challenge has no rival/OpponentCache, no showdown/region unlock, no
+# challenge has no rival/OpponentCache, no special/star unlock, no
 # Save.complete_rally bookkeeping). See
 # docs/superpowers/specs/2026-07-31-rally-challenge-design.md §3-4-6 and
 # features/rally-challenge.md.
@@ -345,14 +345,9 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	_stage_upgrade = ""
 	var is_final := _stage_index >= _stage_count
 	if not is_final:
-		var driven: Dictionary = Save.get_car(_car_instance_id)
-		var difficulty := RewardSystem.tier_ceiling(RallyLibrary.completed_count(Save.profile))
-		var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile, null, driven)
-		if UpgradeLibrary.is_consumable(item_id):
-			Save.add_item(item_id, 1, false)
-		else:
-			Save.install_upgrade(_car_instance_id, item_id, false)
-		_stage_upgrade = item_id
+		# The draw can legitimately come up empty for a maxed-out car (NO_REWARD) — then
+		# nothing is granted and _stage_upgrade stays "" so no reveal fires.
+		_stage_upgrade = RewardSystem.draw_and_grant_upgrade(_car_instance_id, Save.profile)
 	Save.save()
 	# The same partial pit repair a career rally gets — between stages via
 	# _pending_repair (the run scene shows the popup on boot), and on the FINAL

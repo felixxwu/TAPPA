@@ -4,8 +4,8 @@ extends RefCounted
 # CORNER of the single world map: it groups rallies by their `region` tag and carries
 # optional look overrides for the driven world (grass/gravel/sky/fog/tints/layers) — a
 # missing key inherits the scene / GameConfig baseline — plus its own waterline.
-# Regions do NOT unlock in sequence; every corner is open from the start and each
-# authored corner has at most one showdown. See features/regions.md.
+# Regions do NOT unlock in sequence; every corner is open from the start, and a region
+# gates nothing — it owns only its look and its waterline. See features/regions.md.
 
 # The one world map. Every region is a corner of this single satellite image, so a
 # region no longer owns a map image of its own — `map_image` is not a look key.
@@ -30,10 +30,17 @@ const DEFAULT_TREE_MIX: Array = [
 	{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
 ]
 
-# The four authored corners of the world map. ORDER CARRIES NO MEANING — regions no
-# longer unlock in sequence and there is no "final" region (credits fire once every
-# corner's showdown is done, see all_showdowns_completed), so do NOT re-introduce any
-# ordering dependency here. Ids are load-bearing: "home" in particular is hardcoded in
+# The four authored corners of the world map. ORDER CARRIES NO MEANING — regions do not
+# unlock in sequence and there is no "final" region (credits fire once every special event
+# is won, see RallyLibrary.all_specials_completed), so do NOT re-introduce any ordering
+# dependency here.
+#
+# Regions no longer gate rallies AT ALL: the old one-showdown-per-region invariant is
+# retired, and specials are gated on the global star total (RallyLibrary.special_gate_open),
+# so a corner may hold any number of them, including none. A region's only job is its LOOK
+# and its waterline.
+#
+# Ids are load-bearing: "home" in particular is hardcoded in
 # world.gd._current_region_look() as the default/challenge/fallback region, so never
 # rename it. The coastal corners carry no look block of their own — they resolve their
 # parent's via `look_from` — but each corner authors its OWN `water_level`, which is
@@ -114,21 +121,6 @@ static func index_of(id: String) -> int:
 static func id_at(i: int) -> String:
 	return String(all()[i].get("id", ""))
 
-# The win/credits beat: every region's showdown is recorded completed in the profile.
-# Regions that author NO showdown are skipped, not counted as outstanding — an empty
-# corner (the snow corner ships pin-less) must never make the credits unreachable.
-# A roster where no region authors a showdown at all therefore reads as completed;
-# that's a degenerate catalogue, not a progression state to defend against.
-static func all_showdowns_completed(profile: Dictionary) -> bool:
-	var rallies: Dictionary = profile.get("rallies", {})
-	for region in all():
-		var sd := showdown_of(String(region.get("id", "")))
-		if sd.is_empty():
-			continue
-		if not rallies.get(sd.get("id", ""), {}).get("completed", false):
-			return false
-	return true
-
 # The region's authored waterline in metres, or 0.0 when it authors none — ALWAYS
 # pair a call with has_water_level(), because callers resolve
 # `event override → region → GameConfig baseline` and a region that authors nothing
@@ -152,44 +144,6 @@ static func rallies_in(region_id: String) -> Array:
 		if String(rally.get("region", "")) == region_id:
 			out.append(rally)
 	return out
-
-static func showdown_of(region_id: String) -> Dictionary:
-	for rally in rallies_in(region_id):
-		if bool(rally.get("showdown", false)):
-			return rally
-	return {}
-
-static func showdown_unlocked(region_id: String, profile: Dictionary) -> bool:
-	# Guard: the loop below is "every non-showdown rally here is completed", which a
-	# region with NO authored non-showdown rallies would pass vacuously. That's live,
-	# not hypothetical — an empty corner ships with no rallies at all, and its
-	# showdown must not read as unlocked from the start. So require the region to
-	# exist and to author at least one non-showdown rally before the gate can open.
-	if by_id(region_id).is_empty():
-		return false
-	var has_regular := false
-	for rally in rallies_in(region_id):
-		if not bool(rally.get("showdown", false)):
-			has_regular = true
-			break
-	if not has_regular:
-		return false
-	var rallies: Dictionary = profile.get("rallies", {})
-	for rally in rallies_in(region_id):
-		if bool(rally.get("showdown", false)):
-			continue
-		if not rallies.get(rally["id"], {}).get("completed", false):
-			return false
-	return true
-
-# Whether a rally passes its region's showdown gate right now: non-showdown rallies
-# always pass; a showdown passes only once its region's showdown is unlocked.
-# (Completion is a separate check the callers do.) The one predicate shared by the
-# eligibility query and the reward-draw walk.
-static func rally_showdown_gate_open(rally: Dictionary, profile: Dictionary) -> bool:
-	if not bool(rally.get("showdown", false)):
-		return true
-	return showdown_unlocked(String(rally.get("region", "")), profile)
 
 # The tree species split for a resolved region look: the authored `tree_mix`, or the
 # default single home tree when a region authors none (free roam / unknown id). Each

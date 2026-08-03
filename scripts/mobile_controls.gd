@@ -3,7 +3,8 @@ extends CanvasLayer
 # On-screen touch controls for phones, with SIX selectable schemes (chosen on the
 # title screen's Settings page, persisted in the save profile under
 # SETTING_KEY). All drive the SAME input actions as the keyboard
-# (accelerate / brake_reverse / steer_left / steer_right) via
+# (accelerate / brake_reverse / steer_left / steer_right, plus nitrous when the
+# driven car has any fitted) via
 # Input.action_press/release, so car.gd needs no knowledge of touch input.
 #
 # Schemes (see SCHEMES, order matches the enum):
@@ -64,9 +65,16 @@ const _THUMB_COLOR := Color(1, 1, 1, 0.30)
 # font lacks ◄/► glyphs (same reason the menus use < / >).
 const _REGION_LABEL := {
 	"gas": "GAS", "brake": "BRAKE",
+	"nitrous": "NOS",
 	"steer_left": "<", "steer_right": ">",
 	"simple_left": "<", "simple_right": ">",
 }
+
+# Smallest nitrous button we're willing to draw, in pixels. On a realistic viewport
+# there is plenty of room between the steering cluster and the pedal column; on an
+# absurdly narrow one the gap can close, and then we drop the button rather than let
+# it overlap the steering (which would steal steering input).
+const _MIN_NITROUS_W := 8.0
 
 var _active := false
 var _scheme := DEFAULT_SCHEME
@@ -179,6 +187,13 @@ func _has_gas_button() -> bool:
 func _has_brake_button() -> bool:
 	return not _is_simple()
 
+# The NOS button exists only when nitrous is actually fitted to the driven car
+# (GameConfig.has_nitrous(), the same gate the HUD gauge and the sim use). Independent
+# of the scheme — every scheme gets one, sited next to the pedal column.
+func _has_nitrous_button() -> bool:
+	var cfg: GameConfig = Config.data
+	return cfg != null and cfg.has_nitrous()
+
 
 # --- Build / layout ----------------------------------------------------------
 
@@ -202,6 +217,8 @@ func _build() -> void:
 		_panels["gas"] = _make_button(_REGION_LABEL["gas"])
 	if _has_brake_button():
 		_panels["brake"] = _make_button(_REGION_LABEL["brake"])
+	if _has_nitrous_button():
+		_panels["nitrous"] = _make_button(_REGION_LABEL["nitrous"])
 	if _has_steer_buttons():
 		_panels["steer_left"] = _make_button(_REGION_LABEL["steer_left"])
 		_panels["steer_right"] = _make_button(_REGION_LABEL["steer_right"])
@@ -259,6 +276,7 @@ func _compute_rects(size: Vector2) -> void:
 	_rects.clear()
 	var m := size.x * 0.03
 	var gap := size.y * 0.02
+	var hgap := size.x * 0.02
 
 	# Right-hand pedal stack: BRAKE at the bottom, GAS above it (when present).
 	var btn_w := clampf(size.x * 0.26, 60.0, 260.0)
@@ -280,7 +298,6 @@ func _compute_rects(size: Vector2) -> void:
 		_thumb_w = sl_h
 	elif _has_steer_buttons():
 		var sbw := clampf(size.x * 0.18, 50.0, 180.0)
-		var hgap := size.x * 0.02
 		var ly := size.y - m - btn_h
 		_rects["steer_left"] = Rect2(m, ly, sbw, btn_h)
 		_rects["steer_right"] = Rect2(m + sbw + hgap, ly, sbw, btn_h)
@@ -292,11 +309,42 @@ func _compute_rects(size: Vector2) -> void:
 		_rects["simple_left"] = Rect2(0.0, top, size.x * 0.5, h)
 		_rects["simple_right"] = Rect2(size.x * 0.5, top, size.x * 0.5, h)
 
+	# NOS: a SMALL button immediately left of the pedal column, half a pedal tall, only
+	# when nitrous is fitted. Anchored to the GAS pedal where there is one; the auto-gas
+	# schemes (2/3) have none, so it anchors to BRAKE instead, and the simple scheme (4)
+	# has neither pedal, so it uses the slot a bottom pedal WOULD occupy — that keeps the
+	# button in the same corner of the screen in every scheme.
+	#
+	# In scheme 4 the left/right steering halves cover the whole lower screen, so the NOS
+	# rect necessarily sits inside one of them; _button_region tests "nitrous" FIRST, so
+	# the button wins and does not steer. Against every other region it must not overlap
+	# at all, so its width is capped by the gap to the steering cluster (slider / steer
+	# buttons) and the button is dropped outright if that gap has closed.
+	if _has_nitrous_button():
+		var anchor: Rect2
+		if _rects.has("gas"):
+			anchor = _rects["gas"]
+		elif _rects.has("brake"):
+			anchor = _rects["brake"]
+		else:
+			anchor = Rect2(bx, size.y - m - btn_h, btn_w, btn_h)
+		var left_limit := 0.0
+		if _has_slider():
+			left_limit = _slider_rect.end.x
+		elif _has_steer_buttons():
+			left_limit = (_rects["steer_right"] as Rect2).end.x
+		var avail := anchor.position.x - hgap - (left_limit + hgap)
+		var nw := minf(btn_w * 0.45, avail)
+		if nw >= _MIN_NITROUS_W:
+			var nh := anchor.size.y * 0.5
+			_rects["nitrous"] = Rect2(anchor.position.x - hgap - nw, anchor.position.y, nw, nh)
+
 
 # Which digital region a screen position falls in, or "" (the slider is captured
-# separately). Simple halves are tested last so the pedals win any overlap.
+# separately). Simple halves are tested last so the pedals — and the NOS button, which
+# in the simple scheme sits INSIDE a steering half — win any overlap.
 func _button_region(pos: Vector2) -> String:
-	for region in ["gas", "brake", "steer_left", "steer_right", "simple_left", "simple_right"]:
+	for region in ["nitrous", "gas", "brake", "steer_left", "steer_right", "simple_left", "simple_right"]:
 		if _rects.has(region) and (_rects[region] as Rect2).has_point(pos):
 			return region
 	return ""
@@ -691,12 +739,22 @@ func _apply_actions() -> void:
 		brake = _region_pressed("brake")
 	_set_action(&"brake_reverse", brake)
 
-	# Throttle: automatic (unless braking) for auto-gas schemes, else the GAS button.
+	# Nitrous: a plain held button (car.gd reads Input.is_action_pressed("nitrous")).
+	# Absent when nitrous isn't fitted, in which case the region simply never matches.
+	var nos := _region_pressed("nitrous")
+	_set_action(&"nitrous", nos)
+
+	# Throttle: automatic (unless braking) for auto-gas schemes, else the GAS button — and
+	# NOS implies gas. There is no reason to hold nitrous without throttle (the sim refuses
+	# to deliver or drain off-throttle anyway), and on touch the two buttons are adjacent, so
+	# requiring both thumbs would just make the boost feel broken. Holding NOS therefore
+	# presses accelerate too; releasing it leaves a separately-held GAS untouched, since this
+	# is an OR over the two regions rather than a write.
 	var gas := false
 	if _is_auto_gas():
 		gas = not brake
 	elif _has_gas_button():
-		gas = _region_pressed("gas")
+		gas = _region_pressed("gas") or nos
 	_set_action(&"accelerate", gas)
 
 	_update_visuals(brake, gas)
@@ -738,13 +796,24 @@ func _timed_process(_delta: float) -> void:
 	# the car's input actions, not even for a single frame.
 	_poll_live_touches()
 	_reconcile_pointers()
+	_sync_nitrous_button()
 	_apply_actions()
+
+
+# Nitrous is fitted per CAR (car.gd's apply_owned retunes Config.data), and a car swap
+# raises no signal, so the overlay polls the same gate the HUD gauge does and rebuilds
+# when it flips. Cheap: two float compares on a frame where nothing changed.
+func _sync_nitrous_button() -> void:
+	if _panels.has("nitrous") == _has_nitrous_button():
+		return
+	_set_action(&"nitrous", false)
+	_build()
 
 
 # Release every action we might be holding (used on scheme switch + exit) so no
 # phantom input lingers.
 func _release_all() -> void:
-	for action in [&"accelerate", &"brake_reverse"]:
+	for action in [&"accelerate", &"brake_reverse", &"nitrous"]:
 		_set_action(action, false)
 	_steer = 0.0
 	# Through the same helper, so the held-state cache can never be left claiming a

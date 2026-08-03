@@ -105,6 +105,88 @@ func test_fps_row_press_persists_the_cap() -> void:
 	assert_eq(FpsSetting.resolve(), 30, "resolve() follows the latest pick")
 
 
+# Is there a focusable button anywhere on the category list whose label mentions `text`?
+func _list_has_button(menu: SettingsMenu, text: String) -> bool:
+	for node in menu._list_page.find_children("*", "Button", true, false):
+		var button := node as Button
+		if String(button.text).to_lower().contains(text.to_lower()) \
+				and button.focus_mode == Control.FOCUS_ALL:
+			return true
+	return false
+
+
+# Find the Gearbox row whose stored mode == `value`.
+func _gearbox_row(menu: SettingsMenu, value: int) -> Dictionary:
+	for row in menu.gearbox_rows:
+		if int(row["key"]) == value:
+			return row
+	return {}
+
+
+# The Gearbox page offers one row per mode, and nothing is persisted until the player
+# picks — gearbox_auto() reports the authored GameConfig default while unset.
+func test_gearbox_rows_match_options_and_default_unset() -> void:
+	var menu := _make_menu()
+	assert_eq(menu.gearbox_rows.size(), SettingsMenu.GEARBOX_OPTIONS.size(),
+		"one Gearbox row per option")
+	assert_null(_save.get_setting(SettingsMenu.GEARBOX_SETTING_KEY, null),
+		"no mode saved until the player picks one")
+	assert_eq(SettingsMenu.gearbox_auto(), Config.data.auto_gearbox,
+		"unset -> the authored GameConfig default")
+
+
+# Pressing a Gearbox row persists the mode under GEARBOX_SETTING_KEY, and gearbox_auto()
+# (what car.gd mirrors onto the live engine) follows the latest pick either way.
+func test_gearbox_row_press_persists_the_mode() -> void:
+	var menu := _make_menu()
+	var manual := _gearbox_row(menu, SettingsMenu.GEARBOX_MANUAL)
+	assert_false(manual.is_empty(), "a manual row exists")
+	manual["button"].pressed.emit()
+	assert_eq(int(_save.get_setting(SettingsMenu.GEARBOX_SETTING_KEY, -1)),
+		SettingsMenu.GEARBOX_MANUAL, "picking Manual saves manual")
+	assert_false(SettingsMenu.gearbox_auto(), "gearbox_auto() honours the saved choice")
+
+	var auto := _gearbox_row(menu, SettingsMenu.GEARBOX_AUTO)
+	assert_false(auto.is_empty(), "an automatic row exists")
+	auto["button"].pressed.emit()
+	assert_eq(int(_save.get_setting(SettingsMenu.GEARBOX_SETTING_KEY, -1)),
+		SettingsMenu.GEARBOX_AUTO, "re-picking Automatic saves automatic")
+	assert_true(SettingsMenu.gearbox_auto(), "gearbox_auto() follows the latest pick")
+
+
+# The saved mode survives a reload of the profile — this is the ONLY way to select
+# automatic now that the toggle_gearbox action is gone, so it must persist.
+func test_gearbox_mode_survives_a_profile_reload() -> void:
+	var menu := _make_menu()
+	_gearbox_row(menu, SettingsMenu.GEARBOX_MANUAL)["button"].pressed.emit()
+	_save.save_now()  # settings writes are debounced; flush before re-reading the file
+	_save.load_or_new()
+	assert_false(SettingsMenu.gearbox_auto(), "the mode is read back from the save file")
+
+
+# Keyboard + gamepad reachability (CLAUDE.md / features/menus.md): the category list
+# offers a Gearbox row, the page seats a focus cursor, and every mode row is focusable
+# so ui_up/ui_down + ui_accept can pick one without a pointer.
+func test_gearbox_page_is_keyboard_and_gamepad_navigable() -> void:
+	var menu := _make_menu()
+	assert_true(_list_has_button(menu, "gearbox"),
+		"the category list has a focusable Gearbox row")
+	for row in menu.gearbox_rows:
+		assert_eq((row["button"] as Button).focus_mode, Control.FOCUS_ALL,
+			"gearbox rows are focusable")
+	menu.show_gearbox()
+	await get_tree().process_frame
+	menu.focus_current_page()
+	await get_tree().process_frame
+	var focused: Control = menu.get_viewport().gui_get_focus_owner()
+	assert_not_null(focused, "a control is focused on the Gearbox page")
+	assert_true(menu.gearbox_rows.any(func(r: Dictionary) -> bool: return r["button"] == focused),
+		"the cursor lands on a gearbox mode row")
+	# Back (gamepad B / Esc) returns to the category list.
+	assert_true(menu.go_back(), "Back is consumed by the sub-page")
+	assert_true(menu.at_root(), "Back returns to the category list")
+
+
 # The dev "Complete rally" button is hidden when no rally is active (HQ settings).
 func test_complete_rally_button_absent_without_a_rally() -> void:
 	assert_false(RallySession.is_active(), "no rally active")

@@ -12,7 +12,6 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `shift_up` | E | — | Right bumper (RB/R1) | Manual upshift |
 | `shift_down` | Q | — | Left bumper (LB/L1) | Manual downshift |
 | `handbrake` | Space | — | A / Cross (South) | Rear-axle handbrake (drift) |
-| `toggle_gearbox` | T | — | X / Square (West) | Toggle manual / auto transmission |
 | `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
@@ -20,6 +19,15 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
 
 All actions use a 0.2 deadzone.
+
+There is **no gearbox toggle input** any more. Manual vs automatic transmission is a
+**setting** — Settings → **Gearbox** (`scripts/settings_menu.gd` → `_build_gearbox_page`
+/ `select_gearbox`), persisted under `SettingsMenu.GEARBOX_SETTING_KEY` and defaulting
+to the authored `GameConfig.auto_gearbox`. `car.gd` mirrors `SettingsMenu.gearbox_auto()`
+onto the live engine every tick while the driver is in control, so changing it from the
+in-run pause menu applies straight away. The old `toggle_gearbox` (T) action was retired:
+T is unreachable on a phone, no mobile control scheme has shift buttons at all (so touch
+players need automatic), and its controller button was reassigned to `nitrous`.
 
 There is **no direct "reset car" input** — resetting the car onto the track is only
 available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →

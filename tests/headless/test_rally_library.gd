@@ -1,7 +1,7 @@
 extends GutTest
 # The rally roster (RallyLibrary): the authored rally list and the pure
 # functions over it — eligibility, target times, the deterministic opponent
-# field, progress/showdown gating, and the anti-soft-lock query. Mirrors
+# field, progress/star gating, and the anti-soft-lock query. Mirrors
 # test_car_library.gd. See todo/rally-roster.md.
 
 
@@ -53,32 +53,80 @@ func test_every_rally_has_a_known_region() -> void:
 			"rally %s region %s is not in RegionLibrary" % [rally.get("id", "?"), region_id])
 
 
-func test_at_most_one_showdown_per_region_and_exactly_one_where_rallies_exist() -> void:
-	# The durable invariant is NOT "exactly one showdown per region": a region may be
-	# authored with no rallies at all (the snow corner ships as terrain that holds no
-	# pins), and RegionLibrary.showdown_unlocked explicitly supports that — it refuses
-	# to open the gate for a corner with no non-showdown rallies. So an empty corner
-	# legitimately has ZERO showdowns. What must always hold is:
-	#   * no region ever carries TWO showdowns (the gate is per-corner, so a second one
-	#     would be ungated by anything meaningful), and
-	#   * any region that holds non-showdown rallies has exactly one, or those rallies
-	#     ladder up to no finale at all.
-	for region in RegionLibrary.all():
-		var region_id := String(region["id"])
-		var showdowns := 0
-		var regulars := 0
-		for rally in RallyLibrary.all():
-			if String(rally.get("region", "")) != region_id:
-				continue
-			if bool(rally.get("showdown", false)):
-				showdowns += 1
-			else:
-				regulars += 1
-		assert_lte(showdowns, 1, "region %s must have at most one showdown" % region_id)
-		if regulars > 0:
-			assert_eq(showdowns, 1, "region %s holds rallies, so it needs exactly one showdown" % region_id)
-		else:
-			assert_eq(showdowns, 0, "region %s holds no rallies, so it must have no showdown" % region_id)
+func test_a_region_may_hold_any_number_of_specials() -> void:
+	# The old "at most one showdown per region, exactly one where rallies exist" invariant
+	# is RETIRED. Specials are gated on the GLOBAL star total (special_gate_open), so they
+	# have no relationship to a region's contents — a corner may hold none, one, or several,
+	# and an empty corner (the snow corner ships pin-less) is now the ordinary case rather
+	# than an exemption. What must still hold is that every special names a real region.
+	var specials := 0
+	for rally in RallyLibrary.all():
+		if not RallyLibrary.is_special(rally):
+			continue
+		specials += 1
+		assert_ne(RegionLibrary.index_of(String(rally.get("region", ""))), -1,
+			"special %s sits in a real region" % rally.get("id", "?"))
+	assert_gt(specials, 0, "the roster authors at least one special event")
+
+
+func test_every_special_is_open_class() -> void:
+	# A special must never gate on a part it (or a higher rung) unlocks, or the ladder can
+	# deadlock. Open-class is the simplest guarantee of that, and it also keeps the
+	# low-power starter able to finish the game.
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			assert_true((rally.get("restriction", {}) as Dictionary).is_empty(),
+				"special %s is open-class" % rally.get("id", "?"))
+
+
+func test_every_authored_star_gate_names_a_real_special() -> void:
+	# The gates are plain id strings with no validation, so renaming or deleting a special
+	# would silently make the gated part permanently unwinnable (rally_gate_met would just
+	# return false forever, with no error). Pins no chosen id or threshold — it asserts the
+	# CONTRACT that every authored gate resolves.
+	for item in UpgradeLibrary.all():
+		var gate := UpgradeLibrary.unlocked_by_rally(String(item["id"]))
+		if gate == "":
+			continue
+		var rally := RallyLibrary.by_id(gate)
+		assert_false(rally.is_empty(),
+			"%s is gated on '%s', which must be a real rally" % [item["id"], gate])
+		assert_true(RallyLibrary.is_special(rally),
+			"%s is gated on '%s', which must be a SPECIAL event" % [item["id"], gate])
+	# Each special gates at most ONE part: UpgradeLibrary.unlocked_by returns the first match,
+	# so a second part on the same rally would be silently dropped from the map's teaser line.
+	var seen_gates := {}
+	for item in UpgradeLibrary.all():
+		var g := UpgradeLibrary.unlocked_by_rally(String(item["id"]))
+		if g == "":
+			continue
+		assert_false(seen_gates.has(g), "rally '%s' gates only one part" % g)
+		seen_gates[g] = true
+	var swap_rally := RallyLibrary.by_id(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
+	assert_false(swap_rally.is_empty(), "the engine-swap capability names a real rally")
+	assert_true(RallyLibrary.is_special(swap_rally),
+		"the engine-swap capability is gated on a SPECIAL event")
+
+
+func test_max_total_stars_counts_only_ordinary_rallies() -> void:
+	# The meter's denominator and the ladder's reachability check both read this, so it must
+	# exclude specials (which award none) — otherwise the top rung could look reachable when
+	# it isn't.
+	var ordinary := 0
+	for rally in RallyLibrary.all():
+		if not RallyLibrary.is_special(rally):
+			ordinary += 1
+	assert_eq(RallyLibrary.max_total_stars(), ordinary * RallyLibrary.MAX_STARS_PER_RALLY,
+		"the ceiling is every ordinary rally won outright")
+
+
+func test_every_specials_star_requirement_is_reachable() -> void:
+	# A rung above the roster's maximum possible star total would be permanently locked.
+	var max_stars := RallyLibrary.max_total_stars()
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			assert_lte(int(rally.get("requires_stars", 0)), max_stars,
+				"special %s demands a reachable star total" % rally.get("id", "?"))
 
 
 func test_map_pins_are_well_formed_and_never_stack() -> void:
@@ -158,7 +206,7 @@ func test_starter_always_has_an_enterable_rally() -> void:
 	CarFixtures.restore()
 	# Anti-soft-lock floor: now that progression is gated on power-to-weight (not an
 	# open-class pool at every tier), the guarantee is that the weakest car in the
-	# real roster can always enter at least one NON-showdown rally, and the showdown
+	# real roster can always enter at least one ORDINARY rally, and a special
 	# stays open-class so it can finish the game even if it never earns another car.
 	# Derive the weakest car by p/w rather than pinning a specific catalogue id.
 	var starter: Dictionary = {}
@@ -169,18 +217,18 @@ func test_starter_always_has_an_enterable_rally() -> void:
 			starter_pw = pw
 			starter = spec
 	assert_false(starter.is_empty(), "the roster has at least one car")
-	var enterable_non_showdown := 0
-	var showdown_seen := false
+	var enterable_ordinary := 0
+	var special_seen := false
 	for rally in RallyLibrary.RALLIES:
-		if rally["showdown"]:
-			showdown_seen = true
-			assert_true(rally["restriction"].is_empty(), "the showdown is open-class")
-			assert_true(RallyLibrary.is_eligible(rally, starter), "the starter can enter the showdown")
+		if RallyLibrary.is_special(rally):
+			special_seen = true
+			assert_true(rally["restriction"].is_empty(), "a special is open-class")
+			assert_true(RallyLibrary.is_eligible(rally, starter), "the starter can enter a special")
 			continue
 		if RallyLibrary.is_eligible(rally, starter):
-			enterable_non_showdown += 1
-	assert_gt(enterable_non_showdown, 0, "the starter has at least one non-showdown rally to race")
-	assert_true(showdown_seen, "there is a showdown rally")
+			enterable_ordinary += 1
+	assert_gt(enterable_ordinary, 0, "the starter has at least one ordinary rally to race")
+	assert_true(special_seen, "there is a special event")
 
 
 # --- Eligibility -------------------------------------------------------------
@@ -930,7 +978,7 @@ func test_build_standings_handles_a_wrecked_player() -> void:
 	assert_eq(standings[1]["placed"], -1, "a wrecked player does not place")
 
 
-# --- Progress / showdown -----------------------------------------------------
+# --- Progress / stars & the special ladder -----------------------------------------------------
 
 func test_completed_count_tracks_profile() -> void:
 	var profile := {"rallies": {
@@ -940,14 +988,83 @@ func test_completed_count_tracks_profile() -> void:
 	assert_eq(RallyLibrary.completed_count(profile), 1, "only completed rallies count")
 
 
-func test_showdown_unlocks_only_when_all_others_complete() -> void:
+func test_total_stars_scores_best_placement_and_ignores_specials() -> void:
+	# 1st = 3 stars, 2nd = 2, 3rd = 1, anything else 0 — and a special's own result never
+	# counts, so a special can't help unlock the next rung.
+	var ordinary := ""
+	var special := ""
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally) and special == "":
+			special = String(rally["id"])
+		elif not RallyLibrary.is_special(rally) and ordinary == "":
+			ordinary = String(rally["id"])
+	var profile := {"rallies": {ordinary: {"completed": true, "best_placed": 1}}}
+	assert_eq(RallyLibrary.total_stars(profile), RallyLibrary.MAX_STARS_PER_RALLY,
+		"a 1st place is worth the full star count")
+	profile["rallies"][ordinary] = {"completed": true, "best_placed": 3}
+	assert_eq(RallyLibrary.total_stars(profile), 1, "a 3rd place is worth one star")
+	profile["rallies"][ordinary] = {"completed": true, "best_placed": 7}
+	assert_eq(RallyLibrary.total_stars(profile), 0, "finishing off the podium scores nothing")
+	profile["rallies"][special] = {"completed": true, "best_placed": 1}
+	assert_eq(RallyLibrary.total_stars(profile), 0, "a special's own result awards no stars")
+
+
+func test_a_special_gate_opens_on_the_star_total() -> void:
+	# Logic only: the gate compares the star total against the authored requirement, so it
+	# is closed below and open at/above it. No specific threshold is pinned.
+	var special := {}
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			special = rally
+			break
+	var need := int(special.get("requires_stars", 0))
+	assert_false(RallyLibrary.special_gate_open(special, _profile_with_stars(need - 1)),
+		"closed one star short")
+	assert_true(RallyLibrary.special_gate_open(special, _profile_with_stars(need)),
+		"open once the requirement is met")
+	assert_eq(RallyLibrary.stars_needed(special, _profile_with_stars(need)), 0,
+		"nothing left to earn once it is open")
+	assert_gt(RallyLibrary.stars_needed(special, _profile_with_stars(0)), 0,
+		"an unmet gate reports how many stars are still needed")
+
+
+func test_an_ordinary_rally_ignores_the_star_gate() -> void:
+	for rally in RallyLibrary.all():
+		if not RallyLibrary.is_special(rally):
+			assert_true(RallyLibrary.special_gate_open(rally, {"rallies": {}}),
+				"an ordinary rally is never star-gated")
+			assert_eq(RallyLibrary.stars_needed(rally, {"rallies": {}}), 0,
+				"and needs no stars")
+			return
+
+
+func test_all_specials_completed_needs_every_rung() -> void:
 	var profile := {"rallies": {}}
-	assert_false(RallyLibrary.showdown_unlocked(profile), "locked with nothing completed")
-	# Complete every non-showdown rally.
-	for rally in RallyLibrary.RALLIES:
-		if not rally["showdown"]:
-			profile["rallies"][rally["id"]] = {"completed": true}
-	assert_true(RallyLibrary.showdown_unlocked(profile), "unlocks once all non-showdown rallies done")
+	assert_false(RallyLibrary.all_specials_completed(profile), "nothing won yet")
+	var ids: Array = []
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			ids.append(String(rally["id"]))
+	for i in ids.size():
+		profile["rallies"][ids[i]] = {"completed": true}
+		var done: bool = RallyLibrary.all_specials_completed(profile)
+		assert_eq(done, i == ids.size() - 1,
+			"only the LAST special completed finishes the game")
+
+
+# A profile carrying exactly `stars` stars, built by 3-starring ordinary rallies (and
+# topping up with a lesser placement when the target isn't a multiple of 3).
+func _profile_with_stars(stars: int) -> Dictionary:
+	var profile := {"rallies": {}}
+	var left := maxi(stars, 0)
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally) or left <= 0:
+			continue
+		var take: int = mini(left, RallyLibrary.MAX_STARS_PER_RALLY)
+		profile["rallies"][String(rally["id"])] = {
+			"completed": true, "best_placed": RallyLibrary.MAX_STARS_PER_RALLY + 1 - take}
+		left -= take
+	return profile
 
 
 # --- reveal_after (the GLOBAL wave gate) -------------------------------------
@@ -956,11 +1073,11 @@ func test_showdown_unlocks_only_when_all_others_complete() -> void:
 # "greece" that needs 2 completions. Synthetic, so no authored reveal_after is pinned.
 func _install_two_region_reveal_roster() -> void:
 	var roster: Array[Dictionary] = [
-		{"id": "r_home_a", "name": "Home A", "region": "home", "showdown": false,
+		{"id": "r_home_a", "name": "Home A", "region": "home", "special": false,
 			"difficulty": 1, "restriction": {}, "reveal_after": 0, "events": []},
-		{"id": "r_home_b", "name": "Home B", "region": "home", "showdown": false,
+		{"id": "r_home_b", "name": "Home B", "region": "home", "special": false,
 			"difficulty": 1, "restriction": {}, "reveal_after": 0, "events": []},
-		{"id": "r_greece_gated", "name": "Greece Gated", "region": "greece", "showdown": false,
+		{"id": "r_greece_gated", "name": "Greece Gated", "region": "greece", "special": false,
 			"difficulty": 2, "restriction": {}, "reveal_after": 2, "events": []},
 	]
 	RallyLibrary.override_for_test(roster)
@@ -968,7 +1085,7 @@ func _install_two_region_reveal_roster() -> void:
 
 func test_reveal_count_is_global_so_other_regions_count_toward_the_gate() -> void:
 	# The world map pins every corner at once, so reveal_after counts completed
-	# non-showdown rallies ACROSS THE WHOLE ROSTER — a win in one corner opens a rally in
+	# ordinary rallies ACROSS THE WHOLE ROSTER — a win in one corner opens a rally in
 	# another. (after_each restores RallyLibrary.)
 	_install_two_region_reveal_roster()
 	var gated := RallyLibrary.by_id("r_greece_gated")
@@ -982,19 +1099,18 @@ func test_reveal_count_is_global_so_other_regions_count_toward_the_gate() -> voi
 		"completions in another region count toward the gate")
 
 
-func test_a_completed_showdown_does_not_count_toward_the_reveal_gate() -> void:
-	# The showdown is the finale, gated separately by its region — it must not also pay
-	# into the wave count.
+func test_a_completed_special_does_not_count_toward_the_reveal_gate() -> void:
+	# A special is gated separately, on stars — it must not also pay into the wave count.
 	var roster: Array[Dictionary] = [
-		{"id": "r_gated", "name": "Gated", "region": "home", "showdown": false,
+		{"id": "r_gated", "name": "Gated", "region": "home", "special": false,
 			"difficulty": 2, "restriction": {}, "reveal_after": 1, "events": []},
-		{"id": "r_showdown", "name": "Showdown", "region": "home", "showdown": true,
-			"difficulty": 4, "restriction": {}, "events": []},
+		{"id": "r_special", "name": "Special", "region": "home", "special": true,
+			"requires_stars": 0, "difficulty": 4, "restriction": {}, "events": []},
 	]
 	RallyLibrary.override_for_test(roster)
-	var profile := {"rallies": {"r_showdown": {"completed": true}}}
+	var profile := {"rallies": {"r_special": {"completed": true}}}
 	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_gated"), profile),
-		"a completed showdown doesn't advance the wave count")
+		"a completed special doesn't advance the wave count")
 
 
 func test_a_wave_zero_rally_is_revealed_from_the_start() -> void:
@@ -1004,10 +1120,10 @@ func test_a_wave_zero_rally_is_revealed_from_the_start() -> void:
 
 
 func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
-	# The query integrates is_eligible + the showdown lock over the real roster. Assert
-	# the invariants that hold for ANY roster rather than pinning specific authored
-	# rallies: every returned rally is eligible for the car, none are already complete,
-	# and the showdown never appears while it is still locked. A synthetic AWD car with
+	# The query integrates is_eligible + the star gate over the real roster. Assert the
+	# invariants that hold for ANY roster rather than pinning specific authored rallies:
+	# every returned rally is eligible for the car, none are already complete, and a
+	# star-locked special never appears. A synthetic AWD car with
 	# a mid p/w keeps the input off the catalogue.
 	var profile := {"rallies": {}}
 	# The car carries an ENGINE (a before_each fixture, not a shipped entry) and a
@@ -1028,7 +1144,11 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 		assert_true(
 			RallyLibrary.is_eligible(r, car) or RallyLibrary.qualifying_detune(r, car) > 0.0,
 			"%s is enterable by the car (outright or detuned)" % r["id"])
-		assert_false(bool(r.get("showdown", false)), "the locked showdown is not offered")
+		# A fresh profile has zero stars, so every special whose rung is above zero is
+		# still locked and must not be offered.
+		if RallyLibrary.is_special(r):
+			assert_eq(int(r.get("requires_stars", 0)), 0,
+				"a star-locked special is not offered: %s" % r["id"])
 
 
 # --- stage_key (global leaderboards) -----------------------------------------

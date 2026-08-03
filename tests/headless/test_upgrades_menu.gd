@@ -29,12 +29,144 @@ func test_setup_renders_against_the_given_owned_car() -> void:
 	assert_eq(int(m._owned.get("instance_id", -1)), 42, "renders against the passed owned car, not a global")
 	assert_gt(m.get_child_count(), 0, "builds rows")
 
+# Mark the engine-swap capability's gating special won / not won for the duration of a test.
+# The row is gated on it, so a test that wants the row has to open the gate first.
+func _set_engine_swaps_unlocked(unlocked: bool) -> void:
+	var rallies: Dictionary = Save.profile.get("rallies", {})
+	if unlocked:
+		rallies[RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY] = {"completed": true, "best_placed": 1}
+	else:
+		rallies.erase(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
+	Save.profile["rallies"] = rallies
+
+
 func test_swap_row_only_when_on_swap_valid() -> void:
 	var owned := {"instance_id": 8, "model_id": "synthetic", "installed_upgrades": [], "upgrades": {}, "tuning": {}}
+	_set_engine_swaps_unlocked(true)
 	var without = _menu(owned)
 	assert_false(_has_swap_button(without), "no swap row when on_swap is invalid (popup)")
 	var with_swap = _menu(owned, Callable(), func(): pass)
 	assert_true(_has_swap_button(with_swap), "swap row present when on_swap is valid (lift)")
+	_set_engine_swaps_unlocked(false)
+
+
+func test_swap_row_is_absent_entirely_while_the_capability_is_locked() -> void:
+	# Not a disabled row: absent. A permanently-dead row just invites "when do I get this?",
+	# which is the same reason star-locked part options are hidden rather than greyed.
+	var owned := {"instance_id": 9, "model_id": "synthetic", "installed_upgrades": [], "upgrades": {}, "tuning": {}}
+	_set_engine_swaps_unlocked(false)
+	var locked = _menu(owned, Callable(), func(): pass)
+	assert_false(_has_swap_button(locked), "no swap row at all while swapping is star-locked")
+	_set_engine_swaps_unlocked(true)
+	var unlocked = _menu(owned, Callable(), func(): pass)
+	assert_true(_has_swap_button(unlocked), "winning the gating special brings the row in")
+	_set_engine_swaps_unlocked(false)
+
+
+# The label text of every slot row the menu built, so a test can assert a row is ABSENT
+# (label and all) rather than merely disabled.
+func _row_labels(m: Control) -> Array:
+	var out: Array = []
+	for row in m.get_children():
+		for child in row.get_children():
+			if child is Label:
+				out.append(String(child.text))
+			elif child is Container:
+				for inner in child.get_children():
+					if inner is Label:
+						out.append(String(inner.text))
+	return out
+
+
+func test_a_slot_whose_every_option_is_star_locked_gets_no_row_at_all() -> void:
+	# "Not even the label": with every real option in a slot still behind a star gate, the row
+	# would be a bare label plus an unusable Stock button — exactly the dead end that hiding
+	# locked options exists to remove. Derived from the catalogue: find a slot whose parts are
+	# ALL gated, rather than pinning "drivetrain".
+	var by_slot := {}
+	for def in UpgradeLibrary.all():
+		var slot := String(def.get("slot", ""))
+		if slot == "" or bool(def.get("consumable", false)) or UpgradeLibrary.is_hidden_slot(slot):
+			continue
+		if not by_slot.has(slot):
+			by_slot[slot] = []
+		by_slot[slot].append(String(def.get("id", "")))
+	var fully_gated := ""
+	for slot in by_slot:
+		var all_gated := true
+		for pid in by_slot[slot]:
+			if UpgradeLibrary.unlocked_by_rally(pid) == "":
+				all_gated = false
+				break
+		if all_gated:
+			fully_gated = String(slot)
+			break
+	if fully_gated == "":
+		pass_test("no slot is entirely star-gated in this catalogue; nothing to assert")
+		return
+	var owned := {"instance_id": 11, "model_id": "synthetic", "installed_upgrades": [],
+		"upgrades": {}, "tuning": {}}
+	var m = _menu(owned)
+	for text in _row_labels(m):
+		assert_false(text.to_lower().begins_with(fully_gated.to_lower()),
+			"a fully star-locked slot contributes no row label (%s)" % fully_gated)
+
+
+func test_a_star_locked_option_is_absent_from_its_slot_row() -> void:
+	# The slot still has an ungated option, so the ROW appears — but the locked option must
+	# not, not even greyed.
+	var gated := ""
+	var ungated_sibling := ""
+	for def in UpgradeLibrary.all():
+		var pid := String(def.get("id", ""))
+		var slot := String(def.get("slot", ""))
+		if slot == "" or bool(def.get("consumable", false)) or UpgradeLibrary.is_hidden_slot(slot):
+			continue
+		if UpgradeLibrary.unlocked_by_rally(pid) == "":
+			continue
+		for other in UpgradeLibrary.all():
+			if String(other.get("slot", "")) == slot \
+					and UpgradeLibrary.unlocked_by_rally(String(other.get("id", ""))) == "" \
+					and not bool(other.get("consumable", false)):
+				gated = pid
+				ungated_sibling = String(other.get("id", ""))
+				break
+		if gated != "":
+			break
+	if gated == "":
+		pass_test("no star-gated part shares a slot with an ungated one; nothing to assert")
+		return
+	var owned := {"instance_id": 12, "model_id": "synthetic", "installed_upgrades": [],
+		"upgrades": {}, "tuning": {}}
+	var m = _menu(owned)
+	var visible: Array = m._slot_parts(UpgradeLibrary.slot_of(gated), [])["parts"]
+	var ids: Array = []
+	for def in visible:
+		ids.append(String(def.get("id", "")))
+	assert_does_not_have(ids, gated, "a star-locked option is not offered at all")
+	assert_has(ids, ungated_sibling, "its ungated slot-mate still is")
+
+
+func test_a_fitted_part_stays_visible_even_if_its_gate_is_shut() -> void:
+	# The gate governs EARNING a part, never keeping one — a car must never display less than
+	# it is actually running.
+	var gated := ""
+	for def in UpgradeLibrary.all():
+		var pid := String(def.get("id", ""))
+		if UpgradeLibrary.unlocked_by_rally(pid) != "" and not UpgradeLibrary.is_hidden_slot(
+				String(def.get("slot", ""))):
+			gated = pid
+			break
+	if gated == "":
+		pass_test("no star-gated part authored; nothing to assert")
+		return
+	var owned := {"instance_id": 13, "model_id": "synthetic", "installed_upgrades": [gated],
+		"upgrades": {}, "tuning": {}}
+	var m = _menu(owned)
+	var ids: Array = []
+	for def in m._slot_parts(UpgradeLibrary.slot_of(gated), [gated])["parts"]:
+		ids.append(String(def.get("id", "")))
+	assert_has(ids, gated, "an already-fitted part is shown despite its gate being shut")
 
 func _has_swap_button(m: Control) -> bool:
 	for node in m.find_children("*", "Button", true, false):

@@ -486,8 +486,12 @@ func test_under_band_car_cannot_start() -> void:
 	RallySession.start_rally(_rally(), owned, true)
 	var sl := _make(_leaders())
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
-	# A band whose floor sits well above the car's p/w -> under-powered -> ineligible.
+	# Built off the car's upgrade CEILING (the meta the pw_min floor is judged against), not
+	# its current p/w: the floor now asks "could this car ever reach the band", so a band it
+	# could grow into by fitting catalogue parts is NOT a lockout.
+	var ceiling := UpgradeLibrary.max_potential_meta(owned, entry)
+	var pw := CarLibrary.power_to_weight(ceiling) * CarLibrary.KW_KG_TO_HP_TONNE
+	# A band whose floor sits well above even that -> genuinely too weak -> ineligible.
 	sl._rally = {"restriction": {"pw_min": pw * 1.5}}
 	sl.launch()
 	assert_false(sl.has_launched(), "an under-floor (underpowered) car is ineligible and does not launch")

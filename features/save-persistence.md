@@ -68,7 +68,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   in the same per-rally record as `completed` so everything known about a rally is in one
   place and a rally id that stops existing takes its flag with it instead of orphaning an
   entry in a parallel list. Only the ACKNOWLEDGEMENT is stored, never the unlock — which
-  rallies are open stays derived, exactly as `showdown_unlocked` was made to (below).
+  rallies are open stays derived, exactly as the special-event star gate is (below).
   A missing key reads `false` through the normal `.get` default, so no `SCHEMA_VERSION`
   bump was needed.
   **The backfill:** `false` is the wrong default for an EXISTING save — a career with a
@@ -89,13 +89,22 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   `hq.gd`'s `_entry_plan` (owned cars, tuning headroom, etc). The eligible-car hold is
   applied only by `hq.gd._pending_reveals()`, the query that decides what actually
   parades on a given map open.
-- **Showdown/region unlock is not stored here at all** — `RegionLibrary.unlocked`
-  (see [regions.md](regions.md)) derives it on every call from the previous
-  region's showdown-rally `completed` flag in `rallies`, so no dedicated profile
-  field/schema bump is needed for the region system. (An earlier
-  `showdown_unlocked`/`showdown_completed` pair of persisted, never-read flags was
-  removed — see `todo/one-map-four-corners.md`, "Resolved: the last six
-  decisions" item 7.)
+- **Region unlock is not stored here at all** — `RegionLibrary` no longer gates
+  anything (it's look + waterline only, see [regions.md](regions.md)). (An
+  earlier `showdown_unlocked`/`showdown_completed` pair of persisted, never-read
+  flags was removed — see `todo/one-map-four-corners.md`, "Resolved: the last
+  six decisions" item 7.)
+- **The special-event star gate rides entirely on the existing per-rally
+  `completed` flag too — no new save state.** A `RallyLibrary` entry marked
+  `special: true` carries a `requires_stars: N`; `RallyLibrary.total_stars(profile)`
+  sums `_stars_for` (derived from `best_placement`, below) over every
+  non-special rally, and `RallyLibrary.special_gate_open` is a live comparison
+  against that total — nothing is precomputed or persisted for it. Winning a
+  gated upgrade part (`UpgradeDef.unlocked_by_rally`) reads the same
+  `completed` flag on the naming special's rally record — again nothing new.
+  See [rally-roster.md](rally-roster.md) for the ladder and
+  [reward-system.md](reward-system.md) for where the gate is applied to the
+  draw pool.
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old
@@ -223,9 +232,9 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
 
 ## Not yet wired
 
-The showdown unlock and per-region reveal gates are derived LIVE from the
-profile's completion records by `RallyLibrary`/`RegionLibrary`
-(`showdown_unlocked()` / `rally_revealed()`, see `rally-roster.md`), rather
+The special-event star gate and the per-rally reveal gate are derived LIVE from
+the profile's completion records by `RallyLibrary`
+(`special_gate_open()` / `rally_revealed()`, see `rally-roster.md`), rather
 than being precomputed and stored on the save — `save_manager.gd` has nothing
 to recompute on `complete_rally`. `item_id`s come from the upgrade catalogue
 (`upgrade-catalogue.md`); `Save` only consumes them as opaque strings.

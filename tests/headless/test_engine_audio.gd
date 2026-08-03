@@ -636,6 +636,144 @@ func test_supercharger_whine_only_when_enabled() -> void:
 	assert_gt(_energy(blown), _energy(plain), "a supercharged engine adds a whine layer")
 
 
+# --- Nitrous hiss layer (features/nitrous.md, features/engine-audio.md) ------
+# The nitrous layer is synthesised noise gated on the DELIVERY state. The voice is
+# muted in this fixture so the buffer is essentially the nitrous layer alone.
+func _nitrous_synth() -> EngineAudioSynth:
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_noise_level = 0.0  # isolate the nitrous layer from the noise floor
+	cfg.engine_volume_db = -80.0  # mute the firing voice
+	cfg.nitrous_boost_gain = 0.5
+	cfg.nitrous_tank_seconds = 5.0
+	# Set EXPLICITLY rather than relying on the export's default: the default is a tunable a
+	# designer may set to 0 ("off"), which would silently mute the layer and break every hiss
+	# assertion below for reasons nothing to do with the code under test.
+	cfg.engine_nitrous_hiss_gain = 0.7
+	return EngineAudioSynth.new(cfg, MIX_RATE)
+
+
+func test_nitrous_silent_when_not_active() -> void:
+	# Nitrous FITTED but never triggered must add nothing — this is the property the
+	# HQ garage preview relies on (car_preview_audio passes the args hard-false).
+	var buf := PackedVector2Array(); buf.resize(2048)
+	_nitrous_synth().fill(buf, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, false, false, false)
+	assert_lt(_energy(buf), 1e-6, "a fitted-but-unused nitrous system is silent")
+
+
+func test_nitrous_active_adds_hiss() -> void:
+	var off := PackedVector2Array(); off.resize(2048)
+	var on := PackedVector2Array(); on.resize(2048)
+	_nitrous_synth().fill(off, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, false)
+	_nitrous_synth().fill(on, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, true)
+	assert_gt(_energy(on), _energy(off), "delivering nitrous adds a hiss layer")
+
+
+func test_nitrous_hiss_output_is_bounded_and_finite() -> void:
+	var buf := PackedVector2Array(); buf.resize(1024)
+	# Trigger + sustain + a dry tank all in one buffer: nothing may blow up.
+	_nitrous_synth().fill(buf, 6000.0, 1.0, false, 1024, false, false, 0.0, 0.0, false, false, true, true, true)
+	for s in buf:
+		assert_false(is_nan(s.x), "no NaN samples")
+		assert_false(is_inf(s.x), "no infinite samples")
+		assert_true(s.x >= -1.0 and s.x <= 1.0, "sample in [-1, 1]")
+
+
+func test_nitrous_trigger_edge_adds_a_transient() -> void:
+	# The solenoid crack fires on the nitrous_event edge, on top of the sustain.
+	var plain := PackedVector2Array(); plain.resize(512)
+	var cracked := PackedVector2Array(); cracked.resize(512)
+	_nitrous_synth().fill(plain, 4000.0, 1.0, false, 512, false, false, 0.0, 0.0, false, false, true, false)
+	_nitrous_synth().fill(cracked, 4000.0, 1.0, false, 512, false, false, 0.0, 0.0, false, false, true, true)
+	assert_gt(_energy(cracked), _energy(plain), "the delivery edge cracks the solenoid open")
+
+
+func test_nitrous_empty_fires_the_cutoff_cue() -> void:
+	# The tank running dry must be audible even though nitrous stops delivering in the
+	# same breath — it's the cutoff the player didn't choose.
+	var quiet := PackedVector2Array(); quiet.resize(2048)
+	var emptied := PackedVector2Array(); emptied.resize(2048)
+	_nitrous_synth().fill(quiet, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, false, false, false)
+	_nitrous_synth().fill(emptied, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, false, false, true)
+	assert_gt(_energy(emptied), _energy(quiet), "a dry tank fires a cutoff hiss tail")
+
+
+func test_nitrous_release_leaves_a_decaying_tail() -> void:
+	# Releasing the button rings a short tail out into the NEXT buffer, then dies.
+	var synth := _nitrous_synth()
+	var held := PackedVector2Array(); held.resize(2048)
+	var tail := PackedVector2Array(); tail.resize(2048)
+	var after := PackedVector2Array(); after.resize(8192)
+	synth.fill(held, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, true, true)
+	synth.fill(tail, 4000.0, 1.0, false, 2048, false, false, 0.0, 0.0, false, false, false)  # released
+	synth.fill(after, 4000.0, 1.0, false, 8192, false, false, 0.0, 0.0, false, false, false)
+	assert_gt(_energy(tail), 0.0, "the release rings a tail")
+	assert_lt(_energy(after) / 4.0, _energy(tail), "the tail decays away rather than sustaining")
+
+
+func test_nitrous_tail_darkens_as_it_decays() -> void:
+	# The cutoff cue is a DESCENDING hiss: the low-pass cutoff slides down with the
+	# tail, so the second half of the tail crosses zero less often than the first.
+	var synth := _nitrous_synth()
+	var settle := PackedVector2Array(); settle.resize(4096)
+	synth.fill(settle, 4000.0, 1.0, false, 4096, false, false, 0.0, 0.0, false, false, true, true)
+	var tail := PackedVector2Array(); tail.resize(4096)
+	synth.fill(tail, 4000.0, 1.0, false, 4096, false, false, 0.0, 0.0, false, false, false)
+	var first := PackedVector2Array(); first.resize(2048)
+	var second := PackedVector2Array(); second.resize(2048)
+	for i in range(2048):
+		first[i] = tail[i]
+		second[i] = tail[i + 2048]
+	assert_gt(_zero_crossings(first), _zero_crossings(second),
+		"the tail's spectral content descends as it decays")
+
+
+func test_nitrous_respects_the_global_master_volume() -> void:
+	# The hiss goes through the same final master gain as every other layer, so the
+	# in-game audio volume sliders (which drive engine_master_volume_db / the Engine
+	# bus) quieten and mute it too.
+	var mk := func(master_db: float) -> EngineAudioSynth:
+		var cfg := GameConfig.new()
+		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+		cfg.engine_noise_level = 0.0
+		cfg.engine_volume_db = -80.0  # isolate the nitrous layer
+		cfg.engine_master_volume_db = master_db
+		cfg.nitrous_boost_gain = 0.5
+		cfg.nitrous_tank_seconds = 5.0
+		return EngineAudioSynth.new(cfg, MIX_RATE)
+	var n := 4096
+	var loud := PackedVector2Array(); loud.resize(n)
+	var quiet := PackedVector2Array(); quiet.resize(n)
+	var muted := PackedVector2Array(); muted.resize(n)
+	mk.call(0.0).fill(loud, 4000.0, 1.0, false, n, false, false, 0.0, 0.0, false, false, true, true)
+	mk.call(-12.0).fill(quiet, 4000.0, 1.0, false, n, false, false, 0.0, 0.0, false, false, true, true)
+	mk.call(-80.0).fill(muted, 4000.0, 1.0, false, n, false, false, 0.0, 0.0, false, false, true, true)
+	assert_gt(_rms(loud, n), _rms(quiet, n) * 1.5, "the master volume quietens the nitrous hiss")
+	assert_lt(_rms(muted, n), 1e-3, "a muted master silences the nitrous hiss")
+
+
+func test_nitrous_uses_its_own_noise_stream() -> void:
+	# Every noise layer keeps its own rolling index into the shared table; if nitrous
+	# reused another layer's samples the sum would be a fixed multiple of it.
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_volume_db = -80.0
+	cfg.nitrous_boost_gain = 0.5
+	cfg.nitrous_tank_seconds = 5.0
+	var plain := EngineAudioSynth.new(cfg, MIX_RATE)
+	var gassed := EngineAudioSynth.new(cfg, MIX_RATE)
+	var a := PackedVector2Array(); a.resize(1024)
+	var b := PackedVector2Array(); b.resize(1024)
+	plain.fill(a, 3000.0, 0.5, false, 1024)
+	gassed.fill(b, 3000.0, 0.5, false, 1024, false, false, 0.0, 0.0, false, false, true, true)
+	var proportional := true
+	for i in range(512, 1024):  # past the hiss ramp-in
+		if absf(a[i].x) > 0.0001 and not is_equal_approx(b[i].x / a[i].x, b[512].x / a[512].x):
+			proportional = false
+			break
+	assert_false(proportional, "the nitrous layer draws different noise than the noise floor")
+
+
 func test_attenuation_full_volume_inside_ref_radius() -> void:
 	# At or inside the reference radius the result is exactly 0 dB (no attenuation).
 	assert_eq(EngineAudioSynth.attenuation_db(0.0, 8.0, -60.0), 0.0, "at the listener")

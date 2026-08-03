@@ -36,6 +36,8 @@ var _synth: EngineAudioSynth
 var _playback: AudioStreamGeneratorPlayback
 var _scratch := PackedVector2Array()
 var _scratch_silent := false  # true while _scratch holds the all-zero silence buffer
+var _prev_nitrous_on := false  # last frame's nitrous DELIVERY state, for the audio edges
+var _prev_nitrous_empty := false  # so the tank-dry cue arms once, not every frame after
 
 # Resolved-once references for the per-frame fill. Walking the parent chain (and the
 # dynamic string-keyed `get("config")` in _car_config()) every frame is exactly the
@@ -232,6 +234,27 @@ func _timed_process(_delta: float) -> void:
 	# turbo WHISTLE and blow-off valve, layers a supercharged car does not have (its whine
 	# is rpm-pitched, and install_supercharger clears turbo_enabled so neither can fire).
 	# Feeding belt boost in would make a blown car whistle and vent like a turbo.
-	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active)
+	# Nitrous audio state. `nitrous_on` is the sim's LATCHED delivery state (held AND charged
+	# AND combusting) — read, never re-derived, so the hiss can't sound while the engine is
+	# off-throttle or fuel-cut and no torque is actually being added. Never "nitrous is
+	# fitted": the hiss layer must only exist while gas is actually flowing (the same
+	# gate keeps the HQ garage preview silent — see car_preview_audio.gd).
+	# engine.nitrous_event / nitrous_emptied are per-SUBSTEP flags that the sim clears
+	# at the top of every _step_nitrous, so a frame's worth of substeps has usually
+	# wiped them before we get here. So the edges are derived HERE from the delivery
+	# state we last saw, and the sim's flags are OR-ed in for the case where the edge
+	# did land on the final substep.
+	var nitrous_on := engine.nitrous_delivering
+	var nitrous_trigger := engine.nitrous_event or (nitrous_on and not _prev_nitrous_on)
+	# The tank-dry cue must fire ONCE. `nitrous_emptied` catches the substep it happens; the
+	# fallback catches the (common) case where a frame's substeps wiped that flag before we
+	# looked. Without the `_prev_nitrous_empty` guard the fallback re-fires on the FOLLOWING
+	# frame too — _prev_nitrous_on is still true and the fraction is still 0 — re-arming the
+	# tail at full amplitude partway through its own decay.
+	var nitrous_empty := (engine.nitrous_emptied
+		or (_prev_nitrous_on and not _prev_nitrous_empty and engine.nitrous_fraction() <= 0.0))
+	_prev_nitrous_empty = nitrous_empty
+	_prev_nitrous_on = nitrous_on
+	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active, nitrous_on, nitrous_trigger, nitrous_empty)
 	_scratch_silent = false
 	_playback.push_buffer(_scratch)

@@ -133,7 +133,7 @@ func build_table_overlay() -> void:
 	_hq._map_meter = _hq._label("", 14)
 	root.add_child(_hq._map_meter)
 
-	# The new-rally reveal's one-line banner ("NEW RALLY - …" / "SHOWDOWN UNLOCKED - …"),
+	# The new-rally reveal's one-line banner ("NEW RALLY - …" / "SPECIAL EVENT UNLOCKED - …"),
 	# hidden except while the reveal sequence is running. See hq.gd _set_reveal_banner.
 	_hq._reveal_banner = _hq._label("", 20)
 	_hq._reveal_banner.visible = false
@@ -175,7 +175,7 @@ func build_detail_overlay() -> void:
 	# colour and separators — not font size. Stars are a polygon StarRow, since
 	# Syne Mono has no ★ glyph.
 
-	# --- Header: title + region on the left, a gold SHOWDOWN chip on the right.
+	# --- Header: title + region on the left, a gold SPECIAL EVENT chip on the right.
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
 	root.add_child(header)
@@ -187,10 +187,10 @@ func build_detail_overlay() -> void:
 	_hq._detail_region = _hq._label("", 16)
 	_hq._detail_region.add_theme_color_override("font_color", UITheme.MUTED)
 	titles.add_child(_hq._detail_region)
-	_hq._detail_showdown = _hq._label("SHOWDOWN", 16)
-	_hq._detail_showdown.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_hq._detail_showdown.add_theme_color_override("font_color", UITheme.GOLD)
-	header.add_child(_hq._detail_showdown)
+	_hq._detail_special = _hq._label("SPECIAL EVENT", 16)
+	_hq._detail_special.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hq._detail_special.add_theme_color_override("font_color", UITheme.GOLD)
+	header.add_child(_hq._detail_special)
 
 	root.add_child(HSeparator.new())
 
@@ -469,7 +469,13 @@ func build_settings_overlay() -> void:
 	var title := _hq._label("SETTINGS", 32)
 	root.add_child(title)
 
-	_hq._settings_sub = _hq._label("Camera & controls:", 16)
+	# Subtitle for the PRE-RALLY GATE only ("choose your touch controls to start"), where it
+	# is the one thing explaining why the player is being made to pick. The ordinary
+	# title-screen / pause entry shows nothing here — the SETTINGS heading plus the category
+	# buttons already say everything a "Camera & controls:" line did, so it was pure chrome.
+	# _open_settings owns both the text and the visibility.
+	_hq._settings_sub = _hq._label("", 16)
+	_hq._settings_sub.visible = false
 	root.add_child(_hq._settings_sub)
 
 	var scroll := TouchScrollContainer.new()

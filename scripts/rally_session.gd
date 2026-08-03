@@ -36,8 +36,8 @@ signal standings_ready(event_index: int)
 signal upgrade_revealed(item_id: String)
 # A top-3 car reward was drawn + granted — reward reveal (car arrives in HQ).
 signal car_rewarded(model_id: String)
-# A top-3 showdown finish: the game's win / credits beat fires instead of a draw.
-signal showdown_won()
+# The final special event won: the game's win / credits beat fires instead of a draw.
+signal game_won()
 
 var _phase: int = Phase.IDLE
 var _rally: Dictionary = {}            # the RallyDef being run ({} when IDLE)
@@ -188,20 +188,19 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	# and so the unseeded draw is savescum-proof (reward-system.md). The final event
 	# awards no upgrade (the podium reveals the car instead).
 	_event_upgrade = ""
-	var awarded := _event_index < EVENTS_PER_RALLY
-	if awarded:
-		var difficulty := int(_rally.get("difficulty", 1))
-		var driven: Dictionary = Save.get_car(_car_instance_id)
-		var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile, null, driven)
-		if UpgradeLibrary.is_consumable(item_id):
-			Save.add_item(item_id, 1, false)
-		else:
-			Save.install_upgrade(_car_instance_id, item_id, false)
-		_event_upgrade = item_id
-		_upgrades_won.append(item_id)
-	if damaged or awarded:
+	# Two SEPARATE questions, deliberately not one flag. `at_award_boundary` is about the
+	# flow (only non-final events pay out at all); `_event_upgrade` non-empty is about the
+	# draw actually yielding something. A maxed-out car can now legitimately win NOTHING
+	# (RewardSystem.NO_REWARD) — in that case we install nothing, record nothing, and fire
+	# no reveal, so the flow runs straight on to the standings interstitial.
+	var at_award_boundary := _event_index < EVENTS_PER_RALLY
+	if at_award_boundary:
+		_event_upgrade = RewardSystem.draw_and_grant_upgrade(_car_instance_id, Save.profile)
+		if _event_upgrade != "":
+			_upgrades_won.append(_event_upgrade)
+	if damaged or _event_upgrade != "":
 		Save.save()
-	if awarded:
+	if _event_upgrade != "":
 		upgrade_revealed.emit(_event_upgrade)
 	# The rally now PAUSES on a standings interstitial after EVERY event — including
 	# the last, which shows an event-only leaderboard and then resolves to the podium.
@@ -478,7 +477,7 @@ func _apply_field_repair() -> Dictionary:
 
 
 # Total the events, place against the field, record completion + grant rewards on
-# a top-3 finish (showdown wins instead of a car draw), then finish back to IDLE.
+# a top-3 finish (the final special wins instead of a car draw), then finish back to IDLE.
 func _resolve_results() -> void:
 	# The same partial pit repair every other stage-to-stage transition gets — applied
 	# here too, since the final event's damage would otherwise never be repaired (it
@@ -504,26 +503,27 @@ func _resolve_results() -> void:
 	# Reward outcome, captured for the podium reveal (todo/menus.md rig 5).
 	var car_reward := ""
 	var car_reward_is_new := false
-	var showdown_done := false
+	var game_won_now := false
 	if top3:
 		# complete_rally records the FIRST completion (idempotent); the car reward
 		# fires on EVERY top-3 finish, including re-wins (renewable supply).
 		Save.complete_rally(String(_rally.get("id", "")), combined, placed)
-		# The endgame is completing EVERY region's showdown, not one designated final
-		# region (todo/one-map-four-corners.md). complete_rally() above has already
-		# recorded THIS showdown, so the last one to be won sees itself counted here
+		# The endgame is completing EVERY special event on the star ladder — no designated
+		# final region (todo/star-gated-special-events.md). complete_rally() above has
+		# already recorded THIS special, so the last one to be won sees itself counted here
 		# and fires the credits; ordering matters and is why the check sits after it.
-		var is_final_showdown := bool(_rally.get("showdown", false)) \
-			and RegionLibrary.all_showdowns_completed(Save.profile)
-		if is_final_showdown:
-			# Every showdown is now done: fire the win/credits beat, no car draw
+		var is_final_special := RallyLibrary.is_special(_rally) \
+			and RallyLibrary.all_specials_completed(Save.profile)
+		if is_final_special:
+			# Every special is now done: fire the win/credits beat, no car draw
 			# (the finale rewards completion, not a car).
-			showdown_done = true
-			showdown_won.emit()
+			game_won_now = true
+			game_won.emit()
 		else:
-			# Every other top-3 finish - including a showdown won while other regions'
-			# showdowns are still outstanding - is a normal rally win: draw a car
-			# (renewable supply).
+			# Every other top-3 finish - including a special won while other rungs of the
+			# ladder are still outstanding - is a normal rally win: draw a car
+			# (renewable supply). Specials pay out exactly like ordinary rallies, which
+			# also keeps them safe from soft-locking a player who needs a car.
 			var model: Variant = RewardSystem.draw_car(Save.profile, int(_rally.get("difficulty", 1)))
 			if model != null:
 				car_reward = String(model)
@@ -550,7 +550,7 @@ func _resolve_results() -> void:
 		"upgrades": _upgrades_won.duplicate(),
 		"car_reward": car_reward,
 		"car_reward_is_new": car_reward_is_new,
-		"showdown_won": showdown_done,
+		"game_won": game_won_now,
 	}
 	_last_result = result
 	_reset_to_idle()

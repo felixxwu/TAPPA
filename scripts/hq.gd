@@ -71,7 +71,9 @@ enum LiftPage { HUB, TUNE, UPGRADES }
 # one-per-frame, see _spawn_lineup_progressive). Lets tests await a fully-parked lineup.
 signal lineup_built
 
-const MAX_STARS := 3
+# The star row's length — one definition, shared with the gate arithmetic, so the medals
+# drawn on a pin can't disagree with what the special ladder counts.
+const MAX_STARS := RallyLibrary.MAX_STARS_PER_RALLY
 # How many qualifying cars the rally-detail card names before it tails off with "+N more".
 const MAX_QUALIFY_NAMES := 1
 const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of truth for the kW/kg -> hp/tonne display conversion
@@ -356,16 +358,16 @@ var _settings_layer: CanvasLayer
 # Settings page: the shared SettingsMenu (camera angle + mobile controls), reused by
 # the in-run pause menu so both pages match.
 var _settings_menu: SettingsMenu
-var _settings_sub: Label             # subtitle (changes wording in the pre-rally gate)
+var _settings_sub: Label             # subtitle, shown ONLY for the pre-rally gate
 var _settings_action_button: Button  # bottom button: "< Back" (title) or "Start >" (gate)
 # True when Settings was opened as the mandatory pre-rally control-scheme gate (vs.
 # from the title screen) — the bottom button then starts the rally instead of going back.
 var _settings_gate := false
 
-var _map_meter: Label           # progress-to-showdown meter on the table HUD
+var _map_meter: Label           # star-total meter on the table HUD
 var _detail_title: Label
 var _detail_region: Label        # region tag under the title (muted)
-var _detail_showdown: Label      # gold "SHOWDOWN" chip on the header row
+var _detail_special: Label       # gold "SPECIAL EVENT" chip on the header row
 var _detail_restriction: Label   # the eligibility restriction summary
 var _detail_qualify: Label       # the qualifying cars, named (GREEN / RED / muted)
 var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
@@ -632,7 +634,7 @@ func _bay_center_x(i: int, bays: int) -> float:
 # (RallyFlag) at each rally's normalised map_pos, with a billboarded house-style black
 # box above it holding the rally name and a row of five-pointed stars (1st-place best →
 # 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
-# showdown pin is locked (grey/disabled, non-pickable) until every other rally is done,
+# special pin is locked (grey/disabled, non-pickable) until its star gate opens,
 # and any rally whose reveal_after (global reveal order) isn't met yet is locked
 # the same way — a "coming up" hint (see RallyLibrary.rally_revealed).
 #
@@ -665,8 +667,8 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float,
 		hold_locked := false) -> Node3D:
 	var rally_id := String(rally["id"])
-	# Locked = not revealed yet: a showdown before its region's gate opens, OR a
-	# non-showdown rally whose reveal_after (global reveal order) isn't met. A
+	# Locked = not revealed yet: a special before its star gate opens, OR an ordinary
+	# rally whose reveal_after (global reveal order) isn't met. A
 	# locked pin renders grey + non-pickable — a "coming up" hint, not enterable.
 	var locked: bool = hold_locked or not RallyLibrary.rally_revealed(rally, Save.profile)
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
@@ -677,27 +679,47 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	pin.set_meta("rally_id", rally_id)
 	pin.set_meta("locked", locked)
 
-	# The marker: a procedural flag whose look encodes the rally's state — a checkered
-	# pennant once podiumed, else green (an eligible car is owned) or grey (none /
-	# locked), with a gold tip+base once won. See RallyFlag / features/menus.md.
+	# The marker. An ordinary rally plants a procedural FLAG whose look encodes its state —
+	# a checkered pennant once podiumed, else green (an eligible car is owned) or grey (none
+	# / locked), with a gold tip+base once won. A star-gated SPECIAL stands a TROPHY instead:
+	# the prestige event on its corner shouldn't read as one more flag, and a cup can show
+	# WHICH medal you took (gold / silver / bronze) where a pennant only says "podiumed".
+	# Both markers share the same base footprint and the same two state axes, so the map
+	# keeps one visual language. See RallyFlag / RallyTrophy / features/menus.md.
 	var earned := _stars_for(rally_id)
 	var has_eligible := _has_eligible_car(rally)
-	var flag := RallyFlag.build(locked, earned, has_eligible)
-	pin.add_child(flag)
-	var marker_top := RallyFlag.POLE_HEIGHT
+	var special := RallyLibrary.is_special(rally)
+	var marker := (RallyTrophy.build(locked, earned, has_eligible) if special
+		else RallyFlag.build(locked, earned, has_eligible))
+	pin.add_child(marker)
+	# Where the floating readout box hangs — each marker reports its own top, since a trophy
+	# is a different height from a flag pole.
+	var marker_top: float = RallyTrophy.HEIGHT if special else RallyFlag.POLE_HEIGHT
 
 	# Readout: a single design-system black box floating above the flag, holding the
 	# rally name and a row of proper five-pointed stars (gold earned / dim not). Built
 	# as a 2D UITheme panel rendered to a billboarded sprite, so it gets the real house
 	# look (pure-black panel, Syne Mono, uppercase) and always faces the camera.
 	#
-	# THE BOX IS ALL-OR-NOTHING. A rally that can't be entered yet — locked, or with no
-	# eligible car — gets NO box at all rather than a dimmed one: a menu is either live
-	# and at full opacity, or absent. The 3D flag still stands at every pin regardless,
-	# so the map keeps showing where the unavailable rallies are (grey flag = "coming up").
+	# THE BOX IS ALL-OR-NOTHING, with ONE exception. An ordinary rally that can't be entered
+	# yet — locked, or with no eligible car — gets NO box rather than a dimmed one: a menu is
+	# either live and at full opacity, or absent. The 3D flag still stands at every pin, so
+	# the map keeps showing where the unavailable rallies are (grey flag = "coming up").
+	#
+	# THE EXCEPTION: a locked SPECIAL still gets a box, at FULL opacity but non-pickable,
+	# reading "X/24 stars" over what it unlocks. Locking must hide availability, never
+	# information — the player should be able to see what exists and where to earn it long
+	# before they can have it. Full opacity keeps the all-or-nothing rule intact (the box is
+	# live-looking, it just isn't a target); the grey flag beneath already says "not yet".
+	var locked_special := locked and RallyLibrary.is_special(rally)
 	var available := not locked and has_eligible
-	if available:
-		var label := _build_pin_label(String(rally["name"]), earned)
+	if locked_special:
+		var teaser := _build_special_teaser_label(rally)
+		teaser.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
+		pin.add_child(teaser)
+		pin.set_meta("label_panel", teaser.get_meta("panel"))
+	elif available:
+		var label := _build_pin_label(String(rally["name"]), earned, rally)
 		label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
 		pin.add_child(label)
 		# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it
@@ -778,26 +800,58 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	return sprite
 
 
-func _build_pin_label(rally_name: String, earned: int) -> Sprite3D:
-	# Always full opacity: a box only exists for a rally that can be entered (see
-	# _make_pin), so there is no dimmed state to render. Hands its panel back so the pin
-	# repaints it on selection.
+# ONE readout-box builder for every pin variant, so the box styling lives in a single
+# place. `stars` < 0 omits the medal row (the locked-special teaser has no result to show);
+# `unlock` == "" omits the unlock line. Always full opacity — see _make_pin on why a locked
+# special's box is live-looking but non-pickable rather than dimmed. Hands its panel back so
+# the pin can repaint it on selection.
+func _build_readout_box(title: String, stars: int, unlock: String) -> Sprite3D:
 	return _build_readout_sprite(func(box: VBoxContainer) -> void:
 		box.add_theme_constant_override("separation", UITheme.GAP)
-		box.add_child(UITheme.title(rally_name))
-		var stars := StarRow.new()
-		stars.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		box.add_child(stars)
-		stars.setup(earned, MAX_STARS))
+		box.add_child(UITheme.title(title))
+		if stars >= 0:
+			var row := StarRow.new()
+			row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			box.add_child(row)
+			row.setup(stars, MAX_STARS)
+		if unlock != "":
+			box.add_child(_label(unlock, 13)))
+
+
+# An enterable rally: name, medal row, and — for a special — what it unlocks, so the map
+# answers "where do I get X?" whether the special is locked or not.
+func _build_pin_label(rally_name: String, earned: int, rally: Dictionary = {}) -> Sprite3D:
+	return _build_readout_box(rally_name, earned, _special_unlock_line(rally))
+
+
+# The locked-special teaser box: "X/24 stars" over "unlocks Supercharger".
+func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
+	var need := RallyLibrary.stars_required(rally)
+	var have := need - RallyLibrary.stars_needed(rally, Save.profile)
+	return _build_readout_box("%d/%d stars" % [have, need], -1, _special_unlock_line(rally))
+
+
+# What a special unlocks, as a display line ("unlocks Supercharger"), derived from the
+# upgrade catalogue so the map can never drift from the actual gate. A special that gates
+# no part (e.g. the engine-swap capability) names that instead.
+func _special_unlock_line(rally: Dictionary) -> String:
+	var rally_id := String(rally.get("id", ""))
+	if rally_id == "":
+		return ""
+	var item := UpgradeLibrary.unlocked_by(rally_id)
+	if not item.is_empty():
+		return "unlocks %s" % String(item.get("name", item["id"]))
+	# A special may gate a CAPABILITY rather than a part, which is authored the other way
+	# round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) and so isn't in the catalogue index.
+	if rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+		return "unlocks engine swaps"
+	return ""
 
 
 # Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
 # anything else (or never placed) → 0.
 func _stars_for(rally_id: String) -> int:
-	var placed := Save.best_placement(rally_id)
-	if placed >= 1 and placed <= MAX_STARS:
-		return MAX_STARS + 1 - placed
-	return 0
+	return RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
 
 
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
@@ -869,15 +923,10 @@ func _has_eligible_car(rally: Dictionary) -> bool:
 func _refresh_meter() -> void:
 	if _map_meter == null:
 		return
-	var total := 0
-	var done := 0
-	for rally in RallyLibrary.all():
-		if rally["showdown"]:
-			continue
-		total += 1
-		if Save.rally_completed(rally["id"]):
-			done += 1
-	_map_meter.text = "Progress: %d / %d rallies completed" % [done, total]
+	# Stars, not rallies completed: the star total is what gates the special events, so the
+	# table HUD and the special pins must speak the same metric.
+	_map_meter.text = "Stars: %d / %d" % [
+		RallyLibrary.total_stars(Save.profile), RallyLibrary.max_total_stars()]
 
 
 # --- 3D picking handlers (real play; tests call the targets directly) --------
@@ -1619,8 +1668,10 @@ func _build_carpark_nav_row() -> Array:
 # title). Always reset to the category list so each open starts at the top level.
 func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
-	_settings_sub.text = ("Choose your touch controls to start:" if gate
-		else "Camera & controls:")
+	# Shown only for the gate, where it explains the forced pick; otherwise hidden (see
+	# hq_overlays._build_settings_overlay).
+	_settings_sub.text = "Choose your touch controls to start:" if gate else ""
+	_settings_sub.visible = gate
 	# The pre-rally gate jumps straight to the mobile-controls page — the player only
 	# needs to pick a touch layout, not wade through the full category list. The
 	# title-screen / pause entry opens on the category list as usual.
@@ -2118,7 +2169,7 @@ func _enter_table() -> void:
 			Save.save()
 		pending = []
 	# The pending pins go up in their LOCKED look so the flip is watchable; everything
-	# else refreshes normally (newly-earned stars / showdown unlock).
+	# else refreshes normally (newly-earned stars / a special unlocking).
 	_refresh_map_pins(pending)
 	if not pending.is_empty():
 		_go_to(View.TABLE)
@@ -2138,7 +2189,7 @@ func _enter_table() -> void:
 # The rally ids waiting to be shown to the player, in roster order (newest-unlocked
 # last). A rally qualifies only when ALL THREE hold:
 #
-#   * it is unlocked (RallyLibrary.rally_revealed — reveal_after met, or a showdown
+#   * it is unlocked (RallyLibrary.rally_revealed — reveal_after met, or a special
 #     whose region gate has opened),
 #   * the player owns a car that can ACTUALLY enter it (_has_eligible_car — the same
 #     authoritative answer the green/grey pin flag uses), and
@@ -2163,7 +2214,7 @@ func _pending_reveals() -> Array:
 
 
 # Walk the queue: pan to each pin still wearing its locked look, flip it to unlocked,
-# banner it, hold, move on. A showdown gets the bigger beat (its own banner and a longer
+# banner it, hold, move on. A special gets the bigger beat (its own banner and a longer
 # hold — it's a region finale). Any press at any point skips the rest (_skip_reveals).
 #
 # GENERATION GUARD: `_reveal_token` is bumped here and captured in `token` before the
@@ -2194,7 +2245,7 @@ func _run_reveal_sequence(pending: Array) -> void:
 		if not _reveal_continue(token):
 			return
 		var rally := RallyLibrary.by_id(rid)
-		var showdown := bool(rally.get("showdown", false))
+		var special := RallyLibrary.is_special(rally)
 		# 1. Travel to the pin (the existing map-pan tween — one motion for the whole
 		#    game) and let it settle while the pin is still grey.
 		_pan_table_to(_pin_position(rid))
@@ -2208,10 +2259,10 @@ func _run_reveal_sequence(pending: Array) -> void:
 		_reveal_shown.append(rid)
 		_refresh_map_pins(still_held)
 		_focus_pin(rid)
-		var lead := "SHOWDOWN UNLOCKED" if showdown else "NEW RALLY"
+		var lead := "SPECIAL EVENT UNLOCKED" if special else "NEW RALLY"
 		_set_reveal_banner("%s - %s" % [lead, String(rally.get("name", ""))])
-		# 3. Hold on the new thing. A showdown lingers.
-		var hold: float = cfg.hq_reveal_hold_time * (2.0 if showdown else 1.0)
+		# 3. Hold on the new thing. A special lingers.
+		var hold: float = cfg.hq_reveal_hold_time * (2.0 if special else 1.0)
 		await get_tree().create_timer(hold).timeout
 	if _reveal_continue(token) and overflow > 0:
 		# The dev "3-star everything" cheat (and any future mass unlock) can open the whole
@@ -2329,7 +2380,7 @@ func _set_reveal_banner(text: String) -> void:
 
 
 # The pins a keyboard/gamepad cursor can land on: the unlocked ones, in rally order
-# (the locked showdown pin is skipped — it's non-pickable until everything else is done).
+# (a locked special pin is skipped — it's non-pickable until its star gate opens).
 func _unlocked_pins() -> Array:
 	var out: Array = []
 	for pin in _pins:
@@ -2529,9 +2580,9 @@ func _show_detail() -> void:
 	_detail_region.text = region  # UITheme.enforce uppercases it
 	_detail_region.visible = region != ""
 	# Difficulty is a hidden tier (it drives reward value, not anything the player
-	# sees) — the eligible-car requirement is the visible gate. The showdown chip
-	# replaces the old trailing "THE SHOWDOWN" body line.
-	_detail_showdown.visible = bool(rally.get("showdown", false))
+	# sees) — the eligible-car requirement is the visible gate. The gold chip marks a
+	# star-gated special event.
+	_detail_special.visible = RallyLibrary.is_special(rally)
 
 	# --- Eligibility: restriction + how many of the player's cars can enter.
 	_detail_restriction.text = _restriction_text(rally.get("restriction", {}))
@@ -4444,13 +4495,26 @@ func _commit_engine_swap(current_id: int, partner_id: int) -> void:
 	_enter_lift()
 
 
-# Confirm popup for a chosen engine-swap partner: swapping costs one token. If the
-# player holds one, OK ("Swap") commits; if not, OK is disabled and the message says
-# so (the swap-row button already blocks this case, but the popup stays defensive).
+# Confirm popup for a chosen engine-swap partner: swapping needs the CAPABILITY unlocked
+# (the star-gated special) and costs one token. Both are checked here as well as on the
+# swap-row button — this popup stays defensive, since it is also reachable from the car-park
+# swap station, not only the upgrades menu.
 func _show_swap_confirm(current_id: int, partner_id: int) -> void:
 	var tokens := Save.engine_swap_tokens_owned()
 	var body: String
-	if tokens > 0:
+	if not RallyLibrary.engine_swaps_unlocked(Save.profile):
+		# Locked takes priority over the token count: while the capability is locked, a
+		# token message would send the player after the wrong thing. Tokens keep dropping
+		# and banking meanwhile, so name them — they're a teaser, not a dead reward.
+		_pending_swap = {}
+		# The requirement is only quotable if the gating rally actually resolves (it may not
+		# under a synthetic test roster) — otherwise say it plainly rather than "0-star".
+		var need := RallyLibrary.engine_swap_star_requirement()
+		body = ("Engine swapping is locked. Win the %d-star special event to unlock it" % need
+			if need > 0 else "Engine swapping is not unlocked yet")
+		body += (" — you have %s banked ready." % UITheme.count_noun(tokens, "token")
+			if tokens > 0 else ".")
+	elif tokens > 0:
 		_pending_swap = {"current": current_id, "partner": partner_id}
 		body = ("Exchange engines between these two cars? " +
 			"This spends 1 engine swap token (you have %d)." % tokens)
@@ -4459,7 +4523,11 @@ func _show_swap_confirm(current_id: int, partner_id: int) -> void:
 		body = "You have no engine swap tokens. Win one from a rally reward, then swap."
 	ConfirmPopup.open(self, "Swap engines?", body,
 		[ {"label": "Cancel", "callback": Callable()},
-		  {"label": "Swap", "callback": _on_swap_confirmed, "disabled": tokens <= 0} ], 1, 0)
+		  # Disabled whenever the swap CANNOT happen — no token, or the capability itself is
+		  # still star-locked. Without the lock term the button looked live and focusable and
+		  # then silently no-opped, because the locked branch above clears _pending_swap.
+		  {"label": "Swap", "callback": _on_swap_confirmed,
+			"disabled": _pending_swap.is_empty()} ], 1, 0)
 
 
 # OK on the swap-confirm popup: perform the swap (spends the token).

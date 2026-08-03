@@ -20,7 +20,6 @@ func test_catalogue_is_well_formed() -> void:
 	for item in UpgradeLibrary.UPGRADES:
 		assert_false(ids.has(item["id"]), "item id '%s' is unique" % item["id"])
 		ids[item["id"]] = true
-		assert_gt(item["tier"], 0, "%s has a positive tier" % item["id"])
 		if item["consumable"]:
 			assert_eq(String(item["slot"]), "", "consumable %s has no slot" % item["id"])
 		else:
@@ -119,12 +118,83 @@ func test_max_potential_meta_undoes_detune_and_drops_ballast() -> void:
 	var maxed := UpgradeLibrary.max_potential_meta(gimped, meta.duplicate())
 	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(cur),
 		"max potential (full tune, no ballast) beats the current gimped power-to-weight")
-	# It matches an un-gimped car (full tune, no ballast) — the true ceiling of ability.
+	# It reaches at least an un-gimped car (full tune, no ballast), and now goes FURTHER:
+	# the ceiling fits the best part in every slot from the whole catalogue, including parts
+	# the car doesn't own and parts still behind a star gate. That's the point — with the
+	# good parts gated, fitted hardware would badly understate what a car can become.
 	var clean := UpgradeLibrary.effective_meta(
 		{"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [], "disabled_upgrades": []},
 		meta.duplicate())
-	assert_almost_eq(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(clean), 0.0001,
-		"max potential equals the un-gimped car's power-to-weight")
+	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(clean),
+		"the ceiling fits catalogue parts the car does not own, so it beats a bare clean car")
+
+
+func test_the_aspirational_ceiling_ignores_star_gates_and_the_reachable_one_respects_them() -> void:
+	# THE load-bearing distinction: max_potential_meta's optional `profile` selects which
+	# ceiling you get. Omitted = ASPIRATIONAL ("could this car EVER?"), used for entry
+	# eligibility and display, so a locked part still counts. Supplied = REACHABLE ("can this
+	# player get there NOW?"), used by the soft-lock rescue — judging that aspirationally
+	# would conclude nobody is ever stuck. fx_gated is the fixture's star-gated part and is
+	# the lightest thing in its slot, so it moves power-to-weight when it counts.
+	var meta := CarLibrary.by_id("fx_light_rwd")
+	var car := {"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [],
+		"disabled_upgrades": []}
+	var unwon := {"rallies": {}}
+	var aspirational := UpgradeLibrary.max_potential_meta(car, meta.duplicate())
+	var reachable := UpgradeLibrary.max_potential_meta(car, meta.duplicate(), unwon)
+	var bare := UpgradeLibrary.effective_meta(car, meta.duplicate())
+	assert_gt(CarLibrary.power_to_weight(aspirational), CarLibrary.power_to_weight(bare),
+		"the ceiling beats the car's bare stats")
+	assert_gt(CarLibrary.power_to_weight(aspirational), CarLibrary.power_to_weight(reachable),
+		"a gate the player has not opened LOWERS the reachable ceiling but not the aspirational one")
+	# Win the gating rally and the two ceilings converge — nothing is out of reach any more.
+	var won := {"rallies": {UpgradeFixtures.FX_GATE_RALLY: {"completed": true, "best_placed": 1}}}
+	assert_almost_eq(
+		CarLibrary.power_to_weight(UpgradeLibrary.max_potential_meta(car, meta.duplicate(), won)),
+		CarLibrary.power_to_weight(aspirational), 0.0001,
+		"once the gate is open the reachable ceiling equals the aspirational one")
+
+
+func test_rally_gate_met_defaults_open_and_closes_only_on_an_authored_gate() -> void:
+	# The central new predicate, tested directly rather than through the draw. An ungated
+	# part is always available; a gated one flips on its rally being recorded complete.
+	var unwon := {"rallies": {}}
+	var won := {"rallies": {UpgradeFixtures.FX_GATE_RALLY: {"completed": true, "best_placed": 1}}}
+	assert_true(UpgradeLibrary.rally_gate_met("fx_lightweight", unwon),
+		"a part with no authored gate is always available")
+	assert_false(UpgradeLibrary.rally_gate_met("fx_gated", unwon),
+		"a gated part is withheld until its rally is won")
+	assert_true(UpgradeLibrary.rally_gate_met("fx_gated", won),
+		"and becomes available once it is")
+	assert_false(UpgradeLibrary.rally_gate_met("fx_gated",
+		{"rallies": {UpgradeFixtures.FX_GATE_RALLY: {"completed": false}}}),
+		"merely attempting the rally is not enough — completed means a top-3 finish")
+
+
+func test_a_fitted_part_keeps_applying_while_its_gate_is_closed() -> void:
+	# Pinned deliberately: the star gate governs EARNING a part, never keeping one. apply()
+	# walks installed_upgrades and never consults the gate, so a gate closing behind the
+	# player (or a profile that never opened it) must not retroactively uninstall anything.
+	var cfg := GameConfig.new()
+	var baseline := cfg.mass
+	var car := {"model_id": "fx_light_rwd", "tuning": {},
+		"installed_upgrades": ["fx_gated"], "disabled_upgrades": []}
+	assert_false(UpgradeLibrary.rally_gate_met("fx_gated", {"rallies": {}}),
+		"setup: the part's gate is shut")
+	UpgradeLibrary.apply(car, cfg)
+	assert_lt(cfg.mass, baseline, "an already-fitted part still takes effect")
+
+
+func test_max_potential_meta_fits_one_part_per_slot() -> void:
+	# Slot exclusivity must hold in the ceiling too: stacking two turbo-slot parts would
+	# report a power the car could never actually reach.
+	var meta := CarLibrary.by_id("fx_light_rwd")
+	var car := {"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [], "disabled_upgrades": []}
+	var seen := {}
+	for item_id in UpgradeLibrary._best_part_per_slot(car, meta.duplicate()):
+		var slot := UpgradeLibrary.slot_of(String(item_id))
+		assert_false(seen.has(slot), "at most one part per slot in the ceiling (%s)" % slot)
+		seen[slot] = true
 
 
 func test_no_upgrades_leaves_config_untouched() -> void:

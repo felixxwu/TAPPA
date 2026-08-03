@@ -37,17 +37,16 @@ func _clean() -> void:
 
 func test_dev_three_star_all_rallies_completes_everything_and_finishes_the_game() -> void:
 	# Dev cheat: every rally becomes completed + 3-starred (1st place). Regions no
-	# longer unlock in sequence (todo/one-map-four-corners.md), so the end state to
-	# assert is the one that now ends the game: every region's showdown completed,
-	# which is what fires the credits. Treats the catalogues as opaque (no dependency
-	# on any entry).
+	# longer gate anything, so the end state to assert is the one that now ends the
+	# game: every SPECIAL completed, which is what fires the credits. Treats the
+	# catalogues as opaque (no dependency on any entry).
 	_save.dev_three_star_all_rallies()
 	for rally in RallyLibrary.all():
 		var rid := String(rally["id"])
 		assert_true(_save.rally_completed(rid), "rally %s marked completed" % rid)
 		assert_eq(_save.best_placement(rid), 1, "rally %s is 3-starred (1st place)" % rid)
-	assert_true(RegionLibrary.all_showdowns_completed(_save.profile),
-		"every region's showdown completed after 3-starring all rallies")
+	assert_true(RallyLibrary.all_specials_completed(_save.profile),
+		"every special completed after 3-starring all rallies")
 
 
 func test_default_profile_is_empty_and_valid() -> void:
@@ -126,6 +125,22 @@ func test_install_disables_same_slot_incumbent() -> void:
 	assert_true(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_big"), "the newly-applied kit is enabled")
 	assert_false(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_small"),
 		"the same-slot incumbent is disabled, not scrapped")
+
+
+func test_a_hidden_slot_part_installs_enabled_even_when_asked_for_disabled() -> void:
+	# The centralised rule (Save.install_upgrade -> UpgradeLibrary.installs_enabled): a part in
+	# a HIDDEN slot has no garage row, so installing it disabled would leave it permanently
+	# dead AND block the slot from ever being re-awarded (install dedups per car). Enforcing it
+	# here rather than at each award site is what makes it hold for the career draw, the
+	# challenge draw and a mystery box alike.
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	assert_true(_save.install_upgrade(car["instance_id"], "fx_hidden", false),
+		"the hidden-slot part is fitted")
+	var fitted: Dictionary = _save.get_car(car["instance_id"])
+	assert_true(UpgradeLibrary.is_enabled(fitted, "fx_hidden"),
+		"it is ENABLED despite the caller passing enabled=false")
+	assert_false((fitted["disabled_upgrades"] as Array).has("fx_hidden"),
+		"and is not parked in disabled_upgrades")
 
 
 func test_install_disabled_parks_the_part_without_enabling() -> void:
@@ -894,9 +909,9 @@ func test_a_progressed_profile_with_no_reveal_flags_wants_seeding() -> void:
 func test_load_or_new_seeds_an_existing_career_with_no_reveal_flags() -> void:
 	RallyLibrary.override_for_test([
 		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
-			"showdown": false, "reveal_after": 0, "restriction": {}, "events": []},
+			"special": false, "reveal_after": 0, "restriction": {}, "events": []},
 		{"id": "sm_locked", "name": "Save Locked", "region": "home", "difficulty": 2,
-			"showdown": false, "reveal_after": 99, "restriction": {}, "events": []},
+			"special": false, "reveal_after": 99, "restriction": {}, "events": []},
 	])
 	_save.complete_rally("sm_open", 60_000, 1)  # career progress, but no reveal flags at all
 	assert_true(_save.needs_reveal_seeding())
@@ -917,7 +932,7 @@ func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
 	# same backfill, reached through the OTHER point a profile becomes live.
 	RallyLibrary.override_for_test([
 		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
-			"showdown": false, "reveal_after": 0, "restriction": {}, "events": []},
+			"special": false, "reveal_after": 0, "restriction": {}, "events": []},
 	])
 	var incoming: Dictionary = _save._default_profile()
 	incoming["rallies"] = {"sm_open": {"completed": true, "best_combined_ms": 1, "best_placed": 1}}

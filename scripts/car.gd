@@ -183,6 +183,13 @@ func replay_cursor() -> float:
 	return _replay_t
 
 
+# The Gearbox setting (SettingsMenu.gearbox_auto()) as last mirrored onto this car's
+# engine, as a tri-state int: -1 = not yet seen, 0 = manual, 1 = auto. An int rather than a
+# Variant because this is compared every tick. Only CHANGES are pushed, so nothing else that
+# writes `engine.auto` gets clobbered every frame — see _physics_process.
+var _gearbox_auto_seen := -1
+
+
 # True when the human driver's live inputs should be read: not locked (staging/finish),
 # not scripted (AI / opponent), not a passive replay ghost. One predicate so a future
 # non-driving mode is dead to input in ONE place instead of leaking through each input
@@ -456,9 +463,23 @@ func _timed_physics_process(delta: float) -> void:
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
 	# player can't shift or change mode mid-countdown. Scripted cars never read them.
-	if _driver_input_live():
-		if Input.is_action_just_pressed("toggle_gearbox"):
-			engine.auto = not engine.auto
+	# Hoisted: both the nitrous read below and the discrete-action block need it, and it was
+	# being evaluated twice per tick.
+	var input_live := _driver_input_live()
+	# Nitrous is a HELD input (left Shift / controller X), unlike the discrete gear and
+	# mode actions — so it reads is_action_pressed every tick and is cleared whenever the
+	# driver isn't live, so a countdown or a scripted car can never be spraying.
+	engine.nitrous_active = input_live and Input.is_action_pressed("nitrous")
+	if input_live:
+		# Transmission mode is a SETTING now (Settings -> Gearbox), not the old
+		# `toggle_gearbox` (T) runtime flip — T was unreachable on touch and on a
+		# controller. Mirror it onto the engine when it CHANGES (including the first live
+		# tick), not every tick: that applies a pause-menu change mid-run while leaving
+		# anything else that sets `engine.auto` (a scripted car, a test) alone.
+		var want_auto := 1 if SettingsMenu.gearbox_auto() else 0
+		if want_auto != _gearbox_auto_seen:
+			_gearbox_auto_seen = want_auto
+			engine.auto = want_auto == 1
 		if not engine.auto:
 			if Input.is_action_just_pressed("shift_up"):
 				engine.request_shift(1)
@@ -1643,6 +1664,10 @@ func apply_owned(owned: Dictionary) -> String:
 	# engine. The synth caches voicing at build time, so without this a turbo on an NA
 	# car would be silent even though its physics reads the config live.
 	_reconfigure_engine_audio()
+	# The upgrade layer above ran AFTER the drivetrain was constructed, so the engine's
+	# config-derived fitment caches are stale — re-derive them now the config is final.
+	# (Rally staging would reset the engine anyway; free roam never does.)
+	drivetrain.engine.refresh_fitment()
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
 	# removes it from the save.
 	var entry := CarLibrary.by_id(model_id)
@@ -1709,6 +1734,14 @@ func _rederive_live_config(owned: Dictionary) -> void:
 	UpgradeLibrary.apply(owned, config)
 	TuningLibrary.apply(owned, config)
 	_apply_aero_visibility(owned)  # keep the wing in sync when upgrades are re-fitted live
+	# Same reason as apply_owned: restoring the baseline zeroes the fitment fields and the
+	# upgrade layer re-writes them, so the engine's caches must be re-derived. refit_upgrades
+	# rebuilds the drivetrain after this anyway; retune does not, so it has to happen here.
+	drivetrain.engine.refresh_fitment()
+	# A rebuilt drivetrain re-seeds engine.auto from the config default, so forget the
+	# mirrored Gearbox setting and let the next live tick push it again — otherwise the
+	# player's choice silently reverts to the default after an upgrade refit.
+	_gearbox_auto_seen = -1
 
 
 # Re-apply a CHANGED tuning to the already-fielded live config, without reshaping the

@@ -9,7 +9,7 @@ extends RefCounted
 #   placed 3rd or better  → black-and-white CHECKERED racing flag (a result earned)
 #   has an eligible car    → light green   (raceable now, not yet podiumed)
 #   no eligible car         → dark grey      (can't field a qualifying car — also
-#                                            the look of the still-locked showdown)
+#                                            the look of a still-locked special)
 #
 # Tip + base (finial bead and base disk, which always share one colour):
 #   finished 1st (3 stars) → warm gold      (the rally is won)
@@ -38,7 +38,7 @@ const ACCENT_METAL := Color(0.60, 0.62, 0.66)
 
 # Solid pennant colours (the non-checkered cases).
 const PENNANT_GREEN := Color(0.30, 0.95, 0.32)   # raceable: eligible car owned (bright)
-const PENNANT_GREY := Color(0.30, 0.32, 0.36)    # no eligible car / locked showdown
+const PENNANT_GREY := Color(0.30, 0.32, 0.36)    # no eligible car / locked special
 
 # Checkered racing-flag swatches (generated into a tiny checker texture, cached).
 # Black and white, the classic racing checkered flag.

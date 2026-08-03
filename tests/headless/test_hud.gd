@@ -44,11 +44,15 @@ func before_each() -> void:
 	# await in a test would otherwise leak a fitted turbo into the shared autoload.
 	cfg.turbo_enabled = false
 	cfg.supercharger_boost_gain = 0.0
+	# Nitrous likewise starts unfitted, so its gauge is hidden unless a test fits a tank.
+	cfg.nitrous_boost_gain = 0.0
+	cfg.nitrous_tank_seconds = 0.0
 	var engine: EngineSim = car.drivetrain.engine
 	engine.auto = true
 	engine.gear = 1
 	engine.boost = 0.0
 	engine.sc_boost = 0.0
+	engine.nitrous_charge = 0.0
 	car.damage.field(1000.0, 1000.0)  # a healthy, mortal car
 	# Force the diagnostic readout + stage widgets back to hidden (tests show them).
 	var hud = _scene.get_node("HUD")
@@ -451,6 +455,67 @@ func test_boost_gauge_tracks_turbo_and_blower_boost() -> void:
 	assert_almost_eq(bar.value, 0.75, 0.001, "the fill tracks belt boost")
 
 
+# --- Nitrous gauge (features/nitrous.md) ---------------------------------------
+# The boost bar's twin: fill = tank fraction left, caption inside, hidden when unfitted.
+
+func test_nitrous_gauge_hidden_when_no_nitrous_is_fitted() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("NitrousBar") as ProgressBar
+	# before_each leaves the car without a nitrous system.
+	await get_tree().process_frame
+	assert_false(bar.visible, "an unfitted car shows no always-empty nitrous bar")
+
+
+func test_nitrous_gauge_tracks_the_tank_fraction() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("NitrousBar") as ProgressBar
+	var engine: EngineSim = car.drivetrain.engine
+	# Fit a tank (values are this test's own inputs, not the shipped tune).
+	Config.data.nitrous_boost_gain = 0.3
+	Config.data.nitrous_tank_seconds = 4.0
+	engine.nitrous_charge = 4.0
+	await get_tree().process_frame
+	assert_true(bar.visible, "a fitted tank reveals the nitrous bar")
+	assert_almost_eq(bar.value, 1.0, 0.001, "a full tank fills the bar")
+	# Drain half the tank: the fill follows the remaining fraction.
+	engine.nitrous_charge = 2.0
+	await get_tree().process_frame
+	assert_almost_eq(bar.value, 0.5, 0.001, "the fill tracks the remaining fraction")
+	engine.nitrous_charge = 0.0
+	await get_tree().process_frame
+	assert_true(bar.visible, "an empty tank still shows the (empty) gauge")
+	assert_almost_eq(bar.value, 0.0, 0.001, "a dry tank empties the bar")
+
+
+func test_nitrous_gauge_caption_sits_inside_the_bar() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var bar := hud.get_node("NitrousBar") as ProgressBar
+	var label := hud.get_node("NitrousBar/NitrousLabel") as Label
+	assert_eq(label.get_parent(), bar, "the caption is a child of the bar")
+	assert_false(label.text.strip_edges().is_empty(), "and it names the gauge")
+
+
+func test_nitrous_and_boost_gauges_are_visually_distinct() -> void:
+	# Forced induction and nitrous are separate slots, so both bars can be on screen at
+	# once — their tints must not collide. Relationship, not a pinned hue value.
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var boost := hud.get_node("BoostBar") as ProgressBar
+	var nitrous := hud.get_node("NitrousBar") as ProgressBar
+	var engine: EngineSim = car.drivetrain.engine
+	Config.data.turbo_enabled = true
+	Config.data.nitrous_boost_gain = 0.3
+	Config.data.nitrous_tank_seconds = 4.0
+	engine.boost = 0.5
+	engine.nitrous_charge = 4.0
+	await get_tree().process_frame
+	assert_true(boost.visible and nitrous.visible, "a turbo + nitrous car shows both bars")
+	assert_ne(nitrous.self_modulate, boost.self_modulate, "the two gauges read as different colours")
+	assert_eq(nitrous.modulate, Color.WHITE,
+		"the tint goes through self_modulate, sparing the child caption")
+
+
 func test_has_forced_induction_covers_both_parts() -> void:
 	# The predicate lives on GameConfig, next to the fields whose encoding it interprets —
 	# EngineSim gates the belt sim on it too, so it must not be a HUD-private rule.
@@ -475,7 +540,7 @@ func test_has_forced_induction_covers_both_parts() -> void:
 # in place; this guards the override that actually switches it off.
 func test_gauge_captions_have_no_drop_shadow() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	for path in ["HPBar/HPLabel", "BoostBar/BoostLabel"]:
+	for path in ["HPBar/HPLabel", "BoostBar/BoostLabel", "NitrousBar/NitrousLabel"]:
 		var cap := hud.get_node(path) as Label
 		assert_eq(cap.get_theme_color("font_shadow_color").a, 0.0,
 			"%s draws no drop shadow" % path)

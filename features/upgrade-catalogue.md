@@ -21,26 +21,60 @@ is the upgrades half.
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
-(`turbo` / `aero` / `weight` / `drivetrain`, or `""` for consumables),
-`tier` (reward-tier gating), `consumable`, an optional `free` flag (always-available,
+(`turbo` / `aero` / `weight` / `drivetrain` / `nitrous`, or `""` for
+consumables), `consumable`, an optional `free` flag (always-available,
 never-drawn parts — the ballast; see below), an optional `requires_upgrade_id`
-(prerequisite gating — see below), and `effect` (config-field → delta/multiplier).
+(per-car prerequisite gating — see below), an optional `unlocked_by_rally`
+(garage-wide star gating — see below), an optional `weight` (reward-pool
+rarity, default 1.0 — see below), and `effect` (config-field →
+delta/multiplier).
 
-**Prerequisite gate (`requires_upgrade_id`).** An alternative to the `tier`
-gate for an item that should unlock through owning ANOTHER item rather than
-through raw rally difficulty. `""`/absent (the default) means no
-prerequisite. `UpgradeLibrary.requires_upgrade_id(id)` reads the field;
-`UpgradeLibrary.prerequisite_met(item_id, owned_car)` checks it against
-**that car's** `installed_upgrades` and is what
-`RewardSystem._parts_at_or_below` consults to keep a gated item out of the
-draw pool until the driven car has its prerequisite fitted. The gate is
-deliberately **per-car, not garage-wide** — upgrades are car-bound, so every
-car has to climb its own ladder; a sibling car owning Small Turbo does not
-unlock Big Turbo elsewhere. The **forced-induction ladder** is what uses this:
-**Big Turbo (`turbo_large`)** requires `turbo_small`, and the
-**Supercharger (`supercharger`)** requires `turbo_large` — all three sit at
-ordinary tier 1 (the old tier-2 difficulty gate Big Turbo used to carry is
-gone — see `reward-system.md`), so the chain, not difficulty, is the gate.
+**`tier` is gone.** Upgrades used to carry a `tier` walked by
+`RewardSystem._parts_at_or_below` (also gone); the star gate below replaced it
+— see `reward-system.md`. The draw pool is now a **flat** filter with no tier
+concept at all. (`CarLibrary`'s `reward_tier` is unrelated and still tiers the
+**car** draw.)
+
+**Reward-pool weight (`weight`).** Optional, defaulting to 1.0.
+`UpgradeLibrary.pool_weight(id)` reads it. This is the rarity knob that
+replaced `tier`: tier gated on rally **difficulty** and had gone vestigial
+(nearly every part sat at tier 1), whereas the star gate below now handles
+availability-over-time and `weight` handles rarity within whatever is
+currently available — a more direct lever, and the reward pool already spoke
+in weights (that's how the engine swap token gets its low drop rate).
+
+**Star gate (`unlocked_by_rally`).** Garage-wide availability over *time*: an
+item can be withheld from the reward pool entirely until a particular special
+event has been **won**. `UpgradeLibrary.unlocked_by_rally(id)` reads the
+field; `UpgradeLibrary.rally_gate_met(item_id, profile)` returns `true` when
+the field is absent (default: ungated), else whether that rally is recorded
+`completed` in `profile.rallies` — and `completed` already means a **top-3
+finish**, so this genuinely reads "was the event won", not just "does the
+player have enough stars". Keyed on the **rally id**, not a raw star total.
+This gate is about **earning** a part, never about **keeping** one:
+`UpgradeLibrary.apply` walks `installed_upgrades` and never consults it, so a
+part already fitted keeps working even if its gate would no longer be met.
+Gated parts today: `turbo_large` → `sp_woodland_trial`, `drivetrain_swap`
+(now named "Drivetrain Conversion") → `sp_dust_trial`, `supercharger` →
+`sp_lakeshore_trial`, and the nitrous ladder `nitrous` / `nitrous_tank` /
+`nitrous_shot` / `nitrous_race` → `the_showdown` / `hc_showdown` /
+`gr_showdown` / `gc_showdown` respectively. See `reward-system.md` for how
+`RewardSystem` reads this gate into the draw pool.
+
+**Prerequisite gate (`requires_upgrade_id`).** The **per-car** counterpart to
+the star gate: an item that should unlock through owning ANOTHER item on
+*that car*, rather than (or in addition to) the garage-wide star gate. `""`/absent
+(the default) means no prerequisite. `UpgradeLibrary.requires_upgrade_id(id)`
+reads the field; `UpgradeLibrary.prerequisite_met(item_id, owned_car)` checks
+it against **that car's** `installed_upgrades` and is one of the checks
+`RewardSystem._eligible_parts` runs to keep a gated item out of the draw pool
+until the driven car has its prerequisite fitted. Deliberately **per-car, not
+garage-wide** — upgrades are car-bound, so every car has to climb its own
+ladder; a sibling car owning Small Turbo does not unlock Big Turbo elsewhere.
+The **forced-induction ladder** uses this: **Big Turbo (`turbo_large`)**
+requires `turbo_small` (plus its own star gate above), and the **Supercharger
+(`supercharger`)** requires `turbo_large` (plus its own star gate) — so a car
+climbs the chain *and* the ladder has to have been unlocked garage-wide.
 
 The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
 `unlocks_drivetrain_swap` flag (skipped by `apply`, like the other `unlocks_*` gates).
@@ -65,27 +99,47 @@ row. It holds three parts plus `Stock`: two **BALLAST** options that ADD weight 
 (`ballast_small`, `mass_mult` 1.2) — and one **Weight Reduction** kit
 (`weight_reduction`, `mass_mult` 0.80) that SHEDS weight. Both ballast parts carry a
 **`free: true`** flag: they are **always selectable on every car** (no earning
-required) and are **never drawn as a reward** (`reward_system._parts_at_or_below`
+required) and are **never drawn as a reward** (`RewardSystem._eligible_parts`
 skips `free` parts alongside consumables — see `UpgradeLibrary.is_free`). The ballast
 lets a player deliberately add mass to drop power-to-weight and qualify for a lower
 rally class (a p/w lever alongside engine detune). Weight Reduction is the slot's one
 **earned** reward-pool option — the "lightweight" performance drop, greyed until won.
 The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
 earn-gated option row — see below.
-Current set: three **forced-induction kits** (turbo slot — `turbo_small` tier 1,
-`turbo_large` tier 1 + prerequisite-gated on the same car having `turbo_small`, and
-`supercharger` tier 1 + prerequisite-gated on `turbo_large`, see above; the blower's
-belt physics are in [forced-induction.md](forced-induction.md)), an aero kit, the three **weight** parts above,
-the drivetrain swap kit, and two consumables — the **engine
+Current set: three **forced-induction kits** (turbo slot — `turbo_small` ungated,
+`turbo_large` prerequisite-gated on the same car having `turbo_small` plus its own
+star gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own star
+gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
+an aero kit, the three **weight** parts above, the drivetrain conversion kit, a
+**fifth `nitrous` slot** (see below), and two consumables — the **engine
 swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
 `slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
 damage is one-way now; see [damage.md](damage.md).) The token is spent
-by `Save.swap_engines`, see [engine-swap.md](engine-swap.md). The mystery box
-is drawn instead of a normal upgrade once a car has nothing left to gain and
-the player is token-rich, and is also handed out by the online Rally Challenge
+by `Save.swap_engines`, see [engine-swap.md](engine-swap.md); the swap
+**capability** itself is unlocked by the 32-star special
+(`RallyLibrary.engine_swaps_unlocked`), but tokens drop and accumulate from
+the start regardless (see `reward-system.md`). The mystery box
+is drawn instead of a normal upgrade once a car has nothing left to gain (and,
+once swapping is unlocked, the player is token-rich too — see
+`reward-system.md`), and is also handed out by the online Rally Challenge
 (`ChallengeSession._COMPLETION_REWARD`). Opened from the **HQ garage row**, it
 fits a random upgrade to any owned car with an empty slot — the currently
 selected one included — see [reward-system.md](reward-system.md)
+
+### The `nitrous` slot
+
+A fifth `SLOTS` entry, deliberately absent from the upgrades menu — the
+mechanic, gauge, input and audio are documented in full in
+[nitrous.md](nitrous.md); this file only covers its place in the catalogue.
+`UpgradeLibrary.HIDDEN_SLOTS := "nitrous"` marks it as installed
+**enabled** on award (every other slot installs disabled, relying on the
+reveal overlay to enable the player's pick — a nitrous bottle with no menu row
+would otherwise be permanently dead). Its four rungs (`nitrous` →
+`nitrous_tank` → `nitrous_shot` → `nitrous_race`) chain via
+`requires_upgrade_id` exactly like the turbo ladder, each also star-gated (see
+above). The `install_nitrous` effect uses the `"write_fields"` op with
+`feeds_pw: false` in the `EFFECTS` table below, so nitrous can never move
+`effective_meta`'s power-to-weight or a car's rally eligibility.
 → "Mystery box" for the trigger, resolver, and reveal. The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
@@ -128,7 +182,22 @@ to read like the drivetrain picker: `SLOT:` on the left, then `Stock` + one butt
 catalogue part in that slot on the right. `Stock` is always selectable (the "off" state —
 the car's un-upgraded factory config, hence the label rather than `None`); each part option
 is **greyed until that kit is fitted** to this car, and the active one is
-bracketed **and painted the house accent green** so the current pick stands out. The turbo slot has three parts — `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
+bracketed **and painted the house accent green** so the current pick stands out.
+
+**Star-locked options are not shown at all** (`UpgradesMenu._slot_parts`) — not
+greyed, absent. A greyed row the player cannot act on only raises "when do I get
+this?", which the garage cannot answer; the MAP is the surface that advertises
+what a special unlocks. So the turbo row reads `Stock | Small` for a new player and
+grows to `Stock | Small | Big | Supercharger` as the 8- and 24-star specials are
+won. A slot whose every option is still locked gets **no row at all, label
+included** (`_make_slot_row` returns null) — for a new player that is the whole
+drivetrain row. The engine-swap row is hidden on the same rule while the capability
+is star-locked. Two exceptions keep the display honest: a part already FITTED shows
+regardless of its gate (the gate governs earning, never keeping), and a part that
+is unlocked but merely unfitted stays visible-and-disabled, since winning it is
+something the player can actually act on.
+
+The turbo slot has three parts — `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
 `turbo_large` / `supercharger`, shown by their `menu_label`; the row is an
 `HFlowContainer`, so options wrap rather than clip); the single-part slots read `Stock` /
 `<Kit>` (e.g. `Aero: Stock / Aero Kit`, using the part's full `name`). Under the hood it's
@@ -188,7 +257,10 @@ predictably:
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored
 `.tres`. `*_mult` keys multiply the baseline (`mass`); additive
 keys add (`downforce_front` / `downforce_rear`); `install_turbo` writes the turbo
-fields (see above).
+fields (see above); `install_nitrous` (`"write_fields"` op) straight-splats its
+fields onto `cfg` with no enable flag and no slot rival to clear — `has_nitrous()`
+in the live sim reads the values themselves, so a zero gain/tank already reads
+as "not fitted" (see [nitrous.md](nitrous.md)).
 `unlocks_*` keys are **flags**, skipped by `apply` — they gate tuning sliders, not
 config. `aero_tuning_unlocked(car)` reads that flag so the tuning lift only exposes
 the aero slider when the kit is fitted. Brake bias is **not** gated — it's a free
@@ -215,6 +287,46 @@ two player-car eligibility checks (`hq._has_eligible_car`,
 so an upgrade can push a car over — or back under — a rally's `pw_max` ceiling.
 The rival pool and reward-grant queries keep using the raw `CARS` entries (those
 are unmodified roster cars, not the player's upgraded ones).
+
+## The car's ceiling: `max_potential_meta` — two flavours
+
+`UpgradeLibrary.max_potential_meta(owned_car, meta, profile := {}) -> Dictionary`
+returns the car's `effective_meta` at its **maximum achievable** power-to-weight:
+tuning forced to full (no detune), mass-adding ballast dropped (it's `free` and
+always removable), and the best available part installed in every slot via
+`_best_part_per_slot`. Per-slot maximisation is **exact**, not a heuristic —
+`Save._enable_exclusive` allows only one enabled part per slot and the slots'
+effects are independent (turbo → torque, weight → mass, aero → downforce,
+drivetrain → a flag, nitrous → excluded from p/w entirely), so scoring each
+candidate on its own is the whole answer. `_best_part_per_slot` skips
+consumables and any part whose `mass_mult` is greater than 1.0 (mass-adding
+ballast).
+
+**The `profile` argument selects which ceiling, and the two mean different
+things:**
+
+- **`{}` (default) — the ASPIRATIONAL ceiling.** Every catalogue part is a
+  candidate regardless of ownership *and* star gates are ignored: "could this
+  car ever do it?" Used for entry eligibility and the displayed ceiling, so a
+  player is never locked out of a rally for lacking a part they will obviously
+  grow into.
+- **a non-empty profile — the REACHABLE ceiling.** `_best_part_per_slot` also
+  filters candidates through `rally_gate_met(item_id, profile)`: "can this
+  player get there *now*?" Used by `RewardSystem._unlock_candidates`'s
+  soft-lock rescue check — judging that check against the aspirational
+  ceiling would conclude nobody is ever stuck (every car could in principle be
+  turbo'd), silently disabling the rescue for a player whose turbo is locked
+  behind an event they can't yet reach.
+
+Only the `pw_min` floor is ever judged against either ceiling
+(`RallyLibrary.ineligibility_reason`'s `floor_meta`); `pw_max` still uses the
+car's **real current stats**, so the ceiling only ever makes a car *more*
+eligible, never less — a player can't sandbag into a class they'd dominate.
+**Accepted consequence:** with the best parts star-gated, the `pw_min` floor
+is now very permissive (almost any car could eventually be turbo'd and
+lightened), so its remaining job is soft-lock prevention, not class balance —
+`pw_max` is where balance actually lives. See `reward-system.md` for the
+soft-lock rescue that consumes the reachable flavour.
 
 ## Install (in `Save`)
 
@@ -247,14 +359,17 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 ## Reward integration
 
 Upgrades are the **per-event** reward: one is drawn at each non-final event
-boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward. The
-reward draw picks an `UpgradeDef` by `tier`, clamped by progress, excluding parts
-already on the driven car, never `free` parts (the ballast is always
-available, so it's not a reward), and never a part whose `requires_upgrade_id`
+boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward.
+The reward draw picks from a **flat** pool (no `tier` any more), excluding
+parts already on the driven car, never `free` parts (the ballast is always
+available, so it's not a reward), never a part whose `requires_upgrade_id`
 prerequisite isn't yet on the driven car (Big Turbo, until that car has Small
-Turbo) — that policy is reward-system logic (`reward-system.md`); this
-library just provides the tier-keyed pool plus the `requires_upgrade_id` /
-`prerequisite_met` helpers it reads. The flow
+Turbo), and never a part whose `unlocked_by_rally` star gate hasn't been won
+— that policy is reward-system logic (`reward-system.md`); this library just
+provides the catalogue plus the `requires_upgrade_id` / `prerequisite_met`,
+`unlocked_by_rally` / `rally_gate_met`, and `pool_weight` helpers it reads.
+The draw can also come back empty (`RewardSystem.NO_REWARD`) once a car is
+maxed under the gated pool — see `reward-system.md`. The flow
 controller fits each won part straight onto the driven car via
 `Save.install_upgrade(..., enabled=false)` (consumables go to
 `Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,
@@ -265,8 +380,12 @@ not the podium) confirms the part with a single "Next" step — see `features/re
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, consumables have no slot), lookups, effect application (multiplies/adds on a
 baseline incl. `mass_mult`; empty list is a no-op), `effective_meta`
-(lightens/empowers a meta copy without mutating the source), and the aero
-tuning gate. `test_rally_library.gd` covers an installed upgrade
+(lightens/empowers a meta copy without mutating the source), the aero
+tuning gate, `rally_gate_met` (true when `unlocked_by_rally` is absent, false/true
+tracking `profile.rallies[id].completed` otherwise, using synthetic fixtures per
+CLAUDE.md), and `max_potential_meta`'s two flavours (aspirational includes
+unowned/star-gated parts; a reachable profile excludes still-gated ones, and
+a fitted-but-gate-closed part keeps applying). `test_rally_library.gd` covers an installed upgrade
 qualifying / disqualifying a car for a rally's pw band; `test_car_library.gd`
 covers `apply_owned` re-syncing the RigidBody mass after a weight-reduction kit.
 Disabled parts being inert everywhere (config, effective stats, tuning gates) is

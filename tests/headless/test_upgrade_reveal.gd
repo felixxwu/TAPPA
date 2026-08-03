@@ -151,7 +151,7 @@ func test_upgrades_menu_surfaces_the_same_rally_over_limit_warning_as_pre_stage(
 	# this never depends on a specific catalogue rally/car, only the logic.
 	var tiny_limit_rally: Dictionary = {
 		"id": "fx_tiny_limit_reveal", "name": "Fixture Tiny Limit", "region": "home",
-		"difficulty": 1, "showdown": false, "restriction": {"pw_max": 1.0}, "events": [],
+		"difficulty": 1, "special": false, "restriction": {"pw_max": 1.0}, "events": [],
 	}
 	RallyLibrary.override_for_test([tiny_limit_rally])
 	RallySession.auto_load_scenes = false

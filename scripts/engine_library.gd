@@ -267,3 +267,13 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 	cfg.engine_turbo_bov_gain = engine.get("engine_turbo_bov_gain", 0.0)
 	cfg.engine_turbo_antilag_bang_gain = engine.get("engine_turbo_antilag_bang_gain", 0.0)
 	cfg.engine_supercharger_whine_gain = engine.get("engine_supercharger_whine_gain", 0.0)
+	# Nitrous (features/nitrous.md) is never authored on an ENGINE — only the upgrade fits
+	# it — but it MUST be hard-reset here for the same reason the blower gain is: the player
+	# car runs on the shared Config.data resource, and install_nitrous only ever WRITES its
+	# fields (the `write_fields` op). Without this, fielding a nitrous car and then a car
+	# without one leaves the previous tank baked into the live baseline, handing car B free
+	# nitrous plus a HUD gauge and a mobile NOS button it never earned.
+	cfg.nitrous_boost_gain = 0.0
+	cfg.nitrous_tank_seconds = 0.0
+	cfg.engine_nitrous_hiss_gain = engine.get("engine_nitrous_hiss_gain",
+		cfg.engine_nitrous_hiss_gain)

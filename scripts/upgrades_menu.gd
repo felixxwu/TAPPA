@@ -77,9 +77,20 @@ func rebuild() -> void:
 	var id := int(_owned.get("instance_id", -1))
 	var installed: Array = _owned.get("installed_upgrades", [])
 	for slot in UpgradeLibrary.SLOTS:
-		add_child(_make_slot_row(slot, id, installed))
-	# Engine swap is lift-only: the popup leaves on_swap invalid and drops the row.
-	if _on_swap.is_valid():
+		# A hidden slot gets no row: an unwanted nitrous bottle is just a button you don't
+		# press, and since nitrous is excluded from effective_meta removing it couldn't
+		# change the car's eligibility either — so there is nothing to decide here. See
+		# features/nitrous.md.
+		if UpgradeLibrary.is_hidden_slot(slot):
+			continue
+		var row := _make_slot_row(slot, id, installed)
+		if row != null:
+			add_child(row)
+	# Engine swap is lift-only: the popup leaves on_swap invalid and drops the row. It is
+	# also absent entirely while the CAPABILITY is still star-locked — same reasoning as a
+	# locked part option: a permanently-disabled row just invites a question the garage
+	# can't answer. It appears the moment the gating special is won.
+	if _on_swap.is_valid() and RallyLibrary.engine_swaps_unlocked(Save.profile):
 		add_child(_make_engine_swap_row(id))
 	# Engine detune sits with the upgrades because it trades power for eligibility —
 	# it's a p/w knob, not a handling axis (features/tuning.md, engine-swap.md). It goes
@@ -205,7 +216,13 @@ func over_pw_limit() -> bool:
 	return CarLibrary.power_to_weight_hp_tonne(meta) > roundi(_pw_limit)
 
 
+# Returns null when the slot has nothing worth showing — every real option is still
+# star-locked, so a row would be just a label and a "Stock" button the player can't act on.
+# "Not even the label" is the point: a visible-but-empty drivetrain row is exactly the
+# "when do I get this?" prompt hiding locked options is meant to remove.
 func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control:
+	if _slot_parts(slot, installed)["parts"].is_empty():
+		return null
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 2)
@@ -306,7 +323,8 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 	# None is always available and plays the "off" role.
 	row.add_child(_option_button("Stock", current_id == "", true,
 		"opt:%s:none" % slot, _set_slot_option.bind(instance_id, slot, "")))
-	# One button per catalogue part, greyed until that kit is fitted to this car.
+	# One button per VISIBLE catalogue part (see _slot_parts — star-locked parts are absent
+	# entirely), greyed until that kit is fitted to this car.
 	for def in parts:
 		var pid := String(def.get("id", ""))
 		var text := String(def.get("menu_label", def.get("name", pid)))
@@ -384,8 +402,19 @@ func _slot_parts(slot: String, installed: Array) -> Dictionary:
 	for def in UpgradeLibrary.all():
 		if String(def.get("slot", "")) != slot or bool(def.get("consumable", false)):
 			continue
-		parts.append(def)
 		var pid := String(def.get("id", ""))
+		# STAR-GATED parts are omitted ENTIRELY, not greyed: a row of locked options invites
+		# "when do I get the big turbo?", which is a question the garage can't answer. A new
+		# player's turbo row therefore reads "Stock | Small" and nothing else, and grows as
+		# specials are won. What DOES stay visible-but-disabled is a part that is unlocked
+		# and merely not yet fitted to THIS car — that one the player can act on.
+		#
+		# A part already fitted is kept regardless of its gate, so a car can never display
+		# less than it is actually running (see UpgradeLibrary.apply — the gate governs
+		# earning a part, never keeping one).
+		if not UpgradeLibrary.rally_gate_met(pid, Save.profile) and not installed.has(pid):
+			continue
+		parts.append(def)
 		if installed.has(pid) and UpgradeLibrary.is_enabled(_owned, pid):
 			current_id = pid
 	return {"parts": parts, "current_id": current_id}
@@ -482,9 +511,15 @@ func _set_weight_option(instance_id: int, item_id: String) -> void:
 		_on_change.call()
 
 
-# The engine-swap row: current engine label + a Swap button that runs the host's
-# on_swap action. Disabled when there's no other owned car to swap with OR when no
-# token is held (its label spells out which). See features/engine-swap.md.
+# The engine-swap row: current engine label + a Swap button that runs the host's on_swap
+# action. Disabled when swapping is still STAR-LOCKED, when there's no other owned car to
+# swap with, or when no token is held (its label spells out which).
+#
+# The capability gate is separate from the currency on purpose: tokens keep dropping and
+# banking from the very start, they simply cannot be SPENT until the star-gated special is
+# won (RallyLibrary.engine_swaps_unlocked). A visible stack of tokens you can't use yet is
+# the pull toward that event — so the locked label names the tokens held rather than
+# hiding them. See features/engine-swap.md and features/nitrous.md's sibling discussion.
 func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 	var owned := Save.get_car(instance_id)
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
@@ -500,7 +535,13 @@ func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 	# Each branch sets the button's text/disabled/tooltip for its state.
 	var tokens := Save.engine_swap_tokens_owned()
 	var has_target := not _swap_targets(instance_id).is_empty()
-	if not has_target:
+	if not RallyLibrary.engine_swaps_unlocked(Save.profile):
+		# Checked FIRST: while locked it is the only true reason, and reporting "no other
+		# car" or "no tokens" instead would send the player after the wrong thing.
+		button.text = "Swap Engine — locked"
+		button.disabled = true
+		button.tooltip_text = _swap_locked_hint(tokens)
+	elif not has_target:
 		button.text = "Swap Engine"
 		button.disabled = true
 		button.tooltip_text = "No other car to swap engines with"
@@ -509,12 +550,20 @@ func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 		button.disabled = true
 		button.tooltip_text = "You have no engine swap tokens — win one from a rally reward"
 	else:
-		button.text = "Swap Engine (%d token%s)" % [tokens, "" if tokens == 1 else "s"]
+		button.text = "Swap Engine (%s)" % UITheme.count_noun(tokens, "token")
 		button.disabled = false
 		button.tooltip_text = "Swap engines with another car (costs 1 token)"
 	button.pressed.connect(_on_swap)
 	row.add_child(button)
 	return row
+
+
+# Why the swap button is locked, naming the banked tokens so they read as a teaser rather
+# than a junk reward the player has been collecting for nothing.
+func _swap_locked_hint(tokens: int) -> String:
+	var held := "%s banked — " % UITheme.count_noun(tokens, "token") if tokens > 0 else ""
+	return "%sengine swapping unlocks when you win the %d-star event" % [
+		held, RallyLibrary.engine_swap_star_requirement()]
 
 
 # The owned cars this car can swap engines with: every OTHER owned car. No car is
