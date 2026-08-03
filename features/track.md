@@ -64,6 +64,26 @@ the road around lakes.
   original unbiased Fisher-Yates shuffle. It changes the generated SHAPE, so the same
   value is passed wherever a track's target time is derived. Set per rally event by
   `RallyLibrary.event_straightness` — earlier-game events run higher (easier).
+- **No consecutive hairpins (hard rule):** a candidate whose corner is
+  a hairpin SHAPE is rejected outright when the piece already at the
+  frontier is also one — a 180° straight into another 180° reads as a switchback
+  rather than rally flow. Unlike the straightness bias above this **excludes**
+  candidates rather than reweighting them, so the DFS backtracks instead of ever
+  placing the pair. Tested inside `_search`'s candidate loop (before
+  `_build_candidate`, so the pairing costs no tessellation) rather than by pruning
+  `_candidate_template`, because the rule is contextual while the template is
+  depth-invariant and cached across `generate()` calls.
+  **"Hairpin" is a shape, not a name:** `_is_hairpin(spec)` counts a corner when
+  `_corner_straightness` (1 = dead straight, 0 = a full 180°) is at or below
+  `HAIRPIN_STRAIGHTNESS_MAX`. An earlier version compared the literal corner name,
+  which would have silently stopped firing the moment a near-180° corner was renamed
+  or a second one added under another name — regenerating the very switchbacks the
+  rule prevents. Deriving it from the authored geometry matches
+  `_corner_straightness`'s own stated intent (no hand-maintained per-corner table).
+  The threshold sits far below every other authored corner (a 90° `Square` is 0.5),
+  so it selects the `Hairpin` alone today and widens only if a new near-180° shape is
+  authored. `HAIRPIN_STRAIGHTNESS_MAX` is folded into `constants_fingerprint()`, so
+  the committed track cache auto-invalidates.
 - **Frame transform:** a `Transform2D` (`frame_transform`) maps each corner's
   local space (x = right, y = forward) onto the current end pose; a **left**
   turn is a right-hand corner with its x mirrored (`mirror_points`). Joins are

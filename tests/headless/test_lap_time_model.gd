@@ -59,6 +59,19 @@ func test_profile_total_matches_scalar():
 	var prof: Dictionary = LapTimeModel.optimum_profile(_arc_track(40.0, PI), CAR, {})
 	assert_eq(LapTimeModel.optimum_ms(_arc_track(40.0, PI), CAR, {}), int(prof["total_ms"]))
 
+# A wet event applies GameConfig.rain_grip_mult on top of the surface-blended grip,
+# so its optimum must be strictly slower than the identical dry event — this is the
+# lever that scales the whole rival field for weather (see lap_time_model.gd's
+# _surface_grip docstring). Relation only, no tunable value asserted: whatever
+# rain_grip_mult is authored as (as long as < 1.0), wet must be slower than dry.
+func test_wet_event_is_slower_than_dry_in_a_corner():
+	var track := _arc_track(40.0, PI)
+	var dry_event := {"weather": RallyLibrary.WEATHER_DRY}
+	var wet_event := {"weather": RallyLibrary.WEATHER_RAIN}
+	var t_dry := LapTimeModel.optimum_ms(track, CAR, dry_event)
+	var t_wet := LapTimeModel.optimum_ms(track, CAR, wet_event)
+	assert_gt(t_wet, t_dry, "wet event is strictly slower than the identical dry event")
+
 func test_corner_speed_near_friction_limit():
 	# Mid-corner speed on a steady arc should sit near sqrt(mu*g / kappa).
 	var radius := 50.0

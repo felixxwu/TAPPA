@@ -189,6 +189,11 @@ func load_or_new() -> void:
 	# Recover a wrecked-out player: a free mystery box when every owned car is
 	# wrecked and none is held (also checked on garage view). See features/damage.md.
 	ensure_wreck_safety_net()
+	# Backfill the new-rally reveal's `revealed` flags on a profile that predates the
+	# feature (see _seed_reveals_if_needed). Runs HERE — the moment a profile becomes
+	# live — rather than being left to whoever happens to reach the map/HQ, so a future
+	# entry point can never forget to seat it.
+	_seed_reveals_if_needed()
 
 
 # Read + JSON-parse a profile file. Returns {} on any failure (missing,
@@ -340,6 +345,11 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	profile = _sanitise(migrated)
 	profile["settings"] = device_settings
 	ensure_wreck_safety_net()
+	# A restored career lands with no reveal flags on it, so without this the next map
+	# open would parade the whole roster at somebody who has already played it (see
+	# _seed_reveals_if_needed). Idempotent: a career that already carries flags is left
+	# alone (needs_reveal_seeding() is false).
+	_seed_reveals_if_needed()
 	return true
 
 
@@ -783,9 +793,16 @@ func open_mystery_box(rng: RandomNumberGenerator = null) -> Dictionary:
 	if mystery_boxes_owned() <= 0:
 		return {}
 	if all_cars_wrecked():
+		# Size the replacement against what the player HAD: one rung below the best car
+		# they wrecked. The box is a consolation, not a like-for-like replacement, so
+		# losing a top-tier car costs you a step — but it no longer pays out at the very
+		# bottom of the ladder regardless of progress, which is what made a late-game
+		# wreck hand back a starter car. Floored at 1 (there is no tier 0), and draw_car
+		# still clamps it down to the tier the player has actually earned.
+		var tier := maxi(1, RewardSystem.highest_owned_tier(profile) - 1)
 		# Explicitly typed: the RewardSystem <-> Save cycle leaves the static's return
 		# type unresolved at parse time, so `:=` would infer Variant (a warning-as-error).
-		var model_id: String = RewardSystem.draw_car(profile, 0, rng)
+		var model_id: String = RewardSystem.draw_car(profile, tier, rng)
 		consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # no save yet
 		var car := grant_car(model_id)  # saves; covers the consume above too
 		return {"car": true, "item_id": model_id,
@@ -933,6 +950,75 @@ func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> void
 
 func rally_completed(rally_id: String) -> bool:
 	return profile["rallies"].get(rally_id, {}).get("completed", false)
+
+
+# --- New-rally reveal acknowledgement ----------------------------------------
+#
+# Whether the player has been SHOWN that this rally opened up (the map-table reveal
+# sequence — hq.gd `_run_reveal_sequence`). Stored per rally, beside `completed`, so
+# everything known about a rally lives in one record and a rally id that stops existing
+# takes its flag with it instead of orphaning an entry in a parallel list.
+#
+# Only the ACKNOWLEDGEMENT is persisted, never the unlock itself: whether a rally is
+# available is always derived from the profile (RallyLibrary.rally_revealed + an owned
+# eligible car). A missing key reads false through the normal .get default, so no
+# SCHEMA_VERSION bump was needed. See features/save-persistence.md.
+func rally_revealed_seen(rally_id: String) -> bool:
+	return bool(profile["rallies"].get(rally_id, {}).get("revealed", false))
+
+
+func mark_rally_revealed(rally_id: String, save_now := true) -> void:
+	var rallies: Dictionary = profile["rallies"]
+	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
+	rec["revealed"] = true
+	rallies[rally_id] = rec
+	if save_now:
+		save()
+
+
+# True when this profile predates the reveal feature (or was just restored from the
+# cloud onto a device that has never run the sequence): it has career progress, yet not
+# one rally carries a `revealed` flag. `false` is exactly the WRONG default for such a
+# save — a player with a dozen open rallies would get a dozen-pin parade on next
+# launch — so the caller seeds what is already open as already-seen instead of
+# playing it. See hq.gd `_seed_reveals_if_needed`.
+func needs_reveal_seeding() -> bool:
+	# "Career progress" is read straight off the profile rather than through
+	# RallyLibrary.completed_count, so the backfill decision doesn't depend on the
+	# shipped roster still containing the rallies this save finished.
+	var progressed := false
+	for rec in profile["rallies"].values():
+		var r: Dictionary = rec
+		if bool(r.get("revealed", false)):
+			return false
+		if bool(r.get("completed", false)):
+			progressed = true
+	return progressed  # a brand-new career has nothing to backfill; its first reveals are real
+
+
+# THE BACKFILL ITSELF — moved here (rather than left as a call hq.gd makes on entering
+# the map) so it runs at the points a profile actually BECOMES LIVE (load_or_new,
+# adopt_profile) and can never be forgotten by a future scene/entry point that also
+# reaches the map or replaces the profile. A caller reaching the map through some path
+# nobody has written yet still gets the seeded profile, because the seeding already
+# happened when that profile was loaded/adopted — there is nothing left for hq.gd to do.
+#
+# Seeds every rally that is UNLOCKED (RallyLibrary.rally_revealed) or already COMPLETED,
+# deliberately WITHOUT the eligible-owned-car clause hq.gd's `_pending_reveals` applies:
+# seeding's job is "anything already open should already read as seen", not "anything the
+# player could currently enter" — and it keeps this autoload independent of hq's
+# `_entry_plan` (owned cars, engine/tune headroom, etc). Completed rallies are seeded
+# alongside unlocked-but-not-yet-completed ones purely so the "no flags at all" state
+# can't survive the pass — otherwise a progressed profile with nothing currently open
+# would re-seed (and so swallow) its next real reveal.
+func _seed_reveals_if_needed() -> void:
+	if not needs_reveal_seeding():
+		return
+	for rally in RallyLibrary.all():
+		var rid := String(rally["id"])
+		if rally_completed(rid) or RallyLibrary.rally_revealed(rally, profile):
+			mark_rally_revealed(rid, false)
+	save()
 
 
 # Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so region

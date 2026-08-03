@@ -23,6 +23,16 @@ runs the whole build behind it. The stages, in order:
 | Placing props | spectators, arches, opponent wreck, persistent managers | `world.gd::_generate_track` |
 | Warming shaders | surface-FX warm-up + `_prewarm_corridor` | `world.gd::_prewarm_corridor` |
 
+## The wet-stage tell
+
+`world.gd::_ready` calls `LoadingScreen.set_weather(cfg.weather)` right after
+`DrivingContext.apply_stage_config` has seated the live condition, before any
+generation starts. On a wet stage that swaps the headline for `"Loading stage… rain"`
+(uppercased by `UITheme.caps` like every other loading line); a dry stage is a no-op
+and keeps the default headline, so the rain line reads as the exception it is. The
+point is that the condition is known *during the load*, not discovered at the first
+corner. See `weather.md`, and `rendering.md` for the in-stage look.
+
 ## Measuring it
 
 `_stage(loading, label)` opens a stage and **closes the previous one**, printing

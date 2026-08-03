@@ -187,3 +187,21 @@ func test_loading_screen_joins_loading_screen_group() -> void:
 	var ls: LoadingScreen = autofree(LoadingScreen.new())
 	assert_true(ls.is_in_group("loading_screen"),
 		"LoadingScreen must be in the 'loading_screen' group so music resume can gate on it")
+
+
+func test_dry_weather_leaves_the_default_headline() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var before := screen._title.text
+	screen.set_weather(RallyLibrary.WEATHER_DRY)
+	assert_eq(screen._title.text, before, "a dry stage says nothing about the weather")
+
+
+func test_rain_weather_is_announced_in_the_headline() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var dry := screen._title.text
+	screen.set_weather(RallyLibrary.WEATHER_RAIN)
+	assert_ne(screen._title.text, dry, "a wet stage changes the headline")
+	assert_true(screen._title.text.contains("RAIN"),
+		"the wet-stage headline names the condition, uppercased like every other line")

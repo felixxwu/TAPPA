@@ -58,6 +58,37 @@ func test_surface_grip_scales_mu_by_surface() -> void:
 	assert_eq(dt.surface_grip(cfg, Vector3.ZERO), 1.0, "no terrain -> unchanged μ")
 
 
+func test_surface_tire_params_rain_reduces_mu() -> void:
+	# A wet contact must yield strictly less mu_mult than the identical dry
+	# contact, all other inputs held equal — in both the terrain-backed path
+	# and the no-terrain (flat fixture) fallback. Do not assert the specific
+	# resulting value or rain_grip_mult itself: only the dry > wet relation,
+	# so retuning rain_grip_mult in the inspector can't break this test.
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+
+	# No-terrain fallback branch.
+	dt.terrain = null
+	cfg.weather = RallyLibrary.WEATHER_DRY
+	var dry_flat: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	cfg.weather = RallyLibrary.WEATHER_RAIN
+	var wet_flat: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	assert_lt(wet_flat, dry_flat, "wet mu_mult < dry mu_mult with no terrain")
+
+	# Terrain-backed branch.
+	var stub := _StubTerrain.new()
+	dt.terrain = stub
+	stub.s = Vector2(0.5, 0.5)
+	cfg.weather = RallyLibrary.WEATHER_DRY
+	var dry_terrain: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	cfg.weather = RallyLibrary.WEATHER_RAIN
+	var wet_terrain: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	assert_lt(wet_terrain, dry_terrain, "wet mu_mult < dry mu_mult with terrain")
+
+	cfg.weather = RallyLibrary.WEATHER_DRY
+	dt.terrain = null
+
+
 func test_launch_wheelspin() -> void:
 	# Full throttle from rest in 1st: the driven axle must genuinely spin —
 	# slip well past the grip curve's peak — while the car still accelerates.

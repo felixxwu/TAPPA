@@ -194,6 +194,77 @@ func _avg_gentleness(result: Dictionary, by_name: Dictionary) -> float:
 	return total / float(maxi(n, 1))
 
 
+# Which authored corner names count as a hairpin, by SHAPE — the same predicate the
+# generator uses (TrackGenerator._is_hairpin over _corner_straightness), so these tests
+# keep testing the rule rather than a corner's display name. Iterates the whole
+# CornerLibrary table as opaque input; it never leans on one entry's identity.
+func _hairpin_names() -> Dictionary:
+	var out := {}
+	for spec in CornerLibrary.CORNERS:
+		if TrackGenerator._is_hairpin(spec):
+			out[String(spec["name"])] = true
+	return out
+
+
+func test_generated_tracks_never_place_two_hairpins_in_a_row() -> void:
+	# A 180 straight into another 180 is a switchback, not rally flow, so the DFS
+	# rejects the pairing outright. Swept across seeds and both bias extremes, since
+	# the ban lives in the search rather than in the candidate weighting — an unbiased
+	# search is where the pairing used to show up.
+	var hairpins := _hairpin_names()
+	assert_gt(hairpins.size(), 0, "the corner library authors at least one hairpin shape")
+	for seed_value in range(1, 16):
+		for straightness in [0.0, 1.0]:
+			var result := await TrackGenerator.generate(
+				_params(START_POS, START_HEADING, seed_value, 12, 6.0, 0.0, 0.0, straightness))
+			var pieces: Array = result["pieces"]
+			for i in range(1, pieces.size()):
+				var pair_is_double_hairpin := \
+					hairpins.has(String(pieces[i - 1]["corner"])) \
+					and hairpins.has(String(pieces[i]["corner"]))
+				assert_false(pair_is_double_hairpin,
+					"seed %d straightness %s: pieces %d/%d are both hairpins"
+						% [seed_value, straightness, i - 1, i])
+
+
+func test_a_hairpin_still_gets_placed_after_a_non_hairpin() -> void:
+	# Guard the ban against over-reach: it must reject only the CONSECUTIVE pairing,
+	# not exile the hairpin from the corner pool altogether.
+	var hairpins := _hairpin_names()
+	var seen := false
+	for seed_value in range(1, 16):
+		for piece in (await _generate(seed_value, 12))["pieces"]:
+			if hairpins.has(String(piece["corner"])):
+				seen = true
+				break
+		if seen:
+			break
+	assert_true(seen, "hairpins still appear in generated tracks, just never back-to-back")
+
+
+func test_hairpin_is_decided_by_shape_not_by_corner_name() -> void:
+	# The rule must key off the authored GEOMETRY: a renamed hairpin, or a second
+	# near-180 corner added under any other name, still counts. A gentle corner never
+	# does, whatever it is called. Synthetic corners — no dependence on the catalogue.
+	var u_turn := {"name": "Switchback", "points": [
+		[Vector2(0.0, 0.0), Vector2(0.0, 0.0), Vector2(0.0, 11.457)],
+		[Vector2(9.0, 15.0), Vector2(-4.971, 0.0), Vector2(4.971, 0.0)],
+		[Vector2(18.0, 0.0), Vector2(0.0, 11.971), Vector2(0.0, 0.0)],
+	]}
+	# NB: distinct names matter — _corner_straightness memoises by name, so reusing a
+	# name already in the catalogue would return that corner's cached value instead of
+	# measuring this shape. Names are unique within a corner list, so this only bites
+	# synthetic fixtures like these.
+	var gentle := {"name": "TestSweeper", "points": [
+		[Vector2(0.0, 0.0), Vector2(0.0, 0.0), Vector2(0.0, 18.347)],
+		[Vector2(8.36, 65.854), Vector2(-5.17, -18.182), Vector2(0.0, 0.0)],
+	]}
+	assert_true(TrackGenerator._is_hairpin(u_turn),
+		"a ~180 corner counts as a hairpin whatever it is named")
+	assert_false(TrackGenerator._is_hairpin(gentle),
+		"a gentle corner never counts as a hairpin")
+
+
 func test_straightness_bias_produces_gentler_tracks() -> void:
 	# Averaged across many seeds, a fully straightness-biased track places gentler
 	# corners (and longer straights) than an unbiased one — the "easier" track knob.

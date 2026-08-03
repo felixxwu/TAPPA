@@ -346,7 +346,8 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   (hidden authored tier) rally pin the player hasn't completed (`Save.rally_completed`),
   ties breaking toward the first in rally order, and pans the camera onto it so selection
   sticks there. Only when every pin is done (or there are none) does it fall back to
-  `_select_target_under_center()`.
+  `_select_target_under_center()`. **Unless there is something new to reveal** — see
+  "New-rally reveal" below, which takes over the entry instead.
   Pan is clamped to the map extents, so at an edge the camera simply stops. The selected
   pin gets the hover-style readout underline. `menu_select` fires the selected target,
   opening that pin's rally detail (`_activate_table_focus` — pins are the only kind of
@@ -451,6 +452,65 @@ The pages are still **built**, and `show_benchmark()` / `show_dev()` /
 focus handling and the tests that drive those pages directly unchanged.
 `dev_tools_override` (static, `-1` = real build type) exists so a test can assert
 the player-facing case, which `OS.is_debug_build()` alone makes untestable.
+
+## New-rally reveal (map table)
+
+When rallies become enterable the player is **told**, rather than being left to notice
+that a grey pin turned green. Opening the map table pans the camera to each new rally in
+turn and flips its pin from the locked to the unlocked look.
+
+- **Where.** `hq.gd._enter_table()`, before the usual `_focus_hardest_incomplete()`
+  entry steer. There is no separate scene and no podium teaser — the map is the only
+  place a reveal happens. The camera motion is the EXISTING map pan (`_pan_table_to` →
+  `_move_camera_to`, `menu_camera_move_time`), not a second bespoke tween.
+- **The queue** (`_pending_reveals()`) is derived **fresh on every map open from current
+  state** — never hooked to rally completion. A rally is queued only when it is unlocked
+  (`RallyLibrary.rally_revealed`), the player owns a car that can actually enter it
+  (`_has_eligible_car` → `_entry_plan`, the same authoritative answer the green/grey pin
+  flag uses), and it isn't already `Save.rally_revealed_seen`. That makes it a standing
+  condition rather than an event, so it works for *any* unlock route: finishing a rally,
+  buying a car, a Mystery Box car, an engine swap that moves a car into a class, a cloud
+  restore. A rally with no qualifying car is simply held back and appears later; nothing
+  expires.
+- **The sequence** (`_run_reveal_sequence`) builds the pending pins in their LOCKED look
+  first (`_refresh_map_pins(hold_locked)`) so the flip is watchable, then per rally:
+  pan → settle (`hq_reveal_pan_time`) → rebuild that pin unlocked, focus it, banner it
+  ("NEW RALLY — <name>", or "SHOWDOWN UNLOCKED" and a doubled hold for a region finale)
+  → hold (`hq_reveal_hold_time`). `hq_reveal_max_queue` caps one opening's parade (the
+  dev "3-star everything" cheat opens the whole roster at once); the rest are banner'd as
+  "+N more" and marked seen anyway. `_finish_reveals` marks every queued id seen, saves,
+  and leaves selection on the **last revealed pin** — the player wants to look at the new
+  thing, not be yanked back to `_focus_hardest_incomplete()`.
+- **Navigation / skip (keyboard + gamepad + pointer).** `_revealing` is checked in the
+  same three places `_detail_open` is: the `_process` glide, `_table_pan_input`, and the
+  `View.TABLE` branch of `_unhandled_input` — plus `_on_pin_input`, so a pin can't be
+  opened mid-parade. **Any press skips the WHOLE queue** (`_is_any_press` → `_skip_reveals`
+  → `_finish_reveals`): key, gamepad button, click or tap, never one pin at a time and
+  never swallowed. This is a requirement, not polish — players open the map constantly
+  and an unskippable cutscene is hated by the third viewing. Everything queued is marked
+  seen, so a skipped reveal never replays. Leaving the map mid-parade (`_go_to`) banks the
+  queue the same way.
+- **Persistence + backfill.** A per-rally `revealed` bool beside `completed`. The seeding
+  itself lives entirely in `Save` (`Save._seed_reveals_if_needed`), run at the points a
+  profile actually becomes live — `load_or_new` and `adopt_profile` — rather than as a
+  call `hq.gd` has to remember to make at every scene/entry point that reaches the map or
+  replaces the profile. Details (what it seeds, why the eligible-car clause is
+  deliberately NOT part of it) are in [save-persistence.md](save-persistence.md).
+- **Generation guard.** `_run_reveal_sequence` bumps `_reveal_token` and captures it as
+  `token` before its first `await`; every abort check calls `_reveal_continue(token)`
+  instead of a bare predicate. This stops a STALE coroutine — parked mid-`await` after a
+  skip, then woken up next to a second sequence that started before it resumed — from
+  going on to pan the camera / rebuild pins / `erase()` entries out of the new sequence's
+  queue. `_reveal_active()` itself stays a pure predicate (see next point); `_reveal_continue`
+  is what actually calls `_finish_reveals()` when the player left the map view mid-parade.
+- **`_reveal_active()` is a pure predicate.** It used to also call `_finish_reveals()` (a
+  disk save + pin rebuild) when the view had changed away from `TABLE` — a side effect
+  hiding inside what read as a query. That abort step now lives in `_reveal_continue`,
+  the only thing `_run_reveal_sequence` actually calls between its steps.
+- **Headless.** `_enter_table` drains the queue instantly under `Platform.is_headless()`
+  (marking everything seen, then opening the table normally focused) — the final state
+  with none of the awaits, which would otherwise hang the suite. Skip the animation,
+  never the decision.
 
 ## Text input (`text_field.gd`)
 

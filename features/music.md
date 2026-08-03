@@ -146,11 +146,38 @@ own **Engine** bus — also created here, by `_ensure_engine_bus`, and muted whi
 loading screen"). Volume is a **player setting** persisted in the save profile
 (`Save.set_setting("music_volume", …)`, linear [0,1], default `DEFAULT_VOLUME =
 0.6`) — the single source of truth (there is no `GameConfig` volume). `_ready`
-reads it via `Save.get_setting`; `Music.set_volume(linear, persist := true)`
-clamps, applies `linear_to_db` to the bus live, and persists. The Settings menu's
+reads it via `Save.get_setting`; `Music.set_volume(position, persist := true)`
+clamps, applies the taper (below) + `linear_to_db` to the bus live, and persists. The Settings menu's
 **Audio** page (`SettingsMenu`, shared by the HQ title screen and the pause menu)
 has a focusable `HSlider` (stepped in 5% increments, `step = 0.05`) that calls
-`set_volume` as you drag — live even while paused (`PROCESS_MODE_ALWAYS`).
+`set_volume` as you drag — live even while paused (`PROCESS_MODE_ALWAYS`). Each
+volume row (`SettingsMenu._make_volume_row`) sits inside its own
+`UITheme.panel` so the slider track and grabber stay readable against the 3D HQ
+backdrop.
+
+**Master volume.** The same Audio page carries a **Master** slider *above* the
+Music one. It drives `AudioServer` **bus 0** via
+`MusicDirector.set_master_volume(linear, persist := true)` (persisted as
+`Save.set_setting("master_volume", …)`, linear [0,1], default
+`DEFAULT_MASTER_VOLUME = 0.5`), so because both the Music and Engine buses *send
+to* Master it scales **everything** — music, engine audio and UI — while the Music
+slider stays a relative trim on top of it. `0%` **mutes** bus 0 outright rather
+than leaving it at a very low dB, so it is true silence. It lives on
+`MusicDirector` because that autoload already owns the bus graph and runs before
+the main scene; `_ready` applies it **unconditionally** (outside the
+`Platform.is_headless()` guard that skips the music player), since bus 0 always
+exists.
+
+**Slider taper (logarithmic feel).** Both saved values are **slider positions**
+(0..1), not raw amplitudes. `MusicDirector.slider_to_amplitude` (static, unit
+tested in `test_music_director`) raises the position to
+`VOLUME_TAPER_EXPONENT` before `linear_to_db`, so the sliders track *perceived*
+loudness: feeding the position straight in as amplitude made 50% only -6 dB
+(still roughly two-thirds as loud), whereas the taper puts 50% near -10 dB — the
+point where loudness genuinely halves — and 25% near -20 dB. Both
+`_apply_bus_volume` (Music bus) and `_apply_master_bus_volume` (bus 0) go through
+it, so the two sliders feel the same. The percentage label in the settings menu
+still shows the raw slider position.
 
 ## Clock & robustness
 

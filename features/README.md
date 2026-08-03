@@ -27,6 +27,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
 | [global-leaderboards.md](global-leaderboards.md) | Optional per-stage world leaderboards — `Leaderboard`, `FirestoreCodec`, the standings interstitial's page 2, the one world-readable Firestore collection |
 | [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, showdown gating) |
+| [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm) — the `WeatherLibrary` table that is the single source of truth for every condition, `RallyLibrary.event_weather`, the `GameConfig` blocks it names, and the `RallySession.apply_event_config` funnel that seats it |
 | [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, the HQ table's diegetic region swap, sequential unlock + per-region showdown + final-region credits |
 | [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, consumables, tuning gates) |
 | [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |

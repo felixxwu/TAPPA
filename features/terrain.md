@@ -580,8 +580,17 @@ coarse LOD levels). Rather than hide
 that edge with dense fog (which also hid the sky), a coarse **`DistantTerrain`**
 (`scripts/distant_terrain.gd`, a plain `Node3D`) extends the visible terrain far
 past the ring — collision-free scenery sampling the same `height_at`/`light_at`
-— so the now-thin fog (`fog_density` 0.005) reveals a horizon for the skybox
-instead of a cliff. See [rendering.md](rendering.md).
+— so the now-thin fog (`fog_density`, authored 0.01 in
+`config/game_config.tres`; the script/scene default 0.005 is only a fallback)
+reveals a horizon for the skybox instead of a cliff. See
+[rendering.md](rendering.md).
+
+Two things to know before relying on this section: `distant_terrain_enabled` is
+**`false`** in the shipped `config/game_config.tres`, so the backdrop described
+below is currently switched off; and the ring radius and the fog are entirely
+independent — no cull anywhere reads a fog value, so a foggy/wet stage still draws
+the geometry the fog hides (see [rendering.md](rendering.md) → "Fog does not shorten
+the cull").
 
 Because the play area is now a **bounded corridor** (the off-track reset leash
 caps how far the car can ever get from the track), the backdrop no longer

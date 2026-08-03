@@ -432,6 +432,36 @@ func test_open_mystery_box_grants_a_car_when_every_car_is_wrecked() -> void:
 	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
 
 
+func test_the_wreck_box_scales_its_replacement_to_what_was_lost() -> void:
+	# The box sizes its payout one rung BELOW the best car the player wrecked, rather
+	# than always paying out at the bottom of the ladder (which handed a late-game
+	# player a starter car). Relation only — no authored tier or model id is pinned.
+	UpgradeFixtures.restore()
+	var by_tier := {}
+	for entry in CarLibrary.all():
+		by_tier[int(entry.get("reward_tier", 0))] = String(entry["id"])
+	var tiers: Array = by_tier.keys()
+	tiers.sort()
+	if tiers.size() < 3:
+		return  # fixture roster too shallow for "one rung below" to be observable
+	var top_tier: int = tiers[tiers.size() - 1]
+	var wrecked: Dictionary = _save.grant_car(String(by_tier[top_tier]))
+	_save.apply_damage(int(wrecked["instance_id"]), 999999.0)
+	assert_true(_save.all_cars_wrecked(), "setup: wrecked out holding the best car")
+	# Enough completions that the earned ceiling cannot be what limits the draw.
+	var rallies: Dictionary = _save.profile.get("rallies", {})
+	for n in 12:
+		rallies["done_%d" % n] = {"completed": true}
+	_save.profile["rallies"] = rallies
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	var result: Dictionary = _save.open_mystery_box(_rng(3))
+	assert_true(bool(result["car"]), "the box paid a car")
+	var granted_tier := int(CarLibrary.by_id(String(result["item_id"])).get("reward_tier", 0))
+	assert_lt(granted_tier, top_tier,
+		"the replacement sits below the tier that was wrecked (a consolation, not a swap)")
+	assert_gt(granted_tier, 0, "but it is still a real car, never below the bottom tier")
+
+
 # A ONE-CAR garage: the box now fits a part to the only car you own, instead of
 # being permanently unopenable because there was no "other" car to gift.
 func test_open_mystery_box_can_fit_a_part_to_your_only_car() -> void:
@@ -818,3 +848,80 @@ func test_adopting_a_profile_keeps_this_devices_settings() -> void:
 	incoming["settings"] = {"probe_setting": "other_device"}
 	assert_true(_save.adopt_profile(incoming))
 	assert_eq(_save.get_setting("probe_setting", ""), "this_device")
+
+
+# --- New-rally reveal acknowledgement ----------------------------------------
+
+func test_marking_a_rally_revealed_survives_a_save_and_load() -> void:
+	assert_false(_save.rally_revealed_seen("some_rally"),
+		"a rally nobody has been shown reads as not yet revealed")
+	_save.mark_rally_revealed("some_rally")
+	_save.save_now()     # the ordinary save() is debounced; force the write
+	_save.load_or_new()  # re-read the file from disk
+	assert_true(_save.rally_revealed_seen("some_rally"),
+		"the acknowledgement round-trips through a save + load")
+
+
+func test_marking_a_rally_revealed_keeps_its_other_state() -> void:
+	# The flag lives in the SAME per-rally record as `completed`, so writing one must
+	# not clobber the other in either order.
+	_save.complete_rally("some_rally", 60_000, 1)
+	_save.mark_rally_revealed("some_rally")
+	assert_true(_save.rally_completed("some_rally"), "the completion is still there")
+	assert_eq(_save.best_placement("some_rally"), 1, "the best placement is still there")
+	assert_true(_save.rally_revealed_seen("some_rally"))
+
+
+func test_a_progressed_profile_with_no_reveal_flags_wants_seeding() -> void:
+	# THE BACKFILL TRAP: a save written before the reveal feature existed carries no
+	# flags at all, and treating that as "nothing revealed yet" would parade every open
+	# rally at a player who has been looking at them for weeks.
+	assert_false(_save.needs_reveal_seeding(), "a brand-new career has nothing to backfill")
+	_save.complete_rally("some_rally", 60_000, 1)
+	assert_true(_save.needs_reveal_seeding(),
+		"career progress with not one reveal flag is a pre-feature save")
+	_save.mark_rally_revealed("some_rally")
+	assert_false(_save.needs_reveal_seeding(),
+		"once any flag exists the profile has been through the seeding")
+
+
+# FINDING 1: the backfill used to be a call site living in hq.gd (_seed_reveals_if_needed),
+# invoked from two places (_enter_table, _on_cloud_profile_replaced) — a third path that
+# reaches the map or replaces the profile could silently forget it. It now lives INSIDE
+# Save, run at the points a profile actually becomes live, so it cannot be skipped by a
+# future entry point. These tests exercise that directly through load_or_new/adopt_profile
+# rather than through hq.gd at all.
+func test_load_or_new_seeds_an_existing_career_with_no_reveal_flags() -> void:
+	RallyLibrary.override_for_test([
+		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
+			"showdown": false, "reveal_after": 0, "restriction": {}, "events": []},
+		{"id": "sm_locked", "name": "Save Locked", "region": "home", "difficulty": 2,
+			"showdown": false, "reveal_after": 99, "restriction": {}, "events": []},
+	])
+	_save.complete_rally("sm_open", 60_000, 1)  # career progress, but no reveal flags at all
+	assert_true(_save.needs_reveal_seeding())
+	_save.save_now()
+
+	_save.load_or_new()  # the profile becoming live is what must trigger the backfill
+
+	assert_true(_save.rally_revealed_seen("sm_open"),
+		"an already-open (and completed) rally is seeded as seen on load, no parade")
+	assert_false(_save.rally_revealed_seen("sm_locked"),
+		"a rally that never unlocked is not seeded — it still gets a real reveal later")
+	assert_false(_save.needs_reveal_seeding(), "the profile now carries reveal flags")
+	RallyLibrary.reset()
+
+
+func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
+	# A cloud restore onto a fresh device must not parade the whole roster either —
+	# same backfill, reached through the OTHER point a profile becomes live.
+	RallyLibrary.override_for_test([
+		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
+			"showdown": false, "reveal_after": 0, "restriction": {}, "events": []},
+	])
+	var incoming: Dictionary = _save._default_profile()
+	incoming["rallies"] = {"sm_open": {"completed": true, "best_combined_ms": 1, "best_placed": 1}}
+	assert_true(_save.adopt_profile(incoming))
+	assert_true(_save.rally_revealed_seen("sm_open"),
+		"a restored career's already-open rally is seeded as seen, not paraded")
+	RallyLibrary.reset()

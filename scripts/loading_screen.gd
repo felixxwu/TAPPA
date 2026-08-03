@@ -55,6 +55,19 @@ func set_title(text: String) -> void:
 		_title.text = UITheme.caps(text)
 
 
+# Announce the coming stage's weather condition (a RallyLibrary.WEATHER_* value),
+# so a wet stage is known during the load rather than discovered at the first
+# corner. The wording comes from the condition's `loading_tell` in the weather table
+# (WeatherLibrary) — no per-condition test here. A condition that authors no tell
+# (dry, and today sandstorm) leaves the default headline alone: the overwhelmingly
+# common case says nothing, so the rain line reads as the exception it is. See
+# features/loading.md.
+func set_weather(weather: String) -> void:
+	var tell := String(WeatherLibrary.by_id(weather).get("loading_tell", ""))
+	if tell != "":
+		set_title("Loading stage… %s" % tell)
+
+
 # Update the current-stage line (e.g. "Building terrain…").
 func set_step(text: String) -> void:
 	if _step != null:

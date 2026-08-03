@@ -15,7 +15,9 @@ const CACHE_VERSION := "1"
 # CACHE_VERSION, the corner-shape library, generator constants, config-wide terrain
 # settings) — bump this whenever you bump CACHE_VERSION, so a shape-affecting engine
 # change resets every board instead of leaving them silently stale.
-const BOARD_EPOCH := 1
+# Bumped to 2 for the no-consecutive-hairpins DFS rule: track shapes changed, so
+# every existing board time was set on a layout that no longer exists.
+const BOARD_EPOCH := 2
 
 static var _entries: Dictionary = {}
 static var _loaded := false

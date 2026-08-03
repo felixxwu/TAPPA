@@ -73,6 +73,8 @@ func _ready() -> void:
 	# keep whatever the caller wrote. See DrivingContext.apply_stage_config.
 	DrivingContext.apply_stage_config(Config.data)
 	var cfg: GameConfig = Config.data
+	# Tell the player the stage is wet while it loads (no-op when dry).
+	loading.set_weather(cfg.weather)
 	# Resolve the per-target render quality ONCE, before apply_terrain_lod() and any
 	# scatter run: a web TOUCH device (the low-end / 30fps target) gets the shorter
 	# foliage cull distance and tighter terrain LOD bands, every other target the
@@ -128,6 +130,16 @@ func _ready() -> void:
 	# roam fall back to the GameConfig value.
 	var tarmac_col: Color = _current_region_look().get("tarmac_color", cfg.tarmac_color)
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("tarmac_color", tarmac_col)
+	# Ground albedo multiplier — RE-SEEDED from the authored baseline on every stage
+	# boot, exactly as tarmac_color above is. This is load-bearing, not tidiness:
+	# _apply_weather_look's _tint_road does a read-modify-write on this parameter, and
+	# the material is a SHARED sub-resource of main.tscn (no resource_local_to_scene),
+	# so without this line a wet stage's darkening would COMPOUND across stages
+	# (0.75 → 0.56 → …) and leak into later dry ones. Re-seeding makes the tint
+	# idempotent: every stage tints a clean base exactly once. Regression-tested by
+	# test_render_smoke.gd::test_road_tint_is_idempotent_across_stages.
+	($Floor.chunk_material as ShaderMaterial).set_shader_parameter(
+		"albedo_color", _current_region_look().get("terrain_tint", cfg.terrain_tint))
 	# Terrain seed follows the per-event track_seed so each event has its own
 	# landscape (and lake layout). The road DFS doesn't read terrain when water is
 	# off, so this changes only the visible elevation for water-off events, not the
@@ -146,6 +158,12 @@ func _ready() -> void:
 	# Baked terrain shading — push the sun/ambient + terrain amount BEFORE the
 	# initial build (below) so it's folded into the first chunks' vertex colours.
 	cfg.apply_terrain_light($Floor as TerrainManager)
+	# Weather look override (no-op on a dry stage). Layered AFTER _apply_region_look()
+	# so rain wins over the region's clear-day palette, and after apply_terrain_light()
+	# / the tarmac_color push above so it gets the last word on the ground shading —
+	# still well before the initial terrain build in _generate_track(), so the darker
+	# sun/ambient is what gets baked into the first chunks' vertex colours.
+	_apply_weather_look(cfg)
 	# Terrain LOD tunables — also before the precompute (LOD meshes + skirt are
 	# prebaked in cache_chunk) and the initial build.
 	cfg.apply_terrain_lod($Floor as TerrainManager)
@@ -2049,3 +2067,151 @@ func _apply_region_look() -> void:
 		env.fog_light_color = look["background_color"]
 	# terrain_tint / terrain_layers overrides: apply here if authored (Greece ships
 	# without them for now; leave hooks for later).
+
+
+# Overcast+rain / dust+sandstorm look, layered on top of the region look. A DRY
+# stage returns immediately and changes nothing — no node is built and no value is
+# touched, so it carries exactly zero new per-frame cost (features/weather.md).
+#
+# Both looks are made ENTIRELY out of fog, not a second panorama. Normally
+# fog_sky_affect is deliberately low (see _ready) so the skybox reads clearly above
+# the haze; wet/sandstorm invert that — push it to cfg.*_fog_sky_affect and set the
+# fog colour flat, and the fog washes the EXISTING panorama out into a featureless
+# dome. No extra texture to author, import or carry in the Android bundle (download
+# size gates installs on the phones this game targets) and no extra draw call, so the
+# environment half of any condition is free. NOTE: the thicker fog shortens the
+# VISIBLE distance but not the DRAWN one — the terrain ring radius and the shared
+# tree/prop render distance are fixed and read no fog value, so hidden geometry is
+# still built and submitted. See features/rendering.md → "Fog does not shorten the
+# cull" for the (unclaimed) performance win that leaves on the table.
+func _apply_weather_look(cfg: GameConfig) -> void:
+	# No per-condition branching: everything below is driven by the condition's entry
+	# in the weather table (WeatherLibrary), which names the GameConfig fields it
+	# reads. A new condition is authored there, not here. DRY's entry has no "look",
+	# no "road_tint" and no "particles", so all three blocks are skipped and the stage
+	# is left byte-identical to a world with no weather system at all.
+	var entry := WeatherLibrary.by_id(cfg.weather)
+	var look: Dictionary = entry.get("look", {})
+	if not look.is_empty():
+		var background: Color = cfg.get(String(look["background_color"]))
+		var sky: Color = cfg.get(String(look["sky_color"]))
+		_apply_overcast_look(background, sky,
+			float(cfg.get(String(look["sun_energy_mult"]))),
+			float(cfg.get(String(look["fog_density_mult"]))),
+			float(cfg.get(String(look["fog_sky_affect"]))), cfg)
+	var road_tint: Dictionary = entry.get("road_tint", {})
+	if not road_tint.is_empty():
+		# The entry says WHAT to tint toward, never how: naming a "color" field means
+		# lerp toward it, omitting one means a plain darkening multiply. No condition
+		# is named here and no colour literal lives here.
+		var tint_color_field := String(road_tint.get("color", ""))
+		var toward: Color = cfg.get(tint_color_field) if tint_color_field != "" else Color.BLACK
+		_tint_road(float(cfg.get(String(road_tint["amount"]))), toward, tint_color_field != "")
+	# The particle field itself — built ONLY when the entry names a particle kind,
+	# i.e. never on a dry stage (and never on a future no-particle condition).
+	var particles := String(entry.get("particles", ""))
+	if particles != "":
+		var count := int(cfg.get(String(entry["particle_count"])))
+		var wind_field := String(entry.get("wind_dir", ""))
+		var wind_deg := float(cfg.get(wind_field)) if wind_field != "" else 0.0
+		# Travel speed, like every other value, comes from the field the ENTRY names —
+		# WeatherField never reads a condition's config field itself. 0.0 means "the
+		# particle kind's own built-in speed" (rain's authored fall constant).
+		var speed_field := String(entry.get("particle_speed", ""))
+		var speed := float(cfg.get(speed_field)) if speed_field != "" else 0.0
+		WeatherField.spawn($ChaseCamera as Camera3D, particles, count, wind_deg, speed)
+	# Lightning — only when the entry authors one (storm today). Same shape as the
+	# blocks above: an absent key means the feature simply does not exist here.
+	var lightning: Dictionary = entry.get("lightning", {})
+	if not lightning.is_empty():
+		_start_lightning(cfg, lightning)
+
+
+# An occasional lightning flash on a storm stage. Deliberately NOT a light node: the
+# renderer is unshaded with baked vertex lighting and has no lights at all (see
+# features/rendering.md), so the flash is a short tween on the two environment
+# colours the weather look ALREADY drives — the fog/background colour. Nothing else
+# is touched, so it costs one Timer and one brief tween, and it cannot desync the
+# baked terrain shading (which would need a rebake to change).
+#
+# Purely cosmetic: it changes no physics and no time, so it need NOT be deterministic
+# and is free to use randf(). Kept subtle and infrequent on purpose — a flash that
+# blanks the screen mid-corner is a gameplay event, not an effect.
+func _start_lightning(cfg: GameConfig, lightning: Dictionary) -> void:
+	var env: Environment = $WorldEnvironment.environment
+	var base: Color = env.fog_light_color
+	var flash: float = float(cfg.get(String(lightning["flash"])))
+	var duration: float = float(cfg.get(String(lightning["duration"])))
+	var gap_min: float = float(cfg.get(String(lightning["interval_min"])))
+	var gap_max: float = float(cfg.get(String(lightning["interval_max"])))
+	var timer := Timer.new()
+	timer.name = "Lightning"
+	timer.one_shot = true
+	add_child(timer)
+	var schedule := func () -> void:
+		timer.start(randf_range(gap_min, maxf(gap_min, gap_max)))
+	timer.timeout.connect(func () -> void:
+		var lit := Color(base.r * flash, base.g * flash, base.b * flash, base.a)
+		var tween := create_tween()
+		# A paused game must be visually STILL: without this the flash keeps tweening
+		# behind the pause menu (TWEEN_PAUSE_STOP, not the default bound-node mode).
+		tween.set_pause_mode(Tween.TWEEN_PAUSE_STOP)
+		# Fast rise, slower fall — the shape of a real strike.
+		tween.tween_method(_set_fog_light, base, lit, duration * 0.25)
+		tween.tween_method(_set_fog_light, lit, base, duration * 0.75)
+		tween.finished.connect(schedule)
+	)
+	schedule.call()
+
+
+# Tween target for the lightning flash: the fog colour doubles as the horizon /
+# background colour, so writing both keeps the sky and the haze in step.
+func _set_fog_light(col: Color) -> void:
+	var env: Environment = $WorldEnvironment.environment
+	env.fog_light_color = col
+	env.background_color = col
+
+
+# Shared environment + baked-terrain-light override for both rain and sandstorm:
+# a flat sky/fog colour, a knocked-back sun, thicker fog, and fog washing out the
+# panorama. Written straight onto the TerrainManager (not onto cfg) so the shared
+# config resource is never left dimmed/tinted for a later dry stage.
+func _apply_overcast_look(background: Color, sky: Color, sun_mult: float,
+		fog_density_mult: float, fog_sky_affect: float, cfg: GameConfig) -> void:
+	var env: Environment = $WorldEnvironment.environment
+	env.background_color = background
+	env.fog_light_color = background
+	env.fog_density = cfg.fog_density * fog_density_mult
+	env.fog_sky_affect = fog_sky_affect
+	var tm := $Floor as TerrainManager
+	var sun: Color = cfg.sun_color * sun_mult
+	sun.a = cfg.sun_color.a
+	tm.sun_color = sun
+	tm.sky_color = sky
+
+
+# Tint the road/ground albedo for a condition. Two shapes, chosen by whether the
+# entry named a target COLOUR field (`blend`), never by which condition it is:
+#   * no colour  — a straight multiply (a wet road is DARKER, not recoloured);
+#   * a colour   — a lerp toward it (dust CAKES on the surface; snow would whiten it).
+# The colour itself is authored in game_config.tres and named by the entry, so
+# nothing here needs editing to add a condition that tints toward something new.
+#
+# This is a read-modify-write, and both parameters it touches are RE-SEEDED from the
+# authored baseline in _ready (tarmac_color from the config/region look, albedo_color
+# from `terrain_tint`) before this runs. That is what makes it idempotent — the
+# material is a shared sub-resource of main.tscn, so tinting an already-tinted value
+# would compound across stages and leak into later dry ones. Do not remove either
+# re-seed. Reading the parameter back (rather than computing from the config) is
+# deliberate, so the tint composes with whatever palette the region chose.
+func _tint_road(amount: float, toward: Color, blend: bool) -> void:
+	var floor_mat := $Floor.chunk_material as ShaderMaterial
+	var tinted: PackedStringArray = ["albedo_color", "tarmac_color"]
+	for param in tinted:
+		var col: Color = floor_mat.get_shader_parameter(param)
+		var out: Color
+		if blend:
+			out = col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
+		else:
+			out = Color(col.r * amount, col.g * amount, col.b * amount, col.a)
+		floor_mat.set_shader_parameter(param, out)

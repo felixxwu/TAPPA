@@ -63,7 +63,12 @@ static func global_fingerprint() -> String:
 		return _global_fp
 	var base := load(Config.CONFIG_PATH) as GameConfig
 	var catalogue := str(CarLibrary.CARS) + str(EngineLibrary.ENGINES) + str(CarLibrary.TORQUE_POWER_FALLOFF)
-	var grip := "%.6f|%.6f" % [base.gravel_grip, base.tarmac_grip]
+	# Weather folds in as ONE hash of the whole weather table plus every config value
+	# it names (WeatherLibrary.fingerprint), not as a per-condition field in this
+	# format string. Listing them one at a time meant editing this line for every new
+	# condition forever, and forgetting once would silently serve stale rival times;
+	# now adding or retuning any condition re-keys every field automatically.
+	var grip := "%.6f|%.6f|%s" % [base.gravel_grip, base.tarmac_grip, WeatherLibrary.fingerprint(base)]
 	# Auto-folded field-gen constants + name pool: edits invalidate without a manual bump.
 	var consts := str([
 		RallyLibrary.FIELD_MIN, RallyLibrary.FIELD_MAX,

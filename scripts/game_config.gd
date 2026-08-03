@@ -145,6 +145,16 @@ var peak_torque_rpm := 4500.0
 @export_range(0.1, 2.0) var grass_grip := 0.7
 @export_range(0.1, 2.0) var gravel_grip := 1.0
 @export_range(0.1, 2.0) var tarmac_grip := 1.3
+## The LIVE weather condition for the stage currently being played (RallyLibrary.
+## WEATHER_DRY / WEATHER_RAIN). Seated by RallySession.apply_event_config from the
+## event's authored `weather` field — the ONE funnel into the live config, so a new
+## scene-entry site can't route weather around it. Session-less callers (free roam,
+## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
+@export var weather := RallyLibrary.WEATHER_DRY
+## Global tyre μ multiplier applied on top of the surface grip when weather ==
+## WEATHER_RAIN (Drivetrain.surface_tire_params). A single multiplier regardless of
+## surface — see features/weather.md for the per-surface trade-off this defers.
+@export_range(0.1, 1.0) var rain_grip_mult := 0.8
 ## Slip at which grip peaks, as a NORMALIZED (dimensionless) slip — lateral it is
 ## sin(slip angle), longitudinal it is the slip ratio Δv/v. 0.15 ≈ sin(8.6°), so
 ## peak lateral grip lands at ~8.6° of slip angle at ANY speed (a real tyre peaks
@@ -550,7 +560,7 @@ var peak_torque_rpm := 4500.0
 ## HP a reference-speed (impact_ref_speed_kmh) hit costs. With per-car max HP of
 ## ~800-1100, ~200 means most cars survive 4-5 such moderate hits; the square law
 ## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
-@export_range(0.0, 2000.0) var impact_ref_hp_loss := 200.0
+@export_range(0.0, 2000.0) var impact_ref_hp_loss := 300.0
 ## Cap on the HP a SINGLE tick's deceleration can cost, as an absolute HP amount — so no
 ## one crash wrecks the car outright (it survives a couple). Being a flat amount (not a
 ## fraction of max HP), a car's max_hp genuinely matters: a fragile car is wrecked by
@@ -836,6 +846,15 @@ var peak_torque_rpm := 4500.0
 ## Map-table keyboard/gamepad glide speed: world metres/second the camera slides while
 ## a direction is held. Selection tracks whichever rally/arrow sits nearest the centre.
 @export var hq_table_pan_glide := 2.5
+## New-rally reveal (hq.gd `_run_reveal_sequence`): when rallies become enterable, the
+## map camera pans to each in turn and flips its pin from the locked to the unlocked look.
+## `pan_time` is the beat spent travelling/settling on a pin before it flips, `hold_time`
+## how long the revealed pin is held before moving on (a showdown gets a longer beat), and
+## `max_queue` caps how many pins one opening parades (the rest are banner'd as "+N more"
+## and marked seen anyway). Any input skips the whole queue. See features/menus.md.
+@export var hq_reveal_pan_time := 0.7
+@export var hq_reveal_hold_time := 1.1
+@export_range(1, 20) var hq_reveal_max_queue := 4
 ## Where the car-park lineup sits (outside, in front of the garage). Cars row along X.
 @export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
 ## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.
@@ -943,6 +962,128 @@ var peak_torque_rpm := 4500.0
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.
 @export_range(0.05, 4.0) var road_tile_per_meter := 0.5
+
+## Flat overcast grey used as background_color / fog_light_color / horizon on a
+## wet stage (weather == RallyLibrary.WEATHER_RAIN). Applied by the weather look
+## override, layered after the region look so rain wins. See features/weather.md.
+@export var rain_background_color := Color(0.55, 0.55, 0.58)
+## Dimmer, cooler ambient sky colour (upward-facing surfaces) on a wet stage.
+@export var rain_sky_color := Color(0.4, 0.4, 0.44)
+## Knocks the sun back on a wet stage — scales sun energy.
+@export_range(0.1, 1.0) var rain_sun_energy_mult := 0.6
+## Thickens the haze on a wet stage — scales fog_density.
+@export_range(1.0, 4.0) var rain_fog_density_mult := 1.5
+## How far the fog tints the sky on a wet stage (overrides fog_sky_affect so the
+## panorama washes out into a featureless overcast dome instead of punching through).
+@export_range(0.0, 1.0) var rain_fog_sky_affect := 0.9
+## Darkens the road/ground albedo on a wet stage (multiplies the ground/road colour).
+@export_range(0.1, 1.0) var rain_road_darken := 0.75
+## Rain quads alive at once in the camera-parented particle system on a wet stage.
+## Only instantiated when wet, so a dry stage carries zero added per-frame cost.
+@export_range(0, 2000) var rain_particle_count := 300
+
+## Flat dusty-tan background/fog colour on a sandstorm stage (weather ==
+## RallyLibrary.WEATHER_SANDSTORM, authored only onto region == "greece" events).
+## Applied by the same weather look override as rain, layered after the region
+## look. See features/weather.md.
+@export var sand_background_color := Color(0.72, 0.6, 0.42)
+## Warm, muted ambient sky colour (upward-facing surfaces) on a sandstorm stage.
+@export var sand_sky_color := Color(0.6, 0.5, 0.35)
+## Knocks the sun back on a sandstorm stage — scales sun energy.
+@export_range(0.1, 1.0) var sand_sun_energy_mult := 0.7
+## Thickens the haze on a sandstorm stage — scales fog_density.
+@export_range(1.0, 4.0) var sand_fog_density_mult := 2.0
+## How far the fog tints the sky on a sandstorm stage (overrides fog_sky_affect so
+## the panorama washes out into a featureless dust haze instead of punching through).
+@export_range(0.0, 1.0) var sand_fog_sky_affect := 0.9
+## Tints the road/ground albedo toward the dust colour on a sandstorm stage
+## (lerped onto the ground/road colour, unlike rain's plain darkening multiply).
+@export_range(0.0, 1.0) var sand_road_tint := 0.4
+## The dust colour the road/ground albedo is LERPED toward on a sandstorm stage (by
+## sand_road_tint). Named by the condition's road_tint block in WeatherLibrary, so
+## the tint colour is authored data like every other weather value rather than a
+## literal in world.gd — a future condition tinting toward snow-white needs no code.
+@export var sand_road_tint_color := Color(0.62, 0.5, 0.32)
+## Global tyre μ multiplier on a sandstorm stage (Drivetrain.surface_tire_params),
+## applied the same way as rain_grip_mult so the AI field and the player agree.
+## Folded into OpponentCache.global_fingerprint — changing this value invalidates
+## every rally's cached opponent field and needs a full ./cache_all.sh rebake.
+@export_range(0.1, 1.0) var sand_grip_mult := 0.9
+## Dust quads alive at once in the camera-parented particle system on a sandstorm
+## stage. Only instantiated when sandstorm, so a non-sandstorm stage carries zero
+## added per-frame cost.
+@export_range(0, 2000) var sand_particle_count := 250
+## Wind speed (m/s) dust is blown at, roughly horizontally, past the camera.
+@export_range(1.0, 60.0) var sand_wind_speed := 10.0
+## Compass-style wind heading in degrees (0 = world +X, 90 = world +Z) the dust
+## blows toward. A single fixed direction, not per-event, so "one wind direction"
+## reads consistently for the whole stage regardless of which way the car is facing.
+@export_range(0.0, 360.0) var sand_wind_dir_deg := 45.0
+
+# --- Fog (weather == RallyLibrary.WEATHER_FOG) --------------------------------
+# Prefixed `mist_` rather than `fog_` purely to avoid colliding with the BASE
+# environment knobs `fog_density` / `fog_sky_affect` above, which every stage uses.
+# Fog is a VISIBILITY condition only: it authors NO grip multiplier (so μ is exactly
+# 1.0, as dry) and NO road tint (a foggy road is dry). See features/weather.md.
+## Pale, LUMINOUS grey used as background_color / fog_light_color / horizon on a
+## foggy stage. Deliberately BRIGHTER than rain's flat overcast — mist glows; the
+## common mistake is authoring it dark enough to read as dusk.
+@export var mist_background_color := Color(0.86, 0.87, 0.88)
+## Bright, near-white ambient sky colour (upward-facing surfaces) on a foggy stage.
+@export var mist_sky_color := Color(0.78, 0.79, 0.82)
+## Sun energy on a foggy stage. Barely reduced — diffuse glare is what sells mist,
+## so this stays near 1.0 while the density does the work.
+@export_range(0.1, 1.0) var mist_sun_energy_mult := 0.95
+## The DOMINANT fog parameter — scales fog_density hard. This is the whole effect.
+@export_range(1.0, 12.0) var mist_fog_density_mult := 6.0
+## How far the fog tints the sky on a foggy stage (high, like rain, so the panorama
+## washes out into a featureless white dome instead of punching through the murk).
+@export_range(0.0, 1.0) var mist_fog_sky_affect := 0.95
+
+# --- Storm (weather == RallyLibrary.WEATHER_STORM) ----------------------------
+# Rain's look and rain's particle kind, authored heavier, plus a crosswind and an
+# occasional lightning flash. See features/weather.md.
+## Global tyre μ multiplier on a storm stage — a storm is wetter than plain rain, so
+## this is normally the lower of the two. Applied exactly like rain_grip_mult, so the
+## AI field and the player agree. Folded into OpponentCache.global_fingerprint —
+## changing it invalidates every rally's cached field and needs a full ./cache_all.sh.
+@export_range(0.1, 1.0) var storm_grip_mult := 0.72
+## Flat, dark storm-grey background/fog colour on a storm stage.
+@export var storm_background_color := Color(0.42, 0.43, 0.47)
+## Dim, cool ambient sky colour (upward-facing surfaces) on a storm stage.
+@export var storm_sky_color := Color(0.3, 0.31, 0.36)
+## Knocks the sun back on a storm stage — heavier than rain's.
+@export_range(0.1, 1.0) var storm_sun_energy_mult := 0.45
+## Thickens the haze on a storm stage — scales fog_density.
+@export_range(1.0, 4.0) var storm_fog_density_mult := 2.2
+## How far the fog tints the sky on a storm stage.
+@export_range(0.0, 1.0) var storm_fog_sky_affect := 0.95
+## Darkens the road/ground albedo on a storm stage (a soaked road, darker than rain's).
+@export_range(0.1, 1.0) var storm_road_darken := 0.65
+## Rain quads alive at once on a storm stage — heavier downpour than plain rain.
+@export_range(0, 2000) var storm_particle_count := 500
+## Base lateral crosswind on a storm stage: an ABSOLUTE force in newtons, applied to
+## the car body (car.gd::_apply_crosswind → apply_central_force) with no mass term.
+## A heavier car is therefore shoved less for free — the same force is a smaller
+## acceleration — e.g. ~0.75 m/s² on a 1200 kg car, ~0.375 on a 2400 kg one.
+@export_range(0.0, 4000.0) var storm_wind_strength := 900.0
+## Peak ADDITIONAL gust force (newtons, as above) layered on storm_wind_strength.
+@export_range(0.0, 4000.0) var storm_wind_gust := 700.0
+## Compass-style heading in degrees (0 = world +X, 90 = world +Z) the storm blows
+## TOWARD. Shared by the crosswind force and the rain particles' wind direction, so
+## the drops visibly stream the same way the car is being pushed.
+@export_range(0.0, 360.0) var storm_wind_dir_deg := 200.0
+## Peak brightness multiplier of a lightning flash, applied to the storm fog/sky
+## colour for storm_lightning_duration_s. Purely cosmetic (no light node exists —
+## see features/rendering.md). Keep it modest: a flash that blanks the screen
+## mid-corner is a gameplay event, not an effect.
+@export_range(1.0, 3.0) var storm_lightning_flash := 1.45
+## How long one flash takes to rise and fall, in seconds. Short.
+@export_range(0.02, 1.0) var storm_lightning_duration_s := 0.18
+## Shortest gap between flashes, in seconds.
+@export_range(1.0, 300.0) var storm_lightning_interval_min_s := 18.0
+## Longest gap between flashes, in seconds. Infrequent on purpose.
+@export_range(1.0, 300.0) var storm_lightning_interval_max_s := 45.0
 
 @export_group("Terrain Layers")
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.
@@ -1110,6 +1251,12 @@ var peak_torque_rpm := 4500.0
 ## texture (see todo/tarmac-texture.md) — for now a flat grey under the same
 ## baked terrain lighting as the rest of the floor.
 @export var tarmac_color := Color(0.32, 0.32, 0.34)
+## Neutral multiplier over the ground texture — the floor material's `albedo_color`
+## BASELINE. Re-seeded onto the material on every stage boot (world.gd._ready), which
+## is what makes the weather road tint idempotent: it always modifies the authored
+## value rather than the previous stage's already-tinted result. A region may override
+## it with a "terrain_tint" look key.
+@export var terrain_tint := Color(1, 1, 1)
 ## Lateral distance from the road centerline, in metres, within which track
 ## progress accrues; straying beyond it triggers the off-track reset. Generous on
 ## purpose — you can run wide onto the verge / cut across rough ground (rally!)
@@ -2060,3 +2207,20 @@ func spectator_params() -> Dictionary:
 		"render_distance_m": tree_render_distance_m,
 		"render_fade_m": tree_render_fade_m,
 	}
+
+
+# --- Crosswind (storm) -------------------------------------------------------
+# Shape of the seeded gust profile applied as a lateral body force on a stage whose
+# weather entry carries a "wind" block (scripts/crosswind.gd). The wind STRENGTH,
+# GUST and DIRECTION are named by that block and live with the condition; these two
+# are profile shape, shared by any windy condition.
+
+## Wavelength (m of stage distance) of the slowest gust octave — how far apart the
+## big gusts sit. Smaller = busier, more frequent wind changes.
+@export var crosswind_gust_wavelength_m := 400.0
+
+## Fraction of the wind force that still acts when the car is exactly nose-on to it.
+## 1.0 = direction-independent; lower values make a broadside car catch more wind.
+## A cheap stand-in for real exposure — there is deliberately no shelter/occlusion
+## model (open ground vs. tree cover); see features/car-physics.md.
+@export_range(0.0, 1.0) var crosswind_nose_on_fraction := 0.35

@@ -135,6 +135,22 @@ func test_event_cliffiness_defaults_to_flat() -> void:
 	assert_eq(RallyLibrary.event_cliffiness({"cliffiness": -1.0}), 0.0, "clamps below 0")
 
 
+func test_event_weather_defaults_to_dry() -> void:
+	# An event that omits weather, or authors an unrecognised string (a typo),
+	# resolves to WEATHER_DRY so a stage never crashes on a bad value.
+	assert_eq(RallyLibrary.event_weather({}), RallyLibrary.WEATHER_DRY, "missing weather -> dry")
+	assert_eq(RallyLibrary.event_weather({"weather": "sunny"}), RallyLibrary.WEATHER_DRY, "unrecognised string -> dry")
+	# Per-condition ids resolve to themselves, driven from WeatherLibrary.all() as
+	# opaque input rather than naming which ids exist (that's authored content, not
+	# a logic contract) — every non-dry condition round-trips through event_weather.
+	for entry in WeatherLibrary.all():
+		var wid := String(entry.get("id", ""))
+		if wid == "" or wid == RallyLibrary.WEATHER_DRY:
+			continue
+		assert_eq(RallyLibrary.event_weather({"weather": wid}), wid,
+			"authored '%s' resolves to itself" % wid)
+
+
 func test_starter_always_has_an_enterable_rally() -> void:
 	# SHIPPED-CONTENT guarantee: this must run against the REAL catalogue, not the
 	# fixtures installed by before_each — restore first so CarLibrary sees the real
@@ -294,6 +310,25 @@ func test_every_shipped_rally_has_at_least_one_car_that_can_enter_it() -> void:
 		assert_ne(found, "", "some car in the roster can enter rally '%s'" % rally.get("id", "?"))
 
 
+func test_no_shipped_rally_has_an_over_wide_power_band() -> void:
+	# SHIPPED-CONTENT guarantee, in the same spirit as the "every rally is enterable"
+	# test above: a p/w band whose floor is less than HALF its ceiling lets wildly
+	# mismatched cars into the same event, so the field stops being a class and the
+	# rally loses its identity. This asserts the RATIO invariant only — never a
+	# particular floor or ceiling, both of which a designer may retune freely, and
+	# never which rallies carry a band at all (an open-class finale authors none).
+	CarFixtures.restore()
+	for rally in RallyLibrary.all():
+		var restriction: Dictionary = rally.get("restriction", {})
+		if not (restriction.has("pw_min") and restriction.has("pw_max")):
+			continue  # ceiling-only / floor-only / open class: no band to be too wide
+		var lo := float(restriction["pw_min"])
+		var hi := float(restriction["pw_max"])
+		assert_gte(lo, hi * 0.5,
+			"rally '%s' p/w band %s-%s is too wide (floor must be >= half the ceiling)"
+				% [rally.get("id", "?"), lo, hi])
+
+
 func test_power_to_weight_restriction_filters() -> void:
 	# The p/w gate is a BAND: pw_min..pw_max (both in hp/tonne; is_eligible converts each
 	# car's kW/kg to hp/tonne before comparing). A car must sit INSIDE the band — under the
@@ -442,6 +477,25 @@ func test_track_generation_is_deterministic() -> void:
 		(b["centerline"] as Curve2D).get_baked_length(), 0.001, "same seed -> same track length")
 	assert_eq(a["pieces"].size(), b["pieces"].size(), "same seed -> same piece count")
 
+
+
+func test_stage_key_changes_only_for_the_touched_event() -> void:
+	# stage_key hashes the whole authored event dict, so a wet event gets its own
+	# global leaderboard while an untouched sibling event keeps its board (see
+	# features/weather.md -> "Caches and leaderboards"). Synthetic rally; no real
+	# rally id or event is depended on.
+	var dry_rally := {"id": "synthetic_stage_key", "events": [
+		{"seed": 1, "turn_count": 8},
+		{"seed": 2, "turn_count": 9},
+	]}
+	var wet_rally := {"id": "synthetic_stage_key", "events": [
+		{"seed": 1, "turn_count": 8, "weather": "rain"},
+		{"seed": 2, "turn_count": 9},
+	]}
+	assert_ne(RallyLibrary.stage_key(dry_rally, 0), RallyLibrary.stage_key(wet_rally, 0),
+		"authoring weather onto event 0 changes its stage key")
+	assert_eq(RallyLibrary.stage_key(dry_rally, 1), RallyLibrary.stage_key(wet_rally, 1),
+		"an untouched sibling event keeps its stage key")
 
 
 # --- Turn splits (the in-stage "vs P1" pace popup) ---------------------------
@@ -968,7 +1022,12 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 	# Guards the above: an empty result would make every assertion below vacuous.
 	assert_gt(enterable.size(), 0, "a mid-range car with a fresh profile can enter something")
 	for r in enterable:
-		assert_true(RallyLibrary.is_eligible(r, car), "%s is eligible for the car" % r["id"])
+		# "Enterable" means eligible OUTRIGHT or reachable by ducking under the ceiling
+		# with a detune — the same definition the HQ's _entry_plan and the shipped-roster
+		# test above use, so all three agree on what the player can actually start.
+		assert_true(
+			RallyLibrary.is_eligible(r, car) or RallyLibrary.qualifying_detune(r, car) > 0.0,
+			"%s is enterable by the car (outright or detuned)" % r["id"])
 		assert_false(bool(r.get("showdown", false)), "the locked showdown is not offered")
 
 

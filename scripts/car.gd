@@ -672,6 +672,7 @@ func _apply_aero() -> void:
 	var down := -global_transform.basis.y
 	apply_force(down * v2 * cfg.downforce_front, global_transform.basis * _front_axle)
 	apply_force(down * v2 * cfg.downforce_rear, global_transform.basis * _rear_axle)
+	_apply_crosswind(cfg)
 	# Only build the debug-overlay readout array when the overlay is actually
 	# visible — it's the sole consumer (WheelForceDebug, toggled at runtime by H),
 	# so the shipped game doesn't allocate it every physics tick.
@@ -680,6 +681,61 @@ func _apply_aero() -> void:
 			[global_position + global_transform.basis * _front_axle, down * v2 * cfg.downforce_front],
 			[global_position + global_transform.basis * _rear_axle, down * v2 * cfg.downforce_rear],
 		]
+
+
+# --- Crosswind (storm) -------------------------------------------------------
+# Memoised wind for the current condition, resolved the same way Drivetrain memoises
+# its weather μ (`_weather_mu`): re-read only when the weather id or the config object
+# changes, never per tick. On a condition with no "wind" block — dry, rain, fog, every
+# non-storm stage — `_wind_active` stays false and the per-tick cost is two comparisons
+# and a bool test: no dictionary lookup, no allocation, no force. That zero-cost
+# default is why nothing here ever tests a condition id by name.
+var _wind_active := false
+var _wind_strength := 0.0
+var _wind_gust := 0.0
+var _wind_dir := Vector3.ZERO   # unit world heading, trig done once at resolve time
+var _wind_id := "￿"        # sentinel: never a real weather id, so the first tick resolves
+var _wind_cfg: GameConfig = null
+var _progress: Node = null      # the sibling TrackProgress (distance along the stage)
+
+
+# A lateral force in a FIXED WORLD direction, so the car is blown off line and has to
+# be steered against — not a drag term that rotates with the car. Its magnitude is a
+# pure function of DISTANCE ALONG THE STAGE and the event seed (scripts/crosswind.gd),
+# so every run of a stage meets the same gust in the same place; see that file's header
+# for why leaderboard parity depends on it. Applied here, with the other chassis body
+# forces, so it composes with the existing physics instead of fighting it.
+func _apply_crosswind(cfg: GameConfig) -> void:
+	if cfg.weather != _wind_id or cfg != _wind_cfg:
+		_resolve_wind(cfg)
+	if not _wind_active:
+		return
+	# Distance comes from the existing TrackProgress odometer rather than a private one,
+	# so the wind is keyed to the same along-track metric the HUD and stage gate use.
+	# Not permanently cached when absent: TrackProgress is built after the car exists
+	# (world.gd._generate_track), and the flat test fixtures never have one.
+	if _progress == null:
+		_progress = _sibling_with_method("progress_offset")
+		if _progress == null:
+			return
+	var distance: float = _progress.progress_offset()
+	var magnitude := Crosswind.magnitude_at(distance, cfg.track_seed,
+		_wind_strength, _wind_gust, cfg.crosswind_gust_wavelength_m)
+	# Exposure: a broadside car catches more wind than a nose-on one. Deliberately a
+	# constant-ish factor, NOT an occlusion/shelter model (see features/car-physics.md).
+	var nose_on: float = cfg.crosswind_nose_on_fraction
+	var exposure := nose_on + (1.0 - nose_on) * absf(_wind_dir.dot(global_transform.basis.x))
+	apply_central_force(_wind_dir * (magnitude * exposure))
+
+
+func _resolve_wind(cfg: GameConfig) -> void:
+	_wind_id = cfg.weather
+	_wind_cfg = cfg
+	var wind := Crosswind.wind_params(cfg)
+	_wind_active = not wind.is_empty()
+	_wind_strength = float(wind.get(Crosswind.STRENGTH_KEY, 0.0))
+	_wind_gust = float(wind.get(Crosswind.GUST_KEY, 0.0))
+	_wind_dir = Crosswind.direction(float(wind.get(Crosswind.DIR_KEY, 0.0)))
 
 
 # Point the front wheels: caster toward the direction of travel (blended in by

@@ -3,6 +3,10 @@ extends VBoxContainer
 # A reusable settings panel shared by the HQ title screen and the in-run pause
 # menu, so both present the SAME options. It opens on a LIST of categories; each
 # row drills into its own sub-page:
+#   • Audio — a Master volume slider (AudioServer bus 0, so it scales everything:
+#     music, engine, UI) and a Music volume slider (the Music bus, on top of
+#     master). Both live-apply and persist via the Music autoload
+#     (MusicDirector.set_master_volume / set_volume).
 #   • Display — pick the frame-rate cap (30 / 60 / uncapped), persisted under
 #     FpsSetting.SETTING_KEY. Applied live via Engine.max_fps (a global engine
 #     property, so both hosts take effect immediately); world._ready() re-derives
@@ -73,7 +77,10 @@ var benchmark_rows: Array = []
 var _list_page: VBoxContainer
 var _audio_page: VBoxContainer
 var _display_page: VBoxContainer
-# The music-volume slider + its live "%"" label on the Audio page (exposed for tests).
+# The Audio page's volume sliders + their live "%" labels (exposed for tests).
+# Master scales everything (bus 0); music is the Music bus on top of it.
+var master_slider: HSlider
+var master_value_label: Label
 var music_slider: HSlider
 var music_value_label: Label
 var _camera_page: VBoxContainer
@@ -188,12 +195,26 @@ func _build_list_page() -> void:
 
 
 func _build_audio_page() -> void:
-	# Audio sub-page — the music volume slider (room for SFX/engine later).
+	# Audio sub-page — master volume (everything) then music volume (music only,
+	# scaled by master since the Music bus sends to Master).
 	_audio_page = _make_page()
 	add_child(_audio_page)
 	_audio_page.add_child(_make_heading("Audio"))
-	_audio_page.add_child(_make_sub("Set the music volume:"))
-	_audio_page.add_child(_make_volume_row())
+	_audio_page.add_child(_make_sub("Set the volume levels:"))
+
+	var master := _make_volume_row("Master", float(Save.get_setting(
+		MusicDirector.MASTER_SETTING_KEY, MusicDirector.DEFAULT_MASTER_VOLUME)))
+	master_slider = master["slider"]
+	master_value_label = master["value_label"]
+	master_slider.value_changed.connect(_on_master_volume_changed)
+	_audio_page.add_child(master["row"])
+
+	var music := _make_volume_row("Music", float(Save.get_setting(
+		MusicDirector.SETTING_KEY, MusicDirector.DEFAULT_VOLUME)))
+	music_slider = music["slider"]
+	music_value_label = music["value_label"]
+	music_slider.value_changed.connect(_on_music_volume_changed)
+	_audio_page.add_child(music["row"])
 
 
 func _build_display_page() -> void:
@@ -850,53 +871,67 @@ func _make_scheme_row(id: int, entry: Dictionary) -> Button:
 
 # --- Audio -------------------------------------------------------------------
 
-# The music-volume row: [Music   <===slider===>   60%]. The slider is focusable so
-# it's keyboard/gamepad navigable (native ui_left/ui_right adjust it); dragging it
-# live-applies + persists via MusicDirector (Music autoload). Initial value comes
-# from the saved setting, and value_changed is wired AFTER seeding it so building
-# the page never re-persists.
-func _make_volume_row() -> HBoxContainer:
-	var row := HBoxContainer.new()
+# One volume row: [Name   <===slider===>   60%]. The slider is focusable so it's
+# keyboard/gamepad navigable (native ui_left/ui_right adjust it); dragging it
+# live-applies + persists via MusicDirector (Music autoload), which owns both the
+# Master and Music bus levels. Initial value comes from the saved setting, and
+# value_changed is wired AFTER seeding it so building the page never re-persists.
+# Returns {row, slider, value_label}.
+func _make_volume_row(label_text: String, initial: float) -> Dictionary:
+	# The row sits on its own panel so the slider track/grabber stays readable
+	# against the busy 3D HQ backdrop behind the settings menu.
+	var row := UITheme.panel(0.85, 10)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 12)
+
+	var inner := HBoxContainer.new()
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 12)
+	row.add_child(inner)
 
 	var name_label := Label.new()
-	name_label.text = "Music"
+	name_label.text = label_text
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	name_label.add_theme_font_size_override("font_size", 18)
-	row.add_child(name_label)
+	inner.add_child(name_label)
 
-	music_slider = HSlider.new()
-	music_slider.focus_mode = Control.FOCUS_ALL
-	music_slider.min_value = 0.0
-	music_slider.max_value = 1.0
-	music_slider.step = 0.05
-	music_slider.custom_minimum_size = Vector2(220, 24)
-	music_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	music_slider.value = clampf(
-		float(Save.get_setting(MusicDirector.SETTING_KEY, MusicDirector.DEFAULT_VOLUME)), 0.0, 1.0)
-	row.add_child(music_slider)
+	var slider := HSlider.new()
+	slider.focus_mode = Control.FOCUS_ALL
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.custom_minimum_size = Vector2(220, 24)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.value = clampf(initial, 0.0, 1.0)
+	inner.add_child(slider)
 
-	music_value_label = Label.new()
-	music_value_label.custom_minimum_size = Vector2(56, 0)
-	music_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	music_value_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(music_value_label)
+	var value_label := Label.new()
+	value_label.custom_minimum_size = Vector2(56, 0)
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	value_label.text = _volume_percent(slider.value)
+	inner.add_child(value_label)
 
-	_update_music_value_label()
-	music_slider.value_changed.connect(_on_music_volume_changed)
-	return row
+	return {"row": row, "slider": slider, "value_label": value_label}
+
+
+func _on_master_volume_changed(v: float) -> void:
+	Music.set_master_volume(v)  # live-apply to bus 0 + persist to the profile
+	_update_volume_label(master_value_label, master_slider)
 
 
 func _on_music_volume_changed(v: float) -> void:
 	Music.set_volume(v)  # live-apply to the Music bus + persist to the profile
-	_update_music_value_label()
+	_update_volume_label(music_value_label, music_slider)
 
 
-func _update_music_value_label() -> void:
-	if music_value_label != null and music_slider != null:
-		music_value_label.text = "%d%%" % roundi(music_slider.value * 100.0)
+func _update_volume_label(value_label: Label, slider: HSlider) -> void:
+	if value_label != null and slider != null:
+		value_label.text = _volume_percent(slider.value)
+
+
+func _volume_percent(v: float) -> String:
+	return "%d%%" % roundi(v * 100.0)
 
 
 # --- Shared widgets ----------------------------------------------------------

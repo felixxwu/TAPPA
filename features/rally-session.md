@@ -121,7 +121,11 @@ working copy that is never reset between events — a cfg-value fallback would l
 one event's override (`water_level`, a `terrain_layer*` key, …) leak into a later
 event that omits the key. Overridable per-event keys include `water_enabled`,
 `water_level`, and the 6 hill-shape keys `terrain_layer{1,2,3}_{wavelength,amplitude}`
-(see [terrain.md](terrain.md)).
+(see [terrain.md](terrain.md)). It also seats `cfg.weather` from
+`RallyLibrary.event_weather(event)` — **the one funnel** by which a stage's condition
+reaches the live config, and the same baseline-fallback rule is what leaves a
+session-less caller (free roam, benchmark, dev boot) dry automatically rather than
+inheriting the last event's weather (see [weather.md](weather.md)).
 
 **Target-time derivation and lakes.** `_generate_event_tracks` derives rival times
 by generating each event's track via `TrackGenParams.for_event(event, cfg)` — the

@@ -367,6 +367,142 @@ model. Each per-car material also carries the tread `albedo_color`
   terrain dissolves into the sky seam. All applied in `world._ready()` from config.
 - No bloom, no shadows.
 
+### Weather look override (`world.gd::_apply_weather_look`)
+
+A second override layered on top of the region look, driven by the condition's entry
+in **`WeatherLibrary`** (`scripts/weather_library.gd`) — looked up once from
+`GameConfig.weather` (seated per event — see `weather.md`). There is **no
+per-condition branching here**: the entry's `look` block names the GameConfig fields
+to read, its `road_tint` block names the field and the mode, and its `particles` key
+names the particle kind. It is called **after** `_apply_region_look()`
+and after `apply_terrain_light()` / the `tarmac_color` push, so it gets the last word
+on both the sky and the ground, while still landing before the initial terrain build
+in `_generate_track()` (so the darker sun/ambient is baked into the first chunks'
+vertex colours). The two ground-material parameters the road tint modifies
+(`tarmac_color`, `albedo_color`) are **re-seeded from the authored baseline** in
+`_ready` just before this runs — the floor `ShaderMaterial` is a shared sub-resource
+of `main.tscn`, so a read-modify-write tint would otherwise compound across stages
+and leak into later dry ones (see [weather.md](weather.md) → "Look"). **A dry stage touches nothing** — dry's table entry has no `look`,
+no `road_tint` and no `particles`, so all three blocks are skipped, nothing is
+written and no node is built.
+
+Wet applies `rain_background_color` (to `background_color` + `fog_light_color`),
+`rain_fog_density_mult` × the config `fog_density`, `rain_fog_sky_affect`,
+`rain_sky_color` and `rain_sun_energy_mult` onto the `TerrainManager`'s baked-light
+inputs (written onto the manager, never onto the shared `GameConfig`, so a later dry
+stage isn't left dimmed), and scales the floor material's `albedo_color` /
+`tarmac_color` by `rain_road_darken`.
+
+**Overcast/dust look is made of fog, not a second sky.** Dry keeps `fog_sky_affect`
+low (0.15) so the panorama reads above the haze; rain and sandstorm each invert that
+— push it to their own `*_fog_sky_affect` (~0.9) with a flat background colour (grey
+for rain, dusty tan for sandstorm) and the fog washes the *existing* panorama into a
+featureless dome. No second sky texture to author, import or carry in the Android
+bundle (download size gates installs on the low-end phones this game targets) and no
+extra draw call — the environment half of any condition is free (but see "Fog does
+not shorten the cull" below: it is not *cheaper* than dry, because nothing culls on
+fog density). `world.gd._apply_weather_look` applies this override via the shared
+`_apply_overcast_look`/`_tint_road` helpers, fed the field names from the condition's
+table entry — so every condition is one mechanism with its own colour/parameter set,
+not a copy-pasted path per condition.
+
+**Particle field** (`scripts/rain_field.gd`, class `WeatherField` — kept under its
+original filename to avoid churning the res:// path/uid rain shipped under, but the
+class now covers both conditions): one `GPUParticles3D` parented to the **chase
+camera**, so `rain_particle_count`/`sand_particle_count` quads cover the whole
+visible field without simulating the world. Unshaded billboards, `SHADOW_CASTING_OFF`,
+`COLLISION_DISABLED`, a single draw pass. `world.gd` calls
+`WeatherField.spawn(camera, kind, count, wind_deg, speed)` — every value including the
+travel speed comes from the field the entry names, so `WeatherField` reads no
+condition's config field itself — and it dispatches on the table's
+particle KIND to `spawn_rain` / `spawn_sandstorm` (both still public, and used
+directly by tests); an empty kind — dry, and any future no-particle condition such as
+fog — spawns nothing at all, so a dry stage builds no node and pays exactly zero new
+per-frame cost — asserted by
+`test_render_smoke.gd::test_no_weather_field_on_a_dry_stage`.
+
+**World-space simulation is what makes speed matter, not a per-frame hack.**
+`local_coords = false`: the node still follows the camera (so the emission box
+stays where the player can see it), but each particle's own motion is simulated in
+WORLD space once spawned. Driving forward genuinely carries the car through
+standing rain/dust, so streaks past the windscreen and correct parallax emerge from
+the simulation itself — faster automatically at higher speed, correct even while
+sliding sideways — with **zero per-frame script cost**: no `car.linear_velocity`
+read, no per-frame material writes. (An earlier iteration used
+`local_coords = true` and faked the speed response by reading the car's velocity
+each frame and tilting `process_material.direction`/resizing the quad off it — that
+only ever looked right at a fixed camera angle, since the rain was actually glued to
+the camera the whole time, and it didn't respond correctly to the car spinning; it
+was removed in favour of the true world-space simulation.) The one thing still
+authored per-particle-for-free is streak *orientation*: the draw material's
+`billboard_mode = BILLBOARD_PARTICLES` (an engine feature, not hand-rolled geometry)
+faces each quad to its own world-space velocity, so a falling/wind-blown drop reads
+as a streak rather than a dot.
+
+**Sandstorm** (`WeatherField.spawn_sandstorm`): dust blown in a single fixed WORLD
+direction (`GameConfig.sand_wind_dir_deg`, a compass heading — 0 = world +X, 90 =
+world +Z — resolved once at spawn) at the speed the entry's `particle_speed` names
+(`sand_wind_speed`), using a squarer/softer
+quad (`_SAND_QUAD_SIZE`) than rain's thin drop. The road tint that goes with it lerps
+the ground albedo toward `sand_road_tint_color` — a config value the entry's
+`road_tint` block names, not a literal in `world.gd`, which is why a future snow
+condition could whiten the ground with no code change at all. A fixed world direction only reads
+correctly under world-space simulation — under the old `local_coords = true` scheme
+the "wind" would have rotated with the camera, which is exactly backwards. Covered
+by `test_render_smoke.gd::test_sandstorm_field_is_a_single_cheap_draw_with_wind_direction`.
+Sandstorm is authored only onto `region == "greece"` events — see
+`RallyLibrary.WEATHER_SANDSTORM` and `test_rally_library.gd::test_sandstorm_only_authored_on_greece_events`.
+
+**Fog** is the cheapest condition in the table and the purest use of this section's
+"look is made of fog" mechanism: it is *only* a look block. `mist_fog_density_mult`
+(the dominant knob — the whole effect) × the config `fog_density`, a high
+`mist_fog_sky_affect` so the panorama washes out as rain's does, and a **pale,
+luminous** grey (`mist_background_color` / `mist_sky_color`). Two deliberate
+authoring choices, easy to get wrong: the colour must be *bright* — mist glows, and
+making it dark reads as dusk rather than fog — and `mist_sun_energy_mult` stays near
+1.0, because the diffuse glare of an un-dimmed sun through thick haze is what sells
+it. Fog names no `particles`, no `grip_mult` and no `road_tint` (a foggy road is
+dry), so it constructs no node at all.
+
+**Lightning** (storm only, `world.gd::_start_lightning`): a brief spike in the same
+environment colours the look block already drives — `fog_light_color` /
+`background_color` tweened up by `storm_lightning_flash` and back (fast rise, slower
+fall), re-armed by one self-scheduling `Timer` at a random interval in
+`[storm_lightning_interval_min_s, storm_lightning_interval_max_s]`. The tween is
+`TWEEN_PAUSE_STOP`, so a paused game is visually still rather than flashing behind the
+pause menu. Deliberately
+**not a light node**: this renderer is unshaded with baked vertex lighting and ships
+with no lights at all (see "Environment" above), so a real flash would mean adding
+the one thing the pipeline is built to avoid. It never touches the `TerrainManager`'s
+baked sun/ambient (that would need a chunk rebake, not a per-frame tween). Kept
+subtle and infrequent by authoring — a flash that blanks the screen mid-corner is a
+gameplay event, not an effect — and purely cosmetic, so it may use `randf()`.
+
+### Fog does not shorten the cull (an unclaimed performance win)
+
+**Known gap, verified — do not assume the fog "pays for itself".** Fog density is
+*only* an `Environment` write. Nothing in the cull reads it:
+
+- the terrain chunk ring is a compile-time `TerrainManager.RADIUS` (7×7 × 50 m
+  chunks), and the LOD cutoffs come from `GameConfig.terrain_lod_bands_m` via
+  `apply_terrain_lod()` — see [terrain.md](terrain.md);
+- tree/bush/sign/spectator/arch draw distance is the single shared
+  `GameConfig.tree_render_distance_m`, resolved once at boot by
+  `tree_render_distance_for(web, touch)` and written back in `world.gd::_ready` —
+  see "Shared render distance" below and [trees.md](trees.md).
+
+So on a rain (×1.5), sandstorm (×2.0) or fog (much higher) stage the game still
+builds, submits and shades every chunk and every tree the thickened fog then hides.
+The smallest safe fix, if it is ever wanted, is a single multiplier on
+`cfg.tree_render_distance_m` at the one `world.gd::_ready` write-back (it runs before
+every foliage/prop spawn, and they all read that one field) — sourced from the
+condition's `look["fog_density_mult"]`, since `_apply_weather_look` has not run yet
+at that point. It was **deliberately not done here**: shortening the tree cull is a
+visible pop-in/quality trade-off that needs tuning and playtesting rather than a
+derived constant (at rain's density, objects at the shortened distance are still
+~45% visible), and touching the terrain LOD bands additionally perturbs
+`TerrainManager.detail_ring()` and the corridor precompute pruning.
+
 ## Tests
 
 ## Shader pre-warm (gl_compatibility first-use compiles)

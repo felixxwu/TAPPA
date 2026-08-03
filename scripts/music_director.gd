@@ -18,6 +18,27 @@ extends Node
 const SETTING_KEY := "music_volume"
 const DEFAULT_VOLUME := 0.4
 
+# Player-facing MASTER level (everything: music, engine, UI), persisted in the save
+# profile and applied to AudioServer's bus 0. Linear [0,1]; the settings menu drives
+# it. Lives here because this autoload already owns the bus graph (Music / Engine
+# buses both send to Master), and it is created before the main scene.
+const MASTER_SETTING_KEY := "master_volume"
+const DEFAULT_MASTER_VOLUME := 0.5
+
+# Slider position -> amplitude taper. The stored settings values above are SLIDER
+# POSITIONS (0..1), not raw amplitudes: feeding a position straight into the bus as
+# a linear amplitude makes the sliders feel top-heavy (50% is only -6 dB, which still
+# sounds ~2/3 as loud). Perceived loudness halves roughly every -10 dB, so raising the
+# position to this exponent (10 dB / 6.02 dB per amplitude halving) makes each halving
+# of the slider a genuine halving of perceived loudness: 50% -> -10 dB, 25% -> -20 dB.
+const VOLUME_TAPER_EXPONENT := 1.66
+
+
+# Map a slider position [0,1] to the linear amplitude to hand the audio bus.
+static func slider_to_amplitude(position: float) -> float:
+	return pow(clampf(position, 0.0, 1.0), VOLUME_TAPER_EXPONENT)
+
+
 # Stall-recovery fallback defaults (GameConfig overrides these at runtime).
 const DEFAULT_STALL_THRESHOLD_SEC := 0.5
 const DEFAULT_RESUME_STABLE_SEC := 0.4
@@ -147,6 +168,7 @@ func _ready() -> void:
 		_player.play()  # start the continuous polyphonic timeline (our clock)
 		_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
 		_apply_volume()
+	_apply_master_volume()  # bus 0 always exists, headless included
 	_current_rally_song = MusicLibrary.random_rally_song()  # a song ready before the first loading screen
 	_current_hq_song = MusicLibrary.random_hq_song()  # a song ready before the first HQ visit
 	# No hardcoded autostart — _process picks the song from the live scene state
@@ -365,4 +387,25 @@ func _apply_bus_volume(lin: float) -> void:
 	var idx := AudioServer.get_bus_index("Music")
 	if idx == -1:
 		return
-	AudioServer.set_bus_volume_db(idx, linear_to_db(maxf(lin, 0.0001)))
+	AudioServer.set_bus_volume_db(idx, linear_to_db(maxf(slider_to_amplitude(lin), 0.0001)))
+
+
+# Set the MASTER level (linear [0,1]): everything the game plays routes through
+# bus 0, so this scales music, engine and UI together. Persisted unless persist is
+# false. 0 mutes the bus outright rather than leaving it at -80 dB, so "0%" is
+# true silence. Called by the settings slider.
+func set_master_volume(linear: float, persist := true) -> void:
+	var lin := clampf(linear, 0.0, 1.0)
+	if persist:
+		Save.set_setting(MASTER_SETTING_KEY, lin)
+	_apply_master_bus_volume(lin)
+
+
+func _apply_master_volume() -> void:
+	_apply_master_bus_volume(
+		clampf(float(Save.get_setting(MASTER_SETTING_KEY, DEFAULT_MASTER_VOLUME)), 0.0, 1.0))
+
+
+func _apply_master_bus_volume(lin: float) -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(slider_to_amplitude(lin), 0.0001)))
+	AudioServer.set_bus_mute(0, lin <= 0.0)

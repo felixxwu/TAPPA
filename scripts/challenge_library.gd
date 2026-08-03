@@ -172,7 +172,7 @@ static func stages_for(period_key: String, stage_count: int) -> Array:
 			"turn_count": rng.randi_range(turn_range[0], turn_range[1]),
 			"forestiness": rng.randf_range(0.2, 0.8),
 			"surface_mix": rng.randf_range(0.0, 1.0),
-			"straightness": rng.randf_range(0.0, 1.0),
+			"straightness": rng.randf_range(0.5, 1.0),
 			"cliffiness": rng.randf_range(0.3, 0.7),
 			"water_level": water_level,
 			"terrain_layer1_amplitude": amplitude,

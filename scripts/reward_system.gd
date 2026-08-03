@@ -205,10 +205,37 @@ static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: Random
 		# rally still can't drop a car above the player's earned tier. This is the SAME
 		# clamp the per-event upgrade draw uses (target_tier) — cars no longer key off the
 		# garage's highest owned tier, which let one d2 win open the whole roster.
-		var ceiling := clampi(_difficulty_to_tier(rally_difficulty), 1,
-			tier_ceiling(RallyLibrary.completed_count(profile)))
+		var earned := tier_ceiling(RallyLibrary.completed_count(profile))
+		var ceiling := clampi(_difficulty_to_tier(rally_difficulty), 1, earned)
 		pool = _cars_at_or_below_tier(ceiling)
-	return _pick_prefer_unowned(pool, _owned_model_ids(profile), rng)
+		# EXHAUSTED-TIER STEP-UP. The tier is min(difficulty, earned), so a difficulty-1
+		# rally always draws the tier-1 pool however far the player has come — and there
+		# are far more low-difficulty rallies than low-tier cars, so that pool runs out
+		# and every later win hands back a car already in the garage. When that happens,
+		# climb toward the tier the player has actually EARNED until something new
+		# appears. This never exceeds the earned ceiling, so the progress clamp
+		# (gameplay.md — a lucky early win can't drop a car above your tier) still holds;
+		# it only stops an exhausted pool turning a win into a no-op reward.
+		var owned_ids := _owned_model_ids(profile)
+		while ceiling < earned and _all_owned(pool, owned_ids):
+			ceiling += 1
+			pool = _cars_at_or_below_tier(ceiling)
+	# Avoid handing out the same model twice running when there is any alternative —
+	# back-to-back duplicates read as a broken reward even when a duplicate is the
+	# only honest outcome.
+	return _pick_prefer_unowned(pool, _owned_model_ids(profile), rng,
+		_last_granted_model_id(profile))
+
+
+# The highest reward_tier among the cars in the garage, or 0 for an empty one.
+# Used by the wreck safety net to size its replacement against what the player had
+# actually worked up to, rather than always paying out at the bottom of the ladder.
+static func highest_owned_tier(profile: Dictionary) -> int:
+	var best := 0
+	for car in profile.get("cars", []):
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		best = maxi(best, int(entry.get("reward_tier", 0)))
+	return best
 
 
 # CarLibrary model ids with reward_tier at or below `tier`.
@@ -270,7 +297,12 @@ static func _unlock_candidates(profile: Dictionary) -> Array:
 
 # Uniform pick from `pool`, restricted to not-yet-owned models when any exist
 # (the discovery hook); otherwise a duplicate of an owned one. Null on an empty pool.
-static func _pick_prefer_unowned(pool: Array, owned: Dictionary, rng: RandomNumberGenerator) -> Variant:
+# `avoid` is the model granted LAST time: it is dropped from the candidates whenever
+# doing so still leaves something to pick, so a player never sees the same car twice
+# running while any alternative exists. It is a preference, never a hard filter — a
+# single-entry pool still grants that car rather than returning null.
+static func _pick_prefer_unowned(pool: Array, owned: Dictionary, rng: RandomNumberGenerator,
+		avoid: String = "") -> Variant:
 	if pool.is_empty():
 		return null
 	var unowned: Array = []
@@ -278,7 +310,29 @@ static func _pick_prefer_unowned(pool: Array, owned: Dictionary, rng: RandomNumb
 		if not owned.has(model_id):
 			unowned.append(model_id)
 	var pick_from: Array = unowned if not unowned.is_empty() else pool
+	if avoid != "" and pick_from.size() > 1 and pick_from.has(avoid):
+		var without: Array = pick_from.duplicate()
+		without.erase(avoid)
+		pick_from = without
 	return pick_from[rng.randi_range(0, pick_from.size() - 1)]
+
+
+# True when every model in `pool` is already in the garage — the condition that makes
+# a draw from it a guaranteed duplicate (see draw_car's exhausted-tier step-up).
+static func _all_owned(pool: Array, owned: Dictionary) -> bool:
+	for model_id in pool:
+		if not owned.has(model_id):
+			return false
+	return not pool.is_empty()
+
+
+# The most recently granted car model, or "" for an empty garage. grant_car appends,
+# so the last entry is the newest — no extra state to persist or migrate.
+static func _last_granted_model_id(profile: Dictionary) -> String:
+	var cars: Array = profile.get("cars", [])
+	if cars.is_empty():
+		return ""
+	return String((cars[cars.size() - 1] as Dictionary).get("model_id", ""))
 
 
 static func _owned_model_ids(profile: Dictionary) -> Dictionary:

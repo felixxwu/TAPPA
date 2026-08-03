@@ -204,6 +204,12 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
    met, and for a showdown its own region's showdown gate open — `RegionLibrary.
    showdown_unlocked`, not a "region unlocked" concept, which no longer exists),
    see [regions.md](regions.md)).
+   That query also counts a rally the car can reach by **detuning** under its `pw_max`
+   as enterable — the same definition `hq.gd._entry_plan` uses on the screen that
+   actually gates entry. Judging it more strictly here made the reward system see
+   phantom soft-locks and hand rescue cars to players who were never stuck. It does not
+   loosen the safety net: detuning only rescues an over-CEILING car, while a real
+   soft-lock is a car too weak for everything left.
    Candidates then become the models eligible for the still-locked, **revealed**
    rallies at the **lowest difficulty any catalogue car can actually enter** — e.g.
    all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a difficulty-3
@@ -211,8 +217,22 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
    is stepped past (giving up there would leave the player soft-locked even though a
    grant one difficulty up re-opens progression). This guarantees a fresh rally opens
    after every reward whenever one is openable.
-3. **Prefer un-owned** — either path draws uniformly from the not-yet-owned
+3. **Exhausted-tier step-up** — the standard draw's tier is
+   `min(rally_difficulty, earned_ceiling)`, so a low-difficulty rally keeps drawing the
+   low-tier pool however far the player has come. The roster has **more low-difficulty
+   rallies than low-tier cars** (six difficulty-1 rallies against three tier-1 cars), so
+   that pool runs out and every later win hands back a car already in the garage. When
+   every model at the drawn tier is owned, `draw_car` climbs a tier at a time toward the
+   ceiling the player has actually EARNED until something new appears. It never exceeds
+   that ceiling, so the progress clamp still holds — it only stops an exhausted pool
+   turning a win into a no-op reward.
+4. **Prefer un-owned** — either path draws uniformly from the not-yet-owned
    candidates when any exist, else grants a duplicate of an owned one.
+5. **Never the same car twice running** — the model granted last (the newest entry in
+   `profile["cars"]`, since `grant_car` appends, so there is no extra state to persist)
+   is dropped from the candidates whenever doing so still leaves something to pick. A
+   preference, not a filter: a single-entry pool still grants that car. Back-to-back
+   duplicates read as a broken reward even where a duplicate is the honest outcome.
 
 With every rally completed the fallback is moot and the standard draw still pays
 (a duplicate at worst), so the reward never returns empty. The upgrade draw is

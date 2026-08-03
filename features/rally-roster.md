@@ -39,7 +39,14 @@ Each `RALLIES` entry:
   car is **capped out** (it can duck under `pw_max` by detuning, see `qualifying_detune`)
   and an **under-powered** car is **ineligible outright** (the band floor IS the power
   floor — there is no separate soft "underpowered" warning; that was retired with the
-  hard floor). **The floor is judged at a car's MAX potential:** callers pass a
+  hard floor). **A band is never wider than 2:1** — `pw_min` must be at least half of
+  `pw_max`, so an event stays a recognisable class instead of admitting wildly
+  mismatched cars. This is a shipped-content invariant guarded by
+  `test_no_shipped_rally_has_an_over_wide_power_band`; retune the edges freely, but
+  keep the ratio. Narrow from whichever end preserves the guarantee that every rally
+  still has an eligible car — raising a floor is what orphans a thin class (see
+  `test_every_shipped_rally_has_at_least_one_car_that_can_enter_it`).
+  **The floor is judged at a car's MAX potential:** callers pass a
   `floor_meta` (the car's `UpgradeLibrary.max_potential_meta` — full engine tune, every
   installed kit enabled, ballast removed) so a car detuned or ballasted to fit a *lower*
   rally isn't ruled too weak for a *higher* one it could reach by tuning up (the player
@@ -81,8 +88,17 @@ Each `RALLIES` entry:
   draw from a much smaller pool now that the world is split into four corners. Wave-0 rallies (`reveal_after`
   omitted / 0) are visible from the start. Completed rallies stay farmable — this gates
   first *reveal* only, never re-entry.
+  **`reveal_after` gates the PIN; the reveal SEQUENCE has a second gate on top of it.**
+  When the map table opens, `hq.gd._pending_reveals()` picks out the rallies to
+  announce to the player, and a rally qualifies only if `rally_revealed` is true AND the
+  player owns a car that can actually enter it (`_has_eligible_car` → `_entry_plan`) AND
+  it isn't already `Save.rally_revealed_seen`. So an unlocked rally the garage cannot
+  field is *held back* and announced later — the day a bought / won / engine-swapped car
+  qualifies for it. The queue is derived fresh on every map open from current state
+  (never cached when a rally is completed), which is what makes it work for any unlock
+  route. See [menus.md](menus.md) → "New-rally reveal".
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
-  forestiness?, surface_mix?, straightness?, cliffiness?, target_ms_override? }`. The
+  forestiness?, surface_mix?, straightness?, cliffiness?, weather?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the
   showdown's events are longer. `forestiness` (0–1, default 1.0 via
   `event_forestiness`) sets how wooded the stage is — trees only spawn where the
@@ -90,8 +106,11 @@ Each `RALLIES` entry:
   open clearings (bushes ignore it). See [trees.md](trees.md). `straightness` (0–1,
   default 0.0 via `event_straightness`) biases generation toward gentler corners +
   longer straights for an easier, less twisty stage — **earlier, lower-tier events
-  run higher** so the start of the game is easier, the showdown stays unbiased
-  (twistiest). See [track.md](track.md). `cliffiness` (0–1, default 0.0 via
+  run higher** so the start of the game is easier, while the hardest events
+  (showdowns) sit at the bottom of the authored band. Authored values now span
+  ~0.5–1.0 (a 2026-08 rescale mapped every authored value `v -> 0.5 + 0.5 * v`),
+  so even the twistiest shipped stage carries a moderate gentle-corner bias.
+  See [track.md](track.md). `cliffiness` (0–1, default 0.0 via
   `event_cliffiness`) sets how cliffy the stage is — 0 = flat, 1 = the tallest
   cliffs/deepest drops (`cliff_max_height_m`). It only scales the height ceiling
   (the noise wavelength is global); **earlier, lower-tier events run tamer**,
@@ -99,6 +118,9 @@ Each `RALLIES` entry:
   by `RallySession`. Unlike `straightness`/`width`/`surface_mix`, it does **not**
   change the centerline or the flat lengthwise road profile, so it does **not** feed
   opponent target-time derivation. See [terrain.md](terrain.md) → *Cliffs & drops*.
+- `weather` — `"dry"` (default, omittable) or `"rain"`, via `event_weather`. Authored,
+  never random, so a wet stage is wet every attempt. No shipped rally is currently
+  marked wet. See [weather.md](weather.md).
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). `(0,0)` is the map image's top-left, `(1,1)` its bottom-right
   (`hq.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
@@ -138,8 +160,69 @@ Each `RALLIES` entry:
   further inland lower. Author the value; never derive it from `map_pos`. **Pairing
   constraint:** an event at a coastal waterline (-5) must pair it with
   `terrain_layer1_amplitude >= 16.0` (see `challenge_library.gd`) or a high sea over low
-  relief floods the track. An event authoring no amplitude runs the `GameConfig`
-  baseline, which clears that bar comfortably.
+  relief floods the track.
+- `terrain_layer1_amplitude` (per event) — **authored on every event**, and it follows
+  the map: **relief falls from north to south.** The far-north stages are the hilliest
+  (~26) and the deep-south inland ones the flattest (~12), interpolated from the
+  rally's `map_pos.y` (y=0 is north — `home`/"Rally Country" sits at y 0.16–0.45,
+  Greece at y 0.50–0.98). Each rally staggers its 3 events by ±1 so a corner doesn't
+  read as uniform.
+  **The coastal pairing rule above wins over the gradient.** The coastal regions are
+  also the southern ones, so the two pull against each other: every event at a
+  waterline of -8 or higher is floored at 16.0 regardless of latitude. That flattens
+  the gradient across `home_coast` and `greece_coast` — deliberate, because a flooded
+  track is a broken stage and a slightly-too-hilly coast is not. Inland Greek stages
+  (`gr_mountain_pass`, `gr_ancient_ruins`) keep the low end of the range.
+  Amplitudes reach generation through `cfg`, not `TrackGenParams`, but
+  `TrackCache.terrain_fingerprint` folds config-wide terrain settings into the cache
+  key — so retuning them **changes track shapes and requires `./cache_all.sh`**.
+
+### Early game: one home rally per starter
+
+The three starters sit at **Twingo 82 / Focus 114 / MX-5 159 hp/tonne** — a 1.94×
+spread, which is almost exactly the widest a single band may be under the 2:1 rule
+above. So **no shared opening rally can serve all three fairly**: rivals are drawn
+*uniformly* from a rally's eligible pool (`generate_opponent_field` → `_eligible_cars`)
+and each rival's time is `optimum_ms(their car) × pace`, so band width **is** the
+outclassing risk. A wide opener puts a Twingo against MX-5-class cars.
+
+Each starter therefore gets its own home rally, tuned so its rival pool contains only
+that car — a one-make series, where the player cannot be outclassed by construction:
+
+| Rally | Restriction | Starter | Rival pool |
+|---|---|---|---|
+| `shakedown` | roadster, 130–185 | MX-5 | MX-5 |
+| `front_runners` | hatch + FWD, 95–140 | Focus | Focus |
+| `hm_hatch_cup` | hatch, `doors_max` 3, 55–100 | Twingo | Twingo |
+| `shitbox_cup` | open, 50–90 | shared (any car, via detune) | Acty, Twingo |
+
+**Categories do the separating, not the band** — because `qualifying_detune` lets any
+over-ceiling car detune INTO a lower rally (the floor is then re-checked against the
+*detuned* figure), a `pw_max` can only block moving **up**, never down. So the Focus is
+kept out of the Twingo's cup by `doors_max: 3` (Twingo 3 doors, Focus 5) rather than by
+power, and the hatches are kept out of the MX-5's event by `car_type`. Anything
+expressed purely as a ceiling is porous by design.
+
+Note the floor is judged at `max_potential_meta`, but a **fresh** starter has no
+upgrades installed, so its potential equals its stock figure — the "qualifies on
+upgrades it hasn't bought" trap only appears once a car is modified.
+
+`shitbox_cup` stays in wave 0 deliberately: it is the **anti-soft-lock cover**. Its
+open 50–90 band takes any car — including one drawn from a Mystery Box after a wreck —
+because any faster car can detune into it. Without an open-class rally revealed from
+the start, a player could hold a car with nowhere to race; that is what
+`test_incomplete_enterable_query_respects_eligibility_and_lock` guards, and the failure
+is real rather than pedantic.
+
+`incomplete_rallies_enterable_by` **counts a detune as enterable**, matching
+`hq.gd._entry_plan` and the shipped-roster test — all three now share one definition of
+"can enter". This does not weaken the guarantee: `qualifying_detune` only ever rescues a
+car that is over the CEILING, whereas a genuine soft-lock is the opposite case, a car too
+weak for everything left, which detuning cannot fix. Judging the query more strictly than
+the screen that actually gates entry made the reward system see phantom soft-locks and
+hand rescue cars to players who were never stuck.
+
+The result is **2 clickable rallies for each of the three starters**.
 
 A rally's result is the **combined time across its 3 events**.
 
@@ -166,7 +249,13 @@ computes a car's **physics-optimal velocity profile** over a track centerline:
      redline`), friction-circle limited, drag `= drag·v²`, rolling resistance ≈ 0.2 g.
   3. **Backward braking pass** — friction-circle limited.
   Grip `µ` is the average of front + rear tyre grip coefficients, blended by the
-  event's surface mix via `GameConfig.gravel_grip` / `tarmac_grip`.
+  event's surface mix via `GameConfig.gravel_grip` / `tarmac_grip`, then further
+  scaled by `GameConfig.rain_grip_mult` when `RallyLibrary.event_weather(event)`
+  is `WEATHER_RAIN` (`_surface_grip`). Because every rival's time is a multiple of
+  this same optimum (see `generate_opponent_field` below), scaling it for weather
+  scales the **entire AI field** together with the player — a wet stage's podium
+  cut moves with conditions instead of the stage becoming harder to podium; rain
+  changes how the car must be driven, not how hard the field is to beat.
 - `optimum_ms(track_result, car_meta, event) -> int` — convenience wrapper
   returning only `total_ms`.
 
@@ -177,7 +266,7 @@ generator also uses it per-rival.
 
 - `index_of(id)` / `by_id(id)` / `event_width(event)` / `event_forestiness(event)` /
   `event_tarmac_fraction(event)` / `event_straightness(event)` /
-  `event_cliffiness(event)` — lookups.
+  `event_cliffiness(event)` / `event_weather(event)` — lookups.
 - `is_eligible(rally, car_meta, floor_meta := {})` — restriction match (open-class →
   always true). `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The optional `floor_meta` judges the `pw_min` floor at a different meta

@@ -129,6 +129,7 @@ for each).
 	 has none — no hidden global), and the aero_kit upgrade adds on top. Every car
 	 carries a small `downforce_rear` to keep the tail planted under power; front
 	 is 0 unless a spec sets it.
+   - *Crosswind:* on a windy condition only — see "Crosswind" below.
 5. **Self-righting assist:** a roll+pitch torque (`level_assist_torque`) eases the
    chassis back toward level (`car.gd` → `_apply_level_assist`). The torque axis is
    `car_up × reference_up`, perpendicular to the car's own up (so it never yaws),
@@ -154,6 +155,59 @@ for each).
      default) makes the aid airborne-only, as it originally was.
 6. **Tire/engine step:** `drivetrain.step(delta, throttle, brake, handbrake)`
    computes and applies all wheel contact forces.
+
+## Crosswind (storm)
+
+**Source:** `scripts/crosswind.gd` (the pure profile), `car.gd` → `_apply_crosswind`
+(applied inside `_apply_aero`, alongside drag and downforce, so it composes with the
+existing physics instead of fighting it).
+
+A lateral **body force in a fixed world direction**, so on a windy stage the car is
+blown off line and has to be steered against — not a drag term that turns with the car.
+Because the heading is world-fixed, a broadside car catches more of it than a nose-on
+one (`crosswind_nose_on_fraction` sets how much still acts head-on). That exposure
+factor is deliberately a constant: there is **no shelter/occlusion model** (open ground
+vs. tree cover). Possible future work, but it needs a cheap way to know cover — do not
+build a new occlusion system for it.
+
+### Determinism — the load-bearing property
+
+The force is a **pure function of distance along the stage and the event seed**
+(`Crosswind.force_at` / `magnitude_at`): never `randf()`, never the clock or a frame
+count, and no `RandomNumberGenerator` state carried between ticks (phases come from an
+integer hash of `(seed, octave)`, so evaluation order cannot matter). Two runs of the
+same stage therefore meet the identical gust at the identical point on the road.
+
+Why it matters: every stage has a **global leaderboard** keyed by
+`RallyLibrary.stage_key` ([global-leaderboards.md](global-leaderboards.md)). A wind
+that differed run to run would silently stop every storm board comparing like with
+like. Keying on *distance* rather than time also makes gusts **learnable** — the same
+gust waits in the same place every attempt — which is fairer play as well as fairer
+scoring. Distance comes from the existing `TrackProgress.progress_offset()` odometer,
+not a private one, so wind is keyed to the same along-track metric the HUD and the
+stage gate use.
+
+The gust profile is `strength + gust × (normalised sum of `OCTAVES` layered sines)`,
+so it is smooth (a gust builds and eases rather than snapping) and provably bounded to
+`strength ± gust`.
+
+### Opting in, and the zero-cost default
+
+Nothing here ever tests a weather id by name. A condition opts in by carrying a
+**`"wind"` block** in its `WeatherLibrary` entry, naming the GameConfig fields that
+supply strength / gust / direction (per the project rule the table names fields, never
+numbers). `Crosswind.wind_params(cfg)` returns `{}` for any condition without one —
+dry, rain, fog, everything non-storm — and the car then applies nothing.
+
+`car.gd` memoises that resolution the same way `Drivetrain` memoises `_weather_mu`:
+re-read only when `cfg.weather` or the config object changes. **On a non-storm stage
+the per-tick cost is two comparisons and a bool test** — no dictionary lookup, no
+allocation, no force. Wind never reaches `TrackGenParams` or the track cache; it is not
+a shape determinant.
+
+Tests: `tests/headless/test_crosswind.gd` (determinism incl. order-independence,
+distance variation, monotonicity in strength, the `strength ± gust` bound, and "no wind
+block ⇒ no wind").
 
 ## Suspension
 
@@ -391,12 +445,14 @@ player put during the countdown (`handbrake_locked` forces the handbrake).
 ## Tests
 
 `tests/headless/test_car.gd` (launch, speed, steering, reset),
-`tests/headless/test_car_terrain.gd` (behavior on slopes).
+`tests/headless/test_car_terrain.gd` (behavior on slopes),
+`tests/headless/test_crosswind.gd` (the storm wind profile + its determinism).
 
 ## Related config
 
 `mass`, `drag_coefficient`, `downforce_front/rear`, `steer_*`,
 `spin_assist_torque`, `spin_assist_angle`, `level_assist_torque`,
 `level_assist_grounded`,
+`crosswind_gust_wavelength_m`, `crosswind_nose_on_fraction`,
 `suspension_*`, `brake_torque`, `handbrake_torque`. See
 [configuration.md](configuration.md).

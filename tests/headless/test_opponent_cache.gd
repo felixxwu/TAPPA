@@ -91,6 +91,19 @@ func test_stored_source_hash_survives_a_reset() -> void:
 	TrackCache.reset_source_hash_cache()
 	assert_eq(TrackCache.stored_source_hash(), warm, "re-read from disk matches the memoised hash")
 
+# --- weather ------------------------------------------------------------------
+# Marking an event wet re-keys its rally automatically: rally_content_fingerprint
+# hashes the whole rally dict (see docstring above), so a "weather" field on an
+# event is enough to change the key on its own — no fingerprint code needed for
+# this half. This guards that behaviour keeps holding.
+func test_wet_event_gets_a_different_cache_key_than_dry() -> void:
+	var dry_events := [{"seed": 7, "weather": RallyLibrary.WEATHER_DRY}]
+	var wet_events := [{"seed": 7, "weather": RallyLibrary.WEATHER_RAIN}]
+	var dry_rally := {"id": "synth3", "difficulty": 2, "restriction": {}, "events": dry_events}
+	var wet_rally := {"id": "synth3", "difficulty": 2, "restriction": {}, "events": wet_events}
+	assert_ne(OpponentCache.key_for(dry_rally), OpponentCache.key_for(wet_rally),
+		"an otherwise-identical wet event gets a different opponent-cache key")
+
 func test_committed_source_hash_is_fresh() -> void:
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(OpponentCache.CACHE_PATH))
 	assert_eq(typeof(data), TYPE_DICTIONARY, "lockfile parses")

@@ -164,7 +164,7 @@ const CARS: Array[Dictionary] = [
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
 		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
-		"wheel_radius": 0.28, "wheel_width_front": 0.165, "wheel_width_rear": 0.165,  # 165/65R14 skinny
+		"wheel_radius": 0.28, "wheel_width_front": 0.185, "wheel_width_rear": 0.135,  # 165/65R14 skinny
 		"suspension_travel": 0.3, "suspension_stiffness": 14.0,  # soft, tall city car
 		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.

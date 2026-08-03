@@ -59,10 +59,36 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   upgrades (won but kept for later) + the consumables (engine swap tokens + mystery
   boxes). Adding a new consumable is just a new key — no `SCHEMA_VERSION` bump,
   and an absent key reads as count 0.
-- `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed } }`, only
-  completed rallies present. Completion count is the single progression metric;
-  `best_placed` is the best (lowest) finishing position ever achieved there (drives
-  the world-map star rating).
+- `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed, revealed } }`.
+  Completion count is the single progression metric; `best_placed` is the best (lowest)
+  finishing position ever achieved there (drives the world-map star rating).
+  `revealed` is the **new-rally reveal acknowledgement** — whether the map-table reveal
+  sequence has shown the player that this rally opened up (`Save.rally_revealed_seen` /
+  `Save.mark_rally_revealed`; see [menus.md](menus.md) → "New-rally reveal"). It lives
+  in the same per-rally record as `completed` so everything known about a rally is in one
+  place and a rally id that stops existing takes its flag with it instead of orphaning an
+  entry in a parallel list. Only the ACKNOWLEDGEMENT is stored, never the unlock — which
+  rallies are open stays derived, exactly as `showdown_unlocked` was made to (below).
+  A missing key reads `false` through the normal `.get` default, so no `SCHEMA_VERSION`
+  bump was needed.
+  **The backfill:** `false` is the wrong default for an EXISTING save — a career with a
+  dozen open rallies would be met by a dozen-pin parade on next launch.
+  `Save.needs_reveal_seeding()` reports "has career progress, yet not one rally carries a
+  `revealed` flag" (a pre-feature save, or one just pulled down by a cloud restore).
+  The seeding itself is `Save._seed_reveals_if_needed()`, called by `Save` ITSELF at the
+  two points a profile actually becomes live — the tail of `load_or_new()` and the tail
+  of `adopt_profile()` (the cloud-restore path) — rather than left as a call site a scene
+  has to remember to make. (An earlier version had `hq.gd` call it from `_enter_table()`
+  and separately from `_on_cloud_profile_replaced()`; that shape meant a THIRD future
+  path reaching the map or replacing the profile could silently forget it, so it moved
+  into `Save` where it seats itself automatically.) It marks everything already open
+  (via `RallyLibrary.rally_revealed`) plus everything already completed — so the "no
+  flags at all" state can't survive the pass — as seen, silently, with NO eligible-car
+  check: seeding's job is "anything already open already reads as seen", not "anything
+  the player can currently enter", and skipping that clause keeps `Save` independent of
+  `hq.gd`'s `_entry_plan` (owned cars, tuning headroom, etc). The eligible-car hold is
+  applied only by `hq.gd._pending_reveals()`, the query that decides what actually
+  parades on a given map open.
 - **Showdown/region unlock is not stored here at all** — `RegionLibrary.unlocked`
   (see [regions.md](regions.md)) derives it on every call from the previous
   region's showdown-rally `completed` flag in `rallies`, so no dedicated profile

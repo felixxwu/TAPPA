@@ -103,6 +103,19 @@ So **gravel = `gravel_grip` (1.0, the baseline)**, **grass = `grass_grip` (0.7)*
 road colour uses (grass↔road and gravel↔tarmac — see [terrain.md](terrain.md) /
 [track.md](track.md)).
 
+**Weather.** `surface_tire_params` multiplies the resolved `mu_mult` by
+`WeatherLibrary.grip_mult(cfg, cfg.weather)` — **unconditionally**, because dry
+resolves to exactly 1.0, so there is no per-condition `if` in this file at all. A
+single global penalty applied on top of whatever surface grip was already blended,
+in BOTH branches (terrain-backed and the no-terrain flat-fixture fallback), so a wet
+stage is wet everywhere including in test fixtures. The multiplier is memoised
+(`_weather_mu`, keyed on the condition string + the config resource) so the
+allocation-free per-contact hot path never does a table lookup — it re-resolves only
+on a stage transition. `slip_peak` and `slide_ratio` are untouched by weather — this version
+ships one global grip multiplier rather than per-surface wet curves (see
+[weather.md](weather.md) for the design rationale and the per-surface
+alternative it defers).
+
 ## Helper functions
 
 - `wheel_normal_force(wheel)` — suspension force: spring×compression −

@@ -108,6 +108,79 @@ func test_set_volume_can_skip_persistence() -> void:
 	Save.save_disabled = prev_disabled
 
 
+func test_set_master_volume_clamps_and_persists() -> void:
+	var md := _make()
+	var prev_disabled: bool = Save.save_disabled
+	var prev_db := AudioServer.get_bus_volume_db(0)
+	var prev_mute := AudioServer.is_bus_mute(0)
+	Save.save_disabled = true
+
+	md.set_master_volume(1.5)
+	assert_almost_eq(float(Save.get_setting(MusicDirector.MASTER_SETTING_KEY, -1.0)), 1.0, 0.0001,
+		"clamps above 1")
+	md.set_master_volume(-0.5)
+	assert_almost_eq(float(Save.get_setting(MusicDirector.MASTER_SETTING_KEY, -1.0)), 0.0, 0.0001,
+		"clamps below 0")
+	md.set_master_volume(0.42)
+	assert_almost_eq(float(Save.get_setting(MusicDirector.MASTER_SETTING_KEY, -1.0)), 0.42, 0.0001,
+		"round-trips through Save")
+
+	Save.set_setting(MusicDirector.MASTER_SETTING_KEY, 0.33)
+	md.set_master_volume(0.9, false)  # apply live but do not persist
+	assert_almost_eq(float(Save.get_setting(MusicDirector.MASTER_SETTING_KEY, -1.0)), 0.33, 0.0001,
+		"persist=false leaves the saved value untouched")
+
+	Save.save_disabled = prev_disabled
+	AudioServer.set_bus_volume_db(0, prev_db)
+	AudioServer.set_bus_mute(0, prev_mute)
+
+
+# The master slider drives AudioServer's bus 0, which every other bus sends to —
+# so it scales music AND engine audio. Louder settings must be monotonically
+# louder, and 0 must be true silence (a mute, not merely a very low dB).
+func test_master_volume_applies_to_bus_zero() -> void:
+	var md := _make()
+	var prev_disabled: bool = Save.save_disabled
+	var prev_db := AudioServer.get_bus_volume_db(0)
+	var prev_mute := AudioServer.is_bus_mute(0)
+	Save.save_disabled = true
+
+	md.set_master_volume(1.0)
+	var loud := AudioServer.get_bus_volume_db(0)
+	md.set_master_volume(0.5)
+	var quiet := AudioServer.get_bus_volume_db(0)
+	assert_lt(quiet, loud, "halving the master level lowers the bus 0 volume")
+	assert_false(AudioServer.is_bus_mute(0), "a non-zero level leaves bus 0 unmuted")
+
+	md.set_master_volume(0.0)
+	assert_true(AudioServer.is_bus_mute(0), "0% mutes bus 0 outright")
+	md.set_master_volume(0.7)
+	assert_false(AudioServer.is_bus_mute(0), "coming back up unmutes bus 0")
+
+	Save.save_disabled = prev_disabled
+	AudioServer.set_bus_volume_db(0, prev_db)
+	AudioServer.set_bus_mute(0, prev_mute)
+
+
+# The volume sliders are tapered, not linear-in-amplitude: the endpoints must be
+# exact (0 = silence, 1 = unity gain), the curve must rise monotonically, and every
+# intermediate position must sit BELOW the straight line so the slider tracks
+# perceived loudness instead of raw amplitude.
+func test_slider_taper_is_monotonic_and_below_linear() -> void:
+	assert_almost_eq(MusicDirector.slider_to_amplitude(0.0), 0.0, 0.0001, "0% -> silence")
+	assert_almost_eq(MusicDirector.slider_to_amplitude(1.0), 1.0, 0.0001, "100% -> unity gain")
+	assert_almost_eq(MusicDirector.slider_to_amplitude(2.0), 1.0, 0.0001, "clamped above 1")
+	assert_almost_eq(MusicDirector.slider_to_amplitude(-1.0), 0.0, 0.0001, "clamped below 0")
+
+	var prev := -1.0
+	for i in range(1, 10):
+		var pos := float(i) / 10.0
+		var amp := MusicDirector.slider_to_amplitude(pos)
+		assert_gt(amp, prev, "the taper rises with the slider position at %.1f" % pos)
+		assert_lt(amp, pos, "the taper sits below linear amplitude at %.1f" % pos)
+		prev = amp
+
+
 func test_scene_state_seeds_hq_song_then_latches_rally_song() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())  # not in tree: no audio, no _ready
 	# Entering the HQ scene from idle seeds + starts an HQ-pool song immediately.

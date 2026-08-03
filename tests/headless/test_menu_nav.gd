@@ -286,12 +286,14 @@ func test_settings_menu_is_keyboard_navigable() -> void:
 	assert_false(sm.go_back(), "go_back at the root is left to the host")
 
 
-# The Audio page carries a focusable music-volume slider that reflects the saved
-# setting, so it is reachable and adjustable by keyboard/gamepad (not just mouse).
+# The Audio page carries focusable master + music volume sliders that reflect the
+# saved settings, so they are reachable and adjustable by keyboard/gamepad (not
+# just mouse), and the cursor seats on the first of them when the page opens.
 func test_audio_page_slider_is_focusable_and_reflects_saved_volume() -> void:
 	var prev_disabled: bool = Save.save_disabled
 	Save.save_disabled = true
 	Save.set_setting(MusicDirector.SETTING_KEY, 0.5)
+	Save.set_setting(MusicDirector.MASTER_SETTING_KEY, 0.75)
 
 	var sm := SettingsMenu.new()
 	add_child_autofree(sm)
@@ -305,8 +307,13 @@ func test_audio_page_slider_is_focusable_and_reflects_saved_volume() -> void:
 		"the slider is keyboard/gamepad focusable")
 	assert_almost_eq(sm.music_slider.value, 0.5, 0.0001,
 		"the slider reflects the saved volume")
-	assert_eq(sm.get_viewport().gui_get_focus_owner(), sm.music_slider,
-		"opening the Audio page focuses the slider")
+	assert_not_null(sm.master_slider, "audio page has a master slider")
+	assert_eq(sm.master_slider.focus_mode, Control.FOCUS_ALL,
+		"the master slider is keyboard/gamepad focusable")
+	assert_almost_eq(sm.master_slider.value, 0.75, 0.0001,
+		"the master slider reflects the saved master volume")
+	assert_eq(sm.get_viewport().gui_get_focus_owner(), sm.master_slider,
+		"opening the Audio page focuses the first slider")
 
 	Save.save_disabled = prev_disabled
 

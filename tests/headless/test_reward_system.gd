@@ -452,3 +452,50 @@ func test_draw_excludes_a_locked_regions_showdown() -> void:
 	for r in out: ids.append(r["id"])
 	assert_does_not_have(ids, "g_sd")  # greece showdown gated
 	RegionLibrary.reset(); RallyLibrary.reset()
+
+
+# --- Duplicate-reward guards --------------------------------------------------
+# The tier a draw resolves at is min(rally_difficulty, earned_ceiling), so a
+# low-difficulty rally keeps drawing the low-tier pool however far the player has
+# come. There are more low-difficulty rallies than low-tier cars, so that pool runs
+# out and the reward becomes a car already in the garage. These two guards cover the
+# step-up and the never-twice-running rule. Both use the synthetic CarFixtures roster
+# and assert relations only — no authored tier or car id is pinned.
+
+func test_an_exhausted_tier_steps_up_to_a_car_the_player_has_earned() -> void:
+	# Own every car at the drawn tier, but have earned a higher one: the draw must
+	# find something NEW rather than hand back a duplicate.
+	RallyLibrary.override_for_test([
+		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+	])
+	var low_tier: Array = RewardSystem._cars_at_or_below_tier(1)
+	if low_tier.size() < 1 or RewardSystem._cars_at_or_below_tier(2).size() <= low_tier.size():
+		RallyLibrary.reset()
+		return  # fixture roster has no higher tier to climb to; nothing to assert
+	# Enough completions that tier 2 is earned (tier_ceiling = 1 + completed/2).
+	var profile := _profile(["a", "b"], low_tier)
+	for i in 12:
+		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
+		assert_not_null(model, "an exhausted tier still yields a grant")
+		assert_false(low_tier.has(String(model)),
+			"the grant climbs past the exhausted tier instead of repeating an owned car")
+	RallyLibrary.reset()
+
+
+func test_a_draw_does_not_repeat_the_previous_grant_when_an_alternative_exists() -> void:
+	# Pool fully owned and no higher tier earned, so a duplicate is unavoidable — but
+	# it must not be the SAME duplicate the player just received.
+	RallyLibrary.override_for_test([
+		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+	])
+	var low_tier: Array = RewardSystem._cars_at_or_below_tier(1)
+	if low_tier.size() < 2:
+		RallyLibrary.reset()
+		return  # need two owned cars for "not the previous one" to mean anything
+	var profile := _profile([], low_tier)          # no completions -> no tier to climb to
+	var cars: Array = profile["cars"]
+	var last := String((cars[cars.size() - 1] as Dictionary)["model_id"])
+	for i in 12:
+		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
+		assert_ne(String(model), last, "the draw never repeats the car granted last time")
+	RallyLibrary.reset()

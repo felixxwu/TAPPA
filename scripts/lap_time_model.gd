@@ -125,8 +125,21 @@ static func _curvature_profile(centerline: Curve2D, length: float) -> Dictionary
 
 # Average tyre grip (front+rear) blended by the event's surface mix, using the
 # GameConfig gravel/tarmac grip multipliers (matches rally_library's surface model).
+#
+# Every rival's time is a multiple of this car's physics optimum
+# (RallyLibrary.PACE_FAST_BASE 1.10x down to a tier-dependent slow end), so scaling
+# the optimum here scales the ENTIRE AI field. That's why the rain penalty belongs
+# here rather than in the field generator: it keeps a wet stage fair — the podium
+# cut scales with conditions along with the player, and rain changes how the car
+# must be driven rather than how hard the stage is to podium.
+#
+# The multiplier itself is the weather table's, not a local per-condition test —
+# see WeatherLibrary / features/weather.md.
 static func _surface_grip(car_meta: Dictionary, event: Dictionary) -> float:
 	var base := float(car_meta.get("tire_compound", 1.0))
 	var tarmac := RallyLibrary.event_tarmac_fraction(event)
 	var cfg: GameConfig = Config.data
-	return base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
+	var mu := base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
+	# Unconditional: WeatherLibrary resolves dry (and any unknown string) to exactly
+	# 1.0, so there is no per-condition branch here and a new condition needs no edit.
+	return mu * WeatherLibrary.grip_mult(cfg, RallyLibrary.event_weather(event))

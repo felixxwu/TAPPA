@@ -41,7 +41,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
 | Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable (a wrecked car is always re-winnable) so 100% stays reachable. Farmed rewards stay under the **same progress-tier ceiling**. |
-| Upgrades on a wreck | **Stay with the car.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment) and never refunded; a wreck keeps the car (at 0 HP) with its parts still fitted, so repairing it brings the whole package back. |
+| Upgrades on a wreck | **Stay with the car.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment) and never refunded; a wreck keeps the car (at 0 HP) with its parts still fitted — but it never races again, so those parts are lost with it. |
 
 ---
 

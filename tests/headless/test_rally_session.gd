@@ -685,6 +685,15 @@ func test_omitted_keys_fall_back_to_authored_baseline_not_prior_event() -> void:
 		"omitted water_level resolves to the authored baseline, not event A's override")
 
 
+func test_apply_event_config_carries_weather_and_defaults_to_dry() -> void:
+	var cfg := GameConfig.new()
+	RallySession.apply_event_config(cfg, {"weather": "rain"})
+	assert_eq(cfg.weather, RallyLibrary.WEATHER_RAIN, "rain event seats rain onto the config")
+	# An event with no weather key at all leaves the config dry.
+	RallySession.apply_event_config(cfg, {})
+	assert_eq(cfg.weather, RallyLibrary.WEATHER_DRY, "omitted weather key resolves to dry")
+
+
 # --- Waterline resolution: event -> region -> GameConfig baseline --------------
 # Order is the whole contract (CLAUDE.md: never pin the shipped -12/-5/-10
 # values). Synthetic regions via the Registry.Seam only.

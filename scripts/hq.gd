@@ -100,6 +100,20 @@ func _car_scene_res() -> PackedScene:
 
 var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
+# New-rally reveal (a second sub-state of TABLE, sibling to _detail_open): the map
+# camera is walking a queue of rallies that just became enterable, flipping each pin
+# from its locked to its unlocked look. While _revealing the table's own input is
+# suspended — and ANY press skips the whole queue (see _skip_reveals).
+var _revealing := false
+var _reveal_queue: Array[String] = []   # ids still to show (all get marked seen either way)
+var _reveal_shown: Array[String] = []   # ids already flipped this sequence
+var _reveal_skipped := false
+# Bumped at the start of every _run_reveal_sequence; each sequence captures its own copy
+# as `token` before its first await. Lets a coroutine parked mid-sequence (skipped, then
+# a second sequence re-armed before it resumes) recognise it has been superseded and bail
+# without mutating the NEW sequence's shared state — see _reveal_continue.
+var _reveal_token := 0
+var _reveal_banner: Label               # the "NEW RALLY - …" line on the table overlay
 var _selected_rally_id := ""
 var _selected_instance_id := -1
 # The car park serves several jobs, one at a time (never overlapping):
@@ -621,7 +635,12 @@ func _bay_center_x(i: int, bays: int) -> float:
 # showdown pin is locked (grey/disabled, non-pickable) until every other rally is done,
 # and any rally whose reveal_after (global reveal order) isn't met yet is locked
 # the same way — a "coming up" hint (see RallyLibrary.rally_revealed).
-func _refresh_map_pins() -> void:
+#
+# `hold_locked` forces the pins with those rally ids to render in their LOCKED look even
+# though they are open — the new-rally reveal needs the "before" state on screen so the
+# flip to unlocked is something the player actually watches happen (see
+# _run_reveal_sequence). Empty everywhere else.
+func _refresh_map_pins(hold_locked: Array = []) -> void:
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	for c in _pins_root.get_children():
 		c.queue_free()
@@ -633,7 +652,7 @@ func _refresh_map_pins() -> void:
 	var size: Vector2 = cfg.hq_map_plane_size
 	var top_y := p.y + cfg.hq_table_size.y + 0.02
 	for rally in RallyLibrary.all():
-		var pin := _make_pin(rally, p, size, top_y)
+		var pin := _make_pin(rally, p, size, top_y, hold_locked.has(String(rally["id"])))
 		_pins_root.add_child(pin)
 		_pins.append(pin)
 	# Re-seat the cursor on whatever pin sits nearest the view centre (no camera
@@ -643,12 +662,13 @@ func _refresh_map_pins() -> void:
 	_refresh_meter()
 
 
-func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
+func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float,
+		hold_locked := false) -> Node3D:
 	var rally_id := String(rally["id"])
 	# Locked = not revealed yet: a showdown before its region's gate opens, OR a
 	# non-showdown rally whose reveal_after (global reveal order) isn't met. A
 	# locked pin renders grey + non-pickable — a "coming up" hint, not enterable.
-	var locked: bool = not RallyLibrary.rally_revealed(rally, Save.profile)
+	var locked: bool = hold_locked or not RallyLibrary.rally_revealed(rally, Save.profile)
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
 	# map_pos is normalised 0..1; centre the map plane, x→world X, y→world Z.
 	var local := Vector3((mp.x - 0.5) * plane_size.x, 0.0, (mp.y - 0.5) * plane_size.y)
@@ -875,7 +895,8 @@ func _on_lift_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vecto
 func _on_pin_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int, rally_id: String) -> void:
 	# Select on RELEASE, and only if the press didn't turn into a pan-drag — so
 	# dragging across the map to pan never accidentally opens a rally.
-	if _view == View.TABLE and not _detail_open and not _table_dragged and _is_release(event):
+	if _view == View.TABLE and not _detail_open and not _revealing and not _table_dragged \
+			and _is_release(event):
 		_on_rally_pin(rally_id)
 
 
@@ -1737,6 +1758,10 @@ func _go_to(view: int, snap := false) -> void:
 	_view = view
 	if view != View.TABLE:
 		_detail_open = false
+		# Leaving the map mid-parade banks the queue as seen (the player has had their
+		# look, or chose to walk away) rather than replaying it on the next open.
+		if _revealing:
+			_finish_reveals()
 	# Drop any GUI focus when changing station. HQ hides overlays by toggling their
 	# CanvasLayer, which does NOT clear a Control's focus (a CanvasLayer breaks the
 	# visibility chain), so a button on the view we just left would otherwise keep
@@ -1822,6 +1847,11 @@ func _on_cloud_profile_replaced() -> void:
 		_build_title_lineup()
 	elif _view == View.GARAGE or _view == View.LIFT:
 		_ensure_lift_car()
+	# A restored career arrives with no reveal flags on it; without seeding, the next map
+	# open would parade the whole roster at somebody who has already played it. The
+	# backfill now runs INSIDE Save.adopt_profile itself (see
+	# Save._seed_reveals_if_needed), so it has already happened by the time this handler
+	# runs — nothing left for hq.gd to do here.
 	_refresh_map_pins()
 	_refresh_meter()
 
@@ -2126,7 +2156,32 @@ func _enter_table() -> void:
 	_table_pan = Vector3.ZERO  # re-centre the map each time we open it
 	_table_dragged = false
 	_table_panning = false
-	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
+	# Which rallies became enterable since the player last looked? Derived FRESH here,
+	# from current state, every single time the map opens — never cached at the moment a
+	# rally is finished. That is what makes the reveal generalise to any unlock route:
+	# completing a rally, buying a car, a Mystery Box car, an engine swap that moves a
+	# car into a class, a cloud restore, or anything nobody has designed yet. (The
+	# pre-feature-save backfill itself now lives in Save — see
+	# Save._seed_reveals_if_needed — run at the points a profile becomes live, so a
+	# future scene/entry point into the map can't forget to seat it.)
+	var pending := _pending_reveals()
+	# HEADLESS (the test runner) gets the sequence's FINAL STATE with none of its
+	# cinematics: the rallies end up marked seen and the table opens live and focused
+	# exactly as it does after a real playthrough, but with no awaits to hang the suite
+	# on. Skip the animation, never the decision (features/testing.md).
+	if Platform.is_headless():
+		for rid in pending:
+			Save.mark_rally_revealed(String(rid), false)
+		if not pending.is_empty():
+			Save.save()
+		pending = []
+	# The pending pins go up in their LOCKED look so the flip is watchable; everything
+	# else refreshes normally (newly-earned stars / showdown unlock).
+	_refresh_map_pins(pending)
+	if not pending.is_empty():
+		_go_to(View.TABLE)
+		_run_reveal_sequence(pending)
+		return
 	# On entry, steer straight to the toughest event the player hasn't finished yet:
 	# focus (and pan the camera to) the highest-difficulty incomplete rally pin. From
 	# there the player pans the camera and selection tracks the view centre. Falls back
@@ -2134,6 +2189,201 @@ func _enter_table() -> void:
 	if not _focus_hardest_incomplete():
 		_select_target_under_center()
 	_go_to(View.TABLE)
+
+
+# --- New-rally reveal --------------------------------------------------------
+#
+# The rally ids waiting to be shown to the player, in roster order (newest-unlocked
+# last). A rally qualifies only when ALL THREE hold:
+#
+#   * it is unlocked (RallyLibrary.rally_revealed — reveal_after met, or a showdown
+#     whose region gate has opened),
+#   * the player owns a car that can ACTUALLY enter it (_has_eligible_car — the same
+#     authoritative answer the green/grey pin flag uses), and
+#   * it has not already been revealed (Save.rally_revealed_seen).
+#
+# The middle clause turns the reveal from an event into a STANDING CONDITION: a rally
+# that unlocks while the garage can't field it is simply held back and appears the day
+# the player buys, wins or engine-swaps a car that qualifies. Nothing expires, because
+# this is recomputed on every single map open.
+func _pending_reveals() -> Array:
+	var out: Array = []
+	for rally in RallyLibrary.all():
+		var rid := String(rally["id"])
+		if Save.rally_revealed_seen(rid):
+			continue
+		if not RallyLibrary.rally_revealed(rally, Save.profile):
+			continue
+		if not _has_eligible_car(rally):
+			continue
+		out.append(rid)
+	return out
+
+
+# Walk the queue: pan to each pin still wearing its locked look, flip it to unlocked,
+# banner it, hold, move on. A showdown gets the bigger beat (its own banner and a longer
+# hold — it's a region finale). Any press at any point skips the rest (_skip_reveals).
+#
+# GENERATION GUARD: `_reveal_token` is bumped here and captured in `token` before the
+# first `await`. Every check below asks `_reveal_continue(token)` instead of a bare
+# `_reveal_active()` so a STALE coroutine — one still parked in an `await` from a
+# sequence that was skipped, then re-armed by a second `_enter_table()` before the first
+# resumed — notices its token no longer matches `_reveal_token` and bails immediately,
+# instead of going on to pan the camera / bump banners / `erase()` entries out of the
+# NEW queue it has no business touching.
+func _run_reveal_sequence(pending: Array) -> void:
+	_reveal_token += 1
+	var token := _reveal_token
+	_reveal_queue.clear()
+	for rid in pending:
+		_reveal_queue.append(String(rid))
+	_revealing = true
+	_reveal_skipped = false
+	# Defensive: _enter_table already drains the queue instantly under headless, but
+	# nothing may await in a display-less run (it would hang the suite).
+	if Platform.is_headless():
+		_finish_reveals()
+		return
+	var cfg: GameConfig = Config.data
+	var cap: int = maxi(1, cfg.hq_reveal_max_queue)
+	var shown := _reveal_queue.slice(0, cap)
+	var overflow: int = _reveal_queue.size() - shown.size()
+	for rid in shown:
+		if not _reveal_continue(token):
+			return
+		var rally := RallyLibrary.by_id(rid)
+		var showdown := bool(rally.get("showdown", false))
+		# 1. Travel to the pin (the existing map-pan tween — one motion for the whole
+		#    game) and let it settle while the pin is still grey.
+		_pan_table_to(_pin_position(rid))
+		await get_tree().create_timer(cfg.hq_reveal_pan_time).timeout
+		if not _reveal_continue(token):
+			return
+		# 2. Flip it: rebuild the pins with this id no longer held back, so the grey flag
+		#    becomes the live one and the readout box pops in.
+		_reveal_queue.erase(rid)  # …but it still gets marked seen — see _finish_reveals
+		var still_held := _reveal_queue.duplicate()
+		_reveal_shown.append(rid)
+		_refresh_map_pins(still_held)
+		_focus_pin(rid)
+		var lead := "SHOWDOWN UNLOCKED" if showdown else "NEW RALLY"
+		_set_reveal_banner("%s - %s" % [lead, String(rally.get("name", ""))])
+		# 3. Hold on the new thing. A showdown lingers.
+		var hold: float = cfg.hq_reveal_hold_time * (2.0 if showdown else 1.0)
+		await get_tree().create_timer(hold).timeout
+	if _reveal_continue(token) and overflow > 0:
+		# The dev "3-star everything" cheat (and any future mass unlock) can open the whole
+		# roster at once; the cap keeps that to a few beats and tells the player the rest.
+		_set_reveal_banner("+%d MORE RALLIES OPEN" % overflow)
+		await get_tree().create_timer(cfg.hq_reveal_hold_time).timeout
+	if not _reveal_continue(token):
+		return
+	_finish_reveals()
+
+
+# Pure predicate — no side effects. Still mid-sequence and still worth continuing, right
+# now, with no consideration for what (if anything) should happen if it isn't. Split out
+# of the old `_reveal_active()`, which used to call `_finish_reveals()` (a disk save +
+# pin rebuild) from what read as a plain query; see `_reveal_continue` for the explicit
+# abort step that replaces that side effect at the call sites that actually need it.
+func _reveal_active() -> bool:
+	return _revealing and not _reveal_skipped and is_inside_tree() and _view == View.TABLE
+
+
+# The abort point `_run_reveal_sequence` actually calls between steps. Returns true to
+# keep going. Returns false to stop — and, exactly once, if the reason is that the
+# sequence is still marked `_revealing` but the player left the map view (Back, a cloud
+# restore bouncing us to the title, …), banks what was queued as seen via an EXPLICIT
+# `_finish_reveals()` call here rather than as a hidden side effect of the predicate.
+#
+# `token` must match the generation `_run_reveal_sequence` captured at its start — a
+# stale coroutine whose token has been superseded by a newer sequence returns false
+# immediately, without finishing anything (the newer sequence owns that now).
+func _reveal_continue(token: int) -> bool:
+	if token != _reveal_token:
+		return false
+	if _reveal_active():
+		return true
+	if _revealing and not _reveal_skipped and is_inside_tree() and _view != View.TABLE:
+		_finish_reveals()
+	return false
+
+
+# ANY press ends the whole queue at once — this is a requirement, not polish. Players
+# open the map constantly and an unskippable cutscene is hated by the third viewing, so
+# the press must never be swallowed into "advance one pin".
+func _skip_reveals() -> void:
+	_reveal_skipped = true
+	_finish_reveals()
+
+
+# Land the final state: every id that was queued (shown, skipped, or capped away) is
+# marked seen and saved, the pins go back to their true look, the banner clears, table
+# input comes back live, and selection is left on the LAST revealed pin — the player
+# wants to look at the new thing, not be yanked to _focus_hardest_incomplete().
+func _finish_reveals() -> void:
+	var last_shown: String = _reveal_shown[-1] if not _reveal_shown.is_empty() else ""
+	for rid in _reveal_queue:
+		Save.mark_rally_revealed(rid, false)
+		if last_shown == "":
+			last_shown = rid
+	for rid in _reveal_shown:
+		Save.mark_rally_revealed(rid, false)
+	Save.save()
+	_reveal_queue.clear()
+	_reveal_shown.clear()
+	_revealing = false
+	if not is_inside_tree():
+		return
+	_set_reveal_banner("")
+	_refresh_map_pins()
+	if _view == View.TABLE and last_shown != "":
+		_focus_pin(last_shown)
+
+
+# The single "which node in this collection carries this rally id" linear scan, shared
+# by _pin_position and _focus_pin so their matching logic can't drift apart. The two
+# callers deliberately search DIFFERENT collections — _pin_position over `_pins` (every
+# pin, locked ones included: a held-back reveal pin must be findable while still
+# locked), _focus_pin over the unlocked-only `_table_targets()` (locked pins are never
+# cursor targets) — so `nodes` stays a parameter rather than this reaching for `_pins`
+# itself; do not collapse that difference away.
+func _node_with_rally_id(nodes: Array, rally_id: String) -> Node3D:
+	for n in nodes:
+		var node := n as Node3D
+		if String(node.get_meta("rally_id", "")) == rally_id:
+			return node
+	return null
+
+
+# The table-plane position of a rally's pin (Vector3.ZERO if it has none).
+func _pin_position(rally_id: String) -> Vector3:
+	var pin := _node_with_rally_id(_pins, rally_id)
+	return pin.position if pin != null else Vector3.ZERO
+
+
+# Seat the keyboard/gamepad cursor on a rally's pin, panning the camera to it. No-op
+# while the pin is still locked (locked pins aren't cursor targets — see _unlocked_pins).
+func _focus_pin(rally_id: String) -> void:
+	var targets := _table_targets()
+	var nodes: Array = []
+	for t in targets:
+		nodes.append(t["node"])
+	var node := _node_with_rally_id(nodes, rally_id)
+	if node == null:
+		return
+	for i in targets.size():
+		if targets[i]["node"] == node:
+			_focus_table_target(i, true)
+			return
+
+
+# The one-line reveal banner on the table overlay ("" hides it).
+func _set_reveal_banner(text: String) -> void:
+	if _reveal_banner == null:
+		return
+	_reveal_banner.text = text
+	_reveal_banner.visible = text != ""
 
 
 # The pins a keyboard/gamepad cursor can land on: the unlocked ones, in rally order
@@ -2181,7 +2431,7 @@ func _table_plane_axes() -> Array:
 # any are down (no discrete jumps — hold a direction and the map slides under a fixed
 # reticle). Only active in the TABLE view with the detail panel closed.
 func _process(delta: float) -> void:
-	if _view != View.TABLE or _detail_open:
+	if _view != View.TABLE or _detail_open or _revealing:
 		return
 	var dir2 := Vector2.ZERO
 	if Input.is_action_pressed("menu_up"):
@@ -4443,7 +4693,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_lift_hub()  # a sub-menu page backs out to the hub (its controls use
 				# native focus for up/down/left-right/select)
 		View.TABLE:
-			if _detail_open:
+			if _revealing:
+				# The reveal parade is running. ANY press (key, gamepad button, click,
+				# tap) skips the WHOLE queue — never one pin at a time, and never
+				# swallowed. Keyboard, gamepad and pointer all get out the same way.
+				if _is_any_press(event):
+					_skip_reveals()
+					get_viewport().set_input_as_handled()
+			elif _detail_open:
 				if event.is_action_pressed("menu_select"):
 					_enter_car_screen()
 				elif event.is_action_pressed("menu_back"):
@@ -4464,9 +4721,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cars_input(event)
 
 
+# Any deliberate "press" from any device — the skip gesture for the new-rally reveal.
+# Echoes (key auto-repeat) don't count; releases don't either, so the release that ends
+# the skipping press can't also fall through into something else.
+static func _is_any_press(event: InputEvent) -> bool:
+	if event is InputEventKey:
+		return event.pressed and not event.echo
+	if event is InputEventJoypadButton or event is InputEventMouseButton \
+			or event is InputEventScreenTouch:
+		return event.is_pressed()
+	return false
+
+
 # Drag the map table around (mouse, or finger via emulate_mouse_from_touch). A drag
 # sets _table_dragged so the release doesn't also open the pin under the finger.
 func _table_pan_input(event: InputEvent) -> void:
+	if _revealing:
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_table_panning = event.pressed
 		if event.pressed:

@@ -659,6 +659,7 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	cfg.track_width = RallyLibrary.event_width(event)
 	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
 	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
+	cfg.weather = RallyLibrary.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
 	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
 	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
 	# event -> event's region (if the caller seated one, see current_event() /

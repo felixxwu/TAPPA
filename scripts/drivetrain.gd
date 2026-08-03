@@ -85,6 +85,15 @@ var all_wheels: Array = []
 # immediately (before the next call overwrites them), which they all do.
 var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0}
 
+# Memoised weather μ multiplier for surface_tire_params (the per-contact hot path,
+# called once per wheel per physics tick). WeatherLibrary.grip_mult does a table
+# lookup, which must NOT happen per contact — so it is resolved once and re-resolved
+# only when the live condition string or the config resource itself changes (a stage
+# transition). Dry resolves to exactly 1.0, so the multiply is unconditional.
+var _weather_mu := 1.0
+var _weather_mu_id := ""
+var _weather_mu_cfg: GameConfig = null
+
 
 func _init(p_car: VehicleBody3D) -> void:
 	car = p_car
@@ -403,13 +412,27 @@ func surface_grip(cfg: GameConfig, cp: Vector3) -> float:
 # bands the road colour uses. Off terrain (flat fixtures) μ is unscaled (1.0) and
 # the shape falls back to the global tire_slip_peak / sliding_grip_ratio.
 func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
+	# Weather scales mu here (once, both branches) rather than at each call site
+	# because this is the single per-contact resolver every wheel/tick goes
+	# through — scaling here keeps flat test fixtures (no terrain) wet too,
+	# instead of requiring every caller to remember a separate weather check.
+	# The multiplier itself comes from WeatherLibrary (dry is exactly 1.0, so the
+	# multiply is UNCONDITIONAL — no per-condition branch here, and no new
+	# condition ever needs an edit to this file). It is memoised on the string id
+	# so the hot path stays allocation-free: the Dictionary lookup happens once
+	# per condition change, not once per wheel per tick, and the steady-state cost
+	# is the same single string compare plus multiply it was before.
+	if cfg.weather != _weather_mu_id or cfg != _weather_mu_cfg:
+		_weather_mu_id = cfg.weather
+		_weather_mu_cfg = cfg
+		_weather_mu = WeatherLibrary.grip_mult(cfg, _weather_mu_id)
 	if terrain == null or not terrain.has_method("surface_at"):
-		_surf_scratch.mu_mult = 1.0
+		_surf_scratch.mu_mult = _weather_mu
 		_surf_scratch.slip_peak = cfg.tire_slip_peak
 		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
 		return _surf_scratch
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
-	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s)
+	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s) * _weather_mu
 	_surf_scratch.slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s)
 	_surf_scratch.slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s)
 	return _surf_scratch

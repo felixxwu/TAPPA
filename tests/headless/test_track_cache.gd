@@ -114,6 +114,24 @@ func test_committed_cache_covers_every_event() -> void:
 			if not hit.is_empty():
 				assert_true(hit["complete"], "cached track for rally %s is complete" % rally.get("id", "?"))
 
+# Weather must never reach track generation: it is not a shape determinant, and
+# routing it into generation would invalidate all baked track-cache entries for no
+# shape change (see features/weather.md -> "Caches and leaderboards"). Two
+# otherwise-identical events differing only in "weather" must produce identical
+# generation params (and therefore an identical cache key).
+func test_weather_does_not_affect_track_generation_params() -> void:
+	var cfg := GameConfig.new()
+	var dry_event := {"seed": 12, "turn_count": 7, "width": 6.0}
+	var wet_event := {"seed": 12, "turn_count": 7, "width": 6.0, "weather": "rain"}
+	var dry_params := TrackGenParams.for_event(dry_event, cfg)
+	var wet_params := TrackGenParams.for_event(wet_event, cfg)
+	var fp := "fp"
+	var ver := "1"
+	assert_eq(dry_params.cache_key(fp, ver), wet_params.cache_key(fp, ver),
+		"a weather-only difference between events must not change the track cache key")
+	assert_eq(TrackCache.key_for(dry_params, cfg), TrackCache.key_for(wet_params, cfg),
+		"a weather-only difference between events must not change TrackCache.key_for")
+
 # The committed source_hash matches the current rally library — the same fast check
 # CI runs (tools/verify_track_cache.gd), so a forgotten regeneration turns the local
 # suite red before it reaches CI.

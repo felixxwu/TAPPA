@@ -4826,3 +4826,198 @@ func test_tapping_a_kind_tab_selects_it_without_starting_the_challenge() -> void
 	# directly — driving it through a real viewport is not available headless.
 	assert_true(weekly.gui_input.get_connections().size() > 0,
 		"the tab consumes pointer presses via gui_input, so `pressed` stays ui_accept-only")
+
+
+# --- New-rally reveal on the map ---------------------------------------------
+#
+# When rallies become enterable, the next map open pans to each and flips its pin from
+# the locked to the unlocked look, so the player is TOLD what opened up instead of
+# having to notice a grey pin turned green. The queue is derived fresh from current
+# state on every open (never cached at rally-completion time), which is what makes it
+# work for any unlock route — finishing a rally, buying a car, a Mystery Box car, an
+# engine swap, a cloud restore. See docs/superpowers/specs/2026-08-02-new-rally-reveal-design.md.
+#
+# The tests below exercise the pure queue-derivation and the skip, never the timings
+# (those are tunables) and never a shipped rally (the roster is synthetic).
+
+# A synthetic three-rally roster: one anyone can enter, one gated behind a power floor
+# nothing in the fixture garage can reach, and a showdown (locked until the rest are done).
+func _install_reveal_roster() -> void:
+	RallyLibrary.override_for_test([
+		{"id": "rv_open", "name": "Reveal Open", "region": "home", "difficulty": 1,
+			"showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "rv_hot", "name": "Reveal Hot", "region": "home", "difficulty": 2,
+			"showdown": false, "map_pos": Vector2(0.6, 0.5),
+			"restriction": {"pw_min": 5000.0}, "events": []},
+		{"id": "rv_showdown", "name": "Reveal Showdown", "region": "home", "difficulty": 3,
+			"showdown": true, "map_pos": Vector2(0.5, 0.15), "restriction": {}, "events": []},
+	])
+
+
+# A car whose power-to-weight is far beyond any authored band, so it qualifies for the
+# rv_hot floor no matter how the fixture engines are tuned.
+func _grant_featherweight() -> void:
+	var cars := CarFixtures.cars()
+	var light := CarFixtures.cars()[0].duplicate(true)
+	light["id"] = "fx_reveal_featherweight"
+	light["name"] = "Fixture Featherweight"
+	light["mass"] = 1.0
+	cars.append(light)
+	CarLibrary.override_for_test(cars)
+	_save.grant_car("fx_reveal_featherweight")
+
+
+func _new_hq() -> Node3D:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	return hq
+
+
+func test_reveal_queue_holds_a_rally_until_a_car_can_enter_it() -> void:
+	# THE CORE OF THE DESIGN: a reveal is not "this rally unlocked", it's "you can go do
+	# this now". An unlocked rally the garage cannot field is held back — and appears the
+	# moment a qualifying car arrives, by whatever route.
+	_install_reveal_roster()
+	var hq: Node3D = await _new_hq()
+	var pending: Array = hq._pending_reveals()
+	assert_true(pending.has("rv_open"), "an open rally with a car that can enter it is revealed")
+	assert_false(pending.has("rv_hot"), "a rally no owned car can enter is held back")
+	assert_false(pending.has("rv_showdown"), "a locked showdown is not revealed")
+
+	_grant_featherweight()
+	assert_true(hq._pending_reveals().has("rv_hot"),
+		"the held rally appears once the player owns a car that qualifies for it")
+
+
+func test_reveal_queue_skips_rallies_already_shown() -> void:
+	_install_reveal_roster()
+	var hq: Node3D = await _new_hq()
+	assert_true(hq._pending_reveals().has("rv_open"))
+	_save.mark_rally_revealed("rv_open")
+	assert_false(hq._pending_reveals().has("rv_open"),
+		"a rally the player has already been shown is never revealed twice")
+
+
+func test_opening_the_map_reveals_the_pending_rallies_and_leaves_the_table_live() -> void:
+	_install_reveal_roster()
+	var hq: Node3D = await _new_hq()
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_true(_save.rally_revealed_seen("rv_open"), "the revealed rally is marked seen")
+	assert_false(hq._revealing, "the sequence has ended")
+	assert_eq(hq._view, hq.View.TABLE, "the player is left on the map")
+	assert_gt(hq._table_focus_index, -1, "a pin is focused, so table input is live again")
+	assert_true(hq._pending_reveals().is_empty(),
+		"re-opening the map does not replay what was already shown")
+
+
+func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
+	# THE BACKFILL TRAP: a save from before this feature carries no reveal flags, and
+	# `false` is the wrong default for it — a player with a dozen open rallies would get
+	# a dozen-pin parade on next launch. Everything already open is seeded as seen.
+	#
+	# The seeding itself now lives in Save (Save._seed_reveals_if_needed), run the moment
+	# a profile becomes live — load_or_new / adopt_profile — rather than as a call hq.gd
+	# has to remember to make. So this exercises it through an actual reload, not through
+	# any hq.gd hook. It seeds by UNLOCKED-OR-COMPLETED, deliberately with NO eligible-car
+	# clause (seeding's job is "anything already open already reads as seen", not
+	# "anything the player can currently enter") — rv_hot is unlocked (no reveal_after)
+	# even though nothing in the garage can enter it yet, so it gets silently seeded too.
+	# Only a rally that is genuinely still LOCKED at seed time — rv_showdown, gated on
+	# its region — survives the pass to become a real future reveal.
+	_install_reveal_roster()
+	_save.complete_rally("rv_open", 60_000, 1)  # career progress, no reveal flags
+	assert_true(_save.needs_reveal_seeding())
+	_save.save_now()
+	_save.load_or_new()  # the profile becoming live is what must trigger the backfill
+	assert_false(_save.needs_reveal_seeding(), "the profile now carries reveal flags")
+
+	var hq: Node3D = await _new_hq()
+	assert_true(hq._pending_reveals().is_empty(),
+		"an existing career's first map open has nothing to parade")
+	assert_true(_save.rally_revealed_seen("rv_hot"),
+		"an unlocked-but-uncarriageable rally is seeded too — seeding has no eligible-car hold")
+
+	# ...and a rally that was still LOCKED at seed time still gets a real reveal once it
+	# actually unlocks — seeding backfilling the open roster does not swallow that.
+	_save.complete_rally("rv_hot", 45_000, 1)  # completes region "home" -> opens its showdown
+	assert_true(hq._pending_reveals().has("rv_showdown"),
+		"seeding never swallows a rally that was still locked at seed time")
+
+
+func test_a_press_during_the_reveal_skips_the_whole_queue() -> void:
+	# An unskippable cutscene in front of a menu players open constantly is hated by the
+	# third viewing, so ANY press ends the WHOLE queue — never one pin at a time, and
+	# never swallowed. Everything queued is marked seen so a skipped reveal never replays.
+	_install_reveal_roster()
+	var hq: Node3D = await _new_hq()
+	hq._enter_table()
+	await get_tree().process_frame
+	# Re-arm the sequence by hand: headless drains it instantly (no awaits allowed in
+	# the suite), so this is the only way to stand in the middle of one.
+	_save.profile["rallies"] = {}
+	hq._revealing = true
+	hq._reveal_queue.append("rv_open")
+	hq._reveal_queue.append("rv_hot")
+
+	var key := InputEventKey.new()
+	key.keycode = KEY_SPACE
+	key.pressed = true
+	hq._unhandled_input(key)
+
+	assert_false(hq._revealing, "the press ended the sequence")
+	assert_true(_save.rally_revealed_seen("rv_open"), "the shown rally is marked seen")
+	assert_true(_save.rally_revealed_seen("rv_hot"),
+		"the rallies the player skipped past are marked seen too, so they never replay")
+	assert_eq(hq._view, hq.View.TABLE, "the skip leaves the player on the map")
+
+
+func test_table_input_is_suspended_while_the_reveal_runs() -> void:
+	_install_reveal_roster()
+	var hq: Node3D = await _new_hq()
+	hq._enter_table()
+	await get_tree().process_frame
+	hq._table_panning = true  # as if a drag were already under way
+	hq._revealing = true
+	var before: Vector3 = hq._table_pan
+	var drag := InputEventMouseMotion.new()
+	drag.relative = Vector2(40.0, 40.0)
+	hq._table_pan_input(drag)
+	assert_eq(hq._table_pan, before, "map dragging is inert while the camera is revealing")
+	hq._revealing = false
+
+
+func test_a_stale_reveal_token_cannot_touch_a_newer_sequences_state() -> void:
+	# FINDING: the reveal coroutine used to have no generation guard. Skip, leave the
+	# table, and re-enter before a parked `await` resumes, and a SECOND sequence may
+	# already have set `_revealing = true` by the time the first one wakes up — without
+	# a guard the stale coroutine would go on to pan the camera, bump the banner, and
+	# erase() entries out of the NEW queue. `_reveal_token` fixes this: each sequence
+	# captures its own generation, and `_reveal_continue` refuses a stale one outright.
+	#
+	# Headless drains a sequence synchronously (nothing ever actually parks mid-`await`),
+	# so this drives the guard directly instead of racing real coroutines.
+	_install_reveal_roster()
+	var hq: Node3D = await _new_hq()
+	hq._enter_table()
+	await get_tree().process_frame
+
+	# Simulate: a first sequence started and captured this token...
+	var stale_token: int = hq._reveal_token
+	# ...then, before it resumed, a second sequence started (bumping the token) and is
+	# now mid-flight with its own queue.
+	hq._reveal_token += 1
+	hq._revealing = true
+	hq._reveal_skipped = false
+	hq._reveal_queue.clear()
+	hq._reveal_queue.append("rv_hot")
+	hq._reveal_shown.clear()
+	hq._view = hq.View.TABLE
+
+	assert_false(hq._reveal_continue(stale_token),
+		"a coroutine carrying an outdated token is told to stop, not to keep going")
+	assert_eq(hq._reveal_queue, ["rv_hot"] as Array[String],
+		"the stale coroutine's abort must not mutate the new sequence's queue")
+	assert_true(hq._revealing,
+		"nor may a stale coroutine's abort clear the new sequence's _revealing flag")

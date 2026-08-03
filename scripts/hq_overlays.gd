@@ -131,6 +131,12 @@ func build_table_overlay() -> void:
 	_hq._map_meter = _hq._label("", 14)
 	root.add_child(_hq._map_meter)
 
+	# The new-rally reveal's one-line banner ("NEW RALLY - …" / "SHOWDOWN UNLOCKED - …"),
+	# hidden except while the reveal sequence is running. See hq.gd _set_reveal_banner.
+	_hq._reveal_banner = _hq._label("", 20)
+	_hq._reveal_banner.visible = false
+	root.add_child(_hq._reveal_banner)
+
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(spacer)

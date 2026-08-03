@@ -43,6 +43,24 @@ const RESTART_SEED_STRIDE := 1_000_003
 # clearly felt without ever excluding a candidate (the DFS can still backtrack onto
 # a sharp corner when nothing gentle fits).
 const STRAIGHTNESS_BIAS := 6.0
+# Back-to-back hairpins are banned outright in the DFS (see _search). The straightness
+# bias above only reweights sampling — it still hands out hairpin-hairpin pairs when a
+# boxed-in frontier leaves nothing gentler, and a 180 immediately into another 180 is a
+# switchback rather than rally flow.
+#
+# "Hairpin" is a SHAPE, not a name: a corner counts when its _corner_straightness (1 at
+# dead straight, 0 at a full 180) is at or below this. Deriving it from the authored
+# geometry is deliberate — an earlier version matched the literal corner name "Hairpin",
+# which silently stopped firing the moment a near-180 corner was renamed or a second one
+# was added under a different name, regenerating exactly the switchbacks the rule exists
+# to prevent. _corner_straightness carries the same intent ("needs no hand-maintained
+# per-corner table and tracks the authored shapes automatically"), so the rule now leans
+# on it rather than working against it.
+#
+# The threshold is far below every other authored corner (a 90° Square is 0.5, the
+# tightest numbered turn ~0.53), so today it selects the Hairpin alone and the generated
+# tracks are unchanged — it only widens automatically if a new near-180 shape is added.
+const HAIRPIN_STRAIGHTNESS_MAX := 0.15
 # Live-preview pacing (used only when generate() is given an on_progress Callable).
 # The search yields a frame — repainting the partial track — every this many search
 # steps (placements + backtracks) while an on_progress callback is set, so the drawn
@@ -75,7 +93,19 @@ static func constants_fingerprint() -> String:
 		STEPS_BASE, STEPS_PER_TURN,
 		WATER_CLIP_CELLS, WATER_MAX_WET_FRACTION,
 		MAX_RESTARTS, RESTART_SEED_STRIDE, STRAIGHTNESS_BIAS,
+		HAIRPIN_STRAIGHTNESS_MAX,
 	]).sha256_text().substr(0, 12)
+
+
+# Whether an authored corner counts as a hairpin for the no-double-hairpin rule —
+# a property of its SHAPE (see HAIRPIN_STRAIGHTNESS_MAX), never of its name, so a
+# renamed or newly-added near-180 corner is covered automatically. Cheap: it reads
+# through _corner_straightness's memo after the first call per corner — which is keyed
+# by NAME, so this (like every _corner_straightness caller) assumes corner names are
+# unique within a corner list. They are in CornerLibrary; a synthetic test fixture that
+# reuses a real corner's name would measure that corner instead of its own shape.
+static func _is_hairpin(spec: Dictionary) -> bool:
+	return _corner_straightness(spec) <= HAIRPIN_STRAIGHTNESS_MAX
 
 
 # Transform2D mapping local corner space (x = right, y = forward/heading) to
@@ -664,9 +694,27 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			stack.append({ "cands": _candidates(corners, rng, straightness), "idx": 0 })
 		var top: Dictionary = stack[stack.size() - 1]
 		var placed := false
+		# Whether the piece already at the frontier is a hairpin, for the no-double-hairpin
+		# rule. Resolved once per search step (not per candidate) by looking the placed
+		# corner's spec back up by name — `pieces` records the name, and _corner_straightness
+		# is memoised, so this is a short scan over the ~9 authored corners plus a dict hit.
+		var prev_is_hairpin := false
+		if not pieces.is_empty():
+			var prev_corner := String(pieces[pieces.size() - 1]["corner"])
+			for spec in corners:
+				if String(spec["name"]) == prev_corner:
+					prev_is_hairpin = _is_hairpin(spec)
+					break
 		while top["idx"] < top["cands"].size():
 			var cand: Dictionary = top["cands"][top["idx"]]
 			top["idx"] += 1
+			# Ban hairpin-into-hairpin. Rejected before _build_candidate so the pairing
+			# costs no tessellation, and rejected inside the candidate loop rather than
+			# by pruning the shared template — the ban is contextual (depends on the
+			# piece below), while _candidate_template is depth-invariant and cached
+			# across generate() calls.
+			if prev_is_hairpin and _is_hairpin(corners[cand["corner_index"]]):
+				continue
 			var built := _build_candidate(cand, corners, frame_pos, frame_heading)
 			# Overlap test (early-exits on the first overlapping cell) + footprint cells.
 			var hit := _collide_and_cells(built["poly"], width, occupied, reserved, frame_pos, params)
