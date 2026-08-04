@@ -29,7 +29,7 @@ extends Node3D
 #
 # Clickable 3D objects (table, lift, rally pins) are Area3D with input_ray_pickable;
 # get_viewport().physics_object_picking drives the picking. Headless tests call the
-# handlers (_enter_table / _on_rally_pin / _enter_car_screen / ...) directly.
+# handlers (_table_ui._enter_table / _table_ui._on_rally_pin / _enter_car_screen / ...) directly.
 #
 # Shared-resource note: car.tscn's body/wheel meshes are SubResources shared across
 # instances, so apply_car sizing one parked car would resize every other. After
@@ -107,15 +107,15 @@ var _detail_open := false       # the rally-detail panel is up (a sub-state of T
 # New-rally reveal (a second sub-state of TABLE, sibling to _detail_open): the map
 # camera is walking a queue of rallies that just became enterable, flipping each pin
 # from its locked to its unlocked look. While _revealing the table's own input is
-# suspended — and ANY press skips the whole queue (see _skip_reveals).
+# suspended — and ANY press skips the whole queue (see _table_ui._skip_reveals).
 var _revealing := false
 var _reveal_queue: Array[String] = []   # ids still to show (all get marked seen either way)
 var _reveal_shown: Array[String] = []   # ids already flipped this sequence
 var _reveal_skipped := false
-# Bumped at the start of every _run_reveal_sequence; each sequence captures its own copy
+# Bumped at the start of every _table_ui._run_reveal_sequence; each sequence captures its own copy
 # as `token` before its first await. Lets a coroutine parked mid-sequence (skipped, then
 # a second sequence re-armed before it resumes) recognise it has been superseded and bail
-# without mutating the NEW sequence's shared state — see _reveal_continue.
+# without mutating the NEW sequence's shared state — see _table_ui._reveal_continue.
 var _reveal_token := 0
 var _reveal_banner: Label               # the "NEW RALLY - …" line on the table overlay
 var _selected_rally_id := ""
@@ -131,14 +131,14 @@ var _selected_instance_id := -1
 #            styles live on the car and Start fits the shown one. Uses the car park
 #            (not the tuning lift) precisely because the lift holds the car RAISED and
 #            wheels are judged by stance. See features/wheel-customization.md.
-#   CHALLENGE (_enter_challenge_car_screen) — the Rally Challenge entry point's car
+#   CHALLENGE (_challenge_ui._enter_challenge_car_screen) — the Rally Challenge entry point's car
 #            picker (spec §7 / §2): owned cars ChallengeSession.eligible_cars(kind, ...)
 #            reports for the currently-shown kind, same over-cap-but-detune-reachable
 #            treatment as RALLY via _detune_needed (judged with
 #            ChallengeSession.qualifying_detune_for instead of RallyLibrary.qualifying_detune,
-#            since a challenge has no authored rally dict — see _build_challenge_lineup).
+#            since a challenge has no authored rally dict — see _challenge_ui._build_challenge_lineup).
 #            Start commits ChallengeSession.start + the scene hand-off instead of
-#            RallySession.start_rally (see _begin_challenge_start).
+#            RallySession.start_rally (see _challenge_ui._begin_challenge_start).
 # One enum instead of mutually-exclusive booleans: entering a job sets the mode
 # (which inherently clears the others), and every exit/commit/back returns to RALLY.
 enum CarparkMode { RALLY, FREEROAM, SWAP, STARTER, WHEELS, CHALLENGE }
@@ -271,18 +271,32 @@ var _pins_root: Node3D          # parent of the rally pins
 # against a half-constructed HQ — see _on_cloud_profile_replaced.
 var _hq_built := false
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
-# Focus cursor into _table_targets() (the unlocked rally pins); -1 = none.
+# Focus cursor into _table_ui._table_targets() (the unlocked rally pins); -1 = none.
 var _table_focus_index := -1
-# Cached _table_targets() result. The target set only changes on pin rebuild
+# The pin node the focus highlight is currently PAINTED onto, so the per-frame pan path
+# can skip repainting when nothing changed (hq_table.gd::_select_target_under_center).
+# Keyed on the node rather than on _table_focus_index because _refresh_map_pins
+# invalidates _table_targets_cache WITHOUT resetting the index — a rebuild reuses the
+# same index with brand-new nodes, and those still need painting.
+var _table_focus_node: Node3D = null
+# Cached _table_ui._table_targets() result. The target set only changes on pin rebuild
 # (_refresh_map_pins), which sets this back
 # to null; every access rebuilds lazily. Per-frame table panning (_process ->
-# _pan_table_step) reuses it instead of rebuilding a Dictionary-per-target array each frame.
+# _table_ui._pan_table_step) reuses it instead of rebuilding a Dictionary-per-target array each frame.
 var _table_targets_cache = null
 
 # Overlays (one CanvasLayer per station; only the active one is visible).
 # The overlay/menu-layer builders live in HqOverlays (scripts/hq_overlays.gd),
 # constructed with `self` in _ready so they can reach back into this controller.
 var _overlays: HqOverlays
+# The Rally Challenge screen (scripts/hq_challenge.gd). Functions live there; the
+# `_challenge_*` state below stays here — see todo/hq-split.md for why.
+var _challenge_ui: HqChallenge
+# The map table (scripts/hq_table.gd). Functions there; state stays here.
+var _table_ui: HqTable
+# The car park (scripts/hq_carpark.gd). Functions there; the lineup / prop-cache
+# state (`_lineup`, `_car_cache`, `_eligible`, `_focus`, …) stays here.
+var _carpark_ui: HqCarpark
 var _title_layer: CanvasLayer
 
 # How long the starter-pick gate will wait on the boot-time cloud pull before
@@ -301,17 +315,17 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 # the garage, opened from the garage row's Challenge button, built as a dark detail-
 # card sibling to the rally-detail panel (build_detail_overlay's MODAL_DIM + header +
 # HSeparator + _detail_heading/_detail_wrap_label shape) rather than a flat button
-# list. See hq_overlays.gd's build_challenge_overlay and the _open_challenge_overlay
+# list. See hq_overlays.gd's build_challenge_overlay and the _challenge_ui._open_challenge_overlay
 # family below.
 var _challenge_layer: CanvasLayer
 var _challenge_kind: String = ChallengeLibrary.DAILY
-# Bumped by every _refresh_challenge_overlay. The board queries that decorate the entry
+# Bumped by every _challenge_ui._refresh_challenge_overlay. The board queries that decorate the entry
 # screen (placing, cut-line time) are async, so each captures the generation it was
 # fired for and writes its answer ONLY if that's still current — the row may have been
 # rebuilt, or the kind switched, while the request was in flight.
 #
 # This replaced "does the label still read the exact string I left it at", which looked
-# equivalent and was not: _open_challenge_overlay runs UITheme.enforce right after
+# equivalent and was not: _challenge_ui._open_challenge_overlay runs UITheme.enforce right after
 # building the row, uppercasing every Label, so a mixed-case comparison never matched
 # and the answer was silently dropped. A counter can't be defeated by anything that
 # rewrites the text.
@@ -321,7 +335,7 @@ var _challenge_refresh_generation := 0
 # Daily/Weekly/Monthly re-renders the whole screen, which used to re-issue both queries
 # every time and flash "Loading…" on rows the player had already seen answered.
 #
-# Cleared in _close_challenge_overlay — leaving the screen for the garage is the
+# Cleared in _challenge_ui._close_challenge_overlay — leaving the screen for the garage is the
 # invalidation point, so the numbers can't go stale behind the player's back for long,
 # and re-opening always asks again. Only OK answers are cached: a failure is a transient
 # condition (offline, board unreachable), not a value, so it retries on the next visit
@@ -332,8 +346,8 @@ var _challenge_placing_cache: Dictionary = {}
 # can rest on and move across them via native left/right focus-neighbour nav — see
 # menu_nav.gd) but mouse_filter = MOUSE_FILTER_IGNORE and no `pressed` wiring at all, so
 # there is NO mouse hover/click interaction whatsoever — arriving via focus (each one's
-# focus_entered calls _select_challenge_kind) is the only way to pick a kind. See
-# build_challenge_overlay. Order matches [DAILY, WEEKLY, MONTHLY] — _challenge_kind_button.
+# focus_entered calls _challenge_ui._select_challenge_kind) is the only way to pick a kind. See
+# build_challenge_overlay. Order matches [DAILY, WEEKLY, MONTHLY] — _challenge_ui._challenge_kind_button.
 var _challenge_kind_buttons: Array[Button] = []
 # Header: title ("Daily Challenge") + subtitle (the rolled ceiling), mirroring
 # _detail_title/_detail_region's two-line shape.
@@ -536,7 +550,7 @@ func _ready() -> void:
 	# the entire rest of HQ boot — pure time-to-first-interaction on the game's very first
 	# screen. Now the player reaches an interactive HQ immediately and the warm trickles in
 	# one prop per frame while they read the title (see _prewarm_free_roam_deferred).
-	_prewarm_free_roam_deferred()
+	_carpark_ui._prewarm_free_roam_deferred()
 
 
 # True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
@@ -601,6 +615,9 @@ func _build_hq() -> void:
 	_map_plane = _env.map_plane
 	_pins_root = _env.pins_root
 	_overlays = HqOverlays.new(self)
+	_challenge_ui = HqChallenge.new(self)
+	_table_ui = HqTable.new(self)
+	_carpark_ui = HqCarpark.new(self)
 	_overlays.build_title_overlay()
 	_overlays.build_garage_overlay()
 	_overlays.build_table_overlay()
@@ -665,7 +682,7 @@ func _bay_center_x(i: int, bays: int) -> float:
 # `hold_locked` forces the pins with those rally ids to render in their LOCKED look even
 # though they are open — the new-rally reveal needs the "before" state on screen so the
 # flip to unlocked is something the player actually watches happen (see
-# _run_reveal_sequence). Empty everywhere else.
+# _table_ui._run_reveal_sequence). Empty everywhere else.
 func _refresh_map_pins(hold_locked: Array = []) -> void:
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	for c in _pins_root.get_children():
@@ -684,7 +701,7 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 	# Re-seat the cursor on whatever pin sits nearest the view centre (no camera
 	# pan) so it never sits at -1 while the table actually has pins to focus —
 	# every entry point into the table (fresh open, test harness) goes through here.
-	_select_target_under_center()
+	_table_ui._select_target_under_center()
 	_refresh_meter()
 
 
@@ -747,8 +764,8 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 		label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
 		pin.add_child(label)
 		# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it
-		# with the hover-style selection look (see _focus_table_target) without resizing
-		# the pin. Absent when there is no box — _focus_table_target checks for the meta.
+		# with the hover-style selection look (see _table_ui._focus_table_target) without resizing
+		# the pin. Absent when there is no box — _table_ui._focus_table_target checks for the meta.
 		pin.set_meta("label_panel", label.get_meta("panel"))
 
 	# Pickable hit spheres (skipped for a locked pin so it can't be entered), both bound
@@ -895,7 +912,7 @@ func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
 	if RallyLibrary.is_eligible(rally, meta, floor_meta):
 		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
-	var target := _switch_target_for(rally, car, meta)
+	var target := _carpark_ui._switch_target_for(rally, car, meta)
 	var meta_sw := meta
 	if target >= 0:
 		meta_sw = meta.duplicate()
@@ -904,7 +921,7 @@ func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw, floor_meta):
 		return {"eligible": true, "detune": 0.0, "drivetrain": target}
 	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
-	var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
+	var frac := _carpark_ui._qualifying_detune_for(rally, car, entry, meta_sw, target)
 	if frac > 0.0:
 		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1}
 	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
@@ -922,15 +939,6 @@ func _detuned_to_full(owned: Dictionary) -> Dictionary:
 	tuning["engine_detune"] = 1.0
 	full["tuning"] = tuning
 	return full
-
-
-# effective_meta for `full`, optionally stamping a switched drive_mode on top (so a
-# switch+detune stack is evaluated on the POST-switch mode). Shared meta tail.
-func _meta_with_drive(full: Dictionary, entry: Dictionary, drive_override: int) -> Dictionary:
-	var out := UpgradeLibrary.effective_meta(full, entry)
-	if drive_override >= 0:
-		out["drive_mode"] = drive_override
-	return out
 
 
 # Whether the player owns at least one car that can enter `rally` — drives the pin
@@ -957,7 +965,7 @@ func _refresh_meter() -> void:
 
 func _on_table_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int) -> void:
 	if _view == View.GARAGE and _is_click(event):
-		_enter_table()
+		_table_ui._enter_table()
 
 
 func _on_lift_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int) -> void:
@@ -970,7 +978,7 @@ func _on_pin_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector
 	# dragging across the map to pan never accidentally opens a rally.
 	if _view == View.TABLE and not _detail_open and not _revealing and not _table_dragged \
 			and _is_release(event):
-		_on_rally_pin(rally_id)
+		_table_ui._on_rally_pin(rally_id)
 
 
 func _is_click(event: InputEvent) -> bool:
@@ -1107,7 +1115,8 @@ func _detail_wrap_label() -> Label:
 # Used where the rally detail panel's heading-above-value-below shape (_detail_heading
 # + _detail_wrap_label stacked) would cost more vertical space than the info is worth —
 # the challenge screen's four sections, one line each instead of two. Returns the value
-# Label for the caller to keep populating.
+# Label for the caller to keep populating. Lives here beside the two builders it calls
+# (and NOT with the challenge cut) because HqOverlays is its only caller.
 func _challenge_info_row(parent: VBoxContainer, heading_text: String) -> Label:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -1181,470 +1190,6 @@ func _dismiss_android_app_notice() -> void:
 	_refresh_title_focus()
 
 
-# --- Rally Challenge overlay (Daily/Weekly/Monthly, spec §7) -----------------
-# A modal over the GARAGE: same shape the (now-removed) title-screen Account overlay had —
-# _challenge_layer built once in _ready (build_challenge_overlay), shown/hidden here
-# rather than folded into the View enum / _update_overlays switch.
-
-func _open_challenge_overlay() -> void:
-	var unix_time := int(Time.get_unix_time_from_system())
-	# A stale run (period rolled over since it was stored) is discarded here, before the
-	# entry screen is built, so a rolled-over period shows a fresh entry rather than a
-	# dead Resume button (spec §3). ChallengeSession.has_stale_run/resumable_run/
-	# eligible_cars are pure static helpers (no Save dependency, testable with a
-	# synthetic profile per challenge_session.gd) called through the autoload the same
-	# way every other ChallengeSession call in this file is — the analyzer's "static
-	# called on instance" warning is expected here, same as it would be for
-	# RallySession.apply_event_config called via the RallySession autoload.
-	@warning_ignore("static_called_on_instance")
-	if ChallengeSession.has_stale_run(Save.profile, unix_time):
-		ChallengeSession.discard_stale_run(unix_time)
-	_garage_layer.visible = false
-	_challenge_layer.visible = true
-	_refresh_challenge_overlay()
-	UITheme.enforce(_challenge_layer)
-	# Land on the CURRENT kind's own tab, not just tree-order-first (which would always
-	# be Daily) — re-opening after switching kind keeps the cursor on the kind you left.
-	UITheme.focus_grab(_challenge_kind_button(_challenge_kind))
-
-
-func _close_challenge_overlay() -> void:
-	if _challenge_layer == null:
-		return
-	# Leaving for the garage is the cache's invalidation point: the board keeps moving,
-	# so the next visit asks again rather than showing numbers from the last one.
-	_challenge_cutoff_cache.clear()
-	_challenge_placing_cache.clear()
-	_challenge_layer.visible = false
-	_garage_layer.visible = _view == View.GARAGE
-
-
-# Switching kind resets any prior car-picker context and instantly re-derives the whole
-# screen for the new kind — Resume is only offered when the freshly-shown kind matches
-# the stored run's kind (see _refresh_challenge_overlay). Called both by a tab's
-# focus_entered (keyboard/gamepad arriving on it) and directly wherever the kind needs
-# setting programmatically (e.g. focusing the right tab on open).
-func _select_challenge_kind(kind_str: String) -> void:
-	_challenge_kind = kind_str
-	_refresh_challenge_overlay()
-
-
-# Ask the board where the player finished and append it to the COMPLETED row.
-#
-# ALWAYS LIVE, NEVER STORED. A completed record only ever refers to a period that is
-# still open (the outcome map is pruned to live periods), so the field keeps growing
-# and the player's position keeps moving underneath them. Caching the rank at finish
-# time would show a placing that was true once and is quietly wrong now.
-#
-# Non-blocking on purpose: the row reads COMPLETED the instant the page opens and
-# gains "- 3 of 42" when the answer arrives. This is decoration on an already-correct
-# label, so it gets no CloudBusy cover — there is nothing to wait for and nothing the
-# player is prevented from doing — and a failure is simply not rendered.
-func _fetch_challenge_placing(period_key_str: String, stage_count: int, generation: int) -> void:
-	if period_key_str == "" or stage_count <= 0:
-		return
-	# Already answered this visit (a tab switch, not a fresh open) — render it straight
-	# away. No query, and no "Loading…" flash on a row the player has already seen.
-	if _challenge_placing_cache.has(period_key_str):
-		_apply_challenge_placing(_challenge_placing_cache[period_key_str])
-		return
-	if Cloud == null or Cloud.challenge_leaderboard == null:
-		return
-	# SIGNED OUT: don't ask. fetch_final_rank needs a token to find the player's own
-	# row, so it can only ever answer "not ok" here — but fetch_standings_at issues
-	# the board query BEFORE it discovers that, which would mean a real network round
-	# trip on every visit to the page, for an answer that cannot exist.
-	if not Cloud.is_signed_in():
-		return
-	# Say we're fetching rather than leaving the placing to pop in later. Only from
-	# here — past every "we are not going to ask" guard above — so a row that will
-	# never gain a placing doesn't advertise one.
-	_set_challenge_completed_text("Loading…")
-	var info := await Cloud.challenge_leaderboard.fetch_final_rank(period_key_str, stage_count)
-	# Cached BEFORE the staleness check: the answer is valid for its period whatever is
-	# on screen now, so a player who switched tabs mid-flight still gets it instantly on
-	# switching back, rather than paying for the same query twice.
-	if bool(info.get("ok", false)):
-		_challenge_placing_cache[period_key_str] = info
-	# The player can switch tabs (or leave HQ entirely) while this is in flight, so
-	# check the row hasn't been rebuilt under us before writing to it — otherwise the
-	# Daily's placing lands on the Weekly's row. See _challenge_refresh_generation for
-	# why this is a counter and not "does the label still read what I left it at".
-	if not is_inside_tree() or generation != _challenge_refresh_generation:
-		return
-	_apply_challenge_placing(info)
-
-
-# Render a placing answer onto the COMPLETED row (shared by the live and cached paths).
-func _apply_challenge_placing(info: Dictionary) -> void:
-	if not is_instance_valid(_challenge_progress_label):
-		return
-	if not bool(info.get("ok", false)):
-		# Signed out, no username, or the board is unreachable — fall back to a bare
-		# COMPLETED. The placeholder is not a resting state.
-		_set_challenge_completed_text("")
-		return
-	_set_challenge_completed_text("%d of %d" % [
-		int(info.get("rank", 0)), int(info.get("total_entries", 0))])
-
-
-# Write the win-condition row as "<condition>" or "<condition> - <tail>". ALWAYS
-# rebuilt from _CHALLENGE_WIN_CONDITION rather than appended to whatever is on screen,
-# so the transient "Loading…" can't end up cemented in front of the answer — and
-# uppercased here, because UITheme.enforce only runs on the open path and this row is
-# also rewritten later, asynchronously, long after that pass.
-func _set_challenge_win_text(tail: String) -> void:
-	if not is_instance_valid(_challenge_win_label):
-		return
-	var text := _CHALLENGE_WIN_CONDITION
-	if tail != "":
-		text += " - " + tail
-	_challenge_win_label.text = UITheme.caps(text)
-
-
-# Write the progress row's COMPLETED state as "COMPLETED" or "COMPLETED - <tail>".
-# Same contract as _set_challenge_win_text: always rebuilt from the constant rather
-# than appended to what's on screen, so the transient "Loading…" can't survive in
-# front of the placing, and uppercased here because this row is rewritten
-# asynchronously long after the one-shot UITheme.enforce pass.
-func _set_challenge_completed_text(tail: String) -> void:
-	if not is_instance_valid(_challenge_progress_label):
-		return
-	var text := "COMPLETED"
-	if tail != "":
-		text += " - " + tail
-	_challenge_progress_label.text = UITheme.caps(text)
-
-
-# Fill in the CURRENT time on the top-50% cut line, so the win condition reads
-# "Top 50% - 1:52.24" rather than an abstract percentage the player can't aim at.
-# Appended to the SAME row (no separate line) — the entry screen is a compact HUD
-# readout, and a bare percentage gives nothing to chase.
-#
-# Never persisted, and re-asked on every fresh open of the screen, for the same reason
-# the completed placing is (see _fetch_challenge_placing): the cut line MOVES as
-# entrants arrive and times improve, so a number saved across sessions would be quietly
-# wrong. Within ONE visit it is cached per period key (see _challenge_cutoff_cache) so
-# flipping between the Daily/Weekly/Monthly tabs doesn't re-query what it just asked.
-#
-# Non-blocking and undecorated on failure: the row is already correct without the
-# time, so there's no CloudBusy cover and an unreachable board just leaves
-# "Top 50%" standing.
-func _fetch_challenge_cutoff(period_key_str: String, stage_count: int, generation: int) -> void:
-	if period_key_str == "" or stage_count <= 0:
-		return
-	# Already answered this visit (a tab switch, not a fresh open) — render it straight
-	# away. No query, and no "Loading…" flash on a row the player has already seen.
-	if _challenge_cutoff_cache.has(period_key_str):
-		_apply_challenge_cutoff(_challenge_cutoff_cache[period_key_str])
-		return
-	if Cloud == null or Cloud.challenge_leaderboard == null:
-		return
-	# SIGNED OUT: don't ask. The board itself is world-readable (firestore.rules
-	# `allow read: if true`), so this query WOULD answer — but a signed-out player
-	# cannot post a checkpoint at all, so there is no cut for them to make, and asking
-	# anyway means a real network round trip on every visit to this page.
-	if not Cloud.is_signed_in():
-		return
-	# Say we're fetching rather than leaving a gap the time will pop into. Only from
-	# here — past every "we are not going to ask" guard above — so a signed-out player
-	# never sees a "Loading…" that resolves to nothing.
-	_set_challenge_win_text("Loading…")
-	var info := await Cloud.challenge_leaderboard.fetch_cutoff(period_key_str, stage_count)
-	# Cached BEFORE the staleness check — see the same note in _fetch_challenge_placing.
-	if bool(info.get("ok", false)):
-		_challenge_cutoff_cache[period_key_str] = info
-	# The player can switch tabs (or leave HQ) while this is in flight — don't land the
-	# Daily's cut line on the Weekly's row. Generation, not a text comparison: the row is
-	# UPPERCASED by UITheme.enforce after it is built (see _challenge_refresh_generation),
-	# so matching on the text silently dropped every answer.
-	if not is_inside_tree() or generation != _challenge_refresh_generation:
-		return
-	_apply_challenge_cutoff(info)
-
-
-# Render a cut-line answer onto the win row (shared by the live and cached paths).
-func _apply_challenge_cutoff(info: Dictionary) -> void:
-	if not is_instance_valid(_challenge_win_label):
-		return
-	if not bool(info.get("ok", false)) or not bool(info.get("exists", false)):
-		# Unreachable, or nobody is on the line yet (any finish currently makes it).
-		# Either way the placeholder must come back off — it is not a resting state.
-		_set_challenge_win_text("")
-		return
-	_set_challenge_win_text(UITheme.format_time(int(info.get("cutoff_ms", 0))))
-
-
-# The tab button for `kind_str` (Daily/Weekly/Monthly), matched by list position —
-# _challenge_kind_buttons is built in the same [DAILY, WEEKLY, MONTHLY] order every time.
-func _challenge_kind_button(kind_str: String) -> Button:
-	var kinds := [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]
-	var idx := kinds.find(kind_str)
-	if idx < 0 or idx >= _challenge_kind_buttons.size():
-		return null
-	return _challenge_kind_buttons[idx]
-
-
-# Player-facing summary of ChallengeSession._COMPLETION_REWARD — keep the two in
-# step when the reward table is retuned.
-const _CHALLENGE_REWARD_TEXT := {
-	"daily": "2 mystery boxes",
-	"weekly": "3 mystery boxes + 1 low-tier car",
-	"monthly": "4 mystery boxes + 1 high-tier car",
-}
-const _CHALLENGE_WIN_CONDITION := "Top 50%"
-
-
-# Rebuild the whole entry screen from ChallengeSession/ChallengeLibrary's current state:
-# header (kind + ceiling) and the four sections (win condition, win reward, eligible
-# cars, current progress), then the Start/Resume button. Every row is a short phrase,
-# not a sentence — this is a HUD readout, not prose.
-func _refresh_challenge_overlay() -> void:
-	if _challenge_layer == null:
-		return
-	# Invalidate any board query still in flight for the PREVIOUS build of this screen.
-	_challenge_refresh_generation += 1
-	var generation := _challenge_refresh_generation
-	_challenge_title_label.text = "%s Challenge" % _challenge_kind.capitalize()
-	# Highlight the current kind's tab — a font-colour swap (GOLD vs. the house default)
-	# rather than a toggled "pressed" look, since these buttons have no toggle_mode/press
-	# state at all (no mouse interaction reaches them; see _challenge_kind_buttons).
-	for btn in _challenge_kind_buttons:
-		var is_current := String(btn.get_meta("challenge_kind", "")) == _challenge_kind
-		btn.add_theme_color_override("font_color", UITheme.GOLD if is_current else UITheme.INK_DIM)
-
-	var unix_time := int(Time.get_unix_time_from_system())
-	var period := ChallengeLibrary.current_period(_challenge_kind, unix_time)
-	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
-	_challenge_subtitle_label.text = "%d hp/t max" % int(round(ceiling))
-
-	_set_challenge_win_text("")
-	_fetch_challenge_cutoff(String(period.get("key", "")),
-		int(period.get("stage_count", 0)), generation)
-	_challenge_reward_label.text = str(_CHALLENGE_REWARD_TEXT.get(_challenge_kind, ""))
-
-	@warning_ignore("static_called_on_instance")
-	var resumable := ChallengeSession.resumable_run(Save.profile, unix_time)
-	# Resume is only offered for the SAME kind the resumable run belongs to — switching
-	# the kind while a different kind's run is stored still shows that other kind's fresh
-	# Start (its own eligible cars/ceiling), not a mismatched Resume button.
-	var resuming := not resumable.is_empty() and String(resumable.get("kind", "")) == _challenge_kind
-
-	# Eligible cars — NAME them (capped + "+N more"), same as the rally pin detail
-	# panel's own eligibility read-out (_eligibility_summary/_qualifying_cars_text),
-	# not just a count. ChallengeSession.eligible_cars already includes the
-	# detune-reachable ones, split here into ready-now vs. needs-a-tune like
-	# _eligibility_summary's own "adjust" bucket.
-	@warning_ignore("static_called_on_instance")
-	var eligible := ChallengeSession.eligible_cars(_challenge_kind, Save.profile, unix_time)
-	var ready_names: Array[String] = []
-	var tune_names: Array[String] = []
-	for car in eligible:
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		if entry.is_empty():
-			continue
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		var display_name := EngineSwap.display_name(entry, car)
-		if CarLibrary.power_to_weight_hp_tonne(meta) <= ceiling:
-			ready_names.append(display_name)
-		else:
-			tune_names.append(display_name)
-	if resuming:
-		# A run in progress has no choice left to make — the car was committed when it
-		# started and is locked to it for the rest of the period. Listing the whole
-		# eligible set here would imply you could still switch; name the ONE car you
-		# actually picked instead, which also explains why it has disappeared from the
-		# garage/career pickers.
-		var locked := Save.get_car(int(resumable.get("car_instance_id", -1)))
-		var locked_entry := CarLibrary.by_id(String(locked.get("model_id", "")))
-		_challenge_eligible_label.text = EngineSwap.display_name(locked_entry, locked) \
-			if not locked_entry.is_empty() else "Your locked car"
-		_challenge_eligible_label.add_theme_color_override("font_color", UITheme.GOLD)
-	elif eligible.is_empty():
-		_challenge_eligible_label.text = "No eligible car"
-		_challenge_eligible_label.add_theme_color_override("font_color", UITheme.RED)
-	else:
-		var text := _qualifying_cars_text(ready_names) if not ready_names.is_empty() else "None ready"
-		if not tune_names.is_empty():
-			text += "\nNeeds tune: %s" % _qualifying_cars_text(tune_names)
-		_challenge_eligible_label.text = text
-		_challenge_eligible_label.add_theme_color_override(
-			"font_color", UITheme.GREEN if not ready_names.is_empty() else UITheme.GOLD)
-
-	# Current progress — the stored run for THIS kind, if any, else this period's
-	# terminal outcome. A finished period is one attempt spent: completed or DNF'd,
-	# both terminal until the period rolls over, so Start stays disabled.
-	@warning_ignore("static_called_on_instance")
-	var outcome := ChallengeSession.period_outcome(Save.profile, String(period.get("key", "")))
-	var finished := not outcome.is_empty()
-	if resuming:
-		var done := int(resumable.get("stage_index", 0))
-		var total := int(period.get("stage_count", 0))
-		# Say the run is LIVE, not just how far it got — a bare "0 / 2 stages" reads
-		# identically to "not started" and gives no hint that this kind is holding a
-		# car locked (which is why that car has vanished from the other pickers).
-		_challenge_progress_label.text = "IN PROGRESS - %d/%d stages" % [done, total]
-		_challenge_progress_label.add_theme_color_override("font_color", UITheme.GOLD)
-	elif finished and bool(outcome.get("dnf", false)):
-		_challenge_progress_label.text = "DNF"
-		_challenge_progress_label.add_theme_color_override("font_color", UITheme.RED)
-	elif finished:
-		# Show COMPLETED immediately and fetch the placing LIVE — never a stored one.
-		# Only live periods survive the outcome prune, so every completed record on
-		# screen belongs to a board that is still open: more entrants keep arriving
-		# and faster times keep pushing the player down, so a rank saved at finish
-		# time is stale by construction.
-		_set_challenge_completed_text("")
-		_challenge_progress_label.add_theme_color_override("font_color", UITheme.GREEN)
-		_fetch_challenge_placing(String(period.get("key", "")),
-			int(period.get("stage_count", 0)), generation)
-	else:
-		_challenge_progress_label.text = "Not started"
-		# Cleared explicitly: the label is reused across kind switches, so a colour
-		# left over from a previous kind's IN PROGRESS/DNF would stick.
-		_challenge_progress_label.remove_theme_color_override("font_color")
-
-	_challenge_start_button.text = "Resume" if resuming else "Start"
-	# A spent period can't be re-entered, however many eligible cars are sitting there.
-	_challenge_start_button.disabled = not resuming and (finished or eligible.is_empty())
-	UITheme.enforce(_challenge_layer)
-
-
-# Start/Resume. Resume (spec §3: same kind as the stored run) calls ChallengeSession.resume
-# directly — no car to pick, the locked car is already fixed. Otherwise this now OPENS the
-# real 3D car park (spec §7 point 4) restricted to this kind's eligible cars, instead of
-# committing straight from a focused button-list item; the car park's own Start
-# (_begin_challenge_start) does the actual ChallengeSession.start + scene hand-off.
-# Enter/gamepad-accept on a focused kind tab acts as Start, exactly as if the Start
-# button itself had focus — the player shouldn't have to tab down to Start first once
-# they've settled on a kind. Respects the SAME disabled gate Start does (no eligible
-# car): a Button's `pressed` signal fires on activate regardless of a DIFFERENT
-# button's disabled state, so that has to be checked here explicitly rather than
-# relying on Godot to block it.
-func _on_challenge_tab_activated() -> void:
-	if not _challenge_start_button.disabled:
-		_on_challenge_start_pressed()
-
-
-func _on_challenge_start_pressed() -> void:
-	var unix_time := int(Time.get_unix_time_from_system())
-	@warning_ignore("static_called_on_instance")
-	var resumable := ChallengeSession.resumable_run(Save.profile, unix_time)
-	if not resumable.is_empty() and String(resumable.get("kind", "")) == _challenge_kind:
-		# Resume runs the same pre-flight a fresh start does — the mobile control-scheme
-		# gate applies whether or not there's a car left to pick (the car is already
-		# committed, hence no select id here).
-		_close_challenge_overlay()  # before the gate, so the picker isn't drawn over
-		if not _start_preflight(_on_challenge_start_pressed):
-			return
-		if not ChallengeSession.resume(unix_time):
-			return
-		await _hand_off_to_challenge_scene()
-		return
-	_close_challenge_overlay()
-	_enter_challenge_car_screen(_challenge_kind)
-
-
-# Hand off to the driving scene the same way a normal rally does (_begin_rally_start): a
-# loading screen, two frames for it to paint, then the scene load — gated on
-# ChallengeSession.auto_load_scenes (mirrors RallySession.auto_load_scenes) so tests can
-# drive start()/resume() with no scene load.
-#
-# world.gd already branches on ChallengeSession.is_active() when it boots (building the
-# current stage's TrackGenParams from ChallengeSession.current_stage_params() and routing
-# StageManager.stage_completed to ChallengeSession.report_event_result / take_pending_repair
-# instead of RallySession's — spec §3's single-call-site mode branch), so this plain scene
-# load is enough to hand off — no RallySession needs to be active for a challenge run.
-func _hand_off_to_challenge_scene() -> void:
-	# No config seating here: world.gd._ready pulls the first stage's track
-	# parameters itself via DrivingContext.apply_stage_config, so this hand-off is
-	# a plain scene load with no ordering dependency to forget.
-	if ChallengeSession.auto_load_scenes:
-		var loading := LoadingScreen.new()
-		loading.set_step("Preparing challenge…")
-		add_child(loading)
-		await get_tree().process_frame
-		await get_tree().process_frame
-		get_tree().change_scene_to_file("res://main.tscn")
-
-
-# Open the car park for the currently-shown challenge kind: park the eligible owned cars
-# (plus any over-ceiling car a detune would fit under, tracked via _detune_needed — see
-# _build_challenge_lineup) and frame the first. With none, show a hint + disable Start.
-# Mirrors _enter_car_screen's shape for CarparkMode.RALLY.
-func _enter_challenge_car_screen(kind_str: String) -> void:
-	_carpark_mode = CarparkMode.CHALLENGE
-	_challenge_kind = kind_str
-	_start_button.text = "Start Challenge"
-	_build_challenge_lineup(kind_str)
-	var unix_time := int(Time.get_unix_time_from_system())
-	var period := ChallengeLibrary.current_period(kind_str, unix_time)
-	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
-	_rally_banner.text = "%s Challenge — needs <= %d hp/tonne" % [kind_str.capitalize(), int(round(ceiling))]
-	_view = View.CARPARK
-	_detail_open = false
-	_update_overlays()
-	if _eligible.is_empty():
-		_show_empty_carpark("No eligible car for this challenge — none of your cars meet the ceiling.")
-		return
-	_no_eligible_label.visible = false
-	_focus = 0
-	_focus_changed(true)
-
-
-# Park the owned cars ChallengeSession.eligible_cars(kind, ...) reports for `kind_str` (already
-# challenge-lock-excluded per §2), tracking which of them are over the ceiling STOCK but
-# reachable by lowering detune — those park looking eligible, and pressing Start pops the
-# same over-limit prompt _build_eligible_lineup's rally cars use, judged with
-# ChallengeSession.qualifying_detune_for (a challenge has no authored rally dict) against the
-# synthetic `{"restriction": {"pw_max": ceiling}}` shape ChallengeSession itself uses
-# internally.
-func _build_challenge_lineup(kind_str: String) -> void:
-	var unix_time := int(Time.get_unix_time_from_system())
-	@warning_ignore("static_called_on_instance")
-	var eligible := ChallengeSession.eligible_cars(kind_str, Save.profile, unix_time)
-	var period := ChallengeLibrary.current_period(kind_str, unix_time)
-	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
-	var synthetic_rally := {"restriction": {"pw_max": ceiling}}
-	var filtered: Array = []
-	var needs_detune := {}
-	for car in eligible:
-		var id := int(car.get("instance_id", -1))
-		filtered.append(car)
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		if entry.is_empty():
-			continue
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		if CarLibrary.power_to_weight_hp_tonne(meta) > ceiling:
-			@warning_ignore("static_called_on_instance")
-			var frac := ChallengeSession.qualifying_detune_for(synthetic_rally, car, entry)
-			if frac > 0.0:
-				needs_detune[id] = frac
-	_build_lineup(filtered)  # clears _detune_needed / _drivetrain_needed, repopulated below
-	_detune_needed = needs_detune
-	_drivetrain_needed = {}
-
-
-# Commit the focused car park selection: ChallengeSession.start, then the same scene
-# hand-off Resume uses. Mirrors _begin_rally_start's shape for CarparkMode.CHALLENGE.
-func _begin_challenge_start() -> void:
-	var owned := Save.get_car(_selected_instance_id)
-	if owned.is_empty():
-		return
-	# The same pre-flight the career start runs (mobile control-scheme gate + select the
-	# fielded car) — a challenge used to skip both.
-	if not _start_preflight(_begin_challenge_start, _selected_instance_id):
-		return
-	var unix_time := int(Time.get_unix_time_from_system())
-	if not ChallengeSession.start(_challenge_kind, owned, unix_time):
-		return
-	_clear_lineup()
-	_selected_instance_id = -1
-	_carpark_mode = CarparkMode.RALLY
-	await _hand_off_to_challenge_scene()
-
-
-
 # Build the ◄/► car-selector nav row for the car park (_build_car_overlay): a "<" prev
 # button, a centred car-name label, and a ">" next button in an HBox, with prev/next
 # wired to _cycle_focus(∓1). Returns [nav_row, center_label] so the caller stashes the
@@ -1655,7 +1200,7 @@ func _build_carpark_nav_row() -> Array:
 	var prev := Button.new()
 	prev.text = "<"
 	prev.focus_mode = Control.FOCUS_NONE
-	prev.pressed.connect(_cycle_focus.bind(-1))
+	prev.pressed.connect(_carpark_ui._cycle_focus.bind(-1))
 	nav.add_child(prev)
 	var center := _label("", 18)
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1664,7 +1209,7 @@ func _build_carpark_nav_row() -> Array:
 	var next := Button.new()
 	next.text = ">"
 	next.focus_mode = Control.FOCUS_NONE
-	next.pressed.connect(_cycle_focus.bind(1))
+	next.pressed.connect(_carpark_ui._cycle_focus.bind(1))
 	nav.add_child(next)
 	return [nav, center]
 
@@ -1764,7 +1309,7 @@ func _go_to(view: int, snap := false) -> void:
 		# Leaving the map mid-parade banks the queue as seen (the player has had their
 		# look, or chose to walk away) rather than replaying it on the next open.
 		if _revealing:
-			_finish_reveals()
+			_table_ui._finish_reveals()
 	# Drop any GUI focus when changing station. HQ hides overlays by toggling their
 	# CanvasLayer, which does NOT clear a Control's focus (a CanvasLayer breaks the
 	# visibility chain), so a button on the view we just left would otherwise keep
@@ -1800,7 +1345,7 @@ func _go_to(view: int, snap := false) -> void:
 		_clear_lift_car()
 	# The title screen shows the player's whole collection parked in the car park.
 	if view == View.EXTERIOR:
-		_build_title_lineup()
+		_carpark_ui._build_title_lineup()
 		_title_focus = _title_start_index()  # seat the cursor on Start each time
 		_refresh_title_focus()
 	_update_overlays()
@@ -1835,7 +1380,7 @@ func _on_cloud_profile_replaced() -> void:
 	# and overwrite the restored selection, so back out to the title instead.
 	if _view == View.CARPARK and _carpark_mode == CarparkMode.STARTER \
 			and bool(Save.profile.get("starter_picked", false)):
-		_clear_lineup()
+		_carpark_ui._clear_lineup()
 		_carpark_mode = CarparkMode.RALLY
 		_go_to(View.EXTERIOR)
 		return
@@ -1846,7 +1391,7 @@ func _on_cloud_profile_replaced() -> void:
 		# first sign-in from the account page, or "Use cloud" on a conflict, both of
 		# which return the player to a title showing the old collection.
 		_clear_lift_car()
-		_build_title_lineup()
+		_carpark_ui._build_title_lineup()
 	elif _view == View.GARAGE or _view == View.LIFT:
 		_ensure_lift_car()
 	# A restored career arrives with no reveal flags on it; without seeding, the next map
@@ -2027,15 +1572,6 @@ func _await_cloud_restore() -> void:
 	await busy.end()
 
 
-# The index of the owned car `id` within `cars`, or 0 (the first car) when not present —
-# used to seat the car-park cursor on a specific car when opening a picker.
-func _index_of_instance(cars: Array, id: int) -> int:
-	for i in cars.size():
-		if int(cars[i].get("instance_id", -1)) == id:
-			return i
-	return 0
-
-
 # Free Roam picker Start: field the focused catalogue car for a session-less drive. The
 # picker parks base-model previews (negative instance ids), so field the bare base model
 # by id; an owned entry (id >= 0) would field its tuned instance instead. See _enter_free_roam.
@@ -2062,7 +1598,7 @@ func _launch_free_roam(instance_id: int, model_id: String) -> void:
 	if not _start_preflight(_launch_free_roam.bind(instance_id, model_id), instance_id):
 		return
 	_carpark_mode = CarparkMode.RALLY
-	_clear_lineup()
+	_carpark_ui._clear_lineup()
 	_selected_instance_id = -1
 	_prepare_free_roam()  # may abandon a stale session, which resets the free-roam ids
 	# Field by MODEL when given one (a not-yet-owned preview): normalise the instance id to
@@ -2124,281 +1660,11 @@ func _prepare_free_roam() -> void:
 		else String(regions[randi() % regions.size()].get("id", ""))
 
 
-func _enter_table() -> void:
-	_detail_open = false
-	_table_pan = Vector3.ZERO  # re-centre the map each time we open it
-	_table_dragged = false
-	_table_panning = false
-	# Which rallies became enterable since the player last looked? Derived FRESH here,
-	# from current state, every single time the map opens — never cached at the moment a
-	# rally is finished. That is what makes the reveal generalise to any unlock route:
-	# completing a rally, buying a car, a Mystery Box car, an engine swap that moves a
-	# car into a class, a cloud restore, or anything nobody has designed yet. (The
-	# pre-feature-save backfill itself now lives in Save — see
-	# Save._seed_reveals_if_needed — run at the points a profile becomes live, so a
-	# future scene/entry point into the map can't forget to seat it.)
-	var pending := _pending_reveals()
-	# HEADLESS (the test runner) gets the sequence's FINAL STATE with none of its
-	# cinematics: the rallies end up marked seen and the table opens live and focused
-	# exactly as it does after a real playthrough, but with no awaits to hang the suite
-	# on. Skip the animation, never the decision (features/testing.md).
-	if Platform.is_headless():
-		for rid in pending:
-			Save.mark_rally_revealed(String(rid), false)
-		if not pending.is_empty():
-			Save.save()
-		pending = []
-	# The pending pins go up in their LOCKED look so the flip is watchable; everything
-	# else refreshes normally (newly-earned stars / a special unlocking).
-	_refresh_map_pins(pending)
-	if not pending.is_empty():
-		_go_to(View.TABLE)
-		_run_reveal_sequence(pending)
-		return
-	# On entry, steer straight to the toughest event the player hasn't finished yet:
-	# focus (and pan the camera to) the highest-difficulty incomplete rally pin. From
-	# there the player pans the camera and selection tracks the view centre. Falls back
-	# to the centre-nearest target when every pin is done (or there are none).
-	if not _focus_hardest_incomplete():
-		_select_target_under_center()
-	_go_to(View.TABLE)
-
-
-# --- New-rally reveal --------------------------------------------------------
-#
-# The rally ids waiting to be shown to the player, in roster order (newest-unlocked
-# last). A rally qualifies only when ALL THREE hold:
-#
-#   * it is unlocked (RallyLibrary.rally_revealed — reveal_after met, or a special
-#     whose region gate has opened),
-#   * the player owns a car that can ACTUALLY enter it (_has_eligible_car — the same
-#     authoritative answer the green/grey pin flag uses), and
-#   * it has not already been revealed (Save.rally_revealed_seen).
-#
-# The middle clause turns the reveal from an event into a STANDING CONDITION: a rally
-# that unlocks while the garage can't field it is simply held back and appears the day
-# the player buys, wins or engine-swaps a car that qualifies. Nothing expires, because
-# this is recomputed on every single map open.
-func _pending_reveals() -> Array:
-	var out: Array = []
-	for rally in RallyLibrary.all():
-		var rid := String(rally["id"])
-		if Save.rally_revealed_seen(rid):
-			continue
-		if not RallyLibrary.rally_revealed(rally, Save.profile):
-			continue
-		if not _has_eligible_car(rally):
-			continue
-		out.append(rid)
-	return out
-
-
-# Walk the queue: pan to each pin still wearing its locked look, flip it to unlocked,
-# banner it, hold, move on. A special gets the bigger beat (its own banner and a longer
-# hold — it's a region finale). Any press at any point skips the rest (_skip_reveals).
-#
-# GENERATION GUARD: `_reveal_token` is bumped here and captured in `token` before the
-# first `await`. Every check below asks `_reveal_continue(token)` instead of a bare
-# `_reveal_active()` so a STALE coroutine — one still parked in an `await` from a
-# sequence that was skipped, then re-armed by a second `_enter_table()` before the first
-# resumed — notices its token no longer matches `_reveal_token` and bails immediately,
-# instead of going on to pan the camera / bump banners / `erase()` entries out of the
-# NEW queue it has no business touching.
-func _run_reveal_sequence(pending: Array) -> void:
-	_reveal_token += 1
-	var token := _reveal_token
-	_reveal_queue.clear()
-	for rid in pending:
-		_reveal_queue.append(String(rid))
-	_revealing = true
-	_reveal_skipped = false
-	# Defensive: _enter_table already drains the queue instantly under headless, but
-	# nothing may await in a display-less run (it would hang the suite).
-	if Platform.is_headless():
-		_finish_reveals()
-		return
-	var cfg: GameConfig = Config.data
-	var cap: int = maxi(1, cfg.hq_reveal_max_queue)
-	var shown := _reveal_queue.slice(0, cap)
-	var overflow: int = _reveal_queue.size() - shown.size()
-	for rid in shown:
-		if not _reveal_continue(token):
-			return
-		var rally := RallyLibrary.by_id(rid)
-		var special := RallyLibrary.is_special(rally)
-		# 1. Travel to the pin (the existing map-pan tween — one motion for the whole
-		#    game) and let it settle while the pin is still grey.
-		_pan_table_to(_pin_position(rid))
-		await get_tree().create_timer(cfg.hq_reveal_pan_time).timeout
-		if not _reveal_continue(token):
-			return
-		# 2. Flip it: rebuild the pins with this id no longer held back, so the grey flag
-		#    becomes the live one and the readout box pops in.
-		_reveal_queue.erase(rid)  # …but it still gets marked seen — see _finish_reveals
-		var still_held := _reveal_queue.duplicate()
-		_reveal_shown.append(rid)
-		_refresh_map_pins(still_held)
-		_focus_pin(rid)
-		var lead := "SPECIAL EVENT UNLOCKED" if special else "NEW RALLY"
-		_set_reveal_banner("%s - %s" % [lead, String(rally.get("name", ""))])
-		# 3. Hold on the new thing. A special lingers.
-		var hold: float = cfg.hq_reveal_hold_time * (2.0 if special else 1.0)
-		await get_tree().create_timer(hold).timeout
-	if _reveal_continue(token) and overflow > 0:
-		# The dev "3-star everything" cheat (and any future mass unlock) can open the whole
-		# roster at once; the cap keeps that to a few beats and tells the player the rest.
-		_set_reveal_banner("+%d MORE RALLIES OPEN" % overflow)
-		await get_tree().create_timer(cfg.hq_reveal_hold_time).timeout
-	if not _reveal_continue(token):
-		return
-	_finish_reveals()
-
-
-# Pure predicate — no side effects. Still mid-sequence and still worth continuing, right
-# now, with no consideration for what (if anything) should happen if it isn't. Split out
-# of the old `_reveal_active()`, which used to call `_finish_reveals()` (a disk save +
-# pin rebuild) from what read as a plain query; see `_reveal_continue` for the explicit
-# abort step that replaces that side effect at the call sites that actually need it.
-func _reveal_active() -> bool:
-	return _revealing and not _reveal_skipped and is_inside_tree() and _view == View.TABLE
-
-
-# The abort point `_run_reveal_sequence` actually calls between steps. Returns true to
-# keep going. Returns false to stop — and, exactly once, if the reason is that the
-# sequence is still marked `_revealing` but the player left the map view (Back, a cloud
-# restore bouncing us to the title, …), banks what was queued as seen via an EXPLICIT
-# `_finish_reveals()` call here rather than as a hidden side effect of the predicate.
-#
-# `token` must match the generation `_run_reveal_sequence` captured at its start — a
-# stale coroutine whose token has been superseded by a newer sequence returns false
-# immediately, without finishing anything (the newer sequence owns that now).
-func _reveal_continue(token: int) -> bool:
-	if token != _reveal_token:
-		return false
-	if _reveal_active():
-		return true
-	if _revealing and not _reveal_skipped and is_inside_tree() and _view != View.TABLE:
-		_finish_reveals()
-	return false
-
-
-# ANY press ends the whole queue at once — this is a requirement, not polish. Players
-# open the map constantly and an unskippable cutscene is hated by the third viewing, so
-# the press must never be swallowed into "advance one pin".
-func _skip_reveals() -> void:
-	_reveal_skipped = true
-	_finish_reveals()
-
-
-# Land the final state: every id that was queued (shown, skipped, or capped away) is
-# marked seen and saved, the pins go back to their true look, the banner clears, table
-# input comes back live, and selection is left on the LAST revealed pin — the player
-# wants to look at the new thing, not be yanked to _focus_hardest_incomplete().
-func _finish_reveals() -> void:
-	var last_shown: String = _reveal_shown[-1] if not _reveal_shown.is_empty() else ""
-	for rid in _reveal_queue:
-		Save.mark_rally_revealed(rid, false)
-		if last_shown == "":
-			last_shown = rid
-	for rid in _reveal_shown:
-		Save.mark_rally_revealed(rid, false)
-	Save.save()
-	_reveal_queue.clear()
-	_reveal_shown.clear()
-	_revealing = false
-	if not is_inside_tree():
-		return
-	_set_reveal_banner("")
-	_refresh_map_pins()
-	if _view == View.TABLE and last_shown != "":
-		_focus_pin(last_shown)
-
-
-# The single "which node in this collection carries this rally id" linear scan, shared
-# by _pin_position and _focus_pin so their matching logic can't drift apart. The two
-# callers deliberately search DIFFERENT collections — _pin_position over `_pins` (every
-# pin, locked ones included: a held-back reveal pin must be findable while still
-# locked), _focus_pin over the unlocked-only `_table_targets()` (locked pins are never
-# cursor targets) — so `nodes` stays a parameter rather than this reaching for `_pins`
-# itself; do not collapse that difference away.
-func _node_with_rally_id(nodes: Array, rally_id: String) -> Node3D:
-	for n in nodes:
-		var node := n as Node3D
-		if String(node.get_meta("rally_id", "")) == rally_id:
-			return node
-	return null
-
-
-# The table-plane position of a rally's pin (Vector3.ZERO if it has none).
-func _pin_position(rally_id: String) -> Vector3:
-	var pin := _node_with_rally_id(_pins, rally_id)
-	return pin.position if pin != null else Vector3.ZERO
-
-
-# Seat the keyboard/gamepad cursor on a rally's pin, panning the camera to it. No-op
-# while the pin is still locked (locked pins aren't cursor targets — see _unlocked_pins).
-func _focus_pin(rally_id: String) -> void:
-	var targets := _table_targets()
-	var nodes: Array = []
-	for t in targets:
-		nodes.append(t["node"])
-	var node := _node_with_rally_id(nodes, rally_id)
-	if node == null:
-		return
-	for i in targets.size():
-		if targets[i]["node"] == node:
-			_focus_table_target(i, true)
-			return
-
-
-# The one-line reveal banner on the table overlay ("" hides it).
-func _set_reveal_banner(text: String) -> void:
-	if _reveal_banner == null:
-		return
-	_reveal_banner.text = text
-	_reveal_banner.visible = text != ""
-
-
-# The pins a keyboard/gamepad cursor can land on: the unlocked ones, in rally order
-# (a locked special pin is skipped — it's non-pickable until its star gate opens).
-func _unlocked_pins() -> Array:
-	var out: Array = []
-	for pin in _pins:
-		if not bool(pin.get_meta("locked", false)):
-			out.append(pin)
-	return out
-
-
-# Every focus target on the table right now: the unlocked pins. There is one world map
-# with every rally on it, so pins are the only kind of target.
-# Each entry: {node, kind, pos}; kind is always "pin".
-# Cached (see _table_targets_cache): rebuilt only when the cache is invalidated by a pin
-# rebuild, so the per-frame pan glide doesn't re-allocate it.
-func _table_targets() -> Array:
-	if _table_targets_cache == null:
-		_table_targets_cache = _build_table_targets()
-	return _table_targets_cache
-
-
-func _build_table_targets() -> Array:
-	var out: Array = []
-	for pin in _unlocked_pins():
-		out.append({"node": pin, "kind": "pin", "pos": (pin as Node3D).position})
-	return out
-
-
-# The table's on-screen up/right directions as world vectors in the (flat) XZ plane.
-# The table camera is fixed and never rotated/tilted much, so these are effectively
-# constant; deriving them from the cam pose keeps up = "away into the screen" and
-# right = 90° clockwise of it, matching what the player sees. Returns [up, right].
-func _table_plane_axes() -> Array:
-	var cfg: GameConfig = Config.data
-	var fwd: Vector3 = cfg.hq_table_cam_look - cfg.hq_table_cam_eye
-	fwd.y = 0.0
-	var up := fwd.normalized() if fwd.length() > 0.001 else Vector3(0.0, 0.0, -1.0)
-	var right := Vector3(-up.z, 0.0, up.x)  # up rotated -90° about Y (world +X when up = -Z)
-	return [up, right]
-
+# --- Kept on HqController, NOT moved with the table cut ----------------------
+# _process is an ENGINE CALLBACK: on a RefCounted collaborator Godot would never call it,
+# so the table pan and the reveal animation would silently stop advancing (and several
+# tests drive hq._process(delta) directly). _eligibility_summary / _qualifying_cars_text
+# are shared — hq_challenge.gd calls both. See todo/hq-split.md.
 
 # Poll the held menu directions each frame and glide the table camera smoothly while
 # any are down (no discrete jumps — hold a direction and the map slides under a fixed
@@ -2416,186 +1682,8 @@ func _process(delta: float) -> void:
 	if Input.is_action_pressed("menu_right"):
 		dir2 += Vector2.RIGHT
 	if dir2 != Vector2.ZERO:
-		_pan_table_step(dir2, Config.data.hq_table_pan_glide * delta)
+		_table_ui._pan_table_step(dir2, Config.data.hq_table_pan_glide * delta)
 
-
-# Slide the table camera `dist` world-metres in screen-direction `dir2` (UP/DOWN/LEFT/
-# RIGHT, or a diagonal sum), then snap selection to whichever target now sits nearest
-# the view centre. The player drives the camera directly; the "cursor" is just whatever
-# the camera reticle is pointed at, so there are no discrete jumps between pins. Both the
-# held-glide (_process, dist = speed·delta) and tests drive this.
-func _pan_table_step(dir2: Vector2, dist: float) -> void:
-	if dir2 == Vector2.ZERO or dist <= 0.0:
-		return
-	var cfg: GameConfig = Config.data
-	var axes := _table_plane_axes()
-	# Godot's Vector2.UP/DOWN use screen convention (y+ = down), so the y term is
-	# negated to line up with axes[0] ("up" as a world-space direction).
-	var want: Vector3 = axes[1] * dir2.x - axes[0] * dir2.y
-	if want.length() < 0.001:
-		return
-	want = want.normalized()
-	var half := cfg.hq_map_plane_size
-	_table_pan.x = clampf(_table_pan.x + want.x * dist, -half.x * 0.5, half.x * 0.5)
-	_table_pan.z = clampf(_table_pan.z + want.z * dist, -half.y * 0.5, half.y * 0.5)
-	if _view == View.TABLE:
-		_move_camera_to(_station_xform(View.TABLE), true)
-	_select_target_under_center()
-
-
-# The map-plane point currently under the table camera's centre. The camera looks at
-# hq_table_cam_look, offset by the live pan (see _station_xform), so the centre is just
-# that look point shifted by _table_pan — i.e. where a ray down the camera's centre
-# meets the map. Selection tracks whichever target lies nearest here.
-func _table_center_pos() -> Vector3:
-	var cfg: GameConfig = Config.data
-	return Vector3(cfg.hq_table_cam_look.x + _table_pan.x, 0.0, cfg.hq_table_cam_look.z + _table_pan.z)
-
-
-# Seat the cursor on the highest-difficulty rally pin the player hasn't completed yet,
-# panning the camera to it. Difficulty is the hidden authored tier; ties break toward
-# the first such pin in rally order (targets are built in that order). Completed pins are
-# skipped. Returns false when there's no incomplete pin (all done, or no pins at all),
-# leaving the caller to seat focus some other way.
-func _focus_hardest_incomplete() -> bool:
-	var targets := _table_targets()
-	var best := -1
-	var best_diff := -1
-	for i in targets.size():
-		var t: Dictionary = targets[i]
-		if String(t["kind"]) != "pin":
-			continue
-		var rally_id := String((t["node"] as Node3D).get_meta("rally_id"))
-		if Save.rally_completed(rally_id):
-			continue
-		var rally := RallyLibrary.by_id(rally_id)
-		var diff := int(rally.get("difficulty", 0)) if not rally.is_empty() else 0
-		if diff > best_diff:
-			best_diff = diff
-			best = i
-	if best < 0:
-		return false
-	_focus_table_target(best, true)  # pan the camera onto it so selection sticks
-	return true
-
-
-# Seat the cursor on whichever pin sits nearest the view
-# centre, without moving the camera (the player already put it there). This is the
-# raycast-to-centre selection that keyboard pan, drag pan, and table entry all share.
-func _select_target_under_center() -> void:
-	var targets := _table_targets()
-	if targets.is_empty():
-		_table_focus_index = -1
-		return
-	var center := _table_center_pos()
-	var best := -1
-	var best_d := INF
-	for i in targets.size():
-		var off: Vector3 = Vector3(targets[i]["pos"]) - center
-		off.y = 0.0
-		var d := off.length()
-		if d < best_d:
-			best_d = d
-			best = i
-	if best >= 0:
-		_focus_table_target(best, false)
-
-
-# Seat the cursor on target `i`, paint the focus highlight (the hover-style readout
-# underline), and (when `pan`) slide the map so the focused pin centres under the
-# table camera.
-func _focus_table_target(i: int, pan := true) -> void:
-	var targets := _table_targets()
-	if targets.is_empty():
-		_table_focus_index = -1
-		return
-	_table_focus_index = clampi(i, 0, targets.size() - 1)
-	var sel: Dictionary = targets[_table_focus_index]
-	for t in targets:
-		var on: bool = t == sel
-		var node: Node3D = t["node"]
-		if node.has_meta("label_panel"):
-			UITheme.mark_panel_focused(node.get_meta("label_panel"), on)
-	if pan:
-		_pan_table_to(Vector3(sel["pos"]))
-
-
-# Fire the focused target: open the pin's rally detail.
-func _activate_table_focus() -> void:
-	var targets := _table_targets()
-	if _table_focus_index < 0 or _table_focus_index >= targets.size():
-		return
-	var t: Dictionary = targets[_table_focus_index]
-	match String(t["kind"]):
-		"pin":
-			_on_rally_pin(String((t["node"] as Node3D).get_meta("rally_id")))
-
-
-# Slide the map so `target` (a table-plane world position) centres under the table
-# camera's look point, clamped to the map extents (as a finger-drag would).
-func _pan_table_to(target: Vector3) -> void:
-	var cfg: GameConfig = Config.data
-	var half: Vector2 = cfg.hq_map_plane_size
-	_table_pan.x = clampf(target.x - cfg.hq_table_cam_look.x, -half.x * 0.5, half.x * 0.5)
-	_table_pan.z = clampf(target.z - cfg.hq_table_cam_look.z, -half.y * 0.5, half.y * 0.5)
-	if _view == View.TABLE:
-		_move_camera_to(_station_xform(View.TABLE), false)
-
-
-func _on_rally_pin(rally_id: String) -> void:
-	_selected_rally_id = rally_id
-	_show_detail()
-
-
-# Show the detail panel for the selected rally (a sub-state of the TABLE view).
-func _show_detail() -> void:
-	var rally := RallyLibrary.by_id(_selected_rally_id)
-	# The stage COUNT is all the per-stage detail the panel shows now — it rides on the
-	# title ("Coastal Sprint - 3 stages") instead of a whole left-hand column.
-	var stage_count: int = (rally.get("events", []) as Array).size()
-	_detail_title.text = "%s - %d %s" % [
-		String(rally.get("name", "?")), stage_count,
-		"stage" if stage_count == 1 else "stages"]
-	var region := String(rally.get("region", ""))
-	_detail_region.text = region  # UITheme.enforce uppercases it
-	_detail_region.visible = region != ""
-	# Difficulty is a hidden tier (it drives reward value, not anything the player
-	# sees) — the eligible-car requirement is the visible gate. The gold chip marks a
-	# star-gated special event.
-	_detail_special.visible = RallyLibrary.is_special(rally)
-
-	# --- Eligibility: restriction + how many of the player's cars can enter.
-	_detail_restriction.text = _restriction_text(rally.get("restriction", {}))
-	var elig := _eligibility_summary(rally, Save.profile.get("cars", []))
-	var total := int(elig["total"])
-	var qualify := int(elig["qualify"])
-	if total == 0:
-		_detail_qualify.text = "No cars owned yet"
-		_detail_qualify.add_theme_color_override("font_color", UITheme.INK_DIM)
-	elif qualify == 0:
-		_detail_qualify.text = "No cars qualify"
-		_detail_qualify.add_theme_color_override("font_color", UITheme.RED)
-	else:
-		_detail_qualify.text = _qualifying_cars_text(elig["names"])
-		_detail_qualify.add_theme_color_override("font_color", UITheme.GREEN)
-	var adjust := int(elig["adjust"])
-	_detail_adjust.visible = adjust > 0
-	_detail_adjust.text = "%d need a tune / swap to fit" % adjust
-	# No owned car qualifies for this rally yet — the button would only lead to an
-	# empty car park, so disable it rather than let the player tap through to it.
-	_detail_enter_button.disabled = qualify == 0
-
-	# --- Record: best finish + medal stars.
-	var best := Save.best_placement(_selected_rally_id)
-	_detail_record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
-	# The star row always shows, unrun or not — an empty row of three reads as
-	# "no medals yet" and keeps the record line's layout stable between rallies.
-	_detail_stars.visible = true
-	_detail_stars.setup(_stars_for(_selected_rally_id), MAX_STARS)
-
-	_detail_open = true
-	_view = View.TABLE
-	_update_overlays()
 
 
 # How many of the player's owned `cars` can enter `rally`, tallied on top of
@@ -2626,6 +1714,7 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	return {"total": total, "qualify": qualify, "adjust": adjust, "names": names}
 
 
+
 # The qualifying-car read-out: name the cars rather than counting them. Caps the list at
 # MAX_QUALIFY_NAMES and tails the rest as "+N more" so a big garage can't blow the panel
 # out. Callers only reach this with a non-empty list (empty is its own RED message).
@@ -2637,10 +1726,6 @@ func _qualifying_cars_text(names: Array) -> String:
 		shown.append(String(names[i]))
 	return "%s, +%d more" % [", ".join(shown), names.size() - MAX_QUALIFY_NAMES]
 
-
-func _hide_detail() -> void:
-	_detail_open = false
-	_update_overlays()
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
@@ -2840,9 +1925,9 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	_garage_actions_row.add_child(back)
 	buttons.append(back); actions.append(on_back)
 	# Career: the rally table — a convenience button mirroring the clickable 3D table.
-	var to_table := _station_button("Career", _enter_table)
+	var to_table := _station_button("Career", _table_ui._enter_table)
 	_garage_actions_row.add_child(to_table)
-	buttons.append(to_table); actions.append(_enter_table)
+	buttons.append(to_table); actions.append(_table_ui._enter_table)
 	# Where Career ended up. Mystery Box is omitted entirely when none is held, so no
 	# index here is a constant — asked of the array the cursor actually indexes into
 	# rather than re-derived from the construction order, so adding or moving a button
@@ -2872,10 +1957,10 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 		_garage_actions_row.add_child(to_box)
 		buttons.append(to_box); actions.append(_on_open_mystery_box)
 	# Online LAST: the Daily/Weekly/Monthly seeded Rally Challenge entry point (a modal
-	# overlay over the garage, see build_challenge_overlay / _open_challenge_overlay).
-	var to_online := _station_button("Online", _open_challenge_overlay)
+	# overlay over the garage, see build_challenge_overlay / _challenge_ui._open_challenge_overlay).
+	var to_online := _station_button("Online", _challenge_ui._open_challenge_overlay)
 	_garage_actions_row.add_child(to_online)
-	buttons.append(to_online); actions.append(_open_challenge_overlay)
+	buttons.append(to_online); actions.append(_challenge_ui._open_challenge_overlay)
 	_garage_cursor.setup(buttons, actions)
 	# Seat BEFORE the settle so the row is painted once, with the right cursor. Doing this
 	# in the caller instead meant this function painted a stale focus that was immediately
@@ -3008,7 +2093,7 @@ func _clear_lift_car() -> void:
 			# exactly like _release_page_props does for parked cars, so the car park /
 			# Free Roam / a future lift visit can reuse it with no re-instancing.
 			_lift_car.visible = false
-			_lift_car.global_position = _prewarm_stow_marker().global_position
+			_lift_car.global_position = _carpark_ui._prewarm_stow_marker().global_position
 		else:
 			_lift_car.queue_free()
 	_lift_car = null
@@ -3052,7 +2137,7 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 		"owned": owned,
 		"configure": configure,
 		"disable_process": true,
-		"smoke": _add_synthetic_smoke,
+		"smoke": _carpark_ui._add_synthetic_smoke,
 	})
 	_car_cache[instance_id] = {"hash": owned_hash, "node": fresh}
 	return fresh
@@ -3209,7 +2294,7 @@ func _show_empty_carpark(message: String) -> void:
 func _enter_car_screen() -> void:
 	_carpark_mode = CarparkMode.RALLY
 	_start_button.text = "Start Rally"
-	_build_eligible_lineup()
+	_carpark_ui._build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var done := Save.rally_completed(_selected_rally_id)
 	_rally_banner.text = "%s%s — needs %s" % [
@@ -3223,7 +2308,7 @@ func _enter_car_screen() -> void:
 		return
 	_no_eligible_label.visible = false
 	_focus = 0
-	_focus_changed(true)  # snaps the camera onto the first car
+	_carpark_ui._focus_changed(true)  # snaps the camera onto the first car
 
 
 # Test Drive from the tuning bay: launch free roam with the car currently on the lift —
@@ -3244,7 +2329,7 @@ func _test_drive() -> void:
 func _enter_free_roam() -> void:
 	_carpark_mode = CarparkMode.FREEROAM
 	var previews := _all_car_previews()
-	_build_lineup(previews, _index_of_model(previews, String(Save.selected_car().get("model_id", ""))))
+	_carpark_ui._build_lineup(previews, _index_of_model(previews, String(Save.selected_car().get("model_id", ""))))
 	_rally_banner.text = "Free roam — pick any car"
 	_no_eligible_label.visible = false
 	_start_button.text = "Start Free Roam"
@@ -3253,7 +2338,7 @@ func _enter_free_roam() -> void:
 	_detail_open = false
 	_update_overlays()
 	# Fly (don't snap) — a tween carries the player smoothly from the garage into the shot.
-	_focus_changed(false)
+	_carpark_ui._focus_changed(false)
 
 
 # The index of the first preview whose model matches `model_id` within `cars`, or 0 when
@@ -3282,7 +2367,7 @@ func _car_back() -> void:
 		# lineup builds and erroring on the next connect. Drop it here.
 		if lineup_built.is_connected(_apply_wheel_preview):
 			lineup_built.disconnect(_apply_wheel_preview)
-	_clear_lineup()
+	_carpark_ui._clear_lineup()
 	_selected_instance_id = -1
 	var mode := _carpark_mode
 	_carpark_mode = CarparkMode.RALLY  # leaving the park in every case
@@ -3297,7 +2382,7 @@ func _car_back() -> void:
 			_enter_lift()
 		CarparkMode.CHALLENGE:
 			_go_to(View.GARAGE)
-			_open_challenge_overlay()
+			_challenge_ui._open_challenge_overlay()
 		_:
 			_go_to(View.TABLE)
 
@@ -3310,7 +2395,7 @@ func _enter_engine_swap() -> void:
 	_selected_instance_id = -1  # no partner chosen yet; guards _select_swap_target
 	var current_id := Save.selected_instance_id()
 	var targets := _swap_targets(current_id)
-	_build_lineup(targets)
+	_carpark_ui._build_lineup(targets)
 	_rally_banner.text = "Engine swap"
 	_start_button.text = "Swap Engine"
 	_view = View.CARPARK
@@ -3323,7 +2408,7 @@ func _enter_engine_swap() -> void:
 		return
 	_no_eligible_label.visible = false
 	_focus = 0
-	_focus_changed(true)
+	_carpark_ui._focus_changed(true)
 
 
 # Open a held mystery box: resolves + spends it as one atomic save transaction
@@ -3384,7 +2469,7 @@ func _enter_wheel_swap() -> void:
 	_wheel_index = WheelStyle.option_index(_wheel_options, owned, model_id)
 	# A ONE-CAR lineup: _render_lineup_page centres a short page in the lot, so the car
 	# stands alone over a real bay with no neighbours competing for the side-on frame.
-	_build_lineup([owned])
+	_carpark_ui._build_lineup([owned])
 	_rally_banner.text = "Wheels"
 	_start_button.text = "Fit Wheels"
 	_view = View.CARPARK
@@ -3398,7 +2483,7 @@ func _enter_wheel_swap() -> void:
 	# One full _focus_changed to seat the selection / camera / damage row, then the wheel
 	# label takes over the name line. Subsequent cycling deliberately does NOT re-run
 	# _focus_changed (it would rev the engine and rewrite the label "1 of 1" every flick).
-	_focus_changed(true)
+	_carpark_ui._focus_changed(true)
 	# The parked prop is streamed in ASYNCHRONOUSLY (_spawn_lineup_progressive awaits at
 	# least a physics frame before it settles the wheels and emits), so applying the
 	# preview now would run against an empty _cars. Fire it once the lot is actually built.
@@ -3463,7 +2548,7 @@ func _commit_wheels() -> void:
 	Save.set_wheels(_wheel_instance_id, id)
 	_wheel_options = []
 	_wheel_instance_id = -1
-	_clear_lineup()
+	_carpark_ui._clear_lineup()
 	_carpark_mode = CarparkMode.RALLY
 	_enter_lift()
 
@@ -3518,7 +2603,7 @@ func _all_car_previews() -> Array:
 # the player's first car (see _confirm_starter); Back returns to the title.
 func _enter_starter_pick() -> void:
 	_carpark_mode = CarparkMode.STARTER
-	_build_lineup(_starter_previews())
+	_carpark_ui._build_lineup(_starter_previews())
 	_rally_banner.text = "Choose your starter car"
 	_no_eligible_label.visible = false
 	_start_button.text = "Choose This Car"
@@ -3527,7 +2612,7 @@ func _enter_starter_pick() -> void:
 	_detail_open = false
 	_update_overlays()
 	_focus = 0
-	_focus_changed(true)
+	_carpark_ui._focus_changed(true)
 
 
 # Commit the focused preview as the player's first car: grant it, record the choice,
@@ -3543,365 +2628,17 @@ func _confirm_starter() -> void:
 	Save.profile["starter_model_id"] = model_id
 	Save.set_selected_car(int(car.get("instance_id", -1)))
 	Save.save()
-	_clear_lineup()
+	_carpark_ui._clear_lineup()
 	_selected_instance_id = -1
 	_carpark_mode = CarparkMode.RALLY
 	_go_to(View.GARAGE)
 
 
-# --- Car park (the eligible lineup) ------------------------------------------
-
-# Release just the CURRENTLY-PARKED page's props + markers, cancelling any in-flight
-# settle. Leaves `_lineup` and the detune/drivetrain maps intact — a page flip re-renders
-# on top of the same list.
-func _release_page_props() -> void:
-	_settle_generation += 1  # cancel any pending settle-then-freeze for this lineup
-	# Hide the parked cars rather than freeing them, so a re-entry into any lineup can
-	# reuse the cached instances (see _car_cache / _build_lineup). Their frozen bodies stay
-	# ray-pickable (CarProp.stop_physics), so STOW them off-screen too — otherwise a hidden
-	# car left sitting in its bay would intercept a tap-to-focus ray meant for the NEW page's
-	# car spawned at the same bay (_car_index_at). Reuse re-seats them via _seat_car_at_marker.
-	var stow := _prewarm_stow_marker().global_position
-	for car in _cars:
-		if is_instance_valid(car):
-			car.visible = false
-			car.global_position = stow
-	for marker in _markers:
-		if is_instance_valid(marker):
-			marker.queue_free()
-	_cars = []
-	_markers = []
-
-
-# Full car-park teardown, used when LEAVING the lot (back / launch): release the page
-# props and forget the list + cursor + per-rally detune maps.
-func _clear_lineup() -> void:
-	_release_page_props()
-	_lineup.setup([], max(1, Config.data.carpark_page_size))
-	_eligible = []
-	_detune_needed = {}
-	_drivetrain_needed = {}
-
-
-# Free every cached (and currently active) parked car outright — used when the cache
-# would otherwise leak, e.g. eviction of preview cars no longer offered. Frees the node and drops its entry.
-func _free_cached_car(instance_id: int) -> void:
-	var entry: Dictionary = _car_cache.get(instance_id, {})
-	var node = entry.get("node")
-	if is_instance_valid(node):
-		node.queue_free()
-	_car_cache.erase(instance_id)
-
-
-# Drop cache entries for cars the player no longer owns, freeing their nodes so the cache
-# doesn't outlive the collection. PREVIEW entries (negative instance_id — Free Roam's
-# whole-catalogue previews, pre-warmed once and kept in memory for the session) are NEVER
-# evicted here: they aren't "owned", but re-warming them is exactly the lag spike we're
-# avoiding, so they persist for the HQ's lifetime (freed only with the HQ node). Entries
-# in `keep` (the list currently being built) are preserved too.
-func _evict_unowned_cached_cars(keep: Array = []) -> void:
-	var owned_ids := {}
-	for car in Save.profile.get("cars", []):
-		owned_ids[int(car.get("instance_id", -1))] = true
-	for car in keep:
-		owned_ids[int(car.get("instance_id", -1))] = true
-	for id in _car_cache.keys():
-		if int(id) < 0:
-			continue  # a preview / pre-warmed car — keep it warm in memory
-		if not owned_ids.has(id):
-			_free_cached_car(id)
-
-
-# Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
-# any OVER-POWERED car a detune could fit under the rally's pw_max cap — those park
-# looking eligible, and pressing Start pops the over-limit prompt routing to the
-# upgrades menu (_show_over_limit_prompt / _on_start_pressed).
-func _build_eligible_lineup() -> void:
-	var rally := RallyLibrary.by_id(_selected_rally_id)
-	var eligible: Array = []
-	var needs_detune := {}
-	var needs_drivetrain := {}
-	for car in Save.profile.get("cars", []):
-		# NO challenge-lock exclusion (the rationale is spelled out in _swap_targets): a
-		# car fielded by an active challenge run can still be entered into a career rally.
-		var plan := _entry_plan(rally, car)
-		if not bool(plan["eligible"]):
-			continue
-		eligible.append(car)
-		var id := int(car.get("instance_id", -1))
-		if int(plan["drivetrain"]) >= 0:
-			needs_drivetrain[id] = int(plan["drivetrain"])
-		if float(plan["detune"]) > 0.0:
-			needs_detune[id] = float(plan["detune"])
-	_build_lineup(eligible)  # clears _detune_needed / _drivetrain_needed, then repopulated below
-	_detune_needed = needs_detune
-	_drivetrain_needed = needs_drivetrain
-
-
-# The engine-detune fraction that would let `owned` enter `rally`, for the one case
-# the car-park prompt covers: the car is TOO POWERFUL (its current p/w sits over the
-# rally's pw_max cap) but tuning the engine down would duck it under. -1.0 when the
-# car is under the cap (already eligible, or ineligible for a reason detuning can't
-# fix — those cars keep today's behaviour) or when no detune qualifies it.
-func _qualifying_detune_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary, drive_override := -1) -> float:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("pw_max"):
-		return -1.0
-	# Compare the ROUNDED hp/tonne (the figure the player actually sees) so this agrees with
-	# RallyLibrary.ineligibility_reason — a car already at/under the displayed cap shouldn't
-	# be treated as needing a detune.
-	if CarLibrary.power_to_weight_hp_tonne(meta) <= roundi(float(r["pw_max"])):
-		return -1.0
-	var frac := RallyLibrary.qualifying_detune(rally, _full_power_meta(owned, entry, drive_override))
-	return frac if frac > 0.0 and frac < 1.0 else -1.0
-
-
-# The drive mode this car would switch to for `rally` (the rally's required mode), or -1
-# when the rally has no drive_mode rule, the car lacks the swap kit, or it's already in
-# that mode. Judges ONLY the drive_mode dimension — callers layer detune on top.
-func _switch_target_for(rally: Dictionary, owned: Dictionary, meta: Dictionary) -> int:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("drive_mode"):
-		return -1
-	if not UpgradeLibrary.drivetrain_swap_unlocked(owned):
-		return -1
-	var required := int(r["drive_mode"])
-	if int(meta.get("drive_mode", -1)) == required:
-		return -1
-	return required
-
-
-# The drive mode `owned` must switch to in order to enter `rally`, or -1 when it's
-# already compliant OR can't be switched (no swap kit / rally has no drive_mode rule /
-# fails for another reason). Accepts a switch that qualifies ALONE, or a switch that
-# qualifies when STACKED with an engine detune (see _qualifying_detune_for).
-func _qualifying_drivetrain_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary) -> int:
-	var target := _switch_target_for(rally, owned, meta)
-	if target < 0:
-		return -1
-	var switched := meta.duplicate()
-	switched["drive_mode"] = target
-	if RallyLibrary.is_eligible(rally, switched):
-		return target
-	return target if _qualifying_detune_for(rally, owned, entry, switched, target) > 0.0 else -1
-
-
-# The car's effective stats at FULL engine tune (detune 1.0), whatever the stored
-# slider value — the base the qualifying-detune math scales down from, so the prompt
-# always proposes an absolute slider setting. `drive_override` stamps a switched
-# drive_mode on top, so a switch+detune stack is evaluated on the POST-switch mode.
-func _full_power_meta(owned: Dictionary, entry: Dictionary, drive_override := -1) -> Dictionary:
-	return _meta_with_drive(_detuned_to_full(owned), entry, drive_override)
-
-
-# Park ALL owned cars for the title screen, so the player's whole collection is on
-# show in the car park behind the title overlay (rebuilt on entering EXTERIOR). A
-# fresh player (no car owned yet, starter not picked) has an empty lot, so show the
-# three starter cars as previews instead — the same set the starter picker offers.
-func _build_title_lineup() -> void:
-	var owned: Array = Save.profile.get("cars", [])
-	if owned.is_empty():
-		_build_lineup(_starter_previews())
-	else:
-		_build_lineup(owned.duplicate())
-
-
-# Park the given owned cars in the painted bays, laid out as a centred row ALONG X at
-# the car-park lot (GameConfig.hq_carpark_origin / menu_car_spacing), each car parked
-# nose-out toward the courtyard / menu camera (+Z) so the front-3/4 framing shows its
-# face with the garage behind it. Fewer cars than bays are centred within the grid so
-# they stay over real bays. The cars are placed resting on their wheels and frozen at
-# once (see _spawn_parked_car). Central entry for EVERY car-park screen — rally car-select,
-# the garage picker, engine-swap, the starter picker, Free Roam and the title backdrop —
-# each of which just hands its full car list here; CarList (_lineup) pages through it.
-func _build_lineup(cars: Array, start_global := 0) -> void:
-	_release_page_props()  # bumps _settle_generation, cancelling any in-flight spawn
-	# A fresh list drops any per-rally over-limit maps from the previous build; the rally
-	# car-select repopulates them right after (see _build_eligible_lineup).
-	_detune_needed = {}
-	_drivetrain_needed = {}
-	# Hand the WHOLE list to the paginator and seat the cursor; it hands back one page at
-	# a time. `carpark_page_size` bays per page — the list itself is unbounded.
-	_lineup.setup(cars, max(1, Config.data.carpark_page_size), start_global)
-	_evict_unowned_cached_cars(cars)  # drop cached nodes for cars sold since the last build
-	_render_lineup_page()
-
-
-# Spawn the CURRENT page of the paginator into the painted bays. Called on entry and on
-# every page flip (_cycle_focus); rebuilds only the visible page's props, so a 300-car
-# collection never parks more than `carpark_page_size` heavy physics props at once.
-func _render_lineup_page() -> void:
-	_release_page_props()
-	_eligible = _lineup.page_items()
-	_focus = _lineup.focus
-	var cfg: GameConfig = Config.data
-	var n := _eligible.size()
-	var bays: int = max(1, cfg.carpark_page_size)
-	var center := HQEnvironment.carpark_center()
-	# Lay out the lot markers up front (cheap Marker3Ds): the camera framing and the
-	# focus cursor key off _markers / _eligible, so they work immediately even while the
-	# heavy car props are still streaming in below. Centre a short final page within the
-	# lot so its cars stay over real bays.
-	var start: int = max(0, floori((bays - n) / 2.0))
-	for i in n:
-		var marker := Marker3D.new()
-		marker.position = Vector3(_bay_center_x(start + i, bays), 0.0, center.z)
-		# Nose toward +Z (the courtyard / camera), so the menu camera sits in front.
-		marker.rotation.y = PI
-		add_child(marker)
-		_markers.append(marker)
-	# Spawn the heavy car props ONE PER FRAME instead of all at once. Each car is a full
-	# physics scene (chassis + wheels + drivetrain + mesh duplication), so building the
-	# whole lineup in a single frame hitches; spreading it out keeps each frame cheap and
-	# lets a car that takes longer than one frame to instance spill into its own frame
-	# without piling onto the others. Guarded by _settle_generation so a rebuild (or a
-	# back-out) abandons a half-spawned lineup cleanly.
-	_spawn_lineup_progressive(_eligible, _settle_generation)
-
-
-# Stream the parked car props in across frames (see _build_lineup), then let them
-# settle and freeze. Bails the moment a newer lineup supersedes this one.
-func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
-	for i in cars.size():
-		if generation != _settle_generation:
-			return  # a rebuild / back-out replaced this lineup mid-stream
-		var car := _obtain_parked_car(cars[i], _markers[i])
-		# A failed spawn (e.g. a car model/texture that couldn't load) returns null —
-		# skip it rather than let the null escape into _cars or the get_meta call below,
-		# which would throw and silently abort this coroutine mid-loop, leaving
-		# lineup_built never emitted and the boot's `await lineup_built` (see _ready)
-		# hung forever behind the loading cover.
-		if car == null:
-			push_warning("HQ: skipping lineup slot %d — car spawn returned null (bad model/texture?)" % i)
-			continue
-		_cars.append(car)
-		# Both fresh and cached cars are placed frozen at rest (see _spawn_parked_car /
-		# _obtain_parked_car), so there's nothing to settle. Only a freshly-instanced car
-		# (heavy: physics scene + mesh duplication) is spread across a frame to avoid
-		# hitching; a cached car reappears with no per-frame cost.
-		if car.get_meta("lineup_fresh", false):
-			await get_tree().process_frame
-	if generation != _settle_generation:
-		return
-	# Refine the analytic seating: droop each parked car's wheels onto the actual lot
-	# floor via a downward raycast. Runs after a physics frame so newly-added bodies are
-	# visible to the space query; guarded so a rebuild/back-out abandons it cleanly.
-	await get_tree().physics_frame
-	if generation != _settle_generation:
-		return
-	for car in _cars:
-		if is_instance_valid(car):
-			car.settle_wheels_to_ground(car.ground_raycast())
-	emit_signal("lineup_built")
-
-
-# Return a parked car for `owned` at `marker`, reusing the cached instance when this
-# car's data is unchanged (deep hash match) or (re)spawning a fresh one otherwise. The
-# returned node carries a "lineup_fresh" meta so the caller knows whether it still
-# needs to settle. Updates _car_cache in place.
-func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
-	var instance_id := int(owned.get("instance_id", -1))
-	var owned_hash := owned.hash()
-	var cached: Dictionary = _car_cache.get(instance_id, {})
-	var node = cached.get("node")
-	if is_instance_valid(node) and int(cached.get("hash", 0)) == owned_hash:
-		# Reuse: it's already built, sized, and frozen. Re-seat it analytically at the new
-		# bay so it sits on its wheels (writing the raw marker transform would drop the
-		# body to ground level — marker y = 0 — and sink it). Reset process_mode in case
-		# this node was last borrowed by the tuning lift (_spawn_lift_car disables it).
-		_seat_car_at_marker(node, marker)
-		node.visible = true
-		node.process_mode = Node.PROCESS_MODE_INHERIT
-		node.set_meta("lineup_fresh", false)
-		node.set_meta("owned_instance_id", instance_id)
-		return node
-	# Stale (data changed) or missing: drop any old node and spawn afresh.
-	if is_instance_valid(node):
-		node.queue_free()
-	var fresh := _spawn_parked_car(owned, marker)
-	fresh.set_meta("lineup_fresh", true)
-	fresh.set_meta("owned_instance_id", instance_id)
-	_car_cache[instance_id] = {"hash": owned_hash, "node": fresh}
-	return fresh
-
-
-# Spawn one owned car as a silent car prop resting at a marker, with its OWN mesh
-# copies (see CarProp.dup_meshes) so a mixed lineup shows each at its true size. Placed with
-# its wheels on the bay via the analytic rest ride height (car.gd:settled_ride_height)
-# and frozen at once — no live physics to settle, so nothing to mistime or drift.
-# An off-screen stow marker the pre-warmed Free Roam props seat at until Free Roam re-seats
-# them at real bays. Sunk far below the lot so the hidden, frozen props never intersect the
-# garage / lift cars or get ray-picked. Created lazily and kept for the HQ's lifetime.
-func _prewarm_stow_marker() -> Marker3D:
-	if not is_instance_valid(_prewarm_marker):
-		_prewarm_marker = Marker3D.new()
-		_prewarm_marker.position = Vector3(0.0, -1000.0, 0.0)
-		add_child(_prewarm_marker)
-	return _prewarm_marker
-
-
-# Pre-warm the Free Roam picker: spawn each catalogue preview as a HIDDEN, cached parked
-# prop so entering Free Roam reuses them via _obtain_parked_car with no fresh instancing —
-# that first-entry build (car.tscn embeds all car glbs) is the lag spike. This is the
-# SYNCHRONOUS form (one long beat); the shipped boot path uses the frame-spread
-# _prewarm_free_roam_deferred instead, off the critical path. The props land in _car_cache keyed by their
-# (negative) preview instance_id, exactly where _obtain_parked_car looks, and are kept for
-# the session (never evicted — see _evict_unowned_cached_cars). Idempotent: a preview already
-# warm (matching hash) is skipped, so a stray re-call is a cheap no-op.
-func _prewarm_free_roam() -> void:
-	for preview in _all_car_previews():
-		_warm_one_preview(preview)
-	_prewarm_complete = true
-
-
-# Spawn ONE catalogue preview into _car_cache as a hidden, stowed prop. Returns true when
-# it actually spawned (false = already warm, so the call was a no-op). The unit of work
-# shared by _prewarm_free_roam and its deferred, frame-spread twin below.
-func _warm_one_preview(preview: Dictionary) -> bool:
-	var instance_id := int(preview.get("instance_id", -1))
-	var preview_hash: int = preview.hash()
-	var cached: Dictionary = _car_cache.get(instance_id, {})
-	if is_instance_valid(cached.get("node")) and int(cached.get("hash", 0)) == preview_hash:
-		return false  # already warm
-	if is_instance_valid(cached.get("node")):
-		cached["node"].queue_free()
-	var node := _spawn_parked_car(preview, _prewarm_stow_marker())
-	node.visible = false
-	_car_cache[instance_id] = {"hash": preview_hash, "node": node}
-	return true
-
-
-# The deferred prewarm: the same work as _prewarm_free_roam, but started AFTER the loading
-# cover lifts and spread one prop per frame, so HQ is interactive at the end of _build_hq
-# instead of one whole prewarm later (§2.14 / E8 — the prewarm measured ~3x the rest of
-# HQ boot). Each spawn is still a single indivisible beat, so the trickle isn't free: it's
-# a handful of frames of hitch while the player looks at the static title shot, instead of
-# a frozen boot. Awaiting a frame BETWEEN spawns also lets input and the reveal tween run.
-#
-# If the player opens Free Roam before this finishes, nothing breaks and nothing is
-# dropped: _build_lineup goes through _obtain_parked_car, which reuses whatever is already
-# warm and instances the rest on the spot (the old first-entry cost, but only for the
-# not-yet-warmed remainder), and those lineup nodes land in _car_cache under the same
-# key + hash, so this loop simply skips them when it resumes on the next frame.
-#
-# Idempotent and self-cancelling: re-entrant calls bail, and the loop stops if the HQ
-# leaves the tree (exit to a race frees the node and everything it cached).
-func _prewarm_free_roam_deferred() -> void:
-	if _prewarm_complete or _prewarm_running:
-		return
-	_prewarm_running = true
-	var t0 := Time.get_ticks_msec()
-	var spawned := 0
-	for preview in _all_car_previews():
-		if not is_inside_tree():
-			_prewarm_running = false
-			return
-		if _warm_one_preview(preview):
-			spawned += 1
-			await get_tree().process_frame
-	_prewarm_running = false
-	_prewarm_complete = true
-	_log_prewarm_cost(Time.get_ticks_msec() - t0, spawned)
+# --- Kept on HqController, NOT moved with the carpark cut --------------------
+# _log_boot_cost runs from _ready (an engine callback on this node), and the two stats
+# helpers below are shared: _restriction_text is called by hq_table.gd and _car_stats_text
+# by both the carpark and the lift readouts. The PREWARM logging moved to hq_carpark.gd
+# with the prewarm it measures — only the boot log is HqController's.
 
 
 # --- Boot instrumentation (todo/mobile-web-performance.md §2.14) --------------------
@@ -3916,13 +2653,6 @@ func _prewarm_free_roam_deferred() -> void:
 # greps cleanly. Called only from the non-headless path in _ready, so it is silent under
 # the test runner exactly like world.gd::_stage.
 
-# Rough per-vertex byte cost of an interleaved car vertex (position + normal + tangent +
-# UV, packed). Only used to turn vertex/index counts into an order-of-magnitude MB figure
-# in the log below — it is an estimate label, never a budget.
-const CAR_MESH_VERTEX_BYTES := 32
-const CAR_MESH_INDEX_BYTES := 4
-
-
 # Print HQ's boot wall-clock and the resident cost of _car_cache at the current garage
 # size. Cheap: the mesh walk reads ArrayMesh surface header counts
 # (surface_get_array_len / surface_get_array_index_len) — it never copies a surface array
@@ -3930,355 +2660,6 @@ const CAR_MESH_INDEX_BYTES := 4
 func _log_boot_cost(build_ms: int) -> void:
 	print("hq boot stage: %-22s %5d ms" % ["build", build_ms])
 	print("hq boot total: %d ms" % build_ms)
-
-
-# Printed when the deferred Free Roam prewarm finishes (see _prewarm_free_roam_deferred).
-# Wall-clock here spans the awaited frames, so it is NOT boot cost — it's how long after
-# the reveal the cache took to fill. The resident car-cache figures follow it because the
-# cache is only at full size once the warm completes.
-func _log_prewarm_cost(elapsed_ms: int, spawned: int) -> void:
-	print("hq prewarm (deferred, off boot path): %d props over %d ms wall-clock"
-		% [spawned, elapsed_ms])
-	var cost := _car_cache_mesh_cost()
-	print("hq car cache: %d props (%d preview, %d owned-garage), %d meshes, ~%.2f MB mesh data (est)"
-		% [cost["props"], cost["previews"], cost["props"] - cost["previews"],
-			cost["meshes"], float(cost["bytes"]) / 1048576.0])
-
-
-# Resident cost of _car_cache: how many props are held, how many of them are the
-# never-evicted Free Roam previews (negative instance_id — see _evict_unowned_cached_cars),
-# how many duplicated meshes they own, and an estimate of those meshes' vertex/index bytes.
-# Returns {"props", "previews", "meshes", "bytes"}.
-func _car_cache_mesh_cost() -> Dictionary:
-	var out := {"props": 0, "previews": 0, "meshes": 0, "bytes": 0}
-	for id in _car_cache:
-		var node = _car_cache[id].get("node")
-		if not is_instance_valid(node):
-			continue
-		out["props"] += 1
-		if int(id) < 0:
-			out["previews"] += 1
-		for child in node.find_children("*", "MeshInstance3D", true, false):
-			# ArrayMesh only: the car glbs import as ArrayMesh, and primitives (if any ever
-			# appear) carry no surface-array counts to read cheaply, so they're skipped
-			# rather than guessed at. That keeps this an under-estimate, never an over-one.
-			var mesh := (child as MeshInstance3D).mesh as ArrayMesh
-			if mesh == null:
-				continue
-			out["meshes"] += 1
-			for s in mesh.get_surface_count():
-				out["bytes"] += (mesh.surface_get_array_len(s) * CAR_MESH_VERTEX_BYTES
-					+ mesh.surface_get_array_index_len(s) * CAR_MESH_INDEX_BYTES)
-	return out
-
-
-func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
-	# Frozen prop resting at its pose: no body integration and no per-frame car script
-	# (drivetrain/steering/aero) cost. We stop physics processing (stop_physics) rather
-	# than fully PROCESS_MODE_DISABLE the node so the body stays a normal member of the
-	# physics space — it must remain ray-pickable for tap-to-focus (see _car_index_at).
-	var configure := func(c) -> void: _seat_car_at_marker(c, marker)
-	return CarProp.spawn(self, _car_scene_res(), {
-		"owned": owned,
-		"configure": configure,
-		"stop_physics": true,
-		"smoke": _add_synthetic_smoke,
-	})
-
-
-# Seat a car on its bay marker with its wheels on the ground: the marker's pose (bay
-# position + facing) lifted by the car's analytic resting ride height. Shared by fresh
-# spawns and cache reuse so both sit identically on their suspension at any bay.
-func _seat_car_at_marker(car: Node, marker: Marker3D) -> void:
-	car.global_transform = marker.global_transform
-	car.global_position += Vector3.UP * car.settled_ride_height()
-	car.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
-
-
-# Give a damaged display car (car park / lift) its own synthetic engine smoke — the
-# frozen prop's engine never runs, so EngineSmoke self-times puffs from the car's
-# damage severity instead of misfire cutouts. Parented to the CAR (so it's freed with
-# it) but top_level (world-space render, ignoring the car transform, like the event
-# pool at the scene root) and PROCESS_MODE_ALWAYS (keeps puffing though the car is
-# frozen / process-disabled). Skipped for a healthy car (severity 0 = no smoke).
-func _add_synthetic_smoke(car: Node) -> void:
-	# Healthy display cars (no misfire severity) don't smoke; the wreck path has no
-	# such gate. The shared attach handles the engine_smoke_enabled check + wiring.
-	if car.get("damage") == null or car.damage.misfire_level(Config.data) <= 0.0:
-		return
-	EngineSmoke.attach_synthetic(car)
-
-
-# Pan the focus to the prev/next car in the list (wrapping). Delegates to the paginator:
-# a move within the page just re-frames; a move across a page boundary flips the page and
-# re-spawns its props (snapping the camera, since the whole lineup changed). At the ends
-# of the whole list it wraps around (single page → wraps in place). See scripts/car_list.gd.
-func _cycle_focus(step: int) -> void:
-	# The cosmetic wheel view parks ONE car, so there are no bays to page: the same
-	# left/right input (plus the ◄ ► nav-row buttons and the swipe gesture, which both
-	# route here) steps the WHEEL list instead. Deliberately bypasses _focus_changed —
-	# the focused car never changes, and that path would rev the engine and overwrite the
-	# wheel name label on every flick.
-	if _carpark_mode == CarparkMode.WHEELS:
-		_cycle_wheel(step)
-		return
-	if _lineup.is_empty():
-		return
-	var page_flipped := _lineup.advance(step)
-	if page_flipped:
-		_render_lineup_page()   # spawn the new page's props; refreshes _eligible / _focus
-		_focus_changed(true)    # snap — the whole lineup just swapped out
-	else:
-		_focus = _lineup.focus
-		_focus_changed()
-
-
-# React to a focus change: make the focused car the selected car, re-aim the camera
-# + stats panel at it. No respawn — every eligible car is already parked.
-func _focus_changed(snap := false) -> void:
-	if _eligible.is_empty():
-		return
-	var owned: Dictionary = _eligible[_focus]
-	_selected_instance_id = int(owned.get("instance_id", -1))
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	# Let the player hear the focused car: rev its (possibly swapped) engine. Fires
-	# on every flick and on the initial lineup show; a new rev cancels the previous.
-	if not entry.is_empty():
-		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))), owned)
-	var stats := _car_stats_text(owned, entry)
-	var display_owned: Dictionary = Save.get_car(_selected_instance_id)
-	var display_name: String = (EngineSwap.display_name(entry, display_owned)
-		if not display_owned.is_empty() else String(entry.get("name", owned.get("model_id", "?"))))
-	# Position across the WHOLE list (all pages), not just the current page.
-	_car_name_label.text = "%s  (%d of %d)" % [
-		display_name, _lineup.global_index() + 1, _lineup.total()]
-	_car_stats_label.text = stats
-	_refresh_swap_preview()
-	if _carpark_mode == CarparkMode.SWAP:
-		# Picking a swap partner: no car is excluded on health; the token cost is
-		# surfaced in the confirm popup, so keep Start enabled and the warning clear.
-		_start_button.disabled = false
-		_car_warning_label.visible = false
-	else:
-		# A wrecked focused car gates Start — permanently.
-		_refresh_focus_damage(owned)
-	_normalize_menus()  # keep house rules on the just-updated car name / stats
-	_move_camera_to(_camera_target_xform(), snap)
-
-
-# Rev the focused car's engine as a short preview (lazily builds the player). The owned
-# car goes along so its FITTED upgrades (turbo / supercharger) are heard, not just the
-# factory engine — see CarPreviewAudio.rev.
-func _preview_rev(engine_id: String, owned_car: Dictionary = {}) -> void:
-	if engine_id.is_empty():
-		return
-	if _preview_audio == null:
-		_preview_audio = CarPreviewAudio.new()
-		add_child(_preview_audio)
-	_preview_audio.rev(engine_id, owned_car)
-
-
-# The two-way power-to-weight preview shown only while picking an engine-swap partner.
-# A swap EXCHANGES engines, so it shows the resulting hp/tonne for the car on the lift
-# (receiving the focused partner's engine) AND the focused partner (receiving the lift
-# car's engine). Coloured ↑ gain / ↓ loss / — unchanged. Hidden in every other mode.
-func _refresh_swap_preview() -> void:
-	if _swap_preview_label == null:
-		return
-	if _carpark_mode != CarparkMode.SWAP:
-		_swap_preview_label.visible = false
-		_swap_preview_label.text = ""
-		return
-	var lift_owned := Save.get_car(Save.selected_instance_id())
-	var partner_owned: Dictionary = _eligible[_focus]
-	if lift_owned.is_empty() or partner_owned.is_empty():
-		_swap_preview_label.visible = false
-		return
-	var lift_entry := CarLibrary.by_id(String(lift_owned.get("model_id", "")))
-	var partner_entry := CarLibrary.by_id(String(partner_owned.get("model_id", "")))
-	var lift_stock := String(lift_entry.get("engine", ""))
-	var partner_stock := String(partner_entry.get("engine", ""))
-	var lift_engine := EngineSwap.current_engine_id(lift_owned, lift_stock)
-	var partner_engine := EngineSwap.current_engine_id(partner_owned, partner_stock)
-	var k := CarLibrary.KW_KG_TO_HP_TONNE
-	# Lift car receives the partner's engine; partner receives the lift car's engine.
-	var lift_before := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(lift_owned, lift_entry)) * k
-	var lift_after := EngineSwap.pw_after_swap(lift_owned, lift_entry, partner_engine) * k
-	var partner_before := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(partner_owned, partner_entry)) * k
-	var partner_after := EngineSwap.pw_after_swap(partner_owned, partner_entry, lift_engine) * k
-	_swap_preview_label.text = "%s\n%s" % [
-		_swap_preview_row(String(lift_entry.get("name", "?")), lift_before, lift_after),
-		_swap_preview_row(String(partner_entry.get("name", "?")), partner_before, partner_after)]
-	_swap_preview_label.visible = true
-
-
-# One preview row: "Name:  before → after hp/tonne ↑" with a coloured arrow.
-func _swap_preview_row(car_name: String, before: float, after: float) -> String:
-	# Palette colours, not hand-typed hex: to_html(false) drops the alpha byte, which BBCode's
-	# [color=#rrggbb] wants. Keeps the up/down/neutral semantics in one place (UITheme).
-	var arrow := "[color=#%s]—[/color]" % UITheme.INK_DIM.to_html(false)
-	if after > before + 0.5:
-		arrow = "[color=#%s]↑[/color]" % UITheme.GREEN.to_html(false)
-	elif after < before - 0.5:
-		arrow = "[color=#%s]↓[/color]" % UITheme.RED.to_html(false)
-	return "[center]%s:  %.0f → %.0f hp/tonne %s[/center]" % [car_name, before, after, arrow]
-
-
-# A wrecked focused car can't be entered — ever: disable Start and say so. There is no
-# repair to offer any more. A healthy car clears all of this — an
-# over-powered car looks eligible here; the over-limit prompt only surfaces as a
-# confirm popup on Start (_show_over_limit_prompt).
-func _refresh_focus_damage(owned: Dictionary) -> void:
-	# WHEELS is purely COSMETIC — a wrecked car can always be re-shod, so damage must never
-	# gate it. Never gate Select on damage in that mode; nor when the focused car isn't
-	# wrecked.
-	if _carpark_mode == CarparkMode.WHEELS or not Save.car_is_wrecked(owned):
-		_start_button.disabled = false
-		_car_warning_label.visible = false
-		return
-	# Wrecked is TERMINAL — there is no repair to offer, so the warning is final rather
-	# than an instruction. Wrecking every car you own hands you a Mystery Box instead
-	# (Save.ensure_wreck_safety_net); opening it grants a fresh car.
-	_start_button.disabled = true
-	_car_warning_label.visible = true
-	_car_warning_label.text = "Wrecked beyond repair — it can't race again. Pick another car."
-
-
-# A full-screen dimmer + centred house panel on the car CanvasLayer, holding `body`
-# built by the caller. Used for the detune prompt and the Change-Upgrades popup so both
-# read as on-brand modals (black panel, sharp corners) instead of native grey dialogs.
-#
-# Same scrolled-body / pinned-footer contract as _make_modal_overlay (read its header for
-# WHY): the caller's `build_body` fills a VBox that lives inside a TouchScrollContainer,
-# and `build_footer` fills the row pinned underneath it, which is where the control that
-# closes the modal belongs. The panel is capped to the frame height (not just centred on
-# it) so the footer is on screen even when the body is taller than the canvas — which the
-# upgrades list, on the 288-high tier, routinely is.
-func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Control:
-	# MenuPage is the shared implementation of this shape. It used to be hand-rolled here
-	# because MenuPage had no dim backdrop and this is a true modal — it must read as blocking
-	# the car park underneath — but `dim` now covers that, so the bespoke copy is gone.
-	#
-	# The reason the old version explained at length for NOT using a CenterContainer (a
-	# CenterContainer hands its child the child's full MINIMUM size, so a panel taller than the
-	# frame overhangs top and bottom and takes the pinned footer off-screen with it) is exactly
-	# what MenuPage._sync_body_height solves: it budgets the box against the frame height and
-	# lets the scroll inside absorb the overflow, so the action row stays reachable.
-	#
-	# margin 16 + padding 20 keep the previous geometry; the caller's `chrome` figure for
-	# _modal_body_width is derived from them (20 either side + 16 either side = 72).
-	var page := MenuPage.new({"dim": true, "margin": 16.0, "padding": 20})
-	build_body.call(page.body())
-	if build_footer.is_valid():
-		# The footer row is now OUTSIDE the box (MenuPage's rule 2), which also means it can no
-		# longer be pushed off the bottom by a growing body — the failure the old comment here
-		# was guarding against by hand.
-		build_footer.call(page.actions())
-	_car_layer.add_child(page)
-	return page
-
-
-# An over-powered focused car (parked because a detune would duck it under the rally's
-# pw_max cap — _build_eligible_lineup) looks eligible in the car park; pressing Start
-# pops this on-brand modal instead. It offers three left/right-navigable choices —
-# Change Upgrades (open the gated upgrades menu, where detune / ballast / stripping parts
-# brings the car under the cap — the menu won't let them leave until it's eligible) or
-# Cancel. No auto-detune button: the player makes the change themselves and re-presses
-# Start (the fix persists like any garage edit — see todo/detune-min-pw-interaction.md).
-func _show_over_limit_prompt(_owned: Dictionary) -> void:
-	_active_carpark_popup = ConfirmPopup.open(self, "Too powerful",
-		"Change your upgrades to get under the power-to-weight limit.",
-		[ {"label": "Cancel", "callback": _close_detune_panel},
-		  {"label": "Change Upgrades", "callback": _detune_change_upgrades} ], 1, 0)
-
-
-# Whether a car-park modal overlay (detune prompt / Change-Upgrades popup) is showing,
-# so _unhandled_input hands navigation to its MenuNav instead of the lineup beneath.
-func _carpark_modal_open() -> bool:
-	return is_instance_valid(_active_carpark_popup) \
-		or (_upgrades_popup != null and _upgrades_popup.visible)
-
-
-func _close_detune_panel() -> void:
-	_focus_changed()
-
-
-# The detune prompt's Change Upgrades choice: close the prompt and open the upgrades
-# menu for the focused car so the player can strip / switch parts to duck under the cap.
-func _detune_change_upgrades() -> void:
-	_show_upgrades_popup(Save.get_car(_selected_instance_id))
-
-
-# Show the upgrades menu over the car-park car-select for the focused car, as an on-brand
-# centred modal. Reuses the UpgradesMenu component with NO engine-swap row (on_swap left
-# invalid — the swap flow would change the HQ view). Nav-wired so it's keyboard/gamepad
-# navigable; Done / back closes it (see _close_upgrades_popup).
-func _show_upgrades_popup(owned: Dictionary) -> void:
-	if _upgrades_popup == null:
-		_upgrades_popup = _make_carpark_modal(
-			func(vbox: VBoxContainer) -> void:
-				# 460 was wider than the whole logical canvas on the short web-touch tier
-				# (~445 units on a 16:9 phone), so it's now the DESKTOP preference and
-				# _modal_body_width clamps it to whatever the frame can actually show;
-				# chrome = the panel's 20-unit padding either side plus the modal margin.
-				vbox.custom_minimum_size = Vector2(_modal_body_width(460.0, 72.0), 0)
-				vbox.add_child(UITheme.title("Upgrades"))
-				_upgrades_popup_menu = UpgradesMenu.new()
-				vbox.add_child(_upgrades_popup_menu),
-			func(footer: HBoxContainer) -> void:
-				# Done is the gated exit (bind_close_button below blocks it, AND back,
-				# while the car is over the p/w cap). It is PINNED outside the scroll:
-				# the controls the player needs in order to get under the cap are the very
-				# ones that grow this list, so letting them push Done off the bottom would
-				# lock a touch player inside a modal they are not allowed to leave.
-				_upgrades_popup_done = Button.new()
-				_upgrades_popup_done.text = "Done"
-				_upgrades_popup_done.focus_mode = Control.FOCUS_ALL
-				# NOTE: press is wired by bind_close_button below (gated), not here.
-				footer.add_child(_upgrades_popup_done))
-	_upgrades_popup_dirty = false
-	_upgrades_popup.visible = true
-	var pw_limit := -1.0
-	if _carpark_mode == CarparkMode.CHALLENGE:
-		var unix_time := int(Time.get_unix_time_from_system())
-		var period := ChallengeLibrary.current_period(_challenge_kind, unix_time)
-		pw_limit = ChallengeLibrary.ceiling_for(String(period.get("key", "")))
-	else:
-		var rally := RallyLibrary.by_id(_selected_rally_id)
-		var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
-		pw_limit = float(restriction.get("pw_max", -1.0))
-	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
-	# Gate Done + Esc/back on the rally's p/w cap: over the cap, the button goes red and
-	# neither it nor MenuNav's on_back closes the popup until the player detunes under it.
-	_upgrades_popup_menu.bind_close_button(_upgrades_popup_done, _close_upgrades_popup)
-	UITheme.enforce(_upgrades_popup)
-	MenuNav.attach(_upgrades_popup, {
-		"first": _upgrades_popup_menu.first_control(),
-		"on_back": _upgrades_popup_menu.request_close,
-	})
-
-
-# A popup upgrade edit: just flag dirty. The UpgradesMenu already repainted its own detune
-# label + gated Done button (the visible feedback); the parked-car prop + lineup are rebuilt
-# on close so a live rebuild can't steal focus from the popup mid-edit.
-func _on_popup_upgrade_changed() -> void:
-	_upgrades_popup_dirty = true
-
-
-# Close the upgrades popup and return to car-select. If anything changed, rebuild the
-# eligible lineup so a now-ineligible car drops out; the player re-presses Start and the
-# normal flow recomputes (eligible → launch; still over → detune prompt reappears).
-func _close_upgrades_popup() -> void:
-	if _upgrades_popup != null:
-		_upgrades_popup.visible = false
-	if _upgrades_popup_dirty:
-		if _carpark_mode == CarparkMode.CHALLENGE:
-			_build_challenge_lineup(_challenge_kind)
-		else:
-			_build_eligible_lineup()
-		_upgrades_popup_dirty = false
-	_focus_changed()
-
 
 
 # One-line car summary shown in the car-select overlay: drive layout,
@@ -4448,9 +2829,9 @@ func _on_start_pressed() -> void:
 			return
 		CarparkMode.CHALLENGE:  # commit the focused eligible car to a fresh challenge run
 			if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
-				_show_over_limit_prompt(Save.get_car(_selected_instance_id))
+				_carpark_ui._show_over_limit_prompt(Save.get_car(_selected_instance_id))
 				return
-			await _begin_challenge_start()
+			await _challenge_ui._begin_challenge_start()
 			return
 	var owned := Save.get_car(_selected_instance_id)
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -4468,7 +2849,7 @@ func _on_start_pressed() -> void:
 	# routes the player to the upgrades menu to shed power (detune / ballast / strip
 	# parts), rather than launching. _detune_needed marks the over-cap-but-fixable cars.
 	if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
-		_show_over_limit_prompt(owned)
+		_carpark_ui._show_over_limit_prompt(owned)
 		return
 	# A car below the class p/w floor is now INELIGIBLE (the floor is judged at the car's
 	# max potential), so it never reaches the car-park lineup — there's no under-powered
@@ -4518,7 +2899,7 @@ func _select_swap_target() -> void:
 # the lift prop with its new engine and return to the upgrades page.
 func _commit_engine_swap(current_id: int, partner_id: int) -> void:
 	Save.swap_engines(current_id, partner_id)
-	_clear_lineup()
+	_carpark_ui._clear_lineup()
 	_selected_instance_id = -1
 	_carpark_mode = CarparkMode.RALLY
 	_ensure_lift_car()  # the engine data changed — the hash flips, so the prop respawns
@@ -4689,17 +3070,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				# tap) skips the WHOLE queue — never one pin at a time, and never
 				# swallowed. Keyboard, gamepad and pointer all get out the same way.
 				if _is_any_press(event):
-					_skip_reveals()
+					_table_ui._skip_reveals()
 					get_viewport().set_input_as_handled()
 			elif _detail_open:
 				if event.is_action_pressed("menu_select"):
 					_enter_car_screen()
 				elif event.is_action_pressed("menu_back"):
-					_hide_detail()
+					_table_ui._hide_detail()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.GARAGE)
 			elif event.is_action_pressed("menu_select"):
-				_activate_table_focus()
+				_table_ui._activate_table_focus()
 			else:
 				# Up/down/left/right glide the camera continuously while held — polled
 				# in _process, not per-press — so only pointer drag is handled here.
@@ -4707,7 +3088,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		View.CARPARK:
 			# While an on-brand modal is up (detune prompt / Change-Upgrades popup) its
 			# MenuNav owns navigation — don't also drive the lineup underneath.
-			if _carpark_modal_open():
+			if _carpark_ui._carpark_modal_open():
 				return
 			_cars_input(event)
 
@@ -4747,16 +3128,16 @@ func _pan_table(rel: Vector2) -> void:
 	_table_pan.x = clampf(_table_pan.x - rel.x * cfg.hq_table_pan_speed, -half.x * 0.5, half.x * 0.5)
 	_table_pan.z = clampf(_table_pan.z - rel.y * cfg.hq_table_pan_speed, -half.y * 0.5, half.y * 0.5)
 	_move_camera_to(_station_xform(View.TABLE), true)
-	_select_target_under_center()  # selection tracks the view centre as the map slides
+	_table_ui._select_target_under_center()  # selection tracks the view centre as the map slides
 
 
 func _cars_input(event: InputEvent) -> void:
 	if _lineup_pointer_input(event):
 		return
 	if event.is_action_pressed("menu_left"):
-		_cycle_focus(-1)
+		_carpark_ui._cycle_focus(-1)
 	elif event.is_action_pressed("menu_right"):
-		_cycle_focus(1)
+		_carpark_ui._cycle_focus(1)
 	# The cosmetic wheel view reads as a LIST, so up/down cycles it too (keyboard W/S +
 	# arrows, gamepad D-pad/stick). Harmless to bind only there: paging bays is a
 	# horizontal action, and the other modes leave up/down free.
@@ -4787,7 +3168,7 @@ func _lineup_pointer_input(event: InputEvent) -> bool:
 			var cfg: GameConfig = Config.data
 			if absf(_lineup_drag_accum.x) >= cfg.menu_swipe_min_px \
 					and absf(_lineup_drag_accum.x) > absf(_lineup_drag_accum.y):
-				_cycle_focus(1 if _lineup_drag_accum.x < 0.0 else -1)
+				_carpark_ui._cycle_focus(1 if _lineup_drag_accum.x < 0.0 else -1)
 			elif _lineup_drag_accum.length() <= cfg.menu_tap_max_px:
 				_focus_car_at(event.position)
 		return true
@@ -4808,7 +3189,7 @@ func _focus_car_at(screen_pos: Vector2) -> void:
 	if idx >= 0 and idx != _focus:
 		_lineup.focus_local(idx)  # a tap stays on the current page; keep the paginator in step
 		_focus = _lineup.focus
-		_focus_changed()
+		_carpark_ui._focus_changed()
 
 
 # The lineup index of the parked car whose body the ray through `screen_pos` hits

@@ -266,7 +266,7 @@ func test_eligible_cars_includes_at_or_under_and_detune_reachable_over_ceiling()
 	for car in eligible:
 		ids.append(int(car["instance_id"]))
 	assert_true(ids.has(1), "a car at/under the ceiling is eligible")
-	# Consistent with career-mode rally entry (hq.gd._qualifying_detune_for):
+	# Consistent with career-mode rally entry (hq_carpark.gd._qualifying_detune_for):
 	# a car over the ceiling STOCK still counts as eligible if detuning down
 	# would fit it under — no forced auto-detune, but it isn't excluded just
 	# because its slider currently sits above what's needed.

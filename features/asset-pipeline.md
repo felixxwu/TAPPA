@@ -88,7 +88,7 @@ A local debug-signed reproduction (JDK 17 + `android-commandlinetools` +
 NDK r23c installed via `sdkmanager`, debug APK sideloaded onto a Pixel 8) surfaced
 the missing-texture errors directly in `adb logcat` and traced them to a related,
 separately-fixed bug: a null car returned by a failed spawn permanently hung
-`hq.gd::_spawn_lineup_progressive` instead of crashing outright (see
+`hq_carpark.gd::_spawn_lineup_progressive` instead of crashing outright (see
 `menus.md` → *"A car that fails to spawn must never hang boot forever"*). Both the
 export-config regression (this section) and the missing null-guard (`menus.md`)
 needed fixing; neither alone was sufficient.

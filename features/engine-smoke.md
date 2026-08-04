@@ -72,7 +72,7 @@ ramp the misfire uses) and puffs a burst on a timer whose interval shrinks with
 severity (`engine_smoke_synthetic_interval_max` → `_min`). A fully-healthy car never
 puffs, a lightly-damaged one smokes lazily, a wreck smokes often.
 
-`hq.gd._add_synthetic_smoke(car)` attaches one to each **damaged** parked/lift car
+`hq_carpark.gd._add_synthetic_smoke(car)` attaches one to each **damaged** parked/lift car
 (skipped when severity is 0), parented to the car so it's freed with it and set
 **`PROCESS_MODE_ALWAYS`** (keeps puffing though the car itself is frozen /
 process-disabled). In synthetic mode `_puff` emits in the car's **local** space (the

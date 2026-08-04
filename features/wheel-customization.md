@@ -88,7 +88,7 @@ re-latch moved suspension connection points.
 
 **Not the tuning lift** — the lift holds the car **raised** off its suspension, and
 wheels are judged by *stance*. So wheel-swapping happens in the **car park**, where
-`hq.gd → _spawn_lineup_progressive` places each car frozen at its analytic rest
+`hq_carpark.gd → _spawn_lineup_progressive` places each car frozen at its analytic rest
 height and then droops its wheels onto the lot floor with a real raycast
 (`settle_wheels_to_ground`). The car is genuinely sitting on its springs.
 

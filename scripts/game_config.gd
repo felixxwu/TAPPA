@@ -914,7 +914,7 @@ func has_nitrous() -> bool:
 ## Map-table keyboard/gamepad glide speed: world metres/second the camera slides while
 ## a direction is held. Selection tracks whichever rally/arrow sits nearest the centre.
 @export var hq_table_pan_glide := 2.5
-## New-rally reveal (hq.gd `_run_reveal_sequence`): when rallies become enterable, the
+## New-rally reveal (hq_table.gd `_run_reveal_sequence`): when rallies become enterable, the
 ## map camera pans to each in turn and flips its pin from the locked to the unlocked look.
 ## `pan_time` is the beat spent travelling/settling on a pin before it flips, `hold_time`
 ## how long the revealed pin is held before moving on (a special gets a longer beat), and

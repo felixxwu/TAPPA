@@ -48,7 +48,7 @@ func _clean() -> void:
 # Boot HQ and park a lineup of the given owned cars, waiting until every prop is in
 # AND settled (frozen) — so transform assertions see the final resting pose.
 func _build_and_wait(hq: Node3D, cars: Array) -> void:
-	hq._build_lineup(cars)
+	hq._carpark_ui._build_lineup(cars)
 	for _i in 600:
 		if hq._cars.size() >= hq._eligible.size():
 			break
@@ -286,7 +286,7 @@ func test_reselecting_the_same_car_from_the_garage_picker_keeps_it_on_the_lift()
 
 	# Reselect the SAME car (id/hash unchanged) — this is what _select_garage_car does
 	# on the way back: hide/stow the parked page, then _ensure_lift_car for the same id.
-	hq._release_page_props()
+	hq._carpark_ui._release_page_props()
 	assert_false(hq._lift_car.visible, "precondition: leaving the picker stowed the shared node")
 
 	hq._ensure_lift_car()
@@ -390,7 +390,7 @@ func test_deferred_prewarm_runs_to_completion() -> void:
 	await get_tree().process_frame
 
 	assert_false(hq._prewarm_complete, "HQ boot leaves the prewarm still to do")
-	await hq._prewarm_free_roam_deferred()
+	await hq._carpark_ui._prewarm_free_roam_deferred()
 
 	assert_true(hq._prewarm_complete, "the deferred prewarm reports completion")
 	assert_false(hq._prewarm_running, "the deferred prewarm is no longer in flight")
@@ -402,13 +402,13 @@ func test_deferred_prewarm_is_idempotent() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 
-	await hq._prewarm_free_roam_deferred()
+	await hq._carpark_ui._prewarm_free_roam_deferred()
 	var first := {}
 	for id in hq._car_cache:
 		if int(id) < 0:
 			first[id] = hq._car_cache[id]["node"].get_instance_id()
 
-	await hq._prewarm_free_roam_deferred()  # a stray second call must be a no-op
+	await hq._carpark_ui._prewarm_free_roam_deferred()  # a stray second call must be a no-op
 
 	for id in first:
 		assert_true(hq._car_cache.has(id), "preview %d is still cached" % int(id))
@@ -422,7 +422,7 @@ func test_free_roam_entry_reuses_the_prewarmed_props() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	await hq._prewarm_free_roam_deferred()
+	await hq._carpark_ui._prewarm_free_roam_deferred()
 
 	var warm := {}
 	for id in hq._car_cache:
@@ -454,7 +454,7 @@ func test_free_roam_entered_before_the_prewarm_finishes_still_works() -> void:
 	for car in hq._cars:
 		live.append(car.get_instance_id())
 
-	await hq._prewarm_free_roam_deferred()
+	await hq._carpark_ui._prewarm_free_roam_deferred()
 
 	assert_true(hq._prewarm_complete, "the deferred prewarm still completes")
 	assert_true(_all_previews_warm(hq), "every catalogue preview ends up warm")
@@ -470,22 +470,26 @@ func test_free_roam_entered_before_the_prewarm_finishes_still_works() -> void:
 # _spawn_lineup_progressive, which permanently aborted the coroutine before it ever
 # reached `emit_signal("lineup_built")` — hanging HQ boot behind the loading cover
 # forever, even though the rest of the scene had already finished building. The fix
-# skips the failed slot instead. Uses a test double (hq_null_spawn_double.gd) to force
-# one specific car's spawn to fail, rather than depending on a real broken asset.
-const NullSpawnHQScript := preload("res://tests/headless/hq_null_spawn_double.gd")
+# skips the failed slot instead. Uses a test double (carpark_null_spawn_double.gd) to
+# force one specific car's spawn to fail, rather than depending on a real broken asset.
+const NullSpawnCarparkScript := preload("res://tests/headless/carpark_null_spawn_double.gd")
 
 
 func test_a_car_that_fails_to_spawn_is_skipped_not_hung() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
-	hq.set_script(NullSpawnHQScript)
 	add_child_autofree(hq)
 	await get_tree().process_frame
 
+	# The spawn seam lives on HqCarpark, so the double replaces `_carpark_ui` rather
+	# than the HQ script itself (see carpark_null_spawn_double.gd).
+	var carpark := NullSpawnCarparkScript.new(hq)
+	hq._carpark_ui = carpark
+
 	var cars := _owned_cars()
 	assert_eq(cars.size(), 2, "fixture roster hands two owned cars")
-	hq.fail_instance_id = int(cars[0]["instance_id"])
+	carpark.fail_instance_id = int(cars[0]["instance_id"])
 
-	hq._build_lineup(cars)
+	hq._carpark_ui._build_lineup(cars)
 
 	# _wait_for_lineup can't be reused here: it waits for _cars.size() >=
 	# _eligible.size(), but the failed slot is skipped so _cars only ever reaches

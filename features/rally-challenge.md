@@ -187,7 +187,7 @@ owned cars whose *current* effective power-to-weight (installed upgrades +
 detune, via `UpgradeLibrary.effective_meta` + `CarLibrary.power_to_weight_hp_tonne`)
 is at or under that period's rolled ceiling — **or reachable by lowering
 detune**, consistent with how a career rally treats an over-the-cap car
-(`hq.gd._qualifying_detune_for` / `RallyLibrary.qualifying_detune`):
+(`hq_carpark.gd._qualifying_detune_for` / `RallyLibrary.qualifying_detune`):
 `ChallengeSession.qualifying_detune_for({"restriction": {"pw_max": ceiling}},
 owned, entry)` judges the car at FULL power and returns the absolute detune
 fraction that would fit it, or `-1.0` if none does. A car isn't excluded just

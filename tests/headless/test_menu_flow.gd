@@ -121,7 +121,7 @@ func _pin_for(hq: Node3D, rally_id: String) -> Node3D:
 func _nearest_target_to(hq: Node3D, center: Vector3) -> Node3D:
 	var best: Node3D = null
 	var best_d := INF
-	for t in hq._table_targets():
+	for t in hq._table_ui._table_targets():
 		var off: Vector3 = Vector3(t["pos"]) - center
 		off.y = 0.0
 		var d := off.length()
@@ -356,6 +356,42 @@ func test_hq_title_shows_build_version() -> void:
 		"the version label lives on the title overlay (shown only there)")
 
 
+# The pan path repaints the focus highlight only when the selection CHANGES (it runs every
+# frame while a direction is held, and repainting allocates a StyleBoxFlat per pin). The
+# guard is keyed on the pin NODE, not the focus index, because _refresh_map_pins throws the
+# pin nodes away and rebuilds them while _table_focus_index keeps its old value — so an
+# index-keyed guard would leave the newly-built pin unpainted. This asserts the rebuilt pin
+# still ends up wearing the highlight.
+func test_hq_map_table_focus_highlight_survives_a_pin_rebuild() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "a", "name": "A", "region": "home", "special": false, "map_pos": Vector2(0.5, 0.5), "restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+
+	var before: Node3D = hq._table_ui._table_targets()[hq._table_focus_index]["node"]
+	var idx_before: int = hq._table_focus_index
+	var box_before: StyleBoxFlat = before.get_meta("label_panel").get_theme_stylebox("panel")
+	assert_eq(box_before.bg_color, UITheme.SURFACE_HOVER, "the entry selection is painted as focused")
+
+	# Rebuild the pins, then re-run the per-frame selection step exactly as _process would.
+	hq._refresh_map_pins()
+	hq._table_ui._select_target_under_center()
+	var after: Node3D = hq._table_ui._table_targets()[hq._table_focus_index]["node"]
+	assert_eq(hq._table_focus_index, idx_before,
+		"the rebuild reuses the same focus index — which is why the guard can't key on it")
+	assert_ne(after, before, "the rebuild replaced the pin nodes")
+	var box_after: StyleBoxFlat = after.get_meta("label_panel").get_theme_stylebox("panel")
+	assert_eq(box_after.bg_color, UITheme.SURFACE_HOVER,
+		"the rebuilt pin is repainted as focused, not left unhighlighted")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
 # The map table pans the camera directly: pressing a direction slides the view centre
 # that way, and selection snaps to whichever pin now sits nearest the centre (a
 # reticle over the map, not discrete jumps). Select opens the selected rally.
@@ -370,40 +406,40 @@ func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.TABLE, "the map table is open")
 	assert_gt(hq._table_focus_index, -1, "a target is selected on entry")
 
-	var axes: Array = hq._table_plane_axes()
+	var axes: Array = hq._table_ui._table_plane_axes()
 	var up: Vector3 = axes[0]
 
 	# Core contract: the selected target is always the one nearest the view centre.
-	assert_eq(hq._table_targets()[hq._table_focus_index]["node"],
-		_nearest_target_to(hq, hq._table_center_pos()),
+	assert_eq(hq._table_ui._table_targets()[hq._table_focus_index]["node"],
+		_nearest_target_to(hq, hq._table_ui._table_center_pos()),
 		"selection = the target nearest the camera centre on entry")
 
 	# Gliding up slides the camera centre in the screen-up direction...
-	var before_up: float = hq._table_center_pos().dot(up)
-	hq._pan_table_step(Vector2.UP, 0.4)
-	assert_gt(hq._table_center_pos().dot(up), before_up, "gliding up pans the view centre upward")
+	var before_up: float = hq._table_ui._table_center_pos().dot(up)
+	hq._table_ui._pan_table_step(Vector2.UP, 0.4)
+	assert_gt(hq._table_ui._table_center_pos().dot(up), before_up, "gliding up pans the view centre upward")
 	# ...and selection re-snaps to whatever is now nearest the centre.
-	assert_eq(hq._table_targets()[hq._table_focus_index]["node"],
-		_nearest_target_to(hq, hq._table_center_pos()),
+	assert_eq(hq._table_ui._table_targets()[hq._table_focus_index]["node"],
+		_nearest_target_to(hq, hq._table_ui._table_center_pos()),
 		"selection tracks the view centre after panning")
 
 	# Glide fully up (past the clamp): the up-most pin (b) ends up nearest the centre.
 	for _i in 12:
-		hq._pan_table_step(Vector2.UP, 0.4)
-	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "b",
+		hq._table_ui._pan_table_step(Vector2.UP, 0.4)
+	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "b",
 		"panning to the top of the map selects the up-most pin")
 
 	# Fresh view, then glide fully right: the right-most pin (c) ends up selected.
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	for _i in 12:
-		hq._pan_table_step(Vector2.RIGHT, 0.4)
-	var sel: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
+		hq._table_ui._pan_table_step(Vector2.RIGHT, 0.4)
+	var sel: Node3D = hq._table_ui._table_targets()[hq._table_focus_index]["node"]
 	assert_eq(String(sel.get_meta("rally_id")), "c", "panning to the right of the map selects the right-most pin")
 
 	# The selected pin gets the hover-style underline; a pin stays scale 1.
@@ -412,7 +448,7 @@ func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 	assert_almost_eq(float(sel.scale.x), 1.0, 0.01, "the selected pin is NOT scaled up")
 
 	# Select on the selected pin opens its rally detail.
-	hq._activate_table_focus()
+	hq._table_ui._activate_table_focus()
 	assert_true(hq._detail_open, "selecting the pin opens its rally detail")
 	assert_eq(hq._selected_rally_id, String(sel.get_meta("rally_id")), "it opens the selected pin's rally")
 	RegionLibrary.reset()
@@ -435,22 +471,22 @@ func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
 	await get_tree().process_frame
 
 	# Nothing completed → focus the highest-difficulty pin ("hard").
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
-	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "hard",
+	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "hard",
 		"entry focuses the highest-difficulty incomplete rally")
 
 	# Complete the hardest → entry now skips it and lands on the next-hardest ("mid").
 	_save.complete_rally("hard", 60000, 1)
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
-	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "mid",
+	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "mid",
 		"a completed event is skipped; focus falls to the next-hardest incomplete one")
 
 	# Everything done → fall back to the centre-nearest target (still a valid pin).
 	_save.complete_rally("mid", 60000, 1)
 	_save.complete_rally("easy", 60000, 1)
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_gt(hq._table_focus_index, -1, "with all events done, entry still seats a target")
 
@@ -475,7 +511,7 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 
 	# Every rally in the roster is pinned, revealed or not.
@@ -499,13 +535,13 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	# ...and the keyboard/gamepad focus ring only contains the enterable pins, so no
 	# amount of panning can land the cursor on a locked one.
 	var focusable: Array = []
-	for t in hq._table_targets():
+	for t in hq._table_ui._table_targets():
 		assert_eq(String(t["kind"]), "pin", "every table focus target is a pin now")
 		focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
 	assert_eq(focusable, ["open"], "only the revealed rally is a focus target")
 	for _i in 12:
-		hq._pan_table_step(Vector2.RIGHT, 0.4)
-	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "open",
+		hq._table_ui._pan_table_step(Vector2.RIGHT, 0.4)
+	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "open",
 		"panning across the map keeps the cursor on an enterable pin")
 
 	RegionLibrary.reset()
@@ -1104,7 +1140,7 @@ func test_opening_the_map_keeps_the_lift_car_but_the_car_park_still_gets_it_back
 	assert_true(is_instance_valid(hq._lift_car), "the garage stands the selected car on the lift")
 	var on_lift: Node3D = hq._lift_car
 
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.TABLE, "Career opens the map")
 	assert_true(is_instance_valid(hq._lift_car), "the lift car is NOT torn down for the map")
@@ -1132,7 +1168,7 @@ func test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 	await get_tree().process_frame
 	await get_tree().process_frame
 
@@ -1145,7 +1181,7 @@ func test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs() -> void:
 	var sizes: Array = []
 	for kind in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
 		hq._challenge_kind = kind
-		hq._refresh_challenge_overlay()
+		hq._challenge_ui._refresh_challenge_overlay()
 		await get_tree().process_frame
 		await get_tree().process_frame
 		sizes.append(box.size)
@@ -1205,7 +1241,7 @@ func test_hq_challenge_kind_tabs_are_focusable_and_left_right_navigable() -> voi
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 	assert_eq(hq._challenge_kind, ChallengeLibrary.DAILY, "opens on Daily by default")
 
 	for btn in hq._challenge_kind_buttons:
@@ -1215,7 +1251,7 @@ func test_hq_challenge_kind_tabs_are_focusable_and_left_right_navigable() -> voi
 		assert_false(btn.toggle_mode, "no press/pressed state — focus_entered is the selection")
 
 	await get_tree().process_frame  # deferred focus grab from _open_challenge_overlay
-	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._challenge_kind_button(ChallengeLibrary.DAILY),
+	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._challenge_ui._challenge_kind_button(ChallengeLibrary.DAILY),
 		"opening the screen focuses the current kind's own tab")
 
 	# Drive REAL focus-neighbour navigation through MenuNav's own _unhandled_input (the
@@ -1249,12 +1285,12 @@ func test_hq_challenge_tab_activate_starts_like_the_start_button() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._open_challenge_overlay()
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	assert_false(hq._challenge_start_button.disabled, "setup: Start is enabled with an eligible car")
 
-	hq._challenge_kind_button(ChallengeLibrary.DAILY).grab_focus()
-	hq._challenge_kind_button(ChallengeLibrary.DAILY).pressed.emit()
+	hq._challenge_ui._challenge_kind_button(ChallengeLibrary.DAILY).grab_focus()
+	hq._challenge_ui._challenge_kind_button(ChallengeLibrary.DAILY).pressed.emit()
 	await get_tree().process_frame
 	assert_false(hq._challenge_layer.visible,
 		"activating the focused tab committed Start, same as pressing the Start button")
@@ -1268,10 +1304,10 @@ func test_hq_challenge_tab_activate_respects_disabled_start() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 	assert_true(hq._challenge_start_button.disabled, "setup: Start is disabled with no eligible car")
 
-	hq._challenge_kind_button(ChallengeLibrary.DAILY).pressed.emit()
+	hq._challenge_ui._challenge_kind_button(ChallengeLibrary.DAILY).pressed.emit()
 	await get_tree().process_frame
 	assert_true(hq._challenge_layer.visible,
 		"activating a tab while Start is disabled must not start anything")
@@ -1288,11 +1324,11 @@ func test_hq_challenge_sections_reflect_the_current_kind_and_ceiling() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 
 	var unix_time := int(Time.get_unix_time_from_system())
 	for kind_str in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
-		hq._select_challenge_kind(kind_str)
+		hq._challenge_ui._select_challenge_kind(kind_str)
 		# UITheme.enforce upper-cases every label (house style), so compare case-insensitively.
 		assert_string_contains(hq._challenge_title_label.text.to_upper(), kind_str.to_upper(),
 			"the header title names the current kind")
@@ -1318,7 +1354,7 @@ func test_hq_challenge_blocks_start_with_no_eligible_car() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 
 	assert_string_contains(hq._challenge_eligible_label.text.to_lower(), "no eligible car",
 		"the eligible-cars section explains why Start is blocked")
@@ -1376,14 +1412,14 @@ func test_hq_challenge_start_opens_carpark_then_resume() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._open_challenge_overlay()
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	assert_eq(hq._challenge_start_button.text.to_upper(), "START", "no stored run yet: the button reads Start")
 	assert_false(hq._challenge_start_button.disabled, "Start is enabled with an eligible car")
 	assert_string_contains(hq._challenge_progress_label.text.to_lower(), "not started",
 		"with no stored run the progress row reads Not started")
 
-	hq._on_challenge_start_pressed()
+	hq._challenge_ui._on_challenge_start_pressed()
 	await get_tree().process_frame
 	assert_eq(hq._carpark_mode, hq.CarparkMode.CHALLENGE, "Start opens the challenge car park, not a direct commit")
 	assert_false(hq._challenge_layer.visible, "opening the car park closes the entry overlay")
@@ -1398,8 +1434,8 @@ func test_hq_challenge_start_opens_carpark_then_resume() -> void:
 
 	# Reopening the same kind's entry now offers Resume, since a run is stored for it.
 	hq._go_to(hq.View.GARAGE)
-	hq._open_challenge_overlay()
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._open_challenge_overlay()
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	assert_eq(hq._challenge_start_button.text.to_upper(), "RESUME",
 		"a stored run for the current kind shows Resume instead of Start")
 	# A live run must SAY it's live — a bare "0 / N stages" reads the same as not
@@ -1423,7 +1459,7 @@ func test_hq_challenge_start_opens_carpark_then_resume() -> void:
 	assert_eq(hq._challenge_eligible_label.text.to_upper(), locked_name.to_upper(),
 		"a run in progress shows only the locked car it was started with")
 
-	hq._on_challenge_start_pressed()
+	hq._challenge_ui._on_challenge_start_pressed()
 	assert_true(ChallengeSession.is_active(), "Resume keeps the same run active — no car park involved")
 
 
@@ -1444,7 +1480,7 @@ func test_hq_challenge_carpark_routes_over_ceiling_car_to_change_upgrades() -> v
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._enter_challenge_car_screen(ChallengeLibrary.DAILY)
+	hq._challenge_ui._enter_challenge_car_screen(ChallengeLibrary.DAILY)
 	await get_tree().process_frame
 
 	assert_eq(hq._eligible.size(), 1, "the over-ceiling car still parks, looking eligible")
@@ -1454,7 +1490,7 @@ func test_hq_challenge_carpark_routes_over_ceiling_car_to_change_upgrades() -> v
 	assert_between(frac, 0.01, 0.99, "the qualifying detune is a real down-tune")
 
 	hq._focus = 0
-	hq._focus_changed()
+	hq._carpark_ui._focus_changed()
 	assert_false(hq._car_warning_label.visible, "no warning label — the car looks eligible in the park")
 	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
 
@@ -1658,7 +1694,7 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	assert_eq(hq._view, hq.View.TABLE, "tapping the table drops the camera to the map view")
 	assert_true(hq._table_layer.visible, "the map HUD is shown")
 	# CHANGED DELIBERATELY (twice): the meter used to read "Progress to the Showdown" for one
@@ -1781,8 +1817,8 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._enter_table()
-	hq._on_rally_pin("rwd_masters")
+	hq._table_ui._enter_table()
+	hq._table_ui._on_rally_pin("rwd_masters")
 	assert_true(hq._detail_open, "tapping a pin opens the rally detail")
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
@@ -1799,7 +1835,7 @@ func test_hq_table_drag_pans_and_clamps() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	# Entry now steers the camera onto the hardest incomplete pin (see the
 	# dedicated test below), so zero the pan first to isolate drag behaviour.
 	hq._table_pan = Vector3.ZERO
@@ -1817,7 +1853,7 @@ func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	# Press → move → the press becomes a pan-drag, not a tap.
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
@@ -1849,7 +1885,7 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	# exactly the owned cars the eligibility rule accepts (derived below, not pinned).
 	_save.grant_car("fx_awd")
 	_save.grant_car("fx_rwd_coupe")
-	hq._on_rally_pin("fx_rwd_band")
+	hq._table_ui._on_rally_pin("fx_rwd_band")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
@@ -1900,7 +1936,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: all three are eligible
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: all three are eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -1924,7 +1960,7 @@ func test_hq_parked_cars_rest_on_their_wheels_frozen() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -1945,18 +1981,18 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 2, "both eligible cars are parked")
 	assert_eq(hq._selected_instance_id, int(hq._eligible[0]["instance_id"]), "the first car is selected on entry")
-	hq._cycle_focus(1)
+	hq._carpark_ui._cycle_focus(1)
 	assert_eq(hq._focus, 1, "cycling right advances the focus")
 	assert_eq(hq._selected_instance_id, int(hq._eligible[1]["instance_id"]), "the newly focused car is selected")
-	hq._cycle_focus(1)
+	hq._carpark_ui._cycle_focus(1)
 	assert_eq(hq._focus, 0, "cycling right off the last car wraps to the first")
-	hq._cycle_focus(-1)
+	hq._carpark_ui._cycle_focus(-1)
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
@@ -1988,7 +2024,7 @@ func test_hq_carpark_swipe_cycles_the_focus() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	var swipe: float = Config.data.menu_swipe_min_px + 20.0
@@ -2007,7 +2043,7 @@ func test_hq_carpark_tap_on_a_parked_car_focuses_it() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")
+	hq._table_ui._on_rally_pin("the_showdown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2053,7 +2089,7 @@ func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: starter + the two granted cars
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: starter + the two granted cars
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._markers.size(), 3, "three eligible cars are parked")
@@ -2079,7 +2115,7 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	var car_pos: Vector3 = hq._focused_car_pos()
@@ -2123,8 +2159,8 @@ func test_hq_free_roam_lists_whole_catalogue_and_paginates() -> void:
 	assert_lte(hq._cars.size(), 2, "only one page of cars is parked at a time")
 	# Cycling right off the last car of page 0 flips to page 1's first car.
 	assert_eq(hq._lineup.page, 0, "starts on page 0")
-	hq._cycle_focus(1)  # 0 -> 1 (still page 0)
-	hq._cycle_focus(1)  # 1 -> page 1, car 0
+	hq._carpark_ui._cycle_focus(1)  # 0 -> 1 (still page 0)
+	hq._carpark_ui._cycle_focus(1)  # 1 -> page 1, car 0
 	assert_eq(hq._lineup.page, 1, "cycling past the page boundary flips to the next page")
 	assert_eq(hq._lineup.global_index(), 2, "the global position keeps counting across pages")
 	# Back returns to the garage.
@@ -2143,7 +2179,7 @@ func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# Focus the wrecked XJS in the lineup.
@@ -2153,11 +2189,11 @@ func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
 			idx = i
 	assert_gt(idx, -1, "the wrecked car is still parked in the lineup")
 	hq._focus = idx
-	hq._focus_changed()
+	hq._carpark_ui._focus_changed()
 	assert_true(hq._start_button.disabled, "a wrecked car cannot be entered")
 	assert_true(hq._car_warning_label.visible, "the beyond-repair warning is shown")
 	# Nothing the player can do here brings it back: refreshing does not change that.
-	hq._focus_changed()
+	hq._carpark_ui._focus_changed()
 	assert_true(hq._start_button.disabled, "still un-enterable — wrecking is terminal")
 	assert_true(_save.car_is_wrecked(_save.get_car(id)), "and the car is still a wreck")
 
@@ -2199,7 +2235,7 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("fx_capped")
+	hq._table_ui._on_rally_pin("fx_capped")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# Both cars park: the eligible starter AND the over-cap coupe, which carries the
@@ -2216,7 +2252,7 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 			idx = i
 	assert_gt(idx, -1, "the over-powered car is in the lineup")
 	hq._focus = idx
-	hq._focus_changed()
+	hq._carpark_ui._focus_changed()
 	assert_false(hq._car_warning_label.visible, "no warning label — the car looks eligible in the park")
 	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
 	# The overlays upper-case their labels (house style), so compare case-insensitively.
@@ -2243,7 +2279,7 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
 		"nothing is applied to the car by the prompt")
 	# Choosing Change Upgrades opens the gated upgrades popup where the player sheds power.
-	hq._detune_change_upgrades()
+	hq._carpark_ui._detune_change_upgrades()
 	assert_true(hq._upgrades_popup != null and hq._upgrades_popup.visible,
 		"Change Upgrades opens the upgrades popup")
 
@@ -2273,7 +2309,7 @@ func test_hq_carpark_excludes_a_car_below_the_band_floor() -> void:
 		},
 	]
 	RallyLibrary.override_for_test(rallies)
-	hq._on_rally_pin("fx_high_band")
+	hq._table_ui._on_rally_pin("fx_high_band")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2297,10 +2333,10 @@ func test_swap_car_qualifies_for_restricted_rally() -> void:
 		"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": -1}
 	var no_kit := {"instance_id": 2, "model_id": "t_fwd", "hp": 1000.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
-	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
+	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, with_kit, entry,
 			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
 		"kitted car can switch to the required RWD")
-	assert_eq(hq._qualifying_drivetrain_for(rally, no_kit, entry,
+	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, no_kit, entry,
 			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
 		"un-kitted car cannot switch, so no qualifying mode")
 
@@ -2324,10 +2360,10 @@ func test_swap_and_detune_stack_for_a_rally_restricting_both() -> void:
 		"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": -1}
 	var no_kit := {"instance_id": 4, "model_id": "t_fwd_stack",
 		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
-	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
+	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, with_kit, entry,
 			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
 		"switch+detune stack qualifies the kitted car for the dual-restricted rally")
-	assert_eq(hq._qualifying_drivetrain_for(rally, no_kit, entry,
+	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, no_kit, entry,
 			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
 		"un-kitted car cannot switch, so no qualifying mode even with a detune available")
 
@@ -2566,8 +2602,8 @@ func test_hq_back_steps_carpark_to_table_to_garage() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._enter_table()
-	hq._on_rally_pin("shakedown")
+	hq._table_ui._enter_table()
+	hq._table_ui._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "in the car park after entering")
@@ -2587,7 +2623,7 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	await get_tree().process_frame
 	# Pick a rally → enter, then Start with the focused car. auto_load_scenes is off,
 	# so no scene change; start_rally derives targets.
-	hq._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_false(hq._start_button.disabled, "Start is enabled once a rally + eligible car are chosen")
@@ -2607,7 +2643,7 @@ func test_hq_starting_a_rally_selects_the_fielded_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._table_ui._on_rally_pin("the_showdown")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2617,7 +2653,7 @@ func test_hq_starting_a_rally_selects_the_fielded_car() -> void:
 	for i in hq._eligible.size():
 		if int(hq._eligible[i]["instance_id"]) != before:
 			hq._focus = i
-			hq._focus_changed(true)
+			hq._carpark_ui._focus_changed(true)
 			other = int(hq._eligible[i]["instance_id"])
 			break
 	assert_ne(other, -1, "a second eligible car exists to field")
@@ -2632,7 +2668,7 @@ func test_hq_mobile_first_start_gates_on_control_scheme_pick() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# No control scheme saved yet -> Start shows the picker as a gate, not the rally.
@@ -2662,7 +2698,7 @@ func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# A preference exists, so Start goes straight to the rally (no gate).
@@ -3111,7 +3147,7 @@ func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 		"one parked starter preview per STARTER_MODEL_IDS entry")
 	# Pick whichever starter is parked first — the flow, not a particular car.
 	hq._focus = 0
-	hq._focus_changed(true)
+	hq._carpark_ui._focus_changed(true)
 	var picked_id := String(hq._eligible[0].get("model_id", ""))
 	assert_ne(picked_id, "", "the parked preview names its model")
 	hq._on_start_pressed()
@@ -3186,7 +3222,7 @@ func test_engine_swap_works_on_a_damaged_car_and_leaves_hp() -> void:
 	await _await_lineup(hq)
 	# The damaged lift car still has a target (no car excluded on health).
 	hq._selected_instance_id = int(b["instance_id"])
-	hq._focus_changed()
+	hq._carpark_ui._focus_changed()
 	assert_false(hq._start_button.disabled, "the partner is never excluded on health")
 	assert_false(hq._car_warning_label.visible, "no repair-cost warning in swap mode anymore")
 	# Confirm the swap: OK exchanges engines and spends the token.
@@ -3216,7 +3252,7 @@ func test_engine_swap_blocked_without_a_token() -> void:
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	hq._selected_instance_id = int(b["instance_id"])
-	hq._focus_changed()
+	hq._carpark_ui._focus_changed()
 	hq._select_swap_target()
 	hq._on_swap_confirmed()
 	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), "",
@@ -3233,12 +3269,12 @@ func test_swap_preview_visible_only_in_swap_mode() -> void:
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	assert_true(hq._eligible.size() >= 1, "swap lineup lists the other owned car(s)")
-	hq._focus_changed(true)
+	hq._carpark_ui._focus_changed(true)
 	assert_true(hq._swap_preview_label.visible, "preview shows in swap mode")
 	assert_string_contains(hq._swap_preview_label.text, "hp/tonne", "preview names the unit")
 	# Leaving swap mode for the normal car-select hides it.
 	hq._carpark_mode = hq.CarparkMode.RALLY
-	hq._focus_changed(true)
+	hq._carpark_ui._focus_changed(true)
 	assert_false(hq._swap_preview_label.visible, "preview hidden outside swap mode")
 
 
@@ -3629,7 +3665,7 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 	# layer; mirror that precondition so its controls are visible-in-tree (the layer is
 	# hidden outside View.CARPARK, which would make first_control() see nothing).
 	hq._car_layer.visible = true
-	hq._show_upgrades_popup(_save.get_car(id))
+	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
 	assert_true(hq._upgrades_popup.visible, "the popup is shown")
 	assert_not_null(hq._upgrades_popup_menu, "the popup hosts an UpgradesMenu")
@@ -3639,7 +3675,7 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 		if String((node as Button).text).to_lower().begins_with("swap engine"):
 			has_swap = true
 	assert_false(has_swap, "the engine-swap row is dropped in the popup")
-	hq._close_upgrades_popup()
+	hq._carpark_ui._close_upgrades_popup()
 	assert_false(hq._upgrades_popup.visible, "Done / back closes the popup")
 
 
@@ -4446,9 +4482,9 @@ func test_hq_challenge_start_selects_the_fielded_car() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
-	hq._on_challenge_start_pressed()
+	hq._challenge_ui._open_challenge_overlay()
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._on_challenge_start_pressed()
 	await get_tree().process_frame
 	assert_eq(hq._carpark_mode, hq.CarparkMode.CHALLENGE, "setup: the challenge car park is open")
 
@@ -4469,9 +4505,9 @@ func test_hq_mobile_challenge_start_gates_on_control_scheme_pick() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
-	hq._on_challenge_start_pressed()
+	hq._challenge_ui._open_challenge_overlay()
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._on_challenge_start_pressed()
 	await get_tree().process_frame
 	assert_eq(hq._carpark_mode, hq.CarparkMode.CHALLENGE, "setup: the challenge car park is open")
 	assert_null(_save.get_setting(MobileControls.SETTING_KEY, null), "setup: no control preference yet")
@@ -4629,7 +4665,7 @@ func _hq_with_a_completed_daily(board: Node) -> Node3D:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 	return hq
 
 
@@ -4639,7 +4675,7 @@ func test_a_completed_period_shows_the_live_placing() -> void:
 	board.answer = {"ok": true, "rank": 3, "total_entries": 42}
 	var hq := await _hq_with_a_completed_daily(board)
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4658,7 +4694,7 @@ func test_a_completed_period_stays_at_completed_when_the_board_cannot_answer() -
 	board.answer = {"ok": false}
 	var hq := await _hq_with_a_completed_daily(board)
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4676,9 +4712,9 @@ func test_a_placing_never_lands_on_a_different_kinds_row() -> void:
 	board.gate = [true]  # hold the answer until we have switched away
 	var hq := await _hq_with_a_completed_daily(board)
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	await get_tree().process_frame
-	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.WEEKLY)
 	var weekly_text: String = hq._challenge_progress_label.text
 	board.gate = []  # let the daily's query answer, now that the row belongs to weekly
 	for _i in 5:
@@ -4703,7 +4739,7 @@ func test_a_signed_out_player_never_queries_the_board_for_a_placing() -> void:
 	Cloud.auth = _real_auth
 	board.calls = 0
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4720,7 +4756,7 @@ func test_a_completed_period_says_loading_while_the_placing_is_fetched() -> void
 	add_child_autofree(board)
 	board.answer = {"ok": true, "rank": 2, "total_entries": 3}
 	var hq := await _hq_with_a_completed_daily(board)
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)  # query is in flight on return
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)  # query is in flight on return
 
 	var loading: String = hq._challenge_progress_label.text.to_upper()
 	assert_string_contains(loading, "COMPLETED", "it still says the period is done")
@@ -4742,7 +4778,7 @@ func test_the_completed_loading_placeholder_is_cleared_when_the_board_cannot_ans
 	add_child_autofree(board)
 	board.answer = {"ok": false}
 	var hq := await _hq_with_a_completed_daily(board)
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4762,7 +4798,7 @@ func test_switching_kinds_does_not_re_query_an_answer_already_fetched() -> void:
 	board.answer = {"ok": true, "rank": 2, "total_entries": 3}
 	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 3}
 	var hq := await _hq_with_a_completed_daily(board)
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 	var placing_calls := board.calls
@@ -4770,11 +4806,11 @@ func test_switching_kinds_does_not_re_query_an_answer_already_fetched() -> void:
 	assert_true(placing_calls > 0 and cutoff_calls > 0, "setup: the Daily was really fetched")
 
 	# Away to another kind and back.
-	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.WEEKLY)
 	for _i in 5:
 		await get_tree().process_frame
 	var weekly_cutoff_calls := board.cutoff_calls
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4797,14 +4833,14 @@ func test_closing_the_challenge_screen_invalidates_the_cached_answers() -> void:
 	board.answer = {"ok": true, "rank": 2, "total_entries": 3}
 	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 3}
 	var hq := await _hq_with_a_completed_daily(board)
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 	var placing_calls := board.calls
 	var cutoff_calls := board.cutoff_calls
 
-	hq._close_challenge_overlay()
-	hq._open_challenge_overlay()
+	hq._challenge_ui._close_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4820,15 +4856,15 @@ func test_a_failed_query_is_not_cached_and_is_retried_on_the_next_visit() -> voi
 	add_child_autofree(board)
 	board.cutoff = {"ok": false}
 	var hq := await _hq_with_a_completed_daily(board)
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 	var cutoff_calls := board.cutoff_calls
 
-	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.WEEKLY)
 	for _i in 5:
 		await get_tree().process_frame
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4849,12 +4885,12 @@ func test_the_win_condition_shows_the_live_time_to_beat() -> void:
 	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 9}
 	var hq := await _hq_with_a_completed_daily(board)
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
 	var text: String = hq._challenge_win_label.text
-	assert_string_contains(text.to_upper(), UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+	assert_string_contains(text.to_upper(), UITheme.caps(HqChallenge._CHALLENGE_WIN_CONDITION),
 		"the placing needed is still named")
 	assert_string_contains(text, UITheme.format_time(112240),
 		"and the row gains the time on the cut line, formatted like every other time")
@@ -4872,12 +4908,12 @@ func test_the_win_condition_stays_bare_when_there_is_no_time_to_beat() -> void:
 	board.cutoff = {"ok": true, "exists": false, "cutoff_ms": 0, "total_entries": 3}
 	var hq := await _hq_with_a_completed_daily(board)
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
 	assert_string_contains(hq._challenge_win_label.text.to_upper(),
-		UITheme.caps(hq._CHALLENGE_WIN_CONDITION))
+		UITheme.caps(HqChallenge._CHALLENGE_WIN_CONDITION))
 	assert_false(hq._challenge_win_label.text.contains("-"),
 		"no dash-and-time tail is appended when there is no line to beat")
 	_restore_after_placing()
@@ -4898,7 +4934,7 @@ func test_the_cut_line_survives_the_uppercase_enforce_pass_on_open() -> void:
 
 	var text: String = hq._challenge_win_label.text
 	assert_eq(text, text.to_upper(), "setup: the enforce pass really did uppercase the row")
-	assert_string_contains(text, UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+	assert_string_contains(text, UITheme.caps(HqChallenge._CHALLENGE_WIN_CONDITION),
 		"the condition is still named")
 	assert_string_contains(text, UITheme.format_time(112240),
 		"and the time to beat landed despite the row having been uppercased under it")
@@ -4916,7 +4952,7 @@ func test_the_win_condition_says_loading_while_the_board_is_being_asked() -> voi
 	assert_string_contains(hq._challenge_win_label.text.to_upper(), "LOADING",
 		"the row says it is fetching instead of showing an empty space")
 	assert_string_contains(hq._challenge_win_label.text.to_upper(),
-		UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+		UITheme.caps(HqChallenge._CHALLENGE_WIN_CONDITION),
 		"and still states the condition while it waits")
 
 	for _i in 5:
@@ -4940,7 +4976,7 @@ func test_the_loading_placeholder_is_cleared_when_the_board_cannot_answer() -> v
 
 	var text: String = hq._challenge_win_label.text
 	assert_false(text.to_upper().contains("LOADING"), "the placeholder is cleared")
-	assert_string_contains(text.to_upper(), UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+	assert_string_contains(text.to_upper(), UITheme.caps(HqChallenge._CHALLENGE_WIN_CONDITION),
 		"leaving the bare condition")
 	_restore_after_placing()
 
@@ -4956,13 +4992,13 @@ func test_a_signed_out_player_never_queries_the_board_for_the_cut_line() -> void
 	Cloud.auth = _real_auth  # undo the fake sign-in; discard the setup's own calls
 	board.cutoff_calls = 0
 
-	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:
 		await get_tree().process_frame
 
 	assert_eq(board.cutoff_calls, 0, "no query is made at all when signed out")
 	assert_string_contains(hq._challenge_win_label.text.to_upper(),
-		UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+		UITheme.caps(HqChallenge._CHALLENGE_WIN_CONDITION),
 		"and the row still states the condition")
 	_restore_after_placing()
 
@@ -4986,7 +5022,7 @@ func test_a_stale_cut_line_is_discarded_when_the_kind_changes_before_it_answers(
 	# snapshots at call time, same as a real query would capture whatever was live then.
 	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 222222, "total_entries": 9}
 	# Switch away before the Daily's parked query can answer.
-	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.WEEKLY)
 	for _i in 5:
 		await get_tree().process_frame
 	var weekly_time := UITheme.format_time(222222)
@@ -5016,11 +5052,11 @@ func test_tapping_a_kind_tab_selects_it_without_starting_the_challenge() -> void
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	hq._open_challenge_overlay()
+	hq._challenge_ui._open_challenge_overlay()
 	await get_tree().process_frame
 	assert_eq(hq._challenge_kind, ChallengeLibrary.DAILY, "setup: opens on Daily")
 
-	var weekly: Button = hq._challenge_kind_button(ChallengeLibrary.WEEKLY)
+	var weekly: Button = hq._challenge_ui._challenge_kind_button(ChallengeLibrary.WEEKLY)
 	var touch := InputEventScreenTouch.new()
 	touch.pressed = true
 	# Drive the `gui_input` SIGNAL, not the `_gui_input` virtual. Godot's
@@ -5098,35 +5134,35 @@ func test_reveal_queue_holds_a_rally_until_a_car_can_enter_it() -> void:
 	# moment a qualifying car arrives, by whatever route.
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
-	var pending: Array = hq._pending_reveals()
+	var pending: Array = hq._table_ui._pending_reveals()
 	assert_true(pending.has("rv_open"), "an open rally with a car that can enter it is revealed")
 	assert_false(pending.has("rv_hot"), "a rally no owned car can enter is held back")
 	assert_false(pending.has("rv_special"), "a star-locked special is not revealed")
 
 	_grant_featherweight()
-	assert_true(hq._pending_reveals().has("rv_hot"),
+	assert_true(hq._table_ui._pending_reveals().has("rv_hot"),
 		"the held rally appears once the player owns a car that qualifies for it")
 
 
 func test_reveal_queue_skips_rallies_already_shown() -> void:
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
-	assert_true(hq._pending_reveals().has("rv_open"))
+	assert_true(hq._table_ui._pending_reveals().has("rv_open"))
 	_save.mark_rally_revealed("rv_open")
-	assert_false(hq._pending_reveals().has("rv_open"),
+	assert_false(hq._table_ui._pending_reveals().has("rv_open"),
 		"a rally the player has already been shown is never revealed twice")
 
 
 func test_opening_the_map_reveals_the_pending_rallies_and_leaves_the_table_live() -> void:
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_true(_save.rally_revealed_seen("rv_open"), "the revealed rally is marked seen")
 	assert_false(hq._revealing, "the sequence has ended")
 	assert_eq(hq._view, hq.View.TABLE, "the player is left on the map")
 	assert_gt(hq._table_focus_index, -1, "a pin is focused, so table input is live again")
-	assert_true(hq._pending_reveals().is_empty(),
+	assert_true(hq._table_ui._pending_reveals().is_empty(),
 		"re-opening the map does not replay what was already shown")
 
 
@@ -5152,7 +5188,7 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 	assert_false(_save.needs_reveal_seeding(), "the profile now carries reveal flags")
 
 	var hq: Node3D = await _new_hq()
-	assert_true(hq._pending_reveals().is_empty(),
+	assert_true(hq._table_ui._pending_reveals().is_empty(),
 		"an existing career's first map open has nothing to parade")
 	assert_true(_save.rally_revealed_seen("rv_hot"),
 		"an unlocked-but-uncarriageable rally is seeded too — seeding has no eligible-car hold")
@@ -5160,7 +5196,7 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 	# ...and a rally that was still LOCKED at seed time still gets a real reveal once it
 	# actually unlocks — seeding backfilling the open roster does not swallow that.
 	_save.complete_rally("rv_hot", 45_000, 1)  # a 1st place -> enough stars to open the special
-	assert_true(hq._pending_reveals().has("rv_special"),
+	assert_true(hq._table_ui._pending_reveals().has("rv_special"),
 		"seeding never swallows a rally that was still locked at seed time")
 
 
@@ -5170,7 +5206,7 @@ func test_a_press_during_the_reveal_skips_the_whole_queue() -> void:
 	# never swallowed. Everything queued is marked seen so a skipped reveal never replays.
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	# Re-arm the sequence by hand: headless drains it instantly (no awaits allowed in
 	# the suite), so this is the only way to stand in the middle of one.
@@ -5194,7 +5230,7 @@ func test_a_press_during_the_reveal_skips_the_whole_queue() -> void:
 func test_table_input_is_suspended_while_the_reveal_runs() -> void:
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	hq._table_panning = true  # as if a drag were already under way
 	hq._revealing = true
@@ -5218,7 +5254,7 @@ func test_a_stale_reveal_token_cannot_touch_a_newer_sequences_state() -> void:
 	# so this drives the guard directly instead of racing real coroutines.
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
-	hq._enter_table()
+	hq._table_ui._enter_table()
 	await get_tree().process_frame
 
 	# Simulate: a first sequence started and captured this token...
@@ -5233,7 +5269,7 @@ func test_a_stale_reveal_token_cannot_touch_a_newer_sequences_state() -> void:
 	hq._reveal_shown.clear()
 	hq._view = hq.View.TABLE
 
-	assert_false(hq._reveal_continue(stale_token),
+	assert_false(hq._table_ui._reveal_continue(stale_token),
 		"a coroutine carrying an outdated token is told to stop, not to keep going")
 	assert_eq(hq._reveal_queue, ["rv_hot"] as Array[String],
 		"the stale coroutine's abort must not mutate the new sequence's queue")

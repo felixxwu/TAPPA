@@ -479,7 +479,7 @@ func test_cycling_steps_the_style_and_previews_it() -> void:
 	hq._enter_wheel_swap()
 	await _await_lineup(hq)
 	var first: int = hq._wheel_index
-	hq._cycle_focus(1)
+	hq._carpark_ui._cycle_focus(1)
 	assert_ne(hq._wheel_index, first, "cycling moves the style cursor")
 	var want := String(hq._wheel_options[hq._wheel_index]["texture"])
 	var wheel: Node = hq._cars[0].find_children("*", "VehicleWheel3D", false)[0]
@@ -503,7 +503,7 @@ func test_fitting_wheels_saves_the_style_and_returns_to_the_lift() -> void:
 	hq._enter_wheel_swap()
 	await _await_lineup(hq)
 	# Step off stock so there's something to fit.
-	hq._cycle_focus(1)
+	hq._carpark_ui._cycle_focus(1)
 	var want := String(hq._wheel_options[hq._wheel_index]["id"])
 	hq._on_start_pressed()
 	await get_tree().process_frame
@@ -537,7 +537,7 @@ func test_backing_out_discards_the_preview_and_reskins_the_car() -> void:
 	hq._enter_wheel_swap()
 	await _await_lineup(hq)
 	var car: Node = hq._cars[0]
-	hq._cycle_focus(1)  # preview something other than stock
+	hq._carpark_ui._cycle_focus(1)  # preview something other than stock
 	hq._car_back()
 	await get_tree().process_frame
 	assert_false(_save.get_car(_save.selected_instance_id()).has("wheels"),
@@ -581,7 +581,7 @@ func test_re_entering_after_an_early_back_out_rewires_cleanly() -> void:
 	# And the view still works end to end: the preview lands on the parked car.
 	await _await_lineup(hq)
 	assert_eq(hq._carpark_mode, hq.CarparkMode.WHEELS, "re-entry is in wheel mode")
-	hq._cycle_focus(1)
+	hq._carpark_ui._cycle_focus(1)
 	var want := String(hq._wheel_options[hq._wheel_index]["texture"])
 	var wheel: Node = hq._cars[0].find_children("*", "VehicleWheel3D", false)[0]
 	var mat := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial

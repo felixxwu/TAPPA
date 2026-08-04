@@ -150,7 +150,7 @@ static func has_stale_run(profile: Dictionary, unix_time: int) -> bool:
 # Owned cars eligible for `kind_str` at `unix_time`: current effective p/w
 # (installed upgrades + current detune) at/under the period's rolled ceiling —
 # OR reachable by lowering detune, same as a career rally's over-the-cap car
-# (RallyLibrary.qualifying_detune / hq.gd._qualifying_detune_for): a car isn't
+# (RallyLibrary.qualifying_detune / hq_carpark.gd._qualifying_detune_for): a car isn't
 # excluded just because its slider happens to sit above what the ceiling
 # needs right now, it shows up "eligible with a note" per spec §2, and the
 # player tunes down before starting (Start still re-checks the CURRENT p/w —
@@ -179,7 +179,7 @@ static func eligible_cars(kind_str: String, profile: Dictionary, unix_time: int)
 # The largest engine-detune fraction (an ABSOLUTE slider setting, 0..1) at
 # which `owned` would qualify under `synthetic_rally`'s `{"restriction": {
 # "pw_max": ceiling}}` shape, or -1.0 if no detune helps. Judged at the car's
-# FULL power (detune 1.0), mirroring hq.gd._full_power_meta/_detuned_to_full —
+# FULL power (detune 1.0), mirroring hq_carpark.gd._full_power_meta / hq.gd._detuned_to_full —
 # duplicated here rather than reused since ChallengeSession stays a pure,
 # Save-free static surface (testable with a synthetic profile, per CLAUDE.md).
 static func qualifying_detune_for(synthetic_rally: Dictionary, owned: Dictionary, entry: Dictionary) -> float:

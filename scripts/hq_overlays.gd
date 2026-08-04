@@ -130,7 +130,7 @@ func build_table_overlay() -> void:
 	root.add_child(_hq._map_meter)
 
 	# The new-rally reveal's one-line banner ("NEW RALLY - …" / "SPECIAL EVENT UNLOCKED - …"),
-	# hidden except while the reveal sequence is running. See hq.gd _set_reveal_banner.
+	# hidden except while the reveal sequence is running. See hq_table.gd _set_reveal_banner.
 	_hq._reveal_banner = _hq._label("", 20)
 	_hq._reveal_banner.visible = false
 	root.add_child(_hq._reveal_banner)
@@ -242,7 +242,7 @@ func build_detail_overlay() -> void:
 	var back := Button.new()
 	back.text = "< Map"
 	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(_hq._hide_detail)
+	back.pressed.connect(_hq._table_ui._hide_detail)
 	actions.add_child(back)
 	var enter := Button.new()
 	enter.text = "Enter Rally — choose car >"
@@ -543,7 +543,7 @@ func build_settings_overlay() -> void:
 # --- Rally Challenge entry point (Daily/Weekly/Monthly) ------------------------
 # A modal overlay over the GARAGE (built on the shared _make_modal_overlay contract —
 # scrolled body, pinned footer), opened by the garage row's Online button and built lazily on
-# first open (_hq._open_challenge_overlay). See spec §7 and features/rally-challenge.md.
+# first open (_hq._challenge_ui._open_challenge_overlay). See spec §7 and features/rally-challenge.md.
 # A flat widget list -> native focus + MenuNav, not the diegetic ButtonCursor idiom
 # the 3D stations use, since this whole screen is a plain menu page.
 # A dark detail-card SIBLING to the rally-detail panel (build_detail_overlay, above):
@@ -640,13 +640,13 @@ func build_challenge_overlay() -> void:
 		btn.focus_mode = Control.FOCUS_ALL
 		btn.mouse_filter = Control.MOUSE_FILTER_STOP  # hit-testable; see _tab_pointer_select
 		btn.set_meta("challenge_kind", kind_str)
-		btn.focus_entered.connect(_hq._select_challenge_kind.bind(kind_str))
+		btn.focus_entered.connect(_hq._challenge_ui._select_challenge_kind.bind(kind_str))
 		btn.gui_input.connect(_tab_pointer_select.bind(btn))
 		# mouse_filter IGNORE means `pressed` can only ever fire via keyboard/gamepad
 		# ui_accept while this tab has focus (never a stray click) — wiring it to Start
 		# means Enter starts the challenge straight from a focused tab, no need to tab
 		# down to the Start button first (see _on_challenge_tab_activated).
-		btn.pressed.connect(_hq._on_challenge_tab_activated)
+		btn.pressed.connect(_hq._challenge_ui._on_challenge_tab_activated)
 		kind_row.add_child(btn)
 		_hq._challenge_kind_buttons.append(btn)
 
@@ -675,13 +675,13 @@ func build_challenge_overlay() -> void:
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_ALL
-	back.pressed.connect(_hq._close_challenge_overlay)
+	back.pressed.connect(_hq._challenge_ui._close_challenge_overlay)
 	actions.add_child(back)
 	_hq._challenge_start_button = Button.new()
 	_hq._challenge_start_button.text = "Start"
 	_hq._challenge_start_button.focus_mode = Control.FOCUS_ALL
 	_hq._challenge_start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hq._challenge_start_button.pressed.connect(_hq._on_challenge_start_pressed)
+	_hq._challenge_start_button.pressed.connect(_hq._challenge_ui._on_challenge_start_pressed)
 	actions.add_child(_hq._challenge_start_button)
 
 	# Framework: WASD + arrow + gamepad focus nav for this flat page — the kind tabs,
@@ -690,7 +690,7 @@ func build_challenge_overlay() -> void:
 	# the overlay back to the garage, the same way every other modal overlay's Back
 	# restores its host. (_open_challenge_overlay re-grabs the CURRENT kind's tab explicitly
 	# on every open, so `first` here only matters as MenuNav's own fallback.)
-	MenuNav.attach(nav_root, {first = _hq._challenge_kind_buttons[0], on_back = _hq._close_challenge_overlay})
+	MenuNav.attach(nav_root, {first = _hq._challenge_kind_buttons[0], on_back = _hq._challenge_ui._close_challenge_overlay})
 
 	# Hidden until _open_challenge_overlay shows it — this overlay is built eagerly in
 	# _ready (like the per-view stations) but is a MODAL over the garage, not one of the

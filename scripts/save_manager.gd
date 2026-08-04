@@ -959,7 +959,7 @@ func rally_completed(rally_id: String) -> bool:
 # --- New-rally reveal acknowledgement ----------------------------------------
 #
 # Whether the player has been SHOWN that this rally opened up (the map-table reveal
-# sequence — hq.gd `_run_reveal_sequence`). Stored per rally, beside `completed`, so
+# sequence — hq_table.gd `_run_reveal_sequence`). Stored per rally, beside `completed`, so
 # everything known about a rally lives in one record and a rally id that stops existing
 # takes its flag with it instead of orphaning an entry in a parallel list.
 #

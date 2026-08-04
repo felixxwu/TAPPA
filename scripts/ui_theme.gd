@@ -431,8 +431,14 @@ static func mark_panel_focused(container: PanelContainer, focused: bool, pad: in
 		box.border_color = GREEN
 	else:
 		box.bg_color = BLACK  # pure black when idle (rule 4)
-	for side in ["left", "top", "right", "bottom"]:
-		box.set("content_margin_" + side, float(pad))
+	# Set the four margins directly rather than looping a string array: this is called
+	# once per map pin per repaint, and the loop form allocated a 4-element array plus
+	# four concatenated property-name strings every call.
+	var p := float(pad)
+	box.content_margin_left = p
+	box.content_margin_top = p
+	box.content_margin_right = p
+	box.content_margin_bottom = p
 	container.add_theme_stylebox_override("panel", box)
 
 

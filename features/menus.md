@@ -4,7 +4,11 @@
 overlay/menu-layer builders in `scripts/hq_overlays.gd` (`class_name HqOverlays` —
 the `build_*_overlay()` methods, split out of `hq.gd` to shrink it; each holds a
 back-reference to the `HqController` and reaches into it for state + button
-callbacks), `podium.tscn` + `scripts/podium.gd`, plus the session-aware fielding
+callbacks), the Rally Challenge screen in `scripts/hq_challenge.gd` (`class_name
+HqChallenge`), the map table in `scripts/hq_table.gd` (`class_name HqTable`), the car park in
+`scripts/hq_carpark.gd` (`class_name HqCarpark`) — all three the same shape as `HqOverlays`,
+described below — `podium.tscn` + `scripts/podium.gd`, plus the
+session-aware fielding
 in `scripts/world.gd`. See the full design in [../todo/menus.md](../todo/menus.md).
 
 This is the **diegetic 3D build** of the menu shell: HQ is one continuous 3D space
@@ -331,8 +335,15 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   select fits them and back discards the preview and returns to the lift;
   the **map table** is driven by a **camera glide**: holding
   `menu_up/down/left/right` slides the camera smoothly over the map (polled in
-  `hq.gd._process`, glide speed `hq_table_pan_glide`), and selection tracks whichever
+  `hq.gd._process`, glide speed `hq_table_pan_glide`; the pan step itself is
+  `hq_table.gd._pan_table_step`), and selection tracks whichever
   target sits nearest the view centre — a reticle over the map, not a jump between pins.
+  Because that selection step runs every frame while a direction is held, it repaints the
+  focus highlight only when the selection actually changes
+  (`hq_table.gd._select_target_under_center` guards on `_table_focus_node`) — repainting
+  allocates a `StyleBoxFlat` per pin, so doing it unconditionally cost ~28 allocations a
+  frame at full unlock. The guard keys on the pin NODE, not `_table_focus_index`, because
+  `_refresh_map_pins` rebuilds the pin nodes without resetting the index.
   The target set is every unlocked rally pin. There is **one world map**
   (`RegionLibrary.DEFAULT_MAP_IMAGE`) carrying the WHOLE roster
   (`_refresh_map_pins` builds a pin per `RallyLibrary.all()` entry), so there are no
@@ -495,7 +506,7 @@ When rallies become enterable the player is **told**, rather than being left to 
 that a grey pin turned green. Opening the map table pans the camera to each new rally in
 turn and flips its pin from the locked to the unlocked look.
 
-- **Where.** `hq.gd._enter_table()`, before the usual `_focus_hardest_incomplete()`
+- **Where.** `hq_table.gd._enter_table()`, before the usual `_focus_hardest_incomplete()`
   entry steer. There is no separate scene and no podium teaser — the map is the only
   place a reveal happens. The camera motion is the EXISTING map pan (`_pan_table_to` →
   `_move_camera_to`, `menu_camera_move_time`), not a second bespoke tween.
@@ -738,7 +749,7 @@ scroll.** `hq.gd::_make_modal_overlay(margin)` is the builder: it returns
 below it as a sibling, and `root` is the outer full-rect VBox you hand to
 `MenuNav.attach` / `UITheme.enforce`. Variable-height content goes in `body`; the
 control that LEAVES the page (Back / Done / Close / "Continue") goes in `footer`.
-`hq.gd::_make_carpark_modal(build_body, build_footer)` is the same contract for the
+`hq_carpark.gd::_make_carpark_modal(build_body, build_footer)` is the same contract for the
 car-park's centred house panel. It is now a thin wrapper over `MenuPage`
 (`{"dim": true, "margin": 16.0, "padding": 20}`) rather than a hand-rolled stack: `MenuPage`
 gained a **`dim`** option for true modals like this one, and its `_sync_body_height` already
@@ -860,8 +871,45 @@ cover**, where a brief wait reads as loading rather than gameplay jank, and it w
 `_car_cache` for every parked car so the car park and tuning lift (above) start
 from a hit, not a cold build.
 
+**The map table is likewise split out** into **`HqTable`** (`scripts/hq_table.gd`), held as
+`_table_ui`: entering the table, the new-rally reveal sequence, pin focus / panning / target
+selection, and the rally detail panel — 25 functions.
+
+Three things stayed on `HqController` and are worth knowing about, because they sat *inside*
+the moved region: **`_process`** (an engine callback — Godot would never fire it on a
+`RefCounted`, so the table pan and reveal animation would silently stop advancing), and
+**`_eligibility_summary` / `_qualifying_cars_text`**, which `hq_challenge.gd` also calls. They
+now live directly below the table code under a banner saying so.
+
+**The Rally Challenge screen is likewise split out** into **`HqChallenge`**
+(`scripts/hq_challenge.gd`), held by `hq.gd` as `_challenge_ui` and built alongside `_overlays`
+in `_build_hq`. It owns the 18 `*_challenge_*` functions — building and refreshing the
+Daily/Weekly/Monthly overlay, fetching its leaderboard placing and cutoff, and the entry path
+into a challenge stage.
+
+The split is deliberately **functions-only**: the `_challenge_*` state (labels, buttons, the
+layer, the caches) still lives on `HqController`, because far more code reads that state
+directly than calls these functions, and property access on the wrong object fails at runtime
+rather than at parse time. `HqOverlays` already reaches into `_hq` for the same state, so this
+follows the established pattern. The two player-facing text constants moved with the functions
+and are reached statically as `HqChallenge._CHALLENGE_WIN_CONDITION` /
+`._CHALLENGE_REWARD_TEXT`. See [../todo/hq-split.md](../todo/hq-split.md).
+
+**The car park is likewise split out** into **`HqCarpark`** (`scripts/hq_carpark.gd`), held as
+`_carpark_ui`: the eligible-lineup build, the parked-car prop cache and its Free-Roam prewarm,
+focus cycling, the swap/damage readouts and the carpark modals — 35 functions, the largest of
+the three cuts.
+
+Two things stayed on `HqController` here for reasons the parser will not tell you about. The
+`lineup_built` **signal** is declared on the node, so `HqCarpark` emits it as
+`_hq.emit_signal("lineup_built")` — a `RefCounted` has no such signal. And anywhere the old
+code passed `self` as a parent or host `Node` (`CarProp.spawn`, `ConfirmPopup.open`) it now
+passes `_hq`; `self` would compile fine and fail only when the line ran. The boot-instrumentation
+helpers (`_log_boot_cost` and friends, driven from `_ready`) and the shared `_car_stats_text` /
+`_restriction_text` also stayed, below the carpark code under a banner saying so.
+
 **A car that fails to spawn must never hang boot forever (regression, fixed).**
-`_spawn_lineup_progressive` (`hq.gd`) loops `_obtain_parked_car` → `_spawn_parked_car`
+`_spawn_lineup_progressive` (`hq_carpark.gd`) loops `_obtain_parked_car` → `_spawn_parked_car`
 → `CarProp.spawn` (`car_prop.gd`) for each car on the page; if the underlying model
 scene fails to instantiate (e.g. a texture dependency the export stripped — see the
 `export_presets.cfg` note below), `CarProp.spawn`'s `scene.instantiate()` itself
@@ -880,7 +928,10 @@ The fix is a plain `if car == null: push_warning(...); continue` right before th
 `get_meta` call — a single bad car is now skipped and logged, and the rest of the page
 (and `lineup_built`) still complete normally. See
 `tests/headless/test_lineup_cache.gd::test_a_car_that_fails_to_spawn_is_skipped_not_hung`
-and the test double `tests/headless/hq_null_spawn_double.gd`. The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
+and the test double `tests/headless/carpark_null_spawn_double.gd`, which subclasses
+`HqCarpark` and is installed over `hq._carpark_ui`.
+
+The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
 the front of the **first (leftmost) parked car**, looking diagonally down the line
 to reveal the rest of the lineup. Its `hq_exterior_cam_eye`/`_look` (GameConfig) are
 **offsets from that lead car** (`_station_xform` → `_first_car_anchor`), so the framing

@@ -124,11 +124,11 @@ func test_star_row_always_shows_and_fills_with_the_record() -> void:
 	var saved: Dictionary = Save.profile["rallies"].duplicate(true)
 	Save.profile["rallies"].erase(rally_id)
 	_hq._selected_rally_id = rally_id
-	_hq._show_detail()
+	_hq._table_ui._show_detail()
 	assert_true(_hq._detail_stars.visible, "no record → still an (empty) star row")
 	assert_eq(_hq._detail_stars.earned, 0, "no record → no stars lit")
 	Save.profile["rallies"][rally_id] = {"best_placed": 1}
-	_hq._show_detail()
+	_hq._table_ui._show_detail()
 	assert_true(_hq._detail_stars.visible, "a placement shows the medals")
 	assert_gt(_hq._detail_stars.earned, 0, "a placement lights at least one star")
 	Save.profile["rallies"] = saved
@@ -141,7 +141,7 @@ func test_enter_button_disabled_when_no_owned_car_qualifies() -> void:
 	var saved_cars: Array = Save.profile["cars"].duplicate(true)
 	Save.profile["cars"] = []
 	_hq._selected_rally_id = rally_id
-	_hq._show_detail()
+	_hq._table_ui._show_detail()
 	assert_true(_hq._detail_enter_button.disabled, "no owned cars → nothing can qualify")
 	Save.profile["cars"] = saved_cars
 
@@ -152,7 +152,7 @@ func test_enter_button_enabled_when_a_car_qualifies() -> void:
 	Save.profile["cars"] = [_owned("fx_rwd_coupe")]
 	RallyFixtures.install()
 	_hq._selected_rally_id = rally_id
-	_hq._show_detail()
+	_hq._table_ui._show_detail()
 	assert_false(_hq._detail_enter_button.disabled, "an owned car qualifies for the open class")
 	RallyFixtures.restore()
 	Save.profile["cars"] = saved_cars

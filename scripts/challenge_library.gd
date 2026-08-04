@@ -140,6 +140,13 @@ static func ceiling_for(period_key: String) -> float:
 	return CEILING_BAND_HP_TONNE[rng.randi_range(0, CEILING_BAND_HP_TONNE.size() - 1)]
 
 
+# The p/w ceiling for whichever period of `kind` is live at `unix_time` — the
+# current_period -> ceiling_for pair every caller needs together, so they don't each
+# have to know that the ceiling is keyed off the period's "key" field.
+static func current_ceiling(kind: String, unix_time: int) -> float:
+	return ceiling_for(String(current_period(kind, unix_time).get("key", "")))
+
+
 # This period's procedurally-authored stages: an Array of TrackGenParams-shaped
 # event dicts (the same fields RallyLibrary.RALLIES entries author by hand),
 # picked deterministically by the period's seed. Stage i's own "seed" field is

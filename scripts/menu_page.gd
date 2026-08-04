@@ -85,7 +85,7 @@ func _init(opts: Dictionary = {}) -> void:
 		dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 		dim.color = UITheme.MODAL_DIM
 		# IGNORE, not STOP: the dim is a visual cue. Screens that must actually block input
-		# underneath do it by routing navigation to the modal (see hq.gd _carpark_modal_open),
+		# underneath do it by routing navigation to the modal (see hq_carpark.gd _carpark_modal_open),
 		# not by relying on a rect to swallow events.
 		dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(dim)
