@@ -94,11 +94,18 @@ func _capture_finish() -> Array:
 # A synthetic two-rung ladder gated on the fixture special, so none of these tests depend on
 # an authored upgrade or on which real rally gates what.
 func _install_unlock_ladder() -> void:
+	# `free: true` keeps these OUT of the ordinary per-event upgrade draw
+	# (RewardSystem._eligible_parts skips free parts) while leaving the special's direct
+	# award untouched. Without it these tests are flaky-by-construction: the moment the
+	# first win opens the gate, fx_top becomes legitimately drawable by the per-event draw
+	# that _report_events triggers, so a second run could receive it from the NORMAL reward
+	# path and an "it wasn't re-awarded" assertion would fail for the wrong reason —
+	# depending on RNG state, which differs between a targeted run and the full suite.
 	var upgrades: Array[Dictionary] = [
 		{"id": "fx_base", "name": "Fixture Base", "slot": "fxslot", "consumable": false,
-			"cost": 0, "power_mult": 1.05},
+			"cost": 0, "free": true, "power_mult": 1.05},
 		{"id": "fx_top", "name": "Fixture Top", "slot": "fxslot", "consumable": false,
-			"cost": 0, "power_mult": 1.1,
+			"cost": 0, "free": true, "power_mult": 1.1,
 			"requires_upgrade_id": "fx_base", "unlocked_by_rally": "fx_showdown"},
 	]
 	UpgradeLibrary.override_for_test(upgrades)
