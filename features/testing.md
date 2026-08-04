@@ -277,6 +277,31 @@ retried, so the retry can never mask a real failure. Budget is
 `TEST_CRASH_RETRIES` (default 2; a crash that persists past it still fails the
 run). If you see a `retrying (n/2)` warning, that's this flake being absorbed.
 
+## Trap: the per-event reward draw pollutes inventory assertions
+
+Driving a rally through `_report_events` (or any path that calls
+`RallySession.report_event_result`) fires the **ordinary per-event upgrade draw**. That draw
+can grant a part or a consumable — including an engine-swap token
+(`RewardSystem.ENGINE_SWAP_TOKEN_DROP_WEIGHT`) — to the driven car.
+
+So an assertion like "the car ends up with exactly one X" or "the car does NOT have Y" after
+driving events is **measuring two systems at once**, and whether it passes depends on RNG
+state. That state differs between a single-file run and the full suite, which makes it the
+worst kind of flake: green on `--fast`, red in CI, and it looks like the feature is broken
+rather than the test.
+
+Two ways out, both used in `test_rally_session.gd`:
+
+1. **Assert on what the feature itself reported**, not on the resulting inventory — e.g.
+   `special_unlock.granted` says what the unlock granted, and the draw cannot touch it. Keep
+   an inventory check if you want, but as `assert_gte(before + 1)` ("it arrived"), not as an
+   exact total.
+2. **Take the items out of the draw pool.** A synthetic upgrade authored with `free: true` is
+   skipped by `RewardSystem._eligible_parts`, so the ordinary draw can never grant it and an
+   exact assertion becomes meaningful again.
+
+Both were learned the hard way — twice, on the same feature.
+
 ## Rules of thumb (from CLAUDE.md)
 
 - Add/update tests in the **same** piece of work as the feature change.

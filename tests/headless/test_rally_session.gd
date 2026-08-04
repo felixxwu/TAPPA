@@ -215,8 +215,15 @@ func test_winning_the_capability_special_awards_a_swap_token() -> void:
 		"the capability unlock is announced even with no part to name")
 	assert_eq(String(unlock.get("item_id", "")), "",
 		"and it names no catalogue item, because there isn't one")
-	assert_eq(int((_save.profile.get("inventory", {}) as Dictionary).get(token, 0)), before + 1,
-		"exactly one swap token is granted, so the station is immediately usable")
+	# Asserted on the special's OWN report, not on the inventory total: the ordinary
+	# per-event draw can independently award a swap token
+	# (RewardSystem.ENGINE_SWAP_TOKEN_DROP_WEIGHT), so an inventory count conflates the two
+	# and lands on 1 or 2 depending on RNG state — which differs between a targeted run and
+	# the full suite. The inventory is still checked, but only for "it actually arrived".
+	assert_eq(unlock.get("granted", []), [token] as Array,
+		"the unlock grants exactly one swap token, so the station is immediately usable")
+	assert_gte(int((_save.profile.get("inventory", {}) as Dictionary).get(token, 0)), before + 1,
+		"and the token reached the inventory")
 	assert_eq(String(result.get("car_reward", "")), "",
 		"it is still a special, so still no car")
 
