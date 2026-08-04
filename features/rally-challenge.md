@@ -42,7 +42,7 @@ stages and damage carries over between them. Full design:
 - **`DrivingContext`** (`scripts/driving_context.gd`, `class_name`, static, no
   autoload) — the one shared accessor for "which session is fielding a car,
   what p/w ceiling applies, and is this car locked". See "Car lock" below.
-- **HQ entry point** (`scripts/hq.gd` / `scripts/hq_overlays.gd`) — see below.
+- **HQ entry point** (`scripts/hq_challenge.gd` / `scripts/hq_overlays.gd`) — see below.
 
 ## Stage-generation retry (unlike a rally's seed, a challenge's isn't pre-verified)
 
@@ -185,7 +185,8 @@ for it), and its car may be a bare catalogue MODEL rather than an `OwnedCar`
 `ChallengeSession.eligible_cars(kind, profile, unix_time)` lists the player's
 owned cars whose *current* effective power-to-weight (installed upgrades +
 detune, via `UpgradeLibrary.effective_meta` + `CarLibrary.power_to_weight_hp_tonne`)
-is at or under that period's rolled ceiling — **or reachable by lowering
+is at or under that period's ceiling **as the player sees it** — see "Rounding"
+below — **or reachable by lowering
 detune**, consistent with how a career rally treats an over-the-cap car
 (`hq_carpark.gd._qualifying_detune_for` / `RallyLibrary.qualifying_detune`):
 `ChallengeSession.qualifying_detune_for({"restriction": {"pw_max": ceiling}},
@@ -197,7 +198,37 @@ before starting) same as any other rally. Recomputed live, not cached at
 grant time. Zero eligible cars (none reachable even via detune) blocks
 starting outright — no loaner car, no forced auto-detune.
 
-## HQ entry point (`hq.gd`)
+### Rounding: the ceiling is judged as displayed
+
+`ChallengeLibrary.ceiling_for` returns a raw `float`, but every label prints it
+whole (`"%d hp/t max"`), and `CarLibrary.power_to_weight_hp_tonne` is itself
+rounded. Comparing a rounded car figure against an unrounded ceiling would
+reject a car whose displayed hp/tonne exactly equals the displayed cap — the
+confusing case `hq_carpark.gd._qualifying_detune_for` and
+`RallyLibrary.ineligibility_reason` already `roundi(pw_max)` to avoid. So the
+challenge path rounds too, in exactly one place:
+
+- `ChallengeSession.displayed_ceiling(kind, unix_time) -> int` — the ceiling as
+  printed, and the number eligibility is judged against. Every challenge label
+  (`hq_challenge.gd`'s entry-screen subtitle and car-park banner) uses this
+  rather than rounding locally.
+- `ChallengeSession.classify_car(raw_ceiling, owned, entry)` — the single
+  implementation of the comparison. Rounds `raw_ceiling`, then returns
+  `{"state": READY | NEEDS_TUNE | EXCLUDED, "detune": frac}` (the synthetic
+  `{"restriction": {"pw_max": <rounded ceiling>}}` it feeds
+  `qualifying_detune_for` carries the rounded cap too).
+- `ChallengeSession.classify_cars(kind, profile, unix_time)` — runs that over
+  the profile and returns `{"ceiling": int, "eligible", "ready", "needs_tune",
+  "detune": {instance_id: frac}}`. `eligible_cars` is now just its `"eligible"`
+  list, and the UI reads the buckets instead of re-deriving the comparison, so
+  the rule cannot drift between the entry screen and the car park.
+
+The start-line launch gate (`world.gd`'s synthetic rally →
+`RallyLibrary.ineligibility_reason`) needs no change: that path rounds `pw_max`
+itself. `DrivingContext.pw_limit()` / the upgrades popup cap stay raw floats —
+they are a *display* cap for the upgrades screen, not the eligibility verdict.
+
+## HQ entry point (`hq_challenge.gd`)
 
 The garage station's bottom action row is **Back / Career / Garage / Free
 Roam / Challenge** (a single left/right `ButtonCursor`, `_garage_cursor` —
@@ -226,7 +257,7 @@ cost four lines, not eight:
 1. **Win condition** — `Top 50%`, plus the CURRENT time on that cut line
    appended to the same row when the board can answer it: `Top 50% - 1:52.24`.
    The time comes from `ChallengeLeaderboard.fetch_cutoff`, fired
-   non-blocking by `hq.gd._fetch_challenge_cutoff` — the row is already
+   non-blocking by `hq_challenge.gd._fetch_challenge_cutoff` — the row is already
    correct without it, so there's no `CloudBusy` cover and an unreachable
    board just leaves the bare condition standing. **Fetched live, never
    stored**, for the same reason the completed placing is (§below): the cut
@@ -263,7 +294,7 @@ cost four lines, not eight:
    it at?") is broken here: `_open_challenge_overlay` runs `UITheme.enforce`
    immediately after building the row, which UPPERCASES every `Label`, so a
    mixed-case comparison never matched and the answer was silently dropped.
-   The win row is written only through `hq.gd._set_challenge_win_text(tail)`,
+   The win row is written only through `hq_challenge.gd._set_challenge_win_text(tail)`,
    which ALWAYS rebuilds it from `_CHALLENGE_WIN_CONDITION` (uppercasing via
    `UITheme.caps`, since this row is rewritten asynchronously long after the
    one-shot enforce pass) rather than appending to whatever is on screen. While
@@ -380,13 +411,11 @@ reads the wall clock the same way).
 for a normal rally: it sets `_carpark_mode = CarparkMode.CHALLENGE`, calls
 `_build_challenge_lineup(kind_str)`, frames the lot, and shows the "no
 eligible car" empty state if none qualify. `_build_challenge_lineup` parks
-exactly what `ChallengeSession.eligible_cars(kind, Save.profile, unix_time)`
-reports (challenge-lock-excluded via `Save.is_challenge_locked`), and tracks
-which of those are over the ceiling STOCK but detune-reachable in the SAME
-`_detune_needed` dict the rally car-select uses — judged with
-`ChallengeSession.qualifying_detune_for` (a challenge has no authored rally
-dict) against the synthetic `{"restriction": {"pw_max": ceiling}}` shape
-`ChallengeSession` itself builds internally. An over-ceiling car therefore
+exactly what `ChallengeSession.classify_cars(kind, Save.profile, unix_time)`
+reports as `"eligible"` (challenge-lock-excluded via `Save.is_challenge_locked`),
+and forwards that same call's `"detune"` map into the SAME `_detune_needed` dict
+the rally car-select uses — it does NOT redo the comparison itself (see
+"Rounding" above). An over-ceiling car therefore
 parks looking eligible, and pressing Start on it pops the SAME
 `_show_over_limit_prompt` "Too powerful" agreement a normal rally's
 over-cap car does, routing to the gated upgrades popup
@@ -469,7 +498,7 @@ period with an outcome. The entry screen reads `COMPLETED` (green) or `DNF` (red
 disables Start.
 
 **The completed row shows the player's placing, fetched LIVE every time**
-(`hq.gd._fetch_challenge_placing`). The row renders `COMPLETED` immediately and
+(`hq_challenge.gd._fetch_challenge_placing`). The row renders `COMPLETED` immediately and
 becomes `COMPLETED - 3 of 42` when `Cloud.challenge_leaderboard.fetch_final_rank`
 answers. The rank is deliberately NOT stored with the outcome: `challenge_results`
 is pruned to LIVE periods, so every completed record on screen belongs to a board
@@ -660,7 +689,7 @@ Two separate reward paths:
   never posted — same graceful skip). Reward per kind:
 
   Reward table (`ChallengeSession._COMPLETION_REWARD` — **tunable, change the
-  numbers there**; `hq.gd._CHALLENGE_REWARD_TEXT` is the player-facing summary and
+  numbers there**; `HqChallenge._CHALLENGE_REWARD_TEXT` is the player-facing summary and
   has to be kept in step):
 
   | Kind | Mystery boxes | Car | Synthetic difficulty |
@@ -730,8 +759,11 @@ the driving scene**, before the hand-off to HQ.
   `:eN`-suffixed key format, `stages_for`'s `seed = base_seed + i` contract.
   Never pins the specific ceiling-band values or turn-count ranges (tunable).
 - `tests/headless/test_challenge_session.gd` — start/resume/resumable_run
-  staleness, `eligible_cars` filtering (via `CarFixtures`, never the real
-  catalogue), stage accumulation/final-stage termination, DNF via
+  staleness, `eligible_cars`/`classify_cars` filtering and bucket partition (via
+  `CarFixtures`, never the real catalogue), the displayed-ceiling boundary rule
+  (`classify_car` with a self-authored fractional ceiling: a car whose displayed
+  hp/tonne equals the displayed ceiling is `READY`; one over it is still
+  `NEEDS_TUNE`) and `displayed_ceiling == roundi(current_ceiling)`, stage accumulation/final-stage termination, DNF via
   wreck/abandon, the completion-reward DNF short-circuit, plus the full
   multi-stage drive-through (`report_event_result` + `continue_to_next_stage()`
   for every stage of the longest kind, reaching `events_completed() ==

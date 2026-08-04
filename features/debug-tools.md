@@ -219,7 +219,7 @@ What the numbers showed on a fast Mac: the **free-roam prewarm was ~3x the entir
 the HQ build** (349 ms build + 1093 ms prewarm = 1442 ms boot), while duplicated mesh data
 is negligible (~26 KB per prop). So the resident-memory concern about per-car mesh copies
 is real but small, and the cost worth attacking was the prewarm's contribution to
-time-to-first-interaction — now fixed by deferring it (`hq.gd` →
+time-to-first-interaction — now fixed by deferring it (`hq_carpark.gd` →
 `_prewarm_free_roam_deferred`), taking HQ boot to ~352 ms. Note the mesh walk
 does not see nodes, physics bodies, materials or textures — for a true RAM figure measure
 `Performance.MEMORY_STATIC` / `RENDER_VIDEO_MEM_USED` deltas around the prewarm instead.

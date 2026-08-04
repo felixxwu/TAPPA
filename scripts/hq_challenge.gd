@@ -139,6 +139,12 @@ func _set_challenge_win_text(tail: String) -> void:
 	_hq._challenge_win_label.text = UITheme.caps(text)
 
 
+# Display name for one owned car dict from a ChallengeSession.classify_cars bucket
+# (whose entries always resolve to a real catalogue entry — classify skips the rest).
+func _challenge_car_name(car: Dictionary) -> String:
+	return EngineSwap.display_name(CarLibrary.by_id(String(car.get("model_id", ""))), car)
+
+
 # Write the progress row's COMPLETED state as "COMPLETED" or "COMPLETED - <tail>".
 # Same contract as _set_challenge_win_text: always rebuilt from the constant rather
 # than appended to what's on screen, so the transient "Loading…" can't survive in
@@ -254,8 +260,11 @@ func _refresh_challenge_overlay() -> void:
 	# The period dict itself is needed below (cutoff/placing fetches, stage count), so this
 	# site keeps it rather than going through ChallengeLibrary.current_ceiling.
 	var period := ChallengeLibrary.current_period(_hq._challenge_kind, unix_time)
-	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
-	_hq._challenge_subtitle_label.text = "%d hp/t max" % int(round(ceiling))
+	# The DISPLAYED ceiling is also the one eligibility is judged against — see
+	# ChallengeSession.displayed_ceiling.
+	@warning_ignore("static_called_on_instance")
+	var ceiling := ChallengeSession.displayed_ceiling(_hq._challenge_kind, unix_time)
+	_hq._challenge_subtitle_label.text = "%d hp/t max" % ceiling
 
 	_set_challenge_win_text("")
 	_fetch_challenge_cutoff(String(period.get("key", "")),
@@ -271,23 +280,18 @@ func _refresh_challenge_overlay() -> void:
 
 	# Eligible cars — NAME them (capped + "+N more"), same as the rally pin detail
 	# panel's own eligibility read-out (_eligibility_summary/_qualifying_cars_text),
-	# not just a count. ChallengeSession.eligible_cars already includes the
-	# detune-reachable ones, split here into ready-now vs. needs-a-tune like
-	# _eligibility_summary's own "adjust" bucket.
+	# not just a count. ChallengeSession.classify_cars owns the ready-now vs.
+	# needs-a-tune split (the latter mirroring _eligibility_summary's "adjust" bucket);
+	# this site only turns the two buckets into names.
 	@warning_ignore("static_called_on_instance")
-	var eligible := ChallengeSession.eligible_cars(_hq._challenge_kind, Save.profile, unix_time)
+	var classified := ChallengeSession.classify_cars(_hq._challenge_kind, Save.profile, unix_time)
+	var eligible: Array = classified["eligible"]
 	var ready_names: Array[String] = []
 	var tune_names: Array[String] = []
-	for car in eligible:
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		if entry.is_empty():
-			continue
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		var display_name := EngineSwap.display_name(entry, car)
-		if CarLibrary.power_to_weight_hp_tonne(meta) <= ceiling:
-			ready_names.append(display_name)
-		else:
-			tune_names.append(display_name)
+	for car in classified["ready"]:
+		ready_names.append(_challenge_car_name(car))
+	for car in classified["needs_tune"]:
+		tune_names.append(_challenge_car_name(car))
 	if resuming:
 		# A run in progress has no choice left to make — the car was committed when it
 		# started and is locked to it for the rest of the period. Listing the whole
@@ -417,8 +421,9 @@ func _enter_challenge_car_screen(kind_str: String) -> void:
 	_hq._start_button.text = "Start Challenge"
 	_build_challenge_lineup(kind_str)
 	var unix_time := int(Time.get_unix_time_from_system())
-	var ceiling := ChallengeLibrary.current_ceiling(kind_str, unix_time)
-	_hq._rally_banner.text = "%s Challenge — needs <= %d hp/tonne" % [kind_str.capitalize(), int(round(ceiling))]
+	@warning_ignore("static_called_on_instance")
+	var ceiling := ChallengeSession.displayed_ceiling(kind_str, unix_time)
+	_hq._rally_banner.text = "%s Challenge — needs <= %d hp/tonne" % [kind_str.capitalize(), ceiling]
 	_hq._view = _hq.View.CARPARK
 	_hq._detail_open = false
 	_hq._update_overlays()
@@ -430,35 +435,19 @@ func _enter_challenge_car_screen(kind_str: String) -> void:
 	_hq._carpark_ui._focus_changed(true)
 
 
-# Park the owned cars ChallengeSession.eligible_cars(kind, ...) reports for `kind_str` (already
-# challenge-lock-excluded per §2), tracking which of them are over the ceiling STOCK but
-# reachable by lowering detune — those park looking eligible, and pressing Start pops the
-# same over-limit prompt _build_eligible_lineup's rally cars use, judged with
-# ChallengeSession.qualifying_detune_for (a challenge has no authored rally dict) against the
-# synthetic `{"restriction": {"pw_max": ceiling}}` shape ChallengeSession itself uses
-# internally.
+# Park the owned cars ChallengeSession.classify_cars(kind, ...) reports for `kind_str`
+# (already challenge-lock-excluded per §2). The classification — including which of them
+# are over the DISPLAYED ceiling but reachable by lowering detune, and at what absolute
+# slider setting — is computed once there and simply forwarded here: those cars park
+# looking eligible, and pressing Start pops the same over-limit prompt
+# _build_eligible_lineup's rally cars use.
 func _build_challenge_lineup(kind_str: String) -> void:
 	var unix_time := int(Time.get_unix_time_from_system())
 	@warning_ignore("static_called_on_instance")
-	var eligible := ChallengeSession.eligible_cars(kind_str, Save.profile, unix_time)
-	var ceiling := ChallengeLibrary.current_ceiling(kind_str, unix_time)
-	var synthetic_rally := {"restriction": {"pw_max": ceiling}}
-	var filtered: Array = []
-	var needs_detune := {}
-	for car in eligible:
-		var id := int(car.get("instance_id", -1))
-		filtered.append(car)
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		if entry.is_empty():
-			continue
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		if CarLibrary.power_to_weight_hp_tonne(meta) > ceiling:
-			@warning_ignore("static_called_on_instance")
-			var frac := ChallengeSession.qualifying_detune_for(synthetic_rally, car, entry)
-			if frac > 0.0:
-				needs_detune[id] = frac
-	_hq._carpark_ui._build_lineup(filtered)  # clears _detune_needed / _drivetrain_needed, repopulated below
-	_hq._detune_needed = needs_detune
+	var classified := ChallengeSession.classify_cars(kind_str, Save.profile, unix_time)
+	# clears _detune_needed / _drivetrain_needed, repopulated below
+	_hq._carpark_ui._build_lineup(classified["eligible"])
+	_hq._detune_needed = classified["detune"]
 	_hq._drivetrain_needed = {}
 
 

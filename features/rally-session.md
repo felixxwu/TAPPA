@@ -227,9 +227,27 @@ removing ~30–45 lap-time sims from every `start_rally`.
   the authored-base grip (`gravel_grip`/`tarmac_grip` from `Config.CONFIG_PATH`), the
   field-gen constants + `RIVAL_NAMES`, and `OpponentCache.CACHE_VERSION` (bump only for
   `LapTimeModel` physics / field-assembly algorithm changes).
+- **Field entry shape** (one dict per rival, as `generate_opponent_field` produces and
+  `deserialize_field` restores): `name`, `car_id`, `engine_id`, `car_name`,
+  `event_times_ms`, `dnf`, `combined_ms`, `wreck_event`, `wreck_progress`,
+  `wreck_side`. `engine_id` + the layout-prefixed `car_name` come from the rival engine
+  swaps (see [rally-roster.md](rally-roster.md) → *Rival builds*).
+- **`deserialize_field` is a WHITELIST.** It rebuilds each rival field-by-field (to
+  restore int/bool types JSON flattens to floats), so **any field not listed there is
+  silently dropped on the way out of the cache** and silently defaults downstream —
+  with a live-generation fallback masking it in the editor. Adding a field to a rival
+  means adding it to `deserialize_field` in the same change.
+- **`CACHE_VERSION` is `"2"`** — bumped from `"1"` for the rival engine swaps. The
+  auto-folded fingerprint covers `EngineLibrary.ENGINES` *data* but not generator
+  *logic*, and here both the entry shape (a new `engine_id`) and the **rng draw order**
+  changed, so identical inputs now yield a different field. Hence the manual bump: it
+  re-keys and therefore re-rolls **every** rally's field.
 - **Depends on the track cache** — regenerate tracks first. `./cache_all.sh` runs
   `cache_tracks.sh` then `cache_opponents.sh` in order; `./cache_opponents.sh` alone
-  regenerates just this file. A car/rally/grip/physics retune requires a regen.
+  regenerates just this file. A car/rally/grip/physics retune requires a regen — as
+  does a `CACHE_VERSION` bump, so the rival-engine-swap change requires re-baking
+  `data/opponent_cache.json` via `./cache_opponents.sh` or CI fails the freshness
+  check.
 - **Validation:** `tools/verify_opponent_cache.tscn` (a `source_hash` over the sorted
   per-rally keys) gates CI alongside the track verifier; `test_opponent_cache.gd`
   runs the same freshness check locally.

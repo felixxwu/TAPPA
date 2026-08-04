@@ -90,8 +90,19 @@ result.
 - **`current_engine_id(owned, stock_id) -> String`** — the engine a car is
   actually running: `owned.swapped_engine` if set, else the `stock_id`
   (`CarLibrary` entry's `engine`) passed in.
+- **`layout_label_from(layout) -> String`** — formats a layout STRING for
+  display: uppercased, with any qualifier suffix after the first `_` dropped
+  (`"v8"` → `"V8"`, `"v12_uneven"` → `"V12"`). Layout keys index
+  `EngineLibrary.FIRING`, where a qualified key like `v12_uneven` is a separate
+  firing table for the same physical layout (a lopier voice for the Merlin), so
+  only the leading token is the layout name — without the strip a swapped-in
+  Merlin displayed as `"V12_UNEVEN Rondel Twist"`. The rule is derived from the
+  string, so a future qualified table needs no change here.
+  Note: an engine may deliberately borrow another layout's firing table for its
+  sound (the flat-six Porsche uses `i6`, so it displays "I6") — that's a known
+  simplification of the audio model, not something the label tries to correct.
 - **`layout_label(engine_id) -> String`** — the engine's `EngineLibrary`
-  `layout` uppercased (`"v8"` → `"V8"`); `""` if unknown.
+  `layout` run through `layout_label_from`; `""` if unknown.
 - **`display_name(entry, owned) -> String`** — the car's name, prefixed with
   the swapped-in engine's layout when non-stock (e.g. `"V8 Rondel Twist"`); the plain
   name otherwise. Used everywhere an owned car's name is shown (lift, car
@@ -271,7 +282,7 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   (`_car_back`) returns to the lift with no change (each car-park mode's Back returns
   to its own origin — the starter picker to the exterior, the challenge picker to the
   garage).
-  While picking a partner, `hq._refresh_swap_preview()` (called from
+  While picking a partner, `hq_carpark.gd._refresh_swap_preview()` (called from
   `_focus_changed`) shows a two-way hp/tonne preview in a `RichTextLabel`
   (`hq._swap_preview_label`) below the stats panel: since a swap EXCHANGES
   engines, both the lift car (receiving the focused partner's engine) and the
@@ -341,7 +352,10 @@ wiring either.
 ## Tests
 
 `tests/headless/test_engine_swap.gd` — `current_engine_id` prefers the swap
-over stock; `layout_label` uppercases a known layout; `display_name` prefixes
+over stock; `layout_label_from` uppercases and strips the qualifier suffix on
+supplied layout strings, and every key in `EngineLibrary.FIRING` yields a
+non-empty label with no underscore and no lowercase; `layout_label` equals the
+formatter applied to each roster entry's own `layout`; `display_name` prefixes
 the layout only when swapped; `recompute_mass` swaps the engine component;
 `recompute_weight_front` moves the CoG by the injected engine position (with
 injected numbers, not authored values — see the project's testing rules);

@@ -87,7 +87,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   check: seeding's job is "anything already open already reads as seen", not "anything
   the player can currently enter", and skipping that clause keeps `Save` independent of
   `hq.gd`'s `_entry_plan` (owned cars, tuning headroom, etc). The eligible-car hold is
-  applied only by `hq.gd._pending_reveals()`, the query that decides what actually
+  applied only by `hq_table.gd._pending_reveals()`, the query that decides what actually
   parades on a given map open.
 - **Region unlock is not stored here at all** — `RegionLibrary` no longer gates
   anything (it's look + waterline only, see [regions.md](regions.md)). (An

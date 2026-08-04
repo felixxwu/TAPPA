@@ -157,23 +157,70 @@ static func has_stale_run(profile: Dictionary, unix_time: int) -> bool:
 # eligible_cars only answers "is there a path in for this car", not "is it
 # ready to start AS TUNED"). Recomputed live, never cached at grant time.
 static func eligible_cars(kind_str: String, profile: Dictionary, unix_time: int) -> Array:
+	return classify_cars(kind_str, profile, unix_time)["eligible"]
+
+
+# The period's p/w ceiling AS THE PLAYER SEES IT — hp/tonne, rounded to a whole
+# number, which is how every challenge label prints it ("%d hp/t max"). Eligibility
+# is judged against THIS, never the raw float: CarLibrary.power_to_weight_hp_tonne is
+# itself rounded, so comparing a rounded figure to an unrounded ceiling would reject a
+# car whose displayed hp/tonne exactly equals the displayed cap. Same rule (and same
+# reason) as hq_carpark.gd._qualifying_detune_for and RallyLibrary.ineligibility_reason,
+# which round `pw_max` before comparing.
+# classify_car verdicts. READY/NEEDS_TUNE double as the classify_cars bucket keys.
+const READY := "ready"
+const NEEDS_TUNE := "needs_tune"
+const EXCLUDED := "excluded"
+
+
+static func displayed_ceiling(kind_str: String, unix_time: int) -> int:
+	return roundi(ChallengeLibrary.current_ceiling(kind_str, unix_time))
+
+
+# The ONE place the challenge eligibility rule lives. Classifies every owned car in
+# `profile` against `kind_str`'s current period and returns
+#   {"ceiling": int, "eligible": Array, "ready": Array, "needs_tune": Array,
+#    "detune": {instance_id: qualifying absolute detune fraction}}
+# `ready` = at/under the displayed ceiling as currently tuned; `needs_tune` = over it
+# but reachable by lowering the engine detune; `eligible` = both, in the profile's own
+# car order (what the car park parks). The UI reads these lists rather than re-deriving
+# the comparison, so the "compare against the DISPLAYED ceiling" rule can't drift.
+static func classify_cars(kind_str: String, profile: Dictionary, unix_time: int) -> Dictionary:
+	var out := {"ceiling": 0, "eligible": [], "ready": [], "needs_tune": [], "detune": {}}
 	var period := ChallengeLibrary.current_period(kind_str, unix_time)
 	if period.is_empty():
-		return []
-	var ceiling := ChallengeLibrary.ceiling_for(String(period["key"]))
-	var synthetic_rally := {"restriction": {"pw_max": ceiling}}
-	var out: Array = []
+		return out
+	var raw_ceiling := ChallengeLibrary.ceiling_for(String(period["key"]))
+	out["ceiling"] = roundi(raw_ceiling)
 	for car in profile.get("cars", []):
 		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 		if entry.is_empty():
 			continue
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		if CarLibrary.power_to_weight_hp_tonne(meta) <= ceiling:
-			out.append(car)
+		var verdict := classify_car(raw_ceiling, car, entry)
+		var state := String(verdict["state"])
+		if state == EXCLUDED:
 			continue
-		if qualifying_detune_for(synthetic_rally, car, entry) > 0.0:
-			out.append(car)
+		out[state].append(car)
+		out["eligible"].append(car)
+		if state == NEEDS_TUNE:
+			out["detune"][int(car.get("instance_id", -1))] = float(verdict["detune"])
 	return out
+
+
+# classify_cars' per-car verdict, and the ONE implementation of the challenge
+# eligibility comparison: {"state": READY|NEEDS_TUNE|EXCLUDED, "detune": frac}.
+# `raw_ceiling` is the period's rolled hp/tonne as ChallengeLibrary returns it; it is
+# ROUNDED here before anything is compared against it (see displayed_ceiling), so the
+# whole challenge path judges a car against the same number the screen prints.
+static func classify_car(raw_ceiling: float, owned: Dictionary, entry: Dictionary) -> Dictionary:
+	var ceiling := float(roundi(raw_ceiling))
+	var meta := UpgradeLibrary.effective_meta(owned, entry)
+	if CarLibrary.power_to_weight_hp_tonne(meta) <= ceiling:
+		return {"state": READY, "detune": -1.0}
+	var frac := qualifying_detune_for({"restriction": {"pw_max": ceiling}}, owned, entry)
+	if frac > 0.0:
+		return {"state": NEEDS_TUNE, "detune": frac}
+	return {"state": EXCLUDED, "detune": -1.0}
 
 
 # The largest engine-detune fraction (an ABSOLUTE slider setting, 0..1) at

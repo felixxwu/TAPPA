@@ -10,7 +10,11 @@ const CACHE_PATH := "res://data/opponent_cache.json"
 # Manual escape hatch: bump for genuine algorithm changes not captured by the
 # auto-folded fingerprints below — the LapTimeModel physics (ROLLING_G, SAMPLE_STEP_M,
 # the sim passes) or the field-assembly logic itself.
-const CACHE_VERSION := "1"
+#   "2" — opponents gained engine swaps (features/rally-roster.md): the field is
+#         drawn from car+engine combos WITHOUT replacement, so both the entry shape
+#         (a new `engine_id`) and the rng draw order changed. The auto-folded inputs
+#         below cover EngineLibrary DATA but not this generator LOGIC, hence the bump.
+const CACHE_VERSION := "2"
 
 static var _entries: Dictionary = {}
 static var _loaded := false
@@ -133,6 +137,10 @@ static func deserialize_field(raw: Array) -> Array:
 		out.append({
 			"name": String(r.get("name", "")),
 			"car_id": String(r.get("car_id", "")),
+			# The rival's fitted engine (features/rally-roster.md). This list is a
+			# WHITELIST — a field missing here is silently dropped on the way out of the
+			# cache and defaults downstream, so any new field on a rival must be added.
+			"engine_id": String(r.get("engine_id", "")),
 			"car_name": String(r.get("car_name", "")),
 			"event_times_ms": times,
 			"dnf": bool(r.get("dnf", false)),

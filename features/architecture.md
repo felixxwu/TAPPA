@@ -130,7 +130,7 @@ or stutter mid-interaction. The player already expects to wait at a loading scre
 added there is invisible, whereas the same beat during play is a hitch.
 
 Concretely, prefer moving into a loading screen: scene/prop instantiation for things the
-player will reach soon (e.g. the Free Roam catalogue pre-warm — `hq.gd`, kept in memory,
+player will reach soon (e.g. the Free Roam catalogue pre-warm — `hq_carpark.gd`, kept in memory,
 see [menus.md](menus.md); it is the one case where the cover was the *wrong* place —
 it dominated boot, so it now trickles in one prop per frame just AFTER the cover lifts via
 `_prewarm_free_roam_deferred`), mesh /

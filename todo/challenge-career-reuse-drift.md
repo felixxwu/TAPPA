@@ -18,7 +18,7 @@ default, or a divergent list — rather than loudly.
 |---|---|
 | `rally_session.gd` → `_load_event_scene` | yes — `apply_event_config` |
 | `challenge_session.gd` → `continue_to_next_stage` | yes (added by the water fix) |
-| `hq.gd` → `_hand_off_to_challenge_scene` | yes (added by the water fix) |
+| `hq_challenge.gd` → `_hand_off_to_challenge_scene` | yes (added by the water fix) |
 | `hq.gd` → `_launch_free_roam` → `_prepare_free_roam` | **partially — see item 3** |
 | `benchmark_mode.gd` → `Benchmark.start` | **partially — see item 7** |
 
@@ -76,7 +76,7 @@ static func apply_stage_config(cfg: GameConfig) -> void:
 Call it **once**, at the top of `world.gd._ready`, before the `var cfg :=
 Config.data` read. Then DELETE the three producer-side calls:
 `rally_session.gd._load_event_scene`, `challenge_session.gd.continue_to_next_stage`,
-`hq.gd._hand_off_to_challenge_scene`. `ChallengeSession.apply_stage_config`
+`hq_challenge.gd._hand_off_to_challenge_scene`. `ChallengeSession.apply_stage_config`
 becomes a thin forwarder or is removed.
 
 **Why this and not "remember to call it".** The current fix is correct but local:
@@ -261,9 +261,9 @@ unless the user asks for it later.
 Independently of the lock's scope, "which cars are eligible" is derived three times
 and the derivations can disagree:
 
-- `hq.gd._refresh_challenge_overlay` uses `ChallengeSession.eligible_cars(...)` raw for
+- `hq_challenge.gd._refresh_challenge_overlay` uses `ChallengeSession.eligible_cars(...)` raw for
   both the "Eligible" label and the Start gate
-- `hq.gd._build_challenge_lineup` additionally drops locked cars
+- `hq_challenge.gd._build_challenge_lineup` additionally drops locked cars
 - `ChallengeSession.eligible_cars` filters on ceiling / detune-reachability only
 
 Once the lock exclusions are removed the three should collapse to one list naturally.
@@ -308,7 +308,7 @@ and do not repair to full.
 **Player-visible on touch devices. Depends on: nothing.**
 
 Career's Start (`_on_start_pressed` → `_proceed_with_start` → `_begin_rally_start`)
-does two things `hq.gd._begin_challenge_start` does not:
+does two things `hq_challenge.gd._begin_challenge_start` does not:
 
 - the **mobile control-scheme gate** — if on mobile and no scheme has been chosen,
   open settings and return
@@ -662,7 +662,7 @@ Four compounding causes, none of which is "nobody wrote a test":
 1. **The one end-to-end challenge test hand-rolls the code path it was meant to
    cover.** `tests/headless/test_smoke.gd::test_entering_a_challenge_stage_generates_its_track`
    calls `ChallengeSession.start(...)` directly and then instantiates `main.tscn`
-   itself, bypassing `hq.gd._hand_off_to_challenge_scene` — where the missing step
+   itself, bypassing `hq_challenge.gd._hand_off_to_challenge_scene` — where the missing step
    lived. It also passed a stale `Config.data` into generation and called that a pass.
 2. **Its assertions are liveness-only** — Floor exists, TrackProgress exists,
    `baked_length() > 0`. The bug produced a valid, non-degenerate track; the road

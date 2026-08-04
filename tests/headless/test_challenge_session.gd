@@ -278,6 +278,98 @@ func test_eligible_cars_includes_at_or_under_and_detune_reachable_over_ceiling()
 	assert_lt(frac, 1.0, "and it is genuinely a reduction, not a no-op")
 
 
+# --- the displayed-ceiling boundary (classify_car) -------------------------------
+#
+# The challenge path must judge a car against the ceiling AS DISPLAYED (rounded),
+# exactly as career entry does (hq_carpark.gd._qualifying_detune_for /
+# RallyLibrary.ineligibility_reason). Both cases below author their OWN ceiling with a
+# fractional part — nothing is read from CEILING_BAND_HP_TONNE — and derive it FROM the
+# fixture car's displayed hp/tonne, so no specific number is pinned.
+
+# A synthetic owned car + entry pair whose displayed hp/tonne is whatever the fixture
+# derivation lands on, returned alongside that figure.
+func _boundary_car() -> Dictionary:
+	var mass := 1000.0
+	var redline := 6000.0
+	var entry := {
+		"id": "fx_boundary", "mass": mass, "engine": "fx_i4", "redline": redline,
+		"peak_torque": _torque_for_target_hp_tonne(150.0, mass, redline),
+	}
+	var owned := {"instance_id": 1, "model_id": "fx_boundary", "installed_upgrades": [], "detune": 0.0}
+	var displayed := CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta(owned, entry))
+	return {"entry": entry, "owned": owned, "displayed": displayed}
+
+
+func test_car_at_the_displayed_ceiling_is_ready_even_though_the_raw_ceiling_is_lower() -> void:
+	var c := _boundary_car()
+	# A ceiling that PRINTS as the car's own displayed hp/tonne but is fractionally
+	# below it: the two numbers on screen match, so the car must be ready to go.
+	var raw_ceiling: float = float(c["displayed"]) - 0.4
+	assert_eq(roundi(raw_ceiling), int(c["displayed"]),
+		"fixture sanity: this ceiling displays as the car's own hp/tonne")
+	var verdict := ChallengeSession.classify_car(raw_ceiling, c["owned"], c["entry"])
+	assert_eq(String(verdict["state"]), ChallengeSession.READY,
+		"a car whose displayed hp/tonne equals the displayed ceiling needs no detune")
+
+
+func test_car_above_the_displayed_ceiling_still_needs_a_tune() -> void:
+	var c := _boundary_car()
+	# Rounds DOWN to one below the car's figure — the car really is over the cap the
+	# player is shown, so rounding must not wave it through.
+	var raw_ceiling: float = float(c["displayed"]) - 0.6
+	assert_eq(roundi(raw_ceiling), int(c["displayed"]) - 1,
+		"fixture sanity: this ceiling displays BELOW the car's own hp/tonne")
+	var verdict := ChallengeSession.classify_car(raw_ceiling, c["owned"], c["entry"])
+	assert_eq(String(verdict["state"]), ChallengeSession.NEEDS_TUNE,
+		"a car over the DISPLAYED ceiling is still only eligible with a detune")
+	assert_gt(float(verdict["detune"]), 0.0, "and a real detune fraction comes back with it")
+
+
+# displayed_ceiling is what every challenge label prints, so it must be the rounding of
+# the rolled ceiling — a relationship, not a value.
+func test_displayed_ceiling_is_the_rounded_rolled_ceiling() -> void:
+	var t := int(Time.get_unix_time_from_system())
+	for kind in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
+		assert_eq(ChallengeSession.displayed_ceiling(kind, t),
+			roundi(ChallengeLibrary.current_ceiling(kind, t)), "%s ceiling is rounded" % kind)
+
+
+# classify_cars' buckets must partition the eligible list — the HQ reads `ready` /
+# `needs_tune` / `detune` straight out of it instead of re-deriving the comparison.
+func test_classify_cars_buckets_partition_the_eligible_list() -> void:
+	var t := int(Time.get_unix_time_from_system())
+	var mass := 1000.0
+	var redline := 6000.0
+	var ceiling: float = ChallengeSession.displayed_ceiling(ChallengeLibrary.WEEKLY, t)
+	var entry_under := {
+		"id": "fx_under", "mass": mass, "engine": "fx_i4", "redline": redline,
+		"peak_torque": _torque_for_target_hp_tonne(maxf(1.0, ceiling - 10.0), mass, redline),
+	}
+	var entry_over := {
+		"id": "fx_over", "mass": mass, "engine": "fx_i4", "redline": redline,
+		"peak_torque": _torque_for_target_hp_tonne(CEILING_BAND_MAX + 100.0, mass, redline),
+	}
+	var roster: Array[Dictionary] = CarFixtures.cars()
+	roster.append(entry_under)
+	roster.append(entry_over)
+	CarLibrary.override_for_test(roster)
+
+	var profile := {"cars": [
+		{"instance_id": 1, "model_id": "fx_under", "installed_upgrades": [], "detune": 0.0},
+		{"instance_id": 2, "model_id": "fx_over", "installed_upgrades": [], "detune": 0.0},
+	]}
+	var classified := ChallengeSession.classify_cars(ChallengeLibrary.WEEKLY, profile, t)
+	assert_eq(classified["eligible"].size(),
+		classified["ready"].size() + classified["needs_tune"].size(),
+		"eligible is exactly ready + needs_tune")
+	assert_eq(classified["ready"], [profile["cars"][0]], "the under-ceiling car is ready as tuned")
+	assert_eq(classified["needs_tune"], [profile["cars"][1]], "the over-ceiling car needs a tune")
+	assert_true(classified["detune"].has(2), "and carries its qualifying detune fraction")
+	assert_eq(classified["ceiling"], int(ceiling), "the reported ceiling is the displayed one")
+	assert_eq(ChallengeSession.eligible_cars(ChallengeLibrary.WEEKLY, profile, t),
+		classified["eligible"], "eligible_cars is the same list")
+
+
 func test_eligible_cars_ignores_cars_missing_from_the_catalogue() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var profile := {"cars": [{"instance_id": 1, "model_id": "no_such_model"}]}

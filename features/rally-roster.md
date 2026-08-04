@@ -115,7 +115,7 @@ Each `RALLIES` entry:
   omitted / 0) are visible from the start. Completed rallies stay farmable — this gates
   first *reveal* only, never re-entry.
   **`reveal_after` gates the PIN; the reveal SEQUENCE has a second gate on top of it.**
-  When the map table opens, `hq.gd._pending_reveals()` picks out the rallies to
+  When the map table opens, `hq_table.gd._pending_reveals()` picks out the rallies to
   announce to the player, and a rally qualifies only if `rally_revealed` is true AND the
   player owns a car that can actually enter it (`_has_eligible_car` → `_entry_plan`) AND
   it isn't already `Save.rally_revealed_seen`. So an unlocked rally the garage cannot
@@ -332,8 +332,9 @@ generator also uses it per-rival.
 - `derive_turn_splits(track_result, car_meta, event)` — per-turn cumulative split
   table derived from that car's `LapTimeModel.optimum_profile`; used for the
   in-run "vs P1" pace popup (see [stage.md](stage.md)).
-- `generate_opponent_field(rally, event)` — the fixed field: 10–15 rivals, each
-  rival's time = physics floor of **their own assigned car** (from `LapTimeModel`)
+- `generate_opponent_field(rally, event)` — the fixed field: `FIELD_MIN`–`FIELD_MAX`
+  rivals (both 9 today, so every field is the same size), each
+  rival's time = physics floor of **their own assigned car+engine build** (from `LapTimeModel`)
   × a pace factor. Each rival draws a **persistent skill** ONCE (not per event):
   skill 0 = ace, skill 1 = backmarker, giving a base pace `lerp(pace_fast,
   pace_slow, skill)` held across all 3 events — so a fast rival stays fast and the
@@ -354,14 +355,11 @@ generator also uses it per-rival.
   placement (`wreck_event` / `wreck_progress` / `wreck_side`) the run scene reads via
   `event_wreck(field, event_index)` to stage the wreck (see
   [opponent-wrecks.md](opponent-wrecks.md)). Each
-  rival is also assigned a **car** (`car_id` / `car_name`) drawn from the rally's
-  eligible roster (`_eligible_cars` filters by the restriction, so a p/w-banded
-  rally fields cars inside that band and an RWD-only rally fields RWD rivals) using
-  the same seeded RNG — so the line-up is stable across re-attempts and shows up on
-  the start-line reveal + leaderboards. Each rival also draws a **name** from the
+  rival is also assigned a **car+engine build** (`car_id` / `engine_id` / `car_name`)
+  — see *Rival builds* below. Each rival also draws a **name** from the
   fixed 20-name pool `RIVAL_NAMES` (`_draw_rival_names` — a Fisher-Yates shuffle on
   the same rally-seeded RNG, taken **without replacement** so no two rivals in a
-  field share a name; the pool of 20 always covers a field of ≤15). Because the
+  field share a name; the pool of 20 always covers a field of `FIELD_MAX`). Because the
   field is generated **once per rally** (in `RallySession`) and reused for all 3
   events, a rival carries the **same name across every event** and across
   re-attempts — it's the entrant's stable identity on the start-line reveal and the
@@ -411,6 +409,53 @@ generator also uses it per-rival.
 - `incomplete_rallies_enterable_by(car_meta, profile, floor_meta := {})` — the
   anti-soft-lock query the reward system uses (incomplete ∧ revealed ∧ eligible in-band).
   `floor_meta` (the owned car's max potential) judges the floor at max, as in `is_eligible`.
+
+### Rival builds — car + engine combos
+
+Rivals get exactly **one** upgrade: the engine swap. The draw pool is therefore not the car roster
+but every **(car, engine) pairing** the rally admits.
+
+- **Pool** — `_eligible_combos(rally)` walks `CarLibrary.all()` ×
+  `EngineLibrary.all()`, builds each pairing's effective meta
+  (`UpgradeLibrary.effective_meta({"swapped_engine": eid}, entry)`, or `{}` when
+  `eid` is the car's stock engine) and keeps it if `is_eligible(rally, meta)`
+  passes. Because `effective_meta` re-points `meta["engine"]` at the fitted engine
+  and runs the engine-swap mass model, displacement / cylinder-count /
+  post-swap-power-to-weight restrictions all apply to the swap with **no new
+  authored data** — and a heavy engine in a light car correctly *lowers* the
+  combo's p/w rather than only raising its power. If a restriction admits nothing
+  the fallback mirrors `_eligible_cars`: every car's **stock** combo, never the
+  unfiltered cross product.
+- **Distinct draw** — `_draw_distinct_combos(rng, pool, count)` Fisher-Yates
+  shuffles the pool with the rally-seeded rng and takes a prefix, so every rival is
+  a *different* build. This replaced an independent per-rival draw **with
+  replacement**: with 10 cars and 9 rivals, all-distinct happened ~0.4% of the
+  time, so fields were routinely several copies of the same car. When the pool is
+  smaller than the field it **cycles** the pool (a 3-combo rally fields 3+3+3)
+  instead of drawing random repeats, so even the degenerate case is as varied as
+  the pool allows.
+- **Pace** — the per-rival pace math is unchanged, but `car_meta` is now the
+  combo's meta, so the swap feeds `LapTimeModel.optimum_ms`. An engine carries its
+  whole **transmission** (`gear_ratios`, `final_drive`, `shift_time`), so a swap
+  moves gearing as well as power.
+- **Naming** — the entry carries `engine_id`, and `car_name` is
+  `EngineSwap.display_name(car, {"swapped_engine": engine_id})`: layout-prefixed
+  ("V12 Rondel Twist") when non-stock, the plain name when stock — the same
+  convention the garage and leaderboards use for the player's own car. It flows
+  unchanged through `rally_session.gd` into `UITheme.standings_row` and
+  `start_line.gd`'s reveal card. `world.gd::_spawn_opponent_wreck` keys the wreck
+  model off `car_id`, so wrecks are unaffected by the engine.
+- **Eligibility judged on effective meta** — `_eligible_cars` now filters on
+  `UpgradeLibrary.effective_meta({}, entry)` rather than the raw `CarLibrary`
+  entry. A raw entry's power-to-weight falls back to the engine's *unboosted*
+  `peak_torque`, so stock-turbo cars were admitted on understated power and then
+  raced on their real, boosted power (the pace model has always used
+  `effective_meta`). Both halves now agree, and it matches the player's own
+  eligibility path (`hq_carpark.gd::_entry_plan`). **Consequence:** a car whose
+  stock boost lifts it over a band's `pw_max` no longer appears in fields it used
+  to.
+- `eligible_car_indices` still deals in **cars only** — the start-line queue props
+  are cosmetic scenery and an engine doesn't change a body.
 
 ## Anti-soft-lock guarantees
 

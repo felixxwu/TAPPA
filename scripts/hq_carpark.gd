@@ -1,10 +1,10 @@
+class_name HqCarpark
+extends RefCounted
 # The car park: the eligible-lineup build, the parked-car prop cache, focus
 # cycling, the swap/damage readouts and the carpark modals. Split out of hq.gd
 # (see todo/hq-split.md) — the FUNCTIONS moved here, every `_carpark_*` / `_lineup`
 # / `_car_cache` STATE var stayed on HqController, which this reaches back into
 # through `_hq`. Same shape as HqOverlays / HqChallenge / HqTable.
-class_name HqCarpark
-extends RefCounted
 
 var _hq: HqController
 
@@ -298,10 +298,6 @@ func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	return fresh
 
 
-# Spawn one owned car as a silent car prop resting at a marker, with its OWN mesh
-# copies (see CarProp.dup_meshes) so a mixed lineup shows each at its true size. Placed with
-# its wheels on the bay via the analytic rest ride height (car.gd:settled_ride_height)
-# and frozen at once — no live physics to settle, so nothing to mistime or drift.
 # An off-screen stow marker the pre-warmed Free Roam props seat at until Free Roam re-seats
 # them at real bays. Sunk far below the lot so the hidden, frozen props never intersect the
 # garage / lift cars or get ray-picked. Created lazily and kept for the HQ's lifetime.
@@ -377,8 +373,10 @@ func _prewarm_free_roam_deferred() -> void:
 	_log_prewarm_cost(Time.get_ticks_msec() - t0, spawned)
 
 
-
-
+# Spawn one owned car as a silent car prop resting at a marker, with its OWN mesh
+# copies (see CarProp.dup_meshes) so a mixed lineup shows each at its true size. Placed with
+# its wheels on the bay via the analytic rest ride height (car.gd:settled_ride_height)
+# and frozen at once — no live physics to settle, so nothing to mistime or drift.
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	# Frozen prop resting at its pose: no body integration and no per-frame car script
 	# (drivetrain/steering/aero) cost. We stop physics processing (stop_physics) rather

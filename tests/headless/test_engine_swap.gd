@@ -21,14 +21,33 @@ func test_current_engine_id_prefers_swap_then_stock() -> void:
 	assert_eq(EngineSwap.current_engine_id({"swapped_engine": "ford_50_v8"}, "stock_i4"), "ford_50_v8", "swap wins")
 
 
-func test_layout_label_uppercases_known_layout() -> void:
-	# layout_label looks the engine up in EngineLibrary by id, so it needs real
-	# engine ids to resolve — restore the real catalogue for this one test.
-	CarFixtures.restore()
-	# Derived from EngineLibrary's own layout key, not a pinned string.
-	var v8 := EngineLibrary.all()[0]  # a real engine
-	assert_eq(EngineSwap.layout_label("mopar_440_v8"), "V8", "v8 layout -> V8")
-	assert_eq(EngineSwap.layout_label("mazda_20_i4"), "I4", "i4 layout -> I4")
+func test_layout_label_from_uppercases_and_strips_qualifier() -> void:
+	# The RULE, exercised on layout strings supplied here — no catalogue lookup.
+	assert_eq(EngineSwap.layout_label_from("v8"), "V8", "plain layout -> uppercased")
+	assert_eq(EngineSwap.layout_label_from("v12_uneven"), "V12",
+		"qualifier suffix after the first _ is dropped")
+	assert_eq(EngineSwap.layout_label_from("w16_quad_turbo"), "W16",
+		"only the leading token survives, however many qualifiers follow")
+	assert_eq(EngineSwap.layout_label_from(""), "", "empty layout -> empty label")
+
+
+func test_every_firing_layout_yields_a_clean_label() -> void:
+	# Contract of the formatter over the whole FIRING table as opaque input: a
+	# displayed label never leaks an internal key's underscore or lowercasing.
+	for layout: String in EngineLibrary.FIRING:
+		var label := EngineSwap.layout_label_from(layout)
+		assert_false(label.is_empty(), "%s -> non-empty label" % layout)
+		assert_false(label.contains("_"), "%s -> label has no underscore (got %s)" % [layout, label])
+		assert_eq(label, label.to_upper(), "%s -> label is upper-case (got %s)" % [layout, label])
+
+
+func test_layout_label_resolves_the_engine_then_formats() -> void:
+	# layout_label reads the layout off whatever EngineLibrary returns for the id;
+	# the fixture roster supplies the entries so no shipped engine is pinned.
+	for engine: Dictionary in EngineLibrary.all():
+		assert_eq(EngineSwap.layout_label(String(engine.get("id", ""))),
+			EngineSwap.layout_label_from(String(engine.get("layout", ""))),
+			"label matches the formatter applied to the entry's own layout")
 	assert_eq(EngineSwap.layout_label("does_not_exist"), "", "unknown -> empty")
 
 

@@ -850,21 +850,30 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
-	var car_pool := _eligible_cars(rally)  # in-band (the band floor is the power floor now)
+	# Every car+engine pairing the rally admits (features/rally-roster.md), in-band
+	# (the band floor is the power floor now).
+	var combo_pool := _eligible_combos(rally)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var band := _pace_band(int(rally.get("difficulty", 1)))
 	# Draw distinct names from the pool for this rally (stable across re-attempts via
 	# the rally-seeded rng); names[i] is rival i's name, held across all 3 events.
 	var names := _draw_rival_names(rng, count)
+	# One distinct build per rival, same rng, so the grid is stable across re-attempts.
+	var combos := _draw_distinct_combos(rng, combo_pool, count)
 	var field: Array = []
 	for i in count:
-		var car: Dictionary = car_pool[rng.randi_range(0, car_pool.size() - 1)]
-		# Boost the raw CarLibrary entry through effective_meta (with no owned-car
-		# state) so the rival's pace floor reflects the car's STOCK forced induction —
-		# e.g. the 911's turbo. Without this, power_to_weight falls back to the engine's
-		# unboosted peak_torque and turbo cars produce artificially slow rival times,
-		# out of step with the player's boosted stats and the car's real physics.
-		var car_meta := UpgradeLibrary.effective_meta({}, car)
+		var combo: Dictionary = combos[i]
+		var car: Dictionary = combo["car"]
+		var engine_id := String(combo["engine_id"])
+		# The pairing's effective meta, computed once when the pool was built: it resolves
+		# the fitted engine (so the rival's pace reflects the SWAP, not the stock engine)
+		# and reflects stock forced induction — e.g. the 911's turbo. Without the
+		# effective_meta pass, power_to_weight falls back to the engine's unboosted
+		# peak_torque and turbo cars produce artificially slow rival times, out of step
+		# with the player's boosted stats and the car's real physics. Note an engine
+		# carries its whole TRANSMISSION (gear_ratios / final_drive / shift_time), so a
+		# swap moves gearing as well as power.
+		var car_meta: Dictionary = combo["meta"]
 		# Persistent per-rival skill (drawn ONCE): sets a base pace held across every
 		# event, so fast rivals stay fast and the field forms a ranked ladder.
 		var skill := rng.randf()
@@ -879,7 +888,11 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		field.append({
 			"name": names[i],
 			"car_id": String(car.get("id", "")),
-			"car_name": String(car.get("name", "")),
+			"engine_id": engine_id,
+			# Layout-prefixed when the rival is running a non-stock engine ("V12 Rondel
+			# Twist"), the plain car name otherwise — the same EngineSwap.display_name
+			# convention the garage and the leaderboards use for the player's own car.
+			"car_name": EngineSwap.display_name(car, {"swapped_engine": engine_id}),
 			"event_times_ms": times,
 			"dnf": false,
 			"combined_ms": 0,
@@ -961,15 +974,82 @@ static func _draw_rival_names(rng: RandomNumberGenerator, count: int) -> Array:
 	return names
 
 
-# The CarLibrary entries a rally's restriction admits — the pool its rivals are
-# drawn from. Falls back to the whole roster if a restriction somehow admits no
-# car (it never should; open-class admits everything).
+# The CarLibrary entries a rally's restriction admits. Falls back to the whole roster if
+# a restriction somehow admits no car (it never should; open-class admits everything).
+#
+# Judged on effective_meta, NOT the raw CarLibrary entry. A raw entry's power-to-weight
+# falls back to the engine's UNBOOSTED peak_torque, so a stock-turbo car (the 911) used to
+# be admitted on understated power and then raced on its real, boosted power — the pace
+# model has always used effective_meta for exactly that reason (see
+# generate_opponent_field). Both halves now agree, and this also matches the PLAYER's
+# eligibility path, which goes through effective_meta too (hq_carpark.gd::_entry_plan).
 static func _eligible_cars(rally: Dictionary) -> Array:
 	var pool: Array = []
 	for entry in CarLibrary.all():
-		if is_eligible(rally, entry):
+		if is_eligible(rally, UpgradeLibrary.effective_meta({}, entry)):
 			pool.append(entry)
 	return pool if not pool.is_empty() else CarLibrary.all()
+
+
+# Every (car, engine) pairing a rally's restriction admits, each carrying the effective
+# meta that pairing produces — the pool the opponent field draws its rivals from.
+#
+# Opponents get ONE upgrade: the engine swap (features/rally-roster.md). That turns a
+# 10-car roster into 10 x EngineLibrary.ENGINES candidates, which is what stops a field of
+# nine rivals being nine near-identical stock cars.
+#
+# effective_meta re-points meta["engine"] at the fitted engine and runs the engine-swap
+# mass model, so ineligibility_reason judges the swapped displacement, cylinder count and
+# post-swap power-to-weight with no new authored data. A heavy engine in a light car
+# correctly LOWERS the combo's power-to-weight rather than only raising its power.
+#
+# Fallback mirrors _eligible_cars: a restriction admitting nothing degrades to every car's
+# STOCK combo (today's behaviour), never to the unfiltered cross product.
+static func _eligible_combos(rally: Dictionary) -> Array:
+	var pool: Array = []
+	for entry in CarLibrary.all():
+		var stock := String(entry.get("engine", ""))
+		for eng in EngineLibrary.all():
+			var eid := String(eng.get("id", ""))
+			var owned: Dictionary = {} if eid == stock else {"swapped_engine": eid}
+			var meta := UpgradeLibrary.effective_meta(owned, entry)
+			if is_eligible(rally, meta):
+				pool.append({"car": entry, "engine_id": eid, "meta": meta})
+	if not pool.is_empty():
+		return pool
+	for entry in CarLibrary.all():
+		pool.append({
+			"car": entry,
+			"engine_id": String(entry.get("engine", "")),
+			"meta": UpgradeLibrary.effective_meta({}, entry),
+		})
+	return pool
+
+
+# `count` combos drawn WITHOUT replacement from `pool`, using the rally-seeded rng so the
+# grid is stable across re-attempts and identical in the cache baker.
+#
+# The old draw picked each rival independently from the whole pool (with replacement), so
+# nine rivals out of ten eligible cars were all distinct only ~0.4% of the time — and a
+# restriction admitting three cars fielded nine rivals across three models. Shuffling and
+# taking a prefix makes every rival a different car+engine build.
+#
+# When the pool holds fewer than `count`, CYCLE it rather than drawing random repeats: a
+# three-combo rally fields 3+3+3 instead of a lopsided random multiset, so even the
+# degenerate case is as varied as the pool allows.
+static func _draw_distinct_combos(rng: RandomNumberGenerator, pool: Array, count: int) -> Array:
+	var shuffled: Array = pool.duplicate()
+	for i in range(shuffled.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = shuffled[i]
+		shuffled[i] = shuffled[j]
+		shuffled[j] = tmp
+	var out: Array = []
+	if shuffled.is_empty():
+		return out
+	for i in count:
+		out.append(shuffled[i % shuffled.size()])
+	return out
 
 
 # CarLibrary.all() indices a rally's restriction admits — the pool an index-based
@@ -977,6 +1057,8 @@ static func _eligible_cars(rally: Dictionary) -> Array:
 # cars bookending the player are always eligible for the rally. Derived from the same
 # eligible pool as _eligible_cars (which handles the admits-none fallback to the whole
 # roster), just mapped from entries back to their roster indices.
+# Cars only, no engines: these props are cosmetic scenery and an engine swap doesn't change
+# a car's body, so the queue stays stock even though the RIVALS now run swaps.
 static func eligible_car_indices(rally: Dictionary) -> Array:
 	var pool: Array = []
 	for entry in _eligible_cars(rally):

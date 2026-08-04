@@ -708,7 +708,13 @@ func test_opponents_drive_eligible_cars() -> void:
 		var meta := CarLibrary.by_id(car_id)
 		assert_false(meta.is_empty(), "the rival car id resolves to a CarLibrary entry")
 		assert_eq(int(meta.get("drive_mode", -1)), CarLibrary.RWD, "RWD-only rally fields only RWD rivals")
-		assert_eq(String(opp.get("car_name", "")), String(meta.get("name", "")), "car name matches the id")
+		# Rivals now run engine swaps (features/rally-roster.md), so the displayed name
+		# is the shared EngineSwap convention — layout-prefixed when the fitted engine isn't
+		# the car's stock one, the plain name when it is. Asserted against display_name
+		# rather than a literal so it can't drift from what the garage shows.
+		assert_eq(String(opp.get("car_name", "")),
+			EngineSwap.display_name(meta, {"swapped_engine": String(opp.get("engine_id", ""))}),
+			"car name is the engine-aware display name for the fielded build")
 
 
 func test_opponents_are_fielded_in_band() -> void:
@@ -730,9 +736,133 @@ func test_opponents_are_fielded_in_band() -> void:
 	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
 	assert_gt(field.size(), 0, "a field is fielded")
 	for opp in field:
-		var meta := UpgradeLibrary.effective_meta({}, CarLibrary.by_id(String(opp.get("car_id", ""))))
+		# Judged on the build the rival ACTUALLY runs: an engine swap moves displacement,
+		# mass and power-to-weight, so checking the stock meta would be checking a car that
+		# isn't on the grid.
+		var meta := UpgradeLibrary.effective_meta(
+			{"swapped_engine": String(opp.get("engine_id", ""))},
+			CarLibrary.by_id(String(opp.get("car_id", ""))))
 		assert_true(RallyLibrary.is_eligible(rally, meta),
 			"%s is fielded in-band (eligible for the rally)" % opp["name"])
+
+
+# --- Opponent engine swaps (features/rally-roster.md) ------------------------
+
+# Every rival runs a DISTINCT car+engine build. This is the whole point of the feature:
+# the old draw picked each rival independently from the eligible pool (with replacement),
+# so nine rivals routinely included several identical stock cars. Asserted as the
+# no-duplicates invariant, with the degenerate case (pool smaller than the field) bounded
+# rather than exempted — no build may appear more often than cycling the pool requires.
+func test_every_rival_runs_a_distinct_car_and_engine_build() -> void:
+	CarFixtures.install()
+	# CarFixtures ships 2 engines, so its 4 cars only make 8 combos — one short of a
+	# 9-rival field, which would leave the all-distinct case untested. Widen the engine
+	# set with clones (same shape, distinct ids and torques) so the pool comfortably
+	# exceeds the field. Still fully synthetic: no shipped catalogue entry is involved.
+	var engines := CarFixtures.engines()
+	for i in 3:
+		var clone: Dictionary = engines[0].duplicate(true)
+		clone["id"] = "fx_clone_%d" % i
+		clone["name"] = "Fixture Clone %d" % i
+		clone["peak_torque"] = float(clone["peak_torque"]) * (1.1 + 0.1 * float(i))
+		engines.append(clone)
+	EngineLibrary.override_for_test(engines)
+	var rally := {"id": "synthetic_open", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var track := _track_with_pieces()
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	assert_gt(field.size(), 0, "a field is fielded")
+	var pool_size: int = RallyLibrary._eligible_combos(rally).size()
+	assert_gt(pool_size, 0, "the rally admits at least one build")
+	var max_repeats: int = ceili(float(field.size()) / float(pool_size))
+	var counts := {}
+	for opp in field:
+		var key := "%s|%s" % [String(opp.get("car_id", "")), String(opp.get("engine_id", ""))]
+		counts[key] = int(counts.get(key, 0)) + 1
+		assert_lte(int(counts[key]), max_repeats,
+			"build %s appears at most ceil(field/pool) = %d times" % [key, max_repeats])
+	if pool_size >= field.size():
+		assert_eq(counts.size(), field.size(), "a pool this big gives every rival its own build")
+	CarFixtures.restore()
+
+
+# Every fielded build satisfies the rally's restriction once the fitted engine is resolved.
+# This is the guard that stops a swap smuggling an over-powered build onto the grid: the
+# restriction bounds power-to-weight, displacement and cylinder count, and effective_meta
+# re-points the engine, so eligibility must hold for the SWAPPED meta, not the stock one.
+func test_every_fielded_build_is_eligible_with_its_fitted_engine() -> void:
+	CarFixtures.install()
+	# A ceiling that admits only part of the combo pool, derived from the fixtures' own
+	# spread so no authored number is pinned.
+	var pws: Array = []
+	for entry in CarLibrary.all():
+		for eng in EngineLibrary.all():
+			var meta := UpgradeLibrary.effective_meta({"swapped_engine": String(eng.get("id", ""))}, entry)
+			pws.append(CarLibrary.power_to_weight_hp_tonne(meta))
+	pws.sort()
+	var rally := {"id": "synthetic_capped", "difficulty": 2,
+		"restriction": {"pw_max": pws[pws.size() / 2]},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var track := _track_with_pieces()
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	assert_gt(field.size(), 0, "a field is fielded")
+	for opp in field:
+		var meta := UpgradeLibrary.effective_meta(
+			{"swapped_engine": String(opp.get("engine_id", ""))},
+			CarLibrary.by_id(String(opp.get("car_id", ""))))
+		assert_true(RallyLibrary.is_eligible(rally, meta),
+			"%s's fielded build satisfies the restriction" % opp["name"])
+	CarFixtures.restore()
+
+
+# The fitted engine actually reaches the lap-time model. Retuning ONE engine's torque must
+# move rival times — asserted as a relationship between two rosters, so no specific time,
+# torque or car is pinned. Without the swap being fed into optimum_ms this passes only by
+# coincidence; with the engine ignored it fails outright.
+func test_a_retuned_engine_changes_rival_times() -> void:
+	var rally := {"id": "synthetic_open", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var track := _track_with_pieces()
+
+	CarFixtures.install()
+	var before := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+
+	# Same roster, one engine given markedly more torque.
+	var engines := CarFixtures.engines()
+	engines[0]["peak_torque"] = float(engines[0]["peak_torque"]) * 2.0
+	CarLibrary.override_for_test(CarFixtures.cars())
+	EngineLibrary.override_for_test(engines)
+	var after := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+
+	assert_eq(before.size(), after.size(), "the field size is unchanged by a retune")
+	var moved := false
+	for i in before.size():
+		if before[i]["event_times_ms"] != after[i]["event_times_ms"]:
+			moved = true
+			break
+	assert_true(moved, "retuning an engine's torque changes at least one rival's times")
+	CarFixtures.restore()
+
+
+# A restriction narrow enough to admit fewer builds than the field still fields a full
+# grid, spread as evenly as the pool allows (the cycle-to-top-up rule) rather than
+# collapsing to random repeats or fielding a short grid.
+func test_a_narrow_pool_still_fields_a_full_grid() -> void:
+	CarFixtures.install()
+	var pool := [{"car": CarLibrary.all()[0], "engine_id": "a", "meta": {}},
+		{"car": CarLibrary.all()[0], "engine_id": "b", "meta": {}}]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345
+	var drawn := RallyLibrary._draw_distinct_combos(rng, pool, 9)
+	assert_eq(drawn.size(), 9, "the grid is filled even from a two-build pool")
+	var counts := {}
+	for c in drawn:
+		var k := String(c["engine_id"])
+		counts[k] = int(counts.get(k, 0)) + 1
+	assert_eq(counts.size(), 2, "both available builds are used")
+	for k in counts:
+		assert_between(int(counts[k]), 4, 5, "cycling spreads repeats evenly (%s)" % k)
+	CarFixtures.restore()
 
 
 func test_wrecks_occur_somewhere_in_the_roster() -> void:

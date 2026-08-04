@@ -284,7 +284,7 @@ an installed turbo kit's, whichever applies) so a turbocharged car reads as more
 powerful and is gated accordingly. the HQ stats panel calls
 `CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry))`, and the
 two player-car eligibility checks (`hq._has_eligible_car`,
-`hq._build_eligible_lineup`) pass `effective_meta` into `RallyLibrary.is_eligible`,
+`hq_carpark.gd._build_eligible_lineup`) pass `effective_meta` into `RallyLibrary.is_eligible`,
 so an upgrade can push a car over — or back under — a rally's `pw_max` ceiling.
 The rival pool and reward-grant queries keep using the raw `CARS` entries (those
 are unmodified roster cars, not the player's upgraded ones).

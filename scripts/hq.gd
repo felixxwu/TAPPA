@@ -289,6 +289,11 @@ var _table_targets_cache = null
 # The overlay/menu-layer builders live in HqOverlays (scripts/hq_overlays.gd),
 # constructed with `self` in _ready so they can reach back into this controller.
 var _overlays: HqOverlays
+# The three cluster collaborators. These fields are the ONLY strong references keeping
+# them alive: a Callable connected to one of their methods stores an ObjectID, not a
+# reference, so clearing or reassigning one of these frees the instance and strands every
+# signal connected to it (see _nav_cycle_focus). Hold them for the node's whole lifetime.
+#
 # The Rally Challenge screen (scripts/hq_challenge.gd). Functions live there; the
 # `_challenge_*` state below stays here — see todo/hq-split.md for why.
 var _challenge_ui: HqChallenge
@@ -685,6 +690,9 @@ func _bay_center_x(i: int, bays: int) -> float:
 # _table_ui._run_reveal_sequence). Empty everywhere else.
 func _refresh_map_pins(hold_locked: Array = []) -> void:
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
+	# The pin this pointed at is about to be freed; clearing it states the invariant the
+	# focus-repaint guard relies on instead of leaning on a freed-object comparison.
+	_table_focus_node = null
 	for c in _pins_root.get_children():
 		c.queue_free()
 	_pins = []
@@ -1194,13 +1202,22 @@ func _dismiss_android_app_notice() -> void:
 # button, a centred car-name label, and a ">" next button in an HBox, with prev/next
 # wired to _cycle_focus(∓1). Returns [nav_row, center_label] so the caller stashes the
 # label in its own member field (_car_name_label).
+# Stable forwarder for the car-park nav row's < > buttons. A Godot Callable stores an
+# ObjectID and does NOT hold a strong reference, so connecting the buttons straight to
+# `_carpark_ui._cycle_focus` would leave them pointing at a FREED HqCarpark the moment
+# anything reassigns `_carpark_ui` (which tests/headless/carpark_null_spawn_double.gd
+# does). Routing through the node keeps the connection valid across a swap.
+func _nav_cycle_focus(step: int) -> void:
+	_carpark_ui._cycle_focus(step)
+
+
 func _build_carpark_nav_row() -> Array:
 	var nav := HBoxContainer.new()
 	nav.add_theme_constant_override("separation", 8)
 	var prev := Button.new()
 	prev.text = "<"
 	prev.focus_mode = Control.FOCUS_NONE
-	prev.pressed.connect(_carpark_ui._cycle_focus.bind(-1))
+	prev.pressed.connect(_nav_cycle_focus.bind(-1))
 	nav.add_child(prev)
 	var center := _label("", 18)
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1209,7 +1226,7 @@ func _build_carpark_nav_row() -> Array:
 	var next := Button.new()
 	next.text = ">"
 	next.focus_mode = Control.FOCUS_NONE
-	next.pressed.connect(_carpark_ui._cycle_focus.bind(1))
+	next.pressed.connect(_nav_cycle_focus.bind(1))
 	nav.add_child(next)
 	return [nav, center]
 
