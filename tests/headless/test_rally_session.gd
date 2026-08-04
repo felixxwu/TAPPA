@@ -192,6 +192,35 @@ func test_re_winning_a_special_reveals_and_awards_nothing() -> void:
 	UpgradeLibrary.reset()
 
 
+# Engine swapping is gated as a CAPABILITY (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY), not as a
+# catalogue part, so there is no upgrade to award — but the win still hands over ONE swap
+# token, so the station is usable the moment it is announced rather than waiting on a drop.
+# The fixture special is re-ided to the gate const, so this leans on the CONST rather than on
+# the shipped roster.
+func test_winning_the_capability_special_awards_a_swap_token() -> void:
+	var roster: Array[Dictionary] = RallyFixtures.rallies()
+	for r in roster:
+		if bool(r.get("special", false)):
+			r["id"] = RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY
+	RallyLibrary.override_for_test(roster)
+	var token := UpgradeLibrary.ENGINE_SWAP_TOKEN_ID
+	var before := int((_save.profile.get("inventory", {}) as Dictionary).get(token, 0))
+
+	_start_winnable(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
+	var box := _capture_finish()
+	_report_events([30000, 30000, 30000])
+	var result: Dictionary = box[0]
+	var unlock: Dictionary = result.get("special_unlock", {})
+	assert_eq(String(unlock.get("capability", "")), "engine_swap",
+		"the capability unlock is announced even with no part to name")
+	assert_eq(String(unlock.get("item_id", "")), "",
+		"and it names no catalogue item, because there isn't one")
+	assert_eq(int((_save.profile.get("inventory", {}) as Dictionary).get(token, 0)), before + 1,
+		"exactly one swap token is granted, so the station is immediately usable")
+	assert_eq(String(result.get("car_reward", "")), "",
+		"it is still a special, so still no car")
+
+
 # An ordinary rally is untouched: no unlock, and it still draws a car.
 func test_an_ordinary_win_reports_no_unlock_and_still_pays_a_car() -> void:
 	_install_unlock_ladder()

@@ -26,7 +26,7 @@ power.
 
 **Capability gate.** Tokens drop and bank from the very start, but cannot be
 SPENT until the 32-star special is won
-(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "sp_archipelago_trial"`, predicate
+(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "sp_woodland_trial"` — the LOWEST star rung, so swapping is the first thing the ladder opens, predicate
 `RallyLibrary.engine_swaps_unlocked(profile)`). Separating the capability from
 the currency is deliberate: a visible stack of tokens you cannot use yet is a
 stronger pull toward the event than any prize description, so the locked UI names

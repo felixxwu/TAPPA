@@ -2954,6 +2954,76 @@ func test_overall_heading_names_every_stage_summed_so_far() -> void:
 		"stage 3 lists all three")
 
 
+# A first-won SPECIAL gets its own podium stage naming the upgrade it unlocked, and the card
+# says which car it went on. Ordinary rallies must not see the stage at all.
+func test_podium_reveals_a_special_unlock_and_names_the_car() -> void:
+	# Synthetic part, so the test neither depends on a shipped catalogue entry nor cares
+	# what the real ladder is named (CLAUDE.md). Also robust to whatever override an
+	# earlier test left installed.
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_part", "name": "Fixture Part", "slot": "fxslot", "consumable": false,
+			"cost": 0, "free": true},
+	] as Array[Dictionary])
+	RallySession._last_result = {
+		"placed": 1, "completed": true, "combined_ms": 65000, "dnf": false,
+		"special_unlock": {"item_id": "fx_part", "granted": ["fx_part"]},
+		"standings": [{"name": "You", "car_name": "V12 Test Car", "car_id": "",
+			"combined_ms": 65000, "dnf": false, "is_player": true, "placed": 1}],
+	}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_true(pod._stages.has(pod.Stage.SPECIAL_UNLOCK), "the unlock stage is in the sequence")
+	pod._enter_stage(pod.Stage.SPECIAL_UNLOCK)
+	var text := _label_texts(pod)
+	# The part is named from the catalogue rather than asserted as a literal, so retitling
+	# the upgrade moves the test with it.
+	var part_name := UITheme.caps(String(UpgradeLibrary.by_id("fx_part").get("name", "")))
+	assert_ne(part_name, "", "precondition: the synthetic part resolves")
+	assert_string_contains(text, part_name, "the card names the unlocked part")
+	assert_string_contains(text, "V12 TEST CAR", "and the car it was applied to")
+	assert_string_contains(text, "CAN NOW BE WON", "and that it joins the rally rewards")
+	# Inverted face, and the drop shadow cleared — a light card with a hard black shadow
+	# reads as grubby fringing.
+	assert_eq(pod._slot_panel.get_theme_stylebox("panel").bg_color, pod.UNLOCK_CARD_BG,
+		"the unlock card is the inverted face")
+	assert_eq(pod._slot_label.get_theme_color("font_shadow_color"), Color(0, 0, 0, 0),
+		"no drop shadow on the light card")
+	UpgradeLibrary.reset()
+
+
+# A special that gates a CAPABILITY rather than a part still gets a reveal. Engine swaps are
+# authored as RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, not as a catalogue entry, and they are
+# now the LOWEST rung — so without this the very first unlock a player earns is silent.
+func test_podium_reveals_a_capability_unlock_with_nothing_to_fit() -> void:
+	RallySession._last_result = {
+		"placed": 1, "completed": true, "combined_ms": 65000, "dnf": false,
+		"special_unlock": {"item_id": "", "capability": "engine_swap", "granted": []},
+		"standings": [],
+	}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_true(pod._stages.has(pod.Stage.SPECIAL_UNLOCK),
+		"a capability unlock still gets its own stage")
+	pod._enter_stage(pod.Stage.SPECIAL_UNLOCK)
+	var text := _label_texts(pod)
+	assert_string_contains(text, "ENGINE SWAPS", "the card names the capability")
+	assert_false(text.contains("APPLIED TO"),
+		"and claims nothing was fitted — there is no part to fit")
+
+
+# An ordinary rally never sees the unlock stage.
+func test_podium_skips_the_unlock_stage_for_an_ordinary_rally() -> void:
+	RallySession._last_result = {"placed": 1, "completed": true, "combined_ms": 65000,
+		"dnf": false, "special_unlock": {}}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_false(pod._stages.has(pod.Stage.SPECIAL_UNLOCK),
+		"no unlock stage without a special_unlock")
+
+
 func test_podium_shows_the_finish_summary() -> void:
 	# The podium opens on its first stage (the 3D podium) showing the headline result.
 	RallySession._last_result = {"placed": 2, "completed": true, "combined_ms": 65000, "dnf": false}

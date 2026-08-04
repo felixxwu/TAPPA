@@ -283,13 +283,13 @@ over the ready start-line reveal rather than a frozen loading screen). The popup
 appears when the repair moved health by **at least `RepairReveal.MIN_SHOW_GAIN_PCT`
 percentage points** (2, via `RepairReveal.worth_showing`) — a smaller touch-up (e.g.
 wheels-only on a near-full car) still applies to the save but doesn't interrupt the
-player. Note the two numbers are deliberately different: the **card** reports
-absolute HP (`health_gain_hp` — the repair card is now the only place an absolute HP
-figure is shown; the in-run HUD gauge is a bar with a static caption), while the
-**gate** stays proportional (`health_gain_pct`) — whether a
-repair is worth interrupting for is a question about how much of the car it fixed,
-and 20 HP means very different things on a fragile car and a heavy one. Headless runs drain
-the summary without building the popup.
+player. The card and the gate read the **same** number — `health_gain_pct`, percentage
+points of `max_hp` — so the figure on screen is the one that decided whether to show the
+popup at all. Proportional is the right unit: a repair's worth is how much of the car it
+fixed, and 20 HP means very different things on a fragile car and a heavy one; the rest of
+the UI already talks in health percent. (`health_gain_hp` still exists as a pure helper and
+is tested, but nothing displays it.) Headless runs drain the summary without building the
+popup.
 
 Without a stage AFTER it, the final event of a rally would never get this courtesy
 repair — `_enter_event()` only ever runs again for a NEXT event, and there is no

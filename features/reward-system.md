@@ -343,6 +343,23 @@ car that earned it**. The podium announces it as its own stage
   outcome is fixed by which special was won. Same documented house-rule-4 exception as a
   special's map pin ([ui-design-system.md](ui-design-system.md)).
 
+**A special may gate a CAPABILITY instead of a part.** Engine swapping is authored the other
+way round — `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`, not an `unlocked_by_rally` field — so it
+is not in `UpgradeLibrary`'s index and there is nothing to grant: winning the rally *is* the
+unlock. It still gets the reveal (`special_unlock.capability == "engine_swap"`), which matters
+because it sits on the **lowest rung**, so without it the first unlock a player ever earns
+would pass in silence. It also grants **one `ENGINE_SWAP_TOKEN_ID`** immediately, so the
+station is usable the moment it is announced — unlocking it and then making the player wait on
+a 0.2-weight drop (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`) would make the reveal a promise rather
+than a reward. The map pin has always had this branch
+(`hq.gd::_special_unlock_line`); the podium mirrors it.
+
+The ladder order is authored, not derived — engine swaps first, then the forced-induction and
+drivetrain parts, then the nitrous rungs. Two invariants are tested rather than the numbers
+(they are tunable): a gated part's **prerequisite opens no later than the part itself**, or a
+player reaches a part whose chain they cannot have earned; and the engine-swap capability sits
+on the lowest rung. See `test_rally_library.gd`.
+
 Carried to the podium as `last_result()["special_unlock"]` =
 `{item_id, granted: [ids, headline first]}`, or `{}` for an ordinary rally, a re-win, or a
 special that gates no part.

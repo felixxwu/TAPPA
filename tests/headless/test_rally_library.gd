@@ -932,6 +932,49 @@ func test_no_hop_drops_a_rival_identity_key() -> void:
 	CarFixtures.restore()
 
 
+# The star ladder's unlocks must stay in a workable ORDER. Two invariants, neither pinning a
+# rung number (they are tunable): every gated part's prerequisite must open at or before the
+# part itself, or a player reaches a part whose chain they cannot have earned; and the
+# engine-swap capability must be the FIRST rung, which is a deliberate design choice.
+func test_the_unlock_ladder_opens_prerequisites_before_the_parts_that_need_them() -> void:
+	var rung := {}   # rally_id -> requires_stars
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			rung[String(rally["id"])] = RallyLibrary.stars_required(rally)
+
+	var checked := 0
+	for item in UpgradeLibrary.all():
+		var item_id := String(item["id"])
+		var gate := UpgradeLibrary.unlocked_by_rally(item_id)
+		var prereq := UpgradeLibrary.requires_upgrade_id(item_id)
+		if gate == "" or prereq == "":
+			continue
+		var prereq_gate := UpgradeLibrary.unlocked_by_rally(prereq)
+		if prereq_gate == "":
+			continue  # the prerequisite is ungated, so it is always available first
+		assert_true(rung.has(gate) and rung.has(prereq_gate),
+			"both gates are real specials (%s / %s)" % [gate, prereq_gate])
+		assert_lte(int(rung[prereq_gate]), int(rung[gate]),
+			"%s's prerequisite %s opens no later than it does" % [item_id, prereq])
+		checked += 1
+	assert_gt(checked, 0, "the roster actually has a gated chain to check")
+
+
+func test_engine_swapping_is_the_first_thing_the_ladder_opens() -> void:
+	var swap_rung := -1
+	var lowest := 1 << 30
+	for rally in RallyLibrary.all():
+		if not RallyLibrary.is_special(rally):
+			continue
+		var need := RallyLibrary.stars_required(rally)
+		lowest = mini(lowest, need)
+		if String(rally["id"]) == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+			swap_rung = need
+	assert_ne(swap_rung, -1, "the engine-swap rally is a real special")
+	assert_eq(swap_rung, lowest,
+		"engine swapping opens on the lowest rung — it is what makes the garage interesting")
+
+
 # EVERY value in a generated rival entry must survive a JSON round-trip unchanged. The
 # opponent cache's entire contract is that a cached field equals a freshly generated one
 # (data/opponent_cache.json is committed and consulted instead of re-simulating), and JSON

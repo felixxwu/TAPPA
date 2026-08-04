@@ -78,7 +78,7 @@ const UPGRADES: Array[Dictionary] = [
 		# (garage-wide): absent from the reward pool entirely until the 8-star special
 		# event is won — see unlocked_by_rally / rally_gate_met.
 		"id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo",
-		"requires_upgrade_id": "turbo_small", "unlocked_by_rally": "sp_woodland_trial",
+		"requires_upgrade_id": "turbo_small", "unlocked_by_rally": "sp_dust_trial",
 		"consumable": false,
 		"effect": {"install_turbo": {
 			"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
@@ -96,7 +96,7 @@ const UPGRADES: Array[Dictionary] = [
 		# constant backpressure. Whistle/BOV gains are left alone: apply() clears
 		# turbo_enabled so neither layer can fire.
 		"id": "supercharger", "name": "Supercharger", "menu_label": "Supercharger", "slot": "turbo",
-		"requires_upgrade_id": "turbo_large", "unlocked_by_rally": "sp_lakeshore_trial",
+		"requires_upgrade_id": "turbo_large", "unlocked_by_rally": "sp_archipelago_trial",
 		"consumable": false,
 		"effect": {"install_supercharger": {
 			"supercharger_boost_gain": 0.9, "supercharger_rpm_ref": 4200.0,
@@ -134,7 +134,7 @@ const UPGRADES: Array[Dictionary] = [
 		# for (RallyLibrary.is_eligible / hq._entry_plan) — so it visibly opens pins on the
 		# map rather than just adding speed.
 		"id": "drivetrain_swap", "name": "Drivetrain Conversion", "slot": "drivetrain",
-		"unlocked_by_rally": "sp_dust_trial",
+		"unlocked_by_rally": "sp_lakeshore_trial",
 		"consumable": false, "effect": {"unlocks_drivetrain_swap": true},
 	},
 	# --- Nitrous (features/nitrous.md) -----------------------------------------

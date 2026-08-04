@@ -33,7 +33,7 @@ Each `RALLIES` entry:
   ladder can't deadlock — a special must never gate on a part it unlocks. Specials
   award no stars themselves (excluded from `total_stars` and `_completed_count`,
   same as the old showdown exclusion). `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`
-  names `sp_archipelago_trial` as the special whose completion flips
+  names `sp_woodland_trial` — the LOWEST rung — as the special whose completion flips
   `engine_swaps_unlocked`. The intent is a *capability* gate on engine swapping,
   separate from the swap-token currency (which keeps dropping unconditionally).
   Fully wired: `RewardSystem._box_gate_open`, the garage swap row and the
@@ -397,7 +397,7 @@ generator also uses it per-rival.
 - `stars_needed(rally, profile)` — stars still needed before a special opens (0
   once open, and 0 for non-specials); drives the locked pin's "X/N stars" readout.
 - `engine_swaps_unlocked(profile)` — whether `ENGINE_SWAP_UNLOCK_RALLY`
-  (`sp_archipelago_trial`) is recorded completed — the engine-swap *capability*
+  (`sp_woodland_trial`, the lowest rung) is recorded completed — the engine-swap *capability*
   gate (tokens themselves always drop; see `features/engine-swap.md`).
 - `all_specials_completed(profile)` — true once every special on the roster is
   completed; a roster with no specials reads as completed. Replaces the old

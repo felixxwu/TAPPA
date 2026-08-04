@@ -33,23 +33,29 @@ func test_continue_is_keyboard_gamepad_focusable() -> void:
 	assert_true(w._continue_button.has_focus(), "the cursor is seated on Continue")
 
 
-func test_the_card_reports_health_in_absolute_hp() -> void:
-	# The card shows HP RESTORED, not a percentage of max: "+100 HP" says what the
-	# repair actually did to the car, where "+10%" made the player do the arithmetic.
+func test_the_card_reports_health_as_a_percentage() -> void:
+	# The card shows PERCENTAGE POINTS of max_hp, the same unit the popup gate reads and the
+	# same unit the rest of the UI shows health in. It briefly showed absolute HP instead;
+	# that made the card the only place in the game quoting a raw HP figure, so the player
+	# had to know their car's max to judge whether the repair mattered.
 	var w := _make()
-	w.reveal(_make_summary())  # 300 -> 400
+	w.reveal(_make_summary())  # 300 -> 400 of 1000
 	await get_tree().process_frame
-	assert_eq(RepairReveal.health_gain_hp(_make_summary()), 100, "hp_after - hp_before")
-	assert_string_contains(w._health_label.text, "100", "the card names the HP restored")
-	assert_false(w._health_label.text.contains("%"), "and no longer shows a percentage")
+	assert_eq(RepairReveal.health_gain_pct(_make_summary()), 10, "10 points of max_hp")
+	assert_string_contains(w._health_label.text, "10%", "the card names the percentage restored")
+	assert_false(w._health_label.text.contains("HP"), "and not a raw HP figure")
 
 
-func test_health_gain_hp_is_independent_of_max_hp() -> void:
-	# The whole point of the change: the same 100 HP reads the same on a fragile car
-	# and a tough one, where the percentage would have differed.
+func test_health_gain_pct_scales_with_max_hp() -> void:
+	# The reason the card uses it: the SAME absolute repair is a big deal on a fragile car
+	# and negligible on a tough one, and the percentage says which.
 	var fragile := {"repaired": true, "hp_before": 100.0, "hp_after": 200.0, "max_hp": 250.0}
 	var tough := {"repaired": true, "hp_before": 100.0, "hp_after": 200.0, "max_hp": 5000.0}
-	assert_eq(RepairReveal.health_gain_hp(fragile), RepairReveal.health_gain_hp(tough))
+	assert_gt(RepairReveal.health_gain_pct(fragile), RepairReveal.health_gain_pct(tough),
+		"the same HP gain reads as a larger share of a fragile car")
+	# The absolute helper is still pure and correct, just not displayed.
+	assert_eq(RepairReveal.health_gain_hp(fragile), RepairReveal.health_gain_hp(tough),
+		"while the absolute figure is by definition the same on both")
 
 
 func test_worth_showing_needs_at_least_the_min_health_gain() -> void:

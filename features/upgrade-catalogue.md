@@ -196,7 +196,7 @@ bracketed **and painted the house accent green** so the current pick stands out.
 greyed, absent. A greyed row the player cannot act on only raises "when do I get
 this?", which the garage cannot answer; the MAP is the surface that advertises
 what a special unlocks. So the turbo row reads `Stock | Small` for a new player and
-grows to `Stock | Small | Big | Supercharger` as the 5- and 15-star specials are
+grows to `Stock | Small | Big | Supercharger` as the 10- and 20-star specials are
 won. A slot whose every option is still locked gets **no row at all, label
 included** (`_make_slot_row` returns null) — for a new player that is the whole
 drivetrain row. The engine-swap row is hidden on the same rule while the capability

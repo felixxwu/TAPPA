@@ -551,6 +551,24 @@ func _resolve_results() -> void:
 					"item_id": item_id,
 					"granted": RewardSystem.grant_special_unlock(_car_instance_id, item_id),
 				}
+			elif rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+				# A special may gate a CAPABILITY rather than a catalogue part, authored the
+				# other way round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) so it is not in
+				# UpgradeLibrary's index. It still gets announced — and it is the LOWEST rung,
+				# so without this branch the very first unlock a player earns would pass in
+				# silence. The map pin has always handled this case
+				# (hq.gd::_special_unlock_line); this mirrors it.
+				#
+				# It also hands over ONE swap token, so the capability is usable the moment
+				# it is announced. Unlocking the station and then making the player wait on a
+				# 0.2-weight drop (RewardSystem.ENGINE_SWAP_TOKEN_DROP_WEIGHT) before they can
+				# try it would make the reveal a promise rather than a reward.
+				Save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1, false)
+				special_unlock = {
+					"item_id": "",
+					"capability": "engine_swap",
+					"granted": [UpgradeLibrary.ENGINE_SWAP_TOKEN_ID],
+				}
 		# The endgame is completing EVERY special event on the star ladder — no designated
 		# final region (todo/star-gated-special-events.md). complete_rally() above has
 		# already recorded THIS special, so the last one to be won sees itself counted here

@@ -512,22 +512,54 @@ func _enter_stage(stage: int) -> void:
 # it reads as a milestone rather than another reward card, matching the treatment a special's
 # map pin wears (features/menus.md). No spin, so the stage is instantly steppable — headless
 # runs need no special casing.
+# The player's own car name from the finish standings — already the engine-aware display
+# name (EngineSwap.display_name via RallySession._player_car_name), so it matches the
+# leaderboard row directly above. "" when there is no player row (headless / no car).
+func _player_standings_car_name() -> String:
+	for entry in (_result.get("standings", []) as Array):
+		if bool((entry as Dictionary).get("is_player", false)):
+			return String((entry as Dictionary).get("car_name", ""))
+	return ""
+
+
 func _show_special_unlock() -> void:
 	var unlock: Dictionary = _result.get("special_unlock", {})
 	var item := UpgradeLibrary.by_id(String(unlock.get("item_id", "")))
+	var capability := String(unlock.get("capability", ""))
 	_title_label.text = "UNLOCKED"
 	_slot_panel.visible = true
 	var box := UITheme.panel_box(1.0, 22)
 	box.bg_color = UNLOCK_CARD_BG
 	_slot_panel.add_theme_stylebox_override("panel", box)
-	_slot_label.text = UITheme.caps(String(item.get("name", "New upgrade")))
+	# A capability unlock (engine swaps) has no catalogue entry to name and nothing to fit —
+	# winning the rally IS the unlock — so it gets its own headline and tail.
+	_slot_label.text = UITheme.caps(
+		"Engine swaps" if capability == "engine_swap"
+		else String(item.get("name", "New upgrade")))
 	# Whether the player actually received it, or only opened the gate: `granted` is empty
 	# when the driven car already had the part, and saying "fitted" then would be a lie.
 	var granted: Array = unlock.get("granted", [])
-	var tail := ("Fitted and enabled — it also joins the rally reward pool."
-		if not granted.is_empty()
-		else "Now appears in rally rewards.")
-	_slot_caption.text = UITheme.caps(tail)
+	var lines: Array[String] = []
+	if capability == "engine_swap":
+		lines.append("Swap engines between your cars in the garage")
+		lines.append("+1 swap token")
+		_slot_caption.text = UITheme.caps("\n".join(lines))
+		_finish_unlock_card()
+		return
+	if not granted.is_empty():
+		# The car the player just drove, named the way every other readout names it (the
+		# engine-aware display name), read off their own standings row rather than re-derived.
+		var car_name := _player_standings_car_name()
+		lines.append(("Applied to %s" % car_name) if car_name != "" else "Applied to your car")
+	lines.append("Can now be won in rally stages")
+	_slot_caption.text = UITheme.caps("\n".join(lines))
+	_finish_unlock_card()
+
+
+# Shared tail of the unlock card: frame it, apply the house text rules, then re-assert the
+# inverted ink (enforce re-runs them) and clear the drop shadow — the terminal look on a dark
+# card but grubby fringing on a light one (same reasoning as hq.gd::_build_readout_sprite).
+func _finish_unlock_card() -> void:
 	_move_camera(_podium_cam())
 	UITheme.enforce(_layer)
 	# Re-assert the ink AFTER enforce, which re-runs the house text rules. The drop shadow

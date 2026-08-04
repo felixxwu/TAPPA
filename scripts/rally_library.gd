@@ -1313,7 +1313,12 @@ static func engine_swaps_unlocked(profile: Dictionary) -> bool:
 # The special whose win unlocks engine swapping. Authored here rather than on the rally so
 # the capability has one named owner (upgrades are gated the other way round, by
 # UpgradeLibrary.unlocked_by_rally).
-const ENGINE_SWAP_UNLOCK_RALLY := "sp_archipelago_trial"
+# Engine swapping is the FIRST thing the star ladder opens (the lowest rung), because it is
+# the mechanic that makes the rest of the garage interesting — a player who has it early can
+# experiment with every car they win, where a turbo is just a number going up. The part
+# unlocks shifted one rung later to make room; the turbo -> supercharger dependency order is
+# unchanged (see UpgradeLibrary's unlocked_by_rally fields).
+const ENGINE_SWAP_UNLOCK_RALLY := "sp_woodland_trial"
 
 
 # Whether EVERY special on the roster is won — the win/credits beat, replacing the old
