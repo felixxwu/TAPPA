@@ -22,7 +22,7 @@ Each `RALLIES` entry:
   player's roster-wide `total_stars` reaches `requires_stars` — a **global** gate
   with no relationship to region: a region may hold any number of specials,
   including none (see [regions.md](regions.md)). Eight specials ship today, at
-  rungs authored 8/16/24/32/40/48/56/64 (do not treat these numbers as a contract —
+  rungs authored 5/10/15/20/25/30/35/40 (do not treat these numbers as a contract —
   they're tunable): `sp_woodland_trial` (`home`), `sp_dust_trial` (`greece`),
   `sp_lakeshore_trial` (`home_coast`), `sp_archipelago_trial` (`greece_coast`) are
   the four new lower rungs; `the_showdown` (`home`), `hc_showdown` "The Lakeland
@@ -411,6 +411,17 @@ generator also uses it per-rival.
   `floor_meta` (the owned car's max potential) judges the floor at max, as in `is_eligible`.
 
 ### Rival builds — car + engine combos
+
+**Carrying a rival onwards.** `RallyLibrary.RIVAL_IDENTITY_KEYS`
+(`["name", "car_id", "engine_id", "car_name"]`) + `identity_of(opp)` are the contract for
+every hop that passes a rival to another surface — the start-line leaders
+(`RallySession.current_event_leaders`), the wreck record (`event_wreck`) and the standings
+rows (`build_standings`). Each used to re-list fields by hand, and dropping `engine_id` is
+what staged rivals on their cars' STOCK engines: the receiving end re-resolves the car from
+`car_id` alone, which can only ever find the catalogue stock engine. Use `identity_of`
+rather than a fresh dict literal, and add new per-rival attributes to the const —
+`test_rally_library.gd::test_no_hop_drops_a_rival_identity_key` walks it and fails until
+every hop carries them.
 
 Rivals get exactly **one** upgrade: the engine swap. The draw pool is therefore not the car roster
 but every **(car, engine) pairing** the rally admits.

@@ -1156,7 +1156,8 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	var fwd := Vector3(tan2.x, 0.0, tan2.y)
 	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
 	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
-	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container, terrain)
+	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container, terrain,
+		String(wreck.get("engine_id", "")))
 
 	# The small gathering of onlookers, on the verge side of the wreck (off the road).
 	_spawn_wreck_crowd(container, Vector3(pos2.x, top_y, pos2.y), outward, terrain, cfg)
@@ -1238,7 +1239,8 @@ func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
 # verge, roll down a slope, or re-wreck on landing (all past bugs of the old drop-and-
 # settle approach). FREEZE_MODE_STATIC (the default) keeps the collider, so the frozen
 # wreck is a solid, immovable obstacle. Its HP is zeroed so the smoke reads it as a wreck.
-func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terrain: TerrainManager) -> Node3D:
+func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terrain: TerrainManager,
+		engine_id := "") -> Node3D:
 	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
 	# apply_car + dup meshes + silence + freeze (+ synthetic wreck smoke). The wreck's
 	# own steps — seat/settle, lock controls, zero HP — run in `configure` after the
@@ -1258,6 +1260,10 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terra
 			c.damage.hp = 0.0
 	return CarProp.spawn(parent, load(WRECK_CAR_SCENE), {
 		"index": library_index,
+		# The wrecked rival's FITTED engine (event_wreck carries it — RallyLibrary
+		# .RIVAL_IDENTITY_KEYS). Matters here only through engine mass -> resting ride
+		# height, but keeps the staged wreck the same build the standings name.
+		"engine_id": engine_id,
 		"configure": configure,
 		"disable_process": true,
 		"smoke": _add_wreck_smoke,

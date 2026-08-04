@@ -123,6 +123,70 @@ static func draw_and_grant_upgrade(car_instance_id: int, profile: Dictionary,
 	return item_id
 
 
+# Grant the part a SPECIAL event unlocks to the car that just won it, cascading down the
+# prerequisite ladder so the award is actually usable (todo/special-unlock-reveal.md).
+#
+# A special's gate opens the part for the whole garage (UpgradeLibrary.rally_gate_met), but
+# the part itself also has a PER-CAR prerequisite: turbo_large needs turbo_small fitted to
+# THIS car, supercharger needs turbo_large, nitrous_shot is two rungs above nitrous. Awarding
+# the headline part to a car that lacks the chain would hand over something it can't run, so
+# the missing rungs are granted too — silently, since the reveal names only the headline.
+#
+# Returns the ids granted, HEADLINE FIRST, or [] when nothing was (the car already has it, or
+# `item_id` is empty/unknown).
+#
+# The HEADLINE is fitted ENABLED — unlike draw_and_grant_upgrade's routine parts, which land
+# disabled for the player to pick between. A special's part is a milestone the reveal
+# announces, so it should be doing something when the player next drives. The cascaded
+# prerequisite rungs are fitted DISABLED: a ladder shares ONE slot (turbo_small /
+# turbo_large / supercharger are all `slot: "turbo"`), so they are mutually exclusive
+# alternatives, and the lower rungs exist only to satisfy prerequisite_met. Save's
+# _enable_exclusive enforces one-enabled-per-slot anyway, so granting bottom-up and enabling
+# only the headline leaves exactly the intended state.
+#
+# Consumables are added to the inventory instead, same split as the draw path.
+static func grant_special_unlock(car_instance_id: int, item_id: String) -> Array:
+	if item_id == "" or UpgradeLibrary.by_id(item_id).is_empty():
+		return []
+	var driven: Dictionary = Save.get_car(car_instance_id)
+	if driven.is_empty():
+		return []
+	# Already fitted to this car: grant NOTHING and report nothing, so the caller can still
+	# announce the unlock (the gate is garage-wide news) without a misleading "you got X".
+	# Returning a partial cascade here would leave granted[0] naming a prerequisite rather
+	# than the headline the reveal is about.
+	if (driven.get("installed_upgrades", []) as Array).has(item_id):
+		return []
+	# Walk DOWN the prerequisite chain collecting what this car is missing. Guarded against a
+	# cycle in authored data (a bad requires_upgrade_id pair would otherwise spin forever).
+	var chain: Array = []
+	var seen := {}
+	var cursor := item_id
+	while cursor != "" and not seen.has(cursor):
+		seen[cursor] = true
+		chain.append(cursor)
+		cursor = UpgradeLibrary.requires_upgrade_id(cursor)
+	var installed: Array = driven.get("installed_upgrades", [])
+	var granted: Array = []
+	# Bottom-up so each rung's prerequisite is in place before the rung above it lands.
+	for i in range(chain.size() - 1, -1, -1):
+		var id := String(chain[i])
+		if installed.has(id):
+			continue  # already on this car — nothing to grant, and not a failure
+		if UpgradeLibrary.is_consumable(id):
+			Save.add_item(id, 1, false)
+		else:
+			# i == 0 is the headline (chain[0]); everything above it in the loop is a
+			# prerequisite rung, which stays parked.
+			Save.install_upgrade(car_instance_id, id, i == 0)
+		granted.append(id)
+	if granted.is_empty():
+		return []
+	# Headline first: the caller shows granted[0] and the cascade stays implementation detail.
+	granted.reverse()
+	return granted
+
+
 # Every part `owned_car` could win right now. Flat — there is no tier walk any more (see
 # the header note on retiring tier). Excludes consumables (added separately as weighted
 # entries), `free` parts (ballast is always available, never a reward), any id in

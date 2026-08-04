@@ -21,9 +21,14 @@ Phases (`StartLine.Seq`), driven in `_process`:
    header hugs the top, and **Start / Tune Car / Upgrades** buttons hug the bottom, with
    an expanding clear band between so the car shows through. An **orbit camera** idles on
    the player's car. The HUD + mobile controls are hidden. All three buttons and both
-   sub-overlays are keyboard/gamepad navigable via `MenuNav`; a tap on the clear band also
-   launches. Pressing **Start** runs the eligibility gates (below); only on passing them
-   does the sequence advance.
+   sub-overlays are keyboard/gamepad navigable via `MenuNav`. **Only Start launches** —
+   pressing it runs the eligibility gates (below), and only on passing them does the sequence
+   advance. A tap on the clear band does **nothing**: it used to call `launch()`, so missing
+   Upgrades or Tune Car, or an idle tap while reading the stage banner, committed the player
+   to the stage with no confirmation. Touch players are not stranded — Start is a real
+   `Button`. (The later REVEAL phase keeps tap-to-advance, since the run has already begun
+   there.) Guarded by
+   `test_start_line.gd::test_a_tap_on_the_start_menu_does_not_launch`.
    - **Tune Car** opens the shared `TuningPanel` (grip / brake-bias / aero / detune for
      this race, mirroring the HQ lift; edits re-field the live car via `car.retune()`;
      passed the rally's `pw_max` so the detune label flags **OVER LIMIT**, detune spans the

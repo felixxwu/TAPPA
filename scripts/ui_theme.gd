@@ -425,7 +425,18 @@ static func mark_focused(btn: Button, focused: bool) -> void:
 # the panel's content padding so the box doesn't resize between the two states.
 static func mark_panel_focused(container: PanelContainer, focused: bool, pad: int = 14) -> void:
 	var box := StyleBoxFlat.new()
-	if focused:
+	# ACCENT PANELS keep their own fill in BOTH states. This function replaces the whole
+	# stylebox, so without this branch a panel painted a non-default colour (the white
+	# special-event map-pin readout — see hq.gd _build_readout_sprite) would snap to BLACK
+	# the first time anything repainted focus, which is every selection change on the map.
+	# Selection still reads, via the same green underline the default treatment uses.
+	var accent: Variant = container.get_meta("accent_bg", null) if container.has_meta("accent_bg") else null
+	if accent != null:
+		box.bg_color = accent
+		if focused:
+			box.border_width_bottom = 3
+			box.border_color = GREEN
+	elif focused:
 		box.bg_color = SURFACE_HOVER
 		box.border_width_bottom = 3
 		box.border_color = GREEN

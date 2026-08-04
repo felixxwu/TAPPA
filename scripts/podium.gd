@@ -18,13 +18,17 @@ extends Node3D
 # view (RallySession.return_to_garage). Headless runs build everything
 # synchronously and resolve the spins instantly so tests can step the stages.
 
-enum Stage { PODIUM, LEADERBOARD, CAR_REVEAL }
+enum Stage { PODIUM, LEADERBOARD, SPECIAL_UNLOCK, CAR_REVEAL }
 
 # Where the podium steps and the showroom turntable sit in the 3D scene (far apart
 # so the camera can frame each cleanly without the other in shot).
 const PODIUM_CENTER := Vector3.ZERO
 const SHOWROOM_CENTER := Vector3(40.0, 0.0, 0.0)
 const CAR_SCENE_PATH := "res://car.tscn"
+# The special-unlock card is inverted, like a special's map-pin readout — a documented
+# exception to design-system house rule 4 (see UITheme / features/ui-design-system.md).
+const UNLOCK_CARD_BG := Color(1.0, 1.0, 1.0, 1.0)
+const UNLOCK_CARD_INK := Color(0.0, 0.0, 0.0, 1.0)
 
 # Floor + scenery assets. The ground reuses the terrain road-blend shader so the
 # tarmac pads feather into grass exactly the way the generated road does; the
@@ -92,6 +96,11 @@ func _compute_stages() -> Array[int]:
 	var stages: Array[int] = [Stage.PODIUM, Stage.LEADERBOARD]
 	# Upgrades are revealed on the between-event standings screens now, not here — the
 	# podium closes on the car reward only (features/reward-system.md).
+	# A first-won SPECIAL announces the upgrade its star gate just opened. Only ever present
+	# for a special's first win (RallySession fills special_unlock), and skipped for a special
+	# that gates no part — so ordinary rallies never see this stage.
+	if not (_result.get("special_unlock", {}) as Dictionary).is_empty():
+		stages.append(Stage.SPECIAL_UNLOCK)
 	if String(_result.get("car_reward", "")) != "":
 		stages.append(Stage.CAR_REVEAL)
 	return stages
@@ -322,7 +331,7 @@ func _spawn_podium_cars() -> void:
 		# Seat on the step top, then lift by the car's resting ride height so its wheels
 		# sit on the step; spawn frozen.
 		var seat := PODIUM_CENTER + Vector3(xs[i], heights[i], 0.0)
-		var car := _spawn_car(idx, seat, false)
+		var car := _spawn_car(idx, seat, false, null, String(top3[i].get("engine_id", "")))
 		car.global_position += Vector3.UP * car.settled_ride_height()
 		car.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
 		# Face the camera: the car's forward is -Z and the podium camera sits on the
@@ -348,7 +357,8 @@ func _top_finishers(n: int) -> Array:
 # Spawn a car-library car as a silent prop at a world position. `live` leaves it
 # running physics (so it settles onto its suspension); otherwise it spawns frozen.
 # Gets its own mesh copies (car.tscn shares mesh sub-resources across instances).
-func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = null) -> Node3D:
+func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = null,
+		engine_id := "") -> Node3D:
 	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
 	# apply_car + dup meshes + silence engine audio, then frozen (unless `live`, which
 	# leaves it running physics so it settles onto its suspension). Positioning runs in
@@ -362,6 +372,10 @@ func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = 
 			c.global_transform = xform
 	return CarProp.spawn(parent if parent != null else self, load(CAR_SCENE_PATH), {
 		"index": library_index,
+		# The finisher's FITTED engine (standings rows carry it — RallyLibrary
+		# .RIVAL_IDENTITY_KEYS). "" falls back to the catalogue stock engine, which is
+		# correct for the showroom reveal of a freshly-won car.
+		"engine_id": engine_id,
 		"configure": configure,
 		"freeze": not live,
 		"disable_process": not live,
@@ -473,13 +487,59 @@ func _enter_stage(stage: int) -> void:
 	_slot_label.visible = true  # the car reveal hides it (one-line card); reset per stage
 	_slot_caption.custom_minimum_size = Vector2.ZERO  # car reveal widens it; reset per stage
 	_slot_caption.text = ""
+	# The special-unlock card repaints this panel light and its text dark, so restore the
+	# house reward card here — otherwise a following CAR_REVEAL would inherit the inverted
+	# look. Same reason the text colour + shadow are reset: per-stage, not per-scene.
+	_slot_panel.add_theme_stylebox_override("panel", UITheme.reward_card_box())
+	for lbl in [_slot_label, _slot_caption]:
+		lbl.add_theme_color_override("font_color", UITheme.INK)
+		lbl.add_theme_color_override("font_shadow_color", UITheme.SHADOW)
+		lbl.add_theme_constant_override("shadow_offset_x", UITheme.SHADOW_OFFSET)
+		lbl.add_theme_constant_override("shadow_offset_y", UITheme.SHADOW_OFFSET)
 	# Drop the content to the bottom for the car reveal (keeps the revealed car in
 	# clear view); keep it centred for the podium + leaderboard.
 	_middle.alignment = BoxContainer.ALIGNMENT_END if stage == Stage.CAR_REVEAL else BoxContainer.ALIGNMENT_CENTER
 	match stage:
 		Stage.PODIUM: _show_podium()
 		Stage.LEADERBOARD: _show_leaderboard()
+		Stage.SPECIAL_UNLOCK: _show_special_unlock()
 		Stage.CAR_REVEAL: _show_car_reveal()
+
+
+# The milestone card for a first-won SPECIAL: the upgrade its star gate just opened.
+# Deliberately NOT the slot-machine reel the car/upgrade reveals use — a reel implies a random
+# draw, and this outcome is fixed by WHICH special was won. Inverted (light face, dark ink) so
+# it reads as a milestone rather than another reward card, matching the treatment a special's
+# map pin wears (features/menus.md). No spin, so the stage is instantly steppable — headless
+# runs need no special casing.
+func _show_special_unlock() -> void:
+	var unlock: Dictionary = _result.get("special_unlock", {})
+	var item := UpgradeLibrary.by_id(String(unlock.get("item_id", "")))
+	_title_label.text = "UNLOCKED"
+	_slot_panel.visible = true
+	var box := UITheme.panel_box(1.0, 22)
+	box.bg_color = UNLOCK_CARD_BG
+	_slot_panel.add_theme_stylebox_override("panel", box)
+	_slot_label.text = UITheme.caps(String(item.get("name", "New upgrade")))
+	# Whether the player actually received it, or only opened the gate: `granted` is empty
+	# when the driven car already had the part, and saying "fitted" then would be a lie.
+	var granted: Array = unlock.get("granted", [])
+	var tail := ("Fitted and enabled — it also joins the rally reward pool."
+		if not granted.is_empty()
+		else "Now appears in rally rewards.")
+	_slot_caption.text = UITheme.caps(tail)
+	_move_camera(_podium_cam())
+	UITheme.enforce(_layer)
+	# Re-assert the ink AFTER enforce, which re-runs the house text rules. The drop shadow
+	# goes too: it is the terminal look on a dark card but grubby fringing on a light one
+	# (same reasoning as the floating map readouts, hq.gd::_build_readout_sprite).
+	for lbl in [_slot_label, _slot_caption]:
+		lbl.add_theme_color_override("font_color", UNLOCK_CARD_INK)
+		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+		lbl.add_theme_constant_override("shadow_offset_x", 0)
+		lbl.add_theme_constant_override("shadow_offset_y", 0)
+	_reveal_done = true
+	_refresh_next_button()
 
 
 func _show_podium() -> void:

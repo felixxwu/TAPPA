@@ -22,7 +22,7 @@ and the endgame are all implemented. Docs are in sync — see
    `NITROUS_HISS_GAIN` constant as a placeholder.
 3. The **engine-swap capability gate** is only half-wired: `engine_swaps_unlocked`
    exists and `RewardSystem` honours it, but the HQ swap station and the upgrades
-   menu do not, so tokens are still spendable before the 32-star special is won.
+   menu do not, so tokens are still spendable before the 20-star special is won.
 
 Everything below this line is the ORIGINAL DESIGN, kept as the rationale record.
 Where the implementation deliberately diverged, the divergence is called out inline
@@ -52,20 +52,34 @@ breadth (podium lots of rallies) and mastery (go back and convert a 2nd into a
 
 ## The ladder
 
-Every **8 stars**. Each event unlocks a part into the **normal reward pool** —
-it does not hand the part over. The player still has to win the part itself at an
-ordinary rally, per car, through the existing draw.
+Every **5 stars**. Each event unlocks a part into the **normal reward pool**.
+
+**SUPERSEDED IN PART (implemented):** it originally did *not* hand the part over — the
+player still had to win it at an ordinary rally. It now also **awards the part to the car
+that won the special**, cascading any missing prerequisite rungs, and a special no longer
+draws a car. The pool unlock still happens as described below; the award is on top. See
+`features/reward-system.md` → Special-event unlock. The rest of this section describes the
+pool mechanics, which are unchanged.
 
 | Stars | Unlocks | New content? |
 |---|---|---|
-| 8 | Big Turbo (`turbo_large`) | no — exists |
-| 16 | Drivetrain Conversion (`drivetrain_swap`, renamed) | no — exists |
-| 24 | Supercharger (`supercharger`) | no — exists |
-| 32 | Engine swapping (the *capability* — see below) | no — exists |
-| 40 | Nitrous | **yes** — new mechanic |
-| 48, 56, 64 | Nitrous upgrades — a mix of tank size (longer) and boost amount (harder) | yes — but they reuse the nitrous mechanic |
+| 5 | Big Turbo (`turbo_large`) | no — exists |
+| 10 | Drivetrain Conversion (`drivetrain_swap`, renamed) | no — exists |
+| 15 | Supercharger (`supercharger`) | no — exists |
+| 20 | Engine swapping (the *capability* — see below) | no — exists |
+| 25 | Nitrous | **yes** — new mechanic |
+| 30, 35, 40 | Nitrous upgrades — a mix of tank size (longer) and boost amount (harder) | yes — but they reuse the nitrous mechanic |
 
-Eight rungs, ending at 64. See *The star maths* for why it stops there.
+Eight rungs, ending at 40. See *The star maths* for why it stops there.
+
+> **RESCALED: the cadence was 8 stars, now 5.** The requirements were scaled
+> down in place — every rung kept its position and its unlock, only the numbers
+> moved (8/16/24/32/40/48/56/64 → 5/10/15/20/25/30/35/40). **No new special
+> events were added.** The accepted consequence, stated by the user: the last
+> unlock now lands at 40 stars instead of 64, well short of the roster's
+> star ceiling, so *"the late game will be more about completionism rather than
+> late game upgrade unlocks"* — a large tail of the roster is played for
+> completion rather than for new parts.
 
 Uniform rule, one mechanism: **no new grant or inventory path at all.** Four of
 the five unlocks are parts that already ship; the only genuinely new mechanic in
@@ -86,7 +100,7 @@ does today via `UpgradeLibrary.prerequisite_met`. No new mechanism.
 
 ## The seam: `unlocked_by_rally`
 
-Gate on **winning the event**, not on the raw star count. If 24 stars alone
+Gate on **winning the event**, not on the raw star count. If 15 stars alone
 unlocked the Supercharger there would be no reason to drive the event.
 
 One new authored field on the `UpgradeDef`:
@@ -94,7 +108,7 @@ One new authored field on the `UpgradeDef`:
 ```gdscript
 {
     "id": "supercharger", ..., "requires_upgrade_id": "turbo_large",
-    "unlocked_by_rally": "special_24",
+    "unlocked_by_rally": "special_15",
 }
 ```
 
@@ -192,7 +206,7 @@ The only new mechanic. Design agreed:
 - **Weak to start.** Because it always refills, the base tank can be small and the
   base boost modest without feeling stingy.
 - **Exactly two upgrade levers: tank size (longer) and boost amount (harder).**
-  The 48/56/64 rungs mix the two, so the escalation ladder has two axes and never
+  The 30/35/40 rungs mix the two, so the escalation ladder has two axes and never
   reads as "bigger number" three times.
 - **Boost is a TORQUE MULTIPLIER** applied while the button is held and the tank has
   charge. It lives only in the live sim — a multiplier on the crank torque in
@@ -203,7 +217,7 @@ The only new mechanic. Design agreed:
   feed `UpgradeLibrary.effective_meta`, so it never affects
   `RallyLibrary.is_eligible` p/w banding, `qualifying_detune`, or rival pace
   floors. It is a late-game mechanic that makes events *easier* — not a stat.
-  This also avoids the trap where fitting your 40-star reward shoves a car over a
+  This also avoids the trap where fitting your 25-star reward shoves a car over a
   `pw_max` and locks it out of rallies it could previously enter.
 
 Needs: a `GameConfig` block (base tank size / boost amount + per-upgrade deltas),
@@ -217,7 +231,7 @@ and `Save.install_upgrade` rejects anything whose `slot_of()` is empty, while
 `SLOTS` entry**: joining `turbo` would make it mutually exclusive with the turbo and
 supercharger, which is exactly wrong.
 
-The 48/56/64 upgrades form a **chained ladder inside that one slot** — each rung a
+The 30/35/40 upgrades form a **chained ladder inside that one slot** — each rung a
 strictly-better tank+boost combination replacing the last, the `turbo_small` →
 `turbo_large` precedent. Not two slots for tank and boost separately: that doubles
 the parts for a mixing freedom the player has no reason to want, and keeps the ladder
@@ -427,7 +441,7 @@ firing too.
 So separate the capability from the currency:
 
 - Tokens keep dropping exactly as they do now.
-- The 32-star event unlocks **swapping** — the swap station becomes usable and
+- The 20-star event unlocks **swapping** — the swap station becomes usable and
   tokens become spendable. Until then tokens are banked but inert.
 - Two readers need the locked state, both of which already read
   `Save.engine_swap_tokens_owned()`: `hq.gd` (the `CarparkMode.SWAP` station) and
@@ -448,7 +462,7 @@ This is the strongest incentive on the whole ladder: a visible stack of tokens
 you *can't spend yet* pulls harder toward the event than any prize description.
 
 **Risk:** pre-unlock tokens read as a junk reward unless the UI frames them as a
-teaser (`3 TOKENS — LOCKED · Win the 32-star event`) rather than an item. Get the
+teaser (`3 TOKENS — LOCKED · Win the 20-star event`) rather than an item. Get the
 label wrong and early draws feel like a whiff. Mitigating factor: tokens aren't
 fully dead pre-unlock, since the mystery-box branch still consumes them.
 
@@ -561,11 +575,11 @@ not from the `Save.save()` call. (Worth a comment where the outcome is decided, 
 
 ### Interaction with locked engine swaps
 
-Before the 32-star rung, swapping is locked and tokens are inert. The 3-token
+Before the 20-star rung, swapping is locked and tokens are inert. The 3-token
 condition is therefore **skipped** while locked (per the rule above), so a maxed car
-pre-32-stars yields either a box or nothing. Tokens keep accruing unspendably in the
+pre-20-stars yields either a box or nothing. Tokens keep accruing unspendably in the
 meantime — which is the intended teaser (see *Engine swaps* above), but it does mean
-the pre-32-star maxed-car case pays out less often than the post-unlock one. That's
+the pre-20-star maxed-car case pays out less often than the post-unlock one. That's
 acceptable; note it so it isn't mistaken for a bug.
 
 ## Eligibility judges the car's TRUE ceiling
@@ -648,7 +662,7 @@ the drivetrain picker at once):
   rather than showing a disabled `Swap Engine — locked`.
 
 Trade-off accepted: the "banked tokens you can't spend yet" teaser no longer
-appears in the garage, so a player holding swap tokens before the 32-star special
+appears in the garage, so a player holding swap tokens before the 20-star special
 has no in-garage explanation of what they are for. The car-park confirm popup still
 explains it if reached, and the map pin still advertises the unlock.
 
@@ -697,14 +711,14 @@ take the lower ones.
 
 | Stars | Id | Name | Region | Diff | Turn counts | Status |
 |---|---|---|---|---|---|---|
-| 8 | `sp_woodland_trial` | The Woodland Trial | `home` | 2 | 24 / 26 / 24 | **new** |
-| 16 | `sp_dust_trial` | The Dust Trial | `greece` | 2 | 28 / 30 / 28 | **new** |
-| 24 | `sp_lakeshore_trial` | The Lakeshore Trial | `home_coast` | 3 | 32 / 34 / 32 | **new** |
-| 32 | `sp_archipelago_trial` | The Archipelago Trial | `greece_coast` | 3 | 36 / 38 / 36 | **new** |
-| 40 | `the_showdown` | The Showdown | `home` | 4 | 40 / 40 / 40 | exists, unchanged |
-| 48 | `hc_showdown` | The Lakeland Crown | `home_coast` | 4 | 34/36/34 → **42 / 44 / 42** | exists, lengthen |
-| 56 | `gr_showdown` | The Aegean Crown | `greece` | 4 | 25/28/25 → **44 / 46 / 44** | exists, lengthen |
-| 64 | `gc_showdown` | The Island Crown | `greece_coast` | 4 | 33/35/33 → **46 / 48 / 46** | exists, lengthen |
+| 5 | `sp_woodland_trial` | The Woodland Trial | `home` | 2 | 24 / 26 / 24 | **new** |
+| 10 | `sp_dust_trial` | The Dust Trial | `greece` | 2 | 28 / 30 / 28 | **new** |
+| 15 | `sp_lakeshore_trial` | The Lakeshore Trial | `home_coast` | 3 | 32 / 34 / 32 | **new** |
+| 20 | `sp_archipelago_trial` | The Archipelago Trial | `greece_coast` | 3 | 36 / 38 / 36 | **new** |
+| 25 | `the_showdown` | The Showdown | `home` | 4 | 40 / 40 / 40 | exists, unchanged |
+| 30 | `hc_showdown` | The Lakeland Crown | `home_coast` | 4 | 34/36/34 → **42 / 44 / 42** | exists, lengthen |
+| 35 | `gr_showdown` | The Aegean Crown | `greece` | 4 | 25/28/25 → **44 / 46 / 44** | exists, lengthen |
+| 40 | `gc_showdown` | The Island Crown | `greece_coast` | 4 | 33/35/33 → **46 / 48 / 46** | exists, lengthen |
 
 That yields a monotonic 24 → 48 ramp, every rung clearly longer than the 10–31 turns
 of ordinary rallies. **Note `gr_showdown` is currently 25/28/25 — *shorter* than
@@ -758,39 +772,43 @@ test fails:
 - **Seeds:** the `8xxxx` block is entirely unused. Allot `81001-3`, `82001-3`,
   `83001-3`, `84001-3` to the four new specials.
 
-## The star maths — the ladder stops at 64
+## The star maths — the ladder stops at 40
 
-The roster is **28 entries, 4 of them showdowns**. Those 4 become the first
-specials and specials award no stars, so there are **24 star-earning rallies → 72
-max stars**.
+The roster is **32 entries, 8 of them specials**. Specials award no stars
+(`RallyLibrary.total_stars` skips them), so there are **24 star-earning rallies →
+72 max stars**.
 
-**The ladder stops at 64**, giving eight rungs: 8, 16, 24, 32, 40, 48, 56, 64.
-The last 8 stars (65–72) are deliberately unallocated.
+**The ladder stops at 40**, giving eight rungs: 5, 10, 15, 20, 25, 30, 35, 40.
+Everything above 40 (41–72) is deliberately unallocated.
 
 That cap does real work:
 
 - **The win condition isn't a perfect run.** A 72-star rung would have demanded 3
-  stars in all 24 rallies with no slips; 64 leaves eight stars of slack, so the
+  stars in all 24 rallies with no slips; 40 leaves a wide margin of slack, so the
   game can be finished without flawlessness.
 - **Four new specials to author, not five.** Four exist already. This is still the
   bulk of the work — stages, `map_pos` pins, weather — but it's a fifth less of it.
-- **Three nitrous-upgrade rungs (48, 56, 64)**, which the two levers (tank size /
+- **Three nitrous-upgrade rungs (30, 35, 40)**, which the two levers (tank size /
   boost amount) fill comfortably without padding.
+
+**After the rescale from 8s to 5s, the slack above the top rung is large by
+design** — roughly the last 32 of 72 stars sit past the final unlock. The user
+accepted this explicitly: the tail of the roster is completionism, not new parts.
 
 ## The endgame
 
-Credits fire on **winning the 64-star special** — the top rung — replacing
+Credits fire on **winning the 40-star special** — the top rung — replacing
 `RegionLibrary.all_showdowns_completed()`. `RallySession.showdown_won` and the
 `podium.gd` beat stay intact; only the predicate changes.
 
-Because the ladder caps at 64 rather than 72, this is a reachable finish rather
+Because the ladder caps at 40 rather than 72, this is a reachable finish rather
 than a star-perfect one. Note that today the *final* showdown swaps its car draw
-for the credits beat (`rally_session.gd`); keep that behaviour on the 64-star
+for the credits beat (`rally_session.gd`); keep that behaviour on the 40-star
 event, and only that one — every other special pays out normally (see *What a
 special pays out*).
 
 > **SHIPPED, with a deliberate change of predicate.** The credits do **not** key
-> on the 64-star rung specifically. `rally_session.gd` fires the renamed
+> on the 40-star rung specifically. `rally_session.gd` fires the renamed
 > `game_won` signal when `RallyLibrary.is_special(_rally)` **and**
 > `RallyLibrary.all_specials_completed(Save.profile)` — i.e. when the just-won
 > special was the last one outstanding. Normally that IS the top rung (the rungs
@@ -836,7 +854,7 @@ should not quietly claim the reserved NE corner.
 
 ## Tests
 
-Per `CLAUDE.md`: **do not pin the ladder's numbers.** `8`, `16`, `24`, which part
+Per `CLAUDE.md`: **do not pin the ladder's numbers.** `5`, `10`, `15`, which part
 sits at which rung, and nitrous magnitudes are all authored/tunable — a designer
 retuning them must not break the suite. Test the logic that must hold for any
 values:
@@ -945,7 +963,7 @@ Everything else has shipped. These three are the remainder:
    is honoured by `RewardSystem._box_gate_open` only. To deliver the design in
    *Engine swaps: capability, not currency*, `hq.gd`'s swap station and
    `upgrades_menu.gd`'s engine-swap row must also consult it and frame banked tokens
-   as a locked teaser (`3 TOKENS — LOCKED · Win the 32-star event`) rather than as a
-   usable item. Until then the 32-star special's advertised unlock ("unlocks engine
+   as a locked teaser (`3 TOKENS — LOCKED · Win the 20-star event`) rather than as a
+   usable item. Until then the 20-star special's advertised unlock ("unlocks engine
    swaps", which `hq._special_unlock_line` already prints on its pin) is not real —
    which is a player-visible inconsistency, so this is the most urgent of the three.

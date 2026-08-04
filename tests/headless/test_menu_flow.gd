@@ -5200,10 +5200,13 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 		"seeding never swallows a rally that was still locked at seed time")
 
 
-func test_a_press_during_the_reveal_skips_the_whole_queue() -> void:
-	# An unskippable cutscene in front of a menu players open constantly is hated by the
-	# third viewing, so ANY press ends the WHOLE queue — never one pin at a time, and
-	# never swallowed. Everything queued is marked seen so a skipped reveal never replays.
+func test_a_press_during_the_reveal_cannot_cancel_it() -> void:
+	# Player input is LOCKED for the duration of the parade. This used to be the opposite:
+	# any press skipped the whole queue. But skipping marked every queued rally SEEN, so a
+	# stray keypress permanently burned the "NEW RALLY - …" beat for up to
+	# hq_reveal_max_queue rallies with no way to replay it — the reveal is the only place
+	# the game announces a new rally. The parade is short (pan + hold each, capped), so it
+	# simply plays. The press is still SWALLOWED so nothing underneath it reacts.
 	_install_reveal_roster()
 	var hq: Node3D = await _new_hq()
 	hq._table_ui._enter_table()
@@ -5220,11 +5223,54 @@ func test_a_press_during_the_reveal_skips_the_whole_queue() -> void:
 	key.pressed = true
 	hq._unhandled_input(key)
 
-	assert_false(hq._revealing, "the press ended the sequence")
-	assert_true(_save.rally_revealed_seen("rv_open"), "the shown rally is marked seen")
-	assert_true(_save.rally_revealed_seen("rv_hot"),
-		"the rallies the player skipped past are marked seen too, so they never replay")
-	assert_eq(hq._view, hq.View.TABLE, "the skip leaves the player on the map")
+	assert_true(hq._revealing, "the press did NOT end the sequence")
+	assert_false(_save.rally_revealed_seen("rv_open"),
+		"nothing was marked seen, so the reveal still has its rallies to show")
+	assert_false(_save.rally_revealed_seen("rv_hot"),
+		"and the queued rally is still pending, not silently burned")
+	assert_eq(hq._view, hq.View.TABLE, "the player stays on the map")
+
+
+# A SPECIAL event's map readout is inverted — white face, black ink — so it stands out from
+# the black panel every ordinary pin wears. Asserted against the constants rather than
+# literal colours, so retheming moves the test with the design.
+func test_special_event_pins_wear_the_inverted_readout() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
+			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "spec", "name": "Special", "region": "home", "special": true,
+			"requires_stars": 0, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var panels := {}
+	for pin in hq._pins:
+		if pin.has_meta("label_panel"):
+			panels[String(pin.get_meta("rally_id"))] = pin.get_meta("label_panel")
+	assert_true(panels.has("spec"), "the special's pin has a readout panel")
+
+	var spec_panel: PanelContainer = panels["spec"]
+	assert_eq(spec_panel.get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
+		"the special's readout is the inverted (light) face")
+	if panels.has("ord"):
+		assert_ne(panels["ord"].get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
+			"an ordinary rally's readout is NOT inverted")
+
+	# The subtle half: UITheme.mark_panel_focused replaces the WHOLE stylebox on every
+	# focus repaint, which happens on each selection change. Without the accent being
+	# carried through it, a special's pin would revert to the default face the first time
+	# the cursor moved — visible as the highlight simply vanishing.
+	UITheme.mark_panel_focused(spec_panel, true)
+	assert_eq(spec_panel.get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
+		"focusing the special keeps its inverted face")
+	UITheme.mark_panel_focused(spec_panel, false)
+	assert_eq(spec_panel.get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
+		"and de-focusing it does not reset the face to the default")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
 
 
 func test_table_input_is_suspended_while_the_reveal_runs() -> void:
@@ -5263,7 +5309,6 @@ func test_a_stale_reveal_token_cannot_touch_a_newer_sequences_state() -> void:
 	# now mid-flight with its own queue.
 	hq._reveal_token += 1
 	hq._revealing = true
-	hq._reveal_skipped = false
 	hq._reveal_queue.clear()
 	hq._reveal_queue.append("rv_hot")
 	hq._reveal_shown.clear()

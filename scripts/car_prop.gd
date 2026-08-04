@@ -54,6 +54,14 @@ static func spawn(parent: Node, scene: PackedScene, opts: Dictionary) -> Node3D:
 	car.use_isolated_config()
 	if opts.has("owned"):
 		car.apply_owned(opts["owned"])
+	elif opts.has("engine_id") and String(opts["engine_id"]) != "":
+		# A catalogue model running a NON-STOCK engine — a rival with an engine swap. Without
+		# this branch the only way to name a car here was its CarLibrary index, which always
+		# resolves the STOCK engine, so every prop caller holding just a car_id was forced
+		# onto the wrong build (features/rally-roster.md). rebuild_audio is deferred to
+		# fit_engine so the voice is built once, for the engine actually fitted.
+		car.apply_car(int(opts.get("index", 0)), false)
+		car.fit_engine(String(opts["engine_id"]))
 	else:
 		car.apply_car(int(opts.get("index", 0)))
 	# Frozen display props never switch model, so drop the 8 embedded car.tscn bodies this

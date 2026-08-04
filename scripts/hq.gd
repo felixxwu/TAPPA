@@ -84,6 +84,12 @@ const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of trut
 const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
+# A special event's map readout is inverted — white face, black ink — so it stands out from
+# the black panels every other pin wears. Deliberate exception to design-system house rule 4
+# (see UITheme); kept here rather than in the palette because it is this one surface's look,
+# not a new system-wide token.
+const ACCENT_READOUT_BG := Color(1.0, 1.0, 1.0, 1.0)
+const ACCENT_READOUT_INK := Color(0.0, 0.0, 0.0, 1.0)
 # Sprite modulate for a readout box whose rally isn't available yet (greyed out).
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
@@ -107,11 +113,11 @@ var _detail_open := false       # the rally-detail panel is up (a sub-state of T
 # New-rally reveal (a second sub-state of TABLE, sibling to _detail_open): the map
 # camera is walking a queue of rallies that just became enterable, flipping each pin
 # from its locked to its unlocked look. While _revealing the table's own input is
-# suspended — and ANY press skips the whole queue (see _table_ui._skip_reveals).
+# suspended and player input is LOCKED — presses are swallowed, not acted on, so the parade
+# always plays out (see _unhandled_input's View.TABLE branch).
 var _revealing := false
 var _reveal_queue: Array[String] = []   # ids still to show (all get marked seen either way)
 var _reveal_shown: Array[String] = []   # ids already flipped this sequence
-var _reveal_skipped := false
 # Bumped at the start of every _table_ui._run_reveal_sequence; each sequence captures its own copy
 # as `token` before its first await. Lets a coroutine parked mid-sequence (skipped, then
 # a second sequence re-armed before it resumes) recognise it has been superseded and bail
@@ -816,7 +822,7 @@ func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void
 # a transparent SubViewport (so only the black box shows), with `build_body` filling the
 # VBox. Dimmed when `dim` (reads as disabled), and hands its panel back via the "panel"
 # meta so the focus cursor / selection can repaint it.
-func _build_readout_sprite(build_body: Callable) -> Sprite3D:
+func _build_readout_sprite(build_body: Callable, accent := false) -> Sprite3D:
 	var vp := SubViewport.new()
 	vp.size = PIN_LABEL_PX
 	vp.transparent_bg = true
@@ -828,6 +834,16 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	vp.add_child(center)
 
 	var panel := UITheme.panel(1.0, 14)
+	if accent:
+		# SPECIAL EVENTS wear a WHITE readout with black text, so they jump out of a map of
+		# black panels — the one deliberate exception to design-system house rule 4 (menu
+		# backgrounds are PURE BLACK, ui_theme.gd). Stashed as `accent_bg` too, because
+		# UITheme.mark_panel_focused replaces the whole stylebox on every focus repaint and
+		# would otherwise reset this pin to black the moment selection moved.
+		var box := UITheme.panel_box(1.0, 14)
+		box.bg_color = ACCENT_READOUT_BG
+		panel.add_theme_stylebox_override("panel", box)
+		panel.set_meta("accent_bg", ACCENT_READOUT_BG)
 	center.add_child(panel)
 
 	var box := VBoxContainer.new()
@@ -837,6 +853,22 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	build_body.call(box)
 
 	UITheme.enforce(panel)  # house rules: uppercase + one font size
+	# No drop shadow on a floating readout. The global theme gives every Label a hard black
+	# shadow (build_ui_theme.gd: font_shadow_color + shadow_offset), which is the terminal
+	# look on a black panel — but on a black panel it is also invisible, and on the white
+	# accent face it reads as grubby fringing. Cleared here rather than in the theme so the
+	# rest of the UI keeps the house look.
+	# Runs AFTER enforce so nothing it does re-lightens the text. On an accent readout every
+	# label also goes black for contrast on the white face. (The medal row is recoloured
+	# where it is built, in _build_readout_box — find_children's type filter matches engine
+	# classes, not script class_names, so it cannot reach a StarRow.)
+	for node in panel.find_children("*", "Label", true, false):
+		var lbl := node as Label
+		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+		lbl.add_theme_constant_override("shadow_offset_x", 0)
+		lbl.add_theme_constant_override("shadow_offset_y", 0)
+		if accent:
+			lbl.add_theme_color_override("font_color", ACCENT_READOUT_INK)
 
 	var sprite := Sprite3D.new()
 	sprite.add_child(vp)
@@ -854,30 +886,38 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 # `unlock` == "" omits the unlock line. Always full opacity — see _make_pin on why a locked
 # special's box is live-looking but non-pickable rather than dimmed. Hands its panel back so
 # the pin can repaint it on selection.
-func _build_readout_box(title: String, stars: int, unlock: String) -> Sprite3D:
+func _build_readout_box(title: String, stars: int, unlock: String, accent := false) -> Sprite3D:
 	return _build_readout_sprite(func(box: VBoxContainer) -> void:
 		box.add_theme_constant_override("separation", UITheme.GAP)
 		box.add_child(UITheme.title(title))
 		if stars >= 0:
 			var row := StarRow.new()
 			row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			if accent:
+				# GOLD on white barely reads at pin scale and MUTED's 55%-alpha olive washes
+				# out entirely, so the row inverts with the rest of the readout.
+				row.earned_color = ACCENT_READOUT_INK
+				row.unearned_color = Color(ACCENT_READOUT_INK.r, ACCENT_READOUT_INK.g,
+					ACCENT_READOUT_INK.b, 0.3)
 			box.add_child(row)
 			row.setup(stars, MAX_STARS)
 		if unlock != "":
-			box.add_child(_label(unlock, 13)))
+			box.add_child(_label(unlock, 13)), accent)
 
 
 # An enterable rally: name, medal row, and — for a special — what it unlocks, so the map
 # answers "where do I get X?" whether the special is locked or not.
 func _build_pin_label(rally_name: String, earned: int, rally: Dictionary = {}) -> Sprite3D:
-	return _build_readout_box(rally_name, earned, _special_unlock_line(rally))
+	return _build_readout_box(rally_name, earned, _special_unlock_line(rally),
+		RallyLibrary.is_special(rally))
 
 
 # The locked-special teaser box: "X/24 stars" over "unlocks Supercharger".
 func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 	var need := RallyLibrary.stars_required(rally)
 	var have := need - RallyLibrary.stars_needed(rally, Save.profile)
-	return _build_readout_box("%d/%d stars" % [have, need], -1, _special_unlock_line(rally))
+	# Always accented: a teaser only ever describes a special.
+	return _build_readout_box("%d/%d stars" % [have, need], -1, _special_unlock_line(rally), true)
 
 
 # What a special unlocks, as a display line ("unlocks Supercharger"), derived from the
@@ -3083,11 +3123,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				# native focus for up/down/left-right/select)
 		View.TABLE:
 			if _revealing:
-				# The reveal parade is running. ANY press (key, gamepad button, click,
-				# tap) skips the WHOLE queue — never one pin at a time, and never
-				# swallowed. Keyboard, gamepad and pointer all get out the same way.
+				# CONTROLS LOCKED for the duration of the parade. A press used to skip the
+				# whole queue, but skipping marked every queued rally SEEN, so one stray
+				# keypress permanently burned the "NEW RALLY - …" beat for up to
+				# hq_reveal_max_queue rallies with no way to replay it. The parade is short
+				# (pan + hold per rally, capped), so it simply plays. Presses are SWALLOWED
+				# rather than ignored, so nothing underneath reacts either.
 				if _is_any_press(event):
-					_table_ui._skip_reveals()
 					get_viewport().set_input_as_handled()
 			elif _detail_open:
 				if event.is_action_pressed("menu_select"):

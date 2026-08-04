@@ -231,11 +231,18 @@ different car. See `features/upgrade-catalogue.md` for the catalogue entry and
 `features/menus.md` → "Menu navigation" for the Lift's native-focus button
 regime the row reuses.
 
-## Car draw (per top-3 finish, including re-wins)
+## Car draw (per top-3 finish of an ORDINARY rally, including re-wins)
 
 `draw_car(profile, rally_difficulty=0, rng=null) -> model_id`. Fires on
-**every** top-3 finish (renewable supply — re-winning a completed rally
-re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
+**every** top-3 finish of an ordinary rally (renewable supply — re-winning a completed
+rally re-grants a car). It is **guaranteed** there — a car is always granted. Two paths:
+
+**SPECIALS DRAW NO CAR.** They pay an upgrade instead (see "Special-event unlock" below);
+a car on top of that is too much in one sitting. `rally_session.gd`'s resolve reads
+`elif not is_special:`, widening a carve-out that already existed for the last special.
+This gives up an old safety the removed comment named — "specials are also a car source,
+which keeps a car-less player from soft-locking" — deliberately: ordinary rallies remain a
+renewable car source, and the star ladder always opens specials alongside plenty of them.
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
    is at or below the **progress-clamped draw ceiling**:
@@ -304,7 +311,41 @@ so it is whichever special happens to be the last one outstanding (normally the
 top rung, since the rungs open in star order, but the rule is set-completion, not
 a designated finale). Every other special pays out exactly like an
 ordinary rally (the per-event upgrade draws plus the car draw on a top-3
-finish) — the star-gated unlock is *additional*, not a replacement.
+finish, minus the car draw — see below).
+
+## Special-event unlock (a special's own reward)
+
+Winning a special for the **first time** opens an upgrade gate for the whole garage
+(`UpgradeLibrary.rally_gate_met` reads `completed`), and now also **hands that upgrade to the
+car that earned it**. The podium announces it as its own stage
+(`Podium.Stage.SPECIAL_UNLOCK`, between `LEADERBOARD` and `CAR_REVEAL`).
+
+- **First completion only.** `rally_session.gd` captures whether the rally was already
+  completed **before** `Save.complete_rally` runs — afterwards the profile cannot tell a
+  first win from a re-win. A re-win reveals nothing and re-awards nothing.
+- **Top-3 only**, because `completed` is only recorded inside the resolve's `if top3:` branch.
+  A 4th-place finish neither opens the gate nor reveals anything.
+- **The grant cascades.** `RewardSystem.grant_special_unlock(car_instance_id, item_id)` walks
+  DOWN the `requires_upgrade_id` chain and grants bottom-up, so the awarded part has the
+  prerequisite rungs it needs on *that* car (the gate is garage-wide, but
+  `prerequisite_met` is per-car). Generalised, not turbo-specific — `nitrous_shot` sits two
+  rungs above `nitrous`. Cycle-guarded, so a bad authored `requires_upgrade_id` pair can't
+  hang a podium.
+- **Only the headline is ENABLED**; the cascaded rungs are fitted but parked. A ladder shares
+  ONE slot (`turbo_small` / `turbo_large` / `supercharger` are all `slot: "turbo"`), so the
+  rungs are mutually exclusive alternatives and the lower ones exist only to satisfy the
+  prerequisite. `Save._enable_exclusive` enforces one-enabled-per-slot regardless.
+- **Already fitted → grant nothing**, and the card says "now appears in rally rewards"
+  instead of claiming a fitting. Returning a partial cascade there would leave the reveal
+  naming a *prerequisite* rather than the headline.
+- The card is **inverted** (light face, dark ink, no drop shadow) and deliberately **not** the
+  slot-machine reel the car/upgrade reveals use: a reel implies a random draw, and this
+  outcome is fixed by which special was won. Same documented house-rule-4 exception as a
+  special's map pin ([ui-design-system.md](ui-design-system.md)).
+
+Carried to the podium as `last_result()["special_unlock"]` =
+`{item_id, granted: [ids, headline first]}`, or `{}` for an ordinary rally, a re-win, or a
+special that gates no part.
 
 ## Tests
 

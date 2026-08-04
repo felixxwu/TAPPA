@@ -76,6 +76,13 @@ requires `turbo_small` (plus its own star gate above), and the **Supercharger
 (`supercharger`)** requires `turbo_large` (plus its own star gate) — so a car
 climbs the chain *and* the ladder has to have been unlocked garage-wide.
 
+**The chain can also be satisfied by CASCADE.** When a special event awards the part it
+gates (`RewardSystem.grant_special_unlock` — see
+[reward-system.md](reward-system.md) → Special-event unlock), the missing rungs beneath it
+are granted to that car too, so the award is usable rather than a part the car cannot run.
+Only the awarded part is ENABLED; the cascaded rungs are fitted but parked, because a ladder
+shares one `slot` and its rungs are mutually exclusive alternatives.
+
 The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
 `unlocks_drivetrain_swap` flag (skipped by `apply`, like the other `unlocks_*` gates).
 It gates the garage FWD/RWD/AWD selector and, via `resolve_drive_override`, lets
@@ -189,7 +196,7 @@ bracketed **and painted the house accent green** so the current pick stands out.
 greyed, absent. A greyed row the player cannot act on only raises "when do I get
 this?", which the garage cannot answer; the MAP is the surface that advertises
 what a special unlocks. So the turbo row reads `Stock | Small` for a new player and
-grows to `Stock | Small | Big | Supercharger` as the 8- and 24-star specials are
+grows to `Stock | Small | Big | Supercharger` as the 5- and 15-star specials are
 won. A slot whose every option is still locked gets **no row at all, label
 included** (`_make_slot_row` returns null) — for a new player that is the whole
 drivetrain row. The engine-swap row is hidden on the same rule while the capability

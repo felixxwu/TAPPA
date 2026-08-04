@@ -89,6 +89,116 @@ func _capture_finish() -> Array:
 	return box
 
 
+# --- Special-event unlock reveal (todo/special-unlock-reveal.md) --------------
+
+# A synthetic two-rung ladder gated on the fixture special, so none of these tests depend on
+# an authored upgrade or on which real rally gates what.
+func _install_unlock_ladder() -> void:
+	var upgrades: Array[Dictionary] = [
+		{"id": "fx_base", "name": "Fixture Base", "slot": "fxslot", "consumable": false,
+			"cost": 0, "power_mult": 1.05},
+		{"id": "fx_top", "name": "Fixture Top", "slot": "fxslot", "consumable": false,
+			"cost": 0, "power_mult": 1.1,
+			"requires_upgrade_id": "fx_base", "unlocked_by_rally": "fx_showdown"},
+	]
+	UpgradeLibrary.override_for_test(upgrades)
+
+
+# Start `rally_id` against a deliberately SLOW one-rival field, so the player's times place
+# P1 and the top-3 gate is satisfied. These tests are about the unlock, not about pace, and
+# the generated field is fast enough that plausible times would not reliably win.
+func _start_winnable(rally_id: String) -> Dictionary:
+	var owned := _start(rally_id)
+	RallySession._opponent_field = [
+		{"name": "Backmarker", "car_id": "fx_light_rwd", "engine_id": "",
+			"car_name": "Backmarker", "event_times_ms": [90000, 90000, 90000],
+			"dnf": false, "combined_ms": 270000,
+			"wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0},
+	]
+	return owned
+
+
+# Winning a special for the FIRST time announces the upgrade its star gate opened, hands it
+# to the car that just earned it, and — unlike an ordinary rally — pays NO car.
+func test_a_first_special_win_unlocks_an_upgrade_and_pays_no_car() -> void:
+	_install_unlock_ladder()
+	var owned := _start_winnable("fx_showdown")
+	var box := _capture_finish()
+	_report_events([30000, 30000, 30000])
+	var result: Dictionary = box[0]
+	assert_not_null(result, "the rally resolved")
+	assert_true(bool(result["completed"]), "precondition: the fixture times place top-3")
+
+	var unlock: Dictionary = result.get("special_unlock", {})
+	assert_false(unlock.is_empty(), "a first special win reports an unlock")
+	assert_eq(String(unlock.get("item_id", "")), "fx_top", "it names the part the special gates")
+	assert_eq(String(result.get("car_reward", "")), "",
+		"a special pays an upgrade INSTEAD of a car")
+
+	# Granted to the driven car, headline enabled, prerequisite fitted-but-parked.
+	var car: Dictionary = _save.get_car(int(owned["instance_id"]))
+	var installed: Array = car.get("installed_upgrades", [])
+	assert_true(installed.has("fx_top"), "the headline part is fitted to the driven car")
+	assert_true(installed.has("fx_base"),
+		"the missing prerequisite rung was granted too, so the headline is usable")
+	assert_true(UpgradeLibrary.prerequisite_met("fx_top", car),
+		"the cascade satisfies the headline's prerequisite")
+	var disabled: Array = car.get("disabled_upgrades", [])
+	assert_false(disabled.has("fx_top"), "the headline is ENABLED on award")
+	assert_true(disabled.has("fx_base"),
+		"the prerequisite rung stays parked — a ladder shares one slot, so only one runs")
+	UpgradeLibrary.reset()
+
+
+# The gate itself must still be recorded. Dropping the car draw for specials must not take
+# Save.complete_rally with it — that is what opens the upgrade for the whole garage.
+func test_a_special_win_still_records_completion() -> void:
+	_install_unlock_ladder()
+	_start_winnable("fx_showdown")
+	_report_events([30000, 30000, 30000])
+	assert_true(bool((_save.profile.get("rallies", {}) as Dictionary)
+		.get("fx_showdown", {}).get("completed", false)),
+		"the special is recorded completed, so its upgrade gate is open")
+	assert_true(UpgradeLibrary.rally_gate_met("fx_top", _save.profile),
+		"and the gated part is now winnable from ordinary rallies")
+	UpgradeLibrary.reset()
+
+
+# Re-winning a special announces nothing and re-awards nothing — the reveal is a
+# first-completion beat, and the profile can't distinguish afterwards, so this guards the
+# capture-before-complete_rally ordering.
+func test_re_winning_a_special_reveals_and_awards_nothing() -> void:
+	_install_unlock_ladder()
+	_start_winnable("fx_showdown")
+	_report_events([30000, 30000, 30000])
+
+	# Second run of the same special, fresh car so a re-award would be visible.
+	var owned := _start_winnable("fx_showdown")
+	var box := _capture_finish()
+	_report_events([30000, 30000, 30000])
+	var result: Dictionary = box[0]
+	assert_true((result.get("special_unlock", {}) as Dictionary).is_empty(),
+		"a re-win reports no unlock")
+	var car: Dictionary = _save.get_car(int(owned["instance_id"]))
+	assert_false((car.get("installed_upgrades", []) as Array).has("fx_top"),
+		"and hands out nothing a second time")
+	UpgradeLibrary.reset()
+
+
+# An ordinary rally is untouched: no unlock, and it still draws a car.
+func test_an_ordinary_win_reports_no_unlock_and_still_pays_a_car() -> void:
+	_install_unlock_ladder()
+	_start_winnable("fx_open")
+	var box := _capture_finish()
+	_report_events([30000, 30000, 30000])
+	var result: Dictionary = box[0]
+	assert_true((result.get("special_unlock", {}) as Dictionary).is_empty(),
+		"an ordinary rally unlocks nothing")
+	assert_ne(String(result.get("car_reward", "")), "",
+		"and still pays a car, which specials no longer do")
+	UpgradeLibrary.reset()
+
+
 # The start-line "time to beat" — the fastest non-DNF rival's time for the CURRENT
 # event, tracking the event index as the rally advances. -1 when idle.
 func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:

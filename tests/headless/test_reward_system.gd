@@ -591,3 +591,88 @@ func test_a_draw_does_not_repeat_the_previous_grant_when_an_alternative_exists()
 		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
 		assert_ne(String(model), last, "the draw never repeats the car granted last time")
 	RallyLibrary.reset()
+
+
+# --- grant_special_unlock (todo/special-unlock-reveal.md) ---------------------
+# A synthetic three-rung ladder in ONE slot, so nothing here depends on the authored
+# catalogue or on which real rally gates what.
+func _install_ladder() -> void:
+	var upgrades: Array[Dictionary] = [
+		{"id": "r1", "name": "Rung One", "slot": "s", "consumable": false, "cost": 0},
+		{"id": "r2", "name": "Rung Two", "slot": "s", "consumable": false, "cost": 0,
+			"requires_upgrade_id": "r1"},
+		{"id": "r3", "name": "Rung Three", "slot": "s", "consumable": false, "cost": 0,
+			"requires_upgrade_id": "r2"},
+	]
+	UpgradeLibrary.override_for_test(upgrades)
+
+
+# Awarding a rung two steps up the ladder grants the rungs beneath it too, so the award is
+# actually usable. Asserted as the RELATIONSHIP (the prerequisite is satisfied), not as a
+# list of ids, so re-authoring the ladders keeps the test true.
+func test_granting_a_high_rung_cascades_its_prerequisites() -> void:
+	_install_ladder()
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	var id := int(owned["instance_id"])
+
+	var granted := RewardSystem.grant_special_unlock(id, "r3")
+	assert_eq(String(granted[0]), "r3", "the headline is reported first, cascade behind it")
+	var car: Dictionary = Save.get_car(id)
+	assert_true(UpgradeLibrary.prerequisite_met("r3", car),
+		"the cascade satisfies the awarded rung's prerequisite")
+	assert_true(UpgradeLibrary.prerequisite_met("r2", car),
+		"and every rung beneath it, so the chain is unbroken")
+	UpgradeLibrary.reset()
+
+
+# Only the headline runs. A ladder shares one slot, so enabling a lower rung as well would
+# be contradictory — they are alternatives, not stacking parts.
+func test_only_the_headline_is_enabled() -> void:
+	_install_ladder()
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	var id := int(owned["instance_id"])
+	RewardSystem.grant_special_unlock(id, "r3")
+	var car: Dictionary = Save.get_car(id)
+	var disabled: Array = car.get("disabled_upgrades", [])
+	assert_false(disabled.has("r3"), "the headline is enabled on award")
+	assert_true(disabled.has("r1"), "the cascaded rungs stay parked")
+	assert_true(disabled.has("r2"), "including the one directly beneath the headline")
+	UpgradeLibrary.reset()
+
+
+# A rung with no prerequisite terminates immediately — the walk must not loop or over-grant.
+func test_granting_a_bottom_rung_grants_only_itself() -> void:
+	_install_ladder()
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	var granted := RewardSystem.grant_special_unlock(int(owned["instance_id"]), "r1")
+	assert_eq(granted.size(), 1, "a rung with no prerequisite grants just itself")
+	UpgradeLibrary.reset()
+
+
+# Already fitted: grant nothing and report nothing, so the caller can still announce the
+# gate without claiming the player was handed something. Reporting a partial cascade here
+# would leave the reveal naming a prerequisite instead of the headline.
+func test_granting_a_part_the_car_already_has_reports_nothing() -> void:
+	_install_ladder()
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	var id := int(owned["instance_id"])
+	RewardSystem.grant_special_unlock(id, "r3")
+	assert_true(RewardSystem.grant_special_unlock(id, "r3").is_empty(),
+		"a second award of the same part reports nothing granted")
+	UpgradeLibrary.reset()
+
+
+# A cycle in authored data (a bad requires_upgrade_id pair) must not hang the walk. This is
+# the guard that keeps a data mistake from freezing the game at a podium.
+func test_a_prerequisite_cycle_terminates() -> void:
+	var upgrades: Array[Dictionary] = [
+		{"id": "a", "name": "A", "slot": "s", "consumable": false, "cost": 0,
+			"requires_upgrade_id": "b"},
+		{"id": "b", "name": "B", "slot": "s", "consumable": false, "cost": 0,
+			"requires_upgrade_id": "a"},
+	]
+	UpgradeLibrary.override_for_test(upgrades)
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	var granted := RewardSystem.grant_special_unlock(int(owned["instance_id"]), "a")
+	assert_eq(granted.size(), 2, "the walk visits each rung once and stops")
+	UpgradeLibrary.reset()

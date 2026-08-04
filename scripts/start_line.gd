@@ -566,7 +566,8 @@ func _spawn_grid(terrain: Node) -> void:
 		if index < 0:
 			continue  # unknown id (fixture/synthetic leaders) — skip rather than spawn a bogus car
 		var pos := _ground(_start_xform * Vector3(0, 0, gap * float(i)), terrain)
-		var car := _spawn_prop(index, pos)
+		# The rival's FITTED engine, not the car's stock one — see _spawn_prop.
+		var car := _spawn_prop(index, pos, String((_leaders[i] as Dictionary).get("engine_id", "")))
 		_grid.append(car)
 		_grid_car_ids.append(car_id)
 	Config.data = player_cfg
@@ -595,14 +596,20 @@ func _ground(pos: Vector3, terrain: Node) -> Vector3:
 # A live, scripted, silent car prop facing the start heading. Runs full physics but
 # reads scripted throttle/steer instead of player Input, axis-locked to a straight line
 # so it can't veer (start heading is world −Z, so lock lateral world-X + yaw world-Y).
-func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
+func _spawn_prop(model_index: int, pos: Vector3, engine_id := "") -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
 	if car.has_method("apply_car"):
 		# Isolate this prop's config so its reshape can't clobber the player car's
 		# engine/gearbox in the shared global Config.data (see car.gd `config`).
 		car.use_isolated_config()
-		car.apply_car(model_index)
+		# Defer the engine-voice build to fit_engine below, which fits the rival's
+		# SWAPPED engine (rivals run engine swaps — features/rally-roster.md) and then
+		# builds the voice once. Without it the prop idles and pulls away on the car's
+		# stock engine while the reveal card names the swapped one.
+		car.apply_car(model_index, false)
+		if car.has_method("fit_engine"):
+			car.fit_engine(engine_id)
 	# Place via reset_to (the pending-teleport path), NOT a bare global_transform write:
 	# car._ready() captures its spawn pose at ADD-CHILD time (the origin), and a plain
 	# global_transform write on a VehicleBody3D is discarded by the physics server (see
@@ -735,14 +742,20 @@ func _prune_departed() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# A pointer tap advances the waiting phases (MENU launches, REVEAL sends the front
-	# car off) for touch/mouse players; keyboard/gamepad use the focused buttons.
+	# A pointer tap advances the REVEAL phase (sends the front car off) for touch/mouse
+	# players; keyboard/gamepad use the focused buttons.
+	#
+	# It deliberately does NOT start the run. Tapping anywhere on the MENU phase used to
+	# call launch(), which meant a stray tap — reaching for UPGRADES or TUNE CAR and missing,
+	# or an idle tap while reading the stage banner — committed the player to the stage with
+	# no confirmation and no way back. Starting is now the START button's job alone (it is a
+	# real Button, so touch players reach it directly). The REVEAL phase keeps tap-to-advance
+	# because the run has already begun there: the worst a stray tap does is show the next
+	# rival sooner.
 	if not ((event is InputEventScreenTouch and event.pressed) \
 			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)):
 		return
-	if _seq == Seq.MENU:
-		launch()
-	elif _seq == Seq.REVEAL:
+	if _seq == Seq.REVEAL:
 		next_car()
 
 

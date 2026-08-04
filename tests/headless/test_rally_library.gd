@@ -844,6 +844,128 @@ func test_a_retuned_engine_changes_rival_times() -> void:
 	CarFixtures.restore()
 
 
+# Modest swaps are favoured over wild ones. Two halves, because the bias has to be both
+# CORRECT (the weight falls as the power delta grows) and CONNECTED (the draw actually
+# uses it) — a right weight function wired to nothing would pass the first alone.
+#
+# Pure half: monotonic and strictly positive, asserted as a relationship so no authored
+# spread value is pinned. Positivity matters — a zero weight would make an admitted combo
+# unreachable, turning the bias into a filter.
+func test_swap_weight_falls_as_the_power_delta_grows() -> void:
+	var last := INF
+	for step in 6:
+		var d := float(step) * RallyLibrary.OPPONENT_SWAP_PW_SPREAD * 0.5
+		var w := RallyLibrary.swap_weight(d)
+		assert_gt(w, 0.0, "every admitted combo stays reachable (delta %.1f)" % d)
+		assert_lt(w, last + 0.0000001, "weight does not rise as the delta grows (delta %.1f)" % d)
+		last = w
+	assert_eq(RallyLibrary.swap_weight(0.0), RallyLibrary.swap_weight(-0.0),
+		"the weight depends on the MAGNITUDE, so a power drop is treated like a rise")
+	assert_gt(RallyLibrary.swap_weight(0.0),
+		RallyLibrary.swap_weight(RallyLibrary.OPPONENT_SWAP_PW_SPREAD * 4.0),
+		"a stock-power build is favoured over a wildly different one")
+
+
+# Connected half: over many seeded draws, the builds actually fielded sit closer to stock
+# power than the pool's own average. Compares the draw against its OWN input, so it holds
+# for any roster and any spread — and it fails outright if the draw ignores the weights.
+func test_the_draw_prefers_modest_swaps_over_wild_ones() -> void:
+	# A synthetic pool: deltas spread evenly, so an unbiased draw would average the middle.
+	var pool: Array = []
+	for i in 12:
+		pool.append({"car": {}, "engine_id": "e%d" % i, "meta": {},
+			"pw_delta": float(i) * RallyLibrary.OPPONENT_SWAP_PW_SPREAD * 0.5})
+	var pool_mean := 0.0
+	for c in pool:
+		pool_mean += float(c["pw_delta"])
+	pool_mean /= float(pool.size())
+
+	# Draw ONE build many times over different seeds and average what came out.
+	var drawn_mean := 0.0
+	var trials := 300
+	for seed_i in trials:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_i
+		drawn_mean += float(RallyLibrary._draw_distinct_combos(rng, pool, 1)[0]["pw_delta"])
+	drawn_mean /= float(trials)
+
+	assert_lt(drawn_mean, pool_mean,
+		"drawn builds average closer to stock power (%.1f) than the pool does (%.1f)"
+			% [drawn_mean, pool_mean])
+
+
+# No hop may drop a rival identity key. This is the guardrail for the class of bug that put
+# rivals on their cars' stock engines: `engine_id` reached the opponent field but not the
+# start-line leader rows, and nothing failed — the grid just silently staged the wrong build.
+#
+# Driven off RIVAL_IDENTITY_KEYS rather than a hand-written list, so adding a per-rival
+# attribute makes THIS test fail until every hop carries it. That is the point: the omission
+# becomes loud instead of silent.
+func test_no_hop_drops_a_rival_identity_key() -> void:
+	CarFixtures.install()
+	var track := _track_with_pieces()
+	var rally := {"id": "synth_identity", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 7}, {"seed": 7}, {"seed": 7}]}
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	assert_gt(field.size(), 0, "a field is fielded")
+
+	# Hop 1: the generator's own entries.
+	for opp in field:
+		for key in RallyLibrary.RIVAL_IDENTITY_KEYS:
+			assert_true(opp.has(key), "a generated rival carries %s" % key)
+
+	# Hop 2: the standings rows the podium fields cars from.
+	for row in RallyLibrary.build_standings(field, 1000, false):
+		if bool(row.get("is_player", false)):
+			continue
+		for key in RallyLibrary.RIVAL_IDENTITY_KEYS:
+			assert_true(row.has(key), "a standings row carries %s" % key)
+
+	# Hop 3: the wreck record the run scene stages from. Force a wreck rather than hoping
+	# the seeded roll produced one, so the assertion can't go vacuous.
+	var wrecked := field.duplicate(true)
+	wrecked[0]["wreck_event"] = 0
+	var wreck := RallyLibrary.event_wreck(wrecked, 0)
+	assert_false(wreck.is_empty(), "the forced wreck is found")
+	for key in RallyLibrary.RIVAL_IDENTITY_KEYS:
+		assert_true(wreck.has(key), "the wreck record carries %s" % key)
+	CarFixtures.restore()
+
+
+# EVERY value in a generated rival entry must survive a JSON round-trip unchanged. The
+# opponent cache's entire contract is that a cached field equals a freshly generated one
+# (data/opponent_cache.json is committed and consulted instead of re-simulating), and JSON
+# is the transport — so a value that doesn't round-trip means cache and live silently
+# disagree. Floats are the only risk: `wreck_progress` used to be a raw double, which
+# prints to ~14 significant digits and parses back to a DIFFERENT double.
+#
+# Asserted over the whole entry rather than on wreck_progress alone, so any FUTURE float
+# added to a rival is covered without anyone remembering to extend this test.
+func test_every_rival_value_survives_a_json_round_trip() -> void:
+	CarFixtures.install()
+	var track := _track_with_pieces()
+	var rally := {"id": "synth_json", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 7}, {"seed": 7}, {"seed": 7}]}
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	assert_gt(field.size(), 0, "a field is fielded")
+	var raw: Variant = JSON.parse_string(JSON.stringify(field, "", true, true))
+	assert_not_null(raw, "the field serialises to valid JSON")
+	for i in field.size():
+		for key in field[i]:
+			var before = field[i][key]
+			var after = raw[i].get(key)
+			if before is float:
+				# Compared EXACTLY, not with a tolerance: the point is bit-identical
+				# transport, and a tolerance would hide the very drift this guards.
+				assert_eq(float(after), float(before),
+					"rival %d's %s round-trips exactly" % [i, key])
+			elif before is int:
+				assert_eq(int(after), int(before), "rival %d's %s round-trips" % [i, key])
+			elif before is String:
+				assert_eq(String(after), String(before), "rival %d's %s round-trips" % [i, key])
+	CarFixtures.restore()
+
+
 # A restriction narrow enough to admit fewer builds than the field still fields a full
 # grid, spread as evenly as the pool allows (the cycle-to-top-up rule) rather than
 # collapsing to random repeats or fielding a short grid.

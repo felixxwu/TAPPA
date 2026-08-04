@@ -45,6 +45,13 @@ const WEATHER_STORM := "storm"
 const FIELD_MIN := 9
 const FIELD_MAX := 9
 const OPPONENT_WRECK_CHANCE := 0.5   # per-event: probability ONE rival crashes out this event
+# How strongly the rival draw favours MODEST engine swaps. Each admitted car+engine combo
+# is weighted exp(-|pw - pw_stock| / this), where the deltas are hp/tonne against the
+# car's OWN stock engine — so a stock combo is weighted 1.0, a swap this many hp/tonne
+# from stock ~0.37, twice that ~0.14. Small = near-stock fields; large = anything goes.
+# NOTE: folded into OpponentCache.global_fingerprint(), so retuning it re-keys every
+# cached field automatically — do not remove it from that list.
+const OPPONENT_SWAP_PW_SPREAD := 25.0
 
 # Rival pace, as multiples of each rival's OWN physics floor (optimum_ms for THEIR
 # car on the event track). Each rival gets a PERSISTENT skill (drawn once, not per
@@ -218,7 +225,7 @@ const RALLIES: Array[Dictionary] = [
 		# --- 8-star special: unlocks the Big Turbo. The gentlest of the eight (a player is
 		# only ~3 wins in), sited on `home`'s north edge — the corner they started in.
 		"id": "sp_woodland_trial", "name": "The Woodland Trial", "region": "home", "difficulty": 2,
-		"special": true, "requires_stars": 8,
+		"special": true, "requires_stars": 5,
 		"map_pos": Vector2(0.318, 0.128),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
@@ -228,7 +235,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "special": true, "requires_stars": 40,
+		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "special": true, "requires_stars": 25,
 		"map_pos": Vector2(0.130, 0.260),
 		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
@@ -324,7 +331,7 @@ const RALLIES: Array[Dictionary] = [
 		# it must NOT creep above ~0.52, since the NE corner is reserved for the snow region
 		# (todo/one-map-four-corners.md). Coastal waterline, so amplitude stays >= 16.
 		"id": "sp_lakeshore_trial", "name": "The Lakeshore Trial", "region": "home_coast", "difficulty": 3,
-		"special": true, "requires_stars": 24,
+		"special": true, "requires_stars": 15,
 		"map_pos": Vector2(0.772, 0.528),
 		"restriction": {},  # open-class
 		"events": [
@@ -334,7 +341,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "hc_showdown", "name": "The Lakeland Crown", "region": "home_coast", "difficulty": 4, "special": true, "requires_stars": 48,
+		"id": "hc_showdown", "name": "The Lakeland Crown", "region": "home_coast", "difficulty": 4, "special": true, "requires_stars": 30,
 		"map_pos": Vector2(0.941, 0.606),
 		"restriction": {},  # open-class finale
 		"events": [
@@ -423,7 +430,7 @@ const RALLIES: Array[Dictionary] = [
 		# --- 16-star special: unlocks the Drivetrain Conversion. Far SW of `greece`, below
 		# the Aegean Crown. Sandstorm is authored ONLY on greece events (test-enforced).
 		"id": "sp_dust_trial", "name": "The Dust Trial", "region": "greece", "difficulty": 2,
-		"special": true, "requires_stars": 16,
+		"special": true, "requires_stars": 10,
 		"map_pos": Vector2(0.062, 0.884),
 		"restriction": {},  # open-class
 		"events": [
@@ -433,7 +440,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gr_showdown", "name": "The Aegean Crown", "region": "greece", "difficulty": 4, "special": true, "requires_stars": 56,
+		"id": "gr_showdown", "name": "The Aegean Crown", "region": "greece", "difficulty": 4, "special": true, "requires_stars": 35,
 		"map_pos": Vector2(0.140, 0.790),
 		"restriction": {},  # open-class finale
 		"events": [
@@ -531,7 +538,7 @@ const RALLIES: Array[Dictionary] = [
 		# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY). South edge of `greece_coast`, east of the
 		# Island GP. Coastal waterline, so amplitude stays >= 16.
 		"id": "sp_archipelago_trial", "name": "The Archipelago Trial", "region": "greece_coast", "difficulty": 3,
-		"special": true, "requires_stars": 32,
+		"special": true, "requires_stars": 20,
 		"map_pos": Vector2(0.812, 0.962),
 		"restriction": {},  # open-class
 		"events": [
@@ -541,7 +548,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gc_showdown", "name": "The Island Crown", "region": "greece_coast", "difficulty": 4, "special": true, "requires_stars": 64,
+		"id": "gc_showdown", "name": "The Island Crown", "region": "greece_coast", "difficulty": 4, "special": true, "requires_stars": 40,
 		"map_pos": Vector2(0.978, 0.788),
 		"restriction": {},  # open-class finale
 		"events": [
@@ -916,7 +923,14 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		field[pick]["wreck_event"] = k
 		# Seeded roadside placement: a fraction along the timed track (kept off the
 		# start/finish) and which verge (±1). The run scene turns these into a world pose.
-		field[pick]["wreck_progress"] = rng.randf_range(0.15, 0.85)
+		# Quantised so the value survives a JSON round-trip EXACTLY. This entry is baked
+		# into data/opponent_cache.json and the cache's whole contract is that a cached
+		# field equals a freshly generated one; a raw double here prints to ~14 significant
+		# digits and parses back to a DIFFERENT double, so cache and live silently diverged
+		# in the last bits (and test_opponent_cache's round-trip assertion failed as soon as
+		# the rng happened to land on such a value). 1e-4 of track length is far below
+		# anything visible in the roadside staging.
+		field[pick]["wreck_progress"] = snappedf(rng.randf_range(0.15, 0.85), 0.0001)
 		field[pick]["wreck_side"] = 1.0 if rng.randf() < 0.5 else -1.0
 		# Crashed out here: no time for this event or any after it.
 		for kk in range(k, event_results.size()):
@@ -935,6 +949,26 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	return field
 
 
+# The keys that identify WHICH rival-and-build an entry refers to, as opposed to its
+# result (times, placement, wreck staging). Every hop that hands a rival onwards — the
+# start-line leaders, the wreck record, the standings rows — must carry all of them, or the
+# receiving end silently re-resolves a DIFFERENT car: dropping `engine_id` is what made the
+# start line stage rivals on their cars' stock engines (features/rally-roster.md).
+#
+# Declared here, beside generate_opponent_field which mints them, so adding a per-rival
+# attribute is ONE edit plus this list rather than four hand-copied dict literals.
+const RIVAL_IDENTITY_KEYS := ["name", "car_id", "engine_id", "car_name"]
+
+
+# Copy just the identity keys out of a rival entry, defaulting each to "" so a caller can
+# rely on every key being present. Use this instead of re-listing fields by hand.
+static func identity_of(opp: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key in RIVAL_IDENTITY_KEYS:
+		out[key] = String(opp.get(key, ""))
+	return out
+
+
 # The rival (if any) who wrecked in `event_index`, for the run scene to stage a
 # roadside wreck (features/opponent-wrecks.md). Returns the crashed rival's identity,
 # the ACTUAL car they drove, and the seeded placement:
@@ -946,13 +980,13 @@ static func event_wreck(field: Array, event_index: int) -> Dictionary:
 		return {}
 	for opp in field:
 		if int(opp.get("wreck_event", -1)) == event_index:
-			return {
-				"name": String(opp.get("name", "Rival")),
-				"car_id": String(opp.get("car_id", "")),
-				"car_name": String(opp.get("car_name", "")),
-				"progress": float(opp.get("wreck_progress", 0.5)),
-				"side": float(opp.get("wreck_side", 1.0)),
-			}
+			var out := identity_of(opp)
+			if String(out["name"]) == "":
+				out["name"] = "Rival"
+			# Renamed on the way out: these are the WRECK's placement, not the rival's.
+			out["progress"] = float(opp.get("wreck_progress", 0.5))
+			out["side"] = float(opp.get("wreck_side", 1.0))
+			return out
 	return {}
 
 
@@ -1009,12 +1043,20 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 	var pool: Array = []
 	for entry in CarLibrary.all():
 		var stock := String(entry.get("engine", ""))
+		# The car's own stock power-to-weight is the reference every swap is judged
+		# against, so "modest" means modest FOR THIS CAR rather than in absolute terms.
+		var pw_stock := CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta({}, entry))
 		for eng in EngineLibrary.all():
 			var eid := String(eng.get("id", ""))
 			var owned: Dictionary = {} if eid == stock else {"swapped_engine": eid}
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
 			if is_eligible(rally, meta):
-				pool.append({"car": entry, "engine_id": eid, "meta": meta})
+				pool.append({
+					"car": entry,
+					"engine_id": eid,
+					"meta": meta,
+					"pw_delta": absf(CarLibrary.power_to_weight_hp_tonne(meta) - pw_stock),
+				})
 	if not pool.is_empty():
 		return pool
 	for entry in CarLibrary.all():
@@ -1022,8 +1064,16 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 			"car": entry,
 			"engine_id": String(entry.get("engine", "")),
 			"meta": UpgradeLibrary.effective_meta({}, entry),
+			"pw_delta": 0.0,  # the stock combo IS the reference
 		})
 	return pool
+
+
+# How much a combo is favoured in the draw, from how far its power-to-weight sits from
+# the car's stock engine. Monotonically decreasing in `pw_delta`, always > 0 so no
+# admitted combo is ever unreachable. Pure — see OPPONENT_SWAP_PW_SPREAD.
+static func swap_weight(pw_delta: float) -> float:
+	return exp(-absf(pw_delta) / maxf(OPPONENT_SWAP_PW_SPREAD, 0.001))
 
 
 # `count` combos drawn WITHOUT replacement from `pool`, using the rally-seeded rng so the
@@ -1031,39 +1081,48 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 #
 # The old draw picked each rival independently from the whole pool (with replacement), so
 # nine rivals out of ten eligible cars were all distinct only ~0.4% of the time — and a
-# restriction admitting three cars fielded nine rivals across three models. Shuffling and
-# taking a prefix makes every rival a different car+engine build.
+# restriction admitting three cars fielded nine rivals across three models. Drawing
+# without replacement makes every rival a different car+engine build.
+#
+# The draw is WEIGHTED by swap_weight, so modest swaps are picked ahead of wild ones and a
+# grid reads as a field of plausible builds rather than engine roulette. It is a bias, not
+# a filter: a big swap is unlikely, never impossible, and the ordering stays fully seeded.
 #
 # When the pool holds fewer than `count`, CYCLE it rather than drawing random repeats: a
 # three-combo rally fields 3+3+3 instead of a lopsided random multiset, so even the
 # degenerate case is as varied as the pool allows.
 static func _draw_distinct_combos(rng: RandomNumberGenerator, pool: Array, count: int) -> Array:
-	var shuffled: Array = pool.duplicate()
-	for i in range(shuffled.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var tmp = shuffled[i]
-		shuffled[i] = shuffled[j]
-		shuffled[j] = tmp
 	var out: Array = []
-	if shuffled.is_empty():
+	if pool.is_empty():
 		return out
+	# Weighted sampling without replacement: pick by weight, remove, repeat. The pool is
+	# at most cars x engines (~110), so the linear scan per pick is irrelevant.
+	var remaining: Array = pool.duplicate()
+	var weights: Array = []
+	for combo in remaining:
+		weights.append(swap_weight(float(combo.get("pw_delta", 0.0))))
+	var ordered: Array = []
+	while not remaining.is_empty():
+		var total := 0.0
+		for w in weights:
+			total += float(w)
+		var pick := 0
+		if total > 0.0:
+			var r := rng.randf() * total
+			var acc := 0.0
+			for i in weights.size():
+				acc += float(weights[i])
+				if r <= acc:
+					pick = i
+					break
+		else:
+			pick = rng.randi_range(0, remaining.size() - 1)
+		ordered.append(remaining[pick])
+		remaining.remove_at(pick)
+		weights.remove_at(pick)
 	for i in count:
-		out.append(shuffled[i % shuffled.size()])
+		out.append(ordered[i % ordered.size()])
 	return out
-
-
-# CarLibrary.all() indices a rally's restriction admits — the pool an index-based
-# spawner (the start-line queue props, start_line.gd) draws its cars from, so the
-# cars bookending the player are always eligible for the rally. Derived from the same
-# eligible pool as _eligible_cars (which handles the admits-none fallback to the whole
-# roster), just mapped from entries back to their roster indices.
-# Cars only, no engines: these props are cosmetic scenery and an engine swap doesn't change
-# a car's body, so the queue stays stock even though the RIVALS now run swaps.
-static func eligible_car_indices(rally: Dictionary) -> Array:
-	var pool: Array = []
-	for entry in _eligible_cars(rally):
-		pool.append(CarLibrary.index_of(String(entry.get("id", ""))))
-	return pool
 
 
 # Player's 1-based placement on combined time among the non-DNF field (the
@@ -1089,21 +1148,23 @@ static func is_top3(field: Array, player_combined_ms: int) -> bool:
 # top-3 cars' 3D models); empty when unknown. `placed` is the 1-based finishing position among the classified
 # (non-DNF) entries; DNF entries get placed = -1. Consistent with placement() — a
 # non-DNF player's `placed` equals placement(field, player_combined_ms).
-static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You", player_car_name := "", player_car_id := "") -> Array:
+static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You", player_car_name := "", player_car_id := "", player_engine_id := "") -> Array:
 	var entries: Array = []
 	for opp in field:
-		entries.append({
-			"name": String(opp.get("name", "Rival")),
-			"car_name": String(opp.get("car_name", "")),
-			"car_id": String(opp.get("car_id", "")),
-			"combined_ms": int(opp.get("combined_ms", -1)),
-			"dnf": bool(opp.get("dnf", false)),
-			"is_player": false,
-		})
+		var row := identity_of(opp)
+		if String(row["name"]) == "":
+			row["name"] = "Rival"
+		row["combined_ms"] = int(opp.get("combined_ms", -1))
+		row["dnf"] = bool(opp.get("dnf", false))
+		row["is_player"] = false
+		entries.append(row)
 	entries.append({
 		"name": player_name,
 		"car_name": player_car_name,
 		"car_id": player_car_id,
+		# The player's fitted engine, so the podium stages their real build rather than the
+		# catalogue stock car. "" when the caller doesn't know it (headless / tests).
+		"engine_id": player_engine_id,
 		"combined_ms": player_combined_ms,
 		"dnf": player_dnf,
 		"is_player": true,

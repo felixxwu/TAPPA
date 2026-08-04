@@ -88,7 +88,8 @@ func _pending_reveals() -> Array:
 
 # Walk the queue: pan to each pin still wearing its locked look, flip it to unlocked,
 # banner it, hold, move on. A special gets the bigger beat (its own banner and a longer
-# hold — it's a region finale). Any press at any point skips the rest (_skip_reveals).
+# hold — it's a region finale). Player input is LOCKED throughout, so the parade always
+# plays out (hq.gd::_unhandled_input).
 #
 # GENERATION GUARD: `_reveal_token` is bumped here and captured in `token` before the
 # first `await`. Every check below asks `_reveal_continue(token)` instead of a bare
@@ -104,7 +105,6 @@ func _run_reveal_sequence(pending: Array) -> void:
 	for rid in pending:
 		_hq._reveal_queue.append(String(rid))
 	_hq._revealing = true
-	_hq._reveal_skipped = false
 	# Defensive: _enter_table already drains the queue instantly under headless, but
 	# nothing may await in a display-less run (it would hang the suite).
 	if Platform.is_headless():
@@ -153,7 +153,7 @@ func _run_reveal_sequence(pending: Array) -> void:
 # pin rebuild) from what read as a plain query; see `_reveal_continue` for the explicit
 # abort step that replaces that side effect at the call sites that actually need it.
 func _reveal_active() -> bool:
-	return _hq._revealing and not _hq._reveal_skipped and _hq.is_inside_tree() and _hq._view == _hq.View.TABLE
+	return _hq._revealing and _hq.is_inside_tree() and _hq._view == _hq.View.TABLE
 
 
 # The abort point `_run_reveal_sequence` actually calls between steps. Returns true to
@@ -170,7 +170,7 @@ func _reveal_continue(token: int) -> bool:
 		return false
 	if _reveal_active():
 		return true
-	if _hq._revealing and not _hq._reveal_skipped and _hq.is_inside_tree() and _hq._view != _hq.View.TABLE:
+	if _hq._revealing and _hq.is_inside_tree() and _hq._view != _hq.View.TABLE:
 		_finish_reveals()
 	return false
 
@@ -178,11 +178,6 @@ func _reveal_continue(token: int) -> bool:
 # ANY press ends the whole queue at once — this is a requirement, not polish. Players
 # open the map constantly and an unskippable cutscene is hated by the third viewing, so
 # the press must never be swallowed into "advance one pin".
-func _skip_reveals() -> void:
-	_hq._reveal_skipped = true
-	_finish_reveals()
-
-
 # Land the final state: every id that was queued (shown, skipped, or capped away) is
 # marked seen and saved, the pins go back to their true look, the banner clears, table
 # input comes back live, and selection is left on the LAST revealed pin — the player

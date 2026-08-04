@@ -160,6 +160,93 @@ func test_grid_cars_use_the_leaders_actual_cars() -> void:
 	assert_eq(sl.queue_car_ids(), want, "grid cars are the leaders' actual cars, in order")
 
 
+# A rival running a SWAPPED engine is staged with that engine, not its car's stock one.
+# The grid cars idle and pull away audibly during the reveal, and layout fixes cylinder
+# count which fixes the firing table which IS the voice — so a prop left on the stock
+# engine sounds wrong while the reveal card names the swapped one. Asserted through the
+# prop's live config (redline is written by EngineLibrary.apply) rather than by naming a
+# number: the fixture engines are looked up for the comparison, so a retune moves both
+# sides together.
+func test_grid_cars_are_staged_with_the_rivals_fitted_engine() -> void:
+	# fx_light_rwd's stock engine is fx_i4; field it running the other fixture engine.
+	var stock_id := String(CarLibrary.by_id("fx_light_rwd").get("engine", ""))
+	var donor_id := ""
+	for eng in EngineLibrary.all():
+		if String(eng.get("id", "")) != stock_id:
+			donor_id = String(eng.get("id", ""))
+			break
+	assert_ne(donor_id, "", "the fixture roster offers a second engine to swap in")
+
+	var swapped := [{"name": "Rival 1", "car_id": "fx_light_rwd", "engine_id": donor_id,
+		"car_name": "Swapped Roadster", "time_ms": 75430}]
+	var sl := _make(swapped)
+	var prop = sl._grid[0]
+	var donor := EngineLibrary.by_id(donor_id)
+	var stock := EngineLibrary.by_id(stock_id)
+	assert_ne(float(donor.get("redline_rpm", 0.0)), float(stock.get("redline_rpm", 0.0)),
+		"precondition: the two fixture engines differ, so this test can tell them apart")
+	assert_almost_eq(float(prop.config.redline_rpm), float(donor["redline_rpm"]), 0.5,
+		"the prop runs the rival's FITTED engine, not the car's stock one")
+	# The config the voice is BUILT FROM carries the fitted engine's cylinder count...
+	assert_eq(int(prop.config.engine_cylinders),
+		EngineLibrary.cylinders(donor), "the config names the fitted engine's cylinders")
+	# ...and the synth was actually REBUILT from it. Asserted on the synth's own firing
+	# phases, not on config alone: config fields are written by EngineLibrary.apply whether
+	# or not _reconfigure_engine_audio ever ran, so a config-only assertion would still pass
+	# with the voice left stale (or unbuilt — apply_car(index, false) defers it).
+	var synth = prop.get_node("EngineAudio")._synth
+	assert_not_null(synth, "the prop has an engine synth")
+	assert_eq(synth._firing_phases.size(), prop.config.engine_firing_phases().size(),
+		"the voice was rebuilt from the config holding the fitted engine")
+	# The swap carries its own transmission and mass, so those must move with it.
+	assert_almost_eq(float(prop.config.final_drive), float(donor["final_drive"]), 0.001,
+		"the fitted engine's final drive came with it")
+	assert_gt(float(prop.mass), 0.0, "the prop has a real mass after the swap")
+
+
+# A rival with NO swap (stock engine, or an empty engine_id from an older cache entry)
+# is still staged and still audible — fit_engine rebuilds the voice unconditionally, so
+# deferring apply_car's audio build can't leave a stock prop silent.
+func test_a_stock_rival_is_still_staged_with_its_own_engine() -> void:
+	var stock_id := String(CarLibrary.by_id("fx_light_rwd").get("engine", ""))
+	var sl := _make([{"name": "Rival 1", "car_id": "fx_light_rwd", "engine_id": "",
+		"car_name": "Fixture Roadster", "time_ms": 75430}])
+	var prop = sl._grid[0]
+	assert_almost_eq(float(prop.config.redline_rpm),
+		float(EngineLibrary.by_id(stock_id)["redline_rpm"]), 0.5,
+		"an unswapped rival keeps its car's stock engine")
+	# The actual silence guard: fit_engine rebuilds the voice UNCONDITIONALLY, so a stock
+	# rival is not left mute by apply_car(index, false) having deferred the build. Reading
+	# the synth is what makes this real — config fields alone are written either way.
+	var synth = prop.get_node("EngineAudio")._synth
+	assert_not_null(synth, "a stock prop still has an engine synth")
+	assert_eq(synth._firing_phases.size(), prop.config.engine_firing_phases().size(),
+		"a stock prop's voice was built, not left unbuilt by the deferred rebuild")
+
+
+# A stray tap must NOT start the run. This used to launch: tapping anywhere while the start
+# menu was up called launch(), so missing UPGRADES or TUNE CAR — or an idle tap while reading
+# the stage banner — committed the player to the stage with no confirmation. Starting is the
+# START button's job alone now.
+func test_a_tap_on_the_start_menu_does_not_launch() -> void:
+	var sl := _make(_leaders())
+	assert_eq(sl._seq, StartLine.Seq.MENU, "precondition: the start menu is up")
+
+	var tap := InputEventScreenTouch.new()
+	tap.pressed = true
+	sl._unhandled_input(tap)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	sl._unhandled_input(click)
+
+	assert_eq(sl._seq, StartLine.Seq.MENU, "a tap and a click both leave the menu up")
+	assert_false(sl._launched, "and neither started the run")
+	# The button still works — this removes the accidental path, not the deliberate one.
+	sl.launch()
+	assert_true(sl._launched, "pressing START still launches")
+
+
 func test_grid_cars_are_scripted_and_axis_locked() -> void:
 	var sl := _make(_leaders())
 	var front = sl._grid[0]

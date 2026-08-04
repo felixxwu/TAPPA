@@ -14,7 +14,13 @@ const CACHE_PATH := "res://data/opponent_cache.json"
 #         drawn from car+engine combos WITHOUT replacement, so both the entry shape
 #         (a new `engine_id`) and the rng draw order changed. The auto-folded inputs
 #         below cover EngineLibrary DATA but not this generator LOGIC, hence the bump.
-const CACHE_VERSION := "2"
+#   "3" — that draw became WEIGHTED toward modest swaps (RallyLibrary.swap_weight), which
+#         changes which combos come out for the same seed. The spread CONSTANT is folded
+#         in below, but the weighting itself is logic, so it needs the bump.
+#   "4" — wreck_progress is now quantised at generation so it round-trips through JSON
+#         exactly (a raw double did not, so a cached field could differ from a live one
+#         in the last bits). Generation changed, so the bake must be redone.
+const CACHE_VERSION := "4"
 
 static var _entries: Dictionary = {}
 static var _loaded := false
@@ -79,7 +85,7 @@ static func global_fingerprint() -> String:
 		RallyLibrary.PACE_FAST_BASE, RallyLibrary.PACE_SLOW_BASE,
 		RallyLibrary.PACE_FAST_STEP, RallyLibrary.PACE_SLOW_STEP,
 		RallyLibrary.PACE_EVENT_NOISE, RallyLibrary.PACE_MIN_FLOOR,
-		RallyLibrary.OPPONENT_WRECK_CHANCE,
+		RallyLibrary.OPPONENT_WRECK_CHANCE, RallyLibrary.OPPONENT_SWAP_PW_SPREAD,
 	]) + str(RallyLibrary.RIVAL_NAMES)
 	var parts := "v%s|%s|%s|%s|%s" % [CACHE_VERSION, track_hash, catalogue, grip, consts]
 	_global_fp = parts.sha256_text().substr(0, 16)
@@ -138,8 +144,10 @@ static func deserialize_field(raw: Array) -> Array:
 			"name": String(r.get("name", "")),
 			"car_id": String(r.get("car_id", "")),
 			# The rival's fitted engine (features/rally-roster.md). This list is a
-			# WHITELIST — a field missing here is silently dropped on the way out of the
-			# cache and defaults downstream, so any new field on a rival must be added.
+			# WHITELIST: a field the generator emits but this omits is dropped on the way
+			# out of the cache. Not silently, though — test_opponent_cache's
+			# test_field_survives_json_round_trip compares whole dicts, so an omission fails
+			# there. Add any new rival field here.
 			"engine_id": String(r.get("engine_id", "")),
 			"car_name": String(r.get("car_name", "")),
 			"event_times_ms": times,

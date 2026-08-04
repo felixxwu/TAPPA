@@ -906,6 +906,38 @@ func test_engine_swap_brings_its_transmission() -> void:
 	assert_almost_eq(_car.config.shift_time, float(eng["shift_time"]), 0.001, "swapped engine's shift_time applied")
 
 
+# apply_owned defers apply_car's engine-voice build and rebuilds ONCE at the end of the
+# fielding pipeline. If that terminal rebuild is ever lost the car goes mute with no error —
+# the config carries the engine either way — so this asserts the SYNTH agrees with the config
+# it should have been built from, not just that the config is right.
+func test_apply_owned_rebuilds_the_voice_for_a_swapped_engine() -> void:
+	CarFixtures.install()
+	var stock := String(CarLibrary.by_id("fx_light_rwd").get("engine", ""))
+	var donor := "fx_v8" if stock != "fx_v8" else "fx_i4"
+	_car.apply_owned({"model_id": "fx_light_rwd", "swapped_engine": donor, "hp": 700.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+	assert_ne(EngineLibrary.cylinders(EngineLibrary.by_id(donor)),
+		EngineLibrary.cylinders(EngineLibrary.by_id(stock)),
+		"precondition: the fixture engines differ in cylinder count, so a stale voice shows")
+	var synth = _car.get_node("EngineAudio")._synth
+	assert_not_null(synth, "the car has an engine synth")
+	assert_eq(synth._firing_phases.size(), _car.config.engine_firing_phases().size(),
+		"the voice was rebuilt from the post-swap config")
+
+
+# fit_engine rebuilds the voice UNCONDITIONALLY, including for an empty/stock engine id, so a
+# prop fielded via apply_car(index, false) is never left mute. Tested directly here rather
+# than through StartLine, which is far more machinery for the same contract.
+func test_fit_engine_builds_a_voice_even_with_no_swap() -> void:
+	CarFixtures.install()
+	_car.apply_car(0, false)  # voice deliberately NOT built yet
+	_car.fit_engine("")
+	var synth = _car.get_node("EngineAudio")._synth
+	assert_not_null(synth, "a stock-fitted car has an engine synth")
+	assert_eq(synth._firing_phases.size(), _car.config.engine_firing_phases().size(),
+		"fit_engine built the voice despite no engine change")
+
+
 func test_stock_car_is_unaffected_by_the_swap_step() -> void:
 	CarFixtures.install()
 	_car.apply_owned({"model_id": "fx_light_rwd", "hp": 700.0,

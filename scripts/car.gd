@@ -394,6 +394,12 @@ func set_water_query(q: Callable) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _audio_build_pending:
+		# Cleared first so this warns ONCE, not every tick.
+		_audio_build_pending = false
+		push_warning("car.gd: fielded with apply_car(rebuild_audio=false) and no follow-up "
+			+ "_reconfigure_engine_audio() — this car's engine voice was never built. "
+			+ "Call fit_engine() (props) or apply_owned() (owned cars).")
 	if replay_playback:
 		_step_replay(delta)
 		return
@@ -1396,6 +1402,13 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 	# voicing), instead of rebuilding here and again per later step.
 	if rebuild_audio:
 		_reconfigure_engine_audio()
+	else:
+		# Deferring is legitimate, but FORGETTING to follow up leaves the car mute with no
+		# error — the config carries the engine either way, so nothing else complains. Arm a
+		# flag the first live physics tick checks (see _physics_process) so a third caller
+		# that defers and never rebuilds is loud instead of silent. Both current deferrers
+		# (apply_owned, fit_engine) clear it, so this never fires today.
+		_audio_build_pending = true
 
 	# Per-car HP pool (CarLibrary metadata, mass-keyed). Free-roam fields it unbound
 	# at full HP; a future rally layer re-fields it from the OwnedCar (with the
@@ -1659,7 +1672,13 @@ func _rebuild_drivetrain(drive_mode: Drivetrain.DriveMode) -> void:
 
 # Rebuild the EngineAudio voice for the current engine profile / voicing, when the
 # node supports it (some headless fixtures swap in a stub without reconfigure()).
+# Armed by apply_car(rebuild_audio=false), cleared by _reconfigure_engine_audio: catches a
+# caller that defers the engine-voice build and then never triggers it (a silent car).
+var _audio_build_pending := false
+
+
 func _reconfigure_engine_audio() -> void:
+	_audio_build_pending = false
 	var audio := $EngineAudio as Node
 	if audio.has_method("reconfigure"):
 		audio.reconfigure()
@@ -1758,6 +1777,29 @@ func apply_owned(owned: Dictionary) -> String:
 	# rather than inheriting this owned car's donor style.
 	_owned_wheel_texture = ""
 	return car_name
+
+
+# Fit `engine_id` onto a car that has already had apply_car() run, then rebuild the
+# engine voice. This is the swap-only counterpart to apply_owned's step 1b, for PROPS —
+# the start-line grid spawns the top rivals, and rivals run engine swaps
+# (features/rally-roster.md), so without this a "V12 Rondel Twist" would idle and pull
+# away sounding like a stock Rondel Twist (layout fixes cylinder count, which fixes the
+# firing table, which IS the voice — features/engine-audio.md) on stock gearing and mass.
+#
+# Deliberately NOT apply_owned: a prop wants none of that path's upgrades, tuning, aero
+# visibility, live-baseline snapshot or damage/HP-to-instance binding.
+#
+# Call with apply_car(index, false) so the voice is built exactly ONCE, here — this
+# rebuilds unconditionally, including when `engine_id` is empty or already the stock
+# engine, so a stock prop is never left silent.
+func fit_engine(engine_id: String) -> void:
+	if engine_id != "":
+		_apply_engine_swap({"swapped_engine": engine_id})
+		# _apply_engine_swap moves cfg.weight_front (the engine is a point mass at
+		# engine_pos) and syncs the body mass, but leaves the spring split derived from
+		# the OLD distribution — apply_owned re-syncs afterwards for the same reason.
+		_sync_suspension_to_wheels()
+	_reconfigure_engine_audio()
 
 
 # The FULL pre-upgrade, pre-tune config snapshot taken at fielding (after apply_car +

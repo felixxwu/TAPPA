@@ -32,7 +32,11 @@ defaults:
 3. **Single-line menu buttons are a fixed, compact height** (`UITheme.MENU_ROW_H`).
    Multi-line rows (e.g. the settings option rows, which embed their own layout)
    are left to size themselves.
-4. **Menu backgrounds are pure black** — buttons and panels alike.
+4. **Menu backgrounds are pure black** — buttons and panels alike. **One documented
+   exception:** a star-gated SPECIAL event's floating map-pin readout is inverted (white
+   face, black ink) so it stands out from a map of otherwise-identical black panels — see
+   `hq.gd`'s `ACCENT_READOUT_BG` and [menus.md](menus.md). Any further exception should be
+   argued and listed here, not added quietly; the rule is what makes the look coherent.
 
 Menu builders call `UITheme.enforce(root)` once after building; screens with
 dynamic text re-run it whenever that text changes (HQ on every view change /

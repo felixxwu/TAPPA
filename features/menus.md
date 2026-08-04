@@ -528,15 +528,19 @@ turn and flips its pin from the locked to the unlocked look.
   "+N more" and marked seen anyway. `_finish_reveals` marks every queued id seen, saves,
   and leaves selection on the **last revealed pin** — the player wants to look at the new
   thing, not be yanked back to `_focus_hardest_incomplete()`.
-- **Navigation / skip (keyboard + gamepad + pointer).** `_revealing` is checked in the
-  same three places `_detail_open` is: the `_process` glide, `_table_pan_input`, and the
-  `View.TABLE` branch of `_unhandled_input` — plus `_on_pin_input`, so a pin can't be
-  opened mid-parade. **Any press skips the WHOLE queue** (`_is_any_press` → `_skip_reveals`
-  → `_finish_reveals`): key, gamepad button, click or tap, never one pin at a time and
-  never swallowed. This is a requirement, not polish — players open the map constantly
-  and an unskippable cutscene is hated by the third viewing. Everything queued is marked
-  seen, so a skipped reveal never replays. Leaving the map mid-parade (`_go_to`) banks the
-  queue the same way.
+- **Controls are LOCKED for the parade (keyboard + gamepad + pointer).** `_revealing` is
+  checked in the same three places `_detail_open` is: the `_process` glide,
+  `_table_pan_input`, and the `View.TABLE` branch of `_unhandled_input` — plus
+  `_on_pin_input`, so a pin can't be opened mid-parade. A press is **swallowed**
+  (`set_input_as_handled`, so nothing underneath reacts) and otherwise does nothing.
+  It used to SKIP the whole queue, and that was wrong: skipping ran `_finish_reveals`, which
+  marks every queued rally seen, so one stray keypress permanently burned the
+  "NEW RALLY - …" beat for up to `hq_reveal_max_queue` rallies — and the reveal is the only
+  place the game announces a new rally. The parade is short (`hq_reveal_pan_time` +
+  `hq_reveal_hold_time` each, a special holding double, capped at `hq_reveal_max_queue`), so
+  it simply plays out. Guarded by
+  `test_menu_flow.gd::test_a_press_during_the_reveal_cannot_cancel_it`. Leaving the map
+  mid-parade (`_go_to`) still banks the queue.
 - **Persistence + backfill.** A per-rally `revealed` bool beside `completed`. The seeding
   itself lives entirely in `Save` (`Save._seed_reveals_if_needed`), run at the points a
   profile actually becomes live — `load_or_new` and `adopt_profile` — rather than as a
@@ -1276,11 +1280,35 @@ regions are look + waterline only; the star-gated specials are
 rally in the roster is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
 **state-driven marker** — an ordinary rally gets a **flag** (`RallyFlag` — a small
 **base disk** the pin stands on + a pole + waving pennant + finial bead), a star-gated
-**SPECIAL** gets a **trophy** (`RallyTrophy`, see below) — topped by a **billboarded design-system black box** (`_build_pin_label`) that
+**SPECIAL** gets a **trophy** (`RallyTrophy`, see below) — topped by a **billboarded design-system box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
 gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
-(pure-black, Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
+(Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
 on a `Sprite3D`, so text and stars live in **one box** that always faces the camera;
+
+**A special event's readout is INVERTED — white face, black ink** (`ACCENT_READOUT_BG` /
+`ACCENT_READOUT_INK` in `hq.gd`, applied via `_build_readout_sprite`'s `accent` flag, which
+`_build_pin_label` sets from `RallyLibrary.is_special` and `_build_special_teaser_label`
+sets unconditionally). It is the **one deliberate exception to design-system house rule 4**
+(menu backgrounds are PURE BLACK — see `UITheme`), so a special jumps out of a map of
+otherwise-identical black panels. Two non-obvious consequences, both handled:
+- The medal row inverts with it. `StarRow`'s defaults are GOLD / MUTED, which are for a
+  black surface — gold on white barely reads at pin scale and MUTED's 55%-alpha olive
+  disappears — so the accent path sets `StarRow.earned_color` / `unearned_color` black
+  where the row is built. (It cannot be reached afterwards with `find_children`, whose type
+  filter matches engine classes, not script `class_name`s.)
+- `UITheme.mark_panel_focused` replaces the panel's WHOLE stylebox on every focus repaint,
+  which happens on each selection change, so an accent panel stashes its fill in an
+  `accent_bg` meta and that function honours it — otherwise a special reverted to the
+  default face the moment the cursor moved. Selection still reads via the green underline.
+  Guarded by `test_menu_flow.gd::test_special_event_pins_wear_the_inverted_readout`.
+
+**No drop shadow on a floating readout.** The global theme gives every `Label` a hard black
+shadow (`tools/build_ui_theme.gd` → `font_shadow_color` + `shadow_offset_*`), which is the
+terminal look on a flat menu — but on a black readout it is invisible, and on the white
+accent face it reads as grubby fringing. `_build_readout_sprite` clears it per-label rather
+than changing the theme, so the rest of the UI keeps the house look.
+
 the stars are drawn by **`StarRow`** (`scripts/star_row.gd`) as polygons, sidestepping
 the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav). The
 flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
@@ -1575,7 +1603,17 @@ only when something was won.
    player is in the top 3; falls back to the podium centre otherwise).
 2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
    position, name + car, time / `WRECKED`, the player's row tinted + marked.
-3. **CAR_REVEAL** (only if `car_reward != ""`) — the camera **flies over to the
+3. **SPECIAL_UNLOCK** (only if `special_unlock != {}`, i.e. the FIRST top-3 win of a
+   star-gated special that gates a part) — a milestone card naming the upgrade the
+   special just opened, and whether it was fitted to the car that earned it. Deliberately
+   **not** the slot-machine reel the other two reveals use: a reel implies a random draw and
+   this outcome is fixed by which special was won. **Inverted** (light face, dark ink, drop
+   shadow cleared — same house-rule-4 exception as a special's map pin), so a milestone does
+   not read as another routine reward card. No spin, so it is instantly steppable and
+   headless needs no special case. The panel's stylebox and text colour are reset in
+   `_enter_stage`, or the following CAR_REVEAL would inherit the inverted look.
+   See [reward-system.md](reward-system.md) → Special-event unlock.
+4. **CAR_REVEAL** (only if `car_reward != ""`, which a SPECIAL never sets) — the camera **flies over to the
    showroom** and a slot-machine reel spins through the car catalogue's
    names, decelerating onto the won car; on the lock-in the car appears on the
    showroom turntable (hidden until then) and the card collapses to a **single

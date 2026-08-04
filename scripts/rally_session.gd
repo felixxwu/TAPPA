@@ -260,7 +260,8 @@ func current_event_standings() -> Array:
 			t = int(times[idx])
 		var dnf := t < 0
 		partial.append({"name": opp.get("name", "Rival"), "car_name": opp.get("car_name", ""), "car_id": opp.get("car_id", ""), "combined_ms": -1 if dnf else t, "dnf": dnf})
-	return RallyLibrary.build_standings(partial, player_time, _dnf, "You", _player_car_name(), _car_model_id)
+	return RallyLibrary.build_standings(partial, player_time, _dnf, "You", _player_car_name(),
+		_car_model_id, _player_engine_id())
 
 
 # The player's fielded car name, for their row in the leaderboards. "" when no car
@@ -270,12 +271,26 @@ func _player_car_name() -> String:
 	return EngineSwap.display_name(entry, Save.get_car(_car_instance_id))
 
 
+# The engine the player's fielded car is actually running — its swapped-in engine when it
+# has one, else the model's stock engine. Mirrors _player_car_name: "" when nothing resolves
+# (headless), which CarProp.spawn reads as "use the catalogue stock engine".
+func _player_engine_id() -> String:
+	var entry := CarLibrary.by_id(_car_model_id)
+	if entry.is_empty():
+		return ""
+	return EngineSwap.current_engine_id(Save.get_car(_car_instance_id), String(entry.get("engine", "")))
+
+
 # The top `n` rivals for the CURRENT event — each rival's time for THIS event with
 # the car they drove, fastest first — shown on the start-line reveal in place of a
 # single "time to beat". Rivals who DNF'd this event (no time set) are omitted.
-# Returns up to n entries: { name:String, car_id:String, car_name:String, time_ms:int }.
-# `car_id` lets the start-line grid spawn each leader's actual car. Empty before a
-# rally starts / when no rival has a time for this event.
+# Returns up to n entries:
+# { name:String, car_id:String, engine_id:String, car_name:String, time_ms:int }.
+# `car_id` lets the start-line grid spawn each leader's actual car, and `engine_id` its
+# FITTED engine — rivals run engine swaps (features/rally-roster.md), so without it the
+# grid prop would idle and pull away on the car's STOCK engine while the reveal card
+# named the swapped one. Empty before a rally starts / when no rival has a time for
+# this event.
 func current_event_leaders(n: int = 3) -> Array:
 	if _event_index < 0:
 		return []
@@ -285,12 +300,11 @@ func current_event_leaders(n: int = 3) -> Array:
 		if _event_index < times.size():
 			var t := int(times[_event_index])
 			if t >= 0:
-				rows.append({
-					"name": String(opp.get("name", "Rival")),
-					"car_id": String(opp.get("car_id", "")),
-					"car_name": String(opp.get("car_name", "")),
-					"time_ms": t,
-				})
+				var row := RallyLibrary.identity_of(opp)
+				if String(row["name"]) == "":
+					row["name"] = "Rival"
+				row["time_ms"] = t
+				rows.append(row)
 	rows.sort_custom(func(a, b): return int(a["time_ms"]) < int(b["time_ms"]))
 	return rows.slice(0, n)
 
@@ -396,7 +410,17 @@ func current_event_p1_car() -> Dictionary:
 	var leaders := current_event_leaders(1)
 	if leaders.is_empty():
 		return {}
-	return CarLibrary.by_id(String(leaders[0]["car_id"]))
+	var entry := CarLibrary.by_id(String(leaders[0]["car_id"]))
+	if entry.is_empty():
+		return {}
+	# Through effective_meta with the rival's FITTED engine, not the bare catalogue entry:
+	# this meta is what world.gd hands RallyLibrary.derive_turn_splits, so a stock-engine
+	# meta derived split SHAPES for a car that wasn't racing while the target TIME it scales
+	# to came from the swapped build (generate_opponent_field). Same call _eligible_combos
+	# uses, so the two agree by construction.
+	var eid := String(leaders[0].get("engine_id", ""))
+	var owned: Dictionary = {"swapped_engine": eid} if eid != "" else {}
+	return UpgradeLibrary.effective_meta(owned, entry)
 
 
 # The most recent rally's finish summary (for the podium scene). {} before any.
@@ -504,10 +528,29 @@ func _resolve_results() -> void:
 	var car_reward := ""
 	var car_reward_is_new := false
 	var game_won_now := false
+	var special_unlock := {}
 	if top3:
+		var rally_id := String(_rally.get("id", ""))
+		var is_special := RallyLibrary.is_special(_rally)
+		# Captured BEFORE complete_rally, which is what sets `completed` — afterwards the
+		# profile can no longer tell a first win from a re-win, and the unlock reveal must
+		# fire exactly once (todo/special-unlock-reveal.md).
+		var was_completed: bool = bool((Save.profile.get("rallies", {}) as Dictionary)
+			.get(rally_id, {}).get("completed", false))
 		# complete_rally records the FIRST completion (idempotent); the car reward
 		# fires on EVERY top-3 finish, including re-wins (renewable supply).
-		Save.complete_rally(String(_rally.get("id", "")), combined, placed)
+		Save.complete_rally(rally_id, combined, placed)
+		# A special's FIRST win opens an upgrade gate. Announce it, and hand the part to the
+		# car that just earned it — cascading any prerequisite rungs that car is missing, so
+		# the award is usable (RewardSystem.grant_special_unlock).
+		if is_special and not was_completed:
+			var unlocked := UpgradeLibrary.unlocked_by(rally_id)
+			if not unlocked.is_empty():
+				var item_id := String(unlocked.get("id", ""))
+				special_unlock = {
+					"item_id": item_id,
+					"granted": RewardSystem.grant_special_unlock(_car_instance_id, item_id),
+				}
 		# The endgame is completing EVERY special event on the star ladder — no designated
 		# final region (todo/star-gated-special-events.md). complete_rally() above has
 		# already recorded THIS special, so the last one to be won sees itself counted here
@@ -519,11 +562,14 @@ func _resolve_results() -> void:
 			# (the finale rewards completion, not a car).
 			game_won_now = true
 			game_won.emit()
-		else:
-			# Every other top-3 finish - including a special won while other rungs of the
-			# ladder are still outstanding - is a normal rally win: draw a car
-			# (renewable supply). Specials pay out exactly like ordinary rallies, which
-			# also keeps them safe from soft-locking a player who needs a car.
+		elif not is_special:
+			# An ordinary top-3 finish draws a car (renewable supply — it fires on re-wins
+			# too). SPECIALS DO NOT: they pay an upgrade instead (above), and a car on top of
+			# that is too much in one sitting. This widens a carve-out that already existed
+			# for the FINAL special, which likewise drew no car. It does give up the old
+			# "specials are also a car source, which keeps a car-less player from
+			# soft-locking" safety — accepted, because ordinary rallies remain a renewable
+			# car source and the star ladder always opens specials alongside plenty of them.
 			var model: Variant = RewardSystem.draw_car(Save.profile, int(_rally.get("difficulty", 1)))
 			if model != null:
 				car_reward = String(model)
@@ -545,7 +591,12 @@ func _resolve_results() -> void:
 		"car_instance_id": _car_instance_id,
 		# Full ranked field for the standings overlay (built before _reset clears it).
 		# Carries each entrant's car_id too, so the podium can spawn the top-3 cars.
-		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf, "You", _player_car_name(), _car_model_id),
+		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf, "You",
+			_player_car_name(), _car_model_id, _player_engine_id()),
+		# The upgrade a first-won SPECIAL unlocked: {item_id, granted:[ids, headline first]}
+		# or {} for an ordinary rally / a re-win / a special that gates nothing. The podium
+		# reveals it as its own stage; `granted` is empty when the driven car already had it.
+		"special_unlock": special_unlock,
 		# Reward reveal data (todo/menus.md): per-event upgrades + the top-3 car.
 		"upgrades": _upgrades_won.duplicate(),
 		"car_reward": car_reward,
