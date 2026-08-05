@@ -1,8 +1,10 @@
 # Nitrous
 
 A held-button torque boost with a per-stage tank. The single genuinely new
-mechanic introduced by the star-gated special-event ladder
-(`todo/star-gated-special-events.md`): the top four rungs of that ladder unlock
+mechanic introduced by the special-event ladder
+(`todo/star-gated-special-events.md` — the spec's filename, but the ladder gates
+on the count of completed ordinary rallies now, not on a star total, see
+[star-economy.md](star-economy.md)): the top four rungs of that ladder unlock
 nitrous and its three upgrades, so it is deliberately a late-game toy that makes
 hard events easier rather than a stat that reshapes the car.
 
@@ -16,8 +18,8 @@ Three properties define it, and every design decision below falls out of them:
 2. **It is invisible to the performance model.** It never reaches
    `UpgradeLibrary.effective_meta`, so fitting it cannot move a car's
    power-to-weight, its rally eligibility, its `qualifying_detune` or the rival
-   pace floor. Winning your 40-star reward can never lock you out of a rally you
-   could previously enter.
+   pace floor. Winning the last rung of the ladder can never lock you out of a
+   rally you could previously enter.
 3. **It has no garage UI to CHANGE it.** An unwanted bottle is simply a button
    you don't press, and since it can't change eligibility there is nothing to
    decide — so the slot is hidden and the part auto-fits enabled. It is still
@@ -51,7 +53,7 @@ Two conventions hang off the slot id:
 
 The four authored rungs form a **chained ladder inside the one slot** — each
 `requires_upgrade_id`s the previous one (the `turbo_small` → `turbo_large`
-precedent) and each is star-gated on its own special event via
+precedent) and each is gated on WINNING its own special event via
 `unlocked_by_rally` (see [upgrade-catalogue.md](upgrade-catalogue.md) and
 [rally-roster.md](rally-roster.md)). Because one part per slot is enabled, a new
 rung simply **replaces** the last. Each rung mixes the two levers — tank
@@ -247,7 +249,7 @@ hit-test priority over the simple steering halves) and `test_engine_audio.gd`
 (the synth layer and its edges).
 
 Per `CLAUDE.md`, do **not** pin the authored magnitudes — tank seconds, torque
-gains, which rung sits at which star rung, the hue value. Test the behaviour that
+gains, which rung hangs off which special event, the hue value. Test the behaviour that
 must hold for any reasonable values: the tank starts full after `reset()`, the
 multiplier applies only while held with charge, an empty tank applies none,
 `effective_meta`'s power-to-weight is unmoved by fitting nitrous, and the part

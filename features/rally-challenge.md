@@ -18,8 +18,9 @@ stages and damage carries over between them. Full design:
   (bump it when the seed roll's inputs change).
 - **`ChallengeSession`** (`scripts/challenge_session.gd`, autoload) — the
   per-run state machine, parallel to `RallySession` rather than a reuse of it
-  (no rival/`OpponentCache`, no special/star unlock, no
-  `Save.complete_rally`). Read surface: `is_active()`, `car_instance_id()`,
+  (no rival/`OpponentCache`, no special-event unlock, no
+  `Save.complete_rally` — so no career star credit; its own star payout is
+  placement-based, see *Completion reward* below). Read surface: `is_active()`, `car_instance_id()`,
   `kind()`, `stage_count()`, `events_completed()`, `current_stage_params()`.
   Lifecycle: `start(kind, owned_car, unix_time)`, `resume(unix_time)`,
   `resumable_run(profile, unix_time)` / `has_stale_run` / `discard_stale_run`
@@ -327,7 +328,10 @@ cost four lines, not eight:
    board), so a row that will never gain a value never advertises one.
 2. **Win reward** — per-kind text (`_CHALLENGE_REWARD_TEXT`: `2 mystery boxes` /
    `3 mystery boxes + 1 low-tier car` / `4 mystery boxes + 1 high-tier car`).
-   These boxes are why `RewardSystem.pick_mystery_box_grant` no longer excludes
+   **This string is stale**: `_COMPLETION_REWARD` pays boxes + placement stars and
+   no car at all any more (see *Completion reward* below), so the weekly/monthly
+   text still advertises a car the run cannot grant — it needs rewording to the
+   boxes-plus-stars payout. These boxes are why `RewardSystem.pick_mystery_box_grant` no longer excludes
    the current car: a challenge box is tied to no car at all, so the old "never
    the car it came from" rule stopped describing anything real — see
    [reward-system.md](reward-system.md) → *Mystery box*. A
@@ -673,7 +677,8 @@ Two separate reward paths:
 - **Per-stage** (non-final stages, unchanged from career): `ChallengeSession.
   report_event_result` calls `RewardSystem.draw_upgrade(Save.profile, null,
   driven)` — the draw takes no difficulty any more (upgrade `tier` is gone; the
-  pool is flat and star-gated, see [reward-system.md](reward-system.md)) — and
+  pool is flat and gated on won special events, see
+  [reward-system.md](reward-system.md)) — and
   installs/adds the result exactly like `RallySession` does: consumables straight
   to inventory, car-bound parts fitted DISABLED except the
   `UpgradeLibrary.HIDDEN_SLOTS` (nitrous) slot, which fits ENABLED. The draw
@@ -692,22 +697,31 @@ Two separate reward paths:
   numbers there**; `HqChallenge._CHALLENGE_REWARD_TEXT` is the player-facing summary and
   has to be kept in step):
 
-  | Kind | Mystery boxes | Car | Synthetic difficulty |
-  |---|---|---|---|
-  | Daily | 2 | — | — |
-  | Weekly | 3 | 1 via `draw_car` | fixed at `1` (low tier) |
-  | Monthly | 4 | 1 via `draw_car` | `-1` = `tier_ceiling(completed_count)` |
+  | Kind | Mystery boxes |
+  |---|---|
+  | Daily | 2 |
+  | Weekly | 3 |
+  | Monthly | 4 |
 
-  Boxes are granted FIRST, because the car draw can legitimately come back empty
-  (nothing left to unlock) and a player who placed must never walk away with
-  nothing. `car_tier: -1` means "the player's own progress ceiling" — `draw_car`
-  clamps to that ceiling anyway, so -1 is the honest way to ask for "high tier"
-  rather than naming a number the clamp would silently lower.
+  **No car** — the table is boxes-only now, and `car_tier` is gone from it: cars
+  are bought with stars at the HQ present box rather than handed out
+  ([star-economy.md](star-economy.md)). A placing challenge instead pays **stars
+  by placement**, on the SAME `RallyLibrary.stars_for_placement` curve a career
+  rally uses (1st/2nd/3rd → 3/2/1), credited via `Save.award_stars`. Note the
+  placement gate here (top HALF of the board) is far more lenient than the podium
+  that curve pays out to, so a mid-table finish legitimately banks **0 stars** and
+  walks away with just the boxes — which is exactly why the boxes are granted
+  unconditionally, so a player who placed never walks away with nothing.
 
-  Emits `completion_reward_revealed(item_id)` on a grant (the car id, `""` for a
-  Daily), and returns `{"placed", "rank", "total_entries", "item_id", "boxes"}`.
-  `world.gd._completion_reward_body` renders whatever actually landed — the card is
-  shown whenever boxes OR a car were won, so a Daily win is never silent.
+  Unlike career stars, this income is **renewable over real time** — deliberately,
+  since it is the only star source still flowing once every career rally is won at
+  P1 and `complete_rally` has no improvement left to credit.
+
+  Emits `completion_reward_revealed(item_id)` on a grant — always `""` now, since
+  nothing item-shaped is granted — and returns `{"placed", "rank",
+  "total_entries", "item_id", "boxes", "stars"}`.
+  `world.gd._completion_reward_body` renders whatever actually landed, so a win
+  that banked only boxes is never silent.
 
 ### Where the run's end is resolved (`world.gd._on_challenge_run_finished`)
 

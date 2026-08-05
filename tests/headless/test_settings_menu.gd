@@ -215,3 +215,19 @@ func test_complete_rally_button_wins_the_active_rally() -> void:
 	assert_true(bool(r["completed"]), "a P1 finish completes the rally")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE")
 	assert_false(get_tree().paused, "the tree is unfrozen before the podium loads")
+
+
+# The dev "Add 1 star" shortcut credits the ledger. Asserts the DELTA, never a resulting
+# total — the ledger starts wherever the profile happens to sit.
+func test_add_star_dev_button_credits_one_star() -> void:
+	var save: Node = get_node("/root/Save")
+	var before: int = save.stars_available()
+	var menu := _make_menu()
+	var button := _dev_button(menu, "Add 1 star")
+	assert_not_null(button, "the dev page offers the add-star shortcut")
+	button.pressed.emit()
+	assert_eq(save.stars_available(), before + 1, "pressing it banks exactly one star")
+	button.pressed.emit()
+	assert_eq(save.stars_available(), before + 2, "and it is repeatable")
+	assert_string_contains(menu._dev_status.text.to_lower(), "star",
+		"the dev status line reports what happened")

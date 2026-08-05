@@ -438,8 +438,10 @@ func build_car_overlay() -> void:
 	_hq._rally_banner = _hq._label("", 22)
 	root.add_child(_hq._rally_banner)
 
-	var hint := _hq._label("Choose your car", 14)
-	root.add_child(hint)
+	# Stored so CarparkMode.PRESENT can replace it: "Choose your car" is wrong when the lot
+	# holds one present box and there is nothing to choose between.
+	_hq._car_hint_label = _hq._label("Choose your car", 14)
+	root.add_child(_hq._car_hint_label)
 
 	# Push the car nav + actions to the bottom so the 3D car park is visible above.
 	root.add_child(UITheme.vspacer())
@@ -451,6 +453,10 @@ func build_car_overlay() -> void:
 	# Car selector: ◄ / ► pan the camera to the prev/next eligible car.
 	var nav_made := _hq._build_carpark_nav_row()
 	root.add_child(nav_made[0])
+	# Stored so CarparkMode.PRESENT can hide the prev/next arrows: there is nothing to
+	# cycle through when the lot holds one present box, but the centre LABEL is still the
+	# place the revealed car's name goes.
+	_hq._car_nav_row = nav_made[0]
 	_hq._car_name_label = nav_made[1]
 
 	_hq._car_stats_label = _hq._label("", 12)

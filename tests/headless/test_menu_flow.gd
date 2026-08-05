@@ -505,7 +505,7 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
 		{"id": "later", "name": "Later", "region": "home", "special": false, "reveal_after": 99,
 			"map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
-		{"id": "sd", "name": "SD", "region": "home", "special": true, "requires_stars": 99,
+		{"id": "sd", "name": "SD", "region": "home", "special": true, "requires_completions": 99,
 			"map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -532,17 +532,26 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	assert_gt(by_id["open"].find_children("*", "Area3D", true, false).size(), 0,
 		"a revealed rally's pin IS clickable")
 
-	# ...and the keyboard/gamepad focus ring only contains the enterable pins, so no
-	# amount of panning can land the cursor on a locked one.
+	# ...and the keyboard/gamepad focus ring only contains the enterable PINS, so no amount
+	# of panning can land the cursor on a locked one. The present box is also a target (kind
+	# "present", no rally_id — todo/star-economy.md), so filter by kind rather than assuming
+	# every target is a rally.
+	_afford_a_present()
+	hq._refresh_map_pins()
 	var focusable: Array = []
+	var kinds: Dictionary = {}
 	for t in hq._table_ui._table_targets():
-		assert_eq(String(t["kind"]), "pin", "every table focus target is a pin now")
-		focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
+		kinds[String(t["kind"])] = true
+		if String(t["kind"]) == "pin":
+			focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
 	assert_eq(focusable, ["open"], "only the revealed rally is a focus target")
+	assert_true(kinds.has("present"), "the present box is a focus target alongside the pins")
 	for _i in 12:
 		hq._table_ui._pan_table_step(Vector2.RIGHT, 0.4)
-	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "open",
-		"panning across the map keeps the cursor on an enterable pin")
+	var landed: Dictionary = hq._table_ui._table_targets()[hq._table_focus_index]
+	if String(landed["kind"]) == "pin":
+		assert_eq(String((landed["node"] as Node3D).get_meta("rally_id")), "open",
+			"panning across the map never lands the cursor on a locked pin")
 
 	RegionLibrary.reset()
 	RallyLibrary.reset()
@@ -1803,10 +1812,10 @@ func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
 # without pinning which rally that is.
 func _top_special_id() -> String:
 	var best := ""
-	var best_stars := -1
+	var best_rung := -1
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and int(rally.get("requires_stars", 0)) > best_stars:
-			best_stars = int(rally.get("requires_stars", 0))
+		if RallyLibrary.is_special(rally) and RallyLibrary.completions_required(rally) > best_rung:
+			best_rung = RallyLibrary.completions_required(rally)
 			best = String(rally["id"])
 	return best
 
@@ -2271,7 +2280,7 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 		},
 		{
 			"id": "fx_showdown", "name": "Fixture Showdown", "difficulty": 4, "special": true,
-			"requires_stars": 0,
+			"requires_completions": 0,
 			"map_pos": Vector2(0.7, 0.7), "restriction": {},
 			"events": [
 				{"seed": 21, "turn_count": 4}, {"seed": 22, "turn_count": 4}, {"seed": 23, "turn_count": 4},
@@ -3179,8 +3188,9 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
-	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.CAR_REVEAL] as Array[int],
-		"the podium reveals podium, leaderboard, then the car — no upgrade stages")
+	assert_eq(pod._stages,
+		[pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.STARS, pod.Stage.CAR_REVEAL] as Array[int],
+		"the podium reveals podium, leaderboard, stars, then the car — no upgrade stages")
 
 	# Next -> the leaderboard.
 	pod._on_next()
@@ -3190,10 +3200,15 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 	assert_string_contains(lb, "RIVAL 1", "the leaderboard lists the opponent field")
 	assert_string_contains(lb, "WRECKED", "a DNF opponent reads as WRECKED on the leaderboard")
 
+	# Next -> the stars beat (resolves instantly headless).
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.STARS, "Next from the leaderboard shows the stars beat")
+
 	# Next -> the car slot-machine reveal (resolves instantly headless).
 	pod._on_next()
 	await get_tree().process_frame
-	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the leaderboard shows the car reveal")
+	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the stars beat shows the car reveal")
 	assert_true(pod._reveal_done, "the slot spin resolves instantly under headless")
 	assert_true(pod._next_button.visible, "Next reappears once the spin locks on")
 	# The showroom car is spawned by the slot's on_done (only once the reel locks on).
@@ -3211,6 +3226,76 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 	assert_eq(pod._next_button.text, "CONTINUE TO HQ", "the final stage's button returns to HQ")
 
 
+# --- Podium stars beat (todo/star-economy.md) --------------------------------
+# The beat shows TWO different numbers: gold stars = the rally's rating at the player's
+# best-ever placement, caption = what the ledger actually moved by. They diverge on a
+# re-win, and these tests pin that split rather than any particular star count.
+
+func _podium_with_stars(star_rating: int, stars_gained: int) -> Node3D:
+	RallySession._last_result = {
+		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
+		"rally_name": "Shakedown", "car_reward": "", "upgrades": [],
+		"star_rating": star_rating, "stars_gained": stars_gained,
+		"standings": [
+			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
+		],
+	}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	pod._enter_stage(pod.Stage.STARS)
+	await get_tree().process_frame
+	return pod
+
+
+func test_the_stars_beat_lights_the_rallys_rating_in_gold() -> void:
+	var rating := RallyLibrary.stars_for_placement(1)
+	var pod: Node3D = await _podium_with_stars(rating, rating)
+	assert_true(pod._stars_panel.visible, "the stars card is shown on the STARS stage")
+	assert_eq(pod._star_row.earned, rating, "gold star count is the rally's rating")
+	assert_eq(pod._star_row.total, RallyLibrary.MAX_STARS_PER_RALLY,
+		"the row always shows the full three, so a miss reads as a miss")
+	assert_true(pod._reveal_done, "the reveal resolves instantly under headless")
+	assert_true(pod._next_button.visible, "Next is available once the stars land")
+
+
+func test_the_stars_beat_reports_the_ledger_delta_not_the_rating() -> void:
+	# The bug this split exists to prevent: a re-win that improves nothing still RATES
+	# stars, but must not claim the player gained any.
+	var rating := RallyLibrary.stars_for_placement(1)
+	var pod: Node3D = await _podium_with_stars(rating, 0)
+	assert_eq(pod._star_row.earned, rating, "the rating is still shown in gold")
+	var text := _label_texts(pod)
+	assert_string_contains(text, "NO NEW STARS",
+		"a zero delta says so rather than claiming a gain")
+	assert_false(pod._star_caption.text.contains("+"),
+		"a zero delta never renders as a '+' gain")
+
+
+func test_the_stars_beat_shows_a_gain_when_the_ledger_moved() -> void:
+	var pod: Node3D = await _podium_with_stars(RallyLibrary.stars_for_placement(1), 1)
+	assert_string_contains(_label_texts(pod), "+1 STAR", "a positive delta reads as a gain")
+
+
+func test_the_stars_beat_runs_with_no_stars_won() -> void:
+	# Off the podium: three dim stars and an honest line, not a skipped stage.
+	var pod: Node3D = await _podium_with_stars(0, 0)
+	assert_true(pod._stars_panel.visible, "the card still shows")
+	assert_eq(pod._star_row.earned, 0, "no stars are lit")
+	assert_true(pod._reveal_done, "a zero-star beat is immediately steppable")
+	assert_true(pod._next_button.visible, "Next is not gated behind an empty reveal")
+
+
+func test_the_stars_beat_quotes_the_spendable_balance() -> void:
+	_save.award_stars(7)
+	var pod: Node3D = await _podium_with_stars(RallyLibrary.stars_for_placement(1), 0)
+	assert_string_contains(_label_texts(pod), "7 IN THE BANK",
+		"the caption ends with the spendable balance")
+	# And no denominator: stars are renewable and spendable, so there is no maximum.
+	assert_false(pod._star_caption.text.contains("/"),
+		"the balance is shown bare, with no 'x of N' denominator")
+
+
 func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 	# A DNF earns no car and no upgrade, so only the podium + leaderboard show.
 	RallySession._last_result = {
@@ -3224,8 +3309,9 @@ func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
-	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD] as Array[int],
-		"a DNF result queues only the podium + leaderboard (no reward reveals)")
+	assert_eq(pod._stages,
+		[pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.STARS] as Array[int],
+		"a DNF queues no reward reveals, but the stars beat still runs (0 stars is feedback)")
 	assert_string_contains(_label_texts(pod), "DNF", "the headline reads as a DNF")
 
 
@@ -5220,7 +5306,7 @@ func _install_reveal_roster() -> void:
 			"special": false, "map_pos": Vector2(0.6, 0.5),
 			"restriction": {"pw_min": 5000.0}, "events": []},
 		{"id": "rv_special", "name": "Reveal Special", "region": "home", "difficulty": 3,
-			"special": true, "requires_stars": RallyLibrary.MAX_STARS_PER_RALLY,
+			"special": true, "requires_completions": 2,
 			"map_pos": Vector2(0.5, 0.15), "restriction": {}, "events": []},
 	])
 
@@ -5296,9 +5382,9 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 	# "anything the player can currently enter") — rv_hot is unlocked (no reveal_after)
 	# even though nothing in the garage can enter it yet, so it gets silently seeded too.
 	# Only a rally that is genuinely still LOCKED at seed time — rv_special, gated on the
-	# star total — survives the pass to become a real future reveal.
+	# ordinary-completion count — survives the pass to become a real future reveal.
 	_install_reveal_roster()
-	_save.complete_rally("rv_open", 60_000, 2)  # career progress (2nd: short of the star gate)
+	_save.complete_rally("rv_open", 60_000, 2)  # 1 completion: still short of rv_special
 	assert_true(_save.needs_reveal_seeding())
 	_save.save_now()
 	_save.load_or_new()  # the profile becoming live is what must trigger the backfill
@@ -5312,7 +5398,7 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 
 	# ...and a rally that was still LOCKED at seed time still gets a real reveal once it
 	# actually unlocks — seeding backfilling the open roster does not swallow that.
-	_save.complete_rally("rv_hot", 45_000, 1)  # a 1st place -> enough stars to open the special
+	_save.complete_rally("rv_hot", 45_000, 1)  # 2nd completion -> opens the special
 	assert_true(hq._table_ui._pending_reveals().has("rv_special"),
 		"seeding never swallows a rally that was still locked at seed time")
 
@@ -5357,7 +5443,7 @@ func test_special_event_pins_wear_the_inverted_readout() -> void:
 		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
 			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
 		{"id": "spec", "name": "Special", "region": "home", "special": true,
-			"requires_stars": 0, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
+			"requires_completions": 0, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -5470,3 +5556,202 @@ func test_free_roam_is_not_on_the_garage_row() -> void:
 	for b: Button in hq._garage_cursor.buttons:
 		assert_false(b.text.to_upper().contains("FREE ROAM"),
 			"the garage row no longer carries Free Roam (it lives on the title screen)")
+
+
+# --- Present box on the map (todo/star-economy.md) ----------------------------
+# CLAUDE.md: no menu ships pointer-only. The box must be reachable and operable by
+# keyboard/gamepad, which on this map means "appears as a focus target and fires through
+# _activate_table_focus" — the same path a pin uses.
+
+# Put the profile in a state where the present box is DRAWN: the pin only exists once the
+# balance covers a car (_refresh_map_pins), so any test that wants the box must afford one.
+func _afford_a_present() -> void:
+	var save: Node = get_node("/root/Save")
+	save.profile["stars_earned"] = int(Config.data.star_cost_per_car) * 2
+	save.profile["stars_spent"] = 0
+
+
+func _present_target_index(hq: Node3D) -> int:
+	var targets: Array = hq._table_ui._table_targets()
+	for i in targets.size():
+		if String(targets[i]["kind"]) == "present":
+			return i
+	return -1
+
+
+func test_the_present_box_is_a_keyboard_reachable_map_target() -> void:
+	_afford_a_present()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	var idx := _present_target_index(hq)
+	assert_gt(idx, -1, "the present box is a focus target, so panning can reach it")
+	var node: Node3D = hq._table_ui._table_targets()[idx]["node"]
+	assert_true(node.has_meta("label_panel"),
+		"it carries a label_panel so the focus cursor can paint it")
+	assert_false(node.has_meta("rally_id"),
+		"and deliberately carries no rally_id — hq._pins consumers assume one")
+	# Focusing it must not error (it goes through the same paint path as a pin).
+	hq._table_ui._focus_table_target(idx, false)
+	assert_eq(hq._table_focus_node, node, "the cursor seats on the present box")
+
+
+func test_the_present_box_is_never_left_out_of_the_pin_array() -> void:
+	# Regression guard for the reason it is kept separate: every consumer of hq._pins reads
+	# a "rally_id" meta, so a present box in that array would crash them.
+	_afford_a_present()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	for pin in hq._pins:
+		assert_true((pin as Node3D).has_meta("rally_id"),
+			"every entry in hq._pins is a rally pin")
+	assert_true(is_instance_valid(hq._present_pin), "the box exists as its own node")
+
+
+func test_activating_the_present_box_goes_straight_to_the_box() -> void:
+	# The keyboard/gamepad path, and the flow shape: firing the target takes the player
+	# STRAIGHT to the box — no confirm dialog in front of it. The box screen is the
+	# confirmation, and its bottom button is what spends the stars.
+	_afford_a_present()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	var idx := _present_target_index(hq)
+	assert_gt(idx, -1, "the box is focusable")
+	hq._table_ui._focus_table_target(idx, false)
+	hq._table_ui._activate_table_focus()
+	await get_tree().process_frame
+	assert_eq(ConfirmPopup.any_open(get_tree()), null,
+		"no confirm dialog stands between the map and the box")
+	assert_eq(hq._view, hq.View.CARPARK, "we are looking at the car park")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.PRESENT, "in present mode")
+	assert_true(is_instance_valid(hq._present_box), "with the box actually built")
+	assert_false(hq._present_opened, "and nothing bought yet")
+
+
+func test_the_present_screen_prices_its_own_bottom_button() -> void:
+	var save: Node = get_node("/root/Save")
+	var price := int(Config.data.star_cost_per_car)
+	save.grant_car(CarFixtures.cars()[0]["id"])  # not stranded, so full price applies
+	save.profile["stars_earned"] = 0
+	save.profile["stars_spent"] = 0
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_present_box()
+	await get_tree().process_frame
+	assert_true(hq._start_button.disabled, "broke: the button is disabled, not a silent no-op")
+	assert_string_contains(hq._start_button.text.to_upper(), "OPEN", "it still reads as Open")
+	save.award_stars(price)
+	hq._refresh_present_button()
+	assert_false(hq._start_button.disabled, "affording it enables the button")
+	assert_eq(hq._car_name_label.text, "", "no car is named before the box is opened")
+
+
+func test_opening_the_present_puts_the_car_in_the_box_and_names_it_under_it() -> void:
+	# The whole point of the reveal: the car is spawned BEFORE any wall moves, so the box
+	# opens ON it. And the name lands in the car-park label under the car — no result modal.
+	var save: Node = get_node("/root/Save")
+	save.grant_car(CarFixtures.cars()[0]["id"])
+	save.profile["stars_earned"] = int(Config.data.star_cost_per_car)
+	save.profile["stars_spent"] = 0
+	var cars_before: int = save.profile["cars"].size()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_present_box()
+	await get_tree().process_frame
+
+	hq._on_start_pressed()  # the bottom button
+	await get_tree().process_frame
+	assert_true(hq._present_opened, "the box is opened")
+	assert_eq(save.profile["cars"].size(), cars_before + 1, "exactly one car was bought")
+	assert_eq(save.stars_available(), 0, "and the stars were spent")
+	assert_ne(hq._car_name_label.text, "", "the car is named under it")
+	assert_eq(ConfirmPopup.any_open(get_tree()), null, "with no modal after the reveal")
+	# The name shown must be the car actually granted, not a placeholder. set_selected_car
+	# promotes the new car to the FRONT of the lineup, so look there rather than at the tail.
+	var granted: Dictionary = save.selected_car()
+	var entry := CarLibrary.by_id(String(granted["model_id"]))
+	assert_string_contains(hq._car_name_label.text.to_upper(),
+		String(entry["name"]).to_upper(), "the label names the car that was granted")
+
+
+func test_the_opened_car_becomes_the_selected_car() -> void:
+	# So "Back to garage" lands on the car you just opened, not whatever you had before.
+	var save: Node = get_node("/root/Save")
+	var old: Dictionary = save.grant_car(CarFixtures.cars()[0]["id"])
+	save.set_selected_car(int(old["instance_id"]))
+	save.profile["stars_earned"] = int(Config.data.star_cost_per_car)
+	save.profile["stars_spent"] = 0
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_present_box()
+	await get_tree().process_frame
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_ne(save.selected_instance_id(), int(old["instance_id"]),
+		"the selection moved off the car we started with")
+	assert_eq(hq._selected_instance_id, save.selected_instance_id(),
+		"and the HQ agrees with the profile about which car is selected")
+
+
+func test_the_present_cannot_be_bought_twice_in_one_visit() -> void:
+	var save: Node = get_node("/root/Save")
+	save.grant_car(CarFixtures.cars()[0]["id"])
+	save.profile["stars_earned"] = int(Config.data.star_cost_per_car) * 4
+	save.profile["stars_spent"] = 0
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_present_box()
+	await get_tree().process_frame
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	var after_one: int = save.profile["cars"].size()
+	hq._on_start_pressed()  # a second press must do nothing, even though they can afford it
+	await get_tree().process_frame
+	assert_eq(save.profile["cars"].size(), after_one,
+		"one box, one car — a second press cannot buy again")
+	assert_true(hq._start_button.disabled, "and the button is spent")
+
+
+func test_the_present_box_only_appears_once_it_is_affordable() -> void:
+	# A box you cannot open is clutter, so it is not drawn at all until the balance covers a
+	# car. Broke but NOT stranded (a starter car can enter something), so the price stands.
+	var save: Node = get_node("/root/Save")
+	var price := int(Config.data.star_cost_per_car)
+	save.grant_car(CarFixtures.cars()[0]["id"])
+	save.profile["stars_earned"] = 0
+	save.profile["stars_spent"] = 0
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	assert_eq(RewardSystem.car_price(save.profile), price,
+		"a player who can still race is charged full price")
+	assert_eq(_present_target_index(hq), -1, "broke: no present box on the map at all")
+
+	save.award_stars(price)
+	hq._refresh_map_pins()
+	assert_gt(_present_target_index(hq), -1, "affording one makes the box appear")
+
+
+func test_the_present_box_cost_line_reads_as_a_price() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var priced := hq._present_cost_line(4).to_upper()
+	assert_string_contains(priced, "COST", "the cost line is labelled as a cost")
+	assert_string_contains(priced, "STAR", "and names the currency")
+	assert_string_contains(hq._present_cost_line(0).to_upper(), "FREE",
+		"a rescue-priced box reads as free, not as '0 stars'")

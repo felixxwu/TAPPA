@@ -12,11 +12,18 @@ const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 # on the shipped table because several of them assert CATALOGUE CONTRACTS (a real gated part
 # exists and is withheld; the token is a real consumable) rather than draw logic. Only the
 # car roster below is synthetic. A new draw-logic test is free to install fixtures.
+var _profile_backup: Dictionary = {}
+
+
 func before_each() -> void:
 	CarFixtures.install()
+	# The purchase tests below assign Save.profile (purchase_car mutates through Save).
+	# Stash the real one so nothing leaks into the next test — or the next FILE.
+	_profile_backup = (get_node("/root/Save").profile as Dictionary).duplicate(true)
 
 
 func after_each() -> void:
+	get_node("/root/Save").profile = _profile_backup
 	CarFixtures.restore()
 
 
@@ -508,37 +515,38 @@ func test_draw_car_unlocks_locked_rally_when_stuck() -> void:
 	RallyLibrary.reset()
 
 
-# --- Star-gated special events ------------------------------------------------
-# Replaces the old per-region showdown gate: specials are now gated on the GLOBAL star
-# total, with no relationship to a region's contents.
+# --- Completion-gated special events -----------------------------------------
+# Replaces the old per-region showdown gate AND the star gate that briefly replaced it:
+# specials are now gated on the GLOBAL count of completed ORDINARY rallies, with no
+# relationship to a region's contents. See todo/star-economy.md.
 
-func test_the_eligibility_query_excludes_a_star_locked_special() -> void:
+func test_the_eligibility_query_excludes_a_locked_special() -> void:
 	RallyLibrary.override_for_test([
 		{"id": "r1", "region": "home", "special": false, "restriction": {}},
-		{"id": "sp_far", "region": "home", "special": true, "requires_stars": 99,
+		{"id": "sp_far", "region": "home", "special": true, "requires_completions": 99,
 			"restriction": {}},
 	])
-	# Nothing completed → no stars → the special is still locked.
+	# Nothing completed → the special is still locked.
 	var car := {"pw": 150.0}  # synthetic; is_eligible reads restriction only
 	var ids := []
 	for r in RallyLibrary.incomplete_rallies_enterable_by(car, {"rallies": {}}):
 		ids.append(r["id"])
-	assert_does_not_have(ids, "sp_far", "a star-locked special is not enterable")
+	assert_does_not_have(ids, "sp_far", "a locked special is not enterable")
 	assert_has(ids, "r1", "an ordinary revealed rally still is")
 	RallyLibrary.reset()
 
 
-func test_a_special_opens_once_the_star_total_is_reached() -> void:
+func test_a_special_opens_once_the_completion_count_is_reached() -> void:
 	RallyLibrary.override_for_test([
 		{"id": "r1", "region": "home", "special": false, "restriction": {}},
-		{"id": "sp_near", "region": "home", "special": true, "requires_stars": 3,
+		{"id": "sp_near", "region": "home", "special": true, "requires_completions": 1,
 			"restriction": {}},
 	])
 	var car := {"pw": 150.0}
-	# One 1st place on the single ordinary rally = 3 stars, which clears the gate. The
-	# special itself must be excluded from the star count, so it cannot bootstrap itself.
+	# Completing the single ordinary rally clears the gate. The special itself is excluded
+	# from the completion count, so it cannot bootstrap itself.
 	var profile := {"rallies": {"r1": {"completed": true, "best_placed": 1}}}
-	assert_eq(RallyLibrary.total_stars(profile), 3, "a 1st place is worth three stars")
+	assert_eq(RallyLibrary._completed_count(profile), 1, "the ordinary win counts once")
 	var ids := []
 	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
 		ids.append(r["id"])
@@ -676,3 +684,102 @@ func test_a_prerequisite_cycle_terminates() -> void:
 	var granted := RewardSystem.grant_special_unlock(int(owned["instance_id"]), "a")
 	assert_eq(granted.size(), 2, "the walk visits each rung once and stops")
 	UpgradeLibrary.reset()
+
+
+# --- Buying a car with stars (todo/star-economy.md) --------------------------
+# Nothing here pins the PRICE (GameConfig.star_cost_per_car is tunable) — only the rules:
+# a purchase debits exactly the configured price, is refused when short, and drops to free
+# in the one state that would otherwise be unrecoverable.
+
+# A COMPLETE profile (built from the real default) with `owned` cars and `earned` stars.
+# Built from _default_profile rather than hand-rolled because purchase_car goes through
+# Save.grant_car, which reads next_instance_id — a partial dict fails at runtime, not parse.
+func _priced_profile(owned: Array, earned: int) -> Dictionary:
+	var profile: Dictionary = (get_node("/root/Save") as Node)._default_profile()
+	var n := 1
+	for model_id in owned:
+		(profile["cars"] as Array).append({
+			"instance_id": n, "model_id": model_id, "hp": 100.0,
+			"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}})
+		n += 1
+	profile["next_instance_id"] = n
+	profile["stars_earned"] = earned
+	profile["stars_spent"] = 0
+	return profile
+
+
+func test_is_stranded_is_false_while_any_owned_car_can_enter_something() -> void:
+	var profile := _priced_profile([CarFixtures.cars()[0]["id"]], 0)
+	assert_false(RewardSystem.is_stranded(profile),
+		"a fresh garage can enter something, so it is not stranded")
+
+
+func test_is_stranded_is_true_with_no_cars_at_all() -> void:
+	assert_true(RewardSystem.is_stranded(_priced_profile([], 0)),
+		"an empty garage can enter nothing")
+
+
+func test_a_wrecked_car_does_not_count_against_stranded() -> void:
+	# A wreck can never be repaired, so a garage holding only wrecks is as stuck as an
+	# empty one. Counting it would deny the rescue to exactly the player who needs it.
+	var profile := _priced_profile([CarFixtures.cars()[0]["id"]], 0)
+	assert_false(RewardSystem.is_stranded(profile), "the intact car counts")
+	profile["cars"][0]["hp"] = 0.0
+	assert_true(RewardSystem.is_stranded(profile), "once wrecked it does not")
+
+
+func test_the_price_is_the_configured_price_when_not_stranded() -> void:
+	var want := int(Config.data.star_cost_per_car)
+	var profile := _priced_profile([CarFixtures.cars()[0]["id"]], 0)
+	assert_eq(RewardSystem.car_price(profile), want,
+		"a player who can still race pays full price even at zero stars")
+	profile["stars_earned"] = want * 3
+	assert_eq(RewardSystem.car_price(profile), want, "and still pays full price when rich")
+
+
+func test_the_price_drops_to_zero_only_when_stranded_AND_broke() -> void:
+	# The dead-end rescue. BOTH halves matter: free-whenever-stranded is farmable, so a
+	# stranded player who can still afford a car must be charged.
+	var want := int(Config.data.star_cost_per_car)
+	var stranded := _priced_profile([], 0)
+	assert_eq(RewardSystem.car_price(stranded), 0, "stranded and broke -> free")
+	stranded["stars_earned"] = want
+	assert_eq(RewardSystem.car_price(stranded), want,
+		"stranded but able to pay -> charged, or the rescue becomes a discount")
+
+
+func test_buying_a_car_debits_exactly_the_price_and_grants_one_car() -> void:
+	var save: Node = get_node("/root/Save")
+	save.profile = _priced_profile([CarFixtures.cars()[0]["id"]], 0)
+	save.profile["stars_earned"] = int(Config.data.star_cost_per_car) * 2
+	var before: int = save.profile["cars"].size()
+	var balance_before: int = save.stars_available()
+	var car: Dictionary = RewardSystem.purchase_car(_rng(11))
+	assert_false(car.is_empty(), "an affordable purchase grants a car")
+	assert_eq(save.profile["cars"].size(), before + 1, "exactly ONE car per purchase")
+	assert_eq(save.stars_available(), balance_before - int(Config.data.star_cost_per_car),
+		"the balance drops by exactly the configured price")
+	assert_false(CarLibrary.by_id(String(car["model_id"])).is_empty(),
+		"the granted car is a real catalogue entry")
+
+
+func test_buying_is_refused_when_the_balance_is_short() -> void:
+	var save: Node = get_node("/root/Save")
+	save.profile = _priced_profile([CarFixtures.cars()[0]["id"]], 0)
+	save.profile["stars_earned"] = maxi(0, int(Config.data.star_cost_per_car) - 1)
+	var before: int = save.profile["cars"].size()
+	assert_true(RewardSystem.purchase_car(_rng(12)).is_empty(),
+		"a player one star short buys nothing")
+	assert_eq(save.profile["cars"].size(), before, "and the garage is unchanged")
+	assert_eq(int(save.profile["stars_spent"]), 0, "and nothing was debited")
+
+
+func test_a_stranded_broke_player_is_rescued_for_free() -> void:
+	var save: Node = get_node("/root/Save")
+	save.profile = _priced_profile([], 0)  # no cars: stranded, and no stars
+	var car: Dictionary = RewardSystem.purchase_car(_rng(13))
+	assert_false(car.is_empty(), "the rescue grants a car")
+	assert_eq(save.profile["cars"].size(), 1, "exactly one")
+	assert_eq(int(save.profile["stars_spent"]), 0, "and charges nothing")
+	assert_false(RewardSystem.is_stranded(save.profile),
+		"the rescued car actually un-strands the player — that is the whole point")

@@ -400,19 +400,97 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 # restriction bands no catalogue car fits matters: giving up there (and silently
 # falling back to the standard draw) would leave the player soft-locked even though a
 # grant for the next difficulty up re-opens progression.
-static func _unlock_candidates(profile: Dictionary) -> Array:
+# --- Buying a car (todo/star-economy.md) -------------------------------------
+# Cars are no longer handed out for winning a rally: the player earns stars and spends them
+# at the present box. `draw_car` stays the draw entry point so a purchase inherits the
+# anti-soft-lock pick (_unlock_candidates) for free.
+
+# What a car costs the player RIGHT NOW.
+#
+# Normally the authored price (GameConfig.star_cost_per_car). It drops to ZERO when the
+# player is stranded AND cannot afford one — the dead-end rescue. Without it, a stranded
+# player with no stars has no eligible rally, so no way to earn, so no way to buy the car
+# that would unlock one: an unrecoverable state that cannot happen in the old free-car
+# model. Simulation put that at ~11% of careers at a price of 5.
+#
+# BOTH halves of the condition are required. Free-whenever-stranded is farmable — take the
+# free car, finish the rally it unlocks, be stranded again, take another, all the way
+# through a career for nothing. Requiring the player to also be BROKE closes that, because
+# anyone making progress is earning stars and so is not broke. It is a rescue, not a
+# discount.
+# PURE over the profile passed in — the balance is read from that dict, not from the Save
+# autoload, so the HQ can price against the live profile and the simulator against a
+# synthetic one and both get the same answer.
+static func car_price(profile: Dictionary) -> int:
+	var price := int(Config.data.star_cost_per_car)
+	if stars_available_in(profile) < price and is_stranded(profile):
+		return 0
+	return price
+
+
+# The spendable balance held by `profile`. Mirrors Save.stars_available() but reads the dict
+# it is given, keeping this whole module pure over a profile the way draw_car already is.
+static func stars_available_in(profile: Dictionary) -> int:
+	return maxi(0, int(profile.get("stars_earned", 0)) - int(profile.get("stars_spent", 0)))
+
+
+# Buy exactly ONE car: resolve the draw, then debit. Returns the granted OwnedCar, or {}
+# when nothing could be bought.
+#
+# NOTHING TO GIVE = NOTHING SPENT. `draw_car` returns null when the pool is empty, so the
+# draw is resolved BEFORE any stars move and the whole transaction is abandoned if it comes
+# back empty — the player must never be charged for nothing. Same rule
+# Save.open_mystery_box already applies to a box it cannot fill.
+#
+# ONE car per call, even when the balance affords several: the reveal is a moment, not a
+# slot machine.
+# Operates on the LIVE profile (Save.profile) because it mutates through Save — unlike
+# car_price / is_stranded, which are pure over whatever profile they are handed.
+static func purchase_car(rng: RandomNumberGenerator = null) -> Dictionary:
+	var profile: Dictionary = Save.profile
+	var price := car_price(profile)
+	if stars_available_in(profile) < price:
+		return {}
+	# Difficulty 0 lets draw_car's own progress clamp pick the tier — a purchase is not tied
+	# to any particular rally's difficulty.
+	var model: Variant = draw_car(profile, 0, rng)
+	if not (model is String) or (model as String).is_empty():
+		return {}
+	if price > 0 and not Save.spend_stars(price, false):
+		return {}  # balance moved under us; charge nothing, grant nothing
+	return Save.grant_car(String(model))
+
+
+# Whether NOTHING the player owns can enter any incomplete, revealed rally.
+#
+# THE shared predicate (todo/star-economy.md): the present box's price readout and the
+# purchase itself must agree on this, or the pin would quote a price the purchase then
+# refuses. Also drives the anti-soft-lock rescue below.
+#
+# WRECKED CARS DO NOT COUNT. A wreck can never be repaired, so a garage whose only
+# in-band car is wrecked is just as stuck as an empty one — counting it would deny the
+# rescue to exactly the player who needs it most.
+static func is_stranded(profile: Dictionary) -> bool:
 	for car in profile.get("cars", []):
+		if Save.car_is_wrecked(car):
+			continue
 		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 		var meta := UpgradeLibrary.effective_meta(car, entry)
 		# Judge the pw_min floor at the car's max potential (the player can always tune up to
 		# enter), so a car detuned/ballasted for a lower rally doesn't read as stuck. Passing
-		# `profile` selects the REACHABLE ceiling — only parts whose star gate is already
-		# open. The aspirational ceiling would conclude nobody is ever stuck (any car could
-		# in principle be turbo'd), silently disabling this rescue for a player whose turbo
-		# is locked behind an event they can't yet reach.
+		# `profile` selects the REACHABLE ceiling — only parts whose gate is already open. The
+		# aspirational ceiling would conclude nobody is ever stuck (any car could in principle
+		# be turbo'd), silently disabling the rescue for a player whose turbo is locked behind
+		# an event they can't yet reach.
 		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry, profile)
 		if not RallyLibrary.incomplete_rallies_enterable_by(meta, profile, floor_meta).is_empty():
-			return []  # a new rally is already enterable — standard draw applies
+			return false
+	return true
+
+
+static func _unlock_candidates(profile: Dictionary) -> Array:
+	if not is_stranded(profile):
+		return []  # a rally is already enterable — standard draw applies
 	var rallies: Dictionary = profile.get("rallies", {})
 	# Locked rallies grouped by difficulty, so we can walk difficulties ascending.
 	var locked_by_difficulty := {}

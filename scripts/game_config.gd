@@ -1834,6 +1834,21 @@ func has_nitrous() -> bool:
 @export_range(0.0, 3.14159) var opponent_wreck_crowd_arc_half := 2.0
 
 
+@export_group("Star Economy")
+## Stars a car costs at the present box (todo/star-economy.md). Stars are earned by
+## placing — 3 for a win, 2 for 2nd, 1 for 3rd — and by the Rally Challenge, then spent
+## here; cars are no longer handed out for winning a rally.
+##
+## THE most retuned number in the progression design, which is why it lives here rather
+## than as a script constant. Simulation (./sim_career.sh) found a real cliff: at 4 every
+## player can afford their first car after two rallies even with two 2nd places (2+2=4),
+## but at 5 that same player is a star short — 11% of careers dead-ended before the
+## price-0 rescue existed. The rescue (a free car when stranded AND unable to afford one)
+## makes higher prices safe, but 4 is chosen because it does not DEPEND on the rescue
+## firing correctly. Raising this is safe; just re-read that section first.
+@export_range(1, 30) var star_cost_per_car := 4
+
+
 @export_group("Performance")
 ## Render frame cap (FPS) on desktop targets. 0 = uncapped. Physics runs
 ## independently at the project physics tick. Mobile uses target_fps_mobile and

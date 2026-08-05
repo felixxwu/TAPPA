@@ -529,6 +529,12 @@ func _resolve_results() -> void:
 	var car_reward_is_new := false
 	var game_won_now := false
 	var special_unlock := {}
+	# Stars this finish added to the ledger, and what the rally is now RATED. The two
+	# differ on a re-win: rating is what best_placed is worth, gained is the improvement
+	# (0 when the placement did not beat the previous best). The podium's stars beat shows
+	# the rating as gold stars and the gained figure as text — see todo/star-economy.md.
+	var stars_gained := 0
+	var star_rating := 0
 	if top3:
 		var rally_id := String(_rally.get("id", ""))
 		var is_special := RallyLibrary.is_special(_rally)
@@ -537,9 +543,10 @@ func _resolve_results() -> void:
 		# fire exactly once (todo/special-unlock-reveal.md).
 		var was_completed: bool = bool((Save.profile.get("rallies", {}) as Dictionary)
 			.get(rally_id, {}).get("completed", false))
-		# complete_rally records the FIRST completion (idempotent); the car reward
-		# fires on EVERY top-3 finish, including re-wins (renewable supply).
-		Save.complete_rally(rally_id, combined, placed)
+		# complete_rally records the FIRST completion (idempotent) and returns the STAR
+		# DELTA it credited to the ledger — 0 for a re-win at an equal or worse placement.
+		stars_gained = Save.complete_rally(rally_id, combined, placed)
+		star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
 		# A special's FIRST win opens an upgrade gate. Announce it, and hand the part to the
 		# car that just earned it — cascading any prerequisite rungs that car is missing, so
 		# the award is usable (RewardSystem.grant_special_unlock).
@@ -576,25 +583,25 @@ func _resolve_results() -> void:
 		var is_final_special := RallyLibrary.is_special(_rally) \
 			and RallyLibrary.all_specials_completed(Save.profile)
 		if is_final_special:
-			# Every special is now done: fire the win/credits beat, no car draw
-			# (the finale rewards completion, not a car).
+			# Every special is now done: fire the win/credits beat.
 			game_won_now = true
 			game_won.emit()
-		elif not is_special:
-			# An ordinary top-3 finish draws a car (renewable supply — it fires on re-wins
-			# too). SPECIALS DO NOT: they pay an upgrade instead (above), and a car on top of
-			# that is too much in one sitting. This widens a carve-out that already existed
-			# for the FINAL special, which likewise drew no car. It does give up the old
-			# "specials are also a car source, which keeps a car-less player from
-			# soft-locking" safety — accepted, because ordinary rallies remain a renewable
-			# car source and the star ladder always opens specials alongside plenty of them.
-			var model: Variant = RewardSystem.draw_car(Save.profile, int(_rally.get("difficulty", 1)))
-			if model != null:
-				car_reward = String(model)
-				# "New" iff the player didn't already own this model before the grant.
-				car_reward_is_new = not _owns_model(car_reward)
-				Save.grant_car(car_reward)
-				car_rewarded.emit(car_reward)
+		# NO CAR IS DRAWN HERE, for any rally (todo/star-economy.md, change 1). Winning pays
+		# STARS — credited by complete_rally above and shown by the podium's stars beat — and
+		# cars are bought with those stars at the present box instead.
+		#
+		# This is what makes the per-rally `restriction` bands mean something again: a
+		# guaranteed car per win filled the garage with something for every class by about
+		# the fifth rally, after which no band ever excluded the player from anything.
+		# Simulation confirmed it — `revealed` and `eligible` were identical from rally 5 on.
+		#
+		# It also closes a grind: the old draw fired on RE-WINS too ("renewable supply"), so
+		# replaying an easy rally farmed cars indefinitely. Stars cannot be farmed that way
+		# because complete_rally only credits the improvement over a rally's previous best.
+		#
+		# The wreck safety net (Save.ensure_wreck_safety_net -> open_mystery_box) still hands
+		# out a car for free, and must: it is the anti-soft-lock path for a wrecked-out
+		# garage, and that one thing must never have a price.
 		Save.save()
 
 	var result := {
@@ -615,6 +622,12 @@ func _resolve_results() -> void:
 		# or {} for an ordinary rally / a re-win / a special that gates nothing. The podium
 		# reveals it as its own stage; `granted` is empty when the driven car already had it.
 		"special_unlock": special_unlock,
+		# The stars beat (podium Stage.STARS): `star_rating` is what this rally is worth at
+		# the player's best-ever placement (the gold star count), `stars_gained` is what the
+		# ledger actually moved by. They diverge on a re-win, and showing only the rating
+		# would tell the player they won stars when the balance did not change.
+		"star_rating": star_rating,
+		"stars_gained": stars_gained,
 		# Reward reveal data (todo/menus.md): per-event upgrades + the top-3 car.
 		"upgrades": _upgrades_won.duplicate(),
 		"car_reward": car_reward,

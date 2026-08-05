@@ -300,8 +300,18 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 	# re-rasterizing every candidate's full footprint. After the fix (early-exit /
 	# capsule collision + a tight per-attempt budget that bails a thrashing seed to a
 	# fresh diverse restart), EVERY authored rally event must generate a COMPLETE track,
-	# and the whole set must finish fast. The time bound is generous (the suite runs in
-	# ~7s now) but still catches any regression back toward minutes.
+	# and the whole set must finish fast.
+	#
+	# The bound was ~7s when every event's turn_count sat at its original authored value.
+	# Every rally-library event was later authored ~15% longer (more corners to place),
+	# and DFS cost is NOT linear in turn_count — the per-attempt step budget is
+	# STEPS_BASE + turn_count * STEPS_PER_TURN, and a seed closer to boxing itself in
+	# backtracks more per attempt too — so the honest new baseline is ~70-80s, not ~8s,
+	# with normal run-to-run variance of a few seconds either way. 180s keeps real
+	# headroom above that (over 2x) while still catching a genuine return of a
+	# multi-MINUTE blowup like the original. If this starts flaking near the bound
+	# again after a future turn_count change, re-measure and move it — don't just
+	# raise it blindly.
 	Config.reset()
 	var clearance: float = Config.data.track_clearance
 	var t0 := Time.get_ticks_msec()
@@ -314,8 +324,8 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 			assert_true(r["complete"],
 				"rally %s seed %d generates a complete track (no partial)" % [
 					rally["id"], int(event.get("seed", 0))])
-	assert_lt(Time.get_ticks_msec() - t0, 60000,
-		"all rally tracks generate in well under a minute (one seed used to take ~8 min)")
+	assert_lt(Time.get_ticks_msec() - t0, 180000,
+		"all rally tracks generate well under the old blow-up's ~8 min (one seed used to take ~474s)")
 
 
 func test_zero_runoff_reports_no_segment() -> void:

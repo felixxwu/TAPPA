@@ -16,23 +16,30 @@ Each `RALLIES` entry:
   sort order. It is **never shown to the player** (no "Difficulty: N" / "TIER N" in
   the detail panel, car-park banner, or finish arch) — the power-to-weight gate is
   the only visible requirement.
-- `special` (bool) + `requires_stars` (int) — a **star-gated special event**,
-  replacing the old per-region "showdown" concept (`RallyLibrary.is_special`,
-  `special_gate_open`, `stars_needed`). A special's map pin/entry unlocks once the
-  player's roster-wide `total_stars` reaches `requires_stars` — a **global** gate
+- `special` (bool) + `requires_completions` (int) — a **completion-gated special
+  event**, replacing the old per-region "showdown" concept (`RallyLibrary.is_special`,
+  `completions_required`, `completions_needed`). A special's map pin/entry unlocks once
+  the player's roster-wide count of completed **ordinary** rallies
+  (`_completed_count`) reaches `requires_completions` — a **global** gate
   with no relationship to region: a region may hold any number of specials,
-  including none (see [regions.md](regions.md)). Eight specials ship today, at
-  rungs authored 5/10/15/20/25/30/35/40 (do not treat these numbers as a contract —
+  including none (see [regions.md](regions.md)). It gates on completions rather than
+  on a star total because stars are now **spendable** currency
+  ([star-economy.md](star-economy.md)) — a gate reading a spendable balance would
+  revoke a special the player had already qualified for the moment they bought a car.
+  Eight specials ship today, at
+  rungs authored 2/4/6/8/10/12/14/16 (do not treat these numbers as a contract —
   they're tunable): `sp_woodland_trial` (`home`), `sp_dust_trial` (`greece`),
   `sp_lakeshore_trial` (`home_coast`), `sp_archipelago_trial` (`greece_coast`) are
   the four new lower rungs; `the_showdown` (`home`), `hc_showdown` "The Lakeland
   Crown" (`home_coast`), `gr_showdown` "The Aegean Crown" (`greece`), `gc_showdown`
   "The Island Crown" (`greece_coast`) are the four pre-existing showdowns, renamed
-  in role only (still `special: true`, now with `requires_stars` instead of the
+  in role only (still `special: true`, now with `requires_completions` instead of the
   retired `showdown: true`). All eight keep `"restriction": {}` (open-class) so the
   ladder can't deadlock — a special must never gate on a part it unlocks. Specials
-  award no stars themselves (excluded from `total_stars` and `_completed_count`,
-  same as the old showdown exclusion). `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`
+  **do** award stars (they used to award none — safe now only because they no longer
+  gate on the star balance), but they are still excluded from `_completed_count`, so a
+  special never advances the gate governing its own ladder.
+  `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`
   names `sp_woodland_trial` — the LOWEST rung — as the special whose completion flips
   `engine_swaps_unlocked`. The intent is a *capability* gate on engine swapping,
   separate from the swap-token currency (which keeps dropping unconditionally).
@@ -87,7 +94,7 @@ Each `RALLIES` entry:
   only trimming the extremes. A *narrow* band picks 2-3 cars arbitrarily and silently
   re-picks them the moment a car is retuned; "four-cylinder, two-door" or "British cars"
   picks a group that reads as a real class and survives retuning. The open-class rallies
-  are the specials (see `special`/`requires_stars` above).
+  are the specials (see `special`/`requires_completions` above).
 
   > **Standing rule — author the data, don't approximate it.** When a rally wants to
   > group cars by a property the catalogue does not record, ADD that property to the
@@ -310,6 +317,25 @@ generator also uses it per-rival.
   authoring target is 2-3 per rally); exits non-zero only if a rally has zero eligible
   cars even at max potential (genuinely unenterable). See
   `todo/one-map-four-corners.md` > "New task: an eligibility-report tool".
+- **Progression check**: `tools/sim_career.gd`/`.tscn` + `./sim_career.sh` (repo root)
+  simulates 100 whole careers as pure computation — no track generation, no physics, no
+  `main.tscn` — by walking the real predicates (`rally_revealed` / `is_eligible` /
+  `incomplete_rallies_enterable_by`, `RewardSystem.draw_car`) over a synthetic profile
+  dict. Where `report_eligibility.sh` answers the STATIC question (which cars can enter
+  which rallies), this answers the DYNAMIC one that static analysis can't: reveal gating
+  depends on progress (both `reveal_after` and the special ladder count completions), so you
+  only learn whether the drip-feed sustains a career by walking one. Reports, per rally
+  index, mean cars owned / **revealed**-unfinished / **enterable**-unfinished / stars, and
+  the **soft-lock rate** (rallies left but no owned car in band) with the rallies most often
+  stranded. It also prints the authored reveal schedule (the `reveal_after` buckets and the
+  cumulative curve) up front, because that curve is the ceiling on how much choice the
+  player can ever have. The `revealed` vs `eligible` gap is the diagnostic that separates
+  the two gates governing breadth: reveal gating vs restriction bands. When the two columns
+  are equal, restrictions have stopped filtering anything and reveal is the only live gate.
+  Models
+  stock cars only, so eligible counts are a lower bound and the soft-lock rate an upper
+  bound. Report signal, not a gate — always exits 0. Design:
+  `docs/superpowers/specs/2026-08-05-career-sim-design.md`.
 - `qualifying_detune(rally, full_meta)` — the largest whole-percent
   `engine_detune` fraction at which a car passes the restriction: `1.0` when it's
   already eligible at full tune, `-1.0` when no detune can qualify it (a non-power
@@ -380,22 +406,24 @@ generator also uses it per-rival.
 - `_completed_count(profile)` — count of completed **non-special** rallies
   roster-wide; the wave metric `reveal_after` compares against. Deliberately
   global, not per-region (see `reveal_after` above).
-- `total_stars(profile)` — sums `MAX_STARS_PER_RALLY + 1 - best_placed` (3/2/1 for
-  1st/2nd/3rd, read via `Save.best_placement`) over every **non-special** rally;
-  specials are excluded, same as `_completed_count`. THE progression metric for
-  the special-event ladder.
-- `stars_for_placement(placed)` — the per-rally scoring curve (1st = the most).
-  THE one definition; `hq._stars_for` delegates to it, so the medals drawn on a pin
-  cannot disagree with what the ladder counts.
-- `max_total_stars()` — the roster ceiling (every ordinary rally won outright);
-  the map HUD's denominator and the ladder's reachability invariant.
-- `stars_required(rally)` — a special's authored threshold, 0 for an ordinary
-  rally. The UI reads this rather than the raw field.
+- `stars_for_placement(placed)` — the per-rally scoring curve (1st = the most,
+  via `MAX_STARS_PER_RALLY`). THE one definition: `Save.complete_rally`'s ledger
+  delta, the Rally Challenge payout and `hq._stars_for` all delegate to it, so the
+  medals drawn on a pin cannot disagree with what the ledger was paid.
+  There is **no** `total_stars` / `max_total_stars` any more — the balance is a
+  persisted ledger on the profile, not a roster sum (see
+  [star-economy.md](star-economy.md)).
 - `is_special(rally)` — `bool(rally.get("special", false))`.
-- `special_gate_open(rally, profile)` — non-specials always pass; a special
-  passes once `total_stars(profile) >= rally.requires_stars`.
-- `stars_needed(rally, profile)` — stars still needed before a special opens (0
-  once open, and 0 for non-specials); drives the locked pin's "X/N stars" readout.
+- `completions_required(rally)` — the one accessor for "how many ordinary rallies
+  must be done first": `requires_completions` for a special, `reveal_after` for an
+  ordinary rally. Two authored field names for one mechanism because they read
+  differently to the player (a drip-feed vs. a quoted requirement); the UI reads
+  through this so a quoted requirement can't drift from the gate that enforces it.
+- `completions_needed(rally, profile)` — completions still outstanding, 0 once open;
+  drives the locked special pin's "N/M events" readout.
+- `engine_swap_completion_requirement()` — `completions_required` of
+  `ENGINE_SWAP_UNLOCK_RALLY`, the figure the garage swap row and the car-park
+  confirm popup quote.
 - `engine_swaps_unlocked(profile)` — whether `ENGINE_SWAP_UNLOCK_RALLY`
   (`sp_woodland_trial`, the lowest rung) is recorded completed — the engine-swap *capability*
   gate (tokens themselves always drop; see `features/engine-swap.md`).
@@ -403,9 +431,10 @@ generator also uses it per-rival.
   completed; a roster with no specials reads as completed. Replaces the old
   `RegionLibrary.all_showdowns_completed` as the credits/win-beat gate.
 - `rally_revealed(rally, profile)` — the single reveal predicate shared by the map
-  pins, the enterable query, and the reward-draw walk: a special delegates
-  entirely to `special_gate_open` (no region coupling at all); a non-special
-  reveals once `_completed_count(profile) >= reveal_after`.
+  pins, the enterable query, and the reward-draw walk. It no longer branches on
+  `is_special` at all: EVERY rally reveals once
+  `_completed_count(profile) >= completions_required(rally)` (no region coupling
+  anywhere), which is what collapsed the old two-predicate shape into one.
 - `incomplete_rallies_enterable_by(car_meta, profile, floor_meta := {})` — the
   anti-soft-lock query the reward system uses (incomplete ∧ revealed ∧ eligible in-band).
   `floor_meta` (the owned car's max potential) judges the floor at max, as in `is_eligible`.
@@ -505,14 +534,14 @@ guard that **every shipped rally has at least one eligible car**,
 a check that the roster's `map_pos` values are well formed, track-gen
 determinism, target-time positivity + override, opponent-field
 shape/bounds/determinism + DNF semantics + names drawn uniquely from the pool,
-placement/top-3, progress count, and the special-event star gate
-(`total_stars`/`special_gate_open`/`rally_revealed`) + the enterable query. The
+placement/top-3, progress count, and the special-event completion gate
+(`completions_required`/`completions_needed`/`rally_revealed`) + the enterable query. The
 `sandstorm`-only-on-`greece` weather test also covers the new specials. The
 start-line queue cars being eligible for the rally is asserted in
 `test_start_line.gd`. An integration smoke (write a rally seed into `Config.data`
 → `_generate_track`) lives in `test_smoke.gd`.
 
-Per `CLAUDE.md`, the ladder's authored numbers (`requires_stars` rungs, turn
+Per `CLAUDE.md`, the ladder's authored numbers (`requires_completions` rungs, turn
 counts, `difficulty`, `map_pos`) are tunable content, not test-pinned contracts —
-tests cover the logic (star arithmetic, the gate predicate, the reveal delegation),
-never the specific rung values.
+tests cover the logic (the star curve's shape, the gate predicate, the single
+reveal rule), never the specific rung values.

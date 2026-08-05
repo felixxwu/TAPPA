@@ -228,8 +228,9 @@ func test_winning_the_capability_special_awards_a_swap_token() -> void:
 		"it is still a special, so still no car")
 
 
-# An ordinary rally is untouched: no unlock, and it still draws a car.
-func test_an_ordinary_win_reports_no_unlock_and_still_pays_a_car() -> void:
+# An ordinary rally unlocks nothing and — since the star economy — pays no car either.
+# Winning pays STARS; cars are bought at the present box (todo/star-economy.md).
+func test_an_ordinary_win_reports_no_unlock_and_pays_stars_not_a_car() -> void:
 	_install_unlock_ladder()
 	_start_winnable("fx_open")
 	var box := _capture_finish()
@@ -237,8 +238,9 @@ func test_an_ordinary_win_reports_no_unlock_and_still_pays_a_car() -> void:
 	var result: Dictionary = box[0]
 	assert_true((result.get("special_unlock", {}) as Dictionary).is_empty(),
 		"an ordinary rally unlocks nothing")
-	assert_ne(String(result.get("car_reward", "")), "",
-		"and still pays a car, which specials no longer do")
+	assert_eq(String(result.get("car_reward", "")), "",
+		"no rally pays a car any more — cars are bought with stars")
+	assert_gt(int(result.get("stars_gained", 0)), 0, "a first win credits stars instead")
 	UpgradeLibrary.reset()
 
 
@@ -437,16 +439,16 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	assert_eq(r["rally_name"], "Fixture Open", "result names the rally for the podium header")
 	assert_eq((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
 		"a finished rally captures one upgrade id per non-final event for the record")
-	# The reward must be a real catalogue car (the draw policy itself — garage
-	# tier cap, unlock fallback — is covered by test_reward_system.gd with
-	# controlled profiles) and the is_new flag must reflect whether the player
-	# already owned it. Derived from the library/profile rather than pinning a
-	# specific model id, so this survives roster changes.
-	var reward := String(r["car_reward"])
-	assert_false(CarLibrary.by_id(reward).is_empty(),
-		"a top-3 finish records a real catalogue car for the reveal")
-	assert_eq(bool(r["car_reward_is_new"]), not owned_before.has(reward),
-		"the is_new flag matches whether the player already owned the won car before the win")
+	# No car is drawn by a finish any more — the reward is STARS, and the result carries
+	# both what the rally is now RATED and what the ledger actually gained, which the
+	# podium's stars beat shows separately (todo/star-economy.md).
+	assert_eq(String(r["car_reward"]), "", "a finish pays no car")
+	assert_eq(_save.profile["cars"].size(), owned_before.size(),
+		"the garage is unchanged by a win")
+	assert_gt(int(r["stars_gained"]), 0, "a first top-3 finish credits stars")
+	assert_eq(int(r["star_rating"]),
+		RallyLibrary.stars_for_placement(_save.best_placement("fx_open")),
+		"the rating matches the recorded best placement")
 	assert_false(r["game_won"], "an ordinary rally is not the endgame")
 	# The result names the owned-car instance the player drove, so the podium's
 	# upgrade reveal can offer to fit each won part straight onto it.
@@ -621,19 +623,20 @@ func _complete_other_specials(keep_id: String) -> void:
 
 
 # The id of some authored special, and of the special on the LOWEST rung (the one a player
-# reaches first, and the cheapest to make enterable in a test).
+# reaches first, and the cheapest to make enterable in a test). Rungs are completion
+# counts now, not star totals.
 func _lowest_special_id() -> String:
 	var best := ""
-	var best_stars := 1 << 30
+	var best_rung := 1 << 30
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and int(rally.get("requires_stars", 0)) < best_stars:
-			best_stars = int(rally.get("requires_stars", 0))
+		if RallyLibrary.is_special(rally) and RallyLibrary.completions_required(rally) < best_rung:
+			best_rung = RallyLibrary.completions_required(rally)
 			best = String(rally["id"])
 	return best
 
 
 func test_win_beat_fires_once_every_special_is_done() -> void:
-	# Credits require EVERY special on the star ladder completed — no designated finale
+	# Credits require EVERY special on the ladder completed — no designated finale
 	# rally. So win the LAST outstanding special: with all the others already recorded,
 	# this finish completes the set and must fire the win beat. Which special is "last"
 	# is deliberately not pinned; any one of them completes the set when it's the only
@@ -679,19 +682,26 @@ func test_a_special_with_others_outstanding_completes_without_win_beat() -> void
 	assert_true(_save.rally_completed(first), "the special still records completion")
 
 
-func test_farming_rewin_grants_car_without_new_completion() -> void:
+# The replay grind is CLOSED (todo/star-economy.md, change 2). It used to be open: the car
+# draw fired on every top-3 including re-wins ("renewable supply"), so replaying an easy
+# rally farmed cars indefinitely. Now no finish pays a car at all, and stars credit only the
+# improvement over a rally's previous best — so a re-win at an equal or worse placement pays
+# absolutely nothing. Replays themselves stay allowed; only the reward is gone.
+func test_a_rewin_at_no_better_placement_pays_nothing() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.complete_rally("fx_open", 999999)  # already won once
+	_save.complete_rally("fx_open", 999999, 1)  # already won outright
 	var completed_before: int = _save.completed_rally_count()
 	var cars_before: int = _save.profile["cars"].size()
-	var rewards: Array = [0]
-	RallySession.car_rewarded.connect(func(_m: String) -> void: rewards[0] += 1, CONNECT_ONE_SHOT)
+	var stars_before: int = _save.stars_available()
+	var box := _capture_finish()
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = _field([90000])  # top-3 re-win
 	_report_events([10000, 10000, 10000])
 	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")
-	assert_eq(rewards[0], 1, "a top-3 re-win still draws a car (renewable supply)")
-	assert_eq(_save.profile["cars"].size(), cars_before + 1, "the re-won car is granted")
+	assert_eq(_save.profile["cars"].size(), cars_before, "no car is granted for a re-win")
+	assert_eq(_save.stars_available(), stars_before, "and no stars are credited either")
+	assert_eq(int((box[0] as Dictionary).get("stars_gained", -1)), 0,
+		"the result reports a zero delta so the podium can say so honestly")
 
 
 # --- current_event_p1_car (Task 4) ------------------------------------------

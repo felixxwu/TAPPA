@@ -6,7 +6,11 @@ extends Node3D
 #   1. PODIUM        — the top-3 finishers' cars stand physically on a 3D podium,
 #                      dropped in so they settle onto their suspension (loaded).
 #   2. LEADERBOARD   — the full ranked field, marking where the player finished.
-#   3. CAR_REVEAL    — the camera flies over to the showroom for a slot-machine spin
+#   3. STARS         — three big stars filling in gold one at a time to the rally's star
+#                      rating, with the stars GAINED and the new spendable balance under
+#                      them. Stars are currency now (todo/star-economy.md), so this is the
+#                      beat that tells the player what the finish was worth.
+#   4. CAR_REVEAL    — the camera flies over to the showroom for a slot-machine spin
 #                      through the car roster, landing on the car won (top-3
 #                      only), which turns on the turntable with its name.
 #                      (Skipped if no car was won.) Per-event upgrades are revealed
@@ -18,7 +22,7 @@ extends Node3D
 # view (RallySession.return_to_garage). Headless runs build everything
 # synchronously and resolve the spins instantly so tests can step the stages.
 
-enum Stage { PODIUM, LEADERBOARD, SPECIAL_UNLOCK, CAR_REVEAL }
+enum Stage { PODIUM, LEADERBOARD, STARS, SPECIAL_UNLOCK, CAR_REVEAL }
 
 # Where the podium steps and the showroom turntable sit in the 3D scene (far apart
 # so the camera can frame each cleanly without the other in shot).
@@ -53,6 +57,12 @@ var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed
 
 const REVEAL_STEP := 0.5  # seconds between each leaderboard name appearing
 
+# The stars beat wears a much bigger StarRow than the HQ map pins (11 px): this is the
+# reward moment, not a readout. Radius/gap are plain vars on StarRow, so "big stars" needs
+# no new widget.
+const STAR_BEAT_RADIUS := 34.0
+const STAR_BEAT_GAP := 20.0
+
 # 3D staging.
 var _camera: Camera3D
 var _podium_cars: Array = []          # the top-3 finisher car props
@@ -70,6 +80,9 @@ var _leaderboard_box: VBoxContainer
 var _slot_panel: PanelContainer       # the slot-machine reveal card
 var _slot_label: Label                # the spinning name
 var _slot_caption: Label              # the locked-in caption under it
+var _stars_panel: PanelContainer       # the stars beat card
+var _star_row: StarRow                 # three stars, filled gold up to the rally's rating
+var _star_caption: Label               # "+1 star · 34 total" under the row
 var _next_button: Button
 var _slot_tween: Tween
 
@@ -93,7 +106,10 @@ func _ready() -> void:
 # Upgrades come FIRST — handed out while the player's car still stands on the
 # podium — and the sequence then flies over to the showroom for the car reward.
 func _compute_stages() -> Array[int]:
-	var stages: Array[int] = [Stage.PODIUM, Stage.LEADERBOARD]
+	# STARS always runs, including on a non-podium finish: three dim stars is honest
+	# feedback about the miss, and hiding the beat would make a 0-star result look like a
+	# missing screen rather than a result.
+	var stages: Array[int] = [Stage.PODIUM, Stage.LEADERBOARD, Stage.STARS]
 	# Upgrades are revealed on the between-event standings screens now, not here — the
 	# podium closes on the car reward only (features/reward-system.md).
 	# A first-won SPECIAL announces the upgrade its star gate just opened. Only ever present
@@ -435,6 +451,28 @@ func _build_overlay() -> void:
 	_leaderboard_box.add_theme_constant_override("separation", 4)
 	_leaderboard_scroll.add_child(_leaderboard_box)
 
+	# Stars beat card: three big stars over a delta/balance line. Uses the SAME StarRow
+	# widget as the HQ map pins and the rally detail panel, so a star reads identically
+	# wherever it appears — just scaled up for the reward moment.
+	_stars_panel = PanelContainer.new()
+	_stars_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_stars_panel.add_theme_stylebox_override("panel", UITheme.reward_card_box())
+	middle.add_child(_stars_panel)
+	var stars_col := VBoxContainer.new()
+	stars_col.add_theme_constant_override("separation", 12)
+	_stars_panel.add_child(stars_col)
+	_star_row = StarRow.new()
+	_star_row.star_radius = STAR_BEAT_RADIUS
+	_star_row.gap = STAR_BEAT_GAP
+	_star_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_star_row.setup(0, RallyLibrary.MAX_STARS_PER_RALLY)
+	stars_col.add_child(_star_row)
+	_star_caption = Label.new()
+	_star_caption.add_theme_font_size_override("font_size", 16)
+	_star_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_star_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stars_col.add_child(_star_caption)
+
 	# Slot-machine reveal card.
 	_slot_panel = PanelContainer.new()
 	_slot_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -483,6 +521,7 @@ func _enter_stage(stage: int) -> void:
 	_stage = stage
 	_body_label.visible = false
 	_leaderboard_scroll.visible = false
+	_stars_panel.visible = false
 	_slot_panel.visible = false
 	_slot_label.visible = true  # the car reveal hides it (one-line card); reset per stage
 	_slot_caption.custom_minimum_size = Vector2.ZERO  # car reveal widens it; reset per stage
@@ -502,6 +541,7 @@ func _enter_stage(stage: int) -> void:
 	match stage:
 		Stage.PODIUM: _show_podium()
 		Stage.LEADERBOARD: _show_leaderboard()
+		Stage.STARS: _show_stars()
 		Stage.SPECIAL_UNLOCK: _show_special_unlock()
 		Stage.CAR_REVEAL: _show_car_reveal()
 
@@ -634,6 +674,66 @@ func _reveal_standings(rows: Array) -> void:
 	if gen == _reveal_gen:
 		_reveal_done = true
 		_refresh_next_button()
+
+
+# The stars beat: three stars filling in gold to this rally's rating, one at a time.
+#
+# TWO DIFFERENT NUMBERS, deliberately shown separately (todo/star-economy.md):
+#   * the GOLD STAR COUNT is the rally's rating at the player's best-ever placement — the
+#     same figure its HQ map pin shows, so the two surfaces agree.
+#   * the CAPTION carries what the ledger actually moved by, which is 0 on a re-win that
+#     did not beat the previous best.
+# Lighting two gold stars while the balance did not budge would read as a bug, so the
+# caption says so in words instead.
+func _show_stars() -> void:
+	_title_label.text = "STARS"
+	_stars_panel.visible = true
+	_move_camera(_podium_cam())
+	var rating := clampi(int(_result.get("star_rating", 0)), 0, RallyLibrary.MAX_STARS_PER_RALLY)
+	var gained := int(_result.get("stars_gained", 0))
+	_star_caption.text = _stars_caption(gained, rating)
+	UITheme.enforce(_layer)
+	# Nothing to animate when the finish scored nothing: leave all three dim and let the
+	# player step on. Also the headless path — tests must not pay REVEAL_STEP per star.
+	if rating <= 0 or _headless:
+		_star_row.setup(rating, RallyLibrary.MAX_STARS_PER_RALLY)
+		_reveal_done = true
+		_refresh_next_button()
+		return
+	_star_row.setup(0, RallyLibrary.MAX_STARS_PER_RALLY)
+	_reveal_done = false  # gate Next until the last star lands
+	_refresh_next_button()
+	_reveal_stars(rating)
+
+
+# Fill the row one star every REVEAL_STEP. Guarded by _reveal_gen exactly like
+# _reveal_standings, so leaving the stage mid-reveal abandons the coroutine instead of
+# touching a freed row.
+func _reveal_stars(rating: int) -> void:
+	_reveal_gen += 1
+	var gen := _reveal_gen
+	for i in rating:
+		await get_tree().create_timer(REVEAL_STEP).timeout
+		if gen != _reveal_gen or _stage != Stage.STARS:
+			return
+		if is_instance_valid(_star_row):
+			_star_row.setup(i + 1, RallyLibrary.MAX_STARS_PER_RALLY)
+	if gen == _reveal_gen:
+		_reveal_done = true
+		_refresh_next_button()
+
+
+# The line under the stars. Always ends with the SPENDABLE balance (what the player can
+# take to the present box), never a "x of N" denominator — the balance falls when they buy
+# a car and the Rally Challenge tops it up without bound, so there is no meaningful maximum.
+func _stars_caption(gained: int, rating: int) -> String:
+	var balance := Save.stars_available()
+	if gained > 0:
+		return "+%s — %d in the bank" % [UITheme.count_noun(gained, "star"), balance]
+	if rating > 0:
+		# A re-win that did not improve. Say why nothing was credited rather than "+0".
+		return "No new stars — your best here is already %d. %d in the bank" % [rating, balance]
+	return "No stars this time — %d in the bank" % balance
 
 
 func _show_car_reveal() -> void:

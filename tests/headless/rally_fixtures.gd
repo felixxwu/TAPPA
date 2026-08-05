@@ -65,9 +65,9 @@ static func rallies() -> Array[Dictionary]:
 		},
 		{
 			"id": "fx_showdown", "name": "Fixture Special", "region": "home",
-			# no requires_stars -> the star gate is open from the start, so a test that
-			# just wants "a special rally to run" can enter it without grinding stars.
-			"difficulty": 4, "special": true, "requires_stars": 0, "map_pos": Vector2(0.5, 0.1),
+			# requires_completions 0 -> open from the start, so a test that just wants "a
+			# special rally to run" can enter it without completing anything first.
+			"difficulty": 4, "special": true, "requires_completions": 0, "map_pos": Vector2(0.5, 0.1),
 			"restriction": {},  # open so any car can finish
 			"events": [_event(9001), _event(9002), _event(9003)],
 		},

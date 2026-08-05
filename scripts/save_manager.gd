@@ -379,6 +379,24 @@ func _default_profile() -> Dictionary:
 		"rallies": {},
 		"reward_history": [],
 		"settings": {},
+		# --- Star ledger (see todo/star-economy.md) ---
+		# Stars are a PERSISTED LEDGER, not a derived total. `stars_earned` only ever
+		# grows — complete_rally credits the DELTA against a rally's previous best, so
+		# re-winning at an equal or worse placement pays nothing — and `stars_spent`
+		# grows as cars are bought. The spendable figure is stars_available().
+		#
+		# Persisted rather than derived (the old RallyLibrary.total_stars summed
+		# best_placed over RALLIES) for two reasons: challenge stars are unrecoverable
+		# from `challenge_results`, which stores no rank and is pruned to live periods;
+		# and a derived total SHRINKS when a rally is renamed or removed, which could
+		# drop it below stars_spent and produce a negative balance.
+		#
+		# Backfilled by _migrate's key backfill like cloud_revision/username above, so
+		# no SCHEMA_VERSION bump. Existing profiles therefore start at 0 rather than
+		# being seeded from their old derived total — deliberate, since those profiles
+		# already hold cars granted free under the old reward rules.
+		"stars_earned": 0,
+		"stars_spent": 0,
 		# --- Optional cloud save (see features/cloud-save.md) ---
 		# The Firestore document revision this profile last agreed with. 0 means
 		# "never synced". Both fields are backfilled by _migrate's key backfill,
@@ -938,18 +956,69 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 # Record a top-3 rally finish. Idempotent for the `completed` flag; updates the
 # best combined time when a faster one comes in. The CAR reward is NOT granted
 # here (re-wins are farmable — see reward-system.md); this only records progress.
-func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> void:
+#
+# RETURNS the stars this finish added to the ledger — the DELTA against the rally's
+# previous best, not the raw placement rating. The podium's stars beat needs that
+# distinction: re-winning a 3-starred rally at 2nd is worth 0, and converting a 2nd
+# into a 1st is worth exactly 1, even though both placements "rate" 2 and 3 stars.
+# See todo/star-economy.md.
+func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 	var rallies: Dictionary = profile["rallies"]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
 	rec["completed"] = true
 	if int(rec.get("best_combined_ms", 0)) <= 0 or combined_ms < int(rec["best_combined_ms"]):
 		rec["best_combined_ms"] = combined_ms
+	# Captured BEFORE best_placed moves, so the delta below is measured against what
+	# this rally was already worth.
+	var was_worth := RallyLibrary.stars_for_placement(int(rec.get("best_placed", 0)))
 	# Track the BEST (lowest) finishing position ever achieved here — it drives the
 	# map's star rating. Lower placement is better; 0 means "never placed".
 	if placed > 0 and (int(rec.get("best_placed", 0)) <= 0 or placed < int(rec["best_placed"])):
 		rec["best_placed"] = placed
 	rallies[rally_id] = rec
+	# Credit only the improvement. This is where the grind guard lives now: because
+	# best_placed only ever improves, a replay at the same or worse placement leaves
+	# `was_worth` unchanged and gains nothing.
+	var gained: int = RallyLibrary.stars_for_placement(int(rec.get("best_placed", 0))) - was_worth
+	if gained > 0:
+		profile["stars_earned"] = int(profile.get("stars_earned", 0)) + gained
 	save()
+	return maxi(0, gained)
+
+
+# --- Star ledger -------------------------------------------------------------
+# See todo/star-economy.md. Career stars arrive through complete_rally (as a delta);
+# everything else — currently the Rally Challenge — credits via award_stars.
+
+# Stars the player can still spend. Clamped at 0 defensively: the ledger cannot go
+# negative through this API, but a hand-edited or corrupted profile should read as
+# broke rather than as a negative balance that breaks arithmetic downstream.
+func stars_available() -> int:
+	return maxi(0, int(profile.get("stars_earned", 0)) - int(profile.get("stars_spent", 0)))
+
+
+# Credit stars from a NON-rally source (the Rally Challenge). Rally finishes must go
+# through complete_rally instead, which computes a delta — calling this for a rally
+# would double-credit and reopen the replay grind.
+func award_stars(count: int, do_save := true) -> void:
+	if count <= 0:
+		return
+	profile["stars_earned"] = int(profile.get("stars_earned", 0)) + count
+	if do_save:
+		save()
+
+
+# Debit `count` stars, or change nothing and return false when the balance is short.
+# Refusing rather than clamping is deliberate: a caller that cannot afford something
+# must not half-complete the transaction.
+func spend_stars(count: int, do_save := true) -> bool:
+	if count < 0 or count > stars_available():
+		return false
+	if count > 0:
+		profile["stars_spent"] = int(profile.get("stars_spent", 0)) + count
+		if do_save:
+			save()
+	return true
 
 
 func rally_completed(rally_id: String) -> bool:
@@ -1026,7 +1095,7 @@ func _seed_reveals_if_needed() -> void:
 
 
 # Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so every
-# special's star gate (RallyLibrary.special_gate_open) is open and the whole
+# special's completion gate (RallyLibrary.rally_revealed) is open and the whole
 # ladder can be exercised without grinding it.
 func dev_three_star_all_rallies() -> void:
 	var rallies: Dictionary = profile["rallies"]
@@ -1046,7 +1115,8 @@ func best_placement(rally_id: String) -> int:
 
 
 # Number of rallies top-3'd — the progression metric driving the CAR reward-tier ceiling.
-# (The special-event ladder keys off stars instead, see RallyLibrary.total_stars.)
+# (The special-event ladder keys off completed ordinary rallies instead, see
+# RallyLibrary.completions_required.)
 # Delegates to RallyLibrary so the metric has one definition.
 func completed_rally_count() -> int:
 	return RallyLibrary.completed_count(profile)

@@ -37,10 +37,10 @@ func _regions() -> Array[Dictionary]:
 func _rallies() -> Array[Dictionary]:
 	return [
 		{"id": "a1", "special": false, "region": R_A},
-		{"id": "a_s1", "special": true, "requires_stars": 1, "region": R_A},
-		{"id": "a_s2", "special": true, "requires_stars": 2, "region": R_A},
+		{"id": "a_s1", "special": true, "requires_completions": 1, "region": R_A},
+		{"id": "a_s2", "special": true, "requires_completions": 2, "region": R_A},
 		{"id": "b1", "special": false, "region": R_B},
-		{"id": "b_s1", "special": true, "requires_stars": 1, "region": R_B},
+		{"id": "b_s1", "special": true, "requires_completions": 1, "region": R_B},
 		{"id": "c1", "special": false, "region": R_C},
 	]
 

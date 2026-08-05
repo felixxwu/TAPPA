@@ -55,7 +55,7 @@ func test_every_rally_has_a_known_region() -> void:
 
 func test_a_region_may_hold_any_number_of_specials() -> void:
 	# The old "at most one showdown per region, exactly one where rallies exist" invariant
-	# is RETIRED. Specials are gated on the GLOBAL star total (special_gate_open), so they
+	# is RETIRED. Specials are gated on the GLOBAL ordinary-completion count, so they
 	# have no relationship to a region's contents — a corner may hold none, one, or several,
 	# and an empty corner (the snow corner ships pin-less) is now the ordinary case rather
 	# than an exemption. What must still hold is that every special names a real region.
@@ -108,25 +108,17 @@ func test_every_authored_star_gate_names_a_real_special() -> void:
 		"the engine-swap capability is gated on a SPECIAL event")
 
 
-func test_max_total_stars_counts_only_ordinary_rallies() -> void:
-	# The meter's denominator and the ladder's reachability check both read this, so it must
-	# exclude specials (which award none) — otherwise the top rung could look reachable when
-	# it isn't.
+func test_every_specials_completion_requirement_is_reachable() -> void:
+	# A rung demanding more completions than there are ordinary rallies would be
+	# permanently locked. Counts the roster rather than pinning any threshold.
 	var ordinary := 0
 	for rally in RallyLibrary.all():
 		if not RallyLibrary.is_special(rally):
 			ordinary += 1
-	assert_eq(RallyLibrary.max_total_stars(), ordinary * RallyLibrary.MAX_STARS_PER_RALLY,
-		"the ceiling is every ordinary rally won outright")
-
-
-func test_every_specials_star_requirement_is_reachable() -> void:
-	# A rung above the roster's maximum possible star total would be permanently locked.
-	var max_stars := RallyLibrary.max_total_stars()
 	for rally in RallyLibrary.all():
 		if RallyLibrary.is_special(rally):
-			assert_lte(int(rally.get("requires_stars", 0)), max_stars,
-				"special %s demands a reachable star total" % rally.get("id", "?"))
+			assert_lte(RallyLibrary.completions_required(rally), ordinary,
+				"special %s demands a reachable completion count" % rally.get("id", "?"))
 
 
 func test_map_pins_are_well_formed_and_never_stack() -> void:
@@ -932,15 +924,15 @@ func test_no_hop_drops_a_rival_identity_key() -> void:
 	CarFixtures.restore()
 
 
-# The star ladder's unlocks must stay in a workable ORDER. Two invariants, neither pinning a
-# rung number (they are tunable): every gated part's prerequisite must open at or before the
+# The special ladder's unlocks must stay in a workable ORDER. Two invariants, neither pinning
+# a rung number (they are tunable): every gated part's prerequisite must open at or before the
 # part itself, or a player reaches a part whose chain they cannot have earned; and the
 # engine-swap capability must be the FIRST rung, which is a deliberate design choice.
 func test_the_unlock_ladder_opens_prerequisites_before_the_parts_that_need_them() -> void:
-	var rung := {}   # rally_id -> requires_stars
+	var rung := {}   # rally_id -> requires_completions
 	for rally in RallyLibrary.all():
 		if RallyLibrary.is_special(rally):
-			rung[String(rally["id"])] = RallyLibrary.stars_required(rally)
+			rung[String(rally["id"])] = RallyLibrary.completions_required(rally)
 
 	var checked := 0
 	for item in UpgradeLibrary.all():
@@ -966,7 +958,7 @@ func test_engine_swapping_is_the_first_thing_the_ladder_opens() -> void:
 	for rally in RallyLibrary.all():
 		if not RallyLibrary.is_special(rally):
 			continue
-		var need := RallyLibrary.stars_required(rally)
+		var need := RallyLibrary.completions_required(rally)
 		lowest = mini(lowest, need)
 		if String(rally["id"]) == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
 			swap_rung = need
@@ -1283,54 +1275,57 @@ func test_completed_count_tracks_profile() -> void:
 	assert_eq(RallyLibrary.completed_count(profile), 1, "only completed rallies count")
 
 
-func test_total_stars_scores_best_placement_and_ignores_specials() -> void:
-	# 1st = 3 stars, 2nd = 2, 3rd = 1, anything else 0 — and a special's own result never
-	# counts, so a special can't help unlock the next rung.
-	var ordinary := ""
-	var special := ""
-	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and special == "":
-			special = String(rally["id"])
-		elif not RallyLibrary.is_special(rally) and ordinary == "":
-			ordinary = String(rally["id"])
-	var profile := {"rallies": {ordinary: {"completed": true, "best_placed": 1}}}
-	assert_eq(RallyLibrary.total_stars(profile), RallyLibrary.MAX_STARS_PER_RALLY,
-		"a 1st place is worth the full star count")
-	profile["rallies"][ordinary] = {"completed": true, "best_placed": 3}
-	assert_eq(RallyLibrary.total_stars(profile), 1, "a 3rd place is worth one star")
-	profile["rallies"][ordinary] = {"completed": true, "best_placed": 7}
-	assert_eq(RallyLibrary.total_stars(profile), 0, "finishing off the podium scores nothing")
-	profile["rallies"][special] = {"completed": true, "best_placed": 1}
-	assert_eq(RallyLibrary.total_stars(profile), 0, "a special's own result awards no stars")
+func test_stars_for_placement_scores_the_podium_and_nothing_else() -> void:
+	# The ONE definition of what a placement is worth. Stars themselves are a persisted
+	# ledger on the profile now (Save.stars_earned — see test_save_manager.gd); this only
+	# guards the scoring curve, which the ledger and the HQ star row both read.
+	assert_eq(RallyLibrary.stars_for_placement(1), RallyLibrary.MAX_STARS_PER_RALLY,
+		"1st is worth the full star count")
+	assert_gt(RallyLibrary.stars_for_placement(1), RallyLibrary.stars_for_placement(2),
+		"a better placement is worth more")
+	assert_gt(RallyLibrary.stars_for_placement(RallyLibrary.MAX_STARS_PER_RALLY), 0,
+		"the last podium step still scores")
+	assert_eq(RallyLibrary.stars_for_placement(RallyLibrary.MAX_STARS_PER_RALLY + 1), 0,
+		"finishing off the podium scores nothing")
+	assert_eq(RallyLibrary.stars_for_placement(0), 0, "never placed scores nothing")
 
 
-func test_a_special_gate_opens_on_the_star_total() -> void:
-	# Logic only: the gate compares the star total against the authored requirement, so it
-	# is closed below and open at/above it. No specific threshold is pinned.
+func test_a_special_gate_opens_on_completed_ordinary_rallies() -> void:
+	# Logic only: the gate compares COMPLETED ORDINARY RALLIES against the authored
+	# requirement, so it is closed below and open at/above it. No threshold is pinned.
+	# Specials gate on completions rather than stars because stars are spendable — a gate
+	# reading a spendable balance would revoke a special already qualified for.
 	var special := {}
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally):
+		if RallyLibrary.is_special(rally) and RallyLibrary.completions_required(rally) > 0:
 			special = rally
 			break
-	var need := int(special.get("requires_stars", 0))
-	assert_false(RallyLibrary.special_gate_open(special, _profile_with_stars(need - 1)),
-		"closed one star short")
-	assert_true(RallyLibrary.special_gate_open(special, _profile_with_stars(need)),
+	assert_false(special.is_empty(), "the roster has a gated special to exercise")
+	var need := RallyLibrary.completions_required(special)
+	assert_false(RallyLibrary.rally_revealed(special, _profile_with_completions(need - 1)),
+		"closed one completion short")
+	assert_true(RallyLibrary.rally_revealed(special, _profile_with_completions(need)),
 		"open once the requirement is met")
-	assert_eq(RallyLibrary.stars_needed(special, _profile_with_stars(need)), 0,
-		"nothing left to earn once it is open")
-	assert_gt(RallyLibrary.stars_needed(special, _profile_with_stars(0)), 0,
-		"an unmet gate reports how many stars are still needed")
+	assert_eq(RallyLibrary.completions_needed(special, _profile_with_completions(need)), 0,
+		"nothing left to complete once it is open")
+	assert_gt(RallyLibrary.completions_needed(special, _profile_with_completions(0)), 0,
+		"an unmet gate reports how many events are still needed")
 
 
-func test_an_ordinary_rally_ignores_the_star_gate() -> void:
+func test_spending_stars_cannot_close_a_special_gate() -> void:
+	# The reason for completion-gating: the gate must not read anything the player can
+	# spend. Draining the ledger to zero leaves every gate exactly where it was.
+	var profile := _profile_with_completions(99)
+	var open_before: Array = []
 	for rally in RallyLibrary.all():
-		if not RallyLibrary.is_special(rally):
-			assert_true(RallyLibrary.special_gate_open(rally, {"rallies": {}}),
-				"an ordinary rally is never star-gated")
-			assert_eq(RallyLibrary.stars_needed(rally, {"rallies": {}}), 0,
-				"and needs no stars")
-			return
+		if RallyLibrary.is_special(rally) and RallyLibrary.rally_revealed(rally, profile):
+			open_before.append(String(rally["id"]))
+	assert_gt(open_before.size(), 0, "some specials are open to begin with")
+	profile["stars_earned"] = 50
+	profile["stars_spent"] = 50  # balance now zero
+	for rid in open_before:
+		assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id(rid), profile),
+			"%s stays open after the balance is spent to zero" % rid)
 
 
 func test_all_specials_completed_needs_every_rung() -> void:
@@ -1347,18 +1342,17 @@ func test_all_specials_completed_needs_every_rung() -> void:
 			"only the LAST special completed finishes the game")
 
 
-# A profile carrying exactly `stars` stars, built by 3-starring ordinary rallies (and
-# topping up with a lesser placement when the target isn't a multiple of 3).
-func _profile_with_stars(stars: int) -> Dictionary:
+# A profile with exactly `n` completed ORDINARY rallies (capped at however many exist),
+# which is what every gate now reads. Specials are never marked, so they cannot pay into
+# the count that gates them.
+func _profile_with_completions(n: int) -> Dictionary:
 	var profile := {"rallies": {}}
-	var left := maxi(stars, 0)
+	var left := maxi(n, 0)
 	for rally in RallyLibrary.all():
 		if RallyLibrary.is_special(rally) or left <= 0:
 			continue
-		var take: int = mini(left, RallyLibrary.MAX_STARS_PER_RALLY)
-		profile["rallies"][String(rally["id"])] = {
-			"completed": true, "best_placed": RallyLibrary.MAX_STARS_PER_RALLY + 1 - take}
-		left -= take
+		profile["rallies"][String(rally["id"])] = {"completed": true, "best_placed": 1}
+		left -= 1
 	return profile
 
 
@@ -1395,12 +1389,13 @@ func test_reveal_count_is_global_so_other_regions_count_toward_the_gate() -> voi
 
 
 func test_a_completed_special_does_not_count_toward_the_reveal_gate() -> void:
-	# A special is gated separately, on stars — it must not also pay into the wave count.
+	# Specials gate on the ORDINARY completion count, so a completed special must not pay
+	# into that count itself — otherwise the ladder could bootstrap its own next rung.
 	var roster: Array[Dictionary] = [
 		{"id": "r_gated", "name": "Gated", "region": "home", "special": false,
 			"difficulty": 2, "restriction": {}, "reveal_after": 1, "events": []},
 		{"id": "r_special", "name": "Special", "region": "home", "special": true,
-			"requires_stars": 0, "difficulty": 4, "restriction": {}, "events": []},
+			"requires_completions": 0, "difficulty": 4, "restriction": {}, "events": []},
 	]
 	RallyLibrary.override_for_test(roster)
 	var profile := {"rallies": {"r_special": {"completed": true}}}
@@ -1439,11 +1434,11 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 		assert_true(
 			RallyLibrary.is_eligible(r, car) or RallyLibrary.qualifying_detune(r, car) > 0.0,
 			"%s is enterable by the car (outright or detuned)" % r["id"])
-		# A fresh profile has zero stars, so every special whose rung is above zero is
-		# still locked and must not be offered.
+		# A fresh profile has zero completions, so every special whose rung is above zero
+		# is still locked and must not be offered.
 		if RallyLibrary.is_special(r):
-			assert_eq(int(r.get("requires_stars", 0)), 0,
-				"a star-locked special is not offered: %s" % r["id"])
+			assert_eq(RallyLibrary.completions_required(r), 0,
+				"a completion-locked special is not offered: %s" % r["id"])
 
 
 # --- stage_key (global leaderboards) -----------------------------------------

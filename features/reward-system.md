@@ -2,7 +2,9 @@
 
 `RewardSystem` (`scripts/reward_system.gd`, `class_name RewardSystem`) is the
 reward **draw policy** — what the player is granted after an event (an upgrade
-item) and after a top-3 rally finish (a car). Pure static functions over the
+item), plus the pick + pricing policy for a car (bought with stars, or handed over
+free by the wreck safety net; no rally awards one — see
+[star-economy.md](star-economy.md)). Pure static functions over the
 authored libraries + the save profile, with no state beyond an injected RNG
 (mirrors `RallyLibrary` / `UpgradeLibrary`, not an autoload).
 
@@ -38,24 +40,30 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
   `challenge_session.gd` also calls `tier_ceiling()` directly to derive
   challenge difficulty.
 
-The "harder rally → better prize" correlation now lives **only** on this car
-draw — accepted as a loss on the upgrade side (see below).
+With no rally paying a car, nothing feeds `f(rally.difficulty)` a real difficulty any
+more — `purchase_car` passes 0 and the wreck net passes the wrecked car's tier — so in
+practice the clamp reduces to `tier_ceiling(completed_count)`: **progress**, not rally
+difficulty, decides how good a car can be. The old "harder rally → better prize"
+correlation is therefore gone from both draws; what a hard rally pays instead is more
+stars (`stars_for_placement` is flat, but a harder rally is harder to podium).
 
-## Star gate (upgrades)
+## Event gate (upgrades)
 
 The best upgrades are withheld from the reward pool until the player has
-**won** a star-gated special event, replacing the old tier walk entirely.
+**won** a specific special event, replacing the old tier walk entirely.
 `UpgradeLibrary.unlocked_by_rally(id)` reads the authored gate;
 `UpgradeLibrary.rally_gate_met(item_id, profile)` (`scripts/upgrade_library.gd`
 → `rally_gate_met`) returns `true` when the field is absent, else whether that
 rally is recorded `completed` in `profile.rallies`. `completed` already means a
 **top-3 finish** (`Save.complete_rally`), so the gate genuinely reads "was the
-event won", not merely "does the player have enough stars".
+event won". It is keyed on a **rally id**, never on a star balance — the special
+itself opens on completed ordinary rallies (`RallyLibrary.completions_required`,
+see [rally-roster.md](rally-roster.md)), and the spendable star balance
+([star-economy.md](star-economy.md)) gates nothing.
 
 The gate is about **earning** a part, never about **keeping** one:
 `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the gate,
-so a part fitted before a gate closes (or that never needed one) keeps working
-regardless of the player's current star total.
+so a part fitted before a gate closes (or that never needed one) keeps working.
 
 Gated parts, per the authored `UPGRADES` table: `turbo_large` →
 `sp_woodland_trial`, `drivetrain_swap` (renamed "Drivetrain Conversion") →
@@ -83,7 +91,7 @@ Pool building goes through `_eligible_parts(profile, exclude, owned_car)`, a
 - parts whose per-car `UpgradeLibrary.prerequisite_met` fails (e.g. Big Turbo
   stays out until that car has Small Turbo — see
   `upgrade-catalogue.md`'s "Prerequisite gate"),
-- parts whose star gate `UpgradeLibrary.rally_gate_met` fails.
+- parts whose event gate `UpgradeLibrary.rally_gate_met` fails.
 
 **Rule, in order:**
 
@@ -109,7 +117,7 @@ The **mystery box is deliberately NOT in the weighted pool** — it is only
 ever awarded by branch 2, and putting it in the pool would hand one out in
 exactly the cases that gate exists to exclude.
 
-**"Every event always awards something" is retired.** Star-gating
+**"Every event always awards something" is retired.** Event-gating
 (`_eligible_parts`) makes a car read as maxed much earlier than the old tier
 ceiling did, so keeping the always-pays-out guarantee would have degenerated
 into a mystery-box firehose. The swap token remains a legitimate low-weight
@@ -119,7 +127,7 @@ floor that backstopped every draw.
 `_car_has_nothing_left(profile, owned_car)` now takes a `profile` and checks
 `_eligible_parts(profile, ...)` (the **gated** pool): a car with every
 *currently unlocked* part fitted counts as maxed, even though more parts may
-unlock later as stars accrue. `any_car_has_room(profile)` and
+unlock later as specials are won. `any_car_has_room(profile)` and
 `pick_mystery_box_grant(profile, rng)` also route through `_eligible_parts`.
 
 **When:** one upgrade is drawn at each **non-final event boundary** — i.e. after
@@ -175,7 +183,7 @@ mutation) that picks a uniformly random owned car — **every** car is a
 candidate, the currently selected one included — among those with a
 non-empty `_eligible_parts(profile, ...)` pool on the candidate, so the
 recipient's own prerequisite AND star gating are respected — e.g. it won't
-hand out Big Turbo before Small Turbo, or a still-star-gated part before its
+hand out Big Turbo before Small Turbo, or a still-gated part before its
 event is won — then a uniformly random item from that pool. Returns
 `{"instance_id": ..., "item_id": ...}`, or `{}` if no car has room.
 
@@ -231,18 +239,25 @@ different car. See `features/upgrade-catalogue.md` for the catalogue entry and
 `features/menus.md` → "Menu navigation" for the Lift's native-focus button
 regime the row reuses.
 
-## Car draw (per top-3 finish of an ORDINARY rally, including re-wins)
+## Car draw (the pick; NOT a rally reward any more)
 
-`draw_car(profile, rally_difficulty=0, rng=null) -> model_id`. Fires on
-**every** top-3 finish of an ordinary rally (renewable supply — re-winning a completed
-rally re-grants a car). It is **guaranteed** there — a car is always granted. Two paths:
+`draw_car(profile, rally_difficulty=0, rng=null) -> model_id` is the **pick policy**
+only. **No rally pays a car** — ordinary or special. Winning a rally pays stars, and
+cars are bought with them at the HQ present box (see
+[star-economy.md](star-economy.md) for the whole loop and the WHY: a guaranteed car
+per win made the `restriction` bands meaningless and left the player no choice in
+when a car arrived). `rally_session.gd`'s resolve draws no car at all now, and
+`challenge_session.gd`'s `_COMPLETION_REWARD` no longer carries a `car_tier`.
 
-**SPECIALS DRAW NO CAR.** They pay an upgrade instead (see "Special-event unlock" below);
-a car on top of that is too much in one sitting. `rally_session.gd`'s resolve reads
-`elif not is_special:`, widening a carve-out that already existed for the last special.
-This gives up an old safety the removed comment named — "specials are also a car source,
-which keeps a car-less player from soft-locking" — deliberately: ordinary rallies remain a
-renewable car source, and the star ladder always opens specials alongside plenty of them.
+Only **two** callers remain, and both are deliberate:
+
+- `Save.open_mystery_box` — the **wreck safety net**: the one place a car is still
+  free, because a player whose last car wrecked has no way to earn.
+- `RewardSystem.purchase_car` — the **purchase**, so a bought car inherits the
+  anti-soft-lock pick below for free. It passes `rally_difficulty = 0`, letting the
+  progress clamp alone choose the tier: a purchase isn't tied to any rally.
+
+Two paths inside the draw:
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
    is at or below the **progress-clamped draw ceiling**:
@@ -259,13 +274,13 @@ renewable car source, and the star ladder always opens specials alongside plenty
    (each owned car is checked on its **effective** stats via
    `UpgradeLibrary.effective_meta`, with a `floor_meta` of
    `UpgradeLibrary.max_potential_meta(car, entry, profile)` — passing `profile`
-   selects the REACHABLE ceiling, star gates respected, not the aspirational
+   selects the REACHABLE ceiling, event gates respected, not the aspirational
    one; see `upgrade-catalogue.md` — so the pw_min floor is judged at what the
    car can *actually* reach right now, against
    `RallyLibrary.incomplete_rallies_enterable_by`, which is reveal-aware — a rally
    counts as enterable only once **revealed** (`rally_revealed`: its `reveal_after`
-   met, and for a special its own star gate open — `RallyLibrary.special_gate_open`,
-   keyed on the global `total_stars`, not a per-region concept), see
+   met — `rally_revealed` now applies that one rule to specials too, keyed on the
+   global count of completed ordinary rallies, not a per-region concept), see
    [regions.md](regions.md)).
    That query also counts a rally the car can reach by **detuning** under its `pw_max`
    as enterable — the same definition `hq.gd._entry_plan` uses on the screen that
@@ -298,20 +313,52 @@ renewable car source, and the star ladder always opens specials alongside plenty
    duplicates read as a broken reward even where a duplicate is the honest outcome.
 
 With every rally completed the fallback is moot and the standard draw still pays
-(a duplicate at worst), so the reward never returns empty (car draws are still
-guaranteed; the upgrade draw is not — see *Retiring "always pays out"* above).
+(a duplicate at worst), so the draw never returns empty in practice (the upgrade
+draw, by contrast, legitimately can — see *Retiring "always pays out"* above).
+
+## Buying a car
+
+The purchase API is pure over whatever profile it is handed (like `draw_car`), so the
+HQ can price against the live profile and `sim_career` against a synthetic one and get
+the same answer:
+
+- `stars_available_in(profile)` — the spendable balance, mirroring
+  `Save.stars_available()` but reading the dict it is given.
+- `car_price(profile)` — normally `GameConfig.star_cost_per_car`. See the
+  **dead-end rescue** below.
+- `is_stranded(profile)` — nothing the player owns can enter any incomplete, revealed
+  rally. THE shared predicate: the present box's price readout and the purchase itself
+  must agree on it, or the pin would quote a price the purchase then refuses. It also
+  drives `_unlock_candidates`. **Wrecked cars don't count** — a wreck can never be
+  repaired, so a garage whose only in-band car is wrecked is as stuck as an empty one,
+  and counting it would deny the rescue to exactly the player who needs it most. The
+  `pw_min` floor is judged at `max_potential_meta(car, entry, profile)` — the
+  REACHABLE ceiling, since the aspirational one would conclude nobody is ever stuck.
+- `purchase_car(rng)` — buys exactly ONE car (a reveal is a moment, not a slot
+  machine), mutating through `Save`. **Nothing to give = nothing spent:** the draw is
+  resolved BEFORE any stars move, and the whole transaction is abandoned if it comes
+  back empty — the same rule `Save.open_mystery_box` applies to a box it can't fill.
+
+**The dead-end rescue.** `car_price` returns **0** when the player `is_stranded` AND
+cannot afford a car. Without it, a stranded, broke player has no eligible rally, so no
+way to earn, so no way to buy the car that would unlock one — an unrecoverable state
+the old free-car model couldn't produce. **Both** halves of the condition are
+load-bearing: free-whenever-merely-stranded is farmable (take the free car, finish the
+rally it unlocks, be stranded again, repeat a whole career for nothing), and requiring
+the player to also be BROKE closes that, because anyone making progress is earning
+stars and so isn't broke. It's a rescue, not a discount.
 
 ## The LAST special won (was "the final showdown")
 
-The special that completes the set grants no car draw of its own — winning it is
-the game's win/credits beat, handled by the flow controller. Note the predicate
+Winning the special that completes the set is the game's win/credits beat, handled by
+the flow controller. Note the predicate
 is **not** "this is the top rung": `rally_session.gd` fires `game_won` when
 `RallyLibrary.is_special(_rally) and RallyLibrary.all_specials_completed(profile)`,
 so it is whichever special happens to be the last one outstanding (normally the
-top rung, since the rungs open in star order, but the rule is set-completion, not
-a designated finale). Every other special pays out exactly like an
-ordinary rally (the per-event upgrade draws plus the car draw on a top-3
-finish, minus the car draw — see below).
+top rung, since the rungs open in completion order, but the rule is set-completion,
+not a designated finale). Every other special pays out exactly like an
+ordinary rally — the per-event upgrade draws plus the placement's stars (specials
+award stars now; they used to award none) — plus its own unlock, below.
 
 ## Special-event unlock (a special's own reward)
 
@@ -380,6 +427,10 @@ rally, and a low-difficulty rally caps the draw at its difficulty tier even when
 progress ceiling is high; car draws prefer un-owned before falling back to a duplicate; a stuck
 player's grant opens a locked rally with a car eligible for it; and `draw_car` still
 pays a real car even with everything completed (the guaranteed-reward property).
+Purchase side: `car_price` charges the authored price when the player can afford it,
+`purchase_car` debits exactly that and grants one car, an unaffordable purchase moves
+nothing, and the rescue frees the price only when stranded AND broke (never when merely
+stranded, never when merely broke) — with `is_stranded` ignoring wrecked cars.
 Mystery-box coverage (synthetic cars/upgrades, per CLAUDE.md — never the real
 catalogue): a maxed owned car with tokens at/above `MYSTERY_BOX_TOKEN_THRESHOLD`
 and a non-maxed second car draws the box; the same maxed car draws normally

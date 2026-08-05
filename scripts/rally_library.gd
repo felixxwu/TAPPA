@@ -8,7 +8,7 @@ extends RefCounted
 # This file is also the home of the pure functions the rest of the game needs:
 #   * is_eligible(rally, car_meta)            — can this car enter?
 #   * generate_opponent_field(rally, event_results, events) — the deterministic opponent field
-#   * total_stars / special_gate_open           — progress + the special ladder
+#   * completions_required / rally_revealed     — progress + the special ladder
 #   * incomplete_rallies_enterable_by(...)     — the anti-soft-lock query
 #
 # Determinism is the whole point: TrackGenerator.generate is deterministic for a
@@ -129,13 +129,19 @@ static func _pace_band(tier: int) -> Vector2:
 # dumping them all at once — and a win in one corner can open a rally in another (see
 # `rally_revealed`). `events` is exactly 3 EventDefs (a special's are longer).
 #
-# A SPECIAL event (`special: true` + `requires_stars: N`) is gated on the player's GLOBAL
-# star total (special_gate_open), not on its region's contents — the old "exactly one
-# showdown per region" invariant is RETIRED, so a corner may hold any number of specials,
-# including none (the snow corner ships pin-less). Every special stays OPEN-CLASS
-# (`restriction: {}`): a special must never gate on a part it or a higher rung unlocks, or
-# the ladder can deadlock, and it keeps the low-power starter able to finish the game.
-# Specials award no stars themselves, so the ceiling is 3 x the ordinary rally count.
+# A SPECIAL event (`special: true` + `requires_completions: N`) is gated on the player's
+# GLOBAL count of completed ORDINARY rallies (`rally_revealed` via `completions_required`),
+# not on its region's contents — the old "exactly one showdown per region" invariant is
+# RETIRED, so a corner may hold any number of specials, including none (the snow corner
+# ships pin-less). Every special stays OPEN-CLASS (`restriction: {}`): a special must never
+# gate on a part it or a higher rung unlocks, or the ladder can deadlock, and it keeps the
+# low-power starter able to finish the game.
+#
+# Specials gate on COMPLETIONS rather than the old star total because stars became
+# spendable — a gate reading a spendable balance would revoke a special the player had
+# already qualified for as soon as they bought a car. Specials DO now award stars (via
+# Save.complete_rally's ledger delta), which is only safe because they no longer gate on
+# them. See todo/star-economy.md.
 #
 # `water_level` is authored on EVERY event, even though the region now supplies one
 # (RegionLibrary.water_level_of): the resolution chain is event → region → GameConfig
@@ -161,7 +167,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1, "special": false,
-		"map_pos": Vector2(0.450, 0.450),
+		"map_pos": Vector2(0.35, 0.52),
 		# FWD intro rally: a band for the FWD starters (Twingo ~82, Focus ~114 hp/t) — the
 		# FWD home (parallels Shakedown for the MX-5).
 		"restriction": {"drive_mode": CarLibrary.FWD, "car_type": "hatch", "pw_min": 95.0, "pw_max": 140.0},
@@ -201,7 +207,7 @@ const RALLIES: Array[Dictionary] = [
 		# A closed-roof GT class: coupes only, over a wide band so the grouping is the
 		# body style rather than the exact power figure.
 		"id": "hm_forest_gt", "name": "Forest GT", "region": "home", "difficulty": 3, "special": false,
-		"reveal_after": 4,
+		"reveal_after": 12,
 		"map_pos": Vector2(0.182, 0.374),
 		"restriction": {"car_type": "coupe", "pw_min": 120.0, "pw_max": 240.0},
 		"events": [
@@ -212,7 +218,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 4, "special": false,
-		"reveal_after": 8,
+		"reveal_after": 18,
 		"map_pos": Vector2(0.220, 0.160),
 		"restriction": {"pw_min": 260.0, "pw_max": 400.0},  # the top ordinary band: Viper ~264 / The Beast ~350
 		"events": [
@@ -225,7 +231,7 @@ const RALLIES: Array[Dictionary] = [
 		# --- 8-star special: unlocks the Big Turbo. The gentlest of the eight (a player is
 		# only ~3 wins in), sited on `home`'s north edge — the corner they started in.
 		"id": "sp_woodland_trial", "name": "The Woodland Trial", "region": "home", "difficulty": 2,
-		"special": true, "requires_stars": 5,
+		"special": true, "requires_completions": 2,
 		"map_pos": Vector2(0.318, 0.128),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
@@ -235,7 +241,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "special": true, "requires_stars": 25,
+		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "special": true, "requires_completions": 10,
 		"map_pos": Vector2(0.130, 0.260),
 		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
@@ -269,7 +275,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# A national class: Japanese cars, over a deliberately wide band so it's the
 		# country that picks the field rather than a power slice.
-		"id": "hc_lakeside_kei", "name": "Lakeside Cup", "region": "home_coast", "difficulty": 1, "special": false, "reveal_after": 1,
+		"id": "hc_lakeside_kei", "name": "Lakeside Cup", "region": "home_coast", "difficulty": 1, "special": false, "reveal_after": 2,
 		"map_pos": Vector2(0.702, 0.571),
 		"restriction": {"country": "JP", "pw_min": 80.0, "pw_max": 160.0},
 		"events": [
@@ -280,7 +286,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "region": "home_coast", "difficulty": 2, "special": false,
-		"reveal_after": 2,
+		"reveal_after": 5,
 		"map_pos": Vector2(0.756, 0.685),
 		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
 		"events": [
@@ -291,7 +297,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "rwd_masters", "name": "RWD Masters", "region": "home_coast", "difficulty": 3, "special": false,
-		"reveal_after": 3,
+		"reveal_after": 9,
 		"map_pos": Vector2(0.791, 0.812),
 		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
 		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 170.0, "pw_max": 270.0},  # XJS/Charger/911/Viper
@@ -304,7 +310,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Open-top cars only — a body class, wide on power.
 		"id": "hc_headland_dash", "name": "Headland Dash", "region": "home_coast", "difficulty": 3, "special": false,
-		"reveal_after": 3,
+		"reveal_after": 10,
 		"map_pos": Vector2(0.831, 0.593),
 		"restriction": {"car_type": "roadster", "pw_min": 135.0, "pw_max": 265.0},
 		"events": [
@@ -317,7 +323,7 @@ const RALLIES: Array[Dictionary] = [
 		# Twelve cylinders or more: the grand-touring exotica class, derived from the
 		# fitted engine's layout, so an engine swap moves a car in or out of it.
 		"id": "hc_v12_promenade", "name": "12 Cylinder Promenade", "region": "home_coast", "difficulty": 4, "special": false,
-		"reveal_after": 6,
+		"reveal_after": 15,
 		"map_pos": Vector2(0.894, 0.691),
 		"restriction": {"cylinders_min": 12, "pw_min": 170.0, "pw_max": 330.0},
 		"events": [
@@ -331,7 +337,7 @@ const RALLIES: Array[Dictionary] = [
 		# it must NOT creep above ~0.52, since the NE corner is reserved for the snow region
 		# (todo/one-map-four-corners.md). Coastal waterline, so amplitude stays >= 16.
 		"id": "sp_lakeshore_trial", "name": "The Lakeshore Trial", "region": "home_coast", "difficulty": 3,
-		"special": true, "requires_stars": 15,
+		"special": true, "requires_completions": 6,
 		"map_pos": Vector2(0.772, 0.528),
 		"restriction": {},  # open-class
 		"events": [
@@ -341,7 +347,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "hc_showdown", "name": "The Lakeland Crown", "region": "home_coast", "difficulty": 4, "special": true, "requires_stars": 30,
+		"id": "hc_showdown", "name": "The Lakeland Crown", "region": "home_coast", "difficulty": 4, "special": true, "requires_completions": 12,
 		"map_pos": Vector2(0.941, 0.606),
 		"restriction": {},  # open-class finale
 		"events": [
@@ -357,7 +363,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Small-capacity class: 2.0 L or less, resolved through the car's CURRENT
 		# engine — an engine swap moves a car in or out of it.
-		"id": "gr_dust_devils", "name": "Dust Devils", "region": "greece", "difficulty": 1, "special": false, "reveal_after": 2,
+		"id": "gr_dust_devils", "name": "Dust Devils", "region": "greece", "difficulty": 1, "special": false, "reveal_after": 6,
 		"map_pos": Vector2(0.360, 0.690),
 		"restriction": {"engine_max_l": 2.0, "pw_min": 100.0, "pw_max": 200.0},
 		"events": [
@@ -368,7 +374,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "american_muscle", "name": "American Muscle", "region": "greece", "difficulty": 2, "special": false,
-		"reveal_after": 2,
+		"reveal_after": 7,
 		"map_pos": Vector2(0.410, 0.760),
 		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
 		# (Charger ~216, Viper ~264). Country-gated, not car_type-gated, so it fields more
@@ -383,7 +389,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Big-bore two-doors: eight cylinders or more AND two doors.
 		"id": "gr_marble_quarry", "name": "Marble Quarry", "region": "greece", "difficulty": 2, "special": false,
-		"reveal_after": 3,
+		"reveal_after": 11,
 		"map_pos": Vector2(0.100, 0.660),
 		"restriction": {"cylinders_min": 8, "doors_max": 2, "pw_min": 200.0, "pw_max": 400.0},
 		"events": [
@@ -394,7 +400,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "gr_mountain_pass", "name": "Mountain Pass", "region": "greece", "difficulty": 3, "special": false,
-		"reveal_after": 4,
+		"reveal_after": 13,
 		"map_pos": Vector2(0.230, 0.630),
 		"restriction": {"pw_min": 210.0, "pw_max": 320.0},
 		"events": [
@@ -405,7 +411,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "gr_ancient_ruins", "name": "Ancient Ruins", "region": "greece", "difficulty": 3, "special": false,
-		"reveal_after": 6,
+		"reveal_after": 16,
 		"map_pos": Vector2(0.290, 0.830),
 		"restriction": {"pw_min": 260.0, "pw_max": 400.0},
 		"events": [
@@ -417,7 +423,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Muscle bodies only — the class is the body style, wide open on power.
 		"id": "gr_thermopylae", "name": "The Hot Gates", "region": "greece", "difficulty": 4, "special": false,
-		"reveal_after": 8,
+		"reveal_after": 19,
 		"map_pos": Vector2(0.138, 0.501),
 		"restriction": {"car_type": "muscle", "pw_min": 170.0, "pw_max": 330.0},
 		"events": [
@@ -430,7 +436,7 @@ const RALLIES: Array[Dictionary] = [
 		# --- 16-star special: unlocks the Drivetrain Conversion. Far SW of `greece`, below
 		# the Aegean Crown. Sandstorm is authored ONLY on greece events (test-enforced).
 		"id": "sp_dust_trial", "name": "The Dust Trial", "region": "greece", "difficulty": 2,
-		"special": true, "requires_stars": 10,
+		"special": true, "requires_completions": 4,
 		"map_pos": Vector2(0.062, 0.884),
 		"restriction": {},  # open-class
 		"events": [
@@ -440,7 +446,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gr_showdown", "name": "The Aegean Crown", "region": "greece", "difficulty": 4, "special": true, "requires_stars": 35,
+		"id": "gr_showdown", "name": "The Aegean Crown", "region": "greece", "difficulty": 4, "special": true, "requires_completions": 14,
 		"map_pos": Vector2(0.140, 0.790),
 		"restriction": {},  # open-class finale
 		"events": [
@@ -459,7 +465,7 @@ const RALLIES: Array[Dictionary] = [
 	# Events author no terrain_layer1_amplitude, so they run the GameConfig baseline
 	# (30 m), comfortably clear of the >= 16 pairing the -5 waterline needs.
 	{
-		"id": "gc_fishermens_run", "name": "Fishermen's Run", "region": "greece_coast", "difficulty": 1, "special": false, "reveal_after": 1,
+		"id": "gc_fishermens_run", "name": "Fishermen's Run", "region": "greece_coast", "difficulty": 1, "special": false, "reveal_after": 3,
 		"map_pos": Vector2(0.552, 0.715),
 		"restriction": {"pw_min": 60.0, "pw_max": 110.0},
 		"events": [
@@ -472,7 +478,7 @@ const RALLIES: Array[Dictionary] = [
 		# A two-door class: doors are a body property (a swap can't change them), so
 		# this grouping is stable under retuning.
 		"id": "gr_olive_coast", "name": "Olive Coast", "region": "greece_coast", "difficulty": 2, "special": false,
-		"reveal_after": 1,
+		"reveal_after": 4,
 		"map_pos": Vector2(0.668, 0.755),
 		"restriction": {"doors_max": 2, "pw_min": 120.0, "pw_max": 200.0},
 		"events": [
@@ -484,7 +490,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Small-engined two-doors — displacement resolved through the fitted engine.
 		"id": "gc_island_hop", "name": "Island Hop", "region": "greece_coast", "difficulty": 2, "special": false,
-		"reveal_after": 2,
+		"reveal_after": 8,
 		"map_pos": Vector2(0.432, 0.874),
 		"restriction": {"engine_max_l": 3.0, "doors_max": 2, "pw_min": 120.0, "pw_max": 240.0},
 		"events": [
@@ -500,7 +506,7 @@ const RALLIES: Array[Dictionary] = [
 		# country gate went and the band alone now hosts the stock heavy hitters
 		# (Charger ~216, Viper ~264 hp/tonne — the Viper's only stock rally).
 		"id": "rising_sun", "name": "Heavy Hitters", "region": "greece_coast", "difficulty": 3, "special": false,
-		"reveal_after": 4,
+		"reveal_after": 14,
 		"map_pos": Vector2(0.615, 0.864),
 		"restriction": {"pw_min": 210.0, "pw_max": 320.0},  # Charger/Viper
 		"events": [
@@ -512,7 +518,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Big-block class: 5.0 L or more, resolved through the fitted engine.
 		"id": "gc_salt_flats", "name": "Salt Flats", "region": "greece_coast", "difficulty": 3, "special": false,
-		"reveal_after": 6,
+		"reveal_after": 17,
 		"map_pos": Vector2(0.508, 0.984),
 		"restriction": {"engine_min_l": 5.0, "pw_min": 185.0, "pw_max": 365.0},
 		"events": [
@@ -524,7 +530,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# A national class: British cars, wide on power.
 		"id": "gc_island_gp", "name": "Island Grand Prix", "region": "greece_coast", "difficulty": 4, "special": false,
-		"reveal_after": 8,
+		"reveal_after": 20,
 		"map_pos": Vector2(0.677, 0.938),
 		"restriction": {"country": "GB", "pw_min": 170.0, "pw_max": 330.0},
 		"events": [
@@ -538,7 +544,7 @@ const RALLIES: Array[Dictionary] = [
 		# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY). South edge of `greece_coast`, east of the
 		# Island GP. Coastal waterline, so amplitude stays >= 16.
 		"id": "sp_archipelago_trial", "name": "The Archipelago Trial", "region": "greece_coast", "difficulty": 3,
-		"special": true, "requires_stars": 20,
+		"special": true, "requires_completions": 8,
 		"map_pos": Vector2(0.812, 0.962),
 		"restriction": {},  # open-class
 		"events": [
@@ -548,7 +554,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gc_showdown", "name": "The Island Crown", "region": "greece_coast", "difficulty": 4, "special": true, "requires_stars": 40,
+		"id": "gc_showdown", "name": "The Island Crown", "region": "greece_coast", "difficulty": 4, "special": true, "requires_completions": 16,
 		"map_pos": Vector2(0.978, 0.788),
 		"restriction": {},  # open-class finale
 		"events": [
@@ -1228,78 +1234,65 @@ static func _completed_count(profile: Dictionary) -> int:
 	return n
 
 
-# --- Stars & the special-event ladder ----------------------------------------
-# Stars are DERIVED, never stored: a rally's best finish is worth 3 stars for 1st, 2 for
-# 2nd, 1 for 3rd, 0 otherwise (hq._stars_for reads the same best_placed). The running
-# total gates the SPECIAL events, which replaced the old per-region showdowns.
+# --- Star scoring ------------------------------------------------------------
+# What a PLACEMENT is worth lives here; the running total does not. Stars are a persisted
+# LEDGER on the profile now (Save.stars_earned / stars_spent — see todo/star-economy.md),
+# because a derived total could not see Rally Challenge income and shrank whenever a rally
+# was renamed or removed.
 #
-# Specials themselves award no stars — same exclusion _completed_count already applies —
-# so the ceiling is 3x the number of ordinary rallies and the ladder can be authored
-# against a stable maximum.
+# Specials DO award stars, and no longer gate on them — the ladder counts completed ordinary
+# rallies instead (see "Completion gating" below). Those two facts are linked: while specials
+# were star-gated, paying them stars would have let a special bootstrap the next rung.
 
 const MAX_STARS_PER_RALLY := 3
 
 
 # Stars a finishing position is worth: 1st -> MAX, 2nd -> MAX-1, ... , off the podium -> 0.
-# THE one definition — total_stars and the HQ's per-pin star row both go through it, so the
-# gates and the displayed medals can never disagree about the scoring curve.
+# THE one definition — Save.complete_rally's ledger delta, the Rally Challenge award and the
+# HQ's per-pin star row all go through it, so what a star is worth can never disagree
+# between the surfaces that pay it and the ones that show it.
+#
+# NOTE stars are no longer summed from the roster: they are a PERSISTED LEDGER on the
+# profile (`stars_earned` / `stars_spent`, see Save.stars_available and
+# todo/star-economy.md). The old total_stars / max_total_stars are gone — a derived total
+# could not see Rally Challenge income and shrank whenever a rally was renamed.
 static func stars_for_placement(placed: int) -> int:
 	if placed >= 1 and placed <= MAX_STARS_PER_RALLY:
 		return MAX_STARS_PER_RALLY + 1 - placed
 	return 0
 
 
-# The most stars the roster can yield — every ordinary rally won outright. Specials award
-# none, so they are excluded. Drives the map HUD's denominator and the reachability
-# invariant on the ladder's top rung.
-static func max_total_stars() -> int:
-	var n := 0
-	for rally in all():
-		if not is_special(rally):
-			n += MAX_STARS_PER_RALLY
-	return n
-
-
-# Total stars earned across the roster. THE progression metric for the special ladder.
-static func total_stars(profile: Dictionary) -> int:
-	var rallies: Dictionary = profile.get("rallies", {})
-	var n := 0
-	for rally in all():
-		if is_special(rally):
-			continue
-		n += stars_for_placement(int(rallies.get(rally["id"], {}).get("best_placed", 0)))
-	return n
-
-
 static func is_special(rally: Dictionary) -> bool:
 	return bool(rally.get("special", false))
 
 
-# The star total a special demands (0 for an ordinary rally). Read through this rather than
-# the raw field so the three UI surfaces that quote the requirement can't drift.
-static func stars_required(rally: Dictionary) -> int:
-	return int(rally.get("requires_stars", 0)) if is_special(rally) else 0
+# --- Completion gating -------------------------------------------------------
+# Every rally, special or not, opens on the count of completed ORDINARY rallies. Specials
+# used to gate on the star total instead, but stars became spendable — and a gate that reads
+# a spendable balance would REVOKE a special the player had already qualified for the moment
+# they bought a car. See todo/star-economy.md.
+#
+# Two field names for one mechanism, because they read differently to the player:
+#   * `reveal_after`          — ordinary rallies. A drip-feed; never quoted as a requirement.
+#   * `requires_completions`  — specials. Quoted on the locked pin as "N/M events completed".
+# Read through completions_required rather than the raw fields so the surfaces that quote
+# the requirement cannot drift from the gate that enforces it.
+static func completions_required(rally: Dictionary) -> int:
+	if is_special(rally):
+		return int(rally.get("requires_completions", 0))
+	return int(rally.get("reveal_after", 0))
 
 
-# The star total the engine-swap CAPABILITY unlocks at — the requirement quoted by the
+# Completions still needed before `rally` opens — 0 once it is open. Drives the locked pin's
+# "N/M events completed" readout.
+static func completions_needed(rally: Dictionary, profile: Dictionary) -> int:
+	return maxi(completions_required(rally) - _completed_count(profile), 0)
+
+
+# The completion count the engine-swap CAPABILITY unlocks at — the requirement quoted by the
 # garage swap row and the car-park confirm popup.
-static func engine_swap_star_requirement() -> int:
-	return stars_required(by_id(ENGINE_SWAP_UNLOCK_RALLY))
-
-
-# Whether a special's star gate has opened. Non-specials always pass.
-static func special_gate_open(rally: Dictionary, profile: Dictionary) -> bool:
-	if not is_special(rally):
-		return true
-	return total_stars(profile) >= stars_required(rally)
-
-
-# Stars still needed before `rally` unlocks — 0 once it is open. Drives the locked pin's
-# "X/24 stars" readout.
-static func stars_needed(rally: Dictionary, profile: Dictionary) -> int:
-	if not is_special(rally):
-		return 0
-	return maxi(stars_required(rally) - total_stars(profile), 0)
+static func engine_swap_completion_requirement() -> int:
+	return completions_required(by_id(ENGINE_SWAP_UNLOCK_RALLY))
 
 
 # Whether the special that gates `item_id`-style capabilities has been won. Used for the
@@ -1339,9 +1332,7 @@ static func all_specials_completed(profile: Dictionary) -> bool:
 # eligibility query, and the reward-draw walk. (Completion is a separate check the callers
 # do — a revealed rally may still be incomplete or already done.)
 static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
-	if is_special(rally):
-		return special_gate_open(rally, profile)
-	var need := int(rally.get("reveal_after", 0))
+	var need := completions_required(rally)
 	if need <= 0:
 		return true
 	return _completed_count(profile) >= need

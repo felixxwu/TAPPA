@@ -33,10 +33,16 @@ defaults:
    Multi-line rows (e.g. the settings option rows, which embed their own layout)
    are left to size themselves.
 4. **Menu backgrounds are pure black** — buttons and panels alike. **One documented
-   exception:** a star-gated SPECIAL event's floating map-pin readout is inverted (white
-   face, black ink) so it stands out from a map of otherwise-identical black panels — see
-   `hq.gd`'s `ACCENT_READOUT_BG` and [menus.md](menus.md). Any further exception should be
-   argued and listed here, not added quietly; the rule is what makes the look coherent.
+   exception, the ACCENT READOUT:** a floating 3D readout that must jump out of a map of
+   otherwise-identical black panels is inverted (white face, black ink) — see `hq.gd`'s
+   `ACCENT_READOUT_BG` / `_build_readout_sprite`'s `accent` flag and [menus.md](menus.md).
+   Three surfaces take it, all on the HQ map table or the podium: a **SPECIAL event's**
+   pin readout (`hq._build_pin_label` via `RallyLibrary.is_special`), a locked special's
+   teaser (`hq._build_special_teaser_label`), and the **present box** that trades stars
+   for a car (`hq._make_present_pin` — the one non-rally target on the map, so it should
+   not read as another rally pin). The podium's `SPECIAL_UNLOCK` card inverts for the same
+   reason (`podium.gd` → `_show_special_unlock`). Any further exception should be argued
+   and listed here, not added quietly; the rule is what makes the look coherent.
 
 Menu builders call `UITheme.enforce(root)` once after building; screens with
 dynamic text re-run it whenever that text changes (HQ on every view change /

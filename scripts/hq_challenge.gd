@@ -230,10 +230,17 @@ func _challenge_kind_button(kind_str: String) -> Button:
 
 # Player-facing summary of ChallengeSession._COMPLETION_REWARD — keep the two in
 # step when the reward table is retuned.
+# What placing pays, per kind. Must match ChallengeSession._COMPLETION_REWARD plus the
+# stars-by-placement award — the challenge stopped granting CARS when cars became something
+# you buy with stars (todo/star-economy.md), and advertising one here would promise a reward
+# the game no longer hands out.
+#
+# Stars are quoted as a range because the payout is placement-based (1st/2nd/3rd -> 3/2/1)
+# while PLACING is the top half of the board, so a mid-table finish legitimately banks none.
 const _CHALLENGE_REWARD_TEXT := {
-	"daily": "2 mystery boxes",
-	"weekly": "3 mystery boxes + 1 low-tier car",
-	"monthly": "4 mystery boxes + 1 high-tier car",
+	"daily": "2 mystery boxes + up to 3 stars",
+	"weekly": "3 mystery boxes + up to 3 stars",
+	"monthly": "4 mystery boxes + up to 3 stars",
 }
 const _CHALLENGE_WIN_CONDITION := "Top 50%"
 

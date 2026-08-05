@@ -68,7 +68,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   in the same per-rally record as `completed` so everything known about a rally is in one
   place and a rally id that stops existing takes its flag with it instead of orphaning an
   entry in a parallel list. Only the ACKNOWLEDGEMENT is stored, never the unlock — which
-  rallies are open stays derived, exactly as the special-event star gate is (below).
+  rallies are open stays derived, exactly as the special-event gate is (below).
   A missing key reads `false` through the normal `.get` default, so no `SCHEMA_VERSION`
   bump was needed.
   **The backfill:** `false` is the wrong default for an EXISTING save — a career with a
@@ -94,17 +94,26 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   earlier `showdown_unlocked`/`showdown_completed` pair of persisted, never-read
   flags was removed — see `todo/one-map-four-corners.md`, "Resolved: the last
   six decisions" item 7.)
-- **The special-event star gate rides entirely on the existing per-rally
-  `completed` flag too — no new save state.** A `RallyLibrary` entry marked
-  `special: true` carries a `requires_stars: N`; `RallyLibrary.total_stars(profile)`
-  sums `_stars_for` (derived from `best_placement`, below) over every
-  non-special rally, and `RallyLibrary.special_gate_open` is a live comparison
-  against that total — nothing is precomputed or persisted for it. Winning a
+- **The special-event gate rides entirely on the existing per-rally
+  `completed` flag — no new save state.** A `RallyLibrary` entry marked
+  `special: true` carries a `requires_completions: N`, and
+  `RallyLibrary.rally_revealed` is a live comparison of that against the profile's
+  count of completed **ordinary** rallies (`_completed_count`) — nothing is
+  precomputed or persisted for it. Winning a
   gated upgrade part (`UpgradeDef.unlocked_by_rally`) reads the same
   `completed` flag on the naming special's rally record — again nothing new.
   See [rally-roster.md](rally-roster.md) for the ladder and
   [reward-system.md](reward-system.md) for where the gate is applied to the
   draw pool.
+- `stars_earned` / `stars_spent` — the **star ledger**, and the one part of the star
+  economy that IS persisted state. `Save.stars_available()` is the difference,
+  `award_stars()` credits, `spend_stars()` debits (refusing an unaffordable debit
+  rather than going negative). Two counters rather than one balance so the lifetime
+  earned figure survives spending. A derived total was deliberately abandoned here:
+  it could not see Rally Challenge income (an unrecoverable, non-rally source) and
+  it would shrink whenever a rally was renamed or retired — dropping the balance
+  below `stars_spent` and producing a negative. Missing keys read 0, so no
+  `SCHEMA_VERSION` bump was needed. See [star-economy.md](star-economy.md).
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old
@@ -172,8 +181,14 @@ keeps its parts fitted; see `features/upgrade-catalogue.md`),
 `set_upgrade_enabled(instance_id, item_id, enabled)` (the upgrades-menu toggle —
 free and reversible; enabling a part switches off its same-slot siblings),
 `complete_rally(rally_id, combined_ms,
-placed)` (idempotent; keeps the best time **and** best placement; does **not** grant
-the car reward — re-wins are farmable). `rally_completed(id)` /
+placed)` (idempotent; keeps the best time **and** best placement; grants no car — cars
+are bought, see [star-economy.md](star-economy.md)). It **returns the star delta it
+credited**: only the IMPROVEMENT over that rally's previous best, so a re-win at an
+equal or worse placement pays nothing and the renewable-win loop can't be farmed.
+The podium's stars beat needs that delta rather than the raw placement rating, since
+turning a 2nd into a 1st is worth exactly 1 even though the two placements rate 2 and
+3 stars. `award_stars` / `spend_stars` / `stars_available` are the non-rally ledger
+API. `rally_completed(id)` /
 `completed_rally_count()` / `best_placement(id)` query progress.
 
 ## Durability & integrity
@@ -232,11 +247,13 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
 
 ## Not yet wired
 
-The special-event star gate and the per-rally reveal gate are derived LIVE from
-the profile's completion records by `RallyLibrary`
-(`special_gate_open()` / `rally_revealed()`, see `rally-roster.md`), rather
-than being precomputed and stored on the save — `save_manager.gd` has nothing
-to recompute on `complete_rally`. `item_id`s come from the upgrade catalogue
+The special-event gate and the per-rally reveal gate are the one predicate, derived
+LIVE from the profile's completion records by `RallyLibrary`
+(`rally_revealed()` over `completions_required()`, see `rally-roster.md`), rather
+than being precomputed and stored on the save — `save_manager.gd` recomputes no
+unlock state on `complete_rally`; the only thing it writes beyond the rally record
+itself is the star delta onto `stars_earned` (see the ledger above).
+`item_id`s come from the upgrade catalogue
 (`upgrade-catalogue.md`); `Save` only consumes them as opaque strings.
 
 ## Tests

@@ -337,6 +337,10 @@ func _build_dev_page() -> void:
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("Wipe all progress", _wipe_progress))
 	_dev_page.add_child(_make_action_button("3-star all rallies (unlock all regions)", _three_star_all_rallies))
+	# Top up the star ledger without racing. Stars are the currency cars are bought with
+	# (features/star-economy.md), so this is the quick way to exercise the present box —
+	# and, being +1, to sit exactly on a price boundary and check the affordability states.
+	_dev_page.add_child(_make_action_button("Add 1 star", _add_star))
 	# Only meaningful mid-rally: instantly finish the whole rally with a perfect time
 	# and jump to the podium (where the top-3 finish grants the car). Hidden in the HQ
 	# settings, where there is no rally to complete.
@@ -792,6 +796,15 @@ func _three_star_all_rallies() -> void:
 func _grant_car(model_id: String, display_name: String) -> void:
 	Save.grant_car(model_id)
 	_dev_status.text = "Granted %s." % display_name
+
+
+# Credit one star to the ledger. Goes through Save.award_stars — the same entry point the
+# Rally Challenge uses — rather than poking `stars_earned` directly, so the dev button can
+# never drift from how stars are really banked. Reports the new spendable balance, which is
+# what the map meter and the present box both read.
+func _add_star() -> void:
+	Save.award_stars(1)
+	_dev_status.text = "Added 1 star (%d to spend)." % Save.stars_available()
 
 
 # Drop a consumable (swap token / mystery box) into the shared inventory.

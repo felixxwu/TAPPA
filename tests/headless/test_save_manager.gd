@@ -96,6 +96,93 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
 
 
+# --- Star ledger (todo/star-economy.md) --------------------------------------
+# Stars are a persisted ledger, not a derived total. These assert the LEDGER RULES,
+# never a particular star count for a particular placement — stars_for_placement is
+# the single definition and is free to change.
+
+func test_a_fresh_profile_has_an_empty_star_ledger() -> void:
+	assert_eq(int(_save.profile["stars_earned"]), 0, "nothing earned yet")
+	assert_eq(int(_save.profile["stars_spent"]), 0, "nothing spent yet")
+	assert_eq(_save.stars_available(), 0, "nothing to spend")
+
+
+func test_completing_a_rally_credits_the_placement_and_returns_it() -> void:
+	var gained: int = _save.complete_rally("alpine", 60_000, 1)
+	assert_eq(gained, RallyLibrary.stars_for_placement(1),
+		"a first win credits what that placement is worth")
+	assert_eq(_save.stars_available(), gained, "the balance reflects the credit")
+
+
+func test_a_rewin_at_a_worse_placement_credits_nothing() -> void:
+	# The grind guard: best_placed only improves, so a replay cannot pay again.
+	var first: int = _save.complete_rally("alpine", 60_000, 1)
+	var before: int = _save.stars_available()
+	var again: int = _save.complete_rally("alpine", 50_000, 2)
+	assert_eq(again, 0, "re-winning at a worse placement credits nothing")
+	assert_eq(_save.stars_available(), before, "the balance did not move")
+	assert_gt(first, 0, "the original win did pay (guards against a vacuous test)")
+
+
+func test_improving_a_placement_credits_only_the_difference() -> void:
+	_save.complete_rally("alpine", 60_000, 2)
+	var after_second: int = _save.stars_available()
+	var gained: int = _save.complete_rally("alpine", 50_000, 1)
+	var expected := RallyLibrary.stars_for_placement(1) - RallyLibrary.stars_for_placement(2)
+	assert_eq(gained, expected, "improving pays the difference, not the full rating")
+	assert_eq(_save.stars_available(), after_second + expected, "balance moved by the delta")
+
+
+func test_award_stars_credits_non_rally_sources() -> void:
+	_save.award_stars(4)
+	assert_eq(_save.stars_available(), 4, "a non-rally source credits the ledger")
+	_save.award_stars(0)
+	_save.award_stars(-5)
+	assert_eq(_save.stars_available(), 4, "zero and negative awards are ignored")
+
+
+func test_spending_debits_the_balance_and_refuses_when_short() -> void:
+	_save.award_stars(10)
+	assert_true(_save.spend_stars(4), "an affordable spend succeeds")
+	assert_eq(_save.stars_available(), 6, "the balance dropped by the amount spent")
+	assert_false(_save.spend_stars(7), "an unaffordable spend is refused")
+	assert_eq(_save.stars_available(), 6, "a refused spend changes nothing")
+	assert_false(_save.spend_stars(-1), "a negative spend is refused")
+	assert_eq(_save.stars_available(), 6, "a negative spend changes nothing")
+
+
+func test_earned_never_decreases_and_balance_never_goes_negative() -> void:
+	_save.award_stars(6)
+	_save.spend_stars(6)
+	assert_eq(_save.stars_available(), 0, "spending everything leaves nothing")
+	assert_eq(int(_save.profile["stars_earned"]), 6, "earned is a ledger, not a balance")
+	assert_false(_save.spend_stars(1), "cannot spend past zero")
+	assert_true(_save.stars_available() >= 0, "the balance is never negative")
+
+
+func test_the_star_ledger_survives_a_save_and_reload() -> void:
+	_save.complete_rally("alpine", 60_000, 1)
+	_save.award_stars(3)
+	_save.spend_stars(2)
+	var earned := int(_save.profile["stars_earned"])
+	var spent := int(_save.profile["stars_spent"])
+	_save.save_now()
+	_save.load_or_new()
+	assert_eq(int(_save.profile["stars_earned"]), earned, "earned round-trips")
+	assert_eq(int(_save.profile["stars_spent"]), spent, "spent round-trips")
+
+
+func test_a_profile_predating_the_ledger_backfills_to_zero() -> void:
+	# No migration by design: an older profile starts at 0 rather than being seeded
+	# from the old derived total. The _migrate key backfill is what supplies the keys.
+	var legacy: Dictionary = _save._default_profile()
+	legacy.erase("stars_earned")
+	legacy.erase("stars_spent")
+	var migrated: Dictionary = _save._migrate(legacy)
+	assert_eq(int(migrated["stars_earned"]), 0, "stars_earned backfills to 0")
+	assert_eq(int(migrated["stars_spent"]), 0, "stars_spent backfills to 0")
+
+
 func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	# Upgrades are CAR-BOUND — install_upgrade fits the won part straight to the car

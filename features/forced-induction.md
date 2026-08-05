@@ -170,12 +170,15 @@ pass for `RewardSystem` to offer the part in a car's reward draw
   fitted to THAT car; `supercharger` requires `turbo_large`. This is the old
   "tier" ladder's real job — `UpgradeLibrary.requires_upgrade_id` /
   `prerequisite_met` — and is unchanged by the tier removal.
-- **Star gate (garage-wide, new).** `UpgradeLibrary.unlocked_by_rally(id)` /
+- **Event gate (garage-wide).** `UpgradeLibrary.unlocked_by_rally(id)` /
   `rally_gate_met(item_id, profile)`: an item can be absent from the reward
-  pool entirely until a particular star-gated special event has been WON
-  (top-3 finish). In the shipped table, `turbo_large` ("Big Turbo") is gated
-  on `sp_woodland_trial` and `supercharger` on `sp_lakeshore_trial` — see
-  `todo/star-gated-special-events.md`. This gates EARNING only:
+  pool entirely until a particular special event has been WON (top-3 finish).
+  In the shipped table, `turbo_large` ("Big Turbo") is gated on
+  `sp_woodland_trial` and `supercharger` on `sp_lakeshore_trial` — see
+  `todo/star-gated-special-events.md` (the spec's filename; the special's OWN
+  gate is the count of completed ordinary rallies now — `RallyLibrary.
+  completions_required` — not a star total, see
+  [star-economy.md](star-economy.md)). This gates EARNING only:
   `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the
   gate, so a part already fitted keeps working even if the gate that unlocked
   it were somehow revisited.

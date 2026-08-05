@@ -411,6 +411,29 @@ static func power_to_weight(entry: Dictionary) -> float:
 		return 0.0
 	return peak_power_kw(entry) / mass
 
+
+# A bounding box (width, height, length in metres) that contains EVERY car on the roster —
+# the per-axis maximum across the catalogue, not any single car's size. Used to size the
+# present box so the largest car still fits inside it (hq._enter_present_box), derived from
+# the authored dimensions rather than a hand-tuned scale factor that silently stops fitting
+# the day a longer car joins.
+#
+# WIDTH takes the greater of the body box and `track + wheel width`: on the widest-tracked
+# cars the wheels stand PROUD of the bodywork, so the body figure alone under-measures them.
+# HEIGHT stacks the cabin on the body, since the cabin sits on top of it.
+static func max_car_bounds() -> Vector3:
+	var out := Vector3.ZERO
+	for entry in all():
+		var body: Vector3 = entry.get("body", Vector3.ZERO)
+		var cabin: Vector3 = entry.get("cabin", Vector3.ZERO)
+		var wheels: float = float(entry.get("track", 0.0)) + maxf(
+			float(entry.get("wheel_width_front", 0.0)),
+			float(entry.get("wheel_width_rear", 0.0)))
+		out.x = maxf(out.x, maxf(body.x, wheels))
+		out.y = maxf(out.y, body.y + cabin.y)
+		out.z = maxf(out.z, body.z)
+	return out
+
 # The player-facing hp/tonne figure, ROUNDED to the nearest whole number — the same
 # rounding every hp/tonne readout applies via "%.0f" (HUD, detail panel, detune slider).
 # Single source of truth for "what number does the player see": any code that gates

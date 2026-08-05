@@ -40,9 +40,9 @@ re-implementing them.
 | `current_event_standings()` | the leaderboard for the **JUST-COMPLETED event alone**: each racer's time for that one event, fastest first (a rival who DNF'd that event sinks to the bottom). The row's `combined_ms` field carries the single-event time, not a cumulative sum. Empty before any event completes. Read by the standings scene's STAGE n RESULT section, AND by `GlobalStandings.for_current_stage()` — the player's row here already carries the corrected car name/id (next row), so the local and [global](global-leaderboards.md) boards can never disagree about what the player was driving. |
 | `_player_car_name()` (private) | the player's own row's `car_name` in both boards above — `EngineSwap.display_name(CarLibrary.by_id(_car_model_id), Save.get_car(_car_instance_id))`, i.e. the car's catalogue name **prefixed with its current engine swap** if it isn't running its stock engine (see [engine-swap.md](engine-swap.md)'s `display_name`). Previously read the bare model name with no swap prefix; corrected as part of the global-leaderboards work since the same string now also gets posted to the world leaderboard. `""` when no car is fielded or the model id resolves to nothing (e.g. headless tests). |
 | `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_id, car_name, time_ms}`); DNF-this-event omitted. Drives the [start-line](start-line.md) reveal: the top three line up on the grid in their **actual cars** (spawned from `car_id`), each shown by name with its time to beat. |
-| `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. Any per-event upgrades already earned this rally are **kept**; a DNF earns **no car** (the car reward only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
+| `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. Any per-event upgrades already earned this rally are **kept**; a DNF earns **no stars** (the star credit only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
-| `dev_complete_rally()` | **DEV shortcut** (settings dev page, surfaced only while active): credit every event a perfect **0 ms** time, force `_event_index = EVENTS_PER_RALLY`, and `_resolve_results()` straight to the podium. A 0 ms combined out-runs the field → **P1** (top-3), so the podium grants the car reward. No-op when `IDLE`. The settings host unfreezes the tree before calling it (the page is reached from the paused in-run overlay). |
+| `dev_complete_rally()` | **DEV shortcut** (settings dev page, surfaced only while active): credit every event a perfect **0 ms** time, force `_event_index = EVENTS_PER_RALLY`, and `_resolve_results()` straight to the podium. A 0 ms combined out-runs the field → **P1** (top-3), so the finish records completion and credits its stars. No-op when `IDLE`. The settings host unfreezes the tree before calling it (the page is reached from the paused in-run overlay). |
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
 event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,
@@ -54,8 +54,14 @@ event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,
 player via `RallyLibrary.build_standings`, each entry carrying `car_id` so the
 podium can spawn the top-3 cars), `upgrades` (the per-event ids won this rally —
 recorded here, but revealed earlier on the standings screens, not the podium),
-`car_reward` (model id, `""` if none),
-`car_reward_is_new` (bool), and `game_won` (bool — renamed from `showdown_won`).
+`star_rating` (int 0–3 — what this rally is worth at the player's BEST-ever
+placement, i.e. how many of the podium's three stars light up) and
+`stars_gained` (int — what the ledger actually moved by, `0` on a re-win that
+didn't beat the previous best; the two are deliberately separate numbers, see
+below), `car_reward` (model id — now always `""`, since no rally pays a car;
+kept, with `car_reward_is_new`, so the podium/reveal plumbing keeps its shape),
+and `game_won` (bool — renamed from `showdown_won`). The `car_rewarded(model_id)`
+signal is likewise vestigial: nothing emits it any more.
 
 `return_to_garage` is a one-shot navigation flag (not part of the result): the
 podium's final Continue sets it so HQ boots straight to the **garage** view; HQ
@@ -65,23 +71,40 @@ reads + clears it on its next `_ready`.
 
 On resolve: `combined = sum(event_times)`, `placed =
 RallyLibrary.placement(field, combined)`. A **top-3, non-DNF** finish records
-completion + best placement (`Save.complete_rally(id, combined, placed)`,
-idempotent; the placement drives the world-map stars, and — for a `special`
-rally — the star gate itself, since specials don't award stars but their
-`completed` flag is exactly what `RallyLibrary.special_gate_open` and the
-endgame check below read) and grants a reward — a **car** for a normal rally
-(`RewardSystem.draw_car`, fires on **every** top-3 including re-wins →
-renewable supply), or the **win beat** (`game_won`) once THIS finish makes
+completion + best placement (`Save.complete_rally(id, combined, placed)` —
+idempotent for the `completed` flag, and its RETURN VALUE is the number of stars
+it credited to the persisted ledger, see [star-economy.md](star-economy.md)).
+That credit is only the **improvement** over the rally's previous best, so a
+re-win at an equal or worse placement pays nothing and an easy rally can't be
+farmed for stars. `star_rating` is then read back from
+`RallyLibrary.stars_for_placement(Save.best_placement(id))` — still the single
+definition of what a placement is worth — and both numbers ride out on the result
+for the podium's stars beat.
+
+**No car is drawn here, for any rally.** Winning pays STARS, and cars are BOUGHT
+with them at the HQ present box (`RewardSystem.purchase_car`). The old guaranteed
+car per top-3 (and it fired on re-wins too) filled the garage with something for
+every class within a handful of rallies, after which the per-rally `restriction`
+bands stopped excluding the player from anything; the only free car left is the
+wreck safety net (`Save.ensure_wreck_safety_net` → `Save.open_mystery_box`),
+which must stay free because it's the anti-soft-lock path.
+
+A top-3 also fires, where applicable: the **special-unlock** reveal on a
+special's FIRST win (`UpgradeLibrary.unlocked_by`, handed to the driven car via
+`RewardSystem.grant_special_unlock`; the engine-swap rung gates a capability
+rather than a catalogue part, so it announces that plus one swap token), and the
+**win beat** (`game_won`) once THIS finish makes
 `RallyLibrary.is_special(_rally) and RallyLibrary.all_specials_completed(Save.profile)`
-true — i.e. every special event on the star ladder is now won, checked after
-this rally's completion is recorded so the last special to fall counts itself.
-There is no designated final region any more (`RegionLibrary.all_showdowns_completed`
-is gone): winning a special while other rungs of the ladder are still
-outstanding instead completes and pays a normal car reward exactly like any
-other rally — specials pay out like ordinary rallies precisely so they can't
-soft-lock a player who needs a car (see [rally-roster.md](rally-roster.md) for
-the star ladder / `special_gate_open`, and [regions.md](regions.md) for the
-region look, which no longer gates anything). Non-top-3 / DNF grants **no car**
+true — i.e. every special event is now won, checked after this rally's completion
+is recorded so the last special to fall counts itself. There is no designated
+final region any more (`RegionLibrary.all_showdowns_completed` is gone). Specials
+DO now award stars, where they used to award none: that exclusion only existed
+because specials once *gated* on a star total, and paying them out would have fed
+their own gate. They gate on completed ORDINARY rallies now
+(`RallyLibrary.completions_required` / `completions_needed`), so the exclusion is
+no longer needed — see [rally-roster.md](rally-roster.md) for the special ladder
+and [regions.md](regions.md) for the region look, which no longer gates anything.
+Non-top-3 / DNF credits **no stars**
 and leaves the rally incomplete (**no retry** — re-enter from the map later;
 damage and the opponent field persist). Upgrades are **not** granted here —
 they're awarded per non-final event in `report_event_result` (above) and kept
@@ -183,6 +206,15 @@ standings UI (the overlay's show/hide toggle) mid-reveal abandons the stale
 coroutine without touching freed rows. The podium gates its **Next** button (`_reveal_done`)
 until the reveal completes. Under headless (`Platform.is_headless()`) the animation
 is skipped — every row shows immediately — so tests see the fully-populated list.
+
+The podium's **stars beat** (`Stage.STARS`, straight after LEADERBOARD) animates
+the same way and under the same `_reveal_gen` guard: `podium.gd` `_reveal_stars`
+fills a big `StarRow` gold one star per `REVEAL_STEP` up to `star_rating`, with
+`_stars_caption` showing the ledger delta (`stars_gained`) plus the spendable
+balance from `Save.stars_available()` underneath — no "x of N" denominator, since
+the total is a wallet now, not a completion score. The beat ALWAYS runs, including
+on a DNF or a non-podium finish: three dim stars is honest feedback about the miss,
+whereas skipping the stage would make a zero-star result look like a bug.
 
 ## Run-scene wiring
 

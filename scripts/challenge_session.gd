@@ -569,16 +569,19 @@ func _end_as_dnf() -> void:
 
 # Per-kind completion reward table — TUNABLE, change the numbers here.
 #
-# `boxes` is a count of the mystery-box consumable; `car_tier` (omit for no car) is
-# the synthetic rally_difficulty handed to RewardSystem.draw_car, where **-1 means
-# the player's own progress ceiling** — the highest tier they have earned, which is
-# what "a high tier car" can mean without handing a top-end car to someone two
-# rallies in. draw_car clamps to that ceiling regardless, so -1 is the honest way to
-# ask for it rather than naming a number the clamp would silently lower.
+# `boxes` is a count of the mystery-box consumable. The car draw that used to sit here is
+# GONE: cars are bought with stars at the present box now, so a challenge pays STARS
+# instead (todo/star-economy.md, change 5). Stars are credited by placement through the
+# same RallyLibrary.stars_for_placement curve career rallies use, so a star earned in a
+# challenge is worth exactly what one earned in a rally is.
+#
+# One attempt per period and the outcome is terminal, so a period cannot be re-farmed —
+# but unlike career stars this income IS renewable over real time, which is deliberate:
+# it is the only star source that keeps flowing once the roster is complete.
 const _COMPLETION_REWARD := {
 	ChallengeLibrary.DAILY: {"boxes": 2},
-	ChallengeLibrary.WEEKLY: {"boxes": 3, "car_tier": 1},
-	ChallengeLibrary.MONTHLY: {"boxes": 4, "car_tier": -1},
+	ChallengeLibrary.WEEKLY: {"boxes": 3},
+	ChallengeLibrary.MONTHLY: {"boxes": 4},
 }
 
 
@@ -609,20 +612,16 @@ func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	var reward: Dictionary = _COMPLETION_REWARD.get(kind_str, {})
 	if reward.is_empty():
 		return {"placed": true, "rank": rank, "total_entries": total}
-	# Boxes first: they are granted unconditionally for the kind, whereas the car
-	# draw can come back empty (nothing left to unlock), and a player who placed
-	# must never walk away with nothing.
 	var boxes := int(reward.get("boxes", 0))
 	if boxes > 0:
 		Save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, boxes)
-	var item_id := ""
-	if reward.has("car_tier"):
-		var tier: int = int(reward["car_tier"])
-		var difficulty_val: int = tier if tier >= 0 else RewardSystem.tier_ceiling(RallyLibrary.completed_count(Save.profile))
-		var model: Variant = RewardSystem.draw_car(Save.profile, difficulty_val)
-		item_id = String(model) if model != null else ""
-		if item_id != "":
-			Save.grant_car(item_id)
-	completion_reward_revealed.emit(item_id)
+	# Stars by placement, on the SAME curve as a career rally (1st/2nd/3rd -> 3/2/1). Note
+	# "placed" here is the top HALF of the board, which is far more lenient than the podium
+	# the star curve pays out to — so a mid-table finish legitimately banks 0 stars and walks
+	# away with the boxes above. That is why the boxes are granted unconditionally.
+	var stars := RallyLibrary.stars_for_placement(rank)
+	if stars > 0:
+		Save.award_stars(stars, false)
+	completion_reward_revealed.emit("")
 	return {"placed": true, "rank": rank, "total_entries": total,
-		"item_id": item_id, "boxes": boxes}
+		"item_id": "", "boxes": boxes, "stars": stars}

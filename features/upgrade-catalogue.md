@@ -25,12 +25,12 @@ is the upgrades half.
 consumables), `consumable`, an optional `free` flag (always-available,
 never-drawn parts — the ballast; see below), an optional `requires_upgrade_id`
 (per-car prerequisite gating — see below), an optional `unlocked_by_rally`
-(garage-wide star gating — see below), an optional `weight` (reward-pool
+(garage-wide event gating — see below), an optional `weight` (reward-pool
 rarity, default 1.0 — see below), and `effect` (config-field →
 delta/multiplier).
 
 **`tier` is gone.** Upgrades used to carry a `tier` walked by
-`RewardSystem._parts_at_or_below` (also gone); the star gate below replaced it
+`RewardSystem._parts_at_or_below` (also gone); the event gate below replaced it
 — see `reward-system.md`. The draw pool is now a **flat** filter with no tier
 concept at all. (`CarLibrary`'s `reward_tier` is unrelated and still tiers the
 **car** draw.)
@@ -38,19 +38,23 @@ concept at all. (`CarLibrary`'s `reward_tier` is unrelated and still tiers the
 **Reward-pool weight (`weight`).** Optional, defaulting to 1.0.
 `UpgradeLibrary.pool_weight(id)` reads it. This is the rarity knob that
 replaced `tier`: tier gated on rally **difficulty** and had gone vestigial
-(nearly every part sat at tier 1), whereas the star gate below now handles
+(nearly every part sat at tier 1), whereas the event gate below now handles
 availability-over-time and `weight` handles rarity within whatever is
 currently available — a more direct lever, and the reward pool already spoke
 in weights (that's how the engine swap token gets its low drop rate).
 
-**Star gate (`unlocked_by_rally`).** Garage-wide availability over *time*: an
+**Event gate (`unlocked_by_rally`).** Garage-wide availability over *time*: an
 item can be withheld from the reward pool entirely until a particular special
 event has been **won**. `UpgradeLibrary.unlocked_by_rally(id)` reads the
 field; `UpgradeLibrary.rally_gate_met(item_id, profile)` returns `true` when
 the field is absent (default: ungated), else whether that rally is recorded
 `completed` in `profile.rallies` — and `completed` already means a **top-3
-finish**, so this genuinely reads "was the event won", not just "does the
-player have enough stars". Keyed on the **rally id**, not a raw star total.
+finish**, so this genuinely reads "was the event won". Keyed on the **rally id** — never
+on a star total, and stars are a spendable currency now
+([star-economy.md](star-economy.md)), so a part can't be bought. The special
+itself opens on the count of COMPLETED ORDINARY rallies
+(`RallyLibrary.completions_required`), which is what makes the chain
+"race enough events → win the special → the part enters the pool".
 This gate is about **earning** a part, never about **keeping** one:
 `UpgradeLibrary.apply` walks `installed_upgrades` and never consults it, so a
 part already fitted keeps working even if its gate would no longer be met.
@@ -62,8 +66,8 @@ Gated parts today: `turbo_large` → `sp_woodland_trial`, `drivetrain_swap`
 `RewardSystem` reads this gate into the draw pool.
 
 **Prerequisite gate (`requires_upgrade_id`).** The **per-car** counterpart to
-the star gate: an item that should unlock through owning ANOTHER item on
-*that car*, rather than (or in addition to) the garage-wide star gate. `""`/absent
+the event gate: an item that should unlock through owning ANOTHER item on
+*that car*, rather than (or in addition to) the garage-wide event gate. `""`/absent
 (the default) means no prerequisite. `UpgradeLibrary.requires_upgrade_id(id)`
 reads the field; `UpgradeLibrary.prerequisite_met(item_id, owned_car)` checks
 it against **that car's** `installed_upgrades` and is one of the checks
@@ -72,8 +76,8 @@ until the driven car has its prerequisite fitted. Deliberately **per-car, not
 garage-wide** — upgrades are car-bound, so every car has to climb its own
 ladder; a sibling car owning Small Turbo does not unlock Big Turbo elsewhere.
 The **forced-induction ladder** uses this: **Big Turbo (`turbo_large`)**
-requires `turbo_small` (plus its own star gate above), and the **Supercharger
-(`supercharger`)** requires `turbo_large` (plus its own star gate) — so a car
+requires `turbo_small` (plus its own event gate above), and the **Supercharger
+(`supercharger`)** requires `turbo_large` (plus its own event gate) — so a car
 climbs the chain *and* the ladder has to have been unlocked garage-wide.
 
 **The chain can also be satisfied by CASCADE.** When a special event awards the part it
@@ -115,16 +119,18 @@ The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the ge
 earn-gated option row — see below.
 Current set: three **forced-induction kits** (turbo slot — `turbo_small` ungated,
 `turbo_large` prerequisite-gated on the same car having `turbo_small` plus its own
-star gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own star
-gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
+event gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own
+event gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
 an aero kit, the three **weight** parts above, the drivetrain conversion kit, a
 **fifth `nitrous` slot** (see below), and two consumables — the **engine
 swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
 `slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
 damage is one-way now; see [damage.md](damage.md).) The token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md); the swap
-**capability** itself is unlocked by the 32-star special
-(`RallyLibrary.engine_swaps_unlocked`), but tokens drop and accumulate from
+**capability** itself is unlocked by winning the engine-swap special
+(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` / `RallyLibrary.engine_swaps_unlocked`;
+`engine_swap_completion_requirement()` reports how many ordinary rallies that
+special needs), but tokens drop and accumulate from
 the start regardless (see `reward-system.md`). The mystery box
 is drawn instead of a normal upgrade once a car has nothing left to gain (and,
 once swapping is unlocked, the player is token-rich too — see
@@ -143,8 +149,8 @@ mechanic, gauge, input and audio are documented in full in
 reveal overlay to enable the player's pick — a nitrous bottle with no menu row
 would otherwise be permanently dead). Its four rungs (`nitrous` →
 `nitrous_tank` → `nitrous_shot` → `nitrous_race`) chain via
-`requires_upgrade_id` exactly like the turbo ladder, each also star-gated (see
-above). The `install_nitrous` effect uses the `"write_fields"` op with
+`requires_upgrade_id` exactly like the turbo ladder, each also gated on winning
+its own special event (see above). The `install_nitrous` effect uses the `"write_fields"` op with
 `feeds_pw: false` in the `EFFECTS` table below, so nitrous can never move
 `effective_meta`'s power-to-weight or a car's rally eligibility.
 → "Mystery box" for the trigger, resolver, and reveal. The concrete part
@@ -192,15 +198,15 @@ the car's un-upgraded factory config, hence the label rather than `None`); each 
 is **greyed until that kit is fitted** to this car, and the active one is
 bracketed **and painted the house accent green** so the current pick stands out.
 
-**Star-locked options are not shown at all** (`UpgradesMenu._slot_parts`) — not
+**Locked options are not shown at all** (`UpgradesMenu._slot_parts`) — not
 greyed, absent. A greyed row the player cannot act on only raises "when do I get
 this?", which the garage cannot answer; the MAP is the surface that advertises
 what a special unlocks. So the turbo row reads `Stock | Small` for a new player and
-grows to `Stock | Small | Big | Supercharger` as the 10- and 20-star specials are
-won. A slot whose every option is still locked gets **no row at all, label
+grows to `Stock | Small | Big | Supercharger` as the turbo and supercharger
+specials are won. A slot whose every option is still locked gets **no row at all, label
 included** (`_make_slot_row` returns null) — for a new player that is the whole
 drivetrain row. The engine-swap row is hidden on the same rule while the capability
-is star-locked. Two exceptions keep the display honest: a part already FITTED shows
+is still locked. Two exceptions keep the display honest: a part already FITTED shows
 regardless of its gate (the gate governs earning, never keeping), and a part that
 is unlocked but merely unfitted stays visible-and-disabled, since winning it is
 something the player can actually act on.
@@ -314,7 +320,7 @@ ballast).
 things:**
 
 - **`{}` (default) — the ASPIRATIONAL ceiling.** Every catalogue part is a
-  candidate regardless of ownership *and* star gates are ignored: "could this
+  candidate regardless of ownership *and* event gates are ignored: "could this
   car ever do it?" Used for entry eligibility and the displayed ceiling, so a
   player is never locked out of a rally for lacking a part they will obviously
   grow into.
@@ -330,7 +336,7 @@ Only the `pw_min` floor is ever judged against either ceiling
 (`RallyLibrary.ineligibility_reason`'s `floor_meta`); `pw_max` still uses the
 car's **real current stats**, so the ceiling only ever makes a car *more*
 eligible, never less — a player can't sandbag into a class they'd dominate.
-**Accepted consequence:** with the best parts star-gated, the `pw_min` floor
+**Accepted consequence:** with the best parts locked behind special events, the `pw_min` floor
 is now very permissive (almost any car could eventually be turbo'd and
 lightened), so its remaining job is soft-lock prevention, not class balance —
 `pw_max` is where balance actually lives. See `reward-system.md` for the
@@ -367,12 +373,13 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 ## Reward integration
 
 Upgrades are the **per-event** reward: one is drawn at each non-final event
-boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward.
+boundary (events 1 & 2 of a 3-event rally); the rally itself pays STARS, not a
+car ([star-economy.md](star-economy.md)).
 The reward draw picks from a **flat** pool (no `tier` any more), excluding
 parts already on the driven car, never `free` parts (the ballast is always
 available, so it's not a reward), never a part whose `requires_upgrade_id`
 prerequisite isn't yet on the driven car (Big Turbo, until that car has Small
-Turbo), and never a part whose `unlocked_by_rally` star gate hasn't been won
+Turbo), and never a part whose `unlocked_by_rally` event gate hasn't been won
 — that policy is reward-system logic (`reward-system.md`); this library just
 provides the catalogue plus the `requires_upgrade_id` / `prerequisite_met`,
 `unlocked_by_rally` / `rally_gate_met`, and `pool_weight` helpers it reads.
@@ -392,7 +399,7 @@ baseline incl. `mass_mult`; empty list is a no-op), `effective_meta`
 tuning gate, `rally_gate_met` (true when `unlocked_by_rally` is absent, false/true
 tracking `profile.rallies[id].completed` otherwise, using synthetic fixtures per
 CLAUDE.md), and `max_potential_meta`'s two flavours (aspirational includes
-unowned/star-gated parts; a reachable profile excludes still-gated ones, and
+unowned/event-gated parts; a reachable profile excludes still-gated ones, and
 a fitted-but-gate-closed part keeps applying). `test_rally_library.gd` covers an installed upgrade
 qualifying / disqualifying a car for a rally's pw band; `test_car_library.gd`
 covers `apply_owned` re-syncing the RigidBody mass after a weight-reduction kit.

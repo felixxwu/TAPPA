@@ -1006,13 +1006,20 @@ and each button drills into **its own sub-page**:
   fresh new game — and, when signed in, `Cloud.publish_local_wipe()` so the cloud
   copy is cleared too, otherwise the next pull restores everything and the wipe
   undoes itself; see `features/cloud-save.md`), **3-star all rallies** (`Save.dev_three_star_all_rallies`, unlocks
-  every region), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
-  and per upgrade (from `UpgradeLibrary.UPGRADES`) to unlock anything in the game.
+  every region), **Add 1 star** (`Save.award_stars(1)` — the same entry point the Rally
+  Challenge banks through, rather than poking `stars_earned` directly, so the shortcut can
+  never drift from how stars are really credited; the status line quotes the new spendable
+  balance). One star at a time is deliberate: it lets you sit exactly on a price boundary and
+  check the present box's affordable / unaffordable / free states — see
+  `features/star-economy.md`. Plus one button per car (`Save.grant_car`, from
+  `CarLibrary.CARS`) and per upgrade (from `UpgradeLibrary.UPGRADES`) to unlock anything in
+  the game.
   **Complete rally (win now)** appears ONLY while a rally is active (i.e. from the
   in-run pause menu, gated on `RallySession.is_active()`): it unfreezes the tree and
   calls `RallySession.dev_complete_rally`, which credits every event a perfect 0 ms
   time, resolves to a P1 (top-3) finish, and routes straight to the podium — so the
-  player collects the car reward without driving the stages.
+  player banks the stars (and sees the stars beat) without driving the stages. Note it no
+  longer yields a CAR: no rally pays one, and cars are bought at the present box.
   Upgrades are car-bound, so a slottable part **fits straight onto the selected car**
   (`Save.install_upgrade` — no-op with a "own a car first" note when nothing's owned);
   only consumables (swap token, mystery box) go to the inventory
@@ -1219,12 +1226,14 @@ throwaway test and still clip in the real game.
   while the lightweight (Weight Reduction) option **greys until earned**; picking a free
   ballast the car doesn't own installs it on the spot, Stock disables all weight parts.
   Nothing is consumed from an
-  unlocked pool — upgrades are car-bound. A part can also grey for a **second** reason —
-  a star-gated special not yet won (`UpgradeDef.unlocked_by_rally`) — never hidden:
-  locking hides *availability*, not *information*. `_make_slot_row` shows the option
-  button either way and, when gated, applies `UITheme.MUTED` to both `font_color` and
-  `font_disabled_color` and sets its tooltip to `_star_gate_hint(item_id)` ("Locked —
-  win the N-star event"). The **`nitrous` slot is deliberately skipped** when building
+  unlocked pool — upgrades are car-bound. A part gated on a **special not yet won**
+  (`UpgradeDef.unlocked_by_rally`, checked via `UpgradeLibrary.rally_gate_met`) is
+  **omitted from the row entirely** rather than greyed (`UpgradesMenu._slot_parts`): a row
+  of locked options invites "when do I get the big turbo?", which is a question the garage
+  can't answer — so a new player's turbo row reads "Stock | Small" and grows as specials
+  are won. Greyed-but-visible is reserved for a part that is unlocked and merely **not yet
+  fitted to THIS car**, which the player can act on. A part already fitted is kept whatever
+  its gate says, so a car never displays less than it is actually running. The **`nitrous` slot is deliberately skipped** when building
   slot rows (`UpgradeLibrary.SLOTS` iteration) — it has no garage row at all, by design;
   see [nitrous.md](nitrous.md) for the mechanic and why it's installed pre-enabled instead. It also hosts the **engine-detune slider**
   (0–100%, step 5) at the **bottom** of the menu (below the slot rows and the engine-swap
@@ -1275,11 +1284,11 @@ region, no way to change maps. `_refresh_map_pins` loads that one texture and pi
 **every** rally in `RallyLibrary.all()` at once, so a corner the player hasn't earned
 is visible from the first minute — its rallies simply render locked.
 See [regions.md](regions.md) for the region look (it no longer gates anything —
-regions are look + waterline only; the star-gated specials are
+regions are look + waterline only; the completion-gated specials are
 [rally-roster.md](rally-roster.md)'s territory). Every
 rally in the roster is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
 **state-driven marker** — an ordinary rally gets a **flag** (`RallyFlag` — a small
-**base disk** the pin stands on + a pole + waving pennant + finial bead), a star-gated
+**base disk** the pin stands on + a pole + waving pennant + finial bead), a
 **SPECIAL** gets a **trophy** (`RallyTrophy`, see below) — topped by a **billboarded design-system box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
 gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
@@ -1345,21 +1354,28 @@ floating **readout box itself**, so a click on the menu enters the rally just li
 click on the flag — while an unlocked-but-ineligible pin has only the flag sphere (no
 box to click) and no `label_panel` meta for the focus cursor to paint. Each pin also
 carries its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
-whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`): a **special**
-until its star gate opens (`RallyLibrary.special_gate_open` — a global star-total
-comparison, no region involvement), and any rally whose **`reveal_after`**
-(a GLOBAL count of completed non-special rallies, `RallyLibrary._completed_count`)
-hasn't been met — a "coming up" hint so a region reveals ~1–2 fresh rallies at a
-time rather than all at once. **The one exception to all-or-nothing:** a locked
+whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`) — ONE predicate
+over ONE count for every rally: `RallyLibrary.completions_required` reads a
+special's **`requires_completions`** and an ordinary rally's **`reveal_after`**,
+both compared against the GLOBAL count of completed ordinary rallies
+(`RallyLibrary._completed_count`). So a special opens after N events won, and an
+ordinary rally reveals in waves (~1–2 fresh rallies at a time rather than all at
+once). Specials used to gate on the player's roster-wide STAR TOTAL; stars became a
+spendable balance, and a gate reading a balance would take back a special the moment
+the player bought a car — see [star-economy.md](star-economy.md).
+**The one exception to all-or-nothing:** a locked
 special still renders a **full-opacity, non-pickable** teaser box
-(`hq._build_special_teaser_label`, via `hq._make_pin`) reading "X/24 stars" over
+(`hq._build_special_teaser_label`, via `hq._make_pin`) reading **"3/4 events"** over
 "unlocks &lt;Part&gt;" (`hq._special_unlock_line`, derived from the upgrade
 catalogue's `UpgradeLibrary.unlocked_by_rally` — falling back to "unlocks engine
 swaps" for `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`) — the grey flag below already
 carries the "not yet" signal, so the teaser doesn't need dimming to read as
-locked. An unlocked special's pin names its unlock too. A progress meter sits on
-the HUD, now reading **"Stars: N / M"** (`hq._refresh_meter`, M = the roster's
-max-star total over non-special rallies) rather than a rally-completion count.
+locked. An unlocked special's pin names its unlock too. A meter sits on
+the HUD reading **"Stars: N"** (`hq._refresh_meter`) — the **spendable balance**
+(`Save.stars_available`) with **no denominator**: stars are currency now, so what
+matters is what the player can take to the present box, and there is no meaningful
+maximum to divide by (the balance falls on a purchase and the Rally Challenge tops it
+up without bound).
 **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
@@ -1368,6 +1384,96 @@ opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
 `MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
 default `STOP`) would swallow every touch and the 3D pins would never get a pick.
+**THE PRESENT BOX — the one non-rally target on the map.** Cars are no longer won by
+finishing a rally; they are **bought with stars** at a procedural gift box standing on
+the map (`scripts/present_box.gd` — `class_name PresentBox`, `build()` for the map prop
+and `build_openable(scale)` for the openable reveal copy). `hq._make_present_pin` builds
+it at `hq.PRESENT_MAP_POS` — **(0.52, 0.50), deliberately not dead centre**, because
+`front_runners` is pinned at (0.45, 0.45) and every hit radius must stay under half the
+closest pin spacing (`_add_pin_hit`), so a box at the exact centre would leave the
+nearest-to-centre cursor ambiguous between the two. Its readout is an
+**accent (inverted) box** — the box is not a rally and must not read as one more pin, see
+[ui-design-system.md](ui-design-system.md) rule 4 — reading **"BUY NEW CAR"** over a cost
+line, **"COST: N STARS"** or **"COST: FREE"** (`hq._present_cost_line`; the price comes from
+`RewardSystem.car_price`, normally `GameConfig.star_cost_per_car`, dropping to 0 **only**
+when the player is *stranded* — `RewardSystem.is_stranded` — AND cannot afford one).
+
+**The pin only exists once the player can afford a car**, and disappears again when the
+balance drops below the price (`_refresh_map_pins` guards on
+`Save.stars_available() >= RewardSystem.car_price(...)`; the free rescue price of 0 always
+qualifies, so a stranded player always sees it). Note this is the **opposite** of the
+locked-special rule ("locking hides availability, never information"): a special is a
+destination worth signposting long before you can reach it, whereas the box is a **button**,
+and a button you cannot press is clutter and a standing tease. There is consequently no
+"can't afford it" wording anywhere — that state has no pin.
+
+The box is kept **OUT of `hq._pins`** on purpose —
+everything walking that array (`_unlocked_pins`, `_node_with_rally_id`, the reveal
+parade) assumes a `rally_id` meta and the box has no rally.
+- **Keyboard + gamepad reach it with no extra wiring.** `hq_table._build_table_targets`
+  returns `{node, kind, pos}` entries of kind `"pin"` **or** `"present"`, and
+  `_activate_table_focus` dispatches on that kind; because the map cursor is simply
+  "whichever target sits nearest the view centre" (`_select_target_under_center`), a new
+  kind of target becomes reachable by pan/glide, drag and stick alike just by appearing in
+  that list. `_focus_hardest_incomplete` skips non-`"pin"` kinds so the box never steals
+  the opening cursor.
+- **One entry point for both input paths.** `hq_table.activate_present_box()` is called by
+  BOTH the tap handler (`hq._on_present_input`, which honours the same release-and-not-
+  dragged rule as a rally pin so panning can't spend stars) and the keyboard/gamepad
+  `_activate_table_focus`, so the pointer and the cursor can never diverge. It goes
+  **straight to `hq._enter_present_box()`** — there is deliberately **NO confirm dialog in
+  front of the box**: the box screen IS the confirmation, and its bottom button is the till.
+- **The box screen** (`CarparkMode.PRESENT`, `hq._enter_present_box`): the car park emptied
+  of cars with one oversized openable box in the middle, and **nothing bought yet**. It
+  reuses the ordinary car-park chrome rather than a modal — `_start_button` is the bottom
+  button and doubles as the **price tag** (`_refresh_present_button`: "Open (4 stars)",
+  or "Open (free)" for the rescue, and **disabled** rather than silently no-opping when the
+  balance is short), `_car_stats_label` carries the shortfall or the reason it is free, and
+  the prev/next **arrows are hidden** (`_set_carpark_arrows_visible`) because there is
+  nothing to cycle — though the centre label they share a row with is where the revealed
+  car's name lands. `_car_hint_label` swaps "Choose your car" for present copy.
+- **Opening it** (`hq._open_present`, on the bottom button): buys the car, then **puts it in
+  the box BEFORE a single wall moves** — the car is spawned at the box centre while the
+  walls still hide it, so the reveal is the box genuinely opening *on* the car rather than a
+  car fading in afterwards. This is exactly why the purchase happens on the button press and
+  not on entry: you cannot put a car in the box until you know which car it is. Its marker
+  sets `rotation.y = PI` so the nose faces the courtyard/camera, matching every other bay
+  marker (`hq_carpark._render_lineup_page`) — without it the car presents its back. Then
+  `hq._refresh_map_pins()` (the balance dropped, so the box may now be gone entirely; and a
+  new car can make previously un-enterable rallies raceable, so pin state changes too), and
+  the car's name goes into `_car_name_label` **under the car** — **no result card, no
+  modal**. A draw that comes back empty costs nothing: `purchase_car` resolves the car before
+  debiting, and the failure surfaces on `_car_warning_label`.
+- **Once open, the bottom button becomes the way OUT** — `_refresh_present_button` relabels it
+  **"Back to garage"** and leaves it ENABLED (`_leave_present_to_garage`). It is never left
+  disabled: a dead action row is a dead end, and the player has somewhere to go next — the
+  garage, where their new car is. The **"< Back"** action goes to the garage from this screen
+  too, for the same reason. That also makes a second purchase impossible without a
+  `_present_opened` re-entrancy check doing the work.
+- **The animation** (`hq._animate_present_open`): the **lid tweens up** out of frame while
+  the **four walls fall outward**, each hinged on the axis parallel to its own base edge
+  (see `PresentBox.build_openable`). The walls use **`TRANS_QUAD` + `EASE_IN` — the gravity
+  curve**, so displacement goes as t²: a wall barely moves at first and then accelerates
+  into the floor like a panel tipping past its balance point. Deliberately **not
+  `TRANS_BACK`**, which overshoots *backwards* before travelling and made every wall visibly
+  suck inward through the box before falling out. `PRESENT_WALL_TIME` is a slow 1.1 s — the
+  panels should read as having weight.
+- **Sizing is DERIVED, not tuned.** `PresentBox.build_openable(width, depth, body_h)` takes
+  **metres**, and the car park sizes it from `CarLibrary.max_car_bounds()` — the per-axis
+  maximum across the whole roster — plus `hq.PRESENT_CLEARANCE_M`. So the box fits the widest
+  and longest car by construction and keeps fitting when a bigger one is authored. A single
+  scale multiplier could not express this: the roster spans **3.8 m to 5.9 m** of length
+  against ~1.9 m of width, so a square box either clips the long cars or dwarfs the narrow
+  ones (an earlier 24× square footprint clipped the 5.9 m car badly). `max_car_bounds` takes
+  the greater of the body box and `track + wheel width` for WIDTH, because on the
+  widest-tracked cars the wheels stand proud of the bodywork. Trim sizes (ribbon, bow, wall
+  thickness) scale off the box's NARROW dimension so a long thin box does not get a 6 m ribbon
+  on a 2 m face.
+- Under `Platform.is_headless()` the whole beat **resolves immediately** — the car is parked
+  and named with no tweens and no awaited timers, so tests pay no cinematic time.
+  `_cleanup_present_reveal` is shared by the generic car-park Back and restores the arrows
+  and hint, so backing out mid-reveal can't leave a giant box parked in the lot.
+
 Tapping a pin opens the **rally detail** sub-panel — a **single-column card** built
 in `build_detail_overlay` (`hq_overlays.gd`) / populated in `_show_detail`. Header:
 rally name **with the stage count appended** (`"Coastal Sprint - 3 stages"`, singular
@@ -1497,7 +1603,11 @@ picker, Free Roam and the title backdrop, so they all page identically.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,
-placed)` on each top-3 finish (`RallySession` passes the placement).
+placed)` on each top-3 finish (`RallySession` passes the placement). A rally's
+displayed rating is therefore always `RallyLibrary.stars_for_placement` of that
+best placement; the SPENDABLE balance shown on the map meter is a separate,
+persisted ledger (`complete_rally` returns the delta it credited) — see
+[star-economy.md](star-economy.md).
 
 Each parked car gets its **own duplicated meshes** (`CarProp.dup_meshes`) so a mixed
 lineup renders each at its true size despite `car.tscn`'s shared mesh
@@ -1603,8 +1713,20 @@ only when something was won.
    player is in the top 3; falls back to the podium centre otherwise).
 2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
    position, name + car, time / `WRECKED`, the player's row tinted + marked.
-3. **SPECIAL_UNLOCK** (only if `special_unlock != {}`, i.e. the FIRST top-3 win of a
-   star-gated special that gates a part) — a milestone card naming the upgrade the
+3. **STARS** — the reward beat, and it **always runs, even on a DNF**: three dim stars is
+   honest feedback about the miss, where hiding the beat would read as a missing screen
+   rather than a result. Three **big** stars (the same `StarRow` widget as the map pins and
+   the rally detail, just scaled up — `podium.STAR_BEAT_RADIUS`/`_GAP`) fill in gold one at
+   a time (`_reveal_stars`, gated by `_reveal_gen`, instant under headless) up to the
+   rally's rating — what the player's BEST-EVER placement here is worth
+   (`RallyLibrary.stars_for_placement`, still the single definition of a placement's
+   worth). The caption (`podium._stars_caption`) reports the **ledger delta**, not the
+   rating: `"+2 stars — 7 in the bank"`, or on a re-win that didn't improve
+   `"No new stars — your best here is already N"` (lighting gold stars while the balance
+   didn't budge would look like a bug). It always ends on the **spendable balance** and
+   **never** an "x of N" denominator — see [star-economy.md](star-economy.md).
+4. **SPECIAL_UNLOCK** (only if `special_unlock != {}`, i.e. the FIRST top-3 win of a
+   special that gates a part) — a milestone card naming the upgrade the
    special just opened, and whether it was fitted to the car that earned it. Deliberately
    **not** the slot-machine reel the other two reveals use: a reel implies a random draw and
    this outcome is fixed by which special was won. **Inverted** (light face, dark ink, drop
@@ -1613,7 +1735,14 @@ only when something was won.
    headless needs no special case. The panel's stylebox and text colour are reset in
    `_enter_stage`, or the following CAR_REVEAL would inherit the inverted look.
    See [reward-system.md](reward-system.md) → Special-event unlock.
-4. **CAR_REVEAL** (only if `car_reward != ""`, which a SPECIAL never sets) — the camera **flies over to the
+5. **CAR_REVEAL** — **dormant.** It fires only if `car_reward != ""`, and since cars are
+   bought at the map's present box rather than won, `rally_session.gd` **never fills that
+   field** any more — for any rally, special or ordinary, first win or re-win (see the
+   "NO CAR IS DRAWN HERE" comment in `RallySession._resolve_rally`, and
+   [star-economy.md](star-economy.md) for why: a guaranteed car per win made the per-rally
+   restriction bands meaningless, and re-wins farmed cars). The stage and its wiring are
+   left in place for a future win-a-car beat; the car the player actually sees arrives
+   through the HQ present reveal above. When it does run — the camera **flies over to the
    showroom** and a slot-machine reel spins through the car catalogue's
    names, decelerating onto the won car; on the lock-in the car appears on the
    showroom turntable (hidden until then) and the card collapses to a **single
@@ -1624,7 +1753,7 @@ only when something was won.
 **Upgrades are no longer revealed on the podium** — the per-event upgrades are
 awarded and revealed on the between-event **standings** screens (see the
 Collect-reward flow above and [reward-system.md](reward-system.md)); the podium
-closes on the car reward only.
+closes on the **stars** beat (or the special-unlock card after it).
 
 During the car reveal the overlay's content stack drops to the **bottom of the
 screen** (`_middle.alignment = ALIGNMENT_END`) so the slot card clears the
@@ -1744,6 +1873,14 @@ scenes (`podium.tscn` / `standings.tscn`); the diegetic 3D versions are later
 refinements.
 
 ## Tests
+
+The **present box** map target is covered in `tests/headless/test_menu_flow.gd`: it appears
+in `hq_table._build_table_targets` with a `label_panel` and no `rally_id`, it is never in
+`hq._pins`, `_activate_table_focus` reaches it **with no pointer and opens no confirm** (it
+lands in `CarparkMode.PRESENT` with the box built), the bottom button prices itself and
+disables when broke, opening it buys exactly one car and names it under the car with no
+modal, and a second press cannot buy again. The purchase LOGIC itself is in
+`tests/headless/test_reward_system.gd` (`purchase_car` / `car_price` / `is_stranded`).
 
 `tests/headless/test_menu_flow.gd` — HQ boots to the **exterior title** (one 3D map
 pin per rally, a locked special pin non-pickable); **Start flies into the garage**;

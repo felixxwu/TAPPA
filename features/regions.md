@@ -11,15 +11,18 @@ forest, the original world), `home_coast` (a lakeland variant of the same
 forest, sea raised), `greece` (SW arid) and `greece_coast` (SE Mediterranean
 shoreline, sea raised) — every rally on every corner is pinned on the map at
 once, and **regions do not unlock in sequence**: there is no "next region"
-gate, and, as of the star-gated special events change
-(`todo/star-gated-special-events.md`), **no region-level gate of any kind** —
+gate, and **no region-level gate of any kind** —
 a region's only job is its LOOK and its `water_level`
 (`RegionLibrary.REGIONS`'s header comment states this explicitly). Progression
 gating now lives entirely in `RallyLibrary`: ordinary rallies gate on the
 global `reveal_after` wave count, and the eight **special events** gate on the
-player's roster-wide star total (`RallyLibrary.special_gate_open`,
-`total_stars`) — a purely global mechanism with no relationship to region. The
-credits/win beat fires once **every** special event is completed
+player's count of **completed ordinary rallies**
+(`RallyLibrary.completions_required` / `completions_needed`, read through
+`rally_revealed`) — a purely global mechanism with no relationship to region.
+Specials used to gate on the roster-wide STAR TOTAL; stars became spendable
+currency (see [star-economy.md](star-economy.md)), so a gate on them would
+close again when the player bought a car — hence completions, which only ever
+go up. The credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
 [rally-roster.md](rally-roster.md).
 
@@ -200,13 +203,13 @@ are the baseline by construction.
 
 Every `RallyLibrary.RALLIES` entry carries `"region": "<region_id>"`. See
 [rally-roster.md](rally-roster.md) for the roster itself and per-rally
-`reveal_after` / `special`+`requires_stars` semantics.
+`reveal_after` / `special`+`requires_completions` semantics.
 
-**The old per-region invariant is retired.** Before star-gated special events,
-the rule was "at most one showdown per region, and exactly one wherever a
-region holds rallies" (`RegionLibrary.showdown_of` picked that one rally out).
-Specials are now gated purely on the roster-wide star total
-(`RallyLibrary.special_gate_open`), so they have no relationship to a region's
+**The old per-region invariant is retired.** Before globally-gated special
+events, the rule was "at most one showdown per region, and exactly one wherever
+a region holds rallies" (`RegionLibrary.showdown_of` picked that one rally out).
+Specials are now gated purely on the global completed-ordinary-rally count
+(`RallyLibrary.completions_required`), so they have no relationship to a region's
 contents: **a corner may hold any number of specials, including none.** Today
 each of the four corners happens to hold exactly two (one lower-rung, one
 upper-rung ex-showdown), but nothing in the code enforces that — it's map
@@ -215,9 +218,10 @@ its look/waterline normally.
 
 `RallyLibrary.incomplete_rallies_enterable_by` (the anti-soft-lock query used
 by the reward system) is no longer region-aware at all: a special is offered as
-enterable once `RallyLibrary.rally_revealed` (which delegates to
-`special_gate_open`) says so — a pure star-total comparison with no region
-lookup in the path.
+enterable once `RallyLibrary.rally_revealed` says so — and `rally_revealed` no
+longer branches on `is_special` at all: EVERY rally reads
+`completions_required`, ordinary rallies simply author 0. A pure global count
+comparison, with no region lookup in the path.
 
 Non-special rallies also reveal in **waves**, but on a **global** count, not a
 per-region one: `RallyLibrary.rally_revealed` gates a rally's map pin (and its
@@ -304,12 +308,22 @@ pin's marker, readout label and hit targets the same way regardless of
 region; the only per-pin state is:
 
 - **locked** (`not RallyLibrary.rally_revealed(rally, Save.profile)`) — a
-  special before its global star gate opens, or a non-special rally whose
-  global `reveal_after` count isn't met yet. A locked pin renders grey,
-  carries no hit spheres (can't be clicked/entered), and its readout label is
-  dimmed — a "coming up" hint, not a hidden pin. Locked rallies are still
-  pinned and visible; they are simply not enterable yet.
+  special whose `requires_completions` count isn't met yet, or a non-special
+  rally whose global `reveal_after` count isn't met yet (one predicate, one
+  count — see `completions_required`). A locked pin renders grey,
+  carries no hit spheres (can't be clicked/entered), and drops its readout box
+  entirely — except a locked SPECIAL, which keeps a full-opacity non-pickable
+  teaser quoting "N/M events" (`hq._build_special_teaser_label`). Either way
+  it's a "coming up" hint, not a hidden pin: locked rallies are still pinned
+  and visible; they are simply not enterable yet.
 - earned stars / eligible-car state, same as always (`RallyFlag.build`).
+
+The table also carries **one non-rally target**: the **present box** that
+trades stars for a car (`hq._make_present_pin`, at `hq.PRESENT_MAP_POS`). It
+belongs to no region and needs none — it is deliberately parked near the
+map's CENTRE rather than in any corner, so it reads as a facility rather than
+another corner's content. See [menus.md](menus.md) → TABLE and
+[star-economy.md](star-economy.md).
 
 None of the old per-region table state exists any more: there is no
 `_viewed_region_index`, no `_swap_region`, no `_furthest_unlocked_index`, and
@@ -333,12 +347,12 @@ minute, while the snow corner's rally content is left for later work. See
 scope. Nothing in `RegionLibrary`, `RallyLibrary`, or the HQ table needs to
 change to add it later — a new `REGIONS` entry with its own rallies would
 just start appearing as pins in its corner, subject to the same global
-`reveal_after` wave and the global star gate as any other region. Adding a
-region with no specials at all is also fine — the retired per-region
-invariant means an empty-of-specials corner is now the ordinary case, not a
-special-cased one (see `todo/star-gated-special-events.md`).
+`reveal_after` wave and the same global completion gate on its specials as any
+other region. Adding a region with no specials at all is also fine — the
+retired per-region invariant means an empty-of-specials corner is now the
+ordinary case, not a special-cased one.
 
-## Progression: no sequence, no region gating, global-star-gated specials
+## Progression: no sequence, no region gating, globally-gated specials
 
 - **No unlock sequence.** There is no derived-or-stored "region unlocked"
   concept any more — every authored region is reachable from the start.
@@ -349,17 +363,25 @@ special-cased one (see `todo/star-gated-special-events.md`).
   those, plus `showdown_of` and `rally_showdown_gate_open`, are **deleted** —
   `RegionLibrary` no longer has any gating API. A region's only remaining job
   is `look_of` / `water_level_of`.
-- **Global star-gated specials.** `hq.gd` and `reward_system.gd` now read
-  `RallyLibrary.rally_revealed` / `special_gate_open`, which compare the
-  player's roster-wide `RallyLibrary.total_stars` against a special's authored
-  `requires_stars` — no region lookup anywhere in the path.
+- **Globally-gated specials.** `hq.gd` and `reward_system.gd` read
+  `RallyLibrary.rally_revealed`, which compares the player's count of completed
+  ordinary rallies against a special's authored `requires_completions` (via
+  `completions_required`) — no region lookup anywhere in the path, and no star
+  total either: `total_stars` / `max_total_stars` / `special_gate_open` /
+  `stars_required` / `stars_needed` are **deleted**. Stars are now a spent
+  balance, and a gate reading a balance would close behind a player who had
+  already passed it — see [star-economy.md](star-economy.md).
 - **Global-completion credits.** `rally_session.gd` emits `RallySession.game_won`
   (renamed from `showdown_won`) when `RallyLibrary.all_specials_completed(profile)`
   is true — every special on the roster completed, regardless of which region
   it sits in. Region ORDER carries no meaning; there is no "final region." A
   special win that still leaves another special outstanding just completes
   like any other rally: it records completion/best-placement and pays the
-  normal `RewardSystem.draw_car` reward. See [rally-session.md](rally-session.md),
+  placement's **stars** into the ledger (specials pay them too now — they used
+  to pay nothing, which made the prestige events the least rewarding on the
+  map). No rally hands over a car any more; cars are bought with those stars at
+  the map's present box. See [star-economy.md](star-economy.md),
+  [rally-session.md](rally-session.md),
   [reward-system.md](reward-system.md) and [rally-roster.md](rally-roster.md).
 
 ## Tests
@@ -369,8 +391,8 @@ special-cased one (see `todo/star-gated-special-events.md`).
 (never the shipped Greek roster or textures): `region_for_rally`/`rallies_in`
 round-trip, `look_of`'s override-vs-omit and
 `look_from` inheritance behaviour, and `has_water_level`/`water_level_of`
-with synthetic values. The star-gated special-event ladder (`total_stars`,
-`special_gate_open`, `all_specials_completed`) and the `region` tag
+with synthetic values. The special-event ladder (`completions_required` /
+`completions_needed`, `rally_revealed`, `all_specials_completed`) and the `region` tag
 on every rally are asserted in `tests/headless/test_rally_library.gd`. The
 map's pin set (every region's rallies pinned at once, locked pins
 non-pickable, keyboard + gamepad reachable) is covered in the HQ nav tests

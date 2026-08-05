@@ -257,9 +257,12 @@ func _unlocked_pins() -> Array:
 	return out
 
 
-# Every focus target on the table right now: the unlocked pins. There is one world map
-# with every rally on it, so pins are the only kind of target.
-# Each entry: {node, kind, pos}; kind is always "pin".
+# Every focus target on the table right now: the unlocked rally pins, plus the present box
+# that trades stars for a car. Each entry: {node, kind, pos}; kind is "pin" or "present".
+#
+# A new kind needs NO neighbour wiring: the map cursor is "whichever target sits nearest the
+# view centre" (_select_target_under_center), so appearing in this list is all it takes to be
+# reachable by keyboard, gamepad and drag alike.
 # Cached (see _table_targets_cache): rebuilt only when the cache is invalidated by a pin
 # rebuild, so the per-frame pan glide doesn't re-allocate it.
 func _table_targets() -> Array:
@@ -272,6 +275,9 @@ func _build_table_targets() -> Array:
 	var out: Array = []
 	for pin in _unlocked_pins():
 		out.append({"node": pin, "kind": "pin", "pos": (pin as Node3D).position})
+	if is_instance_valid(_hq._present_pin):
+		out.append({"node": _hq._present_pin, "kind": "present",
+			"pos": _hq._present_pin.position})
 	return out
 
 
@@ -409,6 +415,8 @@ func _activate_table_focus() -> void:
 	match String(t["kind"]):
 		"pin":
 			_on_rally_pin(String((t["node"] as Node3D).get_meta("rally_id")))
+		"present":
+			activate_present_box()
 
 
 # Slide the map so `target` (a table-plane world position) centres under the table
@@ -420,6 +428,16 @@ func _pan_table_to(target: Vector3) -> void:
 	_hq._table_pan.z = clampf(target.z - cfg.hq_table_cam_look.z, -half.y * 0.5, half.y * 0.5)
 	if _hq._view == _hq.View.TABLE:
 		_hq._move_camera_to(_hq._station_xform(_hq.View.TABLE), false)
+
+
+# The present box: go STRAIGHT to looking at it. No confirm dialog in front — the box
+# screen IS the confirmation, and its bottom button is what spends the stars
+# (hq._enter_present_box / _open_present, todo/star-economy.md).
+#
+# Reached from BOTH the tap handler (hq._on_present_input) and the keyboard/gamepad cursor
+# (_activate_table_focus), so the two can never diverge — the map must not be pointer-only.
+func activate_present_box() -> void:
+	_hq._enter_present_box()
 
 
 func _on_rally_pin(rally_id: String) -> void:
