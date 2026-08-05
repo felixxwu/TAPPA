@@ -570,8 +570,11 @@ func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 # than a junk reward the player has been collecting for nothing.
 func _swap_locked_hint(tokens: int) -> String:
 	var held := "%s banked — " % UITheme.count_noun(tokens, "token") if tokens > 0 else ""
+	# "rallies", not "events": the gate counts completed RALLIES (an event is one stage inside
+	# a rally) — same wording as the map pin's locked-special teaser.
 	return "%sengine swapping unlocks when you win the special event that opens after %s" % [
-		held, UITheme.count_noun(RallyLibrary.engine_swap_completion_requirement(), "event")]
+		held, UITheme.count_noun(RallyLibrary.engine_swap_completion_requirement(),
+			"rally", "rallies")]
 
 
 # The owned cars this car can swap engines with: every OTHER owned car. No car is

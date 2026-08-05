@@ -61,8 +61,11 @@ revoked by a purchase. `special_gate_open`, `stars_required`, `stars_needed` and
 `completions_needed` and `engine_swap_completion_requirement`.
 `RallyLibrary.rally_revealed` no longer branches on `is_special` at all — one rule for
 every rally. `_completed_count` still excludes specials, so a special never advances the
-gate governing its own ladder. Locked-special map pins quote "N/M events". Details in
-[rally-roster.md](rally-roster.md).
+gate governing its own ladder. The map quotes the requirement as "N/M **rallies**" — an
+*event* is one stage inside a rally, so "rallies" is what the gate actually counts — and
+only on the **next** locked special (`RallyLibrary.next_locked_special_id`); the specials
+above it stand their trophies and say nothing until it is their turn. Details in
+[rally-roster.md](rally-roster.md) and [menus.md](menus.md).
 
 Nothing in the game gates on the star balance. Upgrade parts gate on **winning a
 particular special** (`UpgradeDef.unlocked_by_rally`, see

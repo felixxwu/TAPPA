@@ -863,12 +863,20 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# either live and at full opacity, or absent. The 3D flag still stands at every pin, so
 	# the map keeps showing where the unavailable rallies are (grey flag = "coming up").
 	#
-	# THE EXCEPTION: a locked SPECIAL still gets a box, at FULL opacity but non-pickable,
-	# reading "X/24 stars" over what it unlocks. Locking must hide availability, never
+	# THE EXCEPTION: the NEXT locked SPECIAL — the lowest rung of the ladder still shut, per
+	# RallyLibrary.next_locked_special_id — gets a box, at FULL opacity but non-pickable,
+	# reading "0/2 rallies" over what it unlocks. Locking must hide availability, never
 	# information — the player should be able to see what exists and where to earn it long
 	# before they can have it. Full opacity keeps the all-or-nothing rule intact (the box is
-	# live-looking, it just isn't a target); the grey flag beneath already says "not yet".
-	var locked_special := locked and RallyLibrary.is_special(rally)
+	# live-looking, it just isn't a target); the grey trophy beneath already says "not yet".
+	#
+	# ONLY the next rung, though: the specials ladder is strictly ordered, so a requirement
+	# further up is not something the player can work on yet, and eight teasers at once buried
+	# the map under menus that were all unreachable. The further specials still STAND THEIR
+	# TROPHIES — the destination is still signposted, it just doesn't quote a number until it
+	# is the one in front of you.
+	var locked_special := locked and RallyLibrary.is_special(rally) \
+		and rally_id == RallyLibrary.next_locked_special_id(Save.profile)
 	var available := not locked and has_eligible
 	if locked_special:
 		var teaser := _build_special_teaser_label(rally)
@@ -1014,14 +1022,16 @@ func _build_pin_label(rally_name: String, earned: int, rally: Dictionary = {}) -
 		RallyLibrary.is_special(rally))
 
 
-# The locked-special teaser box: "3/4 events completed" over "unlocks Supercharger".
+# The locked-special teaser box: "3/4 rallies" over "unlocks Supercharger".
 # Quotes COMPLETED ORDINARY RALLIES, not stars — stars are spendable currency now and would
-# make this readout go backwards when the player buys a car (todo/star-economy.md).
+# make this readout go backwards when the player buys a car (todo/star-economy.md). "Rallies"
+# and not "events" because that is what the gate counts: an EVENT is one stage inside a rally
+# (`rally["events"]`), and three of them make the rally this readout is counting.
 func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 	var need := RallyLibrary.completions_required(rally)
 	var have := need - RallyLibrary.completions_needed(rally, Save.profile)
 	# Always accented: a teaser only ever describes a special.
-	return _build_readout_box("%d/%d events" % [have, need], -1, _special_unlock_line(rally), true)
+	return _build_readout_box("%d/%d rallies" % [have, need], -1, _special_unlock_line(rally), true)
 
 
 # What a special unlocks, as a display line ("unlocks Supercharger"), derived from the
@@ -3321,8 +3331,10 @@ func _show_swap_confirm(current_id: int, partner_id: int) -> void:
 		# The requirement is only quotable if the gating rally actually resolves (it may not
 		# under a synthetic test roster) — otherwise say it plainly rather than "0-star".
 		var need := RallyLibrary.engine_swap_completion_requirement()
+		# "rallies", not "events" — the gate counts completed RALLIES (an event is one stage
+		# inside a rally), the same wording the map pin's teaser uses.
 		body = ("Engine swapping is locked. Win the special event that opens after %s"
-			% UITheme.count_noun(need, "event") if need > 0
+			% UITheme.count_noun(need, "rally", "rallies") if need > 0
 			else "Engine swapping is not unlocked yet")
 		body += (" — you have %s banked ready." % UITheme.count_noun(tokens, "token")
 			if tokens > 0 else ".")

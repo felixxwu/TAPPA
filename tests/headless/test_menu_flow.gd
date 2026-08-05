@@ -1829,22 +1829,68 @@ func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
 	return null
 
 
+# A two-rung specials ladder over one open ordinary rally: "near" is the next rung the
+# player is working toward, "far" sits further up. Both are locked on a fresh profile (no
+# rally completed), so the pair isolates "which locked special gets a teaser".
+func _install_special_ladder_roster() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
+			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "near", "name": "Near Special", "region": "home", "special": true,
+			"requires_completions": 1, "map_pos": Vector2(0.6, 0.5), "restriction": {},
+			"events": []},
+		{"id": "far", "name": "Far Special", "region": "home", "special": true,
+			"requires_completions": 2, "map_pos": Vector2(0.8, 0.5), "restriction": {},
+			"events": []},
+	])
+
+
 func test_hq_locked_special_shows_a_full_opacity_teaser_box() -> void:
-	# THE documented exception to the all-or-nothing readout rule. A locked special still
-	# gets a box — at FULL opacity but non-pickable — because locking must hide
+	# THE documented exception to the all-or-nothing readout rule. The NEXT locked special
+	# still gets a box — at FULL opacity but non-pickable — because locking must hide
 	# availability, never information: the player should see what exists and where it is
 	# earned long before they can have it.
+	_install_special_ladder_roster()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var pin := _pin_for(hq, _top_special_id())
+	var pin := _pin_for(hq, "near")
 	assert_true(bool(pin.get_meta("locked")), "setup: this special is still locked")
 	assert_gt(pin.find_children("*", "Sprite3D", true, false).size(), 0,
-		"a locked special still shows its teaser box")
+		"the next locked special still shows its teaser box")
 	assert_eq(_pin_label_sprite(pin).modulate, Color.WHITE,
 		"the teaser is at FULL opacity, not dimmed — the box is live-looking, just not a target")
 	assert_eq(pin.find_children("*", "Area3D", true, false).size(), 0,
 		"but it is not pickable")
+	# The teaser quotes completed RALLIES (an event is one stage inside a rally), counted
+	# against the rung it is gated on.
+	assert_string_contains(_label_texts(_pin_label_sprite(pin)).to_upper(), "RALLIES",
+		"the teaser counts rallies, not events")
+
+
+func test_hq_only_the_next_locked_special_is_teased() -> void:
+	# ONE teaser at a time: only the lowest rung still shut quotes its requirement. A locked
+	# special further up the ladder is not something the player can work on yet, so it stands
+	# its trophy and says nothing — the destination is signposted, the number is not.
+	_install_special_ladder_roster()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var far := _pin_for(hq, "far")
+	assert_true(bool(far.get_meta("locked")), "setup: the far special is locked too")
+	assert_eq(far.find_children("*", "Sprite3D", true, false).size(), 0,
+		"a locked special beyond the next rung has no readout box at all")
+	assert_false(far.has_meta("label_panel"),
+		"and no panel for the focus cursor to paint")
+	assert_gt(far.find_children("*", "MeshInstance3D", true, false).size(), 0,
+		"its trophy still stands on the map")
+	# Once the near rung opens, the teaser moves up the ladder to the next one still shut.
+	_save.complete_rally("ord", 60000, 1)
+	hq._refresh_map_pins()
+	await get_tree().process_frame
+	assert_gt(_pin_for(hq, "far").find_children("*", "Sprite3D", true, false).size(), 0,
+		"the far special is teased once it becomes the next rung")
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:
@@ -5721,7 +5767,12 @@ func test_the_present_cannot_be_bought_twice_in_one_visit() -> void:
 	await get_tree().process_frame
 	assert_eq(save.profile["cars"].size(), after_one,
 		"one box, one car — a second press cannot buy again")
-	assert_true(hq._start_button.disabled, "and the button is spent")
+	# The guard is `_present_opened`, NOT a disabled button: hq._refresh_present_button
+	# deliberately leaves the row live once the box is spent, because a dead action row is a
+	# dead end — the button turns into the way out instead.
+	assert_false(hq._start_button.disabled, "the action row is never left dead")
+	assert_string_contains(hq._start_button.text.to_upper(), "GARAGE",
+		"the spent button becomes the exit to the garage")
 
 
 func test_the_present_box_only_appears_once_it_is_affordable() -> void:
@@ -5750,7 +5801,9 @@ func test_the_present_box_cost_line_reads_as_a_price() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var priced := hq._present_cost_line(4).to_upper()
+	# Explicitly typed: `hq` is a Node3D here, so the call comes back as Variant and `:=`
+	# cannot infer a type from it (a parse error, not a warning).
+	var priced: String = hq._present_cost_line(4).to_upper()
 	assert_string_contains(priced, "COST", "the cost line is labelled as a cost")
 	assert_string_contains(priced, "STAR", "and names the currency")
 	assert_string_contains(hq._present_cost_line(0).to_upper(), "FREE",

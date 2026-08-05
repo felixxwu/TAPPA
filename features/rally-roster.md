@@ -420,10 +420,16 @@ generator also uses it per-rival.
   differently to the player (a drip-feed vs. a quoted requirement); the UI reads
   through this so a quoted requirement can't drift from the gate that enforces it.
 - `completions_needed(rally, profile)` — completions still outstanding, 0 once open;
-  drives the locked special pin's "N/M events" readout.
+  drives the locked special pin's **"N/M rallies"** readout (it counts completed
+  *rallies* — an `event` is one stage inside a rally, so that is the accurate noun).
+- `next_locked_special_id(profile)` — the id of the lowest rung of the specials ladder
+  still shut ("" once all are open; roster order breaks a tie). The map teases **only**
+  this special: the ladder is strictly ordered, so a requirement further up is not yet
+  actionable, and every locked special above this one hangs no readout box at all — just
+  its trophy (see [menus.md](menus.md)).
 - `engine_swap_completion_requirement()` — `completions_required` of
   `ENGINE_SWAP_UNLOCK_RALLY`, the figure the garage swap row and the car-park
-  confirm popup quote.
+  confirm popup quote (also worded "N rallies").
 - `engine_swaps_unlocked(profile)` — whether `ENGINE_SWAP_UNLOCK_RALLY`
   (`sp_woodland_trial`, the lowest rung) is recorded completed — the engine-swap *capability*
   gate (tokens themselves always drop; see `features/engine-swap.md`).

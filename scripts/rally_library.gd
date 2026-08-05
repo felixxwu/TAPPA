@@ -1274,7 +1274,7 @@ static func is_special(rally: Dictionary) -> bool:
 #
 # Two field names for one mechanism, because they read differently to the player:
 #   * `reveal_after`          — ordinary rallies. A drip-feed; never quoted as a requirement.
-#   * `requires_completions`  — specials. Quoted on the locked pin as "N/M events completed".
+#   * `requires_completions`  — specials. Quoted on the locked pin as "N/M rallies".
 # Read through completions_required rather than the raw fields so the surfaces that quote
 # the requirement cannot drift from the gate that enforces it.
 static func completions_required(rally: Dictionary) -> int:
@@ -1284,9 +1284,31 @@ static func completions_required(rally: Dictionary) -> int:
 
 
 # Completions still needed before `rally` opens — 0 once it is open. Drives the locked pin's
-# "N/M events completed" readout.
+# "N/M rallies" readout.
 static func completions_needed(rally: Dictionary, profile: Dictionary) -> int:
 	return maxi(completions_required(rally) - _completed_count(profile), 0)
+
+
+# The ONE special the player is currently working toward: the lowest rung of the ladder that
+# has not opened yet ("" once every special is open). Roster order breaks a tie between two
+# specials on the same rung.
+#
+# The map teases THIS special only (hq._make_pin). Every locked special used to hang a box
+# quoting its own requirement, which put a wall of unreachable menus over the table on a
+# fresh profile; the ladder is strictly ordered, so the next rung is the only requirement the
+# player can actually work on. The trophies still stand at the further pins — locking hides
+# availability, never the fact that something exists out there.
+static func next_locked_special_id(profile: Dictionary) -> String:
+	var best := ""
+	var best_rung := 0
+	for rally in all():
+		if not is_special(rally) or rally_revealed(rally, profile):
+			continue
+		var rung := completions_required(rally)
+		if best == "" or rung < best_rung:
+			best = String(rally["id"])
+			best_rung = rung
+	return best
 
 
 # The completion count the engine-swap CAPABILITY unlocks at — the requirement quoted by the

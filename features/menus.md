@@ -1358,19 +1358,31 @@ whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`) — ONE predi
 over ONE count for every rally: `RallyLibrary.completions_required` reads a
 special's **`requires_completions`** and an ordinary rally's **`reveal_after`**,
 both compared against the GLOBAL count of completed ordinary rallies
-(`RallyLibrary._completed_count`). So a special opens after N events won, and an
+(`RallyLibrary._completed_count`). So a special opens after N rallies won, and an
 ordinary rally reveals in waves (~1–2 fresh rallies at a time rather than all at
 once). Specials used to gate on the player's roster-wide STAR TOTAL; stars became a
 spendable balance, and a gate reading a balance would take back a special the moment
 the player bought a car — see [star-economy.md](star-economy.md).
-**The one exception to all-or-nothing:** a locked
-special still renders a **full-opacity, non-pickable** teaser box
-(`hq._build_special_teaser_label`, via `hq._make_pin`) reading **"3/4 events"** over
+**The one exception to all-or-nothing:** the **NEXT** locked
+special renders a **full-opacity, non-pickable** teaser box
+(`hq._build_special_teaser_label`, via `hq._make_pin`) reading **"0/2 rallies"** over
 "unlocks &lt;Part&gt;" (`hq._special_unlock_line`, derived from the upgrade
 catalogue's `UpgradeLibrary.unlocked_by_rally` — falling back to "unlocks engine
-swaps" for `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`) — the grey flag below already
+swaps" for `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`) — the grey trophy below already
 carries the "not yet" signal, so the teaser doesn't need dimming to read as
-locked. An unlocked special's pin names its unlock too. A meter sits on
+locked. **"Rallies", not "events":** the gate counts completed RALLIES, while an
+*event* is one stage inside a rally (`rally["events"]`) — the engine-swap lock
+copy quotes the same requirement the same way (`hq._show_swap_confirm`,
+`UpgradesMenu._swap_locked_hint`).
+**ONLY the next rung is teased** — `RallyLibrary.next_locked_special_id` picks the
+lowest `requires_completions` still shut (roster order breaks a tie), and every
+locked special above it hangs **no box at all**, just its trophy. The ladder is
+strictly ordered, so a requirement further up is not something the player can work
+on yet, and eight teasers at once buried the map under unreachable menus; on a
+fresh profile exactly one special quotes a number. Guarded by
+`test_menu_flow.gd::test_hq_only_the_next_locked_special_is_teased` and
+`::test_hq_locked_special_shows_a_full_opacity_teaser_box`.
+An unlocked special's pin names its unlock too. A meter sits on
 the HUD reading **"Stars: N"** (`hq._refresh_meter`) — the **spendable balance**
 (`Save.stars_available`) with **no denominator**: stars are currency now, so what
 matters is what the player can take to the present box, and there is no meaningful
