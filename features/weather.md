@@ -102,7 +102,7 @@ An EventDef (`RallyLibrary.RALLIES`, `ChallengeLibrary`, `BenchmarkMode`, free r
 via `hq.gd`) may carry an optional `"weather"` string, e.g.:
 
 ```gdscript
-{"seed": 31001, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.6,
+{"seed": 31001, "turn_count": 22, "forestiness": 0.7, "surface_mix": 0.6,
  "straightness": 0.8, "weather": "rain"},
 ```
 

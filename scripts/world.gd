@@ -331,10 +331,14 @@ func _yield_frame() -> void:
 		await get_tree().process_frame
 
 
-# Set a loading-screen step label (when an overlay is up) and yield a frame so it
-# paints before the next blocking generation call. Collapses to a synchronous
-# no-op under headless (via _yield_frame), so tests still see a fully-built world.
-func _stage(loading: LoadingScreen, label: String) -> void:
+# Open a stage (closing the previous one into the perf log) and yield a frame so whatever
+# just painted (the track preview, mainly) actually shows before the next blocking
+# generation call. `label` is perf-log-only now — it is never shown to the player. The
+# loading screen's visible line is a random LoadingTips pick, fixed for the whole load
+# (see loading_screen.gd); the player doesn't need to know the game is "Placing signs…".
+# Collapses to a synchronous no-op under headless (via _yield_frame), so tests still see a
+# fully-built world.
+func _stage(label: String) -> void:
 	if not _headless:
 		var now := Time.get_ticks_msec()
 		if _stage_label != "":
@@ -343,8 +347,6 @@ func _stage(loading: LoadingScreen, label: String) -> void:
 			_load_t0 = now
 		_stage_label = label
 		_stage_t0 = now
-	if loading != null:
-		loading.set_step(label)
 	await _yield_frame()
 
 
@@ -474,7 +476,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var car_body := $Car as RigidBody3D
 	var was_frozen := car_body.freeze
 	car_body.freeze = true
-	await _stage(loading, "Generating track…")
+	await _stage("Generating track…")
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
 	# A Node3D's forward is -Z; project it onto the XZ plane.
@@ -622,7 +624,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Baking the road into the terrain (flatten + surface split + cliffs) is the heaviest
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
-	await _stage(loading, "Carving road into terrain…")
+	await _stage("Carving road into terrain…")
 	# Interactive path: the grey track-preview line fills white as the bake walks the
 	# centerline (carve progress); headless passes empty callbacks and stays synchronous.
 	var carve_interactive := loading != null and not _headless
@@ -659,7 +661,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# reset leash bounds it), so in-run chunk loads are instant cache pulls and
 	# height_at/light_at serve the flattened, collidable terrain. Batched with
 	# frame awaits so the loading label paints and (on web) the tab stays alive.
-	await _stage(loading, "Precomputing chunks…")
+	await _stage("Precomputing chunks…")
 	var floor_tm := _floor()
 	floor_tm.set_corridor(floor_tm.corridor_coords(
 		road_centerline, Config.data.track_progress_max_dist_m))
@@ -691,7 +693,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	print("terrain precompute: %d chunks, %.1f MB cached (peak, pre-free)"
 		% [precompute_done, floor_tm.cache_size_mb()])
 
-	await _stage(loading, "Building terrain…")
+	await _stage("Building terrain…")
 	$Floor.build_initial()
 	# Ground exists (carved, coloured, cache-built) — hand the car back to the physics
 	# engine. Everything after this point still runs behind the loading cover, so it has
@@ -712,24 +714,24 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Trees + ground-cover bushes (+ the pass-through bush hit volume). Returns the
 	# tree points and road-margin cells the spectator layout reuses.
-	var foliage := await _build_foliage(cfg, result, road_centerline, loading)
+	var foliage := await _build_foliage(cfg, result, road_centerline)
 
 	# Lakes: flood the natural basins beside the road below the water level. The
 	# track DFS already routed the road above water; road cells are excluded here
 	# too as a coarse guard. The car gets soft-hazard drag over any lake.
 	if cfg.water_enabled:
-		await _build_lakes(cfg, loading)
+		await _build_lakes(cfg)
 
 	# Roadside turn-arrow signs along the stage.
 	if cfg.signs_enabled:
-		await _build_signs(cfg, result, loading)
+		await _build_signs(cfg, result)
 
 	# Everything from here to the pre-warm used to be billed to the PREVIOUS stage
 	# label ("Placing signs"), because _stage() only closes a stage when the NEXT one
 	# opens and _end_load_timing() runs after _generate_track returns. That made signs
 	# look like a 6-second stage when a stage has only ~16-22 of them; the real cost
 	# was the props + shader pre-warm below. See todo/mobile-web-performance.md item 1.2.
-	await _stage(loading, "Placing props…")
+	await _stage("Placing props…")
 
 	# Roadside spectators: crowds that react to the car (todo/roadside-spectators.md).
 	# One group at the start, one at the end, and one at a seeded mid-stage point.
@@ -764,7 +766,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		# Own stage label: the pre-warm is 30 rendered frames of first-use shader
 		# compilation and is a real multi-second cost on web, but it was previously
 		# invisible — folded into whichever label happened to be open. Item 1.2.
-		await _stage(loading, "Warming shaders…")
+		await _stage("Warming shaders…")
 		var wp := _warm_up_point()
 		# Auto-discover every node implementing the warm_up()/clear_warm_up() contract
 		# (surface-FX pools, tyre marks, the spectator ragdoll variant, and anything
@@ -812,8 +814,8 @@ func _drop_submerged(points: PackedVector2Array, cfg: GameConfig) -> PackedVecto
 	return out
 
 
-func _build_lakes(cfg: GameConfig, loading: LoadingScreen = null) -> void:
-	await _stage(loading, "Filling lakes…")
+func _build_lakes(cfg: GameConfig) -> void:
+	await _stage("Filling lakes…")
 	var floor_tm := _floor()
 	# One big flat plane at the water level; terrain above it occludes it via the
 	# depth test, so no per-lake geometry or flood-fill is needed (features/lakes.md).
@@ -836,8 +838,7 @@ func _build_lakes(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 # already-generated track `result` + rendered `road_centerline`; owns the two
 # loading steps. Returns {"trees", "road_cells"} — the tree points and road-margin
 # cells the spectator layout reuses.
-func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D,
-		loading: LoadingScreen = null) -> Dictionary:
+func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D) -> Dictionary:
 	if not cfg.vegetation_enabled:
 		# Foliage off (the benchmark's vegetation toggle): skip the scatter and the
 		# fields entirely, but still hand the spectator layout the road-margin cells
@@ -845,7 +846,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 		var bare_cells := TrackGenerator.rasterize_cells(
 			road_centerline.tessellate(), cfg.track_width + 2.0 * cfg.tree_road_margin_m)
 		return {"trees": PackedVector2Array(), "road_cells": bare_cells}
-	await _stage(loading, "Scattering trees…")
+	await _stage("Scattering trees…")
 	# Scatter trees around each turn, then render them as solid low-poly meshes
 	# binned into per-cell MultiMeshes (TreeMeshField) so the engine LOD-/cull-s
 	# far bins. height_at needs the terrain noise cache, which build_initial() has
@@ -883,7 +884,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	if not RegionLibrary.spawns_bush_mesh(region_look):
 		return {"trees": trees, "road_cells": road_cells}
 
-	await _stage(loading, "Scattering bushes…")
+	await _stage("Scattering bushes…")
 	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,
 	# default forestiness 1.0 so undergrowth covers the whole stage) and the SAME
 	# renderer (TreeMeshField) — the low-poly ground-cover mesh, binned with per-bin
@@ -921,8 +922,8 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 # Roadside turn-arrow signs along the stage (todo/roadside-signs.md). Few per stage,
 # so individual nodes (not a MultiMesh); knockable cosmetic props that deal no HP
 # damage. Start/finish are the inflatable arches, not signs. Owns its loading step.
-func _build_signs(cfg: GameConfig, result: Dictionary, loading: LoadingScreen = null) -> void:
-	await _stage(loading, "Placing signs…")
+func _build_signs(cfg: GameConfig, result: Dictionary) -> void:
+	await _stage("Placing signs…")
 	var sign_layout := SignLayout.plan(result["centerline"], result["pieces"])
 	var sign_field := SignField.new()
 	add_child(sign_field)

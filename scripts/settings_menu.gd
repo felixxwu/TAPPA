@@ -47,6 +47,15 @@ signal camera_changed(mode: int)
 signal scheme_changed(id: int)
 # Emitted on every page switch; is_root == the category list is showing.
 signal page_changed(is_root: bool)
+# Emitted whenever a Dev-page action fits or grants a part to the SELECTED car
+# (Save.selected_instance_id()) — a garage host (HQ) needs this to rebuild whatever
+# already-fielded car it has on screen (the tuning lift), since fitting an upgrade
+# through here changes Save's data without re-fielding anything: unlike the real
+# upgrades menu, which calls back into the lift itself, this dev tool has no
+# reference to a host's live car to refresh directly. NOT emitted by the in-run pause
+# host (pause_menu.gd) — there is no lift there, and refitting the car you're actively
+# driving mid-run is a separate concern nothing currently handles.
+signal dev_car_upgraded()
 
 # Fixed width for the key-binding buttons (and their column captions), wide enough
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
@@ -800,6 +809,7 @@ func _fit_upgrade(item_id: String, display_name: String) -> void:
 		return
 	if Save.install_upgrade(iid, item_id):
 		_dev_status.text = "Fitted %s to the selected car." % display_name
+		dev_car_upgraded.emit()
 	else:
 		_dev_status.text = "Couldn't fit %s (already fitted?)." % display_name
 

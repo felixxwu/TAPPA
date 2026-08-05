@@ -711,19 +711,25 @@ take the lower ones.
 
 | Stars | Id | Name | Region | Diff | Turn counts | Status |
 |---|---|---|---|---|---|---|
-| 5 | `sp_woodland_trial` | The Woodland Trial | `home` | 2 | 24 / 26 / 24 | **new** |
-| 10 | `sp_dust_trial` | The Dust Trial | `greece` | 2 | 28 / 30 / 28 | **new** |
-| 15 | `sp_lakeshore_trial` | The Lakeshore Trial | `home_coast` | 3 | 32 / 34 / 32 | **new** |
-| 20 | `sp_archipelago_trial` | The Archipelago Trial | `greece_coast` | 3 | 36 / 38 / 36 | **new** |
-| 25 | `the_showdown` | The Showdown | `home` | 4 | 40 / 40 / 40 | exists, unchanged |
-| 30 | `hc_showdown` | The Lakeland Crown | `home_coast` | 4 | 34/36/34 → **42 / 44 / 42** | exists, lengthen |
-| 35 | `gr_showdown` | The Aegean Crown | `greece` | 4 | 25/28/25 → **44 / 46 / 44** | exists, lengthen |
-| 40 | `gc_showdown` | The Island Crown | `greece_coast` | 4 | 33/35/33 → **46 / 48 / 46** | exists, lengthen |
+| 5 | `sp_woodland_trial` | The Woodland Trial | `home` | 2 | 28 / 30 / 28 | authored |
+| 10 | `sp_dust_trial` | The Dust Trial | `greece` | 2 | 32 / 35 / 32 | authored |
+| 15 | `sp_lakeshore_trial` | The Lakeshore Trial | `home_coast` | 3 | 37 / 39 / 37 | authored |
+| 20 | `sp_archipelago_trial` | The Archipelago Trial | `greece_coast` | 3 | 41 / 44 / 41 | authored |
+| 25 | `the_showdown` | The Showdown | `home` | 4 | 46 / 46 / 46 | authored |
+| 30 | `hc_showdown` | The Lakeland Crown | `home_coast` | 4 | 48 / 51 / 48 | authored |
+| 35 | `gr_showdown` | The Aegean Crown | `greece` | 4 | 51 / 53 / 51 | authored |
+| 40 | `gc_showdown` | The Island Crown | `greece_coast` | 4 | 53 / 55 / 53 | authored |
 
-That yields a monotonic 24 → 48 ramp, every rung clearly longer than the 10–31 turns
-of ordinary rallies. **Note `gr_showdown` is currently 25/28/25 — *shorter* than
-`gr_thermopylae` (28/30/28), an ordinary rally in the same corner.** So the three
-lengthenings are a genuine fix, not polish.
+**Turn counts above are as currently authored** (`scripts/rally_library.gd`) — they moved
+twice since this table was first written: once to lengthen the three showdowns that used
+to trail `gr_thermopylae` (below), and again when every rally-library event was scaled
+~15% longer across the board. Re-read the source before trusting a number quoted here;
+do not treat this table as a contract (CLAUDE.md — never pin tunable values). The ramp is
+monotonic with the star rung, every rung clearly longer than an ordinary rally's turn
+count. `gr_showdown` (51/53/51) is comfortably longer than `gr_thermopylae` (32/35/32),
+the ordinary rally in the same corner — the original lengthening this table proposed is
+long since done; the numbers here are historical only in *shape*, not in the exact
+figures.
 
 Naming reads as a two-tier family: the new lower rungs are **Trials**, the capstones
 stay **Showdown / Crown**.

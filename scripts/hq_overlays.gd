@@ -525,6 +525,7 @@ func build_settings_overlay() -> void:
 	_hq._settings_menu = SettingsMenu.new()
 	_hq._settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hq._settings_menu.page_changed.connect(_hq._on_settings_page_changed)
+	_hq._settings_menu.dev_car_upgraded.connect(_hq._on_dev_car_upgraded)
 	scroll.add_child(_hq._settings_menu)
 
 	_hq._settings_action_button = Button.new()

@@ -261,6 +261,20 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
   [upgrade-catalogue.md](upgrade-catalogue.md) and [engine-swap.md](engine-swap.md).
   (There is no Repair action any more — see [damage.md](damage.md).)
 
+**Dev-page fits rebuild the lift car too.** `SettingsMenu`'s Dev sub-page (title screen →
+Settings → Dev) can fit any upgrade straight onto `Save.selected_instance_id()` for
+testing — but it has no reference back to whichever host has that car on screen, so a
+plain `Save.install_upgrade` there would leave an already-fielded car (the lift) showing
+stale stats until you left and re-entered. `SettingsMenu.dev_car_upgraded` closes that
+gap: `hq.gd::_on_dev_car_upgraded` (connected in `hq_overlays.gd`, alongside
+`page_changed`) reruns the same rebuild `_on_lift_upgrade_changed` runs for the real
+upgrades menu — `_ensure_lift_car()` (the changed `installed_upgrades` flips the cached
+`owned.hash()`, so it doesn't skip the rebuild) then `_refresh_lift_car_label()`. Only
+wired for HQ; the in-run pause menu (`pause_menu.gd`) also hosts `SettingsMenu` but has
+no lift to rebuild, and refitting the car you're actively driving mid-run is a separate,
+unhandled concern. See `tests/headless/test_menu_flow.gd` →
+`test_dev_page_upgrade_fit_rebuilds_the_lift_car`.
+
 ## Tests
 
 - `tests/headless/test_tuning_library.gd` — neutral is a no-op; grip shifts rearward

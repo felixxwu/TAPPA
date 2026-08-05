@@ -377,3 +377,61 @@ func test_prerequisite_is_not_satisfied_by_another_car_in_the_garage() -> void:
 		"a sibling car owning the prerequisite doesn't unlock it for this one")
 	assert_false(UpgradeLibrary.prerequisite_met("fx_big", {}),
 		"an empty car dict owns nothing")
+
+
+# --- fitted_nitrous_id (the HQ car-stats readout) -----------------------------
+# Synthetic entries throughout — see CLAUDE.md: never pin logic tests to a specific
+# catalogue id.
+
+func test_fitted_nitrous_id_is_empty_with_nothing_installed() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
+	])
+	assert_eq(UpgradeLibrary.fitted_nitrous_id({"installed_upgrades": []}), "",
+		"nothing installed -> no nitrous")
+	assert_eq(UpgradeLibrary.fitted_nitrous_id({}), "", "an empty car dict owns nothing")
+
+
+func test_fitted_nitrous_id_returns_the_installed_and_enabled_rung() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
+	])
+	var car := {"installed_upgrades": ["fx_nitrous"], "disabled_upgrades": []}
+	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "fx_nitrous",
+		"an installed, enabled nitrous-slot item is reported fitted")
+
+
+func test_fitted_nitrous_id_ignores_a_disabled_rung() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
+	])
+	var car := {"installed_upgrades": ["fx_nitrous"], "disabled_upgrades": ["fx_nitrous"]}
+	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "",
+		"installed but toggled off does not count as fitted")
+
+
+# The ladder shape (features/nitrous.md): several rungs can be INSTALLED on one car at
+# once (each grant keeps the one below it so the prerequisite chain holds), but only one
+# is ever ENABLED — the readout must name that one, not just the first installed.
+func test_fitted_nitrous_id_picks_the_enabled_rung_not_the_first_installed() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
+		{"id": "fx_nitrous_big", "name": "Fixture Big Nitrous", "slot": "nitrous",
+			"requires_upgrade_id": "fx_nitrous", "consumable": false, "effect": {}},
+	])
+	var car := {
+		"installed_upgrades": ["fx_nitrous", "fx_nitrous_big"],
+		"disabled_upgrades": ["fx_nitrous"],  # the ladder's older rung, parked
+	}
+	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "fx_nitrous_big",
+		"the enabled (highest) rung is reported, even though it was installed second")
+
+
+# A part in a DIFFERENT slot must never be mistaken for nitrous, however it's enabled.
+func test_fitted_nitrous_id_ignores_other_slots() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_turbo", "name": "Fixture Turbo", "slot": "turbo", "consumable": false, "effect": {}},
+	])
+	var car := {"installed_upgrades": ["fx_turbo"], "disabled_upgrades": []}
+	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "",
+		"a fitted part in another slot is not reported as nitrous")

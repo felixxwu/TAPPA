@@ -2251,6 +2251,19 @@ func _on_lift_upgrade_changed() -> void:
 	_refresh_lift_car_label()
 
 
+# The Dev settings page fits a part straight onto Save.selected_instance_id() with no
+# reference back to the lift, so it can't rebuild the display car itself the way
+# _on_lift_upgrade_changed does. Same fix, reached via SettingsMenu.dev_car_upgraded
+# instead of the upgrades-menu callback: rebuild (the changed installed_upgrades flips
+# owned.hash(), so _ensure_lift_car's cache correctly treats it as stale) and re-read
+# the stats line, so a dev-fitted part (nitrous included) shows up without having to
+# leave and re-enter the lift.
+func _on_dev_car_upgraded() -> void:
+	_ensure_lift_car()
+	_lift_owned = Save.selected_car()
+	_refresh_lift_car_label()
+
+
 # Fill the lift's two readout rows for the current owned car — the name in the selector
 # row's middle box, its stats on the row below — and gate the chevrons on there being
 # something to cycle to. With one car owned they are hidden AND disabled: hidden so the row
@@ -2723,7 +2736,11 @@ func _log_boot_cost(build_ms: int) -> void:
 # peak horsepower, kerb weight, and condition. Health reads as a percentage (kept
 # distinct so it doesn't read as the horsepower figure now shown alongside it); a
 # wrecked (0 HP) car is flagged so the lineup makes clear why it can't be entered.
-# The power-to-weight ratio lives only in the upgrades-menu detune readout.
+# The power-to-weight ratio lives only in the upgrades-menu detune readout. A fitted
+# nitrous bottle is named LAST, after health — it's invisible to effective_meta (never
+# moves HP/kg/power-to-weight, see features/nitrous.md) so it can only ever be a trailing
+# addition, never something the earlier fields need to account for. Omitted entirely
+# when the car has none, so the common case stays exactly the line it was.
 func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
@@ -2733,12 +2750,16 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
 	var meta := UpgradeLibrary.effective_meta(owned, entry)
-	return "%s | %.0f HP | %.0f kg | %s" % [
+	var stats := "%s | %.0f HP | %.0f kg | %s" % [
 		CarLibrary.drive_text(int(entry.get("drive_mode", -1))),
 		CarLibrary.horsepower(meta),
 		float(meta.get("mass", 0.0)),
 		hp_text,
 	]
+	var nitrous_id := UpgradeLibrary.fitted_nitrous_id(owned)
+	if nitrous_id != "":
+		stats += " | %s" % String(UpgradeLibrary.by_id(nitrous_id).get("name", ""))
+	return stats
 
 
 # Human-readable summary of a rally's restriction (the detail panel + the car banner).

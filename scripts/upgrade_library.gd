@@ -144,27 +144,27 @@ const UPGRADES: Array[Dictionary] = [
 	# never reads as the same number three times. Deliberately absent from
 	# effective_meta, so none of these can move a car's power-to-weight or eligibility.
 	{
-		"id": "nitrous", "name": "Nitrous", "slot": "nitrous",
+		"id": "nitrous", "name": "NOS stage 1", "slot": "nitrous",
 		"unlocked_by_rally": "the_showdown", "consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.22, "nitrous_tank_seconds": 3.0}},
+		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.22, "nitrous_tank_seconds": 5.0}},
 	},
 	{
-		"id": "nitrous_tank", "name": "Nitrous — Big Tank", "slot": "nitrous",
+		"id": "nitrous_tank", "name": "NOS stage 2", "slot": "nitrous",
 		"requires_upgrade_id": "nitrous", "unlocked_by_rally": "hc_showdown",
 		"consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.24, "nitrous_tank_seconds": 5.0}},
+		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.24, "nitrous_tank_seconds": 10.0}},
 	},
 	{
-		"id": "nitrous_shot", "name": "Nitrous — Big Shot", "slot": "nitrous",
+		"id": "nitrous_shot", "name": "NOS stage 3", "slot": "nitrous",
 		"requires_upgrade_id": "nitrous_tank", "unlocked_by_rally": "gr_showdown",
 		"consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.38, "nitrous_tank_seconds": 5.0}},
+		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.4, "nitrous_tank_seconds": 10.0}},
 	},
 	{
-		"id": "nitrous_race", "name": "Nitrous — Race Kit", "slot": "nitrous",
+		"id": "nitrous_race", "name": "NOS stage 4", "slot": "nitrous",
 		"requires_upgrade_id": "nitrous_shot", "unlocked_by_rally": "gc_showdown",
 		"consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.45, "nitrous_tank_seconds": 7.0}},
+		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.6, "nitrous_tank_seconds": 20.0}},
 	},
 	{
 		"id": ENGINE_SWAP_TOKEN_ID, "name": "Engine Swap Token", "slot": "",
@@ -300,6 +300,17 @@ static func enabled_upgrades(owned_car: Dictionary) -> Array:
 
 static func is_enabled(owned_car: Dictionary, item_id: String) -> bool:
 	return not (owned_car.get("disabled_upgrades", []) as Array).has(item_id)
+
+
+# The id of the currently-ENABLED nitrous-slot item on this car ("" if none). The four
+# nitrous rungs (features/nitrous.md) chain via requires_upgrade_id and share ONE slot,
+# so a car climbing the ladder ends up with several installed but only the highest ever
+# enabled — this returns that one, not the whole ladder the car happens to be carrying.
+static func fitted_nitrous_id(owned_car: Dictionary) -> String:
+	for item_id in enabled_upgrades(owned_car):
+		if slot_of(item_id) == "nitrous":
+			return item_id
+	return ""
 
 
 # --- Effect descriptor table -------------------------------------------------

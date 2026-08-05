@@ -18,9 +18,15 @@ Three properties define it, and every design decision below falls out of them:
    power-to-weight, its rally eligibility, its `qualifying_detune` or the rival
    pace floor. Winning your 40-star reward can never lock you out of a rally you
    could previously enter.
-3. **It has no garage UI.** An unwanted bottle is simply a button you don't
-   press, and since it can't change eligibility there is nothing to decide — so
-   the slot is hidden and the part auto-fits enabled.
+3. **It has no garage UI to CHANGE it.** An unwanted bottle is simply a button
+   you don't press, and since it can't change eligibility there is nothing to
+   decide — so the slot is hidden and the part auto-fits enabled. It is still
+   named, read-only, on the car-stats readout: `hq.gd::_car_stats_text`
+   (shared by the tuning lift and the car-park lineup — see [tuning.md](tuning.md))
+   appends `UpgradeLibrary.fitted_nitrous_id(owned)`'s name after the health
+   segment, omitted entirely when the car has none, so the player can tell a
+   nitrous-fitted car apart from a bare one without opening the (nonexistent)
+   menu row for it.
 
 
 ## The catalogue side — a hidden fifth slot

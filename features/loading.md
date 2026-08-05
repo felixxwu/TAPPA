@@ -23,6 +23,21 @@ runs the whole build behind it. The stages, in order:
 | Placing props | spectators, arches, opponent wreck, persistent managers | `world.gd::_generate_track` |
 | Warming shaders | surface-FX warm-up + `_prewarm_corridor` | `world.gd::_prewarm_corridor` |
 
+**These stage labels are perf-log-only.** `_stage(label)` still `print()`s each one (with
+timing) for the "load stage: … ms" log — that's what the table above documents — but it no
+longer reaches the player. `LoadingScreen`'s visible line is a random pick from
+`LoadingTips.TIPS` (`scripts/loading_tips.gd`), drawn once in `_init()` and shown for the
+whole load; the player doesn't need to know the game is "Placing signs…". Each tip is a
+short, standalone gameplay fact (aero balance, turbo lag, engine swaps, …) verified against
+the mechanic it names — every entry must read correctly in ISOLATION, since the player only
+ever sees one. `_build_lakes` / `_build_foliage` / `_build_signs` dropped their now-unused
+`loading: LoadingScreen` parameters when the forwarding call was removed.
+
+Other `LoadingScreen` users (`hq.gd`, `hq_challenge.gd`) build their own instance for a
+menu-transition wait and call `set_step()` on it directly with their own short status text
+("Preparing the garage…") — that path is unrelated and unchanged; only world.gd's
+generation stages stopped forwarding to the label.
+
 ## The wet-stage tell
 
 `world.gd::_ready` calls `LoadingScreen.set_weather(cfg.weather)` right after

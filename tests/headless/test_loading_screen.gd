@@ -20,6 +20,42 @@ func test_set_step_updates_label() -> void:
 	assert_eq(screen._step.text, "SCATTERING TREES…", "step label reflects set_step() (uppercased)")
 
 
+# A random LoadingTips entry is shown from construction, not "" or a generation-stage
+# name — world.gd no longer forwards its stage labels to this label (see _stage()).
+func test_step_starts_on_a_random_tip() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var upper_tips: Array[String] = []
+	for tip in LoadingTips.TIPS:
+		upper_tips.append(tip.to_upper())
+	assert_true(upper_tips.has(screen._step.text),
+		"the initial step line is one of the authored tips (uppercased)")
+
+
+# The tip survives an actual world generation: world.gd's stage progression (used to
+# forward each stage label — "Placing signs…", "Generating track…" — into this same
+# label) must not overwrite it any more. Checked mid-generation, since the overlay is
+# only queue_free()'d (not gone yet) by the time add_child_autofree() returns headless.
+func test_world_generation_does_not_overwrite_the_tip_with_a_stage_label() -> void:
+	SceneHelpers.minimal_world()
+	var scene: Node3D = MAIN_SCENE.instantiate()
+	add_child_autofree(scene)
+	var overlay: LoadingScreen = null
+	for child in scene.get_children():
+		if child is LoadingScreen:
+			overlay = child
+	assert_not_null(overlay, "the loading overlay is still reachable (queue_free()'d, not gone yet)")
+	var shown := overlay._step.text
+	var stage_labels := ["GENERATING TRACK…", "CARVING ROAD INTO TERRAIN…",
+		"PRECOMPUTING CHUNKS…", "BUILDING TERRAIN…", "PLACING PROPS…", "FILLING LAKES…",
+		"SCATTERING TREES…", "SCATTERING BUSHES…", "PLACING SIGNS…", "WARMING SHADERS…"]
+	assert_false(stage_labels.has(shown), "the step line never shows a raw generation-stage label")
+	var upper_tips: Array[String] = []
+	for tip in LoadingTips.TIPS:
+		upper_tips.append(tip.to_upper())
+	assert_true(upper_tips.has(shown), "the step line is one of the authored tips")
+
+
 func test_finish_frees_overlay() -> void:
 	var screen := LoadingScreen.new()
 	add_child(screen)

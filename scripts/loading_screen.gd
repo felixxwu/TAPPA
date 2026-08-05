@@ -6,9 +6,16 @@ extends CanvasLayer
 # world generation that runs in world.gd._ready() (track, terrain ring, tree
 # and bush scatter) is heavy and synchronous, so without this the screen sits
 # frozen with no feedback between the boot bar finishing and the first playable
-# frame. world.gd shows this overlay first, then advances `set_step()` between
-# generation stages (yielding a frame each time so the new label paints), and
-# calls `finish()` when the world is ready.
+# frame. world.gd shows this overlay first, yielding a frame at each generation
+# stage boundary so the screen actually paints, and calls `finish()` when the
+# world is ready.
+#
+# The step line shows a random gameplay TIP (LoadingTips), not the generation
+# stage — the player doesn't need to know the game is "Placing signs…", and
+# world.gd::_stage still print()s the stage name for perf debugging regardless.
+# Other callers (hq.gd, hq_challenge.gd) build their OWN LoadingScreen instance
+# for a menu-transition wait and call `set_step()` on it directly with their own
+# short status text — that is unrelated and unaffected.
 
 # Drawn above the HUD (layer 2) and mobile controls (layer 3).
 const _LAYER := 100
@@ -42,8 +49,15 @@ func _init() -> void:
 	box.add_child(_title)
 
 	_step = Label.new()
-	_step.text = ""
+	# A random tip for the whole load — see the header comment and LoadingTips. A caller
+	# that wants its OWN status text instead (hq.gd, hq_challenge.gd) overwrites this via
+	# set_step() on its own instance immediately after construction.
+	_step.text = UITheme.caps(LoadingTips.random())
 	_step.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Word-wrap rather than overflow: unlike the short status lines set_step() carries
+	# elsewhere, a tip is a full sentence and the VBox it sits in spans the whole screen
+	# width, which is narrow on a portrait phone.
+	_step.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_step.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	_step.modulate = Color(1, 1, 1, 0.7)
 	box.add_child(_step)
@@ -68,7 +82,10 @@ func set_weather(weather: String) -> void:
 		set_title("Loading stage… %s" % tell)
 
 
-# Update the current-stage line (e.g. "Building terrain…").
+# Overwrite the step line with `text` (e.g. "Preparing the garage…"), replacing whatever
+# random tip _init() picked. world.gd's own generation stages do NOT call this any more —
+# see the header comment — but a caller wanting a short, specific status line on its own
+# LoadingScreen instance still can (hq.gd, hq_challenge.gd).
 func set_step(text: String) -> void:
 	if _step != null:
 		_step.text = UITheme.caps(text)

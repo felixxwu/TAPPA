@@ -697,6 +697,30 @@ func test_hq_lift_selector_is_unreachable_with_one_car() -> void:
 	assert_ne(hq._lift_car_stats_label.text, "", "and the stats row is still filled")
 
 
+# A fitted nitrous bottle is named on the stats readout, after the health segment — shared
+# by the lift and the car-park lineup, since both read _car_stats_text (hq.gd). Synthetic
+# part, so this can't drift from (or depend on) the real nitrous ladder's ids or names.
+func test_car_stats_text_names_a_fitted_nitrous_rung_after_health() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false,
+			"effect": {"install_nitrous": {"nitrous_boost_gain": 0.2, "nitrous_tank_seconds": 3.0}}},
+	])
+	var owned: Dictionary = _save.profile["cars"][0]
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var without: String = hq._car_stats_text(owned, entry)
+	assert_false(without.contains("Fixture Nitrous"), "no nitrous fitted -> no segment at all")
+
+	owned["installed_upgrades"] = ["fx_nitrous"]
+	var with_nitrous: String = hq._car_stats_text(owned, entry)
+	assert_true(with_nitrous.ends_with("Fixture Nitrous"),
+		"the fitted rung's name is appended last, after health")
+	UpgradeLibrary.reset()
+
+
 # Regression: the Upgrades page must seat keyboard/gamepad focus on a real control.
 # On a fresh car it has no installed parts, is at full health (no repair button) and
 # its Swap Engine button is disabled, so without an always-enabled control (the Back
@@ -891,6 +915,29 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	dev._wipe_progress()
 	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
 	assert_true((_save.profile["inventory"] as Dictionary).is_empty(), "wipe clears the inventory")
+
+
+# Fitting an upgrade from the Dev page changes Save's data with no reference back to the
+# lift, so nothing rebuilds the already-fielded display car on its own (unlike the real
+# upgrades menu, which calls back into _on_lift_upgrade_changed). SettingsMenu's
+# dev_car_upgraded signal closes that gap — this is the regression test for it.
+func test_dev_page_upgrade_fit_rebuilds_the_lift_car() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	var before_stats: String = hq._lift_car_stats_label.text
+	var before_hash: int = hq._lift_car_hash
+
+	hq._open_settings(false)
+	hq._settings_menu.show_dev()
+	hq._settings_menu._fit_upgrade("fx_turbo_small", "Small Turbo")
+
+	assert_ne(hq._lift_car_hash, before_hash,
+		"the lift's cache key moved on, so _ensure_lift_car treats the fit as a real change")
+	assert_ne(hq._lift_car_stats_label.text, before_stats,
+		"the stats readout reflects the fitted part without leaving and re-entering the lift")
 
 
 func test_hq_title_parks_all_owned_cars() -> void:
