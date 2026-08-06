@@ -736,6 +736,11 @@ func has_nitrous() -> bool:
 # the six control schemes is shown is a per-player setting chosen on the title
 # screen's Settings page (persisted in the save profile, not here).
 @export var mobile_controls_force := false
+## Show a small readout of the touch input path (which browser snapshot is feeding the
+## overlay, how many fingers the BROWSER thinks are down, and what the overlay is
+## holding) in the top-left corner. For diagnosing stuck on-screen buttons on a real
+## phone, where nothing else is observable — see features/mobile-controls.md.
+@export var mobile_controls_debug := false
 ## Tilt-steering sensitivity (TILT scheme): multiplier on the device roll. 1.0 maps
 ## a full 90° tilt to full lock; higher reaches full lock at a gentler tilt.
 @export_range(0.5, 5.0) var tilt_sensitivity := 2.0

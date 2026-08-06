@@ -88,6 +88,7 @@ servo measures the grip limit instead of predicting it. See
 |----------|---------|---------|
 | `hud_enabled` | true | Show speed/gear overlay |
 | `mobile_controls_force` | false | Force on-screen touch controls on (testing; otherwise auto-enabled on touch devices) |
+| `mobile_controls_debug` | false | Top-left readout of the touch input path (which browser snapshot is feeding the overlay, fingers the browser thinks are down, regions held) — for diagnosing stuck buttons on a real phone |
 | `tilt_sensitivity` | 2.0 | TILT scheme: multiplier on device roll → steer (higher = full lock at a gentler tilt) |
 | `tilt_deadzone` | 0.05 | TILT scheme: device roll (fraction of 1 g) ignored around level |
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
