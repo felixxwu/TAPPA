@@ -148,10 +148,38 @@ running stage):
   `rival_ghost_fade_near_m`, ramping to fully transparent at zero separation, driven per
   frame over the retained ghost materials. A solid car you are overlapping fills the screen
   and hides the road you are trying to drive.
-- **Heading by backward difference** with a forward fallback and a length guard: forward
-  alone would cross into the post-finish runoff once clamped; backward alone is
-  degenerate at the very start of an unstaged run.
+- **Heading by centred difference** over `HEADING_PROBE_M`, falling back to backward-only
+  at the finish clamp (where a forward sample would cross into the post-finish runoff).
+  Backward-only everywhere was the original form and it made the ghost point where the road
+  *was* — see *Two rotation bugs* below.
 - Wheel spin by filling `drivetrain.replay_omega` from `speed_at / wheel_radius`.
+
+### Transparency
+
+Fading is done with a per-mesh `StandardMaterial3D` override, not
+`GeometryInstance3D.transparency`: that property only multiplies alpha for a material
+already in the transparent pass, and the car's `ps1_models_lit.gdshader` is
+`render_mode unshaded` and never writes `ALPHA`, so it renders opaque and the instance fade
+is a no-op. Adding an alpha write to that shader was rejected — it would move EVERY car
+into the transparent queue, and that file's comments document how deliberately its cost is
+kept off mobile.
+
+The override **writes depth** (`DEPTH_DRAW_ALWAYS`). Without it every panel blends against
+every other, so you see through the ghost's near side to its own far side — an x-ray look
+that never reads as solid however high `rival_ghost_opacity` goes. The trade-off, taken
+deliberately: at low opacity only the nearest surface shows, and separate meshes can sort
+inconsistently against each other, since a blended pass has no per-pixel ordering
+guarantee.
+
+**Known limitation:** flattening onto a `StandardMaterial3D` drops the car shader's
+per-vertex fake lighting (`v_light`) and its vertex-colour multiply, so the ghost is
+slightly flatter than the player's car. Fixing that means giving the ghost a
+`ShaderMaterial` variant of `ps1_models_lit`, which then has to be kept in sync with it —
+or factoring the shared body into a `.gdshaderinc`, which means editing the perf-sensitive
+shader the player's car uses. Dithered/alpha-hash transparency is the textbook third
+option and is deliberately NOT used: `tree_canopy.gdshader` records that this project
+removed dithered fades because any `discard` disables early-Z/HSR for the whole draw on
+tile-based mobile GPUs.
 
 ### Cosmetics — body only, never the clock
 

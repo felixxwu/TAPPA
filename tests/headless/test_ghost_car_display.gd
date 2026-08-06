@@ -200,6 +200,11 @@ func test_the_ghost_car_is_actually_translucent() -> void:
 		assert_lt(bm.albedo_color.a, 1.0, "its alpha is below opaque")
 		assert_eq(bm.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA,
 				"and it is in the alpha-blended pass")
+		# Writes depth so the body self-occludes: without this the ghost is an x-ray shell
+		# (you see its far side through its near side) and never reads as solid however high
+		# the opacity is set.
+		assert_eq(bm.depth_draw_mode, BaseMaterial3D.DEPTH_DRAW_ALWAYS,
+				"and writes depth, so the car self-occludes instead of looking x-ray")
 	assert_gt(checked, 0, "at least one mesh got a translucent override")
 
 

@@ -241,9 +241,18 @@ func _ghost_material(source: Material, alpha: float) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# Don't write depth: overlapping ghost panels (body over wheel arch) otherwise punch
-	# holes in each other at the same alpha.
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	# WRITE depth, even though this is a blended material.
+	#
+	# Without it every panel blends against every other, so you see through the near side of
+	# the ghost to its own far side — an x-ray look that never reads as a solid car no matter
+	# how high the opacity goes. Writing depth makes the body self-occlude properly, so at
+	# high rival_ghost_opacity it looks genuinely solid.
+	#
+	# The trade-off, deliberately taken: at LOW opacity you now see only the nearest surface
+	# rather than the whole shell, and separate meshes can sort inconsistently against each
+	# other since a blended pass has no per-pixel ordering guarantee. Both are milder than
+	# the x-ray, and neither is visible at the opacities this ghost actually runs at.
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 	mat.albedo_color = Color(1.0, 1.0, 1.0, alpha)
 	if source is ShaderMaterial:
 		var sm := source as ShaderMaterial
