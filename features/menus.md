@@ -1294,14 +1294,14 @@ gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` pan
 (Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
 on a `Sprite3D`, so text and stars live in **one box** that always faces the camera;
 
-**A special event's readout is INVERTED — white face, black ink** (`ACCENT_READOUT_BG` /
+**A special event's readout is INVERTED — light-brown face, black ink** (`ACCENT_READOUT_BG` /
 `ACCENT_READOUT_INK` in `hq.gd`, applied via `_build_readout_sprite`'s `accent` flag, which
 `_build_pin_label` sets from `RallyLibrary.is_special` and `_build_special_teaser_label`
 sets unconditionally). It is the **one deliberate exception to design-system house rule 4**
 (menu backgrounds are PURE BLACK — see `UITheme`), so a special jumps out of a map of
 otherwise-identical black panels. Two non-obvious consequences, both handled:
 - The medal row inverts with it. `StarRow`'s defaults are GOLD / MUTED, which are for a
-  black surface — gold on white barely reads at pin scale and MUTED's 55%-alpha olive
+  black surface — gold on the light face barely reads at pin scale and MUTED's 55%-alpha olive
   disappears — so the accent path sets `StarRow.earned_color` / `unearned_color` black
   where the row is built. (It cannot be reached afterwards with `find_children`, whose type
   filter matches engine classes, not script `class_name`s.)
