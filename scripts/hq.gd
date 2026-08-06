@@ -81,11 +81,13 @@ const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of trut
 const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
-# A special event's map readout is inverted — white face, black ink — so it stands out from
-# the black panels every other pin wears. Deliberate exception to design-system house rule 4
-# (see UITheme); kept here rather than in the palette because it is this one surface's look,
-# not a new system-wide token.
-const ACCENT_READOUT_BG := Color(1.0, 1.0, 1.0, 1.0)
+# A special event's map readout is inverted — light-brown face, black ink — so it stands out
+# from the black panels every other pin wears. Deliberate exception to design-system house
+# rule 4 (see UITheme); kept here rather than in the palette because it is this one surface's
+# look, not a new system-wide token. The face matches the pacenote sign boards
+# (tools/bake_sign_arrows.gd `BOARD`, features/signs.md) so the map's paper reads as the same
+# rally stock as the roadside boards.
+const ACCENT_READOUT_BG := Color("d7bd93")
 const ACCENT_READOUT_INK := Color(0.0, 0.0, 0.0, 1.0)
 # Sprite modulate for a readout box whose rally isn't available yet (greyed out).
 
