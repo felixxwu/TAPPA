@@ -21,9 +21,10 @@ extends CanvasLayer
 #
 # Raw touch events are handled here (not Control buttons) so several pointers
 # register at once — you must steer and use the throttle/brake simultaneously.
-# On the web, held pointers are also reconciled every frame against the browser's
-# own list of fingers currently down, because mobile browsers drop `touchend`
-# events (see _install_touch_watchdog).
+# On the WEB the engine's touch events are not trusted at all: mobile browsers drop
+# `touchend`, so the overlay instead rebuilds its pressed state every frame from the
+# browser's OWN list of pointers currently down, positions included
+# (see _install_touch_watchdog / _apply_live_pointers).
 #
 # Shown only on touch devices, or when mobile_controls_force is set (testing).
 
@@ -114,18 +115,35 @@ var _slider_thumb: ColorRect
 # through; it lives in a member so the reference survives for the node's lifetime.
 # `_js_window` backs the redundant per-frame PULL of the same snapshot.
 var _touch_sync_cb = null
+var _pointer_sync_cb = null
 var _js_window = null
 # Sequence number of the newest snapshot we've adopted (-1 = none yet; JS starts its
 # counter at 0 and only bumps it when the set of fingers down actually changes), so
 # the push and the pull can't apply the same snapshot twice or go backwards.
 var _touch_seq := -1
+var _pointer_seq := -1
 # The browser's authoritative set of fingers CURRENTLY down: touch index -> true.
 # `null` means "no snapshot" — the state off the web build and in tests — and
 # disables reconciliation entirely, so nothing there is ever released behind our back.
+# This is the FALLBACK path, used only when the richer pointer snapshot below can't be
+# produced (see _adopt_live_pointers).
 var _live_touches = null
+# The browser's list of pointers currently down WITH their positions, normalised to
+# the canvas rect (0..1): pointer id -> Vector2. This is the PRIMARY web path — when
+# it is non-null the overlay derives press, drag and release from it alone and ignores
+# the engine's touch/mouse events entirely. `null` = no snapshot (non-web, tests, or a
+# page we can't measure), which leaves the event-driven path in charge.
+var _live_pointers = null
+# Ids present in the PREVIOUS pointer snapshot, so a brand-new id counts as a fresh
+# press (and may capture the steering slider) while an id we already saw is a drag.
+var _seen_pointers := {}
 # One-shot logging latch, so the browser console records that the watchdog is
 # actually feeding us (and by which path) without spamming a line per frame.
 var _logged_first_snapshot := false
+
+# Optional on-device readout of the whole touch path (Config.mobile_controls_debug),
+# so a stuck button on a real phone can be diagnosed from a screenshot.
+var _debug_label: Label = null
 
 
 func _ready() -> void:
@@ -210,6 +228,7 @@ func _build() -> void:
 		_slider_thumb.queue_free()
 		_slider_thumb = null
 	_pointers.clear()
+	_seen_pointers.clear()
 	_slider_owner = null
 
 	# Digital button panels for every region this scheme uses.
@@ -236,6 +255,7 @@ func _build() -> void:
 		_slider_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_slider_thumb)
 
+	_build_debug_label()
 	_layout()
 
 
@@ -252,6 +272,43 @@ func _make_button(text: String) -> ColorRect:
 	panel.add_child(label)
 	add_child(panel)
 	return panel
+
+
+# A tiny top-left readout of the entire touch path, off unless
+# Config.data.mobile_controls_debug is set. It exists because the failure this file
+# guards against only ever reproduces on a real phone: with it on, one screenshot says
+# whether the watchdog installed, which snapshot path is feeding, how many fingers the
+# BROWSER thinks are down, and what the overlay is holding as a result.
+func _build_debug_label() -> void:
+	if _debug_label != null:
+		_debug_label.queue_free()
+		_debug_label = null
+	var cfg: GameConfig = Config.data
+	if cfg == null or not cfg.mobile_controls_debug:
+		return
+	_debug_label = Label.new()
+	_debug_label.add_theme_font_size_override("font_size", 8)
+	_debug_label.position = Vector2(4, 4)
+	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_debug_label)
+
+
+func _update_debug_label() -> void:
+	if _debug_label == null:
+		return
+	var src := "events"
+	if _live_pointers != null:
+		src = "pointers"
+	elif _live_touches != null:
+		src = "touch-ids"
+	var live := -1
+	if _live_pointers != null:
+		live = (_live_pointers as Dictionary).size()
+	elif _live_touches != null:
+		live = (_live_touches as Dictionary).size()
+	_debug_label.text = "js=%s src=%s pseq=%d tseq=%d live=%d held=%s slider=%s" % [
+		"y" if _js_window != null else "n", src, _pointer_seq, _touch_seq, live,
+		str(_pointers), str(_slider_owner)]
 
 
 # Compute hit rects (as fractions of the viewport so it scales across screens) for
@@ -382,6 +439,13 @@ func _poll_tilt() -> float:
 # --- Input -------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
+	# Once the browser is publishing its own pointer list (web only), THAT is the whole
+	# truth: _apply_live_pointers rebuilds press/drag/release from it every frame. The
+	# engine's touch and mouse events are then redundant at best — they arrive under a
+	# different id space, and it is precisely their release half that mobile browsers
+	# drop, which is the bug this path exists to make impossible.
+	if _live_pointers != null:
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_press(event.index, event.position)
@@ -414,6 +478,13 @@ func _is_emulated_mouse(event: InputEvent) -> bool:
 
 
 func _press(idx: int, pos: Vector2) -> void:
+	# A press for a pointer we still think is down means its release was dropped — a
+	# finger cannot press twice without lifting. Clear the stale state first, so a lost
+	# release un-sticks on the next touch instead of pinning the slider forever (which
+	# _press alone can't reclaim: it only captures when _slider_owner is null).
+	if idx == _slider_owner:
+		_slider_owner = null
+	_pointers.erase(idx)
 	# A press inside the slider captures that pointer for steering (until it lifts);
 	# otherwise it's a digital button press.
 	if _has_slider() and _slider_owner == null and _slider_rect.has_point(pos):
@@ -513,6 +584,8 @@ func _install_touch_watchdog() -> void:
 		return
 	_touch_sync_cb = JavaScriptBridge.create_callback(_on_touch_sync)
 	_js_window.godotTouchSync = _touch_sync_cb
+	_pointer_sync_cb = JavaScriptBridge.create_callback(_on_pointer_sync)
+	_js_window.godotPointerSync = _pointer_sync_cb
 	JavaScriptBridge.eval(_TOUCH_WATCHDOG_JS, true)
 
 
@@ -556,6 +629,93 @@ func _is_number(v) -> bool:
 	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
 
 
+# PUSH path for the positioned pointer snapshot. Same contract (and the same
+# fail-by-doing-nothing rule) as _on_touch_sync: [seq, payload].
+func _on_pointer_sync(args: Array) -> void:
+	if args.size() < 2 or not _is_number(args[0]) or typeof(args[1]) != TYPE_STRING:
+		return
+	_adopt_live_pointers(int(args[0]), args[1])
+
+
+# PULL path for the positioned pointer snapshot, mirroring _poll_live_touches.
+func _poll_live_pointers() -> void:
+	if _js_window == null:
+		return
+	var raw_seq = _js_window.__rallyPointerSeq
+	if not _is_number(raw_seq):
+		return
+	var seq := int(raw_seq)
+	if seq <= 0 or seq <= _pointer_seq:
+		return
+	var raw = _js_window.__rallyPointerData
+	if typeof(raw) != TYPE_STRING:
+		return
+	_adopt_live_pointers(seq, raw)
+
+
+# Store a newer positioned snapshot. The payload is "<ok>|id:x:y;id:x:y;…" with x/y
+# normalised to the canvas rect; `ok` is 0 when the page couldn't be measured (no
+# canvas, zero-sized rect), in which case we hand back to the id-only fallback rather
+# than hit-test against meaningless coordinates.
+func _adopt_live_pointers(seq: int, data: String) -> void:
+	if seq <= _pointer_seq:
+		return
+	var bar := data.find("|")
+	if bar < 0:
+		return
+	_pointer_seq = seq
+	if data.substr(0, bar) != "1":
+		_live_pointers = null
+		return
+	var live := {}
+	for part in data.substr(bar + 1).split(";", false):
+		var f := part.split(":")
+		if f.size() != 3:
+			continue
+		live[int(f[0])] = Vector2(float(f[1]), float(f[2]))
+	_live_pointers = live
+	_log_first_snapshot("pointers", seq, live.size())
+
+
+# Rebuild the pressed-region state from the browser's own live pointer list. This
+# REPLACES the event-driven path on the web: press, drag and release all come from one
+# authoritative snapshot, so a dropped `touchend` cannot leave a button held — the
+# finger simply isn't in the next frame's list. Positions arrive normalised to the
+# canvas, and the frame is laid out against the same viewport rect _compute_rects uses
+# (stretch aspect is IGNORE, so the logical frame fills the canvas exactly), which is
+# what makes the mapping a plain multiply.
+func _apply_live_pointers() -> void:
+	if _live_pointers == null:
+		return
+	var live: Dictionary = _live_pointers
+	var size := get_viewport().get_visible_rect().size
+	# A captured slider whose finger is gone springs back to centre.
+	if _slider_owner != null and not live.has(_slider_owner):
+		_slider_owner = null
+	var next := {}
+	var seen := {}
+	for id in live:
+		seen[id] = true
+		var pos: Vector2 = (live[id] as Vector2) * size
+		# The captured slider pointer keeps steering even if it slides off the rail.
+		if id == _slider_owner:
+			_slider_x = pos.x
+			continue
+		# Only a finger that wasn't down last frame can CAPTURE the slider — an id we
+		# already saw is mid-drag, and dragging into the rail must not grab it (the
+		# same rule _press/_drag encode on the event path).
+		if not _seen_pointers.has(id) and _has_slider() and _slider_owner == null \
+				and _slider_rect.has_point(pos):
+			_slider_owner = id
+			_slider_x = pos.x
+			continue
+		var r := _button_region(pos)
+		if r != "":
+			next[id] = r
+	_pointers = next
+	_seen_pointers = seen
+
+
 # Store a newer snapshot of the fingers currently down. `ids` is the comma-separated
 # list JS publishes ("" = nothing down). Older/duplicate sequence numbers are ignored,
 # which is what lets the push and pull paths run side by side.
@@ -567,12 +727,17 @@ func _adopt_live_touches(seq: int, ids: String) -> void:
 	for id in ids.split(",", false):
 		live[int(id)] = true
 	_live_touches = live
-	# Logged once, and only when the watchdog is really installed (so headless tests
-	# driving this seam stay quiet): confirms on a real phone, over chrome://inspect,
-	# that a snapshot path is actually plumbed through.
-	if not _logged_first_snapshot and _js_window != null:
-		_logged_first_snapshot = true
-		print("[rally] touch watchdog feeding: seq=", seq, " fingers=", live.size())
+	_log_first_snapshot("touch-ids", seq, live.size())
+
+
+# Logged once, and only when the watchdog is really installed (so headless tests
+# driving this seam stay quiet): confirms on a real phone, over chrome://inspect, that
+# a snapshot path is actually plumbed through, and which one.
+func _log_first_snapshot(kind: String, seq: int, count: int) -> void:
+	if _logged_first_snapshot or _js_window == null:
+		return
+	_logged_first_snapshot = true
+	print("[rally] touch watchdog feeding (", kind, "): seq=", seq, " fingers=", count)
 
 
 # Drop every tracked pointer the browser says is no longer down. Runs each frame
@@ -615,49 +780,141 @@ const _TOUCH_WATCHDOG_JS := """
 (function () {
 	if (window.__rallyTouchWatchdog) { return; }
 	window.__rallyTouchWatchdog = true;
+	// Fallback snapshot: touch identifiers only, from evt.touches.
 	window.__rallyTouchIds = '';
 	window.__rallyTouchSeq = 0;
-	// Published for BOTH readers: stored on window for the per-frame pull, and pushed
-	// straight to GDScript. Deduped, so double-registered listeners are harmless.
-	function publish(ids) {
+	// Primary snapshot: every pointer currently down WITH its position, normalised to
+	// the canvas rect. Format "<ok>|id:x:y;id:x:y" — ok=0 means the canvas couldn't be
+	// measured, so GDScript must not hit-test against these numbers.
+	window.__rallyPointerData = '';
+	window.__rallyPointerSeq = 0;
+
+	// Both snapshots are published to BOTH readers: stored on window for the per-frame
+	// pull, and pushed straight to GDScript. Deduped, so double-registered listeners
+	// are harmless. A throw inside the bridge must never break a DOM handler.
+	function publishTouches(ids) {
 		var s = ids.join(',');
 		if (s === window.__rallyTouchIds) { return; }
 		window.__rallyTouchIds = s;
 		window.__rallyTouchSeq++;
-		if (window.godotTouchSync) { window.godotTouchSync(window.__rallyTouchSeq, s); }
+		try {
+			if (window.godotTouchSync) { window.godotTouchSync(window.__rallyTouchSeq, s); }
+		} catch (err) {}
 	}
-	function dropAll() { publish([]); }
+
+	var canvas = null;
+	var rect = null;
+	function refreshRect() {
+		if (!canvas || !canvas.isConnected) {
+			canvas = document.getElementById('canvas') || document.querySelector('canvas');
+		}
+		var r = (canvas && canvas.getBoundingClientRect) ? canvas.getBoundingClientRect() : null;
+		rect = (r && r.width > 0 && r.height > 0) ? r : null;
+	}
+	refreshRect();
+	// The rect is cached rather than re-measured per pointermove (that would force a
+	// layout on every frame of a drag); anything that can move or resize the canvas
+	// invalidates it. pointerdown re-measures too, so a missed event self-heals.
+	['resize', 'orientationchange', 'scroll', 'fullscreenchange', 'webkitfullscreenchange'
+	].forEach(function (t) { window.addEventListener(t, refreshRect, true); });
+
+	// pointerId -> [clientX, clientY, isTouch]
+	var down = Object.create(null);
+	var sawPointer = false;
+
+	function publishPointers() {
+		var parts = [];
+		var id;
+		for (id in down) {
+			if (rect === null) { break; }
+			parts.push(id + ':' + ((down[id][0] - rect.left) / rect.width).toFixed(5)
+				+ ':' + ((down[id][1] - rect.top) / rect.height).toFixed(5));
+		}
+		var s = (rect === null ? '0|' : '1|' + parts.join(';'));
+		if (s === window.__rallyPointerData) { return; }
+		window.__rallyPointerData = s;
+		window.__rallyPointerSeq++;
+		try {
+			if (window.godotPointerSync) { window.godotPointerSync(window.__rallyPointerSeq, s); }
+		} catch (err) {}
+	}
+
+	// --- Pointer Events: the primary stream ---------------------------------------
+	// A SEPARATE browser code path from touch events, so a dropped `touchend` doesn't
+	// affect it, and it carries positions — which is what lets the overlay derive
+	// press AND release from it and stop trusting engine touch events altogether.
+	window.addEventListener('pointerdown', function (e) {
+		sawPointer = true;
+		refreshRect();
+		down[e.pointerId] = [e.clientX, e.clientY, e.pointerType === 'touch'];
+		publishPointers();
+	}, true);
+	window.addEventListener('pointermove', function (e) {
+		var p = down[e.pointerId];
+		if (p === undefined) { return; }
+		p[0] = e.clientX;
+		p[1] = e.clientY;
+		publishPointers();
+	}, true);
+	function pointerUp(e) {
+		if (down[e.pointerId] === undefined) { return; }
+		delete down[e.pointerId];
+		publishPointers();
+	}
+	window.addEventListener('pointerup', pointerUp, true);
+	window.addEventListener('pointercancel', pointerUp, true);
+
+	// --- Touch Events: the fallback stream, and a cross-check ---------------------
 	// evt.touches is the browser's authoritative list of fingers currently down —
 	// unlike changedTouches (all the engine reads) it can't miss a dropped release.
 	function sync(e) {
-		var now = [];
-		for (var i = 0; i < e.touches.length; i++) { now.push(e.touches[i].identifier); }
-		publish(now);
+		var ids = [];
+		var live = [];
+		var i;
+		for (i = 0; i < e.touches.length; i++) {
+			ids.push(e.touches[i].identifier);
+			live.push([e.touches[i].clientX, e.touches[i].clientY]);
+		}
+		publishTouches(ids);
+		if (!sawPointer) {
+			// No Pointer Events on this browser: drive the positioned snapshot off the
+			// touch list instead, so the primary path still works.
+			down = Object.create(null);
+			for (i = 0; i < live.length; i++) {
+				down[ids[i]] = [live[i][0], live[i][1], true];
+			}
+			if (live.length > 0) { refreshRect(); }
+			publishPointers();
+			return;
+		}
+		// Both streams alive: prune any TOUCH pointer the browser no longer lists.
+		// pointerId can't be mapped onto a touch identifier, but the coordinates come
+		// from the same finger on the same device, so proximity is an exact match —
+		// and this is what heals a pointerup that never arrived.
+		var changed = false;
+		for (var id in down) {
+			if (!down[id][2]) { continue; }
+			var found = false;
+			for (i = 0; i < live.length; i++) {
+				var dx = live[i][0] - down[id][0];
+				var dy = live[i][1] - down[id][1];
+				if (dx * dx + dy * dy <= 1024.0) { found = true; break; }
+			}
+			if (!found) { delete down[id]; changed = true; }
+		}
+		if (changed) { publishPointers(); }
 	}
 	['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (t) {
 		window.addEventListener(t, sync, true);
 		document.addEventListener(t, sync, true);
 	});
-	// Pointer Events: a separate browser code path, so they still fire when a
-	// touchend is dropped. pointerId can't be mapped onto a touch identifier, but
-	// "everything is up" needs no mapping — and that's the state a stuck button
-	// contradicts. Tracked as a set rather than a count so a missed event can't
-	// leave a permanent drift.
-	var down = {};
-	var sawPointer = false;
-	window.addEventListener('pointerdown', function (e) {
-		down[e.pointerId] = true;
-		sawPointer = true;
-	}, true);
-	function pointerUp(e) {
-		delete down[e.pointerId];
-		if (!sawPointer) { return; }
-		for (var k in down) { return; }
-		dropAll();
-	}
-	window.addEventListener('pointerup', pointerUp, true);
-	window.addEventListener('pointercancel', pointerUp, true);
+
 	// Backgrounding the page ends every touch with no per-id event to observe.
+	function dropAll() {
+		down = Object.create(null);
+		publishTouches([]);
+		publishPointers();
+	}
 	window.addEventListener('blur', dropAll);
 	window.addEventListener('pagehide', dropAll);
 	document.addEventListener('visibilitychange', function () {
@@ -792,12 +1049,19 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(_delta: float) -> void:
-	# Reconcile BEFORE applying: a pointer the browser says is up must never reach
-	# the car's input actions, not even for a single frame.
+	# Refresh from the browser BEFORE applying: a finger the browser says is up must
+	# never reach the car's input actions, not even for a single frame.
 	_poll_live_touches()
-	_reconcile_pointers()
+	_poll_live_pointers()
+	if _live_pointers != null:
+		# Positioned snapshot: the whole pressed state is rebuilt from it, so there is
+		# nothing left for the id-only reconcile to correct.
+		_apply_live_pointers()
+	else:
+		_reconcile_pointers()
 	_sync_nitrous_button()
 	_apply_actions()
+	_update_debug_label()
 
 
 # Nitrous is fitted per CAR (car.gd's apply_owned retunes Config.data), and a car swap

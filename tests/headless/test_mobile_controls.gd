@@ -55,6 +55,12 @@ func before_each() -> void:
 	_controls._live_touches = null
 	_controls._touch_seq = -1
 	_seq = 0
+	# Same for the positioned pointer snapshot: while one is live the overlay ignores
+	# engine touch events entirely, so a leftover would break every event-driven test.
+	_controls._live_pointers = null
+	_controls._pointer_seq = -1
+	_controls._seen_pointers.clear()
+	_pseq = 0
 
 
 func after_each() -> void:
@@ -513,6 +519,143 @@ func test_reconcile_redrops_a_resurrected_pointer() -> void:
 	_controls._apply_actions()
 	assert_false(_controls._pointers.has(1), "reconciliation re-drops a resurrected pointer")
 	assert_false(Input.is_action_pressed("accelerate"), "and its action never sticks")
+
+
+# --- Positioned pointer snapshot (the primary web path) -----------------------
+# On the web the overlay stops trusting engine touch events altogether and rebuilds
+# press / drag / release every frame from the browser's own list of pointers currently
+# down, positions included. A dropped `touchend` then can't leave a button held: the
+# finger is simply absent from the next snapshot. These cover the GDScript half — the
+# JS that produces the snapshot can't run headless.
+
+var _pseq := 0
+
+# Publish a snapshot the way the watchdog's push/pull paths do. The JS normalises
+# positions to the canvas rect, so convert from the viewport coords the hit rects are
+# laid out in, then run the per-frame apply _timed_process would.
+func _live_ptr(pointers: Dictionary) -> void:
+	var size: Vector2 = _controls.get_viewport().get_visible_rect().size
+	assert_gt(size.x * size.y, 0.0, "viewport has a usable size to normalise against")
+	var parts := PackedStringArray()
+	for id in pointers:
+		var p: Vector2 = pointers[id]
+		parts.append("%d:%.8f:%.8f" % [id, p.x / size.x, p.y / size.y])
+	_pseq += 1
+	_controls._adopt_live_pointers(_pseq, "1|" + ";".join(parts))
+	_controls._apply_live_pointers()
+
+
+func test_pointer_snapshot_presses_a_button() -> void:
+	_fixed_button_rects()
+	_live_ptr({7: Vector2(550, 550)})
+	_controls._apply_actions()
+	assert_eq(_controls._pointers.get(7), "gas", "a live pointer over the pedal holds it")
+	assert_true(Input.is_action_pressed("accelerate"), "and drives the throttle")
+
+
+func test_pointer_snapshot_release_clears_the_button() -> void:
+	# THE bug this path exists for: the browser never delivers the touchend, so no
+	# engine release event ever arrives — the finger just stops being listed.
+	_fixed_button_rects()
+	_live_ptr({7: Vector2(550, 550)})
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"), "throttle held while the finger is down")
+	_live_ptr({})
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("accelerate"),
+		"a finger the browser no longer lists releases the pedal, with no release event")
+	assert_eq(_controls._pointers.size(), 0, "and stops being tracked")
+
+
+func test_pointer_snapshot_ignores_engine_touch_events() -> void:
+	# Once the browser is the source of truth, engine touch events must not also
+	# register: they use a different id space, and their release half is the thing we
+	# can't trust. A press that only exists as an engine event is dropped on sight.
+	_fixed_button_rects()
+	_live_ptr({})
+	_controls._input(_touch(0, Vector2(550, 550), true))
+	assert_eq(_controls._pointers.size(), 0, "engine touch events are ignored while a snapshot is live")
+	_controls._input(_mouse(Vector2(550, 550), true, 0))
+	assert_false(_controls._pointers.has(-1), "and so is the mouse — pointer events cover it")
+
+
+func test_pointer_snapshot_multitouch_and_partial_release() -> void:
+	_fixed_button_rects()
+	_live_ptr({3: Vector2(550, 550), 4: Vector2(750, 550)})
+	_controls._apply_actions()
+	assert_eq(_controls._pointers.size(), 2, "two live pointers, two held regions")
+	assert_true(Input.is_action_pressed("brake_reverse"), "the second finger brakes")
+	_live_ptr({3: Vector2(550, 550)})
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("brake_reverse"), "lifting one finger releases only its region")
+	assert_true(Input.is_action_pressed("accelerate"), "the finger still down keeps its own")
+
+
+func test_pointer_snapshot_drags_between_regions() -> void:
+	_fixed_button_rects()
+	_live_ptr({3: Vector2(550, 550)})
+	_live_ptr({3: Vector2(750, 550)})
+	_controls._apply_actions()
+	assert_eq(_controls._pointers.get(3), "brake", "a live pointer re-tests which region it is over")
+
+
+func test_pointer_snapshot_captures_and_recenters_the_slider() -> void:
+	# _slider_rect is Rect2(0, 0, 200, 40) from before_each: centre x = 100.
+	_live_ptr({2: Vector2(20, 20)})
+	_controls._apply_actions()
+	assert_eq(_controls._slider_owner, 2, "a fresh pointer on the rail captures the slider")
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "and steers left of centre")
+	_live_ptr({})
+	_controls._apply_actions()
+	assert_null(_controls._slider_owner, "losing the finger releases the slider")
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+		"steering springs back to centre with no release event")
+
+
+func test_pointer_snapshot_does_not_capture_the_slider_mid_drag() -> void:
+	# A finger already down that merely slides onto the rail must not grab it — the
+	# same rule the event path encodes by only capturing in _press.
+	_controls._rects = {"gas": Rect2(500, 500, 100, 100)}
+	_live_ptr({5: Vector2(550, 550)})
+	_live_ptr({5: Vector2(20, 20)})
+	_controls._apply_actions()
+	assert_null(_controls._slider_owner, "a mid-drag pointer does not capture the slider")
+
+
+func test_unmeasurable_page_falls_back_to_the_id_path() -> void:
+	# The JS reports ok=0 when it can't measure the canvas, so the coordinates would be
+	# meaningless. Hitting-testing them anyway would be worse than the id-only
+	# reconciliation we already had, so the primary path stands down.
+	_controls._adopt_live_pointers(1, "0|")
+	assert_null(_controls._live_pointers, "an unmeasurable page publishes no usable snapshot")
+	_fixed_button_rects()
+	_controls._input(_touch(0, Vector2(550, 550), true))
+	assert_eq(_controls._pointers.get(0), "gas", "so engine touch events stay in charge")
+
+
+func test_a_fresh_press_clears_a_pointer_whose_release_was_lost() -> void:
+	# Event path, no snapshot: a finger can't press twice without lifting, so a press
+	# at an index we still track proves its release was dropped. Pressing again must
+	# start clean — and in particular reclaim the slider, which _press could otherwise
+	# never re-capture once its owner was stuck.
+	_controls._slider_owner = 0
+	_controls._slider_x = 20.0
+	_controls._rects = {"gas": Rect2(500, 500, 100, 100)}
+	_controls._input(_touch(0, Vector2(550, 550), true))
+	assert_null(_controls._slider_owner, "a re-press by the stuck finger frees the slider")
+	assert_eq(_controls._pointers.get(0), "gas", "and lands on the region it actually pressed")
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+		"so the phantom steering stops")
+
+
+func test_pointer_snapshot_ignores_a_stale_sequence() -> void:
+	_fixed_button_rects()
+	_live_ptr({7: Vector2(550, 550)})
+	# An older snapshot (the push and pull paths race) must not resurrect a lifted
+	# finger or re-order the state.
+	_controls._adopt_live_pointers(1, "1|9:0.5:0.5")
+	assert_true(_controls._live_pointers.has(7), "a stale sequence number is discarded")
 
 
 # --- Steering edges (the press/release change-guard) --------------------------
