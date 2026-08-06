@@ -133,11 +133,30 @@ the stage timer's `sector_offsets` hook — see above.)
 
 **Turn-arrow boards** are authored and wired. `tools/bake_sign_arrows.gd` renders one
 PS1-look pacenote face per signed turn type: a bold arrow whose bend traces the REAL
-corner shape from `CornerLibrary` (so it encodes the turn intensity), an orange rule,
-and the grade below (`1`..`6`, `SQ`, `U`). Each is baked in a left and a right
-(mirrored) variant to `textures/signs/arrow_*_<dir>.png` (cream/ink/orange palette,
-shared with the finish banners) and mapped in `sign_textures`
-(`config/game_config.tres`). The **roadside** signs only plant the `SignLayout.TURN_CORNERS`
+corner shape from `CornerLibrary` (so it encodes the turn intensity), with the grade
+(`1`..`6`, `SQ`, `U`) **nested into the concave side of the bend** — the arrow curves
+*around* the number rather than sitting in a band above it. Each is baked in a left and
+a right (mirrored) variant to `textures/signs/arrow_*_<dir>.png` (light-brown board,
+dark ink) and mapped in `sign_textures` (`config/game_config.tres`).
+
+The two-element layout is *solved*, not hand-placed, so it holds for every corner shape:
+- The arrow gets the **whole** face (`_arrow_geometry` fits the tessellated corner
+  polyline uniformly, then centres the full drawn ink — shaft, round caps, arrowhead —
+  rather than just the centerline). Its tail carries a fat entry blob (`TAIL_DOT`) that
+  reads as "the corner starts here".
+- `_solve_layout` then searches a grid of slots for the grade and takes the free one
+  nearest the **bottom corner on the inside of the bend** (a left-bending arrow leaves
+  its bottom-left open). "Free" is a real ink test (`_ink_hits`: discs walked along the
+  stroke plus a barycentric sampling of the arrowhead) against the glyph box grown by
+  `LABEL_CLEARANCE`, so the number can tuck into the concavity without the bounding
+  boxes having to be disjoint. Shapes that wrap both bottom corners — the hairpin —
+  land in the next-nearest gap (its belly); only if *no* slot is free does the arrow
+  step down through `ARROW_SHRINK`.
+- The glyph box comes from `_measure_glyph`, which renders the text and scans the
+  pixels. A `Label`'s line box carries ascent/descent padding well outside a digit's
+  ink, so metric-based placement would leave the grade visibly off-centre in its slot.
+
+The **roadside** signs only plant the `SignLayout.TURN_CORNERS`
 subset (`{1, 2, 3, 4, Square, Hairpin}` — gentle 5s/6s are too straight to warrant a
 board), but the gentle `arrow_5`/`arrow_6` boards **are** baked here because the in-run
 HUD pacenote strip ([hud.md](hud.md)) calls every corner and reuses this same art.
