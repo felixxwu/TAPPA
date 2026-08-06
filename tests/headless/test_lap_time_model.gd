@@ -8,20 +8,14 @@ const CAR := {
 	"tire_compound": 1.1, "drag": 0.2,
 }
 
+# These shapes moved to TrackFixtures when test_rival_pace.gd needed the same ones —
+# one definition instead of a copy per test file. Kept as thin local names so the
+# assertions below read unchanged.
 func _straight_track(length: float) -> Dictionary:
-	var c := Curve2D.new()
-	c.add_point(Vector2(0, 0))
-	c.add_point(Vector2(0, -length))   # heading +... straight line
-	return {"centerline": c, "pieces": []}
+	return TrackFixtures.straight(length)
 
 func _arc_track(radius: float, sweep_rad: float) -> Dictionary:
-	# A circular arc of the given radius, approximated by sampled points.
-	var c := Curve2D.new()
-	var steps := 64
-	for i in steps + 1:
-		var a := sweep_rad * float(i) / float(steps)
-		c.add_point(Vector2(radius * sin(a), -radius * (1.0 - cos(a))))
-	return {"centerline": c, "pieces": []}
+	return TrackFixtures.arc(radius, sweep_rad)
 
 func test_straight_only_matches_analytic_accel():
 	# On a long straight from rest, the car accelerates; final v should approach the
@@ -71,6 +65,52 @@ func test_wet_event_is_slower_than_dry_in_a_corner():
 	var t_dry := LapTimeModel.optimum_ms(track, CAR, dry_event)
 	var t_wet := LapTimeModel.optimum_ms(track, CAR, wet_event)
 	assert_gt(t_wet, t_dry, "wet event is strictly slower than the identical dry event")
+
+# --- Skill-factor seam (grip_mult / power_mult), for the rival ghost -------------
+# The ghost's pace comes from re-solving this model with a degraded envelope
+# (features/rival-ghost.md). These are the injection points; the defaults must be
+# perfect no-ops so every existing caller — and the baked opponent cache — is
+# untouched.
+
+func test_default_multipliers_match_the_no_argument_call():
+	# The invariance every existing caller depends on: passing the defaults explicitly
+	# must be byte-identical to not passing them. If this breaks, rival times move and
+	# data/opponent_cache.json silently diverges from live generation.
+	var track := _arc_track(40.0, PI)
+	var bare: Dictionary = LapTimeModel.optimum_profile(track, CAR, {})
+	var defaulted: Dictionary = LapTimeModel.optimum_profile(track, CAR, {}, 1.0, 1.0)
+	assert_eq(int(defaulted["total_ms"]), int(bare["total_ms"]),
+			"explicit default multipliers must not change the total")
+	var v_bare: PackedFloat32Array = bare["v"]
+	var v_def: PackedFloat32Array = defaulted["v"]
+	assert_eq(v_def.size(), v_bare.size(), "same sample count")
+	for i in v_bare.size():
+		assert_almost_eq(v_def[i], v_bare[i], 1e-6, "speed sample %d unchanged" % i)
+
+func test_grip_mult_below_one_is_slower_in_a_corner():
+	var track := _arc_track(40.0, PI)
+	var full := LapTimeModel.optimum_ms(track, CAR, {}, 1.0, 1.0)
+	var degraded := LapTimeModel.optimum_ms(track, CAR, {}, 0.7, 1.0)
+	assert_gt(degraded, full, "less grip => slower through a sustained corner")
+
+func test_power_mult_below_one_is_slower_on_a_straight():
+	# The reason the skill factor degrades power as well as grip: on a straight the
+	# forward pass is engine-limited, so grip alone barely moves the total.
+	var track := _straight_track(400.0)
+	var full := LapTimeModel.optimum_ms(track, CAR, {}, 1.0, 1.0)
+	var degraded := LapTimeModel.optimum_ms(track, CAR, {}, 1.0, 0.7)
+	assert_gt(degraded, full, "less power => slower down a straight")
+
+func test_total_time_is_monotonic_in_the_skill_factor():
+	# What makes the ghost's bisection well-posed: time must be strictly decreasing in
+	# k across the whole bracket, including above 1.0.
+	var track := _arc_track(60.0, PI)
+	var prev := -1
+	for k in [0.5, 0.7, 0.9, 1.0, 1.1]:
+		var t := LapTimeModel.optimum_ms(track, CAR, {}, k, pow(k, 0.3))
+		if prev >= 0:
+			assert_lt(t, prev, "k=%s must be strictly faster than the previous, lower k" % k)
+		prev = t
 
 func test_corner_speed_near_friction_limit():
 	# Mid-corner speed on a steady arc should sit near sqrt(mu*g / kappa).

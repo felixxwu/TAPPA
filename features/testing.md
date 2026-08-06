@@ -148,6 +148,20 @@ levers, in order of payoff:
   waits for a pending pull and proceeds once it settles, on the same code path
   the player runs.
 
+### Synthetic centerlines — `TrackFixtures`
+
+`tests/headless/track_fixtures.gd` (`class_name TrackFixtures`) supplies the
+`{"centerline", "pieces"}` dicts that `LapTimeModel` / `RivalPace` consume, so no test has
+to reach into a generated track: `straight(length)`, `arc(radius, sweep)` (densely sampled
+POINTS, no handles), `handled_arc(radius, sweep, steps)` (few points with real Bezier
+handles) and `straight_then_arc(...)`.
+
+The distinction between `arc` and `handled_arc` matters and is easy to get wrong: `arc` is
+already a handle-free polyline, so resampling it is near-lossless by construction. Any test
+asserting that a **resample** preserves curvature must use `handled_arc`, or it will pass
+against a broken implementation. See [rival-ghost.md](rival-ghost.md) → *The timed-span
+curve*.
+
 ### Test-catalogue seam — `CarFixtures`
 
 All four content libraries — `CarLibrary`, `EngineLibrary`, `RallyLibrary`,

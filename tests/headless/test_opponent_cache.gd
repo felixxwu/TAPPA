@@ -109,3 +109,50 @@ func test_committed_source_hash_is_fresh() -> void:
 	assert_eq(typeof(data), TYPE_DICTIONARY, "lockfile parses")
 	assert_eq(String(data["source_hash"]), TrackCache.source_hash_of(OpponentCache.all_rally_keys()),
 		"opponent lockfile source_hash is stale — run ./cache_all.sh and commit")
+
+
+# --- Rival-ghost pace seeds (features/rival-ghost.md) -------------------------------
+
+func test_ghost_pace_seeds_survive_the_round_trip() -> void:
+	# The seed is what lets a stage validate in ONE profile sweep instead of a 14-sweep
+	# bisection, so it has to actually come back out of the JSON as numbers.
+	var field := [{
+		"name": "Quick", "car_id": "c", "engine_id": "", "car_name": "Quick",
+		"event_times_ms": [1000, 2000, 3000], "dnf": false, "combined_ms": 6000,
+		"wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0,
+		"skill_k": [0.4321, -1.0, 0.1234],
+	}]
+	var doc := {"entries": {"k": OpponentCache.serialize_field(field)}}
+	var parsed: Dictionary = JSON.parse_string(JSON.stringify(doc, "", false, true))
+	var out := OpponentCache.deserialize_field(parsed["entries"]["k"])
+	assert_eq(out.size(), 1, "one rival back")
+	var seeds: Array = out[0]["skill_k"]
+	assert_eq(seeds.size(), 3, "one seed per event")
+	assert_almost_eq(float(seeds[0]), 0.4321, 0.0001, "solved seed survives")
+	assert_almost_eq(float(seeds[1]), -1.0, 0.0001, "the -1 'no seed' marker survives")
+	assert_almost_eq(float(seeds[2]), 0.1234, 0.0001, "and so does the third event's")
+
+func test_a_cache_entry_without_seeds_still_loads() -> void:
+	# Forward compatibility: a lockfile written before this field existed must not break,
+	# it should just mean "no seed, solve from scratch".
+	var raw := [{
+		"name": "Old", "car_id": "c", "engine_id": "", "car_name": "Old",
+		"event_times_ms": [1000], "dnf": false, "combined_ms": 1000,
+		"wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0,
+	}]
+	var out := OpponentCache.deserialize_field(raw)
+	assert_eq(out.size(), 1, "the row still loads")
+	assert_true((out[0]["skill_k"] as Array).is_empty(),
+			"and reports no seeds rather than erroring")
+
+func test_the_committed_lockfile_carries_a_seed_for_every_event() -> void:
+	# The bake fills a seed for each event's P1 — the only rival a ghost is built for. If
+	# this regresses to zero, every stage silently pays the full bisection again.
+	var seeded := 0
+	for rally in RallyLibrary.all():
+		var field := OpponentCache.lookup(rally)
+		for opp in field:
+			for v in opp.get("skill_k", []):
+				if float(v) >= 0.0:
+					seeded += 1
+	assert_gt(seeded, 0, "the committed lockfile carries baked ghost pace seeds")

@@ -357,7 +357,10 @@ generator also uses it per-rival.
   beatable human PAR). An `event.target_ms_override` wins when present.
 - `derive_turn_splits(track_result, car_meta, event)` — per-turn cumulative split
   table derived from that car's `LapTimeModel.optimum_profile`; used for the
-  in-run "vs P1" pace popup (see [stage.md](stage.md)).
+  in-run "vs P1" pace popup (see [stage.md](stage.md)) — and, for the leading rival,
+  the on-track ghost car the player races against ([rival-ghost.md](rival-ghost.md)):
+  the drawn time is re-solved into a driving envelope, so a pace factor is now
+  something you can SEE rather than only a number on the standings screen.
 - `generate_opponent_field(rally, event)` — the fixed field: `FIELD_MIN`–`FIELD_MAX`
   rivals (both 9 today, so every field is the same size), each
   rival's time = physics floor of **their own assigned car+engine build** (from `LapTimeModel`)

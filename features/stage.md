@@ -75,18 +75,26 @@ that point — `−` (green) when ahead, `+` (red) when behind (see [hud.md](hud
 `show_stage_delta`). It reuses the **turn-based time estimate** the rest of the rally
 runs on rather than inventing a new one:
 
-- `world.gd._setup_stage_splits()` builds a per-turn split table with
-  `RallyLibrary.derive_turn_splits(track_result, car_meta, event)` — for each placed
-  turn, the arc length reached and the cumulative optimum time to there, derived from
-  that car's `LapTimeModel.optimum_profile` (see [rally-roster.md](rally-roster.md)).
-  `car_meta` is the P1 rival's own car, obtained via
-  `RallySession.current_event_p1_car()` (the car of the fastest non-DNF rival). It
-  converts each turn's offset to a **progress fraction** (matching
-  `TrackProgress.progress_percent`, accounting for the staged lead-in) and its time
-  to a **fraction of the stage total**, then hands them to
-  `StageManager.setup_splits(turn_progress, turn_time_frac, p1_total_ms)`. `p1_total_ms`
-  is that P1 rival's own event time. Only wired for a session run that has a P1
-  rival; a plain dev boot shows no popup.
+- **Boundaries** come from `RallyLibrary.derive_turn_splits(track_result, car_meta,
+  event)` — for each placed turn, the arc length reached — since it is the only thing
+  that knows where each placed piece ends.
+- **Times** come from the shared `RivalPace` object the rival ghost is posed from
+  ([rival-ghost.md](rival-ghost.md)), NOT from `derive_turn_splits`' own cumulative
+  times. One pace model serves both, so the delta on the HUD and the ghost car in the
+  windscreen cannot disagree about the same rival.
+- The wiring is therefore **two-phase** in `world.gd`: `_setup_stage_splits()` snapshots
+  P1 and captures the turn boundaries during generation, then `_solve_rival_pace()` at
+  `stage_started` solves the pace and `_wire_stage_splits()` calls
+  `StageManager.setup_splits(turn_progress, turn_time_frac, p1_total_ms)`. It must wait
+  for GO because the span is measured from `TrackProgress.origin_offset()`, which
+  `mark_start()` only anchors once the player has been placed in their grid slot.
+- `derive_turn_splits` measures offsets on the **raw** generated curve while the pace
+  profile starts at the timing origin, so `_wire_stage_splits` shifts each boundary by
+  `start_lead_in_ahead_m` on a staged run first. Without that shift every turn reads one
+  lead-in early and the last boundary stops landing on the total.
+- P1 is resolved from `RallySession.current_event_p1()` — one snapshot carrying the time,
+  the car id, the engine id and the effective meta together. Only wired for a session run
+  that has a classified P1 rival; a plain dev boot shows no popup.
 - Each RUNNING frame, `_maybe_show_split()` advances past every turn boundary the
   player has now crossed (progress is monotonic) and, when the count reaches a whole
   `stage_delta_interval_turns`, fires the popup for the latest crossed turn. The rival's

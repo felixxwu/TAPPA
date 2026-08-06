@@ -391,8 +391,68 @@ func opponent_field() -> Array:
 # unlike the derived par which is faster than the whole field. -1 if no classified
 # rival has a time for this event (empty field / before a rally starts).
 func current_event_target_ms() -> int:
+	var p1 := current_event_p1()
+	return int(p1["time_ms"]) if not p1.is_empty() else -1
+
+
+# ONE snapshot of the event's P1: the leader row AND its effective car meta, resolved
+# together from a single current_event_leaders(1) read.
+#
+# Exists because P1 now has three consumers — the HUD's target readout, the in-stage
+# "vs P1" split popup, and the rival ghost (features/rival-ghost.md) — and the ghost has
+# to show the SAME car and the SAME time the standings will report. Three independent
+# lookups agree today only because event times are fixed at field generation; one shared
+# snapshot makes that structural instead of incidental.
+#
+# Returns {} when no rival has a classified time this event (all DNF, or no field).
+# Keys: name, car_id, engine_id, car_name, time_ms, meta.
+func current_event_p1() -> Dictionary:
 	var leaders := current_event_leaders(1)
-	return int(leaders[0]["time_ms"]) if not leaders.is_empty() else -1
+	if leaders.is_empty():
+		return {}
+	var row: Dictionary = (leaders[0] as Dictionary).duplicate()
+	row["time_ms"] = int(leaders[0]["time_ms"])
+	row["meta"] = _effective_meta_for(row)
+	# This event's baked rival-ghost pace seed, if the cache carried one. -1 = solve from
+	# scratch (a live-generated field, or a cache written before the field existed).
+	row["skill_k"] = _p1_skill_seed(int(row["time_ms"]))
+	return row
+
+
+# The cached pace seed for the current event's P1, or -1.0 when there isn't one.
+#
+# Takes the time as an ARGUMENT rather than reading current_event_target_ms(): that
+# delegates to current_event_p1(), which calls this — straight into infinite recursion.
+func _p1_skill_seed(target_ms: int) -> float:
+	for opp in _opponent_field:
+		var times: Array = opp.get("event_times_ms", [])
+		if _event_index >= times.size():
+			continue
+		var seeds: Array = opp.get("skill_k", [])
+		if _event_index >= seeds.size():
+			continue
+		# Match the row identity_of would carry, not object identity: current_event_leaders
+		# returns copies.
+		if int(times[_event_index]) == target_ms:
+			return float(seeds[_event_index])
+	return -1.0
+
+
+# The car meta for a leader row: the catalogue entry run through effective_meta with the
+# rival's FITTED engine. Resolving from the row's car_id is required, not forbidden —
+# it is the only path to a meta — but it must happen ONCE, from the snapshotted row,
+# rather than via a second independent leaders() lookup.
+#
+# Using the bare catalogue entry here is a bug with history: it derives a profile for a
+# car that wasn't racing, while the time it is compared against came from the swapped
+# build in generate_opponent_field.
+func _effective_meta_for(row: Dictionary) -> Dictionary:
+	var entry := CarLibrary.by_id(String(row.get("car_id", "")))
+	if entry.is_empty():
+		return {}
+	var eid := String(row.get("engine_id", ""))
+	var owned: Dictionary = {"swapped_engine": eid} if eid != "" else {}
+	return UpgradeLibrary.effective_meta(owned, entry)
 
 
 # The rival (if any) who crashed out of the CURRENT event, so the run scene can stage
@@ -407,20 +467,8 @@ func current_event_wreck() -> Dictionary:
 # The car_meta of the opponent posting the fastest non-DNF time for the CURRENT
 # event (the rival the "vs P1" popup tracks). {} if no classified rival has a time.
 func current_event_p1_car() -> Dictionary:
-	var leaders := current_event_leaders(1)
-	if leaders.is_empty():
-		return {}
-	var entry := CarLibrary.by_id(String(leaders[0]["car_id"]))
-	if entry.is_empty():
-		return {}
-	# Through effective_meta with the rival's FITTED engine, not the bare catalogue entry:
-	# this meta is what world.gd hands RallyLibrary.derive_turn_splits, so a stock-engine
-	# meta derived split SHAPES for a car that wasn't racing while the target TIME it scales
-	# to came from the swapped build (generate_opponent_field). Same call _eligible_combos
-	# uses, so the two agree by construction.
-	var eid := String(leaders[0].get("engine_id", ""))
-	var owned: Dictionary = {"swapped_engine": eid} if eid != "" else {}
-	return UpgradeLibrary.effective_meta(owned, entry)
+	var p1 := current_event_p1()
+	return p1.get("meta", {}) if not p1.is_empty() else {}
 
 
 # The most recent rally's finish summary (for the podium scene). {} before any.

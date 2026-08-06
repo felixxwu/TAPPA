@@ -19,7 +19,20 @@ const V_UNBOUNDED := 1.0e12     # m^2/s^2 sentinel for "no cornering cap"
 
 # Full velocity/time profile. Returns parallel arrays sampled every ~SAMPLE_STEP_M
 # along the centerline, plus the total time in ms. Empty/zero for a degenerate track.
-static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, event: Dictionary = {}) -> Dictionary:
+#
+# grip_mult / power_mult are the rival ghost's "driver skill" seam
+# (features/rival-ghost.md): the ghost re-solves this model with a degraded envelope
+# until the total lands on the rival's drawn time, so a slower crew loses time in the
+# corners (grip) and only slightly on the straights (power). They apply at two
+# DIFFERENT sites — grip folds into _surface_grip's mu, power scales p_peak_w below —
+# because _surface_grip never sees power.
+#
+# Both default to exactly 1.0 and are pure no-ops at that value, which is what keeps
+# every existing caller, and the baked data/opponent_cache.json rival times, unchanged.
+# Passing these from optimum_ms (the rival-time path) WOULD move rival times and would
+# require an OpponentCache.CACHE_VERSION bump plus a ./cache_all.sh re-bake.
+static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, event: Dictionary = {},
+		grip_mult := 1.0, power_mult := 1.0) -> Dictionary:
 	var empty := {"s": PackedFloat32Array(), "v": PackedFloat32Array(), "t": PackedFloat32Array(), "total_ms": 0}
 	var centerline := track_result.get("centerline") as Curve2D
 	if centerline == null:
@@ -37,12 +50,13 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 
 	# --- Car physical envelope ------------------------------------------------
 	var mass: float = maxf(float(car_meta.get("mass", 1200.0)), 1.0)
-	var mu := _surface_grip(car_meta, event)
+	var mu := _surface_grip(car_meta, event, grip_mult)
 	var mu_g := mu * G
 	var rolling := ROLLING_G * G
 	var drag: float = float(car_meta.get("drag", 0.0))
 	# Peak power in watts. power_to_weight is kW/kg, so * mass * 1000 -> W.
-	var p_peak_w := CarLibrary.power_to_weight(car_meta) * mass * 1000.0
+	# power_mult is the skill seam's secondary term (see the docstring) — 1.0 by default.
+	var p_peak_w := CarLibrary.power_to_weight(car_meta) * mass * 1000.0 * maxf(power_mult, 0.0)
 
 	# --- Pass 1: cornering ceiling (stored as v^2) ----------------------------
 	var cap2 := PackedFloat32Array(); cap2.resize(n)
@@ -90,8 +104,9 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 	return {"s": s, "v": v, "t": t, "total_ms": int(round(t[n - 1] * 1000.0))}
 
 
-static func optimum_ms(track_result: Dictionary, car_meta: Dictionary, event: Dictionary = {}) -> int:
-	return int(optimum_profile(track_result, car_meta, event)["total_ms"])
+static func optimum_ms(track_result: Dictionary, car_meta: Dictionary, event: Dictionary = {},
+		grip_mult := 1.0, power_mult := 1.0) -> int:
+	return int(optimum_profile(track_result, car_meta, event, grip_mult, power_mult)["total_ms"])
 
 
 # Sampled curvature kappa(s) = |d(heading)| / ds along the baked centerline, with
@@ -135,11 +150,13 @@ static func _curvature_profile(centerline: Curve2D, length: float) -> Dictionary
 #
 # The multiplier itself is the weather table's, not a local per-condition test —
 # see WeatherLibrary / features/weather.md.
-static func _surface_grip(car_meta: Dictionary, event: Dictionary) -> float:
+static func _surface_grip(car_meta: Dictionary, event: Dictionary, skill_grip_mult := 1.0) -> float:
 	var base := float(car_meta.get("tire_compound", 1.0))
 	var tarmac := RallyLibrary.event_tarmac_fraction(event)
 	var cfg: GameConfig = Config.data
 	var mu := base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
 	# Unconditional: WeatherLibrary resolves dry (and any unknown string) to exactly
 	# 1.0, so there is no per-condition branch here and a new condition needs no edit.
-	return mu * WeatherLibrary.grip_mult(cfg, RallyLibrary.event_weather(event))
+	# skill_grip_mult is the ghost's driver-skill term (1.0 = no-op); it multiplies the
+	# same mu the weather/surface model scales, which is why it needed no new concept.
+	return mu * WeatherLibrary.grip_mult(cfg, RallyLibrary.event_weather(event)) * maxf(skill_grip_mult, 0.0)

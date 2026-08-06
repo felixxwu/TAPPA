@@ -508,6 +508,48 @@ func test_cut_penalty_disabled_never_bills() -> void:
 	assert_almost_eq(tp.cut_penalty_s(), 0.0, 0.001, "disabled -> no penalty")
 
 
+# --- Public accessors for the rival ghost (features/rival-ghost.md) ---------------
+# The ghost is posed in the SAME arc-length space progress is measured in, read from
+# the live object rather than reconstructed from config (the lead-in span is already
+# duplicated twice in world.gd; a third copy would drift). These two accessors are
+# that contract.
+
+func test_origin_offset_is_the_anchored_timing_origin() -> void:
+	# The ghost's profile space starts at the timing origin, NOT the start line: the
+	# player is staged behind the line and mark_start() anchors wherever they actually
+	# sit. So origin_offset() must follow the car's staged pose.
+	_put_car(0, 25)
+	var tp := _make_progress()
+	tp.mark_start()
+	assert_almost_eq(tp.origin_offset(), 25.0, 1.0,
+			"origin_offset tracks where the car was anchored, not 0")
+
+func test_origin_offset_is_defined_before_mark_start() -> void:
+	# The ghost constructs on the generate path and only solves at GO, but an early
+	# read must still be sane rather than garbage.
+	_put_car(0, 10)
+	var tp := _make_progress()
+	assert_almost_eq(tp.origin_offset(), 10.0, 1.0,
+			"setup seeds the origin from the car's nearest offset")
+
+func test_sample_at_matches_the_static_point_on() -> void:
+	# sample_at is the ghost's per-frame position call. It must agree with the shared
+	# point table exactly — two tables for one curve is the drift this avoids.
+	var tp := _make_progress()
+	var pts := TrackProgress.baked_points(_curve)
+	for off in [0.0, 12.5, 50.0, 99.9]:
+		var expected := TrackProgress.point_on(pts, tp.baked_length(), off)
+		assert_almost_eq(tp.sample_at(off).x, expected.x, 0.001, "x at %s" % off)
+		assert_almost_eq(tp.sample_at(off).y, expected.y, 0.001, "y at %s" % off)
+
+func test_sample_at_clamps_outside_the_curve() -> void:
+	var tp := _make_progress()
+	var start := tp.sample_at(0.0)
+	var end := tp.sample_at(tp.baked_length())
+	assert_almost_eq(tp.sample_at(-50.0).y, start.y, 0.001, "clamps below 0")
+	assert_almost_eq(tp.sample_at(tp.baked_length() + 50.0).y, end.y, 0.001,
+			"clamps past the end")
+
 func test_setup_resets_accumulated_excess() -> void:
 	var curve := _hairpin_curve()
 	_put_car(0, 5)

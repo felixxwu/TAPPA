@@ -2292,3 +2292,108 @@ func spectator_params() -> Dictionary:
 ## A cheap stand-in for real exposure — there is deliberately no shelter/occlusion
 ## model (open ground vs. tree cover); see features/car-physics.md.
 @export_range(0.0, 1.0) var crosswind_nose_on_fraction := 0.35
+
+
+@export_group("Rival Ghost")
+# While the player drives, the rally leader (P1) is shown on track as a translucent
+# ghost car, crossing the finish exactly when the standings say they did
+# (features/rival-ghost.md). It is NOT an AI driver: it is posed kinematically from
+# LapTimeModel.optimum_profile, re-solved with a degraded "driver skill" envelope until
+# the profile's total lands on P1's drawn time. These knobs shape the look and the
+# solve; WHO gets ghosted (the fastest classified rival) is not tunable.
+## Show the ghost at all. Off = no ghost, but the in-stage "vs P1" delta popup still
+## works — the shared pace object is built for every session run regardless.
+@export var rival_ghost_enabled := true
+## Cull distance (m). Beyond this the ghost is hidden — a ghost minutes up the road is
+## not worth drawing. Its pose stays valid at any distance (it needs no terrain
+## collider), so this is purely a rendering budget.
+@export_range(50.0, 2000.0) var rival_ghost_visible_m := 400.0
+## Ghost body opacity at a normal chasing distance. Low enough to read as "not really
+## there", high enough to chase.
+@export_range(0.05, 1.0) var rival_ghost_opacity := 0.4
+## Float P1's name above the ghost, so it reads as a rival you are racing rather than an
+## anonymous car. Billboarded, and it fades with the ghost's proximity fade.
+@export var rival_ghost_nametag_enabled := true
+## Height (m) of the nametag above the ghost's origin.
+@export_range(0.5, 8.0) var rival_ghost_nametag_height_m := 2.2
+## On-screen size (m of world height) of the nametag text.
+@export_range(0.1, 3.0) var rival_ghost_nametag_size_m := 0.55
+## Give the ghost its own gravel spray. It needs a SECOND WheelParticles system (that
+## node tracks one car), so it is a real cost rather than a free ride on the player's —
+## off is a legitimate choice on a tight frame budget.
+@export var rival_ghost_dust_enabled := true
+## Distance (m) over which the ghost fades OUT as it gets close to the player: full
+## opacity at this range, fully transparent at zero. Stops a ghost you are overlapping
+## from filling the screen and hiding the road you are trying to drive.
+@export_range(0.0, 60.0) var rival_ghost_fade_near_m := 14.0
+## Peak lateral shift (m) off the centerline as the ghost threads a line — wide on
+## entry, tucked at the apex, drifting out on exit. Shares one road-width budget with
+## the slip angle below, so nose and tail stay on the carriageway.
+@export_range(0.0, 6.0) var rival_ghost_line_offset_m := 1.2
+## Artistic multiplier on the ghost's slip angle. The angle ITSELF is derived from the
+## tyre model, not authored here: a tyre at peak lateral force sits at its peak-slip angle,
+## which is asin(*_slip_peak) for the surface (~11.5 deg on tarmac, ~20.5 deg on gravel),
+## scaled by how much of the friction circle cornering is actually using. So the
+## gravel-vs-tarmac difference comes out of the physics for free — retune
+## gravel_slip_peak / tarmac_slip_peak to change it. 1.0 = physical; raise it to
+## exaggerate the drift for looks.
+@export_range(0.0, 3.0) var rival_ghost_slip_scale := 1.0
+## Hard ceiling (deg) on slip. Past this the ghost reads as a spin, not a slide.
+@export_range(0.0, 90.0) var rival_ghost_max_slip_deg := 45.0
+## Smoothing time constant (s) for the ghost's LATERAL position (how far off the
+## centerline it sits). The road curve is only baked every ~5 m and lerped, so the geometry
+## the ghost reads steps at each chord vertex; this filters the residual sideways motion.
+## Applied to the lateral offset ONLY — never to along-track position, which is the ghost's
+## clock and must stay exact. 0 disables it.
+@export_range(0.0, 2.0) var rival_ghost_position_smoothing_s := 1.0
+## The same, for the ghost's ROTATION. Kept SHORTER than the positional constant on
+## purpose: heavy rotational filtering makes the car turn lazily and lag its own direction
+## of travel, which reads as sliding rather than driving, while sideways position wants the
+## heavier hand. 0 disables it.
+## CAREFUL: this is NOT the only thing that smooths rotation. rival_ghost_slip_lag_s below
+## lags the slip angle, which is a yaw folded into the same basis — so setting THIS to 0
+## alone still leaves the ghost's rotation filtered in corners. Zero both for genuinely
+## unfiltered rotation.
+@export_range(0.0, 2.0) var rival_ghost_rotation_smoothing_s := 0.0
+## Smoothing time (s) for the slip angle, so yaw builds through entry and unwinds on
+## exit instead of snapping at the apex. This is the SECOND rotational filter — slip is a
+## yaw applied to the body, so it lags rotation exactly as rival_ghost_rotation_smoothing_s
+## does. See the note there.
+@export_range(0.0, 2.0) var rival_ghost_slip_lag_s := 0.25
+## How much of the driver-skill deficit comes out of CORNERING: grip scales by
+## pow(k, this). 0 = grip is never reduced, so the ghost corners at the car's true limit
+## and every bit of its deficit comes from power (the default -- it makes the ghost a
+## usable reference line: it brakes where you should brake and carries the right apex
+## speed, and only loses to you down the straights). 1 = the old coupled behaviour, where
+## a slower rival is slower everywhere.
+## Caution: with this at 0 the only lever left is straight-line pace, so a very twisty
+## stage may not have enough straight to give away and the solve will clamp (it warns).
+## That ceiling is structural -- lowering rival_ghost_skill_min will not fix it.
+@export_range(0.0, 2.0) var rival_ghost_grip_exponent := 0.0
+## How much comes out of STRAIGHT-LINE pace: power scales by pow(k, this). Grip is the dominant loss, power the weaker secondary one —
+## at k=0.8 and 0.30 that is a 20% grip cut against a ~6.5% power cut, i.e. a crew
+## that loses it in the corners and is only slightly down on straights.
+## Toward 1.0 = slower rivals feel gutless on straights. Toward 0 = corner-limited
+## only, and straightness-dominated stages stop converging (they trip the residual cap
+## below, which is exactly what that cap is for).
+@export_range(0.05, 1.0) var rival_ghost_power_exponent := 1.0
+## Lower end of the skill bracket the solve bisects over. Must be low enough to reach
+## the slowest authored pace; if clamp warnings prove common, lower THIS before touching
+## the exponents (an exponent changes how every ghost looks).
+## Measured, not guessed: with the grip exponent at 0 the worst career stage needs 0.151
+## (tools/audit_ghost_pace.tscn sweeps all 96 of them), so this sits well under that.
+## A wide bracket costs nothing — the bisection still lands on whichever k matches the
+## target, so a low floor only extends what is REACHABLE; it never makes a normal ghost
+## slower. Raise the grip exponent and this can come back up.
+@export_range(0.01, 1.0) var rival_ghost_skill_min := 0.05
+## Upper end of the bracket. Deliberately ABOVE 1.0: it is a safety valve for
+## cached-vs-live track divergence, where the target can land beyond the car's
+## ungraded optimum. Without the headroom those solves fall onto the uniform-scale
+## fallback this design exists to avoid.
+@export_range(1.0, 2.0) var rival_ghost_skill_max := 1.15
+## Bisection steps. Plus 2 bracket evaluations = the sweep budget per solve.
+@export_range(1, 40) var rival_ghost_skill_iterations := 12
+## Largest time error (ms) the final uniform micro-scale may absorb. Beyond this the
+## solve has failed to find a real SHAPE and is falling back to disguised uniform
+## scaling, so it warns instead of shipping silently.
+@export_range(1, 5000) var rival_ghost_max_time_residual_ms := 250

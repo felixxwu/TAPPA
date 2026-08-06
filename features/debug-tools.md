@@ -283,6 +283,36 @@ It must be a SCENE run (like the cache baker), not `--script`: `Config`/
 `RallySession` are autoloads, and `TrackGenerator._search` calls
 `Platform.is_headless()`.
 
+## Road-curve probe jitter
+
+`tools/probe_jitter.tscn` (headless) generates a real stage and reports, for several probe
+spans, the worst frame-to-frame heading change and the number of curvature SIGN flips along
+it.
+
+It exists because the road curve is baked every 5 m and lerped, so anything sampling it
+with a probe shorter than a chord gets a piecewise-constant reading that jumps at each
+vertex. That is invisible in code review and hard to reproduce synthetically (a uniform arc
+turns by the same angle at every vertex, so short probes look fine on one) — but it made
+the rival ghost slide side to side, because a curvature sign flip swaps which side of the
+road it sits on. Use this before trusting any new consumer of the road centerline's
+geometry. See [rival-ghost.md](rival-ghost.md) -> *Smoothness*.
+
+## Rival-ghost pace audit
+
+`tools/audit_ghost_pace.tscn` (headless) sweeps **every career stage** and asks whether the
+rival ghost's pace solve can reach its target with the current `GameConfig` exponents, or
+has to clamp and fall back to uniform scaling ([rival-ghost.md](rival-ghost.md)).
+
+Per stage it prints the pace P1 needs, the most the current exponents can deliver at
+`skill_min` and at a near-zero skill factor, and a verdict for both P1 (the only rival
+ghosted today — this column gates shipping) and the slowest rival (a bound for a future
+multi-ghost field). It exits non-zero if any P1 solve clamped, so it can gate CI.
+
+It also reports **the worst-case skill factor any stage needs**, which is how
+`rival_ghost_skill_min` should be chosen. Run it after changing either exponent: with
+`grip_exponent = 0` the only lever is straight-line pace, so a stage without much straight
+can become unreachable.
+
 ## Tests
 
 `tests/headless/test_debug_arrows.gd` — verifies the force-arrow overlay updates

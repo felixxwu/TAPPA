@@ -154,7 +154,9 @@ section only records what differs for a challenge.
 - **`world.gd._arch_event_info()`** is now the single source of the event framing for
   BOTH the arch banners and the start-line header, and answers for a challenge:
   `"<Kind> Challenge"`, `ChallengeSession.events_completed()` /
-  `stage_count()`. `target_ms` stays `-1` — no rival field, no time to beat — which
+  `stage_count()`. `target_ms` stays `-1` — no rival field, no time to beat, and
+  therefore **no rival ghost** either ([rival-ghost.md](rival-ghost.md) is gated on a
+  classified P1 row, which a challenge run never has) — which
   `FinishArch` already renders as "omit the time row" (the same graceful empty state
   a session-less dev boot gets).
 - **`start_line.gd` resolves the driven car through one helper**, `_driven_car()`

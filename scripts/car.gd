@@ -158,6 +158,32 @@ var _replay: ReplayRecorder = null
 var _replay_t := 0.0
 var _replay_xform := Transform3D()
 var _saved_process_priority := 0
+
+# Kinematic posing: this car's transform is written from OUTSIDE, every frame, by an
+# owner that knows where it should be (the rival ghost — features/rival-ghost.md).
+# Everything a driven car does to itself must therefore stop.
+#
+# Deliberately NOT replay_playback, for two reasons the ghost can't work around:
+# replay_playback needs a ReplayRecorder (_step_replay early-returns without one, so
+# nothing would feed the wheel spin), and it is read outside this file by
+# track_progress.gd — a second car asserting it risks corrupting player progress.
+#
+# The setter owns the process_priority swap so a caller can't forget it: like the replay
+# path, the posed car must process EARLY so every observer reads the fresh pose. The
+# owner writing the transform sets itself lower still, so the write lands before the
+# wheel visuals below rebuild off the car's basis.
+var kinematic_pose := false:
+	set(value):
+		if value == kinematic_pose:
+			return
+		kinematic_pose = value
+		if value:
+			_saved_process_priority = process_priority
+			process_priority = REPLAY_PROCESS_PRIORITY
+		else:
+			process_priority = _saved_process_priority
+			if drivetrain != null:
+				drivetrain.replay_omega = {}
 # Project gravity, cached once (never changes at runtime) so the parking-hold path
 # doesn't do a string-keyed ProjectSettings lookup every physics frame.
 var _default_gravity := Platform.gravity()
@@ -190,7 +216,8 @@ var _gearbox_auto_seen := -1
 # non-driving mode is dead to input in ONE place instead of leaking through each input
 # site. (Handbrake has its own held-while-locked semantics and is gated separately.)
 func _driver_input_live() -> bool:
-	return not controls_locked and not ai_controlled and not replay_playback
+	return not controls_locked and not ai_controlled and not replay_playback \
+			and not kinematic_pose
 
 
 # Read a continuous control axis: live player input when the driver is in control,
@@ -383,6 +410,14 @@ func _process(delta: float) -> void:
 		# applied, so the wheel visuals rebuild off the fresh car basis.
 		if drivetrain != null:
 			drivetrain.replay_spin(delta)
+	elif kinematic_pose:
+		# Same wheel-spin problem, different pose source: the owner writes this car's
+		# transform (at a lower process_priority, so it has already landed this frame) and
+		# fills drivetrain.replay_omega from the pace profile's speed. drivetrain.step()
+		# does not run in this mode either, so without this the ghost would slide down the
+		# road on four dead wheels.
+		if drivetrain != null:
+			drivetrain.replay_spin(delta)
 
 
 # Soft-hazard water predicate, wired by world.gd from the LakeField: takes the
@@ -402,6 +437,11 @@ func _physics_process(delta: float) -> void:
 			+ "Call fit_engine() (props) or apply_owned() (owned cars).")
 	if replay_playback:
 		_step_replay(delta)
+		return
+	if kinematic_pose:
+		# Nothing to simulate: position comes from the owner, and running the drivetrain /
+		# engine / stuck-and-water watchdogs on a teleported body produces garbage (and, in
+		# the watchdogs' case, spurious resets).
 		return
 	var __t := Time.get_ticks_usec()
 	_timed_physics_process(delta)
@@ -1032,7 +1072,9 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# The replay ghost is positioned via the physics server (see _step_replay); it must
 	# take no damage and fell no trees — the per-frame reposition would otherwise read
 	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
-	if replay_playback:
+	# A kinematically posed car (the rival ghost) is moved the same way and needs the same
+	# immunity — otherwise chasing it would rack up damage on a car that isn't driving.
+	if replay_playback or kinematic_pose:
 		return
 	# Apply a queued reset_to teleport here — the physics-authoritative write point. Setting
 	# state.transform makes the pose stick regardless of which frame phase reset_to was

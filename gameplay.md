@@ -245,9 +245,13 @@ resolve into `GameConfig`/`CarLibrary` values, never hardcoded.
 The player should never feel alone in the rally:
 - **Pre-countdown scene:** a car **ahead** launching its run and a car **behind**
   waiting its turn — an animated start-area beat before control is handed over.
-  These are **atmospheric flavour, not the real opponent field** (the field is
-  derived times, not driven cars) — so they're cheap to stage and don't have to
-  match the leaderboard.
+  These are **atmospheric flavour, not the real opponent field** — so they're cheap to
+  stage and don't have to match the leaderboard.
+- **The leader IS a driven car, though.** The field is still *derived times* rather than
+  simulated drivers, but the leading rival's time is now re-solved into an actual driving
+  line and shown on track as a ghost you race — see `features/rival-ghost.md`. So "derived
+  times, not driven cars" describes how the field is GENERATED, not what the player sees:
+  P1's ghost is held to exactly the time the standings will report.
 - **Podium scene:** at the rally's end, an animated **podium** showing who placed.
 - *(These hook into the start/end flow — see `features/stage.md` + `features/start-line.md`; the
   pre-countdown scene precedes that spec's 3-second countdown.)*

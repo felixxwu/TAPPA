@@ -186,6 +186,31 @@ are the ones a feature doc points at directly.
 | `hq_wheel_cam_offset` | (6.4, 0.9, 0.6) | Camera position for the **cosmetic wheel view** — low and side-on, so the settled car's flank and both wheels fill the frame ([wheel-customization.md](wheel-customization.md)) |
 | `hq_wheel_cam_look_height` | 0.45 | Look height for that view — wheel height, not window height |
 
+### Rival Ghost
+The kinematic P1 ghost shown while you drive — see
+[rival-ghost.md](rival-ghost.md) for what each knob does and how the solve uses it.
+
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `rival_ghost_enabled` | `true` | Show the ghost. Off still leaves the "vs P1" popup working — the shared pace object is built either way. |
+| `rival_ghost_visible_m` | `400.0` | Cull distance; the pose stays valid at any range. |
+| `rival_ghost_opacity` | `0.55` | Body opacity at chasing range (a per-mesh translucent material override; the car's own shader is opaque). |
+| `rival_ghost_position_smoothing_s` | `0.45` | Filters LATERAL motion (heavy hand). Never along-track — that's the clock. |
+| `rival_ghost_rotation_smoothing_s` | `0.10` | Filters rotation (light hand). Not the only rotational filter — see `slip_lag_s`. |
+| `rival_ghost_nametag_enabled` / `_height_m` / `_size_m` | on / 2.2 / 0.55 | P1's name floating above the ghost. |
+| `rival_ghost_dust_enabled` | `true` | Give the ghost its own gravel spray (a SECOND WheelParticles system, so a real cost). |
+| `rival_ghost_fade_near_m` | `14.0` | Fades to fully transparent as the player closes in, so an overlapped ghost doesn't hide the road. |
+| `rival_ghost_grip_exponent` | `0.0` | How much of the deficit comes out of CORNERING. 0 = corners cost nothing (the ghost is a valid reference line). |
+| `rival_ghost_line_offset_m` | `1.2` | Peak lateral shift as it threads a line. |
+| `rival_ghost_slip_scale` | `1.0` | Artistic multiplier on slip. The ANGLE is `asin(*_slip_peak)` from the tyre model scaled by friction-circle usage, so surface differences come from `gravel_slip_peak` / `tarmac_slip_peak` — shared with the player's car. |
+| `rival_ghost_max_slip_deg` | `25.0` | Hard ceiling, so it never reads as a spin. |
+| `rival_ghost_slip_lag_s` | `0.25` | Smoothing, so yaw builds and unwinds. |
+| `rival_ghost_power_exponent` | `0.30` | How the skill factor splits: grip scales by `k`, power by `pow(k, this)`. |
+| `rival_ghost_skill_min` | `0.05` | Slow end of the solve bracket. Set from `tools/audit_ghost_pace.tscn`: the worst career stage needs 0.151. |
+| `rival_ghost_skill_max` | `1.15` | Fast end — above 1.0 deliberately, as a cached-vs-live divergence valve. |
+| `rival_ghost_skill_iterations` | `12` | Bisection steps. |
+| `rival_ghost_max_time_residual_ms` | `250` | Largest error the final micro-scale may absorb before warning. |
+
 ## Engine data
 
 `GameConfig` no longer owns an engine preset system — it has no

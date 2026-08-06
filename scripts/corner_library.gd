@@ -4,7 +4,10 @@ extends RefCounted
 # hand-authored as control points in meters, entry at the origin heading +Y,
 # right-hand turns. The number gradient 1-6 goes from sharpest/tightest (1, ~85
 # deg, ~18 m radius) to gentlest (6, ~12 deg, ~108 m radius); Square is a sharp
-# ~90 deg, Hairpin ~180 deg (a 3-point curve), Straight a plain 50 m line. Turns
+# ~90 deg (~8 m minimum radius), Hairpin ~180 deg (a 3-point curve, ~7 m), Straight a
+# plain 50 m line. Square is the second-tightest shape in the set, but it must stay
+# LOOSER than the Hairpin — it briefly wasn't, and the resulting curvature spike made
+# every driver brake harder for the 90 deg than for the 180 deg. Turns
 # 3-5 are tightened (smaller radius, same angle); turns 1, 2, Square and Hairpin
 # carry a longer entry lead-in (a lengthened entry tangent) with their sharpness
 # unchanged. The 2D curve is the source of truth; it will later be imprinted onto
@@ -59,9 +62,18 @@ const CORNERS: Array[Dictionary] = [
 	},
 	{
 		"name": "Square",
+		# Handles shortened from 13.953/13.302 to 11.0/10.5 (same endpoints, so the corner
+		# occupies the same footprint and still turns a sharp ~90 deg). The old handles were
+		# nearly as long as the 14.6 m diagonal, which keeps the curve straight near both
+		# ends and dumps all the turning into the middle: minimum radius came out at 4.7 m,
+		# TIGHTER than the Hairpin (6.6 m) and 3.6x tighter than turn 1. LapTimeModel caps
+		# speed at sqrt(mu*g/kappa) off the tightest point, so that spike made every driver
+		# — the ghost included — brake to ~26 km/h for a 90 deg bend. Now ~8.4 m / ~34 km/h:
+		# looser than the Hairpin, still the second-tightest corner in the set, and
+		# deliberately short of the 8.06 m handles that would make it a plain circular arc.
 		"points": [
-			[Vector2(0.000, 0.000), Vector2(0.000, 0.000),  Vector2(0.000, 13.953)],
-			[Vector2(14.600, 14.600), Vector2(-13.302, 0.000), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000), Vector2(0.000, 0.000),  Vector2(0.000, 11.000)],
+			[Vector2(14.600, 14.600), Vector2(-10.500, 0.000), Vector2(0.000, 0.000)],
 		],
 	},
 	{

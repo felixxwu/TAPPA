@@ -220,6 +220,28 @@ overlay** so the replay is visible behind the leaderboard:
   because `engine_audio.gd` now writes `volume_db` every frame for proximity attenuation
   ([engine-audio.md](engine-audio.md)), which would overwrite a flat `volume_db` mute.
 
+## A second consumer: the rival ghost
+
+The transform lesson above (a scripted `VehicleBody3D` pose only reaches the render
+transform when written in `_process`, plus the `process_priority` ordering trap) is no
+longer replay-only. `car.gd` now also has a **`kinematic_pose`** mode, used by the rival
+ghost ([rival-ghost.md](rival-ghost.md)) to pose a SECOND car from a synthesized pace
+profile while the player drives.
+
+It is deliberately a distinct flag rather than reusing `replay_playback`, for two reasons
+the ghost cannot work around:
+
+- `replay_playback` requires a `ReplayRecorder` — `_step_replay` early-returns on a null
+  recorder, so nothing would feed `drivetrain.replay_omega` and the ghost's wheels would
+  sit dead still.
+- `replay_playback` is read OUTSIDE `car.gd`, notably by `track_progress.gd`. A second car
+  asserting it risks interfering with the player's own progress tracking.
+
+Both modes share the same immunities (no damage, no drive sim, early process priority);
+`kinematic_pose` additionally gates `_driver_input_live()`, because unlike the replay
+ghost the rival ghost is neither `controls_locked` nor `ai_controlled` and would otherwise
+be driven by the player's live input.
+
 ## Named limitations (this pass)
 
 - **Pre-fallen trees**: the replay doesn't restage knocked-over trees/foliage — the

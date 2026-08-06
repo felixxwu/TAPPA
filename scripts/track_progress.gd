@@ -376,6 +376,27 @@ func baked_length() -> float:
 	return _baked_length
 
 
+# The anchored timing origin: the arc offset progress is measured FROM, set by
+# setup() (the car's nearest offset) and re-anchored by mark_start() at GO.
+#
+# Exposed for the rival ghost (features/rival-ghost.md), which is posed in this same
+# arc-length space and must read the LIVE anchor rather than reconstruct it from
+# start_lead_in_behind_m + start_lead_in_ahead_m. Two reasons that matters: the span
+# arithmetic is already duplicated in world.gd's _setup_stage_splits and
+# _setup_pacenotes (a third copy would drift), and the origin is NOT the start line —
+# a staged player is reset_to a grid slot several queue gaps behind it, so
+# mark_start() anchors wherever they actually sit.
+func origin_offset() -> float:
+	return _origin_offset
+
+
+# Point on the centerline at a baked arc offset, clamped to the curve at both ends.
+# The public form of _point_at: the ghost's per-frame position lookup, sharing the
+# one resampled point table rather than baking a second copy of the same curve.
+func sample_at(offset: float) -> Vector2:
+	return _point_at(offset)
+
+
 # Arc offset of the finish line (100%). Shorter than baked_length() when the
 # rendered centerline extends past the finish (the post-finish runoff road).
 func finish_offset() -> float:

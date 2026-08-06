@@ -20,7 +20,10 @@ const CACHE_PATH := "res://data/opponent_cache.json"
 #   "4" — wreck_progress is now quantised at generation so it round-trips through JSON
 #         exactly (a raw double did not, so a cached field could differ from a live one
 #         in the last bits). Generation changed, so the bake must be redone.
-const CACHE_VERSION := "4"
+# Bumped to "5" for the rival-ghost skill_k seeds (features/rival-ghost.md): entries
+# written before that carry no seed, and a stale hit would silently cost every stage a full
+# re-solve instead of the one-sweep validation the seed exists to enable.
+const CACHE_VERSION := "5"
 
 static var _entries: Dictionary = {}
 static var _loaded := false
@@ -134,6 +137,15 @@ static func serialize_field(field: Array) -> Array:
 	return field.duplicate(true)
 
 
+# JSON gives every number back as a float; normalise a list of them.
+static func _floats(raw: Variant) -> Array:
+	var out: Array = []
+	if raw is Array:
+		for v in raw:
+			out.append(float(v))
+	return out
+
+
 static func deserialize_field(raw: Array) -> Array:
 	var out: Array = []
 	for r in raw:
@@ -156,5 +168,9 @@ static func deserialize_field(raw: Array) -> Array:
 			"wreck_event": int(r.get("wreck_event", -1)),
 			"wreck_progress": float(r.get("wreck_progress", 0.0)),
 			"wreck_side": float(r.get("wreck_side", 1.0)),
+			# Per-event rival-ghost pace seeds. Absent in a cache file written before this
+			# field existed, which must stay readable — an empty list means "no seed" and the
+			# runtime solves from scratch.
+			"skill_k": _floats(r.get("skill_k", [])),
 		})
 	return out

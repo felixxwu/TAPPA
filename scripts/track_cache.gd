@@ -17,7 +17,10 @@ const CACHE_VERSION := "1"
 # change resets every board instead of leaving them silently stale.
 # Bumped to 2 for the no-consecutive-hairpins DFS rule: track shapes changed, so
 # every existing board time was set on a layout that no longer exists.
-const BOARD_EPOCH := 2
+# Bumped to 3 for the smoothed Square corner (CornerLibrary): its minimum radius went
+# 4.7 m -> 8.4 m, which changes both the layout and the achievable time on every stage
+# that places one.
+const BOARD_EPOCH := 3
 
 static var _entries: Dictionary = {}
 static var _loaded := false

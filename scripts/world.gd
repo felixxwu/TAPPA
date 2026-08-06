@@ -1398,6 +1398,16 @@ var _engine_smoke: EngineSmoke
 
 # Cinematic replay behind the between-event standings overlay (features/event-replay.md).
 var _replay_recorder: ReplayRecorder
+# Rival ghost (features/rival-ghost.md). The pace object is built for EVERY session run
+# (the "vs P1" popup depends on it); the ghost node is additionally gated on the display
+# config. Both are solved at GO, not at generation — see _solve_rival_pace.
+var _rival_pace: RivalPace = null
+var _ghost: GhostCar = null
+# Captured at generation, consumed at GO: the P1 snapshot, the raw turn boundaries, and
+# whether this run is staged (which decides the raw->profile offset shift).
+var _p1_snapshot: Dictionary = {}
+var _split_boundaries: Array = []
+var _splits_staged := false
 var _replay_camera: ReplayCamera
 var _standings_overlay: CanvasLayer
 # The live challenge interstitial, when one is up. Non-null only for a challenge
@@ -1431,35 +1441,111 @@ var _event_toe_at_finish: Array = []
 # the leading rival's event time, converting each turn's arc offset to a progress
 # fraction (matching TrackProgress.progress_percent) and its par time to a fraction of
 # the stage total. No-op without an active session, a classified P1 rival, or pieces.
-func _setup_stage_splits(track_result: Dictionary, staged: bool, cfg: GameConfig) -> void:
+# Phase 1 of the rival-pace wiring: capture what the solve will need, and build the
+# ghost node. No solving here — see _solve_rival_pace for why.
+#
+# The per-turn BOUNDARIES still come from RallyLibrary.derive_turn_splits: it is the only
+# thing that knows where each placed piece ends, and the popup needs those. Only the
+# TIMES move to RivalPace, so the ghost in the windscreen and the delta on the HUD are
+# describing one rival with one pace model.
+func _setup_stage_splits(track_result: Dictionary, staged: bool, _cfg: GameConfig) -> void:
+	_rival_pace = null
+	_p1_snapshot = {}
+	_split_boundaries = []
+	_splits_staged = staged
 	if _stage_manager == null or not RallySession.is_active():
 		return
-	var p1_ms := RallySession.current_event_target_ms()
-	if p1_ms <= 0:
+	# ONE snapshot: the time, the car id, the engine id and the meta all come from the
+	# same leaders[0] row, so the ghost cannot show a car the standings never mention.
+	var p1 := RallySession.current_event_p1()
+	if p1.is_empty() or int(p1.get("time_ms", -1)) <= 0:
 		return
-	var p1_car := RallySession.current_event_p1_car()
-	if p1_car.is_empty():
+	var meta: Dictionary = p1.get("meta", {})
+	if meta.is_empty():
 		return
-	var splits := RallyLibrary.derive_turn_splits(track_result, p1_car, RallySession.current_event())
-	if splits.is_empty():
+	_p1_snapshot = p1
+	var splits := RallyLibrary.derive_turn_splits(track_result, meta, RallySession.current_event())
+	for sp in splits:
+		_split_boundaries.append(float(sp["end_offset_m"]))
+	_setup_rival_ghost()
+
+
+# Phase 2, at GO: solve the pace over the span the player is actually timed on, then feed
+# BOTH consumers from it — the ghost and the "vs P1" popup.
+func _solve_rival_pace() -> void:
+	if _p1_snapshot.is_empty() or _track_progress == null or _road_centerline == null:
 		return
-	var total_ms := int(splits[splits.size() - 1]["cum_ms"])
-	if total_ms <= 0:
+	var target_ms := int(_p1_snapshot.get("time_ms", -1))
+	if target_ms <= 0:
 		return
-	# Progress is measured from the start line to the finish. A staged run prepends a
-	# straight lead-in of start_lead_in_ahead_m ahead of the generated track, so the
-	# drivable span (and thus the progress denominator) is that plus the track length.
-	var ahead := cfg.start_lead_in_ahead_m if staged else 0.0
-	var raw_len: float = (track_result.get("centerline") as Curve2D).get_baked_length()
-	var span := ahead + raw_len
+	# The timed span, read from the LIVE anchor rather than reconstructed from the
+	# lead-in config fields (that arithmetic already exists twice in this file; a third
+	# copy would drift, and origin_offset() is not the start line anyway — the player is
+	# staged several queue gaps behind it).
+	var span_track := RivalPace.timed_span_track(_road_centerline,
+			_track_progress.origin_offset(), _track_progress.finish_offset())
+	_rival_pace = RivalPace.solve(span_track, _p1_snapshot.get("meta", {}),
+			RallySession.current_event(), target_ms,
+			float(_p1_snapshot.get("skill_k", -1.0)))
+	if _rival_pace.is_degenerate():
+		_rival_pace = null
+		return
+	_wire_stage_splits(target_ms)
+	if _ghost != null:
+		_ghost.pace = _rival_pace
+		_ghost.elapsed_source = Callable(_stage_manager, "elapsed")
+		_ghost.start()
+
+
+# Feed the in-stage "vs P1" popup: boundaries from derive_turn_splits, times from the
+# shared pace object.
+func _wire_stage_splits(target_ms: int) -> void:
+	if _stage_manager == null or _split_boundaries.is_empty() or _rival_pace == null:
+		return
+	var cfg: GameConfig = Config.data
+	# derive_turn_splits measures offsets on the RAW generated curve; the pace profile
+	# starts at the timing origin, which sits a lead-in earlier on a staged run. Without
+	# this shift every turn would be read one lead-in early and the final boundary would
+	# no longer land on the profile total (breaking the popup's cum/total -> 1.0 tail).
+	var shift := cfg.start_lead_in_ahead_m if _splits_staged else 0.0
+	var span := _track_progress.finish_offset() - _track_progress.origin_offset()
 	if span <= 0.0:
+		return
+	var total_s := float(target_ms) / 1000.0
+	if total_s <= 0.0:
 		return
 	var turn_progress: Array[float] = []
 	var turn_time_frac: Array[float] = []
-	for s in splits:
-		turn_progress.append(clampf((ahead + float(s["end_offset_m"])) / span, 0.0, 1.0))
-		turn_time_frac.append(clampf(float(s["cum_ms"]) / float(total_ms), 0.0, 1.0))
-	_stage_manager.setup_splits(turn_progress, turn_time_frac, p1_ms)
+	for end_offset in _split_boundaries:
+		var profile_off: float = float(end_offset) + shift
+		turn_progress.append(clampf(profile_off / span, 0.0, 1.0))
+		turn_time_frac.append(clampf(_rival_pace.time_at_offset(profile_off) / total_s, 0.0, 1.0))
+	_stage_manager.setup_splits(turn_progress, turn_time_frac, target_ms)
+
+
+# Build the ghost node + its car. Construction only: it is hidden and clockless until
+# _solve_rival_pace hands it a pace at GO.
+#
+# NOT gated on _headless — the test runner is always headless, so gating construction
+# there would make the whole feature untestable. GhostCar gates only VISIBILITY.
+func _setup_rival_ghost() -> void:
+	# Replaced, not reused: an _ensure_child would carry the previous event's pace object
+	# and car build into the next stage.
+	_replace_named_child("RivalGhost")
+	_ghost = null
+	var cfg: GameConfig = Config.data
+	if not cfg.rival_ghost_enabled or Benchmark.active or _p1_snapshot.is_empty():
+		return
+	if _track_progress == null:
+		return
+	var ghost := GhostCar.new()
+	ghost.name = "RivalGhost"
+	add_child(ghost)
+	_ghost = ghost
+	_ghost.player = $Car
+	# Pace is null here on purpose — it arrives at GO, once the timing origin is anchored.
+	_ghost.setup(null, _track_progress, _floor(), _p1_snapshot,
+			load(WRECK_CAR_SCENE), RallySession.current_event())
 
 
 # Build the HUD pacenote strip for this stage (features/hud.md) and wire the strip's
@@ -1762,6 +1848,11 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 func _on_stage_started() -> void:
 	if _replay_recorder != null:
 		_replay_recorder.start()
+	# The pace solve MUST happen here, not during generation: it spans
+	# TrackProgress.origin_offset() -> finish_offset(), and mark_start() only anchors the
+	# origin once the player has been reset_to their grid slot and the countdown has run.
+	# Solving earlier measures a span the ghost is never posed over.
+	_solve_rival_pace()
 
 
 # Fired the instant the finish is crossed (StageManager._complete), before the NEXT
@@ -1771,6 +1862,10 @@ func _on_stage_started() -> void:
 func _on_finish_reached() -> void:
 	if _replay_recorder != null:
 		_replay_recorder.stop()
+	# The ghost's own clock ends at P1's time, but stop it here too so it can't keep
+	# posing while the finish panel is up (and so the post-event replay owns the world).
+	if _ghost != null:
+		_ghost.stop()
 	_event_hp_at_finish = $Car.damage.hp
 	_event_toe_at_finish = $Car.damage.toe_array()
 

@@ -34,6 +34,29 @@ loads `CornerLibrary`, lays every corner out in a left-to-right row, and draws
 each one's centerline, control-point markers, tangent handles, a green entry
 dot, and a name label. Used to eyeball and tune the shapes.
 
+Two capture wrappers sit alongside it, because the row view auto-fits all nine shapes
+and a single corner ends up too small to judge:
+
+| Tool | What it gives |
+|---|---|
+| `tools/corner_capture.tscn` | photographs the whole catalogue to `tools/corner_catalog.png`, **and prints every corner's minimum radius plus the cornering-speed ceiling it implies**. Works headless for the numbers (no renderer needed); needs a window for the PNG. |
+| `tools/square_compare.tscn` | a zoomed before/after overlay of one corner's handle lengths, with the tightest point marked on each curve, to `tools/corner_square_compare.png` |
+
+**Minimum radius is the number that matters**, not how the curve looks:
+`LapTimeModel` pass 1 caps speed at `sqrt(mu*g/kappa)` off the *tightest* point, so one
+localised curvature spike sets the braking for the whole corner. That is how `Square`
+came to be tighter than `Hairpin` (4.7 m vs 6.6 m) while looking like a reasonable 90
+degree bend — its control handles were nearly as long as its diagonal, which keeps the
+curve straight near both ends and dumps all the turning into the middle.
+
+**Measuring curvature off a `Curve2D` has a trap**, and the first version of
+`corner_capture` fell into it: `sample_baked` lerps between points baked at
+`bake_interval` (5 m by default), so probing finer than that reads zero curvature along
+each chord and then a whole chord's turn in one step — it reported turn 1 as a 0.39 m
+radius instead of 16.9 m. Set `bake_interval` small first, then probe at a step above it.
+Same quantisation trap as the rival ghost's timed-span resample
+([rival-ghost.md](rival-ghost.md)).
+
 ## Track generation (`TrackGenerator`)
 
 `scripts/track_generator.gd` is a **pure-2D** search (no scene nodes) that chains
@@ -211,7 +234,15 @@ search cost (and its restart/backtrack variability) from both generation sites
   the constants don't capture needs a manual `TrackCache.CACHE_VERSION` bump.
   **`TrackCache.BOARD_EPOCH` lives right next to `CACHE_VERSION` in this file for
   exactly this reason — bump it too, in the same edit, whenever you bump
-  `CACHE_VERSION`.** `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
+  `CACHE_VERSION`.** And note the trap the wording above can hide: the trigger for a
+  `BOARD_EPOCH` bump is **any change that alters track shape**, not only a
+  `CACHE_VERSION` bump. A `CornerLibrary.CORNERS` edit (or a generator-constant edit)
+  invalidates the *cache* automatically via the fingerprint, so it needs no
+  `CACHE_VERSION` bump — but the auto-fingerprint is **not** folded into
+  `stage_key()`, which stamps only `BOARD_EPOCH`. So a shape edit with no manual
+  `BOARD_EPOCH` bump is precisely the silent-stale-board case, arrived at without ever
+  touching `CACHE_VERSION`. Bumped to **3** for the smoothed `Square` corner (minimum
+  radius 4.7 m -> 8.4 m). `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
   (see [global-leaderboards.md](global-leaderboards.md)), which is the id every
   posted [global leaderboard](global-leaderboards.md) entry is keyed by. A
   `CACHE_VERSION` bump means the cached track for a stage changed shape, so any

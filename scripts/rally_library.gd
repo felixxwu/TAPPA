@@ -72,7 +72,7 @@ const PACE_SLOW_BASE := 2.00     # tier-1 slowest-rival pace (skill 1)
 const PACE_FAST_STEP := 0.00     # fast end does not move with tier
 const PACE_SLOW_STEP := 0.1667   # each tier above 1 pulls the slow end down (2.0 -> 1.5 by tier 4)
 const PACE_EVENT_NOISE := 0.05   # ±5% per-event jitter around a rival's persistent base pace
-const PACE_MIN_FLOOR := 1.00     # hard clamp: rivals never beat their car's physics optimum
+const PACE_MIN_FLOOR := 1.10     # hard clamp: rivals never beat their car's physics optimum
 
 # Opponent name pool (cosmetic). A rival is named by drawing from this fixed pool of
 # 20 driver names, WITHOUT replacement within a rally, using the same rally-seeded RNG
@@ -912,6 +912,13 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			"wreck_event": -1,
 			"wreck_progress": 0.0,
 			"wreck_side": 1.0,
+			# Rival-ghost pace seed, one entry per event, -1 = "not solved"
+			# (features/rival-ghost.md). Left empty HERE on purpose: solving it needs
+			# RivalPace, which needs the whole per-event track, and this function is the pure
+			# time-drawing pass. The offline cache bake fills it for each event's P1 — the only
+			# rival a ghost is built for — so a live (cache-miss) field simply has no seed and
+			# the runtime solves from scratch.
+			"skill_k": [],
 		})
 	# Wreck pass: each event crashes at most one still-running rival out. Drawn from the
 	# SAME seeded RNG so the wreck (and its roadside placement) is stable across
