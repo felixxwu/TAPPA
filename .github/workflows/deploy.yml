@@ -375,6 +375,18 @@ jobs:
   deploy-pages:
     name: Deploy /docs to GitHub Pages
     runs-on: ubuntu-latest
+    # Never fail the release over this job. It publishes the redirect page only
+    # (see the NOTE below) — the playable game ships from export-web to itch and
+    # from publish-play to Play, neither of which touches Pages. So a stuck
+    # Pages backend must not turn a perfectly good release red.
+    #
+    # This is not hypothetical: on 2026-08-06 four consecutive runs had their
+    # deployment reach "in_progress" and then sit there until the action gave up
+    # at its 10-minute cap, while githubstatus.com reported Pages operational
+    # and every build, test and store upload in the same runs passed. The wait
+    # is not raisable (see the deploy step below), so soft-failing is the only
+    # lever left. Check this job by hand when the redirect page itself changes.
+    continue-on-error: true
     # No build step needed — we publish the static /docs folder as-is, the same
     # content GitHub's legacy Pages build used to serve. This replaces that
     # automatic "pages-build-deployment" run so everything lives in one workflow.
@@ -416,18 +428,11 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
-        with:
-          # This step uploads nothing — it creates a Pages deployment and then
-          # polls GitHub's Pages API until that deployment reports "built". The
-          # wait is entirely on GitHub's backend dequeuing it, so the timeout
-          # bounds THEIR queue, not any work of ours. The default 10 min is too
-          # tight: on 2026-08-06 the queue degraded over a morning (~3 min for
-          # weeks, then 7m35s, then two runs stuck at "deployment_queued" past
-          # 10 min and failed the release) while the deploys themselves were
-          # fine. 20 min rides that out. Raising it is nearly free — a healthy
-          # queue still returns in minutes, and this job publishes a redirect
-          # page, so a slow one blocks nothing (see the NOTE above).
-          timeout: 1200000
+        # Do NOT try to raise the wait with `timeout:` — the action clamps that
+        # input to its 600000 ms default as a hard maximum ("timeout value is
+        # greater than the allowed maximum"), so it can only ever shorten the
+        # wait. Riding out a slow queue is not available; that is why this job
+        # is continue-on-error instead.
 
   deploy-rules:
     name: Deploy Firestore rules
