@@ -87,6 +87,14 @@ class WheelContact extends RefCounted:
 	# side this DOES evolve across substeps, because it is measured against the wheel's
 	# spin. Recorded for readers outside the solver — see front_axle_state.
 	var slip_long_norm: float
+	# Magnitude of the combined (longitudinal + lateral) force this tire actually put
+	# through the ground this tick, in newtons — the same vector the `applied` debug
+	# readout reports. Written in step()'s apply loop; read by wheel_force_n.
+	var force_n: float
+	# Was this contact FILLED this tick? The pool is persistent (one WheelContact per
+	# wheel for the life of the drivetrain), so an airborne wheel would otherwise keep
+	# serving last tick's numbers to the per-wheel accessors below.
+	var live: bool
 
 var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
 var _contacts: Array = []           # the in-contact subset this tick (reused)
@@ -153,6 +161,12 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 	# pooled WheelContact objects so nothing is allocated in this hot path.
 	_contacts.clear()
 	for wheel in hardpoints:
+		# Stale-guard the pooled context BEFORE any early-out: a wheel that goes
+		# airborne must report nothing to the per-wheel accessors, not last tick's
+		# force/slip (the pool is never rebuilt).
+		var pooled: WheelContact = _contact_pool[wheel]
+		pooled.live = false
+		pooled.force_n = 0.0
 		if not wheel.is_in_contact():
 			continue
 		var n_force := wheel_normal_force(wheel)
@@ -165,7 +179,8 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		# One terrain query for all three surface-dependent tire params (μ mult,
 		# optimum-slip location, sliding plateau) at this contact.
 		var surf := surface_tire_params(cfg, cp)
-		var c: WheelContact = _contact_pool[wheel]
+		var c: WheelContact = pooled
+		c.live = true
 		c.wheel = wheel
 		c.cp = cp
 		c.fwd = fwd
@@ -290,13 +305,18 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		var rolled_offset: Vector3 = (offset - vertical) + vertical * cfg.wheel_roll_influence
 		car.apply_force(long_force, rolled_offset)
 		car.apply_force(lat_force, rolled_offset)
+		# Recorded unconditionally (NOT behind publish_readouts): the tire-mark opacity
+		# reads this every tick in every build, exactly like slip_use. The debug overlay's
+		# `applied` is the same vector, so the readout and the marks cannot disagree.
+		var applied: Vector3 = long_force + lat_force
+		c.force_n = applied.length()
 		if publish_readouts:
 			readouts[c.wheel] = {
 				normal = c.n_force,
 				demand = (
 					c.fwd * (_omega_of(c.wheel) * r - c.v_long) + c.side * c.s_lat
 				) * share / delta,
-				applied = long_force + lat_force,
+				applied = applied,
 				grip = c.slip_use,
 			}
 
@@ -409,6 +429,53 @@ static func grip_fraction(slip: float, slip_peak: float) -> float:
 	if slip_peak <= 0.0:
 		return 0.0
 	return slip / slip_peak
+
+
+# --- Live per-wheel tire state -----------------------------------------------
+#
+# What each tire is doing RIGHT NOW, for the surface effects (tire-mark opacity,
+# wheel debris). Same contract as front_axle_state: read straight off the pooled
+# WheelContact rather than the `readouts` dict, because that dict is gated on
+# publish_readouts (the debug overlay's visibility) and the effects need these
+# numbers in every build. Both sides read the same fields, so the debug grip grid
+# and what the marks/particles do cannot disagree.
+#
+# All three return 0.0 for a wheel with no live contact this tick (airborne, or
+# unloaded), which is the value that reads as "no effect" at every call site.
+
+# The pooled contact for a wheel, or null if it wasn't filled this tick.
+func _live_contact(wheel: Node) -> WheelContact:
+	var c: WheelContact = _contact_pool.get(wheel)
+	return c if c != null and c.live else null
+
+
+# How hard this tire is pushing on the ground, in NEWTONS — the magnitude of the
+# combined longitudinal + lateral force it applied to the chassis this tick. This is
+# the force that shears a wedge out of a loose surface, which is why the gravel ruts
+# scale their opacity with it (features/tire-marks.md).
+func wheel_force_n(wheel: Node) -> float:
+	var c := _live_contact(wheel)
+	return c.force_n if c != null else 0.0
+
+
+# How far up its grip curve this tire is — 1.0 = exactly at peak grip, above that it
+# is sliding. See grip_fraction; this is the same number the HUD's 2x2 grip grid shows.
+func wheel_grip_usage(wheel: Node) -> float:
+	var c := _live_contact(wheel)
+	return c.slip_use if c != null else 0.0
+
+
+# The LONGITUDINAL half of that usage: the slip ratio (tread speed vs ground speed
+# along the roll direction, normalized) over the slip ratio the tire peaks at. Above
+# 1.0 the tire has broken traction fore/aft — spinning up under power, or locked under
+# braking — which is what actually tears loose material up (features/wheel-dust.md).
+#
+# Unsigned, so both directions count: only the magnitude of the breakaway matters to
+# an effect. NOT weighted by traction_ellipse_ratio (unlike slip_use's combined figure),
+# because this is deliberately the pure fore/aft axis, not a share of a combined budget.
+func wheel_long_grip_usage(wheel: Node) -> float:
+	var c := _live_contact(wheel)
+	return grip_fraction(absf(c.slip_long_norm), c.slip_peak) if c != null else 0.0
 
 
 # The steering axle's slip state, as ONE set of numbers for the steering servo to close

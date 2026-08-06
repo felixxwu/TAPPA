@@ -26,6 +26,33 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
 - `front_axle_driven()` — whether the steered axle is also driven (FWD/AWD, not RWD), i.e.
   whether throttle and steering compete for the same tires' grip. Used by the
   longitudinal-demand arbitration.
+- **Live per-wheel tire state** — `wheel_force_n(wheel)`, `wheel_grip_usage(wheel)`,
+  `wheel_long_grip_usage(wheel)` (see below).
+
+## Live per-wheel tire state
+
+What each tire is doing *right now*, for the surface effects — tire-mark opacity
+([tire-marks.md](tire-marks.md)) and the debris gate ([wheel-dust.md](wheel-dust.md)):
+
+| Accessor | Reads | Used for |
+|---|---|---|
+| `wheel_force_n` | magnitude of the combined long+lat force applied this tick, in **N** (`WheelContact.force_n`) | gravel rut opacity — shear work, not proximity to the limit |
+| `wheel_grip_usage` | `slip_use`, how far up the grip curve (1.0 = on the limit) | tarmac skid opacity — the tire giving up |
+| `wheel_long_grip_usage` | `grip_fraction(abs(slip_long_norm), slip_peak)` — the slip ratio over the peak ratio, **unsigned** and NOT ellipse-weighted | the debris gate: has this tire broken traction fore/aft (spinning up, or locked)? |
+
+Same contract as `front_axle_state`, and for the same reason: these read the pooled
+`WheelContact` directly, **not** the `readouts` dict, which only exists while
+`publish_readouts` (the debug overlay's visibility) is on — the effects need these
+numbers in every build. Both sides read the same fields, so the HUD grip grid and what
+the marks/particles do cannot disagree; `force_n` is literally the magnitude of the
+vector the overlay publishes as `applied`.
+
+The contact pool is persistent (one `WheelContact` per wheel for the drivetrain's life),
+so `step()` clears `live`/`force_n` on every pooled contact **before** any early-out.
+Without that a wheel that goes airborne would keep serving the last tick it was loaded,
+and a jumping car would go on laying marks and throwing dirt in mid-air. All three
+accessors return `0.0` for a wheel with no live contact — the value that reads as "no
+effect" at every call site.
 
 ## Main entry: `step(delta, throttle, brake, handbrake)`
 
@@ -228,7 +255,9 @@ aerodynamic value here would double-count the resistance and leave every car
 ## Tests
 
 `tests/headless/test_drivetrain.gd` (wheelspin, brake lockup, handbrake,
-parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque). Gearing
+parking brake, and the live per-wheel state above: published without the debug
+overlay, agreeing with the overlay's `applied`/`grip` when it IS up, and zeroed for
+an airborne wheel), `tests/headless/test_drive_mode.gd` (per-mode torque). Gearing
 is covered by `tests/headless/test_engine_library.gd` (each engine's transmission:
 descending positive ratios, positive final_drive/shift_time) and
 `tests/headless/test_car_library.gd` (the engine's ratios overlaid onto the live

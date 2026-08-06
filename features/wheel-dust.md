@@ -139,12 +139,28 @@ Each `_physics_process` (skipped when `wheel_particles_enabled` is off):
   This runs every tick so airborne clods finish their arc after the wheels stop.
 - **Emit** from each wheel that is (1) **driven** (`Drivetrain.is_wheel_driven`,
   per the drive mode — undriven wheels free-roll and never throw dirt), (2) in
-  contact, (3) **spinning faster than the ground**, and (4) on the gravel:
-  - **Wheelspin test** — `surface_speed (omega x radius) − v_long > wheel_particle_min_slip_mps`,
-    where `v_long` is the ground speed along the wheel's *rolling* direction
-    (`Drivetrain.wheel_forward`), **not** the car's total speed. This is the key to
-    the slide case: a car drifting sideways at speed still counts as spinning as
-    long as the tread turns faster than it rolls forward.
+  contact, (3) **past its longitudinal grip limit**, and (4) on the gravel or grass:
+  - **Traction-break test** — `Drivetrain.wheel_long_grip_usage(wheel) >=
+    wheel_particle_min_long_grip` (default `1.0`). Longitudinal grip usage is the slip
+    ratio over the slip ratio the tire actually peaks at, so above 1.0 the tread has
+    passed the point where it grips best and is **tearing material loose** rather than
+    driving through it. That is the condition that throws debris.
+
+    This replaced a raw slip-SPEED floor (`surface_speed − v_long > 1.5 m/s`), which
+    could not make that call: the slip a tire tolerates scales with how fast it is
+    going, and with the surface (loose gravel peaks at roughly twice the slip ratio
+    tarmac does — see the `gravel_slip_peak` / `tarmac_slip_peak` split in
+    [drivetrain-and-tires.md](drivetrain-and-tires.md)). Any fixed m/s threshold
+    therefore sprays dirt from a tire that is still gripping at speed, while a
+    genuinely spinning wheel at walking pace throws none.
+
+    The reading is **unsigned**, so a wheel LOCKED under braking counts as well as one
+    spinning up under power. It is also purely the fore/aft axis, so a big lateral
+    slide neither triggers nor suppresses the spray — a car drifting sideways at speed
+    still throws dirt exactly as long as its tread is breaking traction fore/aft.
+
+    Note the throw below still keys off `surface_speed`, so a lockup (little tread
+    speed) throws a short spray near the contact patch rather than a rooster tail.
   - **Surface chooser** (`_look_for_surface`) — one
     `Drivetrain.terrain.surface_at(x, z)` lookup returns `(road_weight,
     tarmac_weight)` and picks the flavour rather than merely rejecting:
@@ -176,7 +192,7 @@ All in `GameConfig` (the "Wheel Particles" group): `wheel_particles_enabled`,
 `wheel_particle_color`, `wheel_particle_grass_color`,
 `wheel_particle_grass_width_m`, `wheel_particle_grass_length_m`,
 `wheel_particle_color_jitter`, `wheel_particle_max`, `wheel_particle_size_m`,
-`wheel_particle_min_slip_mps`, `wheel_particle_lifetime_s`,
+`wheel_particle_min_long_grip`, `wheel_particle_lifetime_s`,
 `wheel_particle_speed_scale`, `wheel_particle_up_speed_mps`,
 `wheel_particle_gravity_mps2`, `wheel_particle_air_resistance`,
 `wheel_particle_spawn_count`, `wheel_particle_spread`.

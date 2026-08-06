@@ -1,5 +1,6 @@
 extends GutTest
-# WheelParticles: cheap surface debris flung from the driven wheels under wheelspin
+# WheelParticles: cheap surface debris flung from the driven wheels once they break
+# fore/aft traction
 # (features/wheel-dust.md). Driven against a stub car + stub drivetrain + stub
 # wheels + a stub terrain surface, so the gating / emission / ring-buffer logic and
 # the per-particle look (colour / dimensions / roll) are exercised without a real
@@ -13,6 +14,9 @@ class StubWheel:
 	var driven := true
 	var omega := 0.0          # rad/s (surface speed = omega * wheel_radius)
 	var fwd := Vector3(0, 0, -1)  # rolling direction (road runs +Z, car faces -Z)
+	# How far past its fore/aft grip limit this tire is (1.0 = exactly at the limit).
+	# This is the emit gate — a tire only throws debris once it has broken traction.
+	var long_grip := 0.0
 	func is_in_contact() -> bool:
 		return _contact
 
@@ -42,6 +46,8 @@ class StubDrivetrain:
 		return w.fwd
 	func wheel_omega(w) -> float:
 		return w.omega
+	func wheel_long_grip_usage(w) -> float:
+		return w.long_grip
 	func velocity_at(_point) -> Vector3:
 		return ground_vel
 
@@ -95,6 +101,14 @@ func _omega_for(speed: float) -> float:
 	return speed / Config.data.wheel_radius
 
 
+# Put a wheel past its fore/aft grip limit at the given tread speed — the state that
+# actually throws debris. `long_grip` defaults comfortably clear of the 1.0 limit;
+# tests probing the gate itself pass their own value.
+func _break_traction(i: int, tread_speed: float, long_grip := 1.5) -> void:
+	_wheels[i].omega = _omega_for(tread_speed)
+	_wheels[i].long_grip = long_grip
+
+
 # Tick with delta 0 so the pool emits without ageing (lifetime/gravity untouched).
 func _tick(wp: WheelParticles) -> void:
 	wp._physics_process(0.0)
@@ -109,29 +123,54 @@ func test_pool_starts_empty_and_capped() -> void:
 
 func test_driven_spinning_on_gravel_emits() -> void:
 	var wp := _make()
-	# Rear (driven) wheel spinning at 10 m/s tread vs a stationary ground -> well
-	# over the slip floor, sitting on the gravel road.
-	_wheels[2].omega = _omega_for(10.0)
+	# Rear (driven) wheel spun up past its fore/aft grip limit at 10 m/s of tread
+	# speed, sitting on the gravel road.
+	_break_traction(2, 10.0)
 	_tick(wp)
 	assert_gt(wp.live_count(), 0, "a driven wheel spinning on the gravel throws dirt")
 
 
 func test_undriven_wheel_does_not_emit() -> void:
 	var wp := _make()
-	# Front wheel spinning hard, but undriven (free-rolling) -> no dirt.
+	# Front wheel past its grip limit, but undriven (free-rolling) -> no dirt.
 	_wheels[0].driven = false
-	_wheels[0].omega = _omega_for(10.0)
+	_break_traction(0, 10.0)
 	_tick(wp)
 	assert_eq(wp.live_count(), 0, "an undriven wheel flings no dirt however fast it turns")
 
 
-func test_no_emit_when_not_spinning_faster_than_ground() -> void:
+func test_no_emit_while_the_tire_still_grips() -> void:
 	var wp := _make()
-	# Wheel tread speed matches ground speed (pure rolling) -> slip ~0, below floor.
+	# The tread is turning faster than the ground, but the tire is still WITHIN its
+	# fore/aft limit — it is driving through the surface, not tearing it up.
 	_dt.ground_vel = Vector3(0, 0, -5)        # v_long = fwd . vel = 5
-	_wheels[2].omega = _omega_for(5.0)        # surface speed 5 -> slip 0
+	_break_traction(2, 8.0, 0.6)              # slipping, but only 60% of the limit
 	_tick(wp)
-	assert_eq(wp.live_count(), 0, "no dirt when the wheel only rolls (no wheelspin)")
+	assert_eq(wp.live_count(), 0, "no dirt while the tire is still gripping")
+
+
+func test_emit_starts_at_the_grip_limit() -> void:
+	# The gate is the limit itself, not an arbitrary slip speed: just under throws
+	# nothing, just over throws dirt, at the same tread speed either way.
+	Config.data.wheel_particle_min_long_grip = 1.0
+	var quiet := _make()
+	_break_traction(2, 10.0, 0.99)
+	_tick(quiet)
+	assert_eq(quiet.live_count(), 0, "a tire just inside its limit throws nothing")
+	var spraying := _make()
+	_break_traction(2, 10.0, 1.01)
+	_tick(spraying)
+	assert_gt(spraying.live_count(), 0, "a tire just past its limit throws dirt")
+
+
+func test_locked_wheel_under_braking_also_emits() -> void:
+	# Grip usage is unsigned, so a driven wheel LOCKED under braking (tread slower than
+	# the ground) ploughs up debris too — not just one spinning up under power.
+	var wp := _make()
+	_dt.ground_vel = Vector3(0, 0, -20)  # rolling along at 20 m/s
+	_break_traction(2, 0.0, 1.6)         # tread stopped: locked, well past the limit
+	_tick(wp)
+	assert_gt(wp.live_count(), 0, "a locked wheel ploughs up debris")
 
 
 func test_grass_emits_blades() -> void:
@@ -139,7 +178,7 @@ func test_grass_emits_blades() -> void:
 	# Grass throws its own particles (slim green blades) rather than nothing.
 	var wp := _make()
 	_wheels[2].position = Vector3(10, 0, 0)
-	_wheels[2].omega = _omega_for(10.0)
+	_break_traction(2, 10.0)
 	_tick(wp)
 	assert_gt(wp.live_count(), 0, "a wheel spinning on grass throws grass up")
 
@@ -148,19 +187,19 @@ func test_no_emit_on_tarmac() -> void:
 	var wp := _make()
 	# Driven wheel spinning on the road, but the surface is tarmac -> no dirt.
 	_terrain.tarmac = 1.0
-	_wheels[2].omega = _omega_for(10.0)
+	_break_traction(2, 10.0)
 	_tick(wp)
 	assert_eq(wp.live_count(), 0, "a wheel spinning on tarmac throws no dirt")
 
 
 func test_sliding_and_spinning_still_emits_and_sprays_sideways() -> void:
 	var wp := _make()
-	# The car is sliding sideways at speed (high lateral ground velocity) AND the
-	# driven wheel is spinning faster than it rolls forward. It must still count as
-	# wheelspin (gauged on the rolling direction, not total speed) and the spray
-	# must tilt toward the slide, not just straight back.
+	# The car is sliding sideways at speed (high lateral ground velocity) AND the driven
+	# wheel is past its fore/aft grip limit. The emit gate is the LONGITUDINAL usage, so
+	# a big lateral slide neither triggers nor suppresses it — and the spray must tilt
+	# toward the slide, not just straight back.
 	_dt.ground_vel = Vector3(8, 0, 0)         # sideways slide; v_long = 0
-	_wheels[2].omega = _omega_for(10.0)
+	_break_traction(2, 10.0)
 	_tick(wp)
 	assert_gt(wp.live_count(), 0, "a spinning wheel during a slide still throws dirt")
 	var v: Vector3 = wp._vel[wp._next]
@@ -183,7 +222,7 @@ func test_ring_buffer_caps_live_particles() -> void:
 	Config.data.wheel_particle_max = 5
 	Config.data.wheel_particle_spawn_count = 3
 	var wp := _make()
-	_wheels[2].omega = _omega_for(10.0)
+	_break_traction(2, 10.0)
 	for s in 50:
 		_tick(wp)  # delta 0 -> nothing ages out, so only the cap can bound the count
 	assert_eq(wp.live_count(), 5, "the live pool is capped to wheel_particle_max")
@@ -202,9 +241,9 @@ func test_one_shared_pool_for_every_surface() -> void:
 		"the buffer holds transform + colour floats for every slot")
 	# Spin one wheel on the road and another off it in the same tick: both surfaces
 	# feed the SAME ring buffer rather than a pool each.
-	_wheels[2].omega = _omega_for(10.0)
+	_break_traction(2, 10.0)
 	_wheels[3].position = Vector3(10, 0, 0)
-	_wheels[3].omega = _omega_for(10.0)
+	_break_traction(3, 10.0)
 	_tick(wp)
 	assert_gt(wp.live_count(), 1, "gravel and grass particles share one pool")
 
@@ -256,7 +295,7 @@ func test_slot_writes_per_instance_colour() -> void:
 # keeps the per-tick cost at three float writes per live particle.
 func test_advance_moves_origin_but_freezes_look() -> void:
 	var wp := _make()
-	_wheels[2].omega = _omega_for(10.0)
+	_break_traction(2, 10.0)
 	_tick(wp)
 	var i: int = wp._next
 	var b: int = i * WheelParticles.STRIDE

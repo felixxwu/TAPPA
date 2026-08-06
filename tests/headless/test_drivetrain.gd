@@ -383,3 +383,75 @@ func test_grip_readout_is_published_per_wheel_while_the_overlay_is_up() -> void:
 	Input.action_press("toggle_debug_arrows")
 	await _wait_physics(3)
 	Input.action_release("toggle_debug_arrows")
+
+
+# --- Live per-wheel tire state (the surface effects read these) ---------------
+
+func test_live_wheel_state_is_published_without_the_debug_overlay() -> void:
+	# The tire-mark opacity and the debris gate read these every tick in every build, so
+	# unlike `readouts` they must NOT depend on the debug overlay being up. A settled car
+	# under power has its wheels loaded, so every one reports a real, non-negative figure.
+	var dt: Drivetrain = _car.drivetrain
+	assert_true(dt.readouts.is_empty(), "precondition: the debug overlay is down")
+	Input.action_press("accelerate")
+	await _wait_physics(10)
+	Input.action_release("accelerate")
+	var loaded := 0
+	for wheel: VehicleWheel3D in dt.all_wheels:
+		if not wheel.is_in_contact():
+			continue
+		loaded += 1
+		assert_true(is_finite(dt.wheel_force_n(wheel)), "wheel force is a real number")
+		assert_gte(dt.wheel_force_n(wheel), 0.0, "a force magnitude is never negative")
+		assert_true(is_finite(dt.wheel_grip_usage(wheel)), "grip usage is a real number")
+		assert_gte(dt.wheel_grip_usage(wheel), 0.0, "grip usage is never negative")
+		assert_true(is_finite(dt.wheel_long_grip_usage(wheel)), "long usage is a real number")
+		assert_gte(dt.wheel_long_grip_usage(wheel), 0.0,
+			"longitudinal usage is unsigned, so braking reads positive too")
+	assert_gt(loaded, 0, "the settled car has wheels in contact")
+
+
+func test_wheel_force_matches_the_debug_readout() -> void:
+	# The effects and the force overlay must not be able to disagree about what a tire is
+	# doing: wheel_force_n is the magnitude of the same vector `applied` reports.
+	var dt: Drivetrain = _car.drivetrain
+	Input.action_press("toggle_debug_arrows")
+	await _wait_physics(3)
+	Input.action_release("toggle_debug_arrows")
+	Input.action_press("accelerate")
+	await _wait_physics(10)
+	Input.action_release("accelerate")
+	assert_false(dt.readouts.is_empty(), "precondition: the overlay is publishing")
+	for wheel: VehicleWheel3D in dt.readouts:
+		var applied: Vector3 = dt.readouts[wheel].applied
+		assert_almost_eq(dt.wheel_force_n(wheel), applied.length(), 0.001,
+			"the live force is the magnitude of the published force vector")
+		assert_almost_eq(dt.wheel_grip_usage(wheel), float(dt.readouts[wheel].grip), 0.001,
+			"the live grip usage is the published grip reading")
+	Input.action_press("toggle_debug_arrows")
+	await _wait_physics(3)
+	Input.action_release("toggle_debug_arrows")
+
+
+func test_airborne_wheel_reports_no_live_tire_state() -> void:
+	# The contact pool is persistent, so a wheel that leaves the ground must report zero
+	# rather than keep serving the numbers from the last tick it was loaded — otherwise a
+	# jumping car would keep laying marks and throwing dirt in mid-air.
+	var dt: Drivetrain = _car.drivetrain
+	Input.action_press("accelerate")
+	await _wait_physics(10)
+	Input.action_release("accelerate")
+	var grounded: VehicleWheel3D = null
+	for wheel: VehicleWheel3D in dt.all_wheels:
+		if wheel.is_in_contact() and dt.wheel_force_n(wheel) > 0.0:
+			grounded = wheel
+			break
+	assert_not_null(grounded, "precondition: a loaded wheel to lift")
+	# Launch the whole car clear of the ground and let the next ticks run with no contact.
+	_car.global_position += Vector3(0.0, 12.0, 0.0)
+	_car.linear_velocity = Vector3(0.0, 8.0, 0.0)
+	await _wait_physics(5)
+	assert_false(grounded.is_in_contact(), "precondition: the wheel really is airborne")
+	assert_eq(dt.wheel_force_n(grounded), 0.0, "an airborne wheel puts no force through")
+	assert_eq(dt.wheel_grip_usage(grounded), 0.0, "an airborne wheel reports no grip usage")
+	assert_eq(dt.wheel_long_grip_usage(grounded), 0.0, "and no longitudinal usage")

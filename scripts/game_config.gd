@@ -1467,6 +1467,27 @@ func has_nitrous() -> bool:
 ## Extra lateral allowance beyond the road half-width within which marks still lay
 ## (so the verge of the gravel still marks), in metres.
 @export var tire_mark_gravel_margin_m := 0.3
+## Fade each mark's opacity with how hard its tire is working, instead of laying every
+## segment at full strength. OFF renders the ribbons opaque (the pre-fade look) and puts
+## them back in the opaque pass; WHERE marks appear is identical either way, only how
+## solid they are changes. See features/tire-marks.md.
+@export var tire_mark_alpha_enabled := true
+## GRAVEL ruts: the tire force (newtons, combined longitudinal + lateral) at which a rut
+## reaches full opacity. Opacity ramps linearly from nothing at 0 N to solid here, so a
+## cruising tire leaves a faint scuff and a loaded one digs a dark rut. Roughly the peak
+## a hard-working tire pulls, so most of the range is actually used.
+@export var tire_mark_gravel_full_force_n := 4000.0
+## TARMAC skids: grip usage (1.0 = on the limit — see Drivetrain.grip_fraction) at which
+## a skid first shows. Below this a tire is rolling within its limits and paved road takes
+## no mark at all, which is why tarmac starts high instead of at zero like gravel.
+@export_range(0.0, 2.0) var tire_mark_tarmac_grip_min := 0.8
+## Grip usage at which a tarmac skid reaches full opacity. Between this and
+## tire_mark_tarmac_grip_min the skid fades in.
+@export_range(0.0, 3.0) var tire_mark_tarmac_grip_max := 1.0
+## Opacity below which a segment is not laid at all (the ribbon breaks instead). A quad
+## this faint is invisible but still rasterises and still sorts in the transparent pass,
+## so skipping it is free frame time. Keep small — this is a cull threshold, not a look.
+@export_range(0.0, 0.5) var tire_mark_min_alpha := 0.03
 
 
 @export_group("Wheel Particles")
@@ -1499,9 +1520,12 @@ func has_nitrous() -> bool:
 ## bits of debris rather than one flat smear. Free — each instance already carries
 ## its own colour.
 @export_range(0.0, 1.0) var wheel_particle_color_jitter := 0.18
-## Minimum wheelspin (tread speed minus ground speed along the roll direction, m/s)
-## before any dirt is thrown — keeps a cleanly-rolling wheel from spraying.
-@export var wheel_particle_min_slip_mps := 1.5
+## Longitudinal grip usage a driven wheel must exceed before it throws any debris.
+## 1.0 means "past the fore/aft limit": the tire has actually broken traction and is
+## tearing material loose, rather than merely slipping a little while still gripping.
+## Below 1.0 a rolling wheel would spray dirt it isn't shifting. See
+## Drivetrain.wheel_long_grip_usage and features/wheel-dust.md.
+@export_range(0.0, 3.0) var wheel_particle_min_long_grip := 1.0
 ## How long each clod lives before it recycles, in seconds.
 @export var wheel_particle_lifetime_s := 1.1
 ## Throw speed as a fraction of the wheel's surface speed (omega x radius). 1.0

@@ -5,12 +5,22 @@ extends Node3D
 # mesh (an ArrayMesh rebuilt as segments are appended); each segment carries a
 # vertex colour so one ribbon can show both surfaces. See features/tire-marks.md.
 #
-# Two surfaces, two behaviours:
-#   - GRAVEL: a solid gravel-coloured rut laid continuously while moving.
-#   - TARMAC: a dark skidmark laid ONLY while a driven wheel is spinning (the same
-#     wheelspin slip gate the gravel spray uses in wheel_particles.gd) — a cleanly
-#     rolling wheel on tarmac leaves nothing.
+# Two surfaces, two behaviours — and in both, HOW HARD THE TIRE IS WORKING sets the
+# mark's opacity (per-segment vertex alpha), so a mark deepens through a corner instead
+# of every segment landing at the same flat shade:
+#   - GRAVEL: a rut whose opacity tracks the FORCE (newtons) the tire is shoving into
+#     the loose surface — 0 N transparent, tire_mark_gravel_full_force_n solid. Force,
+#     not grip usage, because it is the shear force that actually digs the wedge out:
+#     a heavy car cruising still scuffs the gravel while nowhere near its limit.
+#   - TARMAC: a dark skidmark whose opacity tracks GRIP USAGE across a high band
+#     (tire_mark_tarmac_grip_min..max, ~80-100% of the limit). Paved road takes no mark
+#     from normal driving at all, so unlike gravel this starts high rather than at zero.
 # The grass off the road footprint never marks.
+#
+# Both readings come from the live drivetrain (Drivetrain.wheel_force_n /
+# wheel_grip_usage), NOT from its debug `readouts` dict, which only exists while the
+# force overlay is up. Set tire_mark_alpha_enabled false to go back to flat opaque
+# marks; that changes only how solid they are, never where they appear.
 #
 # Created + wired by world.gd._generate_track once the centerline exists; re-targeted
 # on a car swap (world.gd.cycle_car). Marks are capped per wheel (a ring buffer).
@@ -45,6 +55,9 @@ var _offset := 0.0          # cached windowed nearest-offset for the car centre
 # matching how world.gd resolves the other per-target values at boot.
 var _segment_step := 0.5
 var _material: StandardMaterial3D
+# Which mode _material was built for, so flipping tire_mark_alpha_enabled rebuilds it
+# (transparent vs opaque is baked into the material, not a per-draw flag).
+var _material_alpha := false
 var _warm_mi: MeshInstance3D  # throwaway quad used by warm_up() to prime the shader
 
 # Parallel per-wheel arrays (index == wheel).
@@ -190,18 +203,28 @@ func _timed_physics_process(_delta: float) -> void:
 		if wxz.distance_to(_point_at(w_off)) > gate:
 			_last_pos[i] = null
 			continue
-		# On the road — pick the mark by surface. Gravel lays a continuous rut; tarmac
-		# lays a dark skidmark ONLY while this driven wheel spins (a cleanly rolling
-		# wheel on tarmac leaves nothing). Terrain is null on the flat test fixtures,
-		# where every surface reads as gravel.
+		# On the road — pick the mark by surface, and how STRONG it is from how hard this
+		# tire is working: force on the loose gravel, grip usage on the paved tarmac (see
+		# the header). Terrain is null on the flat test fixtures, where all is gravel.
 		var color: Color = Config.data.tire_mark_color
+		var strength := _gravel_strength(wheel)
 		if _terrain != null and _terrain.has_method("surface_at"):
 			var surf: Vector2 = _terrain.surface_at(wpos.x, wpos.z)
 			if surf.y > TARMAC_WEIGHT_MAX:
-				if not _wheel_spinning(wheel, wpos):
-					_last_pos[i] = null
-					continue
 				color = Config.data.tire_mark_tarmac_color
+				strength = _tarmac_strength(wheel)
+		# Too faint to see: lay NOTHING and break the ribbon, rather than a quad that
+		# rasterises and sorts in the transparent pass for no visible result. This is
+		# also what keeps a normally-driven tarmac road clean. Gated on `strength`, not
+		# on the final alpha, so marks appear in exactly the same places whether or not
+		# the fade is switched on.
+		if strength <= Config.data.tire_mark_min_alpha:
+			_last_pos[i] = null
+			continue
+		if Config.data.tire_mark_alpha_enabled:
+			# The authored colour's own alpha is the fully-worked ceiling, so a surface can
+			# be tuned never to reach solid without touching the scales above.
+			color.a *= strength
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
 			# A fresh point after a break (airborne / off the gravel / not skidding)
 			# starts a NEW strip — it must NOT bridge to the last point across the gap.
@@ -210,20 +233,46 @@ func _timed_physics_process(_delta: float) -> void:
 			_last_pos[i] = wxz
 
 
-# Is this DRIVEN wheel spinning faster than the ground (the tarmac-skid gate)? Reads
-# the car's drivetrain exactly as wheel_particles.gd does: wheelspin is the tread
-# surface speed (omega x radius) OUTRUNNING the ground along the roll direction by
-# more than wheel_particle_min_slip_mps. Undriven wheels free-roll (never skid here),
-# and with no drivetrain (flat test fixtures) we can't tell, so report not spinning.
-func _wheel_spinning(wheel: Node, wpos: Vector3) -> bool:
+# How dark a GRAVEL rut this wheel is digging, 0..1 — linear in the FORCE (newtons)
+# the tire is putting through the surface, full at tire_mark_gravel_full_force_n.
+#
+# Force rather than grip usage, because a rut is shear work, not a measure of how close
+# the tire is to letting go: a heavy car tracking straight is nowhere near its limit
+# (low usage) yet still scuffs a visible line, while a light car at 100% usage in a slow
+# corner barely disturbs the surface. Force separates those; usage doesn't.
+#
+# With no drivetrain to ask (the flat test fixtures) there is nothing to measure, so a
+# solid rut is laid — the same "gravel always marks" behaviour those fixtures had before.
+func _gravel_strength(wheel: Node) -> float:
 	var dt = _car.get("drivetrain")
-	if dt == null or not dt.is_wheel_driven(wheel):
-		return false
-	var r: float = Config.data.wheel_radius
-	var cp := Vector3(wpos.x, wpos.y - r, wpos.z)
-	var surface_speed: float = dt.wheel_omega(wheel) * r
-	var roll: float = dt.wheel_forward(wheel).dot(dt.velocity_at(cp))
-	return surface_speed - roll >= Config.data.wheel_particle_min_slip_mps
+	if dt == null or not dt.has_method("wheel_force_n"):
+		return 1.0
+	var full: float = Config.data.tire_mark_gravel_full_force_n
+	if full <= 0.0:
+		return 1.0
+	return clampf(dt.wheel_force_n(wheel) / full, 0.0, 1.0)
+
+
+# How dark a TARMAC skid this wheel is leaving, 0..1 — grip usage ramped across the
+# narrow band tire_mark_tarmac_grip_min..max (~80-100% of the limit).
+#
+# Grip usage rather than force, and a high band rather than a ramp from zero, because
+# paved road does not mark under normal driving however heavy the car: a tarmac skid is
+# the tire GIVING UP, which is exactly what usage measures (1.0 = on the limit). Below
+# the band this returns 0 and no segment is laid at all.
+#
+# With no drivetrain to ask (the flat test fixtures) we cannot tell a skid from cruising,
+# so report nothing — paved road stays clean, as it did before.
+func _tarmac_strength(wheel: Node) -> float:
+	var dt = _car.get("drivetrain")
+	if dt == null or not dt.has_method("wheel_grip_usage"):
+		return 0.0
+	var usage: float = dt.wheel_grip_usage(wheel)
+	var lo: float = Config.data.tire_mark_tarmac_grip_min
+	var hi: float = Config.data.tire_mark_tarmac_grip_max
+	if hi <= lo:
+		return 1.0 if usage >= hi else 0.0  # degenerate band: a hard on/off threshold
+	return clampf((usage - lo) / (hi - lo), 0.0, 1.0)
 
 
 # Append one ribbon point for a wheel (left/right of its ground contact, across the
@@ -340,7 +389,14 @@ func _drop_front_quad(i: int) -> void:
 # doesn't grow the heap once the ribbon reaches its steady-state length — which is why
 # the result is only valid until the NEXT wheel is synced.
 func _sync_snapshot(i: int) -> void:
-	var n: int = maxi(_ring_count[i], 0) * RING_QUAD_VERTS if _ring_cap > 0 else 0
+	# No ring yet — this wheel has never emitted (the rings are built lazily on the first
+	# segment). The counters are empty arrays until then, so bail before indexing them.
+	if _ring_cap <= 0 or i >= _ring_count.size():
+		if not _snap_verts.is_empty():
+			_snap_verts.resize(0)
+			_snap_cols.resize(0)
+		return
+	var n: int = maxi(_ring_count[i], 0) * RING_QUAD_VERTS
 	if _snap_verts.size() != n:
 		_snap_verts.resize(n)
 		_snap_cols.resize(n)
@@ -369,6 +425,12 @@ func _process(_delta: float) -> void:
 # Upload every dirty wheel's ribbon now. Called once per rendered frame; also the
 # explicit entry point tests use, since they drive _physics_process directly.
 func flush_uploads() -> void:
+	# One bool compare, and it makes tire_mark_alpha_enabled a LIVE toggle: flip it in the
+	# inspector and every ribbon re-uploads against the rebuilt material on the next frame
+	# that lays a mark, rather than waiting for the next track generation.
+	if _ensure_material():
+		for i in _dirty.size():
+			_dirty[i] = 1
 	for i in _dirty.size():
 		if _dirty[i] != 0:
 			_dirty[i] = 0
@@ -494,13 +556,29 @@ func clear_warm_up() -> void:
 	_warm_mi = null
 
 
-func _ensure_material() -> void:
-	if _material != null:
-		return
+# Build the shared ribbon material if it's missing, or REBUILD it if
+# tire_mark_alpha_enabled has been flipped since (transparent vs opaque is baked into
+# the material). Returns true if it (re)built, so the caller can re-upload the ribbons
+# that are still carrying the old one.
+func _ensure_material() -> bool:
+	var want_alpha: bool = Config.data.tire_mark_alpha_enabled
+	if _material != null and _material_alpha == want_alpha:
+		return false
 	# Each segment carries its own colour (gravel rut vs tarmac skid) as a vertex
-	# colour, so one ribbon mesh per wheel can show both surfaces.
+	# colour, so one ribbon mesh per wheel can show both surfaces — and, with the fade
+	# on, its own ALPHA too, so one mesh also carries the whole range of mark strengths.
 	_material = PS1Material.unshaded(null, true)
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_material_alpha = want_alpha
+	if want_alpha:
+		_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		# Ribbons are flat, coplanar and they cross — the four wheels' trails over each
+		# other through a hairpin, and a single trail over itself in a spin. Writing depth
+		# would make those crossings fight in the buffer, and blending them twice would
+		# darken every overlap into a blob, so the marks stop reading as separate lines.
+		# Same call the smoke puffs make for stacked transparency (engine_smoke.gd).
+		_material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	return true
 
 
 # --- Readouts (tests) --------------------------------------------------------
@@ -511,6 +589,18 @@ func wheel_count() -> int:
 
 func segment_count(wheel: int) -> int:
 	return (_pairs[wheel] as Array).size() if wheel >= 0 and wheel < _pairs.size() else 0
+
+
+# The colour a wheel's Nth segment was laid with, INCLUDING the alpha the surface
+# opacity resolved to — what the opacity tests read. Transparent black for an index
+# that doesn't exist, which no laid segment can be.
+func segment_color(wheel: int, index: int) -> Color:
+	if wheel < 0 or wheel >= _pairs.size():
+		return Color(0, 0, 0, 0)
+	var pairs: Array = _pairs[wheel]
+	if index < 0 or index >= pairs.size():
+		return Color(0, 0, 0, 0)
+	return pairs[index][3]
 
 
 # How many ArrayMesh surface rebuilds have happened since this node was built —

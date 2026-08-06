@@ -20,22 +20,17 @@ class StubCar:
 	var drivetrain = null
 
 
-# Stub drivetrain: the slice TireMarks._wheel_spinning reads, mirroring Drivetrain.
-# `surface_speed` is the tread speed (omega x radius); `roll_speed` is the ground
-# speed along the roll direction. Wheelspin = surface_speed − roll_speed.
+# Stub drivetrain: the live per-wheel tire state TireMarks reads to size each mark —
+# the force the tire puts through the ground (gravel ruts) and how far up its grip
+# curve it is (tarmac skids). Mirrors Drivetrain.wheel_force_n / wheel_grip_usage.
 class StubDrivetrain:
 	extends RefCounted
-	var driven := true
-	var surface_speed := 0.0
-	var roll_speed := 0.0
-	func is_wheel_driven(_w) -> bool:
-		return driven
-	func wheel_omega(_w) -> float:
-		return surface_speed / maxf(Config.data.wheel_radius, 0.0001)
-	func wheel_forward(_w) -> Vector3:
-		return Vector3(0, 0, 1)
-	func velocity_at(_cp) -> Vector3:
-		return Vector3(0, 0, roll_speed)
+	var force_n := 0.0
+	var grip_usage := 0.0
+	func wheel_force_n(_w) -> float:
+		return force_n
+	func wheel_grip_usage(_w) -> float:
+		return grip_usage
 
 
 # Stub terrain: reports (road_weight, tarmac_weight) like TerrainManager.surface_at.
@@ -86,6 +81,21 @@ func _make_with_terrain(terrain: StubTerrain, half_width := 3.0) -> TireMarks:
 	add_child_autofree(tm)
 	tm.setup(_curve, _car, terrain, half_width)
 	return tm
+
+
+# A fresh all-tarmac surface, for the skid tests.
+func _tarmac_terrain() -> StubTerrain:
+	var terrain := StubTerrain.new()
+	terrain.tarmac = 1.0
+	return terrain
+
+
+# Drive a straight run down the road and hand back the opacity of the mark that laid,
+# so an opacity test reads one number instead of re-deriving the drive each time.
+func _laid_alpha(tm: TireMarks) -> float:
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	return tm.segment_color(0, 1).a
 
 
 # Drive the car (and its wheels) to world z and tick. Wheels are children of the
@@ -147,50 +157,151 @@ func test_marks_lay_on_gravel_surface() -> void:
 		assert_gt(tm.segment_count(i), 1, "wheel %d lays a ribbon on the gravel" % i)
 
 
-func test_no_marks_on_tarmac_without_wheelspin() -> void:
-	# On tarmac (tarmac_weight 1) but the wheels roll cleanly (no drivetrain spin) —
-	# a cleanly rolling wheel on tarmac leaves no skidmark.
-	var terrain := StubTerrain.new()
-	terrain.tarmac = 1.0
-	_car.drivetrain = StubDrivetrain.new()  # not spinning (surface == roll == 0)
-	var tm := _make_with_terrain(terrain)
-	for s in 6:
-		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
-	for i in 4:
-		assert_eq(tm.segment_count(i), 0, "wheel %d rolling on tarmac lays no skidmark" % i)
-
-
-func test_skidmarks_on_tarmac_under_wheelspin() -> void:
-	# On tarmac with the driven wheels spinning (tread outrunning the ground past the
-	# slip floor): a dark skidmark IS laid.
+func test_no_marks_on_tarmac_below_the_grip_band() -> void:
+	# On tarmac (tarmac_weight 1) with the tires well within their limits — normal
+	# driving on a paved road leaves nothing at all.
+	Config.data.tire_mark_tarmac_grip_min = 0.8
+	Config.data.tire_mark_tarmac_grip_max = 1.0
 	var terrain := StubTerrain.new()
 	terrain.tarmac = 1.0
 	var dt := StubDrivetrain.new()
-	dt.surface_speed = 20.0  # tread speed
-	dt.roll_speed = 5.0      # ground speed -> slip 15 m/s >> the min-slip floor
+	dt.grip_usage = 0.5  # cruising, nowhere near the limit
 	_car.drivetrain = dt
 	var tm := _make_with_terrain(terrain)
 	for s in 6:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
-		assert_gt(tm.segment_count(i), 1, "wheel %d spinning on tarmac lays a skidmark" % i)
+		assert_eq(tm.segment_count(i), 0, "wheel %d within its limits lays no skidmark" % i)
 
 
-func test_no_skidmarks_on_tarmac_from_undriven_wheels() -> void:
-	# A spinning reading but the wheel is undriven (free-rolling): no skidmark, matching
-	# the gravel-spray gate that only fires for driven wheels.
+func test_skidmarks_on_tarmac_above_the_grip_band() -> void:
+	# Past the top of the band (sliding): a solid dark skidmark IS laid.
+	Config.data.tire_mark_tarmac_grip_min = 0.8
+	Config.data.tire_mark_tarmac_grip_max = 1.0
 	var terrain := StubTerrain.new()
 	terrain.tarmac = 1.0
 	var dt := StubDrivetrain.new()
-	dt.driven = false
-	dt.surface_speed = 20.0
-	dt.roll_speed = 5.0
+	dt.grip_usage = 1.4  # past the limit — the tire is sliding
 	_car.drivetrain = dt
 	var tm := _make_with_terrain(terrain)
 	for s in 6:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
-		assert_eq(tm.segment_count(i), 0, "undriven wheel %d on tarmac lays no skidmark" % i)
+		assert_gt(tm.segment_count(i), 1, "wheel %d sliding on tarmac lays a skidmark" % i)
+		assert_almost_eq(tm.segment_color(i, 1).a, 1.0, 0.001,
+			"wheel %d past the band is fully opaque" % i)
+
+
+func test_tarmac_skid_fades_in_across_the_grip_band() -> void:
+	# Between the band edges the skid is partly transparent, and harder use is darker.
+	# The band is set here rather than read from the config, so this tests the ramp
+	# rather than whichever band is currently authored.
+	Config.data.tire_mark_tarmac_grip_min = 0.8
+	Config.data.tire_mark_tarmac_grip_max = 1.0
+	var terrain := StubTerrain.new()
+	terrain.tarmac = 1.0
+	var dt := StubDrivetrain.new()
+	_car.drivetrain = dt
+	dt.grip_usage = 0.85
+	var low := _laid_alpha(_make_with_terrain(terrain))
+	dt.grip_usage = 0.95
+	var high := _laid_alpha(_make_with_terrain(_tarmac_terrain()))
+	assert_gt(low, 0.0, "inside the band the skid is visible")
+	assert_lt(low, 1.0, "inside the band the skid is not yet solid")
+	assert_gt(high, low, "working the tire harder lays a darker skid")
+
+
+# --- Gravel rut opacity (tire force) -----------------------------------------
+
+func test_gravel_rut_opacity_scales_with_tire_force() -> void:
+	# The rut deepens with how many newtons the tire is putting through the gravel.
+	# The reference force is set here, so this tests the ramp, not the authored value.
+	Config.data.tire_mark_gravel_full_force_n = 4000.0
+	var dt := StubDrivetrain.new()
+	_car.drivetrain = dt
+	dt.force_n = 1000.0
+	var light := _laid_alpha(_make_with_terrain(StubTerrain.new()))
+	dt.force_n = 3000.0
+	var hard := _laid_alpha(_make_with_terrain(StubTerrain.new()))
+	assert_gt(light, 0.0, "a lightly loaded tire still scuffs a faint rut")
+	assert_gt(hard, light, "a harder-working tire digs a darker rut")
+	assert_lt(hard, 1.0, "below the reference force the rut is not yet solid")
+
+
+func test_gravel_rut_is_solid_at_and_above_the_reference_force() -> void:
+	Config.data.tire_mark_gravel_full_force_n = 4000.0
+	var dt := StubDrivetrain.new()
+	dt.force_n = 9000.0  # well past the reference — clamps, never overshoots
+	_car.drivetrain = dt
+	assert_almost_eq(_laid_alpha(_make_with_terrain(StubTerrain.new())), 1.0, 0.001,
+		"at or past the reference force the rut is fully opaque")
+
+
+func test_negligible_tire_force_lays_no_gravel_rut() -> void:
+	# A mark too faint to see is not laid at all — an invisible quad still rasterises
+	# and still sorts in the transparent pass.
+	Config.data.tire_mark_gravel_full_force_n = 4000.0
+	Config.data.tire_mark_min_alpha = 0.03
+	var dt := StubDrivetrain.new()
+	dt.force_n = 10.0  # 0.0025 of the reference — far below the cull threshold
+	_car.drivetrain = dt
+	var tm := _make_with_terrain(StubTerrain.new())
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	assert_eq(tm.segment_count(0), 0, "a mark below the cull threshold is never laid")
+
+
+# --- The fade toggle ---------------------------------------------------------
+
+func test_disabling_the_fade_lays_solid_marks_in_the_same_places() -> void:
+	# tire_mark_alpha_enabled off must change only HOW SOLID marks are, never WHERE they
+	# are — same segments, all at full opacity.
+	Config.data.tire_mark_gravel_full_force_n = 4000.0
+	var dt := StubDrivetrain.new()
+	dt.force_n = 1000.0  # a quarter of the reference: clearly faded when the fade is on
+	_car.drivetrain = dt
+	var faded := _make_with_terrain(StubTerrain.new())
+	var faded_alpha := _laid_alpha(faded)
+	Config.data.tire_mark_alpha_enabled = false
+	var solid := _make_with_terrain(StubTerrain.new())
+	var solid_alpha := _laid_alpha(solid)
+	assert_lt(faded_alpha, 1.0, "with the fade on this mark is partly transparent")
+	assert_almost_eq(solid_alpha, 1.0, 0.001, "with the fade off the same mark is solid")
+	assert_eq(solid.segment_count(0), faded.segment_count(0),
+		"the same segments are laid either way")
+
+
+func test_material_transparency_follows_the_toggle() -> void:
+	# The ribbons must sit in the transparent pass only while the fade is on — an opaque
+	# material there would pay alpha sorting for nothing.
+	var tm := _make()
+	assert_eq(tm._material.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA,
+		"the fade renders the ribbons through the alpha pass")
+	assert_eq(tm._material.depth_draw_mode, BaseMaterial3D.DEPTH_DRAW_DISABLED,
+		"crossing ribbons must not fight the depth buffer")
+	# Flipping the toggle rebuilds the material on the next flush, without a new track.
+	Config.data.tire_mark_alpha_enabled = false
+	tm.flush_uploads()
+	assert_eq(tm._material.transparency, BaseMaterial3D.TRANSPARENCY_DISABLED,
+		"with the fade off the ribbons go back to the opaque pass")
+
+
+func test_flipping_the_toggle_re_uploads_the_ribbons() -> void:
+	# A rebuilt material only reaches the GPU when the surfaces are re-uploaded — a
+	# ribbon still carrying the old material would keep rendering in the old pass.
+	var tm := _make()
+	for s in 6:
+		_drive(tm, float(s), [-0.8, 0.8, -0.8, 0.8])
+	tm.flush_uploads()
+	var before := tm.upload_count()
+	Config.data.tire_mark_alpha_enabled = false
+	tm.flush_uploads()
+	assert_eq(tm.upload_count(), before + tm.wheel_count(),
+		"every ribbon re-uploads against the rebuilt material")
+	for i in tm.wheel_count():
+		var mesh := tm._ribbons[i].mesh as ArrayMesh
+		assert_eq(mesh.surface_get_material(0), tm._material,
+			"wheel %d's surface carries the rebuilt material" % i)
 
 
 func test_corner_wheel_on_road_ahead_still_marks() -> void:

@@ -1,9 +1,13 @@
 class_name WheelParticles
 extends CpuParticlePool
-# Cheap debris flung backwards from the driven wheels whenever they spin faster
-# than the ground — a burnout, a wheelspin launch, or a spinning slide. A
-# hand-rolled CPU pool drawn through ONE MultiMesh of billboarded quads (the
-# shared ring-buffer machinery lives in CpuParticlePool).
+# Cheap debris flung backwards from the driven wheels whenever they break traction
+# fore/aft — a burnout, a wheelspin launch, or a spinning slide. A hand-rolled CPU
+# pool drawn through ONE MultiMesh of billboarded quads (the shared ring-buffer
+# machinery lives in CpuParticlePool).
+#
+# "Breaking traction" is longitudinal grip usage over wheel_particle_min_long_grip
+# (1.0 = past the slip ratio the tire grips best at — Drivetrain.wheel_long_grip_usage),
+# not a raw slip speed: only a tire that has actually let go is shifting material.
 #
 # ONE pool serves every surface. Each particle carries its own colour, half-extents
 # and roll, chosen at emit time from the surface under the wheel:
@@ -247,8 +251,8 @@ func _advance(delta: float) -> bool:
 	return true
 
 
-# Spawn debris from every driven wheel that is in contact and spinning faster than
-# the ground, in the flavour the surface under it calls for. Reads the live
+# Spawn debris from every driven wheel that is in contact and past its longitudinal
+# grip limit, in the flavour the surface under it calls for. Reads the live
 # drivetrain each tick, so a car swap (which rebuilds the drivetrain) needs no
 # extra wiring here. Returns true if anything was emitted (so the caller uploads
 # the buffer once).
@@ -261,7 +265,7 @@ func _emit_from_wheels() -> bool:
 	if terrain == null or not terrain.has_method("surface_at"):
 		return false
 	var r: float = cfg.wheel_radius
-	var min_slip: float = cfg.wheel_particle_min_slip_mps
+	var min_long_grip: float = cfg.wheel_particle_min_long_grip
 	var emitted := false
 	for wheel in dt.all_wheels:
 		# Undriven wheels free-roll — they never fling debris however fast they turn.
@@ -274,11 +278,19 @@ func _emit_from_wheels() -> bool:
 		var fwd: Vector3 = dt.wheel_forward(wheel)
 		var vel: Vector3 = dt.velocity_at(cp)
 		var surface_speed: float = dt.wheel_omega(wheel) * r
-		# Wheelspin is the wheel surface OUTRUNNING the ground along the rolling
-		# direction (v_long), NOT the car's total speed — so a car that is sliding
-		# sideways at speed still counts as spinning as long as the tread is turning
-		# faster than it is rolling forward. Cheapest test, so gate on it first.
-		if surface_speed - fwd.dot(vel) < min_slip:
+		# Debris needs the tire to have actually BROKEN TRACTION fore/aft, not merely to
+		# be slipping: above 1.0 longitudinal grip usage the tread has passed the slip
+		# ratio it grips best at and is tearing material loose instead of driving through
+		# it. A raw slip SPEED can't make that call, because the slip a tire tolerates
+		# scales with how fast it's going (and with the surface — loose gravel peaks at
+		# roughly twice the slip tarmac does), so any fixed m/s threshold sprays dirt at
+		# speed while a genuinely spinning wheel at walking pace throws none.
+		#
+		# Unsigned, so a locked wheel ploughing under braking counts as well as a spinning
+		# one under power. Note that a lockup has little tread speed to fling debris with,
+		# so it throws a short spray near the patch rather than a rooster tail — the throw
+		# still keys off surface_speed below.
+		if dt.wheel_long_grip_usage(wheel) < min_long_grip:
 			continue
 		# One cheap terrain lookup picks the flavour.
 		# surface_at -> (road_weight 0=grass..1=road, tarmac_weight 0=gravel..1=tarmac).
