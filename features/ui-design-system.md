@@ -229,14 +229,17 @@ in `fonts/`, point `UITheme.FONT_PATH` at it, and re-run the theme generator.
 
 ## Gauge captions — the one drop-shadow exception
 
-The two in-run HUD bars (`HPBar` / `BoostBar`, see [hud.md](hud.md)) put their caption
-**inside** the bar, sitting directly on the coloured fill. There the house drop shadow
-works against legibility rather than for it: at caption size a hard black edge thickens
-the glyphs and muddies them against a saturated fill instead of separating them from it.
-So these two labels — and only these two — draw **plain ink with no shadow**
-(`hud.gd::_style_gauge_captions`).
+The three in-run HUD gauges (`HPGauge` / `BoostGauge` / `NitrousGauge`, a `HudGauge`
+radial ring each — see [hud.md](hud.md)) no longer use text captions at all: each
+draws a `GaugeIcons` glyph (cross / dial / bottle) in flat ink, in the hole of the
+ring, never on top of the coloured fill — sidestepping the legibility problem this
+section used to describe for the old bars' captions-on-fill (a hard black drop
+shadow thickening and muddying glyph edges against a saturated fill). The
+`GaugeIcons` glyphs are drawn with no outline and no shadow by construction, not via
+an override on a `Label`.
 
-Two things to know if you add another caption-on-fill widget:
+This section is kept for history and because the underlying trap is still real: if
+you add another caption-on-fill widget, know that —
 
 - The shadow is **not** a per-label property you can leave unset. It comes from the
   project-wide theme (`theme/ui_theme.tres` → `Label/colors/font_shadow_color`), so a

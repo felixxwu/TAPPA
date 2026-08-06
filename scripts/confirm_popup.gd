@@ -156,10 +156,9 @@ func _build(title: String, body: String, default_index: int) -> void:
 	var panel := UITheme.panel(1.0, 20)
 	center.add_child(panel)
 
-	# ADAPTIVE WIDTH. 420 is the house default, but at the narrowest tiers (the
-	# 288-tall web-touch tier, or any portrait aspect — see DisplayStretch,
-	# width follows device aspect and can get much narrower than 420) a fixed
-	# 420 forces the panel wider than the screen. Clamp against the current
+	# ADAPTIVE WIDTH. 420 is the house default, but on a narrow/portrait aspect
+	# (see DisplayStretch — width follows device aspect and can get much narrower
+	# than 420) a fixed 420 forces the panel wider than the screen. Clamp against the current
 	# logical viewport width, with a little breathing room on each side.
 	# Fallback mirrors GameConfig.virtual_resolution (scripts/game_config.gd), the real
 	# source of truth for the design resolution. Config.data is populated by the Config

@@ -1903,12 +1903,6 @@ func has_nitrous() -> bool:
 ## slightly if the band reads too hard at the lower resolution.
 @export_range(8, 512) var ground_subdiv_web_touch := 16
 
-## Rendered viewport HEIGHT on a web TOUCH device. The engine renders at
-## [display] window/size/viewport_height with stretch/aspect="keep_height", so
-## HEIGHT is authoritative and width follows the window aspect — there is no
-## single "480x360 setting". Keep virtual_resolution (the PS1 post-process
-## parameter) in proportion when changing this.
-@export_range(120, 1080) var viewport_height_web_touch := 288
 ## Terrain LOD far-cutoff distances (metres), one per level boundary — the
 ## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
 ## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
@@ -2023,27 +2017,6 @@ func ground_subdiv_for(web: bool, touch: bool) -> int:
 	return ground_subdiv_web_touch if (web and touch) else ground_subdiv
 
 
-# Rendered viewport height for the current target. `base_height` is the authored
-# [display] window/size/viewport_height (DisplayStretch.base_design_height()) —
-# the value every target EXCEPT a web TOUCH device keeps. Pair it with
-# virtual_resolution_for() so the PS1 post-process grid stays in proportion.
-func viewport_height_for(web: bool, touch: bool, base_height: int) -> int:
-	return viewport_height_web_touch if (web and touch) else base_height
-
-
-# The PS1 post-process dither/quantise grid for the current target, scaled by the
-# SAME factor viewport_height_for() applies to the rendered height, so the authored
-# 480x360 grid keeps its proportion to the frame instead of coarsening/fining as the
-# render resolution is tiered down. Base targets get the authored value untouched.
-func virtual_resolution_for(web: bool, touch: bool, base_height: int) -> Vector2:
-	if base_height <= 0:
-		return virtual_resolution
-	var height := viewport_height_for(web, touch, base_height)
-	if height == base_height:
-		return virtual_resolution
-	return (virtual_resolution * (float(height) / float(base_height))).round()
-
-
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car
 # gets the base rate on both axles (unchanged), a nose-heavy car a stiffer front.
 func axle_stiffness(front: bool) -> float:
@@ -2114,12 +2087,11 @@ func terrain_layers() -> Array[Vector2]:
 # Push every ps1_post_process.gdshader uniform onto a post-process material —
 # the dither grid plus the whole colour grade. Shared by BOTH hosts of that pass
 # (world.gd for the stage, hq.gd for the HQ hub) so the two can never drift into
-# grading the game differently depending on which screen you're on.
-# `base_height` is DisplayStretch.base_design_height(); only the dither grid is
-# per-target (it has to keep its proportion on a shorter web-touch frame), while
-# the grade is resolution-independent and pushed raw.
-func apply_post_process(mat: ShaderMaterial, web: bool, touch: bool, base_height: int) -> void:
-	mat.set_shader_parameter("virtual_resolution", virtual_resolution_for(web, touch, base_height))
+# grading the game differently depending on which screen you're on. Every target
+# renders at the same authored resolution, so both the dither grid and the grade
+# are resolution-independent and pushed raw.
+func apply_post_process(mat: ShaderMaterial) -> void:
+	mat.set_shader_parameter("virtual_resolution", virtual_resolution)
 	mat.set_shader_parameter("grade_amount", grade_amount)
 	mat.set_shader_parameter("grade_saturation", grade_saturation)
 	mat.set_shader_parameter("grade_contrast", grade_contrast)

@@ -303,7 +303,7 @@ what it hands you at the bottom, where the big turbo is still spooling.
 `sc_boost` is reset in `EngineSim.reset()`. Consumers do **not** combine the two
 readings themselves — `EngineSim.boost_reading()` is the single 0..1 forced-induction
 reading (`maxf(boost, sc_boost)`; only one can be live, so the max is whichever it is),
-and the HUD's boost bar plus its debug readout both go through it together with
+and the HUD's boost gauge plus its debug readout both go through it together with
 `GameConfig.has_forced_induction()`.
 
 **The audio bridges deliberately do NOT.** `engine_audio.gd` and `car_preview_audio.gd`

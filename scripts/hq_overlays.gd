@@ -151,8 +151,8 @@ func build_detail_overlay() -> void:
 	# Scrolled body + pinned actions row (_hq._make_modal_overlay — read its header for
 	# why): the eligibility column is three autowrapped labels whose height depends on the
 	# rally's restriction text and the player's garage, and on a narrow phone frame they
-	# wrap to several lines each. Before this they could push "< Map" off the bottom of a
-	# 288-high canvas, and menu_back is Esc / gamepad B only — no way back by touch.
+	# wrap to several lines each. Before this they could push "< Map" off the bottom of the
+	# canvas, and menu_back is Esc / gamepad B only — no way back by touch.
 	var made := _hq._make_modal_overlay()
 	_hq._detail_layer = made[0]
 	var root: VBoxContainer = made[1]

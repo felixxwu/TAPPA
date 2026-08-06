@@ -7,11 +7,6 @@ const BUSH_SEED_OFFSET := 1013
 # car.gd has no class_name; preload it to reach its static helpers (compression_budget).
 const CarScript := preload("res://scripts/car.gd")
 
-# display_stretch.gd has no class_name either; preload it to reach base_design_height()
-# (the authored, untiered [display] frame height) as a static call rather than through
-# the DisplayStretch autoload instance.
-const DisplayStretchScript := preload("res://scripts/display_stretch.gd")
-
 # Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
@@ -178,12 +173,9 @@ func _ready() -> void:
 		cfg.apply_car_light(_mat(car_mesh))
 	# PS1 dither/quantise grid + the colour grade, both pushed by apply_post_process
 	# (shared with hq.gd, the other host of this pass, so the two can't grade the
-	# game differently). The grid is scaled by the same factor DisplayStretch applied
-	# to the logical frame height, so a web-touch device's lower render resolution
-	# keeps the authored grid-to-frame proportion instead of the dither pattern
-	# coarsening; every other target gets the authored value.
-	cfg.apply_post_process($PostProcess.material as ShaderMaterial, _web, _touch,
-		int(DisplayStretchScript.base_design_height()))
+	# game differently). Every target renders at the same authored resolution, so
+	# the grid is pushed raw.
+	cfg.apply_post_process($PostProcess.material as ShaderMaterial)
 
 	# Hold the car still for the entire boot. Generation below spans many awaited
 	# frames with the loading overlay up (non-headless); the car is already in the

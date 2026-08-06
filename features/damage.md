@@ -305,16 +305,18 @@ UI for the player's attention.
 
 ## In-run HUD (see [hud.md](hud.md))
 
-`hud.gd` reads `car.damage` each frame: a colour-graded **health bar** (`HPBar`,
-green → amber → red) whose fill is the whole reading, with a **static `HEALTH`
-caption centred inside it** (`HPLabel`, a child of the bar — no absolute HP number,
-which was redundant beside a bar showing the same thing); a low-health **warning
-pulse** below `hud_low_hp_warn_frac`; and a red **impact flash** (`ImpactFlash`)
-sized to each HP-losing hit. The grade is applied via **`self_modulate`** so it
-doesn't tint the caption. The gauge is hidden when `hud_hp_enabled` is off. Because
-there is no longer a number to round, the old "reserve `0` for a genuine wreck"
-rounding rule is gone with it — a nearly-dead car simply shows a nearly-empty bar.
-A **boost bar** sits directly above, built the same way — see [hud.md](hud.md).
+`hud.gd` reads `car.damage` each frame: a colour-graded **health gauge** (`HPGauge`,
+a `HudGauge` radial ring, green → amber → red) whose fill fraction is `hp / max_hp`,
+with a cross **icon** (`GaugeIcons.Kind.HEALTH`) sitting in the ring's hole rather
+than a text caption — no absolute HP number, which was redundant beside a gauge
+showing the same thing; a low-health **warning pulse** below `hud_low_hp_warn_frac`,
+riding on the fill's alpha; and a red **impact flash** (`ImpactFlash`) sized to each
+HP-losing hit. Because the icon is drawn separately from the fill, the pulse never
+tints it. The gauge is hidden when `hud_hp_enabled` is off. Because there is no
+longer a number to round, the old "reserve `0` for a genuine wreck" rounding rule is
+gone with it — a nearly-dead car simply shows a nearly-empty ring. A **boost gauge**
+sits to its left and a **nitrous gauge** to its right, built the same way — see
+[hud.md](hud.md).
 
 ## Config knobs (`GameConfig`, *Damage* group)
 

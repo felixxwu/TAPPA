@@ -28,7 +28,7 @@
 | Engine synth | mix rate halved on web-touch, noise table, inaudible-skip |
 | Centerline lookups | ~26,000 `sample_baked` calls/sec → array indexing |
 | Spectator steering | ~4,000 `on_road()` probes/tick → **0** for a settled crowd |
-| Render resolution | 360 → **288** on web-touch (~36% fewer fragments) |
+| Render resolution | ~~360 → 288 on web-touch (~36% fewer fragments)~~ — **reverted 2026-08**: web-touch now renders at the same authored 360 as every other target, no per-platform resolution tier |
 | Web saves | now flush on `visibilitychange`/`pagehide` |
 | Live-reload poller | no longer ships to players |
 
@@ -147,8 +147,6 @@ plus HQ, garage, podium and standings on the custom build.
 
 ### Small, holding for a reason
 
-- **Render height 288 → 240** (~20% more fragments saved). Deliberately not applied: no
-  target device is pinned, and the risk is HUD/pacenote legibility. One `.tres` line.
 - **Expose `lazy_finest_lod` / `detail_builds_per_frame` as `GameConfig` fields** — plain
   properties on `TerrainManager` today, so not tunable without a code edit.
 - **`emulate_mouse_from_touch = false` project-wide.** The safe local fix landed
@@ -163,9 +161,8 @@ plus HQ, garage, podium and standings on the custom build.
 - **Re-capture the web `load stage:` table** on a **non-benchmark** boot (career *and*
   free roam), tab foregrounded. This is the payoff for the frame-cap work and is still
   unmeasured post-change.
-- **A real phone.** Three tier values (`viewport_height_web_touch`,
-  `ground_subdiv_web_touch`, `engine_mix_rate_web_touch`) are conservative defaults
-  chosen without one.
+- **A real phone.** Two remaining tier values (`ground_subdiv_web_touch`,
+  `engine_mix_rate_web_touch`) are conservative defaults chosen without one.
 - **A replay pass** if `terrain_precompute_safety_slack_m` (now 25, was 40) is suspect —
   the failure mode is unbuilt terrain in a replay shot.
 

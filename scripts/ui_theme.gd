@@ -349,7 +349,7 @@ static func button(text: String) -> Button:
 # A button for a HORIZONTAL action row: no width floor, so it hugs its own label.
 # `button()` above pins BUTTON_MIN_W, which is right for a stacked column but wrong
 # side by side — four of them need ~750 logical units against a canvas ~556 wide at
-# the design height (~445 on the 288 web-touch tier), so the row runs off both edges.
+# the design height (narrower still on a portrait/narrow phone aspect), so the row runs off both edges.
 # Height and uppercasing are left to `enforce()`, which every menu runs after building.
 # An invisible row that eats all the leftover vertical space, pushing whatever follows it to
 # the bottom of its container. Four hq_overlays screens hand-rolled this same three-liner.

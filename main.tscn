@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://dbdwx7yc650em" path="res://scripts/terrain_manager.gd" id="6_terrain"]
 [ext_resource type="Script" uid="uid://bn0pfrwbxaw4v" path="res://scripts/world.gd" id="7_world"]
 [ext_resource type="Script" uid="uid://bx7m7rsqs3hcu" path="res://scripts/hud.gd" id="8_hud"]
+[ext_resource type="Script" path="res://scripts/hud_gauge.gd" id="8_gauge"]
 [ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
 [ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
@@ -195,89 +196,53 @@ text = "STAGE COMPLETE"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="NitrousBar" type="ProgressBar" parent="HUD" unique_id=1791309601]
+[node name="BoostGauge" type="Control" parent="HUD" unique_id=1791309601]
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -50.0
-offset_top = -62.0
-offset_right = 50.0
-offset_bottom = -46.0
+offset_left = -70.0
+offset_top = -51.0
+offset_right = -32.0
+offset_bottom = -13.0
 grow_horizontal = 2
 grow_vertical = 0
-max_value = 1.0
-step = 0.001
-value = 0.0
-show_percentage = false
+mouse_filter = 2
+script = ExtResource("8_gauge")
+icon = 1
 
-[node name="NitrousLabel" type="Label" parent="HUD/NitrousBar" unique_id=1791309602]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 11
-text = "NITROUS"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="BoostBar" type="ProgressBar" parent="HUD" unique_id=1044419653]
+[node name="HPGauge" type="Control" parent="HUD" unique_id=1044419651]
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -50.0
-offset_top = -42.0
-offset_right = 50.0
-offset_bottom = -26.0
+offset_left = -24.0
+offset_top = -56.0
+offset_right = 24.0
+offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 0
-max_value = 1.0
-step = 0.001
-value = 0.0
-show_percentage = false
+mouse_filter = 2
+script = ExtResource("8_gauge")
+icon = 0
 
-[node name="BoostLabel" type="Label" parent="HUD/BoostBar" unique_id=1044419654]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 11
-text = "BOOST"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="HPBar" type="ProgressBar" parent="HUD" unique_id=1044419651]
+[node name="NitrousGauge" type="Control" parent="HUD" unique_id=1044419653]
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -50.0
-offset_top = -22.0
-offset_right = 50.0
-offset_bottom = -6.0
+offset_left = 32.0
+offset_top = -51.0
+offset_right = 70.0
+offset_bottom = -13.0
 grow_horizontal = 2
 grow_vertical = 0
-max_value = 1.0
-step = 0.001
-value = 1.0
-show_percentage = false
-
-[node name="HPLabel" type="Label" parent="HUD/HPBar" unique_id=1044419650]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_font_sizes/font_size = 11
-text = "HEALTH"
-horizontal_alignment = 1
-vertical_alignment = 1
+mouse_filter = 2
+script = ExtResource("8_gauge")
+icon = 2
 
 [node name="ImpactFlash" type="ColorRect" parent="HUD" unique_id=1044419652]
 anchors_preset = 15

@@ -124,7 +124,6 @@ tree_render_distance_m = 120.0
 tree_render_distance_web_touch_m = 60.0
 terrain_lod_bands_m = PackedFloat32Array(60, 100, 115, 120)
 terrain_lod_bands_web_touch_m = PackedFloat32Array(40, 70, 80, 90)
-viewport_height_web_touch = 288
 ground_subdiv = 24
 ground_subdiv_web_touch = 16
 bush_height_m = 1.5

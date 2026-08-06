@@ -267,7 +267,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
     branching live in one place.
   * **The buttons drop `UITheme.BUTTON_MIN_W`.** That 180-unit floor is right for a
     stacked column, but four of them side by side need ~750 logical units against a
-    canvas only ~556 wide at the 360 tier (~445 on the 288 web-touch tier), so the row
+    canvas only ~556 wide on a 16:9 aspect (narrower still on a portrait/narrow phone aspect), so the row
     ran off both edges. `_row_button` keeps the house row HEIGHT and lets each button
     hug its own label.
   `world.gd._show_repair_popup` builds the between-event **pit-repair popup**
@@ -647,8 +647,8 @@ So `_build` hands the sizing to **`UITheme.fit_body_scroll(scroll, body_label, w
 body's true wrapped height and caps it against the viewport only as a fallback. **In practice
 nothing scrolls**: these popups are fullscreen and their bodies are short, so the panel hugs
 the text and all of it is visible. The panel width is likewise adaptive: `clampf(420.0,
-200.0, viewport_width - 32.0)` instead of a bare `420` — at the 288-tall web-touch tier
-(`DisplayStretch`) or in portrait the logical width can be well under 420.
+200.0, viewport_width - 32.0)` instead of a bare `420` — on a narrow/portrait device
+(`DisplayStretch`) the logical width can be well under 420.
 `scripts/username_popup.gd` shares this exact shape and calls the same
 `UITheme.fit_body_scroll` — keep the two in sync if this changes.
 
@@ -763,15 +763,14 @@ handed an **`HBoxContainer`** (the page's action row, outside the box), not a `V
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
 fixed — `DisplayStretch.DESIGN_HEIGHT`, 360 from `project.godot`'s
-`window/size/viewport_height` and only `GameConfig.viewport_height_web_touch` (288) on the
-web-touch tier — while the WIDTH follows the device aspect
+`window/size/viewport_height` on every target — while the WIDTH follows the device aspect
 (`DisplayStretch.logical_size`) and gets narrow on a phone, which makes autowrapped
 labels wrap to more lines. So a fixed, unscrolled column whose Back button is laid out
-AFTER the content does not overflow by device roulette: on the short tier, with a long
-restriction string or a server error string spliced in, the exit is *deterministically*
-pushed off the bottom. And there is no second way out — `menu_back` binds Escape and
-gamepad B only (`project.godot`), so there is NO touch-reachable back and the player is
-simply trapped in the page. Pinning makes that unreachable-by-construction.
+AFTER the content does not overflow by device roulette: with a long restriction string or
+a server error string spliced in, the exit is *deterministically* pushed off the bottom.
+And there is no second way out — `menu_back` binds Escape and gamepad B only
+(`project.godot`), so there is NO touch-reachable back and the player is simply trapped
+in the page. Pinning makes that unreachable-by-construction.
 
 **Focus still crosses into the footer.** Footer controls are `FOCUS_ALL`; `MenuNav` moves
 focus across container boundaries by geometry, so down-nav off the last body row lands on
@@ -797,7 +796,7 @@ app notice (`hq._show_android_app_notice`), and the car-park Change-Upgrades pop
 (`hq._show_upgrades_popup`, whose Done is additionally p/w-gated).
 
 **Widths, not just heights.** A centred modal column asking for a fixed pixel width can
-also exceed the frame: the 288 tier on a 16:9 phone is only ~445 logical units wide.
+also exceed the frame: a narrow/portrait phone aspect can leave well under 445 logical units wide.
 `hq.gd::_modal_body_width(preferred, chrome)` clamps an authored desktop width to what the
 current canvas can actually show (`viewport width - chrome`, floored at 160); the upgrades
 popup and the account menu both go through it.

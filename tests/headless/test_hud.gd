@@ -436,29 +436,29 @@ func test_show_pacenotes_advances_the_current_turn() -> void:
 	assert_true(third.visible, "the new current turn is on screen")
 
 
-# --- HP gauge (features/damage.md) --------------------------------------
+# --- Health gauge (features/damage.md) ----------------------------------
 # The HUD reads the car's DamageModel each frame; these set it directly and await
-# a frame, then assert the bar (the same pattern as the speed/gear labels above).
+# a frame, then assert the gauge (the same pattern as the speed/gear labels above).
 
 func test_hp_gauge_tracks_working_hp() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
-	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
+	var gauge := _scene.get_node("HUD/HPGauge") as HudGauge
 	car.damage.field(1000.0, 1000.0)
 	await get_tree().process_frame
-	assert_true(bar.visible, "gauge shown for a mortal car")
-	assert_almost_eq(bar.value, 1.0, 0.001, "full HP reads full")
+	assert_true(gauge.visible, "gauge shown for a mortal car")
+	assert_almost_eq(gauge.value, 1.0, 0.001, "full HP reads full")
 	car.damage.hp = 250.0
 	await get_tree().process_frame
-	assert_almost_eq(bar.value, 0.25, 0.001, "gauge reflects working HP / max_hp")
+	assert_almost_eq(gauge.value, 0.25, 0.001, "gauge reflects working HP / max_hp")
 
 
 func test_hp_gauge_hidden_when_disabled() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
-	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
+	var gauge := _scene.get_node("HUD/HPGauge") as HudGauge
 	Config.data.hud_hp_enabled = false
 	car.damage.field(1000.0, 1000.0)
 	await get_tree().process_frame
-	assert_false(bar.visible, "gauge suppressed when hud_hp_enabled is off")
+	assert_false(gauge.visible, "gauge suppressed when hud_hp_enabled is off")
 	Config.data.hud_hp_enabled = true
 
 
@@ -477,132 +477,123 @@ func test_finish_panel_next_button_is_keyboard_navigable() -> void:
 	assert_eq(fired[0], 1, "pressing NEXT emits finish_next_pressed")
 
 
-# The caption lives INSIDE the bar and carries no number — the fill is the reading.
-# Regression guard for the label drifting back out of the bar or regrowing a value.
-func test_health_caption_sits_inside_the_bar_and_carries_no_number() -> void:
+# The gauge is labelled by an ICON, not text — the fill is the reading. Regression guard
+# for a text caption creeping back in (it used to be a Label child that had to be kept
+# from displaying the HP number).
+func test_health_gauge_is_labelled_by_an_icon_not_text() -> void:
+	var gauge := _scene.get_node("HUD/HPGauge") as HudGauge
+	for child in gauge.get_children():
+		assert_false(child is Label, "the gauge carries no text caption")
+	assert_eq(gauge.icon, GaugeIcons.Kind.HEALTH, "it draws the health glyph")
+
+
+# Grading the fill toward red at low HP must not drag the ICON's colour with it: the
+# glyph is drawn in ink independently of the fill, so `modulate` (which would tint the
+# whole node, icon included) has to stay neutral.
+func test_health_grading_recolours_the_fill_only() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
-	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("HPBar") as ProgressBar
-	var label := hud.get_node("HPBar/HPLabel") as Label
-	assert_eq(label.get_parent(), bar, "the caption is a child of the bar, not a sibling above it")
+	var gauge := _scene.get_node("HUD/HPGauge") as HudGauge
 	var dmg: DamageModel = car.damage
 	dmg.field(1000.0, 1000.0)
 	await get_tree().process_frame
-	var full_text := label.text
-	dmg.hp = 0.4  # a sliver of HP: the caption must not react to the value at all
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(label.text, full_text, "the caption is static — it holds no HP number")
-	assert_false(label.text.strip_edges().is_empty(), "but it still names the gauge")
-
-
-# The bar is tinted with self_modulate, NOT modulate, so grading the fill toward red
-# at low HP can't drag the caption's colour along with it and hurt legibility.
-func test_health_grading_does_not_tint_the_caption() -> void:
-	var car: VehicleBody3D = _scene.get_node("Car")
-	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("HPBar") as ProgressBar
-	var dmg: DamageModel = car.damage
-	dmg.field(1000.0, 1000.0)
-	await get_tree().process_frame
-	var healthy: Color = bar.self_modulate
+	var healthy: Color = gauge.fill_color
 	dmg.hp = 50.0
 	await get_tree().process_frame
-	assert_ne(bar.self_modulate, healthy, "the fill grades with health")
-	assert_eq(bar.modulate, Color.WHITE, "grading goes through self_modulate, sparing the child caption")
+	assert_ne(gauge.fill_color, healthy, "the fill grades with health")
+	assert_eq(gauge.modulate, Color.WHITE, "grading goes through fill_color, sparing the icon")
 
 
 # --- Boost gauge (features/forced-induction.md) --------------------------------
-# Same shape as the HP gauge: a bar whose fill IS the reading, with a static caption
-# inside it. Shown only on a car with forced induction fitted.
+# Same shape as the health gauge: a dial whose fill IS the reading, with its icon in the
+# middle. Shown only on a car with forced induction fitted.
 
 func test_boost_gauge_hidden_on_a_naturally_aspirated_car() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("BoostBar") as ProgressBar
+	var gauge := hud.get_node("BoostGauge") as HudGauge
 	# before_each leaves the car naturally aspirated.
 	await get_tree().process_frame
-	assert_false(bar.visible, "an NA car shows no always-empty boost bar")
+	assert_false(gauge.visible, "an NA car shows no always-empty boost gauge")
 
 
-func test_boost_gauge_caption_sits_inside_the_bar() -> void:
+func test_boost_gauge_is_labelled_by_its_own_icon() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("BoostBar") as ProgressBar
-	var label := hud.get_node("BoostBar/BoostLabel") as Label
-	assert_eq(label.get_parent(), bar, "the caption is a child of the bar")
-	assert_false(label.text.strip_edges().is_empty(), "and it names the gauge")
+	var gauge := hud.get_node("BoostGauge") as HudGauge
+	assert_eq(gauge.icon, GaugeIcons.Kind.BOOST, "the boost dial draws the boost glyph")
+	for child in gauge.get_children():
+		assert_false(child is Label, "the gauge carries no text caption")
 
 
 func test_boost_gauge_tracks_turbo_and_blower_boost() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("BoostBar") as ProgressBar
+	var gauge := hud.get_node("BoostGauge") as HudGauge
 	var engine: EngineSim = car.drivetrain.engine
-	# Turbo fitted: the bar appears and its fill follows the shaft's boost fraction.
+	# Turbo fitted: the gauge appears and its fill follows the shaft's boost fraction.
 	Config.data.turbo_enabled = true
 	Config.data.supercharger_boost_gain = 0.0
 	engine.boost = 0.5
 	engine.sc_boost = 0.0
 	await get_tree().process_frame
-	assert_true(bar.visible, "a fitted turbo reveals the boost bar")
-	assert_almost_eq(bar.value, 0.5, 0.001, "the fill tracks turbo boost")
-	# Blower fitted instead: the SAME bar reports belt boost (they share a slot).
+	assert_true(gauge.visible, "a fitted turbo reveals the boost gauge")
+	assert_almost_eq(gauge.value, 0.5, 0.001, "the fill tracks turbo boost")
+	# Blower fitted instead: the SAME gauge reports belt boost (they share a slot).
 	Config.data.turbo_enabled = false
 	Config.data.supercharger_boost_gain = 0.9
 	engine.boost = 0.0
 	engine.sc_boost = 0.75
 	await get_tree().process_frame
-	assert_true(bar.visible, "a fitted supercharger reveals the same bar")
-	assert_almost_eq(bar.value, 0.75, 0.001, "the fill tracks belt boost")
+	assert_true(gauge.visible, "a fitted supercharger reveals the same gauge")
+	assert_almost_eq(gauge.value, 0.75, 0.001, "the fill tracks belt boost")
 
 
 # --- Nitrous gauge (features/nitrous.md) ---------------------------------------
-# The boost bar's twin: fill = tank fraction left, caption inside, hidden when unfitted.
+# The boost dial's twin: fill = tank fraction left, own icon, hidden when unfitted.
 
 func test_nitrous_gauge_hidden_when_no_nitrous_is_fitted() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("NitrousBar") as ProgressBar
+	var gauge := hud.get_node("NitrousGauge") as HudGauge
 	# before_each leaves the car without a nitrous system.
 	await get_tree().process_frame
-	assert_false(bar.visible, "an unfitted car shows no always-empty nitrous bar")
+	assert_false(gauge.visible, "an unfitted car shows no always-empty nitrous gauge")
 
 
 func test_nitrous_gauge_tracks_the_tank_fraction() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("NitrousBar") as ProgressBar
+	var gauge := hud.get_node("NitrousGauge") as HudGauge
 	var engine: EngineSim = car.drivetrain.engine
 	# Fit a tank (values are this test's own inputs, not the shipped tune).
 	Config.data.nitrous_boost_gain = 0.3
 	Config.data.nitrous_tank_seconds = 4.0
 	engine.nitrous_charge = 4.0
 	await get_tree().process_frame
-	assert_true(bar.visible, "a fitted tank reveals the nitrous bar")
-	assert_almost_eq(bar.value, 1.0, 0.001, "a full tank fills the bar")
+	assert_true(gauge.visible, "a fitted tank reveals the nitrous gauge")
+	assert_almost_eq(gauge.value, 1.0, 0.001, "a full tank fills the gauge")
 	# Drain half the tank: the fill follows the remaining fraction.
 	engine.nitrous_charge = 2.0
 	await get_tree().process_frame
-	assert_almost_eq(bar.value, 0.5, 0.001, "the fill tracks the remaining fraction")
+	assert_almost_eq(gauge.value, 0.5, 0.001, "the fill tracks the remaining fraction")
 	engine.nitrous_charge = 0.0
 	await get_tree().process_frame
-	assert_true(bar.visible, "an empty tank still shows the (empty) gauge")
-	assert_almost_eq(bar.value, 0.0, 0.001, "a dry tank empties the bar")
+	assert_true(gauge.visible, "an empty tank still shows the (empty) gauge")
+	assert_almost_eq(gauge.value, 0.0, 0.001, "a dry tank empties the gauge")
 
 
-func test_nitrous_gauge_caption_sits_inside_the_bar() -> void:
+func test_nitrous_gauge_is_labelled_by_its_own_icon() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var bar := hud.get_node("NitrousBar") as ProgressBar
-	var label := hud.get_node("NitrousBar/NitrousLabel") as Label
-	assert_eq(label.get_parent(), bar, "the caption is a child of the bar")
-	assert_false(label.text.strip_edges().is_empty(), "and it names the gauge")
+	var gauge := hud.get_node("NitrousGauge") as HudGauge
+	assert_eq(gauge.icon, GaugeIcons.Kind.NOS, "the nitrous dial draws the NOS glyph")
+	for child in gauge.get_children():
+		assert_false(child is Label, "the gauge carries no text caption")
 
 
 func test_nitrous_and_boost_gauges_are_visually_distinct() -> void:
-	# Forced induction and nitrous are separate slots, so both bars can be on screen at
+	# Forced induction and nitrous are separate slots, so both gauges can be on screen at
 	# once — their tints must not collide. Relationship, not a pinned hue value.
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var hud: CanvasLayer = _scene.get_node("HUD")
-	var boost := hud.get_node("BoostBar") as ProgressBar
-	var nitrous := hud.get_node("NitrousBar") as ProgressBar
+	var boost := hud.get_node("BoostGauge") as HudGauge
+	var nitrous := hud.get_node("NitrousGauge") as HudGauge
 	var engine: EngineSim = car.drivetrain.engine
 	Config.data.turbo_enabled = true
 	Config.data.nitrous_boost_gain = 0.3
@@ -610,10 +601,23 @@ func test_nitrous_and_boost_gauges_are_visually_distinct() -> void:
 	engine.boost = 0.5
 	engine.nitrous_charge = 4.0
 	await get_tree().process_frame
-	assert_true(boost.visible and nitrous.visible, "a turbo + nitrous car shows both bars")
-	assert_ne(nitrous.self_modulate, boost.self_modulate, "the two gauges read as different colours")
-	assert_eq(nitrous.modulate, Color.WHITE,
-		"the tint goes through self_modulate, sparing the child caption")
+	assert_true(boost.visible and nitrous.visible, "a turbo + nitrous car shows both gauges")
+	assert_ne(nitrous.fill_color, boost.fill_color, "the two gauges read as different colours")
+	assert_ne(nitrous.icon, boost.icon, "and they carry different glyphs")
+
+
+# Health sits BETWEEN the two flankers, so hiding one on a car that lacks the part
+# leaves health where the eye already expects it. Ordering, not pinned coordinates.
+func test_health_gauge_sits_between_its_two_flankers() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var boost := hud.get_node("BoostGauge") as HudGauge
+	var health := hud.get_node("HPGauge") as HudGauge
+	var nitrous := hud.get_node("NitrousGauge") as HudGauge
+	var bx: float = boost.position.x + boost.size.x * 0.5
+	var hx: float = health.position.x + health.size.x * 0.5
+	var nx: float = nitrous.position.x + nitrous.size.x * 0.5
+	assert_lt(bx, hx, "boost sits to the left of health")
+	assert_lt(hx, nx, "nitrous sits to the right of health")
 
 
 func test_has_forced_induction_covers_both_parts() -> void:

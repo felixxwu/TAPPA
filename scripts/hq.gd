@@ -49,9 +49,6 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 # Generalises over this list, so a third starter is a one-line add.
 const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 
-# Static access to base_design_height() for the post-process dither grid; the same
-# preload world.gd uses, since the autoload instance isn't needed for a static call.
-const DisplayStretchScript := preload("res://scripts/display_stretch.gd")
 # RallySession is an autoload with no class_name, so its STATIC canonical config
 # writer (apply_event_config) must be reached through the script resource — calling a
 # static via the instance warns. Same precedent as driving_context.gd.
@@ -616,9 +613,7 @@ func _apply_post_process() -> void:
 	var container := get_node_or_null("PostProcess") as SubViewportContainer
 	if container == null or container.material == null:
 		return
-	Config.data.apply_post_process(container.material as ShaderMaterial,
-		Platform.is_web(), Platform.is_touch(),
-		int(DisplayStretchScript.base_design_height()))
+	Config.data.apply_post_process(container.material as ShaderMaterial)
 
 
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
@@ -1179,14 +1174,13 @@ func _make_overlay(margin := 24.0) -> Array:
 #
 # WHY this exists, and why it isn't optional for a modal page. Every overlay here is laid
 # out against a LOGICAL canvas whose height is fixed by display_stretch.gd —
-# DisplayStretch.DESIGN_HEIGHT, 360 from project.godot and only 288 on the web-touch tier
-# (GameConfig.viewport_height_web_touch) — while the WIDTH follows the device aspect and
-# gets narrow on a phone, which makes autowrapped labels wrap to more lines. So a fixed,
-# unscrolled column whose Back button is laid out AFTER the content doesn't overflow by
-# device roulette: on the short tier, with a long restriction string or a server error
-# spliced in, the exit is deterministically pushed off the bottom of the frame. And there
-# is no second way out — `menu_back` binds Escape and gamepad B only (project.godot), so a
-# touch player with the exit off-screen is simply TRAPPED in the page. Scrolling the body
+# DisplayStretch.DESIGN_HEIGHT, 360 from project.godot on every target — while the WIDTH
+# follows the device aspect and gets narrow on a phone, which makes autowrapped labels wrap
+# to more lines. So a fixed, unscrolled column whose Back button is laid out AFTER the
+# content doesn't overflow by device roulette: with a long restriction string or a server
+# error spliced in, the exit is deterministically pushed off the bottom of the frame. And
+# there is no second way out — `menu_back` binds Escape and gamepad B only (project.godot),
+# so a touch player with the exit off-screen is simply TRAPPED in the page. Scrolling the body
 # and pinning the exit outside the scroll makes that unreachable-by-construction: the
 # footer is always the bottom row of the frame no matter how tall the content grows.
 #
@@ -1211,10 +1205,10 @@ func _make_modal_overlay(margin := 24.0) -> Array:
 
 # The widest a centred modal column may ask for on the CURRENT logical canvas. The frame's
 # width is not a constant — it is DESIGN_HEIGHT * device_aspect / horizontal_stretch (see
-# display_stretch.gd), so on the 288-high web-touch tier a 16:9 phone gives roughly 445
-# logical units, and a hard-coded 460-wide column is already wider than the whole screen.
-# `chrome` is the horizontal space the surrounding container costs (overlay margins, panel
-# padding). Desktop keeps the authored `preferred` width; only the narrow tiers shrink.
+# display_stretch.gd), so a narrow/portrait phone aspect can give well under the authored
+# preferred width, and a hard-coded 460-wide column can already be wider than the whole
+# screen. `chrome` is the horizontal space the surrounding container costs (overlay margins,
+# panel padding). Desktop keeps the authored `preferred` width; only the narrow tiers shrink.
 func _modal_body_width(preferred: float, chrome := 88.0) -> float:
 	var vp := get_viewport()
 	if vp == null:
@@ -1308,7 +1302,7 @@ func _show_android_app_notice() -> void:
 		return
 	_title_layer.visible = false
 	# Scrolled body + pinned footer (_make_modal_overlay): this is the FIRST thing a
-	# mobile-web player sees, on the short 288-high canvas, and a dismissal they can't
+	# mobile-web player sees, on a narrow portrait canvas, and a dismissal they can't
 	# reach means they never get into the game at all.
 	var made := _make_modal_overlay()
 	_android_notice_layer = made[0]

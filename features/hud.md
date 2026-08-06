@@ -30,9 +30,9 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
-| `NitrousBar` (+ child `NitrousLabel`) | `NITROUS` caption inside a bar whose fill is the tank fraction left | `car.drivetrain.engine` (violet; hidden when no nitrous is fitted) |
-| `BoostBar` (+ child `BoostLabel`) | `BOOST` caption inside a bar whose fill is the live boost fraction | `car.drivetrain.engine` (blue; hidden on an NA car) |
-| `HPBar` (+ child `HPLabel`) | `HEALTH` caption inside a bar whose fill is `hp / max_hp` | `car.damage` (colour-graded green→amber→red) |
+| `NitrousGauge` | radial ring gauge (`HudGauge`, see below) whose fill is the tank fraction left, NOS-bottle icon in the hole | `car.drivetrain.engine` (violet; hidden when no nitrous is fitted) |
+| `BoostGauge` | radial ring gauge whose fill is the live boost fraction, dial icon in the hole | `car.drivetrain.engine` (blue; hidden on an NA car) |
+| `HPGauge` | radial ring gauge whose fill is `hp / max_hp`, cross icon in the hole | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
 | `GripGrid` | 2x2 `FL/FR/RL/RR <n>%` — how far up its grip curve each tire is (100% = on the limit, higher = sliding) | `car.drivetrain.readouts[wheel].grip` (dev diagnostic, H gate, code-built) |
 
@@ -42,63 +42,93 @@ readouts above — a **2x2** grid of per-tire grip figures, one cell per corner.
 that does **not** refresh while hidden, because its source
 (`Drivetrain.readouts`) isn't published while the overlay is down.
 
+## Gauge widget (`HudGauge` / `GaugeIcons`)
+
+The three readouts below share one widget, `HudGauge` (`scripts/hud_gauge.gd`, a
+`Control`): a radial fill clipped to a **square**, drawn as a **ring** with an icon
+(`scripts/gauge_icons.gd`) sitting in the hole rather than as a solid pie. It sweeps
+clockwise from 12 o'clock like a pie chart, but every point on the sweep is projected
+onto the perimeter of a square (`HudGauge._perimeter`), so the fill hugs the box and
+turns hard corners instead of describing a circle — keeping it in the same
+orthogonal, no-rounded-corners language as the rest of the design system
+(see [ui-design-system.md](ui-design-system.md)) while still reading as a dial. The
+projection is exact, not tessellated: the perimeter is a straight line between two
+square corners, so `_draw_ring` emits one convex quad per corner-to-corner span
+(`draw_colored_polygon` only renders convex polygons correctly).
+
+It's a ring, not a solid pie, on purpose: on a solid pie the wedge sweeps *under* the
+icon, so the icon's contrast against its background changes continuously with the
+value while driving. Putting the icon in the hole means it always sits on the
+(constant) track colour and always reads the same. The owner sets `HudGauge.value`
+(0..1, clamped on draw) and `HudGauge.fill_color`; both setters change-gate their own
+`queue_redraw()`, so writing an unchanged value each frame costs nothing. The gauge
+node itself is `mouse_filter = IGNORE` / `focus_mode = FOCUS_NONE` — it's a pure
+readout, never a tap target.
+
+The icon glyphs (`GaugeIcons.Kind.HEALTH` / `BOOST` / `NOS`) are authored on a shared
+24-unit grid with a 4-unit module — every edge on a module multiple, every negative
+gap exactly one module, square corners, one flat fill, no outline — so the three read
+as one family: a cross (health, the one glyph with no interior gap, chosen so it
+survives being shrunk to gauge size), a dial with the needle cut out as a slot swept
+to the upper right (boost — the one round glyph, because every pressure instrument in
+a real car is), and a pressure bottle (NOS, left as one unbroken silhouette). Two are
+concave and the dial is a disc with a slot cut out of it, so `draw_colored_polygon`
+can't take them directly; `GaugeIcons.triangles(kind)` triangulates each glyph once
+via `Geometry2D.triangulate_polygon`/`clip_polygons` and caches the result in
+`GaugeIcons._cache`, and `GaugeIcons.draw_into` just scales and blits the cached
+triangles. Adding a fourth gauge means authoring its glyph to the same grid.
+
 ## Damage gauge
 
-The `HPBar`/`HPLabel`/`ImpactFlash` are driven by `_update_damage(delta)` (called
-from `_process`) off the car's `DamageModel` (see [damage.md](damage.md)): the bar
-tracks `hp / max_hp` and is hue-graded from green (full) to red (empty). `HPLabel`
-is a **child of the bar**, centred inside it, and is a **static `HEALTH` caption** —
-the fill *is* the reading, so it carries no number (an absolute HP figure was
-redundant next to a bar showing the same thing). Because the caption is a child, the
-grade is applied with **`self_modulate`, not `modulate`** — the latter would drag the
-text's colour along with the fill and make it pulse red at low HP. Below
-`hud_low_hp_warn_frac` the bar pulses a low-health warning. Any HP drop since the previous
-frame bumps the red `ImpactFlash` overlay (sized to the loss), which fades back
-out each frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for
-every car (the starter is a normal wreckable car like any other).
+`HPGauge` is driven by `_update_damage(delta)` (called from `_process`) off the
+car's `DamageModel` (see [damage.md](damage.md)): `value` tracks `hp / max_hp` and
+`fill_color` is hue-graded from green (full) to red (empty) via `_gauge_color`.
+Below `hud_low_hp_warn_frac` the low-health warning pulse rides on the fill's
+**alpha** (`HudGauge.fill_color.a`) rather than on `self_modulate`/`modulate` the way
+the old text-captioned bar worked — the icon is drawn separately in ink by
+`GaugeIcons`, so it never pulses with the fill. Any HP drop since the previous frame
+bumps the red `ImpactFlash` overlay (sized to the loss), which fades back out each
+frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for every car (the
+starter is a normal wreckable car like any other).
 
 ## Boost gauge
 
-`BoostBar` sits **directly above** the HP bar and is built the same way: a
-`ProgressBar` whose fill is the whole reading, with a static `BOOST` caption as a
-centred child and the tint applied via `self_modulate`. `_update_boost_gauge(fitted,
-live_boost)` (called from `_process`) sets `value` to
-`maxf(engine.boost, engine.sc_boost)` — turbo and supercharger share one upgrade
-slot, so at most one is ever live and one bar covers both (see
-[forced-induction.md](forced-induction.md)). The bar is **hidden entirely** on a
-naturally-aspirated car rather than sitting permanently at zero; the pure static
-`hud.gd::has_forced_induction(cfg)` is the test (`turbo_enabled` or a non-zero
-`supercharger_boost_gain`, so a stock blown engine's audio-only flag doesn't
-summon an empty gauge). Its tint is a **fixed blue** at the same saturation/value
-as the health bar's grade (`_BOOST_HUE` / `_BOOST_SAT` / `_BOOST_VAL`), so the two
-gauges read as one family and only the hue tells them apart — fixed rather than
-graded because boost has no "danger" end.
+`BoostGauge` is built the same way: `_update_boost_gauge(fitted, live_boost)`
+(called from `_process`) sets `value` to `maxf(engine.boost, engine.sc_boost)` —
+turbo and supercharger share one upgrade slot, so at most one is ever live and one
+gauge covers both (see [forced-induction.md](forced-induction.md)). It's **hidden
+entirely** on a naturally-aspirated car rather than sitting permanently at zero; the
+pure static `hud.gd::has_forced_induction(cfg)` is the test (`turbo_enabled` or a
+non-zero `supercharger_boost_gain`, so a stock blown engine's audio-only flag doesn't
+summon an empty gauge). Its `fill_color` is a **fixed blue** at the same
+saturation/value as the health gauge's grade (`_BOOST_HUE` / `_BOOST_SAT` /
+`_BOOST_VAL`), so the two gauges read as one family and only the hue tells them
+apart — fixed rather than graded because boost has no "danger" end. Its icon is
+`GaugeIcons.Kind.BOOST` (the dial).
 
 The `H` debug overlay's separate textual `Boost NN%` readout still exists alongside
 it (`boost_text`, see [debug-tools.md](debug-tools.md)) for exact numbers.
 
 ## Nitrous gauge
 
-`NitrousBar` is the boost bar's twin, stacked **directly above** it (so the bottom-left
-stack reads, from the bottom edge up: health, boost, nitrous). Same construction: a
-`ProgressBar` whose fill is the whole reading, a static `NITROUS` caption as a centred
-child, and the tint applied via `self_modulate` so the caption keeps the plain ink colour.
-
-Both of its answers come from the model, not the HUD: `GameConfig.has_nitrous()` says
-whether a tank is fitted and live, and `EngineSim.nitrous_fraction()` reports the 0..1
-tank remaining for the stage (see [nitrous.md](nitrous.md)). `hud.gd::_update_nitrous_gauge(fitted, frac)`
-hides the bar **entirely** when nothing is fitted rather than parking it at zero, and
+`NitrousGauge` is the boost gauge's twin, using `GaugeIcons.Kind.NOS` (the pressure
+bottle) as its icon. Both of its answers come from the model, not the HUD:
+`GameConfig.has_nitrous()` says whether a tank is fitted and live, and
+`EngineSim.nitrous_fraction()` reports the 0..1 tank remaining for the stage (see
+[nitrous.md](nitrous.md)). `hud.gd::_update_nitrous_gauge(fitted, frac)` hides the
+gauge **entirely** when nothing is fitted rather than parking it at zero, and
 otherwise sets `value` to the fraction. `_ready()` starts it hidden.
 
-Its tint is a **fixed violet** (`_NITROUS_HUE`) from the same `_gauge_color` family as the
-health grade and the boost blue — deliberately far from the boost hue, because nitrous and
-forced induction occupy separate upgrade slots, so a turbocharged car with nitrous shows
-**both bars at once** and they must not read as one gauge. Like the other captions,
-`NitrousLabel` opts out of the project-wide drop shadow in `_style_gauge_captions()`.
+Its `fill_color` is a **fixed violet** (`_NITROUS_HUE`) from the same
+`_gauge_color` family as the health grade and the boost blue — deliberately far
+from the boost hue, because nitrous and forced induction occupy separate upgrade
+slots, so a turbocharged car with nitrous shows **both gauges at once** and they
+must not read as one.
 
-The bar write is **change-gated** on the rounded integer percent (`_last_nitrous_pct`,
-`-1` = not fitted), the same pattern the boost bar uses: the drain is a continuous float,
-so writing `value` every frame would queue redraws for changes nobody can see.
+The gauge write is **change-gated** on the rounded integer percent
+(`_last_nitrous_pct`, `-1` = not fitted), the same pattern the boost gauge uses: the
+drain is a continuous float, so writing `value` every frame would queue redraws for
+changes nobody can see.
 
 ## Stage flow widgets
 
@@ -202,12 +232,13 @@ The `ElapsedLabel` run timer is anchored to the **top centre**
 it sits in the middle of the screen regardless of viewport width, with the
 `StageDeltaLabel` pace popup tucked just below it. The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
-(see [menus.md](menus.md)), not the HUD. The `HPBar` health gauge and the
-`BoostBar` stacked just above it are anchored to the **bottom centre** of the
-viewport (`anchor_top/bottom = 1.0`, `anchor_left/right = 0.5`,
-`grow_horizontal = 2`); each one's caption fills its parent bar
-(`anchors_preset = 15`, centred both ways), so the pair grows and shrinks as one
-unit.
+(see [menus.md](menus.md)), not the HUD. The three gauges are anchored to the
+**bottom centre** of the viewport (`anchor_top/bottom = 1.0`, `anchor_left/right =
+0.5`, `grow_horizontal = 2`) as a row rather than the old vertical stack: `HPGauge`
+sits in the **centre** at 48x48, with `BoostGauge` to its **left** and
+`NitrousGauge` to its **right**, both 38x38. Health-in-the-middle is deliberate —
+either flanker is hidden outright when its part isn't fitted, and hiding a flanker
+leaves health exactly where the eye expects it, rather than shuffling the row.
 
 ## Build version
 

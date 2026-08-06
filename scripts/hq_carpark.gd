@@ -558,7 +558,7 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 # and `build_footer` fills the row pinned underneath it, which is where the control that
 # closes the modal belongs. The panel is capped to the frame height (not just centred on
 # it) so the footer is on screen even when the body is taller than the canvas — which the
-# upgrades list, on the 288-high tier, routinely is.
+# upgrades list, on a short frame, routinely is.
 func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Control:
 	# MenuPage is the shared implementation of this shape. It used to be hand-rolled here
 	# because MenuPage had no dim backdrop and this is a true modal — it must read as blocking
