@@ -501,7 +501,14 @@ func _step_turbo(cfg: GameConfig, h: float, throttle_in: float) -> void:
 		antilag_active = false
 		_prev_throttle = throttle_in
 		return
-	var drive := turbo_exhaust_drive(rpm(), throttle_in, cfg.turbo_drive_gain, cfg.turbo_antilag, cfg.turbo_antilag_drive)
+	# Exhaust flow follows COMBUSTION, not the pedal: mid-shift the clutch is open and
+	# fuel is cut (`combusting` in step()), so there is nothing coming out of the ports to
+	# spin the shaft — an automatic upshift must bleed boost exactly as if the driver had
+	# lifted, not keep spooling because the throttle input is still held. Anti-lag is the
+	# one thing that holds boost through a shift, and it still does: its residual drive is
+	# a floor inside turbo_exhaust_drive, independent of throttle.
+	var exhaust_throttle := 0.0 if shift_timer > 0.0 else throttle_in
+	var drive := turbo_exhaust_drive(rpm(), exhaust_throttle, cfg.turbo_drive_gain, cfg.turbo_antilag, cfg.turbo_antilag_drive)
 	omega_turbo = maxf(omega_turbo + turbo_shaft_accel(drive, omega_turbo, cfg.turbo_drag_coef, cfg.turbo_inertia) * h, 0.0)
 	boost = boost_fraction(omega_turbo, cfg.turbo_omega_ref)
 	# Blow-off: venting the dump valve while boosted. Two triggers, both LATCHED

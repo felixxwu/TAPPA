@@ -209,6 +209,73 @@ func test_bov_fires_on_gearshift_even_with_throttle_held() -> void:
 	assert_true(eng.bov_event, "a gearshift vents the blow-off even with throttle held")
 
 
+func test_boost_bleeds_during_a_shift_even_with_the_throttle_held() -> void:
+	# Mid-shift the clutch is open and fuel is cut, so there is no exhaust flow to spin
+	# the shaft — an automatic upshift must bleed boost exactly as a lift does, rather
+	# than keep spooling because the pedal is still down.
+	var spooled := func() -> EngineSim:
+		var cfg := _turbo_config()
+		cfg.shift_time = 0.3
+		var eng := EngineSim.new(cfg)
+		eng.gear = 0  # neutral: free flywheel, so boost builds unclutched
+		eng.omega = eng.redline_omega() * 0.8
+		for _i in range(400):
+			eng.step(0.001, 1.0, 0.0)
+		return eng
+	var shifting := spooled.call() as EngineSim
+	var flat := spooled.call() as EngineSim
+	var before := shifting.boost
+	assert_gt(before, 0.0, "precondition: boosted before the shift")
+	shifting.request_shift(1)
+	for _i in range(100):  # 0.1 s, still inside the shift
+		shifting.step(0.001, 1.0, 0.0)
+		flat.step(0.001, 1.0, 0.0)
+	assert_lt(shifting.boost, before, "boost falls while the gearbox is mid-shift")
+	assert_lt(shifting.boost, flat.boost,
+		"a shift bleeds boost that staying in gear at the same throttle does not")
+
+
+func test_a_shift_bleed_matches_lifting_off() -> void:
+	# The shift cut and a throttle lift are the same absence of combustion, so the shaft
+	# must decay identically — anything else means the shift is a special case.
+	var decay := func(shift: bool) -> float:
+		var cfg := _turbo_config()
+		cfg.shift_time = 0.3
+		var eng := EngineSim.new(cfg)
+		eng.gear = 0
+		eng.omega = eng.redline_omega() * 0.8
+		for _i in range(400):
+			eng.step(0.001, 1.0, 0.0)
+		if shift:
+			eng.request_shift(1)
+		for _i in range(100):
+			eng.step(0.001, 1.0 if shift else 0.0, 0.0)
+		return eng.omega_turbo
+	assert_almost_eq(decay.call(true), decay.call(false), 1.0,
+		"the shaft coasts down the same whether the driver lifted or the box shifted")
+
+
+func test_antilag_still_holds_boost_through_a_shift() -> void:
+	# Anti-lag is the one thing that keeps a shaft lit with no combustion, and holding
+	# boost across upshifts is the whole point of it — the shift cut must not defeat it.
+	var through_shift := func(antilag: bool) -> float:
+		var cfg := _turbo_config()
+		cfg.shift_time = 0.3
+		cfg.turbo_antilag = antilag
+		cfg.turbo_antilag_drive = 8.0
+		var eng := EngineSim.new(cfg)
+		eng.gear = 0
+		eng.omega = eng.redline_omega() * 0.8
+		for _i in range(400):
+			eng.step(0.001, 1.0, 0.0)
+		eng.request_shift(1)
+		for _i in range(200):
+			eng.step(0.001, 1.0, 0.0)
+		return eng.omega_turbo
+	assert_gt(through_shift.call(true), through_shift.call(false),
+		"anti-lag keeps the shaft spinning through a shift")
+
+
 # --- Supercharger belt drive (features/forced-induction.md) -------------------
 
 func test_supercharger_boost_is_linear_in_rpm_and_saturates() -> void:

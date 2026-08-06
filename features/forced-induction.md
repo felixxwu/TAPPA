@@ -65,7 +65,10 @@ func _step_turbo(cfg: GameConfig, h: float, throttle_in: float) -> void:
         omega_turbo = 0.0; boost = 0.0; antilag_active = false
         _prev_throttle = throttle_in
         return
-    var drive := turbo_exhaust_drive(rpm(), throttle_in, cfg.turbo_drive_gain, cfg.turbo_antilag, cfg.turbo_antilag_drive)
+    # Exhaust flow follows COMBUSTION, not the pedal: mid-shift fuel is cut, so there
+    # is nothing to spin the shaft even with the throttle input still held.
+    var exhaust_throttle := 0.0 if shift_timer > 0.0 else throttle_in
+    var drive := turbo_exhaust_drive(rpm(), exhaust_throttle, cfg.turbo_drive_gain, cfg.turbo_antilag, cfg.turbo_antilag_drive)
     omega_turbo = maxf(omega_turbo + turbo_shaft_accel(drive, omega_turbo, cfg.turbo_drag_coef, cfg.turbo_inertia) * h, 0.0)
     boost = boost_fraction(omega_turbo, cfg.turbo_omega_ref)
     # Blow-off fires on either of two triggers while boosted: a throttle snap-shut,
@@ -116,6 +119,17 @@ constant. A small `turbo_inertia` spools almost instantly (low lag); a large
 one takes real revs/seconds to build drive against its own ω²-drag before
 boost climbs; lifting off throttle drops `turbo_exhaust_drive` to (near) zero
 and the shaft decays under drag alone, so boost fades on its own.
+
+**A gear shift bleeds boost the same way a lift does.** `step()` cuts fuel while
+`shift_timer > 0.0` (its `combusting` flag), so the exhaust throttle fed to
+`turbo_exhaust_drive` is forced to zero for the duration of the shift — otherwise
+an automatic upshift would keep spooling the shaft on a throttle input that isn't
+burning anything, and boost would *rise* through a gear change. The decay is
+identical to a driver lift (`test_a_shift_bleed_matches_lifting_off`). Anti-lag is
+the one thing that holds boost through a shift, and it still does: its residual
+drive is a floor inside `turbo_exhaust_drive`, independent of throttle. The BOV
+and anti-lag *audio* flags below still read the raw driver input, so they are
+unaffected.
 
 `omega_turbo` and `boost` are reset to 0 in `EngineSim.reset()`, and are
 inert (stay 0) whenever `cfg.turbo_enabled` is false — an NA engine pays no
@@ -371,8 +385,9 @@ does anything; there's no migration step.
 
 `tests/headless/test_turbo.gd` (pure shaft maths — `boost_fraction`,
 `turbo_exhaust_drive`, `turbo_shaft_accel`, `_step_turbo` sequencing:
-spool-up-with-throttle / bleed-down-off-throttle / anti-lag drive floor / BOV
-edge trigger — with synthetic configs, no catalogue dependency),
+spool-up-with-throttle / bleed-down-off-throttle / bleed-down-mid-shift /
+anti-lag drive floor, including through a shift / BOV edge trigger — with
+synthetic configs, no catalogue dependency),
 `tests/headless/test_engine.gd` (NA regression — a `turbo_enabled == false`
 config behaves exactly as before), `tests/headless/test_engine_audio.gd`
 (whistle energy rising with boost, a BOV event adding a transient burst, a
