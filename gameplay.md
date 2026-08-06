@@ -55,7 +55,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   performance cars, so designate the lowest-power existing car(s) and/or add a
   couple of humble starter chassis — a `CarLibrary` roster call, not a schema
   one. The **immortal** flag is per owned instance, set only on the chosen
-  starter — `todo/save-persistence.md`.)*
+  starter — `features/save-persistence.md`.)*
 - **Car metadata for restrictions.** Every car needs tags so rallies can filter
   it: **engine size/type**, **drivetrain layout** (FWD/RWD/AWD — the sim already
   models drive modes via `Drivetrain.drive_mode`), **country**, **car type**
@@ -168,7 +168,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   time-cut DNF — a slow run just places badly; only running out of HP ends the
   rally early.
 
-<!-- Implementation: `todo/reward-system.md` (draw policy). -->
+<!-- Implementation: `features/reward-system.md` (draw policy). -->
 
 ## Progression & rewards
 
@@ -205,7 +205,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   rewards + permanent car destruction could otherwise make 100% completion (the
   a special) permanently unreachable.
 
-<!-- Upgrades implementation: `todo/upgrade-catalogue.md`. -->
+<!-- Upgrades implementation: `features/upgrade-catalogue.md`. -->
 
 ## Tuning & upgrades
 
@@ -249,7 +249,7 @@ The player should never feel alone in the rally:
   derived times, not driven cars) — so they're cheap to stage and don't have to
   match the leaderboard.
 - **Podium scene:** at the rally's end, an animated **podium** showing who placed.
-- *(These hook into the start/end flow — see `todo/stage-start-and-end.md`; the
+- *(These hook into the start/end flow — see `features/stage.md` + `features/start-line.md`; the
   pre-countdown scene precedes that spec's 3-second countdown.)*
 
 ## The special-event ladder
@@ -283,10 +283,10 @@ These underpin everything above and likely each become their own todo:
   without it.
 - **CarLibrary metadata** — the restriction tags (engine/drivetrain/country/
   type/p-w) **plus per-car max HP**. An additive pass on the existing
-  `CarLibrary`; specced in `todo/save-persistence.md` › *Prerequisite*.
+  `CarLibrary`; specced in `features/save-persistence.md` › *Prerequisite*.
 - **Rally roster** — the finite curated list of rallies (seed + restriction);
   its completion count drives the car reward ceiling; stars drive the ladder.
-  Specced in `todo/rally-roster.md`.
+  Specced in `features/rally-roster.md`.
 - **Meta-game UI shell** — **diegetic / in-world**: menus are 3D locations (an HQ
   garage hub with an outdoor car park for the lineup, a tuning lift that also
   installs upgrades, and a stylised map with 3D pins; a start-line; a podium)
@@ -299,7 +299,7 @@ These underpin everything above and likely each become their own todo:
   mixable. Specced in **`todo/audio.md`**.
 - **Settings** — a small **options surface** (volume sliders + a quality toggle)
   persisted to a separate `settings.cfg` (not the progression save). Specced in
-  **`todo/settings.md`**.
+  **`features/menus.md`** + **`features/controls.md`**.
 
 ## Relationship to existing todos
 
@@ -307,12 +307,12 @@ These underpin everything above and likely each become their own todo:
   events and drives the handoffs to HP/standings/rewards/podium/HQ. Sits above the
   per-stage flow below and is the rally-level consumer of its `stage_completed`
   hook.
-- `todo/stage-start-and-end.md` — countdown, elapsed timer, stage-complete. The
+- `features/stage.md` + `features/start-line.md` — countdown, elapsed timer, stage-complete. The
   **pre-countdown presence scene** and **podium** extend its start/end flow; the
   **event timer** is the per-event time that sums into the rally result.
-- `todo/track-progress-and-reset.md` — progress %, on-road reset. Drives "event
+- `features/progress.md` + `features/corner-cutting.md` — progress %, on-road reset. Drives "event
   complete" and the off-track recovery during a run.
-- `todo/roadside-signs.md` — sectors + start/finish + collision. Sign collisions
+- `features/signs.md` — sectors + start/finish + collision. Sign collisions
   are an **impact source for the damage model**; the 4 sectors can show split
   times within an event.
 
@@ -322,7 +322,7 @@ These underpin everything above and likely each become their own todo:
   power degrade with HP lost — settle via playtesting. *(Mechanism specced in
   `features/damage.md`; only the numbers are open.)*
 - **Upgrade catalogue:** the full list of upgrade types and each one's config
-  mapping. *(Data model + pipeline specced in `todo/upgrade-catalogue.md`; the
+  mapping. *(Data model + pipeline specced in `features/upgrade-catalogue.md`; the
   concrete part list/numbers are open.)*
 - **HP↔mass curve:** how strongly durability tracks weight (a soft guideline, or
   a fixed formula CarLibrary defaults from?).
@@ -334,7 +334,7 @@ These underpin everything above and likely each become their own todo:
 - **Win / credits beat:** what completing every special actually presents (credits +
   a stats summary is the likely shape) — its own small spec when we get there.
 - **Quality toggle:** which single lever the Settings *quality* option drives
-  (render scale, post-process, or foliage density) — `todo/settings.md`.
+  (render scale, post-process, or foliage density) — `features/menus.md`.
 
 ### Decided (kept here for trace)
 
@@ -349,11 +349,11 @@ These underpin everything above and likely each become their own todo:
 - **Reward supply:** **infinite / farmable** — re-winning a completed rally
   re-grants its car reward (clamped by the progress-tier ceiling); completion is
   recorded once. Makes the car supply renewable so wrecking can never permanently
-  brick 100% completion. *(`todo/reward-system.md`.)*
+  brick 100% completion. *(`features/reward-system.md`.)*
 - **Tuning:** the **minimal three-knob** set (grip balance, brake bias, aero
   balance) as single-axis sliders; brake-bias is the one new code knob.
   *(`features/tuning.md`.)*
 - **In-run damage feedback:** a live HP gauge + low-HP warning + impact cue in the
   HUD. *(`features/damage.md` › HUD, `todo/audio.md`.)*
 - **Audio & settings:** spec a sound system (impacts/countdown/UI + bus layout)
-  and a minimal settings overlay now. *(`todo/audio.md`, `todo/settings.md`.)*
+  and a minimal settings overlay now. *(`todo/audio.md`, `features/menus.md`.)*

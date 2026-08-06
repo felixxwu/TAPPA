@@ -36,7 +36,7 @@ const TRACK_ALPHA := 0.13
 # whatever is driving past underneath, which is the same failure the ring was chosen to
 # avoid in the first place. Pure black, per the design system's house rule for UI
 # backgrounds (ui_theme.gd).
-const BACKING := Color(0.0, 0.0, 0.0, 1.0)
+const BACKING := UITheme.BLACK
 
 # Sweep geometry. Clockwise from 12 o'clock; the corner angles are where the square's
 # perimeter changes direction, and inserting them exactly is what keeps the fill sharp.

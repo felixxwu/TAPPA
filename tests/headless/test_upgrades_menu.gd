@@ -83,6 +83,7 @@ func test_a_slot_whose_every_option_is_star_locked_gets_no_row_at_all() -> void:
 	# would be a bare label plus an unusable Stock button — exactly the dead end that hiding
 	# locked options exists to remove. Derived from the catalogue: find a slot whose parts are
 	# ALL gated, rather than pinning "drivetrain".
+	assert_gt(UpgradeLibrary.all().size(), 0, "UpgradeLibrary.all() is non-empty (else this test asserts nothing)")
 	var by_slot := {}
 	for def in UpgradeLibrary.all():
 		var slot := String(def.get("slot", ""))

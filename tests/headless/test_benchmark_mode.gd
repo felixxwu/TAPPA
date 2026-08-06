@@ -33,6 +33,7 @@ func _reset_benchmark() -> void:
 # --- Toggle registry -----------------------------------------------------------
 
 func test_every_toggle_has_a_default_on_option() -> void:
+	assert_gt(Benchmark.TOGGLES.size(), 0, "Benchmark.TOGGLES is non-empty (else this test asserts nothing)")
 	for t in Benchmark.TOGGLES:
 		var key := String(t["key"])
 		assert_true(Benchmark.get_option(key), "toggle '%s' defaults ON" % key)
@@ -66,6 +67,7 @@ func test_apply_overrides_with_everything_on_keeps_features_enabled() -> void:
 
 
 func test_toggles_off_disable_their_config_switches() -> void:
+	assert_gt(Benchmark.TOGGLES.size(), 0, "Benchmark.TOGGLES is non-empty (else this test asserts nothing)")
 	var cfg: GameConfig = Config.data
 	for t in Benchmark.TOGGLES:
 		Benchmark.set_option(String(t["key"]), false)

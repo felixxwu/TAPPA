@@ -79,20 +79,26 @@ levers, in order of payoff:
   the flat `res://tests/fixtures/test_track.tscn` directly (`test_debug_arrows.gd`).
   Only the files that genuinely assert on the track/terrain/foliage
   (`test_loading_screen.gd`, `test_terrain.gd`) pay the full generation.
-- **Skip foliage but keep the real track/terrain.** For tests that DO need the
-  authored track/terrain shape but never look at trees/bushes,
-  `SceneTestHelpers.no_foliage_world()` resets Config and sets `trees_per_turn = 0`
-  while leaving `track_turn_count` at its authored value — dropping the ~7 s
-  scatter without shrinking the world (unlike `minimal_world()`). Used by
-  `test_car_terrain.gd` and `test_lakes_integration.gd`'s fielded-car test; reset
-  Config afterwards so the zeroed foliage doesn't leak into later files.
+- **Skip foliage but keep real terrain.** `SceneTestHelpers` exposes exactly two
+  helpers — `use_test_config()` and `minimal_world()`. There is no
+  `no_foliage_world()`; a foliage-only knob that left `track_turn_count` at its
+  authored value has never existed, so don't go looking for one.
+  `minimal_world()` zeroes the trees **and** shortens the track, which is what
+  makes it cheap (<1 s vs ~15 s). Crucially it does not touch the `$Floor`
+  heightfield — that is generated identically — so a terrain-regression test can
+  still use it and get real terrain to settle on. `test_car_terrain.gd` is the
+  canary that relies on exactly that property, and says so in its own
+  `before_each` comment.
 - **Generate once per file, not per test.** When several tests in a file share
   one generated world, build it in `before_all` (plain `add_child`, freed in
   `after_all`) and restore per-test state in `before_each` rather than
-  re-instantiating `main.tscn` each time. `test_car_terrain.gd` does this: it
-  generates + cold-settles once, caches the resting `Transform3D`, and each test
-  restores that pose and re-stabilises in ~20 frames (the same warm-restore idea
-  as `sim_test.gd`, applied to a real-terrain instance).
+  re-instantiating `main.tscn` each time. Many files do this — `test_hud.gd`,
+  `test_config_applied.gd`, `test_garage.gd`, `test_smoke.gd` among them. The
+  cached-resting-pose variant of the idea (cold-settle once, then restore the
+  `Transform3D` and re-stabilise in a handful of frames) lives in
+  `sim_test.gd` → `setup_settled_car`, described in the next bullet;
+  `test_car_terrain.gd` does NOT use it, it takes the cheap
+  `minimal_world()` + `before_each` route instead.
 - **Settle once, not per test.** `tests/headless/sim_test.gd` is the base for
   physics-scene tests. It settles the baseline car **once**, caches the resting
   `Transform3D`, and on later setups restores that pose and stabilises in

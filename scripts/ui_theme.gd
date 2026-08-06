@@ -359,6 +359,14 @@ static func vspacer() -> Control:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return spacer
 
+# A menu / diegetic-station action button: FOCUS_NONE (stations navigate by a manual
+# left/right cursor via MenuNav/ButtonCursor, not native focus), text set raw
+# (`enforce()` uppercases + sizes it on the next _normalize_menus), with `on_press`
+# wired to `pressed`. This is the repeated new + FOCUS_NONE + connect idiom the garage
+# row / tuning hub / station overlays all used to open-code.
+#
+# NOTE the FOCUS_NONE consequence: `TextField.wire_column` silently drops FOCUS_NONE
+# widgets, so a column built from these must be navigated by cursor, not by wiring.
 static func row_button(text: String, on_press: Callable) -> Button:
 	var b := Button.new()
 	b.text = text

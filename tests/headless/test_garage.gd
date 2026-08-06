@@ -26,10 +26,6 @@ func _meshes() -> Array:
 	return _garage.find_children("*", "MeshInstance3D", true, false)
 
 
-func test_garage_instantiates() -> void:
-	assert_not_null(_garage, "garage scene instantiates")
-
-
 func test_has_service_bays() -> void:
 	# num_bays is a tunable @export that drives the layout — assert it's a sane
 	# multi-bay garage, not a literal count that churns if a bay is added/removed.
@@ -88,7 +84,3 @@ func test_environment_and_lighting_present() -> void:
 	assert_eq(lamps.size(), _garage.num_bays, "one interior lamp per bay")
 
 
-func test_survives_a_few_frames() -> void:
-	for _i in 4:
-		await get_tree().process_frame
-	assert_true(true, "garage survives a few process frames without errors")

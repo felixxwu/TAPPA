@@ -122,6 +122,7 @@ func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
 	# Fit one eligible part to the driven car: it must never be drawn again for
 	# that car, while other parts still are. Derived from the live catalogue so a
 	# retune of tiers/parts doesn't break the test.
+	assert_gt(UpgradeLibrary.UPGRADES.size(), 0, "UpgradeLibrary.UPGRADES is non-empty (else this test asserts nothing)")
 	var profile := _all_completed_profile()
 	var fitted := ""
 	for item in UpgradeLibrary.UPGRADES:

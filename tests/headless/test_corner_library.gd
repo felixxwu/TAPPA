@@ -21,6 +21,7 @@ func test_library_has_the_expected_corners() -> void:
 
 
 func test_build_curve_produces_a_usable_curve_for_every_corner() -> void:
+	assert_gt(CornerLibrary.CORNERS.size(), 0, "CornerLibrary.CORNERS is non-empty (else this test asserts nothing)")
 	for spec in CornerLibrary.CORNERS:
 		var who: String = spec["name"]
 		var curve := CornerLibrary.build_curve(spec)
@@ -36,6 +37,7 @@ func test_build_curve_produces_a_usable_curve_for_every_corner() -> void:
 
 func test_first_point_is_at_origin() -> void:
 	# Every corner enters at the origin so they share a common anchor for layout.
+	assert_gt(CornerLibrary.CORNERS.size(), 0, "CornerLibrary.CORNERS is non-empty (else this test asserts nothing)")
 	for spec in CornerLibrary.CORNERS:
 		var curve := CornerLibrary.build_curve(spec)
 		assert_almost_eq(curve.get_point_position(0), Vector2.ZERO, Vector2(0.001, 0.001),
@@ -46,6 +48,7 @@ func test_documented_shape_semantics() -> void:
 	# Shape invariant: all corners are right-hand turns — the curve ends at
 	# X >= 0 (turning toward +X; Straight ends at X == 0, which still satisfies
 	# >= 0). This holds regardless of how sharp any individual corner is authored.
+	assert_gt(CornerLibrary.CORNERS.size(), 0, "CornerLibrary.CORNERS is non-empty (else this test asserts nothing)")
 	for spec in CornerLibrary.CORNERS:
 		var who: String = spec["name"]
 		var curve := CornerLibrary.build_curve(spec)

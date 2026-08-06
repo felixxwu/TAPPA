@@ -458,6 +458,7 @@ func test_collide_and_cells_extra_set_is_treated_as_occupied() -> void:
 func test_corner_straightness_is_memoised_to_the_same_value() -> void:
 	# Memoising must not change the value: a second call returns the first one, and it
 	# still agrees with the freshly tessellated shape.
+	assert_gt(CornerLibrary.CORNERS.size(), 0, "CornerLibrary.CORNERS is non-empty (else this test asserts nothing)")
 	for spec in CornerLibrary.CORNERS:
 		var first := TrackGenerator._corner_straightness(spec)
 		var second := TrackGenerator._corner_straightness(spec)

@@ -28,10 +28,6 @@ func after_all() -> void:
 	RallyFixtures.restore()
 
 
-func test_scene_instantiates() -> void:
-	assert_not_null(_scene)
-
-
 func test_save_autoload_registered() -> void:
 	# The Save autoload (player profile / persistence) must be wired in
 	# project.godot alongside Config.

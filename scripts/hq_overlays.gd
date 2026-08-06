@@ -38,7 +38,7 @@ func build_title_overlay() -> void:
 	# process to quit (the tab owns the lifecycle) — which is why Start's index is
 	# COMPUTED below rather than hardcoded: on web this button isn't there at all.
 	if not Platform.is_web():
-		var exit_btn := _hq._station_button("Exit Game", _hq._on_exterior_exit)
+		var exit_btn := UITheme.row_button("Exit Game", _hq._on_exterior_exit)
 		actions.add_child(exit_btn)
 		_hq._title_exit_button = exit_btn
 		buttons.append(exit_btn)
@@ -49,7 +49,7 @@ func build_title_overlay() -> void:
 	# state it doesn't use. Back out of its picker returns to this screen
 	# (CarparkMode.FREEROAM in _carpark_back). This slot used to hold Account, which is
 	# reachable as a Settings page instead — one route, not two.
-	var free_roam := _hq._station_button("Free Roam", _hq._enter_free_roam)
+	var free_roam := UITheme.row_button("Free Roam", _hq._enter_free_roam)
 	actions.add_child(free_roam)
 	_hq._title_free_roam_button = free_roam
 	buttons.append(free_roam)
@@ -58,12 +58,12 @@ func build_title_overlay() -> void:
 	# Back from it now always returns to the title (see _on_settings_action / the
 	# SETTINGS branch in _unhandled_input).
 	var to_settings_cb := _hq._open_settings.bind(false)
-	var settings := _hq._station_button("Settings", to_settings_cb)
+	var settings := UITheme.row_button("Settings", to_settings_cb)
 	actions.add_child(settings)
 	_hq._title_settings_button = settings
 	buttons.append(settings)
 	acts.append(to_settings_cb)
-	var start := _hq._station_button("Start", _hq._on_exterior_start)
+	var start := UITheme.row_button("Start", _hq._on_exterior_start)
 	actions.add_child(start)
 	_hq._title_start_button = start
 	buttons.append(start)
@@ -378,7 +378,7 @@ func build_lift_overlay() -> void:
 	# navigates by manual cursor, not native focus, so these are pointer affordances for
 	# an action the keyboard/gamepad reaches with up/down. Both are hidden outright when
 	# there is only one car to cycle (_refresh_lift_car_label).
-	_hq._lift_prev_button = _hq._station_button("<", _hq._cycle_lift_car.bind(-1))
+	_hq._lift_prev_button = UITheme.row_button("<", _hq._cycle_lift_car.bind(-1))
 	selector.add_child(_hq._lift_prev_button)
 
 	# The name sits in a box of its own, matched to the chevrons' height so the three
@@ -393,7 +393,7 @@ func build_lift_overlay() -> void:
 	_hq._lift_car_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_box.add_child(_hq._lift_car_label)
 
-	_hq._lift_next_button = _hq._station_button(">", _hq._cycle_lift_car.bind(1))
+	_hq._lift_next_button = UITheme.row_button(">", _hq._cycle_lift_car.bind(1))
 	selector.add_child(_hq._lift_next_button)
 
 	# The selector is the HUB's second cursor row. Same contract as the actions row below
@@ -432,17 +432,17 @@ func build_lift_overlay() -> void:
 	var on_back := func() -> void: _hq._go_to(HqController.View.GARAGE)
 	var to_tune_cb := _hq._open_lift_page.bind(HqController.LiftPage.TUNE)
 	var to_upgrades_cb := _hq._open_lift_page.bind(HqController.LiftPage.UPGRADES)
-	var back := _hq._station_button("< Back", on_back)
+	var back := UITheme.row_button("< Back", on_back)
 	_hq._lift_hub_controls.add_child(back)
 	# The two menu buttons — Upgrades first, then Tuning.
-	var to_upgrades := _hq._station_button("Upgrades", to_upgrades_cb)
+	var to_upgrades := UITheme.row_button("Upgrades", to_upgrades_cb)
 	_hq._lift_hub_controls.add_child(to_upgrades)
-	var to_tune := _hq._station_button("Tuning", to_tune_cb)
+	var to_tune := UITheme.row_button("Tuning", to_tune_cb)
 	_hq._lift_hub_controls.add_child(to_tune)
 	# Test Drive: drive the car currently on the lift in free roam — no car picker, we're
 	# already focused on one (see _test_drive). (Wheels moved into the Tuning panel
 	# itself — see tuning_panel.gd — so the hub row no longer carries it.)
-	var test_drive := _hq._station_button("Test Drive", _hq._test_drive)
+	var test_drive := UITheme.row_button("Test Drive", _hq._test_drive)
 	_hq._lift_hub_controls.add_child(test_drive)
 	# (No Repair button: repair kits are gone and damage is one-way — see features/damage.md.)
 	_hq._hub_cursor.setup(

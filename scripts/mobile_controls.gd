@@ -147,7 +147,7 @@ var _debug_label: Label = null
 
 
 func _ready() -> void:
-	_active = Config.data.mobile_controls_force or DisplayServer.is_touchscreen_available()
+	_active = Platform.is_touch()
 	visible = _active
 	if not _active:
 		set_process(false)

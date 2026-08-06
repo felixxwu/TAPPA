@@ -353,7 +353,7 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 
 # One button in the bottom action row — see UITheme.row_button for why a horizontal row
 # must not carry BUTTON_MIN_W. This used to build via UITheme.button and then strip the
-# width floor back off, which is the same idiom hq.gd::_station_button had open-coded;
+# width floor back off, which is the same idiom UITheme.row_button encapsulates;
 # both now go through the shared helper.
 func _row_button(text: String, on_press: Callable) -> Button:
 	return UITheme.row_button(text, on_press)

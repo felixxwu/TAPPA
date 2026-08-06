@@ -30,7 +30,7 @@ static func is_web() -> bool:
 
 # True on a touch device (phone/tablet) — or when the mobile controls are
 # force-enabled for testing. The same reliable check the mobile control-scheme
-# picker and on-screen touch controls use (hq._is_mobile(), mobile_controls.gd),
+# picker and on-screen touch controls use (hq.gd, mobile_controls.gd),
 # centralised so the web frame cap can tell a phone from a desktop browser: the
 # 30fps web ceiling is a thermal/single-thread concession phones need, but a
 # desktop browser should run at the full desktop cap.

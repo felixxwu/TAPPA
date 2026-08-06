@@ -785,7 +785,7 @@ the driving scene**, before the hand-off to HQ.
   Weekly/Monthly run can't get past stage 1") and the field-of-one local
   standings.
 - `tests/headless/test_challenge_run_end.gd` — `world.gd._on_challenge_run_finished`
-  on a cheap `SceneHelpers.minimal_world()` boot, with a real `ChallengeLeaderboard`
+  on a cheap `SceneTestHelpers.minimal_world()` boot, with a real `ChallengeLeaderboard`
   on a `FakeRestClient` swapped onto `Cloud`: a clean finish consults the board for
   placement (and still reaches HQ when the fetch fails), a DNF hands off to HQ
   IMMEDIATELY with `post_dnf` still in flight behind it, and a null board is

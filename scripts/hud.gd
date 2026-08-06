@@ -457,14 +457,6 @@ static func _gauge_color(hue: float) -> Color:
 	return Color.from_hsv(hue, _GAUGE_SAT, _GAUGE_VAL)
 
 
-# Both gauge captions sit INSIDE their bar, tinted with the house ink colour and — the
-# one documented exception to the house drop-shadow rule — with the shadow SWITCHED OFF.
-# At this size a hard black edge thickens the glyphs and muddies them against the fill
-# instead of separating them; plain ink on the saturated bar reads better. The shadow is
-# NOT a per-label property: it comes from the project-wide theme
-# (theme/ui_theme.tres → Label/colors/font_shadow_color), so overriding font_color alone
-# does nothing to it — it has to be overridden to transparent per label. See
-# features/ui-design-system.md → "Gauge captions" and hud.md.
 # Drive the player-facing boost gauge: the dial's fill IS the boost reading (0..1), with
 # the boost icon in the middle. Hidden entirely on a naturally-aspirated car rather than
 # sitting at zero. Turbo and blower share one gauge because they share one upgrade slot,

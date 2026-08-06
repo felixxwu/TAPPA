@@ -366,7 +366,9 @@
       `TreeMeshField` (`scripts/tree_mesh_field.gd`). See `features/trees.md`.
       This unblocked the "opaque, no-`discard` vegetation" direction under item 2
       and the vegetation auto-LOD in
-      [`todo/distant-terrain-and-sky.md`](distant-terrain-and-sky.md) §2.
+      the since-completed distant-terrain/sky work, now documented in
+      [`features/terrain.md`](../features/terrain.md) and
+      [`features/rendering.md`](../features/rendering.md).
 - [x] **Web-export threading model** (item 7): **DECIDED — single-threaded**
       (`thread_support=false`) for maximum device reach. Terrain gen already uses
       the frame-budgeted main-thread queue on web, so no code change beyond the
@@ -664,8 +666,11 @@ audio buffers to bridge it (`engine_audio.gd` `BUFFER_SECONDS` +
 > **2026-07 update: superseded.** The terrain deep-dive found terrain is the
 > dominant per-frame GPU cost (~93% of primitives — ~125k of ~134k tris, uniform
 > 1 m cells over a 5×5 ring). The structural fix is a distance-scaled prebaked
-> LOD field — see [`todo/terrain-lod.md`](terrain-lod.md), which folds
-> "collision on the near band only" into itself and retires `DistantTerrain`. The
+> LOD field. That work has since LANDED and its spec was retired — the shipped
+> design (5 LOD levels, `TerrainLod.build_all`/`build_levels_from`, the coarse vs
+> full cache split, lazy finest level) is documented in
+> [`features/terrain.md`](../features/terrain.md). It folded "collision on the
+> near band only" into itself and retired `DistantTerrain`. The
 > advice below (don't cull heightmap collision in isolation) still holds; the LOD
 > spec is the right home for the terrain work now.
 
@@ -904,14 +909,13 @@ re-assigns a label's `.text` when the underlying value actually changes, instead
 of rebuilding every label string unconditionally each frame. No further action
 needed here.
 
-## 11. `downforce_readouts` allocated when debug is off (minor)
+## 11. `downforce_readouts` allocated when debug is off (minor) — ✅ DONE
 
-`scripts/car.gd:146-149` builds the nested `downforce_readouts` array **every
-physics tick even when the wheel-force overlay is off** (it's only consumed by
-`WheelForceDebug`, which already early-outs when hidden,
-`wheel_force_debug.gd:64`). Guard the array build behind
-`cfg.debug_wheel_forces` so the shipped game doesn't allocate it. Tiny win, near-
-zero risk.
+`car.gd` used to build the nested `downforce_readouts` array every physics tick
+even with the wheel-force overlay off. It is now guarded on the overlay's own
+visibility (`car.gd` → `_apply_aero`, `if _debug_overlay.visible:`), so the
+shipped game doesn't allocate it. The overlay (`wheel_force_debug.gd`) is the
+sole consumer and already early-outs when hidden.
 
 ## 12. Scaled HeightMapShape3D collision (minor / awareness)
 

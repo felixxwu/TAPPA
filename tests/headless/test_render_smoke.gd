@@ -214,16 +214,6 @@ func test_shader_sources_load() -> void:
 			assert_false(shader.code.is_empty(), path + " has source code")
 
 
-func test_scene_renders_a_few_frames_without_errors() -> void:
-	# No assertion on pixels (headless can't read them); the value is that scene
-	# setup + a few process frames run clean. The runner flags any SCRIPT ERROR.
-	var cam := _scene.get_node("ChaseCamera") as Camera3D
-	assert_not_null(cam, "ChaseCamera present")
-	for i in 5:
-		await get_tree().process_frame
-	assert_true(true, "scene survived 5 process frames")
-
-
 func test_models_shader_uses_vertex_color() -> void:
 	var src := FileAccess.get_file_as_string("res://shaders/ps1_models.gdshader")
 	assert_true(src.contains("COLOR"), "ps1_models multiplies albedo by vertex COLOR")

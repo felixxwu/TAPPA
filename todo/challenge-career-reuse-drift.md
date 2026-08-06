@@ -35,7 +35,7 @@ between scenes. Stale values persist across an entire play session.
 
 ## Already fixed (context, do not redo)
 
-- The challenge path now calls `ChallengeSession.apply_stage_config` from both
+- The challenge path now calls `DrivingContext.apply_stage_config` from both
   entry points. **Item 1 below supersedes this** — it deletes those two calls.
 - `ChallengeLibrary.stages_for` now rolls `water_level` and
   `terrain_layer1_amplitude` together, from the bands real authored content uses.
@@ -76,7 +76,7 @@ static func apply_stage_config(cfg: GameConfig) -> void:
 Call it **once**, at the top of `world.gd._ready`, before the `var cfg :=
 Config.data` read. Then DELETE the three producer-side calls:
 `rally_session.gd._load_event_scene`, `challenge_session.gd.continue_to_next_stage`,
-`hq_challenge.gd._hand_off_to_challenge_scene`. `ChallengeSession.apply_stage_config`
+`hq_challenge.gd._hand_off_to_challenge_scene`. `DrivingContext.apply_stage_config`
 becomes a thin forwarder or is removed.
 
 **Why this and not "remember to call it".** The current fix is correct but local:

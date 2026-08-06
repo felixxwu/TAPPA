@@ -59,6 +59,7 @@ func _select_settled(index: int) -> void:
 
 
 func test_every_car_places_its_wheels_at_track_and_wheelbase() -> void:
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		_select(i)
@@ -197,6 +198,7 @@ func _has_point(pts: PackedVector3Array, target: Vector3) -> bool:
 
 
 func test_every_car_sits_on_the_ground() -> void:
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		await _select_settled(i)  # drop from the spawn clearance and settle (cached)
@@ -212,6 +214,7 @@ func test_every_car_suspension_absorbs_a_one_metre_drop() -> void:
 	# enough that the chassis collision box never reaches the ground. The box is
 	# body.height - 0.3 tall, centred on the car origin, so its underside sits at
 	# car.y - (body.y/2 - 0.15); if that hits y=0 the body has bottomed out.
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		await _select_settled(i)  # settle on its suspension first (cached)
@@ -234,6 +237,7 @@ func test_every_car_stays_upright_while_cornering() -> void:
 	# Accelerate hard and crank full steering: the car may slide, but it must not
 	# tip over. We track the body's up vector — up.y = cos(roll); staying above
 	# 0.5 means it never leans past ~60 degrees, i.e. never rolls onto its side.
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		await _select_settled(i)  # settle (cached)
@@ -252,6 +256,7 @@ func test_every_car_stays_upright_while_cornering() -> void:
 
 
 func test_every_car_drives_forward() -> void:
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		await _select_settled(i)  # settle on its suspension (cached)
@@ -265,19 +270,38 @@ func test_every_car_drives_forward() -> void:
 		assert_gt(travelled, 2.0, "%s: drives forward under throttle" % spec["name"])
 
 
-func test_every_car_applies_its_own_shift_time() -> void:
-	# Fielding a car overlays its ENGINE's shift_time onto the live config (the gearbox
-	# lives on the engine now), so each car shifts at its own speed rather than a single
-	# global value.
-	var seen := {}
+# Fielding a car overlays its ENGINE's per-engine fields onto the live config, so each
+# car shifts and sounds like itself rather than sharing one global setup: the gearbox
+# `shift_time` (the gearbox lives on the engine now), the engine voice's master
+# `volume_db`, the per-car white-noise floor (authored dB, applied as a LINEAR amplitude
+# — cars start on a shared placeholder, so this asserts the overlay actually happens),
+# and the soft clipper's post-amp (its pre-amp / drive stays global).
+#
+# All four are the SAME copy-through contract, so they share one pass over the roster.
+# They used to be four separate tests, each re-selecting all ten cars to assert a single
+# field — four scene builds and forty respawns to prove four assignments. The copy is not
+# per-car conditional, so the extra passes bought no coverage and the cost grew with every
+# car added. Kept iterating the real roster (not a fixture) because that is this file's
+# whole job: every SHIPPED car must field correctly, and before_each resets any fixture
+# roster for exactly that reason.
+func test_every_car_applies_its_engine_audio_and_gearbox_fields() -> void:
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		var eng := EngineLibrary.by_id(spec["engine"])
 		_select(i)
 		await _wait(5)
-		assert_almost_eq(Config.data.shift_time, float(eng["shift_time"]), 0.0001,
-			"%s: applies its engine's shift_time" % spec["name"])
-		seen[float(eng["shift_time"])] = true
+		var cfg: GameConfig = Config.data
+		var who: String = spec["name"]
+		assert_almost_eq(cfg.shift_time, float(eng["shift_time"]), 0.0001,
+			"%s: applies its engine's shift_time" % who)
+		assert_almost_eq(cfg.engine_volume_db, float(eng["volume_db"]), 0.0001,
+			"%s: applies its own engine volume_db" % who)
+		assert_almost_eq(cfg.engine_noise_level, db_to_linear(float(eng["noise_db"])), 0.0001,
+			"%s: applies its own noise_db as a linear noise level" % who)
+		assert_almost_eq(cfg.engine_soft_clip_post_gain,
+			float(eng["soft_clip_post_gain"]), 0.0001,
+			"%s: applies its own soft_clip_post_gain" % who)
 
 
 func test_every_car_applies_its_own_suspension() -> void:
@@ -287,8 +311,7 @@ func test_every_car_applies_its_own_suspension() -> void:
 	# per-axle suspension rather than one shared global setup. This asserts the
 	# resolution LOGIC (rate = base x 2 x axle-weight-fraction, damper = sqrt(rate)),
 	# not the authored numbers.
-	var travels := {}
-	var stiffnesses := {}
+	assert_gt(CarLibrary.CARS.size(), 0, "CarLibrary.CARS is non-empty (else this test asserts nothing)")
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		_select(i)
@@ -314,45 +337,3 @@ func test_every_car_applies_its_own_suspension() -> void:
 				"%s: %s compression damper derived from its axle rate" % [spec["name"], wheel.name])
 			assert_almost_eq(wheel.damping_relaxation, 1.5 * sqrt(k), 0.0001,
 				"%s: %s rebound damper derived from its axle rate" % [spec["name"], wheel.name])
-		travels[travel] = true
-		stiffnesses[stiffness] = true
-
-
-func test_every_car_applies_its_own_engine_volume() -> void:
-	# Selecting a car overlays its engine volume_db onto the live config, so each
-	# car's engine voice plays at its own master level rather than one global one.
-	var seen := {}
-	for i in CarLibrary.CARS.size():
-		var spec: Dictionary = CarLibrary.CARS[i]
-		_select(i)
-		await _wait(5)
-		var eng := EngineLibrary.by_id(spec["engine"])
-		assert_almost_eq(Config.data.engine_volume_db, float(eng["volume_db"]), 0.0001,
-			"%s: applies its own engine volume_db" % spec["name"])
-		seen[float(eng["volume_db"])] = true
-
-
-func test_every_car_applies_its_own_noise_level() -> void:
-	# Selecting a car overlays its per-car noise floor (authored in dB) onto the
-	# live config as a linear amplitude, so each car controls its white-noise
-	# input to the soft clipper independently of the engine voice. Cars are
-	# initialised to a shared placeholder, so we assert the overlay happens.
-	for i in CarLibrary.CARS.size():
-		var spec: Dictionary = CarLibrary.CARS[i]
-		_select(i)
-		await _wait(5)
-		var eng := EngineLibrary.by_id(spec["engine"])
-		assert_almost_eq(Config.data.engine_noise_level, db_to_linear(float(eng["noise_db"])), 0.0001,
-			"%s: applies its own noise_db as a linear noise level" % spec["name"])
-
-
-func test_every_car_applies_its_own_soft_clip_post_gain() -> void:
-	# The soft clipper's post-amp is per-car (its pre-amp / drive stays global),
-	# so selecting a car overlays its soft_clip_post_gain onto the live config.
-	for i in CarLibrary.CARS.size():
-		var spec: Dictionary = CarLibrary.CARS[i]
-		_select(i)
-		await _wait(5)
-		var eng := EngineLibrary.by_id(spec["engine"])
-		assert_almost_eq(Config.data.engine_soft_clip_post_gain, float(eng["soft_clip_post_gain"]), 0.0001,
-			"%s: applies its own soft_clip_post_gain" % spec["name"])

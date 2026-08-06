@@ -1,13 +1,18 @@
 # Splitting hq.gd
 
-`scripts/hq.gd` is **~4850 lines**, the largest file in the repo. Split it into cluster
+`scripts/hq.gd` was the largest file in the repo. Split it into cluster
 helpers following the pattern `HqOverlays` / `HQEnvironment` already establish: a
 `RefCounted` holding an `_hq: HqController` back-reference, reaching into it for state, node
 parenting and widget helpers.
 
-Status: **all three cuts are DONE.** `hq.gd` went **4831 → 3258 lines** (−1573, −33%), with
-`scripts/hq_challenge.gd` (496), `scripts/hq_table.gd` (477) and `scripts/hq_carpark.gd` (679)
-alongside. The only item left is the **`_unhandled_input` follow-up** at the bottom of this file.
+Status: **all three cuts are DONE.** `hq.gd` delegates to `HqChallenge`
+(`scripts/hq_challenge.gd`), `HqTable` (`scripts/hq_table.gd`) and `HqCarpark`
+(`scripts/hq_carpark.gd`), which now sit alongside it. The cut removed roughly a
+third of the file at the time it landed; `hq.gd` has since grown again as
+unrelated feature work landed on top, so run `wc -l scripts/hq*.gd` for current
+sizes rather than trusting a number written here — the earlier snapshot counts in
+this spec had all rotted by ~10-30% within weeks. The only item left is the
+**`_unhandled_input` follow-up** at the bottom of this file.
 
 ## Which cluster to cut first, and why
 

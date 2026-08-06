@@ -744,8 +744,8 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 
 # Where the present box sits on the world map, normalised 0..1 like a rally's map_pos.
 #
-# NOT dead centre (0.5, 0.5): `front_runners` sits at (0.45, 0.45), and _add_pin_hit keeps
-# every hit radius under half the closest pin spacing so neighbouring targets never overlap.
+# NOT dead centre (0.5, 0.5): `front_runners` sits at (0.45, 0.45), and _add_pick_sphere
+# keeps every hit radius under half the closest pin spacing so neighbours never overlap.
 # A box at the exact centre would sit 0.071 away and make the nearest-to-centre cursor
 # ambiguous between the two. Nudged east to clear it.
 const PRESENT_MAP_POS := Vector2(0.52, 0.50)
@@ -777,8 +777,9 @@ func _make_present_pin(table_pos: Vector3, plane_size: Vector2, top_y: float) ->
 	pin.add_child(label)
 	pin.set_meta("label_panel", label.get_meta("panel"))
 
-	_add_present_hit(pin, Vector3(0.0, PresentBox.HEIGHT * 0.5, 0.0), 0.28)
-	_add_present_hit(pin, Vector3(0.0, PresentBox.HEIGHT + PIN_LABEL_RISE, 0.0), 0.32)
+	_add_pick_sphere(pin, Vector3(0.0, PresentBox.HEIGHT * 0.5, 0.0), 0.28, _on_present_input)
+	_add_pick_sphere(pin, Vector3(0.0, PresentBox.HEIGHT + PIN_LABEL_RISE, 0.0), 0.32,
+		_on_present_input)
 	return pin
 
 
@@ -794,7 +795,10 @@ func _present_cost_line(price: int) -> String:
 	return "Cost: %s" % UITheme.count_noun(price, "star")
 
 
-func _add_present_hit(pin: Node3D, pos: Vector3, r: float) -> void:
+# Add a pickable sphere Area3D (radius `r`, at local `pos`) to `pin`, routing clicks to
+# `handler`. Shared by the rally pins and the present box — they differ only in which
+# handler the hit routes to, so the node setup lives here once.
+func _add_pick_sphere(pin: Node3D, pos: Vector3, r: float, handler: Callable) -> void:
 	var area := Area3D.new()
 	var cs := CollisionShape3D.new()
 	var sph := SphereShape3D.new()
@@ -803,9 +807,10 @@ func _add_present_hit(pin: Node3D, pos: Vector3, r: float) -> void:
 	area.add_child(cs)
 	area.position = pos
 	area.input_ray_pickable = true
+	# Pure click target — overlap monitoring is unused (see hq_environment.gd).
 	area.monitoring = false
 	area.monitorable = false
-	area.input_event.connect(_on_present_input)
+	area.input_event.connect(handler)
 	pin.add_child(area)
 
 
@@ -895,30 +900,14 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# target than the slim flag); its radius is kept under half the closest pin spacing
 	# (~0.72 m) so neighbouring menus' targets don't overlap.
 	if not locked:
-		_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top * 0.5, 0.0), 0.28)
+		_add_pick_sphere(pin, Vector3(0.0, marker_top * 0.5, 0.0), 0.28,
+			_on_pin_input.bind(rally_id))
 		# Only where a box actually hangs — an unavailable pin has none, and a hit sphere
 		# floating in the empty air above its flag would be a target for nothing.
 		if available:
-			_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0), 0.32)
+			_add_pick_sphere(pin, Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0), 0.32,
+				_on_pin_input.bind(rally_id))
 	return pin
-
-
-# Add a pickable sphere Area3D (radius `r`, at local `pos`) to `pin`, routing clicks to
-# the rally-pin handler for `rally_id`.
-func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void:
-	var area := Area3D.new()
-	var cs := CollisionShape3D.new()
-	var sph := SphereShape3D.new()
-	sph.radius = r
-	cs.shape = sph
-	area.add_child(cs)
-	area.position = pos
-	area.input_ray_pickable = true
-	# Pure click target — overlap monitoring is unused (see hq_environment.gd).
-	area.monitoring = false
-	area.monitorable = false
-	area.input_event.connect(_on_pin_input.bind(rally_id))
-	pin.add_child(area)
 
 
 # Build the floating readout box for a pin: a design-system black panel holding the
@@ -1231,14 +1220,6 @@ func _passthrough_overlay(root: Control) -> void:
 	for n in root.find_children("*", "Control", true, false):
 		if not (n is BaseButton):
 			(n as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-
-# A diegetic-station action button: FOCUS_NONE (the station navigates by a manual
-# left/right cursor, not native focus), text set raw (UITheme.enforce uppercases + sizes
-# it on the next _normalize_menus), with `cb` wired to `pressed`. The repeated
-# new + FOCUS_NONE + connect idiom the garage row / tuning hub used inline.
-func _station_button(text: String, cb: Callable) -> Button:
-	return UITheme.row_button(text, cb)
 
 
 # A plain Label with `text` and a `font_size` override — the Label.new() + font-size +
@@ -1854,7 +1835,6 @@ func _process(delta: float) -> void:
 		_table_ui._pan_table_step(dir2, Config.data.hq_table_pan_glide * delta)
 
 
-
 # How many of the player's owned `cars` can enter `rally`, tallied on top of
 # _entry_plan so this agrees exactly with the green/grey map pin (_has_eligible_car)
 # and the car-park lineup — the ONE eligibility decision, never re-derived here.
@@ -1883,7 +1863,6 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	return {"total": total, "qualify": qualify, "adjust": adjust, "names": names}
 
 
-
 # The qualifying-car read-out: name the cars rather than counting them. Caps the list at
 # MAX_QUALIFY_NAMES and tails the rest as "+N more" so a big garage can't blow the panel
 # out. Callers only reach this with a non-empty list (empty is its own RED message).
@@ -1894,7 +1873,6 @@ func _qualifying_cars_text(names: Array) -> String:
 	for i in MAX_QUALIFY_NAMES:
 		shown.append(String(names[i]))
 	return "%s, +%d more" % [", ".join(shown), names.size() - MAX_QUALIFY_NAMES]
-
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
@@ -2090,11 +2068,11 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	var buttons: Array[Button] = []
 	var actions: Array[Callable] = []
 	var on_back := func() -> void: _go_to(View.EXTERIOR)
-	var back := _station_button("< Back", on_back)
+	var back := UITheme.row_button("< Back", on_back)
 	_garage_actions_row.add_child(back)
 	buttons.append(back); actions.append(on_back)
 	# Career: the rally table — a convenience button mirroring the clickable 3D table.
-	var to_table := _station_button("Career", _table_ui._enter_table)
+	var to_table := UITheme.row_button("Career", _table_ui._enter_table)
 	_garage_actions_row.add_child(to_table)
 	buttons.append(to_table); actions.append(_table_ui._enter_table)
 	# Where Career ended up. Mystery Box is omitted entirely when none is held, so no
@@ -2106,7 +2084,7 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	# open the car park FIRST to pick a car, but the lift's own selector chevrons change the
 	# car on the lift in place now (_cycle_lift_car), which made the picker a press in and a
 	# press back on the way to the only screen anyone wanted.
-	var to_garage := _station_button("Garage", _enter_lift)
+	var to_garage := UITheme.row_button("Garage", _enter_lift)
 	_garage_actions_row.add_child(to_garage)
 	buttons.append(to_garage); actions.append(_enter_lift)
 	# Mystery Box: a garage-wide reward action, not per-car — moved here from the
@@ -2117,7 +2095,7 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	# the gift to land.
 	var boxes := Save.mystery_boxes_owned()
 	if boxes > 0:
-		var to_box := _station_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
+		var to_box := UITheme.row_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
 		if not RewardSystem.any_car_has_room(Save.profile):
 			to_box.disabled = true
 			to_box.tooltip_text = "Every car in the garage is fully upgraded"
@@ -2127,7 +2105,7 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 		buttons.append(to_box); actions.append(_on_open_mystery_box)
 	# Online LAST: the Daily/Weekly/Monthly seeded Rally Challenge entry point (a modal
 	# overlay over the garage, see build_challenge_overlay / _challenge_ui._open_challenge_overlay).
-	var to_online := _station_button("Online", _challenge_ui._open_challenge_overlay)
+	var to_online := UITheme.row_button("Online", _challenge_ui._open_challenge_overlay)
 	_garage_actions_row.add_child(to_online)
 	buttons.append(to_online); actions.append(_challenge_ui._open_challenge_overlay)
 	_garage_cursor.setup(buttons, actions)
@@ -3280,7 +3258,7 @@ func _on_start_pressed() -> void:
 #
 # Returns false when the caller must abort (the gate took over).
 func _start_preflight(resume: Callable, select_instance_id: int = -1) -> bool:
-	if _is_mobile() and Save.get_setting(MobileControls.SETTING_KEY, null) == null:
+	if Platform.is_touch() and Save.get_setting(MobileControls.SETTING_KEY, null) == null:
 		_pending_start = resume
 		_open_settings(true)
 		return false
@@ -3363,12 +3341,6 @@ func _on_swap_confirmed() -> void:
 	var partner_id := int(_pending_swap["partner"])
 	_pending_swap = {}
 	_commit_engine_swap(current_id, partner_id)
-
-
-# True on a touch device (or when the controls are force-enabled for testing) — the
-# only case the mobile control-scheme picker is relevant.
-func _is_mobile() -> bool:
-	return DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force
 
 
 # The actual handoff to RallySession, covered by a loading screen. Split out of

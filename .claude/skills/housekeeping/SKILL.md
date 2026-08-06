@@ -113,7 +113,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 
 ### 7. Oversized scripts / refactor candidates
 
-- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~4850),
+- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~3630),
   `game_config.gd`, `car.gd`, `world.gd` (each >1000). Flag scripts that have
   grown a lot since the last sweep or that mix several responsibilities — these
   are refactor candidates. Don't refactor here; note it and suggest a split.
@@ -244,15 +244,21 @@ propose wins, don't delete assets or re-encode audio unasked.
   packaged files by size — `unzip -l` the `.apk`/`.aab`, or inspect the `.pck`.
   Report the top ~20 entries. Repo size ≠ bundle size, and the whole value of
   this pass is knowing which is which.
-- **Confirm the excludes are doing their job.** All three presets exclude
-  `addons/gut/*, tests/*, docs/*, tools/*, benchmark/*, todo/*, features/*,
-  *.mp3, *.blend, *.blend1`. Two large tracked trees are **not** named there:
-  `ref/` (~28 MB of car reference screenshots) and the non-`.blend` contents of
-  `blender/` (`.gltf`/`.bin`/source `texture.png` alongside the exported
-  `.glb`). Whether they land in the package depends on whether the editor
-  imported them — so **check the packaged file list, then act on the answer**:
-  if they're in there, adding `ref/*` and the `blender/` source siblings to
-  `exclude_filter` is the single biggest win available and costs nothing.
+- **Confirm the excludes are doing their job.** All four presets share a
+  byte-identical `exclude_filter`: `addons/gut/*, tests/*, docs/*, tools/*,
+  benchmark/*, todo/*, features/*, build/*, *.mp3, *.blend, *.blend1,
+  blender/*/*.gltf, blender/*/*.bin, ref/*`. The two big tracked trees that
+  would otherwise dominate the bundle — `ref/` (~28 MB of car reference
+  screenshots) and the `.gltf`/`.bin` source siblings under `blender/` — are
+  therefore already covered, and a 2026-08 sweep confirmed empirically that a
+  built APK contains **zero** entries under `assets/ref/` or
+  `assets/blender/`; only the imported `.glb` artifacts under
+  `assets/.godot/imported/` ship. Re-verify against the packaged list rather
+  than assuming, but do not expect this to be the big win — it is handled.
+  What the sweep DID surface as the top lead: check whether the artifact you
+  measured was built `--debug` or `--export-release`, because the debug
+  `libgodot_android.so` is several times the release one and will dominate the
+  listing misleadingly.
 - **Duplicate model payloads.** Where a car ships both `.gltf` + `.bin` and a
   `.glb`, only the imported one is needed at runtime. Flag the redundant pair.
 - **Oversized textures.** Check the largest entries under `textures/` (e.g.
@@ -353,7 +359,8 @@ helpers that grew a second responsibility, hand-rolled loops that a built-in or
 an existing utility already covers, dead abstractions, needless indirection.
 
 - **Fan out — don't read the tree serially.** `scripts/` alone has multi-
-  thousand-line files (`hq.gd` ~4850, `game_config.gd`, `car.gd`, `world.gd`).
+  thousand-line files (`hq.gd` ~3630, `game_config.gd` ~2290, `world.gd` ~2230,
+  `car.gd` ~2220, `terrain_manager.gd` ~1630).
   Spawn several `Explore` / `general-purpose` subagents, each owning a slice
   (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
   the menu scripts, the terrain files), each returning candidate simplifications

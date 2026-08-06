@@ -253,6 +253,7 @@ you add another caption-on-fill widget, know that —
   rather than `modulate`, because `modulate` propagates to children and would drag the
   caption's colour along with the fill (turning the HEALTH caption red as health drops).
 
-Guarded by `test_hud.gd::test_gauge_captions_have_no_drop_shadow` and
-`test_health_grading_does_not_tint_the_caption`, so neither decision can silently
-regress.
+There is no longer a caption-on-fill widget to guard, so the drop-shadow half of this
+is documentation only. The tint half is still live and still guarded, by
+`test_hud.gd::test_health_grading_recolours_the_fill_only` — the health grade must move
+the fill without dragging the icon's ink with it.

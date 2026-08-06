@@ -638,18 +638,6 @@ func test_has_forced_induction_covers_both_parts() -> void:
 	assert_false(cfg.has_supercharger_physics(), "nor does it run the belt sim")
 
 
-# The captions sit ON the coloured fill, so they opt OUT of the house drop shadow (the
-# one documented exception — features/ui-design-system.md). The shadow comes from the
-# PROJECT-WIDE theme, not a per-label property, so overriding font_color alone leaves it
-# in place; this guards the override that actually switches it off.
-func test_gauge_captions_have_no_drop_shadow() -> void:
-	var hud: CanvasLayer = _scene.get_node("HUD")
-	for path in ["HPBar/HPLabel", "BoostBar/BoostLabel", "NitrousBar/NitrousLabel"]:
-		var cap := hud.get_node(path) as Label
-		assert_eq(cap.get_theme_color("font_shadow_color").a, 0.0,
-			"%s draws no drop shadow" % path)
-
-
 func test_elapsed_label_keeps_updating_as_the_clock_runs() -> void:
 	# show_elapsed skips the re-format when the DISPLAYED value hasn't moved, so
 	# check the skip can't latch: successive advancing times must each show.

@@ -119,6 +119,7 @@ func test_every_engine_declares_a_non_negative_friction_base() -> void:
 	# Sanity guard only (not a value pin): apply() reads engine_friction_base off every
 	# shipped engine. Negative or non-finite crank friction would be non-physical; zero
 	# is legitimate (tiny/low-displacement engines can carry negligible modelled friction).
+	assert_gt(EngineLibrary.ENGINES.size(), 0, "EngineLibrary.ENGINES is non-empty (else this test asserts nothing)")
 	for eng in EngineLibrary.ENGINES:
 		assert_true(eng.has("engine_friction_base"), "%s declares engine_friction_base" % eng["id"])
 		assert_true(float(eng["engine_friction_base"]) >= 0.0, "%s friction base is non-negative" % eng["id"])
@@ -128,6 +129,7 @@ func test_every_engine_declares_a_non_negative_friction_base() -> void:
 func test_every_engine_has_a_positive_mass() -> void:
 	# Sanity guard only (not a value pin): the weight simulation divides/weights by
 	# engine mass, so each engine must carry a finite positive dry weight.
+	assert_gt(EngineLibrary.ENGINES.size(), 0, "EngineLibrary.ENGINES is non-empty (else this test asserts nothing)")
 	for eng in EngineLibrary.ENGINES:
 		assert_true(eng.has("mass"), "%s declares a mass" % eng["id"])
 		assert_gt(float(eng["mass"]), 0.0, "%s mass is positive" % eng["id"])

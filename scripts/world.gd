@@ -192,9 +192,9 @@ func _ready() -> void:
 	# dev boot keeps the first library car (the Mazda MX-5).
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if ChallengeSession.is_active():
-		_field_challenge_car()
+		_field_car(ChallengeSession.car_instance_id())
 	elif RallySession.is_active():
-		_field_session_car()
+		_field_car(RallySession.car_instance_id())
 	elif RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "":
 		# Free roam (session-less): field the car the player picked in the car park.
 		# An OWNED instance runs with its baseline + upgrades + saved HP; a bare catalogue
@@ -449,6 +449,20 @@ func _warm_up_point() -> Vector3:
 	return Vector3.ZERO
 
 
+# Paint the loading overlay's water preview for `bounds`, first expanding the rect to the
+# preview's aspect so the cells aren't distorted. Returns the EXPANDED rect, which the
+# caller must keep: the later refinement pass repaints into the same frame, and using a
+# different rect would make the water visibly jump. Shared by the rough origin-box pass
+# and the refined track-bounds pass, which were otherwise byte-identical.
+func _paint_water_preview(loading: LoadingScreen, params: TrackGenParams,
+		bounds: Rect2) -> Rect2:
+	var rect := LoadingScreen.expand_to_aspect(bounds,
+		LoadingScreen.aspect_of(loading.preview_size()))
+	var cells: Array = LakeField.preview_cells(params, rect)
+	loading.update_water(cells[0], cells[1], rect)
+	return rect
+
+
 # Build the track from the car's spawn pose, bake road heights, and build the
 # (deferred) terrain ring with flattening + colouring already applied — so no
 # chunk is ever rebuilt at startup. Each heavy step sets the loading label and
@@ -489,8 +503,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Live preview: only when an overlay is up and we're not headless. Headless keeps
 	# generation effectively synchronous (empty Callable -> the search never yields a
 	# frame) so tests still build the world within _ready and test runtime is unchanged.
+	# `interactive` is the one predicate the rest of this function keys off: an overlay is
+	# up AND we're not headless. Defined once here instead of re-spelled at each of the
+	# eight sites below (it used to be, and was locally re-bound under three different
+	# names), so the interactive and headless paths cannot drift apart.
+	var interactive := loading != null and not _headless
 	var on_progress := Callable()
-	if loading != null and not _headless:
+	if interactive:
 		on_progress = loading.update_track_preview
 	# Build the shape contract. In a rally, use the current event so the shape (and
 	# its water avoidance) matches the times RallySession derived; a challenge stage
@@ -520,13 +539,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# of (seed, water_level), so it can show first and the road animates over it. This
 	# early pass covers a rough box around the origin (the track extent isn't known
 	# yet); it's refined to the true track bounds once generation completes (below).
-	if cfg.water_enabled and loading != null and not _headless:
+	if cfg.water_enabled and interactive:
 		var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
 		var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
-		var aspect := LoadingScreen.aspect_of(loading.preview_size())
-		box = LoadingScreen.expand_to_aspect(box, aspect)
-		var wp: Array = LakeField.preview_cells(params, box)
-		loading.update_water(wp[0], wp[1], box)
+		_paint_water_preview(loading, params, box)
 	# Rally events read the committed lockfile (falling back to live generation on a
 	# miss, loudly — every event key IS baked). The for_config path (benchmark boot,
 	# default-config boot, free roam) consults the same lockfile but treats a miss as
@@ -578,7 +594,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	cfg.track_water_level_m = params.water_level
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
-	if loading != null and not _headless:
+	if interactive:
 		loading.update_track_preview((result["centerline"] as Curve2D).tessellate())
 	# Road/progress centerline (with the lead-in for staged runs). The raw generated
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
@@ -589,12 +605,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Held for the FINAL water pass after the bake (below) so it reuses the exact same
 	# frame — repainting into a different rect would make the water jump.
 	var water_bounds := Rect2()
-	if cfg.water_enabled and loading != null and not _headless:
+	if cfg.water_enabled and interactive:
 		var tb := LoadingScreen.bounds_of((result["centerline"] as Curve2D).tessellate()).grow(80.0)
-		tb = LoadingScreen.expand_to_aspect(tb, LoadingScreen.aspect_of(loading.preview_size()))
-		water_bounds = tb
-		var wp2: Array = LakeField.preview_cells(params, tb)
-		loading.update_water(wp2[0], wp2[1], tb)
+		water_bounds = _paint_water_preview(loading, params, tb)
 	if staged:
 		road_centerline = _with_start_lead_in(road_centerline, start_pos, start_heading, cfg)
 	# The FINISH is the END of the generated track (plus lead-in) — capture its arc
@@ -619,12 +632,11 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	await _stage("Carving road into terrain…")
 	# Interactive path: the grey track-preview line fills white as the bake walks the
 	# centerline (carve progress); headless passes empty callbacks and stays synchronous.
-	var carve_interactive := loading != null and not _headless
-	var carve_progress := loading.set_carve_progress if carve_interactive else Callable()
+	var carve_progress := loading.set_carve_progress if interactive else Callable()
 	await $Floor.set_track(road_centerline, bake_args[0], bake_args[1],
 		bake_args[2], bake_args[3], bake_args[4],
-		carve_interactive, carve_progress)
-	if carve_interactive:
+		interactive, carve_progress)
+	if interactive:
 		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
 	# FINAL water pass — the only one that can be right, and it lands HERE, straight
 	# after the carve and before the long chunk precompute, so the true waterline is
@@ -641,7 +653,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# point, so height_at would fall back to pure noise and repaint the same wrong
 	# picture. baked_height_at reads the bake fields directly and is the same height
 	# the real lake is built against in _build_lakes.
-	if cfg.water_enabled and loading != null and not _headless and water_bounds.has_area():
+	if cfg.water_enabled and interactive and water_bounds.has_area():
 		var baked: Array = LakeField.preview_cells_for(
 			_floor().baked_height_at, cfg.track_water_level_m, water_bounds)
 		loading.update_water(baked[0], baked[1], water_bounds)
@@ -660,21 +672,20 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Feed loaded chunks to the loading preview (interactive path only): each cached
 	# chunk becomes a dark square behind the track line, drawn in the same world-XZ
 	# frame (coord * CHUNK_M = its world min-corner). Batched on the existing yield.
-	var show_chunks := loading != null and not _headless
-	if show_chunks:
+	if interactive:
 		loading.set_chunk_size(TerrainManager.CHUNK_M)
 	var chunk_corners := PackedVector2Array()
 	var precompute_done := 0
 	for coord in floor_tm.corridor():
 		floor_tm.cache_chunk(coord)
-		if show_chunks:
+		if interactive:
 			chunk_corners.append(Vector2(coord.x, coord.y) * TerrainManager.CHUNK_M)
 		precompute_done += 1
 		if precompute_done % 8 == 0:
-			if show_chunks:
+			if interactive:
 				loading.update_loaded_chunks(chunk_corners)
 			await _yield_frame()
-	if show_chunks:
+	if interactive:
 		loading.update_loaded_chunks(chunk_corners)  # final batch (loop count not a multiple of 8)
 	# PEAK, not resident: this prints while generation is still running, so it counts the
 	# baked `lights` array that TerrainManager.free_load_only_data() drops moments later on
@@ -754,7 +765,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Only when a loading screen is up: on a bare regeneration the variants are
 	# already cached (identical renderer settings) and there's no overlay to hide
 	# the flash.
-	if loading != null and not _headless:
+	if interactive:
 		# Own stage label: the pre-warm is 30 rendered frames of first-use shader
 		# compilation and is a real multi-second cost on web, but it was previously
 		# invisible — folded into whichever label happened to be open. Item 1.2.
@@ -1657,24 +1668,12 @@ func _with_finish_runoff(gen: Curve2D, runoff: Dictionary) -> Curve2D:
 	c.add_point(runoff["end_pos"])  # dead-straight from the finish to the runoff end
 	return c
 
-# Configure the car for the session's fielded OwnedCar; fall back to the default
-# car if the instance has vanished from the save (defensive).
-func _field_session_car() -> void:
-	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	if owned.is_empty():
-		$Car.apply_car(0)
-		return
-	$Car.apply_owned(owned)
-	_event_start_hp = $Car.damage.hp
-	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
-	_event_hp_at_finish = _event_start_hp
-	_event_toe_at_finish = $Car.damage.toe_array()
-
-
-# Same as _field_session_car but for the locked challenge car (spec §2/§3) — the
-# only difference is which session owns the fielded instance id.
-func _field_challenge_car() -> void:
-	var owned: Dictionary = Save.get_car(ChallengeSession.car_instance_id())
+# Configure the car for the fielded OwnedCar; fall back to the default car if the
+# instance has vanished from the save (defensive). The rally and challenge paths
+# differ ONLY in which session owns the fielded instance id, so the caller resolves
+# that and this stays single-sourced (challenge path: spec §2/§3).
+func _field_car(instance_id: int) -> void:
+	var owned: Dictionary = Save.get_car(instance_id)
 	if owned.is_empty():
 		$Car.apply_car(0)
 		return

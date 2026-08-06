@@ -15,10 +15,14 @@ func test_accepts_water_cells() -> void:
 	assert_eq(tp.water_cell_count(), 2, "water cells stored for drawing")
 
 func test_loading_screen_forwards_water() -> void:
+	# LoadingScreen builds its TrackPreview in _init(), so the forward is observable:
+	# assert the cells actually LANDED rather than merely that the call didn't error
+	# (this test used to assert_true(true), which passed even if update_water was a
+	# no-op).
 	var ls := LoadingScreen.new()
 	add_child_autofree(ls)
-	# Should not error; the preview stores the cells.
 	ls.update_track_preview(PackedVector2Array([Vector2(0, 0), Vector2(5, 5)]))
-	ls.update_water(PackedVector2Array([Vector2(1, 1)]), 1.0)
+	ls.update_water(PackedVector2Array([Vector2(1, 1), Vector2(2, 2)]), 1.0)
 	await get_tree().process_frame
-	assert_true(true, "update_water forwarded without error")
+	assert_eq(ls._preview.water_cell_count(), 2,
+		"update_water forwarded both cells to the preview")

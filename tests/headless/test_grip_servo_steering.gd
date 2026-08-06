@@ -12,8 +12,6 @@ extends "res://tests/headless/sim_test.gd"
 # car.gd carries no class_name, so reach the pure statics through the script itself.
 const CarScript := preload("res://scripts/car.gd")
 
-const ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
-
 
 func before_each() -> void:
 	await setup_settled_car()
@@ -22,8 +20,10 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	for action in ACTIONS:
-		Input.action_release(action)
+	# Derived from the production list, not hand-copied: releasing the whole
+	# rebindable set can't silently desync when an action is added or renamed.
+	for entry in InputRemap.ACTIONS:
+		Input.action_release(String(entry["action"]))
 	CarFixtures.restore()
 	UpgradeLibrary.reset()
 

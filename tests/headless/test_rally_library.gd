@@ -29,11 +29,15 @@ func after_each() -> void:
 # --- Roster validity (anti-soft-lock) ---------------------------------------
 
 func test_roster_is_well_formed() -> void:
+	assert_gt(RallyLibrary.RALLIES.size(), 0, "RallyLibrary.RALLIES is non-empty (else this test asserts nothing)")
 	var ids := {}
 	for rally in RallyLibrary.RALLIES:
 		assert_false(ids.has(rally["id"]), "rally id '%s' is unique" % rally["id"])
 		ids[rally["id"]] = true
-		assert_eq(rally["events"].size(), 3, "%s has exactly 3 events" % rally["id"])
+		# Stage COUNT is authored data a designer changes freely (test_menu_flow.gd
+		# derives it rather than pinning it), so assert only that a rally HAS stages —
+		# which also stops the per-event loop below being vacuous.
+		assert_gt(rally["events"].size(), 0, "%s has at least one event" % rally["id"])
 		assert_gt(rally["difficulty"], 0, "%s has a positive difficulty tier" % rally["id"])
 		for ev in rally["events"]:
 			assert_gt(int(ev["turn_count"]), 0, "%s event has a positive turn_count" % rally["id"])
@@ -46,6 +50,7 @@ func test_roster_is_well_formed() -> void:
 
 
 func test_every_rally_has_a_known_region() -> void:
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
 	for rally in RallyLibrary.all():
 		var region_id := String(rally.get("region", ""))
 		assert_ne(region_id, "", "rally %s has no region" % rally.get("id", "?"))
@@ -111,6 +116,7 @@ func test_every_authored_star_gate_names_a_real_special() -> void:
 func test_every_specials_completion_requirement_is_reachable() -> void:
 	# A rung demanding more completions than there are ordinary rallies would be
 	# permanently locked. Counts the roster rather than pinning any threshold.
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
 	var ordinary := 0
 	for rally in RallyLibrary.all():
 		if not RallyLibrary.is_special(rally):
@@ -126,6 +132,7 @@ func test_map_pins_are_well_formed_and_never_stack() -> void:
 	# designer nudges freely. A pin outside [0,1]^2 lands off the map plane, and two
 	# pins on top of each other are unpickable, so both are structural bugs a corner
 	# re-site can introduce silently.
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
 	const MIN_SEPARATION := 0.03
 	var seen: Array[Vector2] = []
 	for rally in RallyLibrary.all():
@@ -229,6 +236,7 @@ func test_open_class_matches_every_car() -> void:
 	# An open-class rally (empty restriction) accepts every car in the roster. Iterating
 	# CARS as opaque input is fine; the empty-restriction rally is synthetic so the test
 	# never leans on a specific authored open-class entry existing.
+	assert_gt(CarLibrary.all().size(), 0, "CarLibrary.all() is non-empty (else this test asserts nothing)")
 	var open_class := {"restriction": {}}
 	for spec in CarLibrary.all():
 		assert_true(RallyLibrary.is_eligible(open_class, spec),
@@ -336,6 +344,7 @@ func test_every_shipped_rally_has_at_least_one_car_that_can_enter_it() -> void:
 	# SHIPPED-CONTENT guarantee (like the starter-floor test): an "unenterable rally" is a
 	# LOGIC failure, not a tuning choice, so this asserts existence only — never which car,
 	# never how many. Restore the fixtures so both catalogues are the real ones.
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
 	CarFixtures.restore()
 	for rally in RallyLibrary.all():
 		var found := ""
@@ -357,6 +366,7 @@ func test_no_shipped_rally_has_an_over_wide_power_band() -> void:
 	# rally loses its identity. This asserts the RATIO invariant only — never a
 	# particular floor or ceiling, both of which a designer may retune freely, and
 	# never which rallies carry a band at all (an open-class finale authors none).
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
 	CarFixtures.restore()
 	for rally in RallyLibrary.all():
 		var restriction: Dictionary = rally.get("restriction", {})
@@ -1042,6 +1052,7 @@ func test_at_most_one_wreck_per_event() -> void:
 	# The core wreck invariant, independent of the wreck CHANCE: no more than one rival
 	# ever wrecks in a single event, so the run scene shows at most one roadside wreck
 	# per stage. Swept over the whole roster (many seeds) so it holds broadly.
+	assert_gt(RallyLibrary.RALLIES.size(), 0, "RallyLibrary.RALLIES is non-empty (else this test asserts nothing)")
 	var track := _track_with_pieces()
 	for rally in RallyLibrary.RALLIES:
 		var events := [{"seed": 11}, {"seed": 22}, {"seed": 33}]

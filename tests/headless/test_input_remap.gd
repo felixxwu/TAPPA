@@ -38,6 +38,7 @@ func after_all() -> void:
 # --- InputRemap model --------------------------------------------------------
 
 func test_actions_are_all_real_input_map_actions() -> void:
+	assert_gt(InputRemap.ACTIONS.size(), 0, "InputRemap.ACTIONS is non-empty (else this test asserts nothing)")
 	for entry in InputRemap.ACTIONS:
 		assert_true(InputMap.has_action(entry["action"]),
 			"rebindable action '%s' exists in the input map" % entry["action"])

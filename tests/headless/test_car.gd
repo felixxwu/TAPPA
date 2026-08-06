@@ -8,8 +8,6 @@ extends "res://tests/headless/sim_test.gd"
 # `_scene`, `_car`, `_wait_physics()` and the settle machinery come from
 # sim_test.gd — before_each restores a cached settled car instead of re-dropping.
 
-const ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
-
 
 func before_each() -> void:
 	await setup_settled_car()
@@ -21,8 +19,10 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	for action in ACTIONS:
-		Input.action_release(action)
+	# Derived from the production list, not hand-copied: releasing the whole
+	# rebindable set can't silently desync when an action is added or renamed.
+	for entry in InputRemap.ACTIONS:
+		Input.action_release(String(entry["action"]))
 	CarFixtures.restore()
 	UpgradeLibrary.reset()
 
@@ -790,6 +790,7 @@ func test_apply_car_sets_custom_center_of_mass_from_weight_front() -> void:
 	# LOGIC test (not a pinned value): whatever a car's authored weight_front is,
 	# apply_car must switch to a CUSTOM CoM and place it along the wheelbase per the
 	# static-balance mapping z = wheelbase x (rear_frac - 0.5), +Z = rearward.
+	assert_gt(CarLibrary.all().size(), 0, "CarLibrary.all() is non-empty (else this test asserts nothing)")
 	CarFixtures.install()
 	for i in CarLibrary.all().size():
 		var spec: Dictionary = CarLibrary.all()[i]
