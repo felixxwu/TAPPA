@@ -108,8 +108,8 @@ repaired, so a garage whose only in-band car is wrecked is as stuck as an empty 
   sat still. There is deliberately no "x of N" denominator anywhere: with a spendable
   balance there is no maximum to count towards. `RallySession.last_result()` supplies
   both figures as `star_rating` and `stars_gained`.
-- **The HQ map meter** — `hq.gd` shows `"Stars: N"` from `Save.stars_available()`, the
-  spendable balance, again with no denominator.
+- **The HQ map meter** — bottom centre of the table HUD: a drawn star plus the digits of
+  `Save.stars_available()`, the spendable balance, again with no denominator.
 - **The present box** — a procedural gift-box prop (`scripts/present_box.gd`,
   `class_name PresentBox`, `build()` / `build_openable(scale)`) standing on the world
   map as its one non-rally target, with the price/`FREE` readout above it. Tap and the

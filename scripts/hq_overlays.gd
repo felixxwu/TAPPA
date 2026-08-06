@@ -102,9 +102,11 @@ func build_garage_overlay() -> void:
 	_hq._garage_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	var hint := _hq._label("GARAGE — tap the map table to choose a rally, or the lift to tune your car", 22)
-	root.add_child(hint)
-
+	# NO header text. This used to carry "GARAGE — tap the map table to choose a rally, or the
+	# lift to tune your car": a caption naming the room you can see, plus instructions for two
+	# objects that are already lit, labelled and pickable in the 3D scene. The garage is a
+	# diegetic station — the room IS the menu — so a line of prose over it only competes with
+	# the thing it describes. The action row at the bottom is the only chrome here now.
 	root.add_child(UITheme.vspacer())
 
 	# The bottom action row is rebuilt IN PLACE by hq._refresh_garage_row():
@@ -126,9 +128,6 @@ func build_table_overlay() -> void:
 	_hq._table_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	_hq._map_meter = _hq._label("", 14)
-	root.add_child(_hq._map_meter)
-
 	# The new-rally reveal's one-line banner ("NEW RALLY - …" / "SPECIAL EVENT UNLOCKED - …"),
 	# hidden except while the reveal sequence is running. See hq_table.gd _set_reveal_banner.
 	_hq._reveal_banner = _hq._label("", 20)
@@ -136,6 +135,25 @@ func build_table_overlay() -> void:
 	root.add_child(_hq._reveal_banner)
 
 	root.add_child(UITheme.vspacer())
+
+	# The star balance, BOTTOM CENTRE rather than in the top-left corner where it started.
+	# It's the map's one number and the currency the special pins are gated on, so it belongs
+	# on the centre line the player's eye already travels rather than tucked over the pins.
+	# It is a spendable balance with no denominator (_refresh_meter), hence one star and a
+	# count — not a StarRow of N lit-of-M, which is the rally MEDAL readout and would imply
+	# a maximum that doesn't exist. The glyph is a StarRow of one because Syne Mono has no ★
+	# (see star_row.gd); the label carries only the digits.
+	var meter_row := HBoxContainer.new()
+	meter_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	meter_row.add_theme_constant_override("separation", 6)
+	root.add_child(meter_row)
+	var star := StarRow.new()
+	star.star_radius = 8.0
+	star.setup(1, 1)
+	meter_row.add_child(star)
+	_hq._map_meter = _hq._label("", 20)
+	_hq._map_meter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	meter_row.add_child(_hq._map_meter)
 
 	var back := Button.new()
 	back.text = "< Back to garage"
@@ -165,9 +183,11 @@ func build_detail_overlay() -> void:
 	# per rally (build_detail_overlay runs once, _show_rally_detail rewrites it), and rally
 	# names, restriction strings and star counts all differ in length — so a box that only
 	# hugs its contents is a different width for every pin you open. Floored so it reads as
-	# one panel you keep opening rather than a new one each time.
+	# one panel you keep opening rather than a new one each time. Kept the SAME number as the
+	# challenge screen below: the two open from the same map and read as one panel shape, so a
+	# few px of difference between them looks like a bug rather than a choice.
 	var page := made[3] as MenuPage
-	page.set_body_width(_hq._modal_body_width(420.0))  # clamped to the current logical canvas
+	page.set_body_width(_hq._modal_body_width(480.0))  # clamped to the current logical canvas
 
 	# Everything below is uppercased + locked to one font size by UITheme.enforce
 	# (via _normalize_menus on each view change), so hierarchy comes from layout,
@@ -438,9 +458,14 @@ func build_car_overlay() -> void:
 	_hq._rally_banner = _hq._label("", 22)
 	root.add_child(_hq._rally_banner)
 
-	# Stored so CarparkMode.PRESENT can replace it: "Choose your car" is wrong when the lot
-	# holds one present box and there is nothing to choose between.
-	_hq._car_hint_label = _hq._label("Choose your car", 14)
+	# EMPTY and HIDDEN by default. This used to read "Choose your car" under the banner, which
+	# said nothing the ◄ / ► row and the lot full of cars didn't already say — two lines of
+	# header over a 3D scene the player is meant to be looking at. It survives as a node
+	# because CarparkMode.PRESENT still has something real to say ("Open it to see what is
+	# inside" — a one-off prompt for an object with no other affordance), and hq.gd hides it
+	# again when the present flow ends.
+	_hq._car_hint_label = _hq._label("", 14)
+	_hq._car_hint_label.visible = false
 	root.add_child(_hq._car_hint_label)
 
 	# Push the car nav + actions to the bottom so the 3D car park is visible above.
@@ -592,7 +617,7 @@ func build_challenge_overlay() -> void:
 	# panel jumps around under the player — moving the very tabs being clicked. Sized for the
 	# largest of the three views and pinned there. See MenuPage.set_body_fixed_height.
 	var page := nav_root as MenuPage
-	page.set_body_width(_hq._modal_body_width(420.0))  # clamped to the current logical canvas
+	page.set_body_width(_hq._modal_body_width(480.0))  # clamped to the current logical canvas
 	# EXACT, not a floor — a floor only stops the box getting smaller, so content taller than
 	# it still grew the box and the panel kept jumping. Content taller than the pin scrolls.
 	page.set_body_fixed_height(210.0)

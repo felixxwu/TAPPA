@@ -1118,7 +1118,8 @@ func _refresh_meter() -> void:
 	# is what the player can take to the present box — and there is no meaningful maximum
 	# to divide by: the balance falls when they buy a car and the Rally Challenge tops it up
 	# without bound. See todo/star-economy.md.
-	_map_meter.text = "Stars: %d" % Save.stars_available()
+	# DIGITS ONLY: the word "Stars" is now the star polygon beside it (build_table_overlay).
+	_map_meter.text = "%d" % Save.stars_available()
 
 
 # --- 3D picking handlers (real play; tests call the targets directly) --------
@@ -2533,7 +2534,9 @@ func _enter_present_box() -> void:
 	_car_name_label.text = ""       # filled in with the car's name once it is revealed
 	_rally_banner.text = "A present"
 	if is_instance_valid(_car_hint_label):
+		# The one carpark mode that still shows the hint line — see build_car_overlay.
 		_car_hint_label.text = "Open it to see what is inside"
+		_car_hint_label.visible = true
 	_set_carpark_arrows_visible(false)  # nothing to cycle through
 	_refresh_present_button()
 	_update_overlays()
@@ -2695,7 +2698,9 @@ func _cleanup_present_reveal() -> void:
 	_set_carpark_arrows_visible(true)
 	_start_button.disabled = false
 	if is_instance_valid(_car_hint_label):
-		_car_hint_label.text = "Choose your car"
+		# Back to an ordinary lineup: no hint line at all (see build_car_overlay).
+		_car_hint_label.text = ""
+		_car_hint_label.visible = false
 
 
 # Test Drive from the tuning bay: launch free roam with the car currently on the lift —

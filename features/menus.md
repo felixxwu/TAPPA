@@ -400,7 +400,13 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   **Back / Career / Garage / Mystery Box (N) / Online** — Mystery Box appears only when
   one is held, so **no index in the row is a constant** (ask `_garage_career_index` /
   the cursor's `buttons` array, never a literal). `_station_xform(View.GARAGE)` has one
-  framing, the wide shell view.
+  framing, the wide shell view. **No header caption** on this view: it used to carry
+  "GARAGE — tap the map table to choose a rally, or the lift to tune your car", which named
+  the room you can see and gave instructions for two objects already lit, labelled and
+  pickable in the 3D scene. The station IS the menu, so a line of prose over it only competes
+  with what it describes — the action row is the only chrome here. Same reasoning removed the
+  car park's "Choose your car" line (see the present box below, the one mode that still shows
+  that label).
 
   *This row used to be TWO levels:* a **Drive** button swapped it for
   Back / Career / Free Roam / Online, with its own Back going up a level and its own
@@ -1381,8 +1387,14 @@ on yet, and eight teasers at once buried the map under unreachable menus; on a
 fresh profile exactly one special quotes a number. Guarded by
 `test_menu_flow.gd::test_hq_only_the_next_locked_special_is_teased` and
 `::test_hq_locked_special_shows_a_full_opacity_teaser_box`.
-An unlocked special's pin names its unlock too. A meter sits on
-the HUD reading **"Stars: N"** (`hq._refresh_meter`) — the **spendable balance**
+An unlocked special's pin names its unlock too. A meter sits at the **bottom centre** of
+the HUD (`build_table_overlay`) — a drawn gold star (a one-star `StarRow`, since Syne Mono
+has no ★) beside the **digits alone**: `hq._refresh_meter` writes `"%d"` and the glyph
+replaces the word. Centre-bottom rather than the top-left corner it started in: it is the
+map's one number and the currency the special pins are gated on, so it sits on the centre
+line the eye already travels instead of over the pins. One star and a count, deliberately
+NOT a `StarRow` of N-lit-of-M — that shape is the rally MEDAL readout and would imply a
+maximum. It shows the **spendable balance**
 (`Save.stars_available`) with **no denominator**: stars are currency now, so what
 matters is what the player can take to the present box, and there is no meaningful
 maximum to divide by (the balance falls on a purchase and the Rally Challenge tops it
@@ -1442,7 +1454,9 @@ parade) assumes a `rally_id` meta and the box has no rally.
   balance is short), `_car_stats_label` carries the shortfall or the reason it is free, and
   the prev/next **arrows are hidden** (`_set_carpark_arrows_visible`) because there is
   nothing to cycle — though the centre label they share a row with is where the revealed
-  car's name lands. `_car_hint_label` swaps "Choose your car" for present copy.
+  car's name lands. `_car_hint_label` — hidden and empty in every ordinary lineup — is
+  SHOWN here, and only here, for "Open it to see what is inside": the box is the one target
+  with no other affordance, whereas a lot full of cars with a ◄ / ► row needed no caption.
 - **Opening it** (`hq._open_present`, on the bottom button): buys the car, then **puts it in
   the box BEFORE a single wall moves** — the car is spawned at the box centre while the
   walls still hide it, so the reveal is the box genuinely opening *on* the car rather than a

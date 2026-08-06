@@ -1753,11 +1753,15 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 	hq._table_ui._enter_table()
 	assert_eq(hq._view, hq.View.TABLE, "tapping the table drops the camera to the map view")
 	assert_true(hq._table_layer.visible, "the map HUD is shown")
-	# CHANGED DELIBERATELY (twice): the meter used to read "Progress to the Showdown" for one
-	# region, then "N / M rallies completed" for the whole roster. It now reports STARS,
-	# because the star total is what gates the special events — the table HUD and the special
-	# pins must speak the same metric.
-	assert_string_contains(hq._map_meter.text, "STARS", "the star meter is shown")
+	# CHANGED DELIBERATELY (three times): the meter used to read "Progress to the Showdown" for
+	# one region, then "N / M rallies completed" for the whole roster, then "Stars: N". It now
+	# reports the star BALANCE as digits alone, beside a star polygon — the word was redundant
+	# next to the glyph, and stars are what gate the special pins, so the table HUD and the
+	# pins speak the same metric. Assert the number, and that the glyph is actually there.
+	assert_eq(hq._map_meter.text, str(Save.stars_available()),
+		"the meter shows the spendable star balance")
+	assert_eq(hq._map_meter.get_parent().find_children("*", "StarRow", true, false).size(), 1,
+		"a drawn star stands in for the word 'stars'")
 
 
 func test_hq_map_locks_a_special_until_its_star_gate_opens() -> void:
@@ -5699,6 +5703,26 @@ func test_the_present_screen_prices_its_own_bottom_button() -> void:
 	hq._refresh_present_button()
 	assert_false(hq._start_button.disabled, "affording it enables the button")
 	assert_eq(hq._car_name_label.text, "", "no car is named before the box is opened")
+
+
+func test_the_car_park_only_captions_itself_for_the_present_box() -> void:
+	# The hint line over the lot is gone: a garage full of cars with a prev/next row says
+	# "choose your car" by itself. The present box is the exception — a sealed box has no
+	# other affordance — so the label survives for that one mode and must go away again.
+	var save: Node = get_node("/root/Save")
+	save.grant_car(CarFixtures.cars()[0]["id"])
+	save.profile["stars_earned"] = int(Config.data.star_cost_per_car)
+	save.profile["stars_spent"] = 0
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_free_roam()
+	await get_tree().process_frame
+	assert_false(hq._car_hint_label.visible, "an ordinary lineup carries no hint line")
+	hq._enter_present_box()
+	await get_tree().process_frame
+	assert_true(hq._car_hint_label.visible, "the present box explains itself")
+	assert_ne(hq._car_hint_label.text, "", "...with actual copy")
 
 
 func test_opening_the_present_puts_the_car_in_the_box_and_names_it_under_it() -> void:
