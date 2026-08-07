@@ -469,6 +469,104 @@ func test_corner_straightness_is_memoised_to_the_same_value() -> void:
 			"memo agrees with the corner's actual heading change ('%s')" % spec["name"])
 
 
+# How often each corner comes out FIRST in the candidate draw — i.e. the corner the
+# search tries before any other, which is what the weighting actually controls. Sampled
+# off _candidates directly rather than off generated tracks: it is the same code path the
+# DFS consumes, but thousands of draws cost milliseconds instead of thousands of searches,
+# and no collision/backtracking noise sits between the weights and the measurement.
+func _first_pick_counts(corners: Array, straightness: float, samples: int) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 90210
+	var counts := {}
+	for spec in corners:
+		counts[String(spec["name"])] = 0
+	for _i in samples:
+		var first: Dictionary = TrackGenerator._candidates(corners, rng, straightness)[0]
+		var picked := String(corners[first["corner_index"]]["name"])
+		counts[picked] += 1
+	return counts
+
+
+# The rarity multiplier the generator resolves for each authored corner, by name —
+# read through the generator's own accessor so the tests below follow a retune of
+# CORNER_WEIGHTS instead of pinning the chosen numbers.
+func _corner_multipliers(corners: Array) -> Dictionary:
+	var out := {}
+	for i in corners.size():
+		out[String(corners[i]["name"])] = TrackGenerator._candidate_weight_multiplier(
+			corners, { "corner_index": i, "flip": false, "straight": 0.0 })
+	return out
+
+
+func test_corner_weights_name_real_corners() -> void:
+	# CORNER_WEIGHTS is keyed by corner NAME (rarity is an authoring choice about one
+	# shape, not something its curve expresses), which means a rename would silently drop
+	# that corner back to its full, unweighted share. Fail loudly here instead.
+	var authored := {}
+	for spec in CornerLibrary.CORNERS:
+		authored[String(spec["name"])] = true
+	assert_gt(TrackGenerator.CORNER_WEIGHTS.size(), 0,
+		"CORNER_WEIGHTS is non-empty (else the tests below assert nothing)")
+	for name in TrackGenerator.CORNER_WEIGHTS:
+		assert_true(authored.has(String(name)),
+			"CORNER_WEIGHTS key '%s' is a real CornerLibrary corner" % name)
+
+
+func test_corner_weights_shape_the_draw_with_no_straightness_bias() -> void:
+	# The multipliers must apply to EVERY track, so they have to bite at straightness 0 —
+	# where the draw used to be a plain unbiased shuffle. With the straightness factor at
+	# 1 for every candidate, a corner's weight IS its multiplier, so its expected share of
+	# first picks is mult / sum(mult): an exact prediction derived from the table (not from
+	# the chosen numbers), which a retune follows automatically.
+	var corners := TrackGenerator._turn_corners()
+	var mult := _corner_multipliers(corners)
+	var total := 0.0
+	for name in mult:
+		total += float(mult[name])
+	var samples := 4000
+	var counts := _first_pick_counts(corners, 0.0, samples)
+	for name in counts:
+		var expected := float(mult[name]) / total
+		var observed := float(counts[name]) / float(samples)
+		# 25% relative band: ~3 sigma for the rarest corner at this sample count, so the
+		# assertion tracks the weights without turning sampling noise into a failure.
+		assert_almost_eq(observed, expected, expected * 0.25,
+			"'%s' is drawn first at its weighted share (%.3f expected)" % [name, expected])
+
+
+func test_corner_weights_never_exclude_a_corner() -> void:
+	# Rarity is not exclusion: even the most heavily down-weighted shape has to keep
+	# turning up, at both bias extremes, or the DFS would lose the fallback it needs when
+	# nothing gentler fits (and the CORNER_WEIGHT_MIN floor would be doing nothing).
+	var corners := TrackGenerator._turn_corners()
+	for straightness in [0.0, 1.0]:
+		var counts := _first_pick_counts(corners, straightness, 4000)
+		for name in counts:
+			assert_gt(int(counts[name]), 0,
+				"'%s' is still drawn first sometimes at straightness %s" % [name, straightness])
+
+
+func test_down_weighted_corners_are_rarer_than_full_weight_ones() -> void:
+	# The ordering that the multipliers exist to create, stated without reference to any
+	# particular value: anything the table marks down is drawn less than anything it
+	# leaves alone, and a smaller multiplier is rarer than a larger one. Measured at
+	# straightness 0 — the only setting where corners are comparable on weight alone,
+	# since above it the straightness bias also sorts them by sharpness.
+	var corners := TrackGenerator._turn_corners()
+	var mult := _corner_multipliers(corners)
+	var counts := _first_pick_counts(corners, 0.0, 4000)
+	var down := 0
+	for a in counts:
+		for b in counts:
+			if float(mult[a]) >= float(mult[b]):
+				continue
+			down += 1
+			assert_lt(int(counts[a]), int(counts[b]),
+				"'%s' (weight %s) is drawn less often than '%s' (weight %s)"
+					% [a, mult[a], b, mult[b]])
+	assert_gt(down, 0, "at least one corner is down-weighted relative to another")
+
+
 func test_candidate_order_is_a_deterministic_permutation() -> void:
 	# The weighted draw now sorts an index permutation with an explicit (key, index)
 	# tie-break instead of dictionaries, so the order must be fully determined by the

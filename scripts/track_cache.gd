@@ -20,7 +20,10 @@ const CACHE_VERSION := "1"
 # Bumped to 3 for the smoothed Square corner (CornerLibrary): its minimum radius went
 # 4.7 m -> 8.4 m, which changes both the layout and the achievable time on every stage
 # that places one.
-const BOARD_EPOCH := 3
+# Bumped to 4 for TrackGenerator.CORNER_WEIGHTS (per-corner rarity multipliers): the
+# candidate draw is now weighted at every straightness, including 0 where it used to be
+# a plain shuffle, so every stage's layout changed.
+const BOARD_EPOCH := 4
 
 static var _entries: Dictionary = {}
 static var _loaded := false

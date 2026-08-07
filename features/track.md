@@ -74,23 +74,44 @@ the road around lakes.
 - **Chain shape:** corner → connecting straight → corner. Each step places a
   *piece* = (straight length) + (corner type, L/R flip). Candidates are
   `CornerLibrary` corners (excluding `Straight`) × {left, right} × a fixed set of
-  straight lengths (`STRAIGHT_OPTIONS_M`), shuffled with a seeded RNG.
+  straight lengths (`STRAIGHT_OPTIONS_M`), shuffled with a seeded RNG. The order is
+  always an Efraimidis-Spirakis weighted draw (`key = u^(1/weight)`, sorted high→low,
+  with an index tie-break because `sort_custom` isn't stable) — seeded, so
+  deterministic — and every candidate is always present, so the DFS can still backtrack
+  onto a sharp corner when nothing gentler fits and completeness is unaffected. Two
+  independent factors multiply into `weight` (next two bullets).
 - **Straightness bias (easy turns):** `straightness` (0..1) weights the candidate
   shuffle toward *straighter* pieces — gentler corners (less heading change) and
   longer connecting straights — so the search tries them first and the placed track
   favours easy turns. `_candidate_straightness` blends `_corner_straightness` (the
   corner's gentleness, derived from its total heading change so it needs no table)
-  with the connecting-straight length; the ordering is an Efraimidis-Spirakis
-  weighted draw (`key = u^(1/weight)`), so it stays fully seeded → deterministic and
-  every candidate remains present (the DFS can still backtrack onto a sharp corner
-  when a gentle one won't fit — completeness is unaffected). `0` (default) is the
-  original unbiased Fisher-Yates shuffle. It changes the generated SHAPE, so the same
-  value is passed wherever a track's target time is derived. Set per rally event by
-  `RallyLibrary.event_straightness` — earlier-game events run higher (easier).
+  with the connecting-straight length. `0` (the default) means no straightness bias —
+  **not** an even draw, since the per-corner weights below still apply. It changes the
+  generated SHAPE, so the same value is passed wherever a track's target time is
+  derived. Set per rally event by `RallyLibrary.event_straightness` — earlier-game
+  events run higher (easier).
+- **Per-corner rarity (`CORNER_WEIGHTS`):** a multiplier per authored corner, keyed by
+  `CornerLibrary` corner NAME, that scales its sampling weight on **every** track
+  regardless of `straightness` (which is why there's no unbiased fast path any more).
+  Today `1` and `Square` sit at `0.5` (about half as common as an unweighted corner) and
+  `Hairpin` at `0.2` (about five times rarer); a corner missing from the table keeps its
+  full, even share. `_candidate_weight_multiplier` resolves it, floored at
+  `CORNER_WEIGHT_MIN` so a `0` can't divide by zero in the draw or silently exile a
+  shape. **Multiplied** into the weight rather than folded into
+  `_candidate_straightness`, so one corner's rarity relative to another is identical at
+  every straightness value — straightness decides which *sharpness* is favoured, the
+  multiplier decides how big one authored shape's slice of that is. Keyed by name (unlike
+  `_is_hairpin`, which is deliberately geometry-derived) because rarity is an authoring
+  choice about a specific corner rather than a property its curve can express; the cost
+  is that a rename would silently reset the multiplier, which
+  `test_corner_weights_name_real_corners` guards. `CORNER_WEIGHTS` is folded into
+  `constants_fingerprint()`, so a retune auto-invalidates the committed track cache —
+  and since it changes every stage's layout, retuning it also warrants a
+  `TrackCache.BOARD_EPOCH` bump.
 - **No consecutive hairpins (hard rule):** a candidate whose corner is
   a hairpin SHAPE is rejected outright when the piece already at the
   frontier is also one — a 180° straight into another 180° reads as a switchback
-  rather than rally flow. Unlike the straightness bias above this **excludes**
+  rather than rally flow. Unlike the two weightings above this **excludes**
   candidates rather than reweighting them, so the DFS backtracks instead of ever
   placing the pair. Tested inside `_search`'s candidate loop (before
   `_build_candidate`, so the pairing costs no tessellation) rather than by pruning
@@ -242,7 +263,9 @@ search cost (and its restart/backtrack variability) from both generation sites
   `stage_key()`, which stamps only `BOARD_EPOCH`. So a shape edit with no manual
   `BOARD_EPOCH` bump is precisely the silent-stale-board case, arrived at without ever
   touching `CACHE_VERSION`. Bumped to **3** for the smoothed `Square` corner (minimum
-  radius 4.7 m -> 8.4 m). `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
+  radius 4.7 m -> 8.4 m), and to **4** for `TrackGenerator.CORNER_WEIGHTS` (the candidate
+  draw became weighted at every straightness, including `0` where it was a plain
+  shuffle). `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
   (see [global-leaderboards.md](global-leaderboards.md)), which is the id every
   posted [global leaderboard](global-leaderboards.md) entry is keyed by. A
   `CACHE_VERSION` bump means the cached track for a stage changed shape, so any

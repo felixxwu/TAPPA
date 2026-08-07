@@ -143,8 +143,10 @@ Each `RALLIES` entry:
   run higher** so the start of the game is easier, while the hardest events
   (the upper-rung specials) sit at the bottom of the authored band. Authored values now span
   ~0.5–1.0 (a 2026-08 rescale mapped every authored value `v -> 0.5 + 0.5 * v`),
-  so even the twistiest shipped stage carries a moderate gentle-corner bias.
-  See [track.md](track.md). `cliffiness` (0–1, default 0.0 via
+  so even the twistiest shipped stage carries a moderate gentle-corner bias. It is not
+  the only thing shaping the corner mix: `TrackGenerator.CORNER_WEIGHTS` keeps the
+  sharpest authored shapes (`1`, `Square`, `Hairpin`) rarer than the rest on every
+  stage, at any `straightness` including 0. See [track.md](track.md). `cliffiness` (0–1, default 0.0 via
   `event_cliffiness`) sets how cliffy the stage is — 0 = flat, 1 = the tallest
   cliffs/deepest drops (`cliff_max_height_m`). It only scales the height ceiling
   (the noise wavelength is global); **earlier, lower-tier events run tamer**,
