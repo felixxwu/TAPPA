@@ -475,14 +475,25 @@ but every **(car, engine) pairing** the rally admits.
   combo's p/w rather than only raising its power. If a restriction admits nothing
   the fallback mirrors `_eligible_cars`: every car's **stock** combo, never the
   unfiltered cross product.
-- **Distinct draw** — `_draw_distinct_combos(rng, pool, count)` Fisher-Yates
-  shuffles the pool with the rally-seeded rng and takes a prefix, so every rival is
-  a *different* build. This replaced an independent per-rival draw **with
-  replacement**: with 10 cars and 9 rivals, all-distinct happened ~0.4% of the
-  time, so fields were routinely several copies of the same car. When the pool is
-  smaller than the field it **cycles** the pool (a 3-combo rally fields 3+3+3)
-  instead of drawing random repeats, so even the degenerate case is as varied as
-  the pool allows.
+  **A special has `"restriction": {}`**, and `ineligibility_reason` returns "" on an
+  empty restriction before it looks at anything else — so a special's pool is the
+  WHOLE cross product (every car × every engine), with no p/w band trimming it. That
+  is the only way a special's field differs from an ordinary rally's: there is no
+  `is_special` branch anywhere in `generate_opponent_field`. The consequence is a
+  deliberately open grid — a special can field a build far above (or below) whatever
+  the player brought — and it is the same openness that lets the player enter in
+  anything (see *Anti-soft-lock guarantees*).
+- **Distinct draw** — `_draw_distinct_combos(rng, pool, count)` samples the pool
+  **without replacement, weighted by `swap_weight(pw_delta)`** with the rally-seeded
+  rng, so every rival is a *different* build and modest engine swaps are picked ahead
+  of wild ones (`pw_delta` is |combo p/w − the car's STOCK p/w| in hp/tonne; the
+  weight is `exp(-pw_delta / OPPONENT_SWAP_PW_SPREAD)`, a bias and never a filter, so
+  a wild swap stays reachable). Sampling without replacement replaced an independent
+  per-rival draw **with replacement**: with 10 cars and 9 rivals, all-distinct
+  happened ~0.4% of the time, so fields were routinely several copies of the same
+  car. When the pool is smaller than the field it **cycles** the pool (a 3-combo
+  rally fields 3+3+3) instead of drawing random repeats, so even the degenerate case
+  is as varied as the pool allows.
 - **Pace** — the per-rival pace math is unchanged, but `car_meta` is now the
   combo's meta, so the swap feeds `LapTimeModel.optimum_ms`. An engine carries its
   whole **transmission** (`gear_ratios`, `final_drive`, `shift_time`), so a swap
