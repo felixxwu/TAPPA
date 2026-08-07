@@ -450,6 +450,11 @@ var _garage_focus := 1          # which garage action the cursor sits on (defaul
 # Mystery Box is omitted when none is held, so no index in this row is a constant.
 var _garage_career_index := 1
 var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
+# The garage's NEXT CARROT line — "2 more rallies → The Woodland Trial (unlocks engine
+# swaps)". Built by HqOverlays.build_garage_overlay, written by _refresh_carrot_line; the
+# panel is hidden along with the label once no locked special is left to work toward.
+var _carrot_panel: PanelContainer
+var _carrot_label: Label
 
 # Tuning-lift overlay widgets.
 var _lift_info_panel: VBoxContainer  # bottom-left car readout: selector row + stats row (hidden when a sub-menu is open)
@@ -1020,6 +1025,59 @@ func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 	return _build_readout_box("%d/%d rallies" % [have, need], -1, _special_unlock_line(rally), true)
 
 
+# --- The next carrot ---------------------------------------------------------
+# The one progression line the HQ always carries: what the player is working toward, and
+# what winning it gives them. "2 more rallies → The Woodland Trial (unlocks engine swaps)".
+#
+# It is the map's locked-special teaser (_build_special_teaser_label) promoted to the
+# GARAGE — the station the player lands on after every rally and starts every trip from.
+# On the map the same fact is a "0/2 rallies" box hanging over one grey trophy among a
+# dozen pins, which means the player only meets it if they fly to the table AND happen to
+# look at the right corner; here it is unmissable and costs one line. Both readouts derive
+# from RallyLibrary.next_locked_special_id / completions_needed and from the SAME
+# _special_unlock_line, so the carrot and the pin can never quote different numbers or
+# name different rewards.
+#
+# EMPTY once every special is open ("" — the caller hides the line): there is no next rung
+# to work toward, and a line that says so would be chrome. Never empty-with-a-zero: a
+# special that has already opened is not in next_locked_special_id's answer at all, so
+# `remaining` here is always >= 1.
+func _carrot_line() -> String:
+	var rally_id := RallyLibrary.next_locked_special_id(Save.profile)
+	if rally_id == "":
+		return ""
+	var rally := RallyLibrary.by_id(rally_id)
+	if rally.is_empty():
+		return ""
+	var remaining := RallyLibrary.completions_needed(rally, Save.profile)
+	if remaining <= 0:
+		return ""  # defensive: an open special isn't a carrot
+	# "N more rallies", pluralised in the one place the game pluralises (UITheme.count_noun) —
+	# the "more" rides along inside the noun so the singular reads "1 MORE RALLY". And
+	# "rallies", not "events", for the same reason the pin teaser says it: the gate counts
+	# completed RALLIES, while an event is one stage inside a rally.
+	var line := "%s → %s" % [
+		UITheme.count_noun(remaining, "more rally", "more rallies"),
+		String(rally.get("name", rally_id))]
+	var unlock := _special_unlock_line(rally)
+	if unlock != "":
+		line += " (%s)" % unlock
+	return line
+
+
+# Write the garage's carrot line and show/hide it with its panel. Called from
+# _update_overlays, so every path that redraws a station — finishing a rally, a cloud
+# profile swap, buying a car — repaints it without its own hook.
+func _refresh_carrot_line() -> void:
+	if not is_instance_valid(_carrot_label):
+		return
+	var line := _carrot_line()
+	_carrot_label.text = line
+	# The PANEL carries the visibility too: an empty label still draws its readout box, so
+	# hiding only the text would leave a bare box floating over the garage.
+	_carrot_panel.visible = line != ""
+
+
 # What a special unlocks, as a display line ("unlocks Supercharger"), derived from the
 # upgrade catalogue so the map can never drift from the actual gate. A special that gates
 # no part (e.g. the engine-swap capability) names that instead.
@@ -1435,6 +1493,9 @@ func _update_overlays() -> void:
 	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
+	# BEFORE _normalize_menus: the carrot line is dynamic text, so it has to be written
+	# while the house rules (uppercase) are still to come, not after them.
+	_refresh_carrot_line()
 	_normalize_menus()
 
 

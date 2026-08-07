@@ -106,7 +106,33 @@ func build_garage_overlay() -> void:
 	# lift to tune your car": a caption naming the room you can see, plus instructions for two
 	# objects that are already lit, labelled and pickable in the 3D scene. The garage is a
 	# diegetic station — the room IS the menu — so a line of prose over it only competes with
-	# the thing it describes. The action row at the bottom is the only chrome here now.
+	# the thing it describes.
+	#
+	# THE ONE LINE that does earn its place up here: the NEXT CARROT — "2 more rallies → The
+	# Woodland Trial (unlocks engine swaps)". Not prose about the room, but live progression
+	# state that exists nowhere else in the hub: the same requirement the map's locked-special
+	# teaser quotes (hq._build_special_teaser_label), promoted out of the map table so the
+	# player sees what they are working toward on the screen they land on after every rally,
+	# without having to fly to the table and find the one grey trophy that says it. Both
+	# readouts go through RallyLibrary.next_locked_special_id / completions_needed, so the
+	# number here and the number on the pin cannot drift. Text + visibility are owned by
+	# hq._refresh_carrot_line (hidden outright once every special is open — no carrot left).
+	#
+	# A readout PANEL rather than bare text, the same idiom the tuning lift's car-stats line
+	# uses (below): a passive line standing over a lit 3D room needs its own ground to stay
+	# legible, where the action row's buttons carry their own.
+	var carrot_box := PanelContainer.new()
+	carrot_box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	carrot_box.custom_minimum_size.y = UITheme.MENU_ROW_H
+	carrot_box.add_theme_stylebox_override("panel", UITheme.readout_box())
+	root.add_child(carrot_box)
+	_hq._carrot_panel = carrot_box
+	_hq._carrot_label = _hq._label("", 14)
+	_hq._carrot_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	carrot_box.add_child(_hq._carrot_label)
+	# No initial fill here: _update_overlays writes it (and every later repaint) on the way
+	# into the first station, which is also what gets the house uppercase applied to it.
+
 	root.add_child(UITheme.vspacer())
 
 	# The bottom action row is rebuilt IN PLACE by hq._refresh_garage_row():
