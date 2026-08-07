@@ -1897,6 +1897,75 @@ func test_hq_only_the_next_locked_special_is_teased() -> void:
 		"the far special is teased once it becomes the next rung")
 
 
+func test_hq_garage_always_shows_the_next_carrot() -> void:
+	# The map's locked-special teaser, promoted to a permanent line on the GARAGE — the
+	# station the player lands on after every rally. It names the count still owed, the
+	# special it opens, and (below) what winning that special gives.
+	_install_special_ladder_roster()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._go_to(hq.View.GARAGE)
+	assert_true(hq._carrot_panel.visible, "the carrot line is up in the garage")
+	var line: String = hq._carrot_label.text
+	assert_string_contains(line, "1 MORE RALLY",
+		"it quotes what is still owed, pluralised (one to go, so singular)")
+	assert_string_contains(line, "NEAR SPECIAL", "and names the special that count opens")
+	# The SAME requirement the map pin quotes — both read next_locked_special_id /
+	# completions_needed, so the two surfaces can't disagree about the number.
+	assert_string_contains(_label_texts(_pin_label_sprite(_pin_for(hq, "near"))).to_upper(),
+		"0/1", "the map teaser quotes the same rung")
+	# Winning the ordinary rally moves the carrot up the ladder, exactly as the teaser moves.
+	_save.complete_rally("ord", 60000, 1)
+	hq._go_to(hq.View.GARAGE)
+	assert_string_contains(hq._carrot_label.text, "FAR SPECIAL",
+		"once the near rung opens the line points at the next one still shut")
+	assert_string_contains(hq._carrot_label.text, "1 MORE RALLY",
+		"and re-counts against that rung")
+
+
+func test_hq_carrot_names_what_the_special_unlocks() -> void:
+	# The line's whole point is the REWARD, not just the destination: the count and the
+	# rally name are followed by what winning it gives. Wired to the same
+	# _special_unlock_line the map pin uses, so the two can't name different rewards.
+	# The engine-swap CAPABILITY is used here because it is authored on RallyLibrary
+	# itself (ENGINE_SWAP_UNLOCK_RALLY) rather than in the upgrade catalogue — so this
+	# stays a test of the wiring, not of any particular authored part.
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
+			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, "name": "Swap Special", "region": "home",
+			"special": true, "requires_completions": 1, "map_pos": Vector2(0.6, 0.5),
+			"restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._go_to(hq.View.GARAGE)
+	assert_string_contains(hq._carrot_label.text, "UNLOCKS ENGINE SWAPS",
+		"the carrot names the capability the special opens")
+
+
+func test_hq_carrot_hides_once_every_special_is_open() -> void:
+	# No rung left to work toward — the line goes away entirely rather than standing there
+	# with nothing to say. Its readout box hides with it, so no empty panel is left floating.
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
+			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "open", "name": "Open Special", "region": "home", "special": true,
+			"requires_completions": 0, "map_pos": Vector2(0.6, 0.5), "restriction": {},
+			"events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._go_to(hq.View.GARAGE)
+	assert_false(hq._carrot_panel.visible, "nothing left to tease, so no line")
+	assert_eq(hq._carrot_label.text, "", "and no stale text behind the hidden panel")
+
+
 func test_hq_pins_stars_reflect_best_placement() -> void:
 	# A 1st-place best earns 3 stars; a 3rd-place best earns 1.
 	_save.complete_rally("shakedown", 60000, 1)

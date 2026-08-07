@@ -429,7 +429,9 @@ generator also uses it per-rival.
   still shut ("" once all are open; roster order breaks a tie). The map teases **only**
   this special: the ladder is strictly ordered, so a requirement further up is not yet
   actionable, and every locked special above this one hangs no readout box at all — just
-  its trophy (see [menus.md](menus.md)).
+  its trophy (see [menus.md](menus.md)). It is also what the HQ's permanent **next-carrot
+  line** names ("2 more rallies → The Woodland Trial (unlocks engine swaps)",
+  `hq._carrot_line`) — the same rung, quoted on the garage station instead of on the map.
 - `engine_swap_completion_requirement()` — `completions_required` of
   `ENGINE_SWAP_UNLOCK_RALLY`, the figure the garage swap row and the car-park
   confirm popup quote (also worded "N rallies").

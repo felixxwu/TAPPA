@@ -404,9 +404,34 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   "GARAGE — tap the map table to choose a rally, or the lift to tune your car", which named
   the room you can see and gave instructions for two objects already lit, labelled and
   pickable in the 3D scene. The station IS the menu, so a line of prose over it only competes
-  with what it describes — the action row is the only chrome here. Same reasoning removed the
+  with what it describes. Same reasoning removed the
   car park's "Choose your car" line (see the present box below, the one mode that still shows
   that label).
+
+  **THE NEXT CARROT — the one permanent line up there.** Top-left, in a
+  `UITheme.readout_box()` panel (the same passive-readout idiom the tuning lift's stats
+  line uses, so it stays legible over a lit 3D room): **"2 MORE RALLIES → THE WOODLAND
+  TRIAL (UNLOCKS ENGINE SWAPS)"**. It is the map's locked-special teaser
+  (`hq._build_special_teaser_label`) **promoted out of the map table** — on the map the
+  same fact is a "0/2 rallies" box hanging over one grey trophy among a dozen pins, so the
+  player only meets it if they fly to the table *and* look at the right corner; the garage
+  is the station they land on after every rally and start every trip from, so a permanent
+  line there is the cheapest retention lever available. Not prose about the room (see
+  above) — live progression state that exists nowhere else in the hub.
+  `hq._carrot_line` builds the text and `hq._refresh_carrot_line` writes it from
+  `_update_overlays` (before `_normalize_menus`, since it is dynamic text that still needs
+  the house uppercase), so every path that redraws a station — a finished rally, a cloud
+  profile swap, a car bought — repaints it with no hook of its own. It reads exactly the
+  same `RallyLibrary.next_locked_special_id` / `completions_needed` the pin teaser does and
+  the same `hq._special_unlock_line`, so the carrot and the pin can never quote different
+  numbers or name different rewards. "N more **rallies**", not events, for the reason the
+  teaser says it too (the gate counts completed rallies; an event is one stage inside one),
+  pluralised through `UITheme.count_noun`. **Hidden outright — panel and all — once every
+  special is open** (`next_locked_special_id` returns `""`): there is no next rung to work
+  toward, and the empty readout box would be chrome. Guarded by
+  `test_menu_flow.gd::test_hq_garage_always_shows_the_next_carrot`,
+  `::test_hq_carrot_names_what_the_special_unlocks` and
+  `::test_hq_carrot_hides_once_every_special_is_open`.
 
   *This row used to be TWO levels:* a **Drive** button swapped it for
   Back / Career / Free Roam / Online, with its own Back going up a level and its own
@@ -1387,6 +1412,11 @@ on yet, and eight teasers at once buried the map under unreachable menus; on a
 fresh profile exactly one special quotes a number. Guarded by
 `test_menu_flow.gd::test_hq_only_the_next_locked_special_is_teased` and
 `::test_hq_locked_special_shows_a_full_opacity_teaser_box`.
+**The same rung is quoted permanently in the GARAGE** as the next-carrot line
+(`hq._carrot_line`, see the GARAGE section above) — the map teaser is where the fact is
+*placed on the world*, the garage line is where it is *always in front of the player*.
+Both derive from `next_locked_special_id` / `completions_needed` / `_special_unlock_line`,
+so they cannot drift.
 An unlocked special's pin names its unlock too. A meter sits at the **bottom centre** of
 the HUD (`build_table_overlay`) — a drawn gold star (a one-star `StarRow`, since Syne Mono
 has no ★) beside the **digits alone**: `hq._refresh_meter` writes `"%d"` and the glyph
