@@ -43,6 +43,33 @@ const RESTART_SEED_STRIDE := 1_000_003
 # clearly felt without ever excluding a candidate (the DFS can still backtrack onto
 # a sharp corner when nothing gentle fits).
 const STRAIGHTNESS_BIAS := 6.0
+# Per-corner rarity multipliers on the sampling weight, keyed by CornerLibrary corner
+# NAME. Applied on top of — and independently of — the straightness bias, so they bite
+# on EVERY track including straightness 0, where the draw was previously an unbiased
+# shuffle. A corner absent from this table keeps its natural, equal share (1.0); 0.5
+# means "picked about half as often as an unweighted corner", 0.2 "about five times
+# less often". Multiplied into the weight (rather than added), so the ratio between two
+# corners is the same at every straightness value.
+#
+# Keyed by name, not derived from geometry (unlike _corner_straightness / _is_hairpin),
+# because rarity is an authoring choice about one specific shape rather than a property
+# its curve can express — two corners of identical sharpness can deserve different
+# shares. The cost is that renaming a corner silently drops its multiplier back to 1.0;
+# `1`/`Square`/`Hairpin` are asserted to exist by test_corner_weights_name_real_corners
+# so a rename fails loudly instead.
+#
+# Reweights the candidate ORDER only. Like the straightness bias it never removes a
+# candidate, so the DFS still falls back on a Hairpin when nothing else fits and search
+# completeness is unaffected.
+const CORNER_WEIGHTS := {
+	"1": 0.5,        # tightest numbered turn (~85°)
+	"Square": 0.5,   # sharp ~90°
+	"Hairpin": 0.2,  # ~180° — the rarest shape in the set
+}
+# Floor on a resolved corner multiplier. Keeps a weight strictly positive: the weighted
+# draw computes pow(u, 1.0 / weight), so a 0 in CORNER_WEIGHTS would divide by zero, and
+# rarity must never become exclusion (that is what the hairpin rule below is for).
+const CORNER_WEIGHT_MIN := 0.01
 # Back-to-back hairpins are banned outright in the DFS (see _search). The straightness
 # bias above only reweights sampling — it still hands out hairpin-hairpin pairs when a
 # boxed-in frontier leaves nothing gentler, and a 180 immediately into another 180 is a
@@ -94,6 +121,7 @@ static func constants_fingerprint() -> String:
 		WATER_CLIP_CELLS, WATER_MAX_WET_FRACTION,
 		MAX_RESTARTS, RESTART_SEED_STRIDE, STRAIGHTNESS_BIAS,
 		HAIRPIN_STRAIGHTNESS_MAX,
+		CORNER_WEIGHTS, CORNER_WEIGHT_MIN,
 	]).sha256_text().substr(0, 12)
 
 
@@ -206,9 +234,10 @@ static func _snapshot(world_points: Array) -> PackedVector2Array:
 # any (start_pos, start_heading) — keeping the opponents' derived target times
 # (computed at a canonical pose with the same value) in sync with the run track.
 # `straightness` (0..1) biases the search toward gentler corners + longer
-# connecting straights (see _candidates): 0 = no bias (the original layout), higher
-# = an easier, less twisty track. It changes the generated SHAPE, so the same value
-# must be passed wherever a track's target time is derived.
+# connecting straights (see _candidates): 0 = no straightness bias, higher = an easier,
+# less twisty track. It changes the generated SHAPE, so the same value must be passed
+# wherever a track's target time is derived. It is not the only weighting: CORNER_WEIGHTS
+# reweights individual authored corners on every track, straightness 0 included.
 # `should_abort` (optional): a Callable() -> bool polled during the search; when it
 # returns true the search bails immediately and returns its best partial. Lets an
 # animated caller (the dev seed lab) CANCEL an in-flight generation when the inputs
@@ -366,10 +395,14 @@ static func _turn_corners() -> Array:
 	return out
 
 
-# All candidate pieces for one step, shuffled deterministically. `straightness`
-# (0..1) biases the order toward straighter pieces (gentler corners + longer
-# connecting straights), so the search TRIES them first and the placed track
-# favours easy turns; 0 leaves the order an unbiased shuffle (the original layout).
+# All candidate pieces for one step, shuffled deterministically. Two independent
+# weightings decide the order — the search TRIES the front of the list first, so a
+# heavier candidate is the one the placed track tends to get:
+#  * `straightness` (0..1) biases toward straighter pieces (gentler corners + longer
+#    connecting straights) for an easier, less twisty track; 0 = no straightness bias.
+#  * CORNER_WEIGHTS makes individually-authored corners rarer or commoner, at EVERY
+#    straightness (including 0, which is why there is no unbiased fast path any more).
+# Neither ever removes a candidate, so the DFS can still fall back on a sharp corner.
 static func _candidates(corners: Array, rng: RandomNumberGenerator,
 		straightness: float = 0.0) -> Array:
 	_ensure_candidate_template(corners)
@@ -377,20 +410,11 @@ static func _candidates(corners: Array, rng: RandomNumberGenerator,
 	# never-mutated candidate dictionaries — the set is identical at every DFS depth,
 	# so rebuilding 64 dictionaries per step was pure garbage.
 	var list: Array = _candidate_template.duplicate()
-	if straightness <= 0.0:
-		# Fisher-Yates with the seeded rng for determinism (unbiased). `while` rather
-		# than a 3-arg range(), which would allocate a throwaway Array per call.
-		var i := list.size() - 1
-		while i > 0:
-			var j := rng.randi_range(0, i)
-			var tmp = list[i]; list[i] = list[j]; list[j] = tmp
-			i -= 1
-		return list
-	# Straightness-weighted shuffle. Each candidate gets a sampling weight rising
-	# with how straight it is; ordering is an Efraimidis-Spirakis weighted draw
-	# (key = u^(1/weight), sorted high→low), which stays fully seeded → deterministic.
-	# Every candidate is still present, just reordered, so the DFS can backtrack onto
-	# a sharp corner when a gentle one won't fit and completeness is unaffected.
+	# Weighted shuffle. Each candidate gets a sampling weight from the two factors
+	# above; ordering is an Efraimidis-Spirakis weighted draw (key = u^(1/weight),
+	# sorted high→low), which stays fully seeded → deterministic. Every candidate is
+	# still present, just reordered, so the DFS can backtrack onto a sharp corner when
+	# a gentle one won't fit and completeness is unaffected.
 	# Sorted as an INDEX permutation against a float64 key buffer, rather than 64
 	# throwaway { cand, key } dictionaries. float64 (not float32) so the keys are the
 	# exact same values the dictionary form compared — no precision-induced reordering.
@@ -406,7 +430,11 @@ static func _candidates(corners: Array, rng: RandomNumberGenerator,
 	order.resize(n)
 	var i := 0
 	while i < n:
-		var weight := 1.0 + w * STRAIGHTNESS_BIAS * _candidate_straightness(corners, list[i])
+		# Multiplicative, so a corner's rarity relative to the others is identical at
+		# every straightness — the straightness bias changes WHICH sharpness is favoured,
+		# the multiplier changes how big one authored shape's slice of that is.
+		var weight := _candidate_weight_multiplier(corners, list[i]) \
+			* (1.0 + w * STRAIGHTNESS_BIAS * _candidate_straightness(corners, list[i]))
 		var u := maxf(rng.randf(), 1e-9)  # u in (0, 1]; guard pow against 0
 		keys[i] = pow(u, 1.0 / weight)
 		order[i] = i
@@ -444,6 +472,16 @@ static func _ensure_candidate_template(corners: Array) -> void:
 		for flip in [false, true]:
 			for sl in STRAIGHT_OPTIONS_M:
 				_candidate_template.append({ "corner_index": ci, "flip": flip, "straight": sl })
+
+
+# Rarity multiplier for one candidate piece, from CORNER_WEIGHTS (see there for why it
+# is keyed by corner name). 1.0 for any corner the table doesn't mention, so adding a
+# corner needs no edit here. Floored at CORNER_WEIGHT_MIN so the weighted draw can never
+# divide by zero or exile a shape outright. Independent of `straightness` — this is what
+# makes the multipliers apply to every track, unbiased ones included.
+static func _candidate_weight_multiplier(corners: Array, cand: Dictionary) -> float:
+	var corner_name: String = corners[cand["corner_index"]]["name"]
+	return maxf(float(CORNER_WEIGHTS.get(corner_name, 1.0)), CORNER_WEIGHT_MIN)
 
 
 # Straightness of one candidate piece in [0, 1]: 1 = dead straight (a gentle corner

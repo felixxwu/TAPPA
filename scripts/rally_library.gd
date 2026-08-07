@@ -611,10 +611,12 @@ static func event_tarmac_fraction(event: Dictionary) -> float:
 
 
 # Bias toward straighter (easier) turns when generating this event's track, in
-# [0, 1]: 0 = no bias (corners chosen freely), 1 = strongly favour gentle corners
-# and long straights. Earlier, lower-tier events run higher so their stages are
-# gentler; the default (0) leaves generation unbiased. Fed to TrackGenerator.generate
-# (it changes the track SHAPE, so the same value is used when deriving target times).
+# [0, 1]: 0 = no straightness bias (any sharpness equally welcome), 1 = strongly favour
+# gentle corners and long straights. Earlier, lower-tier events run higher so their
+# stages are gentler; the default is 0. Fed to TrackGenerator.generate (it changes the
+# track SHAPE, so the same value is used when deriving target times). Note that 0 is not
+# "every corner equally likely" — TrackGenerator.CORNER_WEIGHTS keeps the sharpest
+# authored shapes rarer than the rest on every track, whatever this value is.
 static func event_straightness(event: Dictionary) -> float:
 	return clampf(float(event.get("straightness", 0.0)), 0.0, 1.0)
 
