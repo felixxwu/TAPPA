@@ -11,6 +11,14 @@ const SAMPLE_POINTS := [
 ]
 
 
+# test_car_spawns_just_above_terrain trims the live Config via minimal_world(); undo
+# it so the shortened track / zeroed foliage can't leak into a later file that
+# doesn't reset Config itself. Every other test here builds a bare TerrainManager
+# with explicit layers, so restoring the authored baseline is a no-op for them.
+func after_each() -> void:
+	Config.reset()
+
+
 func _make_layer(wavelength: float, amplitude: float) -> TerrainLayer:
 	var layer := TerrainLayer.new()
 	layer.wavelength_m = wavelength
@@ -156,6 +164,13 @@ func test_target_coords_is_full_ring() -> void:
 
 
 func test_car_spawns_just_above_terrain() -> void:
+	# minimal_world() rather than full generation: both assertions are about the
+	# TERRAIN (the $Floor heightfield and a chunk's material), and minimal_world
+	# deliberately leaves $Floor generated identically — it only trims the track to
+	# 1 turn and drops the foliage, neither of which this test looks at. The spawn
+	# assertion is relational (car.y == height_at(car.xz) + clearance), so it holds
+	# whatever shape the track takes. ~10.6 s -> under a second.
+	SceneTestHelpers.minimal_world()
 	var scene: Node3D = load("res://main.tscn").instantiate()
 	add_child_autofree(scene)
 	var car := scene.get_node("Car") as VehicleBody3D

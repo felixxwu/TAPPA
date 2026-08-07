@@ -82,12 +82,24 @@ static func key_for(params: TrackGenParams, cfg: GameConfig) -> String:
 	return params.cache_key(terrain_fingerprint(cfg), _version_tag())
 
 
-static func lookup(params: TrackGenParams, cfg: GameConfig) -> Dictionary:
+# The stored entry for these params exactly as it sits in the lockfile ({} on a
+# miss) — no geometry rebuilt. The rebuild in lookup() is the expensive half
+# (rasterizing every piece's footprint), so a caller that only needs to know
+# whether an entry EXISTS and whether it is complete should use this instead:
+# sweeping all ~97 rally events through lookup() costs ~47 s, through raw_entry()
+# well under a second.
+static func raw_entry(params: TrackGenParams, cfg: GameConfig) -> Dictionary:
 	_ensure_loaded()
 	var key := key_for(params, cfg)
 	if not _entries.has(key):
 		return {}
-	var entry: Dictionary = _entries[key]
+	return _entries[key]
+
+
+static func lookup(params: TrackGenParams, cfg: GameConfig) -> Dictionary:
+	var entry := raw_entry(params, cfg)
+	if entry.is_empty():
+		return {}
 	return TrackGenerator.rebuild_from_pieces(_deserialize_pieces(entry.get("pieces", [])), params)
 
 

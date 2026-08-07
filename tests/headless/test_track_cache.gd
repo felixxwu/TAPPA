@@ -102,17 +102,23 @@ func test_canonical_event_config_applies_overrides() -> void:
 # data/track_cache.json with complete == true. A stale/missing entry fails here and
 # in CI — rerun ./cache_tracks.sh. (By design this fails after any seed/terrain
 # retune until the lockfile is regenerated; the message says how to fix it.)
+#
+# Uses raw_entry(), NOT lookup(): both assertions are about the stored entry, so
+# rebuilding each event's geometry buys nothing here and cost ~47 s across the ~97
+# authored events (over 7% of the whole suite). That the rebuild itself is faithful
+# is covered on a small synthetic track by test_lookup_hit_rebuilds_track and
+# test_rebuild_matches_live_generation above.
 func test_committed_cache_covers_every_event() -> void:
 	TrackCache.reset()  # force a real load from disk
 	for rally in RallyLibrary.all():
 		for event in rally.get("events", []):
 			var cfg := RallySession.canonical_event_config(event)
 			var params := TrackGenParams.for_event(event, cfg)
-			var hit := TrackCache.lookup(params, cfg)
-			assert_false(hit.is_empty(),
+			var entry := TrackCache.raw_entry(params, cfg)
+			assert_false(entry.is_empty(),
 				"rally %s seed %d missing from lockfile — run ./cache_tracks.sh" % [rally.get("id", "?"), params.seed])
-			if not hit.is_empty():
-				assert_true(hit["complete"], "cached track for rally %s is complete" % rally.get("id", "?"))
+			if not entry.is_empty():
+				assert_true(entry["complete"], "cached track for rally %s is complete" % rally.get("id", "?"))
 
 # Weather must never reach track generation: it is not a shape determinant, and
 # routing it into generation would invalidate all baked track-cache entries for no

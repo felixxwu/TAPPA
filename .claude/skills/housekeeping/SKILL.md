@@ -54,6 +54,14 @@ run only those sections. A bare `/housekeeping` runs everything.
   where a shared `before_all` or `SceneTestHelpers.minimal_world()` would do.
 - Grep for the smell: `grep -rn "before_each" tests/headless/` and check which
   ones build a full world per test.
+- **Over budget → hand off to [`/optimise-test-suite`](../optimise-test-suite/SKILL.md)**
+  instead of diagnosing it here. That skill owns the per-test JUnit timing
+  measurement and both remedies (rewrite/combine the expensive tests; delete the
+  low-value ones). Note the difference in stance: it is deliberately **act-first**
+  and applies its own recommendations without asking, whereas this sweep is
+  report-first — so mention in your report that you're invoking it (or recommend
+  the user run it), and don't duplicate its analysis. Reuse the run from §1 as its
+  baseline rather than starting a second suite run.
 
 ### 3. Tests that violate project conventions
 
@@ -67,6 +75,11 @@ Per `CLAUDE.md` (Testing section), flag tests that:
   whole table as opaque input is fine; leaning on one entry's identity is not.
 - **Skip `CarFixtures.install()`** where a synthetic roster belongs (catalogue-
   dependent tests that aren't catalogue-contract tests).
+
+Report these here; the value-based *pruning* of such tests (deleting the banned
+value pins and catalogue-identity tests outright, rather than just flagging them)
+belongs to [`/optimise-test-suite`](../optimise-test-suite/SKILL.md) → prong 2.
+Point at it instead of deleting anything in this sweep.
 
 ### 4. Docs in sync with code (`features/` and beyond)
 

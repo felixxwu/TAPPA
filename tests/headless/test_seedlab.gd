@@ -11,6 +11,25 @@ func before_each() -> void:
 	await get_tree().process_frame
 
 func after_each() -> void:
+	# show_seedlab() kicks off an ASYNC TrackGenerator search, and the abort/progress
+	# callables it hands the generator are lambdas that capture the menu (they read
+	# _sl_gen / _seedlab_preview). These tests only await a frame or two, so the search
+	# is typically still in flight when GUT autofrees _menu right after this hook —
+	# and the generator polls those callables across its own await boundaries, so it
+	# then calls a lambda whose owner is half-destroyed. That faults with
+	# "Attempt to call function '<anonymous lambda>(self lambda)' on a null instance"
+	# inside track_generator._search, which corrupts the search's return value
+	# ("Invalid access to key 'complete'") and takes the WHOLE headless run down with
+	# it — a genuine intermittent, order-dependent suite killer that never reproduces
+	# under `--fast seedlab`.
+	#
+	# Bumping the generation token makes any in-flight search abort at its next poll
+	# WHILE the menu is still alive; the awaited frames give it the chance to unwind
+	# (the search yields every PROGRESS_STEP_INTERVAL steps under headless pacing).
+	if is_instance_valid(_menu):
+		_menu._sl_gen += 1
+	for _i in 4:
+		await get_tree().process_frame
 	Config.reset()
 
 func test_seedlab_reachable_and_renders() -> void:

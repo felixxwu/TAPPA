@@ -128,6 +128,12 @@
   warm-restore for physics tests, and bare-logic tests (no scene) where possible.
   Reserve full generation for the few files that genuinely assert on it. See
   `features/testing.md` for the full cost model and the available levers.
+  **When a full run does come in over ~5 minutes, invoke the
+  `/optimise-test-suite` skill** (`.claude/skills/optimise-test-suite/`) rather
+  than eyeballing it — it measures per-test cost from the JUnit timings, then cuts
+  the runtime two ways: rewriting/combining the expensive tests, and deleting
+  tests that add little or no robustness value. It acts on its own findings
+  without asking, so it's the one-step answer to "the suite got slow".
 - Don't start a test run while another `./run_tests.sh` is already in
   progress — wait for it to finish and use its result. Concurrent runs waste
   resources and produce confusing, interleaved output.

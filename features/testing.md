@@ -13,8 +13,13 @@
 
 GUT tests, no window. Use `tests/fixtures/test_track.tscn` (flat ground) for
 deterministic physics. For per-test timing, run once with
-`-gjunit_xml_file=res://test_results.xml` and read the `time` attributes (GUT
-has no `-gtimes` flag).
+`-gjunit_xml_file=user://test_results.xml` and read the `time` attributes (GUT has
+no `-gtimes` flag; write to `user://`, since `test_results.xml` isn't gitignored).
+Those `time` attributes cover **test bodies only** — `before_all` and script
+loading are not attributed, and on the 2026-08 baseline that was ~170 s of a 655 s
+run, so always reconcile the per-test sum against the wall-clock. The
+`/optimise-test-suite` skill (`.claude/skills/optimise-test-suite/`) automates this
+measure-then-cut loop; `CLAUDE.md` points at it whenever a full run exceeds ~5 min.
 
 Before the pass the runner does a `Godot --headless --import` **warmup** to
 rebuild the global class cache (`.godot/global_script_class_cache.cfg`). On a
@@ -77,8 +82,14 @@ levers, in order of payoff:
   doesn't leak into later files that don't reset Config). Tests that only inspect
   the car + ground (no world nodes at all) go one cheaper still and instantiate
   the flat `res://tests/fixtures/test_track.tscn` directly (`test_debug_arrows.gd`).
-  Only the files that genuinely assert on the track/terrain/foliage
-  (`test_loading_screen.gd`, `test_terrain.gd`) pay the full generation.
+  Only the files that genuinely assert on the track/terrain/**foliage** pay the
+  full generation: `test_loading_screen.gd`, and `test_smoke.gd` — whose shared
+  `before_all` scene is read by a test counting colliding vs non-colliding
+  `TreeMeshField` children, so zeroing `trees_per_turn` there would quietly make
+  that assertion vacuous. `test_terrain.gd` does **not**: its one scene test
+  (`test_car_spawns_just_above_terrain`) asserts on the `$Floor` heightfield and a
+  chunk's material, both of which `minimal_world()` leaves untouched, so it takes
+  the cheap route and resets Config in `after_each`.
 - **Skip foliage but keep real terrain.** `SceneTestHelpers` exposes exactly two
   helpers — `use_test_config()` and `minimal_world()`. There is no
   `no_foliage_world()`; a foliage-only knob that left `track_turn_count` at its
@@ -321,6 +332,37 @@ Two ways out, both used in `test_rally_session.gd`:
    exact assertion becomes meaningful again.
 
 Both were learned the hard way — twice, on the same feature.
+
+## Trap: async work that outlives the node that started it
+
+`settings_menu.gd`'s seed lab starts an **async** `TrackGenerator.generate()` and hands
+it two lambdas — `on_prog` and `abort` — which capture the menu (they read `_sl_gen` /
+`_seedlab_preview`). The generator polls those callables *across its own `await`
+boundaries*, so if the menu is freed while a search is still in flight, the generator
+calls a lambda whose owner is half-destroyed:
+
+```
+SCRIPT ERROR: Attempt to call function '<anonymous lambda>(self lambda) (Callable)'
+              on a null instance.   at: _search (res://scripts/track_generator.gd)
+SCRIPT ERROR: Invalid access to property or key 'complete' … at: generate (…)
+```
+
+`test_seedlab.gd` hit exactly this: it awaits only a frame or two after
+`show_seedlab()`, and GUT's `add_child_autofree` then frees the menu mid-search. The
+consequences are nastier than a failed assertion — the corrupted return value aborts
+the **whole run** with no `Totals` block, and since `GUT`'s exit status is still 0 the
+run masquerades as a fast pass (`run_tests.sh` only catches it via
+`TEST_ERROR_PATTERN`). It is timing-dependent and never reproduces under
+`--fast seedlab`, so it reads as random CI death.
+
+The fix, in `test_seedlab.gd`'s `after_each`: bump `_menu._sl_gen` so any in-flight
+search aborts **while the menu is still alive**, then await a few frames to let it
+unwind. Generalise it: **a test that kicks off async work must settle or cancel that
+work before its nodes are freed** — awaiting "a frame or two" is not the same as
+awaiting completion. Note also that a dangling-callable guard inside the generator
+cannot save you: a lambda whose captured owner has been freed reports
+`is_valid() == false` and `get_object_id() == 0`, indistinguishable from an unset
+`Callable()`, so the only reliable fix is not to leave the work in flight.
 
 ## Rules of thumb (from CLAUDE.md)
 
