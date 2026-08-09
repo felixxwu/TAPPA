@@ -249,12 +249,14 @@ func _set_reveal_banner(text: String) -> void:
 
 # The pins a keyboard/gamepad cursor can land on: the unlocked ones, in rally order
 # (a locked special pin is skipped — it's non-pickable until its star gate opens).
+# EVERY pin is a cursor target, enterable or not.
+#
+# Readouts are hover-only, so a pin the cursor cannot reach can never show its box — and a
+# pin that cannot answer when you point at it is just a shape on a dark table. So hovering
+# is open to all of them, and it is _activate_table_focus that refuses to OPEN a locked one.
+# Seeing what is out there is the point; entering it before you get there is not.
 func _unlocked_pins() -> Array:
-	var out: Array = []
-	for pin in _hq._pins:
-		if not bool(pin.get_meta("locked", false)):
-			out.append(pin)
-	return out
+	return _hq._pins.duplicate()
 
 
 # Every focus target on the table right now: the unlocked rally pins, plus the present box
@@ -275,9 +277,6 @@ func _build_table_targets() -> Array:
 	var out: Array = []
 	for pin in _unlocked_pins():
 		out.append({"node": pin, "kind": "pin", "pos": (pin as Node3D).position})
-	if is_instance_valid(_hq._present_pin):
-		out.append({"node": _hq._present_pin, "kind": "present",
-			"pos": _hq._present_pin.position})
 	return out
 
 
@@ -373,6 +372,12 @@ func _select_target_under_center() -> void:
 		if d < best_d:
 			best_d = d
 			best = i
+	# Nothing is selected unless the view is actually ON a pin. The cursor used to snap to
+	# the nearest pin at any distance, so Enter over empty sea opened whichever rally was
+	# least far away — a menu for somewhere the player was not looking.
+	if best_d > Config.data.map_select_radius_m:
+		_clear_table_focus()
+		return
 	if best < 0:
 		return
 	# Repaint ONLY when the selection actually changed. This runs every frame while a pan
@@ -383,6 +388,22 @@ func _select_target_under_center() -> void:
 	if targets[best]["node"] == _hq._table_focus_node:
 		return
 	_focus_table_target(best, false)
+
+
+# Drop the cursor entirely: nothing selected, no highlight, and every hover-only readout
+# closed. NOT _focus_table_target(-1) — that clamps into range and would select the first
+# pin, which is the opposite of "nothing here".
+func _clear_table_focus() -> void:
+	_hq._table_focus_index = -1
+	_hq._table_focus_node = null
+	for t in _table_targets():
+		var node: Node3D = t["node"]
+		if node.has_meta("label_panel"):
+			UITheme.mark_panel_focused(node.get_meta("label_panel"), false)
+		if node.has_meta("label_sprite"):
+			var sprite: Node3D = node.get_meta("label_sprite")
+			if is_instance_valid(sprite):
+				sprite.visible = false
 
 
 # Seat the cursor on target `i`, paint the focus highlight (the hover-style readout
@@ -402,6 +423,14 @@ func _focus_table_target(i: int, pan := true) -> void:
 		var node: Node3D = t["node"]
 		if node.has_meta("label_panel"):
 			UITheme.mark_panel_focused(node.get_meta("label_panel"), on)
+		# HOVER-ONLY readouts, with NO exceptions: a pin shows its box only while the cursor
+		# is on it, so the table reads as a MAP with one thing selected rather than a
+		# noticeboard of a dozen open menus competing for the eye. The 3D marker still stands
+		# at every pin, so nothing is hidden — only the menu chrome is.
+		if node.has_meta("label_sprite"):
+			var sprite: Node3D = node.get_meta("label_sprite")
+			if is_instance_valid(sprite):
+				sprite.visible = on
 	if pan:
 		_pan_table_to(Vector3(sel["pos"]))
 
@@ -414,9 +443,11 @@ func _activate_table_focus() -> void:
 	var t: Dictionary = targets[_hq._table_focus_index]
 	match String(t["kind"]):
 		"pin":
+			# A hovered-but-unreached prize pin is a preview, not a destination — its label
+			# is readable, its detail panel is not.
+			if bool((t["node"] as Node3D).get_meta("locked", false)):
+				return
 			_on_rally_pin(String((t["node"] as Node3D).get_meta("rally_id")))
-		"present":
-			activate_present_box()
 
 
 # Slide the map so `target` (a table-plane world position) centres under the table
@@ -430,18 +461,35 @@ func _pan_table_to(target: Vector3) -> void:
 		_hq._move_camera_to(_hq._station_xform(_hq.View.TABLE), false)
 
 
-# The present box: go STRAIGHT to looking at it. No confirm dialog in front — the box
-# screen IS the confirmation, and its bottom button is what spends the stars
-# (hq._enter_present_box / _open_present, todo/star-economy.md).
+# A pin was tapped: CENTRE ON IT FIRST, then open its detail.
 #
-# Reached from BOTH the tap handler (hq._on_present_input) and the keyboard/gamepad cursor
-# (_activate_table_focus), so the two can never diverge — the map must not be pointer-only.
-func activate_present_box() -> void:
-	_hq._enter_present_box()
-
-
+# The camera used to stay put and the panel just appeared, which left the pin you tapped
+# somewhere off at the edge of the table — so on closing the panel you were looking at a
+# different part of the map than the rally you had just been reading about, and the cursor
+# (which tracks whatever is nearest the view centre) had moved on to something else
+# entirely. Centring first keeps tapping and the keyboard cursor in agreement: both end up
+# with the same rally selected AND under the camera.
+#
+# Awaits the glide so the movement is visible rather than being covered by the panel the
+# instant it starts. menu_camera_move_time == 0 (the snap case, and the headless tests)
+# falls through with no wait at all.
 func _on_rally_pin(rally_id: String) -> void:
 	_hq._selected_rally_id = rally_id
+	var pin := _node_with_rally_id(_hq._pins, rally_id)
+	if pin != null:
+		# Already under the camera? Then there is nothing to glide, and no reason to make the
+		# player wait — this is the keyboard/gamepad path, where the cursor centred the pin
+		# before Select was ever pressed.
+		var already := _table_center_pos().distance_to(pin.position) <= Config.data.map_select_radius_m
+		_pan_table_to(pin.position)
+		_select_target_under_center()
+		var glide: float = Config.data.menu_camera_move_time
+		if not already and glide > 0.0 and _hq.is_inside_tree():
+			await _hq.get_tree().create_timer(glide).timeout
+			# The player can leave the table (or tap elsewhere) mid-glide; opening the panel
+			# then would drop them into a menu they have navigated away from.
+			if _hq._view != _hq.View.TABLE or _hq._selected_rally_id != rally_id:
+				return
 	_show_detail()
 
 

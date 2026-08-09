@@ -114,7 +114,7 @@ func build_garage_overlay() -> void:
 	# teaser quotes (hq._build_special_teaser_label), promoted out of the map table so the
 	# player sees what they are working toward on the screen they land on after every rally,
 	# without having to fly to the table and find the one grey trophy that says it. Both
-	# readouts go through RallyLibrary.next_locked_special_id / completions_needed, so the
+	# readouts go through RallyLibrary.nearest_locked_special_id, so the
 	# number here and the number on the pin cannot drift. Text + visibility are owned by
 	# hq._refresh_carrot_line (hidden outright once every special is open — no carrot left).
 	#
@@ -138,9 +138,9 @@ func build_garage_overlay() -> void:
 	# The bottom action row is rebuilt IN PLACE by hq._refresh_garage_row():
 	# Back / Career / Garage / Mystery Box (N) / Online, ONE level (Mystery Box appears
 	# only when one is held). FOCUS_NONE + hand-painted like the tuning hub, since the
-	# garage is a spatially-navigated 3D station, not a native focus graph. (Repair
-	# lives on the tuning-lift HUB row — see build_lift_overlay. Settings and Free Roam
-	# live on the title screen — see build_title_overlay.)
+	# garage is a spatially-navigated 3D station, not a native focus graph. (Repair is
+	# per-CAR so it lives on the tuning-lift HUB row — see build_lift_overlay. Settings and
+	# Free Roam live on the title screen — see build_title_overlay.)
 	_hq._garage_actions_row = HBoxContainer.new()
 	_hq._garage_actions_row.add_theme_constant_override("separation", 8)
 	root.add_child(_hq._garage_actions_row)
@@ -298,6 +298,25 @@ func build_detail_overlay() -> void:
 	actions.add_child(enter)
 	_hq._detail_enter_button = enter
 
+	# DEV ONLY: win this rally outright without driving it. Built only in a debug build
+	# (SettingsMenu.dev_tools_enabled — the same gate the dev settings pages use), so a
+	# release export never has the node at all, rather than having a hidden one.
+	#
+	# Per-rally rather than the mass "3-star all" cheat in Settings, because reveal is
+	# geometric: completing ONE rally lights the circle around that pin and opens its
+	# neighbours, so this walks the exploration graph a step at a time. The mass cheat
+	# lights the whole map at once and can't show the progression at all.
+	# FOCUS_NONE like its neighbours — this panel has no MenuNav (hq._unhandled_input drives
+	# it), so a focusable button would build a half-wired focus graph. The keyboard/gamepad
+	# route is the dev_complete_rally action instead; see hq._unhandled_input.
+	if SettingsMenu.dev_tools_enabled():
+		var dev := Button.new()
+		dev.text = "DEV: win"
+		dev.focus_mode = Control.FOCUS_NONE
+		dev.pressed.connect(_hq._dev_complete_selected_rally)
+		actions.add_child(dev)
+		_hq._detail_dev_win_button = dev
+
 
 func build_lift_overlay() -> void:
 	_hq._lift_layer = CanvasLayer.new()
@@ -422,12 +441,27 @@ func build_lift_overlay() -> void:
 	_hq._lift_next_button = UITheme.row_button(">", _hq._cycle_lift_car.bind(1))
 	selector.add_child(_hq._lift_next_button)
 
+	# REPAIR sits here, beside the car it acts on, rather than in the actions row below.
+	# That row had outgrown the screen — Back / Upgrades / Tuning / Repair / Test Drive ran
+	# off the right edge — and Repair is the one of the five that is about THIS car's
+	# condition, which the stats line right underneath is already reporting. The other four
+	# are navigation.
+	#
+	# Always built, never conditionally hidden: unlike a locked part option, "your car is
+	# fine" and "you cannot afford it" are both things the player can read off the label and
+	# act on, so the button states them instead of vanishing. hq._refresh_repair_button()
+	# writes its text and disabled state on every repaint.
+	_hq._lift_repair_button = UITheme.row_button("Repair", _hq._repair_selected_car)
+	selector.add_child(_hq._lift_repair_button)
+
 	# The selector is the HUB's second cursor row. Same contract as the actions row below
 	# it: each button's `pressed` callable is also the cursor's action for that index, so a
-	# click and a keyboard/gamepad select can't drift apart.
+	# click and a keyboard/gamepad select can't drift apart. Repair joins it so moving the
+	# button did not cost it keyboard/gamepad reachability (features/menus.md).
 	_hq._lift_selector_cursor.setup(
-		[_hq._lift_prev_button, _hq._lift_next_button],
-		[_hq._cycle_lift_car.bind(-1), _hq._cycle_lift_car.bind(1)])
+		[_hq._lift_prev_button, _hq._lift_next_button, _hq._lift_repair_button],
+		[_hq._cycle_lift_car.bind(-1), _hq._cycle_lift_car.bind(1),
+			_hq._repair_selected_car])
 
 	# Row 2: the stats line for whichever car the selector landed on.
 	var stats_box := PanelContainer.new()
@@ -468,9 +502,17 @@ func build_lift_overlay() -> void:
 	# Test Drive: drive the car currently on the lift in free roam — no car picker, we're
 	# already focused on one (see _test_drive). (Wheels moved into the Tuning panel
 	# itself — see tuning_panel.gd — so the hub row no longer carries it.)
+	# Repair: spend stars to put the car on the lift back to full health with straight
+	# wheels (features/star-economy.md). It lives HERE rather than on the garage row because
+	# it acts on ONE car — the lift is the station where you work on the car in front of you,
+	# and the garage row is for garage-wide actions. It is built UP IN THE SELECTOR ROW,
+	# beside the car name, because this row ran out of width — see there.
+	#
+	# Test Drive stays RIGHTMOST: the house rule is that leaving is leftmost and proceeding
+	# is rightmost (features/menus.md → "Button order"), and driving the car is the one
+	# action here that leaves the station.
 	var test_drive := UITheme.row_button("Test Drive", _hq._test_drive)
 	_hq._lift_hub_controls.add_child(test_drive)
-	# (No Repair button: repair kits are gone and damage is one-way — see features/damage.md.)
 	_hq._hub_cursor.setup(
 		[back, to_upgrades, to_tune, test_drive],
 		[on_back, to_upgrades_cb, to_tune_cb, _hq._test_drive])
@@ -544,6 +586,8 @@ func build_car_overlay() -> void:
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(_hq._car_back)
 	actions.add_child(back)
+	# Kept on the controller so the present-box reveal can hide it — that beat is forced.
+	_hq._car_back_button = back
 	# (No Repair button here either — a wrecked car can never be brought back.)
 	_hq._start_button = Button.new()
 	_hq._start_button.text = "Start Rally"

@@ -1,0 +1,345 @@
+{
+  "cars": [
+    "mx5",
+    "focus",
+    "twingo",
+    "acty",
+    "charger",
+    "porsche911",
+    "viper",
+    "xjs",
+    "beast"
+  ],
+  "eligible": {
+    "american_muscle": [
+      "focus",
+      "charger",
+      "viper"
+    ],
+    "coastal_sprint": [
+      "mx5",
+      "focus",
+      "twingo",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "front_runners": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gc_fishermens_run": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gc_island_gp": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gc_island_hop": [
+      "mx5",
+      "acty",
+      "porsche911"
+    ],
+    "gc_salt_flats": [
+      "charger",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gc_showdown": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gr_ancient_ruins": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gr_dust_devils": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty"
+    ],
+    "gr_marble_quarry": [
+      "charger",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gr_mountain_pass": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gr_olive_coast": [
+      "mx5",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gr_showdown": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "gr_thermopylae": [
+      "charger",
+      "beast"
+    ],
+    "grand_tour": [
+      "mx5",
+      "focus",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "hc_headland_dash": [
+      "mx5",
+      "viper"
+    ],
+    "hc_lakeside_kei": [
+      "mx5",
+      "acty"
+    ],
+    "hc_showdown": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "hc_v12_promenade": [
+      "xjs",
+      "beast"
+    ],
+    "hm_forest_gt": [
+      "mx5",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "hm_hatch_cup": [
+      "mx5",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "hm_timber_trophy": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty"
+    ],
+    "rising_sun": [
+      "mx5",
+      "focus",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "rwd_masters": [
+      "mx5",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "shakedown": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "shitbox_cup": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "sp_archipelago_trial": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "sp_dust_trial": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "sp_lakeshore_trial": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "sp_woodland_trial": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "the_showdown": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ]
+  },
+  "power_to_weight": {
+    "acty": 59.0,
+    "beast": 349.0,
+    "charger": 216.0,
+    "focus": 114.0,
+    "mx5": 159.0,
+    "porsche911": 221.0,
+    "twingo": 111.0,
+    "viper": 264.0,
+    "xjs": 175.0
+  },
+  "prize_car": {
+    "american_muscle": "charger",
+    "coastal_sprint": "",
+    "front_runners": "",
+    "gc_fishermens_run": "",
+    "gc_island_gp": "viper",
+    "gc_island_hop": "",
+    "gc_salt_flats": "",
+    "gc_showdown": "",
+    "gr_ancient_ruins": "porsche911",
+    "gr_dust_devils": "",
+    "gr_marble_quarry": "",
+    "gr_mountain_pass": "xjs",
+    "gr_olive_coast": "",
+    "gr_showdown": "",
+    "gr_thermopylae": "",
+    "grand_tour": "",
+    "hc_headland_dash": "",
+    "hc_lakeside_kei": "",
+    "hc_showdown": "",
+    "hc_v12_promenade": "",
+    "hm_forest_gt": "twingo",
+    "hm_hatch_cup": "acty",
+    "hm_timber_trophy": "focus",
+    "rising_sun": "",
+    "rwd_masters": "beast",
+    "shakedown": "mx5",
+    "shitbox_cup": "",
+    "sp_archipelago_trial": "",
+    "sp_dust_trial": "",
+    "sp_lakeshore_trial": "",
+    "sp_woodland_trial": "",
+    "the_showdown": ""
+  },
+  "starters": [
+    "mx5",
+    "focus",
+    "twingo"
+  ]
+}

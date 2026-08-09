@@ -157,6 +157,86 @@ func test_a_first_special_win_unlocks_an_upgrade_and_pays_no_car() -> void:
 	UpgradeLibrary.reset()
 
 
+# --- Car-unlock rallies ------------------------------------------------------
+# A rally carrying `prize_car` hands that car over on a first podium finish. This is the
+# ONLY route to a new car now — nothing is drawn at random and nothing is bought.
+
+# The fixture roster with a car-unlock rally bolted on: fx_prize awards a car the garage
+# does not start with. Synthetic throughout — the shipped pairing of car to rally is
+# tunable content a designer re-pairs freely.
+# How many owned cars are of this catalogue model — the figure a duplicate-prize check
+# needs, since the garage total also moves when a test grants a car to drive.
+func _owned_count_of(model_id: String) -> int:
+	var n := 0
+	for car in _save.profile.get("cars", []):
+		if String((car as Dictionary).get("model_id", "")) == model_id:
+			n += 1
+	return n
+
+
+func _install_car_prize_rally(car_id: String) -> void:
+	var rallies := RallyFixtures.rallies()
+	var prize := (rallies[0] as Dictionary).duplicate(true)
+	prize["id"] = "fx_prize"
+	prize["name"] = "Fixture Prize"
+	prize["prize_car"] = car_id
+	rallies.append(prize)
+	RallyLibrary.override_for_test(rallies)
+
+
+func test_a_first_car_unlock_win_hands_over_the_car() -> void:
+	var prize_id := String(CarFixtures.cars()[1]["id"])
+	_install_car_prize_rally(prize_id)
+	_start_winnable("fx_prize")
+	var box := _capture_finish()
+	_report_events([30000, 30000, 30000])
+	var result: Dictionary = box[0]
+	assert_true(bool(result["completed"]), "precondition: the fixture times place top-3")
+
+	# Reported through the podium's existing CAR_REVEAL pair, so the reveal beat is the
+	# same one the retired random draw used.
+	assert_eq(String(result.get("car_reward", "")), prize_id,
+		"the result names the car the rally advertised")
+	assert_true(bool(result.get("car_reward_is_new", false)), "and flags it as new")
+	assert_true(_save.owns_model(prize_id), "the garage now holds it")
+
+
+func test_re_winning_a_car_unlock_rally_pays_no_second_car() -> void:
+	# Prize rallies stay re-runnable for stars, but a car is minted ONCE. Otherwise one easy
+	# prize rally farms duplicates of the same car for ever — the exact grind the retired
+	# random draw allowed, since that fired on re-wins too.
+	var prize_id := String(CarFixtures.cars()[1]["id"])
+	_install_car_prize_rally(prize_id)
+	_start_winnable("fx_prize")
+	_report_events([30000, 30000, 30000])
+	assert_eq(_owned_count_of(prize_id), 1, "precondition: the first win handed one over")
+
+	_start_winnable("fx_prize")
+	var box := _capture_finish()
+	_report_events([30000, 30000, 30000])
+	assert_eq(String((box[0] as Dictionary).get("car_reward", "")), "",
+		"a re-win reports no car")
+	# Counts copies of the PRIZE MODEL, not the garage total: _start grants a fresh car to
+	# drive on every run, so the total legitimately grows and would hide the duplicate.
+	assert_eq(_owned_count_of(prize_id), 1, "and mints no duplicate")
+
+
+func test_an_ordinary_rally_hands_over_no_car() -> void:
+	# The counterpart guarantee: cars come ONLY from rallies that advertise one, so a plain
+	# win cannot quietly top the garage up the way the old random draw did. That is what
+	# keeps the per-rally `restriction` bands meaningful.
+	_start_winnable("fx_open")
+	var box := _capture_finish()
+	# Counted AFTER _start_winnable, which grants the car being driven — so anything the
+	# finish adds shows up as a change.
+	var owned_before: int = (_save.profile["cars"] as Array).size()
+	_report_events([30000, 30000, 30000])
+	assert_eq(String((box[0] as Dictionary).get("car_reward", "")), "",
+		"an ordinary win reports no car")
+	assert_eq((_save.profile["cars"] as Array).size(), owned_before,
+		"and the garage is unchanged (the driven car was granted before the count)")
+
+
 # The gate itself must still be recorded. Dropping the car draw for specials must not take
 # Save.complete_rally with it — that is what opens the upgrade for the whole garage.
 func test_a_special_win_still_records_completion() -> void:
@@ -437,8 +517,11 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Fixture Open", "result names the rally for the podium header")
-	assert_eq((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
-		"a finished rally captures one upgrade id per non-final event for the record")
+	# The record holds one entry per non-final event that actually PAID. Most pay nothing
+	# now — the draw is consumables-only since parts became things you win or buy
+	# (features/star-economy.md) — so this is an upper bound, not a count.
+	assert_lte((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
+		"at most one upgrade id per non-final event is recorded")
 	# No car is drawn by a finish any more — the reward is STARS, and the result carries
 	# both what the rally is now RATED and what the ledger actually gained, which the
 	# podium's stars beat shows separately (todo/star-economy.md).
@@ -517,17 +600,18 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 
 
 func test_per_event_upgrades_bind_to_the_driven_car_without_duplicates() -> void:
-	# One upgrade is drawn per NON-FINAL event (EVENTS_PER_RALLY - 1 total), each
-	# fitted to the driven car DISABLED, with no slottable part won twice (the
-	# re-roll excludes what's already on the car).
+	# A draw happens per NON-FINAL event, and anything it DOES pay is fitted to the driven
+	# car disabled, with no slottable part won twice. Most events pay nothing now (the draw
+	# is consumables-only — features/star-economy.md), so this asserts the binding and the
+	# dedup, never a guaranteed count.
 	var finish := _capture_finish()
 	var driven := _start("fx_open")
 	var driven_id := int(driven["instance_id"])
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	_report_events([10000, 10000, 10000])
 	var r: Dictionary = finish[0]
-	assert_eq((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
-		"one upgrade is won per non-final event")
+	assert_lte((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
+		"at most one upgrade is won per non-final event")
 
 	var slottable_wins: Array = []
 	for item_id in r["upgrades"]:
@@ -564,13 +648,14 @@ func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
 	var owned := _start("fx_open")
 	var id := int(owned["instance_id"])
 	RallySession._opponent_field = _field([50000])
-	RallySession.report_event_result(20000)  # event 1 finishes -> one upgrade drawn
+	RallySession.report_event_result(20000)  # event 1 finishes -> one draw
+	# The draw may legitimately pay NOTHING (consumables-only, and both are rare), so what
+	# this test guards is that anything won SURVIVES the later wreck — not that one is won.
 	var won := RallySession.current_event_upgrade()
-	assert_ne(won, "", "finishing a non-final event awards one upgrade")
 	var live: Dictionary = _save.get_car(id)
-	if UpgradeLibrary.is_consumable(won):
+	if won != "" and UpgradeLibrary.is_consumable(won):
 		assert_eq(int(_save.profile["inventory"].get(won, 0)), 1, "a won consumable lands in inventory")
-	else:
+	elif won != "":
 		assert_true((live["installed_upgrades"] as Array).has(won), "a won part is fitted to the driven car")
 		assert_false(UpgradeLibrary.is_enabled(live, won), "and lands disabled until collected/Applied")
 	RallySession.continue_to_next_event()  # into event 2
@@ -580,12 +665,15 @@ func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
 	assert_false(r["completed"], "DNF never completes the rally")
 	assert_eq(r["placed"], -1, "DNF does not place")
 	assert_eq(r["combined_ms"], -1, "DNF has no combined time")
-	# A wrecked car is kept (repairable), not destroyed — it sits at 0 HP in the save.
-	assert_false(_save.get_car(id).is_empty(), "the wrecked car is kept, not destroyed")
-	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the wrecked car is left at 0 HP")
-	# The event-1 upgrade is KEPT despite the DNF.
+	# A wreck costs the RESULT, not the car: it is handed back damaged and repairable
+	# (features/damage.md), never written off.
+	assert_false(_save.get_car(id).is_empty(), "the car is kept")
+	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and comes back with health, not at 0")
+	assert_true(_save.car_needs_repair(id), "but needing a repair")
+	# Anything earned in event 1 is KEPT despite the DNF (skipped when the draw paid nothing,
+	# which is now the common case).
 	var after: Dictionary = _save.get_car(id)
-	if not UpgradeLibrary.is_consumable(won):
+	if won != "" and not UpgradeLibrary.is_consumable(won):
 		assert_true((after["installed_upgrades"] as Array).has(won), "the earned upgrade survives a later DNF")
 	assert_false(_save.rally_completed("fx_open"), "a DNF leaves the rally incomplete")
 
@@ -622,16 +710,18 @@ func _complete_other_specials(keep_id: String) -> void:
 			_save.complete_rally(rid, 1000)
 
 
-# The id of some authored special, and of the special on the LOWEST rung (the one a player
-# reaches first, and the cheapest to make enterable in a test). Rungs are completion
-# counts now, not star totals.
+# The id of the special the map reaches FIRST — the one a player meets soonest, and so the
+# cheapest to make enterable in a test. Reveal is geometric now, so "first" is a
+# reachability wave (RallyLibrary.reveal_depths), not an authored rung.
 func _lowest_special_id() -> String:
+	var depth := RallyLibrary.reveal_depths()
 	var best := ""
-	var best_rung := 1 << 30
+	var best_wave := 1 << 30
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and RallyLibrary.completions_required(rally) < best_rung:
-			best_rung = RallyLibrary.completions_required(rally)
-			best = String(rally["id"])
+		var rid := String(rally["id"])
+		if RallyLibrary.is_special(rally) and int(depth.get(rid, 1 << 30)) < best_wave:
+			best_wave = int(depth.get(rid, 1 << 30))
+			best = rid
 	return best
 
 
@@ -949,3 +1039,130 @@ func test_apply_stage_config_leaves_a_sessionless_config_untouched() -> void:
 	assert_eq(cfg.track_seed, authored_seed, "a session-less caller's seed survives")
 	assert_eq(cfg.track_forestiness, authored_forestiness,
 		"a session-less caller's hand-written fields survive")
+
+
+# --- The opening rally (todo/opening-rally.md) --------------------------------
+#
+# The player is dropped into their starter car's own rally straight from the picker,
+# before the map is ever shown, and it completes WHATEVER the result. These tests own the
+# only place in the game where `completed` means something other than "podiumed", so they
+# check both halves: that the carve-out fires where it should, and that it does not leak
+# anywhere else.
+
+# Install a fixture roster where fx_open awards `model` — making it that starter's opening
+# rally — and record the pick in the profile, exactly as _confirm_starter does.
+func _install_opening_rally(model := "fx_light_rwd") -> void:
+	var roster: Array[Dictionary] = RallyFixtures.rallies()
+	for i in roster.size():
+		if String(roster[i].get("id", "")) == "fx_open":
+			roster[i] = roster[i].duplicate(true)
+			roster[i]["prize_car"] = model
+	RallyLibrary.override_for_test(roster)
+	_save.profile["starter_model_id"] = model
+
+
+# Set up a finish OUTSIDE the top three: a field of five quick rivals the player's slow
+# times cannot beat.
+func _report_losing_run() -> void:
+	RallySession._opponent_field = _field([10000, 20000, 30000, 40000, 50000])
+	_report_events([1_000_000, 1_000_000, 1_000_000])
+
+
+func test_the_opening_rally_completes_even_on_a_dnf() -> void:
+	_install_opening_rally()
+	_start("fx_open")
+	var finish := _capture_finish()
+	RallySession._opponent_field = _field([50000])
+	RallySession.report_wreck()
+	var r: Dictionary = finish[0]
+	assert_true(r["dnf"], "setup: the run ended in a wreck")
+	# The carve-out: everywhere else a DNF leaves the rally incomplete
+	# (test_a_wreck_is_a_dnf_that_keeps_the_car).
+	assert_true(r["completed"], "the opening rally completes despite the DNF")
+	assert_true(_save.rally_completed("fx_open"), "and the completion is recorded")
+	# Placement decides the stars, and a DNF places nowhere — so the completion is a
+	# free pass onto the map, not free currency.
+	assert_eq(int(r["stars_gained"]), 0, "a DNF pays no stars")
+	assert_eq(int(_save.profile.get("stars_earned", 0)), 0, "and credits none to the ledger")
+
+
+func test_the_opening_rally_completes_on_a_losing_finish() -> void:
+	_install_opening_rally()
+	_start("fx_open")
+	var finish := _capture_finish()
+	_report_losing_run()
+	var r: Dictionary = finish[0]
+	assert_gt(int(r["placed"]), 3, "setup: the player finished outside the podium")
+	assert_true(r["completed"], "the opening rally completes on a non-podium finish")
+	assert_eq(int(r["stars_gained"]), 0, "which pays no stars — placement still decides those")
+
+
+# The whole point of completing it unconditionally: the player arrives at the map with the
+# rally done and its neighbours opening around them. Both halves of that arrival are set
+# here, so neither can be lost without a test noticing.
+func test_finishing_the_opening_rally_routes_to_the_map_and_pre_seeds_its_own_reveal() -> void:
+	_install_opening_rally()
+	RallySession.return_to_map = false
+	_start("fx_open")
+	_report_losing_run()
+	assert_true(RallySession.return_to_map, "HQ is told to open on the map, not the garage")
+	# Seen ALREADY, so the arrival parade announces the NEIGHBOURS rather than replaying
+	# the rally the player has just this second driven.
+	assert_true(_save.rally_revealed_seen("fx_open"),
+		"the opening rally is pre-acknowledged")
+
+
+# A DNF cannot install itself as the best time. complete_rally is reached here without a
+# time at all, and a negative would beat every real one for good.
+func test_a_dnf_in_the_opening_rally_records_no_best_time() -> void:
+	_install_opening_rally()
+	_start("fx_open")
+	RallySession.report_wreck()
+	var rec: Dictionary = _save.profile["rallies"]["fx_open"]
+	assert_eq(int(rec.get("best_combined_ms", 0)), 0, "no time is recorded for a DNF")
+	assert_eq(int(rec.get("best_placed", 0)), 0, "and no placement")
+
+
+# The carve-out is FIRST-ATTEMPT ONLY. Once the opening rally is completed it is an
+# ordinary rally, so a retry is scored by the normal podium rule — otherwise it would
+# become a permanent "this one always counts" the player could re-enter at will.
+func test_a_retry_of_a_completed_opening_rally_is_scored_normally() -> void:
+	_install_opening_rally()
+	_start("fx_open")
+	_report_losing_run()
+	assert_true(_save.rally_completed("fx_open"), "setup: the first attempt completed it")
+	RallySession.abandon()
+
+	RallySession.return_to_map = false
+	_start("fx_open")
+	var finish := _capture_finish()
+	_report_losing_run()
+	var r: Dictionary = finish[0]
+	assert_false(r["completed"], "a losing retry does not count as a completion")
+	assert_false(RallySession.return_to_map, "and does not re-route to the map")
+
+
+# The carve-out is PER PROFILE: it keys on the car the player actually picked, so another
+# starter's prize rally is an ordinary rally to this player and stays podium-gated.
+func test_another_starters_prize_rally_is_still_podium_gated() -> void:
+	_install_opening_rally("fx_light_rwd")
+	# The player picked something else, so fx_open is not THEIR opening rally.
+	_save.profile["starter_model_id"] = "fx_heavy_fwd"
+	_start("fx_open")
+	var finish := _capture_finish()
+	_report_losing_run()
+	var r: Dictionary = finish[0]
+	assert_false(r["completed"], "someone else's prize rally still needs a podium")
+	assert_false(_save.rally_completed("fx_open"), "and records no completion")
+
+
+# A profile with no starter recorded (every save made before the picker existed) must not
+# turn some arbitrary rally into a free completion.
+func test_a_profile_with_no_starter_has_no_opening_carve_out() -> void:
+	_install_opening_rally()
+	_save.profile.erase("starter_model_id")
+	_start("fx_open")
+	var finish := _capture_finish()
+	_report_losing_run()
+	assert_false((finish[0] as Dictionary)["completed"],
+		"no starter recorded means no opening rally, so the podium rule stands")

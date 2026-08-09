@@ -16,43 +16,34 @@ Each `RALLIES` entry:
   sort order. It is **never shown to the player** (no "Difficulty: N" / "TIER N" in
   the detail panel, car-park banner, or finish arch) — the power-to-weight gate is
   the only visible requirement.
-- `special` (bool) + `requires_completions` (int) — a **completion-gated special
-  event**, replacing the old per-region "showdown" concept (`RallyLibrary.is_special`,
-  `completions_required`, `completions_needed`). A special's map pin/entry unlocks once
-  the player's roster-wide count of completed **ordinary** rallies
-  (`_completed_count`) reaches `requires_completions` — a **global** gate
-  with no relationship to region: a region may hold any number of specials,
-  including none (see [regions.md](regions.md)). It gates on completions rather than
-  on a star total because stars are now **spendable** currency
-  ([star-economy.md](star-economy.md)) — a gate reading a spendable balance would
-  revoke a special the player had already qualified for the moment they bought a car.
-  Eight specials ship today, at
-  rungs authored 2/4/6/8/10/12/14/16 (do not treat these numbers as a contract —
-  they're tunable): `sp_woodland_trial` (`home`), `sp_dust_trial` (`greece`),
-  `sp_lakeshore_trial` (`home_coast`), `sp_archipelago_trial` (`greece_coast`) are
-  the four new lower rungs; `the_showdown` (`home`), `hc_showdown` "The Lakeland
-  Crown" (`home_coast`), `gr_showdown` "The Aegean Crown" (`greece`), `gc_showdown`
-  "The Island Crown" (`greece_coast`) are the four pre-existing showdowns, renamed
-  in role only (still `special: true`, now with `requires_completions` instead of the
-  retired `showdown: true`). All eight keep `"restriction": {}` (open-class) so the
-  ladder can't deadlock — a special must never gate on a part it unlocks. Specials
-  **do** award stars (they used to award none — safe now only because they no longer
-  gate on the star balance), but they are still excluded from `_completed_count`, so a
-  special never advances the gate governing its own ladder.
-  `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`
-  names `sp_woodland_trial` — the LOWEST rung — as the special whose completion flips
-  `engine_swaps_unlocked`. The intent is a *capability* gate on engine swapping,
-  separate from the swap-token currency (which keeps dropping unconditionally).
-  Fully wired: `RewardSystem._box_gate_open`, the garage swap row and the
-  car-park confirm popup all honour it. On the map a special stands a **trophy**
-  rather than a flag (`RallyTrophy`, see [menus.md](menus.md)). See
-  [engine-swap.md](engine-swap.md). Completing every special
-  (`RallyLibrary.all_specials_completed` — whichever one is last, not a
-  designated finale) fires the game's win/credits beat
-  (`RallySession.game_won`, replacing the old `RegionLibrary.all_showdowns_completed`).
-  The retired field is `showdown` (bool) and the retired invariant is "at most one
-  showdown per region, exactly one wherever a region holds rallies" — regions no
-  longer gate anything (see [regions.md](regions.md)).
+- `special` (bool) — a **part-unlock event**: the rally that opens one upgrade for the
+  whole garage (`unlocked_by_rally`, see [upgrade-catalogue.md](upgrade-catalogue.md)).
+  There is no completion counter — the retired `requires_completions` /
+  `completions_required` gate went with the wave system, and a special now unlocks by
+  being explored out to like any other pin ([map-exploration.md](map-exploration.md)).
+  It has no relationship to region: a region may hold any number of specials, including
+  none (see [regions.md](regions.md)).
+
+  **Five ship today**, one per gated part: `sp_woodland_trial`, `sp_dust_trial`,
+  `sp_lakeshore_trial`, `sp_archipelago_trial` and `the_showdown` (which gates NOS).
+  There were eight. The three region showdowns — `hc_showdown`, `gr_showdown`,
+  `gc_showdown` — each existed to gate one rung of the four-rung NOS ladder, and when
+  that collapsed to a single part ([nitrous.md](nitrous.md)) they gated nothing. They are
+  now **ordinary rallies**: a special that awards no part is a special by label only, and
+  would still have claimed the trophy marker, the garage carrot and a place in the
+  all-specials endgame while paying exactly what an ordinary rally pays. They remain long,
+  hard, open-class star-payers, which is what they always were underneath.
+
+  Every special keeps `"restriction": {}` (open-class) so the ladder cannot deadlock — **a
+  special must never gate on a part it unlocks.** They award stars like any other rally.
+  `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` names `sp_woodland_trial` as the special whose
+  completion flips `engine_swaps_unlocked` — a *capability* gate on engine swapping,
+  separate from the swap-token currency (which keeps dropping unconditionally), honoured by
+  `RewardSystem._box_gate_open`, the garage swap row and the car-park confirm popup. On the
+  map a special stands a **trophy** rather than a flag (`RallyTrophy`, see
+  [menus.md](menus.md)). Completing every special
+  (`RallyLibrary.all_specials_completed` — whichever one is last, not a designated finale)
+  fires `RallySession.game_won`.
 - `restriction` — a `Dictionary`; **empty = open-class** (every car eligible).
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `doors_min`/`doors_max` (vs the car's `doors`),
@@ -160,7 +151,12 @@ Each `RALLIES` entry:
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). `(0,0)` is the map image's top-left, `(1,1)` its bottom-right
   (`hq.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
-  Pure UI data; no effect on the sim. Placement rules, all verified against the actual
+  **NO LONGER pure UI data — `map_pos` IS the progression graph.** Reveal is geometric:
+  a rally opens when the player has lit the map out to its pin, so a pin's position
+  decides what it opens and what opens it (see
+  [map-exploration.md](map-exploration.md)). Nudging a pin for visual spacing can
+  disconnect a branch of the map or reorder the upgrade chain — re-run
+  `tools/fit_map_pins.py` and the map tests after moving one. Placement rules, all verified against the actual
   `textures/map_world.jpg` pixels rather than guessed: a pin must sit **on land**, on
   the **palette that matches its region** (green for `home`/`home_coast`, tan for
   `greece`/`greece_coast`, and the NE snow corner deliberately holds no pins), inside
@@ -213,31 +209,58 @@ Each `RALLIES` entry:
   `TrackCache.terrain_fingerprint` folds config-wide terrain settings into the cache
   key — so retuning them **changes track shapes and requires `./cache_all.sh`**.
 
-### Early game: one home rally per starter
+### Early game: each starter opens in its own rally
 
-The three starters sit at **Twingo 82 / Focus 114 / MX-5 159 hp/tonne** — a 1.94×
-spread, which is almost exactly the widest a single band may be under the 2:1 rule
-above. So **no shared opening rally can serve all three fairly**: rivals are drawn
+The three starters sit at **Twingo 111 / Focus 114 / MX-5 159 hp/tonne**. The Twingo
+reaches that on a **stock small turbo** (`renault_12_i4`) — naturally aspirated it made 82,
+which left whoever picked it simply holding the slow car. Boosted, the starter choice is
+one of CHARACTER (light FWD hatch / heavier FWD hatch / RWD roadster) rather than of how
+hard the early game will be.
+
+Even so, **no shared opening rally can serve all three fairly**: rivals are drawn
 *uniformly* from a rally's eligible pool (`generate_opponent_field` → `_eligible_cars`)
 and each rival's time is `optimum_ms(their car) × pace`, so band width **is** the
 outclassing risk. A wide opener puts a Twingo against MX-5-class cars.
 
-Each starter therefore gets its own home rally, tuned so its rival pool contains only
-that car — a one-make series, where the player cannot be outclassed by construction:
+The roster no longer tries. Each starter is dropped straight into **the rally that awards
+that car** — its own event, with the band ceilinged just above it, so the player is at the
+top of the field rather than the bottom of someone else's
+([opening-rally](../todo/opening-rally.md), [prize-rallies](prize-rallies.md)):
 
-| Rally | Restriction | Starter | Rival pool |
-|---|---|---|---|
-| `shakedown` | roadster, 130–185 | MX-5 | MX-5 |
-| `front_runners` | hatch + FWD, 95–140 | Focus | Focus |
-| `hm_hatch_cup` | hatch, `doors_max` 3, 55–100 | Twingo | Twingo |
-| `shitbox_cup` | open, 50–90 | shared (any car, via detune) | Acty, Twingo |
+| Starter | Opens in | Restriction |
+|---|---|---|
+| MX-5 | `shakedown` | open class, 85–165 |
+| Focus | `hm_timber_trophy` | `cylinders_max` 4, 60–120 |
+| Twingo | `hm_forest_gt` | `doors_max` 3, 58–115 |
 
-**Categories do the separating, not the band** — because `qualifying_detune` lets any
-over-ceiling car detune INTO a lower rally (the floor is then re-checked against the
-*detuned* figure), a `pw_max` can only block moving **up**, never down. So the Focus is
-kept out of the Twingo's cup by `doors_max: 3` (Twingo 3 doors, Focus 5) rather than by
-power, and the hatches are kept out of the MX-5's event by `car_type`. Anything
-expressed purely as a ceiling is porous by design.
+Each of the three runs a **single stage**. The player is dropped into it before they have
+seen the map, the garage or a menu, and a three-stage rally is a lot to ask of someone who
+has not driven the game once — it also delays the thing the run exists to deliver, which is
+arriving at the map with a rally already won. Every other rally keeps its full stage count,
+so `RallySession.EVENTS_PER_RALLY` is the DEFAULT rather than the rule: ask
+`RallySession.stage_count()` for the active rally's real figure.
+
+This is why `front_runners` no longer has to admit everybody. It was widened to a
+class-free 60–200 purely so all three starters could enter the one rally a fresh profile
+could reach; nothing depends on that now, and it is back to an ordinary width.
+
+**A class field on a prize rally is dangerous.** It can make the prize its own
+prerequisite: `shakedown` was roadster-only, and since the catalogue's only other roadster
+is the late-prize Viper, a Focus or Twingo player could not enter the rally standing next
+to them and had to cross the map before the MX-5 was winnable at all. Prize rallies are
+now separated by their **ceiling** — which is what puts the prize car on top of its own
+field anyway — and carry a class field only where it cannot strand anyone.
+
+The Twingo's event is the exception that shows the rule. With the Twingo at 111 and the
+Focus at 114, a ceiling is far too fine an instrument to separate them: it would sit one
+retune away from admitting a car that out-guns the prize. So that one cuts on **doors**
+(Twingo three, Focus five), which is a fact about the cars rather than a number a balance
+pass moves.
+
+Note a ceiling is porous **downward**: `qualifying_detune` lets any over-ceiling car detune
+INTO a lower rally (the floor is then re-checked against the *detuned* figure), so `pw_max`
+blocks moving up, never down. That is the intended direction here — a stronger car choosing
+to come down to an early event is a player decision, not an outclassing.
 
 Note the floor is judged at `max_potential_meta`, but a **fresh** starter has no
 upgrades installed, so its potential equals its stock figure — the "qualifies on

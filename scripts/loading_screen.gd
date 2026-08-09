@@ -69,17 +69,23 @@ func set_title(text: String) -> void:
 		_title.text = UITheme.caps(text)
 
 
-# Announce the coming stage's weather condition (a RallyLibrary.WEATHER_* value),
-# so a wet stage is known during the load rather than discovered at the first
-# corner. The wording comes from the condition's `loading_tell` in the weather table
-# (WeatherLibrary) — no per-condition test here. A condition that authors no tell
-# (dry, and today sandstorm) leaves the default headline alone: the overwhelmingly
-# common case says nothing, so the rain line reads as the exception it is. See
-# features/loading.md.
-func set_weather(weather: String) -> void:
-	var tell := String(WeatherLibrary.by_id(weather).get("loading_tell", ""))
-	if tell != "":
-		set_title("Loading stage… %s" % tell)
+# Announce WHICH stage is loading — "Loading stage 2 of 3…" — so a multi-stage rally tells
+# the player how far through it they are while they wait, and a one-stage rally does not
+# imply there is more to come.
+#
+# `index` is 0-based (RallySession.event_index); `total` is that rally's own stage count,
+# which is NOT always 3 — the opening rallies run a single stage (todo/opening-rally.md).
+# A total of 1 or less says nothing extra and leaves the plain headline, since "stage 1 of
+# 1" is noise.
+#
+# This REPLACED a weather tell ("Loading stage… it's raining"). The headline is now about
+# progress, and mixing the two meant the stage number could only ever be shown on dry
+# stages. Weather still announces itself in the world (features/weather.md); it just no
+# longer competes for this line.
+func set_stage(index: int, total: int) -> void:
+	if total <= 1:
+		return
+	set_title("Loading stage %d of %d…" % [clampi(index + 1, 1, total), total])
 
 
 # Overwrite the step line with `text` (e.g. "Preparing the garage…"), replacing whatever

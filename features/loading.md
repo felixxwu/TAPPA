@@ -38,15 +38,25 @@ menu-transition wait and call `set_step()` on it directly with their own short s
 ("Preparing the garage…") — that path is unrelated and unchanged; only world.gd's
 generation stages stopped forwarding to the label.
 
-## The wet-stage tell
+## The stage counter
 
-`world.gd::_ready` calls `LoadingScreen.set_weather(cfg.weather)` right after
-`DrivingContext.apply_stage_config` has seated the live condition, before any
-generation starts. On a wet stage that swaps the headline for `"Loading stage… rain"`
-(uppercased by `UITheme.caps` like every other loading line); a dry stage is a no-op
-and keeps the default headline, so the rain line reads as the exception it is. The
-point is that the condition is known *during the load*, not discovered at the first
-corner. See `weather.md`, and `rendering.md` for the in-stage look.
+`world.gd::_ready` calls `LoadingScreen.set_stage(index, total)` right after
+`DrivingContext.apply_stage_config` has seated the live stage, before any generation
+starts. That swaps the headline for `"Loading stage 2 of 3…"` (uppercased by
+`UITheme.caps` like every other loading line), so a multi-stage rally tells the player how
+far through it they are while they wait.
+
+`total` is the RALLY'S OWN stage count (`RallySession.stage_count`), **not** a constant 3:
+the opening rallies run a single stage (`todo/opening-rally.md`). A total of 1 or less is a
+no-op and keeps the default headline — "stage 1 of 1" is noise, and implies a series that
+is not there. The index is clamped, because it comes from live session state that sits AT
+the total once the last stage is done.
+
+This line used to carry a **wet-stage tell** instead (`set_weather` → `"Loading stage…
+rain"`). The two cannot share the headline — with weather owning it, the stage number could
+only ever have shown on dry stages — so the tell and its `loading_tell` weather-table field
+were both removed. Weather still announces itself in the world; see `weather.md`, and
+`rendering.md` for the in-stage look.
 
 ## Measuring it
 

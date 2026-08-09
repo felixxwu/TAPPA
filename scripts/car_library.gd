@@ -332,6 +332,18 @@ static func index_of(id: String) -> int:
 
 
 # The CarLibrary entry for a stable id, or an empty Dictionary if unknown.
+# The models the first-run starter picker offers, and the pool sim_career draws its
+# starting car from. Catalogue CONTENT, so it lives here beside the cars rather than in
+# the HQ screen that happens to draw them — it used to be duplicated as a const in both
+# hq.gd and tools/sim_career.gd, which is two places for one fact.
+#
+# The set is load-bearing for playability, not just flavour: the rallies lit on a fresh
+# profile are class-restricted, so every id here needs something it can enter from the
+# start (test_every_starter_car_can_enter_something_on_a_fresh_profile). Adding a starter
+# of a new class means checking the opening rallies still cover it.
+const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
+
+
 static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 
@@ -414,7 +426,7 @@ static func power_to_weight(entry: Dictionary) -> float:
 
 # A bounding box (width, height, length in metres) that contains EVERY car on the roster —
 # the per-axis maximum across the catalogue, not any single car's size. Used to size the
-# present box so the largest car still fits inside it (hq._enter_present_box), derived from
+# reveal/showroom props so the largest car still fits in frame, derived from
 # the authored dimensions rather than a hand-tuned scale factor that silently stops fitting
 # the day a longer car joins.
 #

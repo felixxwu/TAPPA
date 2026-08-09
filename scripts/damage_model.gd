@@ -12,20 +12,21 @@ extends RefCounted
 #
 # Binding: when a car is FIELDED from the meta-game (a future rally/Start-line
 # layer, features/rally-session.md) it carries an OwnedCar instance_id, and a
-# wreck removes that instance via Save.wreck_car (returning its upgrades to
-# inventory). In free-roam / dev play the model is UNBOUND (instance_id < 0): it
+# wreck ends the RUN and hands the car back at part health via Save.record_wreck.
+# In free-roam / dev play the model is UNBOUND (instance_id < 0): it
 # still depletes and degrades and emits `wrecked`, but never touches the save —
 # the car self-heals and respawns so play continues (car.gd handles that).
 #
-# There is no in-run anti-soft-lock floor: every car can be wrecked. A wrecked-out
-# player is recovered between runs by Save.ensure_wreck_safety_net (a free mystery
-# kit when all owned cars are wrecked and none is held).
+# There is no anti-soft-lock floor because none is needed: a wreck costs the RESULT
+# (a DNF — no podium, no prize, no progress) plus a repair bill, never the car. The car
+# comes back at GameConfig.wreck_recovery_hp_fraction and can be repaired with stars
+# (features/star-economy.md), so no sequence of crashes can strand a player.
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
 signal damaged(hp_loss: float, contact_point: Vector3)
 # HP reached 0: the run is a DNF. A fielded car has already
-# had Save.wreck_car called; listeners (the rally flow) react to the signal.
+# had Save.record_wreck called; listeners (the rally flow) react to the signal.
 signal wrecked()
 
 # Scene group every damage-dealing obstacle (tree/bush/sign collision body) joins,
@@ -191,5 +192,5 @@ func apply_loss(amount: float) -> void:
 # unbound model (instance_id < 0, free-roam/dev) never touches it.
 func _wreck() -> void:
 	if instance_id >= 0:
-		Save.wreck_car(instance_id)
+		Save.record_wreck(instance_id)
 	wrecked.emit()

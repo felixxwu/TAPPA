@@ -225,19 +225,31 @@ func test_loading_screen_joins_loading_screen_group() -> void:
 		"LoadingScreen must be in the 'loading_screen' group so music resume can gate on it")
 
 
-func test_dry_weather_leaves_the_default_headline() -> void:
+# The headline counts stages now; the weather tell that used to own this line is gone.
+
+func test_a_multi_stage_rally_names_which_stage_is_loading() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_stage(1, 3)  # 0-based index — the SECOND stage
+	assert_true(screen._title.text.contains("2"),
+		"the headline counts from 1, so index 1 reads as stage 2")
+	assert_true(screen._title.text.contains("3"), "and names the total")
+
+
+func test_a_one_stage_rally_leaves_the_default_headline() -> void:
+	# "Stage 1 of 1" is noise — it tells the player nothing and implies a series that is
+	# not there. The opening rallies are exactly this case (todo/opening-rally.md).
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)
 	var before := screen._title.text
-	screen.set_weather(RallyLibrary.WEATHER_DRY)
-	assert_eq(screen._title.text, before, "a dry stage says nothing about the weather")
+	screen.set_stage(0, 1)
+	assert_eq(screen._title.text, before, "a single-stage rally says nothing extra")
 
 
-func test_rain_weather_is_announced_in_the_headline() -> void:
+func test_the_stage_number_never_exceeds_the_total() -> void:
+	# The index comes from live session state, which sits AT the total once the last stage
+	# is done — "stage 4 of 3" would be a visible bug at the worst moment.
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)
-	var dry := screen._title.text
-	screen.set_weather(RallyLibrary.WEATHER_RAIN)
-	assert_ne(screen._title.text, dry, "a wet stage changes the headline")
-	assert_true(screen._title.text.contains("RAIN"),
-		"the wet-stage headline names the condition, uppercased like every other line")
+	screen.set_stage(3, 3)
+	assert_false(screen._title.text.contains("4"), "the count is clamped to the total")

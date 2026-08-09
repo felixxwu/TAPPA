@@ -152,7 +152,7 @@ func test_wrecking_the_selected_car_respawns_a_smoking_prop() -> void:
 	hq._ensure_lift_car()
 	assert_false(_has_smoke(hq._lift_car), "precondition: a healthy selected car does not smoke")
 
-	_save.wreck_car(id)
+	_save.record_wreck(id)
 	hq._ensure_lift_car()
 	assert_true(is_instance_valid(hq._lift_car), "the prop still holds a car after the change")
 	assert_true(_has_smoke(hq._lift_car), "the now-wrecked car smokes — the prop was rebuilt")
@@ -170,7 +170,7 @@ func test_wrecking_a_parked_car_respawns_a_smoking_prop() -> void:
 	hq._focus = 0
 	assert_false(_has_smoke(hq._cars[0]), "precondition: the healthy parked car does not smoke")
 
-	_save.wreck_car(id)
+	_save.record_wreck(id)
 	await _build_and_wait(hq, _owned_cars_live())
 	assert_true(_has_smoke(hq._cars[0]), "the now-wrecked parked car smokes")
 

@@ -71,29 +71,64 @@ Nothing in the game gates on the star balance. Upgrade parts gate on **winning a
 particular special** (`UpgradeDef.unlocked_by_rally`, see
 [upgrade-catalogue.md](upgrade-catalogue.md)), which is a rally id, not a currency.
 
-## Spending: cars are bought
+## Spending: repairs and part copies
 
-No rally pays a car any more — the draw is gone from `rally_session.gd`, and
-`challenge_session.gd`'s `_COMPLETION_REWARD` no longer carries a `car_tier` (boxes
-only). `RewardSystem.draw_car` survives as the *pick policy*, with exactly two callers:
-the wreck safety net (`Save.open_mystery_box`, the one place a car is still free —
-a player whose last car wrecked has no way to earn) and `RewardSystem.purchase_car`.
+**Cars are not bought.** A car is won at the rally that advertises it — see
+[prize-rallies.md](prize-rallies.md). The present box, `RewardSystem.purchase_car`,
+`car_price`, `is_stranded`, the stranded-and-broke free-car rescue and
+`GameConfig.star_cost_per_car` are all **deleted**. What replaced the dead-end rescue is a
+CONTENT invariant proven over the map (every rally reachable, every starter able to enter
+something from a fresh profile — see [map-exploration.md](map-exploration.md)), rather than
+a runtime discount.
 
-The purchase API (`reward_system.gd`) is pure over the profile it is handed, so the HQ
-can price against the live profile and `sim_career` against a synthetic one:
-`stars_available_in`, `car_price`, `is_stranded`, `purchase_car`. Price comes from
-`GameConfig.star_cost_per_car`. `purchase_car` resolves the draw **before** any stars
-move and abandons the whole transaction if it comes back empty — nothing to give means
-nothing spent — and buys exactly one car per call, because the reveal is a moment, not a
-slot machine. Full API and rationale in [reward-system.md](reward-system.md).
+Two sinks remain, both on `Save`, both demand-driven and renewable — which is what a
+currency needs if the balance is not to become dead weight:
 
-**The dead-end rescue.** `car_price` returns 0 when the player `is_stranded` AND cannot
-afford a car. Without it, a stranded broke player has no eligible rally, so no way to
-earn, so no way to buy the car that would open one — a state the old free-car model
-could not produce. **Both** halves are required: free-whenever-merely-stranded is
-farmable end to end, and requiring the player to also be broke closes it, since anyone
-making progress is earning. `is_stranded` skips WRECKED cars — a wreck can never be
-repaired, so a garage whose only in-band car is wrecked is as stuck as an empty one.
+### Repair — `Save.repair_car` / `repair_price` / `car_needs_repair`
+
+A flat `GameConfig.star_cost_per_repair` returns a car to full health with straight
+wheels. Deliberately **cheap**: repair is a ritual and a small tax, not an economic wall.
+The real cost of wrecking is the lost rally result (a DNF, no podium, no progress), and
+pricing the repair steeply would punish the same mistake twice. Flat rather than per-HP so
+the player never has to arithmetic their way to "is it worth fixing".
+
+`car_needs_repair` covers **both** lost HP and bent wheel toe — a car at full health with
+dog-legged toe still drives badly, and charging for a repair that changes nothing is the
+one thing a flat price must never do. Nothing to fix = nothing spent, and the charge
+resolves before the car is touched, so a short balance leaves both untouched.
+
+The UI is the tuning lift's hub row (`hq._repair_selected_car` /
+`_refresh_repair_button`) — per-CAR, so it belongs at the station where you work on the car
+in front of you rather than on the garage-wide row. It states all three cases on the button
+("Repair" disabled when nothing to fix, "Repair (N★)" enabled, or disabled when short)
+rather than vanishing: the price is information the player can act on even when they cannot
+pay it yet.
+
+### Part copies — `Save.buy_part` / `can_buy_part` / `part_price`
+
+Upgrades are **car-bound**, so a part won once is fitted to one car. `star_cost_per_part`
+buys a copy for any other car — per-car-per-part, so the sink is effectively bottomless.
+
+`can_buy_part` is the single predicate the button and the purchase both read, so they
+cannot diverge. It requires the part to be **discovered** (its part-unlock rally won, via
+`UpgradeLibrary.rally_gate_met`) — the shop sells what the player has proven they can earn,
+never a shortcut past the exploration that reveals it — and honours the **per-car**
+prerequisite ladder, so buying cannot skip a rung.
+
+The UI is the upgrades menu's existing slot rows (`upgrades_menu._make_option_selector`):
+a discovered part not on this car renders as `Name (N★)` and buys on press. No separate
+shop screen, because it is the same question the player is already asking there — "can this
+car run a big turbo?" — and the answer is now "yes, for N stars" instead of a dead grey
+option. Bought parts fit **disabled**, like every other award.
+
+### What the random draw still does
+
+`RewardSystem.draw_upgrade` is **consumables-only** now: the engine swap token and the
+mystery box, plus `NO_REWARD`. Parts left the pool because a stage-by-stage drop undercut
+both deliberate routes to one — why go and win a turbo, or pay for one, if it might fall
+out of the next stage? Most events therefore pay nothing, which is a real outcome rather
+than a bug. The mystery box keeps its own certainty curve (the first is guaranteed) instead
+of being one weight among others.
 
 ## Where the player sees it
 

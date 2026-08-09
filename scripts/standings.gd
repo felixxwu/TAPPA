@@ -116,7 +116,7 @@ func _stages_done() -> int:
 
 func _stage_total() -> int:
 	return ChallengeSession.stage_count() if _challenge \
-		else RallySession.EVENTS_PER_RALLY
+		else RallySession.stage_count()
 
 
 func _stage_upgrade() -> String:

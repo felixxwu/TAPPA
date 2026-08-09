@@ -353,3 +353,60 @@ func test_weight_slot_ballast_is_free_lightweight_is_gated() -> void:
 			assert_true(b.disabled, "an earned weight option is greyed until installed")
 	assert_true(found_free, "the weight slot exposes at least one free ballast option")
 	assert_true(found_gated, "the weight slot exposes at least one earn-gated option")
+
+
+# --- Row layout ---------------------------------------------------------------
+
+# The turbo slot carries the most options of any slot (Stock + every induction part), and
+# they share ONE HFlowContainer with the slot label — a flow container, so anything that
+# does not fit WRAPS onto a second line and the row grows a ragged extra line under it.
+#
+# Measured, not eyeballed: HFlowContainer reports its own line count, so this asserts the
+# thing the player actually sees rather than a proxy for it. It is the option LABELS that
+# decide the answer ("Supercharger" wrapped on its own; "Super" does not), so this is what
+# stops a future rename quietly pushing the row onto two lines again.
+func test_the_turbo_row_fits_on_one_line_with_every_option_shown() -> void:
+	var slot := "turbo"
+	var owned := {"instance_id": 77, "model_id": "synthetic", "upgrades": {}, "tuning": {}}
+	# Every turbo part FITTED, which is the widest the row can ever be: a fitted part shows
+	# its bare label, and each un-fitted one would otherwise be hidden or priced.
+	var installed: Array = []
+	for def in UpgradeLibrary.all():
+		if String(def.get("slot", "")) == slot and not bool(def.get("consumable", false)):
+			installed.append(String(def.get("id", "")))
+	assert_gt(installed.size(), 1, "setup: the turbo slot has several options")
+	owned["installed_upgrades"] = installed
+	owned["disabled_upgrades"] = []
+
+	var m = _menu(owned)
+	# Give the menu a realistic width and let it lay out — a zero-width container would
+	# report a wrap for every row and prove nothing.
+	m.custom_minimum_size = Vector2(560, 0)
+	m.size = Vector2(560, 400)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var flow := _slot_flow(m, slot)
+	assert_not_null(flow, "the turbo slot has a flow row")
+	assert_eq(flow.get_line_count(), 1,
+		"the turbo row's options all fit on one line")
+
+	# PROVE THE MEASUREMENT IS LIVE. A line count that always read 1 — because the row was
+	# never laid out, or was given unbounded width — would make the assertion above pass
+	# whatever the labels said. Squeezing the menu must produce a wrap.
+	m.custom_minimum_size = Vector2(120, 0)
+	m.size = Vector2(120, 400)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_gt(flow.get_line_count(), 1,
+		"a too-narrow menu DOES wrap the row — so the one-line result above was measured")
+
+
+# The HFlowContainer holding `slot`'s label + option buttons, found by its label text so
+# the test does not depend on child ordering.
+func _slot_flow(m: Control, slot: String) -> HFlowContainer:
+	for node in m.find_children("*", "HFlowContainer", true, false):
+		for child in (node as HFlowContainer).get_children():
+			if child is Label and String((child as Label).text).to_lower() == slot:
+				return node
+	return null

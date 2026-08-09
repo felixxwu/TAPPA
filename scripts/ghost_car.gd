@@ -345,7 +345,7 @@ func pose_at(elapsed_s: float, delta := 0.0) -> void:
 	var kappa := _kappa
 
 	# Cosmetics. These move the BODY only; the clock above is already fixed.
-	var load := clampf(absf(kappa) / KAPPA_REFERENCE, 0.0, 1.0)
+	var lateral_load := clampf(absf(kappa) / KAPPA_REFERENCE, 0.0, 1.0)
 	var turn_sign := signf(kappa)
 	# How hard the tyre is actually working LATERALLY, as a fraction of the lateral grip
 	# still available once longitudinal demand has taken its share of the friction circle.
@@ -377,7 +377,7 @@ func pose_at(elapsed_s: float, delta := 0.0) -> void:
 	var margin: float = car.half_width() if car.has_method("half_width") else 0.9
 	var tail := _tail_swing(absf(_slip_rad))
 	var lateral_budget := maxf(road_half_width - margin - tail, 0.0)
-	var lateral_target := -turn_sign * minf(cfg.rival_ghost_line_offset_m * load, lateral_budget)
+	var lateral_target := -turn_sign * minf(cfg.rival_ghost_line_offset_m * lateral_load, lateral_budget)
 	_lateral = lateral_target if not _has_pose else lerpf(_lateral, lateral_target, pos_blend)
 	var lateral := _lateral
 

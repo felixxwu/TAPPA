@@ -407,8 +407,11 @@ func test_non_final_stage_grants_a_per_stage_reward_and_a_field_repair() -> void
 	var items_after := 0
 	for item_id in _save.profile["inventory"]:
 		items_after += int(_save.profile["inventory"][item_id])
-	assert_true(upgrades_after > upgrades_before or items_after > items_before,
-		"a non-final stage grants a reward: installed on the car or added to inventory")
+	# A stage DRAWS, but the draw is consumables-only now and both are rare, so paying
+	# nothing is the common outcome (features/star-economy.md). What must hold is that
+	# anything it does pay lands somewhere real — never a part fitted out of nowhere.
+	assert_gte(upgrades_after, upgrades_before, "a stage never removes a fitted part")
+	assert_gte(items_after, items_before, "nor spends an inventory item")
 
 	var repair := ChallengeSession.take_pending_repair()
 	assert_false(repair.is_empty(), "a non-final stage leaves a pending field repair")

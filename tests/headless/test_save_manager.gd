@@ -183,17 +183,22 @@ func test_a_profile_predating_the_ledger_backfills_to_zero() -> void:
 	assert_eq(int(migrated["stars_spent"]), 0, "stars_spent backfills to 0")
 
 
-func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
+func test_a_wreck_hands_the_car_back_damaged_with_its_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	# Upgrades are CAR-BOUND — install_upgrade fits the won part straight to the car
 	# (no shared inventory pool for slottable parts).
 	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_small"), "upgrade installed")
 
-	_save.wreck_car(car["instance_id"])
-	# A wrecked car is NOT deleted — it stays owned at 0 HP, repairable with a kit.
-	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept, not removed")
-	assert_eq(float(_save.get_car(car["instance_id"])["hp"]), 0.0, "the wrecked car sits at 0 HP")
-	assert_true(_save.car_is_wrecked(_save.get_car(car["instance_id"])), "and reads as wrecked")
+	_save.record_wreck(car["instance_id"])
+	# A wreck is a bad RESULT, not a lost asset: the car comes back damaged and repairable.
+	# Never pins the recovery FRACTION (GameConfig.wreck_recovery_hp_fraction is tunable) —
+	# only that the car survives, is worth repairing, and is not written off.
+	assert_eq(_save.profile["cars"].size(), 1, "the car is kept")
+	var hp: float = float(_save.get_car(car["instance_id"])["hp"])
+	var max_hp: float = float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
+	assert_gt(hp, 0.0, "it comes back with health, not written off")
+	assert_lt(hp, max_hp, "but damaged — there is a repair bill to pay")
+	assert_true(_save.car_needs_repair(car["instance_id"]), "and it reads as needing repair")
 	# Its upgrades ride along with the car (bound to it; never moved or returned).
 	assert_true(_save.get_car(car["instance_id"])["installed_upgrades"].has("fx_turbo_small"),
 		"the upgrade is still installed on the wrecked car")
@@ -214,20 +219,22 @@ func test_install_disables_same_slot_incumbent() -> void:
 		"the same-slot incumbent is disabled, not scrapped")
 
 
-func test_a_hidden_slot_part_installs_enabled_even_when_asked_for_disabled() -> void:
-	# The centralised rule (Save.install_upgrade -> UpgradeLibrary.installs_enabled): a part in
-	# a HIDDEN slot has no garage row, so installing it disabled would leave it permanently
-	# dead AND block the slot from ever being re-awarded (install dedups per car). Enforcing it
-	# here rather than at each award site is what makes it hold for the career draw, the
-	# challenge draw and a mystery box alike.
+func test_no_slot_is_hidden_so_every_part_installs_as_asked() -> void:
+	# The hidden-slot rule (Save.install_upgrade -> UpgradeLibrary.installs_enabled) forces a
+	# part in a slot with NO GARAGE ROW to install enabled, since installing it disabled
+	# would leave it permanently dead. `nitrous` was the only slot that ever claimed it and
+	# now has a row of its own, so UpgradeLibrary.HIDDEN_SLOTS is empty and the rule is
+	# DORMANT — every part installs exactly as the caller asked.
+	#
+	# Asserted rather than deleted so the dormancy is visible: if a slot is hidden again the
+	# rule wakes up, and this test is where that shows.
+	assert_true(UpgradeLibrary.HIDDEN_SLOTS.is_empty(), "no slot is hidden from the garage")
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	assert_true(_save.install_upgrade(car["instance_id"], "fx_hidden", false),
-		"the hidden-slot part is fitted")
+		"the part is fitted")
 	var fitted: Dictionary = _save.get_car(car["instance_id"])
-	assert_true(UpgradeLibrary.is_enabled(fitted, "fx_hidden"),
-		"it is ENABLED despite the caller passing enabled=false")
-	assert_false((fitted["disabled_upgrades"] as Array).has("fx_hidden"),
-		"and is not parked in disabled_upgrades")
+	assert_false(UpgradeLibrary.is_enabled(fitted, "fx_hidden"),
+		"and stays DISABLED, as the caller asked")
 
 
 func test_install_disabled_parks_the_part_without_enabling() -> void:
@@ -363,13 +370,16 @@ func test_field_repair_skips_a_pristine_car() -> void:
 	assert_false(summary.get("repaired", false), "nothing to repair on a spotless car")
 
 
-func test_field_repair_leaves_a_wrecked_car_wrecked() -> void:
+func test_field_repair_works_on_a_car_that_has_wrecked() -> void:
+	# A wrecked car is an ordinary damaged car now, so the free between-event pit repair
+	# treats it like any other — it used to refuse one outright as unrecoverable.
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id: int = car["instance_id"]
-	_save.wreck_car(id)
+	_save.record_wreck(id)
+	var before: float = float(_save.get_car(id)["hp"])
 	var summary: Dictionary = _save.field_repair(id, 0.2, 0.5)
-	assert_false(summary.get("repaired", false), "a wrecked car is not field-repaired")
-	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "still wrecked")
+	assert_true(summary.get("repaired", false), "a wrecked car can still be pit-repaired")
+	assert_gt(float(_save.get_car(id)["hp"]), before, "and it gains health")
 
 
 func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
@@ -396,61 +406,52 @@ func test_sanitise_drops_parts_retired_from_the_catalogue() -> void:
 	assert_eq(car["disabled_upgrades"], [], "the retired part is dropped from the toggles too")
 
 
-func test_a_wrecked_car_can_never_be_revived() -> void:
-	# Wrecking is TERMINAL now that repair kits are gone. The car is kept in the garage
-	# but nothing restores it — not even the free field repair, which refuses a wreck.
+# --- Wrecking is not terminal (features/damage.md) ---------------------------
+# A wreck ends the RUN as a DNF and hands the car back damaged. The whole scaffolding
+# that terminal wrecking needed — an all-cars-wrecked check, a free rescue box, a
+# wrecked-car exclusion in the stranded test — is gone with it.
+
+func test_a_wrecked_car_can_be_repaired_back_into_service() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
-	_save.apply_damage(id, 999999.0)  # wreck it -> 0 HP, still owned
-	assert_true(_save.car_is_wrecked(_save.get_car(id)), "the car is wrecked")
-	var summary: Dictionary = _save.field_repair(id, 1.0, 1.0)
-	assert_false(bool(summary.get("repaired", false)), "the field repair will not touch a wreck")
-	assert_true(_save.car_is_wrecked(_save.get_car(id)), "and it stays wrecked")
+	_save.apply_damage(id, 999999.0)  # lethal damage -> a wreck
+	assert_true(_save.car_needs_repair(id), "the car comes back needing repair")
+	_save.award_stars(20)
+	assert_true(_save.repair_car(id), "and stars put it right")
+	assert_false(_save.car_needs_repair(id), "back in service")
 
 
-func test_starter_wrecks_like_any_car() -> void:
-	# The starter is no longer invulnerable: lethal damage wrecks it (0 HP, still owned).
+func test_the_starter_wrecks_and_recovers_like_any_car() -> void:
+	# The starter is not invulnerable and not special-cased: lethal damage wrecks it, and
+	# it comes back exactly as any other car does.
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.apply_damage(car["instance_id"], 999999.0)
-	assert_eq(_save.profile["cars"].size(), 1, "the wrecked starter is kept in the garage")
-	assert_true(_save.car_is_wrecked(_save.get_car(car["instance_id"])), "the starter can be wrecked")
+	var id := int(car["instance_id"])
+	_save.apply_damage(id, 999999.0)
+	assert_eq(_save.profile["cars"].size(), 1, "still owned")
+	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and still raceable, just damaged")
 
 
-func test_safety_net_grants_a_box_when_all_wrecked_and_none_held() -> void:
+func test_wrecking_every_car_leaves_the_player_able_to_drive() -> void:
+	# THE reason terminal wrecking went: no sequence of crashes can strand a player, so
+	# nothing needs to rescue them. This is also what makes the map's reachability
+	# guarantee sound — a car an authored route depends on can never be lost.
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.apply_damage(a["instance_id"], 999999.0)
-	_save.apply_damage(b["instance_id"], 999999.0)
-	assert_true(_save.all_cars_wrecked(), "every owned car is a write-off")
-	assert_eq(_save.mystery_boxes_owned(), 0, "no box before the net fires")
-	assert_true(_save.ensure_wreck_safety_net(), "a free box is granted when all cars are wrecked")
-	assert_eq(_save.mystery_boxes_owned(), 1, "exactly one free box granted")
-	# Idempotent: once a box is held, the net does not keep topping up.
-	assert_false(_save.ensure_wreck_safety_net(), "no second box while one is already held")
-	assert_eq(_save.mystery_boxes_owned(), 1, "still just the one box")
+	_save.apply_damage(int(a["instance_id"]), 999999.0)
+	_save.apply_damage(int(b["instance_id"]), 999999.0)
+	for car in _save.profile["cars"]:
+		assert_gt(float((car as Dictionary)["hp"]), 0.0,
+			"every car survives its wreck with health left")
 
 
-func test_safety_net_no_op_when_a_car_is_healthy() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.grant_car("fx_rwd_coupe")  # healthy
-	_save.apply_damage(a["instance_id"], 999999.0)  # only one wrecked
-	assert_false(_save.all_cars_wrecked(), "one car can still race")
-	assert_false(_save.ensure_wreck_safety_net(), "not stranded: at least one car can still race")
-	assert_eq(_save.mystery_boxes_owned(), 0, "no free box granted")
-
-
-func test_safety_net_no_op_with_no_cars() -> void:
-	assert_false(_save.all_cars_wrecked(), "owning no cars is not the wrecked-out case")
-	assert_false(_save.ensure_wreck_safety_net(), "owning no cars is not the wrecked-out case")
-	assert_eq(_save.mystery_boxes_owned(), 0, "no free box granted")
-
-
-func test_apply_damage_wrecks_mortal_car_at_zero() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")  # mortal
-	_save.apply_damage(car["instance_id"], 999999.0)
-	# Lethal damage wrecks the car but keeps it owned at 0 HP (repairable), not deleted.
-	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept in the garage")
-	assert_eq(float(_save.get_car(car["instance_id"])["hp"]), 0.0, "wrecked at 0 HP")
+func test_apply_damage_past_zero_wrecks_rather_than_going_negative() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	_save.apply_damage(id, 999999.0)
+	# Damage that would take HP below zero routes through record_wreck instead: the car is
+	# kept, and comes back with health rather than sitting at (or below) 0.
+	assert_eq(_save.profile["cars"].size(), 1, "the car is kept in the garage")
+	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and never lands on a negative or zero HP")
 
 
 func test_consume_item_respects_counts() -> void:
@@ -513,55 +514,24 @@ func test_open_mystery_box_keeps_the_box_when_no_car_has_room() -> void:
 	assert_eq(_save.mystery_boxes_owned(), 1, "and the box is NOT spent")
 
 
-func test_open_mystery_box_grants_a_car_when_every_car_is_wrecked() -> void:
-	# The anti-soft-lock rescue. A part fitted to a wreck would be worthless, so a
-	# wrecked-out garage gets a whole new car instead — checked ahead of the part grant.
+func test_a_mystery_box_never_pays_a_car() -> void:
+	# The box used to have a second branch — a whole new CAR when every owned car was
+	# wrecked — as the anti-soft-lock rescue. Both the rescue and the branch are gone:
+	# wrecks are recoverable (features/damage.md) so nothing needs rescuing, and cars are
+	# won at the rally that advertises them (features/prize-rallies.md), so a box handing
+	# one out would undercut that. A box opens onto a PART or stays unopened.
 	UpgradeFixtures.restore()  # see comment in the test above
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_awd")
 	_save.apply_damage(int(a["instance_id"]), 999999.0)
 	_save.apply_damage(int(b["instance_id"]), 999999.0)
-	assert_true(_save.all_cars_wrecked(), "setup: wrecked out")
 	var owned_before: int = (_save.profile["cars"] as Array).size()
 	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
 	var result: Dictionary = _save.open_mystery_box(_rng(1))
-	assert_true(bool(result["car"]), "the box paid a car, not a part")
-	assert_eq((_save.profile["cars"] as Array).size(), owned_before + 1, "a new car joined the garage")
-	var granted: Dictionary = _save.get_car(int(result["recipient_instance_id"]))
-	assert_false(granted.is_empty(), "the reported recipient is the newly granted car")
-	assert_false(_save.car_is_wrecked(granted), "and it arrives raceable, not wrecked")
-	assert_false(_save.all_cars_wrecked(), "so the player is no longer soft-locked")
-	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
-
-
-func test_the_wreck_box_scales_its_replacement_to_what_was_lost() -> void:
-	# The box sizes its payout one rung BELOW the best car the player wrecked, rather
-	# than always paying out at the bottom of the ladder (which handed a late-game
-	# player a starter car). Relation only — no authored tier or model id is pinned.
-	UpgradeFixtures.restore()
-	var by_tier := {}
-	for entry in CarLibrary.all():
-		by_tier[int(entry.get("reward_tier", 0))] = String(entry["id"])
-	var tiers: Array = by_tier.keys()
-	tiers.sort()
-	if tiers.size() < 3:
-		return  # fixture roster too shallow for "one rung below" to be observable
-	var top_tier: int = tiers[tiers.size() - 1]
-	var wrecked: Dictionary = _save.grant_car(String(by_tier[top_tier]))
-	_save.apply_damage(int(wrecked["instance_id"]), 999999.0)
-	assert_true(_save.all_cars_wrecked(), "setup: wrecked out holding the best car")
-	# Enough completions that the earned ceiling cannot be what limits the draw.
-	var rallies: Dictionary = _save.profile.get("rallies", {})
-	for n in 12:
-		rallies["done_%d" % n] = {"completed": true}
-	_save.profile["rallies"] = rallies
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var result: Dictionary = _save.open_mystery_box(_rng(3))
-	assert_true(bool(result["car"]), "the box paid a car")
-	var granted_tier := int(CarLibrary.by_id(String(result["item_id"])).get("reward_tier", 0))
-	assert_lt(granted_tier, top_tier,
-		"the replacement sits below the tier that was wrecked (a consolation, not a swap)")
-	assert_gt(granted_tier, 0, "but it is still a real car, never below the bottom tier")
+	assert_eq((_save.profile["cars"] as Array).size(), owned_before,
+		"however battered the garage is, a box never adds a car")
+	if not result.is_empty():
+		assert_false(bool(result["car"]), "and never reports one")
 
 
 # A ONE-CAR garage: the box now fits a part to the only car you own, instead of
@@ -995,10 +965,13 @@ func test_a_progressed_profile_with_no_reveal_flags_wants_seeding() -> void:
 # rather than through hq.gd at all.
 func test_load_or_new_seeds_an_existing_career_with_no_reveal_flags() -> void:
 	RallyLibrary.override_for_test([
+		# Reveal is geometric: a pin AT HQ is open from the start, one parked far outside
+		# every circle never opens. (map_pos, not a wave count, is what locks a rally now.)
 		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
-			"special": false, "reveal_after": 0, "restriction": {}, "events": []},
+			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
 		{"id": "sm_locked", "name": "Save Locked", "region": "home", "difficulty": 2,
-			"special": false, "reveal_after": 99, "restriction": {}, "events": []},
+			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.9, 0.0),
+			"restriction": {}, "events": []},
 	])
 	_save.complete_rally("sm_open", 60_000, 1)  # career progress, but no reveal flags at all
 	assert_true(_save.needs_reveal_seeding())
@@ -1019,7 +992,7 @@ func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
 	# same backfill, reached through the OTHER point a profile becomes live.
 	RallyLibrary.override_for_test([
 		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
-			"special": false, "reveal_after": 0, "restriction": {}, "events": []},
+			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
 	])
 	var incoming: Dictionary = _save._default_profile()
 	incoming["rallies"] = {"sm_open": {"completed": true, "best_combined_ms": 1, "best_placed": 1}}
@@ -1027,3 +1000,163 @@ func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
 	assert_true(_save.rally_revealed_seen("sm_open"),
 		"a restored career's already-open rally is seeded as seen, not paraded")
 	RallyLibrary.reset()
+
+# --- Star sinks: repair + part copies (features/star-economy.md) --------------
+# Cars are not bought any more, so these are what the balance is FOR. Neither test pins a
+# price — star_cost_per_repair / star_cost_per_part are tunable content; they assert the
+# balance moves BY the configured price and that the transaction is all-or-nothing.
+
+func _damaged_car() -> int:
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	var id: int = int(car["instance_id"])
+	_save.get_car(id)["hp"] = 1.0
+	return id
+
+
+func test_a_repair_restores_health_and_charges_the_price() -> void:
+	var id := _damaged_car()
+	_save.award_stars(20)
+	var before: int = _save.stars_available()
+	var price: int = _save.repair_price(id)
+	assert_true(_save.repair_car(id), "the repair went through")
+	var entry: Dictionary = CarLibrary.by_id(String(_save.get_car(id)["model_id"]))
+	assert_eq(float(_save.get_car(id)["hp"]), float(entry["max_hp"]), "back to full health")
+	assert_eq(_save.stars_available(), before - price, "and the balance moved by the price")
+
+
+func test_a_repair_straightens_bent_wheels_too() -> void:
+	var id := _damaged_car()
+	_save.get_car(id)["wheel_toe"] = [0.05, -0.05, 0.0, 0.0]
+	_save.award_stars(20)
+	assert_true(_save.repair_car(id))
+	for toe in _save.get_car(id)["wheel_toe"]:
+		assert_almost_eq(float(toe), 0.0, 0.0001, "every wheel is straight again")
+
+
+func test_an_undamaged_car_cannot_be_charged_for_a_repair() -> void:
+	# NOTHING TO FIX = NOTHING SPENT. A flat price makes this the one thing that must not
+	# happen: paying a star and getting nothing back.
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	_save.award_stars(20)
+	var before: int = _save.stars_available()
+	assert_eq(_save.repair_price(int(car["instance_id"])), 0, "a pristine car is quoted nothing")
+	assert_false(_save.repair_car(int(car["instance_id"])), "and cannot be repaired")
+	assert_eq(_save.stars_available(), before, "so nothing is spent")
+
+
+func test_a_repair_is_refused_when_the_balance_is_short() -> void:
+	var id := _damaged_car()
+	var hp_before: float = float(_save.get_car(id)["hp"])
+	assert_eq(_save.stars_available(), 0, "precondition: broke")
+	assert_false(_save.repair_car(id), "refused")
+	assert_eq(float(_save.get_car(id)["hp"]), hp_before, "and the car is untouched")
+
+
+func test_buying_a_part_fits_it_disabled_and_charges_the_price() -> void:
+	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	var id: int = int(car["instance_id"])
+	_save.award_stars(50)
+	var before: int = _save.stars_available()
+	assert_true(_save.can_buy_part(id, item_id), "precondition: discovered, affordable, no prereq")
+	assert_true(_save.buy_part(id, item_id), "the purchase went through")
+	assert_has(_save.get_car(id)["installed_upgrades"], item_id, "fitted to this car")
+	assert_has(_save.get_car(id)["disabled_upgrades"], item_id,
+		"but PARKED — which part runs in a slot stays the player's choice")
+	assert_eq(_save.stars_available(), before - _save.part_price(item_id),
+		"and the balance moved by the price")
+
+
+func test_a_part_cannot_be_bought_twice_for_one_car() -> void:
+	# Per-car dedup: a car can never hold the same part twice, so the second sale is refused
+	# rather than silently charging for a duplicate.
+	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	var id: int = int(car["instance_id"])
+	_save.award_stars(50)
+	assert_true(_save.buy_part(id, item_id))
+	var after_first: int = _save.stars_available()
+	assert_false(_save.can_buy_part(id, item_id), "already fitted")
+	assert_false(_save.buy_part(id, item_id), "so the second sale is refused")
+	assert_eq(_save.stars_available(), after_first, "and costs nothing")
+
+
+func test_an_undiscovered_part_is_not_for_sale() -> void:
+	# The shop sells what the player has proven they can earn. A part whose unlock rally is
+	# unwon must not be purchasable, or stars would buy a shortcut past the exploration.
+	var gated := {"id": "fx_gated_part", "name": "Gated", "slot": "fxslot",
+		"consumable": false, "unlocked_by_rally": "fx_never_won"}
+	var items: Array[Dictionary] = UpgradeFixtures.upgrades()
+	items.append(gated)
+	UpgradeLibrary.override_for_test(items)
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	_save.award_stars(50)
+	assert_false(_save.can_buy_part(int(car["instance_id"]), "fx_gated_part"),
+		"not discovered, so not for sale")
+	assert_false(_save.buy_part(int(car["instance_id"]), "fx_gated_part"))
+	UpgradeLibrary.reset()
+
+
+func test_a_part_is_not_for_sale_until_this_car_has_its_prerequisite() -> void:
+	# Upgrades are car-bound, so buying must not skip a rung: every car climbs its own
+	# ladder even when another car in the garage is already at the top.
+	var items: Array[Dictionary] = UpgradeFixtures.upgrades()
+	var base_id := String(items[0]["id"])
+	items.append({"id": "fx_rung_two", "name": "Rung Two", "slot": "fxslot",
+		"consumable": false, "requires_upgrade_id": base_id})
+	UpgradeLibrary.override_for_test(items)
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	var id: int = int(car["instance_id"])
+	_save.award_stars(50)
+	assert_false(_save.can_buy_part(id, "fx_rung_two"), "prerequisite not fitted to THIS car")
+	assert_true(_save.buy_part(id, base_id), "buy the rung below first")
+	assert_true(_save.can_buy_part(id, "fx_rung_two"), "now the ladder is satisfied")
+	UpgradeLibrary.reset()
+
+
+func test_a_part_is_not_for_sale_when_the_balance_is_short() -> void:
+	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	var id: int = int(car["instance_id"])
+	assert_eq(_save.stars_available(), 0, "precondition: broke")
+	assert_false(_save.can_buy_part(id, item_id), "cannot afford it")
+	assert_false(_save.buy_part(id, item_id), "so the sale is refused")
+	assert_eq((_save.get_car(id)["installed_upgrades"] as Array).size(), 0, "nothing fitted")
+
+
+# --- Handling warning vs. needs-repair ----------------------------------------
+
+# Two DIFFERENT questions that used to be one call. "Needs repair" is true of any car that
+# is not pristine — right for offering a repair, wrong as a red warning, which is why a car
+# at 98% health was told it would handle badly.
+func test_a_lightly_scratched_car_needs_repair_but_still_handles_fine() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var entry := CarLibrary.by_id("fx_rwd_coupe")
+	var max_hp := float(entry.get("max_hp", 1000.0))
+	# Just under pristine: damage exists but is nowhere near the point it costs power.
+	_save.get_car(id)["hp"] = max_hp * 0.99
+	assert_true(_save.car_needs_repair(id), "any lost health is worth repairing")
+	assert_false(_save.car_handles_badly(id), "but a scratch does not make it handle badly")
+
+
+func test_a_properly_hurt_car_warns() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var entry := CarLibrary.by_id("fx_rwd_coupe")
+	# Comfortably below the misfire threshold, so the engine really is down on power.
+	_save.get_car(id)["hp"] = (float(entry.get("max_hp", 1000.0))
+		* Config.data.damage_misfire_health_threshold * 0.5)
+	assert_true(_save.car_handles_badly(id), "a properly damaged car warns")
+
+
+# Bent alignment alone does NOT warn. The warning is about damage costing engine power, and
+# a car at full health has lost none — the red line appearing over "HEALTH 100%" reads as a
+# bug, whatever the alignment says. Alignment is still repaired (car_needs_repair counts
+# it), it just does not raise the alarm.
+func test_bent_alignment_alone_does_not_warn() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	_save.get_car(id)["wheel_toe"] = [0.0, 0.0, 0.03, 0.0]
+	assert_false(_save.car_handles_badly(id), "a full-health car does not warn")
+	assert_true(_save.car_needs_repair(id), "but it is still worth repairing")

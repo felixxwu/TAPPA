@@ -27,7 +27,7 @@ const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 # The mystery-box consumable's id. Granted instead of a normal reward draw when
 # the driven car has nothing left to gain and the player is swap-token-rich
 # (see RewardSystem.draw_upgrade), and as the wrecked-out safety net
-# (Save.ensure_wreck_safety_net). Opened from the HQ garage row to gift a random
+# Opened from the HQ garage row to gift a random
 # upgrade to an owned car — or a whole new car when every car is wrecked.
 const MYSTERY_BOX_ID := "mystery_box"
 
@@ -45,7 +45,16 @@ const SLOTS := ["turbo", "aero", "weight", "drivetrain", "nitrous"]
 # Save.install_upgrade is what makes it hold for EVERY route a part can arrive by (the
 # per-event draw, the challenge draw, and a mystery box), rather than only the ones someone
 # remembered to special-case.
-const HIDDEN_SLOTS := ["nitrous"]
+#
+# CURRENTLY EMPTY. `nitrous` was the only member: it was hidden because a four-rung ladder
+# auto-fitting its highest rung left the player nothing to decide. Now that it is a single
+# part (see the Nitrous section below) it gets an ordinary garage row like every other
+# slot, so the player can actually fit and unfit it — without a row, a won NOS could only
+# ever be installed by the award path.
+#
+# Kept rather than deleted: the rule is real, is exercised by the test fixtures, and is
+# what any future hidden slot would rely on. An empty list simply means nothing claims it.
+const HIDDEN_SLOTS: Array[String] = []
 
 
 static func is_hidden_slot(slot: String) -> bool:
@@ -95,7 +104,12 @@ const UPGRADES: Array[Dictionary] = [
 		# revs (supercharger_parasitic_coef, N·m per 1000 rpm) rather than the turbo's
 		# constant backpressure. Whistle/BOV gains are left alone: apply() clears
 		# turbo_enabled so neither layer can fire.
-		"id": "supercharger", "name": "Supercharger", "menu_label": "Supercharger", "slot": "turbo",
+		# menu_label "Super" — the turbo row carries FOUR options (Stock / Small / Big /
+		# this) sharing one flow row that wraps when they do not fit, and "Supercharger" was
+		# long enough to push itself onto a second line on its own. "Super" is the plain
+		# short form of the full name above it, so the row still reads as the same part;
+		# it also matches "Small" for length.
+		"id": "supercharger", "name": "Supercharger", "menu_label": "Super", "slot": "turbo",
 		"requires_upgrade_id": "turbo_large", "unlocked_by_rally": "sp_archipelago_trial",
 		"consumable": false,
 		"effect": {"install_supercharger": {
@@ -138,32 +152,21 @@ const UPGRADES: Array[Dictionary] = [
 		"consumable": false, "effect": {"unlocks_drivetrain_swap": true},
 	},
 	# --- Nitrous (features/nitrous.md) -----------------------------------------
-	# Its own slot, invisible in the garage, auto-fitted enabled on award. A chained
-	# ladder: each rung REPLACES the last (one enabled part per slot) and mixes the two
-	# levers — tank seconds ("longer") and torque gain ("harder") — so the escalation
-	# never reads as the same number three times. Deliberately absent from
-	# effective_meta, so none of these can move a car's power-to-weight or eligibility.
+	# Its own slot, invisible in the garage, auto-fitted enabled on award. Deliberately
+	# absent from effective_meta, so it cannot move a car's power-to-weight or eligibility.
+	#
+	# ONE PART, not a ladder. This was four chained rungs (NOS stage 1-4), each replacing
+	# the last and each gated on a different showdown special. Collapsed to a single part
+	# carrying the TOP rung's numbers: the intermediate rungs were a long climb whose
+	# individual steps the player could not feel — 0.22 to 0.24 boost between the first two
+	# — and every one of them occupied a special's entire prize slot to deliver it.
+	#
+	# Gated on the FIRST showdown the map reaches, not the last one stage 4 used to sit
+	# behind. The endgame is completing every special, so a part gated on the final one is a
+	# reward with no game left to spend it in.
 	{
-		"id": "nitrous", "name": "NOS stage 1", "slot": "nitrous",
+		"id": "nitrous", "name": "NOS", "slot": "nitrous",
 		"unlocked_by_rally": "the_showdown", "consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.22, "nitrous_tank_seconds": 5.0}},
-	},
-	{
-		"id": "nitrous_tank", "name": "NOS stage 2", "slot": "nitrous",
-		"requires_upgrade_id": "nitrous", "unlocked_by_rally": "hc_showdown",
-		"consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.24, "nitrous_tank_seconds": 10.0}},
-	},
-	{
-		"id": "nitrous_shot", "name": "NOS stage 3", "slot": "nitrous",
-		"requires_upgrade_id": "nitrous_tank", "unlocked_by_rally": "gr_showdown",
-		"consumable": false,
-		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.4, "nitrous_tank_seconds": 10.0}},
-	},
-	{
-		"id": "nitrous_race", "name": "NOS stage 4", "slot": "nitrous",
-		"requires_upgrade_id": "nitrous_shot", "unlocked_by_rally": "gc_showdown",
-		"consumable": false,
 		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.6, "nitrous_tank_seconds": 20.0}},
 	},
 	{
@@ -302,10 +305,15 @@ static func is_enabled(owned_car: Dictionary, item_id: String) -> bool:
 	return not (owned_car.get("disabled_upgrades", []) as Array).has(item_id)
 
 
-# The id of the currently-ENABLED nitrous-slot item on this car ("" if none). The four
-# nitrous rungs (features/nitrous.md) chain via requires_upgrade_id and share ONE slot,
-# so a car climbing the ladder ends up with several installed but only the highest ever
-# enabled — this returns that one, not the whole ladder the car happens to be carrying.
+# The id of the currently-ENABLED nitrous-slot item on this car ("" if none).
+#
+# There is only ONE nitrous part now (features/nitrous.md), so in practice this returns it
+# or nothing. Kept as a slot QUERY rather than a check for that id, because the answer the
+# callers want is "what is this car running in the nitrous slot" — which stays correct if
+# a second nitrous part is ever authored, where a hardcoded id would not. It also still
+# reads correctly for a save made against the old four-rung ladder: only the highest rung
+# was ever enabled, and the retired ids are pruned on load anyway
+# (Save._prune_unknown_upgrades).
 static func fitted_nitrous_id(owned_car: Dictionary) -> String:
 	for item_id in enabled_upgrades(owned_car):
 		if slot_of(item_id) == "nitrous":

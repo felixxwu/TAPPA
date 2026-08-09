@@ -113,18 +113,287 @@ func test_every_authored_star_gate_names_a_real_special() -> void:
 		"the engine-swap capability is gated on a SPECIAL event")
 
 
-func test_every_specials_completion_requirement_is_reachable() -> void:
-	# A rung demanding more completions than there are ordinary rallies would be
-	# permanently locked. Counts the roster rather than pinning any threshold.
-	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
-	var ordinary := 0
+# THE shipped-content invariant of map exploration: every rally must be REACHABLE by
+# exploring outward from HQ. A pin stranded beyond every circle is content the player can
+# never see, and it fails silently — the rally simply never appears — so it needs a guard.
+#
+# Pins no number: it re-derives the closure from whatever is authored, so a designer may
+# move any pin freely as long as the map stays connected.
+func test_every_shipped_rally_is_reachable_by_exploring_from_hq() -> void:
+	var depth := RallyLibrary.reveal_depths()
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this asserts nothing)")
+	var stranded: Array = []
 	for rally in RallyLibrary.all():
-		if not RallyLibrary.is_special(rally):
-			ordinary += 1
+		if not depth.has(String(rally["id"])):
+			stranded.append(String(rally["id"]))
+	assert_eq(stranded, [], "no rally is stranded outside every reveal circle")
+
+
+# THE playability guarantee, restated for the opening-rally flow (todo/opening-rally.md):
+# whichever starter the player picks, they are dropped straight into THAT CAR'S OWN rally,
+# so that rally must exist, must be lit, and must admit the car it awards.
+#
+# The last clause is the one that can really break. A prize rally's restriction band is
+# authored for the field it fields, and nothing else forces it to admit the very car it
+# hands over — so a band drifting off its own prize would strand every player who picked
+# that starter on turn one, with no rally to drive and no way to earn a different car.
+# Nothing else in the suite notices: the map stays connected and every rally stays
+# reachable in principle.
+#
+# Pins no rally, no car and no band: it walks the real starter list through the real
+# lookup and the real eligibility rule, so re-siting a pin or retuning a band re-derives
+# the answer rather than breaking an assertion.
+func test_every_starter_car_opens_in_a_rally_that_admits_it() -> void:
+	# A SHIPPED-CONTENT contract, so it needs the shipped catalogue: before_each installs
+	# the synthetic car fixtures, under which the real starter models do not exist.
+	# after_each re-installs them for the next test.
+	CarFixtures.restore()
+	var starters: Array = CarLibrary.STARTER_MODEL_IDS
+	assert_gt(starters.size(), 0, "the starter picker offers something")
+	for model_id in starters:
+		var entry := CarLibrary.by_id(String(model_id))
+		assert_false(entry.is_empty(), "starter %s is a real catalogue car" % model_id)
+		var opening_id := RallyLibrary.opening_rally_id_for(String(model_id))
+		assert_ne(opening_id, "", "starter %s has an opening rally" % model_id)
+		var opening := RallyLibrary.by_id(opening_id)
+		assert_false(opening.is_empty(), "starter %s's opening rally is a real rally" % model_id)
+		assert_eq(RallyLibrary.prize_car_id(opening), String(model_id),
+			"starter %s's opening rally is the one that awards it" % model_id)
+		# The profile a player has the instant they confirm the picker: the choice recorded,
+		# nothing completed.
+		var fresh := {"rallies": {}, "starter_model_id": String(model_id)}
+		assert_true(RallyLibrary.rally_revealed(opening, fresh),
+			"starter %s's opening rally is lit from the start" % model_id)
+		# A stock, freshly-granted car: no upgrades, no tuning — exactly what the picker hands over.
+		var car := {"model_id": String(model_id), "instance_id": 1,
+			"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}}
+		var meta := UpgradeLibrary.effective_meta(car, entry)
+		# The power FLOOR is judged at max potential (the player may always tune up for free)
+		# and the CEILING may be ducked by detuning — the same two allowances the car park
+		# gives, so this matches what the player can really start.
+		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
+		assert_true(RallyLibrary.is_eligible(opening, meta, floor_meta)
+				or RallyLibrary.qualifying_detune(opening, meta) > 0.0,
+			"starter %s can enter its own opening rally" % model_id)
+
+
+# No two starters share an opening rally. They are derived from `prize_car`, so a roster
+# pointing two starters at one event would silently give one of them no start of its own —
+# and the flow would drop both players into the same rally, which is the specific thing
+# the opening is meant to differentiate (it decides where on the map the career begins).
+func test_each_starter_has_its_own_opening_rally() -> void:
+	CarFixtures.restore()
+	var seen: Dictionary = {}
+	for model_id in CarLibrary.STARTER_MODEL_IDS:
+		var opening_id := RallyLibrary.opening_rally_id_for(String(model_id))
+		assert_false(seen.has(opening_id),
+			"opening rally %s is not shared with starter %s" % [opening_id, seen.get(opening_id, "")])
+		seen[opening_id] = String(model_id)
+
+
+# A model no rally awards has no opening rally, and neither does the empty id. The
+# lookup's miss is a normal answer (the flow falls back to the garage), not an error, so
+# it has to be a stable one.
+func test_opening_rally_lookup_misses_cleanly() -> void:
+	assert_eq(RallyLibrary.opening_rally_id_for(""), "", "no starter model, no opening rally")
+	assert_eq(RallyLibrary.opening_rally_id_for("not_a_real_car_id"), "",
+		"a model no rally awards has no opening rally")
+
+
+# --- Prizes ------------------------------------------------------------------
+
+func test_a_rallys_car_prize_is_a_real_catalogue_car() -> void:
+	# Contract over the shipped roster: a prize naming a car that does not exist would hand
+	# the player nothing, silently. Never asserts WHICH car any rally awards — that is
+	# tunable content a designer re-pairs freely.
+	CarFixtures.restore()
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally):
-			assert_lte(RallyLibrary.completions_required(rally), ordinary,
-				"special %s demands a reachable completion count" % rally.get("id", "?"))
+		var car_id := RallyLibrary.prize_car_id(rally)
+		if car_id == "":
+			continue
+		assert_false(CarLibrary.by_id(car_id).is_empty(),
+			"%s awards a real car (%s)" % [rally.get("id", "?"), car_id])
+
+
+# A prize rally must ADMIT THE CAR IT AWARDS, and that car must be the fastest thing the
+# band admits — so it turns up in the field as the one to beat, and beating it is what
+# wins it. This is the whole advertisement now that the field is drawn normally: the grid
+# used to be a one-make row of the prize car, which said it plainly but threw away the
+# variety the combo pool exists for (RallyLibrary._eligible_cars).
+#
+# Both halves are easy to break silently by retuning a band, and neither shows up in
+# play as an error — the field just quietly fills with cars that are not the prize, or
+# out-guns it so the player beats a car they were not shown. Several shipped rallies
+# HAD drifted this way (the 911's and the XJS's bands started above their own cars, the
+# Acty's demanded a hatch when the Acty is a kei), hidden for as long as the one-make
+# grid bypassed the restriction entirely.
+#
+# Pins no band and no car: it reads each rally's own prize and asks the real eligibility
+# rule about it, so a designer moving a ceiling re-derives the answer. What it will not
+# let them do is move a ceiling BELOW the prize, which is the design rule itself.
+func test_a_car_prize_tops_the_band_of_the_rally_that_awards_it() -> void:
+	CarFixtures.restore()
+	var checked := 0
+	for rally in RallyLibrary.all():
+		var car_id := RallyLibrary.prize_car_id(rally)
+		if car_id == "":
+			continue
+		var prize := CarLibrary.by_id(car_id)
+		if prize.is_empty():
+			continue  # covered by test_a_rallys_car_prize_is_a_real_catalogue_car
+		checked += 1
+		var prize_meta := UpgradeLibrary.effective_meta({}, prize)
+		assert_true(RallyLibrary.is_eligible(rally, prize_meta, prize_meta),
+			"%s admits the %s it awards" % [rally.get("id", "?"), car_id])
+		var prize_pw := CarLibrary.power_to_weight_hp_tonne(prize_meta)
+		for entry in CarLibrary.all():
+			if String(entry.get("id", "")) == car_id:
+				continue
+			var meta := UpgradeLibrary.effective_meta({}, entry)
+			if not RallyLibrary.is_eligible(rally, meta, meta):
+				continue
+			assert_lte(CarLibrary.power_to_weight_hp_tonne(meta), prize_pw,
+				"%s admits nothing quicker than the %s it awards (%s)"
+					% [rally.get("id", "?"), car_id, entry.get("id", "?")])
+	assert_gt(checked, 0, "some rally awards a car (else this asserts nothing)")
+
+
+func test_no_two_rallies_award_the_same_car() -> void:
+	# A car won twice is a wasted prize rally: the second win hands over a duplicate of
+	# something the player already has, and one catalogue car is then unreachable.
+	var seen := {}
+	for rally in RallyLibrary.all():
+		var car_id := RallyLibrary.prize_car_id(rally)
+		if car_id == "":
+			continue
+		assert_false(seen.has(car_id),
+			"%s is awarded by only one rally (also on %s)" % [car_id, seen.get(car_id, "")])
+		seen[car_id] = String(rally.get("id", "?"))
+
+
+# EVERY car has to be winnable, starters included. The picker hands over ONE of the three
+# starters, so without a rally for the other two, most of the starter roster is content no
+# player can ever own — cars are not bought or drawn any more, so a rally is the only route.
+#
+# Winning the starter you already picked costs nothing and mints nothing: rally_session
+# guards on Save.owns_model, so that finish simply pays stars like any other.
+#
+# Derived from the catalogue, so adding a car fails this until it is given an event.
+func test_every_car_is_winnable_somewhere() -> void:
+	CarFixtures.restore()
+	var awarded := {}
+	for rally in RallyLibrary.all():
+		var car_id := RallyLibrary.prize_car_id(rally)
+		if car_id != "":
+			awarded[car_id] = true
+	var orphans: Array = []
+	for spec in CarLibrary.all():
+		if not awarded.has(String(spec.get("id", ""))):
+			orphans.append(String(spec.get("id", "")))
+	assert_eq(orphans, [], "every car in the catalogue is won at some rally")
+
+
+func test_a_part_prize_is_derived_from_the_upgrade_catalogue() -> void:
+	# The part half of a prize is NOT authored on the rally — it comes from the upgrade's
+	# own unlocked_by_rally gate, so the two can never name different parts. Synthetic
+	# catalogue: this is the wiring, not the shipped pairing.
+	UpgradeFixtures.restore()
+	for item in UpgradeLibrary.all():
+		var gate := UpgradeLibrary.unlocked_by_rally(String(item["id"]))
+		if gate == "":
+			continue
+		var rally := RallyLibrary.by_id(gate)
+		if rally.is_empty():
+			continue
+		assert_eq(RallyLibrary.prize_part_id(rally), String(item["id"]),
+			"%s's prize is the part its own gate names" % gate)
+		assert_true(RallyLibrary.has_prize(rally), "%s counts as a prize rally" % gate)
+
+
+func test_a_car_unlock_rally_draws_its_field_like_any_other() -> void:
+	# A car-unlock rally used to field a ONE-MAKE grid — every rival in the car on offer,
+	# with the rally's own restriction ignored for the field. That advertised the prize
+	# plainly but made the grid a row of identical cars, so it is gone: the prize is
+	# advertised through the BAND instead (its ceiling sits just above its own car — see
+	# test_a_car_prize_tops_the_band_of_the_rally_that_awards_it), and the field is drawn
+	# from everything the restriction admits, exactly like an ordinary rally.
+	#
+	# Synthetic prize car and an open restriction — this is the wiring, not the shipped
+	# pairing.
+	var prize_id := String(CarFixtures.cars()[1]["id"])
+	var rally := {
+		"id": "fx_prize", "name": "Prize", "region": "home", "special": false,
+		"difficulty": 1, "prize_car": prize_id, "restriction": {}, "events": [],
+	}
+	assert_gt(RallyLibrary._eligible_cars(rally).size(), 1,
+		"a prize rally's field is drawn from every car the restriction admits")
+	assert_gt(RallyLibrary._eligible_combos(rally).size(), 1,
+		"and keeps its engine-swap variety")
+
+
+# The restriction now GOVERNS the field on a prize rally too — it no longer has a special
+# exemption. A band admitting nothing but one car is what makes a one-make grid, and that
+# is a property of the band, not of carrying a prize.
+func test_a_prize_rallys_restriction_governs_its_field() -> void:
+	var prize_id := String(CarFixtures.cars()[1]["id"])
+	var rally := {
+		"id": "fx_prize_narrow", "name": "Prize Narrow", "region": "home", "special": false,
+		"difficulty": 1, "prize_car": prize_id,
+		# A band no catalogue car satisfies. Previously the prize short-circuit returned the
+		# prize car regardless; now the ordinary empty-pool fallback answers.
+		"restriction": {"pw_min": 5000.0, "pw_max": 9000.0}, "events": [],
+	}
+	var pool := RallyLibrary._eligible_cars(rally)
+	assert_eq(pool.size(), CarLibrary.all().size(),
+		"a restriction admitting nothing degrades to the whole roster, prize or not")
+
+
+func test_a_rally_without_a_car_prize_still_draws_a_mixed_field() -> void:
+	# The one-make path must not leak into ordinary rallies, whose whole point is a varied
+	# grid drawn from everything the restriction admits.
+	var rally := {
+		"id": "fx_mixed", "name": "Mixed", "region": "home", "special": false,
+		"difficulty": 1, "restriction": {}, "events": [],
+	}
+	assert_gt(RallyLibrary._eligible_cars(rally).size(), 1,
+		"an open-class rally admits more than one car")
+	assert_gt(RallyLibrary._eligible_combos(rally).size(), 1,
+		"and more than one car+engine combo")
+
+
+func test_a_rally_with_no_prize_reports_none() -> void:
+	# The common case: an ordinary rally pays stars and lights the map, nothing more.
+	var plain := {"id": "no_prize_here", "name": "Plain", "region": "home", "special": false,
+		"restriction": {}, "events": []}
+	assert_eq(RallyLibrary.prize_car_id(plain), "", "no car")
+	assert_eq(RallyLibrary.prize_part_id(plain), "", "no part")
+	assert_false(RallyLibrary.has_prize(plain), "and so no prize")
+
+
+# The opening beat, for EVERY starter: the rally they begin in must light SOMETHING (else
+# finishing it leaves them on a dark map with nowhere to go and the game cannot continue)
+# but not the whole map (else there is nothing left to explore). Both ends matter; neither
+# pins how many.
+#
+# Walked per starter because the starting light is now per starter — the player's own
+# opening rally, not a shared circle around HQ, which lights nothing at all.
+func test_every_starters_opening_rally_leads_somewhere_but_not_everywhere() -> void:
+	CarFixtures.restore()
+	for model_id in CarLibrary.STARTER_MODEL_IDS:
+		var opening_id := RallyLibrary.opening_rally_id_for(String(model_id))
+		# The profile the moment their opening rally is done — the state they first see the
+		# map in.
+		var started := {"rallies": {opening_id: {"completed": true}},
+			"starter_model_id": String(model_id)}
+		var open_now := 0
+		for rally in RallyLibrary.all():
+			if RallyLibrary.rally_revealed(rally, started):
+				open_now += 1
+		# Its own pin is always lit, so "somewhere to go" means MORE than one.
+		assert_gt(open_now, 1,
+			"%s has somewhere to drive after its opening rally" % model_id)
+		assert_lt(open_now, RallyLibrary.all().size(),
+			"and the map is not fully lit from the start" % [])
 
 
 func test_map_pins_are_well_formed_and_never_stack() -> void:
@@ -934,15 +1203,18 @@ func test_no_hop_drops_a_rival_identity_key() -> void:
 	CarFixtures.restore()
 
 
-# The special ladder's unlocks must stay in a workable ORDER. Two invariants, neither pinning
-# a rung number (they are tunable): every gated part's prerequisite must open at or before the
-# part itself, or a player reaches a part whose chain they cannot have earned; and the
-# engine-swap capability must be the FIRST rung, which is a deliberate design choice.
-func test_the_unlock_ladder_opens_prerequisites_before_the_parts_that_need_them() -> void:
-	var rung := {}   # rally_id -> requires_completions
-	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally):
-			rung[String(rally["id"])] = RallyLibrary.completions_required(rally)
+# A gated part's PREREQUISITE must be reachable no later than the part that needs it:
+# reveal is geometric now, so "opens first" means "is reached in an earlier wave". A
+# prerequisite further out than its dependent is a chain the player can meet out of order.
+#
+# Reads reveal_depths (the reachability ORDER), not distance from HQ — the two disagree,
+# because reveal spreads along a corridor of pins rather than as one circle.
+#
+# A NECESSARY condition, not a sufficient one: real reachability also depends on which cars
+# the player holds by then, which the career reachability solver covers. Nothing here pins
+# a wave number; it only compares two authored pins against each other.
+func test_a_gated_parts_prerequisite_is_reached_no_later_than_the_part_itself() -> void:
+	var reach := RallyLibrary.reveal_depths()
 
 	var checked := 0
 	for item in UpgradeLibrary.all():
@@ -954,27 +1226,32 @@ func test_the_unlock_ladder_opens_prerequisites_before_the_parts_that_need_them(
 		var prereq_gate := UpgradeLibrary.unlocked_by_rally(prereq)
 		if prereq_gate == "":
 			continue  # the prerequisite is ungated, so it is always available first
-		assert_true(rung.has(gate) and rung.has(prereq_gate),
-			"both gates are real specials (%s / %s)" % [gate, prereq_gate])
-		assert_lte(int(rung[prereq_gate]), int(rung[gate]),
-			"%s's prerequisite %s opens no later than it does" % [item_id, prereq])
+		assert_true(reach.has(gate) and reach.has(prereq_gate),
+			"both gates are rallies the map can actually reach (%s / %s)" % [gate, prereq_gate])
+		assert_lte(int(reach[prereq_gate]), int(reach[gate]),
+			"%s's prerequisite %s is reached no later than it is" % [item_id, prereq])
 		checked += 1
 	assert_gt(checked, 0, "the roster actually has a gated chain to check")
 
 
-func test_engine_swapping_is_the_first_thing_the_ladder_opens() -> void:
-	var swap_rung := -1
-	var lowest := 1 << 30
+func test_engine_swapping_is_the_first_special_the_map_reaches() -> void:
+	# Design intent, not a tuned number: engine swapping is what makes the garage
+	# interesting, so its special must be the first one exploration reaches. Compares
+	# authored pins against each other through reveal_depths; no wave number is pinned.
+	var depth := RallyLibrary.reveal_depths()
+	var swap_depth := -1
+	var earliest := 1 << 30
 	for rally in RallyLibrary.all():
 		if not RallyLibrary.is_special(rally):
 			continue
-		var need := RallyLibrary.completions_required(rally)
-		lowest = mini(lowest, need)
-		if String(rally["id"]) == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
-			swap_rung = need
-	assert_ne(swap_rung, -1, "the engine-swap rally is a real special")
-	assert_eq(swap_rung, lowest,
-		"engine swapping opens on the lowest rung — it is what makes the garage interesting")
+		var rid := String(rally["id"])
+		assert_true(depth.has(rid), "special %s is reachable at all" % rid)
+		earliest = mini(earliest, int(depth[rid]))
+		if rid == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+			swap_depth = int(depth[rid])
+	assert_ne(swap_depth, -1, "the engine-swap rally is a real special")
+	assert_eq(swap_depth, earliest,
+		"engine swapping is on the first special the map reaches — it opens first")
 
 
 # EVERY value in a generated rival entry must survive a JSON round-trip unchanged. The
@@ -1301,37 +1578,130 @@ func test_stars_for_placement_scores_the_podium_and_nothing_else() -> void:
 	assert_eq(RallyLibrary.stars_for_placement(0), 0, "never placed scores nothing")
 
 
-func test_a_special_gate_opens_on_completed_ordinary_rallies() -> void:
-	# Logic only: the gate compares COMPLETED ORDINARY RALLIES against the authored
-	# requirement, so it is closed below and open at/above it. No threshold is pinned.
-	# Specials gate on completions rather than stars because stars are spendable — a gate
-	# reading a spendable balance would revoke a special already qualified for.
-	var special := {}
+# --- Map exploration: the geometric reveal gate ------------------------------
+# Synthetic rosters only: reveal now depends on a rally's authored map_pos, which is
+# exactly the kind of tunable content a designer nudges freely.
+
+# The player's OPENING RALLY, one just inside its lit circle, and one far out in the dark
+# that only the near rally's own circle can reach.
+#
+# The opening rally is the map's only starting light: HQ lights nothing (see
+# RallyLibrary.lit_sources), so a profile with no starter recorded sees a wholly dark map.
+# Radii are expressed as fractions of the configured radius rather than as literals.
+const START_CAR := "fx_start_car"
+
+
+func _install_geometric_reveal_roster() -> void:
+	var r: float = Config.data.map_reveal_radius
+	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
+	var roster: Array[Dictionary] = [
+		# The opening rally: awards the starter, so it is lit from the start, completed or
+		# not, and its circle is what the player explores out of.
+		{"id": "r_start", "name": "Opening", "region": "home", "special": false,
+			"difficulty": 1, "restriction": {}, "map_pos": hq, "prize_car": START_CAR,
+			"reveal_radius": r, "events": []},
+		# Inside the opening rally's circle, and lights a wide circle of its own that
+		# reaches r_far.
+		{"id": "r_near", "name": "Near", "region": "home", "special": false,
+			"difficulty": 1, "restriction": {}, "map_pos": hq + Vector2(r * 0.5, 0.0),
+			"reveal_radius": r * 2.0, "events": []},
+		# Outside the opening rally's circle, but inside r_near's once that is completed.
+		{"id": "r_far", "name": "Far", "region": "greece", "special": false,
+			"difficulty": 2, "restriction": {}, "map_pos": hq + Vector2(r * 2.0, 0.0),
+			"events": []},
+		# Beyond every circle on the roster — nothing here can ever light it.
+		{"id": "r_unreachable", "name": "Unreachable", "region": "greece", "special": false,
+			"difficulty": 2, "restriction": {}, "map_pos": hq + Vector2(r * 20.0, 0.0),
+			"events": []},
+	]
+	RallyLibrary.override_for_test(roster)
+
+
+func test_a_rally_inside_the_opening_rallys_circle_is_revealed_from_the_start() -> void:
+	_install_geometric_reveal_roster()
+	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
+	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_start"), fresh),
+		"the opening rally is lit before the player has driven anything")
+	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_near"), fresh),
+		"a pin inside the opening rally's circle is lit from the start")
+	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), fresh),
+		"a pin outside it starts dark")
+
+
+# HQ is no longer a light source, so a profile that names no starter has no opening rally
+# and therefore no light at all. This is the state every pre-opening-rally save is in, and
+# the map must not quietly re-light itself around the middle for them.
+func test_a_profile_with_no_starter_sees_a_wholly_dark_map() -> void:
+	_install_geometric_reveal_roster()
+	var no_starter := {"rallies": {}}
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and RallyLibrary.completions_required(rally) > 0:
-			special = rally
-			break
-	assert_false(special.is_empty(), "the roster has a gated special to exercise")
-	var need := RallyLibrary.completions_required(special)
-	assert_false(RallyLibrary.rally_revealed(special, _profile_with_completions(need - 1)),
-		"closed one completion short")
-	assert_true(RallyLibrary.rally_revealed(special, _profile_with_completions(need)),
-		"open once the requirement is met")
-	assert_eq(RallyLibrary.completions_needed(special, _profile_with_completions(need)), 0,
-		"nothing left to complete once it is open")
-	assert_gt(RallyLibrary.completions_needed(special, _profile_with_completions(0)), 0,
-		"an unmet gate reports how many events are still needed")
+		assert_false(RallyLibrary.rally_revealed(rally, no_starter),
+			"%s is dark when nothing has been completed and no starter is recorded"
+				% rally.get("id", "?"))
 
 
-func test_spending_stars_cannot_close_a_special_gate() -> void:
-	# The reason for completion-gating: the gate must not read anything the player can
-	# spend. Draining the ledger to zero leaves every gate exactly where it was.
-	var profile := _profile_with_completions(99)
+func test_completing_a_rally_lights_the_map_around_that_rally() -> void:
+	# The whole mechanic: progress is SPATIAL. Completing r_near lights a circle around
+	# r_near's own pin, which is what reveals r_far — a rally that no amount of completing
+	# anything else would have opened.
+	_install_geometric_reveal_roster()
+	var profile := {"rallies": {"r_start": {"completed": true}}, "starter_model_id": START_CAR}
+	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), profile),
+		"completing a rally elsewhere does not light the far corner")
+	profile["rallies"]["r_near"] = {"completed": true}
+	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), profile),
+		"completing the neighbouring rally lights it")
+
+
+func test_an_incomplete_rally_lights_nothing() -> void:
+	# Only COMPLETED rallies light the map — merely reaching one must not open its
+	# neighbours, or the frontier would run away from the player.
+	_install_geometric_reveal_roster()
+	var profile := {"rallies": {"r_near": {"completed": false, "best_placed": 0}},
+		"starter_model_id": START_CAR}
+	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), profile),
+		"an entered-but-unfinished rally lights nothing")
+
+
+func test_a_rally_beyond_every_circle_stays_dark() -> void:
+	# Guards the test above from passing vacuously: the predicate must be capable of
+	# saying no even with the whole roster completed.
+	_install_geometric_reveal_roster()
+	# Every rally completed EXCEPT r_unreachable itself — a completed rally lights a circle
+	# centred on its own pin, so marking it done would trivially reveal it.
+	var profile := {"rallies": {}}
+	for rally in RallyLibrary.all():
+		if String(rally["id"]) == "r_unreachable":
+			continue
+		profile["rallies"][String(rally["id"])] = {"completed": true}
+	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_unreachable"), profile),
+		"a pin outside every circle is unreachable however much is completed")
+
+
+func test_distance_beyond_frontier_is_zero_once_revealed_and_shrinks_as_you_approach() -> void:
+	_install_geometric_reveal_roster()
+	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
+	assert_eq(RallyLibrary.distance_beyond_frontier(RallyLibrary.by_id("r_near"), fresh), 0.0,
+		"a revealed rally is zero distance beyond the frontier")
+	var far_before := RallyLibrary.distance_beyond_frontier(RallyLibrary.by_id("r_far"), fresh)
+	assert_gt(far_before, 0.0, "a dark rally reports a positive gap")
+	var profile := {"rallies": {"r_near": {"completed": true}}, "starter_model_id": START_CAR}
+	assert_lt(RallyLibrary.distance_beyond_frontier(RallyLibrary.by_id("r_far"), profile),
+		far_before, "lighting the map toward it closes the gap")
+
+
+func test_spending_stars_cannot_close_a_reveal_gate() -> void:
+	# Reveal must never read anything the player can SPEND, or buying something would take
+	# back a rally they had already opened. Geometric reveal can't regress by construction,
+	# and this pins that: drain the ledger to zero and every open rally stays open.
+	var profile := {"rallies": {}}
+	for rally in RallyLibrary.all():
+		profile["rallies"][String(rally["id"])] = {"completed": true, "best_placed": 1}
 	var open_before: Array = []
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and RallyLibrary.rally_revealed(rally, profile):
+		if RallyLibrary.rally_revealed(rally, profile):
 			open_before.append(String(rally["id"]))
-	assert_gt(open_before.size(), 0, "some specials are open to begin with")
+	assert_gt(open_before.size(), 0, "some rallies are open to begin with")
 	profile["stars_earned"] = 50
 	profile["stars_spent"] = 50  # balance now zero
 	for rid in open_before:
@@ -1353,103 +1723,58 @@ func test_all_specials_completed_needs_every_rung() -> void:
 			"only the LAST special completed finishes the game")
 
 
-# A profile with exactly `n` completed ORDINARY rallies (capped at however many exist),
-# which is what every gate now reads. Specials are never marked, so they cannot pay into
-# the count that gates them.
-func _profile_with_completions(n: int) -> Dictionary:
-	var profile := {"rallies": {}}
-	var left := maxi(n, 0)
-	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) or left <= 0:
-			continue
-		profile["rallies"][String(rally["id"])] = {"completed": true, "best_placed": 1}
-		left -= 1
-	return profile
-
-
-# --- reveal_after (the GLOBAL wave gate) -------------------------------------
-
-# A minimal two-corner roster: one wave-0 rally in each region plus a gated rally in
-# "greece" that needs 2 completions. Synthetic, so no authored reveal_after is pinned.
-func _install_two_region_reveal_roster() -> void:
-	var roster: Array[Dictionary] = [
-		{"id": "r_home_a", "name": "Home A", "region": "home", "special": false,
-			"difficulty": 1, "restriction": {}, "reveal_after": 0, "events": []},
-		{"id": "r_home_b", "name": "Home B", "region": "home", "special": false,
-			"difficulty": 1, "restriction": {}, "reveal_after": 0, "events": []},
-		{"id": "r_greece_gated", "name": "Greece Gated", "region": "greece", "special": false,
-			"difficulty": 2, "restriction": {}, "reveal_after": 2, "events": []},
-	]
-	RallyLibrary.override_for_test(roster)
-
-
-func test_reveal_count_is_global_so_other_regions_count_toward_the_gate() -> void:
-	# The world map pins every corner at once, so reveal_after counts completed
-	# ordinary rallies ACROSS THE WHOLE ROSTER — a win in one corner opens a rally in
-	# another. (after_each restores RallyLibrary.)
-	_install_two_region_reveal_roster()
-	var gated := RallyLibrary.by_id("r_greece_gated")
-	var profile := {"rallies": {}}
-	assert_false(RallyLibrary.rally_revealed(gated, profile), "hidden with nothing completed")
-	profile["rallies"]["r_home_a"] = {"completed": true}
-	assert_false(RallyLibrary.rally_revealed(gated, profile), "one completion is short of the gate")
-	# Both completions are in a DIFFERENT region than the gated rally — they still count.
-	profile["rallies"]["r_home_b"] = {"completed": true}
-	assert_true(RallyLibrary.rally_revealed(gated, profile),
-		"completions in another region count toward the gate")
-
-
-func test_a_completed_special_does_not_count_toward_the_reveal_gate() -> void:
-	# Specials gate on the ORDINARY completion count, so a completed special must not pay
-	# into that count itself — otherwise the ladder could bootstrap its own next rung.
-	var roster: Array[Dictionary] = [
-		{"id": "r_gated", "name": "Gated", "region": "home", "special": false,
-			"difficulty": 2, "restriction": {}, "reveal_after": 1, "events": []},
-		{"id": "r_special", "name": "Special", "region": "home", "special": true,
-			"requires_completions": 0, "difficulty": 4, "restriction": {}, "events": []},
-	]
-	RallyLibrary.override_for_test(roster)
-	var profile := {"rallies": {"r_special": {"completed": true}}}
-	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_gated"), profile),
-		"a completed special doesn't advance the wave count")
-
-
-func test_a_wave_zero_rally_is_revealed_from_the_start() -> void:
-	_install_two_region_reveal_roster()
-	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_home_a"), {"rallies": {}}),
-		"reveal_after 0 is visible immediately")
-
-
-func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
-	# The query integrates is_eligible + the star gate over the real roster. Assert the
-	# invariants that hold for ANY roster rather than pinning specific authored rallies:
-	# every returned rally is eligible for the car, none are already complete, and a
-	# star-locked special never appears. A synthetic AWD car with
-	# a mid p/w keeps the input off the catalogue.
-	var profile := {"rallies": {}}
-	# The car carries an ENGINE (a before_each fixture, not a shipped entry) and a
-	# door count, because engine-derived restrictions (displacement / cylinders) and
-	# doors_* resolve through those fields and REJECT a car that can't supply them.
-	# Without them this car qualifies for nothing, the loop below never runs, and the
-	# test silently asserts nothing while still reporting green.
+func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:
+	# The query integrates is_eligible with the map-reveal gate. Runs on a SYNTHETIC roster
+	# rather than the shipped one: what a given car can enter depends on authored
+	# restriction bands and authored pin positions, both of which a designer retunes freely.
+	#
+	# Three rallies, all incomplete: one lit and enterable, one lit but out of the car's
+	# band, one enterable-but-DARK. A correct query returns exactly the first.
+	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
+	var far: Vector2 = hq + Vector2(Config.data.map_reveal_radius * 5.0, 0.0)
+	RallyLibrary.override_for_test([
+		# The opening rally, so it is the roster's one starting light — nothing else is lit
+		# until something is completed (HQ lights nothing).
+		{"id": "q_open", "name": "Open", "region": "home", "special": false, "difficulty": 1,
+			"prize_car": START_CAR,
+			"map_pos": hq, "restriction": {"pw_min": 50.0, "pw_max": 400.0}, "events": []},
+		{"id": "q_out_of_band", "name": "Out Of Band", "region": "home", "special": false,
+			"difficulty": 1, "map_pos": hq,
+			"restriction": {"pw_min": 900.0, "pw_max": 1200.0}, "events": []},
+		{"id": "q_dark", "name": "Dark", "region": "home", "special": false, "difficulty": 1,
+			"map_pos": far, "restriction": {"pw_min": 50.0, "pw_max": 400.0}, "events": []},
+	] as Array[Dictionary])
+	var profile := {"rallies": {}, "starter_model_id": START_CAR}
+	# The car carries an ENGINE (a before_each fixture, not a shipped entry) and a door
+	# count, because engine-derived restrictions (displacement / cylinders) and doors_*
+	# resolve through those fields and REJECT a car that cannot supply them.
 	var car := {"mass": 1500.0, "peak_torque": 400.0, "redline": 6500.0,
 		"tire_compound": 1.0, "drive_mode": CarLibrary.AWD, "country": "DE",
 		"engine": "fx_i4", "doors": 2}
-	var enterable := RallyLibrary.incomplete_rallies_enterable_by(car, profile)
-	# Guards the above: an empty result would make every assertion below vacuous.
-	assert_gt(enterable.size(), 0, "a mid-range car with a fresh profile can enter something")
-	for r in enterable:
-		# "Enterable" means eligible OUTRIGHT or reachable by ducking under the ceiling
-		# with a detune — the same definition the HQ's _entry_plan and the shipped-roster
-		# test above use, so all three agree on what the player can actually start.
-		assert_true(
-			RallyLibrary.is_eligible(r, car) or RallyLibrary.qualifying_detune(r, car) > 0.0,
-			"%s is enterable by the car (outright or detuned)" % r["id"])
-		# A fresh profile has zero completions, so every special whose rung is above zero
-		# is still locked and must not be offered.
-		if RallyLibrary.is_special(r):
-			assert_eq(RallyLibrary.completions_required(r), 0,
-				"a completion-locked special is not offered: %s" % r["id"])
+	var ids: Array = []
+	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
+		ids.append(String(r["id"]))
+	assert_eq(ids, ["q_open"],
+		"only the rally that is BOTH lit and in-band is offered")
+
+
+func test_a_completed_rally_is_never_offered_as_enterable() -> void:
+	# The query is the anti-soft-lock "what can I still do" answer, so anything already
+	# finished must drop out of it even though completing it left its pin lit.
+	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
+	RallyLibrary.override_for_test([
+		{"id": "q_done", "name": "Done", "region": "home", "special": false, "difficulty": 1,
+			"map_pos": hq, "restriction": {}, "prize_car": START_CAR, "events": []},
+	] as Array[Dictionary])
+	var car := {"mass": 1500.0, "peak_torque": 400.0, "redline": 6500.0,
+		"tire_compound": 1.0, "drive_mode": CarLibrary.AWD, "country": "DE",
+		"engine": "fx_i4", "doors": 2}
+	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
+	assert_eq(RallyLibrary.incomplete_rallies_enterable_by(car, fresh).size(), 1,
+		"offered while incomplete")
+	assert_eq(RallyLibrary.incomplete_rallies_enterable_by(
+		car, {"rallies": {"q_done": {"completed": true}}}).size(), 0,
+		"dropped once completed")
 
 
 # --- stage_key (global leaderboards) -----------------------------------------

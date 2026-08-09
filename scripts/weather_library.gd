@@ -55,8 +55,6 @@ extends RefCounted
 #                              Read by world.gd._start_lightning. Cosmetic, so it is
 #                              NOT in physics_fields() and retuning it never forces a
 #                              cache rebake.
-#   "loading_tell"   String  — word the loading screen appends ("Loading stage… rain").
-#                              ""/omitted => the loading screen says nothing.
 #
 # ADDING A CONDITION: add its GameConfig fields to game_config.gd + game_config.tres,
 # add one entry here naming them, and author `"weather": "<id>"` on the events that
@@ -100,7 +98,6 @@ const CONDITIONS: Array[Dictionary] = [
 		},
 		# No "color": the wet road is DARKENED (albedo × amount), not tinted.
 		"road_tint": {"amount": "rain_road_darken"},
-		"loading_tell": "rain",
 	},
 	# Sandstorm: the same fog-only mechanism in dusty tan, dust blown along one fixed
 	# world-space heading, and a road LERPED toward tan rather than darkened (dust
@@ -143,7 +140,6 @@ const CONDITIONS: Array[Dictionary] = [
 			"fog_density_mult": "mist_fog_density_mult",
 			"fog_sky_affect": "mist_fog_sky_affect",
 		},
-		"loading_tell": "fog",
 	},
 	# Storm: rain's look and rain's particle KIND (so no new particle code), authored
 	# heavier and wetter, plus two things rain does not have — a lateral crosswind
@@ -177,7 +173,6 @@ const CONDITIONS: Array[Dictionary] = [
 			"interval_min": "storm_lightning_interval_min_s",
 			"interval_max": "storm_lightning_interval_max_s",
 		},
-		"loading_tell": "storm",
 	},
 ]
 

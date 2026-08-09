@@ -20,6 +20,10 @@ extends Node
 
 enum Phase { IDLE, PRESENCE, RUNNING, STANDINGS, RESULTS, PODIUM }
 
+# The stage count a rally has UNLESS it authors otherwise — the default, not the rule.
+# Ask stage_count() for the active rally's real figure: opening rallies run a single stage
+# (todo/opening-rally.md), and anything reading this constant as "how many stages are we
+# running" will overrun them.
 const EVENTS_PER_RALLY := 3
 
 # End-of-rally summary (features/rally-session.md API):
@@ -66,6 +70,23 @@ var _drivetrain_revert: Dictionary = {}
 # straight on the GARAGE view (not the exterior title) when it next boots. NOT
 # cleared by _reset_to_idle — it's read + cleared by hq.gd on its next _ready.
 var return_to_garage := false
+
+# One-shot navigation flag, same lifecycle as `return_to_garage` but pointing at the MAP
+# TABLE instead, and taking priority over it when both are set. Raised when the finished
+# rally was the player's OPENING rally (todo/opening-rally.md): that run happens before
+# the map has ever been seen, and its whole point is the arrival — the player lands on the
+# table with their first rally already complete and its neighbours lighting up around it.
+# Sending them to the garage instead would bury the one beat the flow exists to deliver.
+var return_to_map := false
+
+# The owned-car instance the player has just WON, waiting to be revealed at HQ (-1 when
+# nothing is pending). One-shot, same lifecycle as the flags above: read and cleared by
+# hq.gd on its next _ready.
+#
+# The reveal is the PRESENT BOX in the car park, not a podium stage: winning a car is the
+# biggest thing that happens in this game and it deserves the beat where the car physically
+# is, rather than a slot-machine reel on the results screen. See hq.gd::_enter_present_box.
+var pending_car_reveal_instance_id := -1
 
 # Free-roam handoff: the car the player picked for a session-LESS free-roam drive.
 #   free_roam_instance_id — an OWNED instance (Test Drive of the tuned car on the lift,
@@ -193,7 +214,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	# draw actually yielding something. A maxed-out car can now legitimately win NOTHING
 	# (RewardSystem.NO_REWARD) — in that case we install nothing, record nothing, and fire
 	# no reveal, so the flow runs straight on to the standings interstitial.
-	var at_award_boundary := _event_index < EVENTS_PER_RALLY
+	var at_award_boundary := _event_index < stage_count()
 	if at_award_boundary:
 		_event_upgrade = RewardSystem.draw_and_grant_upgrade(_car_instance_id, Save.profile)
 		if _event_upgrade != "":
@@ -215,7 +236,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 func continue_to_next_event() -> void:
 	if _phase != Phase.STANDINGS:
 		return
-	if _event_index >= EVENTS_PER_RALLY:
+	if _event_index >= stage_count():
 		_resolve_results()
 	else:
 		_enter_event()
@@ -324,7 +345,7 @@ func report_wreck() -> void:
 	# harmless no-op, but we own the destruction so report_wreck is correct even
 	# when driven directly (tests / an unbound caller).
 	if _car_instance_id >= 0:
-		Save.wreck_car(_car_instance_id)
+		Save.record_wreck(_car_instance_id)
 		Save.save()
 	_resolve_results()
 
@@ -340,9 +361,9 @@ func dev_complete_rally() -> void:
 		return
 	_dnf = false
 	_event_times_ms = []
-	for _i in EVENTS_PER_RALLY:
+	for _i in stage_count():
 		_event_times_ms.append(0)
-	_event_index = EVENTS_PER_RALLY
+	_event_index = stage_count()
 	_resolve_results()
 
 
@@ -368,6 +389,18 @@ func phase() -> int:
 
 func event_index() -> int:
 	return _event_index
+
+
+# How many stages THIS rally runs — its own authored `events` list. Falls back to
+# EVENTS_PER_RALLY only when there is no rally (session-less callers), so a rally that
+# authors one stage runs one and a rally that authors three runs three.
+#
+# Every "are we done" and "how far through" question must come here rather than to the
+# constant: the opening rallies author a single stage, and reading a hardcoded 3 would run
+# the session past the end of the events array.
+func stage_count() -> int:
+	var events: Array = _rally.get("events", [])
+	return events.size() if events.size() > 0 else EVENTS_PER_RALLY
 
 
 func event_times_ms() -> Array[int]:
@@ -568,11 +601,37 @@ func _resolve_results() -> void:
 			combined += int(t)
 		placed = RallyLibrary.placement(_opponent_field, combined)
 	var top3 := not _dnf and placed >= 1 and placed <= 3
+	# THE ONE PLACE `completed` DIVERGES FROM "PODIUMED" (todo/opening-rally.md).
+	#
+	# The opening rally — the event awarding the car the player chose in the starter
+	# picker, which they are dropped straight into before the map exists — is recorded
+	# complete whatever the result, DNF included. Placement still decides the stars, via
+	# the same complete_rally delta as everywhere else; only the `completed` flag is given.
+	#
+	# It is an introduction, not a test: a first-time player who comes 4th would otherwise
+	# land on a map lit by nothing but HQ and the rally they just failed, a dead end
+	# produced by the one run they had no way to prepare for.
+	#
+	# FIRST attempt only. Once it is completed the rally is an ordinary one — a retry is
+	# scored by the normal podium rule, so the carve-out cannot become a permanent
+	# "this rally always counts" that quietly launders DNFs into best times.
+	#
+	# The exception lives HERE, at the call site, rather than as a parameter on
+	# Save.complete_rally: every other caller must keep the podium rule, and a flag on the
+	# shared function is an invitation to misuse it.
+	var opening_first := _is_opening_first_attempt()
+	var record_completion := top3 or opening_first
 
 	# Upgrades are awarded per NON-FINAL event (in report_event_result), not at
 	# resolve. The podium reveals only the car reward below.
 	_set_phase(Phase.PODIUM)
-	# Reward outcome, captured for the podium reveal (todo/menus.md rig 5).
+	# The car a CAR-UNLOCK rally hands over, captured for the podium's CAR_REVEAL stage
+	# (the slot-machine reel + showroom turntable). "" for every other rally and for a
+	# re-win, which is what keeps the stage out of the podium's list.
+	#
+	# This is the SAME pair the retired random draw fed, deliberately reused: the reveal
+	# beat is identical — a car you did not have is being delivered — so a second parallel
+	# result field would have meant two ways to say one thing and two podium code paths.
 	var car_reward := ""
 	var car_reward_is_new := false
 	var game_won_now := false
@@ -583,9 +642,9 @@ func _resolve_results() -> void:
 	# the rating as gold stars and the gained figure as text — see todo/star-economy.md.
 	var stars_gained := 0
 	var star_rating := 0
-	if top3:
+
+	if record_completion:
 		var rally_id := String(_rally.get("id", ""))
-		var is_special := RallyLibrary.is_special(_rally)
 		# Captured BEFORE complete_rally, which is what sets `completed` — afterwards the
 		# profile can no longer tell a first win from a re-win, and the unlock reveal must
 		# fire exactly once (todo/special-unlock-reveal.md).
@@ -595,10 +654,19 @@ func _resolve_results() -> void:
 		# DELTA it credited to the ledger — 0 for a re-win at an equal or worse placement.
 		stars_gained = Save.complete_rally(rally_id, combined, placed)
 		star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
-		# A special's FIRST win opens an upgrade gate. Announce it, and hand the part to the
-		# car that just earned it — cascading any prerequisite rungs that car is missing, so
-		# the award is usable (RewardSystem.grant_special_unlock).
-		if is_special and not was_completed:
+		# A PART-UNLOCK rally's first win discovers the part garage-wide and hands one copy
+		# to the car that just earned it — cascading any prerequisite rungs that car is
+		# missing, so the award is usable (RewardSystem.grant_special_unlock).
+		#
+		# Keyed on the rally having a PART PRIZE (RallyLibrary.prize_part_id, derived from
+		# the upgrade's own unlocked_by_rally gate) rather than on `special`: what a rally
+		# awards is now its own property, and an ordinary rally may carry a part prize just
+		# as a special may carry none. `special` is a MARKER, not a reward tier.
+		#
+		# Discovery itself needs no new save state: UpgradeLibrary.rally_gate_met already
+		# reads "is the gating rally completed", and complete_rally above has just recorded
+		# exactly that. One fact, one place.
+		if not was_completed:
 			var unlocked := UpgradeLibrary.unlocked_by(rally_id)
 			if not unlocked.is_empty():
 				var item_id := String(unlocked.get("id", ""))
@@ -634,27 +702,47 @@ func _resolve_results() -> void:
 			# Every special is now done: fire the win/credits beat.
 			game_won_now = true
 			game_won.emit()
-		# NO CAR IS DRAWN HERE, for any rally (todo/star-economy.md, change 1). Winning pays
-		# STARS — credited by complete_rally above and shown by the podium's stars beat — and
-		# cars are bought with those stars at the present box instead.
+		# A CAR-UNLOCK rally's first win hands over the car the whole field was driving.
+		# This is the ONLY way a car is earned: nothing is drawn at random and nothing is
+		# bought, so what the player owns is exactly what they went out and won.
 		#
-		# This is what makes the per-rally `restriction` bands mean something again: a
-		# guaranteed car per win filled the garage with something for every class by about
-		# the fifth rally, after which no band ever excluded the player from anything.
+		# FIRST win only (`was_completed`), like the part award — re-running a prize rally
+		# pays stars again but cannot mint duplicate cars. The old model drew a random car
+		# on every top-3 INCLUDING re-wins, which both farmed cars off one easy rally and
+		# filled the garage with something for every class by about the fifth rally, after
+		# which no `restriction` band ever excluded the player from anything again.
 		# Simulation confirmed it — `revealed` and `eligible` were identical from rally 5 on.
-		#
-		# It also closes a grind: the old draw fired on RE-WINS too ("renewable supply"), so
-		# replaying an easy rally farmed cars indefinitely. Stars cannot be farmed that way
-		# because complete_rally only credits the improvement over a rally's previous best.
-		#
-		# The wreck safety net (Save.ensure_wreck_safety_net -> open_mystery_box) still hands
-		# out a car for free, and must: it is the anti-soft-lock path for a wrecked-out
-		# garage, and that one thing must never have a price.
+		var prize_car_id := RallyLibrary.prize_car_id(_rally)
+		if prize_car_id != "" and not was_completed:
+			# Guard the duplicate anyway: a re-authored roster could point two rallies at
+			# one car, and a garage holding the same model twice is a content bug the
+			# player would carry for good. test_no_two_rallies_award_the_same_car covers
+			# the roster; this covers the runtime.
+			if not Save.owns_model(prize_car_id):
+				var won_car := Save.grant_car(prize_car_id)
+				# Hand the new car to HQ to reveal in the present box. The car is already
+				# GRANTED here — the box is a presentation of something the player owns,
+				# not the transaction itself, so quitting before opening it cannot cost
+				# them the car.
+				pending_car_reveal_instance_id = int(won_car.get("instance_id", -1))
+				car_reward = prize_car_id
+				# Always NEW: the duplicate guard above means a car only ever arrives here
+				# the first time the player wins it.
+				car_reward_is_new = true
+				car_rewarded.emit(prize_car_id)
+		if opening_first:
+			# Arrive on the MAP, not the garage — the reveal is the point of this run.
+			return_to_map = true
+			# Mark the opening rally itself as already SEEN, so the arrival parade
+			# announces its NEIGHBOURS rather than replaying the rally the player has
+			# this second finished driving. Without this it would be first in the queue,
+			# and the map's opening beat would be news the player already has.
+			Save.mark_rally_revealed(rally_id, false)
 		Save.save()
 
 	var result := {
 		"placed": placed,
-		"completed": top3,
+		"completed": record_completion,
 		"combined_ms": combined,
 		"dnf": _dnf,
 		"rally_id": String(_rally.get("id", "")),
@@ -687,13 +775,22 @@ func _resolve_results() -> void:
 	rally_finished.emit(result)
 
 
-# Whether the player already owns at least one instance of `model_id` (used to
-# flag a car reward as "new" before it is granted).
-func _owns_model(model_id: String) -> bool:
-	for car in Save.profile.get("cars", []):
-		if String(car.get("model_id", "")) == model_id:
-			return true
-	return false
+# Is the rally being resolved this player's OPENING rally, on its first attempt?
+#
+# "Their" opening rally is the event awarding the model they chose in the starter picker
+# (RallyLibrary.opening_rally_id_for) — so it is per-profile, and every other player's
+# opening rally is an ordinary prize rally to this one.
+#
+# Must be asked BEFORE Save.complete_rally runs: it is the un-completed state that marks
+# the first attempt, and complete_rally is exactly what erases it.
+func _is_opening_first_attempt() -> bool:
+	var rally_id := String(_rally.get("id", ""))
+	if rally_id == "":
+		return false
+	var starter := String(Save.profile.get("starter_model_id", ""))
+	if RallyLibrary.opening_rally_id_for(starter) != rally_id:
+		return false
+	return not Save.rally_completed(rally_id)
 
 
 # A car-park "Detune to N% & Start" agreement is only for the rally being entered:

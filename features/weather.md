@@ -40,7 +40,6 @@ omitted key means "this condition does not have that feature":
 | `road_tint` | `{"amount": <field>, "color": <field>}`. `color` names the colour the albedo is **lerped toward**; **omitted ⇒ a plain darkening multiply**. Omitted entirely ⇒ road albedo untouched |
 | `wind` | lateral **crosswind body force**: `strength` / `gust` / `dir_deg` → GameConfig fields (`WIND_KEYS`). Omitted ⇒ no wind force. Read by the crosswind force in `car.gd` — see [car-physics.md](car-physics.md) |
 | `lightning` | cosmetic **flash**: `flash` / `duration` / `interval_min` / `interval_max` → GameConfig fields (`LIGHTNING_KEYS`). Omitted ⇒ no flashes. Read by `world.gd` → `_start_lightning` |
-| `loading_tell` | word the loading screen appends. Omitted ⇒ it says nothing |
 
 There is **no `"mode"` string and no colour literal in `world.gd`** — a condition that
 tints the road toward something new (dust today, snow tomorrow) just names a colour
@@ -388,14 +387,11 @@ local-space simulation, where a "fixed" direction actually rotates with the
 camera. See [rendering.md](rendering.md) for the full mechanism and why an
 earlier local-space + per-frame-speed-tilt version was replaced.
 
-The loading screen names the condition during the load, so a wet stage is known
-before the countdown rather than discovered at the first corner — the wording comes
-from the entry's `loading_tell`, and a condition that authors none says nothing. Rain,
-fog and storm each author one — fog's matters most, since being told the stage is
-foggy *before* the countdown is the difference between a difficulty lever and an
-ambush. **Sandstorm deliberately has none**, preserving the shipped
-behaviour (adding one would be a behaviour change, not a refactor — it is a
-one-key edit if wanted). See [loading.md](loading.md).
+**The loading screen no longer names the condition.** That line now counts stages
+("Loading stage 2 of 3…"), and the two cannot share it — mixing them meant the stage
+number could only ever appear on dry stages. The `loading_tell` field the tell was read
+from has been removed with it, rather than left as data nothing consumes. Weather still
+announces itself in the world the moment the stage loads. See [loading.md](loading.md).
 
 ## Tests
 

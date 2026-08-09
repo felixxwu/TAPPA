@@ -1,7 +1,7 @@
 extends GutTest
 # The career-simulation tool (tools/sim_career.gd): the walk logic, not the numbers
 # it reports. Every assertion here is an invariant that must hold for ANY reasonable
-# RALLIES / CARS authoring — a designer retuning a restriction band, a reveal_after,
+# RALLIES / CARS authoring — a designer retuning a restriction band, a map pin,
 # or a star requirement must never break this file. Nothing pins a career length, a
 # star total, an eligible-rally count, or a soft-lock rate; those are all outputs of
 # tunable data and the tool exists precisely so they can move.
@@ -34,7 +34,15 @@ func test_fresh_profile_has_one_real_starter_car() -> void:
 	var profile: Dictionary = _sim._new_profile(_rng(1))
 	var cars: Array = profile["cars"]
 	assert_eq(cars.size(), 1, "a fresh career owns exactly the starter car")
-	assert_eq(profile["rallies"], {}, "a fresh career has completed nothing")
+	# A fresh career has completed exactly ONE rally: the opening one, which the player
+	# drives before the map is ever shown (todo/opening-rally.md). Modelling it as "nothing
+	# completed" would put the sim in a state no real player is ever in.
+	var starter := String(cars[0]["model_id"])
+	assert_eq((profile["rallies"] as Dictionary).keys(),
+		[RallyLibrary.opening_rally_id_for(starter)],
+		"a fresh career has completed its opening rally and nothing else")
+	assert_eq(String(profile.get("starter_model_id", "")), starter,
+		"and records the pick, which is what lights that rally on the map")
 	var entry := CarLibrary.by_id(String(cars[0]["model_id"]))
 	assert_false(entry.is_empty(), "the starter is a real catalogue car")
 
@@ -101,72 +109,89 @@ func test_step_records_a_top3_placement_worth_stars() -> void:
 		"the recorded placement is worth stars (a genuine top-3 finish)")
 
 
-func test_car_supply_follows_the_configured_reward_model() -> void:
-	# Two reward models, selected by STAR_COST_PER_CAR, with different invariants:
-	#
-	#   cost == 0 (the CURRENT game) — an ordinary top-3 always draws exactly one car and
-	#             a special draws none. That asymmetry is what makes "cars owned"
-	#             interesting, so it stays asserted whenever the tool models today's rules.
-	#
-	#   cost  > 0 (the PROPOSED economy, todo/star-economy.md) — cars are bought from a
-	#             star balance in a menu, so they are no longer tied to finishing a rally
-	#             at all. What must hold instead: the balance never goes negative, and
-	#             every car added is paid for in full.
-	#
-	# Asserted for whichever model is configured rather than pinning one, so flipping the
-	# constant to explore a price does not turn this file red.
-	var saw_ordinary := false
-	var saw_special := false
-	for seed_value in 40:
+# Cars come from PRIZE RALLIES and nowhere else — nothing is drawn at random, nothing is
+# bought (features/prize-rallies.md). The sim has to model that exactly, or its
+# reachability verdict is about an economy the game does not have.
+func test_a_car_is_added_only_by_a_rally_that_advertises_one() -> void:
+	for seed_value in 20:
 		var profile: Dictionary = _sim._new_profile(_rng(seed_value))
 		for _i in 12:
 			var enterable: Array = _sim._enterable(profile)
 			if enterable.is_empty():
 				break
 			var before: int = (profile["cars"] as Array).size()
-			var spent_before := int(profile.get("stars_spent", 0))
 			var step: Dictionary = _sim._step(profile, enterable, _rng(seed_value * 100 + _i))
 			var after: int = (profile["cars"] as Array).size()
-
-			if step["special"]:
-				saw_special = true
+			var prize := RallyLibrary.prize_car_id(RallyLibrary.by_id(String(step["rally_id"])))
+			if prize == "":
+				assert_eq(after, before, "a rally with no car prize adds no car")
 			else:
-				saw_ordinary = true
+				assert_lte(after, before + 1, "a prize rally adds at most one car")
+				assert_eq(String(step["granted"]), prize if after > before else "",
+					"and it is the car that rally advertises")
 
-			if SimCareer.STAR_COST_PER_CAR <= 0:
-				if step["special"]:
-					assert_eq(after, before, "a special grants no car")
-				else:
-					assert_eq(after, before + 1, "an ordinary win grants exactly one car")
-				continue
 
-			# Economy model.
-			var bought := int(step["bought"])
-			var free_cars := int(step["free_cars"])
-			assert_eq(after, before + bought, "cars added equals cars bought")
-			assert_true(free_cars <= bought, "free cars are a subset of cars acquired")
-			# Paid cars are charged in full; rescued ones are charged nothing.
-			assert_eq(int(profile["stars_spent"]) - spent_before,
-				(bought - free_cars) * SimCareer.STAR_COST_PER_CAR,
-				"paid cars charged in full, rescues charged nothing")
-			assert_eq(int(step["paid"]), (bought - free_cars) * SimCareer.STAR_COST_PER_CAR,
-				"the reported debit matches the paid car count")
-			assert_true(int(step["balance"]) >= 0, "the star balance never goes negative")
-			if free_cars > 0:
-				# A rescue only ever fires when the player could NOT afford a car, and grants
-				# exactly one. Anything else means the broke guard leaked and the rescue is
-				# farmable (todo/star-economy.md, change 1).
-				assert_eq(free_cars, 1, "a rescue grants exactly one car")
-				assert_true(int(step["balance"]) < SimCareer.STAR_COST_PER_CAR,
-					"a rescue only fires when the car was unaffordable")
-			else:
-				# Greedy purchasing must leave nothing affordable behind.
-				assert_true(int(step["balance"]) < SimCareer.STAR_COST_PER_CAR,
-					"no affordable purchase was left unmade")
-		if saw_ordinary and saw_special:
+func test_the_sim_never_spends_stars_on_a_car() -> void:
+	# Guards the deletion: the walk used to buy cars greedily from the balance. If that
+	# ever came back the reachability closure would be measuring the wrong game.
+	var profile: Dictionary = _sim._new_profile(_rng(5))
+	for _i in 15:
+		var enterable: Array = _sim._enterable(profile)
+		if enterable.is_empty():
 			break
-	assert_true(saw_ordinary, "the walk exercised an ordinary rally")
-	assert_true(saw_special, "the walk exercised a special event")
+		_sim._step(profile, enterable, _rng(_i))
+	assert_eq(int(profile.get("stars_spent", 0)), 0, "the sim spends nothing")
+
+
+# --- The reachability solver -------------------------------------------------
+
+func test_solve_reachability_is_deterministic() -> void:
+	# The whole value of the solver is that it is a PROOF, not a sample: same roster, same
+	# starter, same answer every time.
+	var starter := String(CarLibrary.STARTER_MODEL_IDS[0])
+	var a: Dictionary = _sim.solve_reachability(starter)
+	var b: Dictionary = _sim.solve_reachability(starter)
+	assert_eq(a["unreached"], b["unreached"], "two runs agree on what is unreachable")
+	assert_eq((a["waves"] as Array).size(), (b["waves"] as Array).size(), "and on the wave count")
+
+
+func test_solve_reachability_only_takes_rallies_that_are_lit_and_enterable() -> void:
+	# Each wave must satisfy BOTH gates — the map having reached the pin, and the garage
+	# having something in band. A closure that ignored either would report a map as sound
+	# when a player would be stuck.
+	var starter := String(CarLibrary.STARTER_MODEL_IDS[0])
+	var result: Dictionary = _sim.solve_reachability(starter)
+	# Mirrors the solver's OWN start state: the starter recorded, which is what lights
+	# their opening rally before it is completed (RallyLibrary.lit_sources). A profile
+	# without it sees a wholly dark map, since HQ lights nothing.
+	var profile := {"cars": [_sim._make_car(1, starter)], "rallies": {},
+		"stars_earned": 0, "stars_spent": 0, "starter_model_id": starter}
+	for wave in result["waves"]:
+		for rid in wave:
+			var rally := RallyLibrary.by_id(String(rid))
+			assert_true(RallyLibrary.rally_revealed(rally, profile),
+				"%s was lit when the solver took it" % rid)
+		for rid in wave:
+			profile["rallies"][String(rid)] = {"completed": true, "best_placed": 1}
+			var prize := RallyLibrary.prize_car_id(RallyLibrary.by_id(String(rid)))
+			if prize != "":
+				(profile["cars"] as Array).append(
+					_sim._make_car((profile["cars"] as Array).size() + 1, prize))
+
+
+func test_solve_reachability_reports_what_it_could_not_reach() -> void:
+	# The actionable output. Every rally is either in a wave or in `unreached` — never
+	# both, never neither — so the report accounts for the whole roster.
+	var result: Dictionary = _sim.solve_reachability(String(CarLibrary.STARTER_MODEL_IDS[0]))
+	var seen := {}
+	for wave in result["waves"]:
+		for rid in wave:
+			assert_false(seen.has(String(rid)), "%s is taken once" % rid)
+			seen[String(rid)] = true
+	for rid in result["unreached"]:
+		assert_false(seen.has(String(rid)), "%s is not both reached and unreached" % rid)
+	assert_eq(seen.size() + (result["unreached"] as Array).size(), RallyLibrary.all().size(),
+		"every rally is accounted for")
 
 
 func test_stars_spent_never_exceeds_stars_earned() -> void:
@@ -204,21 +229,23 @@ func test_stars_never_decrease_across_a_career() -> void:
 		previous = now
 
 
-func test_specials_do_not_advance_the_reveal_count() -> void:
-	# _completed_count (which drives reveal_after) skips specials, so a special must
-	# leave it untouched. This is what makes a special a progression-neutral detour.
+func test_completing_any_rally_lights_the_map_around_it() -> void:
+	# Reveal is spatial now, so EVERY completion — special or ordinary — lights a circle
+	# around its own pin. There is no completion counter for a special to be excluded from,
+	# which is why the old "specials are progression-neutral" carve-out is gone.
 	var profile: Dictionary = _sim._new_profile(_rng(10))
 	for _i in 20:
 		var enterable: Array = _sim._enterable(profile)
 		if enterable.is_empty():
 			break
-		var before := RallyLibrary._completed_count(profile)
+		var before: int = RallyLibrary.lit_sources(profile).size()
 		var step: Dictionary = _sim._step(profile, enterable, _rng(_i + 500))
-		var after := RallyLibrary._completed_count(profile)
-		if step["special"]:
-			assert_eq(after, before, "a special does not advance the reveal count")
+		var after: int = RallyLibrary.lit_sources(profile).size()
+		if bool(step.get("completed", true)):
+			assert_eq(after, before + 1,
+				"%s lit a new circle on completion" % step["rally_id"])
 		else:
-			assert_eq(after, before + 1, "an ordinary win advances the reveal count by one")
+			assert_eq(after, before, "an uncompleted attempt lights nothing")
 
 
 func test_special_first_priority_is_honoured() -> void:

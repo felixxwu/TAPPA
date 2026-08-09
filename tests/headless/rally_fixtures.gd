@@ -6,10 +6,18 @@ extends RefCounted
 # logic / session / eligibility test. Always restore() in teardown.
 #
 # The roster spans the axes tests exercise: an open (no-restriction) workhorse
-# with events, a drive-mode + power-band gate (RWD and FWD), a country gate, an
-# intra-region reveal gate (reveal_after), and a star-gated SPECIAL. All live in the real
-# "home" region (a structural id RegionLibrary always ships) so region/reveal
-# grouping resolves. Events set a very low water_level so track generation never
+# with events, a drive-mode + power-band gate (RWD and FWD), a country gate, a
+# MAP-REVEAL gate (a pin parked outside HQ's lit circle), and a SPECIAL. All live in the
+# real "home" region (a structural id RegionLibrary always ships) so region grouping
+# resolves.
+#
+# `map_pos` is load-bearing here, not decoration: reveal is geometric now
+# (RallyLibrary.rally_revealed), so a fixture's PIN POSITION is what decides whether it is
+# enterable. Every rally meant to be open from a fresh profile is parked inside HQ's lit
+# circle at RallyLibrary.HQ_MAP_POS; fx_gated is deliberately outside it, and fx_open
+# authors a wide reveal_radius that reaches fx_gated — so "complete fx_open to open
+# fx_gated" is the reveal case a test can exercise. Keep the two facts in sync if you move
+# either pin. Positions are well inside 0..1 so no fixture depends on edge clamping. Events set a very low water_level so track generation never
 # has to route around lakes — a fixture stage generates fast and deterministically.
 #
 # Eligibility (RallyLibrary.is_eligible) reads the CAR catalogue, so a test that
@@ -34,40 +42,44 @@ static func rallies() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
 			"id": "fx_open", "name": "Fixture Open", "region": "home",
-			"difficulty": 1, "special": false, "map_pos": Vector2(0.2, 0.7),
+			# Sits inside HQ's lit circle, and lights a WIDE circle of its own so completing
+			# it reveals fx_gated — the fixture's one reveal-progression edge.
+			"difficulty": 1, "special": false, "map_pos": Vector2(0.50, 0.56),
+			"reveal_radius": 0.30,
 			"restriction": {},  # open class — the "any rally with events" workhorse
 			"events": [_event(1001), _event(1002), _event(1003)],
 		},
 		{
 			"id": "fx_rwd_band", "name": "Fixture RWD Band", "region": "home",
-			"difficulty": 2, "special": false, "map_pos": Vector2(0.4, 0.6),
+			"difficulty": 2, "special": false, "map_pos": Vector2(0.56, 0.52),
 			"restriction": {"drive_mode": RWD, "pw_min": 150.0, "pw_max": 270.0},
 			"events": [_event(2001), _event(2002), _event(2003)],
 		},
 		{
 			"id": "fx_fwd_band", "name": "Fixture FWD Band", "region": "home",
-			"difficulty": 1, "special": false, "map_pos": Vector2(0.3, 0.55),
+			"difficulty": 1, "special": false, "map_pos": Vector2(0.44, 0.52),
 			"restriction": {"drive_mode": FWD, "pw_min": 80.0, "pw_max": 140.0},
 			"events": [_event(2101), _event(2102), _event(2103)],
 		},
 		{
 			"id": "fx_country_us", "name": "Fixture US Muscle", "region": "home",
-			"difficulty": 2, "special": false, "map_pos": Vector2(0.5, 0.4),
+			"difficulty": 2, "special": false, "map_pos": Vector2(0.50, 0.44),
 			"restriction": {"country": "US", "pw_min": 150.0, "pw_max": 300.0},
 			"events": [_event(3001), _event(3002), _event(3003)],
 		},
 		{
 			"id": "fx_gated", "name": "Fixture Gated", "region": "home",
-			"difficulty": 3, "special": false, "reveal_after": 2,
-			"map_pos": Vector2(0.6, 0.3),
+			# OUTSIDE HQ's lit circle on purpose: dark on a fresh profile, revealed once
+			# fx_open is completed (whose reveal_radius reaches this pin).
+			"difficulty": 3, "special": false, "map_pos": Vector2(0.50, 0.78),
 			"restriction": {"pw_min": 200.0, "pw_max": 320.0},
 			"events": [_event(4001), _event(4002), _event(4003)],
 		},
 		{
 			"id": "fx_showdown", "name": "Fixture Special", "region": "home",
-			# requires_completions 0 -> open from the start, so a test that just wants "a
-			# special rally to run" can enter it without completing anything first.
-			"difficulty": 4, "special": true, "requires_completions": 0, "map_pos": Vector2(0.5, 0.1),
+			# Parked inside HQ's lit circle so it is open from the start — a test that just
+			# wants "a special rally to run" can enter it without completing anything first.
+			"difficulty": 4, "special": true, "map_pos": Vector2(0.42, 0.46),
 			"restriction": {},  # open so any car can finish
 			"events": [_event(9001), _event(9002), _event(9003)],
 		},

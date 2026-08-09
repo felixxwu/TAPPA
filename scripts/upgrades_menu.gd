@@ -44,7 +44,11 @@ func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable()
 	_on_swap = on_swap
 	_pw_limit = pw_limit
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_theme_constant_override("separation", 8)
+	# Tight row spacing. Each slot row is already a two-line block (label+options over its
+	# own inner separation of 2), so a generous gap between rows made the page read as a
+	# list of loosely-related panels rather than one menu — and pushed the lower slots off
+	# a short screen for no gain.
+	add_theme_constant_override("separation", 4)
 	rebuild()
 
 
@@ -71,10 +75,8 @@ func rebuild() -> void:
 	var id := int(_owned.get("instance_id", -1))
 	var installed: Array = _owned.get("installed_upgrades", [])
 	for slot in UpgradeLibrary.SLOTS:
-		# A hidden slot gets no row: an unwanted nitrous bottle is just a button you don't
-		# press, and since nitrous is excluded from effective_meta removing it couldn't
-		# change the car's eligibility either — so there is nothing to decide here. See
-		# features/nitrous.md.
+		# A hidden slot gets no row (UpgradeLibrary.HIDDEN_SLOTS, currently empty — nitrous
+		# used to be the one member and now has a row like everything else).
 		if UpgradeLibrary.is_hidden_slot(slot):
 			continue
 		var row := _make_slot_row(slot, id, installed)
@@ -320,14 +322,43 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 	# None is always available and plays the "off" role.
 	row.add_child(_option_button("Stock", current_id == "", true,
 		"opt:%s:none" % slot, _set_slot_option.bind(instance_id, slot, "")))
-	# One button per VISIBLE catalogue part (see _slot_parts — star-locked parts are absent
-	# entirely), greyed until that kit is fitted to this car.
+	# One button per VISIBLE catalogue part (see _slot_parts — undiscovered parts are absent
+	# entirely). A part already ON this car selects it; a part DISCOVERED but not on this car
+	# is a BUY button quoting its star price.
+	#
+	# Buying lives on the same button rather than in a separate shop screen because it is the
+	# same question the player is already asking here — "can this car run a big turbo?" — and
+	# the answer is now "yes, for N stars" instead of a dead grey option. Upgrades are
+	# car-bound, so every car meets this question separately, which is what makes the sink
+	# bottomless (features/star-economy.md).
 	for def in parts:
 		var pid := String(def.get("id", ""))
 		var text := String(def.get("menu_label", def.get("name", pid)))
-		row.add_child(_option_button(text, current_id == pid, installed.has(pid),
-			"opt:%s:%s" % [slot, pid], _set_slot_option.bind(instance_id, slot, pid)))
+		if installed.has(pid):
+			row.add_child(_option_button(text, current_id == pid, true,
+				"opt:%s:%s" % [slot, pid], _set_slot_option.bind(instance_id, slot, pid)))
+			continue
+		# Not on this car: offer it for sale. Disabled — not hidden — when the balance is
+		# short or the car has not climbed to this rung yet, because the price and the
+		# prerequisite are both information the player can act on, unlike an undiscovered
+		# part (which is absent entirely).
+		var price: int = Save.part_price(pid)
+		row.add_child(_option_button("%s (%d★)" % [text, price], false,
+			Save.can_buy_part(instance_id, pid),
+			"opt:%s:%s" % [slot, pid], _buy_slot_option.bind(instance_id, pid)))
 	return row
+
+
+# Buy a copy of a discovered part for this car and rebuild the page so the row flips from
+# a price to a selectable option. Save.buy_part re-checks everything can_buy_part does, so
+# a stale button (the balance moved under it) refuses rather than half-completing.
+func _buy_slot_option(instance_id: int, item_id: String) -> void:
+	if not Save.buy_part(instance_id, item_id):
+		return
+	_owned = Save.get_car(instance_id)
+	rebuild()
+	if _on_change.is_valid():
+		_on_change.call()
 
 
 # One selector button: bracketed AND painted the house accent (GREEN) when active so the
@@ -400,11 +431,12 @@ func _slot_parts(slot: String, installed: Array) -> Dictionary:
 		if String(def.get("slot", "")) != slot or bool(def.get("consumable", false)):
 			continue
 		var pid := String(def.get("id", ""))
-		# STAR-GATED parts are omitted ENTIRELY, not greyed: a row of locked options invites
-		# "when do I get the big turbo?", which is a question the garage can't answer. A new
+		# UNDISCOVERED parts are omitted ENTIRELY, not greyed: a row of locked options invites
+		# "when do I get the big turbo?", which is a question the garage can't answer — the
+		# MAP answers it, by standing the part on the pin of the rally that awards it. A new
 		# player's turbo row therefore reads "Stock | Small" and nothing else, and grows as
-		# specials are won. What DOES stay visible-but-disabled is a part that is unlocked
-		# and merely not yet fitted to THIS car — that one the player can act on.
+		# part-unlock rallies are won. What DOES stay visible is a part already discovered but
+		# not yet on THIS car — that one the player can act on, by buying a copy for it.
 		#
 		# A part already fitted is kept regardless of its gate, so a car can never display
 		# less than it is actually running (see UpgradeLibrary.apply — the gate governs
@@ -570,11 +602,13 @@ func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 # than a junk reward the player has been collecting for nothing.
 func _swap_locked_hint(tokens: int) -> String:
 	var held := "%s banked — " % UITheme.count_noun(tokens, "token") if tokens > 0 else ""
-	# "rallies", not "events": the gate counts completed RALLIES (an event is one stage inside
-	# a rally) — same wording as the map pin's locked-special teaser.
-	return "%sengine swapping unlocks when you win the special event that opens after %s" % [
-		held, UITheme.count_noun(RallyLibrary.engine_swap_completion_requirement(),
-			"rally", "rallies")]
+	# Names the rally rather than quoting a count: reveal is geometric now, so the player is
+	# sent to a place on the map. Falls back to the bare statement under a test roster where
+	# the gating rally doesn't resolve.
+	var unlock_name := RallyLibrary.engine_swap_unlock_rally_name()
+	if unlock_name == "":
+		return "%sengine swapping is not unlocked yet" % held
+	return "%sengine swapping unlocks when you win %s" % [held, unlock_name]
 
 
 # The owned cars this car can swap engines with: every OTHER owned car. No car is

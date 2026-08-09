@@ -60,9 +60,7 @@ This gate is about **earning** a part, never about **keeping** one:
 part already fitted keeps working even if its gate would no longer be met.
 Gated parts today: `turbo_large` → `sp_woodland_trial`, `drivetrain_swap`
 (now named "Drivetrain Conversion") → `sp_dust_trial`, `supercharger` →
-`sp_lakeshore_trial`, and the nitrous ladder `nitrous` / `nitrous_tank` /
-`nitrous_shot` / `nitrous_race` → `the_showdown` / `hc_showdown` /
-`gr_showdown` / `gc_showdown` respectively. See `reward-system.md` for how
+`sp_lakeshore_trial`, and `nitrous` → `the_showdown`. See `reward-system.md` for how
 `RewardSystem` reads this gate into the draw pool.
 
 **Prerequisite gate (`requires_upgrade_id`).** The **per-car** counterpart to
@@ -144,13 +142,10 @@ selected one included — see [reward-system.md](reward-system.md)
 A fifth `SLOTS` entry, deliberately absent from the upgrades menu — the
 mechanic, gauge, input and audio are documented in full in
 [nitrous.md](nitrous.md); this file only covers its place in the catalogue.
-`UpgradeLibrary.HIDDEN_SLOTS := "nitrous"` marks it as installed
-**enabled** on award (every other slot installs disabled, relying on the
-reveal overlay to enable the player's pick — a nitrous bottle with no menu row
-would otherwise be permanently dead). Its four rungs (`nitrous` →
-`nitrous_tank` → `nitrous_shot` → `nitrous_race`) chain via
-`requires_upgrade_id` exactly like the turbo ladder, each also gated on winning
-its own special event (see above). The `install_nitrous` effect uses the `"write_fields"` op with
+It is a SINGLE part with an ordinary garage row — it was a four-rung ladder
+(`nitrous` → `nitrous_tank` → `nitrous_shot` → `nitrous_race`) in a hidden slot,
+collapsed to one entry carrying the top rung's numbers.
+`UpgradeLibrary.HIDDEN_SLOTS` is empty as a result. The `install_nitrous` effect uses the `"write_fields"` op with
 `feeds_pw: false` in the `EFFECTS` table below, so nitrous can never move
 `effective_meta`'s power-to-weight or a car's rally eligibility.
 → "Mystery box" for the trigger, resolver, and reveal. The concrete part

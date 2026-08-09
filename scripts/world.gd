@@ -68,8 +68,12 @@ func _ready() -> void:
 	# keep whatever the caller wrote. See DrivingContext.apply_stage_config.
 	DrivingContext.apply_stage_config(Config.data)
 	var cfg: GameConfig = Config.data
-	# Tell the player the stage is wet while it loads (no-op when dry).
-	loading.set_weather(cfg.weather)
+	# Tell the player which stage of the rally is loading (no-op for a one-stage rally or a
+	# session-less drive). Replaced the weather tell that used to own this line.
+	if RallySession.is_active():
+		loading.set_stage(RallySession.event_index(), RallySession.stage_count())
+	elif ChallengeSession.is_active():
+		loading.set_stage(ChallengeSession.events_completed(), ChallengeSession.stage_count())
 	# Resolve the per-target render quality ONCE, before apply_terrain_lod() and any
 	# scatter run: a web TOUCH device (the low-end / 30fps target) gets the shorter
 	# foliage cull distance and tighter terrain LOD bands, every other target the
@@ -1333,7 +1337,7 @@ func _arch_event_info() -> Dictionary:
 		var rally := RallyLibrary.by_id(RallySession.rally_id())
 		info["rally_name"] = String(rally.get("name", ""))
 		info["stage_index"] = RallySession.event_index()
-		info["stage_count"] = RallySession.EVENTS_PER_RALLY
+		info["stage_count"] = RallySession.stage_count()
 		info["target_ms"] = RallySession.current_event_target_ms()
 	return info
 

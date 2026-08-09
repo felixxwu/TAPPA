@@ -1790,20 +1790,14 @@ only when something was won.
    headless needs no special case. The panel's stylebox and text colour are reset in
    `_enter_stage`, or the following CAR_REVEAL would inherit the inverted look.
    See [reward-system.md](reward-system.md) → Special-event unlock.
-5. **CAR_REVEAL** — **dormant.** It fires only if `car_reward != ""`, and since cars are
-   bought at the map's present box rather than won, `rally_session.gd` **never fills that
-   field** any more — for any rally, special or ordinary, first win or re-win (see the
-   "NO CAR IS DRAWN HERE" comment in `RallySession._resolve_rally`, and
-   [star-economy.md](star-economy.md) for why: a guaranteed car per win made the per-rally
-   restriction bands meaningless, and re-wins farmed cars). The stage and its wiring are
-   left in place for a future win-a-car beat; the car the player actually sees arrives
-   through the HQ present reveal above. When it does run — the camera **flies over to the
-   showroom** and a slot-machine reel spins through the car catalogue's
-   names, decelerating onto the won car; on the lock-in the car appears on the
-   showroom turntable (hidden until then) and the card collapses to a **single
-   line**: the big slot label hides and the caption alone carries
-   `"<car> (NEW) — delivered to your garage"` (the `(NEW)` tag only when first
-   owned), so the name isn't shown twice.
+5. **CAR_REVEAL** — **retired.** A won car is now revealed at HQ, in the present box the
+   player has to open (`hq.gd::_enter_present_box`, handed over by
+   `RallySession.pending_car_reveal_instance_id`). The podium stage put the game's biggest
+   moment on the results screen, away from the garage the car arrives in, and over in a
+   moment. The box puts the reveal where the car is, and makes the player perform it —
+   Back is hidden and the Back ACTION is refused until the lid is off, so it cannot be
+   skipped past. The enum member and its showroom/slot helpers remain in `podium.gd` but
+   are no longer reachable: `_compute_stages` never appends the stage.
 
 **Upgrades are no longer revealed on the podium** — the per-event upgrades are
 awarded and revealed on the between-event **standings** screens (see the

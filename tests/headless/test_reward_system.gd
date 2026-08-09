@@ -17,7 +17,12 @@ var _profile_backup: Dictionary = {}
 
 func before_each() -> void:
 	CarFixtures.install()
-	# The purchase tests below assign Save.profile (purchase_car mutates through Save).
+	# The rally roster too: reveal is geometric now, so which rallies a garage can enter
+	# depends on authored PIN POSITIONS. Reading the shipped map here would make these
+	# tests fail the moment a designer nudges a pin — the fixture roster keeps an
+	# open-class rally lit from the start, which is all the stranded/pricing checks need.
+	RallyFixtures.install()
+	# Some tests below assign Save.profile (grants mutate through Save).
 	# Stash the real one so nothing leaks into the next test — or the next FILE.
 	_profile_backup = (get_node("/root/Save").profile as Dictionary).duplicate(true)
 
@@ -25,6 +30,7 @@ func before_each() -> void:
 func after_each() -> void:
 	get_node("/root/Save").profile = _profile_backup
 	CarFixtures.restore()
+	RallyFixtures.restore()
 
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
@@ -88,23 +94,22 @@ func test_target_tier_never_exceeds_ceiling() -> void:
 
 # --- Upgrade draw ------------------------------------------------------------
 
-func test_draw_upgrade_returns_parts_with_rare_consumables() -> void:
+func test_draw_upgrade_only_ever_yields_consumables_or_nothing() -> void:
+	# THE new draw contract: parts are no longer drawn at random. One is won outright at the
+	# rally that awards it (features/prize-rallies.md) and further copies are bought with
+	# stars (features/star-economy.md) — a stage-by-stage part drop would undercut both.
+	# What is left is consumables (the engine swap token, the mystery box) and NO_REWARD.
 	var profile := _all_completed_profile()
 	var consumables := 0
-	var parts := 0
 	for i in 300:
 		var id: String = RewardSystem.draw_upgrade(profile, _rng(i))
-		assert_false(UpgradeLibrary.by_id(id).is_empty(), "draw returns a real catalogue item")
-		if UpgradeLibrary.is_consumable(id):
-			consumables += 1
-		else:
-			parts += 1
-	assert_gt(consumables, 0, "the rare consumables do appear")
-	# Not `parts > consumables`: that pins the shipped catalogue's part-vs-consumable
-	# weighting (a designer retuning ENGINE_SWAP_TOKEN_DROP_WEIGHT
-	# could reasonably flip it). The real invariant is just that consumables stay rare
-	# relative to the sample, not that parts strictly outnumber them.
-	assert_gt(parts, 0, "parts are drawn at all")
+		if id == RewardSystem.NO_REWARD:
+			continue
+		assert_false(UpgradeLibrary.by_id(id).is_empty(), "a drawn id is a real catalogue item")
+		assert_true(UpgradeLibrary.is_consumable(id),
+			"the draw never hands out a fitted PART any more (got %s)" % id)
+		consumables += 1
+	assert_gt(consumables, 0, "and it does still hand out consumables")
 
 
 func test_draw_upgrade_can_award_an_engine_swap_token() -> void:
@@ -141,6 +146,11 @@ func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
 # excluded from the pool until THE DRIVEN CAR has Small Turbo fitted, present once it
 # does. Star gates are forced open so only the prerequisite is under test.
 func test_eligible_parts_excludes_big_turbo_until_small_turbo_is_owned() -> void:
+	# A CONTRACT test against the shipped catalogue, so it needs the shipped rally roster:
+	# Big Turbo's event gate names a real special, which the fixture roster before_each
+	# installs does not contain — leaving the gate unmet and the part out of the pool for
+	# the wrong reason. after_each re-restores.
+	RallyFixtures.restore()
 	var profile := _all_completed_profile()
 	var without := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [], "tuning": {}}
@@ -154,30 +164,34 @@ func test_eligible_parts_excludes_big_turbo_until_small_turbo_is_owned() -> void
 
 # --- The retired "always pays out" guarantee ---------------------------------
 # The draw used to be backstopped by the swap token, so it could never come up empty.
-# That is deliberately GONE: a maxed car now yields a mystery box or NOTHING.
+# That is deliberately GONE: an event yields a consumable or NOTHING.
 
-func test_a_car_with_parts_left_always_wins_one() -> void:
-	# The common case, and the one that must never regress: while there is something real
-	# to give, the box/nothing branches must not pre-empt it.
+func test_an_event_can_legitimately_pay_nothing() -> void:
+	# NO_REWARD is a real outcome, not a bug. With parts out of the pool the draw is
+	# consumables-only, and both of those are deliberately rare — so most events pay
+	# nothing, and the reveal surfaces simply say so.
 	var profile := _all_completed_profile()
 	var stock := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [], "tuning": {}}
+	var nothing := 0
 	for i in 50:
-		var id: String = RewardSystem.draw_upgrade(profile, _rng(i), stock)
-		assert_ne(id, RewardSystem.NO_REWARD, "a car with parts left never draws nothing")
-		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID, "a car with parts left never draws a box")
+		if RewardSystem.draw_upgrade(profile, _rng(i), stock) == RewardSystem.NO_REWARD:
+			nothing += 1
+	assert_gt(nothing, 0, "an event can pay nothing at all")
 
 
-func test_a_maxed_car_with_nowhere_for_a_box_wins_nothing() -> void:
-	# Every other car also maxed, so a box has nowhere to land. Previously this fell
-	# through to the token; now it awards nothing at all.
+func test_a_maxed_car_with_nowhere_for_a_box_still_only_draws_consumables() -> void:
+	# Every other car also maxed, so a box has nowhere to land — leaving the token or
+	# nothing. Guards that the no-box branch cannot fall back to handing out a part.
 	var maxed := _maxed_car(1)
 	var also_maxed := _maxed_car(2)
 	var profile := _profile_with_inventory([maxed, also_maxed],
 		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD})
 	for i in 20:
-		assert_eq(RewardSystem.draw_upgrade(profile, _rng(i), maxed), RewardSystem.NO_REWARD,
-			"a maxed car with nowhere for a box to land wins nothing")
+		var id: String = RewardSystem.draw_upgrade(profile, _rng(i), maxed)
+		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID, "no box has anywhere to land")
+		if id != RewardSystem.NO_REWARD:
+			assert_true(UpgradeLibrary.is_consumable(id), "and never a part")
 
 
 func test_box_chance_falls_as_boxes_pile_up_and_the_first_is_certain() -> void:
@@ -516,42 +530,52 @@ func test_draw_car_unlocks_locked_rally_when_stuck() -> void:
 	RallyLibrary.reset()
 
 
-# --- Completion-gated special events -----------------------------------------
-# Replaces the old per-region showdown gate AND the star gate that briefly replaced it:
-# specials are now gated on the GLOBAL count of completed ORDINARY rallies, with no
-# relationship to a region's contents. See todo/star-economy.md.
+# --- Map-reveal gating -------------------------------------------------------
+# A rally opens when the player has lit the map out to its pin (RallyLibrary.rally_revealed),
+# so these fixtures express "locked" and "open" as PIN POSITIONS: inside the starting
+# circle = open, far outside every circle = dark.
+#
+# The starting circle belongs to the player's OPENING RALLY, not to HQ — HQ lights nothing
+# (see features/map-exploration.md) — so the open fixture carries a `prize_car` and the
+# profile names it as the starter. Without that pairing the whole map is dark and a test
+# like this passes for the wrong reason.
 
-func test_the_eligibility_query_excludes_a_locked_special() -> void:
+func test_the_eligibility_query_excludes_an_unrevealed_special() -> void:
 	RallyLibrary.override_for_test([
-		{"id": "r1", "region": "home", "special": false, "restriction": {}},
-		{"id": "sp_far", "region": "home", "special": true, "requires_completions": 99,
-			"restriction": {}},
+		{"id": "r1", "region": "home", "special": false, "restriction": {},
+			"prize_car": "fx_start_car", "map_pos": RallyLibrary.HQ_MAP_POS},
+		{"id": "sp_far", "region": "home", "special": true, "restriction": {},
+			"map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.9, 0.0)},
 	])
-	# Nothing completed → the special is still locked.
+	# Nothing completed → the far special is still dark.
 	var car := {"pw": 150.0}  # synthetic; is_eligible reads restriction only
 	var ids := []
-	for r in RallyLibrary.incomplete_rallies_enterable_by(car, {"rallies": {}}):
+	var fresh := {"rallies": {}, "starter_model_id": "fx_start_car"}
+	for r in RallyLibrary.incomplete_rallies_enterable_by(car, fresh):
 		ids.append(r["id"])
-	assert_does_not_have(ids, "sp_far", "a locked special is not enterable")
+	assert_does_not_have(ids, "sp_far", "an unrevealed special is not enterable")
 	assert_has(ids, "r1", "an ordinary revealed rally still is")
 	RallyLibrary.reset()
 
 
-func test_a_special_opens_once_the_completion_count_is_reached() -> void:
+func test_a_special_opens_once_the_map_is_lit_out_to_it() -> void:
+	# r1 sits at HQ (open immediately) and the special sits just beyond HQ's own circle but
+	# well inside the circle r1 lights once completed — so completing r1 is what opens it.
+	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
 	RallyLibrary.override_for_test([
-		{"id": "r1", "region": "home", "special": false, "restriction": {}},
-		{"id": "sp_near", "region": "home", "special": true, "requires_completions": 1,
-			"restriction": {}},
+		{"id": "r1", "region": "home", "special": false, "restriction": {}, "map_pos": hq,
+			"reveal_radius": 0.4},
+		{"id": "sp_near", "region": "home", "special": true, "restriction": {},
+			"map_pos": hq + Vector2(0.3, 0.0)},
 	])
 	var car := {"pw": 150.0}
-	# Completing the single ordinary rally clears the gate. The special itself is excluded
-	# from the completion count, so it cannot bootstrap itself.
+	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("sp_near"), {"rallies": {}}),
+		"dark before anything is driven")
 	var profile := {"rallies": {"r1": {"completed": true, "best_placed": 1}}}
-	assert_eq(RallyLibrary._completed_count(profile), 1, "the ordinary win counts once")
 	var ids := []
 	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
 		ids.append(r["id"])
-	assert_has(ids, "sp_near", "the special opens once the stars are in")
+	assert_has(ids, "sp_near", "the special opens once the map is lit out to it")
 	RallyLibrary.reset()
 
 
@@ -685,102 +709,3 @@ func test_a_prerequisite_cycle_terminates() -> void:
 	var granted := RewardSystem.grant_special_unlock(int(owned["instance_id"]), "a")
 	assert_eq(granted.size(), 2, "the walk visits each rung once and stops")
 	UpgradeLibrary.reset()
-
-
-# --- Buying a car with stars (todo/star-economy.md) --------------------------
-# Nothing here pins the PRICE (GameConfig.star_cost_per_car is tunable) — only the rules:
-# a purchase debits exactly the configured price, is refused when short, and drops to free
-# in the one state that would otherwise be unrecoverable.
-
-# A COMPLETE profile (built from the real default) with `owned` cars and `earned` stars.
-# Built from _default_profile rather than hand-rolled because purchase_car goes through
-# Save.grant_car, which reads next_instance_id — a partial dict fails at runtime, not parse.
-func _priced_profile(owned: Array, earned: int) -> Dictionary:
-	var profile: Dictionary = (get_node("/root/Save") as Node)._default_profile()
-	var n := 1
-	for model_id in owned:
-		(profile["cars"] as Array).append({
-			"instance_id": n, "model_id": model_id, "hp": 100.0,
-			"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}})
-		n += 1
-	profile["next_instance_id"] = n
-	profile["stars_earned"] = earned
-	profile["stars_spent"] = 0
-	return profile
-
-
-func test_is_stranded_is_false_while_any_owned_car_can_enter_something() -> void:
-	var profile := _priced_profile([CarFixtures.cars()[0]["id"]], 0)
-	assert_false(RewardSystem.is_stranded(profile),
-		"a fresh garage can enter something, so it is not stranded")
-
-
-func test_is_stranded_is_true_with_no_cars_at_all() -> void:
-	assert_true(RewardSystem.is_stranded(_priced_profile([], 0)),
-		"an empty garage can enter nothing")
-
-
-func test_a_wrecked_car_does_not_count_against_stranded() -> void:
-	# A wreck can never be repaired, so a garage holding only wrecks is as stuck as an
-	# empty one. Counting it would deny the rescue to exactly the player who needs it.
-	var profile := _priced_profile([CarFixtures.cars()[0]["id"]], 0)
-	assert_false(RewardSystem.is_stranded(profile), "the intact car counts")
-	profile["cars"][0]["hp"] = 0.0
-	assert_true(RewardSystem.is_stranded(profile), "once wrecked it does not")
-
-
-func test_the_price_is_the_configured_price_when_not_stranded() -> void:
-	var want := int(Config.data.star_cost_per_car)
-	var profile := _priced_profile([CarFixtures.cars()[0]["id"]], 0)
-	assert_eq(RewardSystem.car_price(profile), want,
-		"a player who can still race pays full price even at zero stars")
-	profile["stars_earned"] = want * 3
-	assert_eq(RewardSystem.car_price(profile), want, "and still pays full price when rich")
-
-
-func test_the_price_drops_to_zero_only_when_stranded_AND_broke() -> void:
-	# The dead-end rescue. BOTH halves matter: free-whenever-stranded is farmable, so a
-	# stranded player who can still afford a car must be charged.
-	var want := int(Config.data.star_cost_per_car)
-	var stranded := _priced_profile([], 0)
-	assert_eq(RewardSystem.car_price(stranded), 0, "stranded and broke -> free")
-	stranded["stars_earned"] = want
-	assert_eq(RewardSystem.car_price(stranded), want,
-		"stranded but able to pay -> charged, or the rescue becomes a discount")
-
-
-func test_buying_a_car_debits_exactly_the_price_and_grants_one_car() -> void:
-	var save: Node = get_node("/root/Save")
-	save.profile = _priced_profile([CarFixtures.cars()[0]["id"]], 0)
-	save.profile["stars_earned"] = int(Config.data.star_cost_per_car) * 2
-	var before: int = save.profile["cars"].size()
-	var balance_before: int = save.stars_available()
-	var car: Dictionary = RewardSystem.purchase_car(_rng(11))
-	assert_false(car.is_empty(), "an affordable purchase grants a car")
-	assert_eq(save.profile["cars"].size(), before + 1, "exactly ONE car per purchase")
-	assert_eq(save.stars_available(), balance_before - int(Config.data.star_cost_per_car),
-		"the balance drops by exactly the configured price")
-	assert_false(CarLibrary.by_id(String(car["model_id"])).is_empty(),
-		"the granted car is a real catalogue entry")
-
-
-func test_buying_is_refused_when_the_balance_is_short() -> void:
-	var save: Node = get_node("/root/Save")
-	save.profile = _priced_profile([CarFixtures.cars()[0]["id"]], 0)
-	save.profile["stars_earned"] = maxi(0, int(Config.data.star_cost_per_car) - 1)
-	var before: int = save.profile["cars"].size()
-	assert_true(RewardSystem.purchase_car(_rng(12)).is_empty(),
-		"a player one star short buys nothing")
-	assert_eq(save.profile["cars"].size(), before, "and the garage is unchanged")
-	assert_eq(int(save.profile["stars_spent"]), 0, "and nothing was debited")
-
-
-func test_a_stranded_broke_player_is_rescued_for_free() -> void:
-	var save: Node = get_node("/root/Save")
-	save.profile = _priced_profile([], 0)  # no cars: stranded, and no stars
-	var car: Dictionary = RewardSystem.purchase_car(_rng(13))
-	assert_false(car.is_empty(), "the rescue grants a car")
-	assert_eq(save.profile["cars"].size(), 1, "exactly one")
-	assert_eq(int(save.profile["stars_spent"]), 0, "and charges nothing")
-	assert_false(RewardSystem.is_stranded(save.profile),
-		"the rescued car actually un-strands the player — that is the whole point")

@@ -104,11 +104,29 @@ static func reset_cache() -> void:
 	TrackCache.reset_source_hash_cache()
 
 
-# Per-rally content hash: captures difficulty (pace band), restriction (eligible
-# pool), and per-event surface_mix (grip) — none of which are track-shape
-# determinants, so none are in the track cache's source_hash.
+# Per-rally content hash: captures difficulty (pace band), restriction (eligible pool),
+# the events (per-event surface_mix drives grip), and prize_car (a car-unlock rally fields
+# a ONE-MAKE grid of the car it awards, so the prize IS the field) — none of which are
+# track-shape determinants, so none are in the track cache's source_hash.
+#
+# Hashes ONLY those determinants, by name. It used to hash `str(rally)` — the whole dict —
+# which quietly folded in every cosmetic field too, so renaming a rally or nudging its map
+# pin by a thousandth invalidated its cached opponent field and forced a rebake for a
+# change that cannot move a single lap time. That matters much more now than it did: with
+# map exploration, `map_pos` is progression data that gets re-fitted whenever the roster
+# changes (tools/fit_map_pins.py), so whole-dict hashing meant a full rebake every time.
+#
+# Keep this list in step with what generate_opponent_field actually reads. Adding a field
+# that DOES change the field and forgetting it here is the dangerous direction: the cache
+# would serve a stale line-up rather than miss and regenerate.
+const FIELD_DETERMINANTS := ["difficulty", "restriction", "events", "prize_car"]
+
+
 static func rally_content_fingerprint(rally: Dictionary) -> String:
-	return str(rally).sha256_text().substr(0, 16)
+	var determinants: Array = []
+	for key in FIELD_DETERMINANTS:
+		determinants.append(rally.get(key))
+	return str(determinants).sha256_text().substr(0, 16)
 
 
 static func key_for(rally: Dictionary) -> String:

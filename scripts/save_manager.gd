@@ -186,9 +186,6 @@ func load_or_new() -> void:
 		save_disabled = true
 		return
 	profile = _sanitise(migrated)
-	# Recover a wrecked-out player: a free mystery box when every owned car is
-	# wrecked and none is held (also checked on garage view). See features/damage.md.
-	ensure_wreck_safety_net()
 	# Backfill the new-rally reveal's `revealed` flags on a profile that predates the
 	# feature (see _seed_reveals_if_needed). Runs HERE — the moment a profile becomes
 	# live — rather than being left to whoever happens to reach the map/HQ, so a future
@@ -344,7 +341,6 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	var device_settings: Variant = profile.get("settings", {})
 	profile = _sanitise(migrated)
 	profile["settings"] = device_settings
-	ensure_wreck_safety_net()
 	# A restored career lands with no reveal flags on it, so without this the next map
 	# open would parade the whole roster at somebody who has already played it (see
 	# _seed_reveals_if_needed). Idempotent: a career that already carries flags is left
@@ -483,6 +479,19 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 
 # Grant a new owned-car instance referencing a CarLibrary model id. Returns the
 # new OwnedCar dict.
+# Does the garage already hold a car of this catalogue model? Used to keep a prize rally
+# from minting a duplicate (rally_session), and deliberately model-keyed rather than
+# instance-keyed: two of the same car is the thing worth preventing, not two instance ids.
+#
+# WRECK STATE IS IGNORED on purpose — a wrecked car is still a car the player owns, and
+# under the current damage model it can be repaired back into service.
+func owns_model(model_id: String) -> bool:
+	for car in profile.get("cars", []):
+		if String((car as Dictionary).get("model_id", "")) == model_id:
+			return true
+	return false
+
+
 func grant_car(model_id: String) -> Dictionary:
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", 1000.0) if not entry.is_empty() else 1000.0
@@ -505,21 +514,27 @@ func grant_car(model_id: String) -> Dictionary:
 
 
 # The OwnedCar dict for an instance id, or {} if not owned.
+#
+# Reads `instance_id` with a DEFAULT rather than indexing it: a hand-rolled car dict that
+# omits the key (test fixtures, a partially-migrated save) would otherwise crash the lookup
+# rather than simply not matching. -1 can never be a real instance id (they count up from
+# 1), so a keyless entry is skipped, which is the only sensible reading of it.
 func get_car(instance_id: int) -> Dictionary:
 	for car in profile["cars"]:
-		if int(car["instance_id"]) == instance_id:
+		if int((car as Dictionary).get("instance_id", -1)) == instance_id:
 			return car
 	return {}
 
 
-# Apply impact damage. Clamps HP at 0; reaching 0 wrecks the car.
+# Apply impact damage. Reaching 0 wrecks the car — which ends the RUN and hands the car
+# back at a fraction of health (record_wreck), rather than writing it off.
 func apply_damage(instance_id: int, amount: float) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return
 	var hp := float(car["hp"]) - amount
 	if hp <= 0.0:
-		wreck_car(instance_id)
+		record_wreck(instance_id)
 		return
 	car["hp"] = hp
 	save()
@@ -536,52 +551,29 @@ func set_wheel_toe(instance_id: int, toe: Array) -> void:
 	save()
 
 
-# Wreck a car: leave it OWNED but at 0 HP — too damaged to enter a rally until a
-# A wrecked car can NEVER be brought back. It is NOT deleted; its installed
-# upgrades stay fitted (parts are consumed on fit, so they're never returned).
-func wreck_car(instance_id: int) -> void:
+# Record a WRECK against an owned car: it comes back at GameConfig.wreck_recovery_hp_fraction
+# of full health rather than being written off.
+#
+# Wrecking used to be TERMINAL — 0 HP, unrepairable, the car a permanent hulk. That single
+# rule needed a whole scaffolding around it to stay survivable (an every-car-wrecked check, a free
+# mystery box when the garage was wrecked out, is_stranded skipping wrecks, a price-0 car
+# rescue), and it could still end a career on one mistake. Making a wreck a bad RESULT
+# instead of a lost ASSET deletes all of that: the punishment is the DNF plus the repair
+# bill (features/star-economy.md), and the player can always drive again.
+#
+# It is also what makes the map's reachability guarantee sound: a player can never lose the
+# car an authored route depended on, so the closure computed over the roster
+# (features/map-exploration.md) is genuinely reachable in practice.
+func record_wreck(instance_id: int) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return
-	car["hp"] = 0.0
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var max_hp := float(entry.get("max_hp", 1000.0))
+	car["hp"] = max_hp * clampf(Config.data.wreck_recovery_hp_fraction, 0.0, 1.0)
+	# Bent wheels stay bent — the repair bill is the point, and a wreck should feel like
+	# something to fix rather than a free reset.
 	save()
-
-
-# Whether an owned car is wrecked: a car sitting at 0 HP. A wrecked car stays in
-# the garage as an un-raceable hulk — there is no repair that revives it.
-func car_is_wrecked(car: Dictionary) -> bool:
-	return not car.is_empty() and float(car.get("hp", 0.0)) <= 0.0
-
-
-# True when the player owns at least one car and EVERY one of them is wrecked —
-# the soft-lock state, since a wrecked car can never be repaired back into service.
-# Owning no cars at all is NOT this case (that's a fresh profile before the starter
-# pick, which has its own flow).
-func all_cars_wrecked() -> bool:
-	var cars: Array = profile.get("cars", [])
-	if cars.is_empty():
-		return false
-	for car in cars:
-		if not car_is_wrecked(car):
-			return false
-	return true
-
-
-# Anti-soft-lock safety net: if EVERY owned car is wrecked and no Mystery Box is
-# held, grant one free box. Opening it grants a fresh car (see open_mystery_box), so
-# a wrecked-out player can always get back on a stage. Returns true if a box was
-# granted. Call this on save load and whenever the garage is shown.
-#
-# This replaced a free REPAIR KIT. Kits are gone entirely — damage is one-way now, so
-# there is nothing to repair a wrecked car WITH, and the only way out of a fully
-# wrecked garage is a new car. See features/damage.md.
-func ensure_wreck_safety_net() -> bool:
-	if not all_cars_wrecked():
-		return false
-	if mystery_boxes_owned() > 0:
-		return false
-	add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	return true
 
 
 func set_tuning(instance_id: int, tuning: Dictionary) -> void:
@@ -790,17 +782,18 @@ func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 # and the grant's own save covers both).
 #
 # TWO OUTCOMES, decided by the state of the garage at OPEN time:
-#   * WRECKED OUT (every owned car wrecked) -> a whole new CAR. This is the
-#     anti-soft-lock rescue: wrecked cars can never be repaired, so a part fitted to
-#     one would be worthless. Checked FIRST, ahead of the part grant, for that reason.
-#     The car comes from RewardSystem.draw_car, whose stuck-player fallback already
-#     picks something that re-opens progression.
-#   * OTHERWISE -> a random upgrade for a random owned car with room. ANY owned car
+# A box always opens onto a PART. It used to have a second branch — a whole new CAR when
+# every owned car was wrecked — as the anti-soft-lock rescue. That is gone with terminal
+# wrecking (see record_wreck): a wrecked car comes back repairable, so there is no
+# wrecked-out state to rescue, and a box handing out cars would undercut winning them at
+# the rally that advertises them (features/prize-rallies.md).
+#
+#   * A random upgrade for a random owned car with room. ANY owned car
 #     can receive it, the currently selected one included: a box is a garage-wide
 #     reward and is not tied to the car that won it (RewardSystem.any_car_has_room).
 #
-# NOTHING TO GIVE = NOTHING SPENT. When no car has room (and the player isn't wrecked
-# out), the box is left unopened rather than being burned for a consolation prize —
+# NOTHING TO GIVE = NOTHING SPENT. When no car has room, the box is left unopened rather
+# than being burned for a consolation prize —
 # there is no repair kit to fall back on any more, and silently eating the box would
 # be strictly worse than the disabled button the garage row already shows.
 #
@@ -810,21 +803,6 @@ func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 func open_mystery_box(rng: RandomNumberGenerator = null) -> Dictionary:
 	if mystery_boxes_owned() <= 0:
 		return {}
-	if all_cars_wrecked():
-		# Size the replacement against what the player HAD: one rung below the best car
-		# they wrecked. The box is a consolation, not a like-for-like replacement, so
-		# losing a top-tier car costs you a step — but it no longer pays out at the very
-		# bottom of the ladder regardless of progress, which is what made a late-game
-		# wreck hand back a starter car. Floored at 1 (there is no tier 0), and draw_car
-		# still clamps it down to the tier the player has actually earned.
-		var tier := maxi(1, RewardSystem.highest_owned_tier(profile) - 1)
-		# Explicitly typed: the RewardSystem <-> Save cycle leaves the static's return
-		# type unresolved at parse time, so `:=` would infer Variant (a warning-as-error).
-		var model_id: String = RewardSystem.draw_car(profile, tier, rng)
-		consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # no save yet
-		var car := grant_car(model_id)  # saves; covers the consume above too
-		return {"car": true, "item_id": model_id,
-			"recipient_instance_id": int(car["instance_id"])}
 	var grant := RewardSystem.pick_mystery_box_grant(profile, rng)
 	if grant.is_empty():
 		return {}  # nowhere for it to land — keep the box
@@ -917,12 +895,11 @@ func _disable(car: Dictionary, item_id: String) -> void:
 # first. Returns a summary the repair popup renders:
 #   {repaired:bool, hp_before, hp_after, max_hp, hp_gained}
 # `repaired` is false (and nothing is written) when the car is already pristine
-# (full HP and straight wheels) so a spotless car shows no popup. A wrecked (0 HP)
-# car is left wrecked — it can't be fielded, so a mid-rally repair never sees one.
+# (full HP and straight wheels) so a spotless car shows no popup.
 func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> Dictionary:
 	var none := {"repaired": false}
 	var car := get_car(instance_id)
-	if car.is_empty() or car_is_wrecked(car):
+	if car.is_empty():
 		return none
 	var entry := CarLibrary.by_id(car["model_id"])
 	var hp_before := float(car["hp"])
@@ -966,7 +943,15 @@ func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 	var rallies: Dictionary = profile["rallies"]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
 	rec["completed"] = true
-	if int(rec.get("best_combined_ms", 0)) <= 0 or combined_ms < int(rec["best_combined_ms"]):
+	# Only a REAL time can become the best time. A DNF arrives as combined_ms <= 0, and
+	# without this guard it would sail through the "faster than the record" test — every
+	# negative is less than every positive — and install itself as an unbeatable best.
+	# Only the opening rally can complete on a DNF (todo/opening-rally.md), so this is the
+	# one caller that can reach here without a time; the guard lives with the field it
+	# protects rather than at that call site, since nothing downstream wants a negative
+	# best_combined_ms regardless of who wrote it.
+	if combined_ms > 0 and (int(rec.get("best_combined_ms", 0)) <= 0
+			or combined_ms < int(rec["best_combined_ms"])):
 		rec["best_combined_ms"] = combined_ms
 	# Captured BEFORE best_placed moves, so the delta below is measured against what
 	# this rally was already worth.
@@ -1018,6 +1003,130 @@ func spend_stars(count: int, do_save := true) -> bool:
 		profile["stars_spent"] = int(profile.get("stars_spent", 0)) + count
 		if do_save:
 			save()
+	return true
+
+
+# --- Spending stars ----------------------------------------------------------
+# Two sinks, both demand-driven and both renewable, which is what a currency needs if the
+# balance is not to become dead weight. See features/star-economy.md.
+#
+# Cars are NOT one of them: a car is won at the rally that advertises it
+# (features/prize-rallies.md).
+
+
+# What repairing `instance_id` costs right now: the flat price, or 0 when the car needs
+# nothing. Quoted by the garage so the button can price itself and disable when the balance
+# is short, and read by repair_car so a quote and a charge can never disagree.
+func repair_price(instance_id: int) -> int:
+	return int(Config.data.star_cost_per_repair) if car_needs_repair(instance_id) else 0
+
+
+# Is this car's damage ACTUALLY COSTING IT PERFORMANCE — the question the car park's red
+# warning asks.
+#
+# Deliberately NOT car_needs_repair. That one is "is this car less than pristine", which is
+# the right question for offering a repair (any lost health can be bought back) and the
+# wrong one for a warning: it is true at 99% health, and it also counts bent alignment, so
+# the player was told in red that an undamaged car was damaged. A warning that fires when
+# nothing is wrong is one they learn to ignore, which costs them the time it matters.
+#
+# The threshold is GameConfig.damage_misfire_health_threshold — the SAME number that
+# decides when the engine starts misfiring, i.e. the exact point damage stops being
+# cosmetic and starts costing power. Reusing it rather than authoring a second "warn below
+# this" value is what stops the warning and the simulation disagreeing about whether the
+# car is hurt.
+func car_handles_badly(instance_id: int) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var max_hp := float(entry.get("max_hp", 1000.0))
+	if max_hp <= 0.0:
+		return false
+	return float(car.get("hp", max_hp)) / max_hp < Config.data.damage_misfire_health_threshold
+
+
+# Does this car have anything a repair would actually fix — lost health or bent wheels?
+# Both matter: a car at full HP with dog-legged toe still drives badly, and charging for a
+# repair that changes nothing is the one thing a flat price must never do.
+#
+# NOT the warning predicate — that is car_handles_badly above, which asks the narrower
+# question "is the damage costing performance". A car can want repairing without being hurt.
+func car_needs_repair(instance_id: int) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	if float(car.get("hp", 0.0)) < float(entry.get("max_hp", 1000.0)):
+		return true
+	for toe in car.get("wheel_toe", []):
+		if not is_zero_approx(float(toe)):
+			return true
+	return false
+
+
+# Spend stars to return a car to full health with straight wheels. Returns true when the
+# repair happened.
+#
+# NOTHING TO FIX = NOTHING SPENT, and the charge is resolved BEFORE the car is touched, so
+# a short balance leaves both the ledger and the car exactly as they were. Same rule the
+# whole codebase applies to a transaction it cannot complete.
+func repair_car(instance_id: int) -> bool:
+	if not car_needs_repair(instance_id):
+		return false
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	if not spend_stars(repair_price(instance_id), false):
+		return false
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	car["hp"] = float(entry.get("max_hp", 1000.0))
+	car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
+	save()
+	return true
+
+
+# Can this car be sold a copy of `item_id` right now? Every condition the shop button and
+# the purchase itself both have to agree on, in one predicate so the two cannot diverge.
+#
+# The part must be DISCOVERED — its part-unlock rally won (UpgradeLibrary.rally_gate_met) —
+# because the shop sells what the player has proven they can earn, never a shortcut past
+# the exploration that reveals it. The per-car prerequisite ladder still applies: upgrades
+# are car-bound, so every car climbs its own chain and buying cannot skip a rung.
+func can_buy_part(instance_id: int, item_id: String) -> bool:
+	if UpgradeLibrary.by_id(item_id).is_empty():
+		return false
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	if car.get("installed_upgrades", []).has(item_id):
+		return false  # per-car dedup: a car can never hold the same part twice
+	if not UpgradeLibrary.rally_gate_met(item_id, profile):
+		return false  # not discovered yet — go and win it
+	if not UpgradeLibrary.prerequisite_met(item_id, car):
+		return false  # this car has not earned its way up the ladder
+	return stars_available() >= part_price(item_id)
+
+
+# What a copy of `item_id` costs. Flat per part today; a function so rarity pricing can
+# land later without every caller changing.
+func part_price(_item_id: String) -> int:
+	return int(Config.data.star_cost_per_part)
+
+
+# Buy a copy of an already-discovered part and fit it to `instance_id`. Returns true when
+# the part was bought. Fitted DISABLED, like every other award: which part runs in a slot
+# is the player's choice, made in the upgrades menu.
+func buy_part(instance_id: int, item_id: String) -> bool:
+	if not can_buy_part(instance_id, item_id):
+		return false
+	if not spend_stars(part_price(item_id), false):
+		return false
+	var car := get_car(instance_id)
+	(car["installed_upgrades"] as Array).append(item_id)
+	if not (car["disabled_upgrades"] as Array).has(item_id):
+		(car["disabled_upgrades"] as Array).append(item_id)
+	save()
 	return true
 
 
@@ -1094,18 +1203,79 @@ func _seed_reveals_if_needed() -> void:
 	save()
 
 
-# Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so every
-# special's completion gate (RallyLibrary.rally_revealed) is open and the whole
-# ladder can be exercised without grinding it.
+# Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so the whole map is
+# lit at once (RallyLibrary.rally_revealed) and any part of the game can be reached
+# without grinding to it.
 func dev_three_star_all_rallies() -> void:
-	var rallies: Dictionary = profile["rallies"]
 	for rally in RallyLibrary.all():
-		var rid := String(rally["id"])
-		var rec: Dictionary = rallies.get(rid, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
-		rec["completed"] = true
-		rec["best_placed"] = 1  # 1st place → 3 stars (best_placement)
-		rallies[rid] = rec
+		dev_three_star_rally(String(rally["id"]), false)
 	save()
+
+
+# The combined time a dev win records. A plausible-but-unremarkable figure rather than 0,
+# which would read as an impossible world record on every leaderboard the rally feeds.
+const DEV_WIN_TIME_MS := 300_000
+
+
+# Dev cheat (the rally-detail panel's dev button): mark ONE rally 3-starred, as though the
+# player had just won it outright. The per-rally counterpart to the mass cheat above, and
+# the one that matters for map exploration: reveal is geometric, so completing a single
+# rally lights the circle around THAT pin and opens whatever it neighbours — which is
+# exactly the step-by-step progression a designer wants to walk without driving 17 waves of
+# rallies. Doing it one pin at a time is what the mass cheat cannot show, since that lights
+# the entire map in one go.
+#
+# `persist` is false when a caller is looping (one disk write at the end instead of N).
+func dev_three_star_rally(rally_id: String, persist := true) -> int:
+	# Goes through complete_rally rather than writing the record by hand, so the cheat pays
+	# STARS — and, via _grant_rally_prizes below, the CAR or PART — exactly as a real 1st
+	# place would — including the delta rule, which credits only
+	# the improvement over this rally's previous best and so cannot be farmed by pressing the
+	# button twice. Hand-writing the record left the ledger untouched, which made every
+	# dev-completed career star-broke and useless for testing anything the balance gates.
+	#
+	# Reusing the real path is also what stops the two drifting: whatever complete_rally
+	# starts recording next lands here for free.
+	# Captured BEFORE complete_rally, which is what sets `completed` — afterwards there is no
+	# way to tell a first win from a re-win, and the prizes are first-win-only.
+	var first_win := not rally_completed(rally_id)
+	var gained := complete_rally(rally_id, DEV_WIN_TIME_MS, 1)
+	if first_win:
+		_grant_rally_prizes(rally_id)
+	if persist:
+		save()
+	return gained
+
+
+# Hand over whatever a rally awards, exactly as finishing it would (features/prize-rallies.md).
+#
+# The cheat used to record the completion and pay the stars but hand over NOTHING — so a
+# dev-completed career had every rally ticked off and an empty garage, which is useless for
+# testing anything downstream of owning the car or part a rally exists to give.
+#
+# Mirrors rally_session's award path rather than inventing a second one: same first-win-only
+# rule, same duplicate guard, same cascade for a part's missing prerequisites. It cannot
+# simply CALL that path, which is wound through a live session's result handling.
+func _grant_rally_prizes(rally_id: String) -> void:
+	var rally := RallyLibrary.by_id(rally_id)
+	if rally.is_empty():
+		return
+	var prize_car := RallyLibrary.prize_car_id(rally)
+	if prize_car != "" and not owns_model(prize_car):
+		grant_car(prize_car)
+	# A part goes to the SELECTED car — the dev button is pressed from the map with no rally
+	# being driven, so there is no "car you just drove" to fit it to.
+	var recipient := selected_instance_id()
+	if recipient < 0:
+		return
+	var unlocked := UpgradeLibrary.unlocked_by(rally_id)
+	if not unlocked.is_empty():
+		RewardSystem.grant_special_unlock(recipient, String(unlocked.get("id", "")))
+	elif rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+		# The capability special hands over one token so swapping is usable immediately,
+		# same as a real win.
+		add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1, false)
+	return
 
 
 # Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
@@ -1115,8 +1285,8 @@ func best_placement(rally_id: String) -> int:
 
 
 # Number of rallies top-3'd — the progression metric driving the CAR reward-tier ceiling.
-# (The special-event ladder keys off completed ordinary rallies instead, see
-# RallyLibrary.completions_required.)
+# (Map REVEAL keys off nothing of the sort any more: a rally opens when the player has lit
+# the map out to it, see RallyLibrary.rally_revealed.)
 # Delegates to RallyLibrary so the metric has one definition.
 func completed_rally_count() -> int:
 	return RallyLibrary.completed_count(profile)

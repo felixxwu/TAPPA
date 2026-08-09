@@ -47,7 +47,9 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 # The cars offered on first run (the two authored-body cars). The player picks one in
 # the car park (see _enter_starter_pick); the chosen one becomes the player's first car.
 # Generalises over this list, so a third starter is a one-line add.
-const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
+# The starter roster lives in CarLibrary (catalogue content, one source of truth); this
+# alias keeps the existing hq.STARTER_MODEL_IDS call sites and test hooks working.
+const STARTER_MODEL_IDS := CarLibrary.STARTER_MODEL_IDS
 
 # RallySession is an autoload with no class_name, so its STATIC canonical config
 # writer (apply_event_config) must be reached through the script resource — calling a
@@ -78,17 +80,17 @@ const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of trut
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
 # billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
 # scales it to world metres; rise is how far above the flag tip the box floats.
-const PIN_LABEL_PX := Vector2i(320, 120)
+const PIN_LABEL_PX := Vector2i(400, 150)
+# Font size for the map's floating pin readouts ONLY (see _build_readout_sprite). Larger
+# than UITheme.FONT_SIZE because these are rendered to a texture and viewed at a distance in
+# 3D; the flat menus are read at native resolution and stay at the house size.
+const PIN_LABEL_FONT_SIZE := 24
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
-const PIN_LABEL_RISE := 0.16
-# A special event's map readout is inverted — light-brown face, black ink — so it stands out
-# from the black panels every other pin wears. Deliberate exception to design-system house
-# rule 4 (see UITheme); kept here rather than in the palette because it is this one surface's
-# look, not a new system-wide token. The face matches the pacenote sign boards
-# (tools/bake_sign_arrows.gd `BOARD`, features/signs.md) so the map's paper reads as the same
-# rally stock as the roadside boards.
-const ACCENT_READOUT_BG := Color("d7bd93")
-const ACCENT_READOUT_INK := Color(0.0, 0.0, 0.0, 1.0)
+# Every map readout wears the SAME pure-black panel — design-system house rule 4, with no
+# exception. Special events used to get an inverted light-brown face to stand out, which is
+# gone: the 3D markers now carry that job (a car model, a trophy, or a flag), and a panel
+# colour saying "this one is different" on top of a marker that already says so was the same
+# emphasis twice. The retired constants were ACCENT_READOUT_BG / ACCENT_READOUT_INK.
 # Sprite modulate for a readout box whose rally isn't available yet (greyed out).
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
@@ -115,13 +117,28 @@ var _detail_open := false       # the rally-detail panel is up (a sub-state of T
 # suspended and player input is LOCKED — presses are swallowed, not acted on, so the parade
 # always plays out (see _unhandled_input's View.TABLE branch).
 var _revealing := false
+# The next three are read and written ONLY by hq_table.gd (which drives the parade), so the
+# analyzer — which sees one file at a time — flags them as unused here. They are shared HQ
+# state across the hq.gd / hq_table.gd split, exactly like _pins and _table_focus_index; the
+# ignores say so rather than leaving a warning the next person has to re-derive.
+@warning_ignore("unused_private_class_variable")
 var _reveal_queue: Array[String] = []   # ids still to show (all get marked seen either way)
+@warning_ignore("unused_private_class_variable")
 var _reveal_shown: Array[String] = []   # ids already flipped this sequence
 # Bumped at the start of every _table_ui._run_reveal_sequence; each sequence captures its own copy
 # as `token` before its first await. Lets a coroutine parked mid-sequence (skipped, then
 # a second sequence re-armed before it resumes) recognise it has been superseded and bail
 # without mutating the NEW sequence's shared state — see _table_ui._reveal_continue.
+@warning_ignore("unused_private_class_variable")
 var _reveal_token := 0
+# NOTE on the @warning_ignore tags below. hq.gd was split into helper scripts
+# (hq_table / hq_carpark / hq_challenge / hq_overlays) that reach back into this controller
+# for shared state. The analyzer sees one file at a time, so every field only THOSE helpers
+# touch reads as unused here — a warning that is wrong, and that surfaces as a test failure
+# in whichever suite happens to load hq.gd first. The tag marks the field as deliberately
+# cross-file rather than dead; if you delete a helper's last use of one, delete the field
+# too.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _reveal_banner: Label               # the "NEW RALLY - …" line on the table overlay
 var _selected_rally_id := ""
 var _selected_instance_id := -1
@@ -199,12 +216,17 @@ var _drivetrain_needed: Dictionary = {}
 # to detuning: a house-themed overlay on the car CanvasLayer hosting an UpgradesMenu for
 # the focused car (no engine-swap row). Built lazily. _dirty tracks whether any upgrade
 # changed, so closing rebuilds the eligible lineup (see _show/_close_upgrades_popup).
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _upgrades_popup: Control
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _upgrades_popup_menu: UpgradesMenu
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _upgrades_popup_dirty := false
 # Tracks the currently open car-park ConfirmPopup (detune confirm), so
 # _carpark_modal_open can detect it without a dedicated visible flag.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _active_carpark_popup: ConfirmPopup = null
 # Confirm popup shown when a chosen engine-swap partner is picked: swapping costs one
 # engine swap token. Carries the token cost, or the "no tokens" block. Implemented via
@@ -228,22 +250,27 @@ var _car_cache: Dictionary = {}
 var _focus := 0
 # Plays a short engine rev for the focused car each time the lineup selection
 # changes (see _preview_rev). Created lazily on first focus.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _preview_audio: CarPreviewAudio = null
 # Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
 # lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _settle_generation := 0
 # Free Roam pre-warm: just AFTER boot (once the loading cover lifts, one prop per frame —
 # see _prewarm_free_roam_deferred) we spawn the catalogue's preview
 # props into _car_cache (hidden) so entering Free Roam reuses them with no fresh instancing
 # — killing the first-entry lag spike. _prewarm_marker is the off-screen stow marker the
 # hidden props seat at until Free Roam re-seats them at real bays.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _prewarm_marker: Marker3D = null
 # True once every catalogue preview is warm in _car_cache (the deferred prewarm ran to
 # completion, or _prewarm_free_roam was called synchronously). Read by tests; also lets a
 # stray re-start of the deferred loop bail immediately.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _prewarm_complete := false
 # True while the deferred (one-prop-per-frame) prewarm loop is in flight, so it can't be
 # started twice and overlap itself.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _prewarm_running := false
 
 # Tuning-lift state: the selected car raised on the lift (a Car prop, separate from
@@ -276,10 +303,8 @@ var _pins_root: Node3D          # parent of the rally pins
 # against a half-constructed HQ — see _on_cloud_profile_replaced.
 var _hq_built := false
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
-# The present-box map target (todo/star-economy.md). Kept OUT of `_pins` on purpose: every
-# consumer of that array reads a "rally_id" meta, and this target has no rally.
-var _present_pin: Node3D
 # Focus cursor into _table_ui._table_targets() (the unlocked rally pins); -1 = none.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _table_focus_index := -1
 # The pin node the focus highlight is currently PAINTED onto, so the per-frame pan path
 # can skip repainting when nothing changed (hq_table.gd::_select_target_under_center).
@@ -331,6 +356,7 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 # list. See hq_overlays.gd's build_challenge_overlay and the _challenge_ui._open_challenge_overlay
 # family below.
 var _challenge_layer: CanvasLayer
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_kind: String = ChallengeLibrary.DAILY
 # Bumped by every _challenge_ui._refresh_challenge_overlay. The board queries that decorate the entry
 # screen (placing, cut-line time) are async, so each captures the generation it was
@@ -342,6 +368,7 @@ var _challenge_kind: String = ChallengeLibrary.DAILY
 # building the row, uppercasing every Label, so a mixed-case comparison never matched
 # and the answer was silently dropped. A counter can't be defeated by anything that
 # rewrites the text.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_refresh_generation := 0
 # Board answers already fetched during THIS visit to the online challenge screen, keyed
 # by period key (so a period rolling over mid-session re-asks by itself). Switching
@@ -353,7 +380,9 @@ var _challenge_refresh_generation := 0
 # and re-opening always asks again. Only OK answers are cached: a failure is a transient
 # condition (offline, board unreachable), not a value, so it retries on the next visit
 # to that tab instead of sticking for the rest of the session.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_cutoff_cache: Dictionary = {}
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_placing_cache: Dictionary = {}
 # The Daily/Weekly/Monthly tab row: real FOCUS_ALL buttons (so keyboard/gamepad focus
 # can rest on and move across them via native left/right focus-neighbour nav — see
@@ -361,18 +390,26 @@ var _challenge_placing_cache: Dictionary = {}
 # there is NO mouse hover/click interaction whatsoever — arriving via focus (each one's
 # focus_entered calls _challenge_ui._select_challenge_kind) is the only way to pick a kind. See
 # build_challenge_overlay. Order matches [DAILY, WEEKLY, MONTHLY] — _challenge_ui._challenge_kind_button.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_kind_buttons: Array[Button] = []
 # Header: title ("Daily Challenge") + subtitle (the rolled ceiling), mirroring
 # _detail_title/_detail_region's two-line shape.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_title_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_subtitle_label: Label
 # Four concise sections, each one _detail_heading + one/two _detail_wrap_label rows:
 # win condition, win reward, eligible cars, current progress. (The ceiling already
 # rides on the header subtitle, so it doesn't get its own "entry requirement" row.)
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_win_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_reward_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_eligible_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_progress_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_start_button: Button
 var _garage_layer: CanvasLayer
 var _table_layer: CanvasLayer
@@ -390,23 +427,37 @@ var _settings_action_button: Button  # bottom button: "< Back" (title) or "Start
 var _settings_gate := false
 
 var _map_meter: Label           # star-total meter on the table HUD
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_title: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_region: Label        # region tag under the title (muted)
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_special: Label       # gold "SPECIAL EVENT" chip on the header row
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_restriction: Label   # the eligibility restriction summary
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_qualify: Label       # the qualifying cars, named (GREEN / RED / muted)
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_record: Label        # best-finish text beside the StarRow
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_stars: StarRow       # medal row for the player's best finish
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_enter_button: Button # "Enter Rally" — disabled when no owned car qualifies
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
+var _detail_dev_win_button: Button # DEV ONLY: win the rally outright; null in a release build
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
-# Carpark chrome the PRESENT mode repurposes: the hint line ("Choose your car" is wrong when
-# the lot holds one box) and the prev/label/next row whose ARROWS are hidden there — there is
-# nothing to cycle through, but the centre label is where the revealed car's name goes.
+# Carpark chrome: the hint line and the prev/label/next row.
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _car_hint_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _car_nav_row: Control
+# The car park's "< Back" button, kept so the present-box reveal can HIDE it — that beat is
+# forced, and a visible Back the player cannot use is worse than none.
+var _car_back_button: Button
 var _swap_preview_label: RichTextLabel
 var _start_button: Button
 var _title_start_button: Button  # EXTERIOR title Start — first cursor stop
@@ -498,7 +549,6 @@ var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu c
 
 
 func _ready() -> void:
-	_ensure_starter()
 	_ensure_selection()
 	# Optional cloud save can swap the whole profile out from under a live HQ (a
 	# first sign-in that restores a career, or "Use cloud" on a conflict), so the
@@ -655,9 +705,27 @@ func _build_hq() -> void:
 	# Read + clear it now so it never lingers past this boot.
 	var want_garage: bool = RallySession.return_to_garage
 	RallySession.return_to_garage = false
-	# Boot to the garage (returning from a rally) or the title shot. The collection is
-	# unbounded, so there's no garage-full gate to clear first.
-	_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
+	# Returning from the OPENING rally goes one better and opens the MAP, because that
+	# arrival IS the beat — first sight of the table, first rally already complete, its
+	# neighbours revealing around it (todo/opening-rally.md). Takes priority over
+	# `return_to_garage`, which the podium raises on every finish including this one.
+	var want_map: bool = RallySession.return_to_map
+	RallySession.return_to_map = false
+	# A car was WON: open on the present box before anything else. It outranks both other
+	# destinations because it is the payoff for the rally just driven, and the player is
+	# held here until they open it (_car_back).
+	var reveal_id: int = RallySession.pending_car_reveal_instance_id
+	RallySession.pending_car_reveal_instance_id = -1
+	if reveal_id >= 0 and not Save.get_car(reveal_id).is_empty():
+		_enter_present_box(reveal_id)
+	elif want_map:
+		# Via _enter_table, not _go_to(View.TABLE): the reveal parade is armed there, and
+		# entering the view directly would show the neighbours already lit with no beat.
+		_table_ui._enter_table()
+	else:
+		# Boot to the garage (returning from a rally) or the title shot. The collection is
+		# unbounded, so there's no garage-full gate to clear first.
+		_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
 	# Playing the WEB build in an Android browser: point the player at the itch.io
 	# APK once per boot — the native build performs far better than mobile web.
 	# Only over the title shot (a normal boot).
@@ -665,15 +733,6 @@ func _build_hq() -> void:
 		_show_android_app_notice()
 	# Web fullscreen/landscape (the "tap to play" prompt) is handled globally by the
 	# WebFullscreen autoload so it works in every scene, including while driving.
-
-
-# First run no longer auto-grants a car: the player picks their starter (MX-5 vs
-# Focus) in the car park on pressing Start (see _enter_starter_pick / _confirm_starter).
-# The chosen car is a normal, wreckable car (the Mystery Box safety net,
-# Save.ensure_wreck_safety_net, is the anti-soft-lock floor now). Kept as a hook in
-# case a future migration needs to backfill; currently a no-op.
-func _ensure_starter() -> void:
-	pass
 
 
 # Make sure a valid car is selected (the one raised on the lift). Save.selected_car
@@ -705,6 +764,7 @@ func _bay_center_x(i: int, bays: int) -> float:
 # flip to unlocked is something the player actually watches happen (see
 # _table_ui._run_reveal_sequence). Empty everywhere else.
 func _refresh_map_pins(hold_locked: Array = []) -> void:
+	_detach_prize_car_props()
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	# The pin this pointed at is about to be freed; clearing it states the invariant the
 	# focus-repaint guard relies on instead of leaning on a freed-object comparison.
@@ -713,33 +773,41 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 		c.queue_free()
 	_pins = []
 	var cfg: GameConfig = Config.data
-	# One world map, loaded once — there is no per-region map any more.
-	_map_plane.material_override = PS1Material.unshaded(load(RegionLibrary.DEFAULT_MAP_IMAGE))
+	# One world map, loaded once — there is no per-region map any more — shaded by the
+	# exploration fog so only what the player has reached is lit.
+	_apply_map_fog()
 	var p: Vector3 = cfg.hq_table_pos
 	var size: Vector2 = cfg.hq_map_plane_size
 	var top_y := p.y + cfg.hq_table_size.y + 0.02
+	# Hoisted OUT of the pin loop: both answers are the same for every pin in this refresh,
+	# and both are expensive — nearest_locked_special_id walks every special through
+	# distance_beyond_frontier (which rebuilds lit_sources), so asking it per pin was ~32×
+	# the work for one answer. This refresh runs on every table entry AND on every step of
+	# the reveal parade, so it sat directly under the map's responsiveness.
+	var next_special := RallyLibrary.nearest_locked_special_id(Save.profile)
 	for rally in RallyLibrary.all():
-		var pin := _make_pin(rally, p, size, top_y, hold_locked.has(String(rally["id"])))
+		# EVERY rally is pinned, reached or not. The fog dims what the player cannot get to
+		# rather than deleting it: the map is a map, and a world that only exists where you
+		# have already driven gives you nothing to steer by. What the dark withholds is the
+		# ROUTE and the ability to enter — not the knowledge that something is there.
+		var pin := _make_pin(rally, p, size, top_y,
+			hold_locked.has(String(rally["id"])), next_special)
 		_pins_root.add_child(pin)
+		# AFTER the pin is in the tree: a prize car's 3D model is a real car.tscn instance,
+		# whose _ready has to have run before CarProp.spawn's apply_car touches it.
+		if pin.has_meta("prize_car_model"):
+			_attach_prize_car_marker(pin)
 		_pins.append(pin)
-	# The present box that trades stars for a car (todo/star-economy.md).
-	#
-	# ONLY BUILT WHEN THE PLAYER CAN ACTUALLY BUY: a box you cannot open is map clutter and a
-	# standing tease, so it appears the moment the balance covers a car and vanishes again
-	# once spent. Note this is the OPPOSITE of the locked-special rule ("locking hides
-	# availability, never information") — a special is a destination worth signposting early,
-	# whereas the box is a button, and a button you cannot press should not be on screen. The
-	# free rescue price (0) counts as affordable, so a stranded player always sees it.
-	#
-	# Deliberately NOT appended to `_pins`: everything that iterates that array assumes a
-	# "rally_id" meta (_unlocked_pins, _node_with_rally_id, _pending_reveals, the reveal
-	# parade), and the box has no rally. It joins keyboard/gamepad navigation anyway because
-	# the map cursor is "whatever target sits nearest the view centre" — see
-	# hq_table._build_table_targets.
-	_present_pin = null
-	if Save.stars_available() >= RewardSystem.car_price(Save.profile):
-		_present_pin = _make_present_pin(p, size, top_y)
-		_pins_root.add_child(_present_pin)
+	# The reveal graph, under the pins: a faint dotted line wherever completing one rally
+	# would light another.
+	_build_reveal_links(p, size, top_y)
+
+	# NO HQ LANDMARK. A house used to stand at the middle of the map, marking the point
+	# every reveal circle grew out of. HQ lights nothing now — the player's OPENING RALLY
+	# is where exploration starts (todo/opening-rally.md, RallyLibrary.lit_sources) — so
+	# the middle is ordinary fogged ground, and a building sitting in it would advertise a
+	# centre the map no longer has.
+
 	# Re-seat the cursor on whatever pin sits nearest the view centre (no camera
 	# pan) so it never sits at -1 while the table actually has pins to focus —
 	# every entry point into the table (fresh open, test harness) goes through here.
@@ -747,62 +815,305 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 	_refresh_meter()
 
 
-# Where the present box sits on the world map, normalised 0..1 like a rally's map_pos.
+# How far the link lines float above the map plane. Coplanar geometry z-fights, and at this
+# camera distance the flicker is far more noticeable than the offset.
+const MAP_LINK_LIFT := 0.004
+
+
+# Prize-car props, cached per CarLibrary model id so the map's rebuilds do not re-instantiate
+# them. See _attach_prize_car_marker for why this matters.
+var _prize_car_props: Dictionary = {}
+
+
+# Unparent every cached prize car so the imminent queue_free() of the pins cannot take them
+# with it. They are re-parented onto the new pins by _attach_prize_car_marker.
+func _detach_prize_car_props() -> void:
+	for model_id in _prize_car_props:
+		var prop: Node3D = _prize_car_props[model_id]
+		if is_instance_valid(prop) and prop.get_parent() != null:
+			prop.get_parent().remove_child(prop)
+
+
+# Draw the map's REVEAL GRAPH: a faint dotted line between every pair of rallies where
+# finishing one would light the other.
 #
-# NOT dead centre (0.5, 0.5): `front_runners` sits at (0.45, 0.45), and _add_pick_sphere
-# keeps every hit radius under half the closest pin spacing so neighbours never overlap.
-# A box at the exact centre would sit 0.071 away and make the nearest-to-centre cursor
-# ambiguous between the two. Nudged east to clear it.
-const PRESENT_MAP_POS := Vector2(0.52, 0.50)
-
-
-# The present box: the map target that trades stars for a random car. Always present and
-# always pickable — when the player cannot afford one the readout says how far off they are,
-# because locking must hide availability, never information (the same rule a locked
-# special's teaser box follows).
-func _make_present_pin(table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
-	var local := Vector3(
-		(PRESENT_MAP_POS.x - 0.5) * plane_size.x, 0.0,
-		(PRESENT_MAP_POS.y - 0.5) * plane_size.y)
-	var pin := Node3D.new()
-	pin.position = Vector3(table_pos.x, top_y, table_pos.z) + local
-	# No "rally_id" meta by design — see _refresh_map_pins. `locked` is always false: the box
-	# is a live target even when unaffordable, so the player can read the price.
-	pin.set_meta("locked", false)
-	pin.set_meta("present_box", true)
-
-	var marker := PresentBox.build()
-	pin.add_child(marker)
-
-	# Two lines: what it is, then what it costs. _build_readout_box puts `title` above the
-	# trailing line, and -1 stars skips the star row a rally pin would show there.
-	var price := RewardSystem.car_price(Save.profile)
-	var label := _build_readout_box("Buy new car", -1, _present_cost_line(price), true)
-	label.position = Vector3(0.0, PresentBox.HEIGHT + PIN_LABEL_RISE, 0.0)
-	pin.add_child(label)
-	pin.set_meta("label_panel", label.get_meta("panel"))
-
-	_add_pick_sphere(pin, Vector3(0.0, PresentBox.HEIGHT * 0.5, 0.0), 0.28, _on_present_input)
-	_add_pick_sphere(pin, Vector3(0.0, PresentBox.HEIGHT + PIN_LABEL_RISE, 0.0), 0.32,
-		_on_present_input)
-	return pin
-
-
-# The present box's cost line, shown under its "Buy new car" title. Free reads as FREE
-# rather than "0 stars" — a price of zero is the dead-end rescue, and calling it free is the
-# clearer promise.
+# The graph was always there — it is what map_pos means now — but it was invisible, so the
+# map looked like a scatter of pins and the player had to infer the chain by driving it.
+# Showing it turns "which way should I go" into something readable off the table: you can
+# see that this rally opens those two, and that the corner you are eyeing hangs off a
+# different thread entirely.
 #
-# There is no "can't afford it" wording because there is no such state on the map: the pin is
-# only built when the balance already covers the price (_refresh_map_pins).
-func _present_cost_line(price: int) -> String:
-	if price <= 0:
-		return "Cost: free"
-	return "Cost: %s" % UITheme.count_noun(price, "star")
+# Deliberately FAINT and dotted (GameConfig.map_link_alpha): it is a hint under the pins,
+# not a subway map. At full strength 32 pins' worth of edges reads as a web and the markers
+# stop being the thing you look at.
+#
+# ONE line per unordered pair, drawn when the link works in EITHER direction — reveal
+# radius is per-rally, so A can reach B without B reaching A, and drawing both directions
+# separately would just double the geometry on every symmetric pair.
+func _build_reveal_links(table_pos: Vector3, plane_size: Vector2, top_y: float) -> void:
+	var cfg: GameConfig = Config.data
+	if cfg.map_link_alpha <= 0.0:
+		return
+	var rallies := RallyLibrary.all()
+	# Collect the segments FIRST, then build the surface — ImmediateMesh errors on
+	# surface_end() with nothing added, which is a real case here: a synthetic roster whose
+	# pins are all further apart than any reveal radius produces no links at all.
+	var segments: Array[Vector3] = []
+	# HQ is NOT a link source. It used to be the one the whole graph grew out of, but it
+	# lights nothing now — every reveal circle belongs to a rally (RallyLibrary.lit_sources),
+	# so a spoke from the middle would draw an edge that no longer exists.
+	for a in rallies.size():
+		for b in range(a + 1, rallies.size()):
+			var ra: Dictionary = rallies[a]
+			var rb: Dictionary = rallies[b]
+			var pa := RallyLibrary.map_pos_of(ra)
+			var pb := RallyLibrary.map_pos_of(rb)
+			var d := pa.distance_to(pb)
+			if d > maxf(RallyLibrary.reveal_radius_of(ra), RallyLibrary.reveal_radius_of(rb)):
+				continue
+			_dash_line(segments, _map_to_table(pa, table_pos, plane_size, top_y),
+				_map_to_table(pb, table_pos, plane_size, top_y))
+	if segments.is_empty():
+		return
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for v in segments:
+		mesh.surface_add_vertex(v)
+	mesh.surface_end()
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 1.0, 1.0, cfg.map_link_alpha)
+	mat.disable_receive_shadows = true
+	mi.material_override = mat
+	_pins_root.add_child(mi)
+
+
+# A rally's normalised map_pos as a world point on the table top. Mirrors _make_pin's
+# placement so a link always lands on its pin's base rather than near it.
+func _map_to_table(mp: Vector2, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Vector3:
+	return Vector3(table_pos.x, top_y + MAP_LINK_LIFT, table_pos.z) + Vector3(
+		(mp.x - 0.5) * plane_size.x, 0.0, (mp.y - 0.5) * plane_size.y)
+
+
+# Emit `from`->`to` as a dashed run of line segments. Dashes are laid along the segment at a
+# fixed metre pitch rather than as a fraction of its length, so a long link and a short one
+# read as the same kind of line instead of one looking finely stippled and the other coarse.
+func _dash_line(out: Array[Vector3], from: Vector3, to: Vector3) -> void:
+	var cfg: GameConfig = Config.data
+	var span := from.distance_to(to)
+	if span <= 0.0001:
+		return
+	var dir := (to - from) / span
+	var pitch: float = maxf(cfg.map_link_dash_m + cfg.map_link_gap_m, 0.001)
+	var travelled := 0.0
+	while travelled < span:
+		var dash_end: float = minf(travelled + cfg.map_link_dash_m, span)
+		out.append(from + dir * travelled)
+		out.append(from + dir * dash_end)
+		travelled += pitch
 
 
 # Add a pickable sphere Area3D (radius `r`, at local `pos`) to `pin`, routing clicks to
-# `handler`. Shared by the rally pins and the present box — they differ only in which
-# handler the hit routes to, so the node setup lives here once.
+# `handler`. The node setup lives here once so every hit target on the map is built the
+# same way — the flag/trophy body and the floating readout box each get one.
+# --- Exploration fog ---------------------------------------------------------
+# The map is DARK except where the player has driven (features/map-exploration.md). The
+# lit region is rasterised into a small mask texture and multiplied into the map plane by a
+# shader, so the fog is one texture upload per reveal change and nothing per frame.
+#
+# The mask is deliberately COARSE and bilinear-filtered: the circles' edges come out soft
+# for free, which reads as a frontier rather than a stencil, and a 64x64 image costs
+# nothing to rebuild whenever a rally is completed.
+const FOG_MASK_SIZE := 64
+# How dark the unreached map goes and how soft the frontier's rim is both live in
+# GameConfig (map_fog_unlit_brightness / map_fog_edge_softness) — they are pure LOOK values,
+# which is where this project keeps those so they can be retuned in the inspector.
+
+const FOG_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform sampler2D map_tex : source_color, filter_nearest_mipmap;
+uniform sampler2D fog_mask : filter_linear;
+uniform float unlit_brightness;
+void fragment() {
+	vec3 map = texture(map_tex, UV).rgb;
+	// The mask is 1 inside the explored region and 0 outside; bilinear sampling across the
+	// coarse grid is what gives the frontier its soft edge.
+	float lit = texture(fog_mask, UV).r;
+	ALBEDO = map * mix(unlit_brightness, 1.0, lit);
+}
+"""
+
+static var _fog_shader: Shader
+
+
+# Paint the map plane with the world map, darkened everywhere the player has not explored.
+func _apply_map_fog() -> void:
+	if _fog_shader == null:
+		_fog_shader = Shader.new()
+		_fog_shader.code = FOG_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = _fog_shader
+	mat.set_shader_parameter("map_tex", load(RegionLibrary.DEFAULT_MAP_IMAGE))
+	mat.set_shader_parameter("fog_mask", _build_fog_mask())
+	mat.set_shader_parameter("unlit_brightness", Config.data.map_fog_unlit_brightness)
+	_map_plane.material_override = mat
+
+
+# Rasterise the lit region into a mask: 1 where explored, 0 in the dark, with a soft rim.
+#
+# Reads RallyLibrary.lit_sources — the SAME derivation that decides which rallies are
+# enterable — so what the player can see lit and what they can actually enter can never
+# disagree. That is the whole reason the predicate was factored out.
+func _build_fog_mask() -> ImageTexture:
+	var sources := RallyLibrary.lit_sources(Save.profile)
+	var softness: float = maxf(Config.data.map_fog_edge_softness, 0.001)
+	var img := Image.create(FOG_MASK_SIZE, FOG_MASK_SIZE, false, Image.FORMAT_R8)
+	var step := 1.0 / float(FOG_MASK_SIZE)
+	for y in FOG_MASK_SIZE:
+		for x in FOG_MASK_SIZE:
+			# Sample at the CENTRE of each cell, so the mask lines up with the map rather
+			# than being shifted half a texel toward the origin.
+			var p := Vector2((float(x) + 0.5) * step, (float(y) + 0.5) * step)
+			var lit := 0.0
+			for src in sources:
+				var centre: Vector2 = src[0]
+				var radius: float = src[1]
+				# 1 inside, falling to 0 across the softness band beyond the rim. Max rather
+				# than sum, so overlapping circles stay fully lit instead of blowing out.
+				var d := p.distance_to(centre)
+				lit = maxf(lit, clampf((radius - d) / softness + 1.0, 0.0, 1.0))
+				if lit >= 1.0:
+					break
+			img.set_pixel(x, y, Color(lit, lit, lit))
+	return ImageTexture.create_from_image(img)
+
+
+# ONE height for every floating readout on the table, whatever marker stands under it.
+#
+# Per-marker heights were tried and read worse, not better: a car's box sat low, a trophy's
+# mid, a flag's high, so panning across the map made the menus bob up and down and the eye
+# had to re-find the line on every pin. A single height turns them into one row the player
+# reads along. Set to clear the TALLEST marker (the flag pole at 0.30) so no box covers the
+# model it belongs to.
+const PIN_LABEL_HEIGHT := 0.46
+# Scale the car prop is shrunk to so it reads as a map token rather than a vehicle parked on
+# the table. Derived from the largest car in the catalogue so the biggest body still sits
+# inside a pin's footprint — a fixed metre size would clip the moment a longer car is added.
+const PRIZE_CAR_PIN_LENGTH_M := 0.34
+# Where a prize car's model tops out — only used to seat the car itself, not its readout,
+# which hangs at the shared PIN_LABEL_HEIGHT like every other pin's.
+const PRIZE_CAR_MARKER_TOP := 0.10
+
+
+# The 3D car a CAR-UNLOCK rally stands on its pin: the actual model of the car you win,
+# shrunk to map-token size. This is the map's whole incentive structure — you can SEE what
+# is out there and go and take it — so it is the real model rather than an icon.
+#
+# `dim` (an unreached pin) renders it hazy and dark: a distant landmark you can make out but
+# not reach yet. Ordinary rallies stay hidden entirely in the dark, so what the fog leaves
+# visible is exactly the set of destinations worth choosing a direction for.
+func _attach_prize_car_marker(pin: Node3D) -> void:
+	var model_id := String(pin.get_meta("prize_car_model"))
+	var index := CarLibrary.index_of(model_id)
+	if index < 0:
+		return  # a synthetic car roster that does not hold this model — no marker to stand
+	var dim: bool = bool(pin.get_meta("locked"))
+	# REUSE the prop if we have already built one for this car.
+	#
+	# _refresh_map_pins frees and rebuilds every pin, and it runs often — on entering the
+	# table, and once PER RALLY inside the reveal parade. Rebuilding the car props each time
+	# cost about a second: CarProp.spawn instantiates car.tscn (which embeds nine car meshes),
+	# prunes eight of them, then duplicates every mesh resource that survives — ten times
+	# over, for props that are identical between rebuilds.
+	#
+	# So they are built once per model and re-parented thereafter. The cache is detached
+	# before the pins are freed (see _detach_prize_car_props), which is what stops
+	# queue_free() taking the cached props down with their old pin.
+	if _prize_car_props.has(model_id):
+		var cached: Node3D = _prize_car_props[model_id]
+		if is_instance_valid(cached):
+			pin.add_child(cached)
+			_set_marker_dim(cached, dim)
+			return
+		_prize_car_props.erase(model_id)
+	var holder := Node3D.new()
+	pin.add_child(holder)
+	_prize_car_props[model_id] = holder
+	# Shrink to a token. CarLibrary.max_car_bounds() is the longest body in the catalogue, so
+	# every prize car lands at a consistent scale rather than the big ones dwarfing the small.
+	var longest := maxf(CarLibrary.max_car_bounds().z, 0.001)
+	var scale_f := PRIZE_CAR_PIN_LENGTH_M / longest
+	# Seat it in the `configure` step, NOT after spawn: apply_car ends in _reset(), which
+	# puts the car back at its spawn transform (metres above the table). Every other
+	# CarProp caller positions its prop the same way for the same reason — do it here and
+	# the reset undoes it.
+	# Face the middle of the map. Left at a fixed heading the cars all point the same way
+	# whichever corner they sit in, which reads as a row of parked models; aiming them
+	# inward makes the table look like cars gathered around the garage.
+	#
+	# Derived in MAP space (the rally's map_pos toward HQ_MAP_POS) rather than from any node
+	# transform. The holder sits at the pin's own origin, so its position is always zero —
+	# reading a direction off it produced no rotation at all.
+	#
+	# map_pos x -> world X and y -> world Z (hq._make_pin), so the map-space vector is
+	# already a world-space heading on the table plane.
+	var mp := RallyLibrary.map_pos_of(RallyLibrary.by_id(String(pin.get_meta("rally_id"))))
+	var to_hq := RallyLibrary.HQ_MAP_POS - mp
+	var yaw := 0.0
+	if not to_hq.is_zero_approx():
+		# atan2(x, z) yaws a +Z-forward node onto the heading; car.tscn faces -Z (Godot's
+		# convention), hence the half turn. Flip PRIZE_CAR_FACING_TURN if a future car model
+		# is authored the other way round.
+		yaw = atan2(to_hq.x, to_hq.y) + PRIZE_CAR_FACING_TURN
+	var car := CarProp.spawn(holder, _car_scene_res(), {
+		"index": index,
+		"stop_physics": true,
+		"disable_process": true,
+		"configure": func(c: Node3D) -> void:
+			c.transform = Transform3D.IDENTITY
+			c.rotation = Vector3(0.0, yaw, 0.0)
+			c.scale = Vector3(scale_f, scale_f, scale_f),
+	})
+	if dim:
+		# Hazy, and NON-pickable (the caller adds no hit sphere to a locked pin): a landmark,
+		# not a target.
+		_set_marker_dim(holder, true)
+
+
+# Half turn applied to a prize car's heading, because car.tscn's body faces -Z while the
+# atan2(x, z) yaw below is written for a +Z-forward node. Isolated as a constant so
+# "the cars point the wrong way" is a one-value fix rather than an algebra puzzle.
+const PRIZE_CAR_FACING_TURN := PI
+
+# How faded an unreached PRIZE pin reads — model and readout alike. Enough to sit clearly
+# "behind the fog" without becoming invisible: the player is meant to see what is out there,
+# but never to mistake it for something they can click yet.
+#
+# Transparency is the strongest available cue for "not yet", because it is the only one that
+# survives the marker's own state colouring: a locked trophy is already grey, and a prize
+# car keeps its paint on purpose (that paint is what makes the model recognisable), so
+# neither can say "unavailable" through colour alone.
+const FOGGED_PIN_DIM_ALPHA := 0.55
+
+
+# Fade or un-fade a marker so it reads as behind the fog (or comes back out of it). Shared
+# by both prize markers, so a car and a trophy sit at the same remove rather than each
+# fading its own amount. GeometryInstance3D.transparency fades a prop without touching its
+# materials — a tint override would have to replace them and would cost the car its paint.
+#
+# Takes a flag rather than only fading, because a CACHED prize car outlives the pin it was
+# built for: the same prop can be locked on one refresh and open on the next, so the fade
+# has to be re-applied BOTH ways or a car stays ghosted after the player has reached it.
+func _set_marker_dim(node: Node, dim: bool) -> void:
+	var alpha := FOGGED_PIN_DIM_ALPHA if dim else 0.0
+	for mesh in node.find_children("*", "GeometryInstance3D", true, false):
+		(mesh as GeometryInstance3D).transparency = alpha
+
+
 func _add_pick_sphere(pin: Node3D, pos: Vector3, r: float, handler: Callable) -> void:
 	var area := Area3D.new()
 	var cs := CollisionShape3D.new()
@@ -819,21 +1130,16 @@ func _add_pick_sphere(pin: Node3D, pos: Vector3, r: float, handler: Callable) ->
 	pin.add_child(area)
 
 
-func _on_present_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3,
-		_shape: int) -> void:
-	# Same release-and-not-dragged rule as a rally pin, so panning across the map never
-	# accidentally spends stars.
-	if _view == View.TABLE and not _detail_open and not _revealing and not _table_dragged \
-			and _is_release(event):
-		_table_ui.activate_present_box()
-
-
+# `next_special` is the id nearest_locked_special_id returned for this whole refresh —
+# passed in rather than asked per pin, because the answer is identical for every pin and
+# the query is not cheap (see _refresh_map_pins).
 func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float,
-		hold_locked := false) -> Node3D:
+		hold_locked := false, next_special := "") -> Node3D:
 	var rally_id := String(rally["id"])
-	# Locked = not revealed yet: a special before its star gate opens, OR an ordinary
-	# rally whose reveal_after (global reveal order) isn't met. A
-	# locked pin renders grey + non-pickable — a "coming up" hint, not enterable.
+	# Locked = not revealed yet: the pin is not inside any lit circle
+	# (RallyLibrary.rally_revealed). A locked pin renders grey + non-pickable — a "coming
+	# up" hint, not enterable. (There is no star gate and no reveal_after any more; reveal
+	# is purely geometric — see features/map-exploration.md.)
 	var locked: bool = hold_locked or not RallyLibrary.rally_revealed(rally, Save.profile)
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
 	# map_pos is normalised 0..1; centre the map plane, x→world X, y→world Z.
@@ -852,13 +1158,35 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# keeps one visual language. See RallyFlag / RallyTrophy / features/menus.md.
 	var earned := _stars_for(rally_id)
 	var has_eligible := _has_eligible_car(rally)
-	var special := RallyLibrary.is_special(rally)
-	var marker := (RallyTrophy.build(locked, earned, has_eligible) if special
-		else RallyFlag.build(locked, earned, has_eligible))
-	pin.add_child(marker)
-	# Where the floating readout box hangs — each marker reports its own top, since a trophy
-	# is a different height from a flag pole.
-	var marker_top: float = RallyTrophy.HEIGHT if special else RallyFlag.POLE_HEIGHT
+	# What the rally AWARDS picks the marker, because the marker's whole job on a dark map is
+	# to advertise a destination (features/prize-rallies.md):
+	#   * a CAR prize stands the actual 3D car — self-describing, so it needs no label;
+	#   * a PART prize stands a TROPHY (we have no part models, and a trophy at least reads
+	#     as "something is won here") — which is why a part pin keeps its box open, below;
+	#   * everything else plants the ordinary FLAG whose look encodes medal state.
+	var prize_car := RallyLibrary.prize_car_id(rally)
+	var prize_part := RallyLibrary.prize_part_id(rally)
+	var marker_top: float
+	# Resolve the model HERE, not at attach time: a prize naming a car the current catalogue
+	# does not hold (a synthetic test roster) must fall through to the ordinary marker, so
+	# that every pin always stands SOMETHING. A pin with no marker is invisible on the map.
+	if prize_car != "" and CarLibrary.index_of(prize_car) >= 0:
+		# The car prop is attached LATER, once this pin is in the tree — car.tscn's _ready
+		# builds the damage model, and CarProp.spawn's apply_car needs it. Building it here
+		# would run apply_car against a node that has never entered the tree.
+		pin.set_meta("prize_car_model", prize_car)
+		marker_top = PRIZE_CAR_MARKER_TOP
+	else:
+		var trophy := prize_part != "" or RallyLibrary.is_special(rally)
+		var marker := (RallyTrophy.build(locked, earned, has_eligible) if trophy
+			else RallyFlag.build(locked, earned, has_eligible))
+		pin.add_child(marker)
+		# Everything unreached fades, flag or trophy alike — the fog treats all pins the same.
+		if locked:
+			_set_marker_dim(marker, true)
+		# Where the floating readout box hangs — each marker reports its own top, since a
+		# trophy is a different height from a flag pole.
+		marker_top = RallyTrophy.HEIGHT if trophy else RallyFlag.POLE_HEIGHT
 
 	# Readout: a single design-system black box floating above the flag, holding the
 	# rally name and a row of proper five-pointed stars (gold earned / dim not). Built
@@ -870,34 +1198,48 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# either live and at full opacity, or absent. The 3D flag still stands at every pin, so
 	# the map keeps showing where the unavailable rallies are (grey flag = "coming up").
 	#
-	# THE EXCEPTION: the NEXT locked SPECIAL — the lowest rung of the ladder still shut, per
-	# RallyLibrary.next_locked_special_id — gets a box, at FULL opacity but non-pickable,
-	# reading "0/2 rallies" over what it unlocks. Locking must hide availability, never
-	# information — the player should be able to see what exists and where to earn it long
-	# before they can have it. Full opacity keeps the all-or-nothing rule intact (the box is
-	# live-looking, it just isn't a target); the grey trophy beneath already says "not yet".
+	# THE EXCEPTION: the NEXT locked SPECIAL — the one nearest the player's frontier, per
+	# RallyLibrary.nearest_locked_special_id — gets a box, at FULL opacity but non-pickable,
+	# naming what it unlocks. Locking must hide availability, never information — the player
+	# should be able to see what exists and where to earn it long before they can have it.
+	# Full opacity keeps the all-or-nothing rule intact (the box is live-looking, it just
+	# isn't a target); the grey trophy beneath already says "not yet".
 	#
-	# ONLY the next rung, though: the specials ladder is strictly ordered, so a requirement
-	# further up is not something the player can work on yet, and eight teasers at once buried
+	# ONLY the nearest one, though: a special further out is not something the player can
+	# work on yet, and eight teasers at once buried
 	# the map under menus that were all unreachable. The further specials still STAND THEIR
 	# TROPHIES — the destination is still signposted, it just doesn't quote a number until it
 	# is the one in front of you.
 	var locked_special := locked and RallyLibrary.is_special(rally) \
-		and rally_id == RallyLibrary.next_locked_special_id(Save.profile)
+		and rally_id == next_special
 	var available := not locked and has_eligible
-	if locked_special:
-		var teaser := _build_special_teaser_label(rally)
-		teaser.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
-		pin.add_child(teaser)
-		pin.set_meta("label_panel", teaser.get_meta("panel"))
-	elif available:
-		var label := _build_pin_label(String(rally["name"]), earned, rally)
-		label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
-		pin.add_child(label)
-		# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it
-		# with the hover-style selection look (see _table_ui._focus_table_target) without resizing
-		# the pin. Absent when there is no box — _table_ui._focus_table_target checks for the meta.
-		pin.set_meta("label_panel", label.get_meta("panel"))
+	# EVERY pin's readout is hover-only — prize pins included. A table of a dozen open menus
+	# reads as a noticeboard rather than a map, and one rule for all pins means panning
+	# across the table shows exactly one box at a time wherever the cursor is.
+	#
+	# A prize pin still needs its name readable BEFORE it is reachable, which is why the
+	# cursor is allowed to hover an unreached prize (hq_table._unlocked_pins) even though it
+	# refuses to open one.
+	# ONE readout rule for every pin, whatever it stands and whatever state it is in: the box
+	# is always built, always starts HIDDEN, and is shown only while the cursor is on it. That
+	# is what keeps the table a map rather than a noticeboard, and it means a pin the player
+	# cannot enter yet still ANSWERS when they point at it.
+	#
+	# FADED when the rally is not enterable — out in the fog, or reachable but with nothing in
+	# the garage that fits. A full-opacity box over a ghosted marker would read as a live menu,
+	# which is the opposite of what the fade says. The box is non-pickable either way (no hit
+	# sphere is added below), so the fade is the honest visual for "look, don't touch".
+	var label := (_build_special_teaser_label(rally) if locked_special
+		else _build_pin_label(String(rally["name"]), earned, rally))
+	label.position = Vector3(0.0, PIN_LABEL_HEIGHT, 0.0)
+	pin.add_child(label)
+	label.visible = false
+	if not available:
+		label.modulate = Color(1.0, 1.0, 1.0, FOGGED_PIN_DIM_ALPHA)
+	# The PANEL so the focus cursor can paint the hover-style selection look, and the SPRITE
+	# so the focus pass can show/hide the whole box rather than only repainting its inside.
+	pin.set_meta("label_panel", label.get_meta("panel"))
+	pin.set_meta("label_sprite", label)
 
 	# Pickable hit spheres (skipped for a locked pin so it can't be entered), both bound
 	# to the same handler so a click on EITHER the flag/pole OR the floating readout box
@@ -910,7 +1252,7 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 		# Only where a box actually hangs — an unavailable pin has none, and a hit sphere
 		# floating in the empty air above its flag would be a target for nothing.
 		if available:
-			_add_pick_sphere(pin, Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0), 0.32,
+			_add_pick_sphere(pin, Vector3(0.0, PIN_LABEL_HEIGHT, 0.0), 0.32,
 				_on_pin_input.bind(rally_id))
 	return pin
 
@@ -923,7 +1265,7 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 # a transparent SubViewport (so only the black box shows), with `build_body` filling the
 # VBox. Dimmed when `dim` (reads as disabled), and hands its panel back via the "panel"
 # meta so the focus cursor / selection can repaint it.
-func _build_readout_sprite(build_body: Callable, accent := false) -> Sprite3D:
+func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	var vp := SubViewport.new()
 	vp.size = PIN_LABEL_PX
 	vp.transparent_bg = true
@@ -935,16 +1277,6 @@ func _build_readout_sprite(build_body: Callable, accent := false) -> Sprite3D:
 	vp.add_child(center)
 
 	var panel := UITheme.panel(1.0, 14)
-	if accent:
-		# SPECIAL EVENTS wear a WHITE readout with black text, so they jump out of a map of
-		# black panels — the one deliberate exception to design-system house rule 4 (menu
-		# backgrounds are PURE BLACK, ui_theme.gd). Stashed as `accent_bg` too, because
-		# UITheme.mark_panel_focused replaces the whole stylebox on every focus repaint and
-		# would otherwise reset this pin to black the moment selection moved.
-		var box := UITheme.panel_box(1.0, 14)
-		box.bg_color = ACCENT_READOUT_BG
-		panel.add_theme_stylebox_override("panel", box)
-		panel.set_meta("accent_bg", ACCENT_READOUT_BG)
 	center.add_child(panel)
 
 	var box := VBoxContainer.new()
@@ -954,22 +1286,22 @@ func _build_readout_sprite(build_body: Callable, accent := false) -> Sprite3D:
 	build_body.call(box)
 
 	UITheme.enforce(panel)  # house rules: uppercase + one font size
+	# ...then override the SIZE for this one surface. A map readout is not a flat 2D menu:
+	# it is composited in a SubViewport and then shown on a billboard out on the table, so it
+	# loses resolution twice before the player sees it, and at the map's viewing distance the
+	# house 16 is genuinely hard to read. Every OTHER menu in the game keeps UITheme.FONT_SIZE
+	# — this is the one medium that needs its own, not a licence to grow type elsewhere.
+	for label in panel.find_children("*", "Label", true, false):
+		(label as Label).add_theme_font_size_override("font_size", PIN_LABEL_FONT_SIZE)
 	# No drop shadow on a floating readout. The global theme gives every Label a hard black
-	# shadow (build_ui_theme.gd: font_shadow_color + shadow_offset), which is the terminal
-	# look on a black panel — but on a black panel it is also invisible, and on the white
-	# accent face it reads as grubby fringing. Cleared here rather than in the theme so the
-	# rest of the UI keeps the house look.
-	# Runs AFTER enforce so nothing it does re-lightens the text. On an accent readout every
-	# label also goes black for contrast on the white face. (The medal row is recoloured
-	# where it is built, in _build_readout_box — find_children's type filter matches engine
-	# classes, not script class_names, so it cannot reach a StarRow.)
+	# shadow (build_ui_theme.gd), which is the terminal look elsewhere but is invisible on a
+	# black panel. Cleared here rather than in the theme so the rest of the UI keeps the
+	# house look. Runs AFTER enforce so nothing it does re-lightens the text.
 	for node in panel.find_children("*", "Label", true, false):
 		var lbl := node as Label
 		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
 		lbl.add_theme_constant_override("shadow_offset_x", 0)
 		lbl.add_theme_constant_override("shadow_offset_y", 0)
-		if accent:
-			lbl.add_theme_color_override("font_color", ACCENT_READOUT_INK)
 
 	var sprite := Sprite3D.new()
 	sprite.add_child(vp)
@@ -987,42 +1319,36 @@ func _build_readout_sprite(build_body: Callable, accent := false) -> Sprite3D:
 # `unlock` == "" omits the unlock line. Always full opacity — see _make_pin on why a locked
 # special's box is live-looking but non-pickable rather than dimmed. Hands its panel back so
 # the pin can repaint it on selection.
-func _build_readout_box(title: String, stars: int, unlock: String, accent := false) -> Sprite3D:
+func _build_readout_box(title: String, stars: int, unlock: String) -> Sprite3D:
 	return _build_readout_sprite(func(box: VBoxContainer) -> void:
 		box.add_theme_constant_override("separation", UITheme.GAP)
 		box.add_child(UITheme.title(title))
 		if stars >= 0:
 			var row := StarRow.new()
 			row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-			if accent:
-				# GOLD on white barely reads at pin scale and MUTED's 55%-alpha olive washes
-				# out entirely, so the row inverts with the rest of the readout.
-				row.earned_color = ACCENT_READOUT_INK
-				row.unearned_color = Color(ACCENT_READOUT_INK.r, ACCENT_READOUT_INK.g,
-					ACCENT_READOUT_INK.b, 0.3)
 			box.add_child(row)
 			row.setup(stars, MAX_STARS)
 		if unlock != "":
-			box.add_child(_label(unlock, 13)), accent)
+			box.add_child(_label(unlock, 13)))
 
 
 # An enterable rally: name, medal row, and — for a special — what it unlocks, so the map
 # answers "where do I get X?" whether the special is locked or not.
 func _build_pin_label(rally_name: String, earned: int, rally: Dictionary = {}) -> Sprite3D:
-	return _build_readout_box(rally_name, earned, _special_unlock_line(rally),
-		RallyLibrary.is_special(rally))
+	return _build_readout_box(rally_name, earned, _special_unlock_line(rally))
 
 
-# The locked-special teaser box: "3/4 rallies" over "unlocks Supercharger".
-# Quotes COMPLETED ORDINARY RALLIES, not stars — stars are spendable currency now and would
-# make this readout go backwards when the player buys a car (todo/star-economy.md). "Rallies"
-# and not "events" because that is what the gate counts: an EVENT is one stage inside a rally
-# (`rally["events"]`), and three of them make the rally this readout is counting.
+# The locked-special teaser box: the event's NAME over "unlocks Supercharger".
+#
+# It used to quote a progress fraction ("3/4 rallies") against the old global completion
+# counter. There is no counter any more — a special opens when the player lights the map
+# out to it — so there is no number to show, and inventing a distance readout ("0.08 map
+# units away") would be noise. Naming the event is the honest teaser: it says WHAT is out
+# there and WHAT it gives, and the dark map around it already says "not yet". Locking hides
+# availability, never information.
 func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
-	var need := RallyLibrary.completions_required(rally)
-	var have := need - RallyLibrary.completions_needed(rally, Save.profile)
-	# Always accented: a teaser only ever describes a special.
-	return _build_readout_box("%d/%d rallies" % [have, need], -1, _special_unlock_line(rally), true)
+	# -1 stars: the star row is suppressed, since an unreached event has no result to show.
+	return _build_readout_box(String(rally.get("name", "")), -1, _special_unlock_line(rally))
 
 
 # --- The next carrot ---------------------------------------------------------
@@ -1031,34 +1357,26 @@ func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 #
 # It is the map's locked-special teaser (_build_special_teaser_label) promoted to the
 # GARAGE — the station the player lands on after every rally and starts every trip from.
-# On the map the same fact is a "0/2 rallies" box hanging over one grey trophy among a
-# dozen pins, which means the player only meets it if they fly to the table AND happen to
-# look at the right corner; here it is unmissable and costs one line. Both readouts derive
-# from RallyLibrary.next_locked_special_id / completions_needed and from the SAME
-# _special_unlock_line, so the carrot and the pin can never quote different numbers or
-# name different rewards.
+# On the map the same fact is a box hanging over one grey trophy among a dozen pins, which
+# means the player only meets it if they fly to the table AND happen to look at the right
+# corner; here it is unmissable and costs one line. Both readouts derive from
+# RallyLibrary.nearest_locked_special_id and from the SAME _special_unlock_line, so the
+# carrot and the pin can never name different events or different rewards.
 #
-# EMPTY once every special is open ("" — the caller hides the line): there is no next rung
-# to work toward, and a line that says so would be chrome. Never empty-with-a-zero: a
-# special that has already opened is not in next_locked_special_id's answer at all, so
-# `remaining` here is always >= 1.
+# It says "EXPLORE TOWARD X" rather than "N more rallies" because that is now literally the
+# instruction: the event opens when the player lights the map out to it, and no count of
+# rallies-anywhere will do it. Direction, not a tally.
+#
+# EMPTY once every special is revealed ("" — the caller hides the line): there is nothing
+# left to work toward, and a line that says so would be chrome.
 func _carrot_line() -> String:
-	var rally_id := RallyLibrary.next_locked_special_id(Save.profile)
+	var rally_id := RallyLibrary.nearest_locked_special_id(Save.profile)
 	if rally_id == "":
 		return ""
 	var rally := RallyLibrary.by_id(rally_id)
 	if rally.is_empty():
 		return ""
-	var remaining := RallyLibrary.completions_needed(rally, Save.profile)
-	if remaining <= 0:
-		return ""  # defensive: an open special isn't a carrot
-	# "N more rallies", pluralised in the one place the game pluralises (UITheme.count_noun) —
-	# the "more" rides along inside the noun so the singular reads "1 MORE RALLY". And
-	# "rallies", not "events", for the same reason the pin teaser says it: the gate counts
-	# completed RALLIES, while an event is one stage inside a rally.
-	var line := "%s → %s" % [
-		UITheme.count_noun(remaining, "more rally", "more rallies"),
-		String(rally.get("name", rally_id))]
+	var line := "EXPLORE TOWARD %s" % String(rally.get("name", rally_id))
 	var unlock := _special_unlock_line(rally)
 	if unlock != "":
 		line += " (%s)" % unlock
@@ -1085,11 +1403,15 @@ func _special_unlock_line(rally: Dictionary) -> String:
 	var rally_id := String(rally.get("id", ""))
 	if rally_id == "":
 		return ""
-	var item := UpgradeLibrary.unlocked_by(rally_id)
-	if not item.is_empty():
-		return "unlocks %s" % String(item.get("name", item["id"]))
+	# A part-unlock rally is NAMED after the part it awards ("Upgrade: Big Turbo"), so an
+	# "unlocks Big Turbo" line under it just says the title again. The subtitle exists to add
+	# something the name does not; where the name already carries the reward, it earns
+	# nothing and is dropped.
+	if not UpgradeLibrary.unlocked_by(rally_id).is_empty():
+		return ""
 	# A special may gate a CAPABILITY rather than a part, which is authored the other way
-	# round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) and so isn't in the catalogue index.
+	# round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) and so isn't in the catalogue index. That
+	# one still needs the line — its name says nothing about engine swapping.
 	if rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
 		return "unlocks engine swaps"
 	return ""
@@ -1493,9 +1815,10 @@ func _update_overlays() -> void:
 	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
-	# BEFORE _normalize_menus: the carrot line is dynamic text, so it has to be written
-	# while the house rules (uppercase) are still to come, not after them.
+	# BEFORE _normalize_menus: these write dynamic text, so they have to run while the
+	# house rules (uppercase) are still to come, not after them.
 	_refresh_carrot_line()
+	_refresh_repair_button()
 	_normalize_menus()
 
 
@@ -2184,13 +2507,6 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	_normalize_menus()
 
 
-# Top up a stranded player: a free Mystery Box when every owned car is wrecked, so a
-# fully wrecked garage always has a way back onto a stage (opening it grants a car).
-# Called wherever the garage/lift is (re)drawn, since wrecking happens out on a stage.
-func _refresh_wreck_safety_net() -> void:
-	Save.ensure_wreck_safety_net()
-
-
 # Move the cursor left/right WITHIN the row it currently sits on: between the two chevrons
 # on the selector row, or between Back (0), Upgrades (1), Tuning (2) and Test Drive (3) on
 # the actions row. Wraps at the ends of that row and repaints.
@@ -2222,8 +2538,18 @@ func _move_lift_row(row: int) -> void:
 
 # Is the car selector navigable? False when there is nothing to cycle to, in which case the
 # HUB collapses to its single actions row.
+# Does the selector row hold ANYTHING the cursor can land on?
+#
+# Asks the row's own cursor rather than the prev chevron, which is what it used to do. That
+# was fine while the chevrons were the row's only members, but Repair lives here now, and
+# with ONE car owned both chevrons are disabled — so the old test refused the whole row and
+# took Repair with it, leaving it pointer-only in exactly the fresh-career state (one car,
+# possibly damaged) this station exists for. CLAUDE.md: no menu ships pointer-only.
 func _selector_has_stops() -> bool:
-	return is_instance_valid(_lift_prev_button) and not _lift_prev_button.disabled
+	for button in _lift_selector_cursor.buttons:
+		if is_instance_valid(button) and not (button as BaseButton).disabled:
+			return true
+	return false
 
 
 # Fire the item the cursor sits on, in whichever row it sits: a chevron swaps the car on the
@@ -2354,9 +2680,6 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 # Refresh the whole menu for the current selected car: name + stats, which menu is
 # shown, the sliders' gating/values, and the upgrades list.
 func _refresh_lift_ui() -> void:
-	# Recover a wrecked-out player before drawing the lift: a free Mystery Box when
-	# every owned car is wrecked and none is held (also checked on save load).
-	Save.ensure_wreck_safety_net()
 	_lift_owned = Save.selected_car()
 	_refresh_lift_car_label()
 	# Show the hub (car selector + menu buttons) or a sub-menu page from _lift_page.
@@ -2370,7 +2693,7 @@ func _refresh_lift_ui() -> void:
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
 	# without scrolling); UPGRADES keeps its heading.
 	_lift_menu_title.visible = _lift_page != LiftPage.TUNE
-	_lift_menu_title.text = "UPGRADES"
+	_refresh_lift_menu_title()
 	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
 	# on_change is a no-op: the HQ lift did not re-field the display car on a tune edit
 	# (the change lands on next fielding), so preserve that behaviour.
@@ -2387,7 +2710,6 @@ func _refresh_lift_ui() -> void:
 	# committed to an event.
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
 		UpgradesMenu.NO_LIMIT)
-	_refresh_wreck_safety_net()  # a wrecked-out garage gets its rescue box
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
@@ -2400,6 +2722,21 @@ func _on_lift_upgrade_changed() -> void:
 	_ensure_lift_car()
 	_lift_owned = Save.selected_car()
 	_refresh_lift_car_label()
+	# Buying a part spends stars, and the balance is in this page's heading — so it has to
+	# be re-read here, not only when the page is opened.
+	_refresh_lift_menu_title()
+
+
+# The UPGRADES page heading, carrying the player's STAR BALANCE.
+#
+# The balance belongs here because this page is where stars are spent: every part option
+# the player cannot afford quotes a price ("Big (3*)") they otherwise have to leave the
+# page to check against. Repair, the other sink, prices itself on a button that is already
+# beside the balance on the hub.
+func _refresh_lift_menu_title() -> void:
+	if _lift_menu_title == null:
+		return
+	_lift_menu_title.text = "UPGRADES   %d★" % Save.stars_available()
 
 
 # The Dev settings page fits a part straight onto Save.selected_instance_id() with no
@@ -2428,10 +2765,16 @@ func _refresh_lift_car_label() -> void:
 	for chevron in [_lift_prev_button, _lift_next_button]:
 		chevron.visible = cyclable
 		chevron.disabled = not cyclable
-	# Never leave the cursor stranded on a chevron that just went away (the last other car
-	# was sold / wrecked out from under it).
-	if not cyclable and _lift_row == LiftRow.SELECTOR:
+	# Never leave the cursor stranded in a row with nothing live in it (the last other car
+	# was sold / wrecked out from under it). Gated on the ROW being empty, not on the
+	# chevrons being gone: Repair also lives here, so losing the chevrons no longer empties
+	# the row — and ejecting anyway is what made Repair unreachable on a one-car garage.
+	if _lift_row == LiftRow.SELECTOR and not _selector_has_stops():
 		_lift_row = LiftRow.ACTIONS
+	elif not cyclable and _lift_row == LiftRow.SELECTOR:
+		# The chevrons went away but the row still has stops — re-seat onto a live one
+		# instead of leaving the cursor on a hidden button.
+		_lift_selector_focus = _lift_selector_cursor.settled(_lift_selector_focus)
 
 
 # The owned cars in the order the lift's chevrons walk them, by ASCENDING instance_id — the
@@ -2512,6 +2855,27 @@ func _show_empty_carpark(message: String) -> void:
 # Enter the car park for the chosen rally: park the ELIGIBLE owned cars (plus any
 # over-powered car a detune would qualify — see _build_eligible_lineup) and frame
 # the first. With none, show a hint + disable Start.
+# DEV ONLY: mark the open rally as won outright (1st place, 3 stars) without driving it,
+# then drop back to the map so the reveal it triggers plays exactly as a real win's would.
+#
+# Exists for MAP EXPLORATION: reveal is geometric, so one completion lights the circle
+# around that rally's pin and opens its neighbours — walking the roster a pin at a time is
+# the only way to check the exploration graph feels right, and the shipped map is 17 waves
+# deep. The Settings "3-star all rallies" cheat lights everything at once and so cannot
+# show the progression at all.
+#
+# Guarded on dev_tools_enabled() as well as the button being build-gated: the F10 action
+# reaches this directly, so the gate has to live at the sink, not only at the button.
+func _dev_complete_selected_rally() -> void:
+	if not SettingsMenu.dev_tools_enabled() or _selected_rally_id == "":
+		return
+	Save.dev_three_star_rally(_selected_rally_id)
+	# Back to the map, then rebuild the pins: whatever this win just lit has to appear, and
+	# _hide_detail is also what re-runs the reveal queue for the newly-open rallies.
+	_table_ui._hide_detail()
+	_refresh_map_pins()
+
+
 func _enter_car_screen() -> void:
 	_carpark_mode = CarparkMode.RALLY
 	_start_button.text = "Start Rally"
@@ -2532,214 +2896,36 @@ func _enter_car_screen() -> void:
 	_carpark_ui._focus_changed(true)  # snaps the camera onto the first car
 
 
-# --- Present-box reveal (todo/star-economy.md) -------------------------------
-# The flow is deliberately short: tap the map target and you are LOOKING AT THE BOX, with a
-# single bottom button that spends the stars and opens it. No confirm dialog in front of it
-# and no result card behind it — the box itself is the confirmation, and the revealed car
-# with its name under it is the result.
-#
-# The car is spawned INSIDE the closed box at the moment of purchase, before a single wall
-# moves, so the reveal is the box actually opening on the car rather than a car fading in
-# afterwards. That is why the purchase happens on the button press and not on entry: we
-# cannot put a car in the box until we know which car it is.
-
-# Clearance (m) left around the largest car on each axis, so the biggest body does not touch
-# the walls. The box itself is sized from CarLibrary.max_car_bounds() rather than a tuned
-# scale factor — a magic multiplier silently stops fitting the day a longer car is authored,
-# and the roster already spans 3.8 m to 5.9 m of length.
-const PRESENT_CLEARANCE_M := 0.55
-const PRESENT_LID_RISE := 9.0        # how far the lid travels up before it leaves frame
-const PRESENT_OPEN_TIME := 0.7       # seconds for the lid to clear
-const PRESENT_WALL_TIME := 1.1       # seconds for a wall to fall (slow — it has weight)
-
-var _car_nav_row_arrows_hidden := false
-var _present_box: Node3D             # the openable box prop, live only in CarparkMode.PRESENT
-var _present_opened := false         # guards against a second purchase from one visit
+var _lift_repair_button: Button   # the lift hub's Repair action; label carries the price
 
 
-# Enter the car park to look at the present. Nothing is bought yet — this is the shop
-# window, and the bottom button is the till.
-func _enter_present_box() -> void:
-	_carpark_mode = CarparkMode.PRESENT
-	_view = View.CARPARK
-	_detail_open = false
-	_present_opened = false
-	# An EMPTY lot: the point is one box, alone. Clearing also stops a previous mode's
-	# lineup lingering behind the reveal.
-	_carpark_ui._clear_lineup()
-	_no_eligible_label.visible = false
-	_car_warning_label.visible = false
-	_car_stats_label.text = ""
-	_car_name_label.text = ""       # filled in with the car's name once it is revealed
-	_rally_banner.text = "A present"
-	if is_instance_valid(_car_hint_label):
-		# The one carpark mode that still shows the hint line — see build_car_overlay.
-		_car_hint_label.text = "Open it to see what is inside"
-		_car_hint_label.visible = true
-	_set_carpark_arrows_visible(false)  # nothing to cycle through
-	_refresh_present_button()
+# Repair the car on the lift: full health, straight wheels, for the flat star price
+# (Save.repair_car, features/star-economy.md). A no-op when the car needs nothing or the
+# balance is short — Save re-checks both, so a stale button cannot half-complete.
+func _repair_selected_car() -> void:
+	var id := Save.selected_instance_id()
+	if id < 0 or not Save.repair_car(id):
+		return
+	# Repaint the hub row and the star meter the purchase just moved. Re-fielding the car
+	# on the lift is not needed: repair changes health and wheel toe, neither of which the
+	# lift's frozen display prop shows.
 	_update_overlays()
-	_move_camera_to(_station_xform(View.CARPARK), true)
-
-	if is_instance_valid(_present_box):
-		_present_box.queue_free()
-	# Fit the LARGEST car on the roster: width across X, length along Z (a car-park marker
-	# faces +Z, so length runs along depth), and walls tall enough to clear the tallest roof.
-	var bounds := CarLibrary.max_car_bounds()
-	_present_box = PresentBox.build_openable(
-		bounds.x + PRESENT_CLEARANCE_M,
-		bounds.z + PRESENT_CLEARANCE_M,
-		bounds.y + PRESENT_CLEARANCE_M)
-	_present_box.position = HQEnvironment.carpark_center()
-	add_child(_present_box)
 
 
-# The bottom button doubles as the price tag: it quotes the cost, and goes disabled rather
-# than silently no-opping when the player cannot pay.
-func _refresh_present_button() -> void:
-	if _present_opened:
-		# The box is spent, so the bottom button stops being a till and becomes the way OUT.
-		# Never left disabled: a dead action row is a dead end, and the player has somewhere
-		# to go next — the garage, where their new car is.
-		_start_button.text = "Back to garage"
-		_start_button.disabled = false
+# Write the Repair button's label and disabled state. Three states, all readable off the
+# button itself rather than hidden: nothing to fix, affordable, or short of stars — the
+# price is information the player can act on even when they cannot pay it yet.
+func _refresh_repair_button() -> void:
+	if not is_instance_valid(_lift_repair_button):
 		return
-	var price := RewardSystem.car_price(Save.profile)
-	var balance: int = Save.stars_available()
-	if price <= 0:
-		# The dead-end rescue. Say it is free AND why, so a free car does not read as a bug.
-		_start_button.text = "Open (free)"
-		_start_button.disabled = false
-		_car_stats_label.text = "Nothing you own can enter an open event — this one is on the house."
+	var id := Save.selected_instance_id()
+	if id < 0 or not Save.car_needs_repair(id):
+		_lift_repair_button.text = "Repair"
+		_lift_repair_button.disabled = true
 		return
-	_start_button.text = "Open (%s)" % UITheme.count_noun(price, "star")
-	_start_button.disabled = balance < price
-	_car_stats_label.text = ("You have %d." % balance if balance >= price
-		else "You have %d of %d. Place in an event to earn more — 1st is worth 3." % [
-			balance, price])
-
-
-# Hide the prev/next arrows without hiding the centre label they share a row with.
-func _set_carpark_arrows_visible(on: bool) -> void:
-	if not is_instance_valid(_car_nav_row):
-		return
-	for child in _car_nav_row.get_children():
-		if child is Button:
-			(child as Button).visible = on
-	_car_nav_row_arrows_hidden = not on
-
-
-# The bottom button: buy the car, put it in the box, then open the box on it.
-func _open_present() -> void:
-	if _present_opened:
-		return
-	var car: Dictionary = RewardSystem.purchase_car()
-	if car.is_empty():
-		# NOTHING TO GIVE = NOTHING SPENT: purchase_car resolves the draw before debiting,
-		# so this has cost the player nothing.
-		_car_warning_label.text = "The box was empty — your stars are untouched."
-		_car_warning_label.visible = true
-		_refresh_present_button()
-		return
-	_present_opened = true
-	# Make it the SELECTED car. Save.set_selected_car also promotes it to the front of the
-	# lineup, which is what makes the "Back to garage" exit land on the car the player just
-	# opened rather than whatever they had before — the two changes are a pair.
-	_selected_instance_id = int(car.get("instance_id", -1))
-	Save.set_selected_car(_selected_instance_id)
-	_refresh_present_button()
-	# The balance changed and a new car can make locked rallies enterable, so the map behind
-	# us is now stale. Rebuild it here rather than on exit, so backing out shows the truth.
-	_refresh_map_pins()
-
-	# Put the car IN the box first, while the walls still hide it.
-	var marker := Marker3D.new()
-	marker.position = HQEnvironment.carpark_center()
-	# Nose toward +Z (the courtyard / camera), matching every other car-park bay marker
-	# (hq_carpark._render_lineup_page). Without this the car is seated at identity rotation
-	# and presents its back to the player.
-	marker.rotation.y = PI
-	add_child(marker)
-	_markers.append(marker)
-	var node := _carpark_ui._obtain_parked_car(car, marker)
-	if node != null:
-		_carpark_ui._seat_car_at_marker(node, marker)
-
-	# Name it under the car. Set BEFORE the animation so a headless run — which never
-	# animates — still ends in the revealed state.
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	var car_name := String(entry.get("name", "A car")) if not entry.is_empty() else "A car"
-	_car_name_label.text = car_name
-	_car_stats_label.text = "Parked up and ready to field."
-	_rally_banner.text = "A present"
-
-	if Platform.is_headless():
-		# No awaited timers, no tweens: a cinematic that waits on real time would add
-		# seconds to every test that opens a present. Drop the box and be done.
-		if is_instance_valid(_present_box):
-			_present_box.queue_free()
-			_present_box = null
-		return
-	_animate_present_open()
-
-
-# Lid up and away first, walls falling as it clears, so it reads as one gesture rather than
-# four panels flopping at once.
-func _animate_present_open() -> void:
-	if not is_instance_valid(_present_box):
-		return
-	var lid: Node3D = _present_box.get_node_or_null("Lid")
-	if lid != null:
-		var lid_tween := create_tween()
-		lid_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		lid_tween.tween_property(lid, "position:y",
-			lid.position.y + PRESENT_LID_RISE, PRESENT_OPEN_TIME)
-	# Each wall is a hinge Node3D pivoted at its bottom edge, so a quarter turn about the
-	# axis PARALLEL to that edge drops it flat outward (see PresentBox.build_openable).
-	var falls := {
-		"SideN": Vector3(-PI * 0.5, 0.0, 0.0),
-		"SideS": Vector3(PI * 0.5, 0.0, 0.0),
-		"SideW": Vector3(0.0, 0.0, PI * 0.5),
-		"SideE": Vector3(0.0, 0.0, -PI * 0.5),
-	}
-	for side_name in falls:
-		var side: Node3D = _present_box.get_node_or_null(String(side_name))
-		if side == null:
-			continue
-		var t := create_tween()
-		# TRANS_QUAD + EASE_IN is the gravity curve: displacement goes as t², so a wall
-		# barely moves for the first moment and then accelerates into the floor, like a
-		# panel tipping past its balance point.
-		#
-		# NOT TRANS_BACK, which was the bug — "back" overshoots BACKWARDS before it
-		# travels, so every wall visibly sucked inward through the box before falling out.
-		t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		t.tween_interval(PRESENT_OPEN_TIME * 0.45)
-		t.tween_property(side, "rotation", falls[side_name], PRESENT_WALL_TIME)
-
-
-# Leave the present screen for the GARAGE rather than the map: the player has just been
-# given a car, and the garage is where they look at and field it. Used by BOTH the bottom
-# button once the box is open and the "< Back" action.
-func _leave_present_to_garage() -> void:
-	_cleanup_present_reveal()
-	_carpark_mode = CarparkMode.RALLY
-	_go_to(View.GARAGE)
-
-
-# Free the reveal props and un-hide the carpark arrows. Shared by the Back button and any
-# other route out, so leaving mid-reveal cannot leave a giant box parked in the lot.
-func _cleanup_present_reveal() -> void:
-	if is_instance_valid(_present_box):
-		_present_box.queue_free()
-	_present_box = null
-	_present_opened = false
-	_set_carpark_arrows_visible(true)
-	_start_button.disabled = false
-	if is_instance_valid(_car_hint_label):
-		# Back to an ordinary lineup: no hint line at all (see build_car_overlay).
-		_car_hint_label.text = ""
-		_car_hint_label.visible = false
+	var price := Save.repair_price(id)
+	_lift_repair_button.text = "Repair (%d★)" % price
+	_lift_repair_button.disabled = Save.stars_available() < price
 
 
 # Test Drive from the tuning bay: launch free roam with the car currently on the lift —
@@ -2783,7 +2969,197 @@ func _index_of_model(cars: Array, model_id: String) -> int:
 	return 0
 
 
+# --- Present-box car reveal --------------------------------------------------
+# How a won car is handed over. The rally GRANTS it (rally_session), then HQ opens on a
+# giant present in an empty car park with the car inside it. The podium used to do this
+# with a slot-machine reel and a showroom turntable, on the results screen — away from the
+# garage the car actually arrives in, and over in a moment. The box puts the reveal where
+# the car is and makes the player perform it.
+
+const PRESENT_CLEARANCE_M := 0.55
+const PRESENT_LID_RISE := 9.0        # how far the lid travels up before it leaves frame
+const PRESENT_OPEN_TIME := 0.7       # seconds for the lid to clear
+const PRESENT_WALL_TIME := 1.1       # seconds for a wall to fall (slow — it has weight)
+
+var _present_box: Node3D             # the openable box prop, live only in CarparkMode.PRESENT
+var _present_instance_id := -1       # the owned car waiting inside it
+var _present_opened := false         # guards against opening one box twice
+
+
+# Open on the present. `instance_id` is a car the player ALREADY OWNS — the box is a
+# presentation, not a transaction, so backing out or quitting cannot cost them the car.
+func _enter_present_box(instance_id: int) -> void:
+	_present_instance_id = instance_id
+	_carpark_mode = CarparkMode.PRESENT
+	_view = View.CARPARK
+	_detail_open = false
+	_present_opened = false
+	# An EMPTY lot: the point is one box, alone.
+	_carpark_ui._clear_lineup()
+	_no_eligible_label.visible = false
+	_car_warning_label.visible = false
+	_car_stats_label.text = ""
+	_car_name_label.text = ""       # filled in once the car is revealed
+	_rally_banner.text = "You won a car"
+	if is_instance_valid(_car_hint_label):
+		_car_hint_label.text = "Open it to see what you won"
+		_car_hint_label.visible = true
+	_set_carpark_arrows_visible(false)  # nothing to cycle through
+	_refresh_present_button()
+	_update_overlays()
+	_move_camera_to(_station_xform(View.CARPARK), true)
+
+	if is_instance_valid(_present_box):
+		_present_box.queue_free()
+	# Fit the LARGEST car on the roster: width across X, length along Z (a car-park marker
+	# faces +Z, so length runs along depth), and walls tall enough to clear the tallest roof.
+	var bounds := CarLibrary.max_car_bounds()
+	_present_box = PresentBox.build_openable(
+		bounds.x + PRESENT_CLEARANCE_M,
+		bounds.z + PRESENT_CLEARANCE_M,
+		bounds.y + PRESENT_CLEARANCE_M)
+	_present_box.position = HQEnvironment.carpark_center()
+	add_child(_present_box)
+
+
+# The bottom button: Open while the box is shut, then the way out. It is never disabled —
+# the player is FORCED through this beat (see _car_back), so a dead button here would be a
+# dead end rather than a pause.
+func _refresh_present_button() -> void:
+	if not is_instance_valid(_start_button):
+		return
+	_start_button.text = "Back to garage" if _present_opened else "Open it"
+	_start_button.disabled = false
+	# Back is hidden until the box is open: there is nowhere to go back TO — the player has
+	# arrived here straight from a rally they won.
+	if is_instance_valid(_car_back_button):
+		_car_back_button.visible = _present_opened
+
+
+# Hide the prev/next arrows without hiding the centre label they share a row with.
+func _set_carpark_arrows_visible(on: bool) -> void:
+	if not is_instance_valid(_car_nav_row):
+		return
+	for child in _car_nav_row.get_children():
+		if child is Button:
+			(child as Button).visible = on
+
+
+# Open the box on the car inside it.
+func _open_present() -> void:
+	if _present_opened:
+		return
+	var car := Save.get_car(_present_instance_id)
+	if car.is_empty():
+		# Nothing to show (a profile edited between the win and the reveal). Leave rather
+		# than stranding the player in a forced screen with no car in it.
+		_leave_present_to_garage()
+		return
+	_present_opened = true
+	# Make it the SELECTED car, so the "Back to garage" exit lands on the car just opened.
+	_selected_instance_id = _present_instance_id
+	Save.set_selected_car(_present_instance_id)
+	_refresh_present_button()
+	# A new car can make locked rallies enterable, so the map behind us is now stale.
+	_refresh_map_pins()
+
+	# Put the car IN the box first, while the walls still hide it.
+	var marker := Marker3D.new()
+	marker.position = HQEnvironment.carpark_center()
+	# Nose toward +Z (the courtyard / camera), matching every other car-park bay marker.
+	marker.rotation.y = PI
+	add_child(marker)
+	_markers.append(marker)
+	var node := _carpark_ui._obtain_parked_car(car, marker)
+	if node != null:
+		_carpark_ui._seat_car_at_marker(node, marker)
+
+	# Name it under the car. Set BEFORE the animation so a headless run — which never
+	# animates — still ends in the revealed state.
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	_car_name_label.text = String(entry.get("name", "A car")) if not entry.is_empty() else "A car"
+	_car_stats_label.text = "Parked up and ready to field."
+	if is_instance_valid(_car_hint_label):
+		_car_hint_label.text = ""
+		_car_hint_label.visible = false
+
+	if Platform.is_headless():
+		# No awaited timers, no tweens: a cinematic that waits on real time would add
+		# seconds to every test that opens a present. Drop the box and be done.
+		if is_instance_valid(_present_box):
+			_present_box.queue_free()
+			_present_box = null
+		return
+	_animate_present_open()
+
+
+# Lid up and away first, walls falling as it clears, so it reads as one gesture rather than
+# four panels flopping at once.
+func _animate_present_open() -> void:
+	if not is_instance_valid(_present_box):
+		return
+	var lid: Node3D = _present_box.get_node_or_null("Lid")
+	if lid != null:
+		var lid_tween := create_tween()
+		lid_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		lid_tween.tween_property(lid, "position:y",
+			lid.position.y + PRESENT_LID_RISE, PRESENT_OPEN_TIME)
+	# Each wall is a hinge Node3D pivoted at its bottom edge, so a quarter turn about the
+	# axis PARALLEL to that edge drops it flat outward (see PresentBox.build_openable).
+	var falls := {
+		"SideN": Vector3(-PI * 0.5, 0.0, 0.0),
+		"SideS": Vector3(PI * 0.5, 0.0, 0.0),
+		"SideW": Vector3(0.0, 0.0, PI * 0.5),
+		"SideE": Vector3(0.0, 0.0, -PI * 0.5),
+	}
+	for side_name in falls:
+		var side: Node3D = _present_box.get_node_or_null(String(side_name))
+		if side == null:
+			continue
+		var t := create_tween()
+		# TRANS_QUAD + EASE_IN is the gravity curve: displacement goes as t², so a wall
+		# barely moves for the first moment and then accelerates into the floor, like a
+		# panel tipping past its balance point.
+		t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_interval(PRESENT_OPEN_TIME * 0.45)
+		t.tween_property(side, "rotation", falls[side_name], PRESENT_WALL_TIME)
+
+
+# Leave for the GARAGE rather than the map: the player has just been given a car, and the
+# garage is where they look at and field it.
+func _leave_present_to_garage() -> void:
+	_cleanup_present_reveal()
+	_carpark_mode = CarparkMode.RALLY
+	_go_to(View.GARAGE)
+
+
+# Free the reveal props and restore the ordinary car-park chrome.
+func _cleanup_present_reveal() -> void:
+	if is_instance_valid(_present_box):
+		_present_box.queue_free()
+	_present_box = null
+	_present_instance_id = -1
+	_present_opened = false
+	_set_carpark_arrows_visible(true)
+	if is_instance_valid(_start_button):
+		_start_button.disabled = false
+	if is_instance_valid(_car_back_button):
+		_car_back_button.visible = true
+	if is_instance_valid(_car_hint_label):
+		_car_hint_label.text = ""
+		_car_hint_label.visible = false
+
+
 func _car_back() -> void:
+	# The present is a FORCED beat: until the box is open there is nowhere to go back to —
+	# the player arrived here straight from the rally they won it in. The Back button is
+	# hidden too (_refresh_present_button); this covers the keyboard/gamepad Back action,
+	# which does not go through the button.
+	if _carpark_mode == CarparkMode.PRESENT:
+		if not _present_opened:
+			return
+		_leave_present_to_garage()
+		return
 	# Backing out of the wheel view DISCARDS the preview. Re-skin the parked car back to
 	# its saved style BEFORE _clear_lineup: the node survives in _car_cache under an
 	# UNCHANGED owned.hash() (nothing was saved), and the tuning lift borrows that very
@@ -2814,9 +3190,6 @@ func _car_back() -> void:
 		CarparkMode.CHALLENGE:
 			_go_to(View.GARAGE)
 			_challenge_ui._open_challenge_overlay()
-		CarparkMode.PRESENT:
-			_cleanup_present_reveal()
-			_go_to(View.GARAGE)
 		_:
 			_go_to(View.TABLE)
 
@@ -3050,7 +3423,20 @@ func _enter_starter_pick() -> void:
 
 
 # Commit the focused preview as the player's first car: grant it, record the choice,
-# select it, then enter the garage.
+# select it, then drive STRAIGHT INTO that car's own rally — the map is not shown yet.
+#
+# The starter pick is the player's first real decision, and this is what gives it weight:
+# it does not just choose a car, it chooses WHERE ON THE MAP THEIR CAREER BEGINS. Pick the
+# MX-5 and you open in the MX-5's corner. They arrive at the table afterwards with that
+# rally already complete and its neighbours lighting up (todo/opening-rally.md).
+#
+# It also disposes of a dead reward: the rally awarding your starter can never hand you a
+# car you don't have, yet completing it is what lights the pins around it. Rather than
+# substituting the prize, the rally is reframed — it is not something to chase, it is the
+# starting line.
+#
+# Falls back to the garage when the roster has no event for this model, which is a content
+# gap rather than a broken profile — the player still gets their car.
 func _confirm_starter() -> void:
 	if _eligible.is_empty():
 		return
@@ -3060,12 +3446,24 @@ func _confirm_starter() -> void:
 	var car := Save.grant_car(model_id)
 	Save.profile["starter_picked"] = true
 	Save.profile["starter_model_id"] = model_id
-	Save.set_selected_car(int(car.get("instance_id", -1)))
+	var instance_id := int(car.get("instance_id", -1))
+	Save.set_selected_car(instance_id)
 	Save.save()
 	_carpark_ui._clear_lineup()
-	_selected_instance_id = -1
 	_carpark_mode = CarparkMode.RALLY
-	_go_to(View.GARAGE)
+	var opening_id := RallyLibrary.opening_rally_id_for(model_id)
+	if opening_id == "":
+		_selected_instance_id = -1
+		_go_to(View.GARAGE)
+		return
+	# Field the car we just granted in the rally that awards it. Goes through the SHARED
+	# start path (_proceed_with_start), not a private handoff, so the opening run picks up
+	# the mobile control-scheme gate and the loading cover like every other start does —
+	# this is the first drive a touch player ever takes, so it is the LAST place that gate
+	# should be skipped.
+	_selected_instance_id = instance_id
+	_selected_rally_id = opening_id
+	await _proceed_with_start()
 
 
 # --- Kept on HqController, NOT moved with the carpark cut --------------------
@@ -3257,8 +3655,8 @@ func _on_start_pressed() -> void:
 	# In every non-RALLY mode the same Start button commits that mode's action instead
 	# of launching a rally.
 	match _carpark_mode:
-		CarparkMode.STARTER:  # first run: commit the focused preview as the first car
-			_confirm_starter()
+		CarparkMode.STARTER:  # first run: commit the focused preview, then drive its rally
+			await _confirm_starter()
 			return
 		CarparkMode.SWAP:  # exchange engines with the focused car
 			_select_swap_target()
@@ -3269,9 +3667,7 @@ func _on_start_pressed() -> void:
 		CarparkMode.FREEROAM:  # launch a session-less drive in the focused car
 			await _start_free_roam()
 			return
-		CarparkMode.PRESENT:
-			# One button, two jobs: the till while the box is closed, the way out once it is
-			# open (see _refresh_present_button).
+		CarparkMode.PRESENT:  # open the box on the car just won, then leave for the garage
 			if _present_opened:
 				_leave_present_to_garage()
 			else:
@@ -3368,13 +3764,11 @@ func _show_swap_confirm(current_id: int, partner_id: int) -> void:
 		# token message would send the player after the wrong thing. Tokens keep dropping
 		# and banking meanwhile, so name them — they're a teaser, not a dead reward.
 		_pending_swap = {}
-		# The requirement is only quotable if the gating rally actually resolves (it may not
-		# under a synthetic test roster) — otherwise say it plainly rather than "0-star".
-		var need := RallyLibrary.engine_swap_completion_requirement()
-		# "rallies", not "events" — the gate counts completed RALLIES (an event is one stage
-		# inside a rally), the same wording the map pin's teaser uses.
-		body = ("Engine swapping is locked. Win the special event that opens after %s"
-			% UITheme.count_noun(need, "rally", "rallies") if need > 0
+		# Name the rally to go and win — reveal is geometric now, so there is no counter to
+		# quote and a destination is more actionable than a number. Only quotable if the
+		# gating rally actually resolves (it may not under a synthetic test roster).
+		var unlock_name := RallyLibrary.engine_swap_unlock_rally_name()
+		body = ("Engine swapping is locked. Win %s" % unlock_name if unlock_name != ""
 			else "Engine swapping is not unlocked yet")
 		body += (" — you have %s banked ready." % UITheme.count_noun(tokens, "token")
 			if tokens > 0 else ".")
@@ -3526,6 +3920,12 @@ func _unhandled_input(event: InputEvent) -> void:
 					_enter_car_screen()
 				elif event.is_action_pressed("menu_back"):
 					_table_ui._hide_detail()
+				elif event.is_action_pressed("dev_complete_rally"):
+					# Dev cheat (F10, features/debug-tools.md): win the open rally outright.
+					# The keyboard route to the panel's "DEV: win" button — the panel has no
+					# MenuNav, so the button itself is pointer-only and this is what makes
+					# the cheat reachable without a mouse.
+					_dev_complete_selected_rally()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.GARAGE)
 			elif event.is_action_pressed("menu_select"):

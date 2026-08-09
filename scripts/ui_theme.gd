@@ -83,6 +83,11 @@ const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 # --- Size (rule 2: one fixed font size everywhere) ---------------------------
 # Deliberately small. There is NO type hierarchy — titles, headings, body and
 # buttons all use this single size, the way a terminal readout is uniform.
+#
+# The map table's floating pin readouts are the ONE exception, and they are not an exception
+# to the rule so much as a different medium: they render into a SubViewport and are then
+# shown in 3D at a distance, losing resolution twice, so they carry their own larger size
+# (hq.PIN_LABEL_FONT_SIZE). Flat 2D menus stay at this value.
 const FONT_SIZE := 16
 
 # --- Rule 3: fixed, compact height for single-line menu buttons --------------
@@ -433,18 +438,12 @@ static func mark_focused(btn: Button, focused: bool) -> void:
 # the panel's content padding so the box doesn't resize between the two states.
 static func mark_panel_focused(container: PanelContainer, focused: bool, pad: int = 14) -> void:
 	var box := StyleBoxFlat.new()
-	# ACCENT PANELS keep their own fill in BOTH states. This function replaces the whole
-	# stylebox, so without this branch a panel painted a non-default colour (the white
-	# special-event map-pin readout — see hq.gd _build_readout_sprite) would snap to BLACK
-	# the first time anything repainted focus, which is every selection change on the map.
-	# Selection still reads, via the same green underline the default treatment uses.
-	var accent: Variant = container.get_meta("accent_bg", null) if container.has_meta("accent_bg") else null
-	if accent != null:
-		box.bg_color = accent
-		if focused:
-			box.border_width_bottom = 3
-			box.border_color = GREEN
-	elif focused:
+	# The `accent_bg` branch that used to sit here is gone with the map's inverted
+	# special-event readout: nothing paints a panel a non-default colour any more, so every
+	# panel follows the same two-state rule below. If a future surface does need its own
+	# fill, note the trap it existed for — this function replaces the WHOLE stylebox, so an
+	# unguarded custom colour snaps to black on the next focus repaint.
+	if focused:
 		box.bg_color = SURFACE_HOVER
 		box.border_width_bottom = 3
 		box.border_color = GREEN

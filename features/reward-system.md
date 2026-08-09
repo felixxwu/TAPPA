@@ -67,9 +67,8 @@ so a part fitted before a gate closes (or that never needed one) keeps working.
 
 Gated parts, per the authored `UPGRADES` table: `turbo_large` →
 `sp_woodland_trial`, `drivetrain_swap` (renamed "Drivetrain Conversion") →
-`sp_dust_trial`, `supercharger` → `sp_lakeshore_trial`, and the nitrous ladder
-`nitrous` / `nitrous_tank` / `nitrous_shot` / `nitrous_race` →
-`the_showdown` / `hc_showdown` / `gr_showdown` / `gc_showdown` respectively.
+`sp_dust_trial`, `supercharger` → `sp_lakeshore_trial`, and `nitrous` →
+`the_showdown`.
 See `upgrade-catalogue.md` and (for the nitrous mechanic itself)
 `features/nitrous.md`.
 

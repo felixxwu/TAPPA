@@ -4,9 +4,17 @@ A held-button torque boost with a per-stage tank. The single genuinely new
 mechanic introduced by the special-event ladder
 (`todo/star-gated-special-events.md` — the spec's filename, but the ladder gates
 on the count of completed ordinary rallies now, not on a star total, see
-[star-economy.md](star-economy.md)): the top four rungs of that ladder unlock
-nitrous and its three upgrades, so it is deliberately a late-game toy that makes
-hard events easier rather than a stat that reshapes the car.
+[star-economy.md](star-economy.md)): a special event unlocks it, so it is
+deliberately a reward that makes hard events easier rather than a stat that
+reshapes the car.
+
+**It is ONE part.** It was a four-rung ladder (NOS stage 1-4), each rung replacing
+the last and each gated on its own showdown special. That is collapsed to a single
+part carrying the top rung's numbers: the intermediate steps were changes the player
+could not feel (0.22 to 0.24 boost between the first two) and each one consumed an
+entire special's prize slot to deliver. It is gated on the **first** showdown the map
+reaches, not the last — the endgame is completing every special, so a part gated on
+the final one would be a reward with no game left to spend it in.
 
 Three properties define it, and every design decision below falls out of them:
 
@@ -20,10 +28,12 @@ Three properties define it, and every design decision below falls out of them:
    power-to-weight, its rally eligibility, its `qualifying_detune` or the rival
    pace floor. Winning the last rung of the ladder can never lock you out of a
    rally you could previously enter.
-3. **It has no garage UI to CHANGE it.** An unwanted bottle is simply a button
-   you don't press, and since it can't change eligibility there is nothing to
-   decide — so the slot is hidden and the part auto-fits enabled. It is still
-   named, read-only, on the car-stats readout: `hq.gd::_car_stats_text`
+3. **It has an ordinary garage row.** It did not: the slot was hidden and the part
+   auto-fitted enabled, on the reasoning that a ladder always installing its highest
+   rung left nothing to decide. With one part there IS something to decide — fit it
+   or don't — and without a row a won bottle could only ever be fitted by the award
+   path, never by the player. It is also still named, read-only, on the car-stats
+   readout: `hq.gd::_car_stats_text`
    (shared by the tuning lift and the car-park lineup — see [tuning.md](tuning.md))
    appends `UpgradeLibrary.fitted_nitrous_id(owned)`'s name after the health
    segment, omitted entirely when the car has none, so the player can tell a
@@ -39,28 +49,18 @@ Three properties define it, and every design decision below falls out of them:
 with the turbo and the supercharger — exactly wrong, since nitrous is meant to
 stack on top of whatever induction the car carries.
 
-Two conventions hang off the slot id:
+The slot behaves like every other one: `upgrades_menu.gd` builds it a row, the part
+installs **disabled** and the player enables it, and the single authored entry is gated
+on winning its special via `unlocked_by_rally` (see
+[upgrade-catalogue.md](upgrade-catalogue.md) and [rally-roster.md](rally-roster.md)).
+The exact id, gate and magnitudes are authored in `UpgradeLibrary.UPGRADES`; read the
+table rather than trusting a number quoted here.
 
-- **`UpgradeLibrary.HIDDEN_SLOTS := "nitrous"`.** The flow controllers
-  (`rally_session.gd` `report_event_result`, `challenge_session.gd`) install
-  awarded parts **disabled**, because the reveal overlay is what enables the
-  player's pick. With no garage row, a disabled bottle would be permanently
-  dead — so parts in this slot are installed **enabled**
-  (`Save.install_upgrade(..., true)`).
-- **`upgrades_menu.gd` skips the slot** when building its slot rows, so it never
-  appears in the garage. There is no uninstall path and nothing to show in the
-  tuning lift.
-
-The four authored rungs form a **chained ladder inside the one slot** — each
-`requires_upgrade_id`s the previous one (the `turbo_small` → `turbo_large`
-precedent) and each is gated on WINNING its own special event via
-`unlocked_by_rally` (see [upgrade-catalogue.md](upgrade-catalogue.md) and
-[rally-roster.md](rally-roster.md)). Because one part per slot is enabled, a new
-rung simply **replaces** the last. Each rung mixes the two levers — tank
-**seconds** ("longer") and torque **gain** ("harder") — so the escalation never
-reads as the same number three times. The exact ids, gates and magnitudes are
-authored in `UpgradeLibrary.UPGRADES`; read the table rather than trusting a
-number quoted here.
+**`UpgradeLibrary.HIDDEN_SLOTS` is now EMPTY.** Nitrous was its only member. The rule it
+carries is real — a part in a slot with no garage row must install *enabled*, or it would
+be permanently dead — and the code path survives in `Save.install_upgrade`, dormant. Since
+no slot claims it, no test can exercise it end-to-end; `test_no_slot_is_hidden_so_every_part_installs_as_asked`
+asserts the dormancy so it is visible rather than silent.
 
 ### The effect row
 

@@ -222,7 +222,7 @@ func _index_for(arr: PackedFloat32Array, value: float) -> int:
 	var lo := 0
 	var hi := arr.size() - 1
 	while hi - lo > 1:
-		var mid := (lo + hi) / 2
+		var mid := (lo + hi) >> 1  # integer midpoint; >> 1 states the truncation is intended
 		if float(arr[mid]) <= value:
 			lo = mid
 		else:

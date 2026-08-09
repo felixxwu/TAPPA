@@ -296,9 +296,12 @@ func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	dm.apply_loss(40.0)  # -> 0 HP
 
 	assert_eq(wrecks["n"], 1, "wrecked emitted")
-	# The bound car is left at 0 HP in the save (repairable), not destroyed.
+	# A wreck costs the RESULT, not the car: the bound instance is handed back damaged and
+	# repairable rather than written off (features/damage.md). The recovery FRACTION is
+	# tunable content (GameConfig.wreck_recovery_hp_fraction), so only the shape is pinned.
 	assert_false(_save.get_car(id).is_empty(), "the wrecked instance is kept in the save")
-	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the saved car sits at 0 HP")
+	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and comes back with health, not at 0")
+	assert_true(_save.car_needs_repair(id), "but needing a repair")
 	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
 		"the fitted upgrade stays on the wrecked car")
 

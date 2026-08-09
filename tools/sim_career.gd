@@ -25,6 +25,11 @@ extends Node
 #   * Placement is a coin flip, not a simulated race. This answers "given the player
 #     keeps winning, does the career sustain itself" — not "can the player win".
 
+# How many waves a rally may sit lit-but-unenterable before the report calls it out. Two is
+# anticipation (you can see where you are going and need a better car); beyond that the pin
+# reads as broken rather than aspirational.
+const TEASE_LAG_WARN := 3
+
 const RUNS := 100
 const BASE_SEED := 20260805
 
@@ -38,11 +43,20 @@ const BASE_SEED := 20260805
 # Specials gate on COMPLETED ORDINARY RALLIES now, not stars, so spending can never revoke a
 # special the player already qualified for — RallyLibrary.rally_revealed handles that for
 # real and this tool inherits it for free.
-const STAR_COST_PER_CAR := 4
 
-# Uniform random pick among these for the starter car — the same three ids the
-# starter picker offers (hq.gd STARTER_MODEL_IDS).
-const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
+# Uniform random pick among these for the starter car. Read from CarLibrary rather than
+# re-listed here — this was a second hardcoded copy of the starter roster, so the sim could
+# silently drift from what the game actually offers.
+const STARTER_MODEL_IDS := CarLibrary.STARTER_MODEL_IDS
+
+
+# Does this synthetic profile already hold a car of this model? Mirrors Save.owns_model, so
+# a prize rally cannot mint a duplicate here either.
+static func _owns_model(profile: Dictionary, model_id: String) -> bool:
+	for car in profile.get("cars", []):
+		if String((car as Dictionary).get("model_id", "")) == model_id:
+			return true
+	return false
 
 # "Win with 2 or 3 stars" = a coin flip between 1st (3 stars) and 2nd (2 stars).
 # Both are top-3, so both count as a win and both trigger the ordinary-rally car draw.
@@ -104,14 +118,36 @@ func _run_career(rng: RandomNumberGenerator, total_rallies: int) -> Dictionary:
 # autoload) — the predicates only ever read "cars" and "rallies".
 func _new_profile(rng: RandomNumberGenerator) -> Dictionary:
 	var model_id := String(STARTER_MODEL_IDS[rng.randi() % STARTER_MODEL_IDS.size()])
-	return {"cars": [_make_car(1, model_id)], "rallies": {},
+	var profile := {"cars": [_make_car(1, model_id)], "rallies": {},
 		"stars_earned": 0, "stars_spent": 0}
+	_seed_opening_rally(profile, model_id)
+	return profile
+
+
+# Put the player where the GAME puts them on turn one: their starter's opening rally
+# already completed (todo/opening-rally.md). They are dropped into it straight from the
+# picker and it completes whatever the result, so a career that begins at HQ with nothing
+# done is a state no real player is ever in — and modelling it that way would report the
+# opening rally as something to be REACHED rather than as where they start, which is the
+# difference between "the map has a dead end" and "the map is fine".
+func _seed_opening_rally(profile: Dictionary, starter_model_id: String) -> void:
+	var opening := RallyLibrary.opening_rally_id_for(starter_model_id)
+	if opening == "":
+		return
+	# best_placed 1 matches the rest of this tool's optimism: it models the LAYOUT, asking
+	# what a player who keeps winning can reach, so a pessimistic placement here would
+	# confuse a pacing question with a difficulty one.
+	profile["rallies"][opening] = {"completed": true, "best_placed": 1}
+	# Recorded on the profile too, because that is what the GAME reads to light the opening
+	# rally's circle before it is completed (RallyLibrary.lit_sources) — without it this
+	# tool's map would differ from the one the player sees.
+	profile["starter_model_id"] = starter_model_id
 
 
 # An owned car carrying just the fields effective_meta / max_potential_meta read, plus `hp`.
 #
-# `hp` MATTERS even though this tool models no damage: RewardSystem.is_stranded skips
-# wrecked cars, and Save.car_is_wrecked reads `hp <= 0.0` with a default of 0 — so a car
+# `hp` MATTERS even though this tool models no damage: the eligibility walk skips
+# damaged cars, and health reads `hp` with a default of 0 — so a car
 # without the key reads as WRECKED, which would make every synthetic garage look stranded
 # and hand out free rescue cars forever. Seeded from the catalogue max exactly as
 # Save.grant_car does.
@@ -161,42 +197,19 @@ func _step(profile: Dictionary, enterable: Array, rng: RandomNumberGenerator) ->
 	# only an ordinary rally can rescue.
 	var stranded := not _all_complete(profile) and _enterable(profile).is_empty()
 
+	# THE reward: a rally hands over the CAR it advertises, on a first win only
+	# (features/prize-rallies.md). Nothing is drawn at random and nothing is bought — the
+	# purchase economy this tool used to model (a greedy spend-down plus a stranded-and-broke
+	# free-car rescue) is gone, so the garage grows only where the roster says it should.
+	#
+	# That makes the walk DETERMINISTIC in what it owns: given the same rallies completed,
+	# the same cars are held. Which is what lets solve_reachability below be an exhaustive
+	# proof rather than a sampled estimate.
 	var granted := ""
-	var bought := 0     # cars added, paid or free
-	var rescued := 0    # of those, granted free by the dead-end rescue
-	var paid := 0       # stars actually debited
-	if STAR_COST_PER_CAR > 0:
-		if stranded and _stars_available(profile) < STAR_COST_PER_CAR:
-			# DEAD-END RESCUE (todo/star-economy.md, change 1): price drops to 0 when the
-			# player is stranded AND cannot afford a car. Goes through draw_car like any
-			# purchase, so _unlock_candidates still picks a car that opens the easiest
-			# revealed-but-locked rally. Exactly ONE free car — enough to un-strand, not a
-			# discount, and the broke half of the condition is what stops it being farmed.
-			var free_car = RewardSystem.draw_car(profile, int(rally.get("difficulty", 0)), rng)
-			if free_car is String and not (free_car as String).is_empty():
-				granted = String(free_car)
-				cars.append(_make_car(cars.size() + 1, granted))
-				bought += 1
-				rescued += 1
-		else:
-			# Spend down the balance greedily — a player with nothing to save for buys as
-			# soon as they can afford it. Most generous assumption, so coverage is an upper
-			# bound and soft-lock a lower bound.
-			while _stars_available(profile) >= STAR_COST_PER_CAR:
-				var buy = RewardSystem.draw_car(profile, int(rally.get("difficulty", 0)), rng)
-				if not (buy is String) or (buy as String).is_empty():
-					break
-				granted = String(buy)
-				cars.append(_make_car(cars.size() + 1, granted))
-				profile["stars_spent"] = int(profile.get("stars_spent", 0)) + STAR_COST_PER_CAR
-				bought += 1
-				paid += STAR_COST_PER_CAR
-	elif not is_special:
-		# CURRENT GAME: an ordinary top-3 always draws a car.
-		var drawn = RewardSystem.draw_car(profile, int(rally.get("difficulty", 0)), rng)
-		if drawn is String and not (drawn as String).is_empty():
-			granted = String(drawn)
-			cars.append(_make_car(cars.size() + 1, granted))
+	var prize := RallyLibrary.prize_car_id(rally)
+	if prize != "" and not _owns_model(profile, prize):
+		granted = prize
+		cars.append(_make_car(cars.size() + 1, prize))
 
 	return {
 		"rally_id": String(rally["id"]),
@@ -211,17 +224,13 @@ func _step(profile: Dictionary, enterable: Array, rng: RandomNumberGenerator) ->
 		# has opened. The gap between this and `eligible` is what restriction bands are
 		# actually filtering out, which separates the two gates that govern breadth.
 		"revealed": _revealed_incomplete(profile).size(),
-		# Stranded = nothing enterable, measured BEFORE any purchase. `rescued` means the
-		# player was stranded and something un-stranded them; `stranded_broke` means they
-		# were stranded and walked away with nothing, which is the unrecoverable dead end
-		# the price-0 rescue exists to eliminate. It should now always be 0.
-		"rescued": stranded and bought > 0,
-		"stranded_broke": stranded and bought == 0,
-		"free_cars": rescued,
-		"paid": paid,
+		# Stranded = nothing enterable and something still incomplete. With cars no longer
+		# purchasable there is no rescue to soften it: a strand is a CONTENT bug — the map
+		# has led the player to a frontier they cannot drive — and the whole point of this
+		# tool is to find one before a player does.
+		"stranded": stranded,
 		"stars": int(profile.get("stars_earned", 0)),
 		"balance": _stars_available(profile),
-		"bought": bought,
 		"gained_car": cars.size() > before,
 	}
 
@@ -314,7 +323,127 @@ func _all_complete(profile: Dictionary) -> bool:
 
 # --- Reporting ----------------------------------------------------------------
 
+# --- The reachability solver -------------------------------------------------
+# THE dead-end check, and the reason this tool stopped being a sampled walk.
+#
+# Reveal is geometric and cars are won at named rallies, so progression is now a
+# DETERMINISTIC graph: from (HQ lit, one starter car), the set of rallies you can reach is
+# fixed. Nothing is random and nothing is lost — wrecks are recoverable
+# (features/damage.md) — so the closure computed here is exactly what a player can achieve,
+# not an estimate of it.
+#
+# The walk: repeatedly take EVERY rally that is both lit and enterable, complete it, add its
+# prize, re-light; stop at a fixed point. If the closure covers the whole roster the map is
+# sound for that starter. If it does not, the rallies left over are the dead end, and the
+# ones adjacent to the frontier are where to look.
+#
+# Run per STARTER, because the opening rallies are class-restricted: a map that works for
+# the FWD hatch and strands the RWD roadster is still broken, and only a per-starter walk
+# sees it.
+func solve_reachability(starter_model_id: String) -> Dictionary:
+	var profile := {"cars": [_make_car(1, starter_model_id)], "rallies": {},
+		"stars_earned": 0, "stars_spent": 0}
+	_seed_opening_rally(profile, starter_model_id)
+	# The opening rally is wave 1: the player has driven it before the map is ever shown, so
+	# it is progress they have MADE rather than progress the closure has to find. Reported
+	# as a wave rather than silently pre-completed so the walk still accounts for the whole
+	# roster — every rally is either in a wave or in `unreached`.
+	var waves: Array = []
+	var opening := RallyLibrary.opening_rally_id_for(starter_model_id)
+	if opening != "":
+		waves.append([opening])
+	while true:
+		var takeable: Array = []
+		for rally in _enterable(profile):
+			takeable.append(String(rally["id"]))
+		if takeable.is_empty():
+			break
+		takeable.sort()  # deterministic order, so two runs of this tool agree
+		waves.append(takeable)
+		for rid in takeable:
+			var rally := RallyLibrary.by_id(rid)
+			profile["rallies"][rid] = {"completed": true, "best_placed": 1}
+			var prize := RallyLibrary.prize_car_id(rally)
+			if prize != "" and not _owns_model(profile, prize):
+				(profile["cars"] as Array).append(
+					_make_car((profile["cars"] as Array).size() + 1, prize))
+	var unreached: Array = []
+	for rally in RallyLibrary.all():
+		if not profile["rallies"].has(String(rally["id"])):
+			unreached.append(String(rally["id"]))
+	return {"starter": starter_model_id, "waves": waves, "unreached": unreached,
+		"cars": (profile["cars"] as Array).size(),
+		"teases": _lit_but_unenterable(starter_model_id, waves)}
+
+
+# The rallies this starter watched sit LIT AND LOCKED, and for how many waves.
+#
+# "Reachable eventually" is not the same as "playable when you can see it", and only the
+# first was ever measured — which is how a real defect got through: `shakedown` sat one pin
+# from the Focus's opening rally, lit from wave 2, and could not be entered until wave 5,
+# because its `car_type: roadster` clause meant the Focus player first had to cross the map
+# and win the Viper. The solver called that 32/32 and was right; the player is looking at
+# an adjacent pin they cannot touch.
+#
+# Returns [{id, lit, taken, lag}] for every rally whose lag exceeds nothing — the caller
+# decides what counts as too long, since a wave or two of anticipation is the design
+# working, and five is a locked door.
+func _lit_but_unenterable(starter_model_id: String, waves: Array) -> Array:
+	var taken := {}
+	for n in waves.size():
+		for rid in waves[n]:
+			taken[String(rid)] = n + 1
+	# Re-walk, this time asking only what the MAP has lit — no eligibility — so the two
+	# answers can be compared wave by wave.
+	var profile := {"cars": [], "rallies": {}, "starter_model_id": starter_model_id}
+	var lit_at := {}
+	for n in waves.size():
+		for rally in RallyLibrary.all():
+			var rid := String(rally["id"])
+			if not lit_at.has(rid) and RallyLibrary.rally_revealed(rally, profile):
+				lit_at[rid] = n + 1
+		for rid in waves[n]:
+			profile["rallies"][String(rid)] = {"completed": true, "best_placed": 1}
+	var out: Array = []
+	for rid in taken:
+		var lag: int = int(taken[rid]) - int(lit_at.get(rid, taken[rid]))
+		if lag > 0:
+			out.append({"id": rid, "lit": int(lit_at.get(rid, 0)),
+				"taken": int(taken[rid]), "lag": lag})
+	out.sort_custom(func(a, b): return int(a["lag"]) > int(b["lag"]))
+	return out
+
+
+# Print the solver's verdict for every starter the game offers.
+func _print_reachability() -> void:
+	print("")
+	print("--- Reachability from HQ (exhaustive, per starter) ---")
+	var total := RallyLibrary.all().size()
+	for model_id in CarLibrary.STARTER_MODEL_IDS:
+		if CarLibrary.by_id(String(model_id)).is_empty():
+			continue
+		var r := solve_reachability(String(model_id))
+		var reached := total - (r["unreached"] as Array).size()
+		print("%-12s %2d/%d rallies over %d wave(s), %d car(s) won" % [
+			model_id, reached, total, (r["waves"] as Array).size(), int(r["cars"]) - 1])
+		if not (r["unreached"] as Array).is_empty():
+			print("   !! UNREACHABLE: %s" % ", ".join(PackedStringArray(r["unreached"])))
+		# A pin the player can SEE but not enter, for waves on end, is the failure mode
+		# "everything is reachable" cannot express — see _lit_but_unenterable.
+		for t in r["teases"]:
+			if int(t["lag"]) < TEASE_LAG_WARN:
+				continue
+			print("   ~~ %s lit at wave %d, enterable only at %d (%d waves locked)" % [
+				t["id"], t["lit"], t["taken"], t["lag"]])
+	print("")
+	print("An unreachable rally is content no player can ever see. Fix it by widening a")
+	print("restriction band, re-pairing a prize car, or moving a pin (tools/fit_map_pins.py).")
+	print("A ~~ line is a pin lit long before it can be entered — usually a class clause on")
+	print("a rally whose neighbours cannot supply that class.")
+
+
 func _report(runs: Array, total_rallies: int) -> void:
+	_print_reachability()
 	_print_reveal_curve()
 	print("")
 	_print_per_rally_table(runs)
@@ -454,51 +583,22 @@ func _print_summary(runs: Array, total_rallies: int) -> void:
 	print("distinct models: mean %.2f of %d in the catalogue (%.0f%% seen)" % [
 		float(distinct_sum) / n_runs, CarLibrary.CARS.size(),
 		100.0 * (float(distinct_sum) / n_runs) / float(CarLibrary.CARS.size())])
-	if STAR_COST_PER_CAR > 0:
-		print("stars unspent : mean %.1f left over at career end (car costs %d)" % [
-			float(leftover_sum) / n_runs, STAR_COST_PER_CAR])
+	print("stars unspent : mean %.1f left over at career end" % (float(leftover_sum) / n_runs))
 	print("final stars   : mean %.1f earned over the career" % (float(stars_sum) / n_runs))
 	print("completed all : %d (%.0f%%)" % [complete, 100.0 * float(complete) / n_runs])
 	print("SOFT-LOCKED   : %d (%.0f%%)" % [stuck, 100.0 * float(stuck) / n_runs])
 
-	# How much of that soft-lock figure is the rescue's doing. A high number means the
-	# schedule strands players routinely and the anti-soft-lock draw is load-bearing;
-	# zero means the schedule stands up on its own.
-	var rescues := 0
-	var runs_rescued := 0
+	# Any strand at all is a CONTENT bug now. There is no purchase and no rescue to soften
+	# it: if the map leads to a frontier the garage cannot drive, the player simply stops.
+	var strand_runs := 0
 	for run in runs:
-		var n := 0
 		for step in run["steps"]:
-			if step["rescued"]:
-				n += 1
-		rescues += n
-		if n > 0:
-			runs_rescued += 1
-	print("rescue draws  : %d across %d run(s) (%.0f%% of runs needed one)" % [
-		rescues, runs_rescued, 100.0 * float(runs_rescued) / n_runs])
+			if bool(step["stranded"]):
+				strand_runs += 1
+				break
+	if strand_runs > 0:
+		print("!! %d run(s) hit a frontier with no enterable rally — a ROSTER bug" % strand_runs)
 
-	# The economy's own failure mode, distinct from the rescue: stranded AND unable to pay.
-	# This is the dead end that cannot happen under the free-car model.
-	if STAR_COST_PER_CAR > 0:
-		var broke_runs := 0
-		var free_total := 0
-		var free_runs := 0
-		for run in runs:
-			var hit_broke := false
-			var free_here := 0
-			for step in run["steps"]:
-				if step["stranded_broke"]:
-					hit_broke = true
-				free_here += int(step["free_cars"])
-			if hit_broke:
-				broke_runs += 1
-			free_total += free_here
-			if free_here > 0:
-				free_runs += 1
-		print("free rescues  : %d car(s) across %d run(s) (%.0f%% of runs needed one)" % [
-			free_total, free_runs, 100.0 * float(free_runs) / n_runs])
-		print("stranded+broke: %d run(s) (%.0f%%) hit the unrecoverable dead end" % [
-			broke_runs, 100.0 * float(broke_runs) / n_runs])
 	if capped > 0:
 		print("!! %d run(s) hit the iteration cap — that is a BUG in this tool, not a result"
 			% capped)
@@ -519,8 +619,7 @@ func _print_summary(runs: Array, total_rallies: int) -> void:
 			int(unfinished_tally[rid]), stuck, rid,
 			"special" if RallyLibrary.is_special(rally) else "difficulty %d" % int(
 				rally.get("difficulty", 0)),
-			", needs %d events" % RallyLibrary.completions_required(rally)
-				if RallyLibrary.is_special(rally) else ""])
+			", %.3f beyond the frontier" % RallyLibrary.distance_beyond_frontier(rally, {})])
 
 
 func _tally_unfinished(profile: Dictionary, tally: Dictionary) -> void:

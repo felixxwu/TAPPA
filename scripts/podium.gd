@@ -75,6 +75,7 @@ var _layer: CanvasLayer
 var _middle: VBoxContainer             # the per-stage content stack (re-anchored per stage)
 var _title_label: Label
 var _body_label: Label                # headline result (PODIUM stage)
+var _body_plate: PanelContainer       # the black plate _body_label sits on
 var _leaderboard_scroll: ScrollContainer
 var _leaderboard_box: VBoxContainer
 var _slot_panel: PanelContainer       # the slot-machine reveal card
@@ -117,8 +118,11 @@ func _compute_stages() -> Array[int]:
 	# that gates no part — so ordinary rallies never see this stage.
 	if not (_result.get("special_unlock", {}) as Dictionary).is_empty():
 		stages.append(Stage.SPECIAL_UNLOCK)
-	if String(_result.get("car_reward", "")) != "":
-		stages.append(Stage.CAR_REVEAL)
+	# NO CAR REVEAL HERE. A won car is revealed at HQ instead, in the present box the
+	# player has to open (hq.gd::_enter_present_box, RallySession.pending_car_reveal_
+	# instance_id). The podium's slot-machine-and-turntable version happened on the
+	# results screen, away from the garage the car actually arrives in; the box puts the
+	# reveal where the car is and makes the player do it.
 	return stages
 
 
@@ -420,10 +424,24 @@ func _build_overlay() -> void:
 	root.add_theme_constant_override("separation", 12)
 	_layer.add_child(root)
 
+	# Both text blocks sit on a solid BLACK PLATE. They are drawn over the live 3D podium
+	# scene — cars, sky, spotlights — and unbacked light text over a bright, moving
+	# background is barely readable at the exact moment the player most wants to read it.
+	# A plate rather than an outline/shadow because it matches the house look every other
+	# panel in the game already wears (UITheme.panel_box).
+	#
+	# SHRINK_CENTER so the plate hugs its text instead of spanning the screen. Safe HERE
+	# only because this label does not autowrap — see the body plate below, which does and
+	# therefore must fill.
+	var title_plate := PanelContainer.new()
+	title_plate.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	title_plate.add_theme_stylebox_override("panel", UITheme.panel_box())
+	root.add_child(title_plate)
+
 	_title_label = Label.new()
 	_title_label.add_theme_font_size_override("font_size", 30)
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	root.add_child(_title_label)
+	title_plate.add_child(_title_label)
 
 	# A stack that holds the per-stage content (only one visible at a time). It's
 	# centred for the podium/leaderboard, but drops to the bottom during the car /
@@ -435,11 +453,22 @@ func _build_overlay() -> void:
 	root.add_child(middle)
 	_middle = middle
 
+	# Same black plate as the title, but it FILLS the width rather than shrinking to its
+	# content. That difference is load-bearing: _body_label AUTOWRAPS, and an autowrapping
+	# label's minimum width is one character — so under SHRINK_CENTER the plate collapsed
+	# to a narrow column and the summary rendered one letter per line, straight down the
+	# middle of the screen. A shrink-to-fit plate can only ever hold a label that does not
+	# wrap (which is why the title above may use it).
+	_body_plate = PanelContainer.new()
+	_body_plate.size_flags_horizontal = Control.SIZE_FILL
+	_body_plate.add_theme_stylebox_override("panel", UITheme.panel_box())
+	middle.add_child(_body_plate)
+
 	_body_label = Label.new()
 	_body_label.add_theme_font_size_override("font_size", 22)
 	_body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	middle.add_child(_body_label)
+	_body_plate.add_child(_body_label)
 
 	# Leaderboard: a scrolling ranked field inside a solid panel.
 	_leaderboard_scroll = TouchScrollContainer.new()
@@ -519,7 +548,9 @@ func _card_width() -> float:
 
 func _enter_stage(stage: int) -> void:
 	_stage = stage
-	_body_label.visible = false
+	# Hide the PLATE, not the label inside it — an empty black box would otherwise sit on
+	# screen for every stage that shows no body text.
+	_body_plate.visible = false
 	_leaderboard_scroll.visible = false
 	_stars_panel.visible = false
 	_slot_panel.visible = false
@@ -617,7 +648,7 @@ func _finish_unlock_card() -> void:
 func _show_podium() -> void:
 	_title_label.text = "PODIUM"
 	_body_label.text = UITheme.caps(_summary_text())
-	_body_label.visible = true
+	_body_plate.visible = true
 	_move_camera(_podium_cam())
 	_reveal_done = true
 	_refresh_next_button()
@@ -870,14 +901,36 @@ func _summary_text() -> String:
 	var rally_name := String(_result.get("rally_name", ""))
 	var prefix := (rally_name + "\n") if rally_name != "" else ""
 	if _result.get("dnf", false):
-		return "%sDNF — car wrecked.\nThe rally stays incomplete." % prefix
+		# A DNF normally leaves the rally incomplete — but NOT the opening rally, which
+		# completes whatever the result (todo/opening-rally.md). Saying "stays incomplete"
+		# there contradicts the map the player is about to be shown, at the exact moment
+		# the flow is meant to reassure them. Read the result's own `completed` flag rather
+		# than assuming what a DNF means.
+		#
+		# "car wrecked" is also gone: a wreck hands the car back repairable
+		# (Save.record_wreck), so writing it off in the copy is stale.
+		if _result.get("completed", false):
+			return "%sDNF — but the rally counts.\nYou are on the map." % prefix
+		return "%sDNF — the rally stays incomplete." % prefix
 	var placed := int(_result.get("placed", -1))
 	var combined := int(_result.get("combined_ms", -1))
 	var lines: Array[String] = ["%sFinished P%d   (%s)" % [prefix, placed, UITheme.format_time(combined)]]
 	if _result.get("game_won", false):
 		lines.append("EVERY SPECIAL EVENT IS WON — you've completed the game!")
 	elif _result.get("completed", false):
-		lines.append("Top 3 — RALLY WON!")
+		# WON is reserved for an actual win. A podium finish still completes the rally —
+		# it claims the prize and lights the map the same as P1 — but calling 2nd place
+		# "RALLY WON" overstates it, and the player can read their own position one line
+		# above and see it does not say 1.
+		if placed == 1:
+			lines.append("P1 — RALLY WON!")
+		elif placed >= 2 and placed <= 3:
+			lines.append("Top 3 — RALLY COMPLETED")
+		else:
+			# Completed while OFF the podium: only the opening rally does this, which
+			# counts whatever the result (todo/opening-rally.md). Claiming "top 3" here
+			# would be a plain falsehood, so it says only what is true.
+			lines.append("RALLY COMPLETED")
 	else:
 		lines.append("Outside the top 3 — no car reward. Re-enter from HQ to try again.")
 	return "\n".join(lines)

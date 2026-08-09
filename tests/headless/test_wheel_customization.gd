@@ -592,12 +592,12 @@ func test_re_entering_after_an_early_back_out_rewires_cleanly() -> void:
 		"the one-shot hook is consumed once the lot is built")
 
 
-# Cosmetic means cosmetic: a WRECKED car can still be re-shod, so damage must not gate
-# the Fit button (contrast entering a rally, which it does gate).
+# Cosmetic means cosmetic: a car fresh from a WRECK can still be re-shod, so damage must
+# not gate the Fit button.
 func test_a_wrecked_car_can_still_change_wheels() -> void:
 	var id: int = _save.selected_instance_id()
-	_save.wreck_car(id)
-	assert_true(_save.car_is_wrecked(_save.get_car(id)), "the car is wrecked")
+	_save.record_wreck(id)
+	assert_true(_save.car_needs_repair(id), "the car came back damaged")
 	var hq: Node3D = await _hq()
 	hq._enter_lift()
 	await get_tree().process_frame

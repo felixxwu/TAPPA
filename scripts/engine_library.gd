@@ -83,11 +83,29 @@ const ENGINES: Array[Dictionary] = [
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 5, "shift_time": 0.30,  # ND 6-speed manual
 	},
 	{
-		"id": "renault_12_i4", "name": "1.2 16V i4", "layout": "i4", "displacement_l": 1.2, "mass": 95.0,
+		"id": "renault_12_i4", "name": "1.2 16V turbo i4", "layout": "i4", "displacement_l": 1.2, "mass": 95.0,
 		"redline_rpm": 6800.0, "peak_torque": 105.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.13,
 		"engine_friction_base": 5.0,  # i4 1.2L (small displacement, low friction)
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 8, "shift_time": 0.35,  # JB1 5-speed manual
+		# STOCK FORCED INDUCTION (features/forced-induction.md), deliberately matching the
+		# Small Turbo upgrade's numbers exactly — this car ships with the part the others
+		# would have to earn.
+		#
+		# It exists to close a STARTER GAP. Naturally aspirated, the 1.2 left the Twingo at
+		# ~82 hp/tonne against the Focus's 114 and the MX-5's 159 — far enough adrift that
+		# no single opening band could hold all three fairly, and the player who picked it
+		# was simply given the slow one. Boosted it lands at ~111, beside the Focus, so the
+		# starter choice is a choice of CHARACTER (light FWD hatch vs heavier FWD hatch vs
+		# RWD roadster) rather than a choice of how hard the early game will be.
+		#
+		# effective_meta folds this into peak_torque, so it moves the car's eligibility as
+		# well as its pace — retuning it means re-exporting eligibility and re-running
+		# tools/sim_career.gd.
+		"turbo_enabled": true, "turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3,
+		"turbo_omega_ref": 10000.0, "turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
+		"turbo_parasitic_friction": 5.0,
+		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
 	},
 	{
 		"id": "ford_20_i4", "name": "2.0 Duratec i4", "layout": "i4", "displacement_l": 2.0, "mass": 130.0,

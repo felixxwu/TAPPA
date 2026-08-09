@@ -3,15 +3,49 @@
 **Source:** `scripts/damage_model.gd` (`DamageModel`, a `RefCounted` helper owned
 by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model*.
 
-Each fielded car has a depleting **HP pool**. Impacts drain it during a run, the
-car's handling and power degrade as HP falls, and at 0 HP the car is **wrecked**
-(run DNF; a fielded car is destroyed along with its installed upgrades — parts are
-fully consumed when fitted, so they are NOT returned). HP only ever goes down
-in-run, and **wrecking is terminal**. HP climbs back exactly ONE way: the free
-**between-event pit repair** applied automatically at the start of every rally event
-after the first (see *Between-event pit repairs* below). There is no full restore and
-no way to revive a wreck — the Repair Kit that used to do both has been removed. A player whose whole garage is wrecked is rescued by a
-free **Mystery Box**, which grants a new car (see *Wreck at 0 HP*).
+Each fielded car has a depleting **HP pool**. Impacts drain it during a run and the car's
+handling and power degrade as HP falls. At 0 HP the car is **wrecked**: the run ends as a
+**DNF**, and the car is handed back to the garage at
+`GameConfig.wreck_recovery_hp_fraction` of full health (`Save.record_wreck`) with its
+installed upgrades intact and its wheels still bent.
+
+**A wreck costs the RESULT, not the car.** The punishment is the lost rally — no podium, no
+prize, no progress on the map — plus a repair bill. HP climbs back two ways: the free
+**between-event pit repair** applied at the start of every rally event after the first (see
+below), and a **paid repair** at the tuning lift that restores full health and straightens
+the wheels for a flat star price (`Save.repair_car`, see
+[star-economy.md](star-economy.md)).
+
+### Wrecking used to be terminal
+
+It isn't any more, and that change deleted a whole layer of machinery. Previously 0 HP
+meant a permanent hulk with no way back, which needed constant scaffolding to stay
+survivable: `all_cars_wrecked`, a free rescue **Mystery Box** that granted a whole new car,
+`car_is_wrecked` exclusions in the stranded check, a price-0 car rescue, and a car park that
+refused to let a wrecked car start. All of it is **gone** — along with `Save.wreck_car`
+(now `record_wreck`), `car_is_wrecked`, `all_cars_wrecked` and
+`ensure_wreck_safety_net`. The mystery box no longer has a car branch at all.
+
+Two reasons the change was worth making:
+
+1. **One mistake could end a career.** Every rescue above existed to paper over that, and
+   each one was a place the logic could be wrong.
+2. **It makes the map's reachability guarantee sound.** Cars are won at specific rallies
+   now ([prize-rallies.md](prize-rallies.md)) and the roster is authored so exploring from
+   HQ reaches everything ([map-exploration.md](map-exploration.md)). That closure is only a
+   real guarantee if the player cannot LOSE the car an authored route depends on.
+
+A damaged car still races — badly. The car park warns ("Damaged — the engine is down on
+power. Repair it at the lift.") but never blocks entry.
+
+**The warning is not "is this car pristine".** It fires from `Save.car_handles_badly`,
+which reads health against `GameConfig.damage_misfire_health_threshold` — the SAME number
+that decides when the engine starts misfiring, i.e. the point damage stops being cosmetic
+and starts costing power. It used to call `Save.car_needs_repair`, which is true of ANY
+car that is not pristine (and counts bent alignment too), so the red line appeared over
+"HEALTH 100%" and taught the player to ignore it. Repair is still offered for any lost
+health — "is this worth repairing" and "is this car hurt" are different questions, and
+they are now different calls.
 
 ## State (`DamageModel`)
 

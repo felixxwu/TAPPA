@@ -8,7 +8,7 @@ extends RefCounted
 # This file is also the home of the pure functions the rest of the game needs:
 #   * is_eligible(rally, car_meta)            — can this car enter?
 #   * generate_opponent_field(rally, event_results, events) — the deterministic opponent field
-#   * completions_required / rally_revealed     — progress + the special ladder
+#   * rally_revealed / lit_sources           — the map-exploration reveal gate
 #   * incomplete_rallies_enterable_by(...)     — the anti-soft-lock query
 #
 # Determinism is the whole point: TrackGenerator.generate is deterministic for a
@@ -123,25 +123,19 @@ static func _pace_band(tier: int) -> Vector2:
 # ADD that property to the car/engine definitions — never approximate it with a proxy
 # field that happens to correlate today. `difficulty` is a HIDDEN tier (never shown to the player) that
 # drives the reward tier (clamped by progress) and sort order — the p/w band is the
-# visible requirement. `reveal_after` (int, default 0) is the GLOBAL reveal gate: the
-# rally's pin stays hidden until the player has completed that many ordinary rallies
-# ANYWHERE on the roster, so the world map reveals ~1-2 fresh rallies at a time instead of
-# dumping them all at once — and a win in one corner can open a rally in another (see
-# `rally_revealed`). `events` is exactly 3 EventDefs (a special's are longer).
+# visible requirement. `events` is exactly 3 EventDefs (a special's are longer).
 #
-# A SPECIAL event (`special: true` + `requires_completions: N`) is gated on the player's
-# GLOBAL count of completed ORDINARY rallies (`rally_revealed` via `completions_required`),
-# not on its region's contents — the old "exactly one showdown per region" invariant is
-# RETIRED, so a corner may hold any number of specials, including none (the snow corner
-# ships pin-less). Every special stays OPEN-CLASS (`restriction: {}`): a special must never
-# gate on a part it or a higher rung unlocks, or the ladder can deadlock, and it keeps the
-# low-power starter able to finish the game.
+# `map_pos` IS the progression graph. A rally opens when the player has lit the map out to
+# it: HQ starts lit, and every completed rally lights a circle around its own pin (see
+# `rally_revealed` / `lit_sources`). So a pin's POSITION decides what it opens and what
+# opens it, and moving a pin re-derives its neighbourhood for free. Optional
+# `reveal_radius` (float, normalised map units) lets one rally open a wider frontier than
+# the GameConfig default. The retired fields are `reveal_after` and `requires_completions`,
+# two global wave counters whose unlocks had no visible relationship to the rally just won.
 #
-# Specials gate on COMPLETIONS rather than the old star total because stars became
-# spendable — a gate reading a spendable balance would revoke a special the player had
-# already qualified for as soon as they bought a car. Specials DO now award stars (via
-# Save.complete_rally's ledger delta), which is only safe because they no longer gate on
-# them. See todo/star-economy.md.
+# A SPECIAL event (`special: true`) is reached the same way as everything else — there is
+# no ladder and no rung. It stays OPEN-CLASS (`restriction: {}`) so it can never gate on a
+# part it unlocks, which keeps the low-power starter able to reach one.
 #
 # `water_level` is authored on EVERY event, even though the region now supplies one
 # (RegionLibrary.water_level_of): the resolution chain is event → region → GameConfig
@@ -153,24 +147,43 @@ static func _pace_band(tier: int) -> Vector2:
 # `terrain_layer1_amplitude` >= 16.0 (see challenge_library.gd) or a high sea over low
 # relief floods the track; an event authoring no amplitude runs the GameConfig baseline,
 # which clears that bar comfortably.
+# OPENING RALLIES RUN ONE EVENT. The three rallies that award the starter cars are each
+# entered straight from the starter picker, before the player has seen the map, the garage
+# or a menu (todo/opening-rally.md). A three-stage rally is a lot to ask of someone who has
+# not yet driven the game once, and it delays the thing the run exists to deliver: arriving
+# at the map with a rally already won. Every other rally keeps its full stage count — ask
+# RallySession.stage_count(), never the EVENTS_PER_RALLY default.
 const RALLIES: Array[Dictionary] = [
 	# --- Rally Country: NW forest inland (region "home", waterline -12) ---------
 	{
-		"id": "shakedown", "name": "Shakedown", "region": "home", "difficulty": 1, "special": false,
-		"map_pos": Vector2(0.290, 0.290),  # normalised pin position on the world map (hq.gd)
-		"restriction": {"car_type": "roadster", "pw_min": 130.0, "pw_max": 185.0},  # band: the starter's home (Focus ~114 / MX-5 ~159 / XJS ~175 hp/t)
+		"id": "shakedown", "name": "Win: Miot Roadster", "region": "home", "difficulty": 1, "special": false,
+		"prize_car": "mx5",  # wave 3  — Shakedown has always been the MX-5's event
+		"map_pos": Vector2(0.637, 0.485),  # normalised pin position on the world map (hq.gd)
+		# NO class field. It was `car_type: roadster`, which made the MX-5 all but its own
+		# prerequisite: the only other roadster in the catalogue is the Viper, itself a
+		# late prize, so a Focus or Twingo player could not enter the rally standing next
+		# to them and had to cross the whole map before the MX-5 became winnable. The
+		# ceiling alone still puts the MX-5 at the top of the field.
+		"restriction": {"pw_min": 85.0, "pw_max": 165.0},
+		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
 			{"seed": 1007, "turn_count": 20, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 35.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 1008, "turn_count": 20, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.9, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 34.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 1009, "turn_count": 20, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.9, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 33.0, "terrain_layer2_amplitude": 3.0},
 		],
 	},
 	{
-		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1, "special": false,
-		"map_pos": Vector2(0.35, 0.52),
-		# FWD intro rally: a band for the FWD starters (Twingo ~82, Focus ~114 hp/t) — the
-		# FWD home (parallels Shakedown for the MX-5).
-		"restriction": {"drive_mode": CarLibrary.FWD, "car_type": "hatch", "pw_min": 95.0, "pw_max": 140.0},
+		"id": "front_runners", "name": "Proving Ground", "region": "home", "difficulty": 1, "special": false,
+		"map_pos": Vector2(0.465, 0.615),
+		# An ordinary early event beside HQ, CLASS-FREE (no body or class field, just a p/w
+		# band) so it admits an RWD roadster and a FWD hatch alike.
+		#
+		# Being universally enterable was once a hard requirement: this was the one rally
+		# every fresh profile had to be able to start, so a class field here stranded
+		# whoever picked the other kind of car, and the floor was dropped to 60 to reach
+		# the slowest starter. Neither holds now — each starter begins inside its OWN event
+		# (RallyLibrary.opening_rally_id_for, todo/opening-rally.md) — so the floor comes
+		# back up to a normal width. It stays class-free because a broad early event beside
+		# HQ is good for the map whichever branch the player opened.
+		"restriction": {"pw_min": 100.0, "pw_max": 200.0},
 		"events": [
 			{"seed": 1201, "turn_count": 20, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.925, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
 			{"seed": 1102, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.9, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 27.0},
@@ -180,9 +193,10 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# A hot-hatch cup: the class is the BODY, not a narrow power slice, so it keeps
 		# meaning if a hatch is retuned or a new one joins the roster.
-		"id": "hm_hatch_cup", "name": "Hatchback Cup", "region": "home", "difficulty": 2, "special": false,
-		"map_pos": Vector2(0.360, 0.400),
-		"restriction": {"car_type": "hatch", "doors_max": 3, "pw_min": 55.0, "pw_max": 100.0},
+		"id": "hm_hatch_cup", "name": "Win: Honcho Actus", "region": "home", "difficulty": 2, "special": false,
+		"prize_car": "acty",  # wave 3  — a cheap kei runabout, the first car won
+		"map_pos": Vector2(0.581, 0.590),
+		"restriction": {"doors_max": 3, "pw_min": 35.0, "pw_max": 65.0},  # ceiling just over the Acty it awards (a kei, not a hatch)
 		"events": [
 			{"seed": 31001, "turn_count": 22, "forestiness": 0.7, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 30.0, "weather": "rain"},
 			{"seed": 31002, "turn_count": 22, "forestiness": 0.55, "surface_mix": 0.9, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 29.0},
@@ -190,36 +204,44 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		# Small-bore two-doors: four cylinders or fewer AND two doors — a class that
-		# reads honestly ("light, simple, two seats") and survives a retune, unlike a
-		# narrow power slice picking the same cars by accident.
-		"id": "hm_timber_trophy", "name": "Timber Trophy", "region": "home", "difficulty": 2, "special": false,
-		"reveal_after": 1,
-		"map_pos": Vector2(0.420, 0.220),
-		"restriction": {"cylinders_max": 4, "doors_max": 2, "pw_min": 90.0, "pw_max": 170.0},
+		# Small-bore four-cylinders: a class that reads honestly ("light, simple, modest
+		# engine") and survives a retune, unlike a narrow power slice picking the same cars
+		# by accident.
+		#
+		# It used to add `doors_max: 2`, which excluded the five-door hatch this very rally
+		# AWARDS. That was invisible while a prize car was just something you won in
+		# whatever you happened to own; it is fatal now the Focus's driver OPENS here
+		# (todo/opening-rally.md), so the door clause is gone. A prize rally has to admit
+		# its own prize — test_every_starter_car_opens_in_a_rally_that_admits_it.
+		"id": "hm_timber_trophy", "name": "Win: Fjord Focal", "region": "home", "difficulty": 2, "special": false,
+		"prize_car": "focus",  # wave 4
+		"map_pos": Vector2(0.584, 0.387),
+		"restriction": {"cylinders_max": 4, "pw_min": 60.0, "pw_max": 120.0},  # ceiling just over the Focus it awards
+		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
 			{"seed": 32001, "turn_count": 21, "forestiness": 0.85, "surface_mix": 0.1, "straightness": 0.75, "cliffiness": 0.45, "water_level": -13.0, "terrain_layer1_amplitude": 37.0},
-			{"seed": 32002, "turn_count": 21, "forestiness": 0.9, "surface_mix": 0.0, "straightness": 0.725, "cliffiness": 0.55, "water_level": -13.0, "terrain_layer1_amplitude": 36.0, "weather": "fog"},
-			{"seed": 32003, "turn_count": 22, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.5, "water_level": -13.0, "terrain_layer1_amplitude": 35.0},
 		],
 	},
 	{
-		# A closed-roof GT class: coupes only, over a wide band so the grouping is the
-		# body style rather than the exact power figure.
-		"id": "hm_forest_gt", "name": "Forest GT", "region": "home", "difficulty": 3, "special": false,
-		"reveal_after": 12,
-		"map_pos": Vector2(0.182, 0.374),
-		"restriction": {"car_type": "coupe", "pw_min": 120.0, "pw_max": 240.0},
+		# A small-hatch class, over a wide band so the grouping is the body style rather
+		# than the exact power figure.
+		#
+		# It was `coupe` at 120-240, which excluded the little hatch this rally AWARDS —
+		# the same defect the Timber Trophy carried, and the same reason it had to go: the
+		# Twingo's driver OPENS here (todo/opening-rally.md), so the band has to reach down
+		# to a stock city car rather than starting above one.
+		"id": "hm_forest_gt", "name": "Win: Rondel Twist", "region": "home", "difficulty": 3, "special": false,
+		"prize_car": "twingo",  # wave 3
+		"map_pos": Vector2(0.344, 0.580),
+		"restriction": {"doors_max": 3, "pw_min": 58.0, "pw_max": 115.0},  # ceiling just over the Twingo it awards
+		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
 			{"seed": 33001, "turn_count": 30, "forestiness": 0.65, "surface_mix": 0.7, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 31.0, "weather": "rain"},
-			{"seed": 33002, "turn_count": 30, "forestiness": 0.5, "surface_mix": 0.9, "straightness": 0.625, "cliffiness": 0.65, "water_level": -12.0, "terrain_layer1_amplitude": 30.0, "weather": "rain"},
-			{"seed": 33003, "turn_count": 31, "forestiness": 0.8, "surface_mix": 0.4, "straightness": 0.65, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 29.0, "weather": "fog"},
 		],
 	},
 	{
 		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 4, "special": false,
-		"reveal_after": 18,
-		"map_pos": Vector2(0.220, 0.160),
+		"map_pos": Vector2(0.613, 0.709),
 		"restriction": {"pw_min": 260.0, "pw_max": 400.0},  # the top ordinary band: Viper ~264 / The Beast ~350
 		"events": [
 			{"seed": 5001, "turn_count": 40, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.75, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 40.0, "weather": "rain"},
@@ -231,8 +253,8 @@ const RALLIES: Array[Dictionary] = [
 		# --- 8-star special: unlocks the Big Turbo. The gentlest of the eight (a player is
 		# only ~3 wins in), sited on `home`'s north edge — the corner they started in.
 		"id": "sp_woodland_trial", "name": "The Woodland Trial", "region": "home", "difficulty": 2,
-		"special": true, "requires_completions": 2,
-		"map_pos": Vector2(0.318, 0.128),
+		"special": true,
+		"map_pos": Vector2(0.716, 0.409),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
 			{"seed": 81001, "turn_count": 28, "forestiness": 0.8, "surface_mix": 0.35, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 34.0},
@@ -241,8 +263,8 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "special": true, "requires_completions": 10,
-		"map_pos": Vector2(0.130, 0.260),
+		"id": "the_showdown", "name": "Upgrade: NOS", "region": "home", "difficulty": 4, "special": true,
+		"map_pos": Vector2(0.476, 0.316),
 		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
 			{"seed": 9101, "turn_count": 46, "forestiness": 0.8, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 36.0},
@@ -262,7 +284,7 @@ const RALLIES: Array[Dictionary] = [
 	# a high sea over low relief floods the track.
 	{
 		"id": "shitbox_cup", "name": "Sh*tbox Cup", "region": "home_coast", "difficulty": 1, "special": false,
-		"map_pos": Vector2(0.623, 0.670),
+		"map_pos": Vector2(0.527, 0.476),
 		# The bottom band, below even Shakedown: a sub-100 hp/tonne class the true
 		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
 		"restriction": {"pw_min": 50.0, "pw_max": 90.0},
@@ -275,8 +297,8 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# A national class: Japanese cars, over a deliberately wide band so it's the
 		# country that picks the field rather than a power slice.
-		"id": "hc_lakeside_kei", "name": "Lakeside Cup", "region": "home_coast", "difficulty": 1, "special": false, "reveal_after": 2,
-		"map_pos": Vector2(0.702, 0.571),
+		"id": "hc_lakeside_kei", "name": "Lakeside Cup", "region": "home_coast", "difficulty": 1, "special": false,
+		"map_pos": Vector2(0.361, 0.424),
 		"restriction": {"country": "JP", "pw_min": 80.0, "pw_max": 160.0},
 		"events": [
 			{"seed": 34001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.35, "water_level": -7.0, "terrain_layer1_amplitude": 23.0, "weather": "rain"},
@@ -286,8 +308,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "region": "home_coast", "difficulty": 2, "special": false,
-		"reveal_after": 5,
-		"map_pos": Vector2(0.756, 0.685),
+		"map_pos": Vector2(0.599, 0.286),
 		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
 		"events": [
 			{"seed": 2204, "turn_count": 24, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.55, "water_level": -4.0, "terrain_layer1_amplitude": 18.0, "weather": "rain"},
@@ -296,11 +317,11 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "rwd_masters", "name": "RWD Masters", "region": "home_coast", "difficulty": 3, "special": false,
-		"reveal_after": 9,
-		"map_pos": Vector2(0.791, 0.812),
+		"id": "rwd_masters", "name": "Win: The Beast", "region": "home_coast", "difficulty": 3, "special": false,
+		"prize_car": "beast",  # wave 15 — RWD Masters awards the rear-drive monster
+		"map_pos": Vector2(0.229, 0.488),
 		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 170.0, "pw_max": 270.0},  # XJS/Charger/911/Viper
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 180.0, "pw_max": 360.0},  # ceiling just over The Beast it awards
 		"events": [
 			{"seed": 3001, "turn_count": 29, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.4, "water_level": -4.0, "terrain_layer1_amplitude": 16.0},
 			{"seed": 3012, "turn_count": 29, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.725, "cliffiness": 0.5, "water_level": -4.0, "terrain_layer1_amplitude": 16.0, "weather": "storm"},
@@ -310,8 +331,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Open-top cars only — a body class, wide on power.
 		"id": "hc_headland_dash", "name": "Headland Dash", "region": "home_coast", "difficulty": 3, "special": false,
-		"reveal_after": 10,
-		"map_pos": Vector2(0.831, 0.593),
+		"map_pos": Vector2(0.788, 0.491),
 		"restriction": {"car_type": "roadster", "pw_min": 135.0, "pw_max": 265.0},
 		"events": [
 			{"seed": 35001, "turn_count": 28, "forestiness": 0.45, "surface_mix": 0.8, "straightness": 0.65, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 22.0},
@@ -323,8 +343,7 @@ const RALLIES: Array[Dictionary] = [
 		# Twelve cylinders or more: the grand-touring exotica class, derived from the
 		# fitted engine's layout, so an engine swap moves a car in or out of it.
 		"id": "hc_v12_promenade", "name": "12 Cylinder Promenade", "region": "home_coast", "difficulty": 4, "special": false,
-		"reveal_after": 15,
-		"map_pos": Vector2(0.894, 0.691),
+		"map_pos": Vector2(0.746, 0.714),
 		"restriction": {"cylinders_min": 12, "pw_min": 170.0, "pw_max": 330.0},
 		"events": [
 			{"seed": 36001, "turn_count": 35, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.6, "cliffiness": 0.75, "water_level": -7.0, "terrain_layer1_amplitude": 18.0, "weather": "storm"},
@@ -336,9 +355,9 @@ const RALLIES: Array[Dictionary] = [
 		# --- 24-star special: unlocks the Supercharger. The northernmost `home_coast` pin —
 		# it must NOT creep above ~0.52, since the NE corner is reserved for the snow region
 		# (todo/one-map-four-corners.md). Coastal waterline, so amplitude stays >= 16.
-		"id": "sp_lakeshore_trial", "name": "The Lakeshore Trial", "region": "home_coast", "difficulty": 3,
-		"special": true, "requires_completions": 6,
-		"map_pos": Vector2(0.772, 0.528),
+		"id": "sp_lakeshore_trial", "name": "Upgrade: Drivetrain Conversion", "region": "home_coast", "difficulty": 3,
+		"special": true,
+		"map_pos": Vector2(0.781, 0.602),
 		"restriction": {},  # open-class
 		"events": [
 			{"seed": 83001, "turn_count": 37, "forestiness": 0.7, "surface_mix": 0.5, "cliffiness": 0.85, "water_level": -7.0, "terrain_layer1_amplitude": 21.0, "weather": "rain"},
@@ -346,10 +365,16 @@ const RALLIES: Array[Dictionary] = [
 			{"seed": 83003, "turn_count": 37, "forestiness": 0.8, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -7.0, "terrain_layer1_amplitude": 19.0},
 		],
 	},
+	# The three region showdowns below are ORDINARY rallies, not specials. Each used to be a
+	# special gating one rung of the four-rung NOS ladder; collapsing NOS to a single part
+	# (features/nitrous.md) left them gating nothing, and a "special" that awards no part is
+	# only a special by label — it would still claim the trophy marker, the garage carrot and
+	# a place in the all-specials endgame while paying exactly what an ordinary rally pays.
+	# They are long, hard, open-class star-payers, which is what they actually are.
 	{
-		"id": "hc_showdown", "name": "The Lakeland Crown", "region": "home_coast", "difficulty": 4, "special": true, "requires_completions": 12,
-		"map_pos": Vector2(0.941, 0.606),
-		"restriction": {},  # open-class finale
+		"id": "hc_showdown", "name": "The Lakes Showdown", "region": "home_coast", "difficulty": 4, "special": false,
+		"map_pos": Vector2(0.529, 0.205),
+		"restriction": {},  # open-class: a long, hard star-payer with no part to gate against
 		"events": [
 			{"seed": 39001, "turn_count": 48, "forestiness": 0.7, "surface_mix": 0.6, "cliffiness": 0.85, "water_level": -7.0, "terrain_layer1_amplitude": 21.0, "weather": "rain"},
 			{"seed": 39002, "turn_count": 51, "forestiness": 0.55, "surface_mix": 0.9, "cliffiness": 0.9, "water_level": -7.0, "terrain_layer1_amplitude": 20.0, "weather": "rain"},
@@ -363,8 +388,8 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Small-capacity class: 2.0 L or less, resolved through the car's CURRENT
 		# engine — an engine swap moves a car in or out of it.
-		"id": "gr_dust_devils", "name": "Dust Devils", "region": "greece", "difficulty": 1, "special": false, "reveal_after": 6,
-		"map_pos": Vector2(0.360, 0.690),
+		"id": "gr_dust_devils", "name": "Dust Devils", "region": "greece", "difficulty": 1, "special": false,
+		"map_pos": Vector2(0.181, 0.792),
 		"restriction": {"engine_max_l": 2.0, "pw_min": 100.0, "pw_max": 200.0},
 		"events": [
 			{"seed": 41001, "turn_count": 16, "forestiness": 0.5, "surface_mix": 0.2, "straightness": 0.85, "cliffiness": 0.35, "water_level": -10.0, "weather": "sandstorm", "terrain_layer1_amplitude": 18.0},
@@ -373,13 +398,13 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "american_muscle", "name": "American Muscle", "region": "greece", "difficulty": 2, "special": false,
-		"reveal_after": 7,
-		"map_pos": Vector2(0.410, 0.760),
+		"id": "american_muscle", "name": "Win: Swerve Surger R/T", "region": "greece", "difficulty": 2, "special": false,
+		"prize_car": "charger",  # wave 7  — the American Muscle event awards the Charger
+		"map_pos": Vector2(0.380, 0.261),
 		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
 		# (Charger ~216, Viper ~264). Country-gated, not car_type-gated, so it fields more
 		# than a single car.
-		"restriction": {"country": "US", "pw_min": 150.0, "pw_max": 300.0},
+		"restriction": {"country": "US", "pw_min": 115.0, "pw_max": 225.0},  # ceiling just over the Charger it awards
 		"events": [
 			{"seed": 6001, "turn_count": 40, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.85, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 15.0, "weather": "sandstorm"},
 			{"seed": 6102, "turn_count": 40, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
@@ -389,8 +414,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Big-bore two-doors: eight cylinders or more AND two doors.
 		"id": "gr_marble_quarry", "name": "Marble Quarry", "region": "greece", "difficulty": 2, "special": false,
-		"reveal_after": 11,
-		"map_pos": Vector2(0.100, 0.660),
+		"map_pos": Vector2(0.348, 0.157),
 		"restriction": {"cylinders_min": 8, "doors_max": 2, "pw_min": 200.0, "pw_max": 400.0},
 		"events": [
 			{"seed": 42001, "turn_count": 23, "forestiness": 0.45, "surface_mix": 0.15, "straightness": 0.725, "cliffiness": 0.6, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
@@ -399,10 +423,10 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gr_mountain_pass", "name": "Mountain Pass", "region": "greece", "difficulty": 3, "special": false,
-		"reveal_after": 13,
-		"map_pos": Vector2(0.230, 0.630),
-		"restriction": {"pw_min": 210.0, "pw_max": 320.0},
+		"id": "gr_mountain_pass", "name": "Win: Panthera XJS", "region": "greece", "difficulty": 3, "special": false,
+		"prize_car": "xjs",  # wave 6
+		"map_pos": Vector2(0.185, 0.382),
+		"restriction": {"pw_min": 90.0, "pw_max": 180.0},  # ceiling just over the XJS it awards
 		"events": [
 			{"seed": 22001, "turn_count": 20, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.8, "water_level": -10.0, "weather": "sandstorm", "terrain_layer1_amplitude": 20.0},
 			{"seed": 22102, "turn_count": 21, "forestiness": 0.75, "surface_mix": 0.05, "straightness": 0.575, "cliffiness": 0.9, "water_level": -10.0, "weather": "rain", "terrain_layer1_amplitude": 19.0},
@@ -410,10 +434,10 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gr_ancient_ruins", "name": "Ancient Ruins", "region": "greece", "difficulty": 3, "special": false,
-		"reveal_after": 16,
-		"map_pos": Vector2(0.290, 0.830),
-		"restriction": {"pw_min": 260.0, "pw_max": 400.0},
+		"id": "gr_ancient_ruins", "name": "Win: Porker 930 Turbo", "region": "greece", "difficulty": 3, "special": false,
+		"prize_car": "porsche911",  # wave 9
+		"map_pos": Vector2(0.266, 0.736),
+		"restriction": {"pw_min": 115.0, "pw_max": 230.0},  # ceiling just over the 911 it awards
 		"events": [
 			{"seed": 23201, "turn_count": 21, "forestiness": 0.6, "surface_mix": 0.2, "straightness": 0.65, "cliffiness": 0.7, "water_level": -10.0, "weather": "sandstorm", "terrain_layer1_amplitude": 12.0},
 			{"seed": 23202, "turn_count": 23, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.85, "water_level": -10.0, "terrain_layer1_amplitude": 11.0},
@@ -423,8 +447,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Muscle bodies only — the class is the body style, wide open on power.
 		"id": "gr_thermopylae", "name": "The Hot Gates", "region": "greece", "difficulty": 4, "special": false,
-		"reveal_after": 19,
-		"map_pos": Vector2(0.138, 0.501),
+		"map_pos": Vector2(0.072, 0.676),
 		"restriction": {"car_type": "muscle", "pw_min": 170.0, "pw_max": 330.0},
 		"events": [
 			{"seed": 43001, "turn_count": 32, "forestiness": 0.4, "surface_mix": 0.3, "straightness": 0.6, "cliffiness": 0.9, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 26.0},
@@ -435,9 +458,9 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# --- 16-star special: unlocks the Drivetrain Conversion. Far SW of `greece`, below
 		# the Aegean Crown. Sandstorm is authored ONLY on greece events (test-enforced).
-		"id": "sp_dust_trial", "name": "The Dust Trial", "region": "greece", "difficulty": 2,
-		"special": true, "requires_completions": 4,
-		"map_pos": Vector2(0.062, 0.884),
+		"id": "sp_dust_trial", "name": "Upgrade: Big Turbo", "region": "greece", "difficulty": 2,
+		"special": true,
+		"map_pos": Vector2(0.274, 0.297),
 		"restriction": {},  # open-class
 		"events": [
 			{"seed": 82001, "turn_count": 32, "forestiness": 0.7, "surface_mix": 0.15, "cliffiness": 0.8, "water_level": -11.0, "terrain_layer1_amplitude": 24.0, "weather": "sandstorm"},
@@ -446,9 +469,9 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gr_showdown", "name": "The Aegean Crown", "region": "greece", "difficulty": 4, "special": true, "requires_completions": 14,
-		"map_pos": Vector2(0.140, 0.790),
-		"restriction": {},  # open-class finale
+		"id": "gr_showdown", "name": "The Greek Showdown", "region": "greece", "difficulty": 4, "special": false,
+		"map_pos": Vector2(0.455, 0.854),
+		"restriction": {},  # open-class: a long, hard star-payer with no part to gate against
 		"events": [
 			{"seed": 29001, "turn_count": 51, "forestiness": 0.75, "surface_mix": 0.15, "cliffiness": 0.85, "water_level": -10.0, "weather": "sandstorm", "terrain_layer1_amplitude": 14.0},
 			{"seed": 29102, "turn_count": 53, "forestiness": 0.65, "surface_mix": 0.25, "cliffiness": 0.95, "water_level": -10.0, "weather": "rain", "terrain_layer1_amplitude": 13.0},
@@ -465,8 +488,8 @@ const RALLIES: Array[Dictionary] = [
 	# Events author no terrain_layer1_amplitude, so they run the GameConfig baseline
 	# (30 m), comfortably clear of the >= 16 pairing the -5 waterline needs.
 	{
-		"id": "gc_fishermens_run", "name": "Fishermen's Run", "region": "greece_coast", "difficulty": 1, "special": false, "reveal_after": 3,
-		"map_pos": Vector2(0.552, 0.715),
+		"id": "gc_fishermens_run", "name": "Fishermen's Run", "region": "greece_coast", "difficulty": 1, "special": false,
+		"map_pos": Vector2(0.203, 0.649),
 		"restriction": {"pw_min": 60.0, "pw_max": 110.0},
 		"events": [
 			{"seed": 51001, "turn_count": 14, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.875, "cliffiness": 0.3, "water_level": -4.0, "weather": "rain", "terrain_layer1_amplitude": 17.0},
@@ -478,8 +501,7 @@ const RALLIES: Array[Dictionary] = [
 		# A two-door class: doors are a body property (a swap can't change them), so
 		# this grouping is stable under retuning.
 		"id": "gr_olive_coast", "name": "Olive Coast", "region": "greece_coast", "difficulty": 2, "special": false,
-		"reveal_after": 4,
-		"map_pos": Vector2(0.668, 0.755),
+		"map_pos": Vector2(0.681, 0.576),
 		"restriction": {"doors_max": 2, "pw_min": 120.0, "pw_max": 200.0},
 		"events": [
 			{"seed": 21001, "turn_count": 17, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.5, "water_level": -4.0, "terrain_layer1_amplitude": 16.0},
@@ -490,8 +512,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Small-engined two-doors — displacement resolved through the fitted engine.
 		"id": "gc_island_hop", "name": "Island Hop", "region": "greece_coast", "difficulty": 2, "special": false,
-		"reveal_after": 8,
-		"map_pos": Vector2(0.432, 0.874),
+		"map_pos": Vector2(0.238, 0.190),
 		"restriction": {"engine_max_l": 3.0, "doors_max": 2, "pw_min": 120.0, "pw_max": 240.0},
 		"events": [
 			{"seed": 52001, "turn_count": 20, "forestiness": 0.6, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.5, "water_level": -4.0, "terrain_layer1_amplitude": 16.0},
@@ -506,8 +527,7 @@ const RALLIES: Array[Dictionary] = [
 		# country gate went and the band alone now hosts the stock heavy hitters
 		# (Charger ~216, Viper ~264 hp/tonne — the Viper's only stock rally).
 		"id": "rising_sun", "name": "Heavy Hitters", "region": "greece_coast", "difficulty": 3, "special": false,
-		"reveal_after": 14,
-		"map_pos": Vector2(0.615, 0.864),
+		"map_pos": Vector2(0.508, 0.724),
 		"restriction": {"pw_min": 210.0, "pw_max": 320.0},  # Charger/Viper
 		"events": [
 			{"seed": 4001, "turn_count": 33, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.625, "cliffiness": 0.55, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
@@ -518,8 +538,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Big-block class: 5.0 L or more, resolved through the fitted engine.
 		"id": "gc_salt_flats", "name": "Salt Flats", "region": "greece_coast", "difficulty": 3, "special": false,
-		"reveal_after": 17,
-		"map_pos": Vector2(0.508, 0.984),
+		"map_pos": Vector2(0.132, 0.289),
 		"restriction": {"engine_min_l": 5.0, "pw_min": 185.0, "pw_max": 365.0},
 		"events": [
 			{"seed": 53001, "turn_count": 30, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.775, "cliffiness": 0.4, "water_level": -4.0, "terrain_layer1_amplitude": 16.0},
@@ -529,10 +548,15 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		# A national class: British cars, wide on power.
-		"id": "gc_island_gp", "name": "Island Grand Prix", "region": "greece_coast", "difficulty": 4, "special": false,
-		"reveal_after": 20,
-		"map_pos": Vector2(0.677, 0.938),
-		"restriction": {"country": "GB", "pw_min": 170.0, "pw_max": 330.0},
+		"id": "gc_island_gp", "name": "Win: Swerve Serpent RT/10", "region": "greece_coast", "difficulty": 4, "special": false,
+		"prize_car": "viper",  # wave 13
+		"map_pos": Vector2(0.612, 0.840),
+		# NO class field. It was `country: GB`, which excluded the US Viper this rally
+		# AWARDS; making it roadster-only fixed that but made the Viper its own
+		# prerequisite (the only other roadster is the MX-5, itself a prize), stranding
+		# every player who did not start in one. Open class, ceilinged just over the Viper,
+		# is what leaves it reachable — see tools/sim_career.gd.
+		"restriction": {"pw_min": 140.0, "pw_max": 275.0},
 		"events": [
 			{"seed": 54001, "turn_count": 35, "forestiness": 0.35, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 16.0},
 			{"seed": 54002, "turn_count": 35, "forestiness": 0.5, "surface_mix": 0.9, "straightness": 0.6, "cliffiness": 0.8, "water_level": -4.0, "weather": "storm", "terrain_layer1_amplitude": 16.0},
@@ -543,9 +567,9 @@ const RALLIES: Array[Dictionary] = [
 		# --- 32-star special: unlocks ENGINE SWAPPING (the capability, not the token — see
 		# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY). South edge of `greece_coast`, east of the
 		# Island GP. Coastal waterline, so amplitude stays >= 16.
-		"id": "sp_archipelago_trial", "name": "The Archipelago Trial", "region": "greece_coast", "difficulty": 3,
-		"special": true, "requires_completions": 8,
-		"map_pos": Vector2(0.812, 0.962),
+		"id": "sp_archipelago_trial", "name": "Upgrade: Supercharger", "region": "greece_coast", "difficulty": 3,
+		"special": true,
+		"map_pos": Vector2(0.122, 0.580),
 		"restriction": {},  # open-class
 		"events": [
 			{"seed": 84001, "turn_count": 41, "forestiness": 0.55, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
@@ -554,9 +578,9 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gc_showdown", "name": "The Island Crown", "region": "greece_coast", "difficulty": 4, "special": true, "requires_completions": 16,
-		"map_pos": Vector2(0.978, 0.788),
-		"restriction": {},  # open-class finale
+		"id": "gc_showdown", "name": "The Coast Showdown", "region": "greece_coast", "difficulty": 4, "special": false,
+		"map_pos": Vector2(0.299, 0.877),
+		"restriction": {},  # open-class: a long, hard star-payer with no part to gate against
 		"events": [
 			{"seed": 59001, "turn_count": 53, "forestiness": 0.6, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
 			{"seed": 59002, "turn_count": 55, "forestiness": 0.45, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -7.0, "weather": "storm", "terrain_layer1_amplitude": 16.0},
@@ -1032,6 +1056,13 @@ static func _draw_rival_names(rng: RandomNumberGenerator, count: int) -> Array:
 # model has always used effective_meta for exactly that reason (see
 # generate_opponent_field). Both halves now agree, and this also matches the PLAYER's
 # eligibility path, which goes through effective_meta too (hq_carpark.gd::_entry_plan).
+#
+# A CAR-UNLOCK rally draws its field the SAME way as any other. It used to be a one-make
+# shootout — every rival in the car on offer — which advertised the prize plainly but made
+# the grid a row of identical cars and threw away the variety the combo pool exists for.
+# The prize is advertised through the BAND instead: a prize rally's ceiling sits just above
+# its own car, so that car is the fastest thing admitted and turns up as the one to beat.
+# See prize_car_tops_its_band and features/prize-rallies.md.
 static func _eligible_cars(rally: Dictionary) -> Array:
 	var pool: Array = []
 	for entry in CarLibrary.all():
@@ -1224,25 +1255,6 @@ static func completed_count(profile: Dictionary) -> int:
 	return n
 
 
-# Count of completed NON-SPECIAL rallies across the WHOLE roster — the wave metric that
-# drives reveal_after. A completed special doesn't count (it's gated separately, on stars).
-#
-# Deliberately GLOBAL, not per-region: the world map pins every region's rallies at once,
-# so "complete a rally in one corner to reveal one in another corner" is the intended
-# drip-feed and is only expressible with a global count. (A per-region count would also
-# have silently tightened gating when the two old regions were split into four corners —
-# the same authored reveal_after drawing from a smaller pool.)
-static func _completed_count(profile: Dictionary) -> int:
-	var rallies: Dictionary = profile.get("rallies", {})
-	var n := 0
-	for rally in all():
-		if is_special(rally):
-			continue
-		if rallies.get(rally["id"], {}).get("completed", false):
-			n += 1
-	return n
-
-
 # --- Star scoring ------------------------------------------------------------
 # What a PLACEMENT is worth lives here; the running total does not. Stars are a persisted
 # LEDGER on the profile now (Save.stars_earned / stars_spent — see todo/star-economy.md),
@@ -1275,60 +1287,262 @@ static func is_special(rally: Dictionary) -> bool:
 	return bool(rally.get("special", false))
 
 
-# --- Completion gating -------------------------------------------------------
-# Every rally, special or not, opens on the count of completed ORDINARY rallies. Specials
-# used to gate on the star total instead, but stars became spendable — and a gate that reads
-# a spendable balance would REVOKE a special the player had already qualified for the moment
-# they bought a car. See todo/star-economy.md.
+# --- Prizes: what a rally hands over ------------------------------------------
+# A rally may award a CAR or a PART on top of its stars, and the map shows which by
+# standing the prize itself on the pin (see features/map-exploration.md). This is what
+# replaced buying cars with stars: the player can SEE what is out there and go and win it,
+# instead of saving up for a random draw.
 #
-# Two field names for one mechanism, because they read differently to the player:
-#   * `reveal_after`          — ordinary rallies. A drip-feed; never quoted as a requirement.
-#   * `requires_completions`  — specials. Quoted on the locked pin as "N/M rallies".
-# Read through completions_required rather than the raw fields so the surfaces that quote
-# the requirement cannot drift from the gate that enforces it.
-static func completions_required(rally: Dictionary) -> int:
-	if is_special(rally):
-		return int(rally.get("requires_completions", 0))
-	return int(rally.get("reveal_after", 0))
-
-
-# Completions still needed before `rally` opens — 0 once it is open. Drives the locked pin's
-# "N/M rallies" readout.
-static func completions_needed(rally: Dictionary, profile: Dictionary) -> int:
-	return maxi(completions_required(rally) - _completed_count(profile), 0)
-
-
-# The ONE special the player is currently working toward: the lowest rung of the ladder that
-# has not opened yet ("" once every special is open). Roster order breaks a tie between two
-# specials on the same rung.
+# The two halves are authored differently, on purpose:
 #
-# The map teases THIS special only (hq._make_pin). Every locked special used to hang a box
-# quoting its own requirement, which put a wall of unreachable menus over the table on a
-# fresh profile; the ladder is strictly ordered, so the next rung is the only requirement the
-# player can actually work on. The trophies still stand at the further pins — locking hides
-# availability, never the fact that something exists out there.
-static func next_locked_special_id(profile: Dictionary) -> String:
-	var best := ""
-	var best_rung := 0
+#   * CAR — authored here as `prize_car`, a CarLibrary id. There is nowhere else for it to
+#     live: a car does not know which event awards it.
+#   * PART — NOT authored here. Derived from UpgradeLibrary's `unlocked_by_rally`, which
+#     already names the rally that opens each part. Authoring it on both sides would be two
+#     sources for one fact, and they would drift the first time a part was re-gated.
+#
+# Prize claiming is a PODIUM finish (top 3), the same `completed` bar that lights the map —
+# so one good result advances exploration and hands over the reward together.
+
+
+# The CarLibrary id this rally awards, or "" if it awards no car.
+static func prize_car_id(rally: Dictionary) -> String:
+	return String(rally.get("prize_car", ""))
+
+
+# The UpgradeLibrary id this rally awards, or "" if it awards no part. Derived from the
+# upgrade catalogue's own gate, never authored on the rally — see the note above.
+static func prize_part_id(rally: Dictionary) -> String:
+	return String(UpgradeLibrary.unlocked_by(String(rally.get("id", ""))).get("id", ""))
+
+
+# Does this rally hand over anything beyond stars? Drives the map marker choice (a car
+# model / a trophy / an ordinary flag) and the "prize rally" wording.
+static func has_prize(rally: Dictionary) -> bool:
+	return prize_car_id(rally) != "" or prize_part_id(rally) != ""
+
+
+# --- The opening rally -------------------------------------------------------
+
+# The rally a player who picked `model_id` STARTS IN — the event that awards that model,
+# which they are dropped into straight from the starter picker, before the map is ever
+# shown (todo/opening-rally.md, features/map-exploration.md).
+#
+# Derived from `prize_car` rather than authored as a separate "opening" flag, because it
+# is the same fact said once: the rally that advertises a car is that car's event, and for
+# the player who already owns it the prize is dead — so it becomes their starting line
+# instead. A second authored field could disagree with `prize_car`; this cannot.
+#
+# Returns "" when no rally awards the model — a roster where a starter has no event of its
+# own. Callers fall back to the ordinary garage entry rather than treating it as an error,
+# since it is a content gap, not a broken profile.
+static func opening_rally_id_for(model_id: String) -> String:
+	if model_id == "":
+		return ""
 	for rally in all():
-		if not is_special(rally) or rally_revealed(rally, profile):
+		if prize_car_id(rally) == model_id:
+			return String(rally.get("id", ""))
+	return ""
+
+
+# --- Map exploration: the reveal gate ----------------------------------------
+# A rally opens because the player has DRIVEN THEIR WAY TO IT, not because a counter
+# ticked over. See features/map-exploration.md.
+#
+# The map starts dark except for a circle around HQ; every rally the player completes
+# lights a circle around its OWN map_pos; a rally is revealed when it falls inside any
+# lit circle. So the player pushes the frontier outward from the middle and chooses
+# which direction to go, rather than being handed the next wave.
+#
+# This replaced the old global wave counters — `reveal_after` on ordinary rallies and
+# `requires_completions` on specials, both read through a `completions_required` shim.
+# Those were a pure drip-feed: the rally you unlocked had no relationship to the rally
+# you had just won, so a win in one corner opened a rally in another for no reason the
+# player could see. The geometric rule makes the map itself the progression graph, and
+# it is SELF-MAINTAINING — move a pin and its neighbourhood re-derives, where the old
+# scheme needed every authored rung re-checked by hand.
+#
+# Pure function of (profile.rallies, RALLIES): no fog state is stored, so there is
+# nothing to persist and nothing to migrate.
+
+# Where HQ — the garage the player starts at — sits on the world map, normalised 0..1
+# like a rally's map_pos. Near the CENTRE, so exploration runs outward toward all four
+# corners rather than along a single axis. (This is the position the old present box
+# used, for the same reason: the middle of the table reads as "here", not as content.)
+const HQ_MAP_POS := Vector2(0.5, 0.5)
+
+
+# How far a completed rally lights the map around itself, in normalised map units. A
+# rally may author its own `reveal_radius` so a headline event opens a wider frontier
+# than an ordinary one; absent (the usual case) it takes the GameConfig default, which
+# is where the pacing is actually tuned.
+static func reveal_radius_of(rally: Dictionary) -> float:
+	var authored := float(rally.get("reveal_radius", 0.0))
+	if authored > 0.0:
+		return authored
+	return Config.data.map_reveal_radius
+
+
+# The lit sources on the map right now: HQ (always), plus every completed rally, as
+# (centre, radius) pairs in normalised map space. The single derivation shared by the
+# reveal predicate and by the HQ table's fog mask, so what the player can ENTER and what
+# the player can SEE can never disagree.
+static func lit_sources(profile: Dictionary) -> Array:
+	# HQ LIGHTS NOTHING. It used to seed the map with a circle of its own, which made the
+	# handful of pins nearest the middle open on a fresh profile for no reason the player
+	# had earned. Now that they begin INSIDE a rally (todo/opening-rally.md) there is a
+	# natural starting point that they drove to, so the middle is ordinary fogged ground
+	# and every pin — the ones beside HQ included — is unlocked the same way as any other:
+	# by being inside the circle of something completed.
+	#
+	# GameConfig.map_hq_reveal_radius still exists and still works — it just ships at 0.0.
+	# Above 0 it puts HQ's circle back (the map tests use it to light a whole synthetic
+	# roster without completing anything).
+	var out: Array = []
+	var hq_radius: float = Config.data.map_hq_reveal_radius
+	if hq_radius > 0.0:
+		out.append([HQ_MAP_POS, hq_radius])
+	var rallies: Dictionary = profile.get("rallies", {})
+	# ONE pass over the roster. The opening rally is picked out HERE rather than through
+	# opening_rally_id_for + by_id, which would each walk `all()` again — and this function
+	# is called once per rally by the reveal predicate, so an extra scan is paid n times
+	# over. Same rule, a third of the work.
+	var starter := String(profile.get("starter_model_id", ""))
+	for rally in all():
+		var completed := bool(rallies.get(rally["id"], {}).get("completed", false))
+		# The player's OPENING rally lights its corner from the very start, completed or
+		# not (todo/opening-rally.md). It is where their career begins — they are dropped
+		# into it before the map is ever shown — so it is lit for the same reason HQ used
+		# to be: it is not somewhere to be reached, it is somewhere they already are.
+		#
+		# This is also the ANTI-STRANDING guard. The opening rally can sit well outside any
+		# other circle, so a player who quits mid-run would otherwise come back to a map
+		# with no way to reach the one rally the whole opening depends on — a dead end
+		# created by pressing Quit. Lighting it here rather than special-casing
+		# rally_revealed keeps fog, pin state and entry on the SAME derivation, which is
+		# what stops what the player can SEE drifting from what they can ENTER.
+		var is_opening := starter != "" and prize_car_id(rally) == starter
+		if not completed and not is_opening:
 			continue
-		var rung := completions_required(rally)
-		if best == "" or rung < best_rung:
-			best = String(rally["id"])
-			best_rung = rung
-	return best
+		out.append([map_pos_of(rally), reveal_radius_of(rally)])
+	# DEAD-END GUARD. Every source is a completed rally or the opening one, so a player who
+	# HAS picked a starter but whose starter_model_id no rally awards would light NOTHING —
+	# a permanently dark map with no way back, since the picker keys on `starter_picked` and
+	# never re-runs. STARTER_MODEL_IDS and the `prize_car` set are two independent
+	# authorings held in sync by convention alone, and a roster edit or a cloud profile from
+	# another build is enough to break it.
+	#
+	# Gated on a starter being RECORDED, not merely on `out` being empty: a profile that has
+	# not picked yet legitimately sees a dark map (it has not started, and the map is not
+	# even reachable from there) — lighting the middle for it would put HQ's circle back by
+	# the back door, which is the thing this whole change removed.
+	if out.is_empty() and starter != "":
+		out.append([HQ_MAP_POS, Config.data.map_reveal_radius])
+	return out
 
 
-# The completion count the engine-swap CAPABILITY unlocks at — the requirement quoted by the
-# garage swap row and the car-park confirm popup.
-static func engine_swap_completion_requirement() -> int:
-	return completions_required(by_id(ENGINE_SWAP_UNLOCK_RALLY))
+# A rally's pin position, normalised 0..1. Centre-of-map is the fallback for a synthetic
+# test rally that authors none — deliberately the same point as HQ, so such a rally reads
+# as "always lit" rather than landing somewhere arbitrary and dark.
+static func map_pos_of(rally: Dictionary) -> Vector2:
+	return rally.get("map_pos", HQ_MAP_POS)
 
 
 # Whether the special that gates `item_id`-style capabilities has been won. Used for the
 # engine-swap CAPABILITY gate: tokens drop and bank from the start, but cannot be spent
 # until this opens. See features/engine-swap.md.
+# How far `rally` sits OUTSIDE the lit region, in normalised map units: 0.0 once it is
+# revealed, otherwise the gap between its pin and the nearest lit circle's edge. This is
+# the geometric replacement for "which rung is this special on" — with reveal driven by
+# distance rather than by a counter, "how far is it from where I've got to" is the only
+# meaningful ordering of what the player has not reached yet.
+static func distance_beyond_frontier(rally: Dictionary, profile: Dictionary) -> float:
+	var pos := map_pos_of(rally)
+	var best := INF
+	for src in lit_sources(profile):
+		var centre: Vector2 = src[0]
+		var radius: float = src[1]
+		best = minf(best, pos.distance_to(centre) - radius)
+	return maxf(best, 0.0)
+
+
+# How many WAVES of exploration each rally sits behind THE STARTING LINE, ignoring car
+# eligibility:
+# repeatedly light everything currently reachable and complete it, counting rounds. Wave 1
+# is what a fresh profile can enter; wave 2 is what those unlock, and so on. A rally no
+# amount of exploring can reach is absent from the returned dict entirely.
+#
+# This is the roster's REACHABILITY ORDER, and it is what "opens before" means now — NOT
+# euclidean distance from HQ. The two genuinely disagree: reveal spreads as a corridor
+# along the chain of pins, so a rally that is nearer in a straight line can sit many waves
+# further out because nothing lights the gap in between. Anything asserting authored order
+# (which special is reached first, that a prerequisite precedes its dependent) must read
+# this rather than a distance.
+#
+# Deliberately ignores cars: it answers "is the MAP connected and in what order", which is
+# the authored-geometry question. Whether the player has something eligible to drive at
+# each step is a separate, garage-dependent question.
+# Seeded from the OPENING RALLIES — every starter's own event, all of them at once. HQ
+# lights nothing (see lit_sources), so an unseeded walk would light nothing and report the
+# whole roster as unreachable. Taking the union rather than one starter's opening keeps
+# this the geometry-only question it claims to be: whichever car the player picks, their
+# start is one of these, and asking about a single one would smuggle a garage-dependent
+# assumption into an answer about the map. The per-starter walk that DOES account for cars
+# is tools/sim_career.gd::solve_reachability.
+static func reveal_depths() -> Dictionary:
+	var out := {}
+	var profile := {"rallies": {}}
+	for rally in all():
+		if prize_car_id(rally) != "" and CarLibrary.STARTER_MODEL_IDS.has(prize_car_id(rally)):
+			profile["rallies"][String(rally["id"])] = {"completed": true}
+			out[String(rally["id"])] = 1
+	var wave := 1
+	while true:
+		var fresh: Array = []
+		for rally in all():
+			var rid := String(rally["id"])
+			if out.has(rid):
+				continue
+			if rally_revealed(rally, profile):
+				fresh.append(rid)
+		if fresh.is_empty():
+			return out
+		wave += 1
+		for rid in fresh:
+			out[rid] = wave
+			profile["rallies"][rid] = {"completed": true}
+	return out
+
+
+# The next SPECIAL the player is heading for: the unrevealed one closest to the frontier
+# they have already lit ("" once every special is revealed). Roster order breaks a tie.
+#
+# The map teases THIS special only, and the garage carrot line names the same one, so the
+# two surfaces can never point at different events. It replaced next_locked_special_id,
+# which picked the lowest authored rung of a ladder that no longer exists — nearest-to-
+# reach is what "next" means once the player chooses their own direction.
+static func nearest_locked_special_id(profile: Dictionary) -> String:
+	var best := ""
+	var best_gap := INF
+	for rally in all():
+		if not is_special(rally) or rally_revealed(rally, profile):
+			continue
+		var gap := distance_beyond_frontier(rally, profile)
+		if best == "" or gap < best_gap:
+			best = String(rally["id"])
+			best_gap = gap
+	return best
+
+
+# Display name of the rally whose win unlocks engine swapping — what the locked swap row
+# and the car-park confirm popup send the player after. A NAME, not a count: with reveal
+# now geometric there is no counter to quote, and "go and win THIS event" is a destination
+# the player can actually find on the map. Empty when the rally doesn't resolve (a
+# synthetic test roster), so callers can fall back to a plain "not unlocked yet".
+static func engine_swap_unlock_rally_name() -> String:
+	return String(by_id(ENGINE_SWAP_UNLOCK_RALLY).get("name", ""))
+
+
 static func engine_swaps_unlocked(profile: Dictionary) -> bool:
 	return bool((profile.get("rallies", {}) as Dictionary)
 		.get(ENGINE_SWAP_UNLOCK_RALLY, {}).get("completed", false))
@@ -1355,23 +1569,33 @@ static func all_specials_completed(profile: Dictionary) -> bool:
 	return true
 
 
-# Whether a rally's pin is REVEALED (enterable) yet. An ordinary rally reveals once the
-# player has completed `reveal_after` non-special rallies ANYWHERE on the roster (a GLOBAL
-# wave count — keeps ~1-2 fresh rallies enterable at a time even when the garage is broad,
-# and lets a win in one corner open a rally in another); a SPECIAL reveals on its star
-# gate. The single reveal predicate shared by the map pins (hq.gd), the anti-soft-lock
-# eligibility query, and the reward-draw walk. (Completion is a separate check the callers
-# do — a revealed rally may still be incomplete or already done.)
+# Whether a rally's pin is REVEALED (enterable) yet: does its map_pos fall inside any lit
+# circle — HQ's, or one lit by a rally the player has already completed. ONE rule for every
+# rally on the roster, whatever it awards. The single reveal predicate shared by the map
+# pins (hq.gd), the anti-soft-lock eligibility query, and the reward-draw walk. (Completion
+# is a separate check the callers do — a revealed rally may still be incomplete or done.)
+#
+# Distances are compared SQUARED to keep this allocation- and sqrt-free: it is called once
+# per rally per map refresh, and again per cell when the fog mask is rasterised.
 static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
-	var need := completions_required(rally)
-	if need <= 0:
-		return true
-	return _completed_count(profile) >= need
+	return position_revealed(map_pos_of(rally), profile)
+
+
+# Whether an arbitrary point on the map is lit. Factored out of rally_revealed so the fog
+# mask shades the map with the EXACT predicate that gates entry, rather than a lookalike
+# that could drift from it.
+static func position_revealed(pos: Vector2, profile: Dictionary) -> bool:
+	for src in lit_sources(profile):
+		var centre: Vector2 = src[0]
+		var radius: float = src[1]
+		if pos.distance_squared_to(centre) <= radius * radius:
+			return true
+	return false
 
 
 # Anti-soft-lock query for the reward system: the still-incomplete rallies a
-# given car can currently enter (revealed — reveal_after met and, for a special, its star
-# gate open — and eligible in-band).
+# given car can currently enter (revealed — inside the lit region of the map — and
+# eligible in-band).
 #
 # "Can enter" INCLUDES ducking under a pw_max by detuning, exactly as the HQ's
 # _entry_plan and test_every_shipped_rally_has_at_least_one_car_that_can_enter_it

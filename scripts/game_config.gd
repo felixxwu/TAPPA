@@ -666,6 +666,15 @@ func has_nitrous() -> bool:
 ## Per-wheel clamp on accumulated toe (radians) — a wheel can't bend past this no
 ## matter how many hits it takes, so a heavily-crashed car stays (barely) drivable.
 @export_range(0.0, 0.5) var damage_wheel_toe_max := 0.14
+## Fraction of max HP a car comes back with after a WRECK (features/damage.md). A wreck
+## ends the run as a DNF and the car returns to the garage at this much health — it is not
+## written off, and there is no unrecoverable state.
+##
+## Low on purpose. The punishment for wrecking is the LOST RALLY RESULT — a DNF, no podium,
+## no prize, no progress on the map — and a big repair bill on top. Making it terminal
+## instead meant a single mistake could end a career, which is what forced the whole
+## scaffolding of soft-lock rescues that used to sit around it.
+@export_range(0.0, 1.0) var wreck_recovery_hp_fraction := 0.25
 ## Between-event pit repairs (Save.field_repair): at the START of every rally event
 ## after the first, the engineers patch the fielded car up a bit. This is the
 ## fraction of the HP LOST so far that gets restored — 0.2 means a car at 50%
@@ -946,6 +955,51 @@ func has_nitrous() -> bool:
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 4.6)
 @export var hq_map_plane_size := Vector2(4.2, 4.2)
+## How close (metres, on the map plane) the view centre has to be to a pin for that pin to
+## count as SELECTED. Past this the cursor holds nothing and Enter does nothing.
+##
+## Without a limit the cursor always snapped to the nearest pin however far away it was, so
+## pressing Enter over empty ocean opened whichever rally happened to be least distant —
+## a menu the player did not ask for, for a place they were not looking at.
+@export_range(0.05, 3.0, 0.05) var map_select_radius_m := 0.55
+## Opacity of the dotted lines drawn between rallies that unlock one another on the map
+## table. FAINT on purpose: the links are there to be read when you look for them, not to
+## become a web the pins have to compete with. 0 hides them entirely.
+@export_range(0.0, 1.0, 0.01) var map_link_alpha := 0.22
+## Dash and gap length (metres, on the map plane) of those lines.
+@export_range(0.005, 0.2, 0.005) var map_link_dash_m := 0.035
+@export_range(0.005, 0.2, 0.005) var map_link_gap_m := 0.030
+## How bright the UNEXPLORED map reads, as a fraction of its lit colour (0 = black,
+## 1 = no fog at all). The terrain stays legible through it on purpose: the world should
+## look like somewhere you have not been yet, not a hole in the table — the player is meant
+## to be able to make out the coastline they are heading for.
+@export_range(0.0, 1.0, 0.01) var map_fog_unlit_brightness := 0.4
+## Width of the falloff at a lit circle's edge, in normalised map units. Softens the rim so
+## the frontier reads as fog thinning out rather than a cut line.
+@export_range(0.0, 0.5, 0.005) var map_fog_edge_softness := 0.05
+## Map exploration (features/map-exploration.md): how far a lit source reaches, in
+## NORMALISED map units (the same 0..1 space as a rally's map_pos), so the radius is
+## independent of the plane's metre size. Every rally the player has completed lights a
+## circle of this radius around its OWN map_pos — as does their opening rally, completed or
+## not — and a rally is revealed when it falls inside any lit circle. HQ itself lights
+## NOTHING (see map_hq_reveal_radius). A rally may author its own `reveal_radius` to open a
+## wider frontier than this default. Bigger = the world opens faster and in bigger jumps.
+@export_range(0.01, 1.0, 0.005) var map_reveal_radius := 0.16
+## The radius HQ itself lights, independently of any rally. SHIPPED AT 0.0 — HQ lights
+## NOTHING, and is not drawn on the map at all.
+##
+## It used to be 0.16, which opened the handful of pins nearest the middle on a fresh
+## profile. That existed because the player had to start somewhere; they now start inside
+## their own OPENING RALLY (todo/opening-rally.md), which is a starting point they drove to
+## rather than one the map granted, so the pins beside HQ unlock the ordinary way like
+## every other.
+##
+## Kept as a tunable rather than deleted: "how much does home light" is a real design
+## question that may be worth revisiting, and the map tests use it to light a whole
+## synthetic roster without having to complete anything. Any value above 0 puts the circle
+## back — and would also want an HQ landmark on the table again: `scripts/map_house.gd`
+## builds one and is kept for exactly that, currently unreferenced.
+@export_range(0.0, 1.0, 0.005) var map_hq_reveal_radius := 0.0
 ## Tuning lift: centre position + overall footprint (posts span this width; also
 ## the pickable click volume).
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
@@ -1864,18 +1918,21 @@ func has_nitrous() -> bool:
 
 
 @export_group("Star Economy")
-## Stars a car costs at the present box (todo/star-economy.md). Stars are earned by
-## placing — 3 for a win, 2 for 2nd, 1 for 3rd — and by the Rally Challenge, then spent
-## here; cars are no longer handed out for winning a rally.
+## Stars: what a REPAIR costs (features/star-economy.md). Flat, whatever the damage —
+## one star returns a car to full health and straightens its wheels.
 ##
-## THE most retuned number in the progression design, which is why it lives here rather
-## than as a script constant. Simulation (./sim_career.sh) found a real cliff: at 4 every
-## player can afford their first car after two rallies even with two 2nd places (2+2=4),
-## but at 5 that same player is a star short — 11% of careers dead-ended before the
-## price-0 rescue existed. The rescue (a free car when stranded AND unable to afford one)
-## makes higher prices safe, but 4 is chosen because it does not DEPEND on the rescue
-## firing correctly. Raising this is safe; just re-read that section first.
-@export_range(1, 30) var star_cost_per_car := 4
+## Deliberately CHEAP. Repair is a ritual and a small tax, not an economic wall: the real
+## cost of wrecking is the lost rally result (a DNF, no podium, no progress), and pricing
+## the repair steeply would punish the same mistake twice. Flat rather than per-HP so the
+## player never has to arithmetic their way to "is it worth fixing".
+@export_range(0, 30) var star_cost_per_repair := 1
+## Stars: what a COPY of an already-discovered upgrade part costs, fitted to another car.
+##
+## Upgrades are car-bound, so this is the sink that spreads a part you won once across the
+## garage — and being per-car-per-part it is effectively bottomless, which is what stops a
+## late-game star balance becoming dead weight. The first copy is free: it is fitted to the
+## car that won the part-unlock rally (features/prize-rallies.md).
+@export_range(0, 30) var star_cost_per_part := 2
 
 
 @export_group("Performance")

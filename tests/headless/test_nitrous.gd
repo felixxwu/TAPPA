@@ -238,16 +238,18 @@ func test_refresh_fitment_clears_nitrous_that_has_been_removed() -> void:
 
 # --- Awarding it ---------------------------------------------------------------
 
-func test_nitrous_is_fitted_ENABLED_on_award() -> void:
-	# Its slot is hidden from the garage, so a part installed DISABLED (the convention for
-	# every other awarded part, which the reveal overlay then enables) would be permanently
-	# dead AND would block the slot from being re-awarded. Save.install_upgrade overrides the
-	# caller's `enabled` for a hidden slot precisely so this holds on every award route.
-	assert_true(UpgradeLibrary.is_hidden_slot("nitrous"), "setup: the slot is hidden")
-	assert_true(UpgradeLibrary.installs_enabled("nitrous"),
-		"a part in a hidden slot must install enabled")
+func test_nitrous_has_a_garage_row_and_installs_like_any_other_part() -> void:
+	# CHANGED DELIBERATELY: nitrous used to be a HIDDEN slot, auto-fitted ENABLED on award,
+	# because a four-rung ladder that always installed its highest rung left the player
+	# nothing to decide. It is one part now, so it gets an ordinary garage row — and
+	# without one, a won NOS could only ever be fitted by the award path, never by the
+	# player.
+	assert_false(UpgradeLibrary.is_hidden_slot("nitrous"),
+		"the nitrous slot is shown in the garage")
+	assert_false(UpgradeLibrary.installs_enabled("nitrous"),
+		"so it installs DISABLED like every other part, for the player to switch on")
 	assert_false(UpgradeLibrary.installs_enabled("turbo_small"),
-		"a part with a garage row still installs disabled, for the reveal to enable")
+		"same as a part that always had a row")
 
 
 # --- Eligibility isolation ---------------------------------------------------

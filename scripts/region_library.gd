@@ -37,7 +37,7 @@ const DEFAULT_TREE_MIX: Array = [
 #
 # Regions no longer gate rallies AT ALL: the old one-showdown-per-region invariant is
 # retired, and specials are gated on the global ordinary-completion count
-# (RallyLibrary.rally_revealed via completions_required),
+# (RallyLibrary.rally_revealed, geometric map exploration),
 # so a corner may hold any number of them, including none. A region's only job is its LOOK
 # and its waterline.
 #

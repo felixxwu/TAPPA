@@ -534,19 +534,20 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 # over-powered car looks eligible here; the over-limit prompt only surfaces as a
 # confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
-	# WHEELS is purely COSMETIC — a wrecked car can always be re-shod, so damage must never
-	# gate it. Never gate Select on damage in that mode; nor when the focused car isn't
-	# wrecked.
-	if _hq._carpark_mode == _hq.CarparkMode.WHEELS or not Save.car_is_wrecked(owned):
-		_hq._start_button.disabled = false
-		_hq._car_warning_label.visible = false
-		return
-	# Wrecked is TERMINAL — there is no repair to offer, so the warning is final rather
-	# than an instruction. Wrecking every car you own hands you a Mystery Box instead
-	# (Save.ensure_wreck_safety_net); opening it grants a fresh car.
-	_hq._start_button.disabled = true
-	_hq._car_warning_label.visible = true
-	_hq._car_warning_label.text = "Wrecked beyond repair — it can't race again. Pick another car."
+	# Damage NEVER blocks entry any more. A wreck is not terminal (Save.record_wreck hands
+	# the car back at part health), so a battered car is a car you can still race — badly.
+	# The warning is an INSTRUCTION now, not a verdict: it points at the repair the player
+	# can go and buy (features/star-economy.md) rather than telling them the car is dead.
+	_hq._start_button.disabled = false
+	var id := int(owned.get("instance_id", -1))
+	# car_handles_badly, NOT car_needs_repair: the latter is true of any car that is not
+	# pristine, so this line used to fire at 98% health and claim the car would handle
+	# badly. Repair is still offered for any lost health — that is a different question,
+	# asked by the lift's repair button.
+	var hurt := _hq._carpark_mode != _hq.CarparkMode.WHEELS and Save.car_handles_badly(id)
+	_hq._car_warning_label.visible = hurt
+	if hurt:
+		_hq._car_warning_label.text = "Damaged — the engine is down on power. Repair it at the lift."
 
 
 # A full-screen dimmer + centred house panel on the car CanvasLayer, holding `body`

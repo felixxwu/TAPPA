@@ -22,6 +22,15 @@ func before_each() -> void:
 	# value exercised in the real game, not here.
 	Config.data.hq_tree_count = 8
 	Config.data.hq_bush_count = 8
+	# Light the WHOLE map by default. Reveal is geometric now
+	# (features/map-exploration.md), so a synthetic roster's pins are dark unless they
+	# happen to sit near RallyLibrary.HQ_MAP_POS — and these tests deliberately spread pins
+	# to the map's corners to exercise panning, selection and layout. Without this they
+	# would all be locked, leaving the table with no pickable pin at all, which is a
+	# reveal-rule assertion smuggled into every menu test rather than something they mean
+	# to check. The tests that DO cover reveal set their own radius back (see
+	# _dark_map_radius) so this default can't hide the behaviour it is standing in for.
+	Config.data.map_hq_reveal_radius = 10.0
 	CarFixtures.install()
 	UpgradeFixtures.install()
 	_save = get_node("/root/Save")
@@ -39,6 +48,14 @@ func before_each() -> void:
 	ChallengeSession.auto_load_scenes = false
 	if ChallengeSession.is_active():
 		ChallengeSession.abandon()
+
+
+# Restore a REAL reveal radius for the tests that are actually about the map going dark —
+# before_each lights everything so the layout/nav tests can see their pins. Returns HQ's
+# radius to the shipped default, which is the value the roster is authored against.
+func _dark_map_radius() -> void:
+	Config.data.map_hq_reveal_radius = GameConfig.new().map_hq_reveal_radius
+	Config.data.map_reveal_radius = GameConfig.new().map_reveal_radius
 
 
 func after_each() -> void:
@@ -74,6 +91,12 @@ func _clean() -> void:
 # profile so Start goes straight to the garage (the first run now picks a starter in the
 # car park — see test_first_run_start_opens_starter_pick_then_grants_first_car). Tests that
 # need an existing garage call this before booting HQ.
+# The model a synthetic roster's OPENING rally awards. Any id will do — nothing looks it
+# up in CarLibrary; what matters is that the profile's `starter_model_id` and some rally's
+# `prize_car` agree, which is what lights that rally from the start.
+const STARTER_PRIZE_CAR := "fx_start_car"
+
+
 func _pick_starter(model_id := "fx_light_rwd") -> void:
 	_save.profile["starter_picked"] = true
 	_save.profile["starter_model_id"] = model_id
@@ -140,7 +163,18 @@ func _first_owned_car() -> Dictionary:
 
 # Any rally from the (possibly synthetic) catalogue — no assertion on which one, only
 # that it exists, so this stays valid under CarFixtures/RallyLibrary overrides.
+# Any ORDINARY MULTI-STAGE rally — the shape most of these tests mean by "a rally":
+# three events, so per-stage standings, between-stage interstitials and "the final stage"
+# all exist to assert on.
+#
+# It used to be `all()[0]`, which stopped being multi-stage the day the opening rallies
+# were cut to a single event (todo/opening-rally.md) — and a caller driving three events
+# through a one-stage rally fails somewhere far from the cause. Asking for the shape rather
+# than for an index says what the caller actually needs.
 func _any_rally() -> Dictionary:
+	for rally in RallyLibrary.all():
+		if (rally.get("events", []) as Array).size() >= RallySession.EVENTS_PER_RALLY:
+			return rally
 	return RallyLibrary.all()[0]
 
 
@@ -499,13 +533,17 @@ func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
 # the keyboard/gamepad focus ring. That's the invariant the single-map change most
 # easily breaks (the old per-region map simply never drew the rally at all).
 func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
+	# About REVEAL, so it needs the real radius rather than before_each's lit-everything
+	# default — and "locked" is a pin POSITION now: at HQ = open, far out = dark.
+	_dark_map_radius()
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	RallyLibrary.override_for_test([
-		{"id": "open", "name": "Open", "region": "home", "special": false, "reveal_after": 0,
-			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "later", "name": "Later", "region": "home", "special": false, "reveal_after": 99,
-			"map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
-		{"id": "sd", "name": "SD", "region": "home", "special": true, "requires_completions": 99,
+		{"id": "open", "name": "Open", "region": "home", "special": false,
+			"map_pos": hq_pos, "restriction": {}, "events": []},
+		{"id": "later", "name": "Later", "region": "home", "special": false,
+			"map_pos": hq_pos + Vector2(0.9, 0.0), "restriction": {}, "events": []},
+		{"id": "sd", "name": "SD", "region": "home", "special": true,
 			"map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -514,44 +552,34 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
 
-	# Every rally in the roster is pinned, revealed or not.
-	assert_eq(hq._pins.size(), RallyLibrary.all().size(), "every rally gets a pin")
+	# The fog hides an unreached rally COMPLETELY — no pin at all, not a greyed one. The map
+	# shows where you can go; the dark is genuinely unknown.
 	var by_id: Dictionary = {}
 	for pin in hq._pins:
 		by_id[String(pin.get_meta("rally_id"))] = pin
-	assert_true(by_id.has("later"), "an unrevealed rally is still pinned on the world map")
-	assert_true(by_id.has("sd"), "a star-gated special is still pinned on the world map")
-
-	# ...but the unrevealed ones are disabled: flagged locked, with no pickable hit area.
-	for id in ["later", "sd"]:
-		var pin: Node3D = by_id[id]
-		assert_true(bool(pin.get_meta("locked")), "%s's pin is marked locked" % id)
-		assert_eq(pin.find_children("*", "Area3D", true, false).size(), 0,
-			"%s's locked pin has no pickable hit area" % id)
+	assert_false(by_id.has("later"), "an unreached rally is not pinned at all")
+	assert_false(by_id.has("sd"), "nor is an unreached special")
+	assert_true(by_id.has("open"), "only what the player has explored out to is on the map")
+	assert_eq(hq._pins.size(), 1, "and nothing else is standing on the table")
 	assert_false(bool(by_id["open"].get_meta("locked")), "a revealed rally's pin is not locked")
 	assert_gt(by_id["open"].find_children("*", "Area3D", true, false).size(), 0,
 		"a revealed rally's pin IS clickable")
 
 	# ...and the keyboard/gamepad focus ring only contains the enterable PINS, so no amount
-	# of panning can land the cursor on a locked one. The present box is also a target (kind
-	# "present", no rally_id — todo/star-economy.md), so filter by kind rather than assuming
-	# every target is a rally.
-	_afford_a_present()
+	# of panning can land the cursor on a locked one. Every map target is a rally now — the
+	# present box that used to sit among them is gone with the car-purchase economy
+	# (features/star-economy.md).
 	hq._refresh_map_pins()
 	var focusable: Array = []
-	var kinds: Dictionary = {}
 	for t in hq._table_ui._table_targets():
-		kinds[String(t["kind"])] = true
-		if String(t["kind"]) == "pin":
-			focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
+		assert_eq(String(t["kind"]), "pin", "every map target is a rally pin")
+		focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
 	assert_eq(focusable, ["open"], "only the revealed rally is a focus target")
-	assert_true(kinds.has("present"), "the present box is a focus target alongside the pins")
 	for _i in 12:
 		hq._table_ui._pan_table_step(Vector2.RIGHT, 0.4)
 	var landed: Dictionary = hq._table_ui._table_targets()[hq._table_focus_index]
-	if String(landed["kind"]) == "pin":
-		assert_eq(String((landed["node"] as Node3D).get_meta("rally_id")), "open",
-			"panning across the map never lands the cursor on a locked pin")
+	assert_eq(String((landed["node"] as Node3D).get_meta("rally_id")), "open",
+		"panning across the map never lands the cursor on a locked pin")
 
 	RegionLibrary.reset()
 	RallyLibrary.reset()
@@ -570,17 +598,22 @@ func test_hq_lift_actions_row_is_a_left_right_cursor() -> void:
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
 	# The hub is a left/right cursor over Back (0) / Upgrades (1) / Tuning (2) /
-	# Test Drive (3), wrapping at both ends. (Wheels moved into the Tuning panel
-	# itself, so it's no longer a hub cursor stop.)
+	# Repair (3) / Test Drive (4), wrapping at both ends. (Wheels moved into the Tuning
+	# panel itself, so it's no longer a hub cursor stop; Repair arrived with the star
+	# sinks — features/star-economy.md.)
+	# Repair is DISABLED here (this car is undamaged), and the cursor skips disabled stops —
+	# so it is passed over rather than being a dead landing spot. See
+	# test_hq_lift_repair_button_is_reachable_once_the_car_is_damaged for the other half.
+	var last: int = hq._hub_cursor.buttons.size() - 1
 	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Upgrades")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 2, "right moves the cursor to Tuning")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Test Drive")
+	assert_eq(hq._hub_focus, last, "right again skips the disabled Repair and lands on Test Drive")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 0, "right from the end wraps to Back")
 	hq._move_hub_focus(-1)
-	assert_eq(hq._hub_focus, 3, "left from Back wraps onto Test Drive")
+	assert_eq(hq._hub_focus, last, "left from Back wraps onto Test Drive")
 
 	# Select on the Tuning item opens the Tune page (stays in the bay).
 	hq._hub_focus = 2
@@ -734,6 +767,27 @@ func test_car_stats_text_names_a_fitted_nitrous_rung_after_health() -> void:
 # On a fresh car it has no installed parts, is at full health (no repair button) and
 # its Swap Engine button is disabled, so without an always-enabled control (the Back
 # button) focus would land on nothing and the page would be dead to non-pointer input.
+# The UPGRADES page heading carries the STAR BALANCE, because this page is where stars are
+# spent — every part the player cannot afford quotes a price they would otherwise have to
+# leave the page to check against.
+func test_hq_upgrades_page_heading_shows_the_star_balance() -> void:
+	_save.profile["stars_earned"] = 7
+	_save.profile["stars_spent"] = 0
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	assert_string_contains(hq._lift_menu_title.text, "7", "the heading names the balance")
+	# And it TRACKS the balance — buying a part on this page spends stars, so a heading
+	# read only on open would go stale the moment the player used it.
+	_save.profile["stars_spent"] = 5
+	hq._on_lift_upgrade_changed()
+	assert_string_contains(hq._lift_menu_title.text, "2", "spending updates the heading")
+
+
 func test_hq_upgrades_page_is_keyboard_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1063,25 +1117,6 @@ func test_hq_title_parks_starter_previews_when_garage_is_empty() -> void:
 	for owned in hq._eligible:
 		assert_lt(int(owned.get("instance_id", 0)), 0,
 			"each parked car is a preview (negative id), not an owned car")
-
-
-# The lift used to carry a Repair button. It's gone — repair kits no longer exist — and
-# what the lift does on refresh instead is top up a WRECKED-OUT player with the free
-# Mystery Box that gets them a new car. Drawing the lift must arm that net.
-func test_hq_lift_refresh_arms_the_wreck_safety_net() -> void:
-	var id := int(_save.profile["cars"][0]["instance_id"])
-	_save.set_selected_car(id)
-	_save.wreck_car(id)
-	_save.profile["inventory"] = {}
-	assert_true(_save.all_cars_wrecked(), "setup: every owned car is a write-off")
-
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._refresh_wreck_safety_net()
-
-	assert_eq(_save.mystery_boxes_owned(), 1,
-		"a wrecked-out garage is handed exactly one rescue box")
 
 
 func test_hq_start_flies_into_the_garage() -> void:
@@ -1764,29 +1799,23 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 		"a drawn star stands in for the word 'stars'")
 
 
-func test_hq_map_locks_a_special_until_its_star_gate_opens() -> void:
+# An unreached special is not on the map at all. The fog hides it completely rather than
+# standing a grey trophy there — the dark is genuinely unknown, and a marker for somewhere
+# unreachable was a signpost to nothing.
+func test_hq_map_hides_a_special_the_player_has_not_explored_out_to() -> void:
+	# Needs the REAL reveal radius: before_each lights the whole map so the layout tests can
+	# see their pins, and this test is about a rally being hidden.
+	_dark_map_radius()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# A fresh profile has no stars, so the highest-rung special is certainly still locked.
-	var special := _pin_for(hq, _top_special_id())
-	assert_true(bool(special.get_meta("locked")),
-		"a special pin is locked until its star gate opens")
-	assert_eq(special.find_children("*", "Area3D", true, false).size(), 0,
-		"a locked pin is not pickable (no hit area)")
-	var normal := _pin_for(hq, "shakedown")
-	assert_false(bool(normal.get_meta("locked")), "a normal rally pin is unlocked")
-	var areas := normal.find_children("*", "Area3D", true, false)
-	assert_eq(areas.size(), 2, "an unlocked pin is pickable on BOTH the flag and its menu box")
-	# One hit target sits up at the readout box (flag pole + label rise), so a click on
-	# the menu itself enters the rally just like a click on the flag.
-	var label_y: float = RallyFlag.POLE_HEIGHT + hq.PIN_LABEL_RISE
-	var menu_targets := 0
-	for a in areas:
-		if absf((a as Area3D).position.y - label_y) < 0.01:
-			menu_targets += 1
-	assert_eq(menu_targets, 1, "the floating menu box is itself a click target")
-
+	# The special the map reaches LAST is certainly still dark on a fresh profile.
+	assert_null(_pin_for(hq, _top_special_id()), "an unreached special has no pin")
+	# The one rally beside the garage IS there, and is enterable — so the absence above is
+	# the fog working, not the table failing to build.
+	var open_pin := _pin_for(hq, _first_reachable_rally_id())
+	assert_not_null(open_pin, "the rally beside HQ is on the map")
+	assert_false(bool(open_pin.get_meta("locked")), "and open from the start")
 
 func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
 	# All-or-nothing for ORDINARY rallies: one that can't be entered yet shows NO readout
@@ -1794,13 +1823,19 @@ func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
 	# eligible) shows its box at full opacity. The 3D flag stands at BOTH pins either way,
 	# so the map still marks where the unavailable rally is. (Locked SPECIALS are the one
 	# exception — see the teaser test below.)
+	#
+	# Needs the REAL reveal radius: before_each lights the whole map, which would leave no
+	# unavailable ordinary pin to look at and quietly turn this into a no-op.
+	_dark_map_radius()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var hidden := _unavailable_ordinary_pin(hq)
 	if hidden == null:
-		return  # every ordinary rally is currently enterable; nothing to assert
-	var shakedown := _pin_for(hq, "shakedown")
+		# Nothing on the lit map is out of the garage's reach right now — the case this test
+		# describes simply is not present, so there is nothing to assert about it.
+		return
+	var shakedown := _pin_for(hq, _first_reachable_rally_id())
 	assert_eq(hidden.find_children("*", "Sprite3D", true, false).size(), 0,
 		"an unavailable ordinary rally has no floating menu box at all")
 	assert_false(hidden.has_meta("label_panel"),
@@ -1812,15 +1847,32 @@ func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
 			"the 3D flag is built for available and unavailable rallies alike")
 
 
-# The id of the special on the HIGHEST rung — certain to be locked on a fresh profile,
-# without pinning which rally that is.
+# The id of the special the map reaches LAST — certain to be dark on a fresh profile,
+# without pinning which rally that is. Reveal is geometric now, so "last" is the deepest
+# reachability wave (RallyLibrary.reveal_depths), not the top authored rung.
 func _top_special_id() -> String:
+	var depth := RallyLibrary.reveal_depths()
 	var best := ""
-	var best_rung := -1
+	var best_wave := -1
 	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally) and RallyLibrary.completions_required(rally) > best_rung:
-			best_rung = RallyLibrary.completions_required(rally)
-			best = String(rally["id"])
+		var rid := String(rally["id"])
+		if RallyLibrary.is_special(rally) and int(depth.get(rid, -1)) > best_wave:
+			best_wave = int(depth.get(rid, -1))
+			best = rid
+	return best
+
+
+# The rally the map reaches FIRST — the single event beside the garage that a brand-new
+# player can drive. Derived, never named, so re-siting pins moves the test with the map.
+func _first_reachable_rally_id() -> String:
+	var depth := RallyLibrary.reveal_depths()
+	var best := ""
+	var best_wave := 1 << 30
+	for rally in RallyLibrary.all():
+		var rid := String(rally["id"])
+		if int(depth.get(rid, 1 << 30)) < best_wave:
+			best_wave = int(depth.get(rid, 1 << 30))
+			best = rid
 	return best
 
 
@@ -1828,79 +1880,35 @@ func _top_special_id() -> String:
 func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
 	for pin in hq._pins:
 		var rally := RallyLibrary.by_id(String(pin.get_meta("rally_id")))
-		if not RallyLibrary.is_special(rally) and bool(pin.get_meta("locked")):
+		# REVEALED but with nothing in the garage that can enter it. An unreached rally is
+		# not a candidate any more — it is not drawn at all.
+		if not RallyLibrary.is_special(rally) and not hq._has_eligible_car(rally):
 			return pin
 	return null
 
 
-# A two-rung specials ladder over one open ordinary rally: "near" is the next rung the
-# player is working toward, "far" sits further up. Both are locked on a fresh profile (no
-# rally completed), so the pair isolates "which locked special gets a teaser".
+# Two locked specials at DIFFERENT distances beyond the frontier, over one open ordinary
+# rally: "near" is the one the player is heading for, "far" sits further out. Both are dark
+# on a fresh profile, so the pair isolates "which locked special gets a teaser".
+# Distances, not rungs — reveal is geometric (features/map-exploration.md).
 func _install_special_ladder_roster() -> void:
+	_dark_map_radius()
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	RallyLibrary.override_for_test([
 		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+			"map_pos": hq_pos, "restriction": {}, "events": []},
 		{"id": "near", "name": "Near Special", "region": "home", "special": true,
-			"requires_completions": 1, "map_pos": Vector2(0.6, 0.5), "restriction": {},
-			"events": []},
+			"map_pos": hq_pos + Vector2(0.20, 0.0), "restriction": {}, "events": []},
 		{"id": "far", "name": "Far Special", "region": "home", "special": true,
-			"requires_completions": 2, "map_pos": Vector2(0.8, 0.5), "restriction": {},
-			"events": []},
+			"map_pos": hq_pos + Vector2(0.40, 0.0), "restriction": {}, "events": []},
 	])
-
-
-func test_hq_locked_special_shows_a_full_opacity_teaser_box() -> void:
-	# THE documented exception to the all-or-nothing readout rule. The NEXT locked special
-	# still gets a box — at FULL opacity but non-pickable — because locking must hide
-	# availability, never information: the player should see what exists and where it is
-	# earned long before they can have it.
-	_install_special_ladder_roster()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var pin := _pin_for(hq, "near")
-	assert_true(bool(pin.get_meta("locked")), "setup: this special is still locked")
-	assert_gt(pin.find_children("*", "Sprite3D", true, false).size(), 0,
-		"the next locked special still shows its teaser box")
-	assert_eq(_pin_label_sprite(pin).modulate, Color.WHITE,
-		"the teaser is at FULL opacity, not dimmed — the box is live-looking, just not a target")
-	assert_eq(pin.find_children("*", "Area3D", true, false).size(), 0,
-		"but it is not pickable")
-	# The teaser quotes completed RALLIES (an event is one stage inside a rally), counted
-	# against the rung it is gated on.
-	assert_string_contains(_label_texts(_pin_label_sprite(pin)).to_upper(), "RALLIES",
-		"the teaser counts rallies, not events")
-
-
-func test_hq_only_the_next_locked_special_is_teased() -> void:
-	# ONE teaser at a time: only the lowest rung still shut quotes its requirement. A locked
-	# special further up the ladder is not something the player can work on yet, so it stands
-	# its trophy and says nothing — the destination is signposted, the number is not.
-	_install_special_ladder_roster()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var far := _pin_for(hq, "far")
-	assert_true(bool(far.get_meta("locked")), "setup: the far special is locked too")
-	assert_eq(far.find_children("*", "Sprite3D", true, false).size(), 0,
-		"a locked special beyond the next rung has no readout box at all")
-	assert_false(far.has_meta("label_panel"),
-		"and no panel for the focus cursor to paint")
-	assert_gt(far.find_children("*", "MeshInstance3D", true, false).size(), 0,
-		"its trophy still stands on the map")
-	# Once the near rung opens, the teaser moves up the ladder to the next one still shut.
-	_save.complete_rally("ord", 60000, 1)
-	hq._refresh_map_pins()
-	await get_tree().process_frame
-	assert_gt(_pin_for(hq, "far").find_children("*", "Sprite3D", true, false).size(), 0,
-		"the far special is teased once it becomes the next rung")
 
 
 func test_hq_garage_always_shows_the_next_carrot() -> void:
 	# The map's locked-special teaser, promoted to a permanent line on the GARAGE — the
-	# station the player lands on after every rally. It names the count still owed, the
-	# special it opens, and (below) what winning that special gives.
+	# station the player lands on after every rally. It names the DIRECTION to explore, the
+	# special out that way, and (below) what winning that special gives.
 	_install_special_ladder_roster()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1908,20 +1916,17 @@ func test_hq_garage_always_shows_the_next_carrot() -> void:
 	hq._go_to(hq.View.GARAGE)
 	assert_true(hq._carrot_panel.visible, "the carrot line is up in the garage")
 	var line: String = hq._carrot_label.text
-	assert_string_contains(line, "1 MORE RALLY",
-		"it quotes what is still owed, pluralised (one to go, so singular)")
-	assert_string_contains(line, "NEAR SPECIAL", "and names the special that count opens")
-	# The SAME requirement the map pin quotes — both read next_locked_special_id /
-	# completions_needed, so the two surfaces can't disagree about the number.
-	assert_string_contains(_label_texts(_pin_label_sprite(_pin_for(hq, "near"))).to_upper(),
-		"0/1", "the map teaser quotes the same rung")
-	# Winning the ordinary rally moves the carrot up the ladder, exactly as the teaser moves.
-	_save.complete_rally("ord", 60000, 1)
+	assert_string_contains(line, "EXPLORE TOWARD",
+		"it tells the player to explore, which is literally how the event opens now")
+	assert_string_contains(line, "NEAR SPECIAL", "and names the event to head for")
+	# The event it names is genuinely unreached — which is exactly why the garage has to
+	# carry this line at all. The map cannot: an unreached rally is not drawn on it.
+	assert_null(_pin_for(hq, "near"), "the event being teased is not on the map yet")
+	# Reaching and winning the near special moves the carrot outward to the next one dark.
+	_save.dev_three_star_rally("near")
 	hq._go_to(hq.View.GARAGE)
 	assert_string_contains(hq._carrot_label.text, "FAR SPECIAL",
-		"once the near rung opens the line points at the next one still shut")
-	assert_string_contains(hq._carrot_label.text, "1 MORE RALLY",
-		"and re-counts against that rung")
+		"once the near one is won the line points at the next still dark")
 
 
 func test_hq_carrot_names_what_the_special_unlocks() -> void:
@@ -1931,12 +1936,15 @@ func test_hq_carrot_names_what_the_special_unlocks() -> void:
 	# The engine-swap CAPABILITY is used here because it is authored on RallyLibrary
 	# itself (ENGINE_SWAP_UNLOCK_RALLY) rather than in the upgrade catalogue — so this
 	# stays a test of the wiring, not of any particular authored part.
+	# The special must be DARK for there to be a carrot at all, so this needs the real
+	# reveal radius rather than before_each's lit-everything default.
+	_dark_map_radius()
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	RallyLibrary.override_for_test([
 		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+			"map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
 		{"id": RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, "name": "Swap Special", "region": "home",
-			"special": true, "requires_completions": 1, "map_pos": Vector2(0.6, 0.5),
+			"special": true, "map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.4, 0.0),
 			"restriction": {}, "events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -1954,8 +1962,7 @@ func test_hq_carrot_hides_once_every_special_is_open() -> void:
 	RallyLibrary.override_for_test([
 		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
 			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "open", "name": "Open Special", "region": "home", "special": true,
-			"requires_completions": 0, "map_pos": Vector2(0.6, 0.5), "restriction": {},
+		{"id": "open", "name": "Open Special", "region": "home", "special": true, "map_pos": Vector2(0.6, 0.5), "restriction": {},
 			"events": []},
 	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -2365,12 +2372,12 @@ func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
 	assert_gt(idx, -1, "the wrecked car is still parked in the lineup")
 	hq._focus = idx
 	hq._carpark_ui._focus_changed()
-	assert_true(hq._start_button.disabled, "a wrecked car cannot be entered")
-	assert_true(hq._car_warning_label.visible, "the beyond-repair warning is shown")
-	# Nothing the player can do here brings it back: refreshing does not change that.
-	hq._carpark_ui._focus_changed()
-	assert_true(hq._start_button.disabled, "still un-enterable — wrecking is terminal")
-	assert_true(_save.car_is_wrecked(_save.get_car(id)), "and the car is still a wreck")
+	# Damage WARNS but never bars: a wreck is recoverable now (features/damage.md), so a
+	# battered car is one you can still race — badly — and the label points at the repair
+	# rather than declaring the car dead.
+	assert_false(hq._start_button.disabled, "a damaged car can still be entered")
+	assert_true(hq._car_warning_label.visible, "but it is flagged as damaged")
+	assert_true(_save.car_needs_repair(id), "and it does need a repair")
 
 
 func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
@@ -2399,7 +2406,6 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 		},
 		{
 			"id": "fx_showdown", "name": "Fixture Showdown", "difficulty": 4, "special": true,
-			"requires_completions": 0,
 			"map_pos": Vector2(0.7, 0.7), "restriction": {},
 			"events": [
 				{"seed": 21, "turn_count": 4}, {"seed": 22, "turn_count": 4}, {"seed": 23, "turn_count": 4},
@@ -3199,6 +3205,30 @@ func test_podium_skips_the_unlock_stage_for_an_ordinary_rally() -> void:
 		"no unlock stage without a special_unlock")
 
 
+func test_a_win_still_reads_as_a_win() -> void:
+	# The other side of the wording split — P1 is the one result that may claim it.
+	RallySession._last_result = {"placed": 1, "completed": true, "combined_ms": 60000,
+		"dnf": false}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_string_contains(_label_texts(pod), "WON", "first place reads as a win")
+
+
+# A rally completed from OFF the podium — only the opening rally does this
+# (todo/opening-rally.md). It must not claim a top-3 finish that did not happen.
+func test_an_off_podium_completion_claims_no_podium() -> void:
+	RallySession._last_result = {"placed": 6, "completed": true, "combined_ms": 90000,
+		"dnf": false}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	var text := _label_texts(pod)
+	assert_string_contains(text, "COMPLETED", "it still reads as completed")
+	assert_false(text.contains("TOP 3"), "but does not claim a podium it did not get")
+	assert_false(text.contains("WON"), "nor a win")
+
+
 func test_podium_shows_the_finish_summary() -> void:
 	# The podium opens on its first stage (the 3D podium) showing the headline result.
 	RallySession._last_result = {"placed": 2, "completed": true, "combined_ms": 65000, "dnf": false}
@@ -3208,7 +3238,25 @@ func test_podium_shows_the_finish_summary() -> void:
 	assert_eq(pod._stage, pod.Stage.PODIUM, "the podium opens on the PODIUM stage")
 	var text := _label_texts(pod)
 	assert_string_contains(text, "P2", "podium shows the placement")
-	assert_string_contains(text, "WON", "a top-3 finish reads as a win")
+	# CHANGED DELIBERATELY: a P2/P3 finish used to read "RALLY WON". It completes the
+	# rally — claims the prize, lights the map — but it is not a win, and the placement
+	# on the line above already says so.
+	assert_string_contains(text, "COMPLETED", "a podium finish reads as completed")
+	assert_false(text.contains("WON"), "and does not claim a win from second place")
+	# The text sits on a solid black plate: it is drawn over the live 3D podium scene,
+	# where unbacked light text is hard to read at the moment the player most wants to.
+	assert_true(pod._body_plate.visible, "the body text's black plate is up")
+	var plate_box: StyleBox = pod._body_plate.get_theme_stylebox("panel")
+	assert_true(plate_box is StyleBoxFlat, "the plate carries a flat stylebox")
+	assert_eq((plate_box as StyleBoxFlat).bg_color.a, 1.0, "and it is fully opaque")
+	# The plate must FILL, not shrink to its content. _body_label autowraps, and an
+	# autowrapping label's minimum width is ONE CHARACTER — so a shrink-to-fit plate
+	# collapsed to a narrow column and rendered the summary vertically, one letter per
+	# line. Asserting the measured width catches that however it is reintroduced.
+	await get_tree().process_frame
+	assert_gt(pod._body_plate.size.x, 200.0,
+		"the plate spans the page rather than collapsing to a one-character column")
+	assert_false(pod._body_label.text.is_empty(), "setup: there is text to lay out")
 	# The grass floor with feathered tarmac pads is built as a custom ArrayMesh
 	# (scenery MultiMeshes are skipped headless, but the floor swap always runs).
 	var floor_mi := pod.get_node_or_null("Floor")
@@ -3307,9 +3355,13 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
+	# CHANGED DELIBERATELY: the podium no longer reveals the won car. That beat moved to
+	# HQ's present box, which the player has to open (hq.gd::_enter_present_box) — the
+	# slot-machine-and-turntable version happened on the results screen, away from the
+	# garage the car actually arrives in.
 	assert_eq(pod._stages,
-		[pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.STARS, pod.Stage.CAR_REVEAL] as Array[int],
-		"the podium reveals podium, leaderboard, stars, then the car — no upgrade stages")
+		[pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.STARS] as Array[int],
+		"the podium reveals podium, leaderboard and stars — the car is revealed at HQ")
 
 	# Next -> the leaderboard.
 	pod._on_next()
@@ -3319,30 +3371,93 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 	assert_string_contains(lb, "RIVAL 1", "the leaderboard lists the opponent field")
 	assert_string_contains(lb, "WRECKED", "a DNF opponent reads as WRECKED on the leaderboard")
 
-	# Next -> the stars beat (resolves instantly headless).
+	# Next -> the stars beat (resolves instantly headless), which is now the LAST stage.
 	pod._on_next()
 	await get_tree().process_frame
 	assert_eq(pod._stage, pod.Stage.STARS, "Next from the leaderboard shows the stars beat")
-
-	# Next -> the car slot-machine reveal (resolves instantly headless).
-	pod._on_next()
-	await get_tree().process_frame
-	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the stars beat shows the car reveal")
-	assert_true(pod._reveal_done, "the slot spin resolves instantly under headless")
-	assert_true(pod._next_button.visible, "Next reappears once the spin locks on")
-	# The showroom car is spawned by the slot's on_done (only once the reel locks on).
-	assert_true(is_instance_valid(pod._showroom_car), "the won car is spawned once the reveal lands")
-	assert_true(pod._showroom_car.visible, "the revealed car is shown after the spin")
-	var car := _label_texts(pod)
-	# Derive the reward car's name from the catalogue (labels are upper-cased for
-	# display) rather than pinning an authored name that a rename would break.
-	var reward_name: String = String(CarLibrary.by_id("fx_rwd_coupe")["name"]).to_upper()
-	assert_string_contains(car, reward_name, "the won car is revealed by name")
-	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
-	# The car reveal is a single caption line — the big slot label is hidden so the
-	# car name isn't shown twice.
-	assert_false(pod._slot_label.visible, "the big slot label is hidden on the one-line car reveal")
 	assert_eq(pod._next_button.text, "CONTINUE TO HQ", "the final stage's button returns to HQ")
+
+
+# A DNF in the OPENING rally still completes it (todo/opening-rally.md), so the podium must
+# not tell the player it "stays incomplete" — they are about to be shown a map that says
+# otherwise. The ordinary DNF keeps the honest wording.
+func test_a_dnf_that_still_completes_does_not_claim_otherwise() -> void:
+	RallySession._last_result = {"placed": -1, "completed": true, "combined_ms": -1,
+		"dnf": true, "rally_name": "Opener"}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	var text := _label_texts(pod)
+	assert_string_contains(text, "DNF", "it still says the run ended in a DNF")
+	assert_false(text.contains("STAYS INCOMPLETE"),
+		"but does not claim a completion that was recorded did not happen")
+
+
+func test_an_ordinary_dnf_still_reads_as_incomplete() -> void:
+	RallySession._last_result = {"placed": -1, "completed": false, "combined_ms": -1,
+		"dnf": true, "rally_name": "Ordinary"}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_string_contains(_label_texts(pod), "INCOMPLETE",
+		"a DNF that completed nothing says so")
+
+
+# --- The present-box car reveal ----------------------------------------------
+# A won car is revealed at HQ, in a box the player must open. The rally GRANTS the car and
+# hands HQ the instance; HQ opens on the box and holds the player there until they open it.
+
+func test_a_won_car_opens_hq_on_a_forced_present_box() -> void:
+	var won: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var won_id := int(won["instance_id"])
+	RallySession.pending_car_reveal_instance_id = won_id
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.CARPARK, "HQ opens on the car park, not the garage")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.PRESENT, "in present-box mode")
+	assert_eq(RallySession.pending_car_reveal_instance_id, -1,
+		"the hand-off is one-shot — cleared so it cannot replay on the next boot")
+
+	# FORCED: Back does nothing while the box is shut, and its button is hidden.
+	assert_false(hq._car_back_button.visible, "the Back button is hidden while the box is shut")
+	hq._car_back()
+	assert_eq(hq._carpark_mode, hq.CarparkMode.PRESENT, "Back cannot leave an unopened box")
+
+	# Opening it reveals the car and hands back a way out.
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_true(hq._present_opened, "the box is open")
+	assert_eq(_save.selected_instance_id(), won_id, "the won car becomes the selected car")
+	assert_true(hq._car_back_button.visible, "and Back returns once it is open")
+	hq._car_back()
+	assert_eq(hq._view, hq.View.GARAGE, "leaving the opened box lands in the garage")
+
+
+# The car is granted by the rally, NOT by opening the box — so a player who quits before
+# opening it still owns what they won. The box is a presentation, not a transaction.
+func test_the_present_box_only_presents_a_car_already_owned() -> void:
+	var owned_before: int = (_save.profile["cars"] as Array).size()
+	var won: Dictionary = _save.grant_car("fx_rwd_coupe")
+	RallySession.pending_car_reveal_instance_id = int(won["instance_id"])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_eq((_save.profile["cars"] as Array).size(), owned_before + 1,
+		"opening the box mints nothing — the rally already granted the car")
+
+
+# A stale hand-off (a car that no longer exists) must not strand the player in a forced
+# screen with nothing in it.
+func test_a_stale_car_reveal_hand_off_is_ignored() -> void:
+	RallySession.pending_car_reveal_instance_id = 999999
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_ne(hq._carpark_mode, hq.CarparkMode.PRESENT,
+		"an instance that does not exist opens no box")
 
 
 # --- Podium stars beat (todo/star-economy.md) --------------------------------
@@ -3472,15 +3587,27 @@ func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 	hq._carpark_ui._focus_changed(true)
 	var picked_id := String(hq._eligible[0].get("model_id", ""))
 	assert_ne(picked_id, "", "the parked preview names its model")
-	hq._on_start_pressed()
+	# Confirming the pick now DRIVES — the player is put straight into the rally that
+	# awards the car they chose, before the map is ever shown (todo/opening-rally.md).
+	# Kept out of the scene change so the assertion is about the flow, not the load.
+	RallySession.auto_load_scenes = false
+	await hq._on_start_pressed()
 	assert_true(bool(_save.profile["starter_picked"]), "starter recorded")
 	assert_eq(String(_save.profile["starter_model_id"]), picked_id)
 	var cars: Array = _save.profile["cars"]
 	assert_eq(cars.size(), 1, "exactly one car granted")
 	assert_eq(String(cars[0]["model_id"]), picked_id, "the granted car is the picked starter")
-	assert_false(_save.car_is_wrecked(cars[0]), "the chosen starter is a healthy, ordinary car")
+	assert_false(_save.car_needs_repair(int(cars[0]["instance_id"])),
+		"the chosen starter arrives in one piece")
 	assert_eq(_save.selected_instance_id(), int(cars[0]["instance_id"]), "the starter is selected")
-	assert_eq(hq._view, hq.View.GARAGE, "lands in the garage after picking")
+	# The picker no longer lands in the garage: it starts the player's OPENING rally, so
+	# the starter choice decides where on the map their career begins.
+	assert_true(RallySession.is_active(), "picking a starter starts a rally")
+	assert_eq(String(RallySession._rally.get("id", "")),
+		RallyLibrary.opening_rally_id_for(picked_id),
+		"and it is the rally that awards the car they picked")
+	assert_ne(hq._view, hq.View.GARAGE, "the picker does not drop them in the garage")
+	RallySession.abandon()
 
 
 func test_returning_player_start_goes_straight_to_garage() -> void:
@@ -5417,16 +5544,44 @@ func test_tapping_a_kind_tab_selects_it_without_starting_the_challenge() -> void
 # nothing in the fixture garage can reach, and a SPECIAL locked behind a star gate. The
 # gate is set to exactly one 1st-place finish's worth of stars, so completing a single
 # rally opens it — the same shape the old "complete the region" gate had.
+# The shipped roster, but with the profile recording a starter whose opening rally sits at
+# the middle of the map — the one patch of light a fresh profile has now that HQ provides
+# none. Used by the fog tests, which need a known lit spot and known dark corners.
+func _install_opening_rally_at_centre() -> void:
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
+	_save.profile["starter_model_id"] = STARTER_PRIZE_CAR
+	RallyLibrary.override_for_test([
+		{"id": "fog_start", "name": "Fog Start", "region": "home", "difficulty": 1,
+			"special": false, "map_pos": hq_pos, "restriction": {},
+			"prize_car": STARTER_PRIZE_CAR, "events": []},
+		# Something out in the dark for the player to light next, so the "fog recedes"
+		# test has somewhere left to go.
+		{"id": "fog_next", "name": "Fog Next", "region": "home", "difficulty": 2,
+			"special": false, "map_pos": hq_pos + Vector2(0.12, 0.0), "restriction": {},
+			"events": []},
+	])
+
+
 func _install_reveal_roster() -> void:
+	# rv_open is the player's OPENING rally — the map's one starting light, since HQ lights
+	# nothing (features/map-exploration.md) — and rv_hot sits inside its circle, held back
+	# by its power floor rather than by the map. rv_special is parked far out in the dark.
+	# Reveal is geometric, so the real radius is what makes that distinction.
+	_dark_map_radius()
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
+	_save.profile["starter_model_id"] = STARTER_PRIZE_CAR
 	RallyLibrary.override_for_test([
 		{"id": "rv_open", "name": "Reveal Open", "region": "home", "difficulty": 1,
-			"special": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+			"special": false, "map_pos": hq_pos, "restriction": {},
+			"prize_car": STARTER_PRIZE_CAR, "events": []},
+		# rv_hot lights a WIDE circle, so completing it is what reveals rv_special — the
+		# roster's one reveal edge, and what the parade tests drive.
 		{"id": "rv_hot", "name": "Reveal Hot", "region": "home", "difficulty": 2,
-			"special": false, "map_pos": Vector2(0.6, 0.5),
+			"special": false, "map_pos": hq_pos + Vector2(0.03, 0.0), "reveal_radius": 0.7,
 			"restriction": {"pw_min": 5000.0}, "events": []},
 		{"id": "rv_special", "name": "Reveal Special", "region": "home", "difficulty": 3,
-			"special": true, "requires_completions": 2,
-			"map_pos": Vector2(0.5, 0.15), "restriction": {}, "events": []},
+			"special": true, "map_pos": hq_pos + Vector2(0.5, 0.0),
+			"restriction": {}, "events": []},
 	])
 
 
@@ -5498,7 +5653,7 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 	# has to remember to make. So this exercises it through an actual reload, not through
 	# any hq.gd hook. It seeds by UNLOCKED-OR-COMPLETED, deliberately with NO eligible-car
 	# clause (seeding's job is "anything already open already reads as seen", not
-	# "anything the player can currently enter") — rv_hot is unlocked (no reveal_after)
+	# "anything the player can currently enter") — rv_hot is revealed (it sits in the light)
 	# even though nothing in the garage can enter it yet, so it gets silently seeded too.
 	# Only a rally that is genuinely still LOCKED at seed time — rv_special, gated on the
 	# ordinary-completion count — survives the pass to become a real future reveal.
@@ -5551,48 +5706,6 @@ func test_a_press_during_the_reveal_cannot_cancel_it() -> void:
 	assert_false(_save.rally_revealed_seen("rv_hot"),
 		"and the queued rally is still pending, not silently burned")
 	assert_eq(hq._view, hq.View.TABLE, "the player stays on the map")
-
-
-# A SPECIAL event's map readout is inverted — white face, black ink — so it stands out from
-# the black panel every ordinary pin wears. Asserted against the constants rather than
-# literal colours, so retheming moves the test with the design.
-func test_special_event_pins_wear_the_inverted_readout() -> void:
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "spec", "name": "Special", "region": "home", "special": true,
-			"requires_completions": 0, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
-	])
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-
-	var panels := {}
-	for pin in hq._pins:
-		if pin.has_meta("label_panel"):
-			panels[String(pin.get_meta("rally_id"))] = pin.get_meta("label_panel")
-	assert_true(panels.has("spec"), "the special's pin has a readout panel")
-
-	var spec_panel: PanelContainer = panels["spec"]
-	assert_eq(spec_panel.get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
-		"the special's readout is the inverted (light) face")
-	if panels.has("ord"):
-		assert_ne(panels["ord"].get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
-			"an ordinary rally's readout is NOT inverted")
-
-	# The subtle half: UITheme.mark_panel_focused replaces the WHOLE stylebox on every
-	# focus repaint, which happens on each selection change. Without the accent being
-	# carried through it, a special's pin would revert to the default face the first time
-	# the cursor moved — visible as the highlight simply vanishing.
-	UITheme.mark_panel_focused(spec_panel, true)
-	assert_eq(spec_panel.get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
-		"focusing the special keeps its inverted face")
-	UITheme.mark_panel_focused(spec_panel, false)
-	assert_eq(spec_panel.get_theme_stylebox("panel").bg_color, hq.ACCENT_READOUT_BG,
-		"and de-focusing it does not reset the face to the default")
-	RegionLibrary.reset()
-	RallyLibrary.reset()
 
 
 func test_table_input_is_suspended_while_the_reveal_runs() -> void:
@@ -5678,226 +5791,212 @@ func test_free_roam_is_not_on_the_garage_row() -> void:
 
 
 # --- Present box on the map (todo/star-economy.md) ----------------------------
-# CLAUDE.md: no menu ships pointer-only. The box must be reachable and operable by
-# keyboard/gamepad, which on this map means "appears as a focus target and fires through
-# _activate_table_focus" — the same path a pin uses.
 
-# Put the profile in a state where the present box is DRAWN: the pin only exists once the
-# balance covers a car (_refresh_map_pins), so any test that wants the box must afford one.
-func _afford_a_present() -> void:
+
+# --- Repair (features/star-economy.md) ---------------------------------------
+# The lift hub's Repair action: the per-car star sink. Never pins the PRICE
+# (GameConfig.star_cost_per_repair is tunable) — only that the button states its three
+# cases and that pressing it fixes the car and moves the balance.
+
+# A button anywhere in the LIFT station by its label. Searches the whole subtree rather
+# than just the hub row: the lift's controls are spread across two cursor rows — the
+# actions row and the car selector, which is where Repair lives (it moved there when the
+# actions row outgrew the screen).
+func _lift_button(hq: Node3D, label: String) -> Button:
+	for node in hq.find_children("*", "Button", true, false):
+		if (node as Button).text.to_upper().begins_with(label.to_upper()):
+			return node
+	return null
+
+
+func test_hq_lift_repair_button_is_disabled_for_an_undamaged_car() -> void:
+	# Stated, not hidden: "your car is fine" is something the player can read off the row.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	var repair := _lift_button(hq, "REPAIR")
+	assert_not_null(repair, "the hub row has a Repair button")
+	assert_true(repair.disabled, "nothing to fix, so nothing to buy")
+
+
+func test_hq_lift_repair_button_is_reachable_once_the_car_is_damaged() -> void:
+	# CLAUDE.md: no menu ships pointer-only — a damaged car's Repair must be a real
+	# keyboard/gamepad cursor stop, not just a clickable rectangle.
 	var save: Node = get_node("/root/Save")
-	save.profile["stars_earned"] = int(Config.data.star_cost_per_car) * 2
-	save.profile["stars_spent"] = 0
-
-
-func _present_target_index(hq: Node3D) -> int:
-	var targets: Array = hq._table_ui._table_targets()
-	for i in targets.size():
-		if String(targets[i]["kind"]) == "present":
-			return i
-	return -1
-
-
-func test_the_present_box_is_a_keyboard_reachable_map_target() -> void:
-	_afford_a_present()
+	save.get_car(save.selected_instance_id())["hp"] = 1.0
+	save.award_stars(20)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._enter_table()
+	hq._enter_lift()
 	await get_tree().process_frame
-	var idx := _present_target_index(hq)
-	assert_gt(idx, -1, "the present box is a focus target, so panning can reach it")
-	var node: Node3D = hq._table_ui._table_targets()[idx]["node"]
-	assert_true(node.has_meta("label_panel"),
-		"it carries a label_panel so the focus cursor can paint it")
-	assert_false(node.has_meta("rally_id"),
-		"and deliberately carries no rally_id — hq._pins consumers assume one")
-	# Focusing it must not error (it goes through the same paint path as a pin).
-	hq._table_ui._focus_table_target(idx, false)
-	assert_eq(hq._table_focus_node, node, "the cursor seats on the present box")
+	var repair := _lift_button(hq, "REPAIR")
+	assert_false(repair.disabled, "a damaged car with stars in hand can be repaired")
+	# Repair sits on the SELECTOR row (beside the car name) rather than the actions row,
+	# so it is that row's cursor it has to be a stop on. Moving a button must never cost it
+	# keyboard/gamepad reachability (CLAUDE.md).
+	assert_has(hq._lift_selector_cursor.buttons, repair, "and it is a cursor stop")
 
 
-func test_the_present_box_is_never_left_out_of_the_pin_array() -> void:
-	# Regression guard for the reason it is kept separate: every consumer of hq._pins reads
-	# a "rally_id" meta, so a present box in that array would crash them.
-	_afford_a_present()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._table_ui._enter_table()
-	await get_tree().process_frame
-	for pin in hq._pins:
-		assert_true((pin as Node3D).has_meta("rally_id"),
-			"every entry in hq._pins is a rally pin")
-	assert_true(is_instance_valid(hq._present_pin), "the box exists as its own node")
-
-
-func test_activating_the_present_box_goes_straight_to_the_box() -> void:
-	# The keyboard/gamepad path, and the flow shape: firing the target takes the player
-	# STRAIGHT to the box — no confirm dialog in front of it. The box screen is the
-	# confirmation, and its bottom button is what spends the stars.
-	_afford_a_present()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._table_ui._enter_table()
-	await get_tree().process_frame
-	var idx := _present_target_index(hq)
-	assert_gt(idx, -1, "the box is focusable")
-	hq._table_ui._focus_table_target(idx, false)
-	hq._table_ui._activate_table_focus()
-	await get_tree().process_frame
-	assert_eq(ConfirmPopup.any_open(get_tree()), null,
-		"no confirm dialog stands between the map and the box")
-	assert_eq(hq._view, hq.View.CARPARK, "we are looking at the car park")
-	assert_eq(hq._carpark_mode, hq.CarparkMode.PRESENT, "in present mode")
-	assert_true(is_instance_valid(hq._present_box), "with the box actually built")
-	assert_false(hq._present_opened, "and nothing bought yet")
-
-
-func test_the_present_screen_prices_its_own_bottom_button() -> void:
+func test_hq_lift_repair_restores_the_car_and_spends_the_stars() -> void:
 	var save: Node = get_node("/root/Save")
-	var price := int(Config.data.star_cost_per_car)
-	save.grant_car(CarFixtures.cars()[0]["id"])  # not stranded, so full price applies
-	save.profile["stars_earned"] = 0
-	save.profile["stars_spent"] = 0
+	var id: int = save.selected_instance_id()
+	save.get_car(id)["hp"] = 1.0
+	save.award_stars(20)
+	var before: int = save.stars_available()
+	var price: int = save.repair_price(id)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_present_box()
+	hq._enter_lift()
 	await get_tree().process_frame
-	assert_true(hq._start_button.disabled, "broke: the button is disabled, not a silent no-op")
-	assert_string_contains(hq._start_button.text.to_upper(), "OPEN", "it still reads as Open")
-	save.award_stars(price)
-	hq._refresh_present_button()
-	assert_false(hq._start_button.disabled, "affording it enables the button")
-	assert_eq(hq._car_name_label.text, "", "no car is named before the box is opened")
+	hq._repair_selected_car()
+	await get_tree().process_frame
+	var entry: Dictionary = CarLibrary.by_id(String(save.get_car(id)["model_id"]))
+	assert_eq(float(save.get_car(id)["hp"]), float(entry["max_hp"]), "back to full health")
+	assert_eq(save.stars_available(), before - price, "and the balance moved by the price")
+	assert_true(_lift_button(hq, "REPAIR").disabled,
+		"and the button goes quiet again — there is nothing left to fix")
 
 
-func test_the_car_park_only_captions_itself_for_the_present_box() -> void:
-	# The hint line over the lot is gone: a garage full of cars with a prev/next row says
-	# "choose your car" by itself. The present box is the exception — a sealed box has no
-	# other affordance — so the label survives for that one mode and must go away again.
-	var save: Node = get_node("/root/Save")
-	save.grant_car(CarFixtures.cars()[0]["id"])
-	save.profile["stars_earned"] = int(Config.data.star_cost_per_car)
-	save.profile["stars_spent"] = 0
+# --- Exploration fog + prize markers (features/map-exploration.md) ------------
+
+func test_the_map_plane_is_shaded_by_the_exploration_fog() -> void:
+	# The map is DARK except where the player has driven, so the plane carries the fog
+	# shader with a mask — not the plain unshaded texture it used to.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_free_roam()
-	await get_tree().process_frame
-	assert_false(hq._car_hint_label.visible, "an ordinary lineup carries no hint line")
-	hq._enter_present_box()
-	await get_tree().process_frame
-	assert_true(hq._car_hint_label.visible, "the present box explains itself")
-	assert_ne(hq._car_hint_label.text, "", "...with actual copy")
+	var mat: Material = hq._map_plane.material_override
+	assert_true(mat is ShaderMaterial, "the map plane is fog-shaded")
+	assert_not_null((mat as ShaderMaterial).get_shader_parameter("fog_mask"),
+		"and carries a lit-region mask")
 
 
-func test_opening_the_present_puts_the_car_in_the_box_and_names_it_under_it() -> void:
-	# The whole point of the reveal: the car is spawned BEFORE any wall moves, so the box
-	# opens ON it. And the name lands in the car-park label under the car — no result modal.
-	var save: Node = get_node("/root/Save")
-	save.grant_car(CarFixtures.cars()[0]["id"])
-	save.profile["stars_earned"] = int(Config.data.star_cost_per_car)
-	save.profile["stars_spent"] = 0
-	var cars_before: int = save.profile["cars"].size()
+func test_the_fog_mask_lights_the_opening_rally_and_leaves_the_far_map_dark() -> void:
+	# The mask must agree with the reveal RULE — it is built from the same
+	# RallyLibrary.lit_sources — or the player would see lit ground they cannot enter.
+	#
+	# The lit ground is the player's OPENING RALLY, not HQ: HQ lights nothing and is not
+	# even drawn on the map any more (features/map-exploration.md). Parking that rally at
+	# the map's centre keeps the geometry of the original check — one lit patch in the
+	# middle, dark corners — while measuring the thing that actually lights it.
+	_dark_map_radius()
+	_install_opening_rally_at_centre()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_present_box()
-	await get_tree().process_frame
-
-	hq._on_start_pressed()  # the bottom button
-	await get_tree().process_frame
-	assert_true(hq._present_opened, "the box is opened")
-	assert_eq(save.profile["cars"].size(), cars_before + 1, "exactly one car was bought")
-	assert_eq(save.stars_available(), 0, "and the stars were spent")
-	assert_ne(hq._car_name_label.text, "", "the car is named under it")
-	assert_eq(ConfirmPopup.any_open(get_tree()), null, "with no modal after the reveal")
-	# The name shown must be the car actually granted, not a placeholder. set_selected_car
-	# promotes the new car to the FRONT of the lineup, so look there rather than at the tail.
-	var granted: Dictionary = save.selected_car()
-	var entry := CarLibrary.by_id(String(granted["model_id"]))
-	assert_string_contains(hq._car_name_label.text.to_upper(),
-		String(entry["name"]).to_upper(), "the label names the car that was granted")
+	var tex: Texture2D = (hq._map_plane.material_override as ShaderMaterial) \
+		.get_shader_parameter("fog_mask")
+	var img: Image = tex.get_image()
+	var n: int = img.get_width()
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
+	var at_hq: float = img.get_pixel(int(hq_pos.x * n), int(hq_pos.y * n)).r
+	var at_corner: float = img.get_pixel(1, 1).r
+	assert_gt(at_hq, 0.5, "the ground around the opening rally is lit")
+	assert_lt(at_corner, 0.5, "the far corner of the map is dark")
 
 
-func test_the_opened_car_becomes_the_selected_car() -> void:
-	# So "Back to garage" lands on the car you just opened, not whatever you had before.
-	var save: Node = get_node("/root/Save")
-	var old: Dictionary = save.grant_car(CarFixtures.cars()[0]["id"])
-	save.set_selected_car(int(old["instance_id"]))
-	save.profile["stars_earned"] = int(Config.data.star_cost_per_car)
-	save.profile["stars_spent"] = 0
+func test_completing_a_rally_lights_more_of_the_mask() -> void:
+	# The fog RECEDES as the player explores — the mask is rebuilt from current progress
+	# every time the pins are, so it can never lag behind what is enterable.
+	_dark_map_radius()
+	_install_opening_rally_at_centre()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._enter_present_box()
-	await get_tree().process_frame
-	hq._on_start_pressed()
-	await get_tree().process_frame
-	assert_ne(save.selected_instance_id(), int(old["instance_id"]),
-		"the selection moved off the car we started with")
-	assert_eq(hq._selected_instance_id, save.selected_instance_id(),
-		"and the HQ agrees with the profile about which car is selected")
-
-
-func test_the_present_cannot_be_bought_twice_in_one_visit() -> void:
-	var save: Node = get_node("/root/Save")
-	save.grant_car(CarFixtures.cars()[0]["id"])
-	save.profile["stars_earned"] = int(Config.data.star_cost_per_car) * 4
-	save.profile["stars_spent"] = 0
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._enter_present_box()
-	await get_tree().process_frame
-	hq._on_start_pressed()
-	await get_tree().process_frame
-	var after_one: int = save.profile["cars"].size()
-	hq._on_start_pressed()  # a second press must do nothing, even though they can afford it
-	await get_tree().process_frame
-	assert_eq(save.profile["cars"].size(), after_one,
-		"one box, one car — a second press cannot buy again")
-	# The guard is `_present_opened`, NOT a disabled button: hq._refresh_present_button
-	# deliberately leaves the row live once the box is spent, because a dead action row is a
-	# dead end — the button turns into the way out instead.
-	assert_false(hq._start_button.disabled, "the action row is never left dead")
-	assert_string_contains(hq._start_button.text.to_upper(), "GARAGE",
-		"the spent button becomes the exit to the garage")
-
-
-func test_the_present_box_only_appears_once_it_is_affordable() -> void:
-	# A box you cannot open is clutter, so it is not drawn at all until the balance covers a
-	# car. Broke but NOT stranded (a starter car can enter something), so the price stands.
-	var save: Node = get_node("/root/Save")
-	var price := int(Config.data.star_cost_per_car)
-	save.grant_car(CarFixtures.cars()[0]["id"])
-	save.profile["stars_earned"] = 0
-	save.profile["stars_spent"] = 0
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._table_ui._enter_table()
-	await get_tree().process_frame
-	assert_eq(RewardSystem.car_price(save.profile), price,
-		"a player who can still race is charged full price")
-	assert_eq(_present_target_index(hq), -1, "broke: no present box on the map at all")
-
-	save.award_stars(price)
+	var lit := func() -> int:
+		var img: Image = ((hq._map_plane.material_override as ShaderMaterial) \
+			.get_shader_parameter("fog_mask") as Texture2D).get_image()
+		var n := 0
+		for y in img.get_height():
+			for x in img.get_width():
+				if img.get_pixel(x, y).r > 0.5:
+					n += 1
+		return n
+	var before: int = lit.call()
+	for rally in RallyLibrary.all():
+		if RallyLibrary.rally_revealed(rally, _save.profile):
+			_save.dev_three_star_rally(String(rally["id"]))
 	hq._refresh_map_pins()
-	assert_gt(_present_target_index(hq), -1, "affording one makes the box appear")
+	await get_tree().process_frame
+	assert_gt(lit.call(), before, "winning what was reachable lights more of the map")
 
 
-func test_the_present_box_cost_line_reads_as_a_price() -> void:
+func test_a_car_prize_pin_stands_the_actual_car_model() -> void:
+	# The map's incentive: a car-unlock pin shows the car you win, so the destination
+	# describes itself and needs no permanent label.
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	var prize_id := String(CarFixtures.cars()[1]["id"])
+	RallyLibrary.override_for_test([
+		{"id": "car_prize", "name": "Car Prize", "region": "home", "special": false,
+			"map_pos": RallyLibrary.HQ_MAP_POS, "prize_car": prize_id,
+			"restriction": {}, "events": []},
+	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Explicitly typed: `hq` is a Node3D here, so the call comes back as Variant and `:=`
-	# cannot infer a type from it (a parse error, not a warning).
-	var priced: String = hq._present_cost_line(4).to_upper()
-	assert_string_contains(priced, "COST", "the cost line is labelled as a cost")
-	assert_string_contains(priced, "STAR", "and names the currency")
-	assert_string_contains(hq._present_cost_line(0).to_upper(), "FREE",
-		"a rescue-priced box reads as free, not as '0 stars'")
+	var pin := _pin_for(hq, "car_prize")
+	assert_eq(String(pin.get_meta("prize_car_model")), prize_id,
+		"the pin knows which car it advertises")
+	assert_gt(pin.find_children("*", "MeshInstance3D", true, false).size(), 0,
+		"and stands a 3D model for it")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+func test_only_the_focused_pin_shows_its_readout() -> void:
+	# HOVER-ONLY readouts: the table is a map with one thing selected, not a noticeboard of
+	# a dozen open menus. Every pin keeps its 3D marker, so nothing is hidden — only chrome.
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
+	RallyLibrary.override_for_test([
+		{"id": "one", "name": "One", "region": "home", "special": false,
+			"map_pos": hq_pos, "restriction": {}, "events": []},
+		{"id": "two", "name": "Two", "region": "home", "special": false,
+			"map_pos": hq_pos + Vector2(0.06, 0.0), "restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	var shown := 0
+	for pin in hq._pins:
+		if pin.has_meta("label_sprite") and (pin.get_meta("label_sprite") as Node3D).visible:
+			shown += 1
+	assert_eq(shown, 1, "exactly one readout is open — the focused pin's")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+func test_a_prize_car_model_is_seated_flush_on_its_pin() -> void:
+	# REGRESSION: CarProp.spawn's apply_car ends in _reset(), which puts the car back at its
+	# spawn transform — metres up. Positioning it AFTER spawn is therefore undone; it has to
+	# happen in the `configure` step, which runs before that reset. Left unfixed, the prize
+	# cars hovered in mid-air over the map with nothing on screen to explain them.
+	#
+	# Asserts the car's LOCAL transform under its pin — the thing `configure` actually
+	# controls — rather than a world height, which depends on how the HQ is parented.
+	#
+	# Runs on the SHIPPED roster and catalogue, because that is the pairing the bug lived in:
+	# under the synthetic car fixtures no prize car resolves and no model is ever built.
+	CarFixtures.restore()
+	RallyLibrary.reset()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var checked := 0
+	for pin in hq._pins:
+		if not pin.has_meta("prize_car_model"):
+			continue
+		var cars: Array = pin.find_children("*", "RigidBody3D", true, false)
+		assert_gt(cars.size(), 0, "the prize pin stands a car prop")
+		var car: Node3D = cars[0]
+		assert_almost_eq(car.position.y, 0.0, 0.01,
+			"the car is seated on its pin, not left at the spawn height _reset() applies")
+		assert_lt(car.scale.x, 1.0, "and shrunk to a map token rather than left full size")
+		checked += 1
+	assert_gt(checked, 0, "the shipped roster has prize cars to check")
