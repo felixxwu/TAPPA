@@ -684,7 +684,7 @@ func _resolve_results() -> void:
 				#
 				# It also hands over ONE swap token, so the capability is usable the moment
 				# it is announced. Unlocking the station and then making the player wait on a
-				# 0.2-weight drop (RewardSystem.ENGINE_SWAP_TOKEN_DROP_WEIGHT) before they can
+				# rare drop (RewardSystem.ENGINE_SWAP_TOKEN_DROP_CHANCE) before they can
 				# try it would make the reveal a promise rather than a reward.
 				Save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1, false)
 				special_unlock = {

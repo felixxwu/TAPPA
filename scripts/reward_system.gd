@@ -24,10 +24,16 @@ extends RefCounted
 # is untouched — it's also where the "harder rally, better prize" correlation still lives.
 const MAX_TIER := 4
 
-# The engine swap token's weight in the per-event upgrade pool, relative to a
-# part's weight of 1.0. Kept low — swaps are an occasional
-# treat, not a staple. Placeholder; becomes a GameConfig tunable in the balance pass.
-const ENGINE_SWAP_TOKEN_DROP_WEIGHT := 0.2
+# The engine swap token's chance of dropping at the end of a non-final event, as an
+# ABSOLUTE probability (0..1). Kept low — swaps are an occasional treat, not a staple.
+# Placeholder; becomes a GameConfig tunable in the balance pass.
+#
+# It was a relative WEIGHT of 0.2 in a pool where each eligible part weighed 1.0, so with
+# ~4 parts in the pool it paid out about 5% of the time. Retiring random part drops emptied
+# that pool and turned the same 0.2 into a flat 20% roll — quadrupling the token economy as
+# a side effect, which nobody chose. The value is restated here at the rate the weight
+# actually produced; the NAME says `CHANCE` now so it cannot be read as relative again.
+const ENGINE_SWAP_TOKEN_DROP_CHANCE := 0.05
 
 # Engine swap tokens the player must hold, on top of driving a fully-maxed car,
 # before a mystery box is granted instead of a normal draw (see draw_upgrade).
@@ -89,7 +95,7 @@ static func draw_upgrade(profile: Dictionary, rng: RandomNumberGenerator = null,
 	# — why go and win a turbo, or pay for one, if it might simply fall out of the next
 	# stage? — and it was the last thing in the game handing out equipment for nothing.
 	#
-	# What remains is the ENGINE SWAP TOKEN at its low drop weight, plus the mystery box on
+	# What remains is the ENGINE SWAP TOKEN at its low drop chance, plus the mystery box on
 	# its own gate. Those are consumables with no other renewable source, so the per-event
 	# draw is still doing real work; it just no longer competes with the two deliberate
 	# routes to a part.
@@ -103,7 +109,7 @@ static func draw_upgrade(profile: Dictionary, rng: RandomNumberGenerator = null,
 	# pool alongside "nothing" would quietly break that guarantee.
 	if _box_gate_open(profile, owned_car) and rng.randf() < _box_chance(profile):
 		return UpgradeLibrary.MYSTERY_BOX_ID
-	if rng.randf() < ENGINE_SWAP_TOKEN_DROP_WEIGHT:
+	if rng.randf() < ENGINE_SWAP_TOKEN_DROP_CHANCE:
 		return UpgradeLibrary.ENGINE_SWAP_TOKEN_ID
 	return NO_REWARD
 

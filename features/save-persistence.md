@@ -155,15 +155,20 @@ heuristic.
 `Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s),
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id)`, `get_car(instance_id)`,
-`apply_damage(instance_id, amount)`, `wreck_car(instance_id)` (leaves the car owned
-at **0 HP** — not destroyed — and permanently un-fieldable),
-`car_is_wrecked(car)` (the 0-HP predicate the menus gate on),
-`all_cars_wrecked()` (the soft-lock predicate: owns ≥1 car and every one is a
-write-off), `ensure_wreck_safety_net()` (anti-soft-lock floor — when
-`all_cars_wrecked()` and **no** Mystery Box is held, grants ONE free box and returns
-true, else no-op/false; called at the end of `load_or_new` and on every garage-lift
-refresh, `hq.gd:_refresh_lift_ui`. Opening that box grants a new CAR — see
-[reward-system.md](reward-system.md)),
+`apply_damage(instance_id, amount)`, `record_wreck(instance_id)` (hands the car back
+at `GameConfig.wreck_recovery_hp_fraction` of max HP — battered, still drivable, never
+written off; see [damage.md](damage.md)),
+`car_needs_repair(instance_id)` / `repair_price(instance_id)` / `repair_car(instance_id)`
+(the star-priced repair sink — "is this car less than pristine", which is ANY lost health
+or bent alignment), `car_handles_badly(instance_id)` (the narrower question the car park's
+red warning asks: is the damage below `damage_misfire_health_threshold`, i.e. actually
+costing engine power),
+`can_buy_part(instance_id, item_id)` / `part_price(item_id)` / `buy_part(instance_id, item_id)`
+(buying a discovered upgrade for a car — see [star-economy.md](star-economy.md)),
+`owns_model(model_id)`,
+`rally_revealed_seen(rally_id)` / `mark_rally_revealed(rally_id)` (the map's
+new-rally reveal acknowledgement — only the ACKNOWLEDGEMENT is persisted, never the
+unlock, which stays derived; see [map-exploration.md](map-exploration.md)),
 `set_tuning(instance_id, tuning)`,
 `swap_engines(id_a, id_b)` (exchanges two owned cars' CURRENT engines; free,
 unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap`
@@ -260,10 +265,11 @@ itself is the star delta onto `stars_earned` (see the ledger above).
 
 `tests/headless/test_save_manager.gd` — round-trip, default profile, instance-id
 uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
-the starter wrecking like any car, the `ensure_wreck_safety_net` free-box floor
-(all cars wrecked + none held), inventory counts,
+the starter wrecking like any car, the repair sink (price / spend / restore) and the
+narrower `car_handles_badly` warning predicate, inventory counts,
 migration refuse/backfill, corrupt-JSON
-and `.bak` fallback, unknown-model + retired-part pruning, new-game reset.
+and `.bak` fallback, unknown-model + retired-part pruning, the legacy-NOS revival
+(a nitrous part left parked by the retired ladder comes back ENABLED), new-game reset.
 `tests/headless/test_save_web_lifecycle.gd` — the web lifecycle seam: the shared
 `flush_and_sync()` entry point writes immediately (bypassing the debounce) and
 round-trips, the desktop close notification reaches that same entry point, a

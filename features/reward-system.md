@@ -97,7 +97,7 @@ Pool building goes through `_eligible_parts(profile, exclude, owned_car)`, a
 1. While `_eligible_parts` is non-empty, award a real part — weighted pick
    over `{"id": item_id, "weight": UpgradeLibrary.pool_weight(item_id)}` for
    every eligible part, plus the engine swap token at its own low weight
-   (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, placeholder). This is the common case and
+   (`ENGINE_SWAP_TOKEN_DROP_CHANCE`, placeholder). This is the common case and
    must never be pre-empted by what follows.
 2. Once the car is maxed (`_eligible_parts` empty) — a mystery-box roll, gated
    by `_box_gate_open`: requires `_other_car_has_room` (a box with nowhere to
@@ -396,7 +396,7 @@ unlock. It still gets the reveal (`special_unlock.capability == "engine_swap"`),
 because it sits on the **lowest rung**, so without it the first unlock a player ever earns
 would pass in silence. It also grants **one `ENGINE_SWAP_TOKEN_ID`** immediately, so the
 station is usable the moment it is announced — unlocking it and then making the player wait on
-a 0.2-weight drop (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`) would make the reveal a promise rather
+a rare drop (`ENGINE_SWAP_TOKEN_DROP_CHANCE`) would make the reveal a promise rather
 than a reward. The map pin has always had this branch
 (`hq.gd::_special_unlock_line`); the podium mirrors it.
 

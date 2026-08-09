@@ -224,6 +224,7 @@ func _sanitise(p: Dictionary) -> Dictionary:
 			if not car.has("wheel_toe"):
 				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
 			_prune_unknown_upgrades(car)
+			_revive_orphaned_nitrous(car)
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
@@ -253,6 +254,44 @@ func _prune_unknown_upgrades(car: Dictionary) -> void:
 			else:
 				push_warning("Save: dropping unknown upgrade '%s'" % item_id)
 		car[key] = kept
+
+
+# Re-enable a nitrous part that the NOS ladder's retirement left parked.
+#
+# NOS used to be four chained rungs sharing one slot, and only the HIGHEST was ever enabled
+# — the lower ones sat in `disabled_upgrades` (one enabled part per slot,
+# _enable_exclusive). Collapsing the ladder to a single part deletes those higher rungs, so
+# _prune_unknown_upgrades above drops them and leaves the survivor — plain `nitrous` —
+# disabled. A player past stage 1 would load in with NOS owned, fitted and switched OFF,
+# with no clue it happened.
+#
+# Only ever re-enables: it never installs a part the car did not have, and it does nothing
+# to a car that has nitrous enabled already or has none at all. So it is safe to run on
+# every load, which is why it lives here rather than behind a SCHEMA_VERSION bump — the
+# rung ids are gone from the catalogue, so there is no version to key off.
+func _revive_orphaned_nitrous(car: Dictionary) -> void:
+	var disabled: Array = car.get("disabled_upgrades", [])
+	var installed: Array = car.get("installed_upgrades", [])
+	for item_id in disabled.duplicate():
+		if UpgradeLibrary.slot_of(String(item_id)) != "nitrous":
+			continue
+		# Another nitrous part is already live — leave the player's own choice alone.
+		if _has_enabled_in_slot(car, "nitrous"):
+			return
+		disabled.erase(item_id)
+		if not installed.has(item_id):
+			installed.append(item_id)
+	car["disabled_upgrades"] = disabled
+	car["installed_upgrades"] = installed
+
+
+# Is any installed-and-enabled part occupying `slot` on this car?
+func _has_enabled_in_slot(car: Dictionary, slot: String) -> bool:
+	for item_id in car.get("installed_upgrades", []):
+		if UpgradeLibrary.slot_of(String(item_id)) == slot \
+				and not (car.get("disabled_upgrades", []) as Array).has(item_id):
+			return true
+	return false
 
 
 func has_save() -> bool:

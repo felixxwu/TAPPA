@@ -256,25 +256,28 @@ needed.
 ## Wreck at 0 HP
 
 `apply_loss()` clamps HP at 0 and calls `_wreck()`:
-- A **fielded** car (`instance_id >= 0`) calls `Save.wreck_car(instance_id)` —
-  which leaves the car **owned at 0 HP** (NOT destroyed): it stays in the garage,
-  its installed upgrades stay fitted (parts are consumed on fit, so they're never
-  returned), and it is **permanently too damaged to enter a rally** — nothing revives
-  it, so the car park's warning reads as final rather than as an instruction.
-  `Save.car_is_wrecked(car)` is the "0 HP" predicate the menus gate on.
+- A **fielded** car (`instance_id >= 0`) calls `Save.record_wreck(instance_id)`,
+  which hands it back at `GameConfig.wreck_recovery_hp_fraction` of max HP —
+  **battered, not written off**. It stays in the garage, its installed upgrades stay
+  fitted (parts are consumed on fit, so they're never returned), and it can be raced
+  again immediately or repaired at the lift. The car park's warning is an
+  INSTRUCTION ("repair it"), not a verdict.
 - `wrecked` is emitted either way; `car.gd` re-emits it as the car-level `wrecked`
   signal for the rally/menu layer (sibling to `StageManager.stage_completed`).
 - In **free-roam** (unbound) there is no DNF flow, so `car.gd` heals the car
   to full and respawns it at the start so play continues.
 
 Every car — including the starter — is a normal, wreckable car (no invulnerable
-car exists). The anti-soft-lock floor is `Save.ensure_wreck_safety_net`
-(see [save-persistence.md](save-persistence.md)): if the player owns ≥1 car, every
-owned car is wrecked, and no Mystery Box is held, it grants one free box. Opening it
-grants a **whole new car** rather than an upgrade (`Save.open_mystery_box` checks
-`all_cars_wrecked()` first), because a part fitted to a write-off would be worthless.
-That is the only route out of a fully wrecked garage — see
+car exists). **There is no anti-soft-lock machinery, because a wreck can no longer
+soft-lock anything**: since every wrecked car comes back drivable, a garage of
+write-offs is not a state the game has. `Save.wreck_car`, `car_is_wrecked`,
+`all_cars_wrecked` and `ensure_wreck_safety_net` were all retired with it, along
+with the free-Mystery-Box rescue that existed to dig the player out — see
 [reward-system.md](reward-system.md).
+
+The cost of a wreck is the **lost result**: a DNF, no podium, no prize, no progress
+on the map, plus a repair bill. That is punishment enough without ending a career on
+one mistake.
 
 ### Mid-event wreck menu (`scripts/wreck_screen.gd`)
 

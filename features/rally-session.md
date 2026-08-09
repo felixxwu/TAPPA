@@ -35,14 +35,14 @@ re-implementing them.
 | `start_rally(rally, owned_car, event_targets_ms := [])` | seed state, build the opponent field, kick event 0. Targets are derived from each event's track when omitted; tests pass them in to skip generation. |
 | `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw **one upgrade for a non-final event** (events before the last, via `RewardSystem.draw_upgrade(Save.profile, rng, owned_car)` — note there is no `rally_difficulty` param any more). The draw may return `RewardSystem.NO_REWARD` (`""`) — a maxed-out car can legitimately win nothing. On a real id: a consumable goes to inventory, everything else is `Save.install_upgrade`'d **disabled** — except the `UpgradeLibrary.HIDDEN_SLOTS` (`"nitrous"`) slot, installed **enabled** because it has no garage row to switch on (see [nitrous.md](nitrous.md)) — appends to `_upgrades_won`, and emits `upgrade_revealed`. On `NO_REWARD` nothing installs, nothing is recorded, and no reveal fires — the flow runs straight on. Either way the rally then always **enters `STANDINGS`** and emits `standings_ready` — every event pauses on the interstitial, including the last. "Every event always awards something" no longer holds. |
 | `current_event_upgrade()` | the upgrade id won for the just-completed non-final event (`""` after the final event / before any draw). Read by the standings reveal (`features/reward-system.md`). |
-| `continue_to_next_event()` | resume from the between-event standings interstitial: enters the next event, or — once `_event_index >= EVENTS_PER_RALLY` (the final event) — calls `_resolve_results()` (→ podium) instead. |
+| `continue_to_next_event()` | resume from the between-event standings interstitial: enters the next event, or — once `_event_index >= stage_count()` (the final event — the rally's OWN authored event count, which is 1 for an opening rally; `EVENTS_PER_RALLY` is only the fallback) — calls `_resolve_results()` (→ podium) instead. |
 | `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time **and the car each drove**, ranked via `build_standings`); read by the standings scene's OVERALL section. `events_completed()` gives the count for its header. |
 | `current_event_standings()` | the leaderboard for the **JUST-COMPLETED event alone**: each racer's time for that one event, fastest first (a rival who DNF'd that event sinks to the bottom). The row's `combined_ms` field carries the single-event time, not a cumulative sum. Empty before any event completes. Read by the standings scene's STAGE n RESULT section, AND by `GlobalStandings.for_current_stage()` — the player's row here already carries the corrected car name/id (next row), so the local and [global](global-leaderboards.md) boards can never disagree about what the player was driving. |
 | `_player_car_name()` (private) | the player's own row's `car_name` in both boards above — `EngineSwap.display_name(CarLibrary.by_id(_car_model_id), Save.get_car(_car_instance_id))`, i.e. the car's catalogue name **prefixed with its current engine swap** if it isn't running its stock engine (see [engine-swap.md](engine-swap.md)'s `display_name`). Previously read the bare model name with no swap prefix; corrected as part of the global-leaderboards work since the same string now also gets posted to the world leaderboard. `""` when no car is fielded or the model id resolves to nothing (e.g. headless tests). |
 | `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_id, car_name, time_ms}`); DNF-this-event omitted. Drives the [start-line](start-line.md) reveal: the top three line up on the grid in their **actual cars** (spawned from `car_id`), each shown by name with its time to beat. |
 | `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. Any per-event upgrades already earned this rally are **kept**; a DNF earns **no stars** (the star credit only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
-| `dev_complete_rally()` | **DEV shortcut** (settings dev page, surfaced only while active): credit every event a perfect **0 ms** time, force `_event_index = EVENTS_PER_RALLY`, and `_resolve_results()` straight to the podium. A 0 ms combined out-runs the field → **P1** (top-3), so the finish records completion and credits its stars. No-op when `IDLE`. The settings host unfreezes the tree before calling it (the page is reached from the paused in-run overlay). |
+| `dev_complete_rally()` | **DEV shortcut** (settings dev page, surfaced only while active): credit every event a perfect **0 ms** time, force `_event_index = stage_count()`, and `_resolve_results()` straight to the podium. A 0 ms combined out-runs the field → **P1** (top-3), so the finish records completion and credits its stars. No-op when `IDLE`. The settings host unfreezes the tree before calling it (the page is reached from the paused in-run overlay). |
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
 event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,
@@ -58,20 +58,34 @@ recorded here, but revealed earlier on the standings screens, not the podium),
 placement, i.e. how many of the podium's three stars light up) and
 `stars_gained` (int — what the ledger actually moved by, `0` on a re-win that
 didn't beat the previous best; the two are deliberately separate numbers, see
-below), `car_reward` (model id — now always `""`, since no rally pays a car;
-kept, with `car_reward_is_new`, so the podium/reveal plumbing keeps its shape),
-and `game_won` (bool — renamed from `showdown_won`). The `car_rewarded(model_id)`
-signal is likewise vestigial: nothing emits it any more.
+below), `car_reward` (model id — the car a PRIZE RALLY just handed over, `""` for every
+other rally and for a re-win) with `car_reward_is_new`, and `game_won` (bool —
+renamed from `showdown_won`). The `car_rewarded(model_id)` signal fires with it.
 
-`return_to_garage` is a one-shot navigation flag (not part of the result): the
-podium's final Continue sets it so HQ boots straight to the **garage** view; HQ
-reads + clears it on its next `_ready`.
+### One-shot navigation flags
+
+Three, all set by the finish and all read + cleared by HQ on its next `_ready`
+(none is part of the result dict). HQ resolves them in this priority:
+
+1. `pending_car_reveal_instance_id` (int, `-1` when none) — a car was WON, so HQ
+   opens on the **present box** and holds the player there until they open it
+   (`hq.gd::_enter_present_box`). The car is granted *before* this is set, so
+   quitting mid-reveal costs only the animation.
+2. `return_to_map` (bool) — the finished rally was the player's OPENING rally, so
+   HQ opens on the **map table** with the reveal parade armed. That arrival is the
+   whole point of the opening run (see [map-exploration.md](map-exploration.md)).
+3. `return_to_garage` (bool) — the podium's final Continue: boot to the **garage**
+   rather than the exterior title.
 
 ## Results & rewards
 
 On resolve: `combined = sum(event_times)`, `placed =
 RallyLibrary.placement(field, combined)`. A **top-3, non-DNF** finish records
-completion + best placement (`Save.complete_rally(id, combined, placed)` —
+completion + best placement — as does the player's **opening rally on its first
+attempt**, whatever the result, DNF included (the one place `completed` diverges
+from "podiumed"; placement still decides the stars, and the carve-out lives at
+the call site rather than as a flag on `complete_rally`. See
+[../todo/opening-rally.md](../todo/opening-rally.md)) (`Save.complete_rally(id, combined, placed)` —
 idempotent for the `completed` flag, and its RETURN VALUE is the number of stars
 it credited to the persisted ledger, see [star-economy.md](star-economy.md)).
 That credit is only the **improvement** over the rally's previous best, so a

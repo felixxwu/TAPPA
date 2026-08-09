@@ -682,8 +682,9 @@ Two separate reward paths:
   pool is flat and gated on won special events, see
   [reward-system.md](reward-system.md)) — and
   installs/adds the result exactly like `RallySession` does: consumables straight
-  to inventory, car-bound parts fitted DISABLED except the
-  `UpgradeLibrary.HIDDEN_SLOTS` (nitrous) slot, which fits ENABLED. The draw
+  to inventory, car-bound parts fitted DISABLED for the reveal to enable.
+  (`UpgradeLibrary.HIDDEN_SLOTS` — the "fits ENABLED because it has no garage row"
+  rule — is now EMPTY: nitrous was its only member and has an ordinary row.) The draw
   can legitimately come back `RewardSystem.NO_REWARD` (`""`) for a maxed-out car,
   in which case nothing installs and no reveal fires.
 - **Per-challenge** (finishing every stage, no DNF): `ChallengeSession.

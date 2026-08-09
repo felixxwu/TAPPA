@@ -297,7 +297,7 @@ func test_winning_the_capability_special_awards_a_swap_token() -> void:
 		"and it names no catalogue item, because there isn't one")
 	# Asserted on the special's OWN report, not on the inventory total: the ordinary
 	# per-event draw can independently award a swap token
-	# (RewardSystem.ENGINE_SWAP_TOKEN_DROP_WEIGHT), so an inventory count conflates the two
+	# (RewardSystem.ENGINE_SWAP_TOKEN_DROP_CHANCE), so an inventory count conflates the two
 	# and lands on 1 or 2 depending on RNG state — which differs between a targeted run and
 	# the full suite. The inventory is still checked, but only for "it actually arrived".
 	assert_eq(unlock.get("granted", []), [token] as Array,

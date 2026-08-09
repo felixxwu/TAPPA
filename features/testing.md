@@ -313,7 +313,7 @@ run). If you see a `retrying (n/2)` warning, that's this flake being absorbed.
 Driving a rally through `_report_events` (or any path that calls
 `RallySession.report_event_result`) fires the **ordinary per-event upgrade draw**. That draw
 can grant a part or a consumable — including an engine-swap token
-(`RewardSystem.ENGINE_SWAP_TOKEN_DROP_WEIGHT`) — to the driven car.
+(`RewardSystem.ENGINE_SWAP_TOKEN_DROP_CHANCE`) — to the driven car.
 
 So an assertion like "the car ends up with exactly one X" or "the car does NOT have Y" after
 driving events is **measuring two systems at once**, and whether it passes depends on RNG

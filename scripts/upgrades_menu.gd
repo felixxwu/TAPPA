@@ -498,10 +498,21 @@ func _make_weight_selector(instance_id: int, installed: Array) -> Control:
 				"opt:weight:none", _set_weight_option.bind(instance_id, "")))
 			stock_added = true
 		var pid := String(def.get("id", ""))
-		var available := UpgradeLibrary.is_free(pid) or installed.has(pid)
-		row.add_child(_option_button(_weight_delta_label(_mass_mult(def), base),
-			current_id == pid, available, "opt:weight:%s" % pid,
-			_set_weight_option.bind(instance_id, pid)))
+		var delta := _weight_delta_label(_mass_mult(def), base)
+		# FREE (ballast) or already on this car: a plain selectable option.
+		if UpgradeLibrary.is_free(pid) or installed.has(pid):
+			row.add_child(_option_button(delta, current_id == pid, true,
+				"opt:weight:%s" % pid, _set_weight_option.bind(instance_id, pid)))
+			continue
+		# Not on this car: offer it for sale, exactly as every other slot does
+		# (_make_option_selector). This row was the ONE selector that never got the buy
+		# branch, so with random part drops retired the lightweight option had no
+		# acquisition path at all — a permanently greyed button, and the main lever an
+		# under-powered car has for clearing a rally's pw_min floor.
+		var price: int = Save.part_price(pid)
+		row.add_child(_option_button("%s (%d★)" % [delta, price], false,
+			Save.can_buy_part(instance_id, pid),
+			"opt:weight:%s" % pid, _buy_slot_option.bind(instance_id, pid)))
 	if not stock_added:  # no lightweight option authored → Stock goes at the end
 		row.add_child(_option_button("Stock", current_id == "", true,
 			"opt:weight:none", _set_weight_option.bind(instance_id, "")))

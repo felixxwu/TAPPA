@@ -1160,3 +1160,53 @@ func test_bent_alignment_alone_does_not_warn() -> void:
 	_save.get_car(id)["wheel_toe"] = [0.0, 0.0, 0.03, 0.0]
 	assert_false(_save.car_handles_badly(id), "a full-health car does not warn")
 	assert_true(_save.car_needs_repair(id), "but it is still worth repairing")
+
+
+# --- Legacy NOS migration -----------------------------------------------------
+
+# NOS was four chained rungs sharing one slot, of which only the highest was ever ENABLED —
+# the rest sat in disabled_upgrades. Collapsing the ladder deletes the higher rungs, so the
+# survivor would load in fitted but switched OFF, and the player would never know.
+func test_a_legacy_nitrous_save_loads_with_nitrous_enabled() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var live: Dictionary = _save.get_car(id)
+	# The shape an old save had: a lower rung parked, the higher rung (now retired) live.
+	live["installed_upgrades"] = ["fx_hidden", "fx_retired_rung"]
+	live["disabled_upgrades"] = ["fx_hidden"]
+	_save.save_now()
+	_save.load_or_new()
+
+	var loaded: Dictionary = _save.get_car(id)
+	assert_false((loaded["installed_upgrades"] as Array).has("fx_retired_rung"),
+		"the retired rung is pruned")
+	assert_true((loaded["installed_upgrades"] as Array).has("fx_hidden"),
+		"the surviving nitrous part is still fitted")
+	assert_true(UpgradeLibrary.is_enabled(loaded, "fx_hidden"),
+		"and comes back ENABLED rather than silently parked")
+
+
+# The migration must not override a deliberate choice: a player who has switched nitrous
+# off keeps it off.
+func test_the_migration_leaves_a_live_nitrous_choice_alone() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var live: Dictionary = _save.get_car(id)
+	live["installed_upgrades"] = ["fx_hidden"]
+	live["disabled_upgrades"] = []
+	_save.save_now()
+	_save.load_or_new()
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_hidden"),
+		"an already-enabled part is untouched")
+
+
+# A car with no nitrous at all must not be handed one.
+func test_the_migration_never_installs_nitrous_a_car_lacks() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	_save.save_now()
+	_save.load_or_new()
+	var loaded: Dictionary = _save.get_car(id)
+	for item_id in loaded["installed_upgrades"]:
+		assert_ne(UpgradeLibrary.slot_of(String(item_id)), "nitrous",
+			"no nitrous is invented for a car that had none")

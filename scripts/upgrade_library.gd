@@ -223,7 +223,7 @@ static func is_free(id: String) -> bool:
 # Relative likelihood of an item when it's drawn from the reward pool. Optional, defaulting
 # to 1.0 — and NOTHING authors one yet, so the pool is currently uniform. It exists because
 # retiring `tier` removed the only rarity lever, and weights are the direct replacement (the
-# pool already spoke in them — see ENGINE_SWAP_TOKEN_DROP_WEIGHT); authoring the actual
+# pool already spoke in them — see ENGINE_SWAP_TOKEN_DROP_CHANCE); authoring the actual
 # values is the deferred balance pass. Tier gated by DIFFICULTY and had gone vestigial
 # (everything sat at tier 1); the star gate now handles availability over time, and weight
 # handles rarity within what is available.
