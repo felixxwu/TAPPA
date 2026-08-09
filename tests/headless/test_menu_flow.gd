@@ -950,7 +950,7 @@ func _press_action(action: String) -> void:
 	get_viewport().push_input(ev)
 
 
-func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
+func test_hq_dev_page_unlocks_cars_and_upgrades() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -974,10 +974,8 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	dev._add_upgrade(UpgradeLibrary.MYSTERY_BOX_ID, "Mystery Box")
 	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.MYSTERY_BOX_ID, 0)), 1,
 		"adding a consumable puts it in inventory")
-	# Wipe: everything resets to a fresh new game.
-	dev._wipe_progress()
-	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
-	assert_true((_save.profile["inventory"] as Dictionary).is_empty(), "wipe clears the inventory")
+	# NOTE: wiping the save is NOT on this page any more — it is a player setting on its
+	# own Reset progress page, behind a confirm modal (tests/headless/test_settings_menu.gd).
 
 
 # Fitting an upgrade from the Dev page changes Save's data with no reference back to the
@@ -1085,6 +1083,8 @@ func test_players_do_not_see_the_developer_settings_pages() -> void:
 	assert_false(joined.contains("SEED LAB"), "no Seed lab entry for players")
 	assert_true(joined.contains("AUDIO"), "the real settings are still there")
 	assert_true(joined.contains("ACCOUNT"), "and so is the account page")
+	assert_true(joined.contains("RESET PROGRESS"),
+		"starting over is a player setting, not dev tooling")
 
 
 func test_developer_builds_still_reach_the_dev_pages() -> void:

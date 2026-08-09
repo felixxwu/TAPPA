@@ -67,6 +67,31 @@ func _dev_button(menu: SettingsMenu, prefix: String) -> Button:
 	return null
 
 
+# Find the button on the Reset progress page whose text begins with `prefix`.
+func _reset_button(menu: SettingsMenu, prefix: String) -> Button:
+	for child in menu._reset_page.get_children():
+		if child is Button and String(child.text).to_lower().begins_with(prefix.to_lower()):
+			return child
+	return null
+
+
+# The CATEGORY buttons on the list page, joined for substring checks.
+func _category_labels(menu: SettingsMenu) -> String:
+	var labels: Array = []
+	for node in menu._list_page.find_children("*", "Button", true, false):
+		labels.append((node as Button).text)
+	return "|".join(PackedStringArray(labels))
+
+
+# Find the popup's action button by label (case-insensitive), so the tests press
+# what the player presses rather than reaching for an index.
+func _popup_button(popup: ConfirmPopup, label: String) -> Button:
+	for node in popup.find_children("*", "Button", true, false):
+		if String((node as Button).text).to_lower() == label.to_lower():
+			return node
+	return null
+
+
 # Find the FPS row whose stored cap == `value`.
 func _fps_row(menu: SettingsMenu, value: int) -> Dictionary:
 	for row in menu.fps_rows:
@@ -231,3 +256,60 @@ func test_add_star_dev_button_credits_one_star() -> void:
 	assert_eq(save.stars_available(), before + 2, "and it is repeatable")
 	assert_string_contains(menu._dev_status.text.to_lower(), "star",
 		"the dev status line reports what happened")
+
+
+# --- Reset progress ----------------------------------------------------------
+
+# Starting over is a PLAYER setting, not dev tooling: the category is offered even
+# with the dev pages forced off (the case OS.is_debug_build() alone can't produce).
+func test_reset_progress_category_is_offered_to_players() -> void:
+	SettingsMenu.dev_tools_override = 0
+	var menu := _make_menu()
+	await get_tree().process_frame
+	var joined := _category_labels(menu)
+	SettingsMenu.dev_tools_override = -1
+
+	assert_string_contains(joined, "RESET PROGRESS",
+		"every player can reach the reset page")
+	assert_false(joined.contains("DEV"), "while the dev page stays hidden from them")
+	assert_not_null(_reset_button(menu, "Wipe all progress"),
+		"and the wipe button lives on that page")
+
+
+# The wipe is irreversible (and reaches the cloud copy), so the button must ASK.
+# Pressing it opens the confirm modal and destroys nothing on its own.
+func test_wipe_button_asks_before_destroying_anything() -> void:
+	_save.grant_car("fx_light_rwd")
+	var menu := _make_menu()
+	_reset_button(menu, "Wipe all progress").pressed.emit()
+
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup, "pressing the button raises a confirm modal")
+	assert_eq(int(_save.profile["cars"].size()), 1, "and wipes nothing yet")
+
+	# Backing out (Esc / gamepad B routes to the same leftmost Cancel) leaves the save alone.
+	popup.trigger_back()
+	await get_tree().process_frame
+	assert_eq(int(_save.profile["cars"].size()), 1, "cancelling keeps the career")
+	assert_null(ConfirmPopup.any_open(get_tree()), "and closes the modal")
+
+
+# Confirming does the wipe: a fresh new-game profile, and the page reports it.
+func test_confirming_the_modal_wipes_the_save() -> void:
+	_save.grant_car("fx_light_rwd")
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID)
+	var menu := _make_menu()
+	_reset_button(menu, "Wipe all progress").pressed.emit()
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup, "setup: the modal is up")
+
+	var confirm := _popup_button(popup, "Wipe everything")
+	assert_not_null(confirm, "the modal offers the confirming action")
+	confirm.pressed.emit()
+	await get_tree().process_frame
+
+	assert_eq(int(_save.profile["cars"].size()), 0, "confirming clears all owned cars")
+	assert_true((_save.profile["inventory"] as Dictionary).is_empty(),
+		"and the inventory with them")
+	assert_string_contains(menu._reset_status.text.to_lower(), "wiped",
+		"the page reports what happened")

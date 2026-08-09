@@ -29,6 +29,9 @@ extends VBoxContainer
 #   • Mobile controls — pick the touch control scheme (MobileControls.SCHEMES),
 #     persisted under MobileControls.SETTING_KEY. Each row carries a vector layout
 #     diagram (ControlSchemeDiagram), as on the original title-screen page.
+#   • Reset progress — wipe the save back to a fresh new game (local AND, when
+#     signed in, the cloud copy). Player-facing, NOT dev tooling: it is the only
+#     way to start over, so it sits in the ordinary list behind a confirm modal.
 #   • Benchmark — configure and launch the in-game performance benchmark
 #     (features/benchmark.md): one ON/OFF row per Benchmark.TOGGLES entry
 #     (vegetation, spectators, render distance, …) and a Start row that hands off
@@ -74,6 +77,13 @@ const GEARBOX_OPTIONS := [
 		"desc": "You shift yourself with the shift up / shift down controls."},
 ]
 
+# Standing copy on the Reset progress page: the warning shown above the button, and
+# the body of the confirm modal (which appends the cloud line when signed in). One
+# string so the page and the prompt cannot describe the same destruction differently.
+const RESET_WARNING := "Start a brand new game. Every car, star, upgrade and " \
+	+ "rally result is erased — on this device and, while you are signed in, in " \
+	+ "the cloud. This cannot be undone."
+
 # Test override for dev_tools_enabled(): -1 = use the real build type, 0 = force
 # off, 1 = force on. A test cannot change OS.is_debug_build(), and "players don't
 # see the dev pages" is exactly the case worth asserting.
@@ -118,7 +128,9 @@ var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
 var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
-var _dev_status: Label  # feedback line on the dev page ("Granted …", "Wiped …")
+var _dev_status: Label  # feedback line on the dev page ("Granted …", "Fitted …")
+var _reset_page: VBoxContainer
+var _reset_status: Label  # warning line, replaced with the outcome after a wipe
 var _account_page: VBoxContainer
 var _account: AccountMenu  # optional cloud save; see features/cloud-save.md
 var _pages: Array[Control] = []  # all swappable pages, list first; see _build()
@@ -182,6 +194,7 @@ func _build() -> void:
 	_build_benchmark_page()
 	_build_dev_page()
 	_build_account_page()
+	_build_reset_page()
 	_build_seedlab_page()
 
 	# Single source of truth for the swappable pages (list first — it's the
@@ -189,7 +202,7 @@ func _build() -> void:
 	# a page only means appending it here.
 	_pages = [_list_page, _audio_page, _display_page, _camera_page, _gearbox_page,
 			_controls_page, _scheme_page, _benchmark_page, _dev_page, _account_page,
-			_seedlab_page]
+			_reset_page, _seedlab_page]
 
 	_refresh_camera_selection()
 	_refresh_gearbox_selection()
@@ -220,6 +233,11 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
 	list_grid.add_child(_make_nav_button("Account", show_account))
+	# Reset progress is a PLAYER setting, not dev tooling: starting over is something
+	# anyone is allowed to do, so it is offered unconditionally (the destructive part
+	# is guarded by a confirm modal, not by hiding the button). It goes after the
+	# everyday categories — it is the one row nobody should reach for by accident.
+	list_grid.add_child(_make_nav_button("Reset progress", show_reset))
 	# Developer tooling is hidden from players. The pages are still BUILT (and the
 	# show_* methods still work, which is how the tests reach them) — only the way
 	# in is removed, so nothing else has to learn about the distinction.
@@ -329,13 +347,14 @@ func _build_benchmark_page() -> void:
 
 
 func _build_dev_page() -> void:
-	# Dev sub-page — wipe the whole save, or unlock any car / upgrade in the game.
+	# Dev sub-page — unlock any car / upgrade in the game, or skip ahead. Wiping the
+	# save is NOT here: it is a player setting now, on its own Reset progress page
+	# (which dev builds see too), so there is exactly one route to it.
 	_dev_page = _make_page()
 	add_child(_dev_page)
 	_dev_page.add_child(_make_heading("Dev"))
-	_dev_status = _make_sub("Wipe progress or unlock anything.")
+	_dev_status = _make_sub("Unlock anything.")
 	_dev_page.add_child(_dev_status)
-	_dev_page.add_child(_make_action_button("Wipe all progress", _wipe_progress))
 	_dev_page.add_child(_make_action_button("3-star all rallies (unlock all regions)", _three_star_all_rallies))
 	# Top up the star ledger without racing. Stars are the currency cars are bought with
 	# (features/star-economy.md), so this is the quick way to exercise the present box —
@@ -361,6 +380,18 @@ func _build_dev_page() -> void:
 			_dev_page.add_child(_make_action_button("Add %s" % up_name, _add_upgrade.bind(up_id, up_name)))
 		else:
 			_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
+
+
+# Reset progress sub-page — the player-facing "start over". One button, a standing
+# warning line above it (which doubles as the outcome report afterwards), and a
+# confirm modal before anything is destroyed.
+func _build_reset_page() -> void:
+	_reset_page = _make_page()
+	add_child(_reset_page)
+	_reset_page.add_child(_make_heading("Reset progress"))
+	_reset_status = _make_sub(RESET_WARNING)
+	_reset_page.add_child(_reset_status)
+	_reset_page.add_child(_make_action_button("Wipe all progress", _prompt_wipe_progress))
 
 
 # Account sub-page — optional cloud save. The AccountMenu widget owns the whole
@@ -547,6 +578,10 @@ func show_dev() -> void:
 
 func show_account() -> void:
 	_show_page(_account_page)
+
+
+func show_reset() -> void:
+	_show_page(_reset_page)
 
 
 func show_seedlab() -> void:
@@ -747,7 +782,23 @@ func _start_benchmark() -> void:
 	Benchmark.start()
 
 
-# --- Dev actions -------------------------------------------------------------
+# --- Reset progress ----------------------------------------------------------
+
+# Ask before starting over. THE BUTTON NEVER WIPES DIRECTLY: this is offered to every
+# player (not just dev builds), it is irreversible, and it reaches the cloud copy too —
+# so the press opens the house confirm modal and the wipe only runs from its second
+# action. House button order puts the cancelling action leftmost and it is also the
+# default focus + the Back target, so a stray Enter / gamepad-B can only back out.
+func _prompt_wipe_progress() -> void:
+	var body := RESET_WARNING
+	if Cloud != null and Cloud.is_signed_in():
+		body += "\n\nYour cloud save is cleared as well, so this will not come back " \
+			+ "on your other devices."
+	ConfirmPopup.open(self, "Wipe all progress?", body,
+		[ {"label": "Cancel", "callback": Callable()},
+		  {"label": "Wipe everything", "callback": _wipe_progress} ],
+		0, 0)
+
 
 # Wipe the entire save profile back to a fresh new-game state. Camera / control
 # settings are part of the profile, so refresh their highlights afterwards.
@@ -755,22 +806,27 @@ func _start_benchmark() -> void:
 # clean local against an ahead cloud and restores everything, so the wipe would
 # silently undo itself (see Cloud.publish_local_wipe). Behind the shared busy
 # cover, since it is a real network round-trip.
+#
+# Called by the confirm modal, and directly by tests — the confirmation is
+# _prompt_wipe_progress's job, so this stays the plain "do it" entry point.
 func _wipe_progress() -> void:
 	Save.reset_new_game()
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
-	_dev_status.text = "Wiped all progress."
+	_reset_status.text = "Wiped all progress."
 	if Cloud == null or not Cloud.is_signed_in():
 		return
 	var result: Dictionary = await CloudBusy.run_covered(
 		self, "Wiping your progress…", "Clearing your cloud save…",
 		func() -> Dictionary: return await Cloud.publish_local_wipe())
-	if not is_instance_valid(_dev_status):
+	if not is_instance_valid(_reset_status):
 		return
-	_dev_status.text = "Wiped all progress (local and cloud)." \
+	_reset_status.text = "Wiped all progress (local and cloud)." \
 		if bool(result.get("ok", false)) \
 		else "Wiped locally — the cloud copy could not be cleared, so it may come back."
 
+
+# --- Dev actions -------------------------------------------------------------
 
 # Dev: instantly win the active rally. Unfreeze first (this page is reached from the
 # in-run pause overlay, which paused the tree — mirrors PauseMenu.quit_to_hq) so the

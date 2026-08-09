@@ -531,6 +531,12 @@ focus handling and the tests that drive those pages directly unchanged.
 `dev_tools_override` (static, `-1` = real build type) exists so a test can assert
 the player-facing case, which `OS.is_debug_build()` alone makes untestable.
 
+**Reset progress is NOT one of them.** Wiping the save used to sit on the Dev page
+and so was invisible in release builds; it is now its own **player** category
+(`show_reset`, added to the list unconditionally) and the Dev page no longer offers
+a second copy — one route to an irreversible action, guarded by a confirm modal
+rather than by hiding. Dev builds simply see both categories.
+
 ## New-rally reveal (map table)
 
 When rallies become enterable the player is **told**, rather than being left to notice
@@ -1032,10 +1038,20 @@ and each button drills into **its own sub-page**:
   (vegetation, spectators, render distance, uncap FPS, …) and a **Start benchmark**
   row that hands off to the `Benchmark` autoload (config overrides + run-scene
   load). Toggle states are session-scoped, not saved.
-- **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
-  fresh new game — and, when signed in, `Cloud.publish_local_wipe()` so the cloud
-  copy is cleared too, otherwise the next pull restores everything and the wipe
-  undoes itself; see `features/cloud-save.md`), **3-star all rallies** (`Save.dev_three_star_all_rallies`, unlocks
+- **Reset progress** — the player-facing **start over**, shown to EVERYONE (it is
+  deliberately not gated on `dev_tools_enabled()` — wiping your own save is
+  something any player is allowed to do, and hiding it would leave no way to do
+  it). One **Wipe all progress** button, a standing warning line above it, and a
+  `ConfirmPopup` in between: `_prompt_wipe_progress` raises the modal (Cancel
+  leftmost = default focus AND the Back target, "Wipe everything" right, per
+  "Button order" below) and only its confirming action calls `_wipe_progress`,
+  which runs `Save.reset_new_game()` (back to a fresh new game) and, when signed
+  in, `Cloud.publish_local_wipe()` so the cloud copy is cleared too — otherwise
+  the next pull restores everything and the wipe undoes itself; see
+  [cloud-save.md](cloud-save.md). The status line reports the outcome, including a
+  failed cloud clear ("it may come back"). `_wipe_progress` stays the plain "do it"
+  entry point (what the tests drive); asking is the prompt's job.
+- **Dev** — a debug page: **3-star all rallies** (`Save.dev_three_star_all_rallies`, unlocks
   every region), **Add 1 star** (`Save.award_stars(1)` — the same entry point the Rally
   Challenge banks through, rather than poking `stars_earned` directly, so the shortcut can
   never drift from how stars are really credited; the status line quotes the new spendable

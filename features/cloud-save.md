@@ -209,18 +209,22 @@ Both guards matter. A wiped local against a wiped **cloud** is a genuine
 nothing-to-choose-between and still prompts, and if `apply_remote` fails the code
 falls through to the normal prompt rather than leaving sync silently blocked.
 
-### The dev wipe must clear the cloud too
+### The progress wipe must clear the cloud too
 
-`Settings -> Dev -> Wipe all progress` calls `Save.reset_new_game()`, which only
+`Settings -> Reset progress -> Wipe all progress` calls `Save.reset_new_game()`, which only
 clears THIS device. On its own that wipe silently undoes itself: the next pull sees
 a clean local against an ahead cloud and downloads everything back — and with the
 wiped-local auto-restore above it does so without even asking. So `_wipe_progress`
 follows the local reset with `Cloud.publish_local_wipe()` →
 `CloudSync.push_wipe()`, which force-pushes the blank profile over the remote copy
 and discards any pending conflict (the local side of that decision no longer
-exists). It runs behind the shared `CloudBusy` cover and says so in the dev status
-line, including when the cloud clear FAILED — "it may come back" is the honest
+exists). It runs behind the shared `CloudBusy` cover and says so in the reset page's
+status line, including when the cloud clear FAILED — "it may come back" is the honest
 report, because it will. Signed out it is a no-op: there is no cloud copy to clear.
+The confirm modal names the cloud consequence too (`_prompt_wipe_progress` appends the
+"other devices" sentence only while signed in) — this is a player-facing button now,
+so "will this take my cloud save with it?" has to be answered before the press, not
+after.
 
 The conflict prompt is a `ConfirmPopup` with legible summaries produced by
 `CloudSync.describe_profile` ("5 cars, 12 rallies completed") rather than raw
