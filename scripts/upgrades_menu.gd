@@ -342,10 +342,10 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 		# short or the car has not climbed to this rung yet, because the price and the
 		# prerequisite are both information the player can act on, unlike an undiscovered
 		# part (which is absent entirely).
-		var price: int = Save.part_price(pid)
-		row.add_child(_option_button("%s (%d★)" % [text, price], false,
+		row.add_child(_option_button(text, false,
 			Save.can_buy_part(instance_id, pid),
-			"opt:%s:%s" % [slot, pid], _buy_slot_option.bind(instance_id, pid)))
+			"opt:%s:%s" % [slot, pid], _buy_slot_option.bind(instance_id, pid),
+			Save.part_price(pid)))
 	return row
 
 
@@ -365,10 +365,23 @@ func _buy_slot_option(instance_id: int, item_id: String) -> void:
 # selected option stands out clearly, greyed when its option isn't available yet, FOCUS_ALL
 # so keyboard/gamepad can reach it, and tagged with a stable focus key so the cursor lands
 # back on it after the rebuild a press triggers.
+#
+# `star_price` >= 0 turns it into a BUY button: the price is appended to the label and a
+# gold star rides the button's `icon` after it ("SMALL 2*"). The star is DRAWN
+# (StarRow.price_icon), not the ★ character this label used to carry — Syne Mono has no ★
+# glyph, so desktop silently pulled one from a system fallback font while the WEB export,
+# which has no system fonts, drew a tofu box on every price. The parentheses went with the
+# glyph: a star after the digits already reads as a price without brackets, and the two
+# characters saved matter on the weight row (see _OPTION_BUTTON_PAD for how tight it is).
 func _option_button(text: String, active: bool, available: bool, focus_key: String,
-		on_press: Callable) -> Button:
+		on_press: Callable, star_price := -1) -> Button:
 	var b := Button.new()
-	b.text = "[%s]" % text if active else text
+	var label := text if star_price < 0 else "%s %d" % [text, star_price]
+	b.text = "[%s]" % label if active else label
+	if star_price >= 0:
+		b.icon = StarRow.price_icon()
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		b.add_theme_constant_override("h_separation", 3)
 	b.focus_mode = Control.FOCUS_ALL
 	b.disabled = not available
 	if active:
@@ -509,10 +522,10 @@ func _make_weight_selector(instance_id: int, installed: Array) -> Control:
 		# branch, so with random part drops retired the lightweight option had no
 		# acquisition path at all — a permanently greyed button, and the main lever an
 		# under-powered car has for clearing a rally's pw_min floor.
-		var price: int = Save.part_price(pid)
-		row.add_child(_option_button("%s (%d★)" % [delta, price], false,
+		row.add_child(_option_button(delta, false,
 			Save.can_buy_part(instance_id, pid),
-			"opt:weight:%s" % pid, _buy_slot_option.bind(instance_id, pid)))
+			"opt:weight:%s" % pid, _buy_slot_option.bind(instance_id, pid),
+			Save.part_price(pid)))
 	if not stock_added:  # no lightweight option authored → Stock goes at the end
 		row.add_child(_option_button("Stock", current_id == "", true,
 			"opt:weight:none", _set_weight_option.bind(instance_id, "")))

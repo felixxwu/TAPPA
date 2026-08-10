@@ -788,6 +788,46 @@ func test_hq_upgrades_page_heading_shows_the_star_balance() -> void:
 	assert_string_contains(hq._lift_menu_title.text, "2", "spending updates the heading")
 
 
+# REGRESSION: no menu text may lean on a character the BUNDLED font can't draw. Syne Mono
+# has no ★ glyph, so the star prices this page is full of ("Small (2★)", "Repair (1★)")
+# looked right on desktop only because the OS handed Godot a system fallback font — the web
+# export has no system fonts, so on mobile web every price rendered as a tofu box. Stars are
+# drawn now: a StarRow.price_icon on the price BUTTONS, a StarRow node beside the heading's
+# digits. Sweeps the whole lift station rather than the one label that broke, so the next
+# glyph someone reaches for is caught here instead of on a phone.
+func test_hq_lift_text_only_uses_characters_the_bundled_font_can_draw() -> void:
+	# Damaged + solvent, so the Repair button quotes its price too (the other star label).
+	_save.get_car(_save.selected_instance_id())["hp"] = 1.0
+	_save.award_stars(20)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+
+	var font: Font = UITheme.theme().default_font
+	assert_not_null(font, "the house theme ships a font to check against")
+	var priced := 0
+	for node in hq._lift_layer.find_children("*", "Control", true, false):
+		var text := ""
+		if node is Label:
+			text = (node as Label).text
+		elif node is Button:
+			text = (node as Button).text
+			# A star price is the button's icon now, not a character in its label.
+			if (node as Button).icon != null:
+				priced += 1
+		for i in text.length():
+			var c := text.unicode_at(i)
+			if c < 0x20:   # newlines / tabs are layout, not glyphs
+				continue
+			assert_true(font.has_char(c),
+				"%s draws '%s' (U+%04X) in %s" % [node.name, text[i], c, text])
+	assert_gt(priced, 0, "the page shows at least one drawn star price")
+
+
 func test_hq_upgrades_page_is_keyboard_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)

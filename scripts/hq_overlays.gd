@@ -335,8 +335,20 @@ func build_lift_overlay() -> void:
 	_hq._lift_menu_bg = page.panel()
 	var root: VBoxContainer = page.body()
 
+	# The page heading, and on UPGRADES the STAR BALANCE beside it — hq._refresh_lift_menu_title
+	# writes "UPGRADES   7" and the drawn star supplies the unit, the same split the map meter
+	# uses (build_table_overlay). It is a sibling NODE rather than a ★ in the text because Syne
+	# Mono has no ★ glyph (star_row.gd) and a Label, unlike the price BUTTONS, can't carry an
+	# icon. hq toggles the ROW's visibility so the star hides with the title on the TUNE page.
+	_hq._lift_menu_title_row = HBoxContainer.new()
+	_hq._lift_menu_title_row.add_theme_constant_override("separation", 5)
+	root.add_child(_hq._lift_menu_title_row)
 	_hq._lift_menu_title = _hq._label("", 22)
-	root.add_child(_hq._lift_menu_title)
+	_hq._lift_menu_title_row.add_child(_hq._lift_menu_title)
+	var balance_star := StarRow.new()
+	balance_star.star_radius = StarRow.PRICE_RADIUS
+	balance_star.setup(1, 1)
+	_hq._lift_menu_title_row.add_child(balance_star)
 
 	# MenuPage already wraps the body in a scroll safety net for very short logical
 	# canvases, so the page's rows go straight into its body.

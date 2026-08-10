@@ -100,7 +100,7 @@ resolves before the car is touched, so a short balance leaves both untouched.
 The UI is the tuning lift's hub row (`hq._repair_selected_car` /
 `_refresh_repair_button`) — per-CAR, so it belongs at the station where you work on the car
 in front of you rather than on the garage-wide row. It states all three cases on the button
-("Repair" disabled when nothing to fix, "Repair (N★)" enabled, or disabled when short)
+("Repair" disabled when nothing to fix, "Repair N★" enabled, or disabled when short)
 rather than vanishing: the price is information the player can act on even when they cannot
 pay it yet.
 
@@ -116,7 +116,7 @@ never a shortcut past the exploration that reveals it — and honours the **per-
 prerequisite ladder, so buying cannot skip a rung.
 
 The UI is the upgrades menu's existing slot rows (`upgrades_menu._make_option_selector`):
-a discovered part not on this car renders as `Name (N★)` and buys on press. No separate
+a discovered part not on this car renders as `Name N★` and buys on press. No separate
 shop screen, because it is the same question the player is already asking there — "can this
 car run a big turbo?" — and the answer is now "yes, for N stars" instead of a dead grey
 option. Bought parts fit **disabled**, like every other award.
@@ -145,6 +145,27 @@ of being one weight among others.
   both figures as `star_rating` and `stars_gained`.
 - **The HQ map meter** — bottom centre of the table HUD: a drawn star plus the digits of
   `Save.stars_available()`, the spendable balance, again with no denominator.
+- **The UPGRADES page** — the heading carries the balance (`hq._refresh_lift_menu_title`),
+  and every price on it — a part copy, a lightweight shell, Repair — quotes its digits with
+  a star after them.
+
+**Every star on screen is DRAWN, never the `★` character.** Syne Mono has no `★`/`☆` glyph
+(see [menus.md](menus.md)), so a `★` in a label only ever rendered because the OS handed
+Godot a system fallback font. The **web export has no system fonts**, so on mobile web
+every price read as a tofu box. Two shapes, both from `scripts/star_row.gd`, so the
+geometry has one definition:
+- **A star beside a Label** → a `StarRow` node as the label's SIBLING, the label carrying
+  the digits alone (`hq._refresh_lift_menu_title` + `HqOverlays.build_lift_overlay`, and the
+  map meter in `build_table_overlay`).
+- **A star inside a Button** → `StarRow.price_icon()` on the button's `icon` with
+  `icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT`, because a Button lays out no children
+  (`UpgradesMenu._option_button`, `hq._refresh_repair_button`). Button's own
+  `icon_disabled_color` dims the star with the label, so an unaffordable price greys as one
+  piece. `StarRow.PRICE_RADIUS` is the one size, so no price star can drift from another.
+
+The parentheses went with the glyph — `SMALL 2★`, not `SMALL (2★)`: a star after the digits
+already reads as a price, and the two characters matter on the weight row, which is the
+widest slot row in the menu (see `UpgradesMenu._OPTION_BUTTON_PAD`).
 - **The present box** — a procedural gift-box prop (`scripts/present_box.gd`,
   `class_name PresentBox`, `build()` / `build_openable(scale)`) standing on the world
   map as its one non-rally target, with the price/`FREE` readout above it. Tap and the
