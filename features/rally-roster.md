@@ -6,12 +6,35 @@ player state. It holds `const RALLIES: Array[Dictionary]` plus the pure function
 the rest of the game runs over it. Player completion lives in the save profile
 (`Save`, `features/save-persistence.md`), keyed by the stable rally `id` here.
 
+**`RALLIES` is not grouped by geography.** The array is in AUTHORING ORDER and its order
+carries no meaning at all — it is not a progression order, and adjacent entries need not
+share a region or a corner of the map (they frequently don't; see the `region`
+distribution below). The only truth about where a rally is are its own `region` (its look
++ waterline) and its `map_pos` (its pin). Anything that wants "the rallies over there"
+must ask those fields, never a slice of the array.
+
 ## What a rally is
 
 Each `RALLIES` entry:
 
-- `id` — stable key the save's `rallies` map keys on.
-- `name` — display name (map-pin label).
+- `id` — stable key the save's `rallies` map keys on. **Ids are frozen: they are save
+  keys, so renaming one silently orphans every existing profile's progress.** A 2026-08
+  geography pass re-authored the roster's NAMES, `region` tags and per-event terrain to
+  agree with where each pin actually sits on `textures/map_world.jpg` — and deliberately
+  left the ids alone. Several therefore read oddly against their location now
+  (`coastal_sprint` is "Pinewood Sprint", deep in the northern pines; `gc_island_hop` is
+  the inland "Timberline Loop"; `gr_marble_quarry`/`gr_olive_coast`/`gc_salt_flats` all
+  sit in `home`). **Read the id as an opaque key, never as a claim about where the rally
+  is** — `region` + `map_pos` are the only truth about that. The code comments on each
+  affected entry say so at the entry itself.
+- `name` — display name (map-pin label). It must describe the terrain the pin actually
+  sits on: see the "THE MAP'S GEOGRAPHY" header comment above `RALLIES`, which reads the
+  map as NE snow massif (reserved, no pins) / N+centre pine forest / E forest climbing
+  into foothills / centre-west open plain threaded with rivers and lakes / SW+S arid
+  desert / SE sea with a bay, shoreline and islands. Names drift because
+  `tools/fit_map_pins.py` slides pins around whenever the progression graph is re-fit —
+  that is how a "Coastal Sprint" ended up in the northern woods. **When a pin moves,
+  re-read its geography** and rename/re-tag/re-author terrain in the same pass.
 - `difficulty` — a **hidden** tier; drives reward tier (clamped by progress) and
   sort order. It is **never shown to the player** (no "Difficulty: N" / "TIER N" in
   the detail panel, car-park banner, or finish arch) — the power-to-weight gate is
@@ -78,10 +101,10 @@ Each `RALLIES` entry:
   passed meta (a plain point check) for stock catalogue cars / rivals / synthetic tests.
   **The band is usually WIDE, and the CLASS FIELD is what defines the rally.** Most
   rallies pair a wide band with a class field — `car_type` (Hatchback Cup, Forest GT,
-  Headland Dash, The Hot Gates), `country` (American Muscle, Lakeside Cup, Island Grand
-  Prix), `doors_max` (Olive Coast), `cylinders_min`/`cylinders_max` (Marble Quarry,
+  Ridgeline Dash, The Hot Gates), `country` (American Muscle, Lakeside Cup, Island Grand
+  Prix), `doors_max` (Long Meadow), `cylinders_min`/`cylinders_max` (Slate Quarry,
   Twelve-Cylinder Promenade, Timber Trophy), `engine_min_l`/`engine_max_l` (Dust Devils,
-  Salt Flats, Island Hop) or `drive_mode` (Front Runners, RWD Masters) — with the band
+  Fernway Dash, Timberline Loop) or `drive_mode` (Front Runners, RWD Masters) — with the band
   only trimming the extremes. A *narrow* band picks 2-3 cars arbitrarily and silently
   re-picks them the moment a car is retuned; "four-cylinder, two-door" or "British cars"
   picks a group that reads as a real class and survives retuning. The open-class rallies
@@ -145,9 +168,11 @@ Each `RALLIES` entry:
   by `RallySession`. Unlike `straightness`/`width`/`surface_mix`, it does **not**
   change the centerline or the flat lengthwise road profile, so it does **not** feed
   opponent target-time derivation. See [terrain.md](terrain.md) → *Cliffs & drops*.
-- `weather` — `"dry"` (default, omittable) or `"rain"`, via `event_weather`. Authored,
-  never random, so a wet stage is wet every attempt. No shipped rally is currently
-  marked wet. See [weather.md](weather.md).
+- `weather` — a `WeatherLibrary` condition id resolved via `event_weather`: `"dry"`
+  (default, omittable), `"rain"`, `"sandstorm"`, `"fog"` or `"storm"`. Authored, never
+  random, so a wet stage is wet every attempt. It is authored **per zone, not per
+  region-name**: sandstorm only on desert pins, storm on the exposed water pins, fog on
+  the damp forest/foothill ones. See [weather.md](weather.md).
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). `(0,0)` is the map image's top-left, `(1,1)` its bottom-right
   (`hq.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
@@ -156,55 +181,66 @@ Each `RALLIES` entry:
   decides what it opens and what opens it (see
   [map-exploration.md](map-exploration.md)). Nudging a pin for visual spacing can
   disconnect a branch of the map or reorder the upgrade chain — re-run
-  `tools/fit_map_pins.py` and the map tests after moving one. Placement rules, all verified against the actual
-  `textures/map_world.jpg` pixels rather than guessed: a pin must sit **on land**, on
-  the **palette that matches its region** (green for `home`/`home_coast`, tan for
-  `greece`/`greece_coast`, and the NE snow corner deliberately holds no pins), inside
-  its corner, and no closer than ~0.05 to another pin (the test floor is 0.03; the
+  `tools/fit_map_pins.py` and the map tests after moving one. **The solver owns the
+  positions; the geography follows them, not the other way round.** `fit_map_pins.py`
+  optimises the progression graph, so a re-fit slides pins across terrain zones — after
+  every re-fit, walk the moved pins and bring their `name`, `region` and per-event
+  terrain back into agreement with the pixels underneath (that is exactly the drift the
+  2026-08 pass cleaned up). Placement rules, all verified against the actual
+  `textures/map_world.jpg` pixels rather than guessed: a pin must sit **on land**, on a
+  palette its `region` can honestly claim (green forest/plain for `home`/`home_coast`,
+  tan desert for `greece`/`greece_coast`, and the NE snow massif deliberately holds no
+  pins), and no closer than ~0.05 to another pin (the test floor is 0.03; the
   authored roster keeps a wider budget). Keep pins inside roughly **[0.045, 0.955]**
   on both axes — the map plane is only 4.2 m across, so a pin at 0.99 sits centimetres
-  from the table rim and its label can overhang the plane. A `home_coast` pin must sit
-  on the green ground around the **bay** (the big SE water body, roughly x 0.60–0.95 /
-  y 0.58–1.0) — its northern/north-eastern shore, peninsula and islands — not on the
-  green strip at the map's right rim, which touches only a sliver of sea and so does
-  not read as coastal at all. Coastal pins are deliberately at **varied**
+  from the table rim and its label can overhang the plane. A pin claiming a **coastal**
+  waterline must actually sit on the SE **bay** (the big SE water body) — its shore,
+  peninsula or islands — not on a green strip that merely touches a sliver of sea; only
+  `hc_v12_promenade` and `gc_island_gp` qualify today. A **riverine** waterline belongs
+  to a pin on the centre-west plain's rivers and lakes (`hc_lakeside_kei`,
+  `rwd_masters`, `gr_mountain_pass`). Water-adjacent pins are deliberately at **varied**
   distances from the waterline — islands and headlands on the water, others set back
-  to differing depths — so a coastal corner reads as a region, not a line of pins
-  tracing the shore. Re-generating the map texture from a new seed moves the terrain
+  to differing depths — so a shoreline reads as a place, not a line of pins
+  tracing it. Re-generating the map texture from a new seed moves the terrain
   and invalidates every pin: re-verify them all (sample the image, classify sea /
   sandy / green / snow / rock from the palette constants at the top of
   `tools/gen_map_texture.py`) rather than nudging a few by eye.
-- `region` — the `RegionLibrary` region id this rally belongs to: one of the four
-  corners of the single world map, `home` (NW forest inland), `home_coast` (SE green
-  shore / peninsula), `greece` (SW arid inland) or `greece_coast` (SE sandy shore).
-  The corner owns the LOOK and the WATERLINE, so a rally's corner must match how its
-  stages look — a forest rally cannot sit in the arid corner. The tag is explicit and
-  is never derived from `map_pos`, which would couple look selection to pin geometry.
-  **Each corner holds a SPREAD of difficulties** (roughly tiers 1→4 plus its two
-  specials), not a difficulty band: the player hops between corners throughout the game and unlocks
-  across them, so a uniformly-early or uniformly-late corner would re-create the
-  sequential progression the one-map change removed. See [regions.md](regions.md).
+- `region` — the `RegionLibrary` region id this rally belongs to: `home` (the green
+  forest/plain look), `home_coast` (that look with the water raised), `greece` (the arid
+  look) or `greece_coast` (the arid look with the water raised). A region is a **look +
+  a waterline**, NOT a quadrant of the map — after the geography pass the tags follow
+  the terrain under each pin, so the distribution is lopsided: **19 `home`, 8 `greece`,
+  4 `home_coast`, 1 `greece_coast`**. The tag must match how the stage should look — a
+  forest rally cannot carry the arid look — and is explicit, never derived from
+  `map_pos`, which would couple look selection to pin geometry. Only the five pins on
+  real water carry a raised waterline (`hc_v12_promenade` + `gc_island_gp` on the SE
+  sea; `hc_lakeside_kei`, `rwd_masters`, `gr_mountain_pass` on the central rivers);
+  everything else is inland and tagged accordingly, whatever its id suggests.
+  **Difficulties are spread across the map, not banded by area**: the player hops around
+  throughout the game and unlocks across it, so a uniformly-early or uniformly-late
+  patch would re-create the sequential progression the one-map change removed. See
+  [regions.md](regions.md).
 - `water_level` (per event) — **authored on every event**, even though the region now
   supplies one. Resolution is `event → region → GameConfig baseline`
   (`TrackGenParams.resolve_water_level`), so pinning it per event keeps a corner's
   authored waterline from silently reshaping a shipped track, and lets the waterline
-  vary WITHIN a corner **by distance from the shore** — nearer the coast sits higher,
-  further inland lower. Author the value; never derive it from `map_pos`. **Pairing
-  constraint:** an event at a coastal waterline (-5) must pair it with
-  `terrain_layer1_amplitude >= 16.0` (see `challenge_library.gd`) or a high sea over low
-  relief floods the track.
+  vary **by what the pin is standing next to** rather than by region alone. The authored
+  ladder is: **-4 on the sea, -7 on the central rivers, -11/-12 inland, -13 up in the
+  foothills** — water falls away as you climb from the shore. Author the value; never
+  derive it from `map_pos`. **Pairing constraint:** an event at a coastal waterline must
+  pair it with `terrain_layer1_amplitude >= 16.0` (see `challenge_library.gd`) or a high
+  sea over low relief floods the track.
 - `terrain_layer1_amplitude` (per event) — **authored on every event**, and it follows
-  the map: **relief falls from north to south.** The far-north stages are the hilliest
-  (~26) and the deep-south inland ones the flattest (~12), interpolated from the
-  rally's `map_pos.y` (y=0 is north — `home`/"Rally Country" sits at y 0.16–0.45,
-  Greece at y 0.50–0.98). Each rally staggers its 3 events by ±1 so a corner doesn't
-  read as uniform.
-  **The coastal pairing rule above wins over the gradient.** The coastal regions are
-  also the southern ones, so the two pull against each other: every event at a
-  waterline of -8 or higher is floored at 16.0 regardless of latitude. That flattens
-  the gradient across `home_coast` and `greece_coast` — deliberate, because a flooded
-  track is a broken stage and a slightly-too-hilly coast is not. Inland Greek stages
-  (`gr_mountain_pass`, `gr_ancient_ruins`) keep the low end of the range.
+  the TERRAIN ZONE the pin sits in, not latitude: the **eastern foothills** are the
+  hilliest (`hc_headland_dash` / `sp_woodland_trial`, ~34–44), the pine forest and the
+  quarry country behind it sit in the middle (~26–40), the river plain and the sea
+  shore lower (~16–26), and the **southern desert flats** are the flattest (~12–19).
+  Each rally staggers its 3 events so a zone doesn't read as uniform — usually a ramp
+  down (or up, where a stage climbs into the hills), occasionally flat where the
+  ground genuinely is.
+  **The coastal pairing rule above wins over the zone value**, so the two sea rallies
+  are floored at 16.0 however low their surroundings would suggest — deliberate,
+  because a flooded track is a broken stage and a slightly-too-hilly coast is not.
   Amplitudes reach generation through `cfg`, not `TrackGenParams`, but
   `TrackCache.terrain_fingerprint` folds config-wide terrain settings into the cache
   key — so retuning them **changes track shapes and requires `./cache_all.sh`**.
@@ -574,8 +610,10 @@ a check that the roster's `map_pos` values are well formed, track-gen
 determinism, target-time positivity + override, opponent-field
 shape/bounds/determinism + DNF semantics + names drawn uniquely from the pool,
 placement/top-3, progress count, and the special-event completion gate
-(`completions_required`/`completions_needed`/`rally_revealed`) + the enterable query. The
-`sandstorm`-only-on-`greece` weather test also covers the new specials. The
+(`completions_required`/`completions_needed`/`rally_revealed`) + the enterable query.
+There is **no** test asserting sandstorm sits only on `greece` events (the `RALLIES`
+header comment claims one exists; it does not) — the terrain/weather-per-zone rules are
+authoring conventions, checked by reading the map, not by the suite. The
 start-line queue cars being eligible for the rally is asserted in
 `test_start_line.gd`. An integration smoke (write a rally seed into `Config.data`
 → `_generate_track`) lives in `test_smoke.gd`.

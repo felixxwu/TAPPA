@@ -1,7 +1,7 @@
 class_name UpgradesMenu
 extends VBoxContainer
 # Reusable per-car UPGRADES menu — the player's star BALANCE row (this is where stars are
-# spent, so every host of the menu shows it — _make_balance_row), an engine-detune slider (its label carries the
+# spent, so every host shows it in its HEADING — build_title_row), an engine-detune slider (its label carries the
 # live p/w readout), one earn-gated option selector per slot (Stock + the slot's
 # catalogue parts; drivetrain is the RWD/AWD/FWD picker), and an engine-swap row
 # (only when the host wires on_swap). Owns its Save persistence; reports edits via
@@ -24,7 +24,6 @@ var _on_swap: Callable = Callable()   # valid → show swap row; invalid → omi
 var _pw_limit: float = NO_LIMIT   # power-to-weight cap (hp/tonne); NO_LIMIT = free
 var _detune_slider: HSlider
 var _detune_value: Label
-var _balance_label: Label   # the star-balance row's digits (_make_balance_row)
 # The host's overlay close button, gated by the p/w limit (bind_close_button). When a
 # limit is set and the build exceeds it, this button is painted red and blocks closing
 # (proceed) until the player drags power back under the cap.
@@ -130,10 +129,7 @@ func rebuild() -> void:
 
 	var id := int(_owned.get("instance_id", -1))
 	var installed: Array = _owned.get("installed_upgrades", [])
-	# The star BALANCE leads the menu, on every instance of it (see _make_balance_row) —
-	# what you can spend comes before what you might spend it on.
-	add_child(_make_balance_row())
-	# Then Auto-Upgrade, ahead of the part rows: it is the answer for a player who doesn't
+	# Auto-Upgrade leads, ahead of the part rows: it is the answer for a player who doesn't
 	# want to learn what a supercharger is, so it must be met before the part names.
 	var auto_row := AutoUpgradeRow.new()
 	auto_row.setup(id, _pw_limit, _on_auto_applied)
@@ -182,31 +178,31 @@ func rebuild() -> void:
 #
 # Digits + a DRAWN StarRow, never a ★ character: Syne Mono has no ★ glyph, so a text star
 # renders as tofu on the web export (see star_row.gd).
-func _make_balance_row() -> Control:
-	var built := build_balance_row()
-	_balance_label = built["label"]
-	return built["row"]
-
-
-# The balance row itself, as a shared builder: {row, label}. Static because BOTH pages of
-# the upgrades UI draw one — the Simple summary the hosts actually open, and this Advanced
-# page behind it — and a balance that appeared on only one of them would be back to the
-# per-host splicing this row was introduced to replace. The caller keeps the label so it
-# can re-read it on its own rebuild.
-static func build_balance_row() -> Dictionary:
+# A page HEADING that carries the star balance: "Upgrades            7 *".
+#
+# Shared, and a HEADING rather than a row of its own, for two reasons that pull the same
+# way. The balance has to be on EVERY page that quotes star prices — it used to be spliced
+# into the HQ lift's heading alone, so the car-park popup, the start line and the upgrade
+# reveal showed prices with no balance in sight. And vertical space on this page is
+# genuinely scarce (the whole point of the simple view is fitting a car's story on one
+# screen), so it rides a line that already had to exist instead of claiming another.
+#
+# Returns {row, label}; the caller keeps the label so its own rebuild can re-read the
+# balance. Digits + a DRAWN StarRow, never a star CHARACTER: Syne Mono has no glyph for it,
+# so a text star renders as tofu on the web export (see star_row.gd).
+static func build_title_row(text: String) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var caption := Label.new()
-	caption.text = "Balance"
-	caption.add_theme_font_size_override("font_size", 15)
-	# Expand-fill on the caption pushes the digits + star flush right, the same
-	# label-left / value-right shape the slot rows use.
-	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(caption)
+	var title := UITheme.title(text)
+	# Expand-fill on the title pushes the digits + star flush right, the same
+	# label-left / value-right shape every stat row uses.
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.add_child(title)
 	var label := Label.new()
 	label.text = "%d" % Save.stars_available()
-	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	row.add_child(label)
 	var star := StarRow.new()
 	star.star_radius = StarRow.PRICE_RADIUS
@@ -214,11 +210,6 @@ static func build_balance_row() -> Dictionary:
 	star.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(star)
 	return {"row": row, "label": label}
-
-
-# The balance row's digits (test readout; "" before the first rebuild).
-func balance_text() -> String:
-	return _balance_label.text if _balance_label != null and is_instance_valid(_balance_label) else ""
 
 
 # The engine-detune slider row: a direct 0–100% torque scale (default 100% = full

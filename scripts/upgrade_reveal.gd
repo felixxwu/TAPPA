@@ -306,7 +306,8 @@ func _build_upgrades_overlay() -> void:
 	col.add_theme_constant_override("separation", UITheme.GAP)
 	col.custom_minimum_size = Vector2(380.0, 0)
 	panel.add_child(col)
-	col.add_child(UITheme.title("Upgrades"))
+	# No title here: UpgradesSimple draws its own heading, which is what carries the star
+	# balance (UpgradesMenu.build_title_row).
 	col.add_child(_upgrades_menu)
 	_upgrades_back = UITheme.button("Done")
 	_upgrades_back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

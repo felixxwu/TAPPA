@@ -431,7 +431,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   naming the nearest locked special, built in `build_garage_overlay` and written by
   `hq._carrot_line` / `hq._refresh_carrot_line` (both **deleted**, along with
   `_carrot_panel` / `_carrot_label` and their three `test_menu_flow.gd` guards). It began as
-  a progress quote — "2 MORE RALLIES → THE WOODLAND TRIAL" — which was the part that earned
+  a progress quote — "2 MORE RALLIES → THE FOOTHILLS TRIAL" — which was the part that earned
   it: a live number that existed nowhere else in the hub. Exploration replaced the tally
   with a *position* on the map, leaving no number to quote; and because a part-unlock
   special is titled after its own reward, `hq._special_unlock_line` returns `""` for exactly
@@ -1892,7 +1892,7 @@ parade) assumes a `rally_id` meta and the box has no rally.
 
 Tapping a pin opens the **rally detail** sub-panel — a **single-column card** built
 in `build_detail_overlay` (`hq_overlays.gd`) / populated in `_show_detail`. Header:
-rally name **with the stage count appended** (`"Coastal Sprint - 3 stages"`, singular
+rally name **with the stage count appended** (`"Pinewood Sprint - 3 stages"`, singular
 "stage" for a one-stage rally), region tag, and a gold **SPECIAL EVENT** chip
 (`hq._detail_special`) on special rallies. There is deliberately **no per-stage breakdown** — the old left-hand STAGES
 column (one row per event with its gravel/tarmac surface mix) was removed to free the

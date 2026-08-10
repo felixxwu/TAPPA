@@ -1013,7 +1013,9 @@ func _build_upgrades_overlay() -> void:
 	# the one detune slider) need far less room than the handling-axis sliders, and the
 	# shared 520 floor was stretching the detune slider's SIZE_EXPAND_FILL bar across the
 	# leftover width for no reason — reading as an oversized panel.
-	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false)
+	# No page title: UpgradesSimple draws its own heading, and that heading is what carries
+	# the star balance beside the prices this page quotes (UpgradesMenu.build_title_row).
+	_upgrades_layer = _build_menu_overlay("", _upgrades_menu, _close_upgrades, false)
 	_upgrades_back = _menu_last_back
 
 

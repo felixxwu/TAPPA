@@ -8,8 +8,9 @@ cache keying, the overcast/dust look and the loading-screen tell. This file is t
 hub; each half is documented in depth in its own feature file, linked below.
 
 Rain and sandstorm are each a **variety** lever, not a **difficulty** one — see
-"Rival times". Sandstorm is authored only onto `region == "greece"` events (an arid
-region — see `RallyLibrary.RALLIES`'s Greece block); rain has no such restriction.
+"Rival times". Sandstorm is authored only onto `region == "greece"` events — the arid
+desert pins in the map's SW/S, which is where the look belongs; rain has no such
+restriction.
 Fog and storm (`docs/superpowers/specs/2026-08-02-fog-and-storm-weather-design.md`)
 are the two later conditions; **fog is deliberately NOT variety-only** — see
 "Rival times" for why that asymmetry is intended rather than a bug.
@@ -119,31 +120,39 @@ A string enum (not a `0..1` float) so `"fog"` / `"snow"` / `"night"` have an
 obvious home later — each new condition brings its own config block, and the
 funnel below does not change.
 
-**28 of the 84 authored events (a third) are wet**, chosen at random with a fixed
+Roughly **38 of the 90 authored events are wet**, chosen at random with a fixed
 seed and written into the table. They are spread across the roster rather than
 clustered in one region, so weather reads as a property of the individual stage.
-7 Greece events are sandstorm, **4 events are fog** and **6 are storm**. One string
+**4 events are sandstorm, 3 fog and 2 storm.** One string
 field per event, so a condition is never ambiguous — the later conditions were only
 authored onto events that had no `weather` key at all.
 
+The 2026-08 geography pass (see [rally-roster.md](rally-roster.md)) re-tagged most of
+the roster, so the guidance below is stated in terms of the TERRAIN A PIN SITS ON, not
+a region name — most rallies now carry `region: "home"` regardless of what their id
+says, and "the coastal regions" is no longer a useful way to pick out coastal stages.
+
 - **Fog** — authoring guidance (a design convention, not an assertable invariant —
-  a designer is free to move a fog event to a new region or add a fifth one; see
-  "Tests" below for why this lives here rather than in a test): fog suits the
-  `home` / `home_coast` regions (the temperate lakes), and is authored
+  a designer is free to move a fog event or add a fourth one; see
+  "Tests" below for why this lives here rather than in a test): fog suits the damp
+  forest and foothill pins (`region` `home` / `home_coast`), and is authored
   DELIBERATELY SPARINGLY — it's the roster's only difficulty lever (see "Rival
   times"), so keep it a minority of the roster and off any difficulty-1 rally so
-  a new player never meets it first. Shipped onto the difficulty-2/3 stages of
-  Hatchback/Timber/Forest GT, Coastal Sprint and Headland Dash today.
-- **Storm** — authoring guidance, same caveat as fog above: storm suits the two
-  COASTAL regions `home_coast` / `greece_coast`, where an exposed crosswind reads
-  as belonging to the place, and reads best weighted toward the higher
-  difficulties (RWD Masters, 12 Cylinder Promenade, both coastal Crowns, Salt
-  Flats, Island GP) — the open Salt Flats in particular are the crosswind's
-  showcase.
-- **Sandstorm** — authoring guidance: Greece-only (arid region look/palette) — a
-  sandstorm event authored outside a `region == "greece"` rally would look wrong,
-  but nothing enforces this structurally; it's a placement convention, not a
-  logic contract.
+  a new player never meets it first. Shipped today onto one stage each of The
+  Foothills Trial, Pinewood Sprint and Ridgeline Dash — all difficulty 2/3, all in the
+  northern pines or the eastern foothills.
+- **Storm** — authoring guidance, same caveat as fog above: a storm's crosswind reads
+  as belonging to **exposed water**, so it is authored ONLY on a pin actually on the
+  sea. Shipped today on 12 Cylinder Promenade and Island GP — the roster's only two
+  genuine sea pins. A river valley gets heavy rain instead: RWD Masters and the
+  Drivetrain Conversion trial both carried a storm through an earlier pass and were
+  re-authored to rain, since a crosswind inland is just weather with a costume on.
+- **Sandstorm** — authoring guidance: desert-only, which today means
+  `region == "greece"` (the arid look/palette) and a pin in the SW/S sand — Dust
+  Devils, Ancient Ruins, The Hot Gates and the Greek Showdown. A sandstorm on a green
+  forest stage would look wrong. Note the `RALLIES` header comment calls this
+  "test-enforced" — **it is not**: no test in `tests/headless/` asserts it today, so
+  treat it as a placement convention like fog and storm, not a logic contract.
 
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
@@ -306,7 +315,7 @@ Storm inherits a milder version of the same thing: its rain component *does* sca
 the rival field through `storm_grip_mult`, but its **crosswind is a player-only
 load** on top (no wind term exists in the lap-time model either). Storm is therefore
 mostly variety with a small difficulty edge, and is likewise weighted toward the
-higher-difficulty coastal rallies.
+higher-difficulty rallies pinned on open water.
 
 ## Caches and leaderboards
 

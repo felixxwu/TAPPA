@@ -30,11 +30,10 @@ func _page(pw_limit := UpgradesSimple.NO_LIMIT) -> UpgradesSimple:
 	return p
 
 
-func test_it_builds_a_stat_block_and_an_advanced_button() -> void:
+func test_it_builds_a_stat_block() -> void:
 	var p := _page()
 	assert_gt(p._simple_box.get_child_count(), 1, "the simple page has rows")
-	assert_not_null(p._advanced_button, "and a way through to Advanced")
-	assert_false(p._advanced_box.visible, "which starts closed")
+	assert_false(p._advanced_box.visible, "and the Advanced page starts closed")
 
 
 func test_the_stat_block_is_drawn_as_bars() -> void:
@@ -91,8 +90,6 @@ func test_it_is_navigable_without_a_pointer() -> void:
 	# FOCUS_NONE is reachable by tap only.
 	var p := _page()
 	assert_not_null(p.first_control(), "there is somewhere for the cursor to land")
-	assert_eq(p._advanced_button.focus_mode, Control.FOCUS_ALL,
-		"the Advanced button is focusable")
 	var found_nav := false
 	for c in p._simple_box.get_children():
 		if c is MenuNav:
@@ -228,10 +225,15 @@ func test_a_wrench_opens_advanced_filtered_to_its_own_slots() -> void:
 		p._show_simple()
 
 
-func test_the_advanced_button_still_opens_everything() -> void:
+func test_there_is_no_general_advanced_button() -> void:
+	# The category wrenches REPLACED it. A button offering "all of it at once" beside them
+	# just invites the player back into the page the simple view exists to replace — and
+	# the partition test below is what guarantees nothing becomes unreachable without it.
 	var p := _page()
-	p._show_advanced()
-	assert_false(p.advanced().is_filtered(), "Advanced with no category is the whole page")
+	for c in p._simple_box.get_children():
+		if c is Button:
+			assert_false(String((c as Button).text).to_upper().contains("ADVANCED"),
+				"no general Advanced button on the summary")
 
 
 func test_the_categories_partition_the_slots() -> void:
@@ -269,10 +271,15 @@ func test_the_wrenches_are_keyboard_navigable() -> void:
 		var above: Control = (column[i + 1] as Control).get_node(
 			(column[i + 1] as Control).focus_neighbor_top)
 		assert_eq(above, column[i], "and up comes back")
-	# The chain must not dead-end at the last bar: Advanced sits below it.
-	var last: Control = column[column.size() - 1]
-	assert_ne(last.get_node(last.focus_neighbor_bottom), last,
-		"the last wrench leads on to the buttons below")
+	# The chain covers EVERY focusable on the summary, so nothing is stranded off it. With
+	# the Advanced button gone the wrenches are usually the whole column (Auto-Upgrade
+	# joins it only when a rally sets a target), so this is what stops a future row being
+	# added below them and silently left unreachable.
+	var focusables := 0
+	for node in p._simple_box.find_children("*", "Button", true, false):
+		if (node as Button).focus_mode != Control.FOCUS_NONE:
+			focusables += 1
+	assert_eq(focusables, column.size(), "every focusable on the summary is in the chain")
 
 
 func test_a_category_with_nothing_in_it_gets_no_wrench() -> void:

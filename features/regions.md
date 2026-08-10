@@ -4,13 +4,13 @@
 `RallyLibrary.RALLIES` (`scripts/rally_library.gd`), `world.gd._apply_region_look`
 (and `_current_region_look`), and `hq.gd` (`_refresh_map_pins`, `_make_pin`).
 
-A **region** is one CORNER of the single world map (`textures/map_world.jpg`,
-848x848): it groups rallies by a shared look (sky, ground textures, waterline).
-The game ships **one world map with four authored corners** — `home` (NW
-forest, the original world), `home_coast` (a lakeland variant of the same
-forest, sea raised), `greece` (SW arid) and `greece_coast` (SE Mediterranean
-shoreline, sea raised) — every rally on every corner is pinned on the map at
-once, and **regions do not unlock in sequence**: there is no "next region"
+A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
+height — applied to whichever rallies are tagged with it. It is **not a corner
+of the map**, even though it started life that way. The game ships four:
+`home` (the original green forest/plain world), `home_coast` (that same look
+with the sea raised), `greece` (arid) and `greece_coast` (arid, sea raised).
+Every rally is pinned on the one world map (`textures/map_world.jpg`, 848x848)
+at once, and **regions do not unlock in sequence**: there is no "next region"
 gate, and **no region-level gate of any kind** —
 a region's only job is its LOOK and its `water_level`
 (`RegionLibrary.REGIONS`'s header comment states this explicitly). Progression
@@ -26,8 +26,8 @@ go up. The credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
 [rally-roster.md](rally-roster.md).
 
-The map has a fifth, currently-empty corner — NE snow — reserved for a future
-region. See "The empty snow corner" below.
+The map's NE snow massif carries no pins and no region of its own, reserved for
+a future region. See "The empty snow corner" below.
 
 ## `RegionLibrary` (`scripts/region_library.gd`)
 
@@ -38,18 +38,19 @@ position in the array. Each entry has an `id` + `name`, an optional `water_level
 optional look-override keys (a missing key inherits the scene/`GameConfig`
 baseline), and an optional `look_from` (see below). Ships today:
 
-- `home` — the original world (NW forest corner). Authors its **foliage split
+- `home` — the original world: the green pine forest and open plain that cover
+  the north, centre and east of the map. Authors its **foliage split
   explicitly** (`tree_mix` = 100% `res://textures/tree.png` at the home
   profile, `spawn_bush_mesh` = `true`) so the split is config-driven
   everywhere; every OTHER look field is left at the scene/`GameConfig`
   baseline, so the home world still looks byte-identical to before regions
   existed. Its `water_level` is the original baseline (`-12.0`).
-- `home_coast` ("The Lakes") — the same forest look with the sea raised: it
+- `home_coast` ("The Lakes") — the same forest look with the water raised: it
   authors `look_from: "home"` (so it inherits home's `tree_mix` /
   `spawn_bush_mesh` / everything else in `LOOK_KEYS`) plus its own, higher
   `water_level` (`-5.0`). It authors no look keys of its own — the whole point
   of this corner is "home, but wetter."
-- `greece` ("Greece", SW arid corner) — `sky_panorama`, `grass_texture`,
+- `greece` ("Greece", the arid look — the SW/S desert) — `sky_panorama`, `grass_texture`,
   `gravel_texture` (all `res://textures/*`), plus a Greek tree **split**:
   `tree_mix` = 70% `res://textures/tree-greece.webp` (the `region` sizing
   profile) + 30% `res://textures/tree.png` (the `home` profile), and
@@ -63,7 +64,8 @@ baseline), and an optional `look_from` (see below). Ships today:
   mismatch on this arid ground). Terrain tints are still **not** overridden —
   Greece inherits the home tints. Its own `water_level` is `-12.0` (the same
   baseline as home — an unrelated corner, not "home but drier").
-- `greece_coast` ("The Coast", SE corner) — the Mediterranean shoreline:
+- `greece_coast` ("The Coast") — the arid shoreline look, worn today by a single
+  rally on the SE sea:
   `look_from: "greece"` plus its own, higher `water_level` (`-5.0`), the same
   "same look, sea raised" pattern as `home_coast`.
 
@@ -205,14 +207,27 @@ Every `RallyLibrary.RALLIES` entry carries `"region": "<region_id>"`. See
 [rally-roster.md](rally-roster.md) for the roster itself and per-rally
 `reveal_after` / `special`+`requires_completions` semantics.
 
+**Regions are not quadrants, and membership is lopsided.** Pins are positioned by
+`tools/fit_map_pins.py`, which optimises the PROGRESSION GRAPH, not the scenery — so
+every re-fit slides pins across terrain zones and the geography under them has to be
+re-read afterwards (the 2026-08 pass did exactly that: names, `region` tags and
+per-event terrain were all re-authored to match the pixels, while the save-key `id`s
+stayed put). A region tag says only "this stage wears this look at this waterline",
+and the tags follow the terrain, so the split today is **19 `home`, 8 `greece`,
+4 `home_coast`, 1 `greece_coast`** — `greece_coast` is one rally on the SE sea, and
+the coastal looks are worn only by the handful of pins genuinely standing on water
+(the SE bay at a -4 waterline, the central rivers at -7). Nothing may assume a region
+owns a contiguous patch of map, holds a minimum number of rallies, or holds any at
+all.
+
 **The old per-region invariant is retired.** Before globally-gated special
 events, the rule was "at most one showdown per region, and exactly one wherever
 a region holds rallies" (`RegionLibrary.showdown_of` picked that one rally out).
 Specials are now gated purely on the global completed-ordinary-rally count
 (`RallyLibrary.completions_required`), so they have no relationship to a region's
-contents: **a corner may hold any number of specials, including none.** Today
-each of the four corners happens to hold exactly two (one lower-rung, one
-upper-rung ex-showdown), but nothing in the code enforces that — it's map
+contents: **a region may hold any number of specials, including none.** Today
+they are bunched — four sit in `home` and one in `greece`, with neither coastal
+region holding any — precisely because nothing in the code cares; it's map
 composition, not a gating rule. A region holding zero specials still resolves
 its look/waterline normally.
 
@@ -303,7 +318,8 @@ There is a single world map texture, `textures/map_world.jpg`
 (`RegionLibrary.DEFAULT_MAP_IMAGE`), loaded once by `hq.gd._refresh_map_pins`
 and never swapped. Every rally on the whole roster — every region — gets a
 pin on it at the same time, positioned by its own `map_pos` (normalised 0..1,
-placed within its region's corner of the image). `_make_pin` builds every
+solved by `tools/fit_map_pins.py` against the progression graph — not confined
+to any region's patch of the image). `_make_pin` builds every
 pin's marker, readout label and hit targets the same way regardless of
 region; the only per-pin state is:
 

@@ -7,7 +7,10 @@ extends VBoxContainer
 # Three things and nothing else:
 #   1. a stat block in OUTCOMES (Speed / Grip / Condition / Stability), not part names
 #   2. Auto-Upgrade — the shared AutoUpgradeRow, two presses to spend
-#   3. Advanced — today's page (UpgradesMenu), unchanged, one press away
+#   3. the per-row WRENCHES into today's page (UpgradesMenu), unchanged, filtered to the
+#      category the wrench belongs to — there is no general "Advanced" button any more,
+#      because a category IS the way in and a button beside them offering "all of it at
+#      once" only invites the player back into the page this one replaced
 #
 # It exposes the SAME small interface UpgradesMenu does — setup / bind_close_button /
 # first_control / request_close / can_close — so the four hosts (HQ lift, start line,
@@ -52,8 +55,8 @@ var _advanced: UpgradesMenu = null
 var _advanced_box: VBoxContainer = null
 var _advanced_title: Label = null
 var _balance_label: Label = null
+var _advanced_balance_label: Label = null
 var _simple_box: VBoxContainer = null
-var _advanced_button: Button = null
 var _close_button: Button = null
 var _on_close: Callable = Callable()
 
@@ -80,12 +83,14 @@ func rebuild() -> void:
 	# Advanced is built FIRST, though it is shown last: the stat rows ask it which
 	# categories have anything in them before deciding whether to draw a wrench.
 	_build_advanced()
-	# The star balance leads the page. Shared with the Advanced page rather than drawn
-	# twice (UpgradesMenu.build_balance_row): this is the page the hosts actually open, so
-	# a balance only on the other one would be invisible to the player quoting star prices.
-	var balance := UpgradesMenu.build_balance_row()
-	_balance_label = balance["label"]
-	_simple_box.add_child(balance["row"])
+	# The page draws its OWN heading, carrying the star balance on the same line
+	# (UpgradesMenu.build_title_row). Hosts used to title this overlay themselves, which is
+	# how the balance ended up on the HQ lift alone; owning it here means every host shows
+	# it, every rebuild re-reads it, and it costs no row of its own — vertical space on this
+	# page is the scarcest thing it has.
+	var heading := UpgradesMenu.build_title_row("Upgrades")
+	_balance_label = heading["label"]
+	_simple_box.add_child(heading["row"])
 	for row in _stat_rows():
 		_simple_box.add_child(row)
 
@@ -95,9 +100,6 @@ func rebuild() -> void:
 		_simple_box.add_child(auto_row)
 	else:
 		auto_row.free()
-
-	_advanced_button = _nav_button("Advanced", _show_advanced)
-	_simple_box.add_child(_advanced_button)
 
 	UITheme.enforce(self)
 	MenuNav.attach(_simple_box)
@@ -141,8 +143,10 @@ func _build_advanced() -> void:
 	add_child(_advanced_box)
 	# A heading, so a filtered page says which category it is showing rather than looking
 	# like the whole page with most of it missing.
-	_advanced_title = UITheme.title("All upgrades")
-	_advanced_box.add_child(_advanced_title)
+	var advanced_heading := UpgradesMenu.build_title_row("Upgrades")
+	_advanced_title = advanced_heading["row"].get_child(0) as Label
+	_advanced_balance_label = advanced_heading["label"]
+	_advanced_box.add_child(advanced_heading["row"])
 	_advanced = UpgradesMenu.new()
 	_advanced_box.add_child(_advanced)
 	# Back inside Advanced returns to the summary rather than leaving the menu. Set BEFORE
@@ -308,7 +312,12 @@ func _show_advanced(category := "") -> void:
 	_advanced.set_filter(rule.get("slots", []),
 		bool(rule.get("detune", true)), bool(rule.get("swap", true)))
 	_advanced.rebuild()
-	_advanced_title.text = UITheme.caps(category if category != "" else "All upgrades")
+	_advanced_title.text = UITheme.caps(category if category != "" else "Upgrades")
+	# Re-read the balance: the summary's own heading refreshes on rebuild, but stepping
+	# INTO a category doesn't rebuild, and a purchase made in the last category would
+	# otherwise leave a stale number over this one.
+	if is_instance_valid(_advanced_balance_label):
+		_advanced_balance_label.text = "%d" % Save.stars_available()
 	_simple_box.visible = false
 	_advanced_box.visible = true
 	UITheme.focus_grab(_advanced.first_control())
