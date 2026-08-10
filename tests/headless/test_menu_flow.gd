@@ -2022,11 +2022,44 @@ func test_hq_table_drag_pans_and_clamps() -> void:
 	var before_x: float = hq._table_pan.x
 	hq._pan_table(Vector2(-100, -50))
 	assert_gt(hq._table_pan.x, before_x, "dragging pans the map view")
-	# A huge drag clamps to the map extents (half the plane each way).
+	# A huge drag clamps to the map extents (half the plane each way). This also covers the
+	# off-screen case: the ray through a point 100000px away tilts above the horizon and
+	# never meets the map plane, so the delta is sampled near the pointer and scaled.
 	hq._pan_table(Vector2(-100000, -100000))
 	var cfg: GameConfig = Config.data
 	assert_almost_eq(hq._table_pan.x, cfg.hq_map_plane_size.x * 0.5, 0.001, "pan clamps to the map's far X edge")
 	assert_almost_eq(hq._table_pan.z, cfg.hq_map_plane_size.y * 0.5, 0.001, "pan clamps to the map's far Z edge")
+
+
+# THE contract for map dragging: whatever map point you grabbed stays under the pointer.
+# FINDING: the pan used to be pixels x a fixed metres-per-pixel constant (hq_table_pan_speed
+# = 0.012), which for the shipped table camera / 360px-tall viewport was over 2x the real
+# scale — so the map raced ahead of the finger and a pin you started the drag beside was
+# nowhere near it when you let go. Measuring the delta on the map plane makes it exact, and
+# this test fails on any reintroduced constant because it compares world points, not pixels.
+func test_hq_dragging_the_map_keeps_the_grabbed_point_under_the_pointer() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	# Entry eases the camera onto a pin over menu_camera_move_time; zero the pan and snap
+	# there so the drag is measured against a SETTLED table view, not a half-finished tween.
+	hq._table_pan = Vector3.ZERO
+	hq._move_camera_to(hq._station_xform(hq.View.TABLE), true)
+	# Track a real point on the map (the plane's own centre) through the camera's FORWARD
+	# projection — unproject_position, not the ray/plane maths the pan itself uses, so this
+	# can't pass by agreeing with the code under test.
+	var mark: Vector3 = hq._map_plane.global_position
+	var before: Vector2 = hq._camera.unproject_position(mark)
+	var rel := Vector2(37.0, -23.0)  # a plausible one-frame drag, off both axes
+	hq._pan_table(rel, before + rel)  # grab at `before`, drag to `before + rel`
+	var after: Vector2 = hq._camera.unproject_position(mark)
+	assert_almost_eq(after.x, before.x + rel.x, 1.0,
+		"the grabbed map point tracked the pointer horizontally, within a pixel")
+	assert_almost_eq(after.y, before.y + rel.y, 1.0,
+		"the grabbed map point tracked the pointer vertically, within a pixel")
+	# And it really moved — a test that passed because nothing panned would be worthless.
+	assert_gt(hq._table_pan.length(), 0.01, "the drag panned the map")
 
 
 func test_hq_dragging_the_map_does_not_open_a_rally() -> void:

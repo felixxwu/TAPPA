@@ -3968,18 +3968,84 @@ func _table_pan_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _table_panning:
 		if event.relative.length() > 2.0:
 			_table_dragged = true
-		_pan_table(event.relative)
+		_pan_table(event.relative, event.position)
 
 
 # Translate the table camera in the map plane (X/Z) by a screen-drag delta — grab the
 # map and drag it. Clamped so the view stays over the map. Snaps (follows the finger).
-func _pan_table(rel: Vector2) -> void:
+#
+# The delta is MEASURED ON THE MAP PLANE (_map_drag_delta) rather than by multiplying
+# pixels by a fixed metres-per-pixel constant, so the map point under the pointer stays
+# under the pointer for the whole drag. The old constant (`hq_table_pan_speed`, 0.012 m/px)
+# could only ever be right for one camera height / FOV / viewport height, and for the
+# shipped ones it was ~2.1x too fast across and ~1.9x down (the table camera is tilted, so
+# the true scale isn't even the same on both axes): start a drag next to a pin and the pin
+# had slid well away from your finger by the time you let go. Projecting gets it exact for
+# free, and stays exact if the table camera is ever re-posed or the map gains a zoom.
+#
+# `screen_pos` is where the pointer ENDED UP; it defaults to the view centre for callers
+# with no pointer of their own (the headless drag tests).
+func _pan_table(rel: Vector2, screen_pos: Vector2 = Vector2.INF) -> void:
 	var cfg: GameConfig = Config.data
+	if screen_pos == Vector2.INF:
+		screen_pos = get_viewport().get_visible_rect().size * 0.5
+	var delta := _map_drag_delta(rel, screen_pos) * cfg.hq_table_pan_gain
 	var half := cfg.hq_map_plane_size
-	_table_pan.x = clampf(_table_pan.x - rel.x * cfg.hq_table_pan_speed, -half.x * 0.5, half.x * 0.5)
-	_table_pan.z = clampf(_table_pan.z - rel.y * cfg.hq_table_pan_speed, -half.y * 0.5, half.y * 0.5)
+	_table_pan.x = clampf(_table_pan.x + delta.x, -half.x * 0.5, half.x * 0.5)
+	_table_pan.z = clampf(_table_pan.z + delta.z, -half.y * 0.5, half.y * 0.5)
 	_move_camera_to(_station_xform(View.TABLE), true)
 	_table_ui._select_target_under_center()  # selection tracks the view centre as the map slides
+
+
+# The world (X/Z) offset the table camera must make for the map point that was under
+# `screen_pos - rel` to end up under `screen_pos` — i.e. for the map to follow the finger.
+# Translating the camera in the plane shifts the plane point under a FIXED pixel by the
+# same vector, so the answer is just (where the drag started) − (where it is now), both
+# raycast onto the map plane through the pre-move table pose.
+#
+# Measured over a bounded sample and scaled up for longer `rel`: a ray far off-screen can
+# tilt above the horizon and never meet the plane at all (a clamp test drags by 100000 px),
+# and one real frame of drag is a handful of pixels, where the mapping is linear anyway.
+func _map_drag_delta(rel: Vector2, screen_pos: Vector2) -> Vector3:
+	var step := rel.limit_length(64.0)
+	if step.is_zero_approx():
+		return Vector3.ZERO
+	var to_hit = _map_point_at(screen_pos)
+	var from_hit = _map_point_at(screen_pos - step)
+	if to_hit == null or from_hit == null:
+		return Vector3.ZERO  # degenerate pose (camera at/below the map plane, or looking away)
+	var delta: Vector3 = (from_hit as Vector3) - (to_hit as Vector3)
+	delta.y = 0.0
+	return delta * (rel.length() / step.length())
+
+
+# The point on the map plane a ray through `screen_pos` (viewport pixels) lands on, or null
+# when that ray never meets the plane — it can tilt above the horizon well outside the
+# viewport, which is what makes a naive "just hit both ends of the drag" unsafe.
+#
+# Cast from the pose the TABLE station describes (`_station_xform`), NOT from the camera's
+# live transform, because the camera may be mid-flight into the table view: `_move_camera_to`
+# eases over menu_camera_move_time, so a drag started on the way in would otherwise be
+# measured against the garage — or, on the title shot, against an eye 9cm above the map
+# plane, where a few pixels of grazing ray are worth metres. The station pose is the settled
+# table view the pan is expressed in, and it already carries the live `_table_pan`.
+# `project_local_ray_normal` is the camera's OWN projection maths in camera space, so FOV,
+# aspect and viewport size still come from the real camera — only the pose is substituted.
+func _map_point_at(screen_pos: Vector2) -> Variant:
+	var xform := _station_xform(View.TABLE)
+	var plane := Plane(Vector3.UP, _map_plane_y())
+	return plane.intersects_ray(xform.origin,
+		xform.basis * _camera.project_local_ray_normal(screen_pos))
+
+
+# Height of the map plane the drag is measured against: the built plane where there is one,
+# else the table top hq_environment lays it on (bar its 1cm lift, which is under a pixel of
+# drag at this camera height) so this is still answerable before build() has run.
+func _map_plane_y() -> float:
+	if _map_plane != null:
+		return _map_plane.global_position.y
+	var cfg: GameConfig = Config.data
+	return cfg.hq_table_pos.y + cfg.hq_table_size.y
 
 
 func _cars_input(event: InputEvent) -> void:
