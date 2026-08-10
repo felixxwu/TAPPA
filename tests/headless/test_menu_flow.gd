@@ -5925,6 +5925,72 @@ func test_completing_a_rally_lights_more_of_the_mask() -> void:
 	assert_gt(lit.call(), before, "winning what was reachable lights more of the map")
 
 
+# The reveal graph is drawn only between pins the player has already LIT
+# (RallyLibrary.reveal_link_pairs). Asserted on the geometry the table actually builds,
+# because the geometry is the whole point: a dotted line running off into the dark draws the
+# shape of a roster the player has not explored, which is what the fog is there to withhold.
+func test_the_map_draws_no_reveal_link_out_into_the_dark() -> void:
+	_dark_map_radius()
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
+	var r: float = Config.data.map_reveal_radius
+	_save.profile["starter_model_id"] = STARTER_PRIZE_CAR
+	RallyLibrary.override_for_test([
+		{"id": "lk_start", "name": "Link Start", "region": "home", "difficulty": 1,
+			"special": false, "map_pos": hq_pos, "restriction": {},
+			"prize_car": STARTER_PRIZE_CAR, "events": []},
+		# Inside the opening rally's circle: lit from the start, so this edge may be drawn.
+		{"id": "lk_near", "name": "Link Near", "region": "home", "difficulty": 1,
+			"special": false, "map_pos": hq_pos + Vector2(r * 0.6, 0.0),
+			"restriction": {}, "events": []},
+		# Out in the dark, but near enough lk_near that completing it lights this one — an
+		# edge of the graph that exists and must still not be drawn yet.
+		{"id": "lk_dark", "name": "Link Dark", "region": "home", "difficulty": 2,
+			"special": false, "map_pos": hq_pos + Vector2(r * 1.5, 0.0),
+			"restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_true(_link_reaches_pin(hq, "lk_near"),
+		"the two lit pins are joined by a dotted line")
+	assert_false(_link_reaches_pin(hq, "lk_dark"),
+		"nothing is drawn out to the pin still in the fog")
+	_save.dev_three_star_rally("lk_near")
+	hq._refresh_map_pins()
+	await get_tree().process_frame
+	assert_true(_link_reaches_pin(hq, "lk_dark"),
+		"and the line appears once that pin is lit")
+	RallyLibrary.reset()
+
+
+# Whether the map's reveal-link geometry runs all the way out to a given rally's pin. The
+# links are one merged ImmediateMesh under _pins_root, built in the space the pins are
+# positioned in (hq._map_to_table mirrors _make_pin), so a pin's own position is what a line
+# ending there must reach.
+#
+# The tolerance is one dash GAP, not zero: a link is stippled at a fixed pitch, so its far
+# end lands within a gap's length of the pin rather than exactly on it. That is orders of
+# magnitude smaller than the spacing between the pins this is asked about, so it cannot
+# confuse one link's end for another's.
+func _link_reaches_pin(hq: Node3D, rally_id: String) -> bool:
+	var pin := _pin_for(hq, rally_id)
+	if pin == null:
+		return false
+	var tol: float = Config.data.map_link_gap_m + 0.001
+	var target := Vector2(pin.position.x, pin.position.z)
+	for child in hq._pins_root.get_children():
+		var mi := child as MeshInstance3D
+		if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
+			continue
+		var verts: PackedVector3Array = mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		for v in verts:
+			# XZ only: the lines float a hair above the table (hq.MAP_LINK_LIFT) so they do
+			# not z-fight with the map plane.
+			if Vector2(v.x, v.z).distance_to(target) < tol:
+				return true
+	return false
+
+
 func test_a_car_prize_pin_stands_the_actual_car_model() -> void:
 	# The map's incentive: a car-unlock pin shows the car you win, so the destination
 	# describes itself and needs no permanent label.

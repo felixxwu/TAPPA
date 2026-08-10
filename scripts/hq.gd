@@ -798,8 +798,8 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 		if pin.has_meta("prize_car_model"):
 			_attach_prize_car_marker(pin)
 		_pins.append(pin)
-	# The reveal graph, under the pins: a faint dotted line wherever completing one rally
-	# would light another.
+	# The reveal graph, under the pins: a faint dotted line wherever completing one REVEALED
+	# rally would light another one that is also already revealed.
 	_build_reveal_links(p, size, top_y)
 
 	# NO HQ LANDMARK. A house used to stand at the middle of the map, marking the point
@@ -834,45 +834,42 @@ func _detach_prize_car_props() -> void:
 			prop.get_parent().remove_child(prop)
 
 
-# Draw the map's REVEAL GRAPH: a faint dotted line between every pair of rallies where
-# finishing one would light the other.
+# Draw the map's REVEAL GRAPH over the ground the player has lit: a faint dotted line
+# between every pair of REVEALED rallies where finishing one would light the other.
 #
 # The graph was always there — it is what map_pos means now — but it was invisible, so the
 # map looked like a scatter of pins and the player had to infer the chain by driving it.
-# Showing it turns "which way should I go" into something readable off the table: you can
-# see that this rally opens those two, and that the corner you are eyeing hangs off a
-# different thread entirely.
+# Showing it makes the route they took readable off the table: you can see that this rally
+# is what opened those two, and that the corner they reached hangs off a different thread
+# entirely. Where it runs OUT into the dark it is not drawn — see reveal_link_pairs.
 #
 # Deliberately FAINT and dotted (GameConfig.map_link_alpha): it is a hint under the pins,
 # not a subway map. At full strength 32 pins' worth of edges reads as a web and the markers
 # stop being the thing you look at.
 #
-# ONE line per unordered pair, drawn when the link works in EITHER direction — reveal
-# radius is per-rally, so A can reach B without B reaching A, and drawing both directions
-# separately would just double the geometry on every symmetric pair.
+# Only edges with BOTH ends out of the fog are drawn — the pairing rule and its reasoning
+# live in RallyLibrary.reveal_link_pairs, next to the reveal predicate they come from, so
+# what the table draws and what the map actually opens can never drift apart. This function
+# is purely the geometry: ids in, dashes on the table out.
 func _build_reveal_links(table_pos: Vector3, plane_size: Vector2, top_y: float) -> void:
 	var cfg: GameConfig = Config.data
 	if cfg.map_link_alpha <= 0.0:
 		return
-	var rallies := RallyLibrary.all()
+	var pin_pos := {}
+	for rally in RallyLibrary.all():
+		pin_pos[String(rally["id"])] = RallyLibrary.map_pos_of(rally)
 	# Collect the segments FIRST, then build the surface — ImmediateMesh errors on
-	# surface_end() with nothing added, which is a real case here: a synthetic roster whose
-	# pins are all further apart than any reveal radius produces no links at all.
+	# surface_end() with nothing added, which is a real case here: a fresh profile with a
+	# single lit pin, or a synthetic roster whose pins all sit further apart than any reveal
+	# radius, produces no links at all.
 	var segments: Array[Vector3] = []
 	# HQ is NOT a link source. It used to be the one the whole graph grew out of, but it
 	# lights nothing now — every reveal circle belongs to a rally (RallyLibrary.lit_sources),
 	# so a spoke from the middle would draw an edge that no longer exists.
-	for a in rallies.size():
-		for b in range(a + 1, rallies.size()):
-			var ra: Dictionary = rallies[a]
-			var rb: Dictionary = rallies[b]
-			var pa := RallyLibrary.map_pos_of(ra)
-			var pb := RallyLibrary.map_pos_of(rb)
-			var d := pa.distance_to(pb)
-			if d > maxf(RallyLibrary.reveal_radius_of(ra), RallyLibrary.reveal_radius_of(rb)):
-				continue
-			_dash_line(segments, _map_to_table(pa, table_pos, plane_size, top_y),
-				_map_to_table(pb, table_pos, plane_size, top_y))
+	for pair in RallyLibrary.reveal_link_pairs(Save.profile):
+		_dash_line(segments,
+			_map_to_table(pin_pos[pair[0]], table_pos, plane_size, top_y),
+			_map_to_table(pin_pos[pair[1]], table_pos, plane_size, top_y))
 	if segments.is_empty():
 		return
 	var mesh := ImmediateMesh.new()
