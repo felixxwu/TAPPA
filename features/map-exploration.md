@@ -1,8 +1,9 @@
 # Map Exploration
 
 **Source:** `RallyLibrary` (`scripts/rally_library.gd`) — `HQ_MAP_POS`, `lit_sources`,
-`rally_revealed`, `position_revealed`, `reveal_radius_of`, `distance_beyond_frontier`,
-`reveal_depths`, `opening_rally_id_for` — plus `GameConfig.map_reveal_radius` and the
+`rally_revealed`, `position_revealed`, `position_lit_by`, `reveal_radius_of`,
+`reveal_link_pairs`, `distance_beyond_frontier`, `reveal_depths`, `opening_rally_id_for` —
+plus `GameConfig.map_reveal_radius` and the
 `map_pos` / `reveal_radius` fields authored on every `RallyLibrary.RALLIES` entry.
 
 The world map is **dark except where the player has driven**. Every rally the player
@@ -75,6 +76,30 @@ Two shipped-content guards cover this (`test_rally_library.gd`):
   nothing to explore).
 
 Neither pins a number; both re-derive from whatever is authored.
+
+## The graph on the table (dotted links)
+
+The HQ map table draws that graph under the pins: a faint dotted line between two rallies
+whenever completing either would light the other. `RallyLibrary.reveal_link_pairs(profile)`
+decides the pairs — **one unordered entry per pair**, emitted when the link works in either
+direction, since `reveal_radius` is per-rally and A can reach B without B reaching A.
+`hq._build_reveal_links` is only the geometry: ids in, dashes on the table top, laid by
+`hq._dash_line` at a fixed metre pitch so a long link and a short one read as the same kind
+of line. Look values live in `GameConfig` (`map_link_alpha` — 0 turns the graph off
+entirely — `map_link_dash_m`, `map_link_gap_m`).
+
+**Both ends must already be REVEALED.** An edge drawn across the dark hands the player the
+shape of a roster they have not explored, which is exactly what the fog is there to
+withhold, and 30-odd unreached pins webbed together makes the unexplored map the busiest
+thing on the table. Restricted to lit pairs, the graph GROWS as the player explores: it
+draws the route they actually made rather than the one they will be given. `_refresh_map_pins`
+rebuilds it, so a link appears mid-parade at the moment its far pin lights.
+
+Covered by `test_rally_library.gd` →
+`test_the_reveal_graph_links_only_pairs_that_are_both_revealed` (the pairing rule, on a
+synthetic roster) and `test_menu_flow.gd` →
+`test_the_map_draws_no_reveal_link_out_into_the_dark` (the geometry the table actually
+builds — asserted on the link mesh's vertices, because the drawn line is the point).
 
 ## Reachability order (`reveal_depths`)
 

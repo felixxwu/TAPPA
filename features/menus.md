@@ -1328,7 +1328,12 @@ X/Z) surfaced with a **satellite map photo** (`RegionLibrary.DEFAULT_MAP_IMAGE` 
 under the garage lighting). There is **ONE world map**: no swap arrows, no viewed
 region, no way to change maps. `_refresh_map_pins` loads that one texture and pins
 **every** rally in `RallyLibrary.all()` at once, so a corner the player hasn't earned
-is visible from the first minute — its rallies simply render locked.
+is visible from the first minute — its rallies simply render locked. Under the pins it
+also draws the **reveal graph** — faint dotted lines joining rallies whose circles reach
+each other, but **only where both ends are already revealed**, so the lines chart the route
+the player has lit rather than spoiling the dark (`hq._build_reveal_links` /
+`RallyLibrary.reveal_link_pairs`, see
+[map-exploration.md](map-exploration.md) → "The graph on the table").
 See [regions.md](regions.md) for the region look (it no longer gates anything —
 regions are look + waterline only; the completion-gated specials are
 [rally-roster.md](rally-roster.md)'s territory). Every

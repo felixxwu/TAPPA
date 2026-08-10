@@ -1678,6 +1678,38 @@ func test_a_rally_beyond_every_circle_stays_dark() -> void:
 		"a pin outside every circle is unreachable however much is completed")
 
 
+# The map table draws its reveal graph (hq._build_reveal_links) only over ground the player
+# has LIT. An edge running out into the fog would hand them the shape of a roster they have
+# not explored yet — which is the one thing the dark is there to withhold.
+func test_the_reveal_graph_links_only_pairs_that_are_both_revealed() -> void:
+	_install_geometric_reveal_roster()
+	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
+	assert_true(_graph_links(RallyLibrary.reveal_link_pairs(fresh), "r_start", "r_near"),
+		"two revealed neighbours are linked")
+	assert_false(_graph_links(RallyLibrary.reveal_link_pairs(fresh), "r_near", "r_far"),
+		"a neighbour still in the fog is not, close enough to be lit by it or not")
+	for pair in RallyLibrary.reveal_link_pairs(fresh):
+		for rid in pair:
+			assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id(String(rid)), fresh),
+				"%s is out of the fog, so the edge it ends at may be drawn" % rid)
+	# r_near and r_far ARE adjacent — completing r_near is what lights r_far — so the edge
+	# appears the moment the fog leaves it. Without this the assertion above could pass
+	# vacuously on a pair the graph would never have drawn at any distance.
+	var explored := {"rallies": {"r_near": {"completed": true}},
+		"starter_model_id": START_CAR}
+	assert_true(_graph_links(RallyLibrary.reveal_link_pairs(explored), "r_near", "r_far"),
+		"lighting the far pin draws the link that was there all along")
+
+
+# Whether the reveal graph holds an edge between two rallies, in either order (the pairs are
+# unordered — see RallyLibrary.reveal_link_pairs).
+func _graph_links(pairs: Array, a: String, b: String) -> bool:
+	for pair in pairs:
+		if (pair[0] == a and pair[1] == b) or (pair[0] == b and pair[1] == a):
+			return true
+	return false
+
+
 func test_distance_beyond_frontier_is_zero_once_revealed_and_shrinks_as_you_approach() -> void:
 	_install_geometric_reveal_roster()
 	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
