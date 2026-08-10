@@ -8,12 +8,20 @@ title screen's Settings page (see [menus.md](menus.md)) and persisted per-player
 
 ## Schemes (`MobileControls.SCHEME_*`)
 
-`SCHEMES` holds the display name + how-to for each; the enum order is the id.
+`SCHEMES` holds the display name + how-to for each, **in the order the Settings page
+lists them** — which is deliberately *not* id order: `DEFAULT_SCHEME`
+(`BUTTONS_GAS_BRAKE`) is listed first, so the option the game starts on is the one at
+the top of the picker. The `SCHEME_*` ids are the persisted values and must stay
+stable (a save profile stores the id, not the row position), so the array carries an
+explicit `"id"` field and is **never indexed by id** — read `entry["id"]`. Ids still
+cover `0 .. SCHEMES.size() - 1`, which is what `_scheme_from_save` clamps against.
+
+Listed below in **display order**:
 
 | Id | Scheme | Steering | Throttle / Brake |
 |----|--------|----------|------------------|
-| 0 | `SLIDER_GAS_BRAKE` (default) | bottom-left slider | GAS + BRAKE pedals |
-| 1 | `BUTTONS_GAS_BRAKE` | left/right steer buttons | GAS + BRAKE pedals |
+| 1 | `BUTTONS_GAS_BRAKE` (default) | left/right steer buttons | GAS + BRAKE pedals |
+| 0 | `SLIDER_GAS_BRAKE` | bottom-left slider | GAS + BRAKE pedals |
 | 2 | `SLIDER_BRAKE_AUTO` | bottom-left slider | **auto gas** + BRAKE |
 | 3 | `BUTTONS_BRAKE_AUTO` | left/right steer buttons | **auto gas** + BRAKE |
 | 4 | `SIMPLE_LR_AUTO` | tap left/right half | **auto gas**; **both halves = brake** |

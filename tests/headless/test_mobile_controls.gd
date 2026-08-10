@@ -74,9 +74,25 @@ func test_visible_when_forced() -> void:
 	assert_true(_controls.visible, "controls shown when mobile_controls_force is set")
 
 
-func test_defaults_to_slider_gas_brake() -> void:
-	assert_eq(_controls._scheme, MobileControls.SCHEME_SLIDER_GAS_BRAKE,
-		"the default scheme is the slider + gas/brake one")
+# The scheme the game starts on must be the one the Settings picker lists FIRST, so a
+# player who never opens the page is already on the layout sitting at the top of it (and
+# so the pre-rally gate's "highlighted default if untouched" is the top row). SCHEMES is
+# in display order, not id order, so this is a real constraint rather than a tautology.
+func test_default_scheme_is_the_first_option_listed() -> void:
+	assert_eq(int(MobileControls.SCHEMES[0]["id"]), MobileControls.DEFAULT_SCHEME,
+		"the default scheme is the first one the picker lists")
+
+
+# Every scheme id is a distinct, in-range index — _scheme_from_save clamps saved values
+# against SCHEMES.size(), so a gap or a duplicate would silently remap someone's choice.
+func test_scheme_ids_cover_the_valid_range() -> void:
+	var ids := {}
+	for entry in MobileControls.SCHEMES:
+		var id := int(entry["id"])
+		assert_between(id, 0, MobileControls.SCHEMES.size() - 1,
+			"scheme id %d is within the clamped range" % id)
+		assert_false(ids.has(id), "scheme id %d appears once" % id)
+		ids[id] = true
 
 
 func test_hidden_on_desktop() -> void:

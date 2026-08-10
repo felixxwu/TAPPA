@@ -7,9 +7,10 @@ extends CanvasLayer
 # driven car has any fitted) via
 # Input.action_press/release, so car.gd needs no knowledge of touch input.
 #
-# Schemes (see SCHEMES, order matches the enum):
-#   0 SLIDER_GAS_BRAKE  — steering slider (left) + GAS/BRAKE pedals (right). [default]
+# Schemes (ids below; SCHEMES holds them in DISPLAY order, which is not id order):
+#   0 SLIDER_GAS_BRAKE  — steering slider (left) + GAS/BRAKE pedals (right).
 #   1 BUTTONS_GAS_BRAKE — left/right steer buttons (left) + GAS/BRAKE pedals (right).
+#                         [default, and listed first on the Settings page]
 #   2 SLIDER_BRAKE_AUTO — steering slider + BRAKE only; throttle is automatic.
 #   3 BUTTONS_BRAKE_AUTO— left/right steer buttons + BRAKE only; throttle automatic.
 #   4 SIMPLE_LR_AUTO     — tap the left/right half to steer; BOTH at once = brake;
@@ -28,7 +29,8 @@ extends CanvasLayer
 #
 # Shown only on touch devices, or when mobile_controls_force is set (testing).
 
-# Scheme ids (indices into SCHEMES). Kept as plain ints so Save can persist them.
+# Scheme ids. Kept as plain ints so Save can persist them (they must stay stable —
+# a saved profile stores the id, not the position in SCHEMES).
 const SCHEME_SLIDER_GAS_BRAKE := 0
 const SCHEME_BUTTONS_GAS_BRAKE := 1
 const SCHEME_SLIDER_BRAKE_AUTO := 2
@@ -36,17 +38,20 @@ const SCHEME_BUTTONS_BRAKE_AUTO := 3
 const SCHEME_SIMPLE_LR_AUTO := 4
 const SCHEME_TILT_GAS_BRAKE := 5
 
-const DEFAULT_SCHEME := SCHEME_SLIDER_GAS_BRAKE
+const DEFAULT_SCHEME := SCHEME_BUTTONS_GAS_BRAKE
 # Save-profile settings key the chosen scheme is stored under (Save.get_setting).
 const SETTING_KEY := "mobile_control_scheme"
 
-# Display metadata for the Settings page (name + one-line how-to). `id` is the
-# scheme constant; order matches the SCHEME_* values so SCHEMES[id] is the entry.
+# Display metadata for the Settings page (name + one-line how-to), in the order the
+# page lists them — the DEFAULT_SCHEME entry comes first. `id` is the scheme
+# constant, so read `entry["id"]`; this is NOT indexed by id (the array order and
+# the SCHEME_* values deliberately differ). Ids still cover 0..SCHEMES.size() - 1,
+# which is what _scheme_from_save clamps against.
 const SCHEMES := [
-	{"id": 0, "name": "Slider + Gas/Brake",
-		"desc": "Drag the slider to steer; tap Gas and Brake."},
 	{"id": 1, "name": "Steer buttons + Gas/Brake",
 		"desc": "Left/Right buttons steer; tap Gas and Brake."},
+	{"id": 0, "name": "Slider + Gas/Brake",
+		"desc": "Drag the slider to steer; tap Gas and Brake."},
 	{"id": 2, "name": "Slider + Brake (auto gas)",
 		"desc": "Drag the slider to steer; auto throttle, tap Brake."},
 	{"id": 3, "name": "Steer buttons + Brake (auto gas)",

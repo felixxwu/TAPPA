@@ -233,11 +233,15 @@ func test_picking_a_scheme_in_settings_applies_live() -> void:
 	# Settings switches the on-screen controls immediately (not only on the next run).
 	assert_eq(_pause.mobile_controls, _mobile, "the pause menu knows the live MobileControls")
 	_pause.open()
-	_pause.settings_menu.select_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
-	assert_eq(_mobile._scheme, MobileControls.SCHEME_BUTTONS_GAS_BRAKE,
+	# Start from a scheme that ISN'T the one we pick, so the assertion below proves the
+	# pick switched something (picking whatever happens to be the default would pass on
+	# its own). Both are named constants, so this holds whichever one is the default.
+	_mobile.set_scheme(MobileControls.SCHEME_SIMPLE_LR_AUTO)
+	_pause.settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
+	assert_eq(_mobile._scheme, MobileControls.SCHEME_TILT_GAS_BRAKE,
 		"the live touch controls switch to the chosen scheme")
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
-		MobileControls.SCHEME_BUTTONS_GAS_BRAKE, "the chosen scheme is saved")
+		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
 	# Restore the default so the shared scene starts the next test clean.
 	_pause.settings_menu.select_scheme(MobileControls.DEFAULT_SCHEME)
 
