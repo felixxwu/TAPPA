@@ -272,6 +272,18 @@ var _prewarm_complete := false
 # started twice and overlap itself.
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _prewarm_running := false
+# `Time.get_ticks_msec()` of the last input HQ saw from the player, stamped by _input (which
+# sees events BEFORE any overlay button eats them, unlike _unhandled_input). Starts well in
+# the past — "no input ever", i.e. idle — so a boot that lands on the static title shot keeps
+# trickling its prewarm exactly as it does today. (A literal rather than -PREWARM_IDLE_MS so
+# it stays "long ago" whatever that constant is retuned to, and so it is still in the past
+# during the engine's first few hundred ms.)
+var _last_input_ms := -100000
+# How still the player has to be before the prewarm is allowed to spawn its next car, and
+# how long it may be starved before it gives up waiting and finishes anyway (so the warm
+# always completes, even for a player who never stops moving). See _prewarm_should_wait.
+const PREWARM_IDLE_MS := 400
+const PREWARM_MAX_STALL_MS := 15000
 
 # Tuning-lift state: the selected car raised on the lift (a Car prop, separate from
 # the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
@@ -303,6 +315,10 @@ var _pins_root: Node3D          # parent of the rally pins
 # against a half-constructed HQ — see _on_cloud_profile_replaced.
 var _hq_built := false
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
+# Everything the live pins were rendered FROM (_map_pins_stamp). A refresh whose stamp
+# matches keeps the pins standing instead of rebuilding them — see _refresh_map_pins.
+# `null` = nothing built yet, which can never compare equal to a real stamp.
+var _pins_stamp = null
 # Focus cursor into _table_ui._table_targets() (the unlocked rally pins); -1 = none.
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _table_focus_index := -1
@@ -621,7 +637,16 @@ func _ready() -> void:
 	# the first time it's opened. It used to run here behind the cover, where it cost ~3x
 	# the entire rest of HQ boot — pure time-to-first-interaction on the game's very first
 	# screen. Now the player reaches an interactive HQ immediately and the warm trickles in
-	# one prop per frame while they read the title (see _prewarm_free_roam_deferred).
+	# one prop per frame while they read the title (see _prewarm_free_roam_deferred), and
+	# only while the player is actually STILL (_prewarm_should_wait).
+	#
+	# A boot that does NOT land on the title shot is a RETURN — the podium's Continue, or a
+	# quit back to HQ — so the player is mid-career and heading somewhere (usually the map
+	# table, a tap away) rather than reading a title. Stamp the arrival as interaction so the
+	# trickle waits out one idle window instead of firing its heaviest frames into the first
+	# thing they do.
+	if _view != View.EXTERIOR:
+		_last_input_ms = Time.get_ticks_msec()
 	_carpark_ui._prewarm_free_roam_deferred()
 
 
@@ -763,6 +788,25 @@ func _bay_center_x(i: int, bays: int) -> float:
 # flip to unlocked is something the player actually watches happen (see
 # _table_ui._run_reveal_sequence). Empty everywhere else.
 func _refresh_map_pins(hold_locked: Array = []) -> void:
+	# NOTHING CHANGED SINCE THE LAST BUILD -> keep the pins we have.
+	#
+	# _build_hq already builds the full pin set at boot, behind the loading cover, and then
+	# _enter_table calls this AGAIN on every single table entry (it is the hook the reveal
+	# parade needs for `hold_locked`, and where fresh stars land). That second pass freed and
+	# rebuilt all ~32 pins — ~20 ms of pure CPU with no GPU work counted, plus 32 fresh
+	# SubViewport render targets — in the exact frame the camera starts its glide to the
+	# table, which is where a hitch is most visible. Skipping it is what makes "tap the
+	# table" cheap; see features/menus.md -> "What a map-table entry costs".
+	#
+	# The two trailing side effects still run below: the camera has usually MOVED (a table
+	# entry re-centres _table_pan), so selection has to be re-seated even when the pins are
+	# identical, and the meter is a one-line string write.
+	var stamp := _map_pins_stamp(hold_locked)
+	if stamp == _pins_stamp and not _pins.is_empty() and _pins_all_valid():
+		_table_ui._select_target_under_center()
+		_refresh_meter()
+		return
+	_pins_stamp = stamp
 	_detach_prize_car_props()
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	# The pin this pointed at is about to be freed; clearing it states the invariant the
@@ -812,6 +856,43 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 	# every entry point into the table (fresh open, test harness) goes through here.
 	_table_ui._select_target_under_center()
 	_refresh_meter()
+
+
+# EVERY input the pin set is rendered from, in one comparable value — the rebuild-skip
+# predicate for _refresh_map_pins.
+#
+# Deliberately CONSERVATIVE and deliberately COARSE: it hashes the whole profile and the
+# whole of each authored table rather than picking out the fields the pins happen to read
+# today. A stamp that misses an input leaves a STALE MAP (a pin that stays grey after the
+# rally that lights it, a star row a win behind), which is a far worse failure than an
+# occasional needless rebuild — so anything that could plausibly move a pin goes in.
+#
+# **If you make the pins read something new, add it here.** The Config entries are the map
+# geometry + the fog/reveal values (they are authored, so they only move in the inspector or
+# in a test), and the table hashes cover both the shipped catalogues and a test's
+# `override_for_test` / fixture roster.
+func _map_pins_stamp(hold_locked: Array) -> Array:
+	var cfg: GameConfig = Config.data
+	return [
+		Save.profile.hash(),          # completions, best placements, stars, cars, upgrades
+		hold_locked.duplicate(),      # the reveal parade's held-back set (changes per step)
+		RallyLibrary.all().hash(),    # roster: names, map_pos, restrictions, prizes
+		CarLibrary.all().hash(),      # _has_eligible_car / prize-car models
+		UpgradeLibrary.all().hash(),  # _entry_plan's effective stats, _special_unlock_line
+		cfg.hq_table_pos, cfg.hq_table_size, cfg.hq_map_plane_size,
+		cfg.map_fog_unlit_brightness, cfg.map_fog_edge_softness,
+		cfg.map_reveal_radius, cfg.map_hq_reveal_radius,
+		cfg.map_link_alpha, cfg.map_link_dash_m, cfg.map_link_gap_m,
+	]
+
+
+# Are the pins we are holding still real nodes? A freed pin means something outside this
+# function tore the map down, so the stamp must not be trusted to stand in for it.
+func _pins_all_valid() -> bool:
+	for pin in _pins:
+		if not is_instance_valid(pin):
+			return false
+	return true
 
 
 # How far the link lines float above the map plane. Coplanar geometry z-fights, and at this
@@ -1269,7 +1350,16 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	vp.size = PIN_LABEL_PX
 	vp.transparent_bg = true
 	vp.gui_disable_input = true
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# STARTS DISABLED, and only the HOVERED box ever renders — see _paint_pin_readout, which
+	# drives this in lockstep with the sprite's visibility.
+	#
+	# This used to be UPDATE_ALWAYS, which meant every pin's off-screen 400x150 viewport
+	# re-composited its panel EVERY FRAME from the moment HQ booted: ~32 of them (one per
+	# rally) redrawing ~1.9 MP/frame of UI that was invisible — the sprites all start hidden,
+	# and the player is usually standing in the garage or on the title shot with the table
+	# nowhere near the camera. The content is static (a name, a star row, a focus underline),
+	# so there is nothing for a per-frame update to catch.
+	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1310,7 +1400,35 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	sprite.pixel_size = PIN_LABEL_PIXEL_SIZE
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	sprite.set_meta("panel", panel)
+	sprite.set_meta("viewport", vp)  # _paint_pin_readout arms/disables it with the visibility
 	return sprite
+
+
+# Show or hide ONE pin's floating readout, and arm its off-screen viewport to match.
+#
+# THE SINGLE PLACE a readout's visibility changes, so the render target can never be left
+# compositing a box nobody is looking at (the old UPDATE_ALWAYS bill — see
+# _build_readout_sprite). Shown boxes take UPDATE_ALWAYS rather than a one-shot UPDATE_ONCE
+# on purpose: it is ONE viewport at a time (readouts are hover-only), and a continuously
+# updating target cannot be caught out by a Control that finishes its deferred container
+# sort a frame after the box went up — a single render taken too early would bake a blank
+# or mis-sized panel and never correct it. SubViewports draw before the main viewport in the
+# same frame, so arming here also means no blank frame as the box appears.
+#
+# Also carries the focus repaint (the hover-style underline) so the two can't drift apart.
+func _paint_pin_readout(pin: Node3D, shown: bool) -> void:
+	if pin.has_meta("label_panel"):
+		UITheme.mark_panel_focused(pin.get_meta("label_panel"), shown)
+	if not pin.has_meta("label_sprite"):
+		return
+	var sprite: Node3D = pin.get_meta("label_sprite")
+	if not is_instance_valid(sprite):
+		return
+	sprite.visible = shown
+	var vp: SubViewport = sprite.get_meta("viewport", null) as SubViewport
+	if is_instance_valid(vp):
+		vp.render_target_update_mode = (SubViewport.UPDATE_ALWAYS if shown
+			else SubViewport.UPDATE_DISABLED)
 
 
 # ONE readout-box builder for every pin variant, so the box styling lives in a single
@@ -3800,6 +3918,46 @@ func _begin_rally_start() -> void:
 
 
 # --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
+
+# Stamp "the player is doing something" for the prewarm's idle gate — see
+# _prewarm_should_wait. This is `_input`, not `_unhandled_input`, on purpose: a click on a
+# garage button or a modal is exactly the kind of interaction the prewarm must stay out of
+# the way of, and those events never reach _unhandled_input. It reads the event and never
+# consumes it, so it cannot affect what anything downstream receives.
+#
+# Bare mouse MOTION is not interaction — an idle hand nudging the mouse would otherwise
+# starve the prewarm forever — but motion with a button held is a map drag, so the button
+# mask decides.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and (event as InputEventMouseMotion).button_mask == 0:
+		return
+	_last_input_ms = Time.get_ticks_msec()
+
+
+# Should the deferred Free Roam prewarm hold off spawning its next car?
+#
+# Each spawn is one indivisible `car.tscn` instantiate + mesh duplication — a ~100 ms frame
+# on a slow device — so the ONLY thing that decides whether it reads as a hitch is what the
+# player is doing while it lands. On the static title shot, nothing: that is the trade
+# _prewarm_free_roam_deferred was built for. Mid-navigation it is the whole problem, and a
+# PODIUM return is the worst case, because HQ boots straight into the garage and the player
+# reaches for the map table within a second (features/menus.md -> "What a map-table entry
+# costs"). So the loop waits for stillness instead of assuming it.
+#
+# "Busy" is: a reveal parade playing, a station/map camera glide in flight, a menu direction
+# HELD (the table's held-pan glide moves the camera every frame with no tween to notice, and
+# a long hold generates no repeat events for _input to stamp), or any input inside the last
+# PREWARM_IDLE_MS.
+func _prewarm_should_wait() -> bool:
+	if _revealing:
+		return true
+	if _cam_tween != null and _cam_tween.is_valid():
+		return true
+	for action in ["menu_up", "menu_down", "menu_left", "menu_right"]:
+		if Input.is_action_pressed(action):
+			return true
+	return Time.get_ticks_msec() - _last_input_ms < PREWARM_IDLE_MS
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	# While the player is typing (the account sign-in form is the only text input

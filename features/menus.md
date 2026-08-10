@@ -1157,7 +1157,21 @@ preview entries use negative instance ids and are **exempt from
 to run synchronously behind the cover, but measured ~3x the entire rest of HQ boot
 (see [debug-tools.md](debug-tools.md) → "HQ boot cost logging"), and HQ is
 `run/main_scene` — so the warm now happens off the boot critical path while the player
-looks at the title shot. If the player opens Free Roam *before* it finishes, nothing is
+looks at the title shot.
+
+**It also only spawns while the player is STILL** (`hq_carpark._await_prewarm_window` asks
+`hq._prewarm_should_wait` before every car). Each spawn is one indivisible `car.tscn`
+instantiate — a ~100 ms frame on a slow device — so what decides whether it reads as a hitch
+is not *when* it runs but *what the player is doing* while it lands: nothing, on a static
+title shot; everything, mid-navigation. "Busy" is a reveal parade, a camera glide in flight,
+a menu direction held, or any input inside `PREWARM_IDLE_MS`, and input is stamped in
+`hq._input` (not `_unhandled_input` — a click on a garage button is exactly the interaction
+to stay out of the way of, and those never reach the unhandled pass). A boot that does NOT
+land on the title stamps its own arrival as interaction, because such a boot is a RETURN
+(the podium's Continue, a quit back to HQ) and the player is heading somewhere within the
+second. `PREWARM_MAX_STALL_MS` caps the waiting so a player who never sits still still ends
+up with a warm catalogue rather than a permanently half-warm one.
+If the player opens Free Roam *before* it finishes, nothing is
 lost: `_obtain_parked_car` reuses whatever is warm and builds the remainder on the spot
 (the old first-entry cost, for that remainder only), and the deferred loop skips those on
 its next frame. (The underlying cost is that each car still *instantiates* all
@@ -1456,47 +1470,64 @@ maximum to divide by (the balance falls on a purchase and the Rally Challenge to
 up without bound).
 ### What a map-table entry actually costs
 
-Where the hitch on "tap the table" comes from. Measured headless (32-rally roster, fast
-x86, **no GPU work included** — treat these as a CPU floor, not the device cost):
+Where the hitch on "tap the table" came from, and what a rebuild still costs when one is
+genuinely needed. Measured headless (32-rally roster, fast x86, **no GPU work included** —
+treat these as a CPU floor, not the device cost):
 
 | step | cost | notes |
 |---|---|---|
-| `_refresh_map_pins()` (whole) | **~20 ms** | frees all 32 pins and rebuilds them |
+| `_refresh_map_pins()` — real rebuild | **~20 ms** | frees all 32 pins and rebuilds them |
 | ↳ 32 × `_make_pin` | ~8.4 ms | flag/trophy meshes + one readout `SubViewport` each |
 | ↳ `_apply_map_fog` / `_build_fog_mask` | ~0.8 ms | 64² `Image` loop — cheap, not the problem |
 | ↳ `_build_reveal_links` | ~0.9 ms | |
 | ↳ 32 × `_has_eligible_car` | ~0.0 ms | |
-| `nearest_locked_special_id` | ~0.2 ms | already hoisted out of the pin loop |
-| `_enter_table()` (whole) | **~42 ms** | the refresh above, plus focus/pan setup |
+| ↳ `nearest_locked_special_id` | ~0.2 ms | hoisted out of the pin loop |
+| `_enter_table()` — before the skip | **~42 ms** | the rebuild above, plus focus/pan setup |
+| `_refresh_map_pins()` — **skipped** | **~0.04 ms** | stamp matched; the stamp itself is 0.04 ms |
 
-Three structural facts behind that, all worth knowing before "warming the table" is
-proposed as a fix:
+**"Warming the table" is NOT the fix, and the numbers above are why.** `_build_hq` calls
+`_refresh_map_pins()` unconditionally at boot, behind the `LoadingScreen` cover, so the map
+texture, the fog shader, the wood grain (`MapTable._wood_tex`, a `static var` generated once
+per *process*) and the cached prize-car props (`_prize_car_props`) are all live before the
+player ever sees HQ. There was no cold cache to pre-warm — the cost was work being **redone**
+at the worst possible moment. Three things fixed it, and the reasons they are safe are the
+part worth keeping:
 
-1. **The table is ALREADY warm when HQ boots.** `_build_hq` calls `_refresh_map_pins()`
-   unconditionally — behind the `LoadingScreen` cover — so the map texture, the fog shader,
-   the wood grain (`MapTable._wood_tex`, a `static var`, generated once per *process*) and
-   the cached prize-car props (`_prize_car_props`) are all live before the player sees HQ.
-   There is no cold cache left to pre-warm.
-2. **`_enter_table()` throws that away and rebuilds it.** `_refresh_map_pins(pending)` runs
-   again on every single table entry, because it is the hook the reveal parade needs
-   (`hold_locked`) and where fresh stars land. So the ~20 ms above is paid *uncovered*, in
-   the frame the camera starts its glide to the table — and again **once per revealed
-   rally** during the parade.
-3. **32 readout `SubViewport`s run at `UPDATE_ALWAYS`** (`_build_readout_sprite`), each
-   `PIN_LABEL_PX` = 400×150. They exist from HQ boot, and they re-render every frame even
-   though every sprite starts `visible = false` and the player may be standing in the
-   garage or on the title shot. That is ~1.9 MP/frame of offscreen UI redraw as a standing
-   cost, plus 32 render targets reallocated on each rebuild.
+1. **A table entry no longer rebuilds pins that would come out identical.**
+   `_refresh_map_pins` opens by comparing `_map_pins_stamp(hold_locked)` against
+   `_pins_stamp` and returning early when they match (it still re-seats selection and
+   rewrites the meter, because a table entry re-centres `_table_pan` and so moves the
+   cursor). The stamp is deliberately **coarse and conservative** — the whole profile hash,
+   the whole of each authored table, `hold_locked`, and the map/fog Config values — because a
+   missed input means a STALE MAP (a pin still grey after the rally that lights it), which is
+   far worse than an occasional needless rebuild. **Add to it if you make the pins read
+   something new.** Measured: **0.04 ms** on the skip path against **22 ms** for the rebuild,
+   and the stamp itself is 0.04 ms, so the check pays for itself ~500×. Everything that
+   should still rebuild does: the reveal parade varies `hold_locked` per step, and every
+   other caller (`_on_cloud_profile_replaced`, `_enter_present_box`,
+   `_dev_complete_selected_rally`, `_finish_reveals`) writes the profile first.
+   Guarded by `test_menu_flow.gd::test_hq_table_entry_reuses_unchanged_pins` and
+   `::test_hq_map_table_focus_highlight_survives_a_pin_rebuild` (which clears the stamp to
+   force a real rebuild, since that is what it is about).
+2. **Only the HOVERED readout's `SubViewport` renders.** They are built `UPDATE_DISABLED`,
+   and `hq._paint_pin_readout` — now the single place a readout's visibility changes, and it
+   carries the focus repaint too — arms `UPDATE_ALWAYS` on the one box that is up and
+   disables it again when it closes. `UPDATE_ALWAYS` rather than a one-shot `UPDATE_ONCE`
+   on purpose: it is one viewport at a time, and a single render can be taken *before* a
+   `Control` finishes its deferred container sort, which would bake a blank panel and never
+   correct it. Guarded by `::test_hq_only_the_hovered_pin_readout_renders`.
+3. **The Free-Roam prewarm waits for stillness** (see the GARAGE section's Free Roam
+   paragraph, and `hq._prewarm_should_wait`) instead of firing ~100 ms car-instantiate
+   frames into whatever the player is doing.
 
-**Podium → map table is the worst case for a fourth reason:** the podium's Continue boots a
-FRESH HQ, and `_ready` only awaits `lineup_built` when `_view == View.EXTERIOR`. A podium
-return opens on the GARAGE (or, after the opening rally, straight on the TABLE), so the
-cover lifts and `_carpark_ui._prewarm_free_roam_deferred()` then instantiates one
-`car.tscn` **per catalogue car, one per frame** (9 cars today) *while the player is already
-interacting* — the prewarm was measured at ~3× the rest of HQ boot. Tapping the table lands
-its pin rebuild on top of those heavy frames. On the `return_to_map` path the pins are also
-built **twice** at boot (`_build_hq` → `_refresh_map_pins`, then `_enter_table` →
-`_refresh_map_pins` again).
+**Podium → map table was the worst case, and #3 is the reason.** The podium's Continue boots
+a FRESH HQ, and `_ready` only awaits `lineup_built` when `_view == View.EXTERIOR`. A podium
+return opens on the GARAGE (or, after the opening rally, straight on the TABLE), so the cover
+lifted and the deferred prewarm then instantiated one `car.tscn` **per catalogue car, one per
+frame** (9 today, measured at ~3× the rest of HQ boot) *while the player was already reaching
+for the table* — and the pin rebuild landed on top of those frames. Note the `return_to_map`
+path also builds the pins **twice** at boot (`_build_hq`, then `_enter_table`); with the
+stamp in place the second pass is a no-op rather than a second full build.
 
 **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table

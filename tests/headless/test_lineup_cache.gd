@@ -397,6 +397,34 @@ func test_deferred_prewarm_runs_to_completion() -> void:
 	assert_true(_all_previews_warm(hq), "every catalogue preview is warm in the cache")
 
 
+# Each prewarm spawn is one indivisible car.tscn instantiate, so it must land while the
+# player is STILL — never into a station glide, a held map pan or a reveal parade. Tests the
+# DECISION (_prewarm_should_wait), not the clock: waiting on real time would be slow and
+# flaky, and the idle window itself is a tunable.
+func test_prewarm_waits_while_the_player_is_busy() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	hq._last_input_ms = Time.get_ticks_msec() - 10 * HqController.PREWARM_IDLE_MS
+	assert_false(hq._prewarm_should_wait(), "a still HQ is free to spawn the next car")
+
+	hq._last_input_ms = Time.get_ticks_msec()
+	assert_true(hq._prewarm_should_wait(), "input just now holds the prewarm off")
+
+	hq._last_input_ms = Time.get_ticks_msec() - 10 * HqController.PREWARM_IDLE_MS
+	hq._revealing = true
+	assert_true(hq._prewarm_should_wait(), "a reveal parade holds the prewarm off")
+	hq._revealing = false
+
+	# A camera glide in flight is the other busy signal — a station hop or a map pan. Needs a
+	# non-zero move time to glide at all (a zero snaps and there is nothing to wait for), so
+	# arrange one rather than relying on the authored default.
+	Config.data.menu_camera_move_time = 0.5
+	hq._move_camera_to(hq._station_xform(hq.View.TABLE), false)
+	assert_true(hq._prewarm_should_wait(), "a camera glide holds the prewarm off")
+
+
 func test_deferred_prewarm_is_idempotent() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)

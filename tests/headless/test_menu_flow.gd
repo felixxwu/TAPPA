@@ -199,6 +199,15 @@ func _pin_label_sprite(pin: Node3D) -> Sprite3D:
 	return pin.find_children("*", "Sprite3D", true, false)[0]
 
 
+# The live pin nodes' instance ids, in map order — so a test can tell a pin set that was
+# REUSED from one that was rebuilt (see test_hq_table_entry_reuses_unchanged_pins).
+func _pin_ids(hq: Node3D) -> Array:
+	var ids: Array = []
+	for pin in hq._pins:
+		ids.append((pin as Node3D).get_instance_id())
+	return ids
+
+
 func test_hq_boots_to_the_exterior_title() -> void:
 	_reset_to_first_run()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -430,6 +439,11 @@ func test_hq_map_table_focus_highlight_survives_a_pin_rebuild() -> void:
 	assert_eq(box_before.bg_color, UITheme.SURFACE_HOVER, "the entry selection is painted as focused")
 
 	# Rebuild the pins, then re-run the per-frame selection step exactly as _process would.
+	# The stamp is cleared first because _refresh_map_pins now SKIPS a refresh whose inputs
+	# are unchanged (see test_hq_table_entry_reuses_unchanged_pins) — this test is about what
+	# happens when a real rebuild does replace the nodes, which is what any profile / roster /
+	# reveal-parade change causes.
+	hq._pins_stamp = null
 	hq._refresh_map_pins()
 	hq._table_ui._select_target_under_center()
 	var after: Node3D = hq._table_ui._table_targets()[hq._table_focus_index]["node"]
@@ -439,6 +453,86 @@ func test_hq_map_table_focus_highlight_survives_a_pin_rebuild() -> void:
 	var box_after: StyleBoxFlat = after.get_meta("label_panel").get_theme_stylebox("panel")
 	assert_eq(box_after.bg_color, UITheme.SURFACE_HOVER,
 		"the rebuilt pin is repainted as focused, not left unhighlighted")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+# Opening the map table must not rebuild a pin set that would come out identical. HQ boot
+# already builds the pins behind the loading cover, so the rebuild _enter_table used to do
+# unconditionally was ~32 pins' worth of work (meshes, readout SubViewports, prize-car
+# re-parenting) landing in the frame the camera starts its glide to the table — the hitch
+# features/menus.md -> "What a map-table entry costs" describes. Anything the pins actually
+# read still forces the rebuild, which is the other half of the contract.
+func test_hq_table_entry_reuses_unchanged_pins() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "a", "name": "A", "region": "home", "special": false,
+			"map_pos": Vector2(0.5, 0.5), "restriction": {}, "events": []},
+		{"id": "b", "name": "B", "region": "home", "special": false,
+			"map_pos": Vector2(0.6, 0.5), "restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	# The FIRST entry may legitimately rebuild (it banks any pending reveals, which writes the
+	# profile). From here the state is settled.
+	var settled := _pin_ids(hq)
+	assert_eq(settled.size(), 2, "both rallies are pinned")
+
+	hq._go_to(hq.View.GARAGE, true)
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	assert_eq(_pin_ids(hq), settled, "re-entering the table with nothing changed keeps the pins")
+
+	# ...and a change the pins DO read rebuilds them. Completing a rally moves both its star
+	# row and the fog the map is shaded with.
+	Save.complete_rally("a", 100000, 1)
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	var rebuilt := _pin_ids(hq)
+	assert_eq(rebuilt.size(), 2, "still two pins after the rebuild")
+	assert_ne(rebuilt, settled, "a profile change the pins read forces a real rebuild")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+# A pin's readout is composited in its own off-screen SubViewport, and only the ONE the
+# cursor is on may render: they used to sit at UPDATE_ALWAYS, so every pin re-composited a
+# 400x150 panel every frame from HQ boot onward — invisible work, since the boxes are
+# hover-only and the player is usually nowhere near the table.
+func test_hq_only_the_hovered_pin_readout_renders() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "a", "name": "A", "region": "home", "special": false,
+			"map_pos": Vector2(0.5, 0.5), "restriction": {}, "events": []},
+		{"id": "b", "name": "B", "region": "home", "special": false,
+			"map_pos": Vector2(0.9, 0.9), "restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+
+	var focused: Node3D = hq._table_ui._table_targets()[hq._table_focus_index]["node"]
+	for pin in hq._pins:
+		var sprite: Node3D = pin.get_meta("label_sprite")
+		var vp: SubViewport = sprite.get_meta("viewport")
+		var on: bool = pin == focused
+		assert_eq(sprite.visible, on, "only the hovered pin shows its readout")
+		assert_eq(vp.render_target_update_mode,
+			SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED,
+			"a readout viewport renders only while its box is up")
+
+	# Dropping the cursor entirely closes every box AND stops every viewport.
+	hq._table_ui._clear_table_focus()
+	for pin in hq._pins:
+		var sprite2: Node3D = pin.get_meta("label_sprite")
+		assert_false(sprite2.visible, "clearing the cursor closes every readout")
+		assert_eq((sprite2.get_meta("viewport") as SubViewport).render_target_update_mode,
+			SubViewport.UPDATE_DISABLED, "and leaves no viewport rendering")
 	RegionLibrary.reset()
 	RallyLibrary.reset()
 
