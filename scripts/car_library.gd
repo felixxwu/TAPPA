@@ -320,9 +320,11 @@ static func all() -> Array[Dictionary]:
 
 static func override_for_test(cars: Array[Dictionary]) -> void:
 	_seam.override_for_test(cars)
+	CarStatBounds.invalidate()  # the roster-wide stat scale is derived from BOTH catalogues
 
 static func reset() -> void:
 	_seam.reset()
+	CarStatBounds.invalidate()
 
 
 # Array position of the car with this stable id, or -1 if no such car exists
@@ -474,13 +476,30 @@ static func horsepower(entry: Dictionary) -> float:
 # Using the SHARED GameConfig helper keeps the panel honest about what the car does.
 # The grip_balance tuning slider is deliberately ignored — this is a nominal spec-sheet
 # figure for car selection, not the currently-tuned car.
-static func max_lateral_g(entry: Dictionary, cfg: GameConfig) -> float:
+# `speed_kmh` optionally rates the figure WITH aerodynamic downforce at that speed. At the
+# default 0 the result is exactly the static-load figure this has always returned (the
+# car-select panel's caller is unaffected); above 0 each axle's downforce — authored in N
+# per (m/s)², the same fields car.gd::_apply_aero applies as v²·downforce_axle — is added
+# to that axle's normal load before the load-sensitivity factor, and the result is the
+# load-weighted grip Σ(μ·load) / (mass·g).
+#
+# That extra argument is what makes the aero kit VISIBLE on a grip readout: without it,
+# fitting aero moves nothing on this figure, because downforce is purely a speed effect.
+# A caller quoting the speed-rated figure must show the speed alongside it — the effect
+# grows with v², so a number without its speed reads as a promise.
+static func max_lateral_g(entry: Dictionary, cfg: GameConfig, speed_kmh := 0.0) -> float:
 	var g := Platform.gravity()
 	var mass: float = float(entry.get("mass", 1.0))
 	var wf: float = clampf(float(entry.get("weight_front", 0.5)), 0.0, 1.0)
 	var compound := float(entry.get("tire_compound", 1.0))
-	var front_load := mass * g * wf * 0.5
-	var rear_load := mass * g * (1.0 - wf) * 0.5
+	var v2 := pow(maxf(speed_kmh, 0.0) / 3.6, 2.0)
+	var front_load := mass * g * wf * 0.5 + v2 * float(entry.get("downforce_front", 0.0)) * 0.5
+	var rear_load := mass * g * (1.0 - wf) * 0.5 + v2 * float(entry.get("downforce_rear", 0.0)) * 0.5
 	var mu_front := compound * cfg.tire_load_factor(front_load, float(entry.get("wheel_width_front", 0.225)))
 	var mu_rear := compound * cfg.tire_load_factor(rear_load, float(entry.get("wheel_width_rear", 0.225)))
-	return (mu_front + mu_rear) * 0.5
+	if v2 <= 0.0 or mass * g <= 0.0:
+		return (mu_front + mu_rear) * 0.5
+	# With downforce in play the axles no longer carry equal shares of the total load, so
+	# the honest figure is load-weighted (total lateral force over weight) rather than a
+	# plain mean of the two μ.
+	return (mu_front * front_load + mu_rear * rear_load) * 2.0 / (mass * g)

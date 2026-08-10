@@ -342,7 +342,7 @@ func build_lift_overlay() -> void:
 	# detune popup). It attaches + preserves its own MenuNav across rebuilds and shows a
 	# p/w + G stats line; the lift wires on_change + the engine-swap action in
 	# _refresh_lift_ui. See features/upgrade-catalogue.md.
-	_hq._lift_upgrades_box = UpgradesMenu.new()
+	_hq._lift_upgrades_box = UpgradesSimple.new()
 	content.add_child(_hq._lift_upgrades_box)
 
 	# Framework: WASD + arrow + gamepad focus nav for the native-focus TUNE (sliders)

@@ -68,6 +68,13 @@ func _ready() -> void:
 	# keep whatever the caller wrote. See DrivingContext.apply_stage_config.
 	DrivingContext.apply_stage_config(Config.data)
 	var cfg: GameConfig = Config.data
+	# A one-shot notice from the Start gate (today: the free upgrade restore) replaces
+	# the loading tip for this one load — it is about the car the player is sitting in,
+	# which beats a generic tip, and taking it here clears it so the remaining stages
+	# go back to tips.
+	var start_notice := RallySession.take_start_notice()
+	if start_notice != "":
+		loading.set_step(start_notice)
 	# Tell the player which stage of the rally is loading (no-op for a one-stage rally or a
 	# session-less drive). Replaced the weather tell that used to own this line.
 	if RallySession.is_active():

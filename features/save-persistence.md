@@ -185,6 +185,18 @@ it, a duplicate of a part already on the car is rejected, and a wrecked car
 keeps its parts fitted; see `features/upgrade-catalogue.md`),
 `set_upgrade_enabled(instance_id, item_id, enabled)` (the upgrades-menu toggle —
 free and reversible; enabling a part switches off its same-slot siblings),
+`apply_build_plan(instance_id, plan)` (writes an `UpgradeLibrary.auto_build_plan`
+plan to a car in one go — buys + enables, enables, strips, an optional drivetrain
+override, then the plan's absolute detune; a no-op returning `false` for a plan whose
+`changed` is false or a car that isn't in the save),
+`restore_free_build(instance_id, restriction := {})` (the Start-gate free restore:
+solves `auto_build_plan` with `free_only`, so it spends nothing and never moves power
+DOWN, and applies it — the motivating case being a detune left down from a previous
+rally. Returns `{applied, notice}`, the notice being the one outcome line the loading
+screen / start line shows. It is **permanent**: unlike the qualifying drivetrain switch
+it is NOT registered for the end-of-rally revert, because a stale detune isn't a
+deliberate per-rally choice, and reverting it would leave the tuning lift showing a
+detuned car while races quietly ran at full power),
 `complete_rally(rally_id, combined_ms,
 placed)` (idempotent; keeps the best time **and** best placement; grants no car — cars
 are bought, see [star-economy.md](star-economy.md)). It **returns the star delta it

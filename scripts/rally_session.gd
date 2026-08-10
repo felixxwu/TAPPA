@@ -88,6 +88,23 @@ var return_to_map := false
 # is, rather than a slot-machine reel on the results screen. See hq.gd::_enter_present_box.
 var pending_car_reveal_instance_id := -1
 
+# A one-line notice from the Start gate, shown on the NEXT loading screen and then
+# forgotten (world.gd, take_start_notice). Today it carries the free upgrade restore
+# (Save.restore_free_build): that edit is automatic and permanent, so the player has to
+# be told — but it spends nothing, so it must not cost them a press to acknowledge. The
+# loading screen is the one surface every start path already passes through, which is
+# why the notice lives here rather than in either car park.
+var start_notice := ""
+
+
+# Read the pending start notice and clear it, so it shows once rather than on every
+# stage of a multi-stage rally.
+func take_start_notice() -> String:
+	var out := start_notice
+	start_notice = ""
+	return out
+
+
 # Free-roam handoff: the car the player picked for a session-LESS free-roam drive.
 #   free_roam_instance_id — an OWNED instance (Test Drive of the tuned car on the lift,
 #     or an owned car picked in Free Roam). world.gd fields it with upgrades + saved HP.

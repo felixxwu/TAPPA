@@ -710,7 +710,7 @@ func test_challenge_menus_bind_to_the_challenge_car_not_the_rally_one() -> void:
 	var want := int(owned["instance_id"])
 	assert_eq(int(sl._tune_panel._owned.get("instance_id", -1)), want,
 		"the Tune Car panel is bound to the challenge's locked car")
-	assert_eq(int(sl._upgrades_menu._owned.get("instance_id", -1)), want,
+	assert_eq(int(sl._upgrades_menu.advanced()._owned.get("instance_id", -1)), want,
 		"the Upgrades menu is bound to the challenge's locked car")
 	assert_eq(int(sl._driven_car().get("instance_id", -1)), want,
 		"the shared driven-car resolver answers with the challenge car")
@@ -793,7 +793,7 @@ func test_challenge_upgrades_close_button_gates_on_the_ceiling() -> void:
 	assert_true(String(sl._upgrades_back.text).begins_with("Over limit"),
 		"the close button paints as blocked, exactly like a career rally's pw_max gate")
 	# Detune under the cap: the gate clears with no challenge-specific mechanism.
-	sl._upgrades_menu._detune_slider.value = 25.0
+	sl._upgrades_menu.advanced()._detune_slider.value = 25.0
 	assert_false(sl._upgrades_menu.over_pw_limit(), "detuning under the ceiling clears the gate")
 	assert_true(sl._upgrades_menu.can_close(), "proceeding is allowed once under the ceiling")
 	assert_false(String(sl._upgrades_back.text).begins_with("Over limit"),

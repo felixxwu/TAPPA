@@ -1169,6 +1169,55 @@ func buy_part(instance_id: int, item_id: String) -> bool:
 	return true
 
 
+# --- Auto-Upgrade plans -------------------------------------------------------
+#
+# Commit a plan from UpgradeLibrary.auto_build_plan to a car: buy, switch on, park,
+# then write the detune and any drivetrain override. The solver decides WHAT, this
+# decides nothing — which is what lets the Auto-Upgrade button, the free restore at
+# the Start gate and the tests all share one rule.
+#
+# Order matters: buys land before enables (a bought part arrives parked, like every
+# other award), and strips run last so a slot's outgoing part cannot re-park the
+# incoming one through _enable_exclusive. Returns false when nothing was applied.
+func apply_build_plan(instance_id: int, plan: Dictionary) -> bool:
+	if get_car(instance_id).is_empty() or not bool(plan.get("changed", false)):
+		return false
+	for item_id in plan.get("buy", []):
+		if buy_part(instance_id, item_id):
+			set_upgrade_enabled(instance_id, item_id, true)
+	for item_id in plan.get("enable", []):
+		set_upgrade_enabled(instance_id, item_id, true)
+	for item_id in plan.get("strip", []):
+		set_upgrade_enabled(instance_id, item_id, false)
+	if int(plan.get("drivetrain", -1)) >= 0:
+		set_drivetrain_override(instance_id, int(plan["drivetrain"]))
+	set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
+	return true
+
+
+# The Start-gate free restore: put a car back on the upgrades it already owns before it
+# races — the motivating case being a detune left down from a previous rally that the
+# player forgot to bring back up. Spends nothing, never moves power DOWN (an over-limit
+# car is the "Too powerful" prompt's business, a decision point this must not bypass),
+# and is PERMANENT rather than reverted afterwards: a stale detune is not a deliberate
+# per-rally choice the way the drivetrain switch is, so reverting it would leave the
+# tuning lift showing a detuned car while races quietly ran at full power.
+#
+# Returns {applied: bool, notice: String} — the notice is the one line the player is
+# shown, in outcome words. See todo/simplified-upgrade-menu.md §4 → "Free-only restore".
+func restore_free_build(instance_id: int, restriction: Dictionary = {}) -> Dictionary:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return {"applied": false, "notice": ""}
+	var meta := CarLibrary.by_id(String(car.get("model_id", "")))
+	var plan := UpgradeLibrary.auto_build_plan(car, meta, profile, 0, restriction, true)
+	if not apply_build_plan(instance_id, plan):
+		return {"applied": false, "notice": ""}
+	var after := UpgradeLibrary.effective_meta(get_car(instance_id), meta)
+	return {"applied": true, "notice": "Restored your upgrades — %d hp/t"
+		% CarLibrary.power_to_weight_hp_tonne(after)}
+
+
 func rally_completed(rally_id: String) -> bool:
 	return profile["rallies"].get(rally_id, {}).get("completed", false)
 

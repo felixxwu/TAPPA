@@ -125,7 +125,19 @@ the lateral-G and the power-to-weight stats are genuinely driven by weight.
 The car-select panel shows this as a **lateral-G** figure (`CarLibrary.max_lateral_g`):
 each axle's static per-wheel load (`mass·g·weight_split/2`) run through the SAME
 `tire_load_factor`, times the compound, averaged over the two axles — so the panel can't
-disagree with what the car actually does. Note `wheel_width_*` is dual-purpose: it sizes
+disagree with what the car actually does.
+
+`max_lateral_g(entry, cfg, speed_kmh := 0.0)` takes an optional **speed** so a figure can
+be rated **with aero**. At the default `0.0` it returns exactly the static-load number
+above, unchanged. Above 0 it adds each axle's downforce (`v² · downforce_front/rear / 2`
+per wheel, `v` in m/s) to that axle's load **before** the load-sensitivity factor, and,
+since the axles then no longer carry equal shares, returns the **load-weighted**
+`Σ(μ·load)/(mass·g)` rather than a plain mean of the two μ. Downforce fields reach the
+meta via `UpgradeLibrary.aero_meta` (see
+[upgrade-catalogue.md](upgrade-catalogue.md)), not `effective_meta`. A quoted
+speed-rated figure must **always show its speed** — the effect grows with v², so a
+speed-dependent grip number without its speed reads as a promise; the Simple upgrades
+page's Grip row does exactly that (`UpgradesSimple.GRIP_REFERENCE_KMH`). Note `wheel_width_*` is dual-purpose: it sizes
 the wheel meshes AND drives grip, so staggered cars both look and handle staggered.
 
 ## Per-wheel surface grip

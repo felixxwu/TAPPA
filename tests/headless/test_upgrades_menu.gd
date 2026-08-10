@@ -357,15 +357,16 @@ func test_weight_slot_ballast_is_free_lightweight_is_gated() -> void:
 
 # --- Row layout ---------------------------------------------------------------
 
-# The turbo slot carries the most options of any slot (Stock + every induction part), and
-# they share ONE HFlowContainer with the slot label — a flow container, so anything that
-# does not fit WRAPS onto a second line and the row grows a ragged extra line under it.
+# A slot row NEVER wraps. Its label and every option button share one flat box row
+# (UpgradesMenu._option_row), so a slot with more options than fit is squeezed rather than
+# spilled onto a second line.
 #
-# Measured, not eyeballed: HFlowContainer reports its own line count, so this asserts the
-# thing the player actually sees rather than a proxy for it. It is the option LABELS that
-# decide the answer ("Supercharger" wrapped on its own; "Super" does not), so this is what
-# stops a future rename quietly pushing the row onto two lines again.
-func test_the_turbo_row_fits_on_one_line_with_every_option_shown() -> void:
+# This used to be an HFlowContainer and the assertion was "the widest row happens to fit on
+# one line", which held only as long as nobody renamed an option (it was already lost once
+# to "Supercharger", fixed by shortening the label to "Super", and again on the aero row).
+# The row can no longer wrap by construction, so the test asserts THAT — measured from the
+# laid-out buttons' positions, at a realistic width and at an absurdly narrow one.
+func test_a_slot_row_never_wraps() -> void:
 	var slot := "turbo"
 	var owned := {"instance_id": 77, "model_id": "synthetic", "upgrades": {}, "tuning": {}}
 	# Every turbo part FITTED, which is the widest the row can ever be: a fitted part shows
@@ -379,34 +380,115 @@ func test_the_turbo_row_fits_on_one_line_with_every_option_shown() -> void:
 	owned["disabled_upgrades"] = []
 
 	var m = _menu(owned)
-	# Give the menu a realistic width and let it lay out — a zero-width container would
-	# report a wrap for every row and prove nothing.
-	m.custom_minimum_size = Vector2(560, 0)
-	m.size = Vector2(560, 400)
-	await get_tree().process_frame
-	await get_tree().process_frame
-
-	var flow := _slot_flow(m, slot)
-	assert_not_null(flow, "the turbo slot has a flow row")
-	assert_eq(flow.get_line_count(), 1,
-		"the turbo row's options all fit on one line")
-
-	# PROVE THE MEASUREMENT IS LIVE. A line count that always read 1 — because the row was
-	# never laid out, or was given unbounded width — would make the assertion above pass
-	# whatever the labels said. Squeezing the menu must produce a wrap.
-	m.custom_minimum_size = Vector2(120, 0)
-	m.size = Vector2(120, 400)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_gt(flow.get_line_count(), 1,
-		"a too-narrow menu DOES wrap the row — so the one-line result above was measured")
+	for width in [560, 120]:
+		m.custom_minimum_size = Vector2(width, 0)
+		m.size = Vector2(width, 400)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var row := _slot_row(m, slot)
+		assert_not_null(row, "the turbo slot has a row")
+		var tops := {}
+		for child in row.get_children():
+			if child is Button:
+				tops[roundi((child as Button).position.y)] = true
+		assert_gt(tops.size(), 0, "the row has option buttons")
+		assert_eq(tops.size(), 1,
+			"at %dpx every option still sits on the same line" % width)
 
 
-# The HFlowContainer holding `slot`'s label + option buttons, found by its label text so
-# the test does not depend on child ordering.
-func _slot_flow(m: Control, slot: String) -> HFlowContainer:
-	for node in m.find_children("*", "HFlowContainer", true, false):
-		for child in (node as HFlowContainer).get_children():
+# The row holding `slot`'s label + option buttons, found by its label text so the test does
+# not depend on child ordering.
+func _slot_row(m: Control, slot: String) -> HBoxContainer:
+	for node in m.find_children("*", "HBoxContainer", true, false):
+		for child in (node as HBoxContainer).get_children():
 			if child is Label and String((child as Label).text).to_lower() == slot:
 				return node
 	return null
+
+
+# --- Auto-Upgrade -------------------------------------------------------------
+# The button is a thin shell over UpgradeLibrary.auto_build_plan (covered in
+# test_auto_build.gd); what belongs here is the TWO-PRESS rule, since a single press
+# spending stars irreversibly is the failure mode it exists to prevent.
+
+func _auto_row(menu: Control) -> AutoUpgradeRow:
+	for c in menu.get_children():
+		if c is AutoUpgradeRow:
+			return c
+	return null
+
+
+# Auto only appears where a rally sets a target, so the menu under test is built WITH a
+# power-to-weight ceiling. A generous one, so the car is legal and the plan is an ordinary
+# "buy the best you can afford" rather than a strip-and-detune.
+func _auto_menu(instance_id: int, pw_limit := 100000.0) -> Control:
+	var m = UpgradesMenuScript.new()
+	add_child_autofree(m)
+	m.setup(Save.get_car(instance_id), Callable(), Callable(), pw_limit)
+	return m
+
+
+func test_auto_upgrade_confirms_before_it_spends() -> void:
+	# Pressing Auto must never spend on its own — it raises a confirm popup naming what it
+	# would buy, and only that popup's action commits.
+	CarFixtures.install()
+	UpgradeFixtures.install()
+	var earned: int = int(Save.profile.get("stars_earned", 0))
+	var spent: int = int(Save.profile.get("stars_spent", 0))
+	Save.profile["stars_earned"] = 100
+	Save.profile["stars_spent"] = 0
+	var car: Dictionary = Save.grant_car("fx_light_rwd")
+	var id := int(car["instance_id"])
+	var m = _auto_menu(id)
+	var row := _auto_row(m)
+	assert_not_null(row, "the menu offers an Auto-Upgrade row")
+	var before: int = Save.stars_available()
+	row._on_pressed()
+	assert_eq(Save.stars_available() as int, before, "the press only asks; it never spends")
+	var modal := ConfirmPopup.any_open(get_tree())
+	assert_not_null(modal, "and it asks with a confirm popup")
+	row._commit()
+	assert_true(Save.stars_available() as int < before, "confirming commits the purchase")
+	if modal != null:
+		modal.queue_free()
+	Save.profile["stars_earned"] = earned
+	Save.profile["stars_spent"] = spent
+	UpgradeFixtures.restore()
+	CarFixtures.restore()
+
+
+func test_auto_upgrade_does_nothing_for_a_car_with_no_plan() -> void:
+	CarFixtures.install()
+	UpgradeFixtures.install()
+	var earned: int = int(Save.profile.get("stars_earned", 0))
+	Save.profile["stars_earned"] = 0
+	var car: Dictionary = Save.grant_car("fx_light_rwd")
+	var m = _auto_menu(int(car["instance_id"]))
+	var row := _auto_row(m)
+	if row != null:
+		row._on_pressed()
+		assert_null(ConfirmPopup.any_open(get_tree()),
+			"a plan with nothing in it never even raises the confirm")
+	else:
+		assert_true(true, "a broke car at its ceiling gets no Auto row at all")
+	Save.profile["stars_earned"] = earned
+	UpgradeFixtures.restore()
+	CarFixtures.restore()
+
+
+func test_auto_upgrade_is_absent_without_a_target() -> void:
+	# The HQ lift passes no ceiling: there is no event in mind, so there is no objective
+	# for Auto to solve and the row must not appear at all.
+	CarFixtures.install()
+	UpgradeFixtures.install()
+	var earned: int = int(Save.profile.get("stars_earned", 0))
+	Save.profile["stars_earned"] = 100
+	var car: Dictionary = Save.grant_car("fx_light_rwd")
+	var id := int(car["instance_id"])
+	assert_null(_auto_row(_auto_menu(id, UpgradesMenuScript.NO_LIMIT)),
+		"no rally target, no Auto-Upgrade row")
+	assert_not_null(_auto_row(_auto_menu(id, 100000.0)),
+		"but a hosted p/w ceiling brings it in")
+	Save.profile["stars_earned"] = earned
+	UpgradeFixtures.restore()
+	CarFixtures.restore()

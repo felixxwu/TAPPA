@@ -172,6 +172,11 @@ geometry has one definition:
   `icon_disabled_color` dims the star with the label, so an unaffordable price greys as one
   piece. `StarRow.PRICE_RADIUS` is the one size, so no price star can drift from another.
 
+The polygon RASTERISER behind both shapes lives in `PolygonIcon` (`scripts/polygon_icon.gd`),
+not in `StarRow` any more: `StarRow.texture` delegates to `PolygonIcon.texture`, which the
+simple upgrades page's `WrenchIcon` shares. Same tofu reasoning, applied once — the star just
+happened to be the first drawn icon that needed it.
+
 The parentheses went with the glyph — `SMALL 2★`, not `SMALL (2★)`: a star after the digits
 already reads as a price, and the two characters matter on the weight row, which is the
 widest slot row in the menu (see `UpgradesMenu._OPTION_BUTTON_PAD`).

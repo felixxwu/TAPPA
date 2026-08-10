@@ -139,7 +139,7 @@ func test_upgrades_button_opens_the_real_upgrades_menu_component() -> void:
 	assert_true(w._action_box.visible, "precondition: the action row is showing")
 	w._upgrades_button.pressed.emit()
 	assert_not_null(w._upgrades_menu, "pressing Upgrades builds the menu component")
-	assert_true(w._upgrades_menu is UpgradesMenu,
+	assert_true(w._upgrades_menu is UpgradesSimple,
 		"it's the real UpgradesMenu component, not a stub reimplementation")
 	assert_true(w._upgrades_overlay.visible, "the upgrades overlay is shown")
 	assert_eq(int(w._upgrades_menu._owned.get("instance_id", -1)), id,

@@ -30,7 +30,7 @@ var _skip_button: Button
 var _action_box: HBoxContainer
 var _upgrades_button: Button
 var _next_button: Button
-var _upgrades_menu: UpgradesMenu
+var _upgrades_menu: UpgradesSimple
 var _upgrades_overlay: CanvasLayer
 var _upgrades_back: Button
 # The spin target + landing callback, stashed so a skip can run the SAME landing
@@ -293,7 +293,7 @@ func _close_upgrades() -> void:
 # shape as start_line._build_menu_overlay / hq's upgrades popup, just built locally
 # since this card doesn't have a shared host overlay builder to call into.
 func _build_upgrades_overlay() -> void:
-	_upgrades_menu = UpgradesMenu.new()
+	_upgrades_menu = UpgradesSimple.new()
 	var layer := CanvasLayer.new()
 	layer.layer = 6
 	add_child(layer)

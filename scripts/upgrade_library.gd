@@ -191,9 +191,11 @@ static func all() -> Array[Dictionary]:
 
 static func override_for_test(upgrades: Array[Dictionary]) -> void:
 	_seam.override_for_test(upgrades)
+	CarStatBounds.invalidate()  # the roster-wide stat scale is derived from BOTH catalogues
 
 static func reset() -> void:
 	_seam.reset()
+	CarStatBounds.invalidate()
 
 
 static func index_of(id: String) -> int:
@@ -562,6 +564,314 @@ static func _best_part_per_slot(base_car: Dictionary, meta: Dictionary,
 	for slot in SLOTS:
 		if best_id.has(slot):
 			out.append(best_id[slot])
+	return out
+
+
+
+# `effective_meta` plus the AERO fields, for a grip readout.
+#
+# effective_meta deliberately mirrors only the power-to-weight-feeding effects, because
+# that is what eligibility is judged on — downforce doesn't move a car's class. But the
+# Simple page's Grip row has to show what the aero kit bought, and
+# CarLibrary.max_lateral_g reads its downforce off the meta, so those two "add" effects
+# are folded in here rather than widening effective_meta's contract.
+static func aero_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
+	var out := effective_meta(owned_car, meta)
+	if out.is_empty():
+		return out
+	out = out.duplicate()
+	for item_id in enabled_upgrades(owned_car):
+		var effect: Dictionary = by_id(item_id).get("effect", {})
+		for key in effect:
+			var desc: Dictionary = EFFECTS.get(key, {})
+			if String(desc.get("op", "")) != "add":
+				continue
+			var f: String = desc["field"]
+			out[f] = float(out.get(f, 0.0)) + float(effect[key])
+	return out
+
+# --- Auto-Upgrade solver ------------------------------------------------------
+#
+# "Give me the best build this car can have right now" as a PURE function over its
+# inputs, so the three things that want it — the Auto-Upgrade button, the free
+# restore at the Start gate, and the tests — all share one rule instead of three
+# copies (todo/simplified-upgrade-menu.md §6 warns specifically against widening
+# the hq.gd / start_line.gd duplication).
+#
+# Returns a PLAN, never a mutation:
+#   {buy: [id], enable: [id], strip: [id], detune: float, drivetrain: int,
+#    cost: int, blocked: String, changed: bool}
+# `strip`/`enable` are toggles on parts the car already owns, `buy` is a purchase
+# (fitted enabled), `detune` is the absolute slider setting to write, `drivetrain`
+# is a drive-mode override or -1 for "leave alone", and `blocked` is a non-empty
+# reason when the car simply cannot enter (wrong car type, wrong country …) —
+# something no build can fix, and which the solver must NAME rather than silently
+# hand back a plan that doesn't work.
+#
+# `restriction` is a rally restriction dict (`RallyLibrary` shape), not the bare
+# pw_max float the spec first sketched: the hosts that only have a p/w ceiling pass
+# `{"pw_max": limit}` in one line, while a host that has the real rally passes the
+# real thing — which is what lets `blocked` distinguish "wrong build" from "wrong
+# car" at all.
+#
+# `free_only` forbids spending, and is a FLAG rather than a `stars = 0` call on
+# purpose: `star_cost_per_part` is an exported range that a designer may set to 0,
+# which would silently turn a free-only restore into a shopping spree.
+static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Dictionary,
+		stars: int, restriction: Dictionary = {}, free_only := false) -> Dictionary:
+	var plan := {"buy": [], "enable": [], "strip": [], "detune": 1.0,
+		"drivetrain": -1, "cost": 0, "blocked": "", "changed": false}
+	if meta.is_empty():
+		return plan
+	var budget := 0 if free_only else maxi(stars, 0)
+	var price := int(Config.data.star_cost_per_part)
+	var enabled_now := enabled_upgrades(owned_car)
+	var owned: Array = owned_car.get("installed_upgrades", [])
+
+	# --- Candidates per slot.
+	# Only parts that feed power-to-weight take part in the search below; the rest
+	# (aero, drivetrain kit, nitrous) can't be scored against the objective, so Auto
+	# never BUYS them — it only switches on ones the car already owns and left parked.
+	# Ballast is excluded everywhere: it is a p/w lever that also destroys grip, and
+	# detune buys the same reduction for free (§4 → "Auto never fits ballast").
+	var pw_slots: Array = []
+	var candidates := {}      # slot -> [id or ""], "" meaning "nothing in this slot"
+	for slot in SLOTS:
+		var opts: Array = [""]
+		for item in all():
+			var item_id := String(item.get("id", ""))
+			if String(item.get("slot", "")) != slot or bool(item.get("consumable", false)):
+				continue
+			if float((item.get("effect", {}) as Dictionary).get("mass_mult", 1.0)) > 1.0:
+				continue  # ballast: never fitted by Auto, in any mode
+			var have := owned.has(item_id)
+			if not have:
+				if free_only or budget < price:
+					continue
+				if not rally_gate_met(item_id, profile) or not prerequisite_met(item_id, owned_car):
+					continue
+			opts.append(item_id)
+		candidates[slot] = opts
+		if _slot_feeds_pw(slot):
+			pw_slots.append(slot)
+
+	# --- Search the p/w-feeding slots.
+	# Exhaustive over the product of their candidate lists (a handful of parts across
+	# two slots today) rather than greedy, because the constrained objective —
+	# "smallest p/w that still clears the cap" — is not something a per-slot greedy
+	# pass can express. Per-slot independence makes each combination's score exact,
+	# the same property _best_part_per_slot leans on.
+	var pw_max := float(restriction.get("pw_max", 0.0)) if restriction.has("pw_max") else 0.0
+	var current_pw := CarLibrary.power_to_weight(effective_meta(owned_car, meta))
+	var best: Array = []
+	var best_pw := -1.0
+	var best_cost := 0
+	for combo in _slot_combinations(pw_slots, candidates):
+		var cost := 0
+		for item_id in combo:
+			# "" is the "leave this slot empty" pick, not a part — it costs nothing.
+			if item_id != "" and not owned.has(item_id):
+				cost += price
+		if cost > budget:
+			continue
+		var pw := _combo_pw(owned_car, meta, combo, pw_slots)
+		if free_only and pw < current_pw:
+			continue  # a free restore only ever moves power UP, or sideways
+		if not _combo_better(pw, cost, best_pw, best_cost, pw_max, best.is_empty()):
+			continue
+		best = combo
+		best_pw = pw
+		best_cost = cost
+
+	# --- Turn the winning combination into toggles.
+	var keep: Array = best.duplicate()
+	for slot in SLOTS:
+		if pw_slots.has(slot):
+			continue
+		# Non-p/w slot: switch on an owned part the player left parked, since that is
+		# free and is never a downgrade. Ballast can't reach here (it lives in a
+		# p/w slot), so there is nothing to protect against. An already-enabled part
+		# wins over a parked sibling — Auto has no way to rank two parts whose effects
+		# don't reach power-to-weight, so it must not overturn the player's pick.
+		var pick := ""
+		for item_id in owned:
+			if slot_of(item_id) != slot or is_free(item_id):
+				continue
+			if enabled_now.has(item_id):
+				pick = item_id
+				break
+			if pick == "":
+				pick = item_id
+		if pick != "":
+			keep.append(pick)
+	for item_id in keep:
+		if item_id == "":
+			continue
+		if not owned.has(item_id):
+			(plan["buy"] as Array).append(item_id)
+			plan["cost"] = int(plan["cost"]) + price
+		elif not enabled_now.has(item_id):
+			(plan["enable"] as Array).append(item_id)
+	for item_id in enabled_now:
+		if slot_of(item_id) != "" and not keep.has(item_id):
+			(plan["strip"] as Array).append(item_id)
+
+	# --- Detune: the final fine trim, never the first lever.
+	# The build above is already the smallest one that clears the cap, so whatever
+	# is left over is trimmed here — and only here.
+	var final_car := _car_with_plan(owned_car, plan)
+	var full_meta := effective_meta(final_car, meta)
+	var detune := 1.0
+	if not restriction.is_empty():
+		var rally := {"restriction": restriction}
+		detune = RallyLibrary.qualifying_detune(rally, full_meta)
+		if detune < 0.0:
+			# Nothing a build can do — name it instead of returning a plan that lies.
+			plan["blocked"] = RallyLibrary.ineligibility_reason(rally, full_meta)
+			var wanted := _drivetrain_fix(owned_car, restriction, full_meta, meta)
+			if wanted >= 0:
+				plan["drivetrain"] = wanted
+				plan["blocked"] = ""
+				detune = RallyLibrary.qualifying_detune(rally, _with_drive(full_meta, wanted))
+			if detune < 0.0:
+				return _finish(plan, owned_car, 1.0)
+	if free_only:
+		# Never trim DOWN: an over-limit car is the "Too powerful" prompt's business,
+		# a deliberate decision point this must not quietly bypass.
+		detune = maxf(detune, float(owned_car.get("tuning", {}).get("engine_detune", 1.0)))
+	return _finish(plan, owned_car, detune)
+
+
+# Stamp the chosen detune on the plan and work out whether it does anything at all.
+# The predicate is PLAN DIFFERENCE, not a power-to-weight comparison: swapping the
+# player's ballast for an equivalent detune lands identical p/w with measurably more
+# grip, and a p/w test would call that a no-op.
+static func _finish(plan: Dictionary, owned_car: Dictionary, detune: float) -> Dictionary:
+	plan["detune"] = clampf(detune, 0.0, 1.0)
+	var now := clampf(float(owned_car.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
+	plan["changed"] = (not (plan["buy"] as Array).is_empty()
+		or not (plan["enable"] as Array).is_empty()
+		or not (plan["strip"] as Array).is_empty()
+		or int(plan["drivetrain"]) >= 0
+		or not is_equal_approx(float(plan["detune"]), now))
+	return plan
+
+
+# Whether any authored part in `slot` moves a power-to-weight input, read off the
+# same EFFECTS table apply() and effective_meta() use so a new effect can't leave the
+# solver scoring a slot it should have searched.
+static func _slot_feeds_pw(slot: String) -> bool:
+	for item in all():
+		if String(item.get("slot", "")) != slot:
+			continue
+		for key in (item.get("effect", {}) as Dictionary):
+			if bool((EFFECTS.get(key, {}) as Dictionary).get("feeds_pw", false)):
+				return true
+	return false
+
+
+# The cartesian product of each slot's candidate list — every build the search has to
+# consider. Small by construction (two p/w slots, a handful of parts each).
+static func _slot_combinations(slots: Array, candidates: Dictionary) -> Array:
+	var out: Array = [[]]
+	for slot in slots:
+		var grown: Array = []
+		for prefix in out:
+			for item_id in (candidates[slot] as Array):
+				var next: Array = (prefix as Array).duplicate()
+				next.append(item_id)
+				grown.append(next)
+		out = grown
+	return out
+
+
+# Power-to-weight of a hypothetical build: the p/w-slot picks in `combo`, plus every
+# owned non-p/w part left as-is (they can't move the figure, but leaving them out
+# would mean scoring a car nobody is proposing to build).
+static func _combo_pw(owned_car: Dictionary, meta: Dictionary, combo: Array,
+		pw_slots: Array) -> float:
+	var probe := owned_car.duplicate(true)
+	var fitted: Array = []
+	for item_id in combo:
+		if item_id != "":
+			fitted.append(item_id)
+	for item_id in owned_car.get("installed_upgrades", []):
+		if not pw_slots.has(slot_of(item_id)) and slot_of(item_id) != "":
+			fitted.append(item_id)
+	probe["installed_upgrades"] = fitted
+	probe["disabled_upgrades"] = []
+	var tuning: Dictionary = (probe.get("tuning", {}) as Dictionary).duplicate()
+	tuning["engine_detune"] = 1.0   # the build is judged at full tune; detune trims after
+	probe["tuning"] = tuning
+	return CarLibrary.power_to_weight(effective_meta(probe, meta))
+
+
+# Is `pw`/`cost` a better pick than the incumbent? Unconstrained the objective is the
+# highest p/w (cheapest on a tie). Under a cap it inverts to the SMALLEST p/w that
+# still clears the cap, so detune has the least work to do and the car keeps as much
+# of itself as possible — with "nothing clears it" falling back to plain maximisation,
+# because then every build is legal anyway.
+static func _combo_better(pw: float, cost: int, best_pw: float, best_cost: int,
+		pw_max: float, first: bool) -> bool:
+	if first:
+		return true
+	if pw_max > 0.0:
+		# Compare in the ROUNDED hp/tonne the eligibility gate itself uses, so a build
+		# the search calls a fit really does pass is_eligible.
+		var cap := roundi(pw_max)
+		var fits := roundi(pw * CarLibrary.KW_KG_TO_HP_TONNE) >= cap
+		var best_fits := roundi(best_pw * CarLibrary.KW_KG_TO_HP_TONNE) >= cap
+		if fits != best_fits:
+			return fits
+		if fits:
+			if not is_equal_approx(pw, best_pw):
+				return pw < best_pw
+			return cost < best_cost
+	if not is_equal_approx(pw, best_pw):
+		return pw > best_pw
+	return cost < best_cost
+
+
+# The car as it would be once `plan`'s buys/enables/strips are applied — used to rate
+# the final build before deciding the detune trim.
+static func _car_with_plan(owned_car: Dictionary, plan: Dictionary) -> Dictionary:
+	var probe := owned_car.duplicate(true)
+	var installed: Array = (probe.get("installed_upgrades", []) as Array).duplicate()
+	for item_id in (plan["buy"] as Array):
+		if not installed.has(item_id):
+			installed.append(item_id)
+	var disabled: Array = []
+	for item_id in (probe.get("disabled_upgrades", []) as Array):
+		disabled.append(item_id)
+	for item_id in (plan["buy"] as Array) + (plan["enable"] as Array):
+		disabled.erase(item_id)
+	for item_id in (plan["strip"] as Array):
+		if not disabled.has(item_id):
+			disabled.append(item_id)
+	probe["installed_upgrades"] = installed
+	probe["disabled_upgrades"] = disabled
+	var tuning: Dictionary = (probe.get("tuning", {}) as Dictionary).duplicate()
+	tuning["engine_detune"] = 1.0
+	probe["tuning"] = tuning
+	if int(plan["drivetrain"]) >= 0:
+		probe["drivetrain_override"] = int(plan["drivetrain"])
+	return probe
+
+
+# The drive mode a restriction demands, when the car can actually deliver it — i.e. the
+# swap kit is fitted. -1 for "no drivetrain problem, or one Auto can't fix". This is the
+# ONLY non-power restriction field Auto is allowed to touch; the rest are car identity.
+static func _drivetrain_fix(owned_car: Dictionary, restriction: Dictionary,
+		full_meta: Dictionary, _meta: Dictionary) -> int:
+	if not restriction.has("drive_mode") or not drivetrain_swap_unlocked(owned_car):
+		return -1
+	var want := int(restriction["drive_mode"])
+	return -1 if int(full_meta.get("drive_mode", -1)) == want else want
+
+
+static func _with_drive(meta: Dictionary, mode: int) -> Dictionary:
+	var out := meta.duplicate()
+	out["drive_mode"] = mode
 	return out
 
 

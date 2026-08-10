@@ -152,8 +152,11 @@ collapsed to one entry carrying the top rung's numbers.
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
 
-The upgrades menu is a **reusable `UpgradesMenu` component** (`scripts/upgrades_menu.gd`,
-mirroring `TuningPanel`): the HQ lift mounts it as its Upgrades page, the car-park
+The upgrades menu is a **reusable `UpgradesSimple` component** (`scripts/upgrades_simple.gd`,
+mirroring `TuningPanel`), which wraps the older `UpgradesMenu` (`scripts/upgrades_menu.gd`)
+as its **Advanced** page — every host below mounts `UpgradesSimple`, never `UpgradesMenu`
+directly (see [menus.md](menus.md) → "The upgrades page: Simple over Advanced"):
+the HQ lift mounts it as its Upgrades page, the car-park
 **detune-to-enter prompt** mounts a second instance in its Change-Upgrades popup so a
 too-powerful car can shed power by stripping parts instead of detuning (see
 [menus.md](menus.md) → CARPARK), and the standings/podium **reward reveal**
@@ -169,6 +172,16 @@ slider now sits at the **bottom** of the menu — below the part-slot selectors 
 lift-only engine-swap row — as the final power adjustment. Lateral G is no longer shown here.
 The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
 leaves it unset and drops the row, since the swap flow would change the HQ view.
+
+**The Advanced page is not always shown whole.** `UpgradesSimple`'s stat rows each carry a
+wrench that opens it **filtered to one category** via
+`UpgradesMenu.set_filter(slots, show_detune, show_swap)` — Speed shows the `turbo`/`nitrous`
+rows plus the detune slider and the swap row, Grip shows `aero`, Lightness `weight`,
+Stability `drivetrain` — so any single row/slider described here may legitimately be absent
+from a given visit to the page. `rebuild()` applies the filter, `is_filtered()` reports it,
+and an empty slot list restores the full page (what the **Advanced** button opens). See
+[menus.md](menus.md) → "The stat block is a CATEGORY INDEX" for the mapping and its
+rationale.
 There is no mystery-box row on this page any more — a box is a garage-WIDE
 reward, so it lives on the HQ garage action row instead. See
 [reward-system.md](reward-system.md) → "Mystery box" and
@@ -193,6 +206,22 @@ the car's un-upgraded factory config, hence the label rather than `None`); each 
 is **greyed until that kit is fitted** to this car, and the active one is
 bracketed **and painted the house accent green** so the current pick stands out.
 
+**A slot row NEVER wraps.** `UpgradesMenu._option_row()` is the shared builder — a flat
+`HBoxContainer` holding the label and every option button as siblings — used by both
+`_make_option_selector` and `_make_drivetrain_selector` (the weight row builds its own
+equivalent for the same reason). It used to be an `HFlowContainer`, and a row with more
+options than fit spilled onto a second line: that read as a layout bug rather than a
+feature — the **aero** row, with one part beside `Stock`, was landing its only real option
+on a line of its own — and it made a row's own reported height depend on how many options it
+happened to have. It is also **not** an HBox wrapping a nested container: nesting a
+container inside a fixed-line one made each slot row's height unreliable mid-layout, which
+threw off the `VBoxContainer` stacking the rows and cost them their vertical stacking. A
+single flat box sizes itself in one pass. Options that no longer fit are **squeezed** by
+`_tighten_option_padding` (see `_OPTION_BUTTON_PAD`) rather than moved to another line.
+Guarded by `test_upgrades_menu.gd::test_a_slot_row_never_wraps`, which asserts no wrap at
+two widths (it replaced an older test that measured `get_line_count()` — a measurement the
+flat row can no longer even report).
+
 **Locked options are not shown at all** (`UpgradesMenu._slot_parts`) — not
 greyed, absent. A greyed row the player cannot act on only raises "when do I get
 this?", which the garage cannot answer; the MAP is the surface that advertises
@@ -207,8 +236,7 @@ is unlocked but merely unfitted stays visible-and-disabled, since winning it is
 something the player can actually act on.
 
 The turbo slot has three parts — `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
-`turbo_large` / `supercharger`, shown by their `menu_label`; the row is an
-`HFlowContainer`, so options wrap rather than clip); the single-part slots read `Stock` /
+`turbo_large` / `supercharger`, shown by their `menu_label`); the single-part slots read `Stock` /
 `<Kit>` (e.g. `Aero: Stock / Aero Kit`, using the part's full `name`). Under the hood it's
 the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
 `UpgradesMenu._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
@@ -296,6 +324,117 @@ two player-car eligibility checks (`hq._has_eligible_car`,
 so an upgrade can push a car over — or back under — a rally's `pw_max` ceiling.
 The rival pool and reward-grant queries keep using the raw `CARS` entries (those
 are unmodified roster cars, not the player's upgraded ones).
+
+### `aero_meta` — the same copy, plus downforce
+
+`aero_meta(owned_car, meta)` is `effective_meta` with the enabled parts' **`add`
+effects** (the aero kit's `downforce_front` / `downforce_rear`) folded in on top. It
+exists as a separate call rather than as a widening of `effective_meta` because the two
+answer different questions: `effective_meta` mirrors only the **power-to-weight-feeding**
+effects, since p/w is what eligibility is judged on and **downforce doesn't move a car's
+class**. But a grip readout has to show what the wing bought, and
+`CarLibrary.max_lateral_g` reads its downforce off the meta it's handed — so the Simple
+upgrades page's Grip row passes `aero_meta`, while every eligibility path keeps passing
+`effective_meta`. Keeping them apart is what stops an aero part quietly changing which
+rallies a car can enter.
+
+### `CarStatBounds` — the roster-wide scale the stat bars are drawn against
+
+`scripts/car_stat_bounds.gd` (`CarStatBounds`) caches the **min/max each comparable stat
+reaches across the whole car roster** — `pw` (hp/tonne), `grip` (max lateral G) and `mass`
+— as `{key: [lo, hi]}` from `all()`, with `fraction(key, value)` mapping a car's figure to
+the 0..1 the Simple upgrades page's `StatBar` fills (see [menus.md](menus.md) →
+`UpgradesSimple`). Grip is speed-dependent, so bounds are rated at `GRIP_REFERENCE_KMH`,
+the same reference speed `UpgradesSimple` rates its Grip row at, so bounds can't be
+computed at one speed and the figure displayed at another. The speed itself is never shown on the row — it's the same
+for every car, so the comparison holds either way and the label's width goes to the blocks.
+
+The scale spans the roster **as the cars ship** — each car's `effective_meta({}, entry)`,
+i.e. stock. Stretching the top to the best car at its fully-upgraded ceiling was tried and
+is worse: the shipped ceiling is roughly **2.5x** the best stock car, so every early-game
+car collapsed into a single lit block and the page couldn't tell a hot hatch from a kei
+van — losing all resolution exactly where most of the game is played. A heavily-upgraded
+car just pegs its bar at full, which is both true and cheap to lose. The **floor is padded
+`FLOOR_PAD` (10%) of the span below the worst car** so the slowest car still lights one
+block (an entirely empty bar reads as broken, not as slow); the **top sits exactly on the
+best car**, so a full bar keeps meaning "nothing ships faster than this". A degenerate
+range (one car, or a synthetic roster of identical cars) returns `1.0` rather than dividing
+by zero.
+
+It's cached because the sweep walks every car through `effective_meta`. **Both catalogue
+seams invalidate it** — `CarLibrary.override_for_test()`/`reset()` and
+`UpgradeLibrary.override_for_test()`/`reset()` both call `CarStatBounds.invalidate()`,
+since the bounds derive from both rosters; a test that installs synthetic cars while
+holding stale bounds would draw bars against a scale from a different game. Covered by
+`tests/headless/test_car_stat_bounds.gd`.
+
+## Auto-Upgrade: `auto_build_plan`
+
+`UpgradeLibrary.auto_build_plan(owned_car, meta, profile, stars, restriction := {},
+free_only := false)` answers "give me the best build this car can have right now" as a
+**pure function** — it returns a PLAN and never mutates anything:
+
+```
+{buy: [id], enable: [id], strip: [id], detune: float,
+ drivetrain: int, cost: int, blocked: String, changed: bool}
+```
+
+`enable` / `strip` are toggles on parts the car already owns, `buy` is a purchase (fitted
+enabled), `detune` is the **absolute** slider setting to write, `drivetrain` is a
+drive-mode override or `-1` for "leave alone", and `blocked` is a non-empty reason when no
+build can get this car in (wrong car type, wrong country) — something the solver must NAME
+rather than hand back a plan that silently doesn't work. `changed` is the "does this do
+anything" predicate, and it is deliberately a **plan difference**, not a p/w comparison
+(`_finish`): swapping the player's ballast for an equivalent detune lands identical
+power-to-weight with measurably more grip, and a p/w test would call that a no-op.
+
+Three callers share this one rule instead of keeping three copies of it: the
+**Auto-Upgrade button** (`AutoUpgradeRow`, see [menus.md](menus.md)), the **free restore at
+the Start gate** (`Save.restore_free_build`), and the tests.
+
+**The objective.** Only slots that feed power-to-weight take part in the search
+(`_slot_feeds_pw` reads the same `EFFECTS` table `apply()`/`effective_meta` use, so a new
+effect can't leave a slot unsearched); the rest — aero, drivetrain kit, nitrous — can't be
+scored against the objective, so Auto never BUYS them and only switches on ones the car
+already owns and left parked (an already-enabled part beats a parked sibling, since Auto
+has no way to rank two effects that don't reach p/w and must not overturn the player's
+pick). Over the p/w slots it is **exhaustive** (`_slot_combinations` — the cartesian
+product, a handful of parts over two slots today) rather than greedy, because the
+constrained objective isn't something a per-slot greedy pass can express. Each
+combination is scored by `_combo_pw` (at full tune; detune trims afterwards) and ranked by
+`_combo_better`:
+
+- **Unconstrained** — the highest power-to-weight the budget affords, cheapest on a tie.
+- **Under a cap** — it *inverts* to the **smallest p/w that still clears `pw_max`**, so the
+  detune has the least work left to do and the car keeps as much of itself as possible.
+  Comparison happens in the **rounded hp/tonne the eligibility gate itself uses**, so a
+  build the search calls a fit really does pass `is_eligible`. If nothing clears the cap it
+  falls back to plain maximisation — every build is legal then anyway.
+- **Detune is the final trim, never the first lever** — the winning build is already the
+  smallest one that clears the cap, so only the leftover is trimmed, via
+  `RallyLibrary.qualifying_detune` on `_car_with_plan`'s projected car.
+
+**Auto never fits ballast, but always strips it.** Ballast is a p/w lever that also
+destroys grip: mass raises the load through each contact patch, which lowers μ through
+`GameConfig.tire_load_factor` (see
+[drivetrain-and-tires.md](drivetrain-and-tires.md)). Detune buys the *same* p/w reduction
+for free, so any part whose `mass_mult` exceeds 1.0 is excluded from the candidate lists in
+every mode — and, being in a p/w slot, an already-fitted one falls out of the winning
+combination and lands in `strip`.
+
+**`restriction` is a rally-restriction dict** (the `RallyLibrary` shape), not the bare
+`pw_max` float it might have been. A host that only has a ceiling passes
+`{"pw_max": limit}` in one line; a host that has the real rally passes the real thing —
+and that is exactly what lets `blocked` distinguish **"wrong build"** (fixable: buy,
+strip, detune) from **"wrong car"** (nothing to be done). The one non-power field Auto may
+touch is the drive mode (`_drivetrain_fix`), and only when the swap kit is actually fitted;
+everything else in a restriction is car identity.
+
+**`free_only` is a flag, not a `stars = 0` call.** `star_cost_per_part` is an exported
+range a designer could set to 0, which would silently turn a free-only restore into a
+shopping spree. The flag also forbids the plan from moving power **down**: an over-limit
+car is the "Too powerful" prompt's business, a deliberate decision point the restore must
+not quietly bypass.
 
 ## The car's ceiling: `max_potential_meta` — two flavours
 
@@ -401,6 +540,15 @@ never a reward). The **standings reveal** (`scripts/upgrade_reveal.gd`, not the
 podium) is what confirms whatever the draw did hand out, with a single "Next" step.
 
 ## Tests
+
+`tests/headless/test_auto_build.gd` — the `auto_build_plan` solver (max p/w
+unconstrained; smallest-clearing build then detune under a cap; ballast stripped and
+never fitted; `free_only` spends nothing and never trims power down; `blocked` named
+when no build can enter) plus the save side (`Save.apply_build_plan`,
+`Save.restore_free_build`), all on synthetic fixtures per CLAUDE.md.
+`tests/headless/test_upgrades_simple.gd` covers the Simple page (stat block, the
+Auto row's two presses — now press → `ConfirmPopup` → confirm, Simple↔Advanced, the
+delegated `can_close` gate).
 
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, consumables have no slot), lookups, effect application (multiplies/adds on a

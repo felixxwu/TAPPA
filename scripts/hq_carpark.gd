@@ -652,7 +652,7 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 				# chrome = the panel's 20-unit padding either side plus the modal margin.
 				vbox.custom_minimum_size = Vector2(_hq._modal_body_width(460.0, 72.0), 0)
 				vbox.add_child(UITheme.title("Upgrades"))
-				_hq._upgrades_popup_menu = UpgradesMenu.new()
+				_hq._upgrades_popup_menu = UpgradesSimple.new()
 				vbox.add_child(_hq._upgrades_popup_menu),
 			func(footer: HBoxContainer) -> void:
 				# Done is the gated exit (bind_close_button below blocks it, AND back,

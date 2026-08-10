@@ -77,6 +77,19 @@ Three, all set by the finish and all read + cleared by HQ on its next `_ready`
 3. `return_to_garage` (bool) — the podium's final Continue: boot to the **garage**
    rather than the exterior title.
 
+A fourth one-shot, read on the way IN rather than out: **`start_notice`** (String) and
+**`take_start_notice()`**. The Start gate leaves one line here and `world.gd._ready`
+takes it, showing it in place of the loading tip for that one load — the notice is about
+the car the player is sitting in, which beats a generic tip. `take_start_notice` clears
+as it reads, so a multi-stage rally shows it once and the remaining stages go back to
+tips. Today it carries the free upgrade restore (`Save.restore_free_build`, set by
+`hq.gd::_apply_free_restore` on both the career and CHALLENGE start branches): that edit
+is automatic and permanent, so the player has to be told — but it spends nothing, so it
+must not cost them a press to acknowledge. It lives on the session rather than in either
+car park because the loading screen is the one surface every start path passes through.
+(The start line shows the same notice itself, via `start_line.gd::_restore_notice` set in
+`setup()`.)
+
 ## Results & rewards
 
 On resolve: `combined = sum(event_times)`, `placed =

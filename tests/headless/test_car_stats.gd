@@ -156,3 +156,36 @@ func test_tire_load_factor_is_neutral_when_sensitivity_is_zero() -> void:
 	# And a degenerate (zero/negative) load or width is safely neutral, never a divide blow-up.
 	assert_eq(cfg.tire_load_factor(0.0, 0.2), 1.0, "zero load -> neutral")
 	assert_eq(cfg.tire_load_factor(5000.0, 0.0), 1.0, "zero width -> neutral")
+
+
+# --- Aero-rated grip ----------------------------------------------------------
+# CarLibrary.max_lateral_g gained an optional reference SPEED so a Grip readout can show
+# what the aero kit bought (todo/simplified-upgrade-menu.md §5). The default must stay
+# exactly the static-load figure the car-select panel has always shown.
+
+func test_max_lateral_g_defaults_to_the_static_figure() -> void:
+	var cfg := GameConfig.new()
+	var entry := {"mass": 1200.0, "weight_front": 0.55, "tire_compound": 1.0,
+		"wheel_width_front": 0.225, "wheel_width_rear": 0.225,
+		"downforce_front": 3.0, "downforce_rear": 3.0}
+	assert_almost_eq(CarLibrary.max_lateral_g(entry, cfg, 0.0),
+		CarLibrary.max_lateral_g(entry, cfg), 0.0000001,
+		"an explicit zero speed matches the no-speed call")
+
+
+func test_downforce_raises_grip_only_above_zero_speed() -> void:
+	var cfg := GameConfig.new()
+	var base := {"mass": 1200.0, "weight_front": 0.5, "tire_compound": 1.0,
+		"wheel_width_front": 0.225, "wheel_width_rear": 0.225}
+	var winged := base.duplicate()
+	winged["downforce_front"] = 3.0
+	winged["downforce_rear"] = 3.0
+	assert_almost_eq(CarLibrary.max_lateral_g(winged, cfg, 0.0),
+		CarLibrary.max_lateral_g(base, cfg, 0.0), 0.0000001,
+		"downforce does nothing standing still")
+	assert_gt(CarLibrary.max_lateral_g(winged, cfg, 50.0),
+		CarLibrary.max_lateral_g(winged, cfg, 0.0),
+		"and adds grip once the car is moving")
+	assert_almost_eq(CarLibrary.max_lateral_g(base, cfg, 50.0),
+		CarLibrary.max_lateral_g(base, cfg, 0.0), 0.0000001,
+		"a car with no wing is unaffected by the reference speed")

@@ -983,11 +983,15 @@ func test_hq_upgrades_menunav_survives_rebuild() -> void:
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
+	# The nav helper lives on each PAGE — the Simple summary and the Advanced page behind
+	# it (UpgradesSimple wraps UpgradesMenu), so both are checked.
+	assert_eq(_count_menunav(hq._lift_upgrades_box._simple_box), 1,
+		"the summary has its focus-nav helper after opening")
+	assert_eq(_count_menunav(hq._lift_upgrades_box.advanced()), 1,
 		"the Upgrades box has its focus-nav helper after opening")
-	hq._lift_upgrades_box.rebuild()  # a fresh rebuild (as a car swap / toggle would trigger)
+	hq._lift_upgrades_box.advanced().rebuild()  # a fresh rebuild (as a car swap / toggle would trigger)
 	await get_tree().process_frame
-	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
+	assert_eq(_count_menunav(hq._lift_upgrades_box.advanced()), 1,
 		"the rebuild preserves exactly one focus-nav helper (WASD/gamepad nav survives)")
 
 
@@ -1021,6 +1025,10 @@ func test_hq_upgrades_toggle_keeps_focus_on_same_control() -> void:
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	# The per-slot option rows live on the ADVANCED page now (UpgradesSimple), so open it
+	# before hunting for a button — a control in a hidden subtree can't take focus.
+	hq._lift_upgrades_box._show_advanced()
 	await get_tree().process_frame
 	# Focus an available option button, then activate it (which rebuilds the rows).
 	var opt: Button = null
@@ -3912,8 +3920,8 @@ func test_detune_label_shows_power_to_weight() -> void:
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var id: int = _save.selected_instance_id()
-	hq._lift_upgrades_box._on_detune_changed(80.0, id)
-	var txt := String(hq._lift_upgrades_box._detune_value.text)
+	hq._lift_upgrades_box.advanced()._on_detune_changed(80.0, id)
+	var txt := String(hq._lift_upgrades_box.advanced()._detune_value.text)
 	assert_true(txt.to_upper().contains("HP/T"), "detune label shows the power-to-weight readout")
 
 
@@ -3923,7 +3931,7 @@ func test_detune_slider_is_present_and_focusable() -> void:
 	await get_tree().process_frame
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var slider: HSlider = hq._lift_upgrades_box._detune_slider
+	var slider: HSlider = hq._lift_upgrades_box.advanced()._detune_slider
 	assert_not_null(slider, "upgrades page has a detune slider")
 	assert_eq(slider.focus_mode, Control.FOCUS_ALL, "detune slider is keyboard/gamepad focusable")
 	assert_eq(slider.min_value, 0.0, "detune slider starts at 0%")
@@ -3937,7 +3945,7 @@ func test_detune_slider_persists_as_fraction() -> void:
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var id: int = _save.selected_instance_id()
-	hq._lift_upgrades_box._on_detune_changed(50.0, id)
+	hq._lift_upgrades_box.advanced()._on_detune_changed(50.0, id)
 	assert_almost_eq(float(_save.get_car(id)["tuning"]["engine_detune"]), 0.5, 0.001,
 		"a 50% slider stores a 0.5 torque fraction")
 
@@ -3951,7 +3959,7 @@ func _unlock_engine_swaps() -> void:
 
 
 func _find_swap_button(hq: Node3D) -> Button:
-	for row in hq._lift_upgrades_box.get_children():
+	for row in hq._lift_upgrades_box.advanced().get_children():
 		if row.is_queued_for_deletion():
 			continue  # a rebuild queue_free'd the old rows; ignore them
 		for child in row.get_children():
@@ -4270,7 +4278,7 @@ func test_engine_swap_button_is_focusable() -> void:
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var found := false
-	for row in hq._lift_upgrades_box.get_children():
+	for row in hq._lift_upgrades_box.advanced().get_children():
 		for child in row.get_children():
 			if child is Button and String(child.text).to_upper() == "SWAP ENGINE":
 				assert_eq(child.focus_mode, Control.FOCUS_ALL, "swap button is focusable")

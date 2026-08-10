@@ -25,6 +25,22 @@ var _detune_value: Label
 # The host's overlay close button, gated by the p/w limit (bind_close_button). When a
 # limit is set and the build exceeds it, this button is painted red and blocks closing
 # (proceed) until the player drags power back under the cap.
+# An optional CATEGORY filter, set by the simple page's per-stat wrench buttons: only
+# these slots get a row, and `_filter_detune` / `_filter_swap` say whether the engine
+# detune slider and the engine-swap row belong to the category being shown. An EMPTY slot
+# list means no filter at all — the whole page, which is what the Advanced button opens.
+#
+# A filter rather than a separate cut-down component: the rows, their persistence and the
+# p/w gate are all already here, and a second widget rendering "just the turbo row" is how
+# two pages start disagreeing about what a turbo row does.
+# Where Esc / gamepad-B goes from this page. Owned HERE rather than re-attached by the
+# host after every edit: MenuNav.attach defers a focus GRAB, so a host that re-attached to
+# keep its back route alive yanked the cursor to the first control on every change — which
+# is what made left/right on the detune slider jump to the top of the page.
+var _on_back: Callable = Callable()
+var _filter_slots: Array = []
+var _filter_detune := true
+var _filter_swap := true
 var _close_button: Button
 var _close_button_text := ""
 var _on_close: Callable = Callable()
@@ -52,6 +68,43 @@ func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable()
 	rebuild()
 
 
+# Where back goes from this page ("" leaves it to the host). Survives every rebuild,
+# since rebuild re-attaches MenuNav with it.
+func set_back_action(on_back: Callable) -> void:
+	_on_back = on_back
+
+
+# Narrow the page to one category of upgrade. `slots` empty restores the whole page.
+# Call before rebuild() (setup() rebuilds, so call it after setup and rebuild yourself).
+func set_filter(slots: Array, show_detune := true, show_swap := true) -> void:
+	_filter_slots = slots.duplicate()
+	_filter_detune = show_detune
+	_filter_swap = show_swap
+
+
+# Whether a category would produce ANY row at all — used by the simple page to decide
+# whether that stat gets a wrench. False when every slot in it is still empty (the
+# drivetrain row before the swap kit is owned, say), because a wrench that opens a blank
+# page is exactly the "when do I get this?" prompt the hidden-options rule exists to avoid.
+func has_rows_for(slots: Array, show_detune := true, show_swap := true) -> bool:
+	if show_detune:
+		return true   # the detune slider is on every car, always
+	if show_swap and _on_swap.is_valid() and RallyLibrary.engine_swaps_unlocked(Save.profile):
+		return true
+	var installed: Array = _owned.get("installed_upgrades", [])
+	for slot in slots:
+		if UpgradeLibrary.is_hidden_slot(slot):
+			continue
+		if not (_slot_parts(slot, installed)["parts"] as Array).is_empty():
+			return true
+	return false
+
+
+# Whether this page is currently showing one category rather than everything.
+func is_filtered() -> bool:
+	return not _filter_slots.is_empty()
+
+
 # First focusable option, for the host to seat the keyboard/gamepad cursor.
 func first_control() -> Control:
 	return UITheme.first_focusable(self)
@@ -74,10 +127,20 @@ func rebuild() -> void:
 
 	var id := int(_owned.get("instance_id", -1))
 	var installed: Array = _owned.get("installed_upgrades", [])
+	# Auto-Upgrade goes FIRST: it is the answer for a player who doesn't want to learn what
+	# a supercharger is, so it must be the thing they meet before the part names.
+	var auto_row := AutoUpgradeRow.new()
+	auto_row.setup(id, _pw_limit, _on_auto_applied)
+	if auto_row.worth_showing():
+		add_child(auto_row)
+	else:
+		auto_row.free()
 	for slot in UpgradeLibrary.SLOTS:
 		# A hidden slot gets no row (UpgradeLibrary.HIDDEN_SLOTS, currently empty — nitrous
 		# used to be the one member and now has a row like everything else).
 		if UpgradeLibrary.is_hidden_slot(slot):
+			continue
+		if not _filter_slots.is_empty() and not _filter_slots.has(slot):
 			continue
 		var row := _make_slot_row(slot, id, installed)
 		if row != null:
@@ -86,15 +149,16 @@ func rebuild() -> void:
 	# also absent entirely while the CAPABILITY is still star-locked — same reasoning as a
 	# locked part option: a permanently-disabled row just invites a question the garage
 	# can't answer. It appears the moment the gating special is won.
-	if _on_swap.is_valid() and RallyLibrary.engine_swaps_unlocked(Save.profile):
+	if _filter_swap and _on_swap.is_valid() and RallyLibrary.engine_swaps_unlocked(Save.profile):
 		add_child(_make_engine_swap_row(id))
 	# Engine detune sits with the upgrades because it trades power for eligibility —
 	# it's a p/w knob, not a handling axis (features/tuning.md, engine-swap.md). It goes
 	# LAST, below the part slots, as the final power adjustment before you commit.
-	add_child(_make_detune_row(id))
+	if _filter_detune:
+		add_child(_make_detune_row(id))
 
 	UITheme.enforce(self)
-	MenuNav.attach(self)
+	MenuNav.attach(self, {"on_back": _on_back} if _on_back.is_valid() else {})
 	_refresh_close_button()  # a part/drivetrain toggle can cross the p/w cap
 	if focus_key != "":
 		_restore_focus.bind(focus_key).call_deferred()
@@ -129,6 +193,7 @@ func _make_detune_row(instance_id: int) -> Control:
 	# for a challenge via world.gd._build_start_line's synthetic restriction dict) is
 	# the one mechanism, exactly like career.
 	return handles["panel"]
+
 
 
 # The detune slider's value label: the car's LIVE p/w at the current setting —
@@ -254,16 +319,28 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control
 # modes, but only the car's stock mode is selected + enabled — the other two are greyed,
 # exactly like a part option greys until its kit is fitted. The whole selector is
 # earn-gated by owning the kit, not per option.
-func _make_drivetrain_selector(instance_id: int) -> Control:
-	# A single HFlowContainer (label + every button as flowed siblings) rather than an
-	# HBoxContainer wrapping a nested HFlowContainer: nesting a wrapping container inside a
-	# fixed-line one made each slot ROW's own reported height unreliable (a wrap changes the
-	# inner container's height mid-layout), which was throwing off the VBoxContainer that
-	# stacks the slot rows above one another — rows lost their vertical stacking. A single
-	# flow container sizes itself in one pass, so its box-row parent stacks it correctly
-	# (confirmed empirically: rows stay stacked even when a row wraps to 2 lines).
-	var row := HFlowContainer.new()
+# The container every slot row is built in: ONE row, label plus every option button as
+# siblings, that never wraps.
+#
+# It used to be an HFlowContainer, so a slot with more options than fit spilled onto a
+# second line — which looked like a layout bug rather than a feature (the aero row, with
+# one part beside "Stock", was landing its only real option on a line of its own), and
+# made a row's own reported height depend on how many options it happened to have.
+#
+# NOT an HBoxContainer wrapping a nested container, either: nesting a container inside a
+# fixed-line one made each slot ROW's reported height unreliable mid-layout, which threw
+# off the VBoxContainer stacking the rows and cost them their vertical stacking. A single
+# flat box row sizes itself in one pass. Options that no longer fit are squeezed by
+# _tighten_option_padding rather than moved to another line.
+static func _option_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 4)
+	return row
+
+
+func _make_drivetrain_selector(instance_id: int) -> Control:
+	var row := _option_row()
 	var unlocked := UpgradeLibrary.drivetrain_swap_unlocked(_owned)
 	var stock := int(CarLibrary.by_id(String(_owned.get("model_id", ""))).get("drive_mode", CarLibrary.RWD))
 	var override := int(_owned.get("drivetrain_override", -1))
@@ -298,13 +375,9 @@ func _set_drivetrain(instance_id: int, mode: int) -> void:
 # available (the "off" state); each part is greyed until that kit is fitted to this car,
 # and the active option is bracketed. The button label is the part's `menu_label` if
 # present (the turbo slot's short Small / Big / Supercharger), else its full `name`. The row
-# is an HFlowContainer, so a slot with more options than fit simply wraps to the next line.
+# never wraps — see _option_row.
 func _make_option_selector(slot: String, instance_id: int, installed: Array) -> Control:
-	# A single HFlowContainer (label + every option button as flowed siblings), not an
-	# HBoxContainer wrapping a nested HFlowContainer — see _make_drivetrain_selector for
-	# why the nested version broke the slot rows' vertical stacking.
-	var row := HFlowContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var row := _option_row()
 	var label := Label.new()
 	# No trailing colon: this page's OWN detune row has none, and neither does any row on
 	# the Tuning page beside it, so a colon here was the odd one out rather than a
@@ -352,6 +425,15 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 # Buy a copy of a discovered part for this car and rebuild the page so the row flips from
 # a price to a selectable option. Save.buy_part re-checks everything can_buy_part does, so
 # a stale button (the balance moved under it) refuses rather than half-completing.
+# Auto-Upgrade committed a whole plan (AutoUpgradeRow). Same follow-up a single-part buy
+# needs: re-read the car, redraw every row the plan touched, tell the host to re-field it.
+func _on_auto_applied() -> void:
+	_owned = Save.get_car(int(_owned.get("instance_id", -1)))
+	rebuild()
+	if _on_change.is_valid():
+		_on_change.call()
+
+
 func _buy_slot_option(instance_id: int, item_id: String) -> void:
 	if not Save.buy_part(instance_id, item_id):
 		return

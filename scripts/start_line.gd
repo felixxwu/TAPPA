@@ -62,12 +62,15 @@ var _tune_layer: CanvasLayer         # the pre-race tuning overlay (built lazily
 var _tune_panel: TuningPanel         # the shared handling-axis tuning sliders (detune is in Upgrades)
 var _upgrades_button: Button
 var _upgrades_layer: CanvasLayer     # the pre-race upgrades overlay (built lazily)
-var _upgrades_menu: UpgradesMenu     # the shared upgrades menu (same as the HQ garage)
+var _upgrades_menu: UpgradesSimple   # the shared upgrades page (same as the HQ garage)
 var _upgrades_back: Button           # the upgrades overlay's Back/Done button (p/w-gated)
 var _menu_last_back: Button          # back button _build_menu_overlay just created
 var _pause_menu: PauseMenu           # for the Exit button; pause itself is off while staged
 var _exit_button: Button
 var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
+# One line announcing the free upgrade restore (Save.restore_free_build), "" when it
+# did nothing. Set in setup() before the overlay is built, which renders it.
+var _restore_notice := ""
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
@@ -188,6 +191,13 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	if _mobile != null:
 		_mobile.visible = false
 	_build_orbit_camera()
+	# Put the car back on the upgrades it already owns BEFORE the overlay is built, so the
+	# restore has a line to announce itself on and the Start gate below judges the restored
+	# car. Free and never power-raising past the cap, so it asks for no confirmation — see
+	# Save.restore_free_build. Done as the start line OPENS rather than on the Start press
+	# because that is where the player has a screen to read it on.
+	_restore_notice = String(Save.restore_free_build(
+		int(_driven_car().get("instance_id", -1)), rally.get("restriction", {})).get("notice", ""))
 	_build_overlay(rally, event_index)
 	_build_reveal_overlay()
 	_build_fade()
@@ -313,6 +323,13 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	var total := _stage_total(rally)
 	_subtitle_label = UITheme.title("%s — Stage %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
 	top_box.add_child(_subtitle_label)
+	# The free restore, when it did something. A quiet second line rather than a modal:
+	# it spends nothing, so it must not cost the player a press to dismiss.
+	if _restore_notice != "":
+		var notice := UITheme.label(_restore_notice)
+		notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		notice.modulate = Color(1, 1, 1, 0.75)
+		top_box.add_child(notice)
 
 	# --- Clear band: lets the orbiting car show between the cards -------------
 	var spacer := Control.new()
@@ -991,7 +1008,7 @@ func _close_upgrades() -> void:
 
 
 func _build_upgrades_overlay() -> void:
-	_upgrades_menu = UpgradesMenu.new()
+	_upgrades_menu = UpgradesSimple.new()
 	# Narrower than Tune Car's default 520: Upgrades' rows (short slot-option buttons +
 	# the one detune slider) need far less room than the handling-axis sliders, and the
 	# shared 520 floor was stretching the detune slider's SIZE_EXPAND_FILL bar across the

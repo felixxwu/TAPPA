@@ -219,7 +219,7 @@ var _drivetrain_needed: Dictionary = {}
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _upgrades_popup: Control
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _upgrades_popup_menu: UpgradesMenu
+var _upgrades_popup_menu: UpgradesSimple
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
@@ -560,7 +560,7 @@ var _lift_page_actions: HBoxContainer
 var _lift_back_button: Button   # the shared "< Back", leading the row above
 var _tune_action_buttons: Array[Button] = []  # TuningPanel's Reset / Wheels, placed in the row above
 var _tune_panel: TuningPanel         # the TUNE menu (sliders) — shared with the start line
-var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu component)
+var _lift_upgrades_box: UpgradesSimple  # the UPGRADES page (shared UpgradesSimple component)
 
 
 func _ready() -> void:
@@ -2793,7 +2793,7 @@ func _refresh_lift_ui() -> void:
 	# here — the gate lives at the start line / car park where a car is actually
 	# committed to an event.
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
-		UpgradesMenu.NO_LIMIT)
+		UpgradesSimple.NO_LIMIT)
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
@@ -3767,6 +3767,7 @@ func _on_start_pressed() -> void:
 				_open_present()
 			return
 		CarparkMode.CHALLENGE:  # commit the focused eligible car to a fresh challenge run
+			_apply_free_restore(_selected_instance_id, _challenge_restriction())
 			if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
 				_carpark_ui._show_over_limit_prompt(Save.get_car(_selected_instance_id))
 				return
@@ -3776,6 +3777,12 @@ func _on_start_pressed() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
+	# Put the car back on the upgrades it already owns before anything else judges it —
+	# most often a detune left down from a previous rally. Free, so it needs no
+	# confirmation; permanent, so it is announced on the loading screen. It runs BEFORE
+	# the over-limit check so that check judges the final build, and it can never create
+	# an over-limit car (the solver refuses to raise power past the cap).
+	_apply_free_restore(_selected_instance_id, rally.get("restriction", {}))
 	# Apply a qualifying drivetrain switch first (temporary, reverted after the rally),
 	# so the subsequent detune math sees the switched car.
 	var need_dm: int = _drivetrain_needed.get(_selected_instance_id, -1)
@@ -3794,6 +3801,33 @@ func _on_start_pressed() -> void:
 	# max potential), so it never reaches the car-park lineup — there's no under-powered
 	# start to warn about here anymore (the old soft "Underpowered" prompt is retired).
 	await _proceed_with_start()
+
+
+# Put the fielded car back on the upgrades it already OWNS before it races — the
+# free-only arm of the Auto-Upgrade solver (UpgradeLibrary.auto_build_plan with
+# free_only), whose motivating case is a detune left down from a previous rally.
+#
+# Both career and challenge starts call this, and start_line.gd calls the same
+# Save.restore_free_build for the mid-rally start gate: the RULE lives in the solver
+# and each host contributes only the call plus the restriction it is racing under, so
+# this doesn't widen the hq/start_line detune duplication todo/backlog.md already flags.
+#
+# The notice is handed to RallySession rather than shown here — the car park is about to
+# be replaced by the loading screen, which is the surface the player will actually be
+# looking at.
+func _apply_free_restore(instance_id: int, restriction: Dictionary) -> void:
+	var result := Save.restore_free_build(instance_id, restriction)
+	if bool(result.get("applied", false)):
+		RallySession.start_notice = String(result.get("notice", ""))
+
+
+# The restriction a challenge run is judged against, in the same synthetic
+# {"restriction": {"pw_max": ceiling}} shape world.gd::_build_start_line hands the start
+# line — a challenge has no authored rally, but its ceiling is an ordinary p/w cap.
+func _challenge_restriction() -> Dictionary:
+	var ceiling := ChallengeSession.displayed_ceiling(
+		_challenge_kind, int(Time.get_unix_time_from_system()))
+	return {} if ceiling <= 0 else {"pw_max": float(ceiling)}
 
 
 # The pre-flight EVERY start path shares — career, challenge (fresh and Resume) and free

@@ -5,10 +5,43 @@ build that is *competitive and legal*, without learning what a supercharger,
 ballast or a detune slider is. Today's page is preserved verbatim behind an
 **Advanced** button.
 
-**Status:** spec, not implemented. Brainstormed and steered by the user; every open
-question from that discussion is settled and recorded in §9 — including the
-ballast/detune ordering, resolved in favour of demoting ballast out of Auto
-altogether (§4).
+**Status: IMPLEMENTED** (all four sequencing steps in §7). What shipped:
+
+- `UpgradeLibrary.auto_build_plan()` — the pure solver, plus `Save.apply_build_plan()`
+  and `Save.restore_free_build()` to commit its plans. Tests: `test_auto_build.gd`.
+- The free restore at the Start gate, on all three paths (`hq._on_start_pressed`
+  career + CHALLENGE branches via `_apply_free_restore`, and `start_line.setup`).
+  Announced without a press: the career path hands `RallySession.start_notice` to the
+  next loading screen, the start line shows it under its own header.
+- `AutoUpgradeRow` — the two-press Auto-Upgrade button, shared by both pages.
+- `UpgradesSimple` — the Simple page (stat block, Auto row, `Advanced ▸`), mounted by
+  all four hosts; `UpgradesMenu` is untouched behind it and reachable via `advanced()`.
+- `CarLibrary.max_lateral_g(entry, cfg, speed_kmh)` — aero-rated grip at
+  `UpgradesSimple.GRIP_REFERENCE_KMH` (50), with `UpgradeLibrary.aero_meta()` feeding it.
+- `StatBar` + `CarStatBounds` — the stat block as countable segmented bars on one
+  roster-wide scale (Speed / Grip / Lightness / Condition), with Stability left as a word.
+  Tests: `test_car_stat_bounds.gd`.
+
+Two deliberate departures from the spec as written, both documented at their call sites:
+
+1. The solver takes a `restriction` DICT rather than a bare `pw_limit` float. Hosts with
+   only a ceiling pass `{"pw_max": limit}`; a host with the real rally passes the real
+   thing, which is what lets `blocked` tell "wrong car" from "wrong build" at all (§4 →
+   "What Auto must not pretend to fix" is unreachable with a bare float).
+2. The stat bars are scaled against the STOCK ROSTER (`CarStatBounds`), not against the
+   car's own reachable ceiling as §3a proposed. Per-car normalisation shows every car as
+   nearly full and answers nothing about how this car compares with the others; the
+   roster scale answers exactly that, Mario-Kart style. The ceiling is still on screen —
+   as the bar's dimmed GHOST segment, drawn from
+   `max_potential_meta(owned, entry, Save.profile)` (the reachable flavour §2 argued for),
+   so "how much of this car have you unlocked" is the headroom rather than the whole bar.
+   Scaling the top of the range to the best car FULLY UPGRADED was tried first and
+   reverted: the shipped ceiling is ~2.5x the best stock car, which collapsed every
+   early-game car into a single lit block.
+
+Brainstormed and steered by the user; every open question from that discussion is settled
+and recorded in §9 — including the ballast/detune ordering, resolved in favour of demoting
+ballast out of Auto altogether (§4).
 
 **Depends on:** nothing unbuilt. Every solver input already ships (see
 "The solver already exists"). Touches `features/upgrade-catalogue.md`,

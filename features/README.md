@@ -109,6 +109,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, sequential unlock) |
 | Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, consumables) |
+| Upgrades-page stat bars | `scripts/stat_bar.gd` (`StatBar` — segmented bar widget), `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max the bars scale against), `scripts/upgrades_simple.gd` (`_stat_rows`) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/hq.gd` (tuning lift) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`), `scripts/hq.gd` (`CarparkMode.WHEELS`) |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |
