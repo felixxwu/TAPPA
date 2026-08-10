@@ -1447,7 +1447,19 @@ maximum to divide by (the balance falls on a purchase and the Rally Challenge to
 up without bound).
 **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
-plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
+plane, clamped to the map extents. **The map tracks the pointer 1:1** — the drag delta is
+measured by raycasting the pointer's before/after screen positions onto the map plane
+(`_map_drag_delta` / `_map_point_at`) and moving the camera by the difference, so the map
+point you grabbed stays under your finger. It used to be pixels × a fixed metres-per-pixel
+constant (`hq_table_pan_speed`), which was only ever right for one camera height / FOV /
+viewport height and for the shipped ones ran **~2.1× too fast across and ~1.9× down** (the
+table camera is tilted, so one constant can't even be right on both axes at once): the map
+raced ahead of the finger, so a pin you started a drag beside had slid well away by the
+time you let go.
+Projection is exact for free and survives re-posing the table camera or adding a zoom.
+`hq_table_pan_gain` remains as a multiplier on top, and 1.0 (exact tracking) is the only
+value that doesn't reintroduce the old feel. Guarded by
+`test_hq_dragging_the_map_keeps_the_grabbed_point_under_the_pointer`. Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
 opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
