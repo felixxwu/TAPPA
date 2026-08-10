@@ -2938,7 +2938,7 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	var sc: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(sc)
 	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board, NOT straight to the reward")
 
 	# Step 1 -> page 2. The reveal must not exist yet: the reward comes after.
@@ -3076,11 +3076,11 @@ func test_standings_final_event_has_no_collect_reward() -> void:
 	await get_tree().process_frame
 	# The final event draws no upgrade, so there is no reveal step: page 1 -> page 2
 	# -> podium.
-	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board on the final stage too")
 	sc._on_action()
 	await get_tree().process_frame
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Continue to podium >"),
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
 		"and page 2 goes straight to the podium — no empty reveal in between")
 	assert_false(is_instance_valid(sc._reveal), "the final stage has no reward to collect")
 	RallySession.abandon()
@@ -4209,7 +4209,7 @@ func test_final_event_shows_both_leaderboards_before_proceeding() -> void:
 		"the final event's own stage result is on the page")
 	assert_string_contains(text, UITheme.caps(Standings.overall_heading(3)),
 		"the cumulative standings are on the same page, naming all three stages")
-	assert_eq(s._action_button.text, UITheme.caps("Online leaderboard >"),
+	assert_eq(s._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board; the podium is one page further on")
 
 
@@ -4511,8 +4511,8 @@ func test_reward_stage_order_is_local_then_global_then_reward() -> void:
 		if p == RallySession.Phase.RUNNING:
 			resumes[0] += 1)
 
-	# 1. Page 1 names page 2, not the reward.
-	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+	# 1. Page 1 leads to page 2, not to the reward.
+	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board")
 	sc._action_button.pressed.emit()
 	await get_tree().process_frame
