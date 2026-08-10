@@ -7,10 +7,10 @@ the catalogue of upgrade **items** — authored content (like `CarLibrary` /
 here, plus the consumable `inventory` — engine swap tokens and mystery boxes); this library defines
 what those ids mean and what each does to a fielded car.
 
-**Upgrades are car-bound.** An upgrade belongs to the car it was won for and
-**never moves** to another car or into a shared pool. When a part is won it is
-fitted straight onto the driven car (`rally_session` installs it **disabled**;
-the podium's Apply enables the player's pick). A fitted part can be **toggled
+**Upgrades are car-bound.** An upgrade belongs to the car it was fitted to and
+**never moves** to another car or into a shared pool. A part is acquired by
+**buying a copy for that car with stars** (`Save.buy_part`, from the slot row
+itself — see "Acquisition" below); it fits **disabled**. A fitted part can be **toggled
 on/off** in the upgrades menu (`OwnedCar.disabled_upgrades`); only **enabled**
 parts contribute effects, and a car keeps at most one enabled part per slot. A
 car can never hold the same upgrade twice (**per-car dedup**), and the part stays
@@ -365,25 +365,40 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 - **There is no repair action.** HP climbs back only via the free between-event
   `Save.field_repair`, and a wrecked car is never revived — see [damage.md](damage.md).
 
-## Reward integration
+## Acquisition — bought with stars, not dropped
 
-Upgrades are the **per-event** reward: one is drawn at each non-final event
-boundary (events 1 & 2 of a 3-event rally); the rally itself pays STARS, not a
-car ([star-economy.md](star-economy.md)).
-The reward draw picks from a **flat** pool (no `tier` any more), excluding
-parts already on the driven car, never `free` parts (the ballast is always
-available, so it's not a reward), never a part whose `requires_upgrade_id`
-prerequisite isn't yet on the driven car (Big Turbo, until that car has Small
-Turbo), and never a part whose `unlocked_by_rally` event gate hasn't been won
-— that policy is reward-system logic (`reward-system.md`); this library just
-provides the catalogue plus the `requires_upgrade_id` / `prerequisite_met`,
-`unlocked_by_rally` / `rally_gate_met`, and `pool_weight` helpers it reads.
-The draw can also come back empty (`RewardSystem.NO_REWARD`) once a car is
-maxed under the gated pool — see `reward-system.md`. The flow
-controller fits each won part straight onto the driven car via
-`Save.install_upgrade(..., enabled=false)` (consumables go to
-`Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,
-not the podium) confirms the part with a single "Next" step — see `features/reward-system.md`.
+**Parts are BOUGHT, not won at random.** `RewardSystem.draw_upgrade` is
+**consumables-only** now — the engine swap token and the mystery box, plus
+`NO_REWARD` — because a stage-by-stage part drop undercut both deliberate routes
+to a part (why go and win a turbo, or pay for one, if it might fall out of the
+next stage?). Most events therefore pay no item at all; the rally itself pays
+STARS ([star-economy.md](star-economy.md) → "What the random draw still does").
+
+The buy path is `Save.can_buy_part` / `part_price` / `buy_part`, priced at a flat
+`GameConfig.star_cost_per_part` **per car per part** — upgrades are car-bound, so
+every car meets the same question separately, which is what makes the sink
+effectively bottomless. `can_buy_part` is the single predicate both the button and
+the purchase read, and it requires the part to be **discovered**
+(`rally_gate_met` — its part-unlock rally won, so the shop only ever sells what
+the player has proven they can earn) and honours the **per-car**
+`requires_upgrade_id` ladder, so a purchase cannot skip a rung. Bought parts fit
+**disabled**, like every other award.
+
+The UI is the slot rows themselves, not a separate shop screen
+(`UpgradesMenu._make_option_selector` / `_make_weight_selector`): a discovered part
+not on this car renders as `Name (N★)` and buys on press — the same question the
+player is already asking on that row, answered with a price instead of a dead grey
+option.
+
+This library still supplies the gate helpers the shop and the mystery box read —
+`requires_upgrade_id` / `prerequisite_met`, `unlocked_by_rally` /
+`rally_gate_met`, `is_free` and `pool_weight`. `RewardSystem._eligible_parts` is
+**not** retired: the **mystery box** still opens onto a part and uses it (with
+`pool_weight` for rarity), and `_car_is_maxed` reads it to decide when a box is
+granted instead of a normal draw — see [reward-system.md](reward-system.md). The
+`free` ballast is excluded there for the same reason as ever (always available, so
+never a reward). The **standings reveal** (`scripts/upgrade_reveal.gd`, not the
+podium) is what confirms whatever the draw did hand out, with a single "Next" step.
 
 ## Tests
 

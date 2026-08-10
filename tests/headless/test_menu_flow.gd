@@ -822,6 +822,46 @@ func test_hq_upgrades_page_heading_shows_the_star_balance() -> void:
 	assert_string_contains(hq._lift_menu_title.text, "2", "spending updates the heading")
 
 
+# REGRESSION: no menu text may lean on a character the BUNDLED font can't draw. Syne Mono
+# has no ★ glyph, so the star prices this page is full of ("Small (2★)", "Repair (1★)")
+# looked right on desktop only because the OS handed Godot a system fallback font — the web
+# export has no system fonts, so on mobile web every price rendered as a tofu box. Stars are
+# drawn now: a StarRow.price_icon on the price BUTTONS, a StarRow node beside the heading's
+# digits. Sweeps the whole lift station rather than the one label that broke, so the next
+# glyph someone reaches for is caught here instead of on a phone.
+func test_hq_lift_text_only_uses_characters_the_bundled_font_can_draw() -> void:
+	# Damaged + solvent, so the Repair button quotes its price too (the other star label).
+	_save.get_car(_save.selected_instance_id())["hp"] = 1.0
+	_save.award_stars(20)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+
+	var font: Font = UITheme.theme().default_font
+	assert_not_null(font, "the house theme ships a font to check against")
+	var priced := 0
+	for node in hq._lift_layer.find_children("*", "Control", true, false):
+		var text := ""
+		if node is Label:
+			text = (node as Label).text
+		elif node is Button:
+			text = (node as Button).text
+			# A star price is the button's icon now, not a character in its label.
+			if (node as Button).icon != null:
+				priced += 1
+		for i in text.length():
+			var c := text.unicode_at(i)
+			if c < 0x20:   # newlines / tabs are layout, not glyphs
+				continue
+			assert_true(font.has_char(c),
+				"%s draws '%s' (U+%04X) in %s" % [node.name, text[i], c, text])
+	assert_gt(priced, 0, "the page shows at least one drawn star price")
+
+
 func test_hq_upgrades_page_is_keyboard_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1926,92 +1966,10 @@ func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
 	return null
 
 
-# Two locked specials at DIFFERENT distances beyond the frontier, over one open ordinary
-# rally: "near" is the one the player is heading for, "far" sits further out. Both are dark
-# on a fresh profile, so the pair isolates "which locked special gets a teaser".
-# Distances, not rungs — reveal is geometric (features/map-exploration.md).
-func _install_special_ladder_roster() -> void:
-	_dark_map_radius()
-	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": hq_pos, "restriction": {}, "events": []},
-		{"id": "near", "name": "Near Special", "region": "home", "special": true,
-			"map_pos": hq_pos + Vector2(0.20, 0.0), "restriction": {}, "events": []},
-		{"id": "far", "name": "Far Special", "region": "home", "special": true,
-			"map_pos": hq_pos + Vector2(0.40, 0.0), "restriction": {}, "events": []},
-	])
-
-
-func test_hq_garage_always_shows_the_next_carrot() -> void:
-	# The map's locked-special teaser, promoted to a permanent line on the GARAGE — the
-	# station the player lands on after every rally. It names the DIRECTION to explore, the
-	# special out that way, and (below) what winning that special gives.
-	_install_special_ladder_roster()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.GARAGE)
-	assert_true(hq._carrot_panel.visible, "the carrot line is up in the garage")
-	var line: String = hq._carrot_label.text
-	assert_string_contains(line, "EXPLORE TOWARD",
-		"it tells the player to explore, which is literally how the event opens now")
-	assert_string_contains(line, "NEAR SPECIAL", "and names the event to head for")
-	# The event it names is genuinely unreached — which is why the garage carries the line at
-	# all. Its pin is on the map (the fog fades pins, it doesn't delete them), but locked:
-	# something to steer toward, not somewhere to go yet.
-	assert_true(bool(_pin_for(hq, "near").get_meta("locked")),
-		"the event being teased is still locked on the map")
-	# Reaching and winning the near special moves the carrot outward to the next one dark.
-	_save.dev_three_star_rally("near")
-	hq._go_to(hq.View.GARAGE)
-	assert_string_contains(hq._carrot_label.text, "FAR SPECIAL",
-		"once the near one is won the line points at the next still dark")
-
-
-func test_hq_carrot_names_what_the_special_unlocks() -> void:
-	# The line's whole point is the REWARD, not just the destination: the count and the
-	# rally name are followed by what winning it gives. Wired to the same
-	# _special_unlock_line the map pin uses, so the two can't name different rewards.
-	# The engine-swap CAPABILITY is used here because it is authored on RallyLibrary
-	# itself (ENGINE_SWAP_UNLOCK_RALLY) rather than in the upgrade catalogue — so this
-	# stays a test of the wiring, not of any particular authored part.
-	# The special must be DARK for there to be a carrot at all, so this needs the real
-	# reveal radius rather than before_each's lit-everything default.
-	_dark_map_radius()
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
-		{"id": RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, "name": "Swap Special", "region": "home",
-			"special": true, "map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.4, 0.0),
-			"restriction": {}, "events": []},
-	])
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.GARAGE)
-	assert_string_contains(hq._carrot_label.text, "UNLOCKS ENGINE SWAPS",
-		"the carrot names the capability the special opens")
-
-
-func test_hq_carrot_hides_once_every_special_is_open() -> void:
-	# No rung left to work toward — the line goes away entirely rather than standing there
-	# with nothing to say. Its readout box hides with it, so no empty panel is left floating.
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "open", "name": "Open Special", "region": "home", "special": true, "map_pos": Vector2(0.6, 0.5), "restriction": {},
-			"events": []},
-	])
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.GARAGE)
-	assert_false(hq._carrot_panel.visible, "nothing left to tease, so no line")
-	assert_eq(hq._carrot_label.text, "", "and no stale text behind the hidden panel")
+# The garage's next-carrot line (a readout naming the nearest locked special) is GONE, so
+# the three tests that guarded its text, its reward subtitle and its hide-when-nothing-left
+# behaviour went with it. What the garage station DOES carry is asserted by
+# test_hq_garage_is_a_left_right_cursor — the action row, and nothing else over the room.
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:
@@ -2070,11 +2028,44 @@ func test_hq_table_drag_pans_and_clamps() -> void:
 	var before_x: float = hq._table_pan.x
 	hq._pan_table(Vector2(-100, -50))
 	assert_gt(hq._table_pan.x, before_x, "dragging pans the map view")
-	# A huge drag clamps to the map extents (half the plane each way).
+	# A huge drag clamps to the map extents (half the plane each way). This also covers the
+	# off-screen case: the ray through a point 100000px away tilts above the horizon and
+	# never meets the map plane, so the delta is sampled near the pointer and scaled.
 	hq._pan_table(Vector2(-100000, -100000))
 	var cfg: GameConfig = Config.data
 	assert_almost_eq(hq._table_pan.x, cfg.hq_map_plane_size.x * 0.5, 0.001, "pan clamps to the map's far X edge")
 	assert_almost_eq(hq._table_pan.z, cfg.hq_map_plane_size.y * 0.5, 0.001, "pan clamps to the map's far Z edge")
+
+
+# THE contract for map dragging: whatever map point you grabbed stays under the pointer.
+# FINDING: the pan used to be pixels x a fixed metres-per-pixel constant (hq_table_pan_speed
+# = 0.012), which for the shipped table camera / 360px-tall viewport was over 2x the real
+# scale — so the map raced ahead of the finger and a pin you started the drag beside was
+# nowhere near it when you let go. Measuring the delta on the map plane makes it exact, and
+# this test fails on any reintroduced constant because it compares world points, not pixels.
+func test_hq_dragging_the_map_keeps_the_grabbed_point_under_the_pointer() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	# Entry eases the camera onto a pin over menu_camera_move_time; zero the pan and snap
+	# there so the drag is measured against a SETTLED table view, not a half-finished tween.
+	hq._table_pan = Vector3.ZERO
+	hq._move_camera_to(hq._station_xform(hq.View.TABLE), true)
+	# Track a real point on the map (the plane's own centre) through the camera's FORWARD
+	# projection — unproject_position, not the ray/plane maths the pan itself uses, so this
+	# can't pass by agreeing with the code under test.
+	var mark: Vector3 = hq._map_plane.global_position
+	var before: Vector2 = hq._camera.unproject_position(mark)
+	var rel := Vector2(37.0, -23.0)  # a plausible one-frame drag, off both axes
+	hq._pan_table(rel, before + rel)  # grab at `before`, drag to `before + rel`
+	var after: Vector2 = hq._camera.unproject_position(mark)
+	assert_almost_eq(after.x, before.x + rel.x, 1.0,
+		"the grabbed map point tracked the pointer horizontally, within a pixel")
+	assert_almost_eq(after.y, before.y + rel.y, 1.0,
+		"the grabbed map point tracked the pointer vertically, within a pixel")
+	# And it really moved — a test that passed because nothing panned would be worthless.
+	assert_gt(hq._table_pan.length(), 0.01, "the drag panned the map")
 
 
 func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
@@ -2987,7 +2978,7 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	var sc: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(sc)
 	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board, NOT straight to the reward")
 
 	# Step 1 -> page 2. The reveal must not exist yet: the reward comes after.
@@ -3125,11 +3116,11 @@ func test_standings_final_event_has_no_collect_reward() -> void:
 	await get_tree().process_frame
 	# The final event draws no upgrade, so there is no reveal step: page 1 -> page 2
 	# -> podium.
-	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board on the final stage too")
 	sc._on_action()
 	await get_tree().process_frame
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Continue to podium >"),
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
 		"and page 2 goes straight to the podium — no empty reveal in between")
 	assert_false(is_instance_valid(sc._reveal), "the final stage has no reward to collect")
 	RallySession.abandon()
@@ -4258,7 +4249,7 @@ func test_final_event_shows_both_leaderboards_before_proceeding() -> void:
 		"the final event's own stage result is on the page")
 	assert_string_contains(text, UITheme.caps(Standings.overall_heading(3)),
 		"the cumulative standings are on the same page, naming all three stages")
-	assert_eq(s._action_button.text, UITheme.caps("Online leaderboard >"),
+	assert_eq(s._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board; the podium is one page further on")
 
 
@@ -4560,8 +4551,8 @@ func test_reward_stage_order_is_local_then_global_then_reward() -> void:
 		if p == RallySession.Phase.RUNNING:
 			resumes[0] += 1)
 
-	# 1. Page 1 names page 2, not the reward.
-	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+	# 1. Page 1 leads to page 2, not to the reward.
+	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
 		"page 1 leads to the world board")
 	sc._action_button.pressed.emit()
 	await get_tree().process_frame
@@ -5972,6 +5963,72 @@ func test_completing_a_rally_lights_more_of_the_mask() -> void:
 	hq._refresh_map_pins()
 	await get_tree().process_frame
 	assert_gt(lit.call(), before, "winning what was reachable lights more of the map")
+
+
+# The reveal graph is drawn only between pins the player has already LIT
+# (RallyLibrary.reveal_link_pairs). Asserted on the geometry the table actually builds,
+# because the geometry is the whole point: a dotted line running off into the dark draws the
+# shape of a roster the player has not explored, which is what the fog is there to withhold.
+func test_the_map_draws_no_reveal_link_out_into_the_dark() -> void:
+	_dark_map_radius()
+	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
+	var r: float = Config.data.map_reveal_radius
+	_save.profile["starter_model_id"] = STARTER_PRIZE_CAR
+	RallyLibrary.override_for_test([
+		{"id": "lk_start", "name": "Link Start", "region": "home", "difficulty": 1,
+			"special": false, "map_pos": hq_pos, "restriction": {},
+			"prize_car": STARTER_PRIZE_CAR, "events": []},
+		# Inside the opening rally's circle: lit from the start, so this edge may be drawn.
+		{"id": "lk_near", "name": "Link Near", "region": "home", "difficulty": 1,
+			"special": false, "map_pos": hq_pos + Vector2(r * 0.6, 0.0),
+			"restriction": {}, "events": []},
+		# Out in the dark, but near enough lk_near that completing it lights this one — an
+		# edge of the graph that exists and must still not be drawn yet.
+		{"id": "lk_dark", "name": "Link Dark", "region": "home", "difficulty": 2,
+			"special": false, "map_pos": hq_pos + Vector2(r * 1.5, 0.0),
+			"restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_true(_link_reaches_pin(hq, "lk_near"),
+		"the two lit pins are joined by a dotted line")
+	assert_false(_link_reaches_pin(hq, "lk_dark"),
+		"nothing is drawn out to the pin still in the fog")
+	_save.dev_three_star_rally("lk_near")
+	hq._refresh_map_pins()
+	await get_tree().process_frame
+	assert_true(_link_reaches_pin(hq, "lk_dark"),
+		"and the line appears once that pin is lit")
+	RallyLibrary.reset()
+
+
+# Whether the map's reveal-link geometry runs all the way out to a given rally's pin. The
+# links are one merged ImmediateMesh under _pins_root, built in the space the pins are
+# positioned in (hq._map_to_table mirrors _make_pin), so a pin's own position is what a line
+# ending there must reach.
+#
+# The tolerance is one dash GAP, not zero: a link is stippled at a fixed pitch, so its far
+# end lands within a gap's length of the pin rather than exactly on it. That is orders of
+# magnitude smaller than the spacing between the pins this is asked about, so it cannot
+# confuse one link's end for another's.
+func _link_reaches_pin(hq: Node3D, rally_id: String) -> bool:
+	var pin := _pin_for(hq, rally_id)
+	if pin == null:
+		return false
+	var tol: float = Config.data.map_link_gap_m + 0.001
+	var target := Vector2(pin.position.x, pin.position.z)
+	for child in hq._pins_root.get_children():
+		var mi := child as MeshInstance3D
+		if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
+			continue
+		var verts: PackedVector3Array = mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		for v in verts:
+			# XZ only: the lines float a hair above the table (hq.MAP_LINK_LIFT) so they do
+			# not z-fight with the map plane.
+			if Vector2(v.x, v.z).distance_to(target) < tol:
+				return true
+	return false
 
 
 func test_a_car_prize_pin_stands_the_actual_car_model() -> void:

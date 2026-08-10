@@ -368,8 +368,9 @@ const RALLIES: Array[Dictionary] = [
 	# The three region showdowns below are ORDINARY rallies, not specials. Each used to be a
 	# special gating one rung of the four-rung NOS ladder; collapsing NOS to a single part
 	# (features/nitrous.md) left them gating nothing, and a "special" that awards no part is
-	# only a special by label — it would still claim the trophy marker, the garage carrot and
-	# a place in the all-specials endgame while paying exactly what an ordinary rally pays.
+	# only a special by label — it would still claim the trophy marker, the map's locked
+	# teaser and a place in the all-specials endgame while paying exactly what an ordinary
+	# rally pays.
 	# They are long, hard, open-class star-payers, which is what they actually are.
 	{
 		"id": "hc_showdown", "name": "The Lakes Showdown", "region": "home_coast", "difficulty": 4, "special": false,
@@ -1517,8 +1518,9 @@ static func reveal_depths() -> Dictionary:
 # The next SPECIAL the player is heading for: the unrevealed one closest to the frontier
 # they have already lit ("" once every special is revealed). Roster order breaks a tie.
 #
-# The map teases THIS special only, and the garage carrot line names the same one, so the
-# two surfaces can never point at different events. It replaced next_locked_special_id,
+# The map table teases THIS special only, and is now the only surface that names it (the
+# garage's carrot line, which quoted the same id, is gone — see
+# features/map-exploration.md). It replaced next_locked_special_id,
 # which picked the lowest authored rung of a ladder that no longer exists — nearest-to-
 # reach is what "next" means once the player chooses their own direction.
 static func nearest_locked_special_id(profile: Dictionary) -> String:
@@ -1585,12 +1587,60 @@ static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
 # mask shades the map with the EXACT predicate that gates entry, rather than a lookalike
 # that could drift from it.
 static func position_revealed(pos: Vector2, profile: Dictionary) -> bool:
-	for src in lit_sources(profile):
+	return position_lit_by(pos, lit_sources(profile))
+
+
+# The containment test itself, against an ALREADY-BUILT source list. Split out so a caller
+# asking about many points at once (reveal_link_pairs, one query per pin) pays for
+# lit_sources ONCE instead of once per point, without hand-rolling a second copy of the rule
+# that could drift from the one that gates entry.
+static func position_lit_by(pos: Vector2, sources: Array) -> bool:
+	for src in sources:
 		var centre: Vector2 = src[0]
 		var radius: float = src[1]
 		if pos.distance_squared_to(centre) <= radius * radius:
 			return true
 	return false
+
+
+# The map's REVEAL GRAPH, as unordered pairs of rally ids: the pairs sitting close enough
+# that completing either would light the other. The HQ table draws one dotted line per pair
+# (hq._build_reveal_links) — this is where the pairing itself is decided, alongside the
+# reveal rule it is derived from.
+#
+# BOTH ends must already be revealed. An edge is a statement about ground the player has
+# lit; drawn across the dark it hands them the shape of the whole roster before they have
+# been anywhere, which is exactly what the fog exists to withhold — and 30-odd unreached
+# pins webbed together turns the unexplored map into the busiest thing on the table. Kept to
+# revealed pairs, the graph GROWS as the player explores: it draws the route they made.
+#
+# ONE entry per unordered pair, emitted when the link works in EITHER direction — reveal
+# radius is per-rally, so A can reach B without B reaching A, and listing both directions
+# would just double the geometry on every symmetric pair.
+static func reveal_link_pairs(profile: Dictionary) -> Array:
+	var rallies := all()
+	var sources := lit_sources(profile)
+	# Position and lit-ness are asked once per RALLY, not once per pair: the pair loop is
+	# already O(n²) and lit_sources walks the whole roster to build its list, so asking
+	# inside the inner loop would make a map refresh cubic in the roster size.
+	var pins: Array[Vector2] = []
+	var lit: Array[bool] = []
+	for rally in rallies:
+		var mp := map_pos_of(rally)
+		pins.append(mp)
+		lit.append(position_lit_by(mp, sources))
+	var out: Array = []
+	for a in rallies.size():
+		if not lit[a]:
+			continue
+		for b in range(a + 1, rallies.size()):
+			if not lit[b]:
+				continue
+			var reach := maxf(reveal_radius_of(rallies[a]), reveal_radius_of(rallies[b]))
+			if pins[a].distance_squared_to(pins[b]) > reach * reach:
+				continue
+			out.append([String(rallies[a]["id"]), String(rallies[b]["id"])])
+	return out
 
 
 # Anti-soft-lock query for the reward system: the still-incomplete rallies a

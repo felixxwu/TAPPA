@@ -501,11 +501,6 @@ var _garage_focus := 1          # which garage action the cursor sits on (defaul
 # Mystery Box is omitted when none is held, so no index in this row is a constant.
 var _garage_career_index := 1
 var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
-# The garage's NEXT CARROT line — "2 more rallies → The Woodland Trial (unlocks engine
-# swaps)". Built by HqOverlays.build_garage_overlay, written by _refresh_carrot_line; the
-# panel is hidden along with the label once no locked special is left to work toward.
-var _carrot_panel: PanelContainer
-var _carrot_label: Label
 
 # Tuning-lift overlay widgets.
 var _lift_info_panel: VBoxContainer  # bottom-left car readout: selector row + stats row (hidden when a sub-menu is open)
@@ -536,7 +531,11 @@ var _lift_selector_focus := 0   # which chevron the cursor sits on (0 = prev, 1 
 # gapped horizontal action row below it (see menu_page.gd). Only the box is held here,
 # because its visibility is what shows/hides the page; reach the page as its parent.
 var _lift_menu_bg: PanelContainer
-var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
+var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES" + the balance's digits)
+# The heading's row: the title label plus the drawn gold star that reads the balance's
+# digits as a star count. Held because VISIBILITY is toggled here, not on the label —
+# see _refresh_lift_ui.
+var _lift_menu_title_row: HBoxContainer
 # A sub-page's bottom ACTION ROW: "< Back" always, plus the TUNE page's own actions (see
 # HqOverlays.build_lift_overlay). It is a SIBLING of the body box rather than a child — that
 # is what makes the gap between body and actions read as a gap — so its visibility is gated
@@ -798,8 +797,8 @@ func _refresh_map_pins(hold_locked: Array = []) -> void:
 		if pin.has_meta("prize_car_model"):
 			_attach_prize_car_marker(pin)
 		_pins.append(pin)
-	# The reveal graph, under the pins: a faint dotted line wherever completing one rally
-	# would light another.
+	# The reveal graph, under the pins: a faint dotted line wherever completing one REVEALED
+	# rally would light another one that is also already revealed.
 	_build_reveal_links(p, size, top_y)
 
 	# NO HQ LANDMARK. A house used to stand at the middle of the map, marking the point
@@ -834,45 +833,42 @@ func _detach_prize_car_props() -> void:
 			prop.get_parent().remove_child(prop)
 
 
-# Draw the map's REVEAL GRAPH: a faint dotted line between every pair of rallies where
-# finishing one would light the other.
+# Draw the map's REVEAL GRAPH over the ground the player has lit: a faint dotted line
+# between every pair of REVEALED rallies where finishing one would light the other.
 #
 # The graph was always there — it is what map_pos means now — but it was invisible, so the
 # map looked like a scatter of pins and the player had to infer the chain by driving it.
-# Showing it turns "which way should I go" into something readable off the table: you can
-# see that this rally opens those two, and that the corner you are eyeing hangs off a
-# different thread entirely.
+# Showing it makes the route they took readable off the table: you can see that this rally
+# is what opened those two, and that the corner they reached hangs off a different thread
+# entirely. Where it runs OUT into the dark it is not drawn — see reveal_link_pairs.
 #
 # Deliberately FAINT and dotted (GameConfig.map_link_alpha): it is a hint under the pins,
 # not a subway map. At full strength 32 pins' worth of edges reads as a web and the markers
 # stop being the thing you look at.
 #
-# ONE line per unordered pair, drawn when the link works in EITHER direction — reveal
-# radius is per-rally, so A can reach B without B reaching A, and drawing both directions
-# separately would just double the geometry on every symmetric pair.
+# Only edges with BOTH ends out of the fog are drawn — the pairing rule and its reasoning
+# live in RallyLibrary.reveal_link_pairs, next to the reveal predicate they come from, so
+# what the table draws and what the map actually opens can never drift apart. This function
+# is purely the geometry: ids in, dashes on the table out.
 func _build_reveal_links(table_pos: Vector3, plane_size: Vector2, top_y: float) -> void:
 	var cfg: GameConfig = Config.data
 	if cfg.map_link_alpha <= 0.0:
 		return
-	var rallies := RallyLibrary.all()
+	var pin_pos := {}
+	for rally in RallyLibrary.all():
+		pin_pos[String(rally["id"])] = RallyLibrary.map_pos_of(rally)
 	# Collect the segments FIRST, then build the surface — ImmediateMesh errors on
-	# surface_end() with nothing added, which is a real case here: a synthetic roster whose
-	# pins are all further apart than any reveal radius produces no links at all.
+	# surface_end() with nothing added, which is a real case here: a fresh profile with a
+	# single lit pin, or a synthetic roster whose pins all sit further apart than any reveal
+	# radius, produces no links at all.
 	var segments: Array[Vector3] = []
 	# HQ is NOT a link source. It used to be the one the whole graph grew out of, but it
 	# lights nothing now — every reveal circle belongs to a rally (RallyLibrary.lit_sources),
 	# so a spoke from the middle would draw an edge that no longer exists.
-	for a in rallies.size():
-		for b in range(a + 1, rallies.size()):
-			var ra: Dictionary = rallies[a]
-			var rb: Dictionary = rallies[b]
-			var pa := RallyLibrary.map_pos_of(ra)
-			var pb := RallyLibrary.map_pos_of(rb)
-			var d := pa.distance_to(pb)
-			if d > maxf(RallyLibrary.reveal_radius_of(ra), RallyLibrary.reveal_radius_of(rb)):
-				continue
-			_dash_line(segments, _map_to_table(pa, table_pos, plane_size, top_y),
-				_map_to_table(pb, table_pos, plane_size, top_y))
+	for pair in RallyLibrary.reveal_link_pairs(Save.profile):
+		_dash_line(segments,
+			_map_to_table(pin_pos[pair[0]], table_pos, plane_size, top_y),
+			_map_to_table(pin_pos[pair[1]], table_pos, plane_size, top_y))
 	if segments.is_empty():
 		return
 	var mesh := ImmediateMesh.new()
@@ -1069,6 +1065,9 @@ func _attach_prize_car_marker(pin: Node3D) -> void:
 		# convention), hence the half turn. Flip PRIZE_CAR_FACING_TURN if a future car model
 		# is authored the other way round.
 		yaw = atan2(to_hq.x, to_hq.y) + PRIZE_CAR_FACING_TURN
+	# The spawned node is not kept: everything downstream (the dim pass below, the cache in
+	# _prize_car_props, the detach before a rebuild) works through `holder`, the pin-local
+	# parent it is spawned under.
 	CarProp.spawn(holder, _car_scene_res(), {
 		"index": index,
 		"stop_physics": true,
@@ -1351,49 +1350,15 @@ func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 	return _build_readout_box(String(rally.get("name", "")), -1, _special_unlock_line(rally))
 
 
-# --- The next carrot ---------------------------------------------------------
-# The one progression line the HQ always carries: what the player is working toward, and
-# what winning it gives them. "2 more rallies → The Woodland Trial (unlocks engine swaps)".
-#
-# It is the map's locked-special teaser (_build_special_teaser_label) promoted to the
-# GARAGE — the station the player lands on after every rally and starts every trip from.
-# On the map the same fact is a box hanging over one grey trophy among a dozen pins, which
-# means the player only meets it if they fly to the table AND happen to look at the right
-# corner; here it is unmissable and costs one line. Both readouts derive from
-# RallyLibrary.nearest_locked_special_id and from the SAME _special_unlock_line, so the
-# carrot and the pin can never name different events or different rewards.
-#
-# It says "EXPLORE TOWARD X" rather than "N more rallies" because that is now literally the
-# instruction: the event opens when the player lights the map out to it, and no count of
-# rallies-anywhere will do it. Direction, not a tally.
-#
-# EMPTY once every special is revealed ("" — the caller hides the line): there is nothing
-# left to work toward, and a line that says so would be chrome.
-func _carrot_line() -> String:
-	var rally_id := RallyLibrary.nearest_locked_special_id(Save.profile)
-	if rally_id == "":
-		return ""
-	var rally := RallyLibrary.by_id(rally_id)
-	if rally.is_empty():
-		return ""
-	var line := "EXPLORE TOWARD %s" % String(rally.get("name", rally_id))
-	var unlock := _special_unlock_line(rally)
-	if unlock != "":
-		line += " (%s)" % unlock
-	return line
-
-
-# Write the garage's carrot line and show/hide it with its panel. Called from
-# _update_overlays, so every path that redraws a station — finishing a rally, a cloud
-# profile swap, buying a car — repaints it without its own hook.
-func _refresh_carrot_line() -> void:
-	if not is_instance_valid(_carrot_label):
-		return
-	var line := _carrot_line()
-	_carrot_label.text = line
-	# The PANEL carries the visibility too: an empty label still draws its readout box, so
-	# hiding only the text would leave a bare box floating over the garage.
-	_carrot_panel.visible = line != ""
+# The garage USED TO carry a permanent "next carrot" line — the map's locked-special
+# teaser (_build_special_teaser_label) promoted onto the station the player lands on after
+# every rally, first as "2 more rallies → The Woodland Trial", later as the event's bare
+# name. It is GONE, panel and all. The specials it named are mostly part-unlock rallies
+# titled after their own reward ("Upgrade: Supercharger"), so with no count left to quote
+# and no unlock subtitle to add (_special_unlock_line is empty for exactly those), the line
+# degenerated to a bare rally name standing over the garage saying nothing about why it was
+# there. The map table still teases the same special ON the map, where its position IS the
+# explanation — the one place that fact reads.
 
 
 # What a special unlocks, as a display line ("unlocks Supercharger"), derived from the
@@ -1815,9 +1780,8 @@ func _update_overlays() -> void:
 	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
-	# BEFORE _normalize_menus: these write dynamic text, so they have to run while the
+	# BEFORE _normalize_menus: this writes dynamic text, so it has to run while the
 	# house rules (uppercase) are still to come, not after them.
-	_refresh_carrot_line()
 	_refresh_repair_button()
 	_normalize_menus()
 
@@ -2692,7 +2656,9 @@ func _refresh_lift_ui() -> void:
 	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
 	# without scrolling); UPGRADES keeps its heading.
-	_lift_menu_title.visible = _lift_page != LiftPage.TUNE
+	# The ROW, not the label: the heading's star balance is a sibling StarRow, so hiding
+	# only the label would leave a lone star floating over the sliders.
+	_lift_menu_title_row.visible = _lift_page != LiftPage.TUNE
 	_refresh_lift_menu_title()
 	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
 	# on_change is a no-op: the HQ lift did not re-field the display car on a tune edit
@@ -2736,7 +2702,10 @@ func _on_lift_upgrade_changed() -> void:
 func _refresh_lift_menu_title() -> void:
 	if _lift_menu_title == null:
 		return
-	_lift_menu_title.text = "UPGRADES   %d★" % Save.stars_available()
+	# Digits only — the star is the drawn StarRow sibling in the heading row
+	# (HqOverlays.build_lift_overlay), exactly as the map meter does it, because a Label
+	# can't carry an icon the way the price BUTTONS do and Syne Mono has no ★ glyph.
+	_lift_menu_title.text = "UPGRADES   %d" % Save.stars_available()
 
 
 # The Dev settings page fits a part straight onto Save.selected_instance_id() with no
@@ -2921,10 +2890,16 @@ func _refresh_repair_button() -> void:
 	var id := Save.selected_instance_id()
 	if id < 0 or not Save.car_needs_repair(id):
 		_lift_repair_button.text = "Repair"
+		_lift_repair_button.icon = null   # nothing to pay, so no price star
 		_lift_repair_button.disabled = true
 		return
 	var price := Save.repair_price(id)
-	_lift_repair_button.text = "Repair (%d★)" % price
+	# Same DRAWN price star as the upgrade options (UpgradesMenu._option_button): the ★
+	# character this label used to carry has no glyph in Syne Mono and rendered as a tofu
+	# box in the web export, which has no system font to fall back on.
+	_lift_repair_button.text = "Repair %d" % price
+	_lift_repair_button.icon = StarRow.price_icon()
+	_lift_repair_button.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lift_repair_button.disabled = Save.stars_available() < price
 
 
@@ -3966,18 +3941,84 @@ func _table_pan_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _table_panning:
 		if event.relative.length() > 2.0:
 			_table_dragged = true
-		_pan_table(event.relative)
+		_pan_table(event.relative, event.position)
 
 
 # Translate the table camera in the map plane (X/Z) by a screen-drag delta — grab the
 # map and drag it. Clamped so the view stays over the map. Snaps (follows the finger).
-func _pan_table(rel: Vector2) -> void:
+#
+# The delta is MEASURED ON THE MAP PLANE (_map_drag_delta) rather than by multiplying
+# pixels by a fixed metres-per-pixel constant, so the map point under the pointer stays
+# under the pointer for the whole drag. The old constant (`hq_table_pan_speed`, 0.012 m/px)
+# could only ever be right for one camera height / FOV / viewport height, and for the
+# shipped ones it was ~2.1x too fast across and ~1.9x down (the table camera is tilted, so
+# the true scale isn't even the same on both axes): start a drag next to a pin and the pin
+# had slid well away from your finger by the time you let go. Projecting gets it exact for
+# free, and stays exact if the table camera is ever re-posed or the map gains a zoom.
+#
+# `screen_pos` is where the pointer ENDED UP; it defaults to the view centre for callers
+# with no pointer of their own (the headless drag tests).
+func _pan_table(rel: Vector2, screen_pos: Vector2 = Vector2.INF) -> void:
 	var cfg: GameConfig = Config.data
+	if screen_pos == Vector2.INF:
+		screen_pos = get_viewport().get_visible_rect().size * 0.5
+	var delta := _map_drag_delta(rel, screen_pos) * cfg.hq_table_pan_gain
 	var half := cfg.hq_map_plane_size
-	_table_pan.x = clampf(_table_pan.x - rel.x * cfg.hq_table_pan_speed, -half.x * 0.5, half.x * 0.5)
-	_table_pan.z = clampf(_table_pan.z - rel.y * cfg.hq_table_pan_speed, -half.y * 0.5, half.y * 0.5)
+	_table_pan.x = clampf(_table_pan.x + delta.x, -half.x * 0.5, half.x * 0.5)
+	_table_pan.z = clampf(_table_pan.z + delta.z, -half.y * 0.5, half.y * 0.5)
 	_move_camera_to(_station_xform(View.TABLE), true)
 	_table_ui._select_target_under_center()  # selection tracks the view centre as the map slides
+
+
+# The world (X/Z) offset the table camera must make for the map point that was under
+# `screen_pos - rel` to end up under `screen_pos` — i.e. for the map to follow the finger.
+# Translating the camera in the plane shifts the plane point under a FIXED pixel by the
+# same vector, so the answer is just (where the drag started) − (where it is now), both
+# raycast onto the map plane through the pre-move table pose.
+#
+# Measured over a bounded sample and scaled up for longer `rel`: a ray far off-screen can
+# tilt above the horizon and never meet the plane at all (a clamp test drags by 100000 px),
+# and one real frame of drag is a handful of pixels, where the mapping is linear anyway.
+func _map_drag_delta(rel: Vector2, screen_pos: Vector2) -> Vector3:
+	var step := rel.limit_length(64.0)
+	if step.is_zero_approx():
+		return Vector3.ZERO
+	var to_hit = _map_point_at(screen_pos)
+	var from_hit = _map_point_at(screen_pos - step)
+	if to_hit == null or from_hit == null:
+		return Vector3.ZERO  # degenerate pose (camera at/below the map plane, or looking away)
+	var delta: Vector3 = (from_hit as Vector3) - (to_hit as Vector3)
+	delta.y = 0.0
+	return delta * (rel.length() / step.length())
+
+
+# The point on the map plane a ray through `screen_pos` (viewport pixels) lands on, or null
+# when that ray never meets the plane — it can tilt above the horizon well outside the
+# viewport, which is what makes a naive "just hit both ends of the drag" unsafe.
+#
+# Cast from the pose the TABLE station describes (`_station_xform`), NOT from the camera's
+# live transform, because the camera may be mid-flight into the table view: `_move_camera_to`
+# eases over menu_camera_move_time, so a drag started on the way in would otherwise be
+# measured against the garage — or, on the title shot, against an eye 9cm above the map
+# plane, where a few pixels of grazing ray are worth metres. The station pose is the settled
+# table view the pan is expressed in, and it already carries the live `_table_pan`.
+# `project_local_ray_normal` is the camera's OWN projection maths in camera space, so FOV,
+# aspect and viewport size still come from the real camera — only the pose is substituted.
+func _map_point_at(screen_pos: Vector2) -> Variant:
+	var xform := _station_xform(View.TABLE)
+	var plane := Plane(Vector3.UP, _map_plane_y())
+	return plane.intersects_ray(xform.origin,
+		xform.basis * _camera.project_local_ray_normal(screen_pos))
+
+
+# Height of the map plane the drag is measured against: the built plane where there is one,
+# else the table top hq_environment lays it on (bar its 1cm lift, which is under a pixel of
+# drag at this camera height) so this is still answerable before build() has run.
+func _map_plane_y() -> float:
+	if _map_plane != null:
+		return _map_plane.global_position.y
+	var cfg: GameConfig = Config.data
+	return cfg.hq_table_pos.y + cfg.hq_table_size.y
 
 
 func _cars_input(event: InputEvent) -> void:

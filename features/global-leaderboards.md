@@ -235,10 +235,12 @@ the reward reveal sat BETWEEN page 1 and page 2 (see the superseded note
 above for why that made page 2's Back button conditional).
 
 Button wording follows the new order: page 1's action is unconditionally
-**"Online leaderboard >"** (it only ever does one thing now — go to page 2).
-Page 2's action names whatever happens next: **"Collect reward >"** on a
-stage that drew one, **"Continue to podium >"** on the final stage, else
-**"Continue to next stage >"**. The final event awards no reward
+**"Next >"** (it only ever does one thing now — go to page 2 — so the label is
+generic rather than naming the destination). Page 2's action names whatever
+happens next where that's meaningful: **"Collect reward >"** on a stage that
+drew one, **"Finish challenge >"** on a challenge's last stage, **"Continue to
+next stage >"** on a non-final stage, and the same generic **"Next >"** on the
+career's final stage (which leads to the podium). The final event awards no reward
 (`RallySession` only draws on non-final events), so on stage 3 the ladder is
 just page 1 → page 2 → podium, with no reveal step in between at all.
 
