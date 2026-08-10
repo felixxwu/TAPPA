@@ -1066,7 +1066,10 @@ func _attach_prize_car_marker(pin: Node3D) -> void:
 		# convention), hence the half turn. Flip PRIZE_CAR_FACING_TURN if a future car model
 		# is authored the other way round.
 		yaw = atan2(to_hq.x, to_hq.y) + PRIZE_CAR_FACING_TURN
-	var car := CarProp.spawn(holder, _car_scene_res(), {
+	# The spawned node is not kept: everything downstream (the dim pass below, the cache in
+	# _prize_car_props, the detach before a rebuild) works through `holder`, the pin-local
+	# parent it is spawned under.
+	CarProp.spawn(holder, _car_scene_res(), {
 		"index": index,
 		"stop_physics": true,
 		"disable_process": true,
