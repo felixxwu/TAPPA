@@ -1887,88 +1887,10 @@ func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
 	return null
 
 
-# Two locked specials at DIFFERENT distances beyond the frontier, over one open ordinary
-# rally: "near" is the one the player is heading for, "far" sits further out. Both are dark
-# on a fresh profile, so the pair isolates "which locked special gets a teaser".
-# Distances, not rungs — reveal is geometric (features/map-exploration.md).
-func _install_special_ladder_roster() -> void:
-	_dark_map_radius()
-	var hq_pos: Vector2 = RallyLibrary.HQ_MAP_POS
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": hq_pos, "restriction": {}, "events": []},
-		{"id": "near", "name": "Near Special", "region": "home", "special": true,
-			"map_pos": hq_pos + Vector2(0.20, 0.0), "restriction": {}, "events": []},
-		{"id": "far", "name": "Far Special", "region": "home", "special": true,
-			"map_pos": hq_pos + Vector2(0.40, 0.0), "restriction": {}, "events": []},
-	])
-
-
-func test_hq_garage_always_shows_the_next_carrot() -> void:
-	# The map's locked-special teaser, promoted to a permanent line on the GARAGE — the
-	# station the player lands on after every rally. It names the special being worked
-	# toward, and (alongside) what winning that special gives.
-	_install_special_ladder_roster()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.GARAGE)
-	assert_true(hq._carrot_panel.visible, "the carrot line is up in the garage")
-	var line: String = hq._carrot_label.text
-	assert_string_contains(line, "NEAR SPECIAL", "it names the event to head for")
-	# The event it names is genuinely unreached — which is exactly why the garage has to
-	# carry this line at all. The map cannot: an unreached rally is not drawn on it.
-	assert_null(_pin_for(hq, "near"), "the event being teased is not on the map yet")
-	# Reaching and winning the near special moves the carrot outward to the next one dark.
-	_save.dev_three_star_rally("near")
-	hq._go_to(hq.View.GARAGE)
-	assert_string_contains(hq._carrot_label.text, "FAR SPECIAL",
-		"once the near one is won the line points at the next still dark")
-
-
-func test_hq_carrot_names_what_the_special_unlocks() -> void:
-	# The line's whole point is the REWARD, not just the destination: the count and the
-	# rally name are followed by what winning it gives. Wired to the same
-	# _special_unlock_line the map pin uses, so the two can't name different rewards.
-	# The engine-swap CAPABILITY is used here because it is authored on RallyLibrary
-	# itself (ENGINE_SWAP_UNLOCK_RALLY) rather than in the upgrade catalogue — so this
-	# stays a test of the wiring, not of any particular authored part.
-	# The special must be DARK for there to be a carrot at all, so this needs the real
-	# reveal radius rather than before_each's lit-everything default.
-	_dark_map_radius()
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
-		{"id": RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, "name": "Swap Special", "region": "home",
-			"special": true, "map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.4, 0.0),
-			"restriction": {}, "events": []},
-	])
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.GARAGE)
-	assert_string_contains(hq._carrot_label.text, "UNLOCKS ENGINE SWAPS",
-		"the carrot names the capability the special opens")
-
-
-func test_hq_carrot_hides_once_every_special_is_open() -> void:
-	# No rung left to work toward — the line goes away entirely rather than standing there
-	# with nothing to say. Its readout box hides with it, so no empty panel is left floating.
-	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
-	RallyLibrary.override_for_test([
-		{"id": "ord", "name": "Ordinary", "region": "home", "special": false,
-			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "open", "name": "Open Special", "region": "home", "special": true, "map_pos": Vector2(0.6, 0.5), "restriction": {},
-			"events": []},
-	])
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.GARAGE)
-	assert_false(hq._carrot_panel.visible, "nothing left to tease, so no line")
-	assert_eq(hq._carrot_label.text, "", "and no stale text behind the hidden panel")
+# The garage's next-carrot line (a readout naming the nearest locked special) is GONE, so
+# the three tests that guarded its text, its reward subtitle and its hide-when-nothing-left
+# behaviour went with it. What the garage station DOES carry is asserted by
+# test_hq_garage_is_a_left_right_cursor — the action row, and nothing else over the room.
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:

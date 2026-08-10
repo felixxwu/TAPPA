@@ -30,7 +30,7 @@ Each `RALLIES` entry:
   `gc_showdown` — each existed to gate one rung of the four-rung NOS ladder, and when
   that collapsed to a single part ([nitrous.md](nitrous.md)) they gated nothing. They are
   now **ordinary rallies**: a special that awards no part is a special by label only, and
-  would still have claimed the trophy marker, the garage carrot and a place in the
+  would still have claimed the trophy marker, the map's locked teaser and a place in the
   all-specials endgame while paying exactly what an ordinary rally pays. They remain long,
   hard, open-class star-payers, which is what they always were underneath.
 
@@ -442,24 +442,16 @@ generator also uses it per-rival.
   persisted ledger on the profile, not a roster sum (see
   [star-economy.md](star-economy.md)).
 - `is_special(rally)` — `bool(rally.get("special", false))`.
-- `completions_required(rally)` — the one accessor for "how many ordinary rallies
-  must be done first": `requires_completions` for a special, `reveal_after` for an
-  ordinary rally. Two authored field names for one mechanism because they read
-  differently to the player (a drip-feed vs. a quoted requirement); the UI reads
-  through this so a quoted requirement can't drift from the gate that enforces it.
-- `completions_needed(rally, profile)` — completions still outstanding, 0 once open;
-  drives the locked special pin's **"N/M rallies"** readout (it counts completed
-  *rallies* — an `event` is one stage inside a rally, so that is the accurate noun).
-- `next_locked_special_id(profile)` — the id of the lowest rung of the specials ladder
-  still shut ("" once all are open; roster order breaks a tie). The map teases **only**
-  this special: the ladder is strictly ordered, so a requirement further up is not yet
-  actionable, and every locked special above this one hangs no readout box at all — just
-  its trophy (see [menus.md](menus.md)). It is also what the HQ's permanent **next-carrot
-  line** names ("The Woodland Trial (unlocks engine swaps)",
-  `hq._carrot_line`) — the same rung, quoted on the garage station instead of on the map.
-- `engine_swap_completion_requirement()` — `completions_required` of
-  `ENGINE_SWAP_UNLOCK_RALLY`, the figure the garage swap row and the car-park
-  confirm popup quote (also worded "N rallies").
+- `nearest_locked_special_id(profile)` — the locked special with the smallest
+  `distance_beyond_frontier`, i.e. the one the player's lit map comes closest to reaching
+  ("" once every special is open). The map teases **only** this special; every other locked
+  special hangs no readout box at all, just its trophy (see [menus.md](menus.md)) — one the
+  player cannot work toward yet is not worth a menu. The map table is now the **only**
+  surface that names it: the garage's permanent next-carrot line quoted the same id and has
+  been deleted. It replaced `next_locked_special_id`, which walked an authored ladder;
+  `completions_required` / `completions_needed` /
+  `engine_swap_completion_requirement` went with that ladder — see
+  [map-exploration.md](map-exploration.md).
 - `engine_swaps_unlocked(profile)` — whether `ENGINE_SWAP_UNLOCK_RALLY`
   (`sp_woodland_trial`, the lowest rung) is recorded completed — the engine-swap *capability*
   gate (tokens themselves always drop; see `features/engine-swap.md`).
