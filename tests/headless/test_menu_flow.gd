@@ -1907,8 +1907,8 @@ func _install_special_ladder_roster() -> void:
 
 func test_hq_garage_always_shows_the_next_carrot() -> void:
 	# The map's locked-special teaser, promoted to a permanent line on the GARAGE — the
-	# station the player lands on after every rally. It names the DIRECTION to explore, the
-	# special out that way, and (below) what winning that special gives.
+	# station the player lands on after every rally. It names the special being worked
+	# toward, and (alongside) what winning that special gives.
 	_install_special_ladder_roster()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1916,9 +1916,7 @@ func test_hq_garage_always_shows_the_next_carrot() -> void:
 	hq._go_to(hq.View.GARAGE)
 	assert_true(hq._carrot_panel.visible, "the carrot line is up in the garage")
 	var line: String = hq._carrot_label.text
-	assert_string_contains(line, "EXPLORE TOWARD",
-		"it tells the player to explore, which is literally how the event opens now")
-	assert_string_contains(line, "NEAR SPECIAL", "and names the event to head for")
+	assert_string_contains(line, "NEAR SPECIAL", "it names the event to head for")
 	# The event it names is genuinely unreached — which is exactly why the garage has to
 	# carry this line at all. The map cannot: an unreached rally is not drawn on it.
 	assert_null(_pin_for(hq, "near"), "the event being teased is not on the map yet")
