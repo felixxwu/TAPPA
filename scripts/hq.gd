@@ -536,7 +536,11 @@ var _lift_selector_focus := 0   # which chevron the cursor sits on (0 = prev, 1 
 # gapped horizontal action row below it (see menu_page.gd). Only the box is held here,
 # because its visibility is what shows/hides the page; reach the page as its parent.
 var _lift_menu_bg: PanelContainer
-var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
+var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES" + the balance's digits)
+# The heading's row: the title label plus the drawn gold star that reads the balance's
+# digits as a star count. Held because VISIBILITY is toggled here, not on the label —
+# see _refresh_lift_ui.
+var _lift_menu_title_row: HBoxContainer
 # A sub-page's bottom ACTION ROW: "< Back" always, plus the TUNE page's own actions (see
 # HqOverlays.build_lift_overlay). It is a SIBLING of the body box rather than a child — that
 # is what makes the gap between body and actions read as a gap — so its visibility is gated
@@ -2694,7 +2698,9 @@ func _refresh_lift_ui() -> void:
 	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
 	# without scrolling); UPGRADES keeps its heading.
-	_lift_menu_title.visible = _lift_page != LiftPage.TUNE
+	# The ROW, not the label: the heading's star balance is a sibling StarRow, so hiding
+	# only the label would leave a lone star floating over the sliders.
+	_lift_menu_title_row.visible = _lift_page != LiftPage.TUNE
 	_refresh_lift_menu_title()
 	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
 	# on_change is a no-op: the HQ lift did not re-field the display car on a tune edit
@@ -2738,7 +2744,10 @@ func _on_lift_upgrade_changed() -> void:
 func _refresh_lift_menu_title() -> void:
 	if _lift_menu_title == null:
 		return
-	_lift_menu_title.text = "UPGRADES   %d★" % Save.stars_available()
+	# Digits only — the star is the drawn StarRow sibling in the heading row
+	# (HqOverlays.build_lift_overlay), exactly as the map meter does it, because a Label
+	# can't carry an icon the way the price BUTTONS do and Syne Mono has no ★ glyph.
+	_lift_menu_title.text = "UPGRADES   %d" % Save.stars_available()
 
 
 # The Dev settings page fits a part straight onto Save.selected_instance_id() with no
@@ -2923,10 +2932,16 @@ func _refresh_repair_button() -> void:
 	var id := Save.selected_instance_id()
 	if id < 0 or not Save.car_needs_repair(id):
 		_lift_repair_button.text = "Repair"
+		_lift_repair_button.icon = null   # nothing to pay, so no price star
 		_lift_repair_button.disabled = true
 		return
 	var price := Save.repair_price(id)
-	_lift_repair_button.text = "Repair (%d★)" % price
+	# Same DRAWN price star as the upgrade options (UpgradesMenu._option_button): the ★
+	# character this label used to carry has no glyph in Syne Mono and rendered as a tofu
+	# box in the web export, which has no system font to fall back on.
+	_lift_repair_button.text = "Repair %d" % price
+	_lift_repair_button.icon = StarRow.price_icon()
+	_lift_repair_button.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lift_repair_button.disabled = Save.stars_available() < price
 
 

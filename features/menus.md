@@ -1279,7 +1279,17 @@ throwaway test and still clip in the real game.
   can't answer — so a new player's turbo row reads "Stock | Small" and grows as specials
   are won. Greyed-but-visible is reserved for a part that is unlocked and merely **not yet
   fitted to THIS car**, which the player can act on. A part already fitted is kept whatever
-  its gate says, so a car never displays less than it is actually running. The **`nitrous` slot is deliberately skipped** when building
+  its gate says, so a car never displays less than it is actually running. Such a part is a
+  **BUY button** quoting its price as `Name N★` — and that star is **DRAWN**
+  (`StarRow.price_icon()` on the button's `icon`, `icon_alignment` RIGHT), never the `★`
+  CHARACTER: Syne Mono has no `★` glyph, so a `★` in a label only rendered at all because the
+  OS supplied a fallback font, and the **web export has no system fonts** — every price read
+  as a tofu box on mobile web. The page heading's balance does it the other way round (a
+  sibling `StarRow` beside digit-only text, since a Label carries no icon), as does the hub's
+  **Repair N★**; see [star-economy.md](star-economy.md) → "Where the player sees it" for both
+  shapes. Guarded by
+  `test_menu_flow.gd::test_hq_lift_text_only_uses_characters_the_bundled_font_can_draw`,
+  which sweeps the whole lift station for any character the bundled font cannot draw. The **`nitrous` slot is deliberately skipped** when building
   slot rows (`UpgradeLibrary.SLOTS` iteration) — it has no garage row at all, by design;
   see [nitrous.md](nitrous.md) for the mechanic and why it's installed pre-enabled instead. It also hosts the **engine-detune slider**
   (0–100%, step 5) at the **bottom** of the menu (below the slot rows and the engine-swap
@@ -1359,7 +1369,9 @@ terminal look on a flat menu — but on a black readout it is invisible. `_build
 clears it per-label rather than changing the theme, so the rest of the UI keeps the house look.
 
 the stars are drawn by **`StarRow`** (`scripts/star_row.gd`) as polygons, sidestepping
-the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav). The
+the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav) — a rule that
+holds for **every** star in the game, including the star PRICES on buttons, which take
+`StarRow.price_icon()` as their `icon` because a Button lays out no children. The
 flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
 `RallyFlag.accent_color`). **Pennant:** placed 3rd or better → a **black-and-grey
 checkered** racing flag; else **bright green** when the player owns a car eligible to
