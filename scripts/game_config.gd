@@ -923,8 +923,13 @@ func has_nitrous() -> bool:
 ## a perfectly vertical angle.)
 @export var hq_table_cam_eye := Vector3(-3.0, 2.6, 0.4)
 @export var hq_table_cam_look := Vector3(-3.0, 0.95, -0.3)
-## Map-table pan speed: world metres per screen pixel of drag.
-@export var hq_table_pan_speed := 0.012
+## Map-table drag gain. **1.0 means the map tracks the finger EXACTLY** — the drag delta is
+## measured by projecting the pointer onto the map plane (hq.gd `_map_drag_delta`), so there
+## is no metres-per-pixel constant to keep in step with the camera pose or the viewport size.
+## This is a deliberate multiplier on top of that, and anything other than 1.0 reintroduces
+## the bug it replaced: the map slides out from under the finger, so a pin you started the
+## drag beside is nowhere near it when you let go. Retune only with that in mind.
+@export_range(0.25, 4.0, 0.05) var hq_table_pan_gain := 1.0
 ## Map-table keyboard/gamepad glide speed: world metres/second the camera slides while
 ## a direction is held. Selection tracks whichever rally/arrow sits nearest the centre.
 @export var hq_table_pan_glide := 2.5

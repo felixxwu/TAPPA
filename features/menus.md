@@ -408,30 +408,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   car park's "Choose your car" line (see the present box below, the one mode that still shows
   that label).
 
-  **THE NEXT CARROT — the one permanent line up there.** Top-left, in a
-  `UITheme.readout_box()` panel (the same passive-readout idiom the tuning lift's stats
-  line uses, so it stays legible over a lit 3D room): **"THE WOODLAND TRIAL (UNLOCKS
-  ENGINE SWAPS)"** — the event's NAME and its reward, with no `EXPLORE TOWARD` prefix in
-  front (that instruction never varied, so it read as chrome and pushed the part that does
-  vary along the line). It is the map's locked-special teaser
-  (`hq._build_special_teaser_label`) **promoted out of the map table** — on the map the
-  same fact is a box hanging over one grey trophy among a dozen pins, so the
-  player only meets it if they fly to the table *and* look at the right corner; the garage
-  is the station they land on after every rally and start every trip from, so a permanent
-  line there is the cheapest retention lever available. Not prose about the room (see
-  above) — live progression state that exists nowhere else in the hub.
-  `hq._carrot_line` builds the text and `hq._refresh_carrot_line` writes it from
-  `_update_overlays` (before `_normalize_menus`, since it is dynamic text that still needs
-  the house uppercase), so every path that redraws a station — a finished rally, a cloud
-  profile swap, a car bought — repaints it with no hook of its own. It reads exactly the
-  same `RallyLibrary.nearest_locked_special_id` the pin teaser does and
-  the same `hq._special_unlock_line`, so the carrot and the pin can never name a different
-  event or a different reward. **Hidden outright — panel and all — once every
-  special is open** (`nearest_locked_special_id` returns `""`): there is no next rung to work
-  toward, and the empty readout box would be chrome. Guarded by
-  `test_menu_flow.gd::test_hq_garage_always_shows_the_next_carrot`,
-  `::test_hq_carrot_names_what_the_special_unlocks` and
-  `::test_hq_carrot_hides_once_every_special_is_open`.
+  **NOTHING ELSE stands over the room** — the action row is the whole overlay.
+  *There used to be one more line:* the **next carrot**, a top-left `UITheme.readout_box()`
+  naming the nearest locked special, built in `build_garage_overlay` and written by
+  `hq._carrot_line` / `hq._refresh_carrot_line` (both **deleted**, along with
+  `_carrot_panel` / `_carrot_label` and their three `test_menu_flow.gd` guards). It began as
+  a progress quote — "2 MORE RALLIES → THE WOODLAND TRIAL" — which was the part that earned
+  it: a live number that existed nowhere else in the hub. Exploration replaced the tally
+  with a *position* on the map, leaving no number to quote; and because a part-unlock
+  special is titled after its own reward, `hq._special_unlock_line` returns `""` for exactly
+  those, so the line ended up a bare rally name ("UPGRADE: SUPERCHARGER") standing over the
+  garage with nothing saying what it was or why it was there. The **map table still teases
+  the same special** (`hq._build_special_teaser_label`, see the TABLE section) — on the map
+  the name sits on the ground the player has to light to reach it, which is the context the
+  garage line could not carry.
 
   *This row used to be TWO levels:* a **Drive** button swapped it for
   Back / Career / Free Roam / Online, with its own Back going up a level and its own
@@ -1434,10 +1424,9 @@ teasers at once buried the map under unreachable menus. It is **hoisted out of t
 loop** in `_refresh_map_pins` and passed in per pin — the answer is the same for every pin
 and the query walks every special through `distance_beyond_frontier` (which rebuilds
 `lit_sources`), so asking it per pin was ~32× the work for one answer.
-**The same event is named permanently in the GARAGE** as the next-carrot line
-(`hq._carrot_line`, see the GARAGE section above) — the map teaser is where the fact is
-*placed on the world*, the garage line is where it is *always in front of the player*.
-Both derive from `nearest_locked_special_id` / `_special_unlock_line`, so they cannot drift.
+**This is the ONLY place that event is named.** The garage used to carry it too, as a
+permanent next-carrot line; that line is gone (see the GARAGE section above) — off the map
+the name has no context to stand in, while here it is placed on the world.
 An unlocked special's pin names its unlock too. A meter sits at the **bottom centre** of
 the HUD (`build_table_overlay`) — a drawn gold star (a one-star `StarRow`, since Syne Mono
 has no ★) beside the **digits alone**: `hq._refresh_meter` writes `"%d"` and the glyph
@@ -1496,7 +1485,19 @@ built **twice** at boot (`_build_hq` → `_refresh_map_pins`, then `_enter_table
 
 **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
-plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
+plane, clamped to the map extents. **The map tracks the pointer 1:1** — the drag delta is
+measured by raycasting the pointer's before/after screen positions onto the map plane
+(`_map_drag_delta` / `_map_point_at`) and moving the camera by the difference, so the map
+point you grabbed stays under your finger. It used to be pixels × a fixed metres-per-pixel
+constant (`hq_table_pan_speed`), which was only ever right for one camera height / FOV /
+viewport height and for the shipped ones ran **~2.1× too fast across and ~1.9× down** (the
+table camera is tilted, so one constant can't even be right on both axes at once): the map
+raced ahead of the finger, so a pin you started a drag beside had slid well away by the
+time you let go.
+Projection is exact for free and survives re-posing the table camera or adding a zoom.
+`hq_table_pan_gain` remains as a multiplier on top, and 1.0 (exact tracking) is the only
+value that doesn't reintroduce the old feel. Guarded by
+`test_hq_dragging_the_map_keeps_the_grabbed_point_under_the_pointer`. Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
 opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
