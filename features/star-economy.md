@@ -1,7 +1,9 @@
 # Star Economy
 
 Stars are the game's single currency. You **earn** them by placing well in rallies and
-**spend** them on cars at the HQ present box. Design: `todo/star-economy.md`.
+**spend** them on car repairs and on upgrade parts, from the upgrades menu's own slot
+rows. Cars are **not** bought — they are won at the rally that advertises them (see
+[prize-rallies.md](prize-rallies.md)). Design: `todo/star-economy.md`.
 
 Before this, stars were a *score*: a number derived from the roster that gated the
 special-event ladder, and cars were handed out free for every top-3 finish. Both halves
@@ -74,9 +76,12 @@ particular special** (`UpgradeDef.unlocked_by_rally`, see
 ## Spending: repairs and part copies
 
 **Cars are not bought.** A car is won at the rally that advertises it — see
-[prize-rallies.md](prize-rallies.md). The present box, `RewardSystem.purchase_car`,
-`car_price`, `is_stranded`, the stranded-and-broke free-car rescue and
-`GameConfig.star_cost_per_car` are all **deleted**. What replaced the dead-end rescue is a
+[prize-rallies.md](prize-rallies.md). `RewardSystem.purchase_car`, `car_price`, the
+stranded-and-broke price-0 rescue and `GameConfig.star_cost_per_car` are all **deleted**.
+Two things outlived the purchase flow: `RewardSystem.is_stranded` (no longer a pricing
+input — it now only arms the anti-soft-lock rally unlock in `_unlock_candidates`), and the
+present-box PROP, re-purposed as the free prize-car reveal (see "Where the player sees it"
+below). What replaced the dead-end rescue is a
 CONTENT invariant proven over the map (every rally reachable, every starter able to enter
 something from a fresh profile — see [map-exploration.md](map-exploration.md)), rather than
 a runtime discount.
@@ -145,31 +150,34 @@ of being one weight among others.
   both figures as `star_rating` and `stars_gained`.
 - **The HQ map meter** — bottom centre of the table HUD: a drawn star plus the digits of
   `Save.stars_available()`, the spendable balance, again with no denominator.
-- **The present box** — a procedural gift-box prop (`scripts/present_box.gd`,
-  `class_name PresentBox`, `build()` / `build_openable(scale)`) standing on the world
-  map as its one non-rally target, with the price/`FREE` readout above it. Tap and the
-  keyboard/gamepad cursor both funnel through `hq_table.activate_present_box()`, which goes
-  **straight to the box** — no confirm dialog first. The bottom button of the ordinary
-  car-park chrome is the till (it quotes the price and disables when the balance is short);
-  pressing it buys the car, **spawns it inside the still-closed box**, then opens the box on
-  it (lid up, four walls falling on a gravity curve) and names it in the label **under the
-  car** — no result modal. See [menus.md](menus.md) for the full flow, the map-target
-  wiring and the nav path.
+- **The upgrades menu's slot rows** — `Name (N★)` on any discovered part not yet on this
+  car, disabled when the balance is short (the price is information the player can act on
+  even when they cannot pay it). See "Part copies" above.
+- **The tuning lift's hub row** — the per-car Repair button, stating its price. See
+  "Repair" above.
+
+**Not a star sink: the present box.** `scripts/present_box.gd` (`class_name PresentBox`,
+`build()` / `build_openable(...)`) survives, but purely as the **prize-car reveal** for a
+car the player has ALREADY won — `hq._enter_present_box(instance_id)`, armed off
+`RallySession.pending_car_reveal_instance_id`. Its bottom button reads Open and is never
+disabled, because "the box is a presentation, not a transaction": backing out cannot cost
+the player the car, and no balance is ever consulted. See
+[prize-rallies.md](prize-rallies.md).
 
 ## Tests
 
 `tests/headless/test_save_manager.gd` — the ledger (an empty fresh ledger,
 `award_stars` for non-rally sources, the `complete_rally` delta, a refused overdraft,
 and the whole thing surviving a save/reload).
-`tests/headless/test_reward_system.gd` — `is_stranded` (including the wrecked-car
-exclusion), pricing, the debit-and-grant, and the rescue firing only when stranded AND
-broke. `tests/headless/test_rally_library.gd` — the star curve's shape and the
+`tests/headless/test_reward_system.gd` — the consumables-only draw.
+`tests/headless/test_rally_library.gd` — the star curve's shape and the
 completion gate. `tests/headless/test_rally_session.gd` — `star_rating` /
 `stars_gained` on the result. `tests/headless/test_menu_flow.gd` — the HQ/purchase
 flow. `tests/headless/test_sim_career.gd` — the career simulator over the real
 predicates.
 
-Per `CLAUDE.md` the authored numbers are NOT test-pinned: `star_cost_per_car`,
-`MAX_STARS_PER_RALLY` and the `requires_completions` rungs are all tunable content, so
-tests assert the logic (a debit moves the balance by the price; the rescue needs both
-conditions) and never the chosen values.
+Per `CLAUDE.md` the authored numbers are NOT test-pinned: `star_cost_per_part`,
+`star_cost_per_repair`, `MAX_STARS_PER_RALLY` and the `requires_completions` rungs are all
+tunable content, so tests assert the logic (a debit moves the balance by the price; a
+purchase needs the part discovered and its prerequisite fitted) and never the chosen
+values.
