@@ -186,17 +186,73 @@ This lines the solver up with `UpgradeLibrary._best_part_per_slot`, which alread
 skips every candidate whose `mass_mult > 1.0` on the same reasoning — ballast is
 `free` and always removable, so it can never be part of a ceiling.
 
-**Auto does still REMOVE ballast the player left on**, in both modes: it is almost
+**Auto does still REMOVE ballast the player left on**, in every mode: it is almost
 always either a mistake (it reads as a free upgrade — §1) or a stale leftover from
 a lower class, and stripping it is free and reversible. Ballast stays fully
 available by hand on the Advanced page, which is where a deliberate p/w lever
 belongs.
+
+Stripping raises p/w, so it can break a `pw_max` that the ballast was satisfying.
+That is not a reason to keep it: **strip the ballast and let step 2 detune back
+under the cap instead.** Same final p/w, strictly more grip, per the table above.
 
 The one thing that could revive step 3 is a **detune floor** — a rule that Auto
 won't cut torque below, say, 50%, on the grounds that a car needing a deeper cut
 than that is undriveable and ballast at least preserves throttle response. **Not
 specified, and not recommended:** at that extreme the honest message is the one
 below — wrong car for this class — not a quietly worse build.
+
+### Free-only restore — the Start gate
+
+A third mode of the same solver, for the case where a player enters a rally
+**without using the upgrades they already own** — the motivating example being a
+detune left down from a previous rally that they forgot to bring back up.
+
+**Permitted actions (all free, no star spend):**
+
+- enable an owned-but-disabled part (`Save.set_upgrade_enabled`)
+- raise detune back toward 100%
+- strip ballast, compensating with detune if that breaks the cap (see above)
+
+**Forbidden:** buying anything. This must be an explicit `free_only` flag on the
+solver, **not** a `stars = 0` call — `GameConfig.star_cost_per_part` is
+`@export_range(0, 30)`, so a designer setting it to 0 would silently turn a
+"free-only" restore into a shopping spree.
+
+**It only ever moves power UP** (or sideways, trading ballast for detune at equal
+p/w), never down, and never above the rally's `pw_max`. Making an *over*-limit car
+legal stays the existing "Too powerful" prompt's job — that gate is a deliberate
+decision point, and this one must not quietly bypass it. Under-utilisation and
+over-power are separate problems with separate gates.
+
+**Predicate: the free plan differs from the current build.** Not a p/w comparison
+— that would miss the ballast-for-detune swap, which lands identical p/w with
+measurably more grip (§4's table). "The plan is a no-op" is the simpler and
+strictly more complete test.
+
+**It fires automatically, and this has precedent.** `hq._on_start_pressed` already
+auto-applies a free qualifying fix on Start — the `_drivetrain_needed` switch,
+applied before the detune math and before the over-limit check. The free restore
+slots in as a sibling rung, running first so the over-limit check judges the final
+build.
+
+**But it must be announced.** The drivetrain switch can be silent because it is
+temporary; this one is **permanent**, so the player is told in one line, in outcome
+words ("Restored full power — 227 HP/T"). No extra press: the two-press rule in §3b
+exists to guard an irreversible *star spend*, and this spends nothing.
+
+Permanent rather than reverted, unlike the drivetrain switch, because the two are
+undoing different things. A drivetrain override is a deliberate identity choice
+that belongs to the car, so a rally-specific switch is reverted to leave it intact
+(`RallySession.register_drivetrain_revert` → `_reset_to_idle`). A detune left down
+from a previous event is *stale state*: reverting it would leave the tuning lift
+showing a permanently detuned car while races quietly ran at full power, which is a
+worse confusion than the one being fixed.
+
+> If you'd rather it were temporary, the machinery is already built and tested but
+> dormant: `RallySession.register_detune_revert` has no caller today (documented as
+> such in `features/engine-swap.md`, exercised by `test_rally_session.gd`). Wiring
+> it would be a few lines.
 
 ### What Auto must not pretend to fix
 
@@ -271,18 +327,47 @@ there.
 `UpgradesSimple.can_close()` must delegate to the same p/w check, or a player
 could escape the start-line cap through the Simple page.
 
+### The Start-gate hook (free restore)
+
+The free restore needs a rung in **three** start paths:
+
+- `hq._on_start_pressed` — the career path, inserted **before** the
+  `_detune_needed` over-limit check, next to the existing `_drivetrain_needed`
+  auto-switch it mirrors
+- the same function's `CarparkMode.CHALLENGE` branch, which has its own
+  over-limit gate (the Rally Challenge's synthetic `pw_max` comes from
+  `world.gd::_build_start_line`)
+- `start_line.gd`'s Start button (`_start_button`, `_pw_limit()`)
+
+`todo/backlog.md` already flags the detune-to-enter flow as duplicated across
+`hq.gd` and `start_line.gd`, deliberately un-consolidated because the two flows
+differ materially. **Do not widen that duplication:** the predicate and the plan
+both live in the pure solver, so each host contributes only a call plus its own
+notice. Three call sites of one function is fine; three copies of the rule is not.
+
+The same plan should also surface on the Simple page as a `Restore (0★)`
+affordance, for a player who visits the lift before racing.
+
 ## 7. Sequencing
 
 Front-loads the value, so a slip still ships something useful:
 
 1. **Pure solver in `UpgradeLibrary`** — `auto_build_plan(owned_car, meta,
-   profile, stars, pw_limit) -> {buy, enable, strip, detune, cost}`. No scene,
-   no UI, pure over its inputs like `max_potential_meta` already is. Cheap
-   headless tests.
-2. **Wire it to a single Auto-Upgrade button on the existing page.** Shippable
-   alone — it is most of the newcomer benefit for a fraction of the UI work.
-3. **Then** the Simple stat block, the aero-aware `max_lateral_g`, and the
+   profile, stars, pw_limit, free_only := false) -> {buy, enable, strip, detune,
+   cost}`. No scene, no UI, pure over its inputs like `max_potential_meta`
+   already is. Cheap headless tests.
+2. **The free restore at the Start gate** (§4 → "Free-only restore"). Same
+   solver with `free_only = true`, three call sites, no new UI beyond a one-line
+   notice. Independently valuable — it fixes the forgot-to-restore-the-detune
+   trap on its own, for players who never open the upgrades page at all.
+3. **Wire the solver to a single Auto-Upgrade button on the existing page.**
+   Shippable alone — most of the newcomer benefit for a fraction of the UI work.
+4. **Then** the Simple stat block, the aero-aware `max_lateral_g`, and the
    Advanced toggle.
+
+Steps 1–2 are worth doing first regardless of whether the Simple page ever lands:
+they need no new UI surface and they close the specific trap that prompted this
+addition.
 
 ## 8. Tests
 
@@ -310,9 +395,30 @@ Solver (`tests/headless/`, bare logic, no scene):
   for the existing car-select caller); a positive speed returns a *higher* figure
   when downforce is non-zero, and an unchanged one when it is zero
 
+Free-only mode (§4 → "Free-only restore"):
+
+- `free_only` buys **nothing**, and specifically buys nothing when
+  `star_cost_per_part` is 0 (the flag is not a budget check)
+- a detune left below 1.0 is raised back — to 1.0 with no limit, or to
+  `qualifying_detune` under one, never above the cap
+- an owned-but-disabled part gets enabled when doing so stays legal
+- it **never reduces** p/w below the player's current setting: an over-limit car
+  yields a no-op plan, leaving the existing "Too powerful" prompt to handle it
+- the predicate is plan-difference, not p/w difference — a car whose only
+  available improvement is swapping ballast for detune (identical p/w, more grip)
+  is still reported as improvable
+- a fully-utilised car yields a no-op plan, so the gate stays quiet
+
 Menu (`test_menu_flow.gd`): Simple page mounts in all four hosts; **Advanced round
 trips** back to Simple; `can_close()` is still refused while over a `pw_limit`;
 Auto-Upgrade needs **two** presses to spend (one press changes no balance).
+
+Start gate (`test_menu_flow.gd`, and `test_rally_session.gd` for the persistence
+half): pressing Start on a car with a stale detune **restores it and launches** in
+one press; the restore **persists** after the rally ends (it is not registered for
+revert, unlike the drivetrain switch); Start on a fully-utilised car launches with
+no notice and no edit; Start on an over-limit car still reaches the "Too powerful"
+prompt rather than being silently detuned into legality.
 
 **Nav (mandatory, `CLAUDE.md`):** the Simple page is keyboard + gamepad navigable
 via `MenuNav.attach`, with a nav test. This should be *easier* than today's page —
@@ -330,6 +436,10 @@ the current rows are wrapping `HFlowContainer`s with 4+ buttons, and
   does *strip* it; it stays available by hand on Advanced. Rationale and the grip
   numbers in §4 → "Auto never fits ballast".
 - **Auto requires a second press** to spend stars.
+- **A free-only restore runs automatically at the Start gate** when the player is
+  not using upgrades they already own (the forgotten detune). Announced, one press,
+  permanent, never spends stars, never moves power down, never above `pw_max` —
+  §4 → "Free-only restore".
 - **Grip shows aero's contribution** at a stated 50 km/h.
 - **The Tuning page is left alone** — neutral is already a safe default, so it is
   not a trap in the way ballast and detune are.
