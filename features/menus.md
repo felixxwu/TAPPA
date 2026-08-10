@@ -1341,28 +1341,17 @@ gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` pan
 (Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
 on a `Sprite3D`, so text and stars live in **one box** that always faces the camera;
 
-**A special event's readout is INVERTED — light-brown face, black ink** (`ACCENT_READOUT_BG` /
-`ACCENT_READOUT_INK` in `hq.gd`, applied via `_build_readout_sprite`'s `accent` flag, which
-`_build_pin_label` sets from `RallyLibrary.is_special` and `_build_special_teaser_label`
-sets unconditionally). It is the **one deliberate exception to design-system house rule 4**
-(menu backgrounds are PURE BLACK — see `UITheme`), so a special jumps out of a map of
-otherwise-identical black panels. Two non-obvious consequences, both handled:
-- The medal row inverts with it. `StarRow`'s defaults are GOLD / MUTED, which are for a
-  black surface — gold on the light face barely reads at pin scale and MUTED's 55%-alpha olive
-  disappears — so the accent path sets `StarRow.earned_color` / `unearned_color` black
-  where the row is built. (It cannot be reached afterwards with `find_children`, whose type
-  filter matches engine classes, not script `class_name`s.)
-- `UITheme.mark_panel_focused` replaces the panel's WHOLE stylebox on every focus repaint,
-  which happens on each selection change, so an accent panel stashes its fill in an
-  `accent_bg` meta and that function honours it — otherwise a special reverted to the
-  default face the moment the cursor moved. Selection still reads via the green underline.
-  Guarded by `test_menu_flow.gd::test_special_event_pins_wear_the_inverted_readout`.
+**EVERY readout wears the same pure-black panel** — house rule 4 with no exception. A
+special event's box used to be INVERTED (a light-brown face via the retired
+`ACCENT_READOUT_BG` / `ACCENT_READOUT_INK` and `_build_readout_sprite`'s `accent` flag);
+that is gone, because the 3D markers now carry the "this one is different" job (a car
+model, a trophy, or a flag) and a panel colour saying it on top of a marker that already
+says so was the same emphasis twice.
 
 **No drop shadow on a floating readout.** The global theme gives every `Label` a hard black
 shadow (`tools/build_ui_theme.gd` → `font_shadow_color` + `shadow_offset_*`), which is the
-terminal look on a flat menu — but on a black readout it is invisible, and on the white
-accent face it reads as grubby fringing. `_build_readout_sprite` clears it per-label rather
-than changing the theme, so the rest of the UI keeps the house look.
+terminal look on a flat menu — but on a black readout it is invisible. `_build_readout_sprite`
+clears it per-label rather than changing the theme, so the rest of the UI keeps the house look.
 
 the stars are drawn by **`StarRow`** (`scripts/star_row.gd`) as polygons, sidestepping
 the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav). The
@@ -1389,50 +1378,49 @@ the same height as a flag pole (`RallyTrophy.HEIGHT` ≈ `RallyFlag.POLE_HEIGHT`
 `_make_pin` hangs the readout box off whichever marker it built and specials never look
 diminished beside ordinary rallies.
 
-**The readout box is all-or-nothing — except one documented exception.** A rally
-that isn't available yet — locked, or with no eligible car — gets **no box at
-all** (it used to get a dimmed one): a menu is either live at full opacity or
-absent. The **3D marker still stands at every pin** regardless, so the map keeps
-marking where the unavailable rallies are, greyed. An available pin therefore
-carries **two** pickable `Area3D` hit spheres bound to the same handler
-(`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the
+**The readout box is HOVER-ONLY, on every pin.** One rule for all of them, whatever they
+stand and whatever state they are in: `_make_pin` always builds the box, always starts it
+`visible = false`, and the focus pass shows it only while the cursor is on that pin — which
+is what keeps the table a map rather than a noticeboard (a dozen open boxes at once read as
+a wall of menus). A rally that isn't enterable — out in the fog, or reachable with nothing
+in the garage that fits — keeps its box but renders it faded (`FOGGED_PIN_DIM_ALPHA`), so a
+pin the player can't enter yet still *answers* when they point at it. The **3D marker stands
+at every pin** regardless, so the map always marks where the unavailable rallies are.
+An available pin carries **two** pickable `Area3D` hit spheres bound to the same handler
+(`_add_pick_sphere`, rally id bound) — one over the flag/pole and one over the
 floating **readout box itself**, so a click on the menu enters the rally just like a
 click on the flag — while an unlocked-but-ineligible pin has only the flag sphere (no
-box to click) and no `label_panel` meta for the focus cursor to paint. Each pin also
+live box to click). Each pin also
 carries its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
-whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`) — ONE predicate
-over ONE count for every rally: `RallyLibrary.completions_required` reads a
-special's **`requires_completions`** and an ordinary rally's **`reveal_after`**,
-both compared against the GLOBAL count of completed ordinary rallies
-(`RallyLibrary._completed_count`). So a special opens after N rallies won, and an
-ordinary rally reveals in waves (~1–2 fresh rallies at a time rather than all at
-once). Specials used to gate on the player's roster-wide STAR TOTAL; stars became a
-spendable balance, and a gate reading a balance would take back a special the moment
-the player bought a car — see [star-economy.md](star-economy.md).
-**The one exception to all-or-nothing:** the **NEXT** locked
-special renders a **full-opacity, non-pickable** teaser box
-(`hq._build_special_teaser_label`, via `hq._make_pin`) reading **"0/2 rallies"** over
-"unlocks &lt;Part&gt;" (`hq._special_unlock_line`, derived from the upgrade
-catalogue's `UpgradeLibrary.unlocked_by_rally` — falling back to "unlocks engine
-swaps" for `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`) — the grey trophy below already
-carries the "not yet" signal, so the teaser doesn't need dimming to read as
-locked. **"Rallies", not "events":** the gate counts completed RALLIES, while an
-*event* is one stage inside a rally (`rally["events"]`) — the engine-swap lock
-copy quotes the same requirement the same way (`hq._show_swap_confirm`,
-`UpgradesMenu._swap_locked_hint`).
-**ONLY the next rung is teased** — `RallyLibrary.next_locked_special_id` picks the
-lowest `requires_completions` still shut (roster order breaks a tie), and every
-locked special above it hangs **no box at all**, just its trophy. The ladder is
-strictly ordered, so a requirement further up is not something the player can work
-on yet, and eight teasers at once buried the map under unreachable menus; on a
-fresh profile exactly one special quotes a number. Guarded by
-`test_menu_flow.gd::test_hq_only_the_next_locked_special_is_teased` and
-`::test_hq_locked_special_shows_a_full_opacity_teaser_box`.
-**The same rung is quoted permanently in the GARAGE** as the next-carrot line
+whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`). Reveal is
+**purely geometric** now — `rally_revealed` → `position_revealed` asks whether the
+rally's `map_pos` falls inside any of `RallyLibrary.lit_sources`, the circles grown
+around what the player has already completed. There is **no star gate and no
+`reveal_after`/`requires_completions` count** any more (the old wave counters, and
+before them the roster-wide STAR TOTAL, are both gone — stars became a spendable
+balance, see [star-economy.md](star-economy.md)). The fog mask on the map plane
+shades with the SAME predicate, so what looks lit and what can be entered cannot
+drift — see [map-exploration.md](map-exploration.md).
+**The next locked special still gets a teaser box:** it renders a **full-opacity,
+non-pickable** teaser (`hq._build_special_teaser_label`, via `hq._make_pin`) naming the
+event over an unlock line (`hq._special_unlock_line` — "unlocks engine swaps" for
+`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`, and **empty** where the rally's own name already
+carries its reward, i.e. anything in `UpgradeLibrary.unlocked_by`). No count is quoted:
+with reveal geometric there is no counter to quote, so the line names a *destination*
+rather than a requirement. The grey trophy below already carries the "not yet" signal, so
+the teaser doesn't need dimming to read as locked.
+**ONLY the nearest one is teased** — `RallyLibrary.nearest_locked_special_id` (which
+replaced `next_locked_special_id`) picks the locked special with the smallest
+`distance_beyond_frontier`, and every other locked special hangs **no box at all**, just
+its trophy: a special further out isn't something the player can work on yet, and eight
+teasers at once buried the map under unreachable menus. It is **hoisted out of the pin
+loop** in `_refresh_map_pins` and passed in per pin — the answer is the same for every pin
+and the query walks every special through `distance_beyond_frontier` (which rebuilds
+`lit_sources`), so asking it per pin was ~32× the work for one answer.
+**The same event is named permanently in the GARAGE** as the next-carrot line
 (`hq._carrot_line`, see the GARAGE section above) — the map teaser is where the fact is
 *placed on the world*, the garage line is where it is *always in front of the player*.
-Both derive from `next_locked_special_id` / `completions_needed` / `_special_unlock_line`,
-so they cannot drift.
+Both derive from `nearest_locked_special_id` / `_special_unlock_line`, so they cannot drift.
 An unlocked special's pin names its unlock too. A meter sits at the **bottom centre** of
 the HUD (`build_table_overlay`) — a drawn gold star (a one-star `StarRow`, since Syne Mono
 has no ★) beside the **digits alone**: `hq._refresh_meter` writes `"%d"` and the glyph
@@ -1445,6 +1433,50 @@ maximum. It shows the **spendable balance**
 matters is what the player can take to the present box, and there is no meaningful
 maximum to divide by (the balance falls on a purchase and the Rally Challenge tops it
 up without bound).
+### What a map-table entry actually costs
+
+Where the hitch on "tap the table" comes from. Measured headless (32-rally roster, fast
+x86, **no GPU work included** — treat these as a CPU floor, not the device cost):
+
+| step | cost | notes |
+|---|---|---|
+| `_refresh_map_pins()` (whole) | **~20 ms** | frees all 32 pins and rebuilds them |
+| ↳ 32 × `_make_pin` | ~8.4 ms | flag/trophy meshes + one readout `SubViewport` each |
+| ↳ `_apply_map_fog` / `_build_fog_mask` | ~0.8 ms | 64² `Image` loop — cheap, not the problem |
+| ↳ `_build_reveal_links` | ~0.9 ms | |
+| ↳ 32 × `_has_eligible_car` | ~0.0 ms | |
+| `nearest_locked_special_id` | ~0.2 ms | already hoisted out of the pin loop |
+| `_enter_table()` (whole) | **~42 ms** | the refresh above, plus focus/pan setup |
+
+Three structural facts behind that, all worth knowing before "warming the table" is
+proposed as a fix:
+
+1. **The table is ALREADY warm when HQ boots.** `_build_hq` calls `_refresh_map_pins()`
+   unconditionally — behind the `LoadingScreen` cover — so the map texture, the fog shader,
+   the wood grain (`MapTable._wood_tex`, a `static var`, generated once per *process*) and
+   the cached prize-car props (`_prize_car_props`) are all live before the player sees HQ.
+   There is no cold cache left to pre-warm.
+2. **`_enter_table()` throws that away and rebuilds it.** `_refresh_map_pins(pending)` runs
+   again on every single table entry, because it is the hook the reveal parade needs
+   (`hold_locked`) and where fresh stars land. So the ~20 ms above is paid *uncovered*, in
+   the frame the camera starts its glide to the table — and again **once per revealed
+   rally** during the parade.
+3. **32 readout `SubViewport`s run at `UPDATE_ALWAYS`** (`_build_readout_sprite`), each
+   `PIN_LABEL_PX` = 400×150. They exist from HQ boot, and they re-render every frame even
+   though every sprite starts `visible = false` and the player may be standing in the
+   garage or on the title shot. That is ~1.9 MP/frame of offscreen UI redraw as a standing
+   cost, plus 32 render targets reallocated on each rebuild.
+
+**Podium → map table is the worst case for a fourth reason:** the podium's Continue boots a
+FRESH HQ, and `_ready` only awaits `lineup_built` when `_view == View.EXTERIOR`. A podium
+return opens on the GARAGE (or, after the opening rally, straight on the TABLE), so the
+cover lifts and `_carpark_ui._prewarm_free_roam_deferred()` then instantiates one
+`car.tscn` **per catalogue car, one per frame** (9 cars today) *while the player is already
+interacting* — the prewarm was measured at ~3× the rest of HQ boot. Tapping the table lands
+its pin rebuild on top of those heavy frames. On the `return_to_map` path the pins are also
+built **twice** at boot (`_build_hq` → `_refresh_map_pins`, then `_enter_table` →
+`_refresh_map_pins` again).
+
 **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
