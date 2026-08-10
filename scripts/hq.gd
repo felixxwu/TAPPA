@@ -1353,7 +1353,7 @@ func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 
 # --- The next carrot ---------------------------------------------------------
 # The one progression line the HQ always carries: what the player is working toward, and
-# what winning it gives them. "2 more rallies → The Woodland Trial (unlocks engine swaps)".
+# what winning it gives them. "The Woodland Trial (unlocks engine swaps)".
 #
 # It is the map's locked-special teaser (_build_special_teaser_label) promoted to the
 # GARAGE — the station the player lands on after every rally and starts every trip from.
@@ -1363,9 +1363,11 @@ func _build_special_teaser_label(rally: Dictionary) -> Sprite3D:
 # RallyLibrary.nearest_locked_special_id and from the SAME _special_unlock_line, so the
 # carrot and the pin can never name different events or different rewards.
 #
-# It says "EXPLORE TOWARD X" rather than "N more rallies" because that is now literally the
-# instruction: the event opens when the player lights the map out to it, and no count of
-# rallies-anywhere will do it. Direction, not a tally.
+# It NAMES the event rather than quoting "N more rallies", because there is no tally to
+# quote any more: the event opens when the player lights the map out to it, and no count of
+# rallies-anywhere will do it. The name alone, with no "EXPLORE TOWARD" prefix in front of
+# it — the instruction was the same on every profile at every moment, so it read as chrome
+# and pushed the one fact that does change (which event, and what it gives) along the line.
 #
 # EMPTY once every special is revealed ("" — the caller hides the line): there is nothing
 # left to work toward, and a line that says so would be chrome.
@@ -1376,7 +1378,7 @@ func _carrot_line() -> String:
 	var rally := RallyLibrary.by_id(rally_id)
 	if rally.is_empty():
 		return ""
-	var line := "EXPLORE TOWARD %s" % String(rally.get("name", rally_id))
+	var line := String(rally.get("name", rally_id))
 	var unlock := _special_unlock_line(rally)
 	if unlock != "":
 		line += " (%s)" % unlock

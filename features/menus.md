@@ -410,10 +410,12 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 
   **THE NEXT CARROT — the one permanent line up there.** Top-left, in a
   `UITheme.readout_box()` panel (the same passive-readout idiom the tuning lift's stats
-  line uses, so it stays legible over a lit 3D room): **"2 MORE RALLIES → THE WOODLAND
-  TRIAL (UNLOCKS ENGINE SWAPS)"**. It is the map's locked-special teaser
+  line uses, so it stays legible over a lit 3D room): **"THE WOODLAND TRIAL (UNLOCKS
+  ENGINE SWAPS)"** — the event's NAME and its reward, with no `EXPLORE TOWARD` prefix in
+  front (that instruction never varied, so it read as chrome and pushed the part that does
+  vary along the line). It is the map's locked-special teaser
   (`hq._build_special_teaser_label`) **promoted out of the map table** — on the map the
-  same fact is a "0/2 rallies" box hanging over one grey trophy among a dozen pins, so the
+  same fact is a box hanging over one grey trophy among a dozen pins, so the
   player only meets it if they fly to the table *and* look at the right corner; the garage
   is the station they land on after every rally and start every trip from, so a permanent
   line there is the cheapest retention lever available. Not prose about the room (see
@@ -422,12 +424,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `_update_overlays` (before `_normalize_menus`, since it is dynamic text that still needs
   the house uppercase), so every path that redraws a station — a finished rally, a cloud
   profile swap, a car bought — repaints it with no hook of its own. It reads exactly the
-  same `RallyLibrary.next_locked_special_id` / `completions_needed` the pin teaser does and
-  the same `hq._special_unlock_line`, so the carrot and the pin can never quote different
-  numbers or name different rewards. "N more **rallies**", not events, for the reason the
-  teaser says it too (the gate counts completed rallies; an event is one stage inside one),
-  pluralised through `UITheme.count_noun`. **Hidden outright — panel and all — once every
-  special is open** (`next_locked_special_id` returns `""`): there is no next rung to work
+  same `RallyLibrary.nearest_locked_special_id` the pin teaser does and
+  the same `hq._special_unlock_line`, so the carrot and the pin can never name a different
+  event or a different reward. **Hidden outright — panel and all — once every
+  special is open** (`nearest_locked_special_id` returns `""`): there is no next rung to work
   toward, and the empty readout box would be chrome. Guarded by
   `test_menu_flow.gd::test_hq_garage_always_shows_the_next_carrot`,
   `::test_hq_carrot_names_what_the_special_unlocks` and
