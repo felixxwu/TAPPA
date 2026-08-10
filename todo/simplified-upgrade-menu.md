@@ -5,8 +5,10 @@ build that is *competitive and legal*, without learning what a supercharger,
 ballast or a detune slider is. Today's page is preserved verbatim behind an
 **Advanced** button.
 
-**Status:** spec, not implemented. Brainstormed and steered by the user; the five
-open questions from that discussion are settled and recorded inline below.
+**Status:** spec, not implemented. Brainstormed and steered by the user; every open
+question from that discussion is settled and recorded in §9 — including the
+ballast/detune ordering, resolved in favour of demoting ballast out of Auto
+altogether (§4).
 
 **Depends on:** nothing unbuilt. Every solver input already ships (see
 "The solver already exists"). Touches `features/upgrade-catalogue.md`,
@@ -130,23 +132,22 @@ The objective changes by host, and this is the load-bearing part of the design.
 ### Unconstrained (HQ lift, no `pw_limit`)
 
 Maximise p/w within the star balance: buy and enable the best affordable part per
-slot, strip ballast (it's `free`, always removable), return detune to 100%.
+slot, strip any ballast the player left on (it's `free`, always removable), return
+detune to 100%.
 
 ### Constrained (`pw_limit` set — start line, car-park popup, reward reveal)
 
 Maximise p/w **subject to ≤ pw_max**, reducing power via a fixed lever ladder
-(settled by the user):
+(settled by the user; ballast **demoted** behind detune — see below):
 
 1. **Remove power upgrades first** — but only the *minimum* needed. Never strip a
    part whose removal drops p/w **below** pw_max, because detune cannot trim
    upward and the headroom would be lost for nothing. Formally: choose the part
-   set with the **smallest p/w that is still ≥ pw_max**, so step 3 has the least
+   set with the **smallest p/w that is still ≥ pw_max**, so step 2 has the least
    work to do and the car keeps as much of itself as possible.
-2. **Then add ballast** — the lightest option that lands p/w closest to pw_max
-   *from above*. If even the lightest ballast undershoots, skip this step
-   entirely and go to 3.
-3. **Then detune, as the final fine trim only** — `qualifying_detune` to land
-   exactly on the requirement, not as the sole lever dragged down to hit it.
+2. **Then detune, as the final fine trim** — `qualifying_detune` to land exactly
+   on the requirement, not as the sole lever dragged down to hit it.
+3. ~~Then add ballast~~ — **unreachable, and deliberately so.** See below.
 
 Stripping before detuning is right for two reasons beyond the user's preference:
 a stripped part is free, reversible and **visible** on its row, whereas a car left
@@ -154,33 +155,48 @@ at 62% detune forever is an invisible permanent handicap — precisely the
 confusion this redesign exists to remove — and a supercharger bought for 2★ then
 detuned to 60% is money spent for nothing.
 
-> ### ⚠ Flagged for the user: the ballast step costs grip that detune wouldn't
->
-> Step 2 is the one part of the ladder I'd argue against, and the reason is
-> physical rather than stylistic. `GameConfig.tire_load_factor` is
-> load-**sensitive** — `(tire_ref_pressure / (normal_force / width)) ^
-> tire_load_sensitivity` — so μ *falls* as mass rises. Ballast therefore buys its
-> p/w reduction by also destroying cornering grip, while detune buys the same
-> reduction for free. Worked on a ~1058 kg car at today's tunables:
->
-> | Lever to reach the same p/w | Lateral grip |
-> |---|---|
-> | Detune only | 0.91 G (unchanged) |
-> | `+200kg` ballast | 0.89 G (−2%) |
-> | `+500kg` ballast | 0.87 G (−4.5%) |
->
-> And the displayed penalty **understates** the real one: mass also costs braking
-> distance, rotational inertia and jump landings, none of which `max_lateral_g`
-> models. Since final p/w is pinned to pw_max either way, ballast-before-detune is
-> strictly slower on stage.
->
-> Note also that step 1 + step 3 can **always** satisfy a pw_max on their own
-> (detune scales torque linearly to 0), so ballast is never *necessary* — it only
-> fires when there is little or nothing left to strip, e.g. a stock car at
-> 250 hp/t entering a 200 hp/t class.
->
-> **Recommendation:** drop step 2, or demote it behind detune. **Written as
-> specified pending your call** — say the word and I'll reorder it.
+### Auto never fits ballast
+
+Ballast sat between stripping and detuning in the first draft and has been
+**demoted behind detune**. The reason is physical rather than stylistic:
+`GameConfig.tire_load_factor` is load-**sensitive** — `(tire_ref_pressure /
+(normal_force / width)) ^ tire_load_sensitivity` — so μ *falls* as mass rises.
+Ballast buys its p/w reduction by also destroying cornering grip, while detune
+buys the same reduction for free. Worked on a ~1058 kg car at today's tunables:
+
+| Lever to reach the same p/w | Lateral grip |
+|---|---|
+| Detune only | 0.91 G (unchanged) |
+| `+200kg` ballast | 0.89 G (−2%) |
+| `+500kg` ballast | 0.87 G (−4.5%) |
+
+And the displayed penalty **understates** the real one: mass also costs braking
+distance, rotational inertia and jump landings, none of which `max_lateral_g`
+models. Since final p/w is pinned to pw_max either way, ballast-before-detune was
+strictly slower on stage for no gain.
+
+**Demoting it removes it entirely, and that is the intended outcome.** Steps 1+2
+can *always* satisfy a pw_max on their own — detune scales torque linearly toward
+zero, so `qualifying_detune` only ever returns -1.0 for a failure detune can't fix
+(a non-power restriction field), never for a pw_max. So nothing ever falls through
+to step 3, and the constrained ladder is effectively two rungs. **Auto therefore
+never fits ballast on any car, in either mode.**
+
+This lines the solver up with `UpgradeLibrary._best_part_per_slot`, which already
+skips every candidate whose `mass_mult > 1.0` on the same reasoning — ballast is
+`free` and always removable, so it can never be part of a ceiling.
+
+**Auto does still REMOVE ballast the player left on**, in both modes: it is almost
+always either a mistake (it reads as a free upgrade — §1) or a stale leftover from
+a lower class, and stripping it is free and reversible. Ballast stays fully
+available by hand on the Advanced page, which is where a deliberate p/w lever
+belongs.
+
+The one thing that could revive step 3 is a **detune floor** — a rule that Auto
+won't cut torque below, say, 50%, on the grounds that a car needing a deeper cut
+than that is undriveable and ballast at least preserves throttle response. **Not
+specified, and not recommended:** at that extreme the honest message is the one
+below — wrong car for this class — not a quietly worse build.
 
 ### What Auto must not pretend to fix
 
@@ -260,7 +276,7 @@ could escape the start-line cap through the Simple page.
 Front-loads the value, so a slip still ships something useful:
 
 1. **Pure solver in `UpgradeLibrary`** — `auto_build_plan(owned_car, meta,
-   profile, stars, pw_limit) -> {buy, enable, ballast, detune, cost}`. No scene,
+   profile, stars, pw_limit) -> {buy, enable, strip, detune, cost}`. No scene,
    no UI, pure over its inputs like `max_potential_meta` already is. Cheap
    headless tests.
 2. **Wire it to a single Auto-Upgrade button on the existing page.** Shippable
@@ -283,6 +299,11 @@ Solver (`tests/headless/`, bare logic, no scene):
   p/w below the limit (the no-needless-undershoot rule, §4 step 1)
 - detune is only ever the final trim — a plan that reached the limit by stripping
   alone leaves detune at 1.0
+- **a plan never fits ballast** — no `is_free` mass-adding part ever appears in
+  `buy`/`enable`, at any `pw_limit`, including one so low that only a deep detune
+  can reach it (§4 → "Auto never fits ballast")
+- **a plan strips ballast the player left on**, in both the constrained and
+  unconstrained modes
 - a car already at its reachable ceiling yields an empty plan costing 0
 - an unfixable restriction (`car_type` mismatch) yields "wrong car", not a plan
 - `max_lateral_g(entry, cfg, 0.0)` equals the pre-change value (regression guard
@@ -302,9 +323,12 @@ the current rows are wrapping `HFlowContainer`s with 4+ buttons, and
 ## 9. Settled decisions
 
 - **Simple is for everyone** — no preference flag, no first-visit-only behaviour.
-- **Auto detunes**, but only as the final fine trim: strip power parts → add
-  ballast → detune to hit the requirement exactly (see the flagged concern on the
-  ballast step in §4).
+- **Auto detunes**, but only as the final fine trim: strip power parts (the
+  minimum needed, never undershooting) → detune to hit the requirement exactly.
+- **Ballast is demoted behind detune, which removes it from Auto entirely** —
+  steps 1+2 always suffice, so nothing reaches it. Auto never *fits* ballast but
+  does *strip* it; it stays available by hand on Advanced. Rationale and the grip
+  numbers in §4 → "Auto never fits ballast".
 - **Auto requires a second press** to spend stars.
 - **Grip shows aero's contribution** at a stated 50 km/h.
 - **The Tuning page is left alone** — neutral is already a safe default, so it is
