@@ -145,8 +145,8 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   1st `_advance()` call shows page 2; the 2nd collects the reward if one is
   pending, else resumes the rally via `RallySession.continue_to_next_event()` —
   still the only call site for either. Page 1's action button is now
-  unconditionally **"Online leaderboard >"**, since that's the only thing it ever
-  does. Page 2 is a sibling `Control` added over page 1 that REPLACES its content
+  unconditionally **"Next >"** — it only ever does one thing (open page 2), and the
+  wording is deliberately generic rather than naming the destination. Page 2 is a sibling `Control` added over page 1 that REPLACES its content
   rather than sitting beside it: page 1's root VBox is hidden — `visible = false`
   — which, because page 2 now always runs before any reward reveal, means page 1's
   root VBox is ALWAYS still there to hide (no more "reveal already tore it down"
@@ -186,7 +186,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   **Collect reward on the standings.** On the interstitial of a **non-final event**
   that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`),
   **page 2's** action button (not page 1's, which is now always the unconditional
-  "Online leaderboard >") reads **`Collect reward >`** instead of `Continue to next
+  "Next >") reads **`Collect reward >`** instead of `Continue to next
   stage >`. Pressing it clears page 2 and takes over the screen with the shared
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
   as the podium** — which lands on the won part. Everything auto-resolves to the
@@ -219,7 +219,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   own `MenuNav` across Skip, the repair Apply/Keep choice, and the Upgrades/Next row
   (no `on_back` — same linear, host-owns-back-but-doesn't-wire-one convention the
   podium reward reveal uses), so the whole flow is keyboard/gamepad navigable. The
-  **final event** keeps `Continue to podium >` with no reward step (the podium
+  **final event** shows the same generic `Next >` with no reward step (the podium
   reveals the car). See [reward-system.md](reward-system.md).
 
   A few flat menus keep their own `_unhandled_input` and attach `MenuNav` **without**

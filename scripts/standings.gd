@@ -233,9 +233,10 @@ func _build_ui() -> void:
 
 	# This page ALWAYS leads to the global leaderboard now — the reward (when there
 	# is one) is collected from page 2, after the player has seen where they placed
-	# in the world. So the label is unconditional: it names page 2 and nothing else,
-	# because page 2 is the only thing this button ever does.
-	var button_text := "Online leaderboard >"
+	# in the world. The label is unconditional AND deliberately generic: this button
+	# only ever means "move on", and a plain "Next >" reads faster at a glance than
+	# spelling out the destination.
+	var button_text := "Next >"
 
 	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -410,7 +411,10 @@ func _show_global_page() -> void:
 		opts["continue_text"] = "Collect reward >"
 	elif is_final_event():
 		# A challenge has no podium — its final Continue ends the run (see _advance).
-		opts["continue_text"] = "Finish challenge >" if _challenge else "Continue to podium >"
+		# Career's final stage goes to the podium, but the button just says "Next >" —
+		# same generic wording as page 1. A challenge keeps its own explicit label
+		# because that press ENDS the run rather than advancing within it.
+		opts["continue_text"] = "Finish challenge >" if _challenge else "Next >"
 	else:
 		opts["continue_text"] = "Continue to next stage >"
 
