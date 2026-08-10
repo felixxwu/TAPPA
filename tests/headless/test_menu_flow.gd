@@ -895,10 +895,11 @@ func test_car_stats_text_names_a_fitted_nitrous_rung_after_health() -> void:
 # On a fresh car it has no installed parts, is at full health (no repair button) and
 # its Swap Engine button is disabled, so without an always-enabled control (the Back
 # button) focus would land on nothing and the page would be dead to non-pointer input.
-# The UPGRADES page heading carries the STAR BALANCE, because this page is where stars are
+# The UPGRADES menu shows the STAR BALANCE, because this menu is where stars are
 # spent — every part the player cannot afford quotes a price they would otherwise have to
-# leave the page to check against.
-func test_hq_upgrades_page_heading_shows_the_star_balance() -> void:
+# leave the menu to check against. It is the COMPONENT that draws it (UpgradesMenu), so
+# every host of the menu gets it; see test_upgrades_menu_balance_row.
+func test_hq_upgrades_page_shows_the_star_balance() -> void:
 	_save.profile["stars_earned"] = 7
 	_save.profile["stars_spent"] = 0
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -908,12 +909,13 @@ func test_hq_upgrades_page_heading_shows_the_star_balance() -> void:
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	assert_string_contains(hq._lift_menu_title.text, "7", "the heading names the balance")
-	# And it TRACKS the balance — buying a part on this page spends stars, so a heading
-	# read only on open would go stale the moment the player used it.
+	assert_eq(hq._lift_upgrades_box.balance_text(), "7", "the menu names the balance")
+	# And it TRACKS the balance — buying a part on this page spends stars, so a readout
+	# taken only on open would go stale the moment the player used it.
 	_save.profile["stars_spent"] = 5
-	hq._on_lift_upgrade_changed()
-	assert_string_contains(hq._lift_menu_title.text, "2", "spending updates the heading")
+	hq._lift_upgrades_box.rebuild()
+	await get_tree().process_frame
+	assert_eq(hq._lift_upgrades_box.balance_text(), "2", "spending updates the balance")
 
 
 # REGRESSION: no menu text may lean on a character the BUNDLED font can't draw. Syne Mono

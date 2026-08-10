@@ -21,7 +21,7 @@ const INNER_RATIO := 0.42  # inner vertex radius as a fraction of the outer radi
 
 # The house size for an inline price star: sized to sit with the 16px house caps
 # (UITheme.FONT_SIZE). One constant so every price star in the game matches — the upgrade
-# option rows, the Repair button, the UPGRADES heading's balance.
+# option rows, the Repair button, the upgrades menu's balance row.
 const PRICE_RADIUS := 6.5
 const TEXTURE_SS := 3      # supersamples per axis when rasterising, for antialiased edges
 

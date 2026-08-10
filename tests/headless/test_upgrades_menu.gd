@@ -410,3 +410,22 @@ func _slot_flow(m: Control, slot: String) -> HFlowContainer:
 			if child is Label and String((child as Label).text).to_lower() == slot:
 				return node
 	return null
+
+
+# The menu is where stars are SPENT (part options quote star prices), so it draws the
+# player's balance itself rather than leaving it to each host's heading — the HQ lift used
+# to be the only one of the four hosts (lift, car-park popup, start line, upgrade reveal)
+# that showed it. Component-owned means every host gets it and every rebuild refreshes it.
+func test_menu_shows_the_star_balance_and_tracks_it() -> void:
+	var earned: int = int(Save.profile.get("stars_earned", 0))
+	var spent: int = int(Save.profile.get("stars_spent", 0))
+	Save.profile["stars_earned"] = 7
+	Save.profile["stars_spent"] = 0
+	var m = _menu(_owned_fixture_car())
+	assert_eq(m.balance_text(), "7", "the menu draws the spendable balance")
+	# Spending (buying a part copy is the menu's own action) rebuilds — the readout follows.
+	Save.profile["stars_spent"] = 5
+	m.rebuild()
+	assert_eq(m.balance_text(), "2", "a rebuild re-reads the balance")
+	Save.profile["stars_earned"] = earned
+	Save.profile["stars_spent"] = spent

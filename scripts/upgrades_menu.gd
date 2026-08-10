@@ -1,11 +1,13 @@
 class_name UpgradesMenu
 extends VBoxContainer
-# Reusable per-car UPGRADES menu — an engine-detune slider (its label carries the
+# Reusable per-car UPGRADES menu — the player's star BALANCE row (this is where stars are
+# spent, so every host of the menu shows it — _make_balance_row), an engine-detune slider (its label carries the
 # live p/w readout), one earn-gated option selector per slot (Stock + the slot's
 # catalogue parts; drivetrain is the RWD/AWD/FWD picker), and an engine-swap row
 # (only when the host wires on_swap). Owns its Save persistence; reports edits via
 # on_change so the host can re-field the car / refresh its own UI. Used by the HQ
-# lift (hq.gd) and the car-park detune popup. Mirrors TuningPanel. See
+# lift (hq.gd), the car-park detune popup, the start line and the upgrade reveal.
+# Mirrors TuningPanel. See
 # features/upgrade-catalogue.md. (Mystery Box moved OUT of this menu onto the
 # garage row's own top-level button — see hq.gd/hq_overlays.gd — since it isn't
 # a per-car upgrade, it's a garage-wide action.)
@@ -22,6 +24,7 @@ var _on_swap: Callable = Callable()   # valid → show swap row; invalid → omi
 var _pw_limit: float = NO_LIMIT   # power-to-weight cap (hp/tonne); NO_LIMIT = free
 var _detune_slider: HSlider
 var _detune_value: Label
+var _balance_label: Label   # the star-balance row's digits (_make_balance_row)
 # The host's overlay close button, gated by the p/w limit (bind_close_button). When a
 # limit is set and the build exceeds it, this button is painted red and blocks closing
 # (proceed) until the player drags power back under the cap.
@@ -74,6 +77,8 @@ func rebuild() -> void:
 
 	var id := int(_owned.get("instance_id", -1))
 	var installed: Array = _owned.get("installed_upgrades", [])
+	# The star BALANCE leads the menu, on every instance of it (see _make_balance_row).
+	add_child(_make_balance_row())
 	for slot in UpgradeLibrary.SLOTS:
 		# A hidden slot gets no row (UpgradeLibrary.HIDDEN_SLOTS, currently empty — nitrous
 		# used to be the one member and now has a row like everything else).
@@ -98,6 +103,46 @@ func rebuild() -> void:
 	_refresh_close_button()  # a part/drivetrain toggle can cross the p/w cap
 	if focus_key != "":
 		_restore_focus.bind(focus_key).call_deferred()
+
+
+# The player's spendable STAR BALANCE, as the menu's first row.
+#
+# It lives INSIDE the component rather than in each host's heading because this menu is
+# where stars are spent — every part option the player cannot afford quotes a price
+# ("Big (3*)") they would otherwise have to leave the menu to check against — and the menu
+# has FOUR hosts (HQ lift, car-park popup, start line, upgrade reveal). A per-host heading
+# meant only the hosts that remembered to draw one showed the balance, and only the hosts
+# that remembered to re-read it kept it live. Built here, it is drawn by all four and
+# refreshed for free: buying a part calls rebuild().
+#
+# Digits + a DRAWN StarRow, never a ★ character: Syne Mono has no ★ glyph, so a text star
+# renders as tofu on the web export (see star_row.gd).
+func _make_balance_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var caption := Label.new()
+	caption.text = "Balance"
+	caption.add_theme_font_size_override("font_size", 15)
+	# Expand-fill on the caption pushes the digits + star flush right, the same
+	# label-left / value-right shape the slot rows use.
+	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(caption)
+	_balance_label = Label.new()
+	_balance_label.text = "%d" % Save.stars_available()
+	_balance_label.add_theme_font_size_override("font_size", 15)
+	row.add_child(_balance_label)
+	var star := StarRow.new()
+	star.star_radius = StarRow.PRICE_RADIUS
+	star.setup(1, 1)
+	star.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(star)
+	return row
+
+
+# The balance row's digits (test readout; "" before the first rebuild).
+func balance_text() -> String:
+	return _balance_label.text if _balance_label != null and is_instance_valid(_balance_label) else ""
 
 
 # The engine-detune slider row: a direct 0–100% torque scale (default 100% = full
