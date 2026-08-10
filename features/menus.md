@@ -1318,7 +1318,7 @@ throwaway test and still clip in the real game.
   (`StarRow.price_icon()` on the button's `icon`, `icon_alignment` RIGHT), never the `★`
   CHARACTER: Syne Mono has no `★` glyph, so a `★` in a label only rendered at all because the
   OS supplied a fallback font, and the **web export has no system fonts** — every price read
-  as a tofu box on mobile web. The page heading's balance does it the other way round (a
+  as a tofu box on mobile web. The menu's own balance row does it the other way round (a
   sibling `StarRow` beside digit-only text, since a Label carries no icon), as does the hub's
   **Repair N★**; see [star-economy.md](star-economy.md) → "Where the player sees it" for both
   shapes. Guarded by

@@ -51,6 +51,7 @@ var _pw_limit: float = NO_LIMIT
 var _advanced: UpgradesMenu = null
 var _advanced_box: VBoxContainer = null
 var _advanced_title: Label = null
+var _balance_label: Label = null
 var _simple_box: VBoxContainer = null
 var _advanced_button: Button = null
 var _close_button: Button = null
@@ -79,6 +80,12 @@ func rebuild() -> void:
 	# Advanced is built FIRST, though it is shown last: the stat rows ask it which
 	# categories have anything in them before deciding whether to draw a wrench.
 	_build_advanced()
+	# The star balance leads the page. Shared with the Advanced page rather than drawn
+	# twice (UpgradesMenu.build_balance_row): this is the page the hosts actually open, so
+	# a balance only on the other one would be invisible to the player quoting star prices.
+	var balance := UpgradesMenu.build_balance_row()
+	_balance_label = balance["label"]
+	_simple_box.add_child(balance["row"])
 	for row in _stat_rows():
 		_simple_box.add_child(row)
 
@@ -356,6 +363,11 @@ func _on_advanced_change() -> void:
 # machinery.
 func advanced() -> UpgradesMenu:
 	return _advanced
+
+
+# The balance row's digits (test readout; "" before the first rebuild).
+func balance_text() -> String:
+	return _balance_label.text if is_instance_valid(_balance_label) else ""
 
 
 func first_control() -> Control:

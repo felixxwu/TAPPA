@@ -152,8 +152,13 @@ of being one weight among others.
   `Save.stars_available()`, the spendable balance, again with no denominator.
 - **The upgrades menu's slot rows** — `Name N★` on any discovered part not yet on this
   car, disabled when the balance is short (the price is information the player can act on
-  even when they cannot pay it). The page's own HEADING carries the balance
-  (`hq._refresh_lift_menu_title`), because this is where stars are spent. See "Part
+  even when they cannot pay it). The menu's own FIRST ROW carries the balance
+  (`UpgradesMenu._make_balance_row`, a "Balance" caption then digits + a drawn star),
+  because this is where stars are spent. It lives in the COMPONENT rather than in each
+  host's heading so all FOUR hosts of the menu show it — the HQ lift, the car-park detune
+  popup, the start line's Upgrades overlay and the upgrade reveal's — and so every
+  `rebuild()` (which a purchase triggers) re-reads it. It used to be spliced into the HQ
+  lift's page title, which is why the other three showed no balance at all. See "Part
   copies" above.
 - **The tuning lift's hub row** — the per-car Repair button, stating its price. See
   "Repair" above.
@@ -164,8 +169,8 @@ Godot a system fallback font. The **web export has no system fonts**, so on mobi
 every price read as a tofu box. Two shapes, both from `scripts/star_row.gd`, so the
 geometry has one definition:
 - **A star beside a Label** → a `StarRow` node as the label's SIBLING, the label carrying
-  the digits alone (`hq._refresh_lift_menu_title` + `HqOverlays.build_lift_overlay`, and the
-  map meter in `build_table_overlay`).
+  the digits alone (`UpgradesMenu._make_balance_row`, and the map meter in
+  `HqOverlays.build_table_overlay`).
 - **A star inside a Button** → `StarRow.price_icon()` on the button's `icon` with
   `icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT`, because a Button lays out no children
   (`UpgradesMenu._option_button`, `hq._refresh_repair_button`). Button's own

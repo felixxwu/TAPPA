@@ -351,3 +351,20 @@ func test_editing_on_the_advanced_page_does_not_yank_focus() -> void:
 	await get_tree().process_frame
 	assert_eq(get_viewport().gui_get_focus_owner(), slider,
 		"the cursor stays on the slider being dragged")
+
+
+func test_the_summary_shows_the_star_balance() -> void:
+	# The hosts open the SUMMARY, so the balance has to be here — quoting star prices one
+	# button away from a balance the player can't see is what putting the row in the shared
+	# component was meant to stop.
+	var earned: int = int(Save.profile.get("stars_earned", 0))
+	var spent: int = int(Save.profile.get("stars_spent", 0))
+	Save.profile["stars_earned"] = 7
+	Save.profile["stars_spent"] = 0
+	var p := _page()
+	assert_eq(p.balance_text(), "7", "the summary draws the spendable balance")
+	Save.profile["stars_spent"] = 5
+	p.rebuild()
+	assert_eq(p.balance_text(), "2", "a rebuild re-reads it")
+	Save.profile["stars_earned"] = earned
+	Save.profile["stars_spent"] = spent

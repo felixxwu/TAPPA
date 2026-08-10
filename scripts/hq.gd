@@ -547,9 +547,8 @@ var _lift_selector_focus := 0   # which chevron the cursor sits on (0 = prev, 1 
 # gapped horizontal action row below it (see menu_page.gd). Only the box is held here,
 # because its visibility is what shows/hides the page; reach the page as its parent.
 var _lift_menu_bg: PanelContainer
-var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES" + the balance's digits)
-# The heading's row: the title label plus the drawn gold star that reads the balance's
-# digits as a star count. Held because VISIBILITY is toggled here, not on the label —
+var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
+# The heading's row. Held because VISIBILITY is toggled here, not on the label —
 # see _refresh_lift_ui.
 var _lift_menu_title_row: HBoxContainer
 # A sub-page's bottom ACTION ROW: "< Back" always, plus the TUNE page's own actions (see
@@ -2774,8 +2773,7 @@ func _refresh_lift_ui() -> void:
 	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
 	# without scrolling); UPGRADES keeps its heading.
-	# The ROW, not the label: the heading's star balance is a sibling StarRow, so hiding
-	# only the label would leave a lone star floating over the sliders.
+	# The ROW, not the label, so any sibling the heading grows hides with it.
 	_lift_menu_title_row.visible = _lift_page != LiftPage.TUNE
 	_refresh_lift_menu_title()
 	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
@@ -2806,24 +2804,21 @@ func _on_lift_upgrade_changed() -> void:
 	_ensure_lift_car()
 	_lift_owned = Save.selected_car()
 	_refresh_lift_car_label()
-	# Buying a part spends stars, and the balance is in this page's heading — so it has to
-	# be re-read here, not only when the page is opened.
-	_refresh_lift_menu_title()
+	# The balance is repainted by the component's own rebuild() (UpgradesMenu), so nothing
+	# to re-read here.
 
 
-# The UPGRADES page heading, carrying the player's STAR BALANCE.
+# The UPGRADES page heading.
 #
-# The balance belongs here because this page is where stars are spent: every part option
-# the player cannot afford quotes a price ("Big (3*)") they otherwise have to leave the
-# page to check against. Repair, the other sink, prices itself on a button that is already
-# beside the balance on the hub.
+# The player's STAR BALANCE used to be spliced in here ("UPGRADES   7" + a drawn star).
+# It now lives in the UpgradesMenu component's own first row (UpgradesMenu._make_balance_row)
+# so that EVERY host of that menu shows it — the car-park popup, the start line and the
+# upgrade reveal open the same menu and had no balance at all. One implementation, drawn
+# and refreshed in one place.
 func _refresh_lift_menu_title() -> void:
 	if _lift_menu_title == null:
 		return
-	# Digits only — the star is the drawn StarRow sibling in the heading row
-	# (HqOverlays.build_lift_overlay), exactly as the map meter does it, because a Label
-	# can't carry an icon the way the price BUTTONS do and Syne Mono has no ★ glyph.
-	_lift_menu_title.text = "UPGRADES   %d" % Save.stars_available()
+	_lift_menu_title.text = "UPGRADES"
 
 
 # The Dev settings page fits a part straight onto Save.selected_instance_id() with no

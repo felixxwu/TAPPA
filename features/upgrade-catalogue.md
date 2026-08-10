@@ -165,7 +165,17 @@ third instance behind an **Upgrades** button on its post-spin action row, so a p
 slot the just-won part immediately instead of waiting for the next stage/HQ visit — see
 [menus.md](menus.md) → "Collect reward on the standings". It owns its `Save` persistence
 and reports edits via an
-`on_change` callback so the host re-fields the car. There is **no stats line** at the top;
+`on_change` callback so the host re-fields the car. (A fourth instance is the start line's
+pre-stage **Upgrades** overlay, `start_line.gd._build_upgrades_overlay`.)
+
+Its **first row is the player's star balance** (`UpgradesMenu._make_balance_row`: a
+"Balance" caption, then the digits of `Save.stars_available()` and a drawn `StarRow`
+price star). It belongs to the COMPONENT, so all four hosts show it and every `rebuild()`
+— which buying a part copy triggers — re-reads it; it used to be spliced into the HQ
+lift's page heading only, leaving the other three instances with no balance beside the
+star prices they quote. See [star-economy.md](star-economy.md).
+
+There is **no stats line** at the top;
 the live power-to-weight readout instead lives on the **engine-detune slider's value label**
 (e.g. `80% - 200 hp/tonne`, recomputed from `effective_meta` on every rebuild), and that
 slider now sits at the **bottom** of the menu — below the part-slot selectors and the
