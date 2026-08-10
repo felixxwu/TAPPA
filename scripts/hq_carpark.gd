@@ -353,6 +353,9 @@ func _warm_one_preview(preview: Dictionary) -> bool:
 # not-yet-warmed remainder), and those lineup nodes land in _car_cache under the same
 # key + hash, so this loop simply skips them when it resumes on the next frame.
 #
+# It also spawns only while the player is STILL (_await_prewarm_window below), because a
+# ~100 ms frame is invisible on a title shot and a hitch the moment they are navigating.
+#
 # Idempotent and self-cancelling: re-entrant calls bail, and the loop stops if the HQ
 # leaves the tree (exit to a race frees the node and everything it cached).
 func _prewarm_free_roam_deferred() -> void:
@@ -365,12 +368,32 @@ func _prewarm_free_roam_deferred() -> void:
 		if not _hq.is_inside_tree():
 			_hq._prewarm_running = false
 			return
+		await _await_prewarm_window()
+		if not _hq.is_inside_tree():
+			_hq._prewarm_running = false
+			return
 		if _warm_one_preview(preview):
 			spawned += 1
 			await _hq.get_tree().process_frame
 	_hq._prewarm_running = false
 	_hq._prewarm_complete = true
 	_log_prewarm_cost(Time.get_ticks_msec() - t0, spawned)
+
+
+# Park until the HQ is idle enough to absorb one car spawn (HqController._prewarm_should_wait
+# decides), or until we have waited HqController.PREWARM_MAX_STALL_MS and take the frame
+# anyway.
+#
+# The cap is the point: without it a player who never sits still would leave the catalogue
+# half-warm forever, and opening Free Roam would then pay the full cold cost this whole
+# mechanism exists to avoid. Waiting is measured, not counted in frames, so it means the same
+# thing at 30 and at 60 fps.
+func _await_prewarm_window() -> void:
+	var waited := 0
+	while _hq.is_inside_tree() and _hq._prewarm_should_wait() and waited < HqController.PREWARM_MAX_STALL_MS:
+		var t0 := Time.get_ticks_msec()
+		await _hq.get_tree().process_frame
+		waited += maxi(0, Time.get_ticks_msec() - t0)
 
 
 # Spawn one owned car as a silent car prop resting at a marker, with its OWN mesh

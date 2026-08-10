@@ -211,6 +211,12 @@ longer runs inside boot (see below), so its wall-clock is elapsed time *while HQ
 already interactive*, not time the player waits. The car-cache line rides with it because
 the cache only reaches full size once the warm completes.
 
+> **That wall-clock is NOT a cost.** The prewarm only spawns while the player is still
+> (`hq._prewarm_should_wait`, see [menus.md](menus.md) → Free Roam), so the elapsed figure
+> includes however long it spent parked waiting for them to stop navigating — an interactive
+> boot can therefore report seconds while having done a few hundred ms of work. Read the prop
+> count with it, and if you need the true cost, measure a boot you don't touch.
+
 `_car_cache_mesh_cost()` walks the cache reading only ArrayMesh surface *header* counts
 (never `surface_get_arrays`), so it is cheap; non-ArrayMesh meshes are skipped, making it
 a deliberate under-estimate.

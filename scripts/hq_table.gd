@@ -397,13 +397,7 @@ func _clear_table_focus() -> void:
 	_hq._table_focus_index = -1
 	_hq._table_focus_node = null
 	for t in _table_targets():
-		var node: Node3D = t["node"]
-		if node.has_meta("label_panel"):
-			UITheme.mark_panel_focused(node.get_meta("label_panel"), false)
-		if node.has_meta("label_sprite"):
-			var sprite: Node3D = node.get_meta("label_sprite")
-			if is_instance_valid(sprite):
-				sprite.visible = false
+		_hq._paint_pin_readout(t["node"], false)
 
 
 # Seat the cursor on target `i`, paint the focus highlight (the hover-style readout
@@ -419,18 +413,12 @@ func _focus_table_target(i: int, pan := true) -> void:
 	var sel: Dictionary = targets[_hq._table_focus_index]
 	_hq._table_focus_node = sel["node"]
 	for t in targets:
-		var on: bool = t == sel
-		var node: Node3D = t["node"]
-		if node.has_meta("label_panel"):
-			UITheme.mark_panel_focused(node.get_meta("label_panel"), on)
 		# HOVER-ONLY readouts, with NO exceptions: a pin shows its box only while the cursor
 		# is on it, so the table reads as a MAP with one thing selected rather than a
 		# noticeboard of a dozen open menus competing for the eye. The 3D marker still stands
-		# at every pin, so nothing is hidden — only the menu chrome is.
-		if node.has_meta("label_sprite"):
-			var sprite: Node3D = node.get_meta("label_sprite")
-			if is_instance_valid(sprite):
-				sprite.visible = on
+		# at every pin, so nothing is hidden — only the menu chrome is. _paint_pin_readout
+		# also arms/disables the box's off-screen viewport, so only the hovered one renders.
+		_hq._paint_pin_readout(t["node"], t == sel)
 	if pan:
 		_pan_table_to(Vector3(sel["pos"]))
 
