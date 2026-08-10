@@ -52,8 +52,14 @@ func _enter_table() -> void:
 	# focus (and pan the camera to) the highest-difficulty incomplete rally pin. From
 	# there the player pans the camera and selection tracks the view centre. Falls back
 	# to the centre-nearest target when every pin is done (or there are none).
+	#
+	# The fallback PANS onto that target rather than testing what happens to lie under the
+	# view centre: entry re-centres the map (_table_pan = ZERO above), and the middle of the
+	# map is rarely within map_select_radius_m of any pin — so seating with
+	# _select_target_under_center opened the table with nothing selected at all whenever the
+	# fallback was taken (every event completed). See _focus_nearest_target.
 	if not _focus_hardest_incomplete():
-		_select_target_under_center()
+		_focus_nearest_target()
 	_hq._go_to(_hq.View.TABLE)
 
 
@@ -353,15 +359,12 @@ func _focus_hardest_incomplete() -> bool:
 	return true
 
 
-# Seat the cursor on whichever pin sits nearest the view
-# centre, without moving the camera (the player already put it there). This is the
-# raycast-to-centre selection that keyboard pan, drag pan, and table entry all share.
-func _select_target_under_center() -> void:
+# The target nearest the view centre as [index, distance_m] — index -1 when the table has
+# no targets at all. Shared by the two seating rules below, which differ ONLY in whether
+# map_select_radius_m applies: it is the rule for a cursor the PLAYER is driving, not for
+# seating one.
+func _nearest_target_to_center() -> Array:
 	var targets := _table_targets()
-	if targets.is_empty():
-		_hq._table_focus_index = -1
-		_hq._table_focus_node = null
-		return
 	var center := _table_center_pos()
 	var best := -1
 	var best_d := INF
@@ -372,13 +375,37 @@ func _select_target_under_center() -> void:
 		if d < best_d:
 			best_d = d
 			best = i
+	return [best, best_d]
+
+
+# Seat the cursor on the target nearest the view centre AND pan the camera onto it, at any
+# distance. This is the entry fallback (_enter_table), which is why map_select_radius_m is
+# deliberately NOT applied here: the map has just been re-centred, so "whatever is already
+# under the reticle" is usually nothing at all. Returns false when the table has no targets.
+func _focus_nearest_target() -> bool:
+	var best := int(_nearest_target_to_center()[0])
+	if best < 0:
+		return false
+	_focus_table_target(best, true)
+	return true
+
+
+# Seat the cursor on whichever pin sits nearest the view
+# centre, without moving the camera (the player already put it there). This is the
+# raycast-to-centre selection that keyboard pan, drag pan, and table entry all share.
+func _select_target_under_center() -> void:
+	var targets := _table_targets()
+	if targets.is_empty():
+		_hq._table_focus_index = -1
+		_hq._table_focus_node = null
+		return
+	var nearest := _nearest_target_to_center()
+	var best := int(nearest[0])
 	# Nothing is selected unless the view is actually ON a pin. The cursor used to snap to
 	# the nearest pin at any distance, so Enter over empty sea opened whichever rally was
 	# least far away — a menu for somewhere the player was not looking.
-	if best_d > Config.data.map_select_radius_m:
+	if best < 0 or float(nearest[1]) > Config.data.map_select_radius_m:
 		_clear_table_focus()
-		return
-	if best < 0:
 		return
 	# Repaint ONLY when the selection actually changed. This runs every frame while a pan
 	# direction is held (_pan_table_step), and _focus_table_target repaints every pin, so
@@ -480,7 +507,15 @@ func _on_rally_pin(rally_id: String) -> void:
 		# Already under the camera? Then there is nothing to glide, and no reason to make the
 		# player wait — this is the keyboard/gamepad path, where the cursor centred the pin
 		# before Select was ever pressed.
-		var already := _table_center_pos().distance_to(pin.position) <= Config.data.map_select_radius_m
+		#
+		# Measured in the map PLANE, like every other distance the table compares against
+		# map_select_radius_m (see _nearest_target_to_center). A pin sits a table-height above
+		# the plane the view centre lies in, so a straight distance_to() carries that height in
+		# and never came under the radius — the keyboard path always sat through a 0.6 s glide
+		# that moved the camera nowhere.
+		var to_pin: Vector3 = pin.position - _table_center_pos()
+		to_pin.y = 0.0
+		var already: bool = to_pin.length() <= Config.data.map_select_radius_m
 		_pan_table_to(pin.position)
 		_select_target_under_center()
 		var glide: float = Config.data.menu_camera_move_time

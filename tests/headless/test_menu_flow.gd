@@ -154,6 +154,23 @@ func _nearest_target_to(hq: Node3D, center: Vector3) -> Node3D:
 	return best
 
 
+# Glide the table camera in `dir` a step at a time until `rally_id` is the selected target;
+# true if it ever was. Selection only happens while a pin is actually within
+# GameConfig.map_select_radius_m of the view centre, so a pan big enough to slam into the
+# map clamp sails PAST the far pin and selects nothing — the reticle has to be walked over
+# it, which is also what a player holding a direction does.
+func _pan_until_selected(hq: Node3D, dir: Vector2, rally_id: String) -> bool:
+	for _i in 60:
+		hq._table_ui._pan_table_step(dir, 0.1)
+		var i: int = hq._table_focus_index
+		if i < 0:
+			continue
+		var node: Node3D = hq._table_ui._table_targets()[i]["node"]
+		if String(node.get_meta("rally_id", "")) == rally_id:
+			return true
+	return false
+
+
 # The billboarded readout-box sprite a pin floats above its flag.
 # The player's currently-owned car (before_each already grants a starter via
 # _pick_starter) — the first entry in the profile's garage.
@@ -462,19 +479,27 @@ func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 		_nearest_target_to(hq, hq._table_ui._table_center_pos()),
 		"selection tracks the view centre after panning")
 
-	# Glide fully up (past the clamp): the up-most pin (b) ends up nearest the centre.
-	for _i in 12:
-		hq._table_ui._pan_table_step(Vector2.UP, 0.4)
-	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "b",
-		"panning to the top of the map selects the up-most pin")
+	# Glide up the map: the reticle picks up the up-most pin (b) as it crosses it.
+	assert_true(_pan_until_selected(hq, Vector2.UP, "b"),
+		"panning up the map selects the up-most pin")
 
-	# Fresh view, then glide fully right: the right-most pin (c) ends up selected.
+	# Keep going, past every pin: nothing is under the reticle and nothing is selected, so
+	# Select over empty map opens no rally (GameConfig.map_select_radius_m).
+	for _i in 40:
+		hq._table_ui._pan_table_step(Vector2.UP, 0.4)
+	assert_eq(hq._table_focus_index, -1, "panned off past every pin, nothing is selected")
+	hq._table_ui._activate_table_focus()
+	assert_false(hq._detail_open, "and Select over empty map opens nothing")
+
+	# Fresh view, then glide right along the map's centre line: the right-most pin (c) ends
+	# up selected. The pan is zeroed first because entry seats the camera on a pin (a, which
+	# is up-map), and sweeping right from THERE runs along a line c never comes near.
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
-	for _i in 12:
-		hq._table_ui._pan_table_step(Vector2.RIGHT, 0.4)
+	hq._table_pan = Vector3.ZERO
+	assert_true(_pan_until_selected(hq, Vector2.RIGHT, "c"),
+		"panning right across the map selects the right-most pin")
 	var sel: Node3D = hq._table_ui._table_targets()[hq._table_focus_index]["node"]
-	assert_eq(String(sel.get_meta("rally_id")), "c", "panning to the right of the map selects the right-most pin")
 
 	# The selected pin gets the hover-style underline; a pin stays scale 1.
 	var box: StyleBoxFlat = sel.get_meta("label_panel").get_theme_stylebox("panel")
@@ -552,34 +577,43 @@ func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
 
-	# The fog hides an unreached rally COMPLETELY — no pin at all, not a greyed one. The map
-	# shows where you can go; the dark is genuinely unknown.
+	# The fog DIMS what the player cannot reach; it does not delete it. Every rally in the
+	# roster stands a pin, reached or not — a map that only exists where you have already
+	# driven gives you nothing to steer by. What the dark withholds is the ROUTE and the
+	# ability to enter, not the knowledge that something is out there.
 	var by_id: Dictionary = {}
 	for pin in hq._pins:
 		by_id[String(pin.get_meta("rally_id"))] = pin
-	assert_false(by_id.has("later"), "an unreached rally is not pinned at all")
-	assert_false(by_id.has("sd"), "nor is an unreached special")
-	assert_true(by_id.has("open"), "only what the player has explored out to is on the map")
-	assert_eq(hq._pins.size(), 1, "and nothing else is standing on the table")
+	assert_eq(hq._pins.size(), 3, "every rally in the roster is pinned, reached or not")
 	assert_false(bool(by_id["open"].get_meta("locked")), "a revealed rally's pin is not locked")
+	assert_true(bool(by_id["later"].get_meta("locked")), "an unreached rally's pin is locked")
+	assert_true(bool(by_id["sd"].get_meta("locked")), "and so is an unreached special's")
+
+	# Locked = look, don't touch: no pickable hit area, so it can't be tapped into.
 	assert_gt(by_id["open"].find_children("*", "Area3D", true, false).size(), 0,
 		"a revealed rally's pin IS clickable")
+	for rid in ["later", "sd"]:
+		assert_eq((by_id[rid] as Node3D).find_children("*", "Area3D", true, false).size(), 0,
+			"an unreached rally's pin has no hit area to tap")
 
-	# ...and the keyboard/gamepad focus ring only contains the enterable PINS, so no amount
-	# of panning can land the cursor on a locked one. Every map target is a rally now — the
-	# present box that used to sit among them is gone with the car-purchase economy
+	# The cursor, though, IS allowed onto a locked pin: readouts are hover-only, so a pin the
+	# cursor cannot reach could never answer when you point at it. Every map target is a rally
+	# now — the present box that used to sit among them is gone with the car-purchase economy
 	# (features/star-economy.md).
 	hq._refresh_map_pins()
 	var focusable: Array = []
 	for t in hq._table_ui._table_targets():
 		assert_eq(String(t["kind"]), "pin", "every map target is a rally pin")
 		focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
-	assert_eq(focusable, ["open"], "only the revealed rally is a focus target")
-	for _i in 12:
-		hq._table_ui._pan_table_step(Vector2.RIGHT, 0.4)
-	var landed: Dictionary = hq._table_ui._table_targets()[hq._table_focus_index]
-	assert_eq(String((landed["node"] as Node3D).get_meta("rally_id")), "open",
-		"panning across the map never lands the cursor on a locked pin")
+	assert_eq(focusable, ["open", "later", "sd"], "every pin is a cursor target, enterable or not")
+
+	# ...and it is SELECT that refuses, not the cursor: parking on the unreached pin and
+	# pressing it opens nothing. ("sd" rather than "later" because the pan clamps to the map
+	# extents and "later" is authored deliberately off the edge, out of the camera's reach.)
+	assert_true(_pan_until_selected(hq, Vector2.UP, "sd"),
+		"panning out into the dark lands the cursor on the unreached pin")
+	hq._table_ui._activate_table_focus()
+	assert_false(hq._detail_open, "selecting an unreached pin opens no rally detail")
 
 	RegionLibrary.reset()
 	RallyLibrary.reset()
@@ -1799,30 +1833,35 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 		"a drawn star stands in for the word 'stars'")
 
 
-# An unreached special is not on the map at all. The fog hides it completely rather than
-# standing a grey trophy there — the dark is genuinely unknown, and a marker for somewhere
-# unreachable was a signpost to nothing.
-func test_hq_map_hides_a_special_the_player_has_not_explored_out_to() -> void:
+# An unreached special still stands its trophy on the map — the fog fades it rather than
+# deleting it. Locking must hide availability, never information: the player should be able
+# to see what exists and roughly where, long before they can drive to it.
+func test_hq_map_fogs_a_special_the_player_has_not_explored_out_to() -> void:
 	# Needs the REAL reveal radius: before_each lights the whole map so the layout tests can
-	# see their pins, and this test is about a rally being hidden.
+	# see their pins, and this test is about a rally being out in the dark.
 	_dark_map_radius()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	# The special the map reaches LAST is certainly still dark on a fresh profile.
-	assert_null(_pin_for(hq, _top_special_id()), "an unreached special has no pin")
-	# The one rally beside the garage IS there, and is enterable — so the absence above is
+	var dark_pin := _pin_for(hq, _top_special_id())
+	assert_not_null(dark_pin, "an unreached special is still on the map")
+	assert_true(bool(dark_pin.get_meta("locked")), "and reads as locked")
+	assert_eq(dark_pin.find_children("*", "Area3D", true, false).size(), 0,
+		"with nothing pickable on it — look, don't touch")
+	# The one rally beside the garage is there too, and IS enterable — so the lock above is
 	# the fog working, not the table failing to build.
 	var open_pin := _pin_for(hq, _first_reachable_rally_id())
 	assert_not_null(open_pin, "the rally beside HQ is on the map")
 	assert_false(bool(open_pin.get_meta("locked")), "and open from the start")
 
-func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
-	# All-or-nothing for ORDINARY rallies: one that can't be entered yet shows NO readout
-	# box rather than a dimmed one, while an available rally (open-class shakedown, starter
-	# eligible) shows its box at full opacity. The 3D flag stands at BOTH pins either way,
-	# so the map still marks where the unavailable rally is. (Locked SPECIALS are the one
-	# exception — see the teaser test below.)
+
+func test_hq_unavailable_ordinary_rally_fades_its_floating_readout() -> void:
+	# ONE readout rule for every pin: the box is always built, always starts HIDDEN, and is
+	# shown only while the cursor is on it — that is what keeps the table a map rather than a
+	# noticeboard of a dozen open menus. What "can't enter this" changes is the OPACITY: a
+	# rally out in the fog, or reachable but with nothing in the garage that fits, fades its
+	# box, while an available one is full opacity. The 3D flag stands at both pins either way.
 	#
 	# Needs the REAL reveal radius: before_each lights the whole map, which would leave no
 	# unavailable ordinary pin to look at and quietly turn this into a no-op.
@@ -1836,12 +1875,12 @@ func test_hq_unavailable_ordinary_rally_has_no_floating_readout() -> void:
 		# describes simply is not present, so there is nothing to assert about it.
 		return
 	var shakedown := _pin_for(hq, _first_reachable_rally_id())
-	assert_eq(hidden.find_children("*", "Sprite3D", true, false).size(), 0,
-		"an unavailable ordinary rally has no floating menu box at all")
-	assert_false(hidden.has_meta("label_panel"),
-		"and no panel for the focus cursor to paint")
+	assert_true(hidden.has_meta("label_panel"),
+		"an unavailable rally still carries a panel for the focus cursor to paint")
+	assert_lt(_pin_label_sprite(hidden).modulate.a, 1.0,
+		"but its box is faded — a full-opacity menu would read as live")
 	assert_eq(_pin_label_sprite(shakedown).modulate, Color.WHITE,
-		"an available rally's box is shown at full opacity")
+		"an available rally's box is at full opacity")
 	for pin in [hidden, shakedown]:
 		assert_gt((pin as Node3D).find_children("*", "MeshInstance3D", true, false).size(), 0,
 			"the 3D flag is built for available and unavailable rallies alike")
@@ -1880,8 +1919,8 @@ func _first_reachable_rally_id() -> String:
 func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
 	for pin in hq._pins:
 		var rally := RallyLibrary.by_id(String(pin.get_meta("rally_id")))
-		# REVEALED but with nothing in the garage that can enter it. An unreached rally is
-		# not a candidate any more — it is not drawn at all.
+		# Either out in the fog or revealed with nothing in the garage that can enter it —
+		# both render the same way, which is the point of the test that uses this.
 		if not RallyLibrary.is_special(rally) and not hq._has_eligible_car(rally):
 			return pin
 	return null
@@ -1919,9 +1958,11 @@ func test_hq_garage_always_shows_the_next_carrot() -> void:
 	assert_string_contains(line, "EXPLORE TOWARD",
 		"it tells the player to explore, which is literally how the event opens now")
 	assert_string_contains(line, "NEAR SPECIAL", "and names the event to head for")
-	# The event it names is genuinely unreached — which is exactly why the garage has to
-	# carry this line at all. The map cannot: an unreached rally is not drawn on it.
-	assert_null(_pin_for(hq, "near"), "the event being teased is not on the map yet")
+	# The event it names is genuinely unreached — which is why the garage carries the line at
+	# all. Its pin is on the map (the fog fades pins, it doesn't delete them), but locked:
+	# something to steer toward, not somewhere to go yet.
+	assert_true(bool(_pin_for(hq, "near").get_meta("locked")),
+		"the event being teased is still locked on the map")
 	# Reaching and winning the near special moves the carrot outward to the next one dark.
 	_save.dev_three_star_rally("near")
 	hq._go_to(hq.View.GARAGE)
@@ -2000,14 +2041,19 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	hq._table_ui._enter_table()
-	hq._table_ui._on_rally_pin("rwd_masters")
+	# Tapping CENTRES the camera on the pin and only then opens the panel, so the detail
+	# lands one camera glide later — await the handler rather than reading _detail_open
+	# before the glide it deliberately waits out.
+	await hq._table_ui._on_rally_pin("rwd_masters")
 	assert_true(hq._detail_open, "tapping a pin opens the rally detail")
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
-	assert_string_contains(hq._detail_title.text, "RWD MASTERS", "the detail names the rally")
-	# The stage count rides on the title instead of a per-stage column; derive the
-	# expected count from the rally itself so retuning the roster can't break this.
-	var stages: int = (RallyLibrary.by_id("rwd_masters").get("events", []) as Array).size()
+	# Name and stage count both ride on the title (there is no per-stage column); derive both
+	# from the rally itself so renaming or retuning the roster can't break this.
+	var rally: Dictionary = RallyLibrary.by_id("rwd_masters")
+	assert_string_contains(hq._detail_title.text, String(rally.get("name", "")).to_upper(),
+		"the detail names the rally")
+	var stages: int = (rally.get("events", []) as Array).size()
 	assert_string_contains(hq._detail_title.text, "%d STAGE" % stages,
 		"the title carries the rally's stage count")
 	assert_string_contains(hq._detail_restriction.text, "RWD CARS", "the detail spells out the eligibility")
@@ -2051,9 +2097,12 @@ func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
 	release.pressed = false
 	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "shakedown")
 	assert_false(hq._detail_open, "dragging the map does not open the pin under the finger")
-	# A clean tap (no drag) on a pin DOES open it (selection fires on release).
+	# A clean tap (no drag) on a pin DOES open it (selection fires on release). The handler
+	# is fire-and-forget and _on_rally_pin centres the camera on the pin before opening the
+	# panel, so the detail arrives one camera glide later.
 	hq._table_dragged = false
 	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "shakedown")
+	await get_tree().create_timer(Config.data.menu_camera_move_time).timeout
 	assert_true(hq._detail_open, "a tap with no drag opens the rally detail")
 
 

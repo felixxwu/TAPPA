@@ -344,20 +344,35 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   allocates a `StyleBoxFlat` per pin, so doing it unconditionally cost ~28 allocations a
   frame at full unlock. The guard keys on the pin NODE, not `_table_focus_index`, because
   `_refresh_map_pins` rebuilds the pin nodes without resetting the index.
-  The target set is every unlocked rally pin. There is **one world map**
+  The target set is **every** rally pin. There is **one world map**
   (`RegionLibrary.DEFAULT_MAP_IMAGE`) carrying the WHOLE roster
   (`_refresh_map_pins` builds a pin per `RallyLibrary.all()` entry), so there are no
   map-swap arrows and no viewed region — an unrevealed rally is still pinned, just
-  locked (grey, non-pickable, absent from the focus ring).
+  locked (grey and non-pickable). It **is** in the focus ring, though
+  (`_unlocked_pins` returns every pin): readouts are hover-only, so a pin the cursor
+  could not reach would be a shape on a dark table that never answers when you point at
+  it. It's `_activate_table_focus` that refuses to OPEN a locked pin, not the cursor that
+  refuses to land on it.
   `_select_target_under_center()` seats `_table_focus_index` on the
   target nearest `_table_center_pos()` (the fixed table camera's look point offset by the
-  live `_table_pan` — `_table_plane_axes` derives on-screen up/right from the camera pose).
+  live `_table_pan` — `_table_plane_axes` derives on-screen up/right from the camera pose)
+  — but **only within `GameConfig.map_select_radius_m`** of it. Past that nothing is
+  selected at all (`_clear_table_focus`), so Select over empty sea opens nothing instead of
+  whichever rally happened to be least far away. Every distance compared against that radius
+  is measured in the map PLANE (`_nearest_target_to_center` zeroes Y): a pin stands a
+  table-height above the plane the view centre lies in, so a raw 3D distance never comes
+  under it.
   **On entry (`_enter_table`) the map doesn't open dead-centre: it steers straight to the
   toughest event still to beat.** `_focus_hardest_incomplete()` picks the highest-difficulty
   (hidden authored tier) rally pin the player hasn't completed (`Save.rally_completed`),
   ties breaking toward the first in rally order, and pans the camera onto it so selection
   sticks there. Only when every pin is done (or there are none) does it fall back to
-  `_select_target_under_center()`. **Unless there is something new to reveal** — see
+  `_focus_nearest_target()` — which seats the cursor on the nearest pin **and pans onto
+  it**, at any distance. That fallback deliberately ignores `map_select_radius_m` (the rule
+  for a cursor the *player* is driving, not for seating one): entry re-centres the map, and
+  the middle of the map is rarely within 0.55 m of a pin, so testing what already lies under
+  the reticle opened the table with nothing selected at all.
+  **Unless there is something new to reveal** — see
   "New-rally reveal" below, which takes over the entry instead.
   Pan is clamped to the map extents, so at an edge the camera simply stops. The selected
   pin gets the hover-style readout underline. `menu_select` fires the selected target,
@@ -1389,50 +1404,43 @@ the same height as a flag pole (`RallyTrophy.HEIGHT` ≈ `RallyFlag.POLE_HEIGHT`
 `_make_pin` hangs the readout box off whichever marker it built and specials never look
 diminished beside ordinary rallies.
 
-**The readout box is all-or-nothing — except one documented exception.** A rally
-that isn't available yet — locked, or with no eligible car — gets **no box at
-all** (it used to get a dimmed one): a menu is either live at full opacity or
-absent. The **3D marker still stands at every pin** regardless, so the map keeps
-marking where the unavailable rallies are, greyed. An available pin therefore
-carries **two** pickable `Area3D` hit spheres bound to the same handler
-(`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the
-floating **readout box itself**, so a click on the menu enters the rally just like a
-click on the flag — while an unlocked-but-ineligible pin has only the flag sphere (no
-box to click) and no `label_panel` meta for the focus cursor to paint. Each pin also
-carries its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
-whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`) — ONE predicate
-over ONE count for every rally: `RallyLibrary.completions_required` reads a
-special's **`requires_completions`** and an ordinary rally's **`reveal_after`**,
-both compared against the GLOBAL count of completed ordinary rallies
-(`RallyLibrary._completed_count`). So a special opens after N rallies won, and an
-ordinary rally reveals in waves (~1–2 fresh rallies at a time rather than all at
-once). Specials used to gate on the player's roster-wide STAR TOTAL; stars became a
-spendable balance, and a gate reading a balance would take back a special the moment
-the player bought a car — see [star-economy.md](star-economy.md).
-**The one exception to all-or-nothing:** the **NEXT** locked
-special renders a **full-opacity, non-pickable** teaser box
-(`hq._build_special_teaser_label`, via `hq._make_pin`) reading **"0/2 rallies"** over
-"unlocks &lt;Part&gt;" (`hq._special_unlock_line`, derived from the upgrade
-catalogue's `UpgradeLibrary.unlocked_by_rally` — falling back to "unlocks engine
-swaps" for `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`) — the grey trophy below already
-carries the "not yet" signal, so the teaser doesn't need dimming to read as
-locked. **"Rallies", not "events":** the gate counts completed RALLIES, while an
-*event* is one stage inside a rally (`rally["events"]`) — the engine-swap lock
-copy quotes the same requirement the same way (`hq._show_swap_confirm`,
-`UpgradesMenu._swap_locked_hint`).
-**ONLY the next rung is teased** — `RallyLibrary.next_locked_special_id` picks the
-lowest `requires_completions` still shut (roster order breaks a tie), and every
-locked special above it hangs **no box at all**, just its trophy. The ladder is
-strictly ordered, so a requirement further up is not something the player can work
-on yet, and eight teasers at once buried the map under unreachable menus; on a
-fresh profile exactly one special quotes a number. Guarded by
-`test_menu_flow.gd::test_hq_only_the_next_locked_special_is_teased` and
-`::test_hq_locked_special_shows_a_full_opacity_teaser_box`.
-**The same rung is quoted permanently in the GARAGE** as the next-carrot line
+**ONE readout rule for every pin: always built, always starts HIDDEN, shown only while
+the cursor is on it.** Hover-only with no exceptions — a table of a dozen open menus
+reads as a noticeboard rather than a map, and one rule for all pins means panning across
+the table shows exactly one box wherever the cursor is (guarded by
+`test_menu_flow.gd::test_only_the_focused_pin_shows_its_readout`). It also means a pin the
+player cannot enter yet still **answers** when they point at it, which is why the cursor is
+allowed onto locked pins at all.
+What "not enterable" changes is the **opacity**: a rally out in the fog, or revealed but
+with nothing in the garage that fits, fades its box to `hq.FOGGED_PIN_DIM_ALPHA` — a
+full-opacity menu over a ghosted marker would read as live, which is the opposite of what
+the fade says. Every pin carries `label_panel` (for the focus cursor to paint) and
+`label_sprite` (so the focus pass can show/hide the whole box) in metadata, alongside its
+`rally_id` / `locked`.
+**Pickability is where locking actually bites.** An available pin carries **two**
+`Area3D` hit spheres bound to the same handler (`hq._add_pick_sphere`, rally id bound) —
+one over the flag/pole and one over the floating **readout box itself**, so a click on the
+menu enters the rally just like a click on the flag. A revealed-but-ineligible pin has only
+the flag sphere (a hit sphere floating where no live box hangs would be a target for
+nothing), and a **locked** pin has neither: grey, faded, look-don't-touch.
+`locked` is purely `not RallyLibrary.rally_revealed(rally, Save.profile)` — reveal is
+geometric now (is the pin inside a lit circle), with no star gate and no `reveal_after`
+counter left; see [map-exploration.md](map-exploration.md).
+**The one full-opacity exception:** the **nearest** locked special
+(`RallyLibrary.nearest_locked_special_id`) renders a teaser box
+(`hq._build_special_teaser_label`, via `hq._make_pin`) naming the event over "unlocks
+&lt;Part&gt;" (`hq._special_unlock_line`, derived from the upgrade catalogue's
+`UpgradeLibrary.unlocked_by_rally` — falling back to "unlocks engine swaps" for
+`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`). There is no progress fraction to quote any
+more, and a distance readout would be noise — the dark map around it already says "not
+yet". **ONLY the nearest one**, because a special further out is not something the player
+can work on yet and eight teasers at once buried the map under unreachable menus; the
+further specials still stand their trophies.
+**The same event is quoted permanently in the GARAGE** as the next-carrot line
 (`hq._carrot_line`, see the GARAGE section above) — the map teaser is where the fact is
 *placed on the world*, the garage line is where it is *always in front of the player*.
-Both derive from `next_locked_special_id` / `completions_needed` / `_special_unlock_line`,
-so they cannot drift.
+Both derive from `nearest_locked_special_id` / `_special_unlock_line`, so they cannot
+drift.
 An unlocked special's pin names its unlock too. A meter sits at the **bottom centre** of
 the HUD (`build_table_overlay`) — a drawn gold star (a one-star `StarRow`, since Syne Mono
 has no ★) beside the **digits alone**: `hq._refresh_meter` writes `"%d"` and the glyph
