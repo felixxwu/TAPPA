@@ -368,8 +368,9 @@ const RALLIES: Array[Dictionary] = [
 	# The three region showdowns below are ORDINARY rallies, not specials. Each used to be a
 	# special gating one rung of the four-rung NOS ladder; collapsing NOS to a single part
 	# (features/nitrous.md) left them gating nothing, and a "special" that awards no part is
-	# only a special by label — it would still claim the trophy marker, the garage carrot and
-	# a place in the all-specials endgame while paying exactly what an ordinary rally pays.
+	# only a special by label — it would still claim the trophy marker, the map's locked
+	# teaser and a place in the all-specials endgame while paying exactly what an ordinary
+	# rally pays.
 	# They are long, hard, open-class star-payers, which is what they actually are.
 	{
 		"id": "hc_showdown", "name": "The Lakes Showdown", "region": "home_coast", "difficulty": 4, "special": false,
@@ -1517,8 +1518,9 @@ static func reveal_depths() -> Dictionary:
 # The next SPECIAL the player is heading for: the unrevealed one closest to the frontier
 # they have already lit ("" once every special is revealed). Roster order breaks a tie.
 #
-# The map teases THIS special only, and the garage carrot line names the same one, so the
-# two surfaces can never point at different events. It replaced next_locked_special_id,
+# The map table teases THIS special only, and is now the only surface that names it (the
+# garage's carrot line, which quoted the same id, is gone — see
+# features/map-exploration.md). It replaced next_locked_special_id,
 # which picked the lowest authored rung of a ladder that no longer exists — nearest-to-
 # reach is what "next" means once the player chooses their own direction.
 static func nearest_locked_special_id(profile: Dictionary) -> String:

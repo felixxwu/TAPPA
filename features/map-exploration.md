@@ -149,10 +149,12 @@ authored rung had to be re-checked by hand whenever the roster changed.
 
 Surfaces that used to quote a count now name a destination instead:
 
-- The garage **carrot line** (`hq._carrot_line`) names the event itself —
-  `<EVENT> (unlocks X)`, no `EXPLORE TOWARD` prefix (a constant instruction is chrome) —
-  and picks its target with `RallyLibrary.nearest_locked_special_id`: the unrevealed
-  special closest to the frontier the player has already lit.
+- The garage's **carrot line** is **deleted** (`hq._carrot_line` /
+  `_refresh_carrot_line` and their widgets are gone). With no count to quote it fell back
+  to naming the nearest locked special, and a part-unlock special is titled after its own
+  reward, so it read as a bare "UPGRADE: SUPERCHARGER" over the garage explaining nothing.
+  The teaser below survives because on the MAP the name is placed where the player has to
+  reach it.
 - The map's **locked-special teaser** (`hq._build_special_teaser_label`) shows the event's
   NAME over what it unlocks, with no progress fraction: there is no counter to show, and a
   distance readout would be noise. The dark map around it already says "not yet".
