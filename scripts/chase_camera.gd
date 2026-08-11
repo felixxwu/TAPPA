@@ -16,6 +16,8 @@ var _smoothing: float
 var _base_fov: float
 var _fov_speed_boost: float
 var _fov_speed: float
+# Fixed extra FOV (degrees) while nitrous is delivering. See GameConfig.chase_fov_nitrous_boost.
+var _fov_nitrous_boost: float
 var _fov_smoothing: float
 var _dolly_mix: float
 # How far forward along the car's facing the look-at point sits, as a multiple of
@@ -32,6 +34,20 @@ var _tilt_max: float
 var _tilt_smoothing: float
 var _roll := 0.0     # current eased roll (radians)
 var _pitch := 0.0    # current eased pitch (radians)
+
+# Camera shake. ONE amplitude that every source pushes into (see _update_shake), applied as
+# rotation after the aim. Impulsive sources charge _shake_impulse, which decays; continuous
+# ones are re-read every tick and never latch. See features/camera.md.
+var _shake_max: float        # radians at full intensity
+var _shake_frequency: float
+var _shake_decay: float
+var _shake_g_threshold: float
+var _shake_g_gain: float
+var _shake_speed_gain: float
+var _shake_wheelspin_gain: float
+var _shake_nitrous_gain: float
+var _shake_impulse := 0.0    # decaying intensity from g-force spikes (0..1)
+var _shake_phase := 0.0      # seconds, advanced by delta — drives the oscillation
 var _prev_vel := Vector3.ZERO
 var _have_prev_vel := false
 # The target the cached _prev_vel belongs to; when it changes (a car swap via
@@ -66,6 +82,7 @@ func _ready() -> void:
 	_base_fov = cfg.chase_fov
 	_fov_speed_boost = cfg.chase_fov_speed_boost
 	_fov_speed = cfg.chase_fov_speed
+	_fov_nitrous_boost = cfg.chase_fov_nitrous_boost
 	_fov_smoothing = cfg.chase_fov_smoothing
 	_dolly_mix = cfg.chase_dolly_mix
 	_look_ahead_ratio = cfg.chase_look_ahead_ratio
@@ -73,6 +90,14 @@ func _ready() -> void:
 	_tilt_pitch_gain = cfg.chase_tilt_pitch_gain
 	_tilt_max = deg_to_rad(cfg.chase_tilt_max_deg)
 	_tilt_smoothing = cfg.chase_tilt_smoothing
+	_shake_max = deg_to_rad(cfg.shake_max_deg)
+	_shake_frequency = cfg.shake_frequency
+	_shake_decay = cfg.shake_decay
+	_shake_g_threshold = cfg.shake_g_threshold
+	_shake_g_gain = cfg.shake_g_gain
+	_shake_speed_gain = cfg.shake_speed_gain
+	_shake_wheelspin_gain = cfg.shake_wheelspin_gain
+	_shake_nitrous_gain = cfg.shake_nitrous_gain
 	fov = _base_fov
 
 
@@ -111,8 +136,13 @@ func _timed_physics_process(delta: float) -> void:
 	# Widen the FOV with horizontal speed to sell a sense of speed. The target
 	# FOV ramps linearly from _base_fov (stationary) to _base_fov +
 	# _fov_speed_boost at _fov_speed, then eased frame-rate-independently.
+	# Nitrous adds a further FIXED amount for as long as it's delivering, so the boost
+	# punches the view out at any speed rather than being swallowed by the speed ramp
+	# (which is already near its ceiling by the time nitrous is worth using).
 	var speed_frac := clampf(vel.length() / maxf(_fov_speed, 0.001), 0.0, 1.0)
 	var target_fov := _base_fov + _fov_speed_boost * speed_frac
+	if _fov_nitrous_boost != 0.0 and _nitrous_delivering():
+		target_fov += _fov_nitrous_boost
 	var fov_weight := 1.0 - exp(-_fov_smoothing * delta)
 	fov = lerpf(fov, target_fov, fov_weight)
 
@@ -170,7 +200,25 @@ func _timed_physics_process(delta: float) -> void:
 	if to_target.length() > 0.001 and absf(to_target.normalized().dot(Vector3.UP)) < 0.999:
 		look_at(aim, Vector3.UP)
 
-	_apply_gforce_tilt(delta)
+	# Shake goes LAST, on top of the aimed-and-leaned view: it is a disturbance of the shot the
+	# rest of this function composed, not an input to it.
+	_update_shake(delta, _apply_gforce_tilt(delta))
+
+
+# Whether the target car is actually delivering nitrous this tick. Reads EngineSim's
+# LATCHED nitrous_delivering rather than re-deriving it from the input action, so the view
+# only widens when the boost is really being made (holding the button with a dry tank, off
+# throttle, or under a fuel cut moves nothing and must move the camera no more than it
+# moves the car). Guarded for targets with no drivetrain — the test fixtures and the
+# replay/ghost bodies this camera can be pointed at are plain RigidBody3Ds.
+func _nitrous_delivering() -> bool:
+	# Deliberately NOT gated on _fov_nitrous_boost: this answers "is nitrous delivering", and the
+	# FOV punch is only one of its consumers (the shake is another). Folding one consumer's
+	# disable switch in here silently killed the other.
+	if target == null or target.get("drivetrain") == null:
+		return false
+	var engine: EngineSim = target.drivetrain.engine
+	return engine != null and engine.nitrous_delivering
 
 
 # The world point the camera aims at: _look_ahead_ratio × the car's half length
@@ -188,9 +236,13 @@ func _aim_point() -> Vector3:
 # lateral g, pitch with forward g. Acceleration is the frame-to-frame change in
 # the car's velocity projected onto its local axes; the resulting target angles
 # are clamped and eased so the tilt settles back to level when the g-forces drop.
-func _apply_gforce_tilt(delta: float) -> void:
+# Returns the car's acceleration magnitude in g this tick (0 when it cannot be measured), so
+# the shake can key off the SAME measurement rather than deriving a second, subtly different
+# one from its own velocity history.
+func _apply_gforce_tilt(delta: float) -> float:
 	var target_roll := 0.0
 	var target_pitch := 0.0
+	var accel_g := 0.0
 	if delta > 0.0 and target is RigidBody3D:
 		if target != _tilt_vel_target:
 			_have_prev_vel = false
@@ -198,6 +250,12 @@ func _apply_gforce_tilt(delta: float) -> void:
 		var cur_vel := (target as RigidBody3D).linear_velocity
 		if _have_prev_vel:
 			var accel := (cur_vel - _prev_vel) / delta
+			# The FULL 3D magnitude, unlike the tilt's two projections below: a hard landing is
+			# almost entirely VERTICAL, and it is one of the impacts the shake most needs to
+			# catch. Gravity is deliberately not subtracted — a car in free flight reads a
+			# steady 1 g, which sits below any sensible shake_g_threshold, and the landing spike
+			# that follows is what matters. Same convention as DamageModel's deceleration rule.
+			accel_g = accel.length() / 9.8
 			var car_basis := target.global_transform.basis
 			var lateral := accel.dot(car_basis.x)       # + = accelerating rightward
 			var longitudinal := accel.dot(-car_basis.z) # + = speeding up forward
@@ -214,6 +272,68 @@ func _apply_gforce_tilt(delta: float) -> void:
 	_pitch = lerpf(_pitch, target_pitch, weight)
 	rotate_object_local(Vector3.RIGHT, _pitch)
 	rotate_object_local(Vector3.FORWARD, _roll)
+	return accel_g
+
+
+# Shake the (already aimed and leaned) camera. ONE amplitude, fed by every source, applied as
+# three small rotations — see features/camera.md for the whole design.
+#
+# ROTATION ONLY, never position. A positional shake fights the dolly zoom (which sets the
+# follow distance precisely so the car holds its on-screen size) and, on a close mount, walks
+# the camera through the bodywork. Rotating the view is also what a head does.
+#
+# TWO KINDS OF SOURCE, and the distinction is the whole structure:
+#   - IMPULSIVE (the g-force term). A crash, a hard landing, a clipped bush and a kerb strike
+#     are all one spike in the car's acceleration, so ONE source covers every impact in the
+#     game with no per-event plumbing and nothing to forget to wire up. It charges a decaying
+#     envelope, because an impact is over in a tick but must be FELT for a moment after.
+#   - CONTINUOUS (speed, wheelspin, nitrous). Re-read every tick and never latched, so they
+#     stop the instant the condition does.
+# Both add into one intensity, which is clamped to 1 — sources stack, but simultaneous events
+# can never multiply into nausea, and shake_max_deg alone bounds how violent it can ever be.
+#
+# The oscillation is DETERMINISTIC (layered sines on a phase accumulator, not randf): three
+# incommensurate frequencies per axis, which reads as irregular vibration without a random
+# stream, so a replay of the same run shakes the same way and a test can assert on it. The
+# frequencies differ per axis so pitch/yaw/roll never move as one — that would read as a
+# single wobble rather than a rattle.
+func _update_shake(delta: float, accel_g: float) -> void:
+	if _shake_max <= 0.0:
+		return
+	# Impulsive: charge from the g-force excess, then decay. max() rather than += so a long
+	# scrape holds its level instead of integrating up to full.
+	# Clamped to 1 as it is CHARGED, not merely where it is read. A 300 g arrest would otherwise
+	# store an envelope of hundreds, and the decay would then spend seconds coming back down
+	# through that headroom with the shake pinned at full amplitude the whole way — a big crash
+	# would rattle the camera long after the car had stopped.
+	var spike := maxf(accel_g - _shake_g_threshold, 0.0) * _shake_g_gain
+	_shake_impulse = clampf(maxf(_shake_impulse * exp(-_shake_decay * delta), spike), 0.0, 1.0)
+
+	var intensity := _shake_impulse
+	var vel := Vector3.ZERO
+	if target is RigidBody3D:
+		vel = (target as RigidBody3D).linear_velocity
+	vel.y = 0.0
+	intensity += _shake_speed_gain * clampf(vel.length() / maxf(_fov_speed, 0.001), 0.0, 1.0)
+	# Duck-typed rather than `as Drivetrain`, deliberately: this camera is pointed at replay and
+	# ghost stand-ins as well as the player's car, and the reading is optional — a target that
+	# cannot report wheelspin simply contributes none, instead of the camera needing to know
+	# which kinds of target exist.
+	var dt: Object = target.get("drivetrain") if target != null else null
+	if dt != null and dt.has_method("drive_wheelspin_excess"):
+		intensity += _shake_wheelspin_gain * float(dt.drive_wheelspin_excess())
+	if _nitrous_delivering():
+		intensity += _shake_nitrous_gain
+	intensity = clampf(intensity, 0.0, 1.0)
+	if intensity <= 0.0:
+		return
+
+	_shake_phase += delta
+	var amplitude := _shake_max * intensity
+	var w := TAU * _shake_frequency * _shake_phase
+	rotate_object_local(Vector3.RIGHT, amplitude * sin(w * 1.00))
+	rotate_object_local(Vector3.UP, amplitude * sin(w * 1.37 + 1.7))
+	rotate_object_local(Vector3.FORWARD, amplitude * sin(w * 0.83 + 3.1))
 
 
 # Terrain surface height at a world (x, z), used to seat the camera a fixed

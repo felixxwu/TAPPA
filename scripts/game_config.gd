@@ -790,8 +790,15 @@ func has_nitrous() -> bool:
 @export_range(0.0, 100.0) var chase_fov_speed_boost := 100.0
 ## Speed (m/s) at which the full chase_fov_speed_boost is reached.
 @export_range(1.0, 100.0) var chase_fov_speed := 55.0
+## Extra FOV (degrees) added, on top of the speed boost, for as long as nitrous is
+## actually DELIVERING (held + charged + combusting — EngineSim.nitrous_delivering, not
+## merely the button held). A FIXED amount, not speed-scaled: the point is a punch at the
+## moment of the boost, so it reads at any speed. Eases in and out at
+## chase_fov_smoothing like every other FOV change. 0 disables it.
+## See features/nitrous.md.
+@export_range(0.0, 60.0) var chase_fov_nitrous_boost := 20.0
 ## Easing rate for chase FOV changes (1 - exp(-rate*dt)); higher snaps faster.
-@export_range(0.1, 20.0) var chase_fov_smoothing := 4.0
+@export_range(0.1, 20.0) var chase_fov_smoothing := 2.0
 ## Dolly-zoom strength: how strongly the follow distance is pulled in to
 ## counteract the speed FOV so the car keeps its on-screen size. 0 = distance
 ## never changes (pure FOV zoom, the car grows with speed); 1 = full dolly zoom
@@ -816,6 +823,39 @@ func has_nitrous() -> bool:
 @export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.0
 @export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
 @export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0
+## CAMERA SHAKE (chase only). One shared amplitude that every source below pushes into, applied
+## as ROTATION after the camera has aimed — never as position, which would break the dolly-zoom
+## framing. See features/camera.md → "Camera shake".
+##
+## Peak shake amplitude (degrees) at full intensity, on each of pitch / yaw / roll. The single
+## "how violent" dial: 0 disables shake outright, and every gain below is a share of it.
+@export_range(0.0, 10.0) var shake_max_deg := 0.5
+## Oscillation rate (Hz). Layered at three incommensurate multiples of this so the shake never
+## reads as a clean wobble. Keep it well under half the physics rate or it aliases into a slow
+## sway instead of a vibration.
+@export_range(0.5, 30.0) var shake_frequency := 13.0
+## How fast an IMPULSE (a crash, a landing, a clipped bush) decays, as the usual
+## 1-exp(-rate·dt) weight. Higher = a sharper, shorter jolt.
+@export_range(0.1, 30.0) var shake_decay := 7.0
+## G-FORCE source — the one that covers every impact. The car's acceleration magnitude in g;
+## anything above this threshold shakes, scaled by the gain (shake per g of excess). The
+## threshold keeps ordinary cornering, braking and free-fall (a steady ~1 g) quiet, the same way
+## impact_threshold_g keeps them free of damage — see features/damage.md.
+@export_range(0.0, 20.0) var shake_g_threshold := 2.5
+## Intensity added per g of acceleration above shake_g_threshold. 1.0 means ~1 g of excess
+## already reaches full amplitude.
+@export_range(0.0, 2.0) var shake_g_gain := 4
+## SPEED source: intensity added at chase_fov_speed and above (the same reference speed the FOV
+## ramp uses, so the two "sense of speed" effects cannot disagree), ramping linearly from 0.
+## A constant low-level buzz — keep it small.
+@export_range(0.0, 1.0) var shake_speed_gain := 0.5
+## WHEELSPIN source: intensity added per 1.0 of fore/aft breakaway past peak on the worst DRIVEN
+## tire (Drivetrain.drive_wheelspin_excess). Only driven wheels count — a locked undriven wheel
+## already reaches the camera through the g-force term.
+@export_range(0.0, 2.0) var shake_wheelspin_gain := 0.02
+## NITROUS source: intensity added for as long as nitrous is DELIVERING, on top of the FOV punch
+## (chase_fov_nitrous_boost). Flat, like that boost, and for the same reason.
+@export_range(0.0, 1.0) var shake_nitrous_gain := 0.25
 ## Replay WHEEL shot: lateral clearance (m) kept OUTSIDE the target car's half-width
 ## when mounting the onboard wheel-cam rig. The rig sits at (car half-width +
 ## this margin) out from the body centreline, so it never lands inside — or right on

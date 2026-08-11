@@ -210,12 +210,17 @@ func test_braking_to_a_stop_while_steering_still_anchors_the_car() -> void:
 		"brake + steering at a standstill holds position (drifted %.3f m)" % drift.length())
 
 
-func test_power_keeps_the_front_tires_inside_their_friction_ellipse() -> void:
-	# Emergent, not scripted: the setpoint is a share of the grip the ellipse has LEFT after
-	# the measured longitudinal spend, so driving the front axle costs cornering. The robust
-	# form of that claim is the ellipse itself — full steering PLUS full throttle on FWD must
-	# not drive the fronts meaningfully past peak, because the lateral demand gives way to
-	# what the drive is already using.
+func test_steering_does_not_run_a_driven_front_axle_further_past_peak() -> void:
+	# Driving the front axle costs cornering, emergently: lateral_grip_share normalises the
+	# lateral ask against the MEASURED longitudinal spend, so a spinning front axle gets less
+	# steering than a rolling one.
+	#
+	# The claim is deliberately RELATIVE — steering must not drive the axle meaningfully
+	# further past peak than the drive alone already does. An absolute ceiling looks tighter
+	# and is not: in first gear at full throttle this fixture's fronts reach long_used ~1.4
+	# with the wheels dead straight, so an absolute bound low enough to be interesting is
+	# really asserting that the throttle bled off, and it passes for the wrong reason. What
+	# must not happen is a SPIRAL — lateral ask feeding wheelspin feeding more ask.
 	var cfg: GameConfig = Config.data
 	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
 	_car.drivetrain.engine.gear = 1
@@ -224,19 +229,33 @@ func test_power_keeps_the_front_tires_inside_their_friction_ellipse() -> void:
 	# Let it accelerate for real.
 	_car.linear_velocity = -_car.global_transform.basis.z * 12.0
 	Input.action_press("accelerate")
+	await _wait_physics(45)
+	var straight_usage := _front_usage()
+	Input.action_release("accelerate")
+	# Same manoeuvre, now steering as well. Re-settle first so both runs start alike.
+	await setup_settled_car()
+	_car.drivetrain.engine.auto = false
+	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
+	_car.drivetrain.engine.gear = 1
+	_car.linear_velocity = -_car.global_transform.basis.z * 12.0
+	Input.action_press("accelerate")
 	Input.action_press("steer_left")
 	await _wait_physics(45)
-	var usage := _front_usage()
+	var steered_usage := _front_usage()
 	var state: Dictionary = _car.drivetrain.front_axle_state(Config.data)
 	var long_slip := absf(float(state["slip_long_norm"]))
+	var lat_used := absf(float(state["lat_used"]))
 	Input.action_release("steer_left")
 	Input.action_release("accelerate")
-	# Precondition: the drive really is spending front grip, or the test proves nothing.
+	# Preconditions: the drive really is spending front grip, and the steering really did get
+	# some cornering out of it — otherwise the comparison proves nothing.
 	assert_gt(long_slip, 0.001,
 		"precondition: a driven front axle shows longitudinal slip (%.4f)" % long_slip)
-	assert_lt(usage, 1.15,
-		"steering + power keeps the fronts inside their ellipse rather than overdriving them (%.2f)"
-			% usage)
+	assert_gt(lat_used, 0.1,
+		"precondition: the servo got real cornering grip out of the driven axle (%.2f)" % lat_used)
+	assert_lt(steered_usage, straight_usage * 1.5,
+		"steering adds cornering without spiralling the fronts further past peak (%.2f vs %.2f straight)"
+			% [steered_usage, straight_usage])
 	assert_gt(cfg.traction_ellipse_ratio, 0.0, "the ellipse weighting is live")
 
 
@@ -439,8 +458,9 @@ func test_two_pinned_demands_scale_onto_the_circle() -> void:
 	assert_lt(scale, 1.0, "the pedal gives up part of the budget so the car can still turn")
 	# The scale is exactly the reciprocal of how far outside the circle the pair sat. Note the
 	# (scaled_long, raw_steer) pair is deliberately NOT on the circle: only the longitudinal
-	# side is scaled here, because the servo's own lat_available limits the lateral side and
-	# scaling both would double-count. See Car.longitudinal_demand_scale.
+	# side is scaled here, because the servo's own lateral_grip_share normalises the lateral
+	# side against the MEASURED spend and scaling both would double-count. See
+	# Car.longitudinal_demand_scale.
 	assert_almost_eq(Vector2(1.0, 1.0).length() * scale, 1.0, 1e-5,
 		"the scale is 1 / |(long, steer)|")
 
@@ -461,6 +481,95 @@ func test_more_steering_takes_more_from_the_pedal() -> void:
 	var light := CarScript.longitudinal_demand_scale(1.0, 0.3)
 	var heavy := CarScript.longitudinal_demand_scale(1.0, 1.0)
 	assert_lt(heavy, light, "more steering demand leaves the pedal less of the budget")
+
+
+# --- How much of the circle the lateral side may claim -------------------------
+
+func test_the_lateral_share_is_untouched_when_the_circle_has_room() -> void:
+	# Nothing is being spent longitudinally, so the driver gets exactly what they asked for —
+	# the free-rolling case must not be taxed by machinery meant for a competing spend.
+	assert_almost_eq(CarScript.lateral_grip_share(1.0, 0.0), 1.0, 1e-5, "full ask, nothing spent")
+	assert_almost_eq(CarScript.lateral_grip_share(0.4, 0.5), 0.4, 1e-5,
+		"a pair inside the circle is left alone")
+	assert_almost_eq(CarScript.lateral_grip_share(0.0, 1.0), 0.0, 1e-5, "no ask, no share")
+
+
+func test_the_lateral_share_never_collapses_however_much_grip_is_spent() -> void:
+	# THE regression test for the FWD/AWD uphill trap. When the world (a climb, a slick
+	# surface) rather than the pedal sets the longitudinal spend, the front axle can be at or
+	# past peak longitudinally while the player is still asking to turn. Treating that spend as
+	# a reservation zeroed the setpoint, so the servo drove the wheels to the null and the car
+	# could not be steered out of a deviation in EITHER direction. The share must stay
+	# meaningful at any spend — 1/sqrt(2) of the ask is the circle-splitting floor.
+	var floor_share := 1.0 / sqrt(2.0)
+	for spent in [0.9, 1.0, 1.5, 5.0]:
+		var share := CarScript.lateral_grip_share(1.0, spent)
+		assert_gte(share, floor_share - 1e-5,
+			"a full ask keeps at least a 1/sqrt(2) share at long_used %.1f (got %.3f)"
+				% [spent, share])
+	# And it holds for a partial ask too — proportionally, not as a flat floor.
+	assert_gte(CarScript.lateral_grip_share(0.5, 3.0), 0.5 * floor_share - 1e-5,
+		"a half ask keeps at least half of that floor")
+
+
+func test_spending_more_grip_leaves_less_for_cornering() -> void:
+	# The trade still has to BE a trade: power understeer stays emergent. More longitudinal
+	# spend must reduce the share, monotonically, right up to the floor.
+	var light := CarScript.lateral_grip_share(1.0, 0.2)
+	var heavy := CarScript.lateral_grip_share(1.0, 0.8)
+	var saturated := CarScript.lateral_grip_share(1.0, 1.0)
+	assert_lt(heavy, light, "more spend leaves less cornering share")
+	assert_lt(saturated, heavy, "a saturated axle leaves less again")
+
+
+func test_the_lateral_share_never_amplifies_the_ask() -> void:
+	# A reduction only — the servo may never be told to ask for more grip than the driver did,
+	# or a light steering input would become a heavy one.
+	for ask in [0.0, 0.25, 0.5, 1.0]:
+		for spent in [0.0, 0.3, 1.0, 4.0]:
+			assert_lte(CarScript.lateral_grip_share(ask, spent), ask + 1e-6,
+				"share(%.2f, %.1f) never exceeds the ask" % [ask, spent])
+
+
+func test_the_lateral_share_ignores_the_sign_of_the_spend() -> void:
+	# long_used is a magnitude of spend: braking and driving compete for the same grip, so a
+	# negative reading (however a caller signs it) must cost the same as a positive one.
+	assert_almost_eq(CarScript.lateral_grip_share(1.0, -0.9),
+		CarScript.lateral_grip_share(1.0, 0.9), 1e-6, "spend competes by magnitude, not sign")
+
+
+func test_a_climbing_front_driven_car_can_still_be_steered() -> void:
+	# The same trap end-to-end, through the real servo and tire model. A constant force
+	# opposing travel stands in for gravity down a slope (the fixture is flat), which is what
+	# makes this specifically a WORLD-imposed longitudinal spend: the pedal arbitration cannot
+	# bound it, so the old reservation reading zeroed the steering authority.
+	var cfg: GameConfig = Config.data
+	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
+	_car.drivetrain.engine.gear = 1
+	# ~20 degrees of climb: m·g·sin(theta), opposing the direction of travel.
+	var grade_force := _car.mass * 9.8 * 0.34
+	Input.action_press("accelerate")
+	Input.action_press("steer_left")
+	for i in 60:
+		_car.constant_force = _car.global_transform.basis.z * grade_force
+		await get_tree().physics_frame
+	var state: Dictionary = _car.drivetrain.front_axle_state(Config.data)
+	var spent := absf(float(state["long_used"]))
+	var angle := _car.steering
+	var yaw_rate := _car.angular_velocity.y
+	Input.action_release("steer_left")
+	Input.action_release("accelerate")
+	_car.constant_force = Vector3.ZERO
+	# Precondition: the climb really has the front axle spending most of its grip, or this
+	# proves nothing about the trap.
+	assert_gt(spent, 0.9,
+		"precondition: the graded climb has the driven front axle at/past peak longitudinally (%.2f)"
+			% spent)
+	assert_gt(angle, cfg.steer_limit * 0.15,
+		"a climbing FWD car still holds a real steering angle (%.3f rad)" % angle)
+	# And the angle is doing something: steering left yaws the car left (+Y in Godot).
+	assert_gt(yaw_rate, 0.0,
+		"the retained angle actually rotates the car toward the demanded side (%.3f rad/s)" % yaw_rate)
 
 
 # --- The front-axle reading the servo closes its loop on -----------------------
@@ -492,18 +601,19 @@ func test_front_axle_state_load_weights_the_two_wheels() -> void:
 	assert_true(bool(state["in_contact"]), "two loaded front wheels report contact")
 	assert_gt(float(state["slip_angle"]), 0.20 * 0.9,
 		"the heavily loaded wheel dominates the reading")
-	# The axle also reports the BUDGET the servo consumes, so the ellipse maths lives with the
-	# tire model instead of being re-derived by the steering. Nothing is being spent
-	# longitudinally here, so all of it is available for cornering.
-	assert_almost_eq(float(state["lat_available"]), 1.0, 1e-5,
-		"no longitudinal spend leaves the whole budget for cornering")
+	# The axle also reports the SPEND the servo normalises against, so the ellipse maths lives
+	# with the tire model instead of being re-derived by the steering. Nothing is being spent
+	# longitudinally here.
+	assert_almost_eq(float(state["long_used"]), 0.0, 1e-5,
+		"a free-rolling front axle reports no longitudinal spend")
 	assert_almost_eq(float(state["lat_used"]), 0.0, 1e-5, "and none of it is used yet")
 
 
-func test_front_axle_state_budget_shrinks_as_the_drive_spends_grip() -> void:
+func test_front_axle_state_cornering_share_shrinks_as_the_drive_spends_grip() -> void:
 	# The ellipse accounting lives with the tire model, not the steering servo, so that the
 	# servo cannot drift out of step with what _tire_force actually applies. Its contract:
-	# longitudinal spend takes cornering budget away.
+	# longitudinal spend takes cornering share away. Asserted end-to-end through
+	# lateral_grip_share — the reading and the use of it, so neither can drift alone.
 	var dt: Drivetrain = _car.drivetrain
 	var fronts: Array = dt.front_wheels
 	var c: Drivetrain.WheelContact = dt._contact_pool[fronts[0]]
@@ -516,16 +626,21 @@ func test_front_axle_state_budget_shrinks_as_the_drive_spends_grip() -> void:
 	dt._contacts.append(c)
 
 	c.slip_long_norm = 0.0
-	var idle: float = dt.front_axle_state(Config.data)["lat_available"]
+	var idle := CarScript.lateral_grip_share(
+		1.0, float(dt.front_axle_state(Config.data)["long_used"]))
 	c.slip_long_norm = 0.075
-	var driving: float = dt.front_axle_state(Config.data)["lat_available"]
+	var driving := CarScript.lateral_grip_share(
+		1.0, float(dt.front_axle_state(Config.data)["long_used"]))
 	c.slip_long_norm = 0.15
-	var flat_out: float = dt.front_axle_state(Config.data)["lat_available"]
+	var flat_out := CarScript.lateral_grip_share(
+		1.0, float(dt.front_axle_state(Config.data)["long_used"]))
 
-	assert_almost_eq(idle, 1.0, 1e-5, "no longitudinal slip leaves the full budget")
+	assert_almost_eq(idle, 1.0, 1e-5, "no longitudinal slip leaves the full ask intact")
 	assert_lt(driving, idle, "spending grip longitudinally takes it from cornering")
 	assert_lt(flat_out, driving, "and spending more takes more")
-	assert_gte(flat_out, 0.0, "the budget floors at zero rather than going imaginary")
+	# Never to nothing, however hard the axle is driven — the guarantee that keeps a
+	# front-driven car steerable on a climb. See Car.lateral_grip_share.
+	assert_gt(flat_out, 0.0, "the share is reduced, never zeroed")
 
 
 func test_front_axle_state_reports_no_contact_when_airborne() -> void:

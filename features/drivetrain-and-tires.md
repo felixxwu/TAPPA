@@ -39,6 +39,7 @@ What each tire is doing *right now*, for the surface effects — tire-mark opaci
 | `wheel_force_n` | magnitude of the combined long+lat force applied this tick, in **N** (`WheelContact.force_n`) | gravel rut opacity — shear work, not proximity to the limit |
 | `wheel_grip_usage` | `slip_use`, how far up the grip curve (1.0 = on the limit) | tarmac skid opacity — the tire giving up |
 | `wheel_long_grip_usage` | `grip_fraction(abs(slip_long_norm), slip_peak)` — the slip ratio over the peak ratio, **unsigned** and NOT ellipse-weighted | the debris gate: has this tire broken traction fore/aft (spinning up, or locked)? |
+| `drive_wheelspin_excess` | the **max** of `wheel_long_grip_usage - 1` over the **driven** wheels, floored at 0 | the camera-shake wheelspin term ([camera.md](camera.md)). Max, not load-weighted: one wheel lighting up is felt as a judder, and weighting would hide an unloaded inside wheel spinning freely. Gated on `is_wheel_driven`, so a locked undriven wheel under braking is not mistaken for wheelspin — braking reaches the camera through the g-force term instead |
 
 Same contract as `front_axle_state`, and for the same reason: these read the pooled
 `WheelContact` directly, **not** the `readouts` dict, which only exists while

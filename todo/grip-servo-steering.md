@@ -14,7 +14,7 @@ its own section below rather than quietly patched:
   and that a driven front axle lost nearly all steering under power
   ([Throttle gives way too](#throttle-gives-way-too-on-a-driven-steered-axle)).
 - Reasoning about the throttle case exposed that the steering demand was being scaled TWICE —
-  once by the arbitration and again by `lat_available` — under-steering every braking corner by
+  once by the arbitration and again by the servo's own lateral normalisation — under-steering every braking corner by
   a factor of 0.71 (see Input demand).
 - Code review found the null angle was wrong in reverse, swinging the wheels to full lock
   ([Reverse needs NO special case](#reverse-needs-no-special-case)), and that the substep hoist
@@ -134,12 +134,11 @@ compromise but the optimum on a friction circle, and what a driver with progress
 does. **No config knob.** Trail braking and power-out both emerge: as steering winds on the
 pedal bleeds off, and as it unwinds the pedal returns.
 
-**Only the longitudinal side is scaled.** The lateral side is already limited by the servo's
-own `lat_available` (what the ellipse has left after the *measured* longitudinal spend), so
-scaling the steering demand too would **double-count** — at 0.71 longitudinal the tires have
-0.71 of lateral budget, and a player asking for everything should get all of it, not
-`0.71 x 0.71 = 0.5`. An earlier revision made exactly this mistake and quietly under-steered
-every braking corner by a factor of 0.71.
+**Only the longitudinal side is scaled here.** The lateral side is normalised by the servo's
+own `lateral_grip_share` against the spend it *measures*, so scaling the steering demand too
+would **double-count** — a player asking for everything should get the whole remaining share,
+not `0.71 x 0.71 = 0.5`. An earlier revision made exactly this mistake and quietly
+under-steered every braking corner by a factor of 0.71.
 
 **This is demand arbitration, not ABS or traction control.** Pedal torque is untouched when
 the player is not steering, so wheels still lock up under braking and still spin up under
@@ -176,11 +175,13 @@ Replaces `_update_steering` entirely. Runs in `_timed_physics_process` **after**
 ```
 front = drivetrain.front_axle_state()      # load-weighted; see below
 
-# What is left of the friction circle for cornering, MEASURED not modelled:
-long_used     = absf(front.s_long * cfg.traction_ellipse_ratio) / front.slip_peak
-lat_available = sqrt(max(0.0, 1.0 - long_used * long_used))
-
-setpoint = steer_demand * lat_available    # 0..1 of peak grip
+# How much of the friction circle cornering may claim, MEASURED not modelled. The two sides
+# COMPETE for the circle (Car.lateral_grip_share) — an earlier revision RESERVED the
+# longitudinal spend instead, as lat_available = sqrt(1 - long_used^2), which zeroed the
+# steering authority whenever the world rather than the pedal set that spend (a climb on
+# FWD/AWD). See "The spend competes, it does not reserve" below.
+long_used = absf(front.s_long * cfg.traction_ellipse_ratio) / front.slip_peak
+setpoint  = steer_demand * demand_scale(min(long_used, 1.0), steer_demand)  # 0..1 of peak
 measured = absf(front.s_lat) / front.slip_peak
 error    = setpoint - measured
 
@@ -199,7 +200,36 @@ steering = clampf(move_toward(steering, target, cfg.steer_speed * delta),
                   -cfg.steer_limit, cfg.steer_limit)
 ```
 
-#### Why the setpoint is the lateral budget, not total usage
+#### The spend competes, it does not reserve
+
+**Amended after the FWD/AWD climb trap.** The reservation form below —
+`setpoint = steer_demand * sqrt(1 - long_used²)` — holds only while something bounds
+`long_used` below 1. The pedal arbitration bounds the *request*, never the *spend*: the
+longitudinal force a tire must produce is set by the world as much as by the pedal, so
+climbing a slope (or driving a slick surface) a driven front axle spends essentially all of
+its grip going forwards. Measured on the flat test fixture, first gear at full throttle alone
+reaches `long_used ≈ 1.4` with the wheels straight — no gradient needed.
+
+The remainder then reads ~0, the setpoint collapses, and the servo concludes there is no
+cornering grip to be had and drives the wheels to the null. The car tracks whichever way it is
+already sliding and cannot be steered out **in either direction** — the failure that motivated
+this amendment. It is a controller artifact, not physics: `_tire_force`'s ellipse trades
+longitudinal force for lateral as the wheel turns, so the grip was available all along.
+
+So treat the two as competing for one circle — `Car.lateral_grip_share`, which delegates to
+the *same* `longitudinal_demand_scale` normalisation with the measured spend in place of the
+assumed one, so the two mechanisms cannot drift apart. The lateral share is then never below
+`steer_demand / sqrt(2)`: full power on a steep climb becomes a real trade (turn and lose
+drive, or hold the throttle and run wide) instead of a one-way ratchet.
+
+`long_used` is clamped to 1 before normalising. Past peak the friction vector is saturated, so
+extra slip does not reserve grip that turning could otherwise have used — it only rotates the
+vector. Unclamped, a spinning axle walks the authority back toward zero: the same trap, one
+step removed. Measured cost of the clamp on the flat full-power case: combined front usage
+1.48 vs 1.42 unclamped, both inside the 1.29–1.46 band the *straight-ahead* baseline already
+occupies — so the clamp buys the guarantee for nothing.
+
+#### Why the setpoint is a lateral share, not total usage
 
 The steer angle only moves the **lateral** component, so comparing the player's request
 against *combined* usage charges them for the longitudinal spend. Under threshold braking
@@ -209,10 +239,11 @@ A request of 60% would then produce `error = -0.40`, driving the offset to zero:
 would refuse to turn in under braking at all.** Measuring against the *remaining lateral*
 share is what makes trail braking work.
 
-The two mechanisms agree numerically, which is the check that this is coherent: demand
-normalisation sets brake to 0.71, so `long_used ≈ 0.71`, so
-`lat_available = sqrt(1 - 0.5) ≈ 0.71`, so `setpoint = 1.0 × 0.71 = 0.71`. Both halves land
-on the same 71% share of the circle.
+The two mechanisms agree by construction, which is the check that this is coherent: both are
+the same circle normalisation, one over the *requested* longitudinal demand and one over the
+*measured* spend. Demand normalisation sets brake to 0.71, so `long_used ≈ 0.71`, so
+`setpoint = 1.0 × demand_scale(0.71, 1.0) ≈ 0.82` — the pair `(0.71, 0.82)` on the circle,
+with the lateral side taking the larger share because it is the side being asked for.
 
 Note `long_used` is measured per front wheel, so `brake_bias` sending different torque to
 the front axle is accounted for automatically — no need to model the split.
@@ -316,9 +347,9 @@ guards the pair together for exactly that reason.
 | Steady cornering | converges to the commanded usage | stable fixed point at `measured == setpoint` |
 | Half input | settles at ~50% of available | proportional setpoint |
 | Release mid-slide | lateral slip → 0, slide catches | target *is* the null |
-| Braking + steering | trail braking | demand normalisation frees longitudinal budget; `lat_available` reflects what is left |
+| Braking + steering | trail braking | demand normalisation frees longitudinal budget; `lateral_grip_share` normalises the lateral ask against what the brake is measurably spending |
 | FWD/AWD, zero input, full power | resolves cleanly | null is lateral-only; wheelspin is irrelevant to it |
-| FWD/AWD under power, turning | authority shrinks, but never to nothing | `long_used` is measured, so `lat_available` falls — **power understeer becomes emergent**, not scripted — while the throttle scaling keeps a real angle available. See "Throttle gives way too" |
+| FWD/AWD under power, turning | authority shrinks, but never to nothing | `long_used` is measured, so the lateral share falls — **power understeer becomes emergent**, not scripted — but never past `steer_demand / sqrt(2)`, so the car stays steerable. The reservation form broke this promise on a climb; see "The spend competes, it does not reserve" |
 | RWD under power, turning | full steering authority | the front tires never drive, so the throttle is not scaled and takes no cornering grip |
 | Past the limit | pulls itself back | `setpoint ≤ 1` ⇒ commanded slip never exceeds peak; no over-limit clause needed |
 | One front airborne | handled implicitly | its `n_force` is 0, so the load weighting drops it |

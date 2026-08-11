@@ -808,10 +808,10 @@ func _resolve_wind(cfg: GameConfig) -> void:
 # a pedal pinned WITH full steering scales to 0.71 — not an invented compromise but the
 # actual optimum on a friction circle, and what a driver with progressive pedals does.
 #
-# Only the LONGITUDINAL side is scaled. The lateral side is already limited by the servo's
-# own lat_available term (what the ellipse has left after the measured longitudinal spend),
-# so scaling the steering demand as well would double-count: at 0.71 longitudinal the tires
-# have 0.71 of lateral budget, and the player asking for everything should get all of it.
+# Only the LONGITUDINAL side is scaled here. The lateral side is normalised by the servo's own
+# lateral_grip_share, against the spend it MEASURES rather than the one requested here, so
+# scaling the steering demand a second time would double-count. The two agree by construction:
+# both are this same circle normalisation, one in input space and one in measured space.
 #
 # Trail braking and power-out both fall out for free: as steering winds on the pedal bleeds
 # off, and as it unwinds the pedal returns.
@@ -820,6 +820,45 @@ func _resolve_wind(cfg: GameConfig) -> void:
 static func longitudinal_demand_scale(long_demand: float, steer_demand: float) -> float:
 	var mag := Vector2(long_demand, steer_demand).length()
 	return 1.0 / mag if mag > 1.0 else 1.0
+
+
+# The share of peak front grip the steering servo should ask for laterally, given what the
+# front tires are ALREADY spending longitudinally (`long_used`, measured — see
+# Drivetrain.front_axle_state). 0..1 of peak.
+#
+# THE LONGITUDINAL SPEND IS NOT A RESERVATION, and that is the whole point of this function.
+# The obvious reading — the driver may have whatever the ellipse has left, `steer_demand *
+# sqrt(1 - long_used²)` — is right only while something bounds `long_used` below 1. The pedal
+# arbitration above bounds the driver's *request*, but not the spend: the longitudinal force
+# a tire must produce is set by the WORLD as much as by the pedal. Climbing a slope, a driven
+# front axle spends nearly all of its grip just holding the car up the hill, and on a
+# low-grip surface it does so at a fraction of the pedal. The remainder then reads ~0, the
+# setpoint collapses with it, and the servo — correctly, by its own maths — concludes there
+# is no cornering grip to be had and drives the wheels to the null. The car tracks whichever
+# way it is already sliding and the player cannot steer out of it, in EITHER direction. That
+# is the FWD/AWD-uphill trap this replaced, and note it is a controller artifact, not
+# physics: the tire model itself will happily trade longitudinal force for lateral as the
+# wheel turns (that is what the ellipse in _tire_force does), so the grip was there all along
+# — the servo just never asked for it.
+#
+# So treat the two as COMPETING for one circle, exactly as longitudinal_demand_scale already
+# treats two pedal demands: if (long_used, steer_demand) lies outside the unit circle, scale
+# BOTH onto it. It is literally the same normalisation with the measured spend in place of
+# the assumed one, which is why it delegates rather than re-deriving — the two mechanisms
+# cannot drift apart.
+#
+# The guarantee that fixes the trap: the result is never below `steer_demand / sqrt(2)`, so
+# the driver keeps ~71% of their asked-for cornering share no matter how much longitudinal
+# grip is being spent. Full power on a steep climb becomes a real trade — turn and lose drive,
+# or hold the throttle and run wide — instead of a one-way ratchet with no way out.
+#
+# `long_used` is clamped to 1 before the normalisation. Past peak the tire's friction vector
+# is saturated, so further slip does not reserve grip that turning could otherwise have used;
+# it only rotates the vector. Without the clamp a wildly spinning front axle would drive the
+# authority back toward zero — the same trap, one step removed.
+static func lateral_grip_share(steer_demand: float, long_used: float) -> float:
+	var spent := clampf(absf(long_used), 0.0, 1.0)
+	return steer_demand * longitudinal_demand_scale(spent, steer_demand)
 
 
 # One tick's correction, in RADIANS, for a usage error in fractions-of-peak.
@@ -881,13 +920,17 @@ func _chassis_slip_angle() -> float:
 # |slip_angle|, re-measured every tick, so there is no integrator to store or wind up. The
 # wheel angle IS the integrator.
 #
-# THE SETPOINT IS A SHARE OF THE LATERAL BUDGET, not of total usage: the wheel angle only
-# moves the lateral component, so charging the driver for longitudinal spend would mean a
-# pinned brake (or full throttle on a FWD car) turns a request of 60% into negative error and
-# drives the wheels straight. The drivetrain reports that budget (front_axle_state's
-# lat_used / lat_available) because it is tire-model maths — and it agrees with
-# longitudinal_demand_scale: a pedal scaled to 0.71 leaves sqrt(1 - 0.5) = 0.71 of lateral
-# budget, the same share of the circle.
+# THE SETPOINT IS A LATERAL SHARE, not a share of total usage: the wheel angle only moves the
+# lateral component, so charging the driver for longitudinal spend would mean a pinned brake
+# (or full throttle on a FWD car) turns a request of 60% into negative error and drives the
+# wheels straight. It is compared against front_axle_state's measured `lat_used`, which is
+# tire-model maths and so lives in the drivetrain.
+#
+# How much of the circle the lateral side may claim is `lateral_grip_share` — the SAME
+# normalisation longitudinal_demand_scale applies to two pedal demands, with the MEASURED
+# longitudinal spend standing in for the assumed one. Read it before changing anything here:
+# it is what keeps a driven front axle steerable when the world (a climb, a slick surface),
+# rather than the pedal, is what is spending the grip.
 #
 # THE STEP is grip_servo_step(error) — see there for why it carries no gain.
 #
@@ -934,7 +977,7 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 		else:
 			# Both sides are fractions of peak grip, and the drivetrain measured them — the
 			# lateral budget already accounts for what braking or driving has spent.
-			var setpoint: float = steer_demand * float(front["lat_available"])
+			var setpoint: float = lateral_grip_share(steer_demand, float(front["long_used"]))
 			var step: float = grip_servo_step(setpoint - float(front["lat_used"]), slip_peak)
 			# null_angle anchors this branch too, not just the centring one: the target is the
 			# null plus the offset the tires should be at. slip_angle appears twice on purpose —

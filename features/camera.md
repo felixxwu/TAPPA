@@ -91,6 +91,18 @@ reaches `chase_fov_speed` (m/s), and the live `fov` eases toward that target wit
 the same frame-rate-independent `1 - exp(-chase_fov_smoothing · dt)` weight so it
 breathes in and out rather than snapping.
 
+**Nitrous FOV punch.** On top of the speed ramp, a further **fixed**
+`chase_fov_nitrous_boost` degrees are added for as long as nitrous is actually
+delivering — `chase_camera.gd` → `_nitrous_delivering`, which reads the target's
+`drivetrain.engine.nitrous_delivering` (EngineSim's latched held-AND-charged-AND-combusting
+state, *not* the `nitrous` input action, so a dry tank or a fuel cut punches nothing).
+Fixed rather than speed-scaled because nitrous is used near the top of the speed ramp,
+where a proportional boost would have almost nothing left to give. It eases in and out on
+the same `chase_fov_smoothing` weight, and — being an ordinary FOV change — it is dollied
+like any other, so at `chase_dolly_mix > 0` the car holds its size while the world
+stretches past it. Targets with no drivetrain (replay/ghost bodies, test fixtures) are
+skipped. See [nitrous.md](nitrous.md).
+
 To keep the car itself roughly the same on-screen size while the FOV breathes,
 the follow distance is scaled inversely — a **dolly zoom** (Vertigo effect). An
 object of fixed size subtends an angle proportional to `1/(distance · tan(fov/2))`,
@@ -136,6 +148,45 @@ axis. Applied via `rotate_object_local` (pitch about local `RIGHT`, roll about
 local `FORWARD`), so it composes on top of the un-smoothed look-at. The bonnet
 camera is unaffected (it already inherits the car body's suspension roll/pitch).
 
+**Camera shake.** `chase_camera.gd` → `_update_shake`, applied last, on top of the
+aimed-and-leaned shot. **Rotation only, never position**: a positional shake fights the
+dolly zoom (which sets the follow distance precisely so the car holds its on-screen size)
+and walks a close mount through the bodywork.
+
+Every source pushes into **one** intensity, clamped to 1, scaled by the single
+`shake_max_deg` amplitude — so sources stack but simultaneous events can never multiply
+into nausea, and one dial bounds how violent it can ever get. Sources come in two kinds:
+
+- **Impulsive — the g-force term, which covers every impact in the game.** A crash, a hard
+  landing, a clipped bush, a kerb strike and a spectator are all the same thing to the
+  camera: one spike in the car's acceleration. So there is no per-event plumbing and nothing
+  to forget to wire up when a new hazard is added. It reuses the acceleration
+  `_apply_gforce_tilt` already derives (which now returns it) rather than deriving a second,
+  subtly different one, and takes the **full 3D magnitude** — unlike the lean's two
+  projections — because a hard landing is almost entirely vertical. Gravity is not
+  subtracted: free flight reads a steady ~1 g, below any sensible `shake_g_threshold`, and
+  the landing spike after it is the part that matters. Same convention as `DamageModel`'s
+  deceleration rule, and `shake_g_threshold` plays the same role as `impact_threshold_g` —
+  it keeps ordinary cornering and braking quiet. It charges a decaying envelope
+  (`shake_decay`), because an impact is over in one tick but must be *felt* for a moment
+  after. The envelope is clamped to 1 **as it charges**, not where it is read: a 300 g
+  arrest would otherwise store hundreds and spend seconds decaying back down through that
+  headroom with the shake pinned at full.
+- **Continuous — speed, wheelspin, nitrous.** Re-read every tick and never latched, so they
+  stop the instant the condition does. Speed ramps to `shake_speed_gain` at
+  `chase_fov_speed` — the same reference speed the FOV ramp uses, so the two "sense of
+  speed" effects cannot disagree. Wheelspin reads
+  `Drivetrain.drive_wheelspin_excess()`; nitrous keys off the same latched
+  `nitrous_delivering` as the FOV punch.
+
+The oscillation is **deterministic** — three incommensurate sines per axis on a phase
+accumulator, not `randf` — so a replay of a run shakes the same way and the suite can assert
+on it. The per-axis frequencies differ so pitch/yaw/roll never move together, which would
+read as one wobble rather than a rattle.
+
+Only the chase camera shakes. The bonnet camera is untouched (it already rides the body's
+suspension), and the replay/cinematic cameras are deliberately steady.
+
 ### Exported / config
 
 - `target: Node3D` — the node to follow (set in the scene to `Car`).
@@ -147,6 +198,14 @@ camera is unaffected (it already inherits the car body's suspension roll/pitch).
 - `chase_fov` (100.0) — base field of view at a standstill.
 - `chase_fov_speed_boost` (15.0) — extra FOV degrees added at full speed.
 - `chase_fov_speed` (55.0 m/s) — speed at which the full boost is reached.
+- `chase_fov_nitrous_boost` — extra FOV degrees while nitrous is delivering, a
+  fixed amount at any speed (0 disables it).
+- `shake_max_deg` — peak shake amplitude per axis; the master switch (0 = off).
+- `shake_frequency`, `shake_decay` — oscillation rate, and how fast an impulse fades.
+- `shake_g_threshold`, `shake_g_gain` — the impact source: g above which it shakes,
+  and how much per g of excess.
+- `shake_speed_gain`, `shake_wheelspin_gain`, `shake_nitrous_gain` — the three
+  continuous sources' shares of the amplitude.
 - `chase_fov_smoothing` (4.0) — easing rate for FOV changes.
 - `chase_dolly_mix` (0–1) — how strongly the follow distance is pulled in to
   counteract the speed FOV (0 = distance fixed, 1 = full dolly zoom holding the

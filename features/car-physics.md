@@ -85,10 +85,28 @@ for each).
      which is why countersteer needs no rule: releasing the wheel targets the null and the
      slide catches. It also makes the controller **stateless** — the current offset from the
      null is just `|slip_angle|`, re-measured every tick, so there is nothing to wind up.
-   - **The setpoint is the LATERAL budget**, not total usage: `steer_demand * lat_available`,
-     where `lat_available = sqrt(1 - long_used²)` from the *measured* longitudinal slip. The
-     wheel angle only moves the lateral component, so charging the driver for longitudinal
-     spend would mean a pinned pedal drives the wheels straight.
+   - **The setpoint is a LATERAL share**, not a share of total usage. The wheel angle only
+     moves the lateral component, so charging the driver for longitudinal spend would mean a
+     pinned pedal drives the wheels straight.
+   - **The longitudinal spend competes for the circle; it does not reserve it.**
+     `Car.lateral_grip_share(steer_demand, long_used)` normalises the pair
+     `(long_used, steer_demand)` onto the unit circle when it falls outside — the *same*
+     normalisation `longitudinal_demand_scale` applies to two pedal demands, which it
+     delegates to, with the **measured** spend standing in for the assumed one. The lateral
+     share is therefore never below `steer_demand / sqrt(2)`.
+     This replaced a reservation, `steer_demand * sqrt(1 - long_used²)`, which was correct
+     only while something bounded `long_used` below 1. Nothing does: the longitudinal force
+     a tire must make is set by the **world** as much as by the pedal. On a climb a driven
+     front axle spends nearly all its grip holding the car up the hill (on this project's
+     flat test fixture, first gear at full throttle alone reaches `long_used ≈ 1.4` with the
+     wheels dead straight), so the remainder read ~0, the setpoint collapsed with it, and the
+     servo drove the wheels to the null — the car tracked whichever way it was already sliding
+     and **could not be steered out in either direction**. That was a controller artifact, not
+     physics: `_tire_force`'s own ellipse trades longitudinal force for lateral as the wheel
+     turns, so the grip was there; the servo just stopped asking. `long_used` is clamped to 1
+     first — past peak the friction vector is saturated, so further slip does not reserve grip
+     that turning could have used, and without the clamp a spinning axle walks the authority
+     back toward zero.
    - **The step is `error * slip_peak`** (`Car.grip_servo_step`) — the usage error converted
      into radians, a Newton step of gain 1. Requiring that a tick never move further than the
      remaining angular error collapses any gain term to exactly this, so **there is no gain
@@ -116,7 +134,8 @@ for each).
      friction-circle optimum). The **brake** always counts; the **throttle** counts only when
      the steered axle is also driven (`Drivetrain.front_axle_driven()` — FWD/AWD, not RWD), so
      RWD power-oversteer is untouched. Only the longitudinal side is scaled, because
-     `lat_available` already limits the lateral side and scaling both would double-count.
+     `lateral_grip_share` already normalises the lateral side (against the *measured* spend)
+     and scaling both would double-count.
      Trail braking and power-out emerge from this rather than being scripted. It is demand
      arbitration, **not** ABS or traction control: pedal torque is untouched when the player
      isn't steering, so lockup and wheelspin remain.

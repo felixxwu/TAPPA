@@ -83,6 +83,8 @@ case in `effective_meta`.
 |---|---|
 | `nitrous_boost_gain` | extra torque fraction while held — delivered torque is multiplied by `(1.0 + this)`. `0` = not fitted. The "harder" lever. |
 | `nitrous_tank_seconds` | seconds a full tank holds. The "longer" lever. |
+| `chase_fov_nitrous_boost` | extra chase-camera FOV (degrees) while delivering — presentation only, no physics. Lives with the other `chase_*` camera fields, not with the two above. |
+| `shake_nitrous_gain` | camera-shake intensity while delivering. Also presentation only; lives with the other `shake_*` fields. |
 
 `GameConfig.has_nitrous()` returns true only when **both** are positive,
 mirroring `has_supercharger_physics`. It is the single "is nitrous fitted"
@@ -177,6 +179,19 @@ actually moves. Unlike boost, the bar drains rather than tracking a live reading
 See [hud.md](hud.md).
 
 
+## The camera punch (`chase_camera.gd`)
+
+While nitrous delivers, the chase camera adds a **fixed**
+`GameConfig.chase_fov_nitrous_boost` degrees to its field of view, eased in and out on the
+usual `chase_fov_smoothing` weight, and feeds `shake_nitrous_gain` into the camera shake for
+as long as it lasts. Like the audio bridge, both read the latched `nitrous_delivering` and
+not `nitrous_active`, so the view only reacts when torque is really being made.
+`_nitrous_delivering()` is deliberately NOT gated on `chase_fov_nitrous_boost` — it answers
+"is nitrous delivering", and folding the FOV consumer's disable switch into it silently
+killed the shake. See [camera.md](camera.md) → "Nitrous FOV punch" for why the amount is
+fixed rather than speed-scaled, and how it interacts with the dolly zoom.
+
+
 ## Audio (`engine_audio_synth.gd`, `engine_audio.gd`)
 
 A sixth synth layer, procedurally generated like every other forced-induction
@@ -245,8 +260,11 @@ Nitrous coverage lives in `tests/headless/test_hud.gd` (the gauge is hidden
 unless fitted, tracks the tank fraction, keeps its caption inside the bar, and
 tints distinguishably from the boost bar — asserted as a *relationship*, never a
 pinned hue), `test_mobile_controls.gd` (the NOS region's per-scheme placement and its
-hit-test priority over the simple steering halves) and `test_engine_audio.gd`
-(the synth layer and its edges).
+hit-test priority over the simple steering halves), `test_engine_audio.gd`
+(the synth layer and its edges), `test_chase_camera_fov.gd` (the FOV punch appears while
+delivering, eases back out on release, is NOT triggered by the button alone, and a target
+with no drivetrain is safe) and `test_chase_camera_shake.gd` (delivering shakes the camera;
+the button alone does not).
 
 Per `CLAUDE.md`, do **not** pin the authored magnitudes — tank seconds, torque
 gains, which rung hangs off which special event, the hue value. Test the behaviour that

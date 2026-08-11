@@ -121,6 +121,79 @@ func test_half_length_pushes_camera_back() -> void:
 	long_car.free()
 
 
+# A target that looks enough like a car for the camera's nitrous probe: a `drivetrain`
+# holding an EngineSim whose delivery flag the test drives by hand.
+class _NitrousCar extends RigidBody3D:
+	var drivetrain: RefCounted
+
+
+class _FakeDrivetrain extends RefCounted:
+	var engine: EngineSim
+
+
+func _nitrous_car() -> _NitrousCar:
+	var car := _NitrousCar.new()
+	car.gravity_scale = 0.0
+	var dt := _FakeDrivetrain.new()
+	dt.engine = EngineSim.new(GameConfig.new())
+	car.drivetrain = dt
+	add_child(car)
+	_cam.target = car
+	# Take over as the fixture body so after_each frees this one (and not the plain body
+	# from before_each, which nothing points at any more).
+	_target.free()
+	_target = car
+	return car
+
+
+func test_nitrous_widens_fov_while_delivering() -> void:
+	var car := _nitrous_car()
+	_cam._fov_nitrous_boost = 12.0
+	for _i in 240:
+		car.linear_velocity = Vector3(0.0, 0.0, -20.0)
+		_cam._physics_process(1.0 / 60.0)
+	var plain := _cam.fov
+	car.drivetrain.engine.nitrous_delivering = true
+	for _i in 240:
+		car.linear_velocity = Vector3(0.0, 0.0, -20.0)
+		_cam._physics_process(1.0 / 60.0)
+	var boosted := _cam.fov
+	assert_almost_eq(boosted - plain, 12.0, 0.5,
+		"delivering nitrous adds the configured fixed FOV amount at the same speed")
+	# And it eases back out when the boost stops — not a one-way ratchet.
+	car.drivetrain.engine.nitrous_delivering = false
+	for _i in 240:
+		car.linear_velocity = Vector3(0.0, 0.0, -20.0)
+		_cam._physics_process(1.0 / 60.0)
+	assert_almost_eq(_cam.fov, plain, 0.5, "releasing nitrous returns the FOV to the speed ramp")
+
+
+func test_held_nitrous_that_is_not_delivering_leaves_fov_alone() -> void:
+	# nitrous_active (the button) is NOT the signal — an empty tank or a fuel cut makes no
+	# torque, so it must make no FOV punch either.
+	var car := _nitrous_car()
+	_cam._fov_nitrous_boost = 12.0
+	car.drivetrain.engine.nitrous_active = true
+	car.drivetrain.engine.nitrous_delivering = false
+	for _i in 240:
+		car.linear_velocity = Vector3(0.0, 0.0, -20.0)
+		_cam._physics_process(1.0 / 60.0)
+	var held := _cam.fov
+	_cam._fov_nitrous_boost = 0.0
+	for _i in 240:
+		car.linear_velocity = Vector3(0.0, 0.0, -20.0)
+		_cam._physics_process(1.0 / 60.0)
+	assert_almost_eq(held, _cam.fov, 0.5, "holding the button without delivery doesn't widen the FOV")
+
+
+func test_target_without_a_drivetrain_is_safe() -> void:
+	# The camera can be pointed at plain bodies (replay/ghost). The nitrous probe must not
+	# assume a drivetrain.
+	_cam._fov_nitrous_boost = 12.0
+	_settle(20.0)
+	assert_gt(_cam.fov, 0.0, "a target with no drivetrain still updates the FOV without erroring")
+
+
 func test_more_mix_pulls_camera_closer() -> void:
 	# A stronger mix should pull the camera in more at speed than a weaker one.
 	_cam._dolly_mix = 0.25

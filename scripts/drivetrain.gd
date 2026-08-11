@@ -113,7 +113,7 @@ var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0}
 # as _surf_scratch: filled and returned every call, read immediately by the caller.
 var _front_scratch := {
 	in_contact = false, slip_angle = 0.0, slip_lat_norm = 0.0, slip_long_norm = 0.0, slip_peak = 0.0,
-	v_long = 0.0, lat_used = 0.0, lat_available = 0.0,
+	v_long = 0.0, lat_used = 0.0, long_used = 0.0,
 }
 
 # Memoised weather μ multiplier for surface_tire_params (the per-contact hot path,
@@ -478,6 +478,27 @@ func wheel_long_grip_usage(wheel: Node) -> float:
 	return grip_fraction(absf(c.slip_long_norm), c.slip_peak) if c != null else 0.0
 
 
+# How far PAST fore/aft breakaway the worst DRIVEN tire is: 0.0 while every driven wheel is
+# still inside its grip curve, rising as they spin up (or lock) beyond peak. Built from
+# wheel_long_grip_usage so it cannot disagree with what the dust and the marks react to.
+#
+# The MAXIMUM, not a load-weighted average, and that is the point: one wheel lighting up is
+# felt through the chassis as a judder, and load weighting would hide exactly the case that
+# shakes most — an unloaded inside wheel spinning freely while the loaded one still bites.
+# (The steering servo wants the opposite treatment, hence front_axle_state's weighting: there
+# the question is how much cornering force the axle can make, which the loaded tire decides.)
+#
+# Gated on is_wheel_driven, so a locked-up undriven wheel under braking does not read as
+# wheelspin — braking already reaches the camera through the g-force term.
+func drive_wheelspin_excess() -> float:
+	var worst := 0.0
+	for wheel in all_wheels:
+		if not is_wheel_driven(wheel):
+			continue
+		worst = maxf(worst, wheel_long_grip_usage(wheel) - 1.0)
+	return worst
+
+
 # The steering axle's slip state, as ONE set of numbers for the steering servo to close
 # its loop on (car.gd `_update_steering`). Load-weighted across the front wheels in
 # contact: each field is weighted by that wheel's normal force.
@@ -518,7 +539,7 @@ func front_axle_state(cfg: GameConfig) -> Dictionary:
 		_front_scratch.v_long += c.v_long * w
 	_front_scratch.in_contact = weight > 0.0
 	_front_scratch.lat_used = 0.0
-	_front_scratch.lat_available = 0.0
+	_front_scratch.long_used = 0.0
 	if weight > 0.0:
 		_front_scratch.slip_angle /= weight
 		_front_scratch.slip_lat_norm /= weight
@@ -533,7 +554,16 @@ func front_axle_state(cfg: GameConfig) -> Dictionary:
 			var long_used: float = absf(
 				_front_scratch.slip_long_norm * cfg.traction_ellipse_ratio) / _front_scratch.slip_peak
 			_front_scratch.lat_used = absf(_front_scratch.slip_lat_norm) / _front_scratch.slip_peak
-			_front_scratch.lat_available = sqrt(maxf(0.0, 1.0 - long_used * long_used))
+			# long_used is deliberately UNCLAMPED: past peak it reads > 1, and a caller that
+			# needs to know the axle is overdriven (rather than merely saturated) cannot
+			# recover that from a clamped value. Callers clamp for their own purposes.
+			#
+			# There is deliberately NO `lat_available = sqrt(1 - long_used²)` companion any
+			# more. Reporting the ellipse REMAINDER invites treating the longitudinal spend as
+			# a reservation, which collapses the steering authority to zero whenever the world
+			# (a gradient, a slick surface) rather than the pedal sets that spend — see
+			# car.gd `lateral_grip_share` for the trap and the fix.
+			_front_scratch.long_used = long_used
 	return _front_scratch
 
 
