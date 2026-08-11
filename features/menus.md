@@ -1387,10 +1387,11 @@ throwaway test and still clip in the real game.
   Grip?" never requires knowing that the answer is called an aero kit.
   `UpgradesSimple.CATEGORIES` is the whole mapping (`{slots, detune, swap}` per row; a row
   absent from it gets no wrench, via `_wrench_for` returning an unset `Callable`):
-  - **Speed** → the `turbo` and `nitrous` slots, **plus the engine-detune slider and the
-    engine-swap row** — both are power levers, and detune is specifically the one that
-    trades power for eligibility.
-  - **Grip** → `aero`. **Lightness** → `weight`. **Stability** → `drivetrain`.
+  - **Speed** → the `turbo`, `gearbox` and `nitrous` slots, **plus the engine-detune slider
+    and the engine-swap row** — all are power levers, and detune is specifically the one that
+    trades power for eligibility. Note `gearbox` and `nitrous` move **no bar** here: Speed
+    reads power-to-weight, which neither a shift time nor a per-stage boost can touch.
+  - **Grip** → `aero` + `tires`. **Lightness** → `weight`. **Stability** → `drivetrain`.
   - **Condition has NO wrench**, deliberately: nothing in the catalogue repairs damage (see
     [damage.md](damage.md)), so a wrench there would open an empty page.
 
