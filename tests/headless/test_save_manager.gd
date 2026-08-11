@@ -114,23 +114,38 @@ func test_completing_a_rally_credits_the_placement_and_returns_it() -> void:
 	assert_eq(_save.stars_available(), gained, "the balance reflects the credit")
 
 
-func test_a_rewin_at_a_worse_placement_credits_nothing() -> void:
-	# The grind guard: best_placed only improves, so a replay cannot pay again.
+func test_a_rally_can_be_rewon_for_stars() -> void:
+	# Rallies are a RENEWABLE star source: replaying one pays for the finish again, every time.
+	# (It used to credit only the improvement on the rally's best placement, so a replay at an
+	# equal or worse placement paid nothing.)
 	var first: int = _save.complete_rally("alpine", 60_000, 1)
+	var again: int = _save.complete_rally("alpine", 61_000, 1)
+	assert_gt(first, 0, "the original win pays")
+	assert_eq(again, first, "re-winning at the same placement pays the same again")
+	assert_eq(_save.stars_available(), first + again, "and both credits are in the balance")
+
+
+func test_a_worse_replay_still_pays_for_what_it_placed() -> void:
+	# The payout follows THIS run's placement, not the record — so a scrappier replay still
+	# earns, just less if it dropped off the podium.
+	_save.complete_rally("alpine", 60_000, 1)
 	var before: int = _save.stars_available()
-	var again: int = _save.complete_rally("alpine", 50_000, 2)
-	assert_eq(again, 0, "re-winning at a worse placement credits nothing")
+	var off_podium: int = _save.complete_rally("alpine", 90_000, RallyLibrary.PODIUM_PLACES + 1)
+	assert_eq(off_podium, RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1),
+		"a non-podium replay pays what finishing is worth")
+	assert_eq(_save.stars_available(), before + off_podium, "the balance moved by that much")
+	# The map rating still tracks the BEST placement — paying for a replay must not demote it.
+	assert_eq(_save.best_placement("alpine"), 1, "the record is still the best finish")
+
+
+func test_a_dnf_replay_pays_nothing() -> void:
+	# The one case that must stay at zero: the opening rally can complete on a DNF, and a
+	# ledger that paid for that would pay for quitting.
+	_save.complete_rally("alpine", 60_000, 1)
+	var before: int = _save.stars_available()
+	var dnf: int = _save.complete_rally("alpine", 0, 0)
+	assert_eq(dnf, 0, "a run that did not place credits nothing")
 	assert_eq(_save.stars_available(), before, "the balance did not move")
-	assert_gt(first, 0, "the original win did pay (guards against a vacuous test)")
-
-
-func test_improving_a_placement_credits_only_the_difference() -> void:
-	_save.complete_rally("alpine", 60_000, 2)
-	var after_second: int = _save.stars_available()
-	var gained: int = _save.complete_rally("alpine", 50_000, 1)
-	var expected := RallyLibrary.stars_for_placement(1) - RallyLibrary.stars_for_placement(2)
-	assert_eq(gained, expected, "improving pays the difference, not the full rating")
-	assert_eq(_save.stars_available(), after_second + expected, "balance moved by the delta")
 
 
 func test_award_stars_credits_non_rally_sources() -> void:

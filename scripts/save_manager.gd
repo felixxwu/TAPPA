@@ -973,11 +973,16 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 # best combined time when a faster one comes in. The CAR reward is NOT granted
 # here (re-wins are farmable — see reward-system.md); this only records progress.
 #
-# RETURNS the stars this finish added to the ledger — the DELTA against the rally's
-# previous best, not the raw placement rating. The podium's stars beat needs that
-# distinction: re-winning a 3-starred rally at 2nd is worth 0, and converting a 2nd
-# into a 1st is worth exactly 1, even though both placements "rate" 2 and 3 stars.
-# See todo/star-economy.md.
+# RETURNS the stars this finish added to the ledger, which is simply what THIS finish's
+# placement is worth: rallies are RE-WINNABLE for stars, so replaying one pays again every
+# time. It used to credit only the delta over the rally's previous best, so a replay at an
+# equal or worse placement paid nothing — a deliberate anti-grind guard, now deliberately
+# removed. Consequence to keep in mind when tuning prices: stars are farmable by replaying
+# any rally the player finds easy, so the ceiling on income is the player's patience, and
+# repair/part costs are the only thing holding the economy up. See todo/star-economy.md.
+#
+# `best_placed` is still tracked (it drives the map's star rating) — it just no longer gates
+# what gets paid.
 func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 	var rallies: Dictionary = profile["rallies"]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
@@ -992,18 +997,16 @@ func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 	if combined_ms > 0 and (int(rec.get("best_combined_ms", 0)) <= 0
 			or combined_ms < int(rec["best_combined_ms"])):
 		rec["best_combined_ms"] = combined_ms
-	# Captured BEFORE best_placed moves, so the delta below is measured against what
-	# this rally was already worth.
-	var was_worth := RallyLibrary.stars_for_placement(int(rec.get("best_placed", 0)))
 	# Track the BEST (lowest) finishing position ever achieved here — it drives the
 	# map's star rating. Lower placement is better; 0 means "never placed".
 	if placed > 0 and (int(rec.get("best_placed", 0)) <= 0 or placed < int(rec["best_placed"])):
 		rec["best_placed"] = placed
 	rallies[rally_id] = rec
-	# Credit only the improvement. This is where the grind guard lives now: because
-	# best_placed only ever improves, a replay at the same or worse placement leaves
-	# `was_worth` unchanged and gains nothing.
-	var gained: int = RallyLibrary.stars_for_placement(int(rec.get("best_placed", 0))) - was_worth
+	# Credit what THIS finish placed, not the improvement on the record: every finish pays,
+	# so a rally can be re-driven for stars. Read off `placed` rather than the stored
+	# `best_placed` for exactly that reason — the record only ever improves, so paying off it
+	# would silently reinstate the old no-pay-on-a-worse-replay rule.
+	var gained := RallyLibrary.stars_for_placement(placed)
 	if gained > 0:
 		profile["stars_earned"] = int(profile.get("stars_earned", 0)) + gained
 	save()
@@ -1011,8 +1014,8 @@ func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 
 
 # --- Star ledger -------------------------------------------------------------
-# See todo/star-economy.md. Career stars arrive through complete_rally (as a delta);
-# everything else — currently the Rally Challenge — credits via award_stars.
+# See todo/star-economy.md. Career stars arrive through complete_rally (which pays every
+# finish); everything else — currently the Rally Challenge — credits via award_stars.
 
 # Stars the player can still spend. Clamped at 0 defensively: the ledger cannot go
 # negative through this API, but a hand-edited or corrupted profile should read as
@@ -1021,9 +1024,9 @@ func stars_available() -> int:
 	return maxi(0, int(profile.get("stars_earned", 0)) - int(profile.get("stars_spent", 0)))
 
 
-# Credit stars from a NON-rally source (the Rally Challenge). Rally finishes must go
-# through complete_rally instead, which computes a delta — calling this for a rally
-# would double-credit and reopen the replay grind.
+# Credit stars from a NON-rally source (the Rally Challenge). Rally finishes must go through
+# complete_rally instead — it is the one place that records the finish AND pays for it, so
+# calling this for a rally as well would double-credit it.
 func award_stars(count: int, do_save := true) -> void:
 	if count <= 0:
 		return

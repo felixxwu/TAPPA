@@ -710,11 +710,12 @@ Two separate reward paths:
   are bought with stars at the HQ present box rather than handed out
   ([star-economy.md](star-economy.md)). A placing challenge instead pays **stars
   by placement**, on the SAME `RallyLibrary.stars_for_placement` curve a career
-  rally uses (1st/2nd/3rd → 3/2/1), credited via `Save.award_stars`. Note the
-  placement gate here (top HALF of the board) is far more lenient than the podium
-  that curve pays out to, so a mid-table finish legitimately banks **0 stars** and
-  walks away with just the boxes — which is exactly why the boxes are granted
-  unconditionally, so a player who placed never walks away with nothing.
+  rally uses (a podium place pays more, any other finish still pays), credited via
+  `Save.award_stars`. The placement gate here (top HALF of the board) is far more
+  lenient than the podium, so a mid-table finish banks the smaller
+  `STARS_FOR_FINISH` amount rather than the podium's — it used to bank **0**, back
+  when the curve paid nothing off the podium. The boxes are granted unconditionally
+  regardless, so a player who placed never walks away with nothing.
 
   Unlike career stars, this income is **renewable over real time** — deliberately,
   since it is the only star source still flowing once every career rally is won at

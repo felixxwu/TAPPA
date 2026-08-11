@@ -844,7 +844,7 @@ func has_nitrous() -> bool:
 @export_range(0.0, 20.0) var shake_g_threshold := 2.5
 ## Intensity added per g of acceleration above shake_g_threshold. 1.0 means ~1 g of excess
 ## already reaches full amplitude.
-@export_range(0.0, 2.0) var shake_g_gain := 4
+@export_range(0.0, 2.0) var shake_g_gain := 4.0
 ## SPEED source: intensity added at chase_fov_speed and above (the same reference speed the FOV
 ## ramp uses, so the two "sense of speed" effects cannot disagree), ramping linearly from 0.
 ## A constant low-level buzz — keep it small.

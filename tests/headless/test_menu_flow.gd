@@ -2083,14 +2083,19 @@ func _unavailable_ordinary_pin(hq: Node3D) -> Node3D:
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:
-	# A 1st-place best earns 3 stars; a 3rd-place best earns 1.
+	# The pin shows what the rally's BEST placement rates, through the one scoring curve — a
+	# podium best rates the maximum, a non-podium finish rates less but not nothing, and an
+	# unplayed rally rates nothing.
+	var podium_stars := RallyLibrary.stars_for_placement(1)
+	var finish_stars := RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1)
 	_save.complete_rally("shakedown", 60000, 1)
-	_save.complete_rally("coastal_sprint", 90000, 3)
+	_save.complete_rally("coastal_sprint", 90000, RallyLibrary.PODIUM_PLACES + 1)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(hq._stars_for("shakedown"), 3, "1st place earns 3 stars")
-	assert_eq(hq._stars_for("coastal_sprint"), 1, "3rd place earns 1 star")
+	assert_eq(hq._stars_for("shakedown"), podium_stars, "a podium best rates the full count")
+	assert_eq(hq._stars_for("coastal_sprint"), finish_stars, "a finish rates less, but not zero")
+	assert_gt(podium_stars, finish_stars, "and the podium really does rate more")
 	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
 	# The readout box on the pin is the design-system black panel (a Sprite3D) carrying
 	# a StarRow lit to the earned count — and no leftover 3D sphere "stars".
@@ -2099,7 +2104,8 @@ func test_hq_pins_stars_reflect_best_placement() -> void:
 		"the pin carries a billboarded readout box (Sprite3D)")
 	var rows := pin.find_children("*", "StarRow", true, false)
 	assert_eq(rows.size(), 1, "the readout box holds one StarRow")
-	assert_eq((rows[0] as StarRow).earned, 3, "the StarRow is lit to the earned star count")
+	assert_eq((rows[0] as StarRow).earned, podium_stars,
+		"the StarRow is lit to the earned star count")
 	assert_eq((rows[0] as StarRow).total, hq.MAX_STARS, "out of MAX_STARS stars")
 
 
@@ -3747,17 +3753,18 @@ func test_the_stars_beat_lights_the_rallys_rating_in_gold() -> void:
 	assert_true(pod._next_button.visible, "Next is available once the stars land")
 
 
-func test_the_stars_beat_reports_the_ledger_delta_not_the_rating() -> void:
-	# The bug this split exists to prevent: a re-win that improves nothing still RATES
-	# stars, but must not claim the player gained any.
+func test_the_stars_beat_reports_what_was_banked_not_the_rating() -> void:
+	# The bug this split exists to prevent: the gold row shows the rally's best-ever RATING,
+	# so it must never be read as a claim about what this run banked. Now that every finish
+	# pays, the case where they diverge is a run that did not place at all (a DNF) on a rally
+	# already rated — the row stays gold, the caption must not claim a gain.
 	var rating := RallyLibrary.stars_for_placement(1)
 	var pod: Node3D = await _podium_with_stars(rating, 0)
 	assert_eq(pod._star_row.earned, rating, "the rating is still shown in gold")
-	var text := _label_texts(pod)
-	assert_string_contains(text, "NO NEW STARS",
-		"a zero delta says so rather than claiming a gain")
+	assert_string_contains(_label_texts(pod), "NO STARS",
+		"banking nothing says so rather than claiming a gain")
 	assert_false(pod._star_caption.text.contains("+"),
-		"a zero delta never renders as a '+' gain")
+		"and never renders as a '+' gain")
 
 
 func test_the_stars_beat_shows_a_gain_when_the_ledger_moved() -> void:

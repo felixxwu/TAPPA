@@ -712,10 +712,11 @@ func _reveal_standings(rows: Array) -> void:
 # TWO DIFFERENT NUMBERS, deliberately shown separately (todo/star-economy.md):
 #   * the GOLD STAR COUNT is the rally's rating at the player's best-ever placement — the
 #     same figure its HQ map pin shows, so the two surfaces agree.
-#   * the CAPTION carries what the ledger actually moved by, which is 0 on a re-win that
-#     did not beat the previous best.
-# Lighting two gold stars while the balance did not budge would read as a bug, so the
-# caption says so in words instead.
+#   * the CAPTION carries what the ledger actually moved by for THIS finish.
+# The two differ when a replay finishes worse than the record: the row still shows the
+# best-ever rating (so the pin and the podium agree), while the caption reports the smaller
+# amount this run actually banked. Rallies are re-winnable, so the caption is normally a
+# credit; it only reports nothing when the run did not place at all.
 func _show_stars() -> void:
 	_title_label.text = "STARS"
 	_stars_panel.visible = true
@@ -762,8 +763,11 @@ func _stars_caption(gained: int, rating: int) -> String:
 	if gained > 0:
 		return "+%s — %d in the bank" % [UITheme.count_noun(gained, "star"), balance]
 	if rating > 0:
-		# A re-win that did not improve. Say why nothing was credited rather than "+0".
-		return "No new stars — your best here is already %d. %d in the bank" % [rating, balance]
+		# Nothing credited despite a rated rally: this run did not PLACE (a DNF), since every
+		# finish now pays. Say that, rather than the old "your best here is already N" — which
+		# was the right explanation only while re-wins paid nothing.
+		return "No stars — you didn't finish. Your best here rates %d. %d in the bank" % [
+			rating, balance]
 	return "No stars this time — %d in the bank" % balance
 
 

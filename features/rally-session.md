@@ -101,9 +101,9 @@ the call site rather than as a flag on `complete_rally`. See
 [../todo/opening-rally.md](../todo/opening-rally.md)) (`Save.complete_rally(id, combined, placed)` —
 idempotent for the `completed` flag, and its RETURN VALUE is the number of stars
 it credited to the persisted ledger, see [star-economy.md](star-economy.md)).
-That credit is only the **improvement** over the rally's previous best, so a
-re-win at an equal or worse placement pays nothing and an easy rally can't be
-farmed for stars. `star_rating` is then read back from
+That credit is what **this** finish placed — every finish pays, so a rally can be
+re-driven for stars (see [star-economy.md](star-economy.md); it used to credit only
+the improvement over the rally's previous best). `star_rating` is then read back from
 `RallyLibrary.stars_for_placement(Save.best_placement(id))` — still the single
 definition of what a placement is worth — and both numbers ride out on the result
 for the podium's stars beat.

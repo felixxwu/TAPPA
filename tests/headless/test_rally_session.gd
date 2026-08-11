@@ -772,12 +772,12 @@ func test_a_special_with_others_outstanding_completes_without_win_beat() -> void
 	assert_true(_save.rally_completed(first), "the special still records completion")
 
 
-# The replay grind is CLOSED (todo/star-economy.md, change 2). It used to be open: the car
-# draw fired on every top-3 including re-wins ("renewable supply"), so replaying an easy
-# rally farmed cars indefinitely. Now no finish pays a car at all, and stars credit only the
-# improvement over a rally's previous best — so a re-win at an equal or worse placement pays
-# absolutely nothing. Replays themselves stay allowed; only the reward is gone.
-func test_a_rewin_at_no_better_placement_pays_nothing() -> void:
+# A re-win pays STARS again but still no CAR. The two halves used to move together (the car
+# draw fired on every top-3, and stars credited only the improvement on a rally's best
+# placement), which closed the replay grind entirely. Stars are re-winnable now — replaying a
+# rally is a legitimate way to earn — while the CAR remains a one-time prize, or an easy rally
+# would refill the garage indefinitely and make the rallies' restriction bands meaningless.
+func test_a_rewin_pays_stars_again_but_never_another_car() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.complete_rally("fx_open", 999999, 1)  # already won outright
 	var completed_before: int = _save.completed_rally_count()
@@ -787,11 +787,11 @@ func test_a_rewin_at_no_better_placement_pays_nothing() -> void:
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = _field([90000])  # top-3 re-win
 	_report_events([10000, 10000, 10000])
+	var gained := int((box[0] as Dictionary).get("stars_gained", -1))
 	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")
 	assert_eq(_save.profile["cars"].size(), cars_before, "no car is granted for a re-win")
-	assert_eq(_save.stars_available(), stars_before, "and no stars are credited either")
-	assert_eq(int((box[0] as Dictionary).get("stars_gained", -1)), 0,
-		"the result reports a zero delta so the podium can say so honestly")
+	assert_eq(gained, RallyLibrary.stars_for_placement(1), "the podium re-win pays its stars")
+	assert_eq(_save.stars_available(), stars_before + gained, "and the balance moved by that much")
 
 
 # --- current_event_p1_car (Task 4) ------------------------------------------
@@ -1094,7 +1094,11 @@ func test_the_opening_rally_completes_on_a_losing_finish() -> void:
 	var r: Dictionary = finish[0]
 	assert_gt(int(r["placed"]), 3, "setup: the player finished outside the podium")
 	assert_true(r["completed"], "the opening rally completes on a non-podium finish")
-	assert_eq(int(r["stars_gained"]), 0, "which pays no stars — placement still decides those")
+	# Finishing always pays, podium or not — so the player's first drive banks something even
+	# when the field beats them. Only a DNF pays nothing (see the DNF test below).
+	assert_eq(int(r["stars_gained"]), RallyLibrary.stars_for_placement(int(r["placed"])),
+		"a losing FINISH still pays what finishing is worth")
+	assert_gt(int(r["stars_gained"]), 0, "which is more than nothing")
 
 
 # The whole point of completing it unconditionally: the player arrives at the map with the

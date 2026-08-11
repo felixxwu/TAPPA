@@ -2035,10 +2035,11 @@ picker, Free Roam and the title backdrop, so they all page identically.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,
-placed)` on each top-3 finish (`RallySession` passes the placement). A rally's
+placed)` on each finish (`RallySession` passes the placement). A rally's
 displayed rating is therefore always `RallyLibrary.stars_for_placement` of that
 best placement; the SPENDABLE balance shown on the map meter is a separate,
-persisted ledger (`complete_rally` returns the delta it credited) — see
+persisted ledger (`complete_rally` returns what it credited for THIS finish, which
+can be less than the displayed rating on a replay that finished worse) — see
 [star-economy.md](star-economy.md).
 
 Each parked car gets its **own duplicated meshes** (`CarProp.dup_meshes`) so a mixed

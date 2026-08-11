@@ -470,10 +470,14 @@ generator also uses it per-rival.
 - `_completed_count(profile)` — count of completed **non-special** rallies
   roster-wide; the wave metric `reveal_after` compares against. Deliberately
   global, not per-region (see `reveal_after` above).
-- `stars_for_placement(placed)` — the per-rally scoring curve (1st = the most,
-  via `MAX_STARS_PER_RALLY`). THE one definition: `Save.complete_rally`'s ledger
-  delta, the Rally Challenge payout and `hq._stars_for` all delegate to it, so the
-  medals drawn on a pin cannot disagree with what the ledger was paid.
+- `stars_for_placement(placed)` — the per-rally scoring curve: a podium place
+  (1st–`PODIUM_PLACES`) pays `STARS_FOR_PODIUM`, any other finish pays
+  `STARS_FOR_FINISH`, not finishing pays 0. Flat within each tier — no 1st/2nd/3rd
+  gradient. THE one definition: `Save.complete_rally`'s credit, the Rally Challenge
+  payout and `hq._stars_for` all delegate to it, so the medals drawn on a pin cannot
+  disagree with what the ledger was paid. `MAX_STARS_PER_RALLY` (the star rows'
+  denominator) is a SEPARATE constant from `PODIUM_PLACES` — see
+  [star-economy.md](star-economy.md).
   There is **no** `total_stars` / `max_total_stars` any more — the balance is a
   persisted ledger on the profile, not a roster sum (see
   [star-economy.md](star-economy.md)).

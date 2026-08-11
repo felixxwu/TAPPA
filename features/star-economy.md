@@ -33,25 +33,46 @@ Missing keys read 0, so adding them needed no `SCHEMA_VERSION` bump. See
 ## Earning
 
 `RallyLibrary.stars_for_placement(placed)` is THE definition of what a placement is
-worth (1st = `MAX_STARS_PER_RALLY`, descending to 0 off the podium). Every surface that
-pays stars and every surface that *shows* them goes through it — `Save.complete_rally`,
-the Rally Challenge payout, `hq._stars_for`'s per-pin star row and the podium's stars
-beat — so a paid star and a drawn star can never disagree.
+worth. Every surface that pays stars and every surface that *shows* them goes through it —
+`Save.complete_rally`, the Rally Challenge payout, `hq._stars_for`'s per-pin star row and
+the podium's stars beat — so a paid star and a drawn star can never disagree.
+
+**Two tiers, flat within each:** a podium place (1st–`PODIUM_PLACES`) pays
+`STARS_FOR_PODIUM`, **any other finish** pays `STARS_FOR_FINISH`, and not finishing
+(`placed <= 0`) pays nothing. There is no 1st/2nd/3rd gradient — winning outright is
+rewarded with the rally's car or part prize and the leaderboard time, not a bigger pile of
+the same currency — and turning up and finishing always pays something, so a rally the
+player cannot podium is still worth driving. It was a descending curve (1st = 3, 2nd = 2,
+3rd = 1, off the podium = 0).
+
+`PODIUM_PLACES` and `MAX_STARS_PER_RALLY` are now **separate constants**. They used to be
+one number doing both jobs, which the old descending curve made necessarily equal; with a
+flat tier they are independent, and conflating them would tie the size of the podium to
+what a win pays. `MAX_STARS_PER_RALLY` is the denominator the star rows draw against.
 
 Sources:
 
-- **Career rallies** — `Save.complete_rally(rally_id, combined_ms, placed)` credits and
-  **returns the DELTA**: only the improvement over that rally's previous best. A re-win
-  at an equal or worse placement pays nothing, which is what keeps the renewable-win
-  loop from being farmed for currency. Turning a 2nd into a 1st is worth exactly 1,
-  even though the two placements *rate* 2 and 3 stars.
+- **Career rallies — RE-WINNABLE.** `Save.complete_rally(rally_id, combined_ms, placed)`
+  credits what **this** finish placed, every time, and returns it. Replaying a rally is a
+  legitimate way to earn stars. It used to credit only the improvement over that rally's
+  previous best (so a replay at an equal or worse placement paid nothing) as an anti-grind
+  guard; that guard is deliberately gone. **Consequence for price tuning:** star income is
+  now bounded only by the player's patience, so repair and part costs are the only thing
+  holding the economy up.
+  The payout reads `placed`, never the stored `best_placed` — the record only ever improves,
+  so paying off it would silently reinstate the old rule. `best_placed` is still tracked,
+  because it drives the map's star rating; it just no longer gates what gets paid.
+  The **car** prize is still one-time (see [reward-system.md](reward-system.md)): an easy
+  rally refilling the garage forever would make the rallies' `restriction` bands meaningless,
+  which is the half of the original grind guard that still matters.
 - **Special events** — specials now award stars like any other rally. They used to award
   none, and that is only safe because the ladder no longer gates on the balance.
-- **The Rally Challenge** — `challenge_session.gd` awards 1/2/3 by placement through the
-  same `stars_for_placement` curve, via `Save.award_stars`. This is the one
-  **renewable-over-real-time** star source, deliberately: it gives a stuck player
-  something to grind. A mid-table finish legitimately banks 0, which is why its boxes
-  are unconditional. See [rally-challenge.md](rally-challenge.md).
+- **The Rally Challenge** — `challenge_session.gd` awards by placement through the same
+  `stars_for_placement` curve, via `Save.award_stars`. It is renewable **over real time** (a
+  new challenge each day), where career rallies are renewable **on demand**. Sharing the one
+  curve means a mid-table challenge finish now banks `STARS_FOR_FINISH` rather than 0 — its
+  boxes were already unconditional, which was written for the days when it could bank
+  nothing, so nothing there needed changing. See [rally-challenge.md](rally-challenge.md).
 
 ## Gating is on COMPLETIONS, not stars
 

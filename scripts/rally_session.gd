@@ -667,8 +667,8 @@ func _resolve_results() -> void:
 		# fire exactly once (todo/special-unlock-reveal.md).
 		var was_completed: bool = bool((Save.profile.get("rallies", {}) as Dictionary)
 			.get(rally_id, {}).get("completed", false))
-		# complete_rally records the FIRST completion (idempotent) and returns the STAR
-		# DELTA it credited to the ledger — 0 for a re-win at an equal or worse placement.
+		# complete_rally records the FIRST completion (idempotent) and returns the STARS it
+		# credited for THIS finish — every finish pays, so a replay pays again.
 		stars_gained = Save.complete_rally(rally_id, combined, placed)
 		star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
 		# A PART-UNLOCK rally's first win discovers the part garage-wide and hands one copy

@@ -45,7 +45,8 @@ more — `purchase_car` passes 0 and the wreck net passes the wrecked car's tier
 practice the clamp reduces to `tier_ceiling(completed_count)`: **progress**, not rally
 difficulty, decides how good a car can be. The old "harder rally → better prize"
 correlation is therefore gone from both draws; what a hard rally pays instead is more
-stars (`stars_for_placement` is flat, but a harder rally is harder to podium).
+stars (`stars_for_placement` is the same everywhere, but a harder rally is harder to
+podium — and off the podium it pays the smaller finishing amount).
 
 ## Event gate (upgrades)
 

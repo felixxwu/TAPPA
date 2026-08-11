@@ -1269,11 +1269,32 @@ static func completed_count(profile: Dictionary) -> int:
 # rallies instead (see "Completion gating" below). Those two facts are linked: while specials
 # were star-gated, paying them stars would have let a special bootstrap the next rung.
 
-const MAX_STARS_PER_RALLY := 3
+# How many places count as the podium. NOT a star count — it used to be the same number
+# doing both jobs (the curve ran 1st -> 3, 2nd -> 2, 3rd -> 1, so the podium size and the top
+# rating were necessarily equal). The curve is flat within the podium now, so the two are
+# independent and conflating them would tie the size of the podium to what a win pays.
+const PODIUM_PLACES := 3
+## What a podium finish pays.
+const STARS_FOR_PODIUM := 2
+## What merely FINISHING pays, anywhere off the podium.
+const STARS_FOR_FINISH := 1
+# The most a single rally can pay — i.e. the denominator the star rows draw against.
+const MAX_STARS_PER_RALLY := STARS_FOR_PODIUM
 
 
-# Stars a finishing position is worth: 1st -> MAX, 2nd -> MAX-1, ... , off the podium -> 0.
-# THE one definition — Save.complete_rally's ledger delta, the Rally Challenge award and the
+# Stars a finishing position is worth: a podium place -> STARS_FOR_PODIUM, any other finish ->
+# STARS_FOR_FINISH, and not finishing at all -> 0.
+#
+# TWO TIERS, deliberately flat within each. There is no 1st/2nd/3rd gradient: the reward for
+# winning outright rather than scraping 3rd is the rally's CAR or PART prize plus the leaderboard
+# time, not a bigger pile of the same currency. Turning up and finishing always pays something,
+# so a rally the player cannot podium is still worth driving.
+#
+# `placed <= 0` is "did not finish / never placed" and pays nothing — the one case that must
+# stay at zero, since the opening rally can complete on a DNF (todo/opening-rally.md) and a
+# ledger that paid for that would pay for quitting.
+#
+# THE one definition — Save.complete_rally's credit, the Rally Challenge award and the
 # HQ's per-pin star row all go through it, so what a star is worth can never disagree
 # between the surfaces that pay it and the ones that show it.
 #
@@ -1282,9 +1303,9 @@ const MAX_STARS_PER_RALLY := 3
 # todo/star-economy.md). The old total_stars / max_total_stars are gone — a derived total
 # could not see Rally Challenge income and shrank whenever a rally was renamed.
 static func stars_for_placement(placed: int) -> int:
-	if placed >= 1 and placed <= MAX_STARS_PER_RALLY:
-		return MAX_STARS_PER_RALLY + 1 - placed
-	return 0
+	if placed <= 0:
+		return 0
+	return STARS_FOR_PODIUM if placed <= PODIUM_PLACES else STARS_FOR_FINISH
 
 
 static func is_special(rally: Dictionary) -> bool:
