@@ -944,6 +944,196 @@ func has_nitrous() -> bool:
 @export_range(1, 20) var hq_reveal_max_queue := 4
 ## Where the car-park lineup sits (outside, in front of the garage). Cars row along X.
 @export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
+# --- WORLD-SPACE MENUS -------------------------------------------------------
+# Everything tunable for the diegetic 3D menus lives in ONE run, in ONE inspector group, because
+# these values are tuned TOGETHER and against each other (a panel offset only makes sense next to
+# its station camera shift). See features/world-panel.md -> "Tuning it live" for the F8 loop, and
+# the framing harness that prints the exact corrections rather than making you guess.
+#
+# NOT MOVED HERE, on purpose: each station's BASE camera pose, because both the flat and the
+# world-space menus are framed by it, and filing it under "World-space menus" would misplace a value
+# that also controls the shipped game. They stay in "Menu / HQ" above/below:
+#   car park  menu_camera_offset / menu_camera_look_height
+#   lift      hq_lift_cam_eye / hq_lift_cam_look
+#   garage    hq_garage_cam_eye / hq_garage_cam_look        (also frames the challenge modal)
+#   table     hq_table_cam_eye / hq_table_cam_look          (also frames the rally detail)
+#   title     hq_exterior_cam_eye / hq_exterior_cam_look
+# The *_camera_look_shift / *_camera_eye_shift fields in THIS group are added to those poses and
+# apply only while world menus are on, which is why they belong here and the base poses do not.
+@export_group("World-space menus")
+## WORLD-SPACE MENUS (world_panel.gd, features/world-panel.md). While on, the car-park
+## overlay is hosted on a panel welded to the focused car's flank instead of on a flat
+## CanvasLayer over the frame. Off by default: this is the spike toggle, kept so the two
+## can be A/B'd in place. In a debug build it also flips live with the
+## `toggle_world_menus` action (F7) — same pattern as debug_wheel_forces / H.
+@export var world_space_menus := false
+## Where the car-park panel sits relative to the focused car, in the car MARKER's local
+## space. MIND THE SIGNS: lineup markers are built with `rotation.y = PI` so the car parks
+## nose-out toward the camera (hq_carpark.gd::_render_lineup_page), which flips X and Z
+## against the world — in this space **−Z is the car's nose** and **−X is the car's left**
+## (world +X, which is screen-right from the menu camera).
+##
+## The default puts the panel at the car's front-left corner, pushed forward and about one
+## `menu_car_spacing` to the left, so it stands IN FRONT OF the neighbouring car on that
+## side rather than on top of the focused one.
+@export var world_panel_car_offset := Vector3(-2.16, 2.1, -2.31)
+## Yaw about Y, in degrees, in that same marker space. 180 turns the panel to face the
+## camera side (world +Z), which makes its plane PERPENDICULAR TO THE CAR'S DIRECTION and
+## its width run ALONG THE ROW of parked cars. Note this is still read off-square: the menu
+## camera is a front-3/4 shot (menu_camera_offset), so the angle comes from the CAMERA's
+## pose, not from skewing the panel — which is the whole point of the design.
+@export_range(-180.0, 180.0) var world_panel_car_yaw_deg := 180.0
+## Panel height in metres; the width follows the 16:9 logical menu canvas. Pure look.
+@export_range(0.2, 8.0) var world_panel_height := 3.8
+## HOW BIG THE UI READS ON THE PANEL, independent of how big the panel is. The menu is
+## laid out on a canvas this many times SMALLER than the normal logical frame and then
+## scaled to fill the panel, so 2.0 makes every widget twice the size relative to the
+## panel. This — not world_panel_height — is the dial for "the menu is too small to read";
+## enlarging the panel scales the whole thing on screen, this scales the UI within it.
+## Trade-off: a smaller canvas FITS LESS, so pushed far enough a screen needs its content
+## trimmed or scrolled rather than just scaled up.
+@export_range(0.5, 4.0, 0.1) var world_panel_ui_scale := 1.8
+## THE WHEEL-FITTING VIEW needs its own placement, because it is the one car-park mode that swaps the
+## CAMERA out from under the panel: CarparkMode.WHEELS uses a low SIDE-ON framing (hq_wheel_cam_offset)
+## so the settled car's flank and both wheels fill the frame, where every other mode uses the
+## front-3/4 menu_camera_offset. A panel welded for the front-3/4 shot is edge-on or off-frame in that
+## one, so the offset/yaw/height below replace the car-park values while it is open.
+##
+## Same marker space as world_panel_car_offset — signs are FLIPPED (−Z is the car's nose, −X its left).
+@export var world_panel_wheels_offset := Vector3(-2.2, 1.6, 0.4)
+@export_range(-180.0, 180.0) var world_panel_wheels_yaw_deg := 90.0
+@export_range(0.2, 8.0) var world_panel_wheels_height := 2.4
+## Added to the car park camera's LOOK TARGET while world-space menus are on, so the shot
+## pans over to fit the floating panel in frame. The camera's POSITION is deliberately left
+## alone (menu_camera_offset): moving the eye changes the whole composition and the
+## car's framing with it, where panning the aim just brings the panel into shot. +X aims
+## toward the panel's side (screen-right). Applied only in that mode, so the default flat
+## car-park framing is untouched by this feature.
+@export var world_panel_camera_look_shift := Vector3(2.1, 0.7, 0.0)
+## Added to the car park camera's EYE while world-space menus are on — the car-park counterpart of
+## world_panel_lift_camera_eye_shift. Prefer the LOOK shift above when it will do: panning the aim
+## brings the panel into frame from the same viewpoint, where moving the eye recomposes the whole shot
+## and moves the car within it. Reach for this when panning cannot solve it — most often because the
+## panel needs more DISTANCE (pull back on +Z) to stop overflowing the frame, or because something is
+## occluding it, which no aim change fixes.
+##
+## Applies to the standard lineup shot only, NOT the side-on wheel-fitting view (that mode swaps the
+## camera out entirely — see world_panel_wheels_offset).
+@export var world_panel_camera_eye_shift := Vector3(0.0, 0.0, 0.0)
+## THE TUNING LIFT's world panel (migration step 2). Its anchor is hq_lift_pos in WORLD
+## space — unlike the car park there is no per-car marker to hang off, so no axis flip
+## applies here: +X is world +X, and the lift car noses −Z. Yaw 180 keeps the car-park
+## convention (plane perpendicular to the car, width along the row).
+##
+## The garage is a MUCH tighter space than the open car park: the bay is enclosed and the
+## lift camera sits close, so this panel wants to be smaller and its shot nudged more than
+## the car park's. Expect to eyeball all four.
+## The z here is pulled back toward the garage rather than out toward the lift camera: the
+## bay camera sits only ~2.3 m off the bay, and at that range the panel's angular size is
+## most of the frame — a little more distance buys a lot of fit.
+##
+## X IS BOUNDED BY THE CAR. The car is centred on the lift at x=4 and is ~1.8 m wide, so the
+## panel's near edge must stay clear of x≈3.1 or it intersects the bodywork — the panel cannot
+## be centred on the lift, because the car is what's standing there. Shrinking
+## world_panel_lift_height is what buys room here: the aspect is fixed, so a shorter panel is
+## also narrower.
+##
+## THE SAME PLACEMENT AS THE CAR PARK — the car's FRONT-LEFT CORNER, just past the nose. The
+## lift car noses −Z and its left is −X (facing −Z with +Y up puts +X on its right), so that
+## corner is −Z and −X of the lift: this default sits ~0.5 m ahead of the nose and 2.2 m out to
+## the left, clear of the bodywork in both axes.
+##
+## Being ahead of the nose is what fixes the OCCLUSION, not just the framing: the car's nose
+## sits ~1.2 m from the bay camera, so the near car covers a wide wedge of screen and was
+## hiding a panel placed level with or behind it. Forward of the nose plus a pulled-back eye
+## (world_panel_lift_camera_eye_shift) is what separates the two.
+@export var world_panel_lift_offset := Vector3(-3.17, 1.39, -2.77)
+@export_range(-180.0, 180.0) var world_panel_lift_yaw_deg := 180.0
+## THE SIZE KNOB for this screen. A panel's on-screen size is its metre height over its distance from
+## the camera, and NOTHING else — ui_scale only changes how big the UI reads WITHIN the panel, and on
+## this screen it is already pinned at its ceiling (~1.77, set by the 401 px minimum width of the
+## Back / Upgrades / Tuning / Test Drive row, which cannot wrap). So if the lift menu looks small,
+## this is the value to raise; raising ui_scale does nothing.
+@export_range(0.2, 8.0) var world_panel_lift_height := 3.0
+## The lift gets its OWN ui_scale rather than sharing world_panel_ui_scale, because its
+## content is WIDER than the car park's: the selector row (‹ / name / › / Repair) and the hub
+## row (Back / Upgrades / Tuning / Test Drive) are HBoxes of buttons, and unlike a label an
+## HBox cannot wrap — so on too narrow a canvas the row simply runs off the panel's right edge
+## and "HEALTH 100%" / "TEST DRIVE" get cut in half. A lower scale = a WIDER canvas = the rows
+## fit. If this screen's rows grow again, this is the dial, not the panel size.
+@export_range(0.5, 4.0, 0.1) var world_panel_lift_ui_scale := 1.25
+## Pans the bay shot toward the panel, which stands off the lift car's −X side (as does the
+## map table, so one shift serves both). The eye is untouched — see _station_xform's LIFT
+## branch on why this pans rather than moves.
+##
+## THIS VALUE IS A BALANCE, not "as far as possible". The panel needs ~±27° of frame at this
+## range, against a horizontal half-FOV of roughly 54° (the 75° `fov` is VERTICAL; the
+## horizontal extent is much wider, which is why a panel that overhangs the frame vertically
+## can still fit across it). Aim much further −X and the panel centres up beautifully while
+## the CAR leaves the frame — on a screen whose entire job is tuning the car in front of you.
+##
+## Tuned WITH world_panel_lift_offset and the eye shift below, not independently. At the
+## current set the panel spans roughly −14°..+48° of frame and the car −17°..+3°, with the panel
+## much the nearer of the two — so it reads as standing in front of the car's front corner,
+## exactly as the car-park panel stands in front of its neighbour.
+@export var world_panel_lift_camera_look_shift := Vector3(-2.24, 0.2, -1.0)
+## Added to hq_lift_cam_eye while world menus are on — the ONE place a world panel moves the
+## camera's position rather than just its aim, and only because the bay is genuinely too tight
+## otherwise: the car's nose sits ~1.2 m from the eye, so it covers a wide wedge of screen and
+## no amount of panning stops it hiding a panel behind it. Pulling back shrinks the car's
+## angular size and buys room for both.
+##
+## −Z here moves AWAY from the garage (whose footprint starts at z=0, HQEnvironment._build_garage)
+## and out into the open, so pulling back does not push the camera through a wall. Going the
+## other way would.
+@export var world_panel_lift_camera_eye_shift := Vector3(0.0, 0.15, -1.4)
+
+## THE GARAGE AND TITLE PANELS.
+##
+## These four are anchored differently from the car park and lift, and the difference is
+## deliberate: rather than welding to a car and then panning the camera to find the panel
+## (which cost several tuning passes per station), each is placed relative to ITS STATION'S
+## EXISTING CAMERA LOOK TARGET, so it starts out already in shot and needs no camera shift at
+## all. `offset` is from that look target, in world axes.
+##
+## PITCH IS NEW HERE and is not decoration. The map-table camera sits ~1.8 m from the table
+## looking steeply DOWN at it (hq_table_cam_eye / _look), so an upright panel would be read
+## almost edge-on. A pitched panel lies back toward the camera — which also reads better: a
+## briefing sheet angled on the table rather than a screen standing on it.
+##
+## Each station gets its own HEIGHT because their camera distances differ enormously — the
+## garage shot is ~8 m out while the table camera is under 2 m, and the same panel size cannot
+## serve both. `ui_scale` stays the shared world_panel_ui_scale until a station proves it needs
+## its own (as the lift's unwrappable button rows did).
+@export var world_panel_garage_offset := Vector3(0.0, 2.29, 8.52)
+@export_range(-180.0, 180.0) var world_panel_garage_yaw_deg := 0.0
+@export_range(-90.0, 90.0) var world_panel_garage_pitch_deg := -15.0
+@export_range(0.2, 8.0) var world_panel_garage_height := 4.95
+## The garage gets its OWN ui_scale for the same reason the lift does: its content is a ROW OF
+## BUTTONS (Back / Career / Garage / Mystery Box / Online), and an HBox cannot wrap — so on too
+## narrow a canvas the row runs off the panel's right edge and the last button is cut in half
+## instead of reflowing. A LOWER scale gives a WIDER canvas and the row fits.
+##
+## Starts a little lower than the lift's 1.25 because this row is the longer of the two (up to five
+## buttons, since Mystery Box only appears when one is held — so the row's width CHANGES with save
+## state, and the value has to fit the widest case, not the one on screen when you tuned it).
+@export_range(0.5, 4.0, 0.1) var world_panel_garage_ui_scale := 1.15
+@export var world_panel_title_offset := Vector3(-5.9, 1.19, 4.32)
+@export_range(-180.0, 180.0) var world_panel_title_yaw_deg := -53.7
+@export_range(-90.0, 90.0) var world_panel_title_pitch_deg := -6.0
+@export_range(0.2, 8.0) var world_panel_title_height := 2.14
+## The title screen gets its own ui_scale for the same reason the lift and garage do: its content is
+## a ROW OF BUTTONS (Exit Game / Free Roam / Settings / Start) and an HBox cannot wrap, so on too
+## narrow a canvas the row runs off the panel's right edge — "START" was being cut in half. A LOWER
+## scale gives a WIDER canvas and the row fits. Note the row's width is PLATFORM-DEPENDENT: Exit Game
+## is skipped on web, so tune against the desktop (4-button) case, which is the wider one.
+## 1.0 gives a canvas the full 16:9 of the logical height — ~711 px wide against the real screen's
+## 618 (the anamorphic stretch narrows the screen, not this canvas), so the row has ~15% MORE room
+## here than it does flat. At 1.15 the canvas is exactly screen width, which left no headroom and
+## "START" was still being cut off.
+@export_range(0.5, 4.0, 0.1) var world_panel_title_ui_scale := 1.0
+
+@export_group("Menu / HQ")
 ## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.
 @export var hq_garage_size := Vector2(14.0, 12.0)
 ## Grey concrete apron under the garage + car park: centre (XZ) and size (X, Z). Laid

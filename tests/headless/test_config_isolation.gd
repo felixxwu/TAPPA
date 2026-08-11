@@ -68,3 +68,31 @@ func test_prop_apply_does_not_clobber_active_cars_engine() -> void:
 	var prop_engine := EngineLibrary.by_id(CarLibrary.by_id("fx_light_rwd")["engine"])
 	assert_eq(prop.config.peak_torque, prop_engine["peak_torque"],
 		"prop config carries its own engine's torque")
+
+
+# HOT RELOAD (Config.reload_from_disk) — the tuning loop for world-space menu placement: retune a
+# value on game_config.tres in the inspector, press F8 in the running game, see it.
+#
+# The bug this guards is subtle and was the reason the feature didn't work at first: `load()` returns
+# the CACHED resource, so reset() re-duplicates the copy read at boot however many times it is
+# called and a disk edit is invisible. Only CACHE_MODE_REPLACE goes back to the file. That is not
+# directly observable without editing a file mid-test, so what IS asserted is the two things that
+# must hold for it to be capable of working at all: it succeeds, and it installs a FRESH instance
+# rather than handing back the object already in use.
+func test_reload_from_disk_swaps_in_a_fresh_config() -> void:
+	var before: GameConfig = Config.data
+	# A runtime mutation of the kind the game makes (car.gd's apply_car reshapes the live config).
+	# A real re-read must not preserve it — that is the difference between reloading and no-op.
+	before.hq_tree_count = 12345
+
+	assert_true(Config.reload_from_disk(), "the authored config re-reads from disk")
+	assert_ne(Config.data, before, "reload installs a NEW GameConfig, not the one already in use")
+	assert_ne(Config.data.hq_tree_count, 12345,
+		"a re-read drops runtime mutations — otherwise nothing was actually re-read")
+
+
+# The key that drives it. Debug-build-only in hq.gd, but the ACTION has to exist or the handler is
+# dead code (the same reasoning as test_menu_nav's gamepad-button guard).
+func test_the_config_hot_reload_action_exists() -> void:
+	assert_true(InputMap.has_action("reload_config"),
+		"F8 hot-reload needs its input action in project.godot")

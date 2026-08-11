@@ -55,6 +55,10 @@ const STARTER_MODEL_IDS := CarLibrary.STARTER_MODEL_IDS
 # writer (apply_event_config) must be reached through the script resource — calling a
 # static via the instance warns. Same precedent as driving_context.gd.
 const RallySessionScript := preload("res://scripts/rally_session.gd")
+# Same idiom as RallySessionScript above, and for the same reason: ChallengeSession is an
+# AUTOLOAD, so the bare name is the node instance — and calling one of its `static func`s through
+# an instance raises STATIC_CALLED_ON_INSTANCE. Reaching the script directly keeps the call clean.
+const ChallengeSessionScript := preload("res://scripts/challenge_session.gd")
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
 # name/description + Upgrades/Tuning buttons + a Test Drive button); TUNE is
@@ -239,6 +243,18 @@ var _pending_swap: Dictionary = {}
 var _pending_start: Callable = Callable()
 var _cars: Array = []
 var _markers: Array = []
+# WORLD-SPACE MENUS (world_panel.gd + world_panel_host.gd, features/world-panel.md), off
+# by default behind Config.data.world_space_menus. `_car_root` / `_lift_root` are the two
+# migrated screens' trees, held so their WorldPanelHost can MOVE each one between its flat
+# CanvasLayer and a panel welded into the 3D scene. All the swap machinery lives in
+# WorldPanelHost — a station only supplies its layer, tree, anchor and size.
+var _car_root: Control
+var _lift_root: Control
+var _title_root: Control
+var _garage_root: Control
+# The challenge screen is a MODAL over the garage rather than a View of its own, so its shown-ness
+# is its own flag rather than a _view comparison (hq_challenge.gd toggles it).
+var _challenge_shown := false
 # Reuse cache for parked lineup cars, shared by every lineup (rally car-select,
 # title, free roam) since they all build from the same car dicts. Keyed by the
 # owned car's instance_id -> {"hash": int, "node": Node3D}; the hash is the deep
@@ -1628,7 +1644,7 @@ func _make_overlay(margin := 24.0) -> Array:
 #
 # WHY this exists, and why it isn't optional for a modal page. Every overlay here is laid
 # out against a LOGICAL canvas whose height is fixed by display_stretch.gd —
-# DisplayStretch.DESIGN_HEIGHT, 360 from project.godot on every target — while the WIDTH
+# DisplayStretch.DESIGN_HEIGHT, read from project.godot, the same on every target — while the WIDTH
 # follows the device aspect and gets narrow on a phone, which makes autowrapped labels wrap
 # to more lines. So a fixed, unscrolled column whose Back button is laid out AFTER the
 # content doesn't overflow by device roulette: with a long restriction string or a server
@@ -1817,7 +1833,15 @@ func _build_carpark_nav_row() -> Array:
 	var center := _label("", 18)
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nav.add_child(center)
+	# Wraps rather than clipping — the name + position ("SWERVE SURGER R/T  (1 OF 2)") is the
+	# longest line on the car screen and was losing its tail off the edge of a world panel.
+	center.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Backed like the other bare labels, but EXPAND_FILL rather than SHRINK_CENTER: this one
+	# is the stretchy middle of the chevron row, and shrinking it would let the < and >
+	# collapse toward the centre.
+	var center_backing := WorldPanel.text_backing(center)
+	center_backing.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nav.add_child(center_backing)
 	var next := Button.new()
 	next.text = ">"
 	next.focus_mode = Control.FOCUS_NONE
@@ -1890,13 +1914,43 @@ func _on_settings_action() -> void:
 
 # Show only the active station's overlay (detail is a TABLE sub-state).
 func _update_overlays() -> void:
-	_title_layer.visible = _view == View.EXTERIOR
-	_garage_layer.visible = _view == View.GARAGE
+	# NOTE: there is deliberately NO `var cfg := Config.data` local here. The closures below read
+	# Config.data at call time instead, because the F8 hot reload swaps the whole GameConfig instance
+	# — a captured one goes stale the moment it is pressed, which is exactly how a ui_scale retune
+	# stopped reaching the panels. Same reason _sync_panel re-binds the callables on every sync.
+	# The un-migrated screens set their layer directly; the MIGRATED ones go through _sync_panel,
+	# which owns its layer's visibility because whichever host isn't holding the tree must be
+	# hidden — an empty CanvasLayer or an unfed panel left armed is the bug this prevents.
 	_table_layer.visible = _view == View.TABLE and not _detail_open
-	_detail_layer.visible = _view == View.TABLE and _detail_open
-	_lift_layer.visible = _view == View.LIFT
-	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
+	# THE RALLY DETAIL PAGE STAYS FLAT, deliberately — it is not a migration that was forgotten.
+	# It is the densest page in the HQ (name, region, restriction, record, star row, reward line) read
+	# at the map table, whose camera sits under 2 m from the table looking steeply DOWN; a panel there
+	# is read at a punishing angle and has to be tiny to fit the shot. A full-frame page is simply the
+	# better read for this one screen. See features/world-panel.md -> "Adoption rule".
+	_detail_layer.visible = _view == View.TABLE and _detail_open
+	# THE ONLINE CHALLENGE SCREEN IS FLAT TOO, by the same choice as the rally detail: a dense
+	# info page (period, ceiling, eligible cars, leaderboard) that reads better with the whole frame
+	# than welded to a panel in the garage. Migrated, tried, reverted — see features/world-panel.md.
+	#
+	# Driven by _challenge_shown rather than by writing the layer from the open/close handlers, which
+	# is KEPT from the migration on purpose: it is a modal rather than a View, and hq's own
+	# _unhandled_input needs one authoritative answer to "is the challenge up?" so the garage below
+	# cannot react to the same keypress.
+	_challenge_layer.visible = _challenge_shown
+	_sync_panel("title", _title_layer, _title_root, _view == View.EXTERIOR,
+		_title_panel_xform, _title_panel_spec)
+	# The garage stands down while the CHALLENGE modal is over it — the modal owns the screen. This
+	# used to be an ad-hoc `_garage_layer.visible = false` inside _open_challenge_overlay, which
+	# stopped working the moment that function also had to call _update_overlays (this function then
+	# re-showed the garage a line later). It is a visibility RULE, so it belongs here with the rest.
+	_sync_panel("garage", _garage_layer, _garage_root,
+			_view == View.GARAGE and not _challenge_shown,
+		_garage_panel_xform, _garage_panel_spec)
+	_sync_panel("lift", _lift_layer, _lift_root, _view == View.LIFT,
+		_lift_panel_xform, _lift_panel_spec)
+	_sync_panel("car", _car_layer, _car_root, _view == View.CARPARK,
+		_car_panel_xform, _car_panel_spec)
 	# BEFORE _normalize_menus: this writes dynamic text, so it has to run while the
 	# house rules (uppercase) are still to come, not after them.
 	_refresh_repair_button()
@@ -1911,6 +1965,196 @@ func _normalize_menus() -> void:
 			_lift_layer, _car_layer, _settings_layer]:
 		if layer != null:
 			UITheme.enforce(layer)
+	# A migrated tree may not be under its CanvasLayer at all (world-space host), and the
+	# house rules have to reach it wherever it lives — enforce walks from a node DOWN, so an
+	# empty layer enforces nothing.
+	for pair in [[_car_root, _car_layer], [_lift_root, _lift_layer],
+			[_title_root, _title_layer], [_garage_root, _garage_layer]]:
+		var tree := pair[0] as Control
+		if tree != null and tree.get_parent() != pair[1]:
+			UITheme.enforce(tree)
+
+
+# Re-read the authored config from disk and re-apply it, keeping the player where they are. The F8
+# debug key (see _unhandled_input) and the tuning loop in features/world-panel.md.
+#
+# PRESERVES THE WORLD-MENU TOGGLE. `world_space_menus` is stored false in game_config.tres, so a
+# straight reload switched world menus OFF — F8 fought F7 and looked like "reload just resets it to
+# the flat menus". The toggle is a live A/B switch for this session, not one of the values being
+# tuned, so it survives the reload while everything else is taken from the file.
+#
+# Re-applies rather than merely reloading, because the two things NOT read per frame have to be
+# poked: _update_overlays re-syncs the panel hosts (panel height and ui_scale are baked in at
+# construction, so retuning either rebuilds the panel), and the camera is re-posed because a
+# station's pose is only recomputed when it moves. Panel offsets, yaw, pitch and the camera shifts
+# need none of this — WorldPanel re-reads its anchor every frame.
+func hot_reload_config() -> bool:
+	var was_world := bool(Config.data.world_space_menus)
+	if not Config.reload_from_disk():
+		return false
+	Config.data.world_space_menus = was_world
+	_update_overlays()
+	_move_camera_to(_camera_target_xform() if _view == View.CARPARK
+		else _station_xform(_view), true)
+	return true
+
+
+# --- World-space menu hosts ---------------------------------------------------
+#
+# Four migrated screens, each a WorldPanelHost (world_panel_host.gd) owning the swap between its
+# flat CanvasLayer and a panel welded into the 3D scene. Everything generic — building and
+# rebuilding the panel, moving the tree, restyling it, reverting cleanly — lives in that class
+# and in WorldPanel.apply_host_style. The only per-station knowledge here is WHERE the panel
+# hangs and HOW BIG it is.
+#
+# Hosts live in a dictionary rather than one field each: at two screens that was a toss-up, at
+# six it is the difference between a table and a wall of copy-paste.
+var _panel_hosts: Dictionary = {}
+
+
+func _panel_host(key: String) -> WorldPanelHost:
+	return _panel_hosts.get(key, null) as WorldPanelHost
+
+
+# Put ONE screen on the host the config asks for, creating its host on first use. Idempotent and
+# cheap, so it is safe to call from _update_overlays on every view change.
+func _sync_panel(key: String, layer: CanvasLayer, tree: Control, shown: bool,
+		anchor: Callable, spec: Callable) -> void:
+	if layer == null or tree == null:
+		return
+	var host := _panel_host(key)
+	if host == null:
+		host = WorldPanelHost.new({
+			"flat_layer": layer, "tree": tree, "parent": self,
+			"anchor": anchor, "spec": spec,
+		})
+		_panel_hosts[key] = host
+	# RE-BIND EVERY SYNC, not just at birth. A host built once kept the Callables it was created
+	# with — and the F8 hot reload REPLACES Config.data with a fresh GameConfig, so a spec closure
+	# that had captured the old instance kept reporting the old height / ui_scale and the panel was
+	# never rebuilt. Offsets and yaw appeared to work (their anchors read Config.data per call),
+	# which made it look like only ui_scale was broken.
+	host.anchor = anchor
+	host.spec = spec
+	if host.panel != null:
+		host.panel.anchor = anchor
+	host.sync(bool(Config.data.world_space_menus), shown)
+
+
+# THE PANEL SIZE for each migrated screen, as (height_m, ui_scale).
+#
+# Methods, not closures. _update_overlays runs on every view change, so building four lambdas there
+# allocated four Callables per call and left each captured on a long-lived WorldPanelHost. These read
+# Config.data at CALL time exactly as the lambdas did, which is what keeps them correct across the F8
+# hot reload (it replaces the whole GameConfig instance, so a captured one goes stale) — and they
+# allocate nothing.
+#
+# Every screen built of BUTTON ROWS carries its own ui_scale: an HBox cannot wrap, so it needs a wider
+# canvas (a LOWER scale) than a screen of labels does. Only the car park uses the shared value.
+func _title_panel_spec() -> Vector2:
+	return Vector2(float(Config.data.world_panel_title_height),
+		float(Config.data.world_panel_title_ui_scale))
+
+
+func _garage_panel_spec() -> Vector2:
+	return Vector2(float(Config.data.world_panel_garage_height),
+		float(Config.data.world_panel_garage_ui_scale))
+
+
+func _lift_panel_spec() -> Vector2:
+	return Vector2(float(Config.data.world_panel_lift_height),
+		float(Config.data.world_panel_lift_ui_scale))
+
+
+# The wheel-fitting view gets its own HEIGHT for the same reason it gets its own offset: it is the one
+# car-park mode that swaps the camera, so a different distance needs a different panel size.
+func _car_panel_spec() -> Vector2:
+	var cfg: GameConfig = Config.data
+	return Vector2(
+		float(cfg.world_panel_wheels_height if _carpark_mode == CarparkMode.WHEELS
+			else cfg.world_panel_height),
+		float(cfg.world_panel_ui_scale))
+
+
+# Orientation for a placed panel: yaw about world up, then pitch about its own X.
+#
+# PITCH IS NOT DECORATION. The map-table camera sits under 2 m from the table looking steeply
+# DOWN at it, so an upright panel there is read almost edge-on; pitching it back to lie toward
+# the camera is what makes it legible (and reads better anyway — a sheet angled on the table
+# rather than a screen standing on it).
+func _panel_basis(yaw_deg: float, pitch_deg: float) -> Basis:
+	return Basis(Vector3.UP, deg_to_rad(yaw_deg)) * Basis(Vector3.RIGHT, deg_to_rad(pitch_deg))
+
+
+# THE CAR-PARK ANCHOR: the focused car's runtime Marker3D, offset to its front-left corner.
+#
+# A marker rather than an authored scene node because the lineup is BUILT AT RUNTIME (one marker
+# per owned car, laid out along X), so there is nothing fixed in hq.tscn to weld to.
+#
+# MIND THE SIGNS: markers are built with `rotation.y = PI` so the car parks nose-out toward the
+# camera (hq_carpark.gd::_render_lineup_page), which flips X and Z against the world — in this
+# space -Z is the car's nose and -X is the car's left (world +X, screen-right). Get it backwards
+# and the panel lands behind the car, off-screen, which reads as "the panel never appeared"
+# rather than as a sign error.
+func _car_panel_xform() -> Variant:
+	if _markers.is_empty():
+		return null
+	var marker := _markers[clampi(_focus, 0, _markers.size() - 1)] as Marker3D
+	if marker == null:
+		return null
+	var cfg: GameConfig = Config.data
+	# THE WHEEL VIEW IS ITS OWN SHOT. CarparkMode.WHEELS swaps in a low SIDE-ON camera
+	# (_camera_target_xform), so the placement welded for the front-3/4 lineup shot is edge-on or out
+	# of frame there. It is the only car-park mode that moves the camera, so it is the only one that
+	# needs its own offset and yaw.
+	var wheels := _carpark_mode == CarparkMode.WHEELS
+	var local := Transform3D(
+		_panel_basis(float(cfg.world_panel_wheels_yaw_deg if wheels
+			else cfg.world_panel_car_yaw_deg), 0.0),
+		cfg.world_panel_wheels_offset if wheels else cfg.world_panel_car_offset)
+	return marker.global_transform * local
+
+
+# THE LIFT ANCHOR: hq_lift_pos in WORLD space. No marker and no axis flip here - the lift bay is
+# a fixed place in the garage, and the car on it noses -Z.
+func _lift_panel_xform() -> Variant:
+	var cfg: GameConfig = Config.data
+	return Transform3D(_panel_basis(float(cfg.world_panel_lift_yaw_deg), 0.0),
+		cfg.hq_lift_pos + cfg.world_panel_lift_offset)
+
+
+# THE STEP 3-4 ANCHORS (detail / challenge / garage / title) are all built the same way: from
+# THEIR STATION'S EXISTING CAMERA LOOK TARGET plus an offset.
+#
+# That is a deliberate change of tactic from the first two stations. Welding to a car and then
+# panning the camera to find the panel cost several eyeball passes per station; anchoring to the
+# point the camera already aims at means the panel starts IN SHOT, and none of these four needs a
+# camera shift at all.
+func _looked_at_panel_xform(look: Vector3, offset: Vector3, yaw: float, pitch: float) -> Variant:
+	return Transform3D(_panel_basis(yaw, pitch), look + offset)
+
+
+func _garage_panel_xform() -> Variant:
+	var cfg: GameConfig = Config.data
+	return _looked_at_panel_xform(cfg.hq_garage_cam_look, Config.data.world_panel_garage_offset,
+		float(Config.data.world_panel_garage_yaw_deg), float(Config.data.world_panel_garage_pitch_deg))
+
+
+func _title_panel_xform() -> Variant:
+	var cfg: GameConfig = Config.data
+	# The title camera is posed RELATIVE to the leftmost parked car, so its look target moves with
+	# the lineup; the panel has to follow it or it drifts off as the collection grows.
+	return _looked_at_panel_xform(_first_car_anchor() + cfg.hq_exterior_cam_look,
+		Config.data.world_panel_title_offset,
+		float(Config.data.world_panel_title_yaw_deg), float(Config.data.world_panel_title_pitch_deg))
+
+
+# Re-weld the car-park panel to the focused car. Called from hq_carpark.gd::_focus_changed - the
+# one place the selection actually changes.
+func _position_car_panel() -> void:
+	var host := _panel_host("car")
+	if host != null:
+		host.place()
 
 
 # --- Station transitions -----------------------------------------------------
@@ -3674,7 +3918,21 @@ func _station_xform(view: int) -> Transform3D:
 		# see _refresh_garage_row.)
 		View.GARAGE: return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
 		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
-		View.LIFT: return _look_xform(cfg.hq_lift_cam_eye, cfg.hq_lift_cam_look)
+		View.LIFT:
+			# Same rule as the car park (_camera_target_xform): while world menus are on, PAN
+			# THE AIM to bring the panel into frame rather than moving the eye, which would
+			# recompose the whole bay shot. The garage is tighter than the car park, so this
+			# shift matters more here, not less.
+			var lift_look: Vector3 = cfg.hq_lift_cam_look
+			var lift_eye: Vector3 = cfg.hq_lift_cam_eye
+			if bool(cfg.world_space_menus):
+				lift_look += Config.data.world_panel_lift_camera_look_shift
+				# The ONE station where a world panel also moves the EYE. The bay is too tight
+				# to solve by aim alone: the car's nose is ~1.2 m from the eye, so it covers a
+				# wide wedge of screen and occludes any panel behind it. Pulling back shrinks
+				# the car and separates the two.
+				lift_eye += Config.data.world_panel_lift_camera_eye_shift
+			return _look_xform(lift_eye, lift_look)
 		View.CARPARK: return _camera_target_xform()
 		# Title shot: eye + look are OFFSETS from the first (leftmost) parked car, so the
 		# low ~45° "past the first car, down the line" framing tracks the lead car as the
@@ -3712,7 +3970,22 @@ func _camera_target_xform() -> Transform3D:
 	if _carpark_mode == CarparkMode.WHEELS:
 		return _look_xform(car_pos + cfg.hq_wheel_cam_offset,
 			car_pos + Vector3.UP * cfg.hq_wheel_cam_look_height)
-	return _look_xform(car_pos + cfg.menu_camera_offset, car_pos + Vector3.UP * cfg.menu_camera_look_height)
+	# A world-space menu stands off the car's front-left corner, so the shot that framed the
+	# car alone leaves the panel at the edge of frame. PANS THE AIM, NOT THE EYE: moving the
+	# camera's position recomposes the whole shot (and moves the car within it), where
+	# shifting the look target just brings the panel into view from the same viewpoint.
+	# Only while that mode is on, leaving the shipped flat framing exactly as it was.
+	# Deliberately below the WHEELS branch above: that mode is a car-only inspection shot
+	# with no panel in it to frame.
+	var look: Vector3 = car_pos + Vector3.UP * cfg.menu_camera_look_height
+	var eye: Vector3 = car_pos + cfg.menu_camera_offset
+	if bool(cfg.world_space_menus):
+		look += Config.data.world_panel_camera_look_shift
+		# The eye shift is the SECOND-choice lever (see the field's comment): panning the aim keeps the
+		# composition and just finds the panel, where moving the eye recomposes the shot. It exists for
+		# what panning cannot fix — distance, and occlusion.
+		eye += Config.data.world_panel_camera_eye_shift
+	return _look_xform(eye, look)
 
 
 func _snap_camera_to_focus() -> void:
@@ -3820,7 +4093,12 @@ func _apply_free_restore(instance_id: int, restriction: Dictionary) -> void:
 # {"restriction": {"pw_max": ceiling}} shape world.gd::_build_start_line hands the start
 # line — a challenge has no authored rally, but its ceiling is an ordinary p/w cap.
 func _challenge_restriction() -> Dictionary:
-	var ceiling := ChallengeSession.displayed_ceiling(
+	# Called through the SCRIPT, not the autoload instance. `ChallengeSession` is an autoload, so
+	# the bare name resolves to the node — and calling a `static func` on an instance raises
+	# STATIC_CALLED_ON_INSTANCE, which GUT reports as a test failure (it was failing
+	# test_render_smoke and test_upgrades_simple, and any other suite that checks for engine
+	# errors while hq.gd is parsed). Same function, same result, no warning.
+	var ceiling: int = ChallengeSessionScript.displayed_ceiling(
 		_challenge_kind, int(Time.get_unix_time_from_system()))
 	return {} if ceiling <= 0 else {"pw_max": float(ceiling)}
 
@@ -3995,6 +4273,35 @@ func _unhandled_input(event: InputEvent) -> void:
 	# predicate so this guard cannot drift from the one MenuNav uses.
 	if MenuNav.is_text_editing():
 		return
+	# WORLD-SPACE MENU A/B (F7), debug builds only — the same shape as the wheel-force
+	# arrows' H toggle: a config that starts world menus on works in any build, but the
+	# live key is a dev affordance and release exports ignore it. Flips the config field
+	# the host swap reads, then re-runs the swap so the tree moves immediately.
+	if OS.is_debug_build() and event.is_action_pressed("toggle_world_menus"):
+		Config.data.world_space_menus = not Config.data.world_space_menus
+		_update_overlays()
+		# The car-park framing differs between the two modes (world_panel_camera_look_shift /
+		# _eye_shift), so
+		# re-seat the camera or the A/B compares the new host against the old shot. Snapped
+		# rather than tweened, and NOT routed through _focus_changed — that would re-rev the
+		# focused car's engine on every toggle.
+		if _view == View.CARPARK:
+			_snap_camera_to_focus()
+		get_viewport().set_input_as_handled()
+		return
+	# HOT-RELOAD THE CONFIG (F8), debug builds only — the tuning loop for world-space menus. Edit
+	# any value on config/game_config.tres in the inspector, press this, and the running game picks
+	# it up: no restart, no losing your place in the HQ.
+	#
+	# Re-applies rather than merely reloading, because the two things that are NOT read per frame
+	# have to be poked: _update_overlays re-syncs the panel hosts (panel height and ui_scale are
+	# baked in at construction, so a retune of either rebuilds the panel), and the camera is
+	# re-posed because a station's pose is only recomputed when it moves. Panel offsets, yaw, pitch
+	# and the camera shifts need none of this — WorldPanel re-reads its anchor every frame.
+	if OS.is_debug_build() and event.is_action_pressed("reload_config"):
+		hot_reload_config()
+		get_viewport().set_input_as_handled()
+		return
 	# A ConfirmPopup / UsernamePopup is MODAL: it owns the input until dismissed, and its
 	# own MenuNav handles select/back on its buttons. Normally the focused popup button
 	# consumes ui_accept before this ever runs — but that relies on the popup HOLDING
@@ -4012,7 +4319,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# movement (menu_nav.gd) does the job; hq must still bail out here (its
 	# _unhandled_input runs BEFORE the overlay's own MenuNav node, an HQ descendant) so
 	# the GARAGE view below doesn't also react to the same key.
-	if _challenge_layer != null and _challenge_layer.visible:
+	# _challenge_shown, NOT the layer's visibility: while world menus are on the challenge tree sits
+	# on a WorldPanel and its layer is hidden, so reading the layer would let the GARAGE below react
+	# to the same keypress the challenge screen is handling.
+	if _challenge_shown:
 		return
 	match _view:
 		View.EXTERIOR:

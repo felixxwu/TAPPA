@@ -46,7 +46,7 @@ extends Control
 # action row is a sibling of the body box, and MenuNav drives focus across container
 # boundaries by geometry, so down-nav off the last body row lands in the row.
 
-# The body's scroll is a SAFETY NET for very short logical canvases (DESIGN_HEIGHT is 360
+# The body's scroll is a SAFETY NET for very short logical canvases (DESIGN_HEIGHT is small
 # on every target — see display_stretch.gd), not the normal way content
 # is read: the box is meant to fit. It matters because the box hugs its contents, so tall
 # content would otherwise push the action row off the bottom of the screen entirely.
@@ -171,7 +171,7 @@ func _ready() -> void:
 # content scrolls inside it, which keeps the action row on screen — the thing that must never
 # break, because `menu_back` is Escape / gamepad B only (project.godot) and a touch player
 # whose exit has been pushed off the bottom of the frame is simply trapped. The logical canvas
-# is short (DESIGN_HEIGHT 360 — see display_stretch.gd), so this is a real case, not a
+# is short (DESIGN_HEIGHT — see display_stretch.gd), so this is a real case, not a
 # theoretical one.
 func _sync_body_height() -> void:
 	# Every part is optional here because this can be called DURING construction: the
@@ -239,7 +239,7 @@ func set_body_width(preferred: float) -> void:
 #
 # Deliberately EXACT rather than a minimum. A floor cannot do this job: it only stops the box
 # getting SMALLER than the number, and content taller than it still grows the box, so the
-# jumping remains. (A floor appears to work on the short logical canvas — DESIGN_HEIGHT 360 —
+# jumping remains. (A floor appears to work on the short logical canvas — DESIGN_HEIGHT —
 # because the available-height cap pins it anyway; on a taller frame the jitter comes
 # straight back. That is a trap, not a fix.)
 #

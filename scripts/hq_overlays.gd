@@ -15,6 +15,7 @@ func build_title_overlay() -> void:
 	var made := _hq._make_overlay()
 	_hq._title_layer = made[0]
 	var root: VBoxContainer = made[1]
+	_hq._title_root = root
 	# Sit the buttons at the BOTTOM of the screen so the HQ (garage + parked
 	# collection) stays visible above them rather than being covered by a centred menu.
 	root.alignment = BoxContainer.ALIGNMENT_END
@@ -101,6 +102,7 @@ func build_garage_overlay() -> void:
 	var made := _hq._make_overlay()
 	_hq._garage_layer = made[0]
 	var root: VBoxContainer = made[1]
+	_hq._garage_root = root
 
 	# NOTHING over the room but the action row. This used to carry "GARAGE — tap the map table
 	# to choose a rally, or the lift to tune your car": a caption naming the room you can see,
@@ -304,6 +306,16 @@ func build_lift_overlay() -> void:
 	_hq._lift_layer = CanvasLayer.new()
 	_hq.add_child(_hq._lift_layer)
 
+	# ONE full-rect root under the layer, holding BOTH of this screen's anchored children
+	# (the sub-page and the hub column below). A WorldPanel hosts a single Control, so the
+	# screen needs one handle to move between hosts — and both children keep their own
+	# anchors, resolved against this root instead of the layer, so the flat layout is
+	# unchanged. PASS so it doesn't swallow presses meant for the buttons inside it.
+	_hq._lift_root = Control.new()
+	_hq._lift_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_hq._lift_root.mouse_filter = Control.MOUSE_FILTER_PASS
+	_hq._lift_layer.add_child(_hq._lift_root)
+
 	# --- The sub-menu page (shown on the TUNE / UPGRADES pages) ---
 	# The house page shape, from the shared MenuPage widget: a body box that HUGS its
 	# contents with a gap to the screen edges, and the page's actions in one horizontal row
@@ -313,8 +325,14 @@ func build_lift_overlay() -> void:
 	# content.
 	#
 	var page := MenuPage.new({"margin": 12.0})
-	_hq._lift_layer.add_child(page)
+	_hq._lift_root.add_child(page)
 	_hq._lift_menu_bg = page.panel()
+	# LEFT-ALIGN THE SUB-PAGE ON A WORLD PANEL. MenuPage centres its panel and its action row, which is
+	# right for a modal over a screen — but on the lift it meant the Upgrades/Tuning page sat at a
+	# different left edge from the hub rows below it (and moved as its content width changed). Opting in
+	# lets WorldPanel.apply_host_style share one left edge per host and restore centring when flat.
+	_hq._lift_menu_bg.set_meta(WorldPanel.ALIGN_BEGIN_META, true)
+	page.actions().set_meta(WorldPanel.ALIGN_BEGIN_META, true)
 	var root: VBoxContainer = page.body()
 
 	# The page heading. The STAR BALANCE used to sit beside it here (digits + a drawn star);
@@ -380,7 +398,12 @@ func build_lift_overlay() -> void:
 	left_col.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	left_col.add_theme_constant_override("separation", 10)
 	left_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hq._lift_layer.add_child(left_col)
+	# Bottom-anchored is right FLAT (a row over the 3D bay) but wrong on a world panel, where the panel
+	# is the menu and there is nothing behind it to leave room for — the hub sat low while MenuPage
+	# centred the Upgrades/Tuning body, so the content jumped bands when switching pages. Opting in
+	# lets WorldPanel.apply_host_style centre it per host and put it back when flat.
+	left_col.set_meta(WorldPanel.CENTER_META, true)
+	_hq._lift_root.add_child(left_col)
 
 	# The car readout: TWO stacked rows of equal-height boxes, above the hub button row.
 	#
@@ -512,9 +535,18 @@ func build_car_overlay() -> void:
 	var made := _hq._make_overlay(16.0)
 	_hq._car_layer = made[0]
 	var root: VBoxContainer = made[1]
+	# Held so the tree can be moved between its CanvasLayer and a world-space
+	# WorldPanel at runtime (hq.gd::_sync_panel). The tree itself is built exactly
+	# the same either way — only its container changes.
+	_hq._car_root = root
 
 	_hq._rally_banner = _hq._label("", 22)
-	root.add_child(_hq._rally_banner)
+	_hq._rally_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Autowrap so a long rally name + restriction WRAPS instead of running off the edge. It
+	# never wraps on the flat full-width canvas; it is the narrow world-panel canvas that
+	# needs it (see WorldPanel.text_backing).
+	_hq._rally_banner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(WorldPanel.text_backing(_hq._rally_banner))
 
 	# EMPTY and HIDDEN by default. This used to read "Choose your car" under the banner, which
 	# said nothing the ◄ / ► row and the lot full of cars didn't already say — two lines of
@@ -524,14 +556,14 @@ func build_car_overlay() -> void:
 	# again when the present flow ends.
 	_hq._car_hint_label = _hq._label("", 14)
 	_hq._car_hint_label.visible = false
-	root.add_child(_hq._car_hint_label)
+	root.add_child(WorldPanel.text_backing(_hq._car_hint_label))
 
 	# Push the car nav + actions to the bottom so the 3D car park is visible above.
 	root.add_child(UITheme.vspacer())
 
 	_hq._no_eligible_label = _hq._label("", 16)
 	_hq._no_eligible_label.visible = false
-	root.add_child(_hq._no_eligible_label)
+	root.add_child(WorldPanel.text_backing(_hq._no_eligible_label))
 
 	# Car selector: ◄ / ► pan the camera to the prev/next eligible car.
 	var nav_made := _hq._build_carpark_nav_row()
@@ -544,7 +576,10 @@ func build_car_overlay() -> void:
 
 	_hq._car_stats_label = _hq._label("", 12)
 	_hq._car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	root.add_child(_hq._car_stats_label)
+	# Same reason as the banner: the stats line is long ("AWD | 307 HP | 1336 KG | HEALTH …")
+	# and was being cut off at the panel's edge rather than wrapping.
+	_hq._car_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(WorldPanel.text_backing(_hq._car_stats_label))
 
 	# Engine-swap only: the post-swap power-to-weight for BOTH cars (a swap exchanges
 	# engines, so both change). Coloured ↑/↓ deltas; hidden in every other car-park mode.
@@ -556,7 +591,7 @@ func build_car_overlay() -> void:
 	_hq._swap_preview_label.add_theme_font_size_override("normal_font_size", 13)
 	_hq._swap_preview_label.set_meta("menu_nav_skip", true)
 	_hq._swap_preview_label.visible = false
-	root.add_child(_hq._swap_preview_label)
+	root.add_child(WorldPanel.text_backing(_hq._swap_preview_label))
 
 	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
 	# An over-powered car does NOT warn here — the over-limit prompt pops as a confirm
@@ -566,7 +601,7 @@ func build_car_overlay() -> void:
 	_hq._car_warning_label.add_theme_color_override("font_color", UITheme.RED)
 	_hq._car_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hq._car_warning_label.visible = false
-	root.add_child(_hq._car_warning_label)
+	root.add_child(WorldPanel.text_backing(_hq._car_warning_label))
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
@@ -787,4 +822,5 @@ func build_challenge_overlay() -> void:
 	# Hidden until _open_challenge_overlay shows it — this overlay is built eagerly in
 	# _ready (like the per-view stations) but is a MODAL over the garage, not one of the
 	# _view-switched layers _update_overlays drives, so it must start hidden by hand.
+	_hq._challenge_shown = false
 	_hq._challenge_layer.visible = false

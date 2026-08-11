@@ -370,3 +370,34 @@ cannot save you: a lambda whose captured owner has been freed reports
 - If a previously-green test fails, suspect the **new code**, not the test.
   Only change a test if the user explicitly asked for the asserted behavior to
   change — never weaken thresholds/assertions to go green.
+
+## Runner timeouts (`run_tests.sh`)
+
+Two independent caps, both of which exist because a wedged headless Godot otherwise sits there for
+tens of minutes eating CPU and looking like a hung agent:
+
+| Env | Default | What it caps |
+|-----|---------|--------------|
+| `TEST_TIMEOUT` | 1800 s | wall clock for the whole run |
+| `TEST_STALL` | 120 s | **per test**: no test output for this long = something is stuck |
+| `WARMUP_TIMEOUT` | 300 s | the `--import` class-cache warmup |
+
+**`TEST_STALL` is the useful one.** GUT streams a line per test as it starts, so a healthy run never
+goes quiet for long; if the captured output stops growing, a test is wedged (an infinite layout/resize
+loop, an await that never resolves). When it fires it **names the last test seen**, which is the thing
+you actually want and which neither a wall-clock cap nor GUT itself will tell you:
+
+```
+error: no test output for 15s — a test is STUCK. Killing the run.
+error: last test seen: test_this_one_hangs_on_purpose
+```
+
+Raise it (`TEST_STALL=300 ./run_tests.sh`) for a legitimately slow test rather than removing it.
+
+**Note the wall-clock cap needs a `timeout` binary — and stock macOS has none.** It used to warn and
+then run *uncapped*, which is exactly how the long hangs happened. There is now a pure-bash
+`builtin_timeout` fallback, so the cap applies everywhere.
+
+**One subtlety if you touch `run_pass`:** the Godot run must stay in the FOREGROUND so
+`PIPESTATUS[0]` is its exit status. Backgrounding the pipeline and `wait`-ing returns *tee's* status
+(always 0), which would report a failing run as passing.

@@ -129,6 +129,13 @@ func _wire_summary_nav() -> void:
 				column.append(first)
 		elif row is Button:
 			column.append(row)
+	# THE HOST'S BACK BUTTON CLOSES THE CHAIN. It is not a child of _simple_box — it lives in the
+	# page's action row, outside the body — so neither MenuNav.attach(_simple_box) nor Godot's
+	# geometric neighbour search reliably reaches it, and pressing DOWN from the last wrench went
+	# nowhere. Appending it here means the column ends where the player expects to leave.
+	if _close_button != null and is_instance_valid(_close_button) \
+			and _close_button.focus_mode != Control.FOCUS_NONE:
+		column.append(_close_button)
 	TextField.wire_column(column)
 
 
@@ -273,10 +280,10 @@ func _stability_word(meta: Dictionary) -> String:
 
 
 # A plain key/value line, for the one stat that isn't a bar.
-func _stat_row(name: String, value: String) -> Control:
+func _stat_row(label: String, value: String) -> Control:
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var key := UITheme.label(name)
+	var key := UITheme.label(label)
 	key.custom_minimum_size = Vector2(StatBar.LABEL_MIN_W, 0.0)
 	key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(key)
@@ -392,6 +399,10 @@ func bind_close_button(button: Button, on_close: Callable) -> void:
 	# pages can never disagree about whether the player may leave.
 	if _advanced != null:
 		_advanced.bind_close_button(button, on_close)
+	# The column is wired during rebuild(), which may have run BEFORE the host bound its button — so
+	# re-wire now that there is something to chain to.
+	if _simple_box != null:
+		_wire_summary_nav()
 	_refresh_close_button()
 
 

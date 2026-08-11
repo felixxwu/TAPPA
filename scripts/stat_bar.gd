@@ -37,7 +37,13 @@ const SEGMENTS := 20
 # nothing to the row's minimum — the panel sizes itself around the name and figure labels
 # alone and the whole bar collapses to invisible. The expand flag still lets the blocks
 # take any extra width a wider panel offers.
-const SEGMENT_W := 8.0
+# 6, not 8: the row's width contribution is SEGMENTS * SEGMENT_W + (SEGMENTS - 1) * SEGMENT_GAP, so
+# this is the cheapest way to make the whole upgrades page NARROWER — 198 px of bar becomes 158 px,
+# without touching SEGMENTS (see above: dropping to 12 blocks stopped the bars discriminating between
+# mid-field cars, which is the one thing they exist to do). That page width matters twice over on a
+# world panel: it was overflowing the panel's right edge, and it sets the ceiling on how far that
+# screen's ui_scale can be pushed (features/world-panel.md).
+const SEGMENT_W := 6.0
 const SEGMENT_H := 12.0
 const SEGMENT_GAP := 2
 # The name and figure columns are kept narrow on purpose — every unit they give back goes
@@ -61,14 +67,14 @@ const _EMPTY_ALPHA := 0.18
 # `limit` (0..1, or < 0 for none) marks a ceiling the car must stay under. `on_wrench`,
 # when valid, adds a wrench button at the end of the row — the way into the upgrades that
 # move THIS stat, so the bar is not just a readout but the handle for changing it.
-static func build(name: String, value: float, text: String, stock := -1.0,
+static func build(label: String, value: float, text: String, stock := -1.0,
 		limit := -1.0, on_wrench := Callable()) -> StatBar:
 	var bar := StatBar.new()
 	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.custom_minimum_size = Vector2(0.0, ROW_H)
 	bar.add_theme_constant_override("separation", 8)
 
-	var key := UITheme.label(name)
+	var key := UITheme.label(label)
 	key.custom_minimum_size = Vector2(LABEL_MIN_W, 0.0)
 	bar.add_child(key)
 
@@ -93,7 +99,7 @@ static func build(name: String, value: float, text: String, stock := -1.0,
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	bar.add_child(value_label)
 	if on_wrench.is_valid():
-		bar.add_child(_wrench(name, on_wrench))
+		bar.add_child(_wrench(label, on_wrench))
 	else:
 		# A row with no wrench still reserves its column, so the figures stay in one
 		# vertical line. Letting the value label slide right to fill the space would make
@@ -111,13 +117,13 @@ static func build(name: String, value: float, text: String, stock := -1.0,
 # to be reachable without a pointer (features/menus.md → Menu navigation). The stat name
 # rides on the tooltip and the focus key, so keyboard focus survives the page rebuild a
 # press triggers and the wrenches are told apart in a nav test.
-static func _wrench(name: String, on_press: Callable) -> Button:
+static func _wrench(label: String, on_press: Callable) -> Button:
 	var b := Button.new()
 	b.icon = WrenchIcon.texture()
-	b.tooltip_text = "Change %s" % name
+	b.tooltip_text = "Change %s" % label
 	b.focus_mode = Control.FOCUS_ALL
 	b.custom_minimum_size = Vector2(WRENCH_MIN_W, 0.0)
-	b.set_meta("upgrade_focus_key", "wrench:%s" % name.to_lower())
+	b.set_meta("upgrade_focus_key", "wrench:%s" % label.to_lower())
 	b.pressed.connect(on_press)
 	return b
 

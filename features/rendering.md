@@ -5,6 +5,10 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 
 ## Display / renderer (`project.godot`)
 
+- Logical frame height: **400** (`display/window/size/viewport_height`) — the value every
+  menu is laid out against, read by `DisplayStretch.DESIGN_HEIGHT`. Raised from 360; the
+  post-process dither grid (`virtual_resolution`, below) was deliberately NOT changed with it,
+  since it is a look value rather than a render size.
 - Internal viewport: **480×360**, window **1280×960** (upscaled). Lower than
   the old 640×480 — fewer fragments to shade (the full-screen post-process runs
   per internal pixel), and closer to the PS1's ~320×240.
@@ -201,6 +205,15 @@ sets `mouse_filter = IGNORE` — `disable_3d` only skips the render pass, so the
 camera stays current and picking is unaffected. `test_render_smoke.gd` →
 `test_hq_hosts_the_same_post_process_pass` pins both the shared world and the
 mouse-filter.
+
+**The one exception, and it is deliberate: a `WorldPanel` IS graded.** A menu hosted
+in the 3D world (see [world-panel.md](world-panel.md)) is a `Sprite3D` *inside* the
+scene, not a `CanvasLayer` above the container — so the grade, fog and tonemap reach
+it exactly as they reach the car beside it. That cohesion is the point of putting a
+menu in the world, so its fog/exposure flags are **not** disabled. The standing risk
+is that the grade was tuned against terrain and car paint rather than UI text, so a
+grade retune can quietly hurt panel legibility — worth an eyeball when the grade
+changes. Currently the car-park overlay only, and off by default.
 
 The HUD, menus **and the speed
 lines** are all on CanvasLayers above the container, so the shader never sees them.

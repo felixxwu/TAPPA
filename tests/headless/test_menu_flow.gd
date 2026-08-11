@@ -16,6 +16,12 @@ func before_each() -> void:
 	# for gamepad nav), so per-test focus assertions aren't contaminated by order.
 	get_viewport().gui_release_focus()
 	Config.reset()
+	# PIN THE FLAT HOST. Most of this file asserts on the flat CanvasLayer menus — layer visibility,
+	# focus in the main viewport — and `world_space_menus` is an authored value a designer may set
+	# either way in game_config.tres. When it was switched on for tuning, eight of these failed for a
+	# reason that had nothing to do with what they test. The world-mode tests below set it true
+	# themselves, so pinning it false here makes both halves independent of the shipped default.
+	Config.data.world_space_menus = false
 	# These tests build hq.tscn many times but never assert on the HQ scenery COUNT
 	# (only that a tree field of the right type exists), so trim the framing scatter to
 	# keep each of the ~88 HQ builds cheap — the full 320+320 default is a pure-look
@@ -2451,6 +2457,110 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 	assert_lt(forward.z, 0.0, "the camera looks back toward the car and the garage (−Z)")
 
 
+# WORLD-SPACE CAR-PARK MENU (features/world-panel.md), off by default. Three things have to
+# move together when it is on, and all three are invisible in the flat default:
+#   1. the overlay tree is hosted on the WorldPanel, not its CanvasLayer;
+#   2. the bare labels get an opaque backing (the panel is transparent, so text would
+#      otherwise sit straight on the sunlit car park);
+#   3. the camera shifts to frame the panel as well as the car.
+# Asserts the RELATIONSHIPS, not the authored offsets — every value involved is a look
+# tunable a designer retunes by eye.
+func test_hq_carpark_world_space_menu_hosts_backs_and_reframes() -> void:
+	Config.data.world_space_menus = true
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._on_rally_pin("shakedown")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+
+	var flat_sep: int = int(hq._car_root.get_meta(
+		WorldPanel.FLAT_METRICS_META, {}).get("separation", 0))
+
+	# 1. Hosted on the panel, and the flat layer has let go of the tree.
+	assert_not_null(hq._panel_host("car").panel, "world mode builds a panel")
+	assert_eq(hq._panel_host("car").panel.hosted(), hq._car_root as Control,
+		"the car overlay tree is hosted on the panel")
+	assert_false(hq._car_layer.visible, "the flat car-park layer stands down")
+
+	# 2. Every label backing wears a real box rather than the empty one it has when flat.
+	var backings: Array = hq._car_root.find_children("*", "PanelContainer", true, false).filter(
+		func(n: Node) -> bool: return n.has_meta(WorldPanel.BACKING_META))
+	assert_gt(backings.size(), 0, "the car overlay has backed labels")
+	for n in backings:
+		assert_true((n as PanelContainer).get_theme_stylebox("panel") is StyleBoxFlat,
+			"a backed label must have an opaque box while on a world panel")
+
+	# 2b. Rows are tighter than the flat screen's. A world panel's canvas is only ~200 px
+	# tall, and the screen-authored gaps push the bottom action row clean off the panel once
+	# a wrapped line takes two rows — Back / Start Rally get cut in half. Compared against
+	# the tree's OWN recorded flat metrics rather than a pinned number, since both are look
+	# tunables.
+	assert_lt(hq._car_root.get_theme_constant("separation"), flat_sep,
+		"a world panel's short canvas needs tighter rows than the flat screen")
+	assert_lt(hq._car_root.offset_top, 16.0,
+		"...and tighter margins, for the same reason")
+
+	# 3. The shot is re-framed to fit the panel, and by EXACTLY the two authored shifts — no more.
+	#
+	# It used to assert the eye never moved at all, on the rule that panning the aim is preferable to
+	# recomposing the shot. That rule still holds as GUIDANCE (see the field comments) but is no longer
+	# an invariant: the car park has world_panel_camera_eye_shift for what panning cannot fix, distance
+	# and occlusion. So the check became "the eye moves by the configured shift", which still catches
+	# both a shift wired to nothing and a shift leaking somewhere it shouldn't.
+	var eye_shift: Vector3 = Config.data.world_panel_camera_eye_shift
+	var world_shot: Transform3D = hq._camera_target_xform()
+	Config.data.world_space_menus = false
+	var flat_shot: Transform3D = hq._camera_target_xform()
+	assert_true((world_shot.origin - flat_shot.origin).is_equal_approx(eye_shift),
+		"world mode must move the eye by exactly world_panel_camera_eye_shift, and no more")
+	assert_false(world_shot.basis.is_equal_approx(flat_shot.basis),
+		"world mode must pan the aim over to bring the panel into frame")
+
+	# ...and flipping back off returns the tree to the flat host with its boxes cleared,
+	# which is what makes the F7 A/B honest rather than one-way.
+	hq._update_overlays()
+	assert_eq(hq._car_root.get_parent(), hq._car_layer as Node,
+		"turning world menus off returns the tree to its CanvasLayer")
+	for n in backings:
+		assert_false((n as PanelContainer).get_theme_stylebox("panel") is StyleBoxFlat,
+			"the flat host must not inherit the panel's opaque label boxes")
+	assert_eq(hq._car_root.get_theme_constant("separation"), flat_sep,
+		"...nor the panel's tightened row gaps")
+
+
+# MIGRATION STEP 2 — the tuning lift. This is the screen that actually exercises the input
+# pump end to end: unlike the car park (FOCUS_NONE buttons, no sliders) the lift's sub-pages
+# are native-focus with real HSliders, so it is the first host where MenuNav and drag have to
+# work THROUGH a panel rather than only in a synthetic test.
+func test_hq_lift_hosts_its_menu_on_a_world_panel() -> void:
+	Config.data.world_space_menus = true
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+
+	assert_eq(hq._view, hq.View.LIFT, "we are on the lift")
+	assert_not_null(hq._panel_host("lift"), "the lift has a world-panel host")
+	assert_not_null(hq._panel_host("lift").panel, "...which built a panel in world mode")
+	assert_eq(hq._panel_host("lift").panel.hosted(), hq._lift_root as Control,
+		"the whole lift tree — sub-page AND hub column — is hosted on the panel")
+	assert_false(hq._lift_layer.visible, "the flat lift layer stands down")
+
+	# The sliders came along. This is the point of migrating this screen rather than another:
+	# it puts a real Range inside a panel, where only the event pump can reach it.
+	var sliders: Array = hq._lift_root.find_children("*", "Slider", true, false)
+	assert_gt(sliders.size(), 0, "the tuning panel's sliders are inside the world panel")
+
+	# And it reverts: the tree goes home and the flat layer takes over again.
+	Config.data.world_space_menus = false
+	hq._update_overlays()
+	assert_eq(hq._lift_root.get_parent(), hq._lift_layer as Node,
+		"turning world menus off returns the lift tree to its CanvasLayer")
+	assert_true(hq._lift_layer.visible, "...and the flat lift layer comes back up")
+
+
 # --- Unbounded collection + car-park pagination ------------------------------
 
 # The collection is unbounded: owning far more cars than the car park has bays never
@@ -3091,7 +3201,7 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	assert_not_null(sc._global_page, "page 1's button opens the global leaderboard")
 	assert_false(is_instance_valid(sc._reveal),
 		"and the reward reveal has NOT run yet — the world board comes first")
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Collect reward >"),
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
 		"page 2's button names what is next, which on a reward stage is the reward")
 
 	# Step 2 -> the reveal.
@@ -3167,7 +3277,7 @@ func test_standings_non_final_challenge_stage_collects_an_upgrade_reward() -> vo
 	# reward. (A career rally still gets all three — see the rally test above.)
 	assert_true(sc._global_shown, "it opened straight on the world board")
 	assert_not_null(sc._global_page, "the world board is live")
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Collect reward >"),
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
 		"the board names the challenge stage's reward — it is no longer granted silently")
 
 	sc._global_page._on_continue()
@@ -4667,7 +4777,7 @@ func test_reward_stage_order_is_local_then_global_then_reward() -> void:
 	# behind it, which it was not when the reveal came first.
 	assert_true(sc._global_page.show_back,
 		"page 2 offers Back on a reward stage too, now that page 1 survives it")
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Collect reward >"),
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
 		"page 2 leads to the reward")
 	sc._global_page._on_continue()
 	await get_tree().process_frame
@@ -6210,3 +6320,132 @@ func test_a_prize_car_model_is_seated_flush_on_its_pin() -> void:
 		assert_lt(car.scale.x, 1.0, "and shrunk to a map token rather than left full size")
 		checked += 1
 	assert_gt(checked, 0, "the shipped roster has prize cars to check")
+
+
+# F8 HOT RELOAD (hq.hot_reload_config) must not fight F7. `world_space_menus` is stored FALSE in
+# game_config.tres, so a straight re-read switches world menus off — which looked exactly like
+# "pressing F8 resets me to the flat menus". The toggle is a live A/B switch for the session, not one
+# of the values being tuned, so it has to survive a reload of everything else.
+func test_hq_hot_reload_keeps_the_world_menu_toggle() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	Config.data.world_space_menus = true
+	hq._update_overlays()
+	assert_not_null(hq._panel_host("title").panel, "world mode is on before the reload")
+
+	assert_true(hq.hot_reload_config(), "the config re-reads from disk")
+	assert_true(bool(Config.data.world_space_menus),
+		"F8 must not switch world menus off — it re-reads TUNING values, not the A/B toggle")
+
+	# ...and the flat direction survives too, so F8 is neutral either way.
+	Config.data.world_space_menus = false
+	hq._update_overlays()
+	assert_true(hq.hot_reload_config(), "the config re-reads from disk again")
+	assert_false(bool(Config.data.world_space_menus), "and a flat session stays flat")
+
+
+# A ui_scale RETUNE MUST REACH THE PANEL. This is the bug that made F8 look half-broken: panel
+# offsets and yaw updated (their anchors read Config.data per call) while height and ui_scale did
+# not, because a WorldPanelHost kept the spec Callable it was BORN with — and that closure had
+# captured the GameConfig instance, which reload_from_disk() replaces wholesale.
+#
+# Asserts the observable consequence: the hosted tree's layout canvas is logical_size / ui_scale, so
+# changing ui_scale must change the frame's size. Compared as a RELATIONSHIP (a bigger scale means a
+# smaller canvas), never against a pinned pixel count.
+func test_hq_panel_ui_scale_retune_reaches_the_panel() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	Config.data.world_space_menus = true
+	hq._update_overlays()
+	var before: Vector2 = hq._panel_host("title").panel.frame().size
+
+	Config.data.world_panel_title_ui_scale = float(Config.data.world_panel_title_ui_scale) * 2.0
+	hq._update_overlays()
+	var after: Vector2 = hq._panel_host("title").panel.frame().size
+	assert_lt(after.x, before.x, "doubling ui_scale must halve the layout canvas — the panel rebuilt")
+
+	# ...and it still works ACROSS a hot reload, which swaps the GameConfig instance out from under
+	# any callable that captured it. This half is the actual regression.
+	assert_true(hq.hot_reload_config(), "the config re-reads from disk")
+	var reloaded: Vector2 = hq._panel_host("title").panel.frame().size
+	Config.data.world_panel_title_ui_scale = float(Config.data.world_panel_title_ui_scale) * 2.0
+	hq._update_overlays()
+	assert_lt(hq._panel_host("title").panel.frame().size.x, reloaded.x,
+		"a retune AFTER a hot reload must still reach the panel (no stale GameConfig capture)")
+
+
+# BOTH CAR-PARK CAMERA SHIFTS ARE ACTUALLY WIRED, and F8 re-applies them.
+#
+# This exists because `world_panel_camera_eye_shift` shipped for a few minutes as a config field that
+# was READ BY NOTHING — the export and the .tres entry landed but the edit that consumed it silently
+# failed, so turning the dial did nothing and looked like a hot-reload bug. A field that no code reads
+# is invisible from the game, so it gets a test.
+#
+# Asserts the RELATIONSHIP, not the values: a non-zero look shift must change the aim, a non-zero eye
+# shift must change the viewpoint, and neither may touch the flat framing.
+func test_hq_carpark_world_camera_shifts_are_applied() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_free_roam()
+	await get_tree().process_frame
+
+	var flat: Transform3D = hq._camera_target_xform()
+
+	Config.data.world_space_menus = true
+	Config.data.world_panel_camera_look_shift = Vector3(3.0, 0.5, 0.0)
+	Config.data.world_panel_camera_eye_shift = Vector3.ZERO
+	var panned: Transform3D = hq._camera_target_xform()
+	assert_true(panned.origin.is_equal_approx(flat.origin),
+		"a LOOK shift must not move the camera's position")
+	assert_false(panned.basis.is_equal_approx(flat.basis), "a LOOK shift must change the aim")
+
+	Config.data.world_panel_camera_eye_shift = Vector3(0.0, 2.0, 3.0)
+	var moved: Transform3D = hq._camera_target_xform()
+	assert_false(moved.origin.is_equal_approx(panned.origin),
+		"an EYE shift must move the camera's position — otherwise the field is wired to nothing")
+
+	# ...and neither leaks into the flat framing.
+	Config.data.world_space_menus = false
+	var flat_again: Transform3D = hq._camera_target_xform()
+	assert_true(flat_again.origin.is_equal_approx(flat.origin),
+		"the flat shot keeps its authored eye")
+	assert_true(flat_again.basis.is_equal_approx(flat.basis), "the flat shot keeps its authored aim")
+
+
+# ENTERING THE MAP TABLE SEATS THE CURSOR ON A PIN THE PLAYER CAN ACTUALLY START: unlocked and not
+# yet completed. `_table_targets()` includes LOCKED pins on purpose (readouts are hover-only, so a pin
+# you cannot point at is just a shape on a dark table), which is right for hovering and wrong for
+# seating — a locked pin is the one target `_activate_table_focus` refuses to open, so parking the
+# cursor there hands the player a selection that does nothing when they press enter. And because the
+# rule picks the HIGHEST-difficulty incomplete pin, the locked special was very often exactly the one
+# it chose.
+#
+# Locked-ness is forced onto whatever pin the rule would otherwise pick, rather than hoping the fixture
+# roster contains a locked special — so this tests the rule, not the roster.
+func test_hq_table_entry_never_seats_the_cursor_on_a_locked_pin() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+
+	var first: Node3D = hq._table_focus_node
+	assert_not_null(first, "entering the table seats the cursor on something")
+	if first == null:
+		return
+	assert_false(bool(first.get_meta("locked", false)), "and not on a locked pin")
+
+	# Lock the chosen pin and re-enter: the cursor must move to a different, enterable pin rather
+	# than staying on the one that can no longer be opened.
+	first.set_meta("locked", true)
+	hq._table_ui._enter_table()
+	await get_tree().process_frame
+	var second: Node3D = hq._table_focus_node
+	assert_not_null(second, "re-entering still seats the cursor")
+	if second == null:
+		return
+	assert_false(bool(second.get_meta("locked", false)),
+		"the locked pin is skipped, not seated on")

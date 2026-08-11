@@ -405,10 +405,12 @@ func _show_global_page() -> void:
 	var have_page_one := is_instance_valid(_root_box)
 	opts["show_back"] = have_page_one
 	opts["overlay_mode"] = overlay_mode
-	# Page 2's button names what happens NEXT, which is now the reward when this
-	# stage drew one — the reveal sits between page 2 and resuming.
+	# Page 2's button is deliberately GENERIC when a reward is pending — "Next >", the same wording
+	# page 1 uses, rather than "Collect reward >". It used to name the reward on the grounds that a
+	# button should say what happens next; naming it spends the surprise the reveal exists to deliver,
+	# and the reveal itself announces what was won a moment later anyway.
 	if _reward_pending():
-		opts["continue_text"] = "Collect reward >"
+		opts["continue_text"] = "Next >"
 	elif is_final_event():
 		# A challenge has no podium — its final Continue ends the run (see _advance).
 		# Career's final stage goes to the podium, but the button just says "Next >" —

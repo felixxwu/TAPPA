@@ -22,3 +22,26 @@ func reset() -> void:
 		data = GameConfig.new()
 	else:
 		data = base.duplicate(true)
+
+
+# HOT RELOAD: re-read game_config.tres FROM DISK and swap it in, so a value can be retuned in the
+# editor's inspector and seen in the running game without restarting.
+#
+# reset() cannot do this. `load()` returns the CACHED resource — the copy this process read at
+# boot — so re-running it re-duplicates the same stale values however many times you call it. Only
+# CACHE_MODE_REPLACE actually goes back to the file (and updates the cache, so later load()s agree
+# with what is now live rather than silently disagreeing).
+#
+# A DEBUG AFFORDANCE, not a game feature. It replaces `data` wholesale, which DISCARDS the runtime
+# mutations the game makes to the active config (car.gd's apply_car reshapes `data` for the selected
+# car), so the car you are looking at may not match its config until it is re-applied. That is
+# acceptable while tuning the look of a menu and is why the caller is a debug-build-only key.
+#
+# Returns true when the file was read and swapped in.
+func reload_from_disk() -> bool:
+	var fresh := ResourceLoader.load(CONFIG_PATH, "", ResourceLoader.CACHE_MODE_REPLACE) as GameConfig
+	if fresh == null:
+		push_error("Config.reload_from_disk: failed to re-read %s" % CONFIG_PATH)
+		return false
+	data = fresh.duplicate(true)
+	return true

@@ -1,5 +1,16 @@
 # Debug Tools
 
+## Debug-build-only keys
+
+| Key | Action | Does |
+|-----|--------|------|
+| **H** | `toggle_debug_arrows` | Per-wheel force arrows + the HUD dev readout (below) |
+| **F7** | `toggle_world_menus` | A/B world-space menus against the flat overlays ([world-panel.md](world-panel.md)) |
+| **F8** | `reload_config` | Re-read `config/game_config.tres` from disk and re-apply, no restart ([world-panel.md](world-panel.md) → "Tuning it live") |
+
+All three are gated on `OS.is_debug_build()`, so release exports ignore them. A config value that
+starts a feature on still works in any build — the keys are dev affordances, not player features.
+
 ## Wheel force visualization
 
 **Source:** `scripts/wheel_force_debug.gd` (`class_name WheelForceDebug extends

@@ -332,11 +332,19 @@ func _table_center_pos() -> Vector3:
 	return Vector3(cfg.hq_table_cam_look.x + _hq._table_pan.x, 0.0, cfg.hq_table_cam_look.z + _hq._table_pan.z)
 
 
-# Seat the cursor on the highest-difficulty rally pin the player hasn't completed yet,
-# panning the camera to it. Difficulty is the hidden authored tier; ties break toward
-# the first such pin in rally order (targets are built in that order). Completed pins are
-# skipped. Returns false when there's no incomplete pin (all done, or no pins at all),
-# leaving the caller to seat focus some other way.
+# Seat the cursor on the highest-difficulty rally pin the player hasn't completed yet AND CAN
+# ACTUALLY ENTER, panning the camera to it. Difficulty is the hidden authored tier; ties break
+# toward the first such pin in rally order (targets are built in that order). Returns false when
+# there is no such pin, leaving the caller to seat focus some other way.
+#
+# TWO exclusions, and the second is easy to miss: completed pins, and LOCKED ones.
+#
+# `_table_targets()` deliberately includes every pin, locked specials included, because readouts are
+# hover-only and a pin you cannot point at is just a shape on a dark table (see _unlocked_pins, whose
+# name is a lie kept for its callers). That is right for hovering and wrong for SEATING: a locked pin
+# is the one target _activate_table_focus refuses to open, so opening the map with the cursor parked on
+# it hands the player a selection that does nothing when they press enter — the highest-difficulty pin
+# is very often exactly the locked special, so this was the common case rather than an edge one.
 func _focus_hardest_incomplete() -> bool:
 	var targets := _table_targets()
 	var best := -1
@@ -345,6 +353,8 @@ func _focus_hardest_incomplete() -> bool:
 		var t: Dictionary = targets[i]
 		if String(t["kind"]) != "pin":
 			continue
+		if bool((t["node"] as Node3D).get_meta("locked", false)):
+			continue  # can't be entered — the same test _activate_table_focus applies
 		var rally_id := String((t["node"] as Node3D).get_meta("rally_id"))
 		if Save.rally_completed(rally_id):
 			continue

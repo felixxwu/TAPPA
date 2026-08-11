@@ -72,6 +72,22 @@ keyboard *and* controller, alongside mouse / touch. There are **two regimes**, a
 which one a screen uses depends on whether its layout is a flat widget list or a 3D
 space:
 
+> **A third HOST exists (not a third regime): `WorldPanel`** — see
+> [world-panel.md](world-panel.md). A menu can be hosted in the 3D world instead of on a
+> `CanvasLayer`, welded off-square to an anchor (currently the car-park overlay only, and
+> **off by default** behind `Config.data.world_space_menus`). Either navigation regime
+> works inside a panel, because the panel pumps *all* input — keyboard and gamepad
+> included — across into its `SubViewport`, which receives no window events on its own.
+> Two rules that follow from it:
+>
+> - **A screen may only become a panel if its camera pose is authored and static.** The
+>   start-line pre-stage orbit, the wreck-screen orbit and the **pause** menu stay
+>   screen-space **permanently, by design** — a hard-welded panel under an orbiting camera
+>   can be viewed edge-on with no recovery. This is a design rule, not unfinished work.
+> - **Shared components stay host-neutral.** `SettingsMenu` backs both the HQ settings
+>   overlay and the (permanently flat) pause menu, so it must work in either host without
+>   knowing which.
+
 - **Flat / overlay menus** use **Godot's native focus**, wired by the **`MenuNav`
   framework** (`scripts/menu_nav.gd`) so a menu author doesn't hand-roll (or forget)
   the per-widget setup. A menu calls **`MenuNav.attach(root, {first = ..., on_back = ...})`**
@@ -816,8 +832,8 @@ which is what stops a tall body pushing the footer off screen. Note the footer c
 handed an **`HBoxContainer`** (the page's action row, outside the box), not a `VBoxContainer`.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
-fixed — `DisplayStretch.DESIGN_HEIGHT`, 360 from `project.godot`'s
-`window/size/viewport_height` on every target — while the WIDTH follows the device aspect
+fixed — `DisplayStretch.DESIGN_HEIGHT`, read from `project.godot`'s
+`window/size/viewport_height` (currently 400) on every target — while the WIDTH follows the device aspect
 (`DisplayStretch.logical_size`) and gets narrow on a phone, which makes autowrapped
 labels wrap to more lines. So a fixed, unscrolled column whose Back button is laid out
 AFTER the content does not overflow by device roulette: with a long restriction string or

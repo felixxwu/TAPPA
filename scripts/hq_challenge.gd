@@ -36,8 +36,12 @@ func _open_challenge_overlay() -> void:
 	@warning_ignore("static_called_on_instance")
 	if ChallengeSession.has_stale_run(Save.profile, unix_time):
 		ChallengeSession.discard_stale_run(unix_time)
-	_hq._garage_layer.visible = false
-	_hq._challenge_layer.visible = true
+	# Through the FLAG, not the layer, and the garage is not hidden by hand here either: while world
+	# menus are on the tree lives on a WorldPanel and its layer is empty, so writing layer.visible
+	# would show nothing. _update_overlays owns which host is up for both screens — including the
+	# rule that the garage stands down while this modal is over it (hq.gd::_sync_panel).
+	_hq._challenge_shown = true
+	_hq._update_overlays()
 	_refresh_challenge_overlay()
 	UITheme.enforce(_hq._challenge_layer)
 	# Land on the CURRENT kind's own tab, not just tree-order-first (which would always
@@ -52,8 +56,9 @@ func _close_challenge_overlay() -> void:
 	# so the next visit asks again rather than showing numbers from the last one.
 	_hq._challenge_cutoff_cache.clear()
 	_hq._challenge_placing_cache.clear()
-	_hq._challenge_layer.visible = false
-	_hq._garage_layer.visible = _hq._view == _hq.View.GARAGE
+	_hq._challenge_shown = false
+	# Brings the garage back up too, since _update_overlays gates it on _challenge_shown.
+	_hq._update_overlays()
 
 
 # Switching kind resets any prior car-picker context and instantly re-derives the whole

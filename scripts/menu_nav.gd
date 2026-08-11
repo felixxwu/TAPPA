@@ -119,7 +119,15 @@ func _enable_scroll_follow(root: Node) -> void:
 # Is `node` actually on screen? Control.is_visible_in_tree() only walks Control
 # ancestors, so it MISSES a CanvasLayer ancestor being hidden (how HQ toggles its
 # station overlays) — a panel inside a hidden overlay reports itself visible.
-# Check both: the Control chain AND any CanvasLayer ancestor.
+# Check all three chains: the Control chain, any CanvasLayer ancestor, AND any
+# Node3D ancestor.
+#
+# THE Node3D CASE IS FOR WorldPanel (world_panel.gd): a menu hosted in a world-space
+# panel lives inside a SubViewport whose owning Sprite3D/Node3D chain is what gets
+# hidden. Nothing on the Control chain changes when a panel is hidden, and a
+# SubViewport is not a CanvasLayer, so without this a hidden world panel would keep
+# eating menu_* / ui_cancel — exactly the bug the CanvasLayer clause above exists to
+# prevent, one host later.
 #
 # Static because this is not only MenuNav's problem: anything that grabs focus
 # from a panel that might be parked inside a hidden overlay needs the same
@@ -133,6 +141,8 @@ static func is_on_screen(node: Node) -> bool:
 	var n: Node = node
 	while n != null:
 		if n is CanvasLayer and not (n as CanvasLayer).visible:
+			return false
+		if n is Node3D and not (n as Node3D).is_visible_in_tree():
 			return false
 		n = n.get_parent()
 	return true

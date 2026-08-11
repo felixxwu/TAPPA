@@ -491,6 +491,10 @@ func _focus_changed(snap := false) -> void:
 		# A wrecked focused car gates Start — permanently.
 		_refresh_focus_damage(owned)
 	_hq._normalize_menus()  # keep house rules on the just-updated car name / stats
+	# A car-flank world panel is welded to the FOCUSED car, so it has to follow the
+	# selection here — the one place the focus actually changes — rather than only on a
+	# station change. No-op unless world-space menus are on.
+	_hq._position_car_panel()
 	_hq._move_camera_to(_hq._camera_target_xform(), snap)
 
 
