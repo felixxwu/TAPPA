@@ -63,7 +63,11 @@ Each `RALLIES` entry:
   and the race tyres needed part-unlock events: a long, hard, already open-class rally on
   a pin the solver has already placed is the shape a special takes, and promoting one beat
   authoring a new pin — which would have re-fitted the whole map
-  (`tools/fit_map_pins.py`) and moved every other rally's neighbourhood with it. Their
+  (`tools/fit_map_pins.py`) and moved every other rally's neighbourhood with it. The
+  promotion needs **no** re-fit either way: the solver's own `SPECIALS` set is
+  `id.startswith("sp_") or id.endswith("showdown")`, so it has been placing these three as
+  specials all along, and it reads the gate/prerequisite chain straight out of
+  `UpgradeLibrary` rather than duplicating it. Their
   `id` / `difficulty` / `restriction` / `events` were left untouched: ids key saved
   progress, and the other three are `OpponentCache.FIELD_DETERMINANTS`, so the committed
   field cache still hits. **`gc_showdown` stays ordinary** — the longest of the three,
