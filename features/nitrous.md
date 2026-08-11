@@ -41,9 +41,10 @@ Three properties define it, and every design decision below falls out of them:
    menu row for it.
 
 
-## The catalogue side — a hidden fifth slot
+## The catalogue side — its own slot
 
-`UpgradeLibrary.SLOTS` gained a fifth entry, `"nitrous"`. It could not join the
+`UpgradeLibrary.SLOTS` gained a `"nitrous"` entry (a fifth at the time; the list has since
+grown `gearbox` and `tires` — see [upgrade-catalogue.md](upgrade-catalogue.md)). It could not join the
 `turbo` slot: one part per slot is *enabled* per car
 (`Save._enable_exclusive`), which would have made nitrous mutually exclusive
 with the turbo and the supercharger — exactly wrong, since nitrous is meant to

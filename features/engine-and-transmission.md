@@ -159,6 +159,15 @@ gate accepted everything.
   manual MX-5's i4 shifts slowly (0.30 s) while dual-clutch / automated boxes
   (the 2.5T i5's 7-speed S tronic) snap through gears (~0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
+  **`shift_time` is upgradeable**: the `gearbox` upgrade slot holds the **Sequential
+  Gearbox** (`sequential_gearbox`), whose `shift_time_mult` effect scales whatever the
+  fitted engine authors, in pipeline step 2. A *multiplier* rather than an absolute time
+  precisely because the baseline is per-engine — the kit is then worth the same proportion
+  on a slow old manual as on a quick twin-clutch, instead of flattening every car to one
+  number (and, being re-seeded by `EngineLibrary.apply` on every fielding, it can never
+  compound across re-fields). `EngineSim` reads `config.shift_time` live at each shift, so
+  fitting or unfitting the kit needs no drivetrain rebuild. See
+  [upgrade-catalogue.md](upgrade-catalogue.md).
 - **`engine_inertia` (crank + flywheel rotating inertia, kg·m²) is per-car**
   (`CarLibrary`, applied by `Car.apply_car()`). Small = fast revving, large =
   a heavy, lazy flywheel. Anchored to the MX-5's light 2.0 i4 (`0.15`) and

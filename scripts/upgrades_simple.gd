@@ -40,9 +40,14 @@ const GRIP_REFERENCE_KMH := 50.0
 # eligibility), and that the WEIGHT slot — ballast and the lightweight kit — lives under
 # Lightness rather than Speed even though it moves power-to-weight too. Naming it under
 # the row whose figure is literally its own units is the less surprising of the two.
+# The GEARBOX slot sits under Speed for the same reason detune and the swap do — it is a
+# power-delivery lever, and a sequential shift is bought to go faster. Note it moves no bar
+# on this page: Speed reads power-to-weight, which a shift time cannot touch (nitrous is in
+# the same position, deliberately — see UpgradeLibrary.EFFECTS).
+# The TIRES slot sits under Grip, whose figure is literally its own units.
 const CATEGORIES := {
-	"Speed": {"slots": ["turbo", "nitrous"], "detune": true, "swap": true},
-	"Grip": {"slots": ["aero"], "detune": false, "swap": false},
+	"Speed": {"slots": ["turbo", "gearbox", "nitrous"], "detune": true, "swap": true},
+	"Grip": {"slots": ["aero", "tires"], "detune": false, "swap": false},
 	"Lightness": {"slots": ["weight"], "detune": false, "swap": false},
 	"Stability": {"slots": ["drivetrain"], "detune": false, "swap": false},
 }
@@ -203,13 +208,15 @@ func _stat_rows() -> Array:
 		CarStatBounds.fraction("pw", CarLibrary.power_to_weight_hp_tonne(stock)), limit,
 		_wrench_for("Speed")))
 
-	# GRIP — rated WITH aero, which is the only way fitting the aero kit moves this row at
-	# all (downforce is purely a speed effect). The reference speed is NOT printed: it is
+	# GRIP — rated through grip_meta, which folds in both things a part can buy here: the
+	# aero kit's downforce (rated at a SPEED, the only way fitting aero moves this row at
+	# all, since downforce is purely a speed effect) and the race tyres' compound
+	# multiplier. The reference speed is NOT printed: it is
 	# the same for every car and every row, so the comparison is like-for-like either way,
 	# and the label was eating the width the blocks want. GRIP_REFERENCE_KMH is the single
 	# place it is set, shared with CarStatBounds so the scale and the figure can't diverge.
 	var grip := CarLibrary.max_lateral_g(
-		UpgradeLibrary.aero_meta(_owned, entry), Config.data, GRIP_REFERENCE_KMH)
+		UpgradeLibrary.grip_meta(_owned, entry), Config.data, GRIP_REFERENCE_KMH)
 	out.append(StatBar.build("Grip", CarStatBounds.fraction("grip", grip), "%.2f G" % grip,
 		CarStatBounds.fraction("grip",
 			CarLibrary.max_lateral_g(stock, Config.data, GRIP_REFERENCE_KMH)),

@@ -5,9 +5,11 @@ extends RefCounted
 # the shipped UPGRADES, so adding / renaming / retuning a real part can't break a
 # logic test. Always restore() in teardown.
 #
-# The fixture parts cover every EFFECT shape the apply / effective_meta pipeline
+# The fixture parts cover every EFFECT shape the apply / effective_meta / grip_meta pipeline
 # reads: install_turbo, install_supercharger, mass_mult (both a reduction < 1 and a `free` ballast > 1),
-# unlocks_aero_tuning + downforce, and unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
+# unlocks_aero_tuning + downforce, shift_time_mult, tire_grip_mult (the one row whose meta
+# field and live-config fields differ — see UpgradeLibrary._cfg_fields), and
+# unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
 # their real constant ids (UpgradeLibrary.ENGINE_SWAP_TOKEN_ID / MYSTERY_BOX_ID) —
 # these are referenced by constant across the save / reward code (like the engine
 # FIRING layout keys the car fixtures reuse), so keeping them present means an
@@ -48,9 +50,25 @@ static func upgrades() -> Array[Dictionary]:
 			}},
 		},
 		{
+			# Covers the plain single-field "mult" shape on a NON-power-to-weight config
+			# field (shift_time), so a test can tell "apply wrote it" from "effective_meta
+			# mirrored it" — mass_mult, the other mult row, feeds both.
+			"id": "fx_gearbox", "name": "Fixture Sequential", "menu_label": "Sequential",
+			"slot": "gearbox", "consumable": false,
+			"effect": {"shift_time_mult": 0.3},
+		},
+		{
 			"id": "fx_aero", "name": "Fixture Aero", "slot": "aero",
 			"consumable": false,
 			"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
+		},
+		{
+			# Covers the `cfg_fields` shape: ONE meta field (tire_compound) standing for TWO
+			# live-config fields (the per-axle wheel_friction_slip_*), and the only
+			# feeds_grip "mult" row — so grip_meta's multiply arm has something to walk.
+			"id": "fx_tires", "name": "Fixture Race Tires", "menu_label": "Race",
+			"slot": "tires", "consumable": false,
+			"effect": {"tire_grip_mult": 1.15},
 		},
 		{
 			"id": "fx_lightweight", "name": "Fixture Lightweight", "slot": "weight",

@@ -47,15 +47,27 @@ Each `RALLIES` entry:
   It has no relationship to region: a region may hold any number of specials, including
   none (see [regions.md](regions.md)).
 
-  **Five ship today**, one per gated part: `sp_woodland_trial`, `sp_dust_trial`,
-  `sp_lakeshore_trial`, `sp_archipelago_trial` and `the_showdown` (which gates NOS).
-  There were eight. The three region showdowns — `hc_showdown`, `gr_showdown`,
-  `gc_showdown` — each existed to gate one rung of the four-rung NOS ladder, and when
-  that collapsed to a single part ([nitrous.md](nitrous.md)) they gated nothing. They are
-  now **ordinary rallies**: a special that awards no part is a special by label only, and
-  would still have claimed the trophy marker, the map's locked teaser and a place in the
-  all-specials endgame while paying exactly what an ordinary rally pays. They remain long,
-  hard, open-class star-payers, which is what they always were underneath.
+  **Seven ship today**: `sp_dust_trial` (Big Turbo), `sp_lakeshore_trial` (Drivetrain
+  Conversion), `sp_archipelago_trial` (Supercharger), `the_showdown` (NOS),
+  `hc_showdown` (Sequential Gearbox), `gr_showdown` (Race Tires) — and
+  `sp_woodland_trial`, the one that gates a **capability** rather than a part
+  (`ENGINE_SWAP_UNLOCK_RALLY`, below).
+
+  Three of them are **region showdowns that have been a special twice**. `hc_showdown`,
+  `gr_showdown` and `gc_showdown` each existed to gate one rung of the four-rung NOS
+  ladder; when that collapsed to a single part ([nitrous.md](nitrous.md)) they gated
+  nothing and were demoted to ordinary rallies, on the rule that *a special that awards
+  no part is a special by label only* — it would still claim the trophy marker, the map's
+  locked teaser and a place in the all-specials endgame while paying exactly what an
+  ordinary rally pays. Two of the three were **promoted back** when the sequential gearbox
+  and the race tyres needed part-unlock events: a long, hard, already open-class rally on
+  a pin the solver has already placed is the shape a special takes, and promoting one beat
+  authoring a new pin — which would have re-fitted the whole map
+  (`tools/fit_map_pins.py`) and moved every other rally's neighbourhood with it. Their
+  `id` / `difficulty` / `restriction` / `events` were left untouched: ids key saved
+  progress, and the other three are `OpponentCache.FIELD_DETERMINANTS`, so the committed
+  field cache still hits. **`gc_showdown` stays ordinary** — the longest of the three,
+  gating no part, so it remains the pure star-payer.
 
   Every special keeps `"restriction": {}` (open-class) so the ladder cannot deadlock — **a
   special must never gate on a part it unlocks.** They award stars like any other rally.

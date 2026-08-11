@@ -66,10 +66,10 @@ The gate is about **earning** a part, never about **keeping** one:
 `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the gate,
 so a part fitted before a gate closes (or that never needed one) keeps working.
 
-Gated parts, per the authored `UPGRADES` table: `turbo_large` →
-`sp_woodland_trial`, `drivetrain_swap` (renamed "Drivetrain Conversion") →
-`sp_dust_trial`, `supercharger` → `sp_lakeshore_trial`, and `nitrous` →
-`the_showdown`.
+Gated parts, per the authored `UPGRADES` table: `turbo_large` → `sp_dust_trial`,
+`supercharger` → `sp_archipelago_trial`, `drivetrain_swap` (renamed "Drivetrain
+Conversion") → `sp_lakeshore_trial`, `nitrous` → `the_showdown`,
+`sequential_gearbox` → `hc_showdown`, and `race_tires` → `gr_showdown`.
 See `upgrade-catalogue.md` and (for the nitrous mechanic itself)
 `features/nitrous.md`.
 

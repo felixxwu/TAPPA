@@ -204,6 +204,60 @@ func test_no_upgrades_leaves_config_untouched() -> void:
 	assert_almost_eq(cfg.peak_torque, 250.0, 0.001, "empty upgrade list is a no-op")
 
 
+func test_a_tire_part_multiplies_BOTH_axle_grips_on_the_live_config() -> void:
+	# The one effect row whose meta spelling and live-config spelling differ: `tire_compound`
+	# on a car's meta, the per-axle wheel_friction_slip_* PAIR on the config
+	# (UpgradeLibrary._cfg_fields). Both axles must move, or fitting tyres would silently
+	# re-balance the car front-to-rear as well as grip it up. Multiplied (not set) so the
+	# grip_balance tuning slider, which runs after, still shifts them about this baseline.
+	var cfg := GameConfig.new()
+	cfg.wheel_friction_slip_front = 0.9
+	cfg.wheel_friction_slip_rear = 0.7
+	var mult := float(UpgradeLibrary.by_id("fx_tires")["effect"]["tire_grip_mult"])
+	UpgradeLibrary.apply({"installed_upgrades": ["fx_tires"]}, cfg)
+	assert_almost_eq(cfg.wheel_friction_slip_front, 0.9 * mult, 0.001, "front axle grip multiplied")
+	assert_almost_eq(cfg.wheel_friction_slip_rear, 0.7 * mult, 0.001, "rear axle grip multiplied")
+
+
+func test_a_gearbox_part_multiplies_shift_time() -> void:
+	var cfg := GameConfig.new()
+	cfg.shift_time = 0.4
+	var mult := float(UpgradeLibrary.by_id("fx_gearbox")["effect"]["shift_time_mult"])
+	UpgradeLibrary.apply({"installed_upgrades": ["fx_gearbox"]}, cfg)
+	assert_almost_eq(cfg.shift_time, 0.4 * mult, 0.001, "the kit scales the fitted gearbox's shift time")
+
+
+func test_grip_parts_move_grip_meta_and_are_invisible_to_eligibility() -> void:
+	# THE safeguard that keeps grip_meta and effective_meta separate: a wing or a set of
+	# tyres must show up on a grip readout and must NOT move power-to-weight, because p/w is
+	# what a rally's band is judged on — otherwise fitting tyres could lock a car out of
+	# events it could previously enter. Derived from the fixtures' own effects, so retuning
+	# either part can't break it.
+	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0,
+		"weight_front": 0.5, "tire_compound": 0.9,
+		"wheel_width_front": 0.225, "wheel_width_rear": 0.225}
+	var car := {"installed_upgrades": ["fx_tires", "fx_aero"], "disabled_upgrades": [], "tuning": {}}
+	var eff := UpgradeLibrary.effective_meta(car, entry)
+	var grip := UpgradeLibrary.grip_meta(car, entry)
+	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": [], "tuning": {}}, entry)
+	assert_almost_eq(CarLibrary.power_to_weight(eff), CarLibrary.power_to_weight(bare), 0.001,
+		"grip parts leave power-to-weight — and therefore rally eligibility — alone")
+	assert_almost_eq(float(eff.get("tire_compound", 0.0)), float(entry["tire_compound"]), 0.001,
+		"effective_meta does not fold the compound multiplier in")
+	var tire_mult := float(UpgradeLibrary.by_id("fx_tires")["effect"]["tire_grip_mult"])
+	var aero: Dictionary = UpgradeLibrary.by_id("fx_aero")["effect"]
+	assert_almost_eq(float(grip["tire_compound"]), float(entry["tire_compound"]) * tire_mult, 0.001,
+		"grip_meta multiplies the compound (the mult arm)")
+	assert_almost_eq(float(grip["downforce_front"]), float(aero["downforce_front"]), 0.001,
+		"grip_meta still adds downforce (the add arm)")
+	# And the figure the Simple page's Grip row draws actually rises — at any speed for the
+	# tyres, and the downforce term needs a speed to exist at all.
+	assert_gt(CarLibrary.max_lateral_g(grip, Config.data, 50.0),
+		CarLibrary.max_lateral_g(bare, Config.data, 50.0),
+		"the grip figure rises once tyres and a wing are fitted")
+	assert_almost_eq(float(entry["tire_compound"]), 0.9, 0.001, "the source entry is left untouched")
+
+
 func test_aero_tuning_is_gated_by_the_aero_upgrade() -> void:
 	var bare := {"installed_upgrades": []}
 	assert_false(UpgradeLibrary.aero_tuning_unlocked(bare), "aero tuning locked with no aero kit")

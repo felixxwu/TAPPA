@@ -109,6 +109,14 @@ A car authors **one `tire_compound`** (the rubber's intrinsic μ, ~0.85 hard eco
 (the `grip_balance` tuning slider then trims them apart) and copies the widths onto the
 config.
 
+**The compound is upgradeable.** The `tires` upgrade slot holds **Race Tires**
+(`race_tires`), whose `tire_grip_mult` effect multiplies **both** axle μ figures in
+pipeline step 2 — i.e. *after* `apply_car` seeds them and *before* the `grip_balance`
+slider shifts them apart, so a player's front/rear balance is scaled, never overwritten.
+It gets its own slot rather than sharing `aero` because rubber grip and downforce are not
+alternatives: a car wants both, and one-enabled-part-per-slot would have made them
+mutually exclusive. See [upgrade-catalogue.md](upgrade-catalogue.md).
+
 Effective μ is **not** the textbook load-independent `μN`. A real tyre's μ falls as the
 load pressed through its contact patch rises, and a wider tyre spreads that load over
 more rubber. `tire_load_factor(normal_force, width)` models this as
@@ -133,9 +141,11 @@ be rated **with aero**. At the default `0.0` it returns exactly the static-load 
 above, unchanged. Above 0 it adds each axle's downforce (`v² · downforce_front/rear / 2`
 per wheel, `v` in m/s) to that axle's load **before** the load-sensitivity factor, and,
 since the axles then no longer carry equal shares, returns the **load-weighted**
-`Σ(μ·load)/(mass·g)` rather than a plain mean of the two μ. Downforce fields reach the
-meta via `UpgradeLibrary.aero_meta` (see
-[upgrade-catalogue.md](upgrade-catalogue.md)), not `effective_meta`. A quoted
+`Σ(μ·load)/(mass·g)` rather than a plain mean of the two μ. Downforce fields — and the
+**race tyres**' multiplier on `tire_compound` — reach the meta via
+`UpgradeLibrary.grip_meta` (see [upgrade-catalogue.md](upgrade-catalogue.md)), **not**
+`effective_meta`: grip must never move a car's power-to-weight, and therefore never its
+rally eligibility. A quoted
 speed-rated figure must **always show its speed** — the effect grows with v², so a
 speed-dependent grip number without its speed reads as a promise; the Simple upgrades
 page's Grip row does exactly that (`UpgradesSimple.GRIP_REFERENCE_KMH`). Note `wheel_width_*` is dual-purpose: it sizes

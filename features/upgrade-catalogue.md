@@ -21,8 +21,9 @@ is the upgrades half.
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
-(`turbo` / `aero` / `weight` / `drivetrain` / `nitrous`, or `""` for
-consumables), `consumable`, an optional `free` flag (always-available,
+(`turbo` / `gearbox` / `aero` / `tires` / `weight` / `drivetrain` / `nitrous`, or `""` for
+consumables — `SLOTS`' order is the garage row order, so a slot sits beside the one it is
+read alongside: `gearbox` after `turbo`, `tires` after `aero`), `consumable`, an optional `free` flag (always-available,
 never-drawn parts — the ballast; see below), an optional `requires_upgrade_id`
 (per-car prerequisite gating — see below), an optional `unlocked_by_rally`
 (garage-wide event gating — see below), an optional `weight` (reward-pool
@@ -58,10 +59,14 @@ itself opens on the count of COMPLETED ORDINARY rallies
 This gate is about **earning** a part, never about **keeping** one:
 `UpgradeLibrary.apply` walks `installed_upgrades` and never consults it, so a
 part already fitted keeps working even if its gate would no longer be met.
-Gated parts today: `turbo_large` → `sp_woodland_trial`, `drivetrain_swap`
-(now named "Drivetrain Conversion") → `sp_dust_trial`, `supercharger` →
-`sp_lakeshore_trial`, and `nitrous` → `the_showdown`. See `reward-system.md` for how
-`RewardSystem` reads this gate into the draw pool.
+Gated parts today: `turbo_large` → `sp_dust_trial`, `supercharger` →
+`sp_archipelago_trial`, `drivetrain_swap` (now named "Drivetrain Conversion") →
+`sp_lakeshore_trial`, `nitrous` → `the_showdown`, `sequential_gearbox` →
+`hc_showdown`, and `race_tires` → `gr_showdown`. The last two are **region showdowns
+promoted back to specials** to carry those unlocks rather than new pins being authored —
+see [rally-roster.md](rally-roster.md) for why. `sp_woodland_trial` gates no part: it
+gates the engine-swap *capability* ([engine-swap.md](engine-swap.md)). See
+`reward-system.md` for how `RewardSystem` reads this gate into the draw pool.
 
 **Prerequisite gate (`requires_upgrade_id`).** The **per-car** counterpart to
 the event gate: an item that should unlock through owning ANOTHER item on
@@ -115,12 +120,27 @@ rally class (a p/w lever alongside engine detune). Weight Reduction is the slot'
 **earned** reward-pool option — the "lightweight" performance drop, greyed until won.
 The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
 earn-gated option row — see below.
+The **`gearbox` slot** holds one part, the **Sequential Gearbox** (`sequential_gearbox`),
+whose `shift_time_mult` effect scales the `shift_time` of whatever transmission the car is
+currently running. `shift_time` is a **per-engine** field (`EngineLibrary`, so an engine
+swap carries its gearbox — see [engine-and-transmission.md](engine-and-transmission.md)),
+which is exactly why the kit is a multiplier rather than an absolute time: it is worth the
+same proportion on a slow old manual as on a quick twin-clutch, instead of flattening every
+car onto one number. It sits under **Speed** on the Simple page and moves **no bar** there —
+Speed reads power-to-weight, which a shift time cannot touch — the same position nitrous is
+in.
+The **`tires` slot** holds one part, **Race Tires** (`race_tires`), whose `tire_grip_mult`
+effect multiplies the car's tyre μ. Its **own slot rather than sharing `aero`**: grip from
+rubber and grip from downforce are not alternatives — a car wants both — and one enabled
+part per slot would have made them mutually exclusive. Like the aero kit it is deliberately
+**not** a power-to-weight input, so it can never move a car's rally eligibility; it does show
+on the Simple page's **Grip** row, via `grip_meta` below.
 Current set: three **forced-induction kits** (turbo slot — `turbo_small` ungated,
 `turbo_large` prerequisite-gated on the same car having `turbo_small` plus its own
 event gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own
 event gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
-an aero kit, the three **weight** parts above, the drivetrain conversion kit, a
-**fifth `nitrous` slot** (see below), and two consumables — the **engine
+an aero kit, the race tyres, the sequential gearbox, the three **weight** parts above, the
+drivetrain conversion kit, the `nitrous` slot's part (see below), and two consumables — the **engine
 swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
 `slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
 damage is one-way now; see [damage.md](damage.md).) The token is spent
@@ -139,7 +159,7 @@ selected one included — see [reward-system.md](reward-system.md)
 
 ### The `nitrous` slot
 
-A fifth `SLOTS` entry, deliberately absent from the upgrades menu — the
+The last `SLOTS` entry, deliberately absent from the upgrades menu — the
 mechanic, gauge, input and audio are documented in full in
 [nitrous.md](nitrous.md); this file only covers its place in the catalogue.
 It is a SINGLE part with an ordinary garage row — it was a four-rung ladder
@@ -302,7 +322,7 @@ predictably:
 4. **Damage multipliers** — power/steer degraded by HP fraction (`features/damage.md`).
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored
-`.tres`. `*_mult` keys multiply the baseline (`mass`); additive
+`.tres`. `*_mult` keys multiply the baseline (`mass` / `shift_time` / tyre μ); additive
 keys add (`downforce_front` / `downforce_rear`); `install_turbo` writes the turbo
 fields (see above); `install_nitrous` (`"write_fields"` op) straight-splats its
 fields onto `cfg` with no enable flag and no slot rival to clear — `has_nitrous()`
@@ -312,6 +332,15 @@ as "not fitted" (see [nitrous.md](nitrous.md)).
 config. `aero_tuning_unlocked(car)` reads that flag so the tuning lift only exposes
 the aero slider when the kit is fitted. Brake bias is **not** gated — it's a free
 tuning axis on every car (see [tuning.md](tuning.md)).
+
+**A `mult`/`add` row may target more than one config field, under a different name.** A
+descriptor's `field` is the **meta** spelling; the optional `cfg_fields` list is the
+**live-config** spelling, and `_cfg_fields(desc)` falls back to `[field]` when the two
+coincide (as they do for `mass` and the downforce pair). `tire_grip_mult` is the row that
+needs it: a car's rubber is one `tire_compound` on its meta but a per-axle
+`wheel_friction_slip_front` / `_rear` pair on the config. Keeping that mapping as table
+DATA is what stops `apply` growing a branch per part. Multiplying both axles in step 2 —
+before tuning runs — scales the player's `grip_balance` split rather than overwriting it.
 
 > **Mass re-sync:** `car.gd.apply_car` copies the baseline `mass` onto the
 > RigidBody, but upgrades run *after* it (step 2), so `apply_owned` re-assigns
@@ -335,18 +364,23 @@ so an upgrade can push a car over — or back under — a rally's `pw_max` ceili
 The rival pool and reward-grant queries keep using the raw `CARS` entries (those
 are unmodified roster cars, not the player's upgraded ones).
 
-### `aero_meta` — the same copy, plus downforce
+### `grip_meta` — the same copy, plus the grip-feeding fields
 
-`aero_meta(owned_car, meta)` is `effective_meta` with the enabled parts' **`add`
-effects** (the aero kit's `downforce_front` / `downforce_rear`) folded in on top. It
-exists as a separate call rather than as a widening of `effective_meta` because the two
-answer different questions: `effective_meta` mirrors only the **power-to-weight-feeding**
-effects, since p/w is what eligibility is judged on and **downforce doesn't move a car's
-class**. But a grip readout has to show what the wing bought, and
-`CarLibrary.max_lateral_g` reads its downforce off the meta it's handed — so the Simple
-upgrades page's Grip row passes `aero_meta`, while every eligibility path keeps passing
-`effective_meta`. Keeping them apart is what stops an aero part quietly changing which
-rallies a car can enter.
+`grip_meta(owned_car, meta)` is `effective_meta` with every enabled part's
+**`feeds_grip`** effect folded in on top: the aero kit's `downforce_front` /
+`downforce_rear` (the `add` arm) and the race tyres' `tire_compound` multiplier (the `mult`
+arm). It exists as a separate call rather than as a widening of `effective_meta` because
+the two answer different questions: `effective_meta` mirrors only the
+**power-to-weight-feeding** effects, since p/w is what eligibility is judged on and
+**grip doesn't move a car's class**. But a grip readout has to show what the wing and the
+rubber bought, and `CarLibrary.max_lateral_g` reads both downforce and `tire_compound` off
+the meta it's handed — so the Simple upgrades page's Grip row passes `grip_meta`, while
+every eligibility path keeps passing `effective_meta`. Keeping them apart is what stops a
+wing or a set of tyres quietly changing which rallies a car can enter.
+
+`feeds_grip` is a second flag on the `EFFECTS` rows rather than a re-use of `feeds_pw`, for
+exactly that reason — the two sets must not merge. (This was `aero_meta` while downforce
+was the only thing it folded in.)
 
 ### `CarStatBounds` — the roster-wide scale the stat bars are drawn against
 
@@ -562,8 +596,11 @@ delegated `can_close` gate).
 
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, consumables have no slot), lookups, effect application (multiplies/adds on a
-baseline incl. `mass_mult`; empty list is a no-op), `effective_meta`
-(lightens/empowers a meta copy without mutating the source), the aero
+baseline incl. `mass_mult`; `tire_grip_mult` reaching BOTH axle μ fields via `cfg_fields`;
+`shift_time_mult`; empty list is a no-op), `effective_meta`
+(lightens/empowers a meta copy without mutating the source), `grip_meta` folding tyres and
+downforce in **while `effective_meta` leaves power-to-weight untouched** — the safeguard
+that keeps a grip part out of eligibility — the aero
 tuning gate, `rally_gate_met` (true when `unlocked_by_rally` is absent, false/true
 tracking `profile.rallies[id].completed` otherwise, using synthetic fixtures per
 CLAUDE.md), and `max_potential_meta`'s two flavours (aspirational includes

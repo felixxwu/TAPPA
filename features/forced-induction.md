@@ -188,7 +188,7 @@ pass for `RewardSystem` to offer the part in a car's reward draw
   `rally_gate_met(item_id, profile)`: an item can be absent from the reward
   pool entirely until a particular special event has been WON (top-3 finish).
   In the shipped table, `turbo_large` ("Big Turbo") is gated on
-  `sp_woodland_trial` and `supercharger` on `sp_lakeshore_trial` — see
+  `sp_dust_trial` and `supercharger` on `sp_archipelago_trial` — see
   `todo/star-gated-special-events.md` (the spec's filename; the special's OWN
   gate is the count of completed ordinary rallies now — `RallyLibrary.
   completions_required` — not a star total, see
@@ -198,7 +198,7 @@ pass for `RewardSystem` to offer the part in a car's reward draw
   it were somehow revisited.
 
 Both gates are evaluated together, so `turbo_large` isn't offered to a car
-until it already carries `turbo_small` AND the `sp_woodland_trial` special has
+until it already carries `turbo_small` AND the `sp_dust_trial` special has
 been won — whichever comes later in a given playthrough.
 
 `UpgradeLibrary.apply()` handles **both** induction effect keys through ONE

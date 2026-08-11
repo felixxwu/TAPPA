@@ -33,7 +33,11 @@ const MYSTERY_BOX_ID := "mystery_box"
 
 # The valid non-consumable slot ids. A car holds at most one ENABLED upgrade per slot
 # (Save._enable_exclusive), so parts sharing a slot are alternatives, not stackables.
-const SLOTS := ["turbo", "aero", "weight", "drivetrain", "nitrous"]
+#
+# Order is the GARAGE ROW ORDER (upgrades_menu walks this list), so a slot sits next to the
+# one it is read alongside: `gearbox` follows `turbo` (both are Speed levers) and `tires`
+# follows `aero` (both are Grip). It is also the order _best_part_per_slot reports in.
+const SLOTS := ["turbo", "gearbox", "aero", "tires", "weight", "drivetrain", "nitrous"]
 
 # Slots that are HIDDEN from the garage (upgrades_menu skips their rows) and whose parts
 # are therefore fitted ENABLED whenever they are installed — enforced centrally in
@@ -121,9 +125,40 @@ const UPGRADES: Array[Dictionary] = [
 		}},
 	},
 	{
+		# The `gearbox` slot's one part: a dog-ring sequential shift in place of the car's
+		# H-pattern. It multiplies whatever shift_time the car's CURRENT transmission
+		# authors (EngineLibrary owns gear_ratios / final_drive / shift_time, and an engine
+		# swap carries its whole gearbox with it — see features/engine-swap.md), so the kit
+		# is worth the same PROPORTION on a slow old manual as on a quick twin-clutch rather
+		# than pinning every car to one number.
+		#
+		# menu_label "Sequential" — the slot label already says "Gearbox", so the full name
+		# would read "Gearbox   Stock  Sequential Gearbox".
+		"id": "sequential_gearbox", "name": "Sequential Gearbox", "menu_label": "Sequential",
+		"slot": "gearbox", "unlocked_by_rally": "hc_showdown",
+		"consumable": false,
+		"effect": {"shift_time_mult": 0.3},
+	},
+	{
 		"id": "aero_kit", "name": "Aero Kit", "slot": "aero",
 		"consumable": false,
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
+	},
+	{
+		# The `tires` slot's one part: competition rubber, a flat multiplier on the car's
+		# tyre μ. Its OWN slot rather than sharing `aero`, because grip from rubber and grip
+		# from downforce are not alternatives — a car wants both, and one enabled part per
+		# slot would have made them mutually exclusive.
+		#
+		# Deliberately NOT a power-to-weight input (see EFFECTS below): it must never move a
+		# car's rally eligibility, the same rule the aero kit follows. It does show on the
+		# Simple page's GRIP row, via grip_meta.
+		#
+		# menu_label "Race" — the slot label already says "Tires".
+		"id": "race_tires", "name": "Race Tires", "menu_label": "Race",
+		"slot": "tires", "unlocked_by_rally": "gr_showdown",
+		"consumable": false,
+		"effect": {"tire_grip_mult": 1.15},
 	},
 	# The "weight" slot is a p/w lever, not an earn-gated part row. The two BALLAST
 	# options add weight and are `free` (always selectable on every car, never drawn as
@@ -333,6 +368,14 @@ static func fitted_nitrous_id(owned_car: Dictionary) -> String:
 #              "flag" (gates a tuning slider, no config effect)
 #   feeds_pw — whether it changes a power-to-weight input (mass / torque), so
 #              effective_meta must mirror it; the rest are cfg-only.
+#   feeds_grip — whether it changes a MAX-LATERAL-G input (tyre μ / downforce), so
+#              grip_meta must mirror it. Separate from feeds_pw because grip does NOT
+#              move a car's class: eligibility is judged on power-to-weight alone, and
+#              folding grip into effective_meta would let a set of tyres re-gate which
+#              rallies a car may enter (see grip_meta).
+#
+# A "mult"/"add" row may also carry `cfg_fields` — see _cfg_fields — for the case where the
+# live config spells the same quantity differently from the meta.
 #
 # FORCED-INDUCTION rows carry three more keys so the two parts share ONE op rather than a
 # copied match arm each (a third induction type would then be a row, not more branches):
@@ -365,11 +408,32 @@ const EFFECTS := {
 	# over a rally's pw_max and lock it out of events it could previously enter.
 	"install_nitrous": {"field": "", "op": "write_fields", "feeds_pw": false},
 	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
-	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false},
-	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false},
+	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`
+	# coefficient) while `cfg_fields` names the live-config spelling (a PER-AXLE pair, seeded
+	# from that same compound by car.gd::_apply_physics_spec and then shifted apart by the
+	# grip_balance tuning slider). Multiplying both axles here — before TuningLibrary runs —
+	# leaves the player's front/rear balance intact and just scales it.
+	"tire_grip_mult": {
+		"field": "tire_compound", "op": "mult", "feeds_pw": false, "feeds_grip": true,
+		"cfg_fields": ["wheel_friction_slip_front", "wheel_friction_slip_rear"],
+	},
+	# Sequential gearbox. shift_time is re-seeded from the fitted engine on every fielding
+	# (EngineLibrary.apply, step 1), so this multiplier can never compound across re-fields.
+	"shift_time_mult":     {"field": "shift_time", "op": "mult", "feeds_pw": false},
+	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false, "feeds_grip": true},
+	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false, "feeds_grip": true},
 	"unlocks_aero_tuning": {"field": "", "op": "flag", "feeds_pw": false},
 	"unlocks_drivetrain_swap": {"field": "", "op": "flag", "feeds_pw": false},
 }
+
+
+# The LIVE-CONFIG fields a "mult"/"add" row writes. Usually just `field`: the meta and the
+# config call the quantity by the same name (`mass`, `downforce_front`), so one name serves
+# both. `cfg_fields` overrides for a row whose two vocabularies diverge — race tyres are one
+# `tire_compound` on a car's meta and two per-axle `wheel_friction_slip_*` fields on the live
+# config — which keeps that mapping DATA in the table above rather than a branch in apply().
+static func _cfg_fields(desc: Dictionary) -> Array:
+	return desc.get("cfg_fields", [String(desc.get("field", ""))])
 
 
 # --- Effect application (pipeline step 2) ------------------------------------
@@ -402,11 +466,11 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 					for tkey in (val as Dictionary):
 						cfg.set(tkey, (val as Dictionary)[tkey])
 				"mult":
-					var f: String = desc["field"]
-					cfg.set(f, float(cfg.get(f)) * float(val))
+					for f in _cfg_fields(desc):
+						cfg.set(f, float(cfg.get(f)) * float(val))
 				"add":
-					var f: String = desc["field"]
-					cfg.set(f, float(cfg.get(f)) + float(val))
+					for f in _cfg_fields(desc):
+						cfg.set(f, float(cfg.get(f)) + float(val))
 				_:
 					pass  # "flag" (gates tuning sliders) + unknown ids: no cfg effect
 
@@ -503,8 +567,9 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 #
 # Per-slot maximisation is EXACT here, not a heuristic: only one part per slot can be
 # enabled (Save._enable_exclusive) and the slots' effects are independent (turbo → torque,
-# weight → mass, aero → downforce, drivetrain → a flag, nitrous → excluded from pw
-# entirely), so the best combination is the best choice in each slot taken separately.
+# weight → mass, aero → downforce, tires → μ, gearbox → shift time, drivetrain → a flag,
+# nitrous → excluded from pw entirely), so the best combination is the best choice in each
+# slot taken separately.
 #
 # Pure: builds a fresh owned-car dict, never mutates the input.
 # `profile` selects WHICH ceiling — and the distinction is load-bearing:
@@ -568,14 +633,18 @@ static func _best_part_per_slot(base_car: Dictionary, meta: Dictionary,
 
 
 
-# `effective_meta` plus the AERO fields, for a grip readout.
+# `effective_meta` plus the GRIP-feeding fields (EFFECTS[*].feeds_grip) — the aero kit's
+# downforce and the race tyres' compound multiplier — for a max-lateral-G readout.
 #
-# effective_meta deliberately mirrors only the power-to-weight-feeding effects, because
-# that is what eligibility is judged on — downforce doesn't move a car's class. But the
-# Simple page's Grip row has to show what the aero kit bought, and
-# CarLibrary.max_lateral_g reads its downforce off the meta, so those two "add" effects
-# are folded in here rather than widening effective_meta's contract.
-static func aero_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
+# effective_meta deliberately mirrors only the power-to-weight-feeding effects, because that
+# is what ELIGIBILITY is judged on, and grip doesn't move a car's class: a wing or a set of
+# tyres must never quietly change which rallies a car may enter. But the Simple page's Grip
+# row has to show what those parts bought, and CarLibrary.max_lateral_g reads both downforce
+# and `tire_compound` off the meta it is handed — so they are folded in HERE rather than by
+# widening effective_meta's contract. Keeping the two calls apart is the whole safeguard.
+#
+# (Was `aero_meta`, when downforce was the only thing it folded in.)
+static func grip_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 	var out := effective_meta(owned_car, meta)
 	if out.is_empty():
 		return out
@@ -584,10 +653,16 @@ static func aero_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
 			var desc: Dictionary = EFFECTS.get(key, {})
-			if String(desc.get("op", "")) != "add":
+			if not bool(desc.get("feeds_grip", false)):
 				continue
 			var f: String = desc["field"]
-			out[f] = float(out.get(f, 0.0)) + float(effect[key])
+			match String(desc["op"]):
+				"add":
+					out[f] = float(out.get(f, 0.0)) + float(effect[key])
+				"mult":
+					# 1.0 is the neutral identity a missing compound reads as — the same
+					# default CarLibrary.max_lateral_g falls back to.
+					out[f] = float(out.get(f, 1.0)) * float(effect[key])
 	return out
 
 # --- Auto-Upgrade solver ------------------------------------------------------
@@ -630,8 +705,8 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 
 	# --- Candidates per slot.
 	# Only parts that feed power-to-weight take part in the search below; the rest
-	# (aero, drivetrain kit, nitrous) can't be scored against the objective, so Auto
-	# never BUYS them — it only switches on ones the car already owns and left parked.
+	# (aero, tires, gearbox, drivetrain kit, nitrous) can't be scored against the objective,
+	# so Auto never BUYS them — it only switches on ones the car already owns and left parked.
 	# Ballast is excluded everywhere: it is a p/w lever that also destroys grip, and
 	# detune buys the same reduction for free (§4 → "Auto never fits ballast").
 	var pw_slots: Array = []

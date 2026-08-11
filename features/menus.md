@@ -1527,7 +1527,8 @@ throwaway test and still clip in the real game.
     which is not what gold says.
   - **Speed** is power-to-weight in hp/t — deliberately the very figure eligibility is
     judged on, so the bar can never disagree with the gate. **Grip** is
-    `CarLibrary.max_lateral_g` rated *with* aero (`UpgradeLibrary.aero_meta`) at
+    `CarLibrary.max_lateral_g` over `UpgradeLibrary.grip_meta` (the aero kit's downforce
+    *and* the race tyres' compound multiplier) rated at
     `GRIP_REFERENCE_KMH`, since downforce is purely a speed effect and would otherwise never
     move the row. The reference speed is **not printed**: it is identical for every car and
     every row, so the comparison is like-for-like whether or not the player knows the

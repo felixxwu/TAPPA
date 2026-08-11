@@ -381,17 +381,28 @@ const RALLIES: Array[Dictionary] = [
 			{"seed": 83002, "turn_count": 39, "forestiness": 0.45, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
 			{"seed": 83003, "turn_count": 37, "forestiness": 0.70, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 18.0},
 		],
-	},	# The three region showdowns below are ORDINARY rallies, not specials. Each used to be a
-	# special gating one rung of the four-rung NOS ladder; collapsing NOS to a single part
-	# (features/nitrous.md) left them gating nothing, and a "special" that awards no part is
-	# only a special by label — it would still claim the trophy marker, the map's locked
-	# teaser and a place in the all-specials endgame while paying exactly what an ordinary
-	# rally pays.
-	# They are long, hard, open-class star-payers, which is what they actually are.
+	},	# The three region showdowns below were each demoted from special to ORDINARY when the
+	# four-rung NOS ladder they used to gate collapsed to a single part
+	# (features/nitrous.md), on the rule that a "special" awarding no part is only a special
+	# by label — it would still claim the trophy marker, the map's locked teaser and a place
+	# in the all-specials endgame while paying exactly what an ordinary rally pays.
+	#
+	# TWO OF THE THREE ARE SPECIALS AGAIN, by that same rule read forwards: the sequential
+	# gearbox and the race tyres each needed a part-unlock event, and a long, hard, already
+	# OPEN-CLASS rally at a pin the solver has already placed is exactly the shape a special
+	# takes. Promoting them beat authoring two new pins, which would have re-fitted the whole
+	# map (tools/fit_map_pins.py) and moved every other rally's neighbourhood with it. Their
+	# `id` / `difficulty` / `restriction` / `events` are untouched — ids key saved progress,
+	# and the other three are OpponentCache.FIELD_DETERMINANTS, so the committed field cache
+	# still hits. `gc_showdown` stays ordinary: it is the longest of the three and gates no
+	# part, so it remains the pure star-payer the endgame finishes on.
 	{
-		"id": "hc_showdown", "name": "The Northwood Showdown", "region": "home", "difficulty": 4, "special": false,
+		# Unlocks the Sequential Gearbox. Reached a wave before the Greek showdown below
+		# (RallyLibrary.reveal_depths), so the gentler of the two parts opens first.
+		"id": "hc_showdown", "name": "Upgrade: Sequential Gearbox", "region": "home", "difficulty": 4,
+		"special": true,
 		"map_pos": Vector2(0.529, 0.205),
-		"restriction": {},  # open-class: a long, hard star-payer with no part to gate against
+		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
 			{"seed": 39001, "turn_count": 48, "forestiness": 0.73, "surface_mix": 0.6, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
 			{"seed": 39002, "turn_count": 51, "forestiness": 0.55, "surface_mix": 0.9, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
@@ -482,9 +493,12 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "gr_showdown", "name": "The Greek Showdown", "region": "greece", "difficulty": 4, "special": false,
+		# Unlocks the Race Tires — see the note above hc_showdown for why a demoted region
+		# showdown is what these two parts are gated on.
+		"id": "gr_showdown", "name": "Upgrade: Race Tires", "region": "greece", "difficulty": 4,
+		"special": true,
 		"map_pos": Vector2(0.455, 0.854),
-		"restriction": {},  # open-class: a long, hard star-payer with no part to gate against
+		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
 			{"seed": 29001, "turn_count": 51, "forestiness": 0.28, "surface_mix": 0.15, "cliffiness": 0.85, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 			{"seed": 29102, "turn_count": 53, "forestiness": 0.15, "surface_mix": 0.25, "cliffiness": 0.95, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 15.5},
