@@ -663,6 +663,49 @@ func _ready() -> void:
 	if _view != View.EXTERIOR:
 		_last_input_ms = Time.get_ticks_msec()
 	_carpark_ui._prewarm_free_roam_deferred()
+	# Ask GitHub Pages whether a newer native build has shipped. NOT awaited: it is a
+	# network round trip and boot must never wait on one — the player gets an
+	# interactive HQ now, and the prompt (if any) arrives a beat later.
+	_check_for_update()
+
+
+# Tell the player when a newer NATIVE build is out (the itch APK / Windows .exe are
+# the two builds nothing updates for them). All of the policy lives in UpdateCheck —
+# see features/update-check.md; this is only the placement and the modal.
+func _check_for_update() -> void:
+	if not UpdateCheck.applicable():
+		return
+	# Cloud.rest is the project's single HTTPRequest owner (one in-flight request,
+	# queued callers) — reusing it keeps that invariant instead of adding a second
+	# client for one GET per boot.
+	var latest: int = await UpdateCheck.fetch_latest_build(Cloud.rest)
+	if not is_inside_tree():
+		return
+	var current := UpdateCheck.current_build()
+	var dismissed := int(Save.get_setting(UpdateCheck.DISMISSED_SETTING, 0))
+	if not UpdateCheck.should_prompt(current, latest, dismissed):
+		return
+	# TITLE SHOT ONLY, re-checked AFTER the await: the fetch outlives the boot frame,
+	# so by now the player may have walked into the garage or the map table. An update
+	# notice landing on top of that is an interruption; the next boot to the title
+	# raises it instead (nothing is recorded as dismissed until it is actually seen).
+	if _view != View.EXTERIOR:
+		return
+	# Record the dismissal from the ACTIONS, not here — ConfirmPopup.open returns null
+	# when another modal already owns the screen, and a prompt that never appeared must
+	# not count as one the player has been shown.
+	var remember := func() -> void:
+		Save.set_setting(UpdateCheck.DISMISSED_SETTING, latest)
+	ConfirmPopup.open(self, "Update available",
+		UpdateCheck.prompt_body(current, latest),
+		[
+			# Leaving is left, proceeding is right (features/menus.md → "Button order");
+			# Back routes to index 0, so Esc / gamepad-B is "Not now".
+			{"label": "Not now", "callback": remember},
+			{"label": "Get the update", "callback": func() -> void:
+				remember.call()
+				OS.shell_open(UpdateCheck.STORE_URL)},
+		], 1)
 
 
 # True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
