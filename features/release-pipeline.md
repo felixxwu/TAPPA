@@ -14,12 +14,18 @@ there is no manual upload step in the normal loop.
 | `export-android` | Export & deploy Android APK | itch.io channel `android` (sideload) |
 | `export-windows` | Export & deploy Windows .exe | itch.io channel `windows` |
 | `publish-play` | Build AAB & upload to Play | Google Play, track from `env.TRACK` |
-| `deploy-pages` | Deploy /docs to GitHub Pages | GitHub Pages (a redirect page, *not* the game) |
+| `deploy-pages` | Deploy /docs to GitHub Pages | GitHub Pages (a redirect page + `version.json`, *not* the game) |
 | `deploy-rules` | Deploy Firestore rules | Firebase, only when the rules changed |
 
 `verify-caches` gates the four export/publish jobs via `needs`; those four then
-run in parallel. `deploy-pages` and `deploy-rules` have no `needs` at all, so a
-rules or Pages failure can't hold up a game release — see
+run in parallel. `deploy-pages` waits on the three **itch** jobs — not because it
+ships anything, but because it publishes `docs/version.json`, the document the
+native builds' update check reads, and announcing a build whose itch upload failed
+would point players at a page still serving the old download (see
+[update-check.md](update-check.md); `publish-play` is deliberately excluded). It
+stays `continue-on-error`, so a Pages outage still can't turn a good release red,
+and it was never in the path that ships the game. `deploy-rules` has no `needs` at
+all, so a rules failure can't hold up a game release — see
 [cloud-save.md](cloud-save.md) → *Deploying the rules* for why `deploy-rules`
 lives here and how its change-detection works.
 
@@ -111,6 +117,9 @@ verifies every upload against the same upload key.
 - **`deploy-pages` does not publish the game.** `docs/index.html` is a redirect to
   the itch page; the playable web build is what `export-web` pushes. Pages
   headers are therefore irrelevant to load time — itch's are what matter. See the
-  header comment in `build_web.sh`.
+  header comment in `build_web.sh`. It *does* publish one thing the game reads:
+  `docs/version.json`, generated in the job (not committed — its build number is
+  the commit count of the commit being released), which is why that checkout uses
+  `fetch-depth: 0` like the export jobs. See [update-check.md](update-check.md).
 - **Pages needs its source set to "GitHub Actions"** (Settings → Pages), not the
   legacy `/docs` branch build.

@@ -80,6 +80,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
 | [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, itch/Play/Pages/Firestore jobs, the `install-butler` composite action, secrets |
+| [update-check.md](update-check.md) | Launch-time "a newer build is out" prompt for the NATIVE builds — `UpdateCheck`, the Pages-published `version.json`, why web/Play are excluded |
 
 ## File-to-feature quick map
 
@@ -133,6 +134,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | In-game benchmark | `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_runner.gd`, `scripts/benchmark_stats.gd`, `scripts/benchmark_results.gd` |
 | Tests | `tests/`, `run_tests.sh` |
 | Release / CI | `.github/workflows/deploy.yml`, `.github/actions/install-butler/action.yml`, `build_web.sh`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh` |
+| Update check | `scripts/update_check.gd` (`UpdateCheck`), `scripts/hq.gd` (`_check_for_update`), `deploy.yml` → `deploy-pages` (`docs/version.json`) |
 
 > **Keep this current:** when you add or change a feature, update the matching
 > file here in the same piece of work (see CLAUDE.md).
