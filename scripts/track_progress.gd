@@ -1,11 +1,15 @@
 class_name TrackProgress
 extends Node
 # Tracks how far along the generated road the car has driven, and snaps it back
-# onto the road when it strays too far. Both behaviours run off the road
-# centerline (a Curve2D in the XZ plane, from TrackGenerator) and a single
-# distance threshold: within Config.data.track_progress_max_dist_m progress
-# accrues; crossing beyond it triggers the off-track reset. See
-# todo/track-progress-and-reset.md.
+# onto the road when it has been off it too long. Both behaviours run off the road
+# centerline (a Curve2D in the XZ plane, from TrackGenerator), but off two DIFFERENT
+# thresholds:
+#   - progress accrues within Config.data.track_progress_max_dist_m of the centerline
+#     (generous — running wide still banks the metres);
+#   - the off-track reset fires after Config.data.off_road_reset_timeout_s spent
+#     continuously beyond the road EDGE (the road is a fixed width, so that edge is
+#     just track_width * 0.5 + off_road_margin_m).
+# See todo/track-progress-and-reset.md.
 #
 # Created and wired by world.gd._generate_track once the centerline exists.
 
@@ -113,6 +117,13 @@ var _best_reset: Transform3D
 # at recovery_timeout_s. Zeroed the moment the car moves or recovers.
 var _stuck_time := 0.0
 
+# Seconds the car has been CONTINUOUSLY off the road — the off-track reset clock
+# (features/progress.md). Accumulates in _update_off_road while the car is beyond
+# off_road_edge_m(), fires the reset at off_road_reset_timeout_s. Zeroed the moment
+# the car is back on the road (so a quick cut across the inside costs nothing), and
+# on every reset/re-anchor path so a fresh run never starts part-way through.
+var _off_road_time := 0.0
+
 # Corner-cutting penalty (features/corner-cutting.md). Metres of along-track
 # progress the car skipped by cutting across the inside of a corner, where the
 # centerline doubles back the long way while the car drives a short line across.
@@ -146,6 +157,8 @@ func setup(centerline: Curve2D, car: Node, terrain: Node, finish_off := -1.0) ->
 	_cut_excess_m = 0.0
 	_incident_excess_m = 0.0
 	_prev_offset = _best_offset
+	_off_road_time = 0.0
+	_stuck_time = 0.0
 
 
 # Re-anchor 0% to the car's current position — called when the stage actually
@@ -160,6 +173,10 @@ func mark_start() -> void:
 	_best_offset = _origin_offset
 	_best_reset = _reset_xform_at(_best_offset)
 	_prev_offset = _best_offset  # re-anchored here; next tick's jump is measured from the line
+	# The car has just been placed on the line; anything it accumulated while being
+	# staged (reset onto a grid slot, settling) is not the player's off-road time.
+	_off_road_time = 0.0
+	_stuck_time = 0.0
 
 
 # The pose the off-track / stuck recovery would snap the car to: on the centerline
@@ -220,24 +237,66 @@ func _timed_physics_process(delta: float) -> void:
 	if underwater or p.y < cfg.fell_off_world_y:
 		_car.reset_to(_best_reset)
 		_stuck_time = 0.0
+		_off_road_time = 0.0  # already back on the road; don't carry the clock over
 		return
 	var here := Vector2(p.x, p.z)
 	var offset := _local_closest_offset(here)
 	var on_curve := _point_at(offset)
 	var dist := here.distance_to(on_curve)
-	if dist <= Config.data.track_progress_max_dist_m:
+	if dist <= cfg.track_progress_max_dist_m:
 		_accrue_cut(offset)
 		if offset > _best_offset:
 			_best_offset = offset
 			_best_reset = _reset_xform_at(offset)
-	elif Config.data.off_track_reset_enabled:
-		_car.reset_to(_best_reset)
-		_stuck_time = 0.0  # lateral reset already recovered it; don't double-fire
+	else:
+		# Too far out for the local window to mean anything: progress can't accrue,
+		# and any cut incident in flight ends here rather than coalescing with the
+		# next one across the excursion.
 		_close_cut_incident()
-		_prev_offset = _best_offset  # snapped back onto the road at _best_offset
-		return
 	_prev_offset = offset
+	# The reset already teleported the car back onto the road, so the stuck watchdog
+	# has nothing left to judge this tick — skip it rather than let both fire.
+	if _update_off_road(delta, dist):
+		return
 	_update_recovery(delta, p, on_curve)
+
+
+# Lateral distance from the centerline, in metres, at which the car counts as OFF
+# the road. The road is a FIXED width, so this is pure geometry: half that width
+# plus off_road_margin_m, which keeps a wheel clipping the verge or a tail-out slide
+# from starting the clock.
+func off_road_edge_m() -> float:
+	var cfg: GameConfig = Config.data
+	return cfg.track_width * 0.5 + cfg.off_road_margin_m
+
+
+# Time-based off-track reset (features/progress.md). Accumulate _off_road_time while
+# the car is beyond the road edge and snap it back to the last on-road pose once that
+# passes off_road_reset_timeout_s; being back on the road zeroes the clock.
+#
+# TIME, not distance, is the trigger. A distance leash left the worst case unhandled:
+# bogged in a ditch a couple of metres off the verge, the car can neither climb back
+# onto the road nor get far enough out to trip the leash, so the run just stalls with
+# no way out. The stuck watchdog below doesn't catch it either — that one requires the
+# car to be STATIONARY, and a car thrashing back and forth in a ditch isn't. A clock
+# always expires. It also makes the rule legible: you get N seconds off the road, and
+# how far out you went never enters into it.
+#
+# Returns true when it fired a reset, so the caller can skip the stuck watchdog.
+func _update_off_road(delta: float, dist: float) -> bool:
+	var cfg: GameConfig = Config.data
+	if not cfg.off_track_reset_enabled or dist <= off_road_edge_m():
+		_off_road_time = 0.0
+		return false
+	_off_road_time += delta
+	if _off_road_time < cfg.off_road_reset_timeout_s:
+		return false
+	_car.reset_to(_best_reset)
+	_off_road_time = 0.0
+	_stuck_time = 0.0  # the teleport already recovered it; don't double-fire
+	_close_cut_incident()
+	_prev_offset = _best_offset  # snapped back onto the road at _best_offset
+	return true
 
 
 # Bill a corner cut: how far the car's nearest point on the centerline advanced
@@ -411,6 +470,21 @@ func progress_percent() -> float:
 	if span <= 0.0:
 		return 0.0
 	return clampf((_best_offset - _origin_offset) / span, 0.0, 1.0)
+
+
+# Seconds the car has been continuously off the road — 0 whenever it's on the road
+# (or the reset is disabled). StageManager gates the HUD warning on this passing
+# off_road_warning_after_s, so brief excursions never flash it.
+func off_road_time() -> float:
+	return _off_road_time
+
+
+# Seconds left before the off-track reset fires, or -1.0 when nothing is pending
+# (on the road, or the reset disabled). The HUD countdown reads this.
+func off_road_seconds_left() -> float:
+	if _off_road_time <= 0.0:
+		return -1.0
+	return maxf(0.0, Config.data.off_road_reset_timeout_s - _off_road_time)
 
 
 # Stolen along-track metres accumulated this event (corner cutting).

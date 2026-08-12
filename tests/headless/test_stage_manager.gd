@@ -47,6 +47,12 @@ class StubHud:
 	var pacenote_indices: Array = []
 	func show_pacenotes(current: int) -> void:
 		pacenote_indices.append(current)
+	var off_road_shown: Array = []      # seconds-left values passed to show_off_road
+	var hide_off_road_calls := 0
+	func show_off_road(seconds_left: float) -> void:
+		off_road_shown.append(seconds_left)
+	func hide_off_road() -> void:
+		hide_off_road_calls += 1
 
 
 # Stand-in for TrackProgress: progress_percent() returns a settable 0..1 fraction.
@@ -54,11 +60,19 @@ class StubProgress:
 	extends Node
 	var pct := 0.0
 	var penalty := 0.0
+	# The off-road clock the OFF TRACK warning mirrors: seconds spent off the road,
+	# and the seconds left before TrackProgress snaps the car back.
+	var off_road := 0.0
+	var off_road_left := -1.0
 	signal cut_billed(incident_s: float, total_s: float)
 	func progress_percent() -> float:
 		return pct
 	func cut_penalty_s() -> float:
 		return penalty
+	func off_road_time() -> float:
+		return off_road
+	func off_road_seconds_left() -> float:
+		return off_road_left
 
 
 var _car: StubCar
@@ -437,6 +451,57 @@ func test_cut_flash_relayed_to_hud_only_while_running() -> void:
 	_to_running(sm)
 	_progress.cut_billed.emit(1.4, 1.4)
 	assert_eq(_hud.flash_args, [1.4, 1.4], "cut flash relayed while running")
+
+
+func test_off_road_warning_waits_out_the_grace_then_shows_the_countdown() -> void:
+	# The warning is held back by off_road_warning_after_s so everyday rally excursions
+	# (running wide, a jump landing on the verge) don't flash it every corner; past the
+	# grace it mirrors TrackProgress's countdown. Synthetic grace value, not the
+	# authored one — a designer retuning it must not break this.
+	Config.data.off_road_warning_after_s = 1.0
+	var sm := _make()
+	_to_running(sm)
+	_progress.off_road = Config.data.off_road_warning_after_s * 0.5
+	_progress.off_road_left = 4.0
+	sm._process(0.1)
+	assert_eq(_hud.off_road_shown.size(), 0, "a brief excursion stays under the grace and shows nothing")
+	_progress.off_road = Config.data.off_road_warning_after_s + 0.1
+	_progress.off_road_left = 3.0
+	sm._process(0.1)
+	assert_eq(_hud.off_road_shown, [3.0], "past the grace the warning shows the seconds left")
+
+
+func test_off_road_warning_hidden_once_back_on_the_road() -> void:
+	Config.data.off_road_warning_after_s = 1.0
+	var sm := _make()
+	_to_running(sm)
+	_progress.off_road = Config.data.off_road_warning_after_s + 0.1
+	_progress.off_road_left = 2.0
+	sm._process(0.1)
+	assert_eq(_hud.off_road_shown.size(), 1, "warning up while off the road")
+	# Back on the road: TrackProgress zeroes its clock, so the warning comes down.
+	_progress.off_road = 0.0
+	_progress.off_road_left = -1.0
+	var hides_before := _hud.hide_off_road_calls
+	sm._process(0.1)
+	assert_gt(_hud.hide_off_road_calls, hides_before, "returning to the road hides the warning")
+	assert_eq(_hud.off_road_shown.size(), 1, "and it isn't shown again")
+
+
+func test_off_road_warning_cleared_at_the_finish() -> void:
+	# Crossing the line off-road must not leave the warning stranded under the finish
+	# panel, where the player can't act on it. (TrackProgress keeps its clock running,
+	# so the car is still recovered — just silently.)
+	Config.data.off_road_warning_after_s = 1.0
+	var sm := _make()
+	_to_running(sm)
+	_progress.off_road = Config.data.off_road_warning_after_s + 0.1
+	_progress.off_road_left = 2.0
+	sm._process(0.1)
+	var hides_before := _hud.hide_off_road_calls
+	_progress.pct = 1.0  # cross the finish
+	sm._process(0.1)
+	assert_gt(_hud.hide_off_road_calls, hides_before, "the finish takes the warning down")
 
 
 func test_main_scene_holds_car_at_boot() -> void:

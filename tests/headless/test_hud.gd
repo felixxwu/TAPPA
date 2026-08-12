@@ -57,6 +57,7 @@ func before_each() -> void:
 	# Force the diagnostic readout + stage widgets back to hidden (tests show them).
 	var hud = _scene.get_node("HUD")
 	hud.hide_countdown()
+	hud.hide_off_road()  # also clears its change-gate, so the next show_off_road re-formats
 	for w in ["StageCompletePanel", "StageDeltaLabel", "CutFlashLabel"]:
 		var node := hud.get_node_or_null(w)
 		if node != null:
@@ -165,6 +166,33 @@ func test_seed_text_formatting() -> void:
 	const Hud = preload("res://scripts/hud.gd")
 	assert_eq(Hud.seed_text(42), "Seed 42", "seed readout echoes the seed")
 	assert_eq(Hud.seed_text(-7), "Seed -7", "negative seeds print verbatim")
+
+
+func test_off_road_text_formatting() -> void:
+	# Pure formatter for the off-track warning: the label plus the seconds left on the
+	# reset clock, to a tenth. Never shows a negative countdown — the clock can tick
+	# slightly past zero between the reset firing and the HUD's next frame.
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.off_road_text(3.0), "OFF TRACK  3.0", "whole seconds keep their tenth")
+	assert_eq(Hud.off_road_text(1.25), "OFF TRACK  1.2", "the countdown reads to a tenth")
+	assert_eq(Hud.off_road_text(0.0), "OFF TRACK  0.0", "an expired clock reads zero")
+	assert_eq(Hud.off_road_text(-0.5), "OFF TRACK  0.0", "a negative countdown is clamped to zero")
+
+
+func test_off_road_warning_shows_and_hides() -> void:
+	# The warning is a live state readout, not a fading popup: show_off_road puts it up
+	# and it stays up until hide_off_road takes it down (StageManager owns that call).
+	var hud = _scene.get_node("HUD")
+	var label := hud.get_node("OffRoadLabel") as Label
+	assert_false(label.visible, "the warning starts hidden")
+	hud.show_off_road(2.5)
+	assert_true(label.visible, "show_off_road reveals the warning")
+	assert_eq(label.text, "OFF TRACK  2.5", "and prints the seconds left")
+	hud.show_off_road(1.5)
+	assert_eq(label.text, "OFF TRACK  1.5", "a later call updates the countdown in place")
+	assert_true(label.visible, "and it does not fade out on its own")
+	hud.hide_off_road()
+	assert_false(label.visible, "hide_off_road takes it down")
 
 
 func test_grip_text_formatting() -> void:

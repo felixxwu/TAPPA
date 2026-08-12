@@ -2090,9 +2090,9 @@ track**, **Settings** and **Quit to HQ**.
 Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
 beside its current position** — "the middle of the road, regardless of where the car
 is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query).
-This is deliberately **not** `recovery_pose()` (which the off-track leash / stuck
+This is deliberately **not** `recovery_pose()` (which the off-track reset / stuck
 watchdog use): that pose is pinned to the *furthest* offset reached and freezes the
-moment the car leaves the leash, so a strayed car would reset to a stale point that's
+moment the car stops banking progress, so a strayed car would reset to a stale point that's
 no longer beside it — feeling like the button does nothing. It's also **not** the full
 start-line reset (`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track"
 menu item is now the **only** player-facing way to reset — there is no direct reset

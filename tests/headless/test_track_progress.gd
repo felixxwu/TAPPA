@@ -20,6 +20,10 @@ class StubCar:
 var _car: StubCar
 var _curve: Curve2D
 
+# Fixed step the timed tests drive _physics_process with. Small enough that a
+# "just under the timeout" assertion has room, large enough to keep the loops short.
+const _TICK := 0.05
+
 
 func before_each() -> void:
 	Config.reset()
@@ -44,6 +48,26 @@ func _make_progress() -> TrackProgress:
 
 func _put_car(x: float, z: float) -> void:
 	_car.transform.origin = Vector3(x, 0.0, z)
+
+
+# Give the off-road clock a SYNTHETIC timeout for a test, rather than leaning on
+# whatever the authored one is (a designer retuning it must not break these).
+func _set_off_road_timeout(seconds: float) -> void:
+	Config.data.off_road_reset_timeout_s = seconds
+
+
+# A lateral X that is unambiguously off the road — out on the verge, the kind of
+# running-wide a rally car does every other corner — but still well inside the
+# progress leash, where a distance-based reset would never fire. Derived from the
+# live road width + margin, so retuning either keeps the fixture valid.
+func _off_road_x() -> float:
+	return Config.data.track_width * 0.5 + Config.data.off_road_margin_m + 2.0
+
+
+# Run `seconds` of physics at _TICK, leaving the car wherever _put_car left it.
+func _tick_for(tp: TrackProgress, seconds: float) -> void:
+	for _i in maxi(1, int(ceil(seconds / _TICK))):
+		tp._physics_process(_TICK)
 
 
 func test_progress_advances_on_road_and_is_monotonic() -> void:
@@ -133,25 +157,26 @@ func test_progress_gated_by_distance() -> void:
 
 
 func test_wide_tolerance_keeps_running_wide_on_track() -> void:
-	# The reset tolerance is deliberately generous (rally): running wide onto the
-	# verge (x = 15 m, inside the 25 m threshold) still counts as on-track — it
-	# advances progress and does NOT snap back.
+	# The PROGRESS leash is deliberately generous (rally): running wide onto the verge
+	# still banks the metres. It is not a reset trigger — a single tick out there snaps
+	# nothing back, however far out it is (the reset is on a clock, tested below).
 	_put_car(0, 0)
 	var tp := _make_progress()
-	_put_car(15, 40)
+	_put_car(_off_road_x(), 40)
 	tp._physics_process(0.0)
 	assert_almost_eq(tp.progress_offset(), 40.0, 0.5, "running wide within tolerance still advances progress")
-	assert_eq(_car.reset_calls.size(), 0, "no reset while within the wide tolerance")
+	assert_eq(_car.reset_calls.size(), 0, "one tick off the road never resets — the reset is timed")
 
 
-func test_off_track_triggers_reset_to_last_progress_pose() -> void:
+func test_off_road_reset_fires_after_the_timeout() -> void:
+	_set_off_road_timeout(2.0)
 	_put_car(0, 0)
 	var tp := _make_progress()
 	_put_car(0, 30)  # progress to ~30 m, on-road
 	tp._physics_process(0.0)
-	_put_car(40, 30)  # stray well off-road (x = 40 m > 25 m)
-	tp._physics_process(0.0)
-	assert_eq(_car.reset_calls.size(), 1, "off-track stray triggers exactly one reset")
+	_put_car(_off_road_x(), 30)  # off the road, but nowhere near the progress leash
+	_tick_for(tp, Config.data.off_road_reset_timeout_s + _TICK)
+	assert_eq(_car.reset_calls.size(), 1, "staying off the road past the timeout triggers exactly one reset")
 	var xform: Transform3D = _car.reset_calls[0]
 	# XZ matches the centerline at the recorded progress (~0, ~30).
 	assert_almost_eq(xform.origin.x, 0.0, 0.5, "reset X on the centerline")
@@ -163,13 +188,77 @@ func test_off_track_triggers_reset_to_last_progress_pose() -> void:
 	assert_almost_eq(forward, Vector3(0, 0, 1), Vector3(0.02, 0.02, 0.02), "reset faces along the road")
 
 
+func test_off_road_reset_waits_for_the_full_timeout() -> void:
+	# The clock has to actually run out: most of the way there is still no reset, so a
+	# player who drags the car back onto the road in time keeps their run.
+	_set_off_road_timeout(2.0)
+	_put_car(0, 0)
+	var tp := _make_progress()
+	_put_car(_off_road_x(), 20)
+	_tick_for(tp, Config.data.off_road_reset_timeout_s - 4.0 * _TICK)
+	assert_eq(_car.reset_calls.size(), 0, "no reset before the timeout elapses")
+	assert_gt(tp.off_road_time(), 0.0, "the off-road clock is running while out there")
+
+
+func test_a_car_barely_off_the_road_still_gets_reset() -> void:
+	# THE point of the time-based reset. This car is bogged just past the road edge —
+	# far short of the progress leash, which a distance-based reset would need it to
+	# cross. It can't drive back on and it can't get further out, so only a clock
+	# recovers it. Sits at a lateral distance that is off the road but comfortably
+	# INSIDE track_progress_max_dist_m, and the reset must still fire.
+	_set_off_road_timeout(2.0)
+	_put_car(0, 0)
+	var tp := _make_progress()
+	var ditch_x := _off_road_x()
+	assert_lt(ditch_x, Config.data.track_progress_max_dist_m,
+		"fixture sanity: the ditch is inside the progress leash, so distance alone would never reset")
+	_put_car(ditch_x, 20)
+	_tick_for(tp, Config.data.off_road_reset_timeout_s + _TICK)
+	assert_eq(_car.reset_calls.size(), 1, "a car stuck just off the road is recovered by the clock")
+
+
+func test_returning_to_the_road_clears_the_off_road_clock() -> void:
+	# The clock measures a CONTINUOUS excursion. Two long-but-separated trips off the
+	# road, each just short of the timeout, must not add up into a reset — otherwise a
+	# clean run down a twisty stage would eventually snap back for no reason.
+	_set_off_road_timeout(2.0)
+	_put_car(0, 0)
+	var tp := _make_progress()
+	var almost: float = Config.data.off_road_reset_timeout_s - 4.0 * _TICK
+	_put_car(_off_road_x(), 20)
+	_tick_for(tp, almost)
+	_put_car(0, 25)  # back on the road for a single tick
+	tp._physics_process(_TICK)
+	assert_eq(tp.off_road_time(), 0.0, "coming back onto the road zeroes the clock")
+	_put_car(_off_road_x(), 30)
+	_tick_for(tp, almost)
+	assert_eq(_car.reset_calls.size(), 0, "two separate excursions don't accumulate into a reset")
+
+
+func test_off_road_seconds_left_counts_down_and_reads_idle_on_road() -> void:
+	_set_off_road_timeout(2.0)
+	_put_car(0, 0)
+	var tp := _make_progress()
+	tp._physics_process(_TICK)
+	assert_eq(tp.off_road_seconds_left(), -1.0, "on the road there is no pending reset")
+	_put_car(_off_road_x(), 20)
+	tp._physics_process(_TICK)
+	var first := tp.off_road_seconds_left()
+	assert_almost_eq(first, Config.data.off_road_reset_timeout_s - _TICK, 0.001,
+		"the countdown starts at the full timeout less the tick already spent")
+	_tick_for(tp, 4.0 * _TICK)
+	assert_lt(tp.off_road_seconds_left(), first, "the countdown keeps falling while off the road")
+
+
 func test_off_track_reset_can_be_disabled() -> void:
+	_set_off_road_timeout(2.0)
 	_put_car(0, 0)
 	var tp := _make_progress()
 	Config.data.off_track_reset_enabled = false
-	_put_car(40, 30)  # well off-road (x = 40 m > 25 m)
-	tp._physics_process(0.0)
+	_put_car(_off_road_x(), 30)
+	_tick_for(tp, Config.data.off_road_reset_timeout_s * 3.0)
 	assert_eq(_car.reset_calls.size(), 0, "no reset fires when off_track_reset_enabled is false")
+	assert_eq(tp.off_road_time(), 0.0, "the clock doesn't even run while the reset is disabled")
 
 
 func test_falling_below_the_world_y_resets_to_last_progress_pose() -> void:
@@ -402,9 +491,11 @@ func test_offset_reacquires_after_an_off_track_reset() -> void:
 	_put_car(mid.x, mid.y)
 	tp._physics_process(0.0)
 	assert_almost_eq(tp.progress_offset(), 60.0, 1.5, "progress reached the middle of the road")
-	# Stray far off-road: the leash fires and teleports the car back to _best_reset.
+	# Stray far off-road and sit there: the clock runs out and teleports the car back
+	# to _best_reset.
+	_set_off_road_timeout(2.0)
 	_put_car(mid.x + 200.0, mid.y)
-	tp._physics_process(0.0)
+	_tick_for(tp, Config.data.off_road_reset_timeout_s + _TICK)
 	assert_eq(_car.reset_calls.size(), 1, "the stray triggered the off-track reset")
 	var back: Transform3D = _car.reset_calls[0]
 	_put_car(back.origin.x, back.origin.z)
