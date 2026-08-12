@@ -15,6 +15,8 @@ knocked **spectator** ([spectators.md](spectators.md)) rather than a solid prop:
 layer (off the car's mask) and masks only the world layer (terrain + trees), so the
 car drives straight through it; on contact the waker **flings it along the car's
 travel direction** — a fake collision — and it then tumbles on the terrain on its own.
+(The solid roadside prop that *does* stop the car and cost HP is the corner barrier
+— see [barriers.md](barriers.md).)
 They deal **no HP damage**: their collision is decoupled from the car (own layer, off
 the car's mask — see below), so the car never decelerates against a sign, and damage is
 keyed purely to deceleration ([damage.md](damage.md)). They're also *not* in the

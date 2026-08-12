@@ -722,7 +722,7 @@ func has_nitrous() -> bool:
 # get trapped INSIDE the lateral reset leash (nose-down in a pit, flipped, or pinned).
 # TrackProgress runs a watchdog that teleports it back to the last on-road pose (free —
 # no penalty) once it's been stationary and unable to self-recover for a short while.
-## Master toggle for the stuck watchdog. Off ⇒ only the lateral off-track reset runs.
+## Master toggle for the stuck watchdog. Off ⇒ only the timed off-track reset runs.
 @export var recovery_enabled := true
 ## Seconds the car must stay stuck (stationary + can't self-recover) before the
 ## auto-reset fires. Long enough not to interrupt a brief scrabble out of trouble.
@@ -1604,15 +1604,34 @@ func has_nitrous() -> bool:
 ## it with a "terrain_tint" look key.
 @export var terrain_tint := Color(1, 1, 1)
 ## Lateral distance from the road centerline, in metres, within which track
-## progress accrues; straying beyond it triggers the off-track reset. Generous on
-## purpose — you can run wide onto the verge / cut across rough ground (rally!)
-## before being snapped back. The distance is measured against a LOCAL window of
-## the centerline (TrackProgress._local_closest_offset), so this is independent of
-## `track_clearance` and won't snap onto a different track section.
+## progress accrues. Generous on purpose — you can run wide onto the verge / cut
+## across rough ground (rally!) and still bank the metres. The distance is measured
+## against a LOCAL window of the centerline (TrackProgress._local_closest_offset),
+## so this is independent of `track_clearance` and won't snap onto a different
+## track section. NOT a reset trigger — the off-track reset is time-based
+## (`off_road_reset_timeout_s`). It does still size the precomputed terrain
+## corridor (TerrainManager.corridor_coords), which is why it stays modest.
 @export var track_progress_max_dist_m := 50.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
+## Extra metres beyond the road EDGE (`track_width * 0.5`) the car must be before
+## it counts as off the road and the reset clock starts. The road is a fixed width,
+## so "off the road" is a clean geometric test; this margin keeps a wheel clipping
+## the verge, or a slide that hangs the tail out, from starting the clock.
+@export_range(0.0, 20.0) var off_road_margin_m := 2.0
+## Seconds the car may stay CONTINUOUSLY off the road (past the edge + margin above)
+## before it is snapped back to the last on-road pose. This is the off-track reset:
+## it is driven by time, not by how far out the car gets, so a car bogged in a ditch
+## a couple of metres off the verge — which can neither drive back on nor get far
+## enough out to trip a distance leash — always recovers. Returning to the road
+## zeroes the clock, so a quick cut across the inside costs nothing.
+@export_range(1.0, 30.0) var off_road_reset_timeout_s := 6.0
+## Seconds off the road before the HUD shows the OFF TRACK warning + countdown.
+## A grace period: brief excursions (running wide, a jump landing on the verge)
+## are normal rally driving and shouldn't flash a warning every corner. Must be
+## below `off_road_reset_timeout_s` or the warning never appears before the reset.
+@export_range(0.0, 30.0) var off_road_warning_after_s := 2.0
 ## Absolute world Y below which the car is considered to have fallen off the
 ## world entirely (a void with no water plane) and is snapped back to the last
 ## on-road pose (TrackProgress._best_reset), regardless of lateral distance from
@@ -2039,6 +2058,35 @@ func has_nitrous() -> bool:
 ## Peak tumble spin (rad/s) at full launch speed; scaled down toward zero as the car
 ## slows, so a gentle bump produces a gentle tumble.
 @export_range(0.0, 30.0) var sign_knock_spin := 11.0
+
+@export_group("Corner Barriers")
+# Solid crash barriers along the OUTSIDE of the stage's sharp corners
+# (features/barriers.md). Planned by BarrierLayout, built by BarrierField from 2 m
+# BarrierSection modules stitched end to end. The look follows the road surface: the
+# steel armco guardrail on gravel, the precast concrete jersey rail on tarmac.
+# Unlike the roadside signs these are SOLID and in the damage obstacle group — hitting
+# one costs HP.
+## Master switch for the corner barriers. The benchmark's barriers toggle drives this
+## (features/benchmark.md); normal play leaves it on.
+@export var barriers_enabled := true
+## Length of one barrier module, in metres — the pitch a run is stitched at.
+@export_range(0.5, 8.0) var barrier_section_length_m := 2.0
+## Clear gap, in metres, between the visible road edge and the barrier's nearest face.
+## Measured to the face, so the armco and the wider-footed jersey rail leave the same gap.
+## KEEP `this + the barrier's own depth` (0.6 m at the jersey's foot) UNDER
+## `2 x tree_road_margin_m`, or trees start spawning inside the barrier's footprint —
+## the tree scatter rejects on the road inflated by that margin and knows nothing about
+## the barrier. See features/barriers.md.
+@export_range(0.0, 4.0) var barrier_road_gap_m := 0.4
+## How far, in metres, a run extends before the corner entry and past its exit, so the
+## barrier starts before the car needs it rather than exactly on the apex.
+@export_range(0.0, 20.0) var barrier_lead_m := 5.0
+## Tarmac-ness (0..1, as TerrainManager.surface_at reports) at or above which a module
+## uses the concrete jersey rail instead of the steel armco.
+@export_range(0.0, 1.0) var barrier_tarmac_threshold := 0.5
+## How far, in metres, each module is sunk into the ground. Small: enough that a rigid
+## module on slightly uneven verge buries its foot rather than floating above it.
+@export_range(0.0, 0.5) var barrier_sink_m := 0.06
 
 @export_group("Finish Arch")
 # The inflatable rally gates straddling the road (features/finish-arch.md): a
@@ -2507,6 +2555,22 @@ func sign_render_params() -> Dictionary:
 		"knock_mask": 1,
 		# Shared world-prop render distance (same field foliage uses) so resting signs
 		# cull at the same range as the trees/spectators. See MeshUtil.apply_visibility_range.
+		"render_distance_m": tree_render_distance_m,
+		"render_fade_m": tree_render_fade_m,
+	}
+
+
+# Everything BarrierLayout.plan + BarrierField.build need (features/barriers.md).
+# `track_width` and the shared world-prop render distance come along so the barrier
+# lines up with the road and culls with the rest of the roadside dressing.
+func barrier_render_params() -> Dictionary:
+	return {
+		"section_length_m": barrier_section_length_m,
+		"road_gap_m": barrier_road_gap_m,
+		"lead_m": barrier_lead_m,
+		"tarmac_threshold": barrier_tarmac_threshold,
+		"sink_m": barrier_sink_m,
+		"track_width": track_width,
 		"render_distance_m": tree_render_distance_m,
 		"render_fade_m": tree_render_fade_m,
 	}

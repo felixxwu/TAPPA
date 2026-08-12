@@ -42,6 +42,7 @@ const TOGGLES: Array[Dictionary] = [
 	{"key": "vegetation", "name": "Trees & bushes"},
 	{"key": "spectators", "name": "Spectators"},
 	{"key": "signs", "name": "Roadside signs"},
+	{"key": "barriers", "name": "Corner barriers"},
 	{"key": "distant_terrain", "name": "Distant terrain"},
 	{"key": "road_markings", "name": "Road markings"},
 	{"key": "surface_fx", "name": "Tire marks & dust FX"},
@@ -155,7 +156,7 @@ func exit_to_hq() -> void:
 # can't be a hand-maintained list of it — see _snapshot_fields.
 const _OVERRIDDEN_FIELDS: Array[String] = [
 	"target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
-	"vegetation_enabled", "spectators_enabled", "signs_enabled",
+	"vegetation_enabled", "spectators_enabled", "signs_enabled", "barriers_enabled",
 	"distant_terrain_enabled", "road_markings_enabled",
 	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
 	"tree_render_distance_m",
@@ -197,6 +198,7 @@ func apply_overrides(cfg: GameConfig) -> void:
 	cfg.vegetation_enabled = get_option("vegetation")
 	cfg.spectators_enabled = get_option("spectators")
 	cfg.signs_enabled = get_option("signs")
+	cfg.barriers_enabled = get_option("barriers")
 	cfg.distant_terrain_enabled = get_option("distant_terrain")
 	cfg.road_markings_enabled = get_option("road_markings")
 	cfg.tire_marks_enabled = get_option("surface_fx")

@@ -91,17 +91,36 @@ func test_ring_spawns_from_cache_without_recompute() -> void:
 	assert_eq(m.loaded_coords().size(), ring * ring, "full ring spawned synchronously from cache")
 
 
-func test_cache_miss_with_populated_cache_spawns_no_chunk() -> void:
+func test_focus_beyond_the_corridor_is_a_quiet_hole() -> void:
+	# The off-track reset is TIMED, not distance-bounded (features/progress.md), so the
+	# car is no longer hard-leashed inside the precomputed corridor — a big enough launch
+	# can outrun it. Still a hole rather than a build hitch: the car can't get far before
+	# the clock resets it, and the DistantTerrain backdrop covers the view out there. What
+	# must NOT happen is an error — leaving the corridor is expected now, not a bug.
 	var m := _make_manager()
 	m.precompute_corridor(_straight_centerline(), 25.0)
-	# Teleport far outside the corridor: every ring coord misses. Prefer a HOLE over a
-	# mid-drive build hitch — the manager spawns nothing and logs each miss once.
 	m.update_focus(Vector3(5000, 0, 5000))
-	assert_eq(m.loaded_coords().size(), 0, "cache miss spawns no chunk (hole, not hitch)")
-	# Re-crossing the same missing region must not re-log (once per coord).
-	m.update_focus(Vector3(5050, 0, 5000))
-	assert_push_error_count(m._logged_misses.size(),
-		"each missing coord logged at most once")
+	assert_eq(m.loaded_coords().size(), 0, "nothing is built beyond the corridor")
+	assert_eq(m._logged_misses.size(), 0, "and an excursion is not reported as an invariant break")
+
+
+func test_missing_chunk_inside_the_corridor_is_a_loud_hole() -> void:
+	# A coord the precompute was TOLD to cover but didn't is a real bug (a hole in the
+	# region maths, or a cache cleared out from under us) — so unlike an excursion
+	# beyond the corridor, this one is logged.
+	var m := _make_manager()
+	m.precompute_corridor(_straight_centerline(), 25.0)
+	var focus := Vector3(150, 0, 0)  # mid-track, deep inside the corridor
+	var centre: Vector2i = m.chunk_coord_for(focus)
+	assert_true(m.has_cached(centre), "fixture sanity: the corridor really does cover mid-track")
+	m._chunk_cache.erase(centre)  # punch a hole the region maths says shouldn't exist
+	m.update_focus(focus)
+	assert_false(m.loaded_coords().has(centre), "the missing chunk is left as a hole")
+	assert_eq(m._logged_misses.size(), 1, "the hole is logged once")
+	# Re-crossing the same missing coord must not re-log.
+	m.update_focus(focus + Vector3(ManagerScript.CHUNK_M, 0, 0))
+	m.update_focus(focus)
+	assert_push_error_count(m._logged_misses.size(), "each missing coord logged at most once")
 
 
 func test_empty_cache_builds_on_demand_without_error() -> void:

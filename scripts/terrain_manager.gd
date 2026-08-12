@@ -213,10 +213,10 @@ var _cached_amplitudes: PackedFloat32Array = PackedFloat32Array()
 var _noise_cache_valid := false
 
 # Precomputed terrain: coord -> the data dict compute_chunk_data returns. Filled
-# behind the loading screen (world.gd) for the whole reachable corridor — the
-# play area is bounded by the off-track reset leash, so this is the complete set
-# of chunks the level can request. Runtime chunk loads are then cache lookups
-# (~0.2 ms node build), and height_at/light_at serve from it (it is the terrain
+# behind the loading screen (world.gd) for the whole reachable corridor — sized from
+# the track-progress leash, so it covers every chunk the level realistically requests
+# (see _reconcile for the rare excursion beyond it). Runtime chunk loads are then
+# cache lookups (~0.2 ms node build), and height_at/light_at serve from it (the terrain
 # the player actually sees: road flattening included, unlike the raw noise).
 var _chunk_cache: Dictionary = {}
 
@@ -667,10 +667,9 @@ func target_coords(center: Vector2i) -> Array:
 
 
 # Every chunk coord the runtime ring can request while the car stays within
-# `leash_m` of the centerline (the off-track reset leash) — plus one chunk of
-# margin for the physics tick between crossing the leash and the reset firing.
-# The margin is derived from the LIVE leash value, never hard-coded: the
-# invariant this region guarantees depends on that tunable. Straight spans
+# `leash_m` of the centerline (callers pass the track-progress leash) — plus one
+# chunk of margin. The margin is derived from the LIVE leash value, never
+# hard-coded: the region this guarantees depends on that tunable. Straight spans
 # tessellate to just their endpoints, so each polyline segment is sub-sampled
 # at half a chunk so no interior chunk is skipped.
 # The corridor dilation margin (chunks) — RADIUS render ring + leash overshoot + 1
@@ -824,8 +823,8 @@ func cache_chunk(coord: Vector2i) -> void:
 		data.erase(dead_key)
 	# Pre-build the PhysicsServer collision shape now, behind the loading screen, for
 	# every chunk that could EVER carry live collision — the leash-bounded band
-	# (`in_collision_band`, sized off the off-track reset leash passed into
-	# precompute_corridor, never a hardcoded distance). This is the actual expensive
+	# (`in_collision_band`, sized off the leash passed into precompute_corridor,
+	# never a hardcoded distance). This is the actual expensive
 	# step (PhysicsServer3D committing a full SAMPLES x SAMPLES heightfield), previously
 	# paid on the main thread the first time a chunk crossed into the live ring
 	# (TerrainChunk.apply_data). Doing it here means a crossing later just hands the
@@ -1574,11 +1573,18 @@ func _reconcile(center: Vector2i) -> void:
 			# _process out until then.
 			on_demand_builds += 1
 			_spawn_chunk(coord, compute_chunk_data(coord))
-		elif not _logged_misses.has(coord):
-			# Real-play corridor miss: prefer a HOLE over a mid-drive build hitch.
-			# Spawn nothing; log once per coord (crossings re-visit the same coord).
+		elif _corridor_class.has(coord) and not _logged_misses.has(coord):
+			# Real-play cache miss: prefer a HOLE over a mid-drive build hitch. Spawn
+			# nothing; log once per coord (crossings re-visit the same coord).
+			#
+			# Only an IN-corridor miss is an error. Since the off-track reset went timed
+			# (features/progress.md) the car is no longer hard-leashed inside the corridor,
+			# so a big enough launch can simply leave it — expected, not a bug, and not
+			# worth a build hitch to paper over: the car can't get far before the clock
+			# resets it, the static DistantTerrain backdrop still draws the landscape out
+			# there, and if it drops through, `fell_off_world_y` catches it first.
 			_logged_misses[coord] = true
-			push_error("terrain cache miss at %s — corridor region/leash invariant broke (leaving a hole)" % coord)
+			push_error("terrain cache miss at %s — corridor region invariant broke (leaving a hole)" % coord)
 	# Collision only on the near band: chunks within `collision_ring` of the focus
 	# carry live collision, farther loaded (render-only) chunks disable theirs. The
 	# detail ring does the same for the lazily-built finest LOD level (a no-op on

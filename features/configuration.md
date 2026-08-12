@@ -140,7 +140,7 @@ Per-car `max_hp` is CarLibrary metadata, not a `GameConfig` field. See
 Automatic stuck-car recovery (see [progress.md](progress.md)).
 | Property | Default | Purpose |
 |----------|---------|---------|
-| `recovery_enabled` | true | Master toggle for the stuck watchdog (the lateral off-track reset runs regardless) |
+| `recovery_enabled` | true | Master toggle for the stuck watchdog (the timed off-track reset runs regardless) |
 | `recovery_timeout_s` | 3.0 | Seconds stationary + unable to self-recover before the free auto-reset fires |
 | `recovery_speed_mps` | 0.7 | Below this speed the car counts as "not moving" |
 | `recovery_depth_m` | 3.0 | Metres below the road surface that count as fallen-into-a-pit (recovers even with no throttle) |

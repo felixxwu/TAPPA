@@ -55,3 +55,8 @@ service-account*.json
 
 # Blender autosave/backup files
 *.blend1
+
+# Published version document — generated in CI by deploy.yml's deploy-pages job
+# (its build number is the commit count of the commit being released, so it can
+# never be committed). See features/update-check.md.
+/docs/version.json

@@ -681,7 +681,8 @@ mouse-consuming backdrop** (`MOUSE_FILTER_STOP`, swallows clicks) + **centred ho
 `UITheme.panel`** with a title, an autowrap body, and one button per action. Each action is
 a dict `{ "label": String, "callback": Callable, "disabled": bool (optional) }`. When an
 action's button is pressed, the popup dismisses and runs its callback; Back routes to the
-configured action (default: the last one — the dismiss convention).
+configured action (default: the **first** one — dismiss/leave sits leftmost, see
+"Button order" above).
 
 **Contract:** `ConfirmPopup.open(host, title, body, actions, default_index := 0, back_index := -1, allow_stack := false) -> ConfirmPopup` — **returns `null` when refused; callers must not assume a popup came back.**
 
@@ -691,16 +692,18 @@ configured action (default: the last one — the dismiss convention).
 - `actions` — Array of action dicts; disabled actions are greyed and unselectable.
 - `default_index` — 0-based index to focus on open (defaults to 0, falls back to first
   enabled if the default is disabled).
-- `back_index` — 0-based index of the action to fire on Back / cancel (defaults to the
-  last action — the dismiss convention). A negative `back_index` (-1) dismisses without
-  firing any callback.
+- `back_index` — 0-based index of the action to fire on Back / cancel. **Defaults to the
+  FIRST action**, because the house order puts the leaving/cancel action leftmost (it used
+  to default to the last, which after that reorder pointed Esc at the *confirming* button —
+  see the comment in `ConfirmPopup.open`). Pass an explicit index to override; a negative
+  one is replaced by the default rather than dismissing silently.
 
 The popup **builds its own CanvasLayer** under `host` (layer 101, above overlays), so it's
 independent of the hosting scene. It's **MenuNav-wired** (keyboard + gamepad navigable),
 emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it. **New
 confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
 `ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause
-menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms**, and HQ **detune-to-enter confirm** (over-powered car).
+menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms**, HQ **detune-to-enter confirm** (over-powered car), and the HQ **"Update available" prompt** on the native builds (`hq.gd::_check_for_update` — see [update-check.md](update-check.md)).
 
 **Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its
 own action buttons (`trigger_back` is reachable only from `ui_cancel`/`menu_back` — Escape
@@ -2090,9 +2093,9 @@ track**, **Settings** and **Quit to HQ**.
 Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
 beside its current position** — "the middle of the road, regardless of where the car
 is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query).
-This is deliberately **not** `recovery_pose()` (which the off-track leash / stuck
+This is deliberately **not** `recovery_pose()` (which the off-track reset / stuck
 watchdog use): that pose is pinned to the *furthest* offset reached and freezes the
-moment the car leaves the leash, so a strayed car would reset to a stale point that's
+moment the car stops banking progress, so a strayed car would reset to a stale point that's
 no longer beside it — feeling like the button does nothing. It's also **not** the full
 start-line reset (`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track"
 menu item is now the **only** player-facing way to reset — there is no direct reset

@@ -375,6 +375,20 @@ jobs:
   deploy-pages:
     name: Deploy /docs to GitHub Pages
     runs-on: ubuntu-latest
+    # WHY THIS ONE HAS `needs` DESPITE PUBLISHING NO GAME. It also publishes
+    # docs/version.json — the document the native builds' update check reads (see
+    # features/update-check.md). Announcing a build whose itch upload then failed
+    # would send players to a page that still has the old download, so the three
+    # itch jobs gate it. publish-play is deliberately NOT in the list — even though
+    # Play players DO get prompted (a Play testing track does not reliably update
+    # its testers): that job's failure modes are slow or manual (first-upload
+    # refusal, review holds, staged rollout), and gating on it would mute the
+    # notification for every itch player whenever Play is having a bad week. The
+    # cost of leaving it out is one wasted look at the Play listing.
+    #
+    # This does not slow the release down — the game ships from the export jobs,
+    # and Pages was never in that path.
+    needs: [export-web, export-android, export-windows]
     # Never fail the release over this job. It publishes the redirect page only
     # (see the NOTE below) — the playable game ships from export-web to itch and
     # from publish-play to Play, neither of which touches Pages. So a stuck
@@ -387,9 +401,10 @@ jobs:
     # is not raisable (see the deploy step below), so soft-failing is the only
     # lever left. Check this job by hand when the redirect page itself changes.
     continue-on-error: true
-    # No build step needed — we publish the static /docs folder as-is, the same
-    # content GitHub's legacy Pages build used to serve. This replaces that
-    # automatic "pages-build-deployment" run so everything lives in one workflow.
+    # We publish the static /docs folder plus ONE generated file (version.json,
+    # written by the step below) — otherwise the same content GitHub's legacy Pages
+    # build used to serve. This replaces that automatic "pages-build-deployment"
+    # run so everything lives in one workflow.
     # Requires the repo's Pages source to be set to "GitHub Actions"
     # (Settings -> Pages -> Build and deployment -> Source).
     #
@@ -416,9 +431,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # Full history: version.json's build number is the commit count, the
+          # same value the build scripts stamp into the exports. A shallow clone
+          # would publish "1" and tell every player they are up to date.
+          fetch-depth: 0
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
+
+      # The document the native builds' update check GETs on launch (see
+      # features/update-check.md). Generated rather than committed, because the
+      # number it carries is the commit count of the commit being released — a
+      # checked-in file could never name its own commit.
+      - name: Generate docs/version.json
+        run: |
+          set -euo pipefail
+          COMMITS="$(git rev-list --count HEAD)"
+          SHA="$(git rev-parse --short HEAD)"
+          # `build` is what the client compares; `version` mirrors the string
+          # stamped into the exports so the file is legible to a human too.
+          cat > docs/version.json <<EOF
+          {
+            "build": ${COMMITS},
+            "version": "0.${COMMITS} (${SHA})",
+            "sha": "${SHA}",
+            "url": "https://felixxwu.itch.io/tappa"
+          }
+          EOF
+          cat docs/version.json
 
       - name: Upload /docs as the Pages artifact
         uses: actions/upload-pages-artifact@v5
