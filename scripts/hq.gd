@@ -669,9 +669,10 @@ func _ready() -> void:
 	_check_for_update()
 
 
-# Tell the player when a newer NATIVE build is out (the itch APK / Windows .exe are
-# the two builds nothing updates for them). All of the policy lives in UpdateCheck —
-# see features/update-check.md; this is only the placement and the modal.
+# Tell the player when a newer NATIVE build is out — every native build, Play
+# included: a Play testing track does not reliably push updates to its testers. Only
+# the destination differs (UpdateCheck.store_url / store_label). All of the policy
+# lives in UpdateCheck — see features/update-check.md; this is placement + modal.
 func _check_for_update() -> void:
 	if not UpdateCheck.applicable():
 		return
@@ -702,9 +703,9 @@ func _check_for_update() -> void:
 			# Leaving is left, proceeding is right (features/menus.md → "Button order");
 			# Back routes to index 0, so Esc / gamepad-B is "Not now".
 			{"label": "Not now", "callback": remember},
-			{"label": "Get the update", "callback": func() -> void:
+			{"label": UpdateCheck.store_label(), "callback": func() -> void:
 				remember.call()
-				OS.shell_open(UpdateCheck.STORE_URL)},
+				OS.shell_open(UpdateCheck.store_url())},
 		], 1)
 
 

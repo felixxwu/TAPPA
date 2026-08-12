@@ -379,10 +379,12 @@ jobs:
     # docs/version.json — the document the native builds' update check reads (see
     # features/update-check.md). Announcing a build whose itch upload then failed
     # would send players to a page that still has the old download, so the three
-    # itch jobs gate it. publish-play is deliberately NOT in the list: Play ships
-    # its own updates, the Play build never reaches the prompt, and that job has
-    # its own well-known failure modes (first-upload refusal, review holds) which
-    # must not hold the version document back.
+    # itch jobs gate it. publish-play is deliberately NOT in the list — even though
+    # Play players DO get prompted (a Play testing track does not reliably update
+    # its testers): that job's failure modes are slow or manual (first-upload
+    # refusal, review holds, staged rollout), and gating on it would mute the
+    # notification for every itch player whenever Play is having a bad week. The
+    # cost of leaving it out is one wasted look at the Play listing.
     #
     # This does not slow the release down — the game ships from the export jobs,
     # and Pages was never in that path.

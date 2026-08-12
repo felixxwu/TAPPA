@@ -81,7 +81,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
 | [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, itch/Play/Pages/Firestore jobs, the `install-butler` composite action, secrets |
-| [update-check.md](update-check.md) | Launch-time "a newer build is out" prompt for the NATIVE builds — `UpdateCheck`, the Pages-published `version.json`, why web/Play are excluded |
+| [update-check.md](update-check.md) | Launch-time "a newer build is out" prompt for every NATIVE build (Play included — a testing track doesn't self-update) — `UpdateCheck`, the Pages-published `version.json`, per-store destinations, why web is excluded |
 
 ## File-to-feature quick map
 

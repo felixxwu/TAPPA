@@ -22,7 +22,9 @@ run in parallel. `deploy-pages` waits on the three **itch** jobs — not because
 ships anything, but because it publishes `docs/version.json`, the document the
 native builds' update check reads, and announcing a build whose itch upload failed
 would point players at a page still serving the old download (see
-[update-check.md](update-check.md); `publish-play` is deliberately excluded). It
+[update-check.md](update-check.md); `publish-play` is deliberately excluded — Play
+players are prompted too, but that job's slow/manual failure modes must not mute
+the notification for itch players). It
 stays `continue-on-error`, so a Pages outage still can't turn a good release red,
 and it was never in the path that ships the game. `deploy-rules` has no `needs` at
 all, so a rules failure can't hold up a game release — see

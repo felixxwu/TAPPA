@@ -2,30 +2,46 @@
 
 On launch, the **native** builds ask whether a newer build has shipped and — if
 one has — raise a single dismissible prompt over the title shot with a link to the
-download page. Nothing else about the game changes: it is one GET, off the boot
-critical path, and every failure mode is a silent no-op.
+store they came from. Nothing else about the game changes: it is one GET, off the
+boot critical path, and every failure mode is a silent no-op.
 
 | Piece | Where |
 |---|---|
-| The policy (parsing, the decision, the fetch) | `scripts/update_check.gd` (`UpdateCheck`) |
+| The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |
 | Placement + the modal | `scripts/hq.gd` → `_check_for_update` |
 | The published document | `.github/workflows/deploy.yml` → `deploy-pages` → *Generate docs/version.json* |
 | The "this is a Play build" marker | `export_presets.cfg` → `preset.2` (`custom_features="play"`) |
 | Tests | `tests/headless/test_update_check.gd` |
 
-## Which builds check, and why the others don't
+## Which builds check, and where each is sent
 
-| Build | Checks? | Why |
-|---|---|---|
-| itch Windows `.exe` | **yes** | nothing updates a downloaded exe for the player |
-| itch Android `.apk` (sideload) | **yes** | same — a sideloaded APK has no updater |
-| Web | no | `build_web.sh` uploads to a build-unique itch path, so a browser player is by construction on the newest build |
-| Google Play `.aab` | no | Play ships its own updates, and pointing a Play install at an off-store download is against Play policy |
-| Editor / test runner | no | the version is the unstamped `0.0-dev`, which has no build number |
+| Build | Checks? | Sent to | Why |
+|---|---|---|---|
+| itch Windows `.exe` | **yes** | itch page | nothing updates a downloaded exe for the player |
+| itch Android `.apk` (sideload) | **yes** | itch page | same — a sideloaded APK has no updater |
+| Google Play `.aab` | **yes** | its Play listing | **Play does not reliably update the app for the player.** A closed/internal testing track in particular can leave testers sitting on an old build indefinitely, which is exactly the case this feature exists for |
+| Web | no | — | `build_web.sh` uploads to a build-unique itch path, so a browser player is by construction on the newest build |
+| Editor / test runner | no | — | the version is the unstamped `0.0-dev`, which has no build number |
 
-`UpdateCheck.applicable()` is the single gate for all of the above (`Platform.is_headless()`,
-`Platform.is_web()`, `OS.has_feature("play")`, and a parseable local build number).
-When it returns false **no request is made at all**.
+`UpdateCheck.applicable()` is the single gate (`Platform.is_headless()`,
+`Platform.is_web()`, and a parseable local build number). When it returns false
+**no request is made at all**.
+
+**A Play install is never pointed at the itch download.** Play's policy is that a
+Play install updates through Play, so `UpdateCheck.store_url()` returns the Play
+listing (`https://play.google.com/store/apps/details?id=tappa.game` — the https
+form, not `market://`, so it opens the Play app when installed and a browser when
+not, and can't dead-end), and `store_label()` says **"Open Google Play"** rather
+than "Get the update", because the player still has to press Update themselves.
+Both take the `play` flag as a parameter defaulting to `OS.has_feature("play")`, so
+both branches are reachable from a test on any platform.
+
+The `play` feature comes from `preset.2`'s `custom_features` and is the only thing
+that tells the two Android builds apart at runtime. The package id is duplicated in
+three places by necessity — `UpdateCheck.PLAY_PACKAGE`, `preset.2`'s
+`package/unique_name`, and `deploy.yml`'s `PACKAGE_NAME` — because Godot 4.6 has no
+runtime API that reports it (no `OS.get_bundle_identifier`). Changing the Play
+package means changing all three.
 
 Desktop players who installed through the **itch app** already get automatic
 updates. They can't be told apart from a direct download, so they may see the
@@ -71,9 +87,16 @@ one coupling this feature adds to the pipeline: announcing a build whose itch
 upload failed would send players to a page still serving the old download. It
 costs nothing in release latency — Pages was never in the path that ships the
 game — and the job stays `continue-on-error`, so a Pages outage still can't turn
-a good release red. `publish-play` is deliberately **not** in `needs`: the Play
-build never reaches the prompt, and that job's known failure modes (first-upload
-refusal, review holds) must not hold the version document back. See
+a good release red.
+
+`publish-play` is deliberately **not** in `needs`, even though Play players do get
+prompted. Its failure modes are slow or manual (the first-upload refusal, review
+holds, a staged rollout), and gating the document on it would mute the notification
+for every itch player whenever Play is having a bad week. The cost of leaving it
+out is bounded and mild in the other direction: a Play player can occasionally be
+nudged before their track actually offers the build, which costs them one look at
+the listing. Announcing a build that reached **no** store is the failure worth
+preventing, and the three itch jobs already prevent it. See
 [release-pipeline.md](release-pipeline.md).
 
 **Why not Firestore.** The project already talks to Firestore ([cloud-save.md](cloud-save.md)),
@@ -104,15 +127,15 @@ boot must never wait on a network round trip. It then:
    an update notice landing on top of that is an interruption. Nothing is recorded
    as dismissed, so the next boot to the title raises it instead;
 2. raises a `ConfirmPopup` (already keyboard + gamepad navigable — see
-   [menus.md](menus.md)) with **Not now** / **Get the update**, dismiss-left and
-   proceed-right per the house button order, `default_index = 1` and Back routing
-   to "Not now";
+   [menus.md](menus.md)) with **Not now** / `UpdateCheck.store_label()`,
+   dismiss-left and proceed-right per the house button order, `default_index = 1`
+   and Back routing to "Not now";
 3. records the dismissal **from the action callbacks**, not before opening.
    `ConfirmPopup.open` returns `null` when another modal owns the screen, and a
    prompt the player never saw must not count as one they've been shown.
 
-"Get the update" is `OS.shell_open(UpdateCheck.STORE_URL)` — the itch page carries
-both native builds, so one link covers every platform that can reach the prompt.
+The confirming action is `OS.shell_open(UpdateCheck.store_url())` — the itch page
+for the itch builds, the Play listing for the Play build.
 
 ## Testing
 

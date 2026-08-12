@@ -133,3 +133,27 @@ func test_not_applicable_headless() -> void:
 	# Both are reasons to be off, and either one is enough.
 	assert_false(UpdateCheck.applicable(),
 		"the update check is inert in headless / unstamped builds")
+
+
+# --- Where the prompt sends the player ----------------------------------------
+
+func test_a_play_build_is_sent_to_play() -> void:
+	# NEVER the itch download: a Play install must update through Play. This is the
+	# assertion that keeps a well-meaning "one link for everyone" simplification
+	# from becoming a policy violation.
+	assert_eq(UpdateCheck.store_url(true), UpdateCheck.PLAY_URL,
+		"a Play build is sent to its Play listing")
+	assert_false(UpdateCheck.store_url(true).contains("itch.io"),
+		"a Play build is never sent to an off-store download")
+
+
+func test_an_itch_build_is_sent_to_itch() -> void:
+	assert_eq(UpdateCheck.store_url(false), UpdateCheck.ITCH_URL,
+		"the itch builds are sent to the itch page")
+
+
+func test_the_button_names_the_destination() -> void:
+	# "Get the update" on Play would promise a download that isn't coming — the
+	# player has to press Update on the listing themselves.
+	assert_ne(UpdateCheck.store_label(true), UpdateCheck.store_label(false),
+		"the confirming button names the store it opens")

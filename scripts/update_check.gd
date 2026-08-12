@@ -4,10 +4,12 @@ extends RefCounted
 #
 # WHY ONLY NATIVE. The web build is served from a build-unique, cache-busted path
 # on itch (see the header of build_web.sh), so a browser player is by construction
-# already on the newest build — there is nothing to tell them. The sideloaded itch
-# APK and the itch Windows .exe are the two builds nothing updates for the player,
-# and they are what this exists for. The Play build is skipped too: Play ships its
-# own updates, and steering a Play install at an off-store download is against
+# already on the newest build — there is nothing to tell them. Every native build
+# needs telling: the itch .exe and the sideloaded itch .apk have no updater at all,
+# and the PLAY build does not reliably auto-update either — a closed/internal
+# testing track in particular leaves testers sitting on an old build indefinitely.
+# So Play is checked too; what changes is only WHERE the prompt sends the player
+# (store_url), because pointing a Play install at an off-store download is against
 # Play policy. See features/update-check.md.
 #
 # WHAT IS COMPARED. Every build script stamps application/config/version as
@@ -33,10 +35,21 @@ extends RefCounted
 # would keep announcing (or hiding) the wrong build.
 const VERSION_URL := "https://felixxwu.github.io/TAPPA/version.json"
 
-# Where "Get the update" sends the player. The itch page carries both native
-# builds (Windows .exe, Android .apk), so one link covers every platform that can
-# reach the prompt.
-const STORE_URL := "https://felixxwu.itch.io/tappa"
+# Where an itch player is sent. The itch page carries both of the builds it ships
+# (Windows .exe, Android .apk), so one link covers them.
+const ITCH_URL := "https://felixxwu.itch.io/tappa"
+
+# Where a PLAY player is sent — its own store listing, never the itch download:
+# Play's policy is that a Play install updates through Play. The https form (not
+# market://) is deliberate: Android hands it to the Play app when installed and
+# falls back to a browser when not, so it can't dead-end.
+#
+# The package id is duplicated in two other places by necessity — export_presets.cfg
+# preset.2 `package/unique_name` and deploy.yml's `PACKAGE_NAME` — because there is
+# no runtime API that reports it (Godot 4.6 has no OS.get_bundle_identifier).
+# Changing the Play package means changing all three.
+const PLAY_PACKAGE := "tappa.game"
+const PLAY_URL := "https://play.google.com/store/apps/details?id=" + PLAY_PACKAGE
 
 # Save.get_setting / set_setting key holding the newest build the player has
 # already been told about. Lives in the DEVICE-LOCAL settings bag (excluded from
@@ -72,9 +85,22 @@ static func applicable() -> bool:
 		return false
 	if Platform.is_web():
 		return false  # served from a build-unique path; always current
-	if OS.has_feature("play"):
-		return false  # Play ships its own updates (custom_features on the AAB preset)
 	return current_build() > 0
+
+
+# The store this build came from. The `play` feature is set by preset.2's
+# custom_features — it is the only thing that distinguishes the two Android builds
+# at runtime. Parameterised (rather than reading OS.has_feature inline) so both
+# branches are reachable from a test.
+static func store_url(play := OS.has_feature("play")) -> String:
+	return PLAY_URL if play else ITCH_URL
+
+
+# Label for the prompt's confirming button. Naming the destination matters here:
+# "Get the update" on a Play install would imply a download the player is not
+# about to get — Play needs them to press Update on the listing.
+static func store_label(play := OS.has_feature("play")) -> String:
+	return "Open Google Play" if play else "Get the update"
 
 
 # GET the published document and return the build number it names, or -1 for
