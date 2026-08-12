@@ -51,9 +51,28 @@ func setup_settled_car() -> void:
 	SceneTestHelpers.use_test_config()
 	_make_scene()
 	if _has_settled:
-		_car.global_transform = _settled_xform
-		_car.linear_velocity = Vector3.ZERO
-		_car.angular_velocity = Vector3.ZERO
+		# THE POSE MUST BE WRITTEN THROUGH car.gd's reset_to, NOT a bare global_transform
+		# assignment. car.gd documents why on reset_to itself: the physics server DISCARDS a
+		# plain global_transform write made outside the physics step, re-asserting the body's
+		# own ongoing integration instead. Whether the write happened to land therefore
+		# depended on the frame phase this was called from — so the warm path sometimes left
+		# the car wherever it already was rather than at the cached resting pose.
+		#
+		# That is a nasty failure mode because it is SILENT and INTERMITTENT: the car is still
+		# a settled car on flat ground, so most assertions still pass, and only a test reading
+		# something pose-sensitive notices. It cost a real flake — the climbing-FWD steering
+		# test in test_grip_servo_steering.gd read a yaw rate of ~0 in one full-suite run and
+		# passed in isolation and on re-run, because its two other assertions could not tell
+		# the difference.
+		#
+		# reset_to queues the pose for _integrate_forces (the physics-authoritative write
+		# point), and also does the rest of the job this path was doing by hand and
+		# incompletely: it wakes the body (a sleeping body never runs _integrate_forces, so a
+		# queued pose would never be applied), zeroes both velocities, and additionally
+		# re-zeroes steering, the wheel omegas and the engine sim — so a warm-restored car is
+		# a genuinely fresh car rather than one carrying the previous state of everything
+		# except its position.
+		_car.reset_to(_settled_xform)
 		await _wait_physics(RESTORE_FRAMES)
 	else:
 		await _wait_physics(SETTLE_FRAMES)

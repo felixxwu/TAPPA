@@ -119,6 +119,22 @@ levers, in order of payoff:
   form still resolves to the same base). `test_car.gd` / `test_engine.gd` extend
   it; `test_car_types.gd` keeps a per-car-index settled-pose cache via the same
   mechanism.
+
+  **The warm restore must go through `car.gd`'s `reset_to`, never a bare
+  `global_transform` write.** The physics server *discards* a plain
+  `global_transform` assignment made outside the physics step — `reset_to` exists
+  precisely because of that, and queues the pose for `_integrate_forces`, the
+  authoritative write point (it also wakes the body, since a sleeping body never
+  runs `_integrate_forces`, and zeroes the velocities, steering, wheel omegas and
+  engine sim). The warm path originally wrote the transform directly, so whether
+  the car actually moved to the cached pose depended on the frame phase
+  `setup_settled_car` happened to be called from. **This is a flake generator, and
+  a nasty one:** the car is still a settled car on flat ground either way, so
+  almost every assertion still passes and only a pose-sensitive reading notices.
+  It cost one — `test_grip_servo_steering.gd`'s climbing-FWD test read a yaw rate
+  of ~1e-10 in one full-suite run while passing in isolation and on re-run. If a
+  physics test ever fails only inside a full run, suspect the shared settle cache
+  first.
 - **Logic that doesn't need a scene** (flywheel/gearbox/clutch math) lives in
   `test_engine_logic.gd`, which builds a bare `EngineSim` and pays no settle
   cost at all. Reserve the physics fixture for behaviour that genuinely needs
