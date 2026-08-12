@@ -30,6 +30,7 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
+| `OffRoadLabel` | `OFF TRACK  n.n` — seconds until the off-track reset snaps the car back | driven by `StageManager` (centre screen, code-built) |
 | `NitrousGauge` | radial ring gauge (`HudGauge`, see below) whose fill is the tank fraction left, NOS-bottle icon in the hole | `car.drivetrain.engine` (violet; hidden when no nitrous is fitted) |
 | `BoostGauge` | radial ring gauge whose fill is the live boost fraction, dial icon in the hole | `car.drivetrain.engine` (blue; hidden on an NA car) |
 | `HPGauge` | radial ring gauge whose fill is `hp / max_hp`, cross icon in the hole | `car.damage` (colour-graded green→amber→red) |
@@ -152,6 +153,23 @@ resets — built in code, sharing the **top-centre pace-popup spot** with
 precedence** over the pace popup: showing a cut flash hides any live stage-delta
 readout, and `show_stage_delta` no-ops while a cut flash is still on screen.
 Gated by `cut_penalty_enabled`.
+
+## Off-track warning
+
+The **`OffRoadLabel`** mirrors `TrackProgress`'s off-road clock (see
+[progress.md](progress.md)): a red `OFF TRACK  n.n` counting down the seconds left
+before the car is snapped back onto the road. Built in code, anchored at the
+**viewport centre** and hung `_OFF_ROAD_TOP` below it so it clears the centred
+3·2·1·GO countdown and stays out of the eye-line of the road ahead.
+
+Unlike the popups above it is **not a fading pulse** — it mirrors a live state, so it
+has no `_tick_fade` timer: `show_off_road(seconds_left)` puts it up and it stays up
+until `hide_off_road()`. `StageManager._update_off_road_warning` owns both calls,
+polling `TrackProgress.off_road_time()` / `off_road_seconds_left()` each RUNNING
+frame and holding the label back until `off_road_warning_after_s` has elapsed.
+`show_off_road` change-gates on the displayed **tenth**, so a per-frame call only
+re-formats the string ten times a second. `Hud.off_road_text(seconds_left)` is the
+pure formatter (clamps a negative countdown to `0.0`).
 
 ## Pacenote strip
 

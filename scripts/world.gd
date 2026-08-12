@@ -672,8 +672,8 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# follows the same road the progress manager measures).
 	_road_centerline = road_centerline
 
-	# Precompute every chunk the bounded play area can request (the off-track
-	# reset leash bounds it), so in-run chunk loads are instant cache pulls and
+	# Precompute every chunk the play area realistically requests (the track-progress
+	# leash sizes it), so in-run chunk loads are instant cache pulls and
 	# height_at/light_at serve the flattened, collidable terrain. Batched with
 	# frame awaits so the loading label paints and (on web) the tab stays alive.
 	await _stage("Precomputing chunks…")

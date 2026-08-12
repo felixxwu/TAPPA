@@ -196,5 +196,7 @@ func test_reconcile_does_not_build_on_real_play_miss() -> void:
 	m.update_focus(Vector3(8000, 0, 8000))
 	assert_eq(m.integrations_total, before, "no chunk integrated on a real-play miss")
 	assert_eq(m.loaded_coords().size(), 0, "real-play miss leaves a hole (no spawn)")
-	# Each missing coord logs once — declare them expected so GUT doesn't fail the test.
-	assert_push_error_count(m._logged_misses.size(), "one push_error per missing coord")
+	# Out here the coords are OUTSIDE the corridor, which is expected now that the
+	# off-track reset is timed rather than distance-bounded (features/progress.md) —
+	# so it's a silent hole, not a logged invariant break.
+	assert_eq(m._logged_misses.size(), 0, "an excursion beyond the corridor logs nothing")

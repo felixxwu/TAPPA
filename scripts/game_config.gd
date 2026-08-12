@@ -722,7 +722,7 @@ func has_nitrous() -> bool:
 # get trapped INSIDE the lateral reset leash (nose-down in a pit, flipped, or pinned).
 # TrackProgress runs a watchdog that teleports it back to the last on-road pose (free —
 # no penalty) once it's been stationary and unable to self-recover for a short while.
-## Master toggle for the stuck watchdog. Off ⇒ only the lateral off-track reset runs.
+## Master toggle for the stuck watchdog. Off ⇒ only the timed off-track reset runs.
 @export var recovery_enabled := true
 ## Seconds the car must stay stuck (stationary + can't self-recover) before the
 ## auto-reset fires. Long enough not to interrupt a brief scrabble out of trouble.
@@ -1604,15 +1604,34 @@ func has_nitrous() -> bool:
 ## it with a "terrain_tint" look key.
 @export var terrain_tint := Color(1, 1, 1)
 ## Lateral distance from the road centerline, in metres, within which track
-## progress accrues; straying beyond it triggers the off-track reset. Generous on
-## purpose — you can run wide onto the verge / cut across rough ground (rally!)
-## before being snapped back. The distance is measured against a LOCAL window of
-## the centerline (TrackProgress._local_closest_offset), so this is independent of
-## `track_clearance` and won't snap onto a different track section.
+## progress accrues. Generous on purpose — you can run wide onto the verge / cut
+## across rough ground (rally!) and still bank the metres. The distance is measured
+## against a LOCAL window of the centerline (TrackProgress._local_closest_offset),
+## so this is independent of `track_clearance` and won't snap onto a different
+## track section. NOT a reset trigger — the off-track reset is time-based
+## (`off_road_reset_timeout_s`). It does still size the precomputed terrain
+## corridor (TerrainManager.corridor_coords), which is why it stays modest.
 @export var track_progress_max_dist_m := 50.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
+## Extra metres beyond the road EDGE (`track_width * 0.5`) the car must be before
+## it counts as off the road and the reset clock starts. The road is a fixed width,
+## so "off the road" is a clean geometric test; this margin keeps a wheel clipping
+## the verge, or a slide that hangs the tail out, from starting the clock.
+@export_range(0.0, 20.0) var off_road_margin_m := 2.0
+## Seconds the car may stay CONTINUOUSLY off the road (past the edge + margin above)
+## before it is snapped back to the last on-road pose. This is the off-track reset:
+## it is driven by time, not by how far out the car gets, so a car bogged in a ditch
+## a couple of metres off the verge — which can neither drive back on nor get far
+## enough out to trip a distance leash — always recovers. Returning to the road
+## zeroes the clock, so a quick cut across the inside costs nothing.
+@export_range(1.0, 30.0) var off_road_reset_timeout_s := 6.0
+## Seconds off the road before the HUD shows the OFF TRACK warning + countdown.
+## A grace period: brief excursions (running wide, a jump landing on the verge)
+## are normal rally driving and shouldn't flash a warning every corner. Must be
+## below `off_road_reset_timeout_s` or the warning never appears before the reset.
+@export_range(0.0, 30.0) var off_road_warning_after_s := 2.0
 ## Absolute world Y below which the car is considered to have fallen off the
 ## world entirely (a void with no water plane) and is snapped back to the last
 ## on-road pose (TrackProgress._best_reset), regardless of lateral distance from

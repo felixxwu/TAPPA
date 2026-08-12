@@ -97,7 +97,8 @@ Key methods:
   it early-returns until the car crosses a chunk boundary.
 - `corridor_coords(centerline, leash_m)` — the full set of chunk coords the
   runtime ring can ever request while the car stays within `leash_m` of the
-  centerline (the off-track reset leash): every centerline-sample chunk
+  centerline (callers pass `Config.data.track_progress_max_dist_m`, the track-progress
+  leash — see the note on the timed reset below): every centerline-sample chunk
   dilated by `RADIUS + ceil(leash_m/CHUNK_M) + 1`. Straight spans tessellate to
   just their endpoints, so segments are sub-sampled every `CHUNK_M/2` to avoid
   skipping interior chunks. Pure function of the track + config, used once at
@@ -184,10 +185,13 @@ poisoned. Covered by `tests/headless/test_terrain_memory.gd`.
     builds the `HeightMapShape3D` only when full-res heights are present and asserts a
     grid-less chunk is `coarse` (the collision-band rule guarantees no coarse chunk
     ever enters `collision_ring`).
-  - A **real-play cache miss** in `_reconcile` (cache populated, coord absent) now
-    leaves a **hole** — it spawns nothing and logs once per coord (`_logged_misses`) —
-    rather than building on the fly (holes over hitches). The empty-cache editor/test
-    path still builds on demand.
+  - A **real-play cache miss** in `_reconcile` (cache populated, coord absent) leaves
+    a **hole** — it spawns nothing rather than building on the fly (holes over
+    hitches). Only an **in-corridor** miss (`_corridor_class` has the coord) is
+    *logged*, once per coord (`_logged_misses`): that one is a real bug. A miss
+    **outside** the corridor is a deep off-road excursion — expected now that the
+    off-track reset is timed — and stays silent. The empty-cache editor/test path
+    still builds on demand.
 
 ## TerrainChunk
 
@@ -248,7 +252,8 @@ the prebake reads the right one.
 
 **Far chunks prebake fewer levels.** A chunk more than ~`leash + band` from the
 racing line can never be viewed at the finer LOD levels (the car stays within the
-off-track leash), so `cache_chunk` prunes them for `coarse` chunks: only levels
+progress leash the corridor is sized from), so `cache_chunk` prunes them for `coarse`
+chunks: only levels
 `l_min..last` are built, each sampled at its own stride by a strided
 `TerrainChunkBuilder` (`TerrainLod.build_levels_from` → `mesh_from_grid`) instead of
 decimating a full-res grid that was never generated. Because every channel (height,
@@ -592,8 +597,8 @@ independent — no cull anywhere reads a fog value, so a foggy/wet stage still d
 the geometry the fog hides (see [rendering.md](rendering.md) → "Fog does not shorten
 the cull").
 
-Because the play area is now a **bounded corridor** (the off-track reset leash
-caps how far the car can ever get from the track), the backdrop no longer
+Because the play area is a **bounded corridor** (see the caveat under Performance —
+in practice the band reaches hundreds of metres off the road), the backdrop no longer
 needs to track the car at all: `build_static(terrain, bounds)` builds a grid of
 static `250 m` tiles (`tile_m`) covering `TerrainManager.corridor_bounds()`
 dilated by `GameConfig.distant_terrain_radius_m` (now a **margin**, not a
@@ -618,9 +623,23 @@ properties).
 ## Performance
 
 Terrain generation is no longer a runtime stream — it's a one-time **precompute
-over a bounded corridor**, done behind the loading screen. The play area is
-bounded because the off-track reset leash caps how far the car can ever get
-from the track, so the reachable chunk set is knowable in advance:
+over a bounded corridor**, done behind the loading screen. The corridor is sized
+from `Config.data.track_progress_max_dist_m` and dilated by `RADIUS + 1` chunks on
+top, which puts its edge hundreds of metres off the road — far enough that the
+reachable chunk set is knowable in advance for any realistic driving:
+
+> **This is no longer a hard invariant.** It used to be: the off-track reset was a
+> distance leash, so the car physically could not leave the band. The reset is now
+> **timed** ([progress.md](progress.md)), so a car launched off a cliff can outrun the
+> corridor before its clock expires. That case is deliberately left to **degrade**
+> rather than being engineered around: the chunk is a silent hole (see 3 below), the
+> static `DistantTerrain` backdrop still draws the landscape, and the car is recovered
+> within a second or two by whichever net gets it first — the off-road clock, or
+> `fell_off_world_y` if it drops through. Two alternatives were considered and
+> rejected: sizing the corridor to the true worst case (`timeout × top speed`) widens
+> the precompute band by ~40%, paying loading time and VRAM on **every** stage; and
+> building the chunk on demand pays a main-thread hitch, for ground the player is
+> about to be teleported off anyway.
 
 1. `world.gd._generate_track` (loading stage "Precomputing chunks…") calls
    `TerrainManager.corridor_coords(centerline, leash_m)` to get the full coord
@@ -652,9 +671,12 @@ from the track, so the reachable chunk set is knowable in advance:
      `precompute_corridor`): `_reconcile` silently falls through to a fresh
      `compute_chunk_data(coord)` — the old synchronous on-demand behaviour,
      unchanged so `@tool` editing and existing tests keep working.
-   - **Populated cache, coord missing** (the corridor/leash invariant broke —
-     should never happen in play): `push_error` and the same synchronous
-     fallback — a slow frame, not a hole in the ground.
+   - **Populated cache, coord missing**: **spawn nothing**, leaving a hole (holes over
+     hitches). Whether it is *logged* depends on which side of the corridor it is on:
+     a coord INSIDE the corridor (`_corridor_class` has an entry) is a real bug — the
+     region maths broke, or the cache was cleared out from under us — and gets a
+     `push_error` once per coord. A coord OUTSIDE it is a deep off-road excursion (see
+     the caveat above), which is expected rather than broken, so it stays silent.
 
 `integrations_total` still counts chunk nodes spawned (mesh + collision
 build); `PerfOverlay` (see [debug-tools.md](debug-tools.md)) reads its
