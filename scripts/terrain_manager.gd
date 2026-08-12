@@ -200,12 +200,6 @@ var integrations_total: int = 0
 # coming out of the corridor cache. Legitimately non-zero for the editor preview and for
 # tests that never precompute; on a real load it must stay 0 (the initial ring is cached).
 var on_demand_builds: int = 0
-# Chunks built on demand because the focus left the precomputed corridor entirely — a deep
-# off-road excursion (see _reconcile). Distinct from on_demand_builds, which is about a
-# missing precompute; this one is about the car going somewhere the precompute never
-# covered, which is expected-but-rare now that the off-track reset is timed rather than
-# distance-bounded (features/progress.md). Non-zero means someone got a build hitch.
-var off_corridor_builds: int = 0
 
 # Main-thread noise cache for height_at(): FastNoiseLite instances are expensive
 # to build, and height_at used to rebuild all layers on every call (it is hit
@@ -1579,31 +1573,18 @@ func _reconcile(center: Vector2i) -> void:
 			# _process out until then.
 			on_demand_builds += 1
 			_spawn_chunk(coord, compute_chunk_data(coord))
-		elif _corridor_class.has(coord):
-			# The coord IS in the corridor the precompute was told to cover, so its
-			# absence from the cache is a real invariant break (a hole in the region
-			# maths, or a cache cleared out from under us). Prefer a HOLE over a
-			# mid-drive build hitch here: something is wrong and it should be loud.
-			# Log once per coord (crossings re-visit the same coord).
-			if not _logged_misses.has(coord):
-				_logged_misses[coord] = true
-				push_error("terrain cache miss at %s — corridor region invariant broke (leaving a hole)" % coord)
-		else:
-			# OUTSIDE the corridor the precompute covered. This became reachable when the
-			# off-track reset went from distance-based to TIMED (features/progress.md): the
-			# play area is no longer hard-bounded by a leash, so a car launched off a cliff
-			# can outrun the precomputed band before its clock expires. Rare and expensive
-			# (a full build on the main thread, and an on-demand chunk builds every LOD
-			# level itself), but a hitch out in the wilderness beats dropping the player
-			# through the floor. Counted separately from on_demand_builds so the
-			# "the initial ring came from the cache" assertions stay meaningful.
+		elif _corridor_class.has(coord) and not _logged_misses.has(coord):
+			# Real-play cache miss: prefer a HOLE over a mid-drive build hitch. Spawn
+			# nothing; log once per coord (crossings re-visit the same coord).
 			#
-			# Caveat: free_load_only_data() may have dropped the bake fields by now, so a
-			# chunk built here carries no cliff offsets and can step against a cached
-			# neighbour at the corridor edge. Acceptable — it's ~RADIUS chunks beyond the
-			# far side of a band that already reaches hundreds of metres off the road.
-			off_corridor_builds += 1
-			_spawn_chunk(coord, compute_chunk_data(coord))
+			# Only an IN-corridor miss is an error. Since the off-track reset went timed
+			# (features/progress.md) the car is no longer hard-leashed inside the corridor,
+			# so a big enough launch can simply leave it — expected, not a bug, and not
+			# worth a build hitch to paper over: the car can't get far before the clock
+			# resets it, the static DistantTerrain backdrop still draws the landscape out
+			# there, and if it drops through, `fell_off_world_y` catches it first.
+			_logged_misses[coord] = true
+			push_error("terrain cache miss at %s — corridor region invariant broke (leaving a hole)" % coord)
 	# Collision only on the near band: chunks within `collision_ring` of the focus
 	# carry live collision, farther loaded (render-only) chunks disable theirs. The
 	# detail ring does the same for the lazily-built finest LOD level (a no-op on

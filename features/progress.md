@@ -99,10 +99,16 @@ to precompute *every chunk the level could ever request*
 is gone: a big enough launch can outrun the precomputed band before the clock
 expires. `track_progress_max_dist_m` still sizes the corridor (which is why it
 stays modest — the corridor's own `RADIUS + 1` chunk dilation already carries it
-hundreds of metres off the road, covering any realistic excursion), and
-`_reconcile` now **builds ground on demand** beyond it rather than leaving a hole,
-counting it in `TerrainManager.off_corridor_builds`. A missing chunk *inside* the
-corridor is still a loud `push_error` — that one really is an invariant break.
+hundreds of metres off the road, covering any realistic excursion).
+
+Out past that edge the terrain is simply left to **degrade**, which is the whole
+point of the timed reset making excursions short-lived: the chunk is a silent hole,
+the static `DistantTerrain` backdrop still draws the landscape, and the car is
+recovered within a second or two by whichever net reaches it first — the off-road
+clock, or `fell_off_world_y` if it drops through in the meantime. Nothing is built
+on demand out there; paying a main-thread build hitch for ground the player is about
+to be teleported off would be the wrong trade. A missing chunk *inside* the corridor
+is still a loud `push_error` — that one really is an invariant break.
 
 ## Fallen off the world (water/void)
 

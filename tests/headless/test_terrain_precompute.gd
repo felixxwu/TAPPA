@@ -91,26 +91,23 @@ func test_ring_spawns_from_cache_without_recompute() -> void:
 	assert_eq(m.loaded_coords().size(), ring * ring, "full ring spawned synchronously from cache")
 
 
-func test_focus_beyond_the_corridor_builds_ground_on_demand() -> void:
+func test_focus_beyond_the_corridor_is_a_quiet_hole() -> void:
 	# The off-track reset is TIMED, not distance-bounded (features/progress.md), so the
-	# car is no longer hard-leashed inside the precomputed corridor — a big enough
-	# launch can outrun it. Out there the manager must still put GROUND under the car:
-	# a build hitch in the wilderness beats dropping the player through the floor.
+	# car is no longer hard-leashed inside the precomputed corridor — a big enough launch
+	# can outrun it. Still a hole rather than a build hitch: the car can't get far before
+	# the clock resets it, and the DistantTerrain backdrop covers the view out there. What
+	# must NOT happen is an error — leaving the corridor is expected now, not a bug.
 	var m := _make_manager()
 	m.precompute_corridor(_straight_centerline(), 25.0)
 	m.update_focus(Vector3(5000, 0, 5000))
-	var ring: int = 2 * ManagerScript.RADIUS + 1
-	assert_eq(m.loaded_coords().size(), ring * ring, "a full ring is built beyond the corridor")
-	assert_eq(m.off_corridor_builds, ring * ring, "and every one is counted as an excursion build")
-	# Not an error: leaving the corridor is expected now, just expensive.
-	assert_eq(m._logged_misses.size(), 0, "an excursion outside the corridor is not an invariant break")
+	assert_eq(m.loaded_coords().size(), 0, "nothing is built beyond the corridor")
+	assert_eq(m._logged_misses.size(), 0, "and an excursion is not reported as an invariant break")
 
 
 func test_missing_chunk_inside_the_corridor_is_a_loud_hole() -> void:
-	# A coord the precompute was TOLD to cover but didn't is still a real bug (a hole in
-	# the region maths, or a cache cleared out from under us). That case keeps the old
-	# policy — spawn nothing, log once per coord — so it stays loud instead of being
-	# silently papered over by an on-demand rebuild.
+	# A coord the precompute was TOLD to cover but didn't is a real bug (a hole in the
+	# region maths, or a cache cleared out from under us) — so unlike an excursion
+	# beyond the corridor, this one is logged.
 	var m := _make_manager()
 	m.precompute_corridor(_straight_centerline(), 25.0)
 	var focus := Vector3(150, 0, 0)  # mid-track, deep inside the corridor
@@ -119,7 +116,6 @@ func test_missing_chunk_inside_the_corridor_is_a_loud_hole() -> void:
 	m._chunk_cache.erase(centre)  # punch a hole the region maths says shouldn't exist
 	m.update_focus(focus)
 	assert_false(m.loaded_coords().has(centre), "the missing chunk is left as a hole")
-	assert_eq(m.off_corridor_builds, 0, "and is NOT quietly rebuilt as an excursion")
 	assert_eq(m._logged_misses.size(), 1, "the hole is logged once")
 	# Re-crossing the same missing coord must not re-log.
 	m.update_focus(focus + Vector3(ManagerScript.CHUNK_M, 0, 0))

@@ -185,13 +185,13 @@ poisoned. Covered by `tests/headless/test_terrain_memory.gd`.
     builds the `HeightMapShape3D` only when full-res heights are present and asserts a
     grid-less chunk is `coarse` (the collision-band rule guarantees no coarse chunk
     ever enters `collision_ring`).
-  - A cache miss in `_reconcile` (cache populated, coord absent) splits two ways.
-    **Inside** the corridor (`_corridor_class` has the coord) it leaves a **hole** —
-    spawns nothing, logs once per coord (`_logged_misses`) — because that's a real
-    bug and should be loud. **Outside** it (a deep off-road excursion, now that the
-    off-track reset is timed) it builds on demand and counts `off_corridor_builds`:
-    a hitch, but never a hole to fall through. The empty-cache editor/test path
-    still builds on demand as before.
+  - A **real-play cache miss** in `_reconcile` (cache populated, coord absent) leaves
+    a **hole** — it spawns nothing rather than building on the fly (holes over
+    hitches). Only an **in-corridor** miss (`_corridor_class` has the coord) is
+    *logged*, once per coord (`_logged_misses`): that one is a real bug. A miss
+    **outside** the corridor is a deep off-road excursion — expected now that the
+    off-track reset is timed — and stays silent. The empty-cache editor/test path
+    still builds on demand.
 
 ## TerrainChunk
 
@@ -631,11 +631,15 @@ reachable chunk set is knowable in advance for any realistic driving:
 > **This is no longer a hard invariant.** It used to be: the off-track reset was a
 > distance leash, so the car physically could not leave the band. The reset is now
 > **timed** ([progress.md](progress.md)), so a car launched off a cliff can outrun the
-> corridor before its clock expires. `_reconcile` handles that by building the chunk
-> on demand (see 3 below) — a hitch, not a hole. Sizing the corridor to the true
-> worst case (`timeout × top speed`) was considered and rejected: it widens the
-> precompute band by ~40%, paying loading time and VRAM on every stage for a case
-> that needs a cliff launch to reach.
+> corridor before its clock expires. That case is deliberately left to **degrade**
+> rather than being engineered around: the chunk is a silent hole (see 3 below), the
+> static `DistantTerrain` backdrop still draws the landscape, and the car is recovered
+> within a second or two by whichever net gets it first — the off-road clock, or
+> `fell_off_world_y` if it drops through. Two alternatives were considered and
+> rejected: sizing the corridor to the true worst case (`timeout × top speed`) widens
+> the precompute band by ~40%, paying loading time and VRAM on **every** stage; and
+> building the chunk on demand pays a main-thread hitch, for ground the player is
+> about to be teleported off anyway.
 
 1. `world.gd._generate_track` (loading stage "Precomputing chunks…") calls
    `TerrainManager.corridor_coords(centerline, leash_m)` to get the full coord
@@ -667,17 +671,12 @@ reachable chunk set is knowable in advance for any realistic driving:
      `precompute_corridor`): `_reconcile` silently falls through to a fresh
      `compute_chunk_data(coord)` — the old synchronous on-demand behaviour,
      unchanged so `@tool` editing and existing tests keep working.
-   - **Populated cache, coord OUTSIDE the corridor** (`_corridor_class` has no entry
-     for it — a deep off-road excursion, see the caveat above): synchronous
-     `compute_chunk_data` fallback, counted in `off_corridor_builds`. A slow frame,
-     not a hole in the ground, and deliberately **not** an error — leaving the
-     corridor is expected now, just expensive. Caveat: `free_load_only_data()` may
-     already have dropped the bake fields, so a chunk built here carries no cliff
-     offsets and can step against a cached neighbour at the corridor edge.
-   - **Populated cache, coord INSIDE the corridor but missing** (the corridor region
-     maths broke, or the cache was cleared out from under us — a real bug):
-     `push_error` once per coord and **spawn nothing**, leaving a hole. Loud on
-     purpose; papering it over with a rebuild would hide the bug.
+   - **Populated cache, coord missing**: **spawn nothing**, leaving a hole (holes over
+     hitches). Whether it is *logged* depends on which side of the corridor it is on:
+     a coord INSIDE the corridor (`_corridor_class` has an entry) is a real bug — the
+     region maths broke, or the cache was cleared out from under us — and gets a
+     `push_error` once per coord. A coord OUTSIDE it is a deep off-road excursion (see
+     the caveat above), which is expected rather than broken, so it stays silent.
 
 `integrations_total` still counts chunk nodes spawned (mesh + collision
 build); `PerfOverlay` (see [debug-tools.md](debug-tools.md)) reads its
