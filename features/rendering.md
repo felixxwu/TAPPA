@@ -370,9 +370,10 @@ model. Each per-car material also carries the tread `albedo_color`
   `height_at`/`light_at` as the real terrain, covering the whole precomputed
   corridor (`TerrainManager.corridor_bounds()`) plus a margin so the reduced
   fog reveals a horizon instead of the ring's hard edge. Built **once**, behind
-  the loading screen, in `world._generate_track()` — the play area is bounded
-  (off-track reset leash), so it never re-centres or rebuilds at runtime (see
-  [terrain.md](terrain.md)). Tunables in `GameConfig` (`distant_terrain_*`).
+  the loading screen, in `world._generate_track()` — the play area is bounded by the
+  precomputed corridor, so it never re-centres or rebuilds at runtime (see
+  [terrain.md](terrain.md) for the caveat on a car that outruns it). Tunables in
+  `GameConfig` (`distant_terrain_*`).
 - **Fog** demoted from edge-hider to thin aerial haze now that the backdrop hides
   the edge: `fog_density` (0.012), `fog_sky_affect` (0.15, so the sky reads above
   the haze), `fog_light_color = background_color` — and `background_color`

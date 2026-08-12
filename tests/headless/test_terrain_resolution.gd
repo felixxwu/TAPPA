@@ -189,12 +189,17 @@ func test_height_at_over_coarse_chunk_uses_noise_fallback() -> void:
 	assert_almost_eq(m.height_at(wx, wz), m._noise_height_at(wx, wz), 1e-5,
 		"coarse chunk: height_at falls back to pure noise (no crash, no cached grid)")
 
-func test_reconcile_does_not_build_on_real_play_miss() -> void:
+func test_reconcile_builds_ground_beyond_the_corridor() -> void:
+	# The off-track reset is timed rather than distance-bounded (features/progress.md),
+	# so the car is no longer hard-leashed inside the corridor. Out beyond it the
+	# manager builds on demand: a hitch, but never a hole to fall through. (A miss
+	# INSIDE the corridor is still a loud hole — see test_terrain_precompute.gd.)
 	var m := _make_manager()
 	m.precompute_corridor(_straight_centerline(), 25.0)
 	var before: int = m.integrations_total
 	m.update_focus(Vector3(8000, 0, 8000))
-	assert_eq(m.integrations_total, before, "no chunk integrated on a real-play miss")
-	assert_eq(m.loaded_coords().size(), 0, "real-play miss leaves a hole (no spawn)")
-	# Each missing coord logs once — declare them expected so GUT doesn't fail the test.
-	assert_push_error_count(m._logged_misses.size(), "one push_error per missing coord")
+	var ring: int = 2 * TerrainManager.RADIUS + 1
+	assert_eq(m.loaded_coords().size(), ring * ring, "a full ring of ground is built out there")
+	assert_eq(m.integrations_total - before, ring * ring, "each one is a real integration")
+	assert_eq(m.off_corridor_builds, ring * ring, "and is counted as an excursion build")
+	assert_eq(m._logged_misses.size(), 0, "leaving the corridor is expected, not an invariant break")

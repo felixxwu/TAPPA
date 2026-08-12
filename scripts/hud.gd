@@ -73,6 +73,15 @@ var _stage_delta_left := 0.0
 # running event total so consecutive incidents read as one growing tag.
 var _cut_flash_label: Label
 var _cut_flash_left := 0.0
+# Off-track warning + reset countdown (features/progress.md): a centre-screen tag the
+# StageManager shows while TrackProgress's off-road clock is running past its warning
+# grace, counting down the seconds left before the car is snapped back onto the road.
+# Unlike the popups above it doesn't self-fade — it mirrors a live state, so it stays
+# up until the car is back on the road (or the reset fires).
+var _off_road_label: Label
+# Last countdown TENTH shown, so show_off_road only re-formats when the displayed
+# value moves (-1 = nothing shown yet), matching the run timer's discipline.
+var _last_off_road_tenths := -1
 # Rally pacenote strip (features/hud.md): a row of turn boards along the top — the
 # current turn (arrow + grade, full opacity) with the upcoming turns queued, dimmer,
 # to its right. Reads left-to-right and slides left as corners are passed. Built in
@@ -147,6 +156,10 @@ const _POPUP_GAP := 8.0
 const _POPUP_TOP := _PACE_TOP + _PACE_ICON + _POPUP_GAP
 const _POPUP_HEIGHT := 24.0
 
+# The off-track warning hangs this far BELOW the viewport centre (it anchors at 0.5,
+# unlike the top-anchored popups above), clearing the centred 3·2·1·GO countdown.
+const _OFF_ROAD_TOP := 70.0
+
 # Last displayed values, so _process only re-formats + re-assigns a label when
 # its value actually changes (avoids per-frame string allocation / GC churn).
 var _last_speed := -1
@@ -191,6 +204,7 @@ func _ready() -> void:
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_stage_delta_label()
 	_build_cut_flash_label()
+	_build_off_road_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
 	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
 	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
@@ -359,6 +373,46 @@ func _build_stage_delta_label() -> void:
 		Control.GROW_DIRECTION_BOTH,
 		Vector4(-80.0, 80.0, _POPUP_TOP, _POPUP_TOP + _POPUP_HEIGHT),
 		HORIZONTAL_ALIGNMENT_CENTER)
+
+
+# Off-track warning + reset countdown (features/progress.md). Centre screen, just
+# BELOW the middle so it clears the big 3·2·1·GO countdown (which is centred on the
+# whole viewport) — the two can't be on screen together in practice, but the offset
+# keeps the warning out of the eye-line of the road ahead either way. Not a fading
+# popup: it is a live state readout, shown for exactly as long as the clock runs, so
+# it has no _tick_fade timer and StageManager drives both show and hide.
+func _build_off_road_label() -> void:
+	_off_road_label = _make_popup_label("OffRoadLabel", 0.5,
+		Control.GROW_DIRECTION_BOTH,
+		Vector4(-160.0, 160.0, _OFF_ROAD_TOP, _OFF_ROAD_TOP + _POPUP_HEIGHT),
+		HORIZONTAL_ALIGNMENT_CENTER)
+	_off_road_label.anchor_top = 0.5
+	_off_road_label.anchor_bottom = 0.5
+	_off_road_label.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_off_road_label.add_theme_font_size_override("font_size", 28)
+	_off_road_label.add_theme_color_override("font_color", UITheme.RED)
+
+
+# Off-track warning text. Pure so it's unit-testable without the HUD scene. The
+# countdown is shown to a tenth — coarse enough to read at speed, fine enough that
+# it's visibly running rather than a static warning.
+static func off_road_text(seconds_left: float) -> String:
+	return "OFF TRACK  %.1f" % maxf(seconds_left, 0.0)
+
+
+# Show the off-track warning with `seconds_left` on the clock. Change-gated on the
+# displayed TENTH so a per-frame call doesn't re-format a string every frame.
+func show_off_road(seconds_left: float) -> void:
+	var tenths := maxi(0, roundi(seconds_left * 10.0))
+	if tenths != _last_off_road_tenths:
+		_last_off_road_tenths = tenths
+		_off_road_label.text = off_road_text(tenths / 10.0)
+	_off_road_label.visible = true
+
+
+func hide_off_road() -> void:
+	_off_road_label.visible = false
+	_last_off_road_tenths = -1
 
 
 # Corner-cut flash, sharing the top-centre pace-popup spot with StageDeltaLabel

@@ -4,7 +4,7 @@ extends Node3D
 # area (the precomputed corridor) plus a margin — so the thin fog reveals a
 # horizon for the sky instead of the hard edge of the 3x3 detail ring.
 #
-# The play area is bounded (off-track reset leash), so unlike the old version
+# The play area is bounded (the precomputed corridor), so unlike the old version
 # this never re-centres or rebuilds: it is built ONCE at level load, behind the
 # loading screen, as a grid of tile meshes. Tiles (rather than one huge mesh)
 # keep the backdrop frustum-cullable — a single mesh covering a whole stage

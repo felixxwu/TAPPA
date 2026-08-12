@@ -86,8 +86,11 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_hud_can.clear()
 	for m in ["show_countdown", "hide_countdown", "show_elapsed",
 			"show_stage_complete", "show_stage_delta", "show_cut_flash",
-			"show_pacenotes"]:
+			"show_pacenotes", "show_off_road", "hide_off_road"]:
 		_hud_can[m] = _hud != null and _hud.has_method(m)
+	# Clear any warning left up by the previous arm (a car swap / new event) — the
+	# fresh car is on the line, so its off-road clock starts at zero.
+	_hide_off_road_warning()
 	_progress = progress
 	_elapsed = 0.0
 	_go_flash_left = 0.0
@@ -189,6 +192,31 @@ func _on_cut_billed(incident_s: float, total_s: float) -> void:
 		_hud.show_cut_flash(incident_s, total_s)
 
 
+# Mirror TrackProgress's off-road clock onto the HUD: an OFF TRACK warning with the
+# seconds left before the car is snapped back (features/progress.md). Held back by
+# off_road_warning_after_s so the everyday rally excursions — running wide, landing a
+# jump on the verge, a tail-out slide — pass without flashing a warning every corner;
+# by the time it appears the player really is off the road and needs to know a reset
+# is coming. Polled rather than signal-driven because it's a continuously-changing
+# readout, not an event. Only while RUNNING: TrackProgress keeps its own clock in every
+# phase (the reset still fires post-finish), but a warning the player can't act on
+# during a countdown or under the finish panel is just noise.
+func _update_off_road_warning() -> void:
+	if _progress == null or not _progress.has_method("off_road_time"):
+		return
+	var elapsed_off: float = _progress.off_road_time()
+	if elapsed_off < _cfg().off_road_warning_after_s or elapsed_off <= 0.0:
+		_hide_off_road_warning()
+		return
+	if _hud_can["show_off_road"]:
+		_hud.show_off_road(_progress.off_road_seconds_left())
+
+
+func _hide_off_road_warning() -> void:
+	if _hud_can.get("hide_off_road", false):
+		_hud.hide_off_road()
+
+
 func _process(delta: float) -> void:
 	var __t := Time.get_ticks_usec()
 	_timed_process(delta)
@@ -234,6 +262,7 @@ func _tick_running(delta: float) -> void:
 		_hud.show_elapsed(_elapsed)
 	_maybe_show_split()
 	_maybe_advance_pacenotes()
+	_update_off_road_warning()
 	# Hold the "GO" flash a moment, then clear it.
 	if _go_flash_left > 0.0:
 		_go_flash_left -= delta
@@ -253,6 +282,10 @@ func _tick_running(delta: float) -> void:
 # dismisses the time — the car skids to a stop in the runoff behind the overlay.
 func _complete() -> void:
 	_phase = Phase.COMPLETE
+	# The run is over; a lingering OFF TRACK warning would sit under the finish panel
+	# with nothing the player can do about it. (TrackProgress keeps its clock running,
+	# so a car that crossed the line off-road is still recovered — just silently.)
+	_hide_off_road_warning()
 	# Re-lock so the finished car skids to a stop under the panel (controls_locked
 	# forces the handbrake on) instead of driving on. It stays visible behind the
 	# overlay; the runoff road (features/track.md) gives it room to stop.
