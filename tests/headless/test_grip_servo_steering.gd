@@ -12,6 +12,11 @@ extends "res://tests/headless/sim_test.gd"
 # car.gd carries no class_name, so reach the pure statics through the script itself.
 const CarScript := preload("res://scripts/car.gd")
 
+# What share of the front axle's available longitudinal grip the simulated climb consumes
+# (see _climb_and_read). Below 1.0 so the car can actually climb; high enough that the axle
+# is deep into its longitudinal budget before the drive torque saturates it.
+const GRADE_FRACTION_OF_GRIP := 0.6
+
 
 func before_each() -> void:
 	await setup_settled_car()
@@ -538,6 +543,22 @@ func test_the_lateral_share_ignores_the_sign_of_the_spend() -> void:
 		CarScript.lateral_grip_share(1.0, 0.9), 1e-6, "spend competes by magnitude, not sign")
 
 
+# The longitudinal force the front (steering) axle can currently hold: Σ μN over its
+# contacts. Read from the live contacts rather than computed from the config, so it accounts
+# for the real normal load — which is the whole point below.
+#
+# Discriminates the axle by `use_as_steering`, NOT by `use_as_traction` the way `_front_usage`
+# does: this test runs in FWD, where the front wheels ARE the traction wheels, so the
+# traction flag would select the wrong axle (or none).
+func _front_axle_grip_n() -> float:
+	var total := 0.0
+	for c in _car.drivetrain._contacts:
+		if not c.wheel.use_as_steering or c.n_force <= 0.0:
+			continue
+		total += c.n_force * c.mu
+	return total
+
+
 # One graded-climb run holding `steer`: reports the front axle's longitudinal spend, the
 # angle the servo held, the yaw it produced and the speed the car actually reached.
 #
@@ -548,8 +569,25 @@ func _climb_and_read(steer: String) -> Dictionary:
 	await _wait_physics(RESTORE_FRAMES)
 	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
 	_car.drivetrain.engine.gear = 1
-	# ~20 degrees of climb: m·g·sin(theta), opposing the direction of travel.
-	var grade_force := _car.mass * 9.8 * 0.34
+	# THE GRADE IS DERIVED FROM THE AXLE'S OWN GRIP, NOT PINNED AT A FRACTION OF g.
+	#
+	# This used to be `mass * 9.8 * 0.34` — "~20 degrees of climb" — and that is a grade a
+	# front-driven car on this surface CANNOT CLIMB. Its front axle holds
+	# μ · weight_front · load ≈ 0.5 · 0.5 · mg = 0.25 mg, against 0.34 mg of grade: the tyres
+	# lose, so the car spins its wheels and stays put. It only ever passed because the warm
+	# restore left the car with ~40% MORE wheel load than its own weight (measured: nf/mg =
+	# 1.404 when passing, 1.008 when failing), which lifted available grip to 0.351 mg — a 3%
+	# margin over the grade. So the test was riding on an incidental suspension state, and
+	# whenever the car settled to its correct static load it could not climb at all. That is
+	# the flake: not noise, and not something a harness fix can rescue, because at 0.34 mg the
+	# scenario is beyond the traction limit by construction.
+	#
+	# Taking a FRACTION of the measured grip keeps the climb inside what the tyres can hold
+	# for ANY tuning of μ / weight_front / suspension — the relationship the file's header
+	# asks for instead of a pinned number — while still spending most of the axle
+	# longitudinally, which is the trap being tested. The drive torque then saturates it the
+	# rest of the way (`spent` lands well past 1.0 either way).
+	var grade_force := _front_axle_grip_n() * GRADE_FRACTION_OF_GRIP
 	Input.action_press("accelerate")
 	Input.action_press(steer)
 	for i in 60:
@@ -574,17 +612,17 @@ func test_a_climbing_front_driven_car_can_still_be_steered() -> void:
 	# bound it, so the old reservation reading zeroed the steering authority.
 	#
 	# RUN MIRRORED, and check the car MOVED. This used to be a single left-hand run whose last
-	# assertion was a bare `yaw > 0`, and it flaked: the yaw a graded climb produces is only
-	# meaningful once the car is actually climbing, and the car has to drag itself forward
-	# against 0.34 g on spinning front tires to get there. When something left it stationary
-	# the tire model produced no lateral force at all — normalized slip is zero at zero
-	# ground speed — so the yaw read ~1e-10 and the sign check failed on noise, while the
-	# spend and angle assertions happily passed and said nothing was wrong. (The specific
-	# cause was the warm-restore pose write being discarded; see sim_test.setup_settled_car.)
-	# So: the speed precondition names that state instead of letting it masquerade as a
-	# steering bug, and mirroring the run replaces "yaw is positive" with "yaw follows the
-	# side the driver asked for", which is the actual claim and cannot be satisfied by a car
-	# that merely drifts one way.
+	# assertion was a bare `yaw > 0`, and it flaked — because the grade it drove against was
+	# steeper than the front tires could hold (see _climb_and_read), so the car was often not
+	# climbing at all. A stationary car makes no lateral force — normalized slip is zero at
+	# zero ground speed — so the yaw read ~1e-10 and the sign check failed on noise, while the
+	# spend and angle assertions passed and said nothing was wrong.
+	#
+	# Both halves of that are fixed here. The grade is now derived from the axle's own grip so
+	# the climb is achievable; the SPEED precondition names a stalled car outright instead of
+	# letting it masquerade as a steering bug; and mirroring the run replaces "yaw is positive"
+	# with "yaw follows the side the driver asked for", which is the actual claim and cannot be
+	# satisfied by a car that merely drifts one way.
 	var cfg: GameConfig = Config.data
 	var left := await _climb_and_read("steer_left")
 	var right := await _climb_and_read("steer_right")
