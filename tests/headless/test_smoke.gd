@@ -700,6 +700,91 @@ func test_tree_mesh_field_xz_radius_scales_with_height() -> void:
 		"zero-height mesh falls back to scale 1.0")
 
 
+# --- Corner barriers (features/barriers.md) -----------------------------------
+# A hand-made layout on the real Floor, so these check the BUILD contract rather
+# than whatever corners the fixture's seed happened to generate: modules land outside
+# the road with their face turned in, render batched, and collide as solid obstacles.
+func _barrier_layout(style: int) -> Array:
+	var out: Array = []
+	for i in range(5):
+		out.append({"pos": Vector2(30.0, 20.0 + i * 2.0), "tangent": Vector2(0.0, 1.0),
+			"side": 1, "style": style, "run": 0})
+	return out
+
+
+func test_barrier_field_builds_a_run_outside_the_road_edge() -> void:
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var cfg: GameConfig = Config.data
+	var field := BarrierField.new()
+	add_child_autofree(field)
+	var layout := _barrier_layout(BarrierSection.Style.ARMCO)
+	field.build(layout, floor_node, cfg.barrier_render_params())
+	assert_eq(field.barrier_count, layout.size(), "one module built per layout entry")
+	assert_eq(field.module_transforms.size(), layout.size(), "every module records its pose")
+	var half_w: float = cfg.track_width * 0.5
+	for i in range(layout.size()):
+		var xform: Transform3D = field.module_transforms[i]
+		var centre: Vector2 = layout[i]["pos"]
+		var here := Vector2(xform.origin.x, xform.origin.z)
+		# Clear of the racing line: the module sits beyond the road edge, never on it.
+		assert_gt(here.distance_to(centre), half_w,
+			"module %d stands outside the road edge" % i)
+		# ...and its +X (the road-facing side of the model) is turned back toward the
+		# centerline, so the driver sees the face and not the back of the barrier.
+		var to_road := Vector3(centre.x - here.x, 0.0, centre.y - here.y).normalized()
+		assert_gt(xform.basis.x.normalized().dot(to_road), 0.9,
+			"module %d faces the road" % i)
+
+
+func test_barrier_field_batches_its_geometry_and_collides_as_an_obstacle() -> void:
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var field := BarrierField.new()
+	add_child_autofree(field)
+	field.build(_barrier_layout(BarrierSection.Style.JERSEY), floor_node,
+		Config.data.barrier_render_params())
+	# Rendering: MultiMesh per part (no node per module), every instance accounted for.
+	var mms := field.get_children().filter(func(c): return c is MultiMeshInstance3D)
+	assert_gt(mms.size(), 0, "a run renders through MultiMeshes")
+	for mmi: MultiMeshInstance3D in mms:
+		assert_eq(mmi.multimesh.instance_count, field.barrier_count,
+			"each part batch carries one instance per module")
+	assert_eq(field.get_children().filter(func(c): return c is MeshInstance3D).size(), 0,
+		"no per-module mesh nodes — the whole run is batched")
+	# Collision: solid, and in the damage obstacle group (unlike the signs), so
+	# clipping a barrier costs HP.
+	var bodies := field.get_children().filter(func(c): return c is StaticBody3D)
+	assert_eq(bodies.size(), 1, "one shared-shape body for the run")
+	var body := bodies[0] as StaticBody3D
+	assert_true(body.is_in_group(DamageModel.OBSTACLE_GROUP),
+		"a barrier is a damage obstacle")
+	assert_eq(PhysicsServer3D.body_get_shape_count(body.get_rid()), field.barrier_count,
+		"one collision box per module, sharing one shape")
+
+
+func test_world_plans_and_builds_barriers_on_a_sharp_corner() -> void:
+	# The wiring: world._build_barriers reads the live config, plans off the track's
+	# pieces, samples the baked surface, and drops a BarrierField into the scene.
+	# Driven with a synthetic bend so it does not depend on the fixture seed throwing
+	# a sharp corner.
+	var curve := Curve2D.new()
+	for z in range(0, 41, 4):
+		curve.add_point(Vector2(60.0, float(z)))
+	var centre := Vector2(76.0, 40.0)
+	for i in range(1, 10):
+		var a: float = PI - (i / 9.0) * (PI * 0.5)
+		curve.add_point(centre + Vector2(cos(a), sin(a)) * 16.0)
+	var pieces := [{"corner": "Hairpin", "flip": false, "straight": 40.0,
+		"entry_pos": Vector2(60.0, 0.0), "entry_heading": Vector2(0.0, 1.0)}]
+	_scene._build_barriers(Config.data, {"centerline": curve, "pieces": pieces})
+	var fields := _scene.get_children().filter(func(c): return c is BarrierField)
+	# Exactly one, whether or not the fixture's own track threw a sharp corner: the
+	# build replaces any existing field rather than stacking a second one.
+	assert_eq(fields.size(), 1, "the world holds one barrier field")
+	var field: BarrierField = fields[0]
+	assert_gt(field.barrier_count, 1, "the sharp corner got a run of modules")
+	field.queue_free()
+
+
 func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var field := SignField.new()

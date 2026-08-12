@@ -2040,6 +2040,35 @@ func has_nitrous() -> bool:
 ## slows, so a gentle bump produces a gentle tumble.
 @export_range(0.0, 30.0) var sign_knock_spin := 11.0
 
+@export_group("Corner Barriers")
+# Solid crash barriers along the OUTSIDE of the stage's sharp corners
+# (features/barriers.md). Planned by BarrierLayout, built by BarrierField from 2 m
+# BarrierSection modules stitched end to end. The look follows the road surface: the
+# steel armco guardrail on gravel, the precast concrete jersey rail on tarmac.
+# Unlike the roadside signs these are SOLID and in the damage obstacle group — hitting
+# one costs HP.
+## Master switch for the corner barriers. The benchmark's barriers toggle drives this
+## (features/benchmark.md); normal play leaves it on.
+@export var barriers_enabled := true
+## Length of one barrier module, in metres — the pitch a run is stitched at.
+@export_range(0.5, 8.0) var barrier_section_length_m := 2.0
+## Clear gap, in metres, between the visible road edge and the barrier's nearest face.
+## Measured to the face, so the armco and the wider-footed jersey rail leave the same gap.
+## KEEP `this + the barrier's own depth` (0.6 m at the jersey's foot) UNDER
+## `2 x tree_road_margin_m`, or trees start spawning inside the barrier's footprint —
+## the tree scatter rejects on the road inflated by that margin and knows nothing about
+## the barrier. See features/barriers.md.
+@export_range(0.0, 4.0) var barrier_road_gap_m := 0.4
+## How far, in metres, a run extends before the corner entry and past its exit, so the
+## barrier starts before the car needs it rather than exactly on the apex.
+@export_range(0.0, 20.0) var barrier_lead_m := 5.0
+## Tarmac-ness (0..1, as TerrainManager.surface_at reports) at or above which a module
+## uses the concrete jersey rail instead of the steel armco.
+@export_range(0.0, 1.0) var barrier_tarmac_threshold := 0.5
+## How far, in metres, each module is sunk into the ground. Small: enough that a rigid
+## module on slightly uneven verge buries its foot rather than floating above it.
+@export_range(0.0, 0.5) var barrier_sink_m := 0.06
+
 @export_group("Finish Arch")
 # The inflatable rally gates straddling the road (features/finish-arch.md): a
 # FINISH arch at the centerline end (100% progress, so crossing it ends the
@@ -2507,6 +2536,22 @@ func sign_render_params() -> Dictionary:
 		"knock_mask": 1,
 		# Shared world-prop render distance (same field foliage uses) so resting signs
 		# cull at the same range as the trees/spectators. See MeshUtil.apply_visibility_range.
+		"render_distance_m": tree_render_distance_m,
+		"render_fade_m": tree_render_fade_m,
+	}
+
+
+# Everything BarrierLayout.plan + BarrierField.build need (features/barriers.md).
+# `track_width` and the shared world-prop render distance come along so the barrier
+# lines up with the road and culls with the rest of the roadside dressing.
+func barrier_render_params() -> Dictionary:
+	return {
+		"section_length_m": barrier_section_length_m,
+		"road_gap_m": barrier_road_gap_m,
+		"lead_m": barrier_lead_m,
+		"tarmac_threshold": barrier_tarmac_threshold,
+		"sink_m": barrier_sink_m,
+		"track_width": track_width,
 		"render_distance_m": tree_render_distance_m,
 		"render_fade_m": tree_render_fade_m,
 	}

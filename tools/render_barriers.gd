@@ -1,8 +1,9 @@
 extends SceneTree
-# Offscreen harness for choosing a corner-barrier look. For every
-# BarrierSection.Style it stitches modules end to end — once down a straight and
-# once around a sharp corner arc — and renders both, then composes the per-style
-# shots into two contact sheets so the candidates can be compared side by side.
+# Offscreen harness for the corner barriers (features/barriers.md). Renders each
+# BarrierSection style on its own, then renders the REAL pipeline — BarrierLayout
+# planning a sharp corner and BarrierField building it — so the placement rules
+# (outside of the bend, road-facing, surface-driven style) can be checked by eye and
+# not just by unit test.
 #
 #   tools/render_barriers.sh          (xvfb + opengl3 wrapper)
 #
@@ -10,17 +11,18 @@ extends SceneTree
 
 const OUT_DIR := "res://docs/barriers"
 const CELL := Vector2i(720, 540)
+const CONFIG_PATH := "res://config/game_config.tres"
 
-const TRACK_WIDTH := 6.0        # the real in-game road width
-const EDGE_INSET := 0.4         # barrier standoff from the road edge
 const SECTION_LEN := 2.0
-const CORNER_RADIUS := 12.0     # barrier line around a sharp (grade 1 / square) corner
-const MODULE_X := 9.0           # where the lone-module shot stages its section (clear of the road)
+const CORNER_RADIUS := 12.0     # road CENTERLINE radius of the test corner
+const MODULE_X := 9.0           # where the lone-module shot stages its section
 
 var _vp: SubViewport
 var _world: Node3D
 var _cam: Camera3D
 var _run: Node3D
+var _params: Dictionary
+var _track_width: float
 
 
 func _init() -> void:
@@ -29,6 +31,8 @@ func _init() -> void:
 
 func _render_all() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
+	_params = _barrier_params()
+	_track_width = float(_params["track_width"])
 	_build_stage()
 	# The stage must be in the tree before the camera can look_at anything.
 	await process_frame
@@ -36,29 +40,51 @@ func _render_all() -> void:
 
 	var module_shots: Array[Image] = []
 	var straight_shots: Array[Image] = []
-	var corner_shots: Array[Image] = []
 	for style in BarrierSection.Style.values():
 		var slug := BarrierSection.style_name(style).to_lower().replace(" ", "_").replace("-", "_")
 
-		# 1. the single 2 m module on its own — the unit being chosen.
+		# The single 2 m module on its own.
 		_lay_module(style)
 		_look_from(Vector3(MODULE_X - 2.1, 1.0, 2.3), Vector3(MODULE_X, 0.45, 0.0))
 		module_shots.append(await _capture("%s/%s_module.png" % [OUT_DIR, slug]))
 
-		# 2. modules stitched down a straight, with a car for scale.
+		# Modules stitched down a straight, with a car for scale.
 		_lay_straight(style)
 		_look_from(Vector3(-1.1, 1.6, 6.4), Vector3(3.1, 0.7, -0.6))
 		straight_shots.append(await _capture("%s/%s_straight.png" % [OUT_DIR, slug]))
 
-		# 3. the real use case: a run around the outside of a sharp corner.
-		_lay_corner(style)
-		_look_from(Vector3(7.4, 2.4, -4.6), Vector3(11.0, 0.8, 4.5))
-		corner_shots.append(await _capture("%s/%s_corner.png" % [OUT_DIR, slug]))
-
 	_save_sheet(module_shots, "%s/sheet_module.png" % OUT_DIR)
 	_save_sheet(straight_shots, "%s/sheet_straight.png" % OUT_DIR)
+
+	# The real pipeline on a sharp corner: all-gravel, all-tarmac, and a stage whose
+	# gravel→tarmac switch falls mid-corner (the barrier changes with it).
+	var corner_shots: Array[Image] = []
+	var cases := [
+		["corner_gravel", func(_p: Vector2) -> float: return 0.0],
+		["corner_tarmac", func(_p: Vector2) -> float: return 1.0],
+		["corner_mixed", func(p: Vector2) -> float: return 1.0 if p.y > 2.0 else 0.0],
+	]
+	for case in cases:
+		_lay_planned_corner(case[1])
+		_look_from(Vector3(10.4, 2.3, -5.0), Vector3(14.5, 0.9, 7.5))
+		corner_shots.append(await _capture("%s/%s.png" % [OUT_DIR, case[0]]))
 	_save_sheet(corner_shots, "%s/sheet_corner.png" % OUT_DIR)
 	quit()
+
+
+# The shipped barrier params if the config resource loads standalone, so the renders
+# show the real pitch/gap; a hand dict otherwise (the harness is autoload-free, so
+# there is no Config singleton to fall back on).
+func _barrier_params() -> Dictionary:
+	var cfg = load(CONFIG_PATH)
+	if cfg != null and cfg.has_method("barrier_render_params"):
+		return cfg.barrier_render_params()
+	print("NOTE: could not load ", CONFIG_PATH, " — using fallback barrier params")
+	return {
+		"section_length_m": SECTION_LEN, "road_gap_m": 0.7, "lead_m": 5.0,
+		"tarmac_threshold": 0.5, "sink_m": 0.06, "track_width": 7.0,
+		"render_distance_m": 0.0, "render_fade_m": 0.0,
+	}
 
 
 # ---------------------------------------------------------------------------
@@ -84,12 +110,10 @@ func _build_stage() -> void:
 	we.environment = env
 	_world.add_child(we)
 
-	_world.add_child(_flat(Vector2(120, 120), Color(0.44, 0.47, 0.30), 0.0))   # grass verge
-	# Straight road down Z at x = 0, plus a curved apron for the corner shot; the
-	# corner run is laid on the same ground, which is flat, so one road strip is
-	# enough context for the straight shot and the arc gets its own ring below.
-	var road := _flat(Vector2(TRACK_WIDTH, 120), Color(0.34, 0.33, 0.31), 0.01)
-	_world.add_child(road)
+	_world.add_child(_flat(Vector2(160, 160), Color(0.44, 0.47, 0.30), 0.0))   # grass verge
+	# Straight road down Z at x = 0 for the straight shots; the corner shots lay their
+	# own tarmac ring on the same flat ground.
+	_world.add_child(_flat(Vector2(_track_width, 160), Color(0.34, 0.33, 0.31), 0.01))
 
 	_run = Node3D.new()
 	_world.add_child(_run)
@@ -104,12 +128,16 @@ func _flat(size: Vector2, col: Color, y: float) -> MeshInstance3D:
 	var pm := PlaneMesh.new()
 	pm.size = size
 	mi.mesh = pm
+	mi.material_override = _unshaded(col)
+	mi.position = Vector3(0, y, 0)
+	return mi
+
+
+func _unshaded(col: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = col
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mi.material_override = mat
-	mi.position = Vector3(0, y, 0)
-	return mi
+	return mat
 
 
 # A blocky car-sized proxy (4.1 x 1.35 x 1.8 m) so barrier heights can be judged
@@ -122,20 +150,17 @@ func _car_proxy(pos: Vector3, yaw: float) -> Node3D:
 	car.add_child(_prox_box(Vector3(1.55, 0.42, 2.0), Vector3(0, 1.05, -0.1), Color(0.30, 0.34, 0.40)))
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.35, 1.35]:
-			var w := _prox_box(Vector3(0.26, 0.62, 0.62), Vector3(sx * 0.82, 0.32, sz),
-				Color(0.10, 0.10, 0.11))
-			car.add_child(w)
+			car.add_child(_prox_box(Vector3(0.26, 0.62, 0.62),
+				Vector3(sx * 0.82, 0.32, sz), Color(0.10, 0.10, 0.11)))
 	return car
 
 
 func _prox_box(size: Vector3, pos: Vector3, col: Color) -> MeshInstance3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = col
-	return MeshUtil.box(size, mat, pos)
+	return MeshUtil.box(size, _unshaded(col), pos)
 
 
 # ---------------------------------------------------------------------------
-# Runs
+# Scenes
 # ---------------------------------------------------------------------------
 func _clear_run() -> void:
 	for c in _run.get_children():
@@ -143,19 +168,17 @@ func _clear_run() -> void:
 		c.free()
 
 
-func _section(style: int, index: int) -> BarrierSection:
+func _section(style: int) -> BarrierSection:
 	var s := BarrierSection.new()
 	s.style = style
 	s.length = SECTION_LEN
-	s.variant_seed = index
 	return s
 
 
-# Place a module at XZ `pos` with its +X (road face) turned toward `road_dir`.
+# Place a module at XZ `pos` with its +X (road face) turned toward `road_dir`. The
+# same solve BarrierField._module_transform uses.
 func _place(s: Node3D, pos: Vector2, road_dir: Vector2) -> void:
 	var n := road_dir.normalized()
-	# Basis.looking_at(d) puts -Z on d and +X on (-d.z, 0, d.x); solving that for
-	# +X == n gives the look direction below.
 	s.transform = Transform3D(Basis.looking_at(Vector3(n.y, 0.0, -n.x), Vector3.UP),
 		Vector3(pos.x, 0.0, pos.y))
 
@@ -163,46 +186,56 @@ func _place(s: Node3D, pos: Vector2, road_dir: Vector2) -> void:
 # One module alone on the grass (clear of the road strip), road face toward -X.
 func _lay_module(style: int) -> void:
 	_clear_run()
-	var s := _section(style, 0)
+	var s := _section(style)
 	_run.add_child(s)
 	_place(s, Vector2(MODULE_X, 0.0), Vector2(-1.0, 0.0))
-	_run.add_child(_nameplate(style, Vector3(MODULE_X - 0.3, 1.3, 0.0), 0.0028))
+	_run.add_child(_nameplate(BarrierSection.style_name(style),
+		Vector3(MODULE_X - 0.3, 1.3, 0.0), 0.0028))
 
 
-# Seven modules down the straight, at the right-hand road edge, plus the car proxy.
+# Modules stitched down the straight road, at its right-hand edge.
 func _lay_straight(style: int) -> void:
 	_clear_run()
-	var x := TRACK_WIDTH * 0.5 + EDGE_INSET
+	var x := _track_width * 0.5 + float(_params["road_gap_m"])
 	for i in range(7):
-		var s := _section(style, i)
+		var s := _section(style)
 		_run.add_child(s)
 		_place(s, Vector2(x, -8.0 + i * SECTION_LEN), Vector2(-1.0, 0.0))
 	_run.add_child(_car_proxy(Vector3(-0.6, 0.0, -1.6), 0.0))
-	_run.add_child(_nameplate(style, Vector3(3.0, 2.0, 0.2)))
+	_run.add_child(_nameplate(BarrierSection.style_name(style), Vector3(3.0, 2.0, 0.2)))
 
 
-# A run around the OUTSIDE of a sharp corner: modules stitched at `SECTION_LEN`
-# arc pitch around CORNER_RADIUS, with a road ring inside them.
-func _lay_corner(style: int) -> void:
+# The REAL pipeline: a sharp corner planned by BarrierLayout and built by
+# BarrierField, with `tarmac_at` standing in for the baked road surface. Nothing here
+# picks a side or a style by hand — that is the point of the shot.
+func _lay_planned_corner(tarmac_at: Callable) -> void:
 	_clear_run()
-	var centre := Vector2.ZERO   # the corner's arc centre
-	var d_theta := SECTION_LEN / CORNER_RADIUS
-	var count := int(ceil((PI * 0.6) / d_theta))
-	for i in range(count):
-		var th := -PI * 0.15 + (i + 0.5) * d_theta
-		var radial := Vector2(cos(th), sin(th))
-		var pos := centre + radial * CORNER_RADIUS
-		var s := _section(style, i)
-		_run.add_child(s)
-		_place(s, pos, -radial)   # road side = inward, toward the arc centre
-	# Road ring: its OUTER edge sits EDGE_INSET inside the barrier line.
-	_run.add_child(_road_ring(centre, CORNER_RADIUS - EDGE_INSET - TRACK_WIDTH))
-	# Car proxy mid-road, mid-corner, pointing along the tangent there.
-	var car_th := PI * 0.12
-	var car_r := CORNER_RADIUS - EDGE_INSET - TRACK_WIDTH * 0.5
-	var car_pos := centre + Vector2(cos(car_th), sin(car_th)) * car_r
-	_run.add_child(_car_proxy(Vector3(car_pos.x, 0.0, car_pos.y), -car_th))
-	_run.add_child(_nameplate(style, Vector3(11.0, 4.3, 4.5)))
+	var curve := Curve2D.new()
+	var steps := 24
+	for i in range(steps + 1):
+		var a: float = lerpf(-0.55, 1.55, float(i) / float(steps))
+		curve.add_point(Vector2(cos(a), sin(a)) * CORNER_RADIUS)
+	var start := curve.sample_baked(0.0)
+	var pieces := [{
+		"corner": "Hairpin", "flip": false, "straight": 0.0,
+		"entry_pos": start,
+		"entry_heading": (curve.sample_baked(1.0) - start).normalized(),
+	}]
+	var layout := BarrierLayout.plan(curve, pieces, _params, tarmac_at)
+	var field := BarrierField.new()
+	_run.add_child(field)
+	field.build(layout, null, _params)   # flat ground, so no terrain sampling needed
+
+	_run.add_child(_road_ring(Vector2.ZERO, CORNER_RADIUS - _track_width * 0.5))
+	var car_a := 0.15
+	var car_pos := Vector2(cos(car_a), sin(car_a)) * CORNER_RADIUS
+	_run.add_child(_car_proxy(Vector3(car_pos.x, 0.0, car_pos.y), -car_a))
+	var styles := {}
+	for entry in layout:
+		styles[entry["style"]] = true
+	var label := "GRAVEL + TARMAC" if styles.size() > 1 else BarrierSection.style_name(
+		layout[0]["style"] if not layout.is_empty() else BarrierSection.Style.ARMCO)
+	_run.add_child(_nameplate(label, Vector3(14.0, 4.3, 5.0)))
 
 
 # A flat tarmac annulus under the corner run, so the barrier reads as roadside.
@@ -215,8 +248,8 @@ func _road_ring(centre: Vector2, inner_r: float) -> MeshInstance3D:
 		var a1 := -PI * 0.25 + ((i + 1) / float(steps)) * PI * 1.1
 		var pts := [
 			Vector2(cos(a0), sin(a0)) * inner_r, Vector2(cos(a1), sin(a1)) * inner_r,
-			Vector2(cos(a1), sin(a1)) * (inner_r + TRACK_WIDTH),
-			Vector2(cos(a0), sin(a0)) * (inner_r + TRACK_WIDTH),
+			Vector2(cos(a1), sin(a1)) * (inner_r + _track_width),
+			Vector2(cos(a0), sin(a0)) * (inner_r + _track_width),
 		]
 		var v := []
 		for p in pts:
@@ -227,16 +260,13 @@ func _road_ring(centre: Vector2, inner_r: float) -> MeshInstance3D:
 				st.add_vertex(v[idx])
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.34, 0.33, 0.31)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mi.material_override = mat
+	mi.material_override = _unshaded(Color(0.34, 0.33, 0.31))
 	return mi
 
 
-func _nameplate(style: int, pos: Vector3, pixel_size := 0.006) -> Label3D:
+func _nameplate(text: String, pos: Vector3, pixel_size := 0.006) -> Label3D:
 	var l := Label3D.new()
-	l.text = BarrierSection.style_name(style)
+	l.text = text
 	l.font_size = 96
 	l.pixel_size = pixel_size
 	l.modulate = Color(0.99, 0.98, 0.94)
@@ -266,11 +296,11 @@ func _capture(path: String) -> Image:
 	return img
 
 
-# Compose the per-style shots into one 3x2 contact sheet.
+# Compose shots into one contact sheet, up to 3 per row.
 func _save_sheet(shots: Array[Image], path: String) -> void:
 	if shots.is_empty():
 		return
-	var cols := 3
+	var cols: int = mini(3, shots.size())
 	var rows := int(ceil(shots.size() / float(cols)))
 	var sheet := Image.create_empty(CELL.x * cols, CELL.y * rows, false, shots[0].get_format())
 	sheet.fill(Color(0.08, 0.08, 0.09))

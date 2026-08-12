@@ -31,6 +31,7 @@ feature's frame cost can be isolated by running with it on and off:
 | Trees & bushes | `cfg.vegetation_enabled` — skips the foliage scatter + fields (and the bush hit volume) entirely in `world._build_foliage` |
 | Spectators | `cfg.spectators_enabled` |
 | Roadside signs | `cfg.signs_enabled` — skips `world._build_signs` |
+| Corner barriers | `cfg.barriers_enabled` — skips `world._build_barriers` (the armco / jersey runs on the sharp corners) |
 | Distant terrain | `cfg.distant_terrain_enabled` (the far horizon backdrop) |
 | Road markings | `cfg.road_markings_enabled` |
 | Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` |
@@ -38,9 +39,9 @@ feature's frame cost can be isolated by running with it on and off:
 | Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 
 All default ON (the full game as shipped). Toggle states are session-scoped
-(not saved). The two feature master switches added for this
-(`vegetation_enabled`, `signs_enabled` on `GameConfig`) default true and are
-untouched by normal play.
+(not saved). The feature master switches added for this
+(`vegetation_enabled`, `signs_enabled`, `barriers_enabled` on `GameConfig`) default
+true and are untouched by normal play.
 
 ## Lifecycle (the `Benchmark` autoload)
 

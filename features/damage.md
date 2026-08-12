@@ -199,6 +199,11 @@ on the `VehicleWheel3D` nodes themselves.
   in-model equivalent of zeroing them). Older saves with no `wheel_toe` key are backfilled
   straight (`Save._sanitise`).
 
+The solid props that arrest the car and so cost HP through the rule above are the
+trees ([trees.md](trees.md)) and the **corner barriers** ([barriers.md](barriers.md)),
+both tagged `OBSTACLE_GROUP` via `ObstacleBody`. Roadside signs are deliberately not
+among them ([signs.md](signs.md)).
+
 ## Soft contacts — bushes & spectators (`apply_soft_drag`)
 
 Bushes and spectators are **not** solid obstacles: a `StaticBody` would arrest the

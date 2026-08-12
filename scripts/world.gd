@@ -740,6 +740,12 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if cfg.signs_enabled:
 		await _build_signs(cfg, result)
 
+	# Solid crash barriers along the outside of the sharp corners. After the road
+	# bake, which is what makes the surface split (gravel vs tarmac) readable — the
+	# barrier style follows it.
+	if cfg.barriers_enabled:
+		_build_barriers(cfg, result)
+
 	# Everything from here to the pre-warm used to be billed to the PREVIOUS stage
 	# label ("Placing signs"), because _stage() only closes a stage when the NEXT one
 	# opens and _end_load_timing() runs after _generate_track returns. That made signs
@@ -942,6 +948,30 @@ func _build_signs(cfg: GameConfig, result: Dictionary) -> void:
 	var sign_field := SignField.new()
 	add_child(sign_field)
 	sign_field.build(sign_layout, _floor(), cfg.sign_render_params())
+
+
+# Solid crash barriers along the OUTSIDE of the stage's sharp corners
+# (features/barriers.md). Runs of 2 m modules, stitched end to end; the look follows
+# the road surface under each module — armco on gravel, concrete jersey on tarmac —
+# which is why this runs after the road bake, the pass that fills in the surface
+# split. Shares the "Placing signs…" step (a handful of runs; no yield needed).
+func _build_barriers(cfg: GameConfig, result: Dictionary) -> void:
+	var terrain := _floor()
+	# The road's tarmac-ness at a centerline point, straight off the baked terrain, so
+	# the barrier can't drift from the surface the player actually drives on.
+	var tarmac_at := func(p: Vector2) -> float:
+		return terrain.surface_at(p.x, p.y).y
+	var params := cfg.barrier_render_params()
+	var layout := BarrierLayout.plan(result["centerline"], result["pieces"], params, tarmac_at)
+	if layout.is_empty():
+		return
+	# Replace rather than stack, like the arches — the barriers rebuild wholesale for
+	# whatever track is current.
+	_replace_named_child("BarrierField")
+	var field := BarrierField.new()
+	field.name = "BarrierField"
+	add_child(field)
+	field.build(layout, terrain, params)
 
 
 # Finish + start arches: the inflatable gates straddling the road

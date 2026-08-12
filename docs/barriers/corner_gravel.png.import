@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cgapibqsh6ls3"
-path="res://.godot/imported/tyre_wall_corner.png-b3e95c80bd42be8bb06f8026c9110783.ctex"
+uid="uid://c55nr72f38qrr"
+path="res://.godot/imported/corner_gravel.png-2d90770ed5dff6e79f576bb1fe5d48bb.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://docs/barriers/tyre_wall_corner.png"
-dest_files=["res://.godot/imported/tyre_wall_corner.png-b3e95c80bd42be8bb06f8026c9110783.ctex"]
+source_file="res://docs/barriers/corner_gravel.png"
+dest_files=["res://.godot/imported/corner_gravel.png-2d90770ed5dff6e79f576bb1fe5d48bb.ctex"]
 
 [params]
 

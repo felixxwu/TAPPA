@@ -17,10 +17,9 @@ func after_each() -> void:
 	_made.clear()
 
 
-func _section(style: int, seed_i := 0) -> BarrierSection:
+func _section(style: int) -> BarrierSection:
 	var s := BarrierSection.new()
 	s.style = style
-	s.variant_seed = seed_i
 	add_child(s)  # triggers _ready() -> build()
 	_made.append(s)
 	return s
@@ -86,8 +85,8 @@ func test_stitched_modules_overlap_instead_of_leaving_a_gap() -> void:
 	# Two neighbours placed one pitch apart: the first module's geometry must reach
 	# at least as far as the second module's geometry starts.
 	for style in BarrierSection.Style.values():
-		var a := _section(style, 0)
-		var b := _section(style, 1)
+		var a := _section(style)
+		var b := _section(style)
 		var a_end: float = a.local_aabb().end.z
 		var b_start: float = a.length + b.local_aabb().position.z
 		assert_gte(a_end, b_start,
@@ -95,7 +94,7 @@ func test_stitched_modules_overlap_instead_of_leaving_a_gap() -> void:
 
 
 func test_rebuild_replaces_rather_than_accumulates() -> void:
-	var s := _section(BarrierSection.Style.HAY_BALES)
+	var s := _section(BarrierSection.Style.ARMCO)
 	var before := _meshes(s).size()
 	s.build()
 	assert_eq(_meshes(s).size(), before, "rebuilding replaces the previous model")
@@ -105,17 +104,44 @@ func test_rebuild_replaces_rather_than_accumulates() -> void:
 	assert_gt(_meshes(s).size(), 0, "a restyled section still has a model")
 
 
-func test_same_seed_rebuilds_the_same_module() -> void:
-	# The per-module jitter must be reproducible, or a cached / re-generated stage
-	# would come back looking different.
-	var a := _section(BarrierSection.Style.STONE_WALL, 7)
-	var b := _section(BarrierSection.Style.STONE_WALL, 7)
-	var ma := _meshes(a)
-	var mb := _meshes(b)
-	assert_eq(ma.size(), mb.size(), "same seed gives the same part count")
-	for i in range(mini(ma.size(), mb.size())):
-		assert_almost_eq(ma[i].position.z, mb[i].position.z, 0.0001,
-			"part %d lands in the same place" % i)
+func test_modules_of_a_style_are_identical() -> void:
+	# BarrierField draws a whole run from one MultiMesh per part, which only holds if
+	# two modules of a style are the same model — i.e. no per-module jitter crept back in.
+	for style in BarrierSection.Style.values():
+		var a := _meshes(_section(style))
+		var b := _meshes(_section(style))
+		assert_eq(a.size(), b.size(),
+			"%s builds the same part count every time" % BarrierSection.style_name(style))
+		for i in range(mini(a.size(), b.size())):
+			assert_eq(a[i].transform, b[i].transform,
+				"%s part %d is in the same place every time"
+					% [BarrierSection.style_name(style), i])
+
+
+func test_surface_picks_the_style() -> void:
+	# The whole selection rule: tarmac gets concrete, gravel gets steel. Uses an
+	# explicit threshold rather than the configured one (that value is tunable).
+	assert_eq(BarrierSection.style_for_tarmac(1.0, 0.5), BarrierSection.Style.JERSEY,
+		"full tarmac gets the concrete jersey rail")
+	assert_eq(BarrierSection.style_for_tarmac(0.0, 0.5), BarrierSection.Style.ARMCO,
+		"gravel gets the steel armco")
+	# Monotonic about the threshold, whatever the threshold is set to.
+	assert_eq(BarrierSection.style_for_tarmac(0.79, 0.8), BarrierSection.Style.ARMCO,
+		"just below the threshold is still gravel")
+	assert_eq(BarrierSection.style_for_tarmac(0.8, 0.8), BarrierSection.Style.JERSEY,
+		"at the threshold it switches to tarmac")
+
+
+func test_parts_expose_the_model_for_instancing() -> void:
+	# parts() is what BarrierField batches from, so it must mirror the built children.
+	for style in BarrierSection.Style.values():
+		var s := _section(style)
+		var parts := s.parts()
+		assert_eq(parts.size(), _meshes(s).size(), "one part entry per mesh child")
+		for part: Dictionary in parts:
+			assert_true(part["mesh"] is Mesh, "part carries its mesh")
+			assert_true(part["material"] is ShaderMaterial, "part carries its material")
+			assert_true(part["transform"] is Transform3D, "part carries its local pose")
 
 
 func test_length_drives_the_module_footprint() -> void:

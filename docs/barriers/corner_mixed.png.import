@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d3wwje5ay8y5b"
-path="res://.godot/imported/hay_bales_corner.png-d8538b39fcbb7830197954b6dd07711b.ctex"
+uid="uid://d1wj02f4eu403"
+path="res://.godot/imported/corner_mixed.png-9d3bb102ae7f910c8b9bda03e8fc7ca7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://docs/barriers/hay_bales_corner.png"
-dest_files=["res://.godot/imported/hay_bales_corner.png-d8538b39fcbb7830197954b6dd07711b.ctex"]
+source_file="res://docs/barriers/corner_mixed.png"
+dest_files=["res://.godot/imported/corner_mixed.png-9d3bb102ae7f910c8b9bda03e8fc7ca7.ctex"]
 
 [params]
 

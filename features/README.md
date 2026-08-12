@@ -61,7 +61,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [start-line.md](start-line.md) | `StartLine` — the pre-event start-line scene (diegetic briefing panel + atmosphere presence cars) before the countdown |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
-| [barriers.md](barriers.md) | `BarrierSection` — the 2 m corner-barrier module stitched into a run on the outside of sharp corners; six candidate looks + the render harness for choosing one (not yet placed in the world) |
+| [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
 | [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles |
 | [finish-arch.md](finish-arch.md) | `FinishArch` — procedural inflatable rally start/finish gates (Dakar-style portal + banners); finish sits at 100% progress so crossing it ends the stage |
 | [tire-marks.md](tire-marks.md) | `TireMarks` — gravel ruts laid behind the wheels (per-wheel ribbon mesh, gated to the road, capped) |
@@ -103,7 +103,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard.gdshader` |
 | Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
 | Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/render_model.gd` |
-| Corner barriers | `scripts/barrier_section.gd` (`BarrierSection`), `tools/render_barriers.gd`/`.sh`, `docs/barriers/` |
+| Corner barriers | `scripts/barrier_layout.gd` (`BarrierLayout` planner), `scripts/barrier_field.gd` (`BarrierField` builder), `scripts/barrier_section.gd` (`BarrierSection` module), `tools/render_barriers.gd`/`.sh` |
 | Camera | `scripts/chase_camera.gd`, `scripts/camera_manager.gd` (`CameraManager` — modes, cycle, persistence) |
 | HUD | `scripts/hud.gd` |
 | Pacenote strip | `scripts/pacenotes.gd` (`Pacenotes` — note list, arrow keys, progress fractions), `scripts/hud.gd` (the strip), `scripts/stage_manager.gd` (advance) |
