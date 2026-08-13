@@ -295,8 +295,13 @@ static func _refit_body_scroll(scroll: ScrollContainer, body: Label, wrap_width:
 	scroll.custom_minimum_size = Vector2(0, content_h)
 	# Cap against what the screen actually leaves once everything OUTSIDE the
 	# scroll (title, field, buttons, gaps, panel padding) has taken its share.
-	var viewport_h: float = scroll.get_viewport().get_visible_rect().size.y \
-		if scroll.get_viewport() != null else 360.0
+	#
+	# THE FRAME, NOT `get_viewport()`: inside a WorldPanel the viewport is a SubViewport sized
+	# `logical * SUPERSAMPLE`, several times the canvas the tree is actually laid out on, so
+	# capping against it would let the body overflow the panel. layout_frame_size answers for
+	# either host (see its header); today's callers are all own-layer modals, so this changes
+	# nothing for them and stops being a trap for the next one.
+	var viewport_h: float = WorldPanel.layout_frame_size(scroll, Vector2(480, 360)).y
 	var box := _panel_ancestor(scroll)
 	var reserved_h: float = 0.0
 	if box != null:

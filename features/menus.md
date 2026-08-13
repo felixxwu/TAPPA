@@ -74,8 +74,9 @@ space:
 
 > **A third HOST exists (not a third regime): `WorldPanel`** — see
 > [world-panel.md](world-panel.md). A menu can be hosted in the 3D world instead of on a
-> `CanvasLayer`, welded off-square to an anchor (currently the car-park overlay only, and
-> **off by default** behind `Config.data.world_space_menus`). Either navigation regime
+> `CanvasLayer`, welded off-square to an anchor, behind `Config.data.world_space_menus` —
+> which `config/game_config.tres` ships **ON**, so this is the path players actually get.
+> Either navigation regime
 > works inside a panel, because the panel pumps *all* input — keyboard and gamepad
 > included — across into its `SubViewport`, which receives no window events on its own.
 > Two rules that follow from it:
@@ -833,6 +834,36 @@ gained a **`dim`** option for true modals like this one, and its `_sync_body_hei
 budgets the box against the frame height instead of centring it at its full minimum size —
 which is what stops a tall body pushing the footer off screen. Note the footer callable is
 handed an **`HBoxContainer`** (the page's action row, outside the box), not a `VBoxContainer`.
+
+### Hosting a modal (`MenuPage.open_modal`) — not optional either
+
+**A modal page never goes on a station's `CanvasLayer`.** `MenuPage.open_modal(host, opts)`
+is the one way to put a full-screen page on screen; it owns three things callers kept getting
+wrong, each with a silent failure mode:
+
+1. **Its own `CanvasLayer`.** `WorldPanelHost.sync` migrates a station's UI tree into a 3D
+   `WorldPanel` and sets `flat_layer.visible = false` whenever `world_space_menus` is on —
+   which `game_config.tres` **ships on**. A page added to `_car_layer` was built, gated and
+   nav-wired but rendered NOWHERE: "Change Upgrades" on the car park's "Too powerful" prompt
+   looked like it dropped the player straight back to car-select.
+2. **`MenuPage.MODAL_LAYER` (100) — above the station overlays, strictly below
+   `ConfirmPopup`'s 101.** A modal page HOSTS confirms rather than being one (the
+   Auto-Upgrade row opens its own). On a tie the confirm can be drawn *under* the page's
+   opaque panel while its full-screen `MOUSE_FILTER_STOP` dim goes on swallowing clicks — an
+   invisible confirm behind a menu that has gone dead.
+3. **A screen claim via `MenuNav.SCREEN_CLAIMER_GROUP`.** `WorldPanel._input` projects clicks
+   landing inside its 3D quad into the panel's `SubViewport` and marks them handled, standing
+   down only for `MenuNav.input_blocked`. A page outside that predicate renders on top while
+   the station underneath eats its clicks. It is deliberately NOT `ConfirmPopup.MODAL_GROUP`
+   (see "One modal at a time") — that group *refuses* a second modal, and these pages must be
+   allowed to open the confirms they host. Membership sits on the page, not its layer, so
+   hiding the page releases the claim (hosts keep these pages alive and toggle `visible`).
+
+`hq.gd::_make_modal_overlay` and `hq_carpark.gd::_make_carpark_modal` are both thin wrappers
+over it now, so all three HQ modals (rally detail, challenge, Android notice) get the same
+hosting. The **Android boot notice** additionally stands the title down through
+`_update_overlays` — `_title_layer.visible = false` only ever addressed the flat host, so
+with world menus on it stood nothing down and left two live `MenuNav`s fighting one keypress.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
 fixed — `DisplayStretch.DESIGN_HEIGHT`, read from `project.godot`'s
@@ -1992,12 +2023,8 @@ warning label, the plain enabled Start (saves overlay space). Pressing Start pop
 (`_detune_change_upgrades`) opens the **Change-Upgrades popup** — the shared
 `UpgradesSimple` component (see [upgrade-catalogue.md](upgrade-catalogue.md)) in a
 matching centred modal (`_show_upgrades_popup`, engine-swap row dropped, passed the
-rally's `pw_limit`; `_make_carpark_modal` hosts it on **its own `CanvasLayer`**, never on
-`_car_layer` — with `world_space_menus` on the car-park tree migrates into a 3D
-`WorldPanel` and its flat layer is hidden, which used to render this modal invisible so
-Change Upgrades looked like a no-op back to car-select; it sits at layer 100, strictly below
-`ConfirmPopup`'s 101, and claims the screen via `MenuNav.SCREEN_CLAIMER_GROUP` so the 3D
-panel underneath stops eating its clicks) so the player can strip / switch parts — or use the menu's own
+rally's `pw_limit`; `_make_carpark_modal` hosts it via **`MenuPage.open_modal`** — see
+"Hosting a modal" below, which is not optional) so the player can strip / switch parts — or use the menu's own
 **engine-detune slider** (at the bottom of the menu) — to shed power. Because the popup
 is passed the rally's `pw_limit`, its close button is the gated **Done** (red,
 **"Over limit — reduce to N hp/tonne"**, blocking both the button and back) until the

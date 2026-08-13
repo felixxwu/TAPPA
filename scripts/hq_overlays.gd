@@ -90,7 +90,11 @@ func build_title_overlay() -> void:
 	version_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	version_label.modulate = Color(1, 1, 1, 0.6)
-	_hq._title_layer.add_child(version_label)
+	# On its own CanvasLayer (see _hq._version_layer) so it survives the title screen
+	# migrating to a 3D panel; _update_overlays shows it with the title.
+	_hq._version_layer = CanvasLayer.new()
+	_hq.add_child(_hq._version_layer)
+	_hq._version_layer.add_child(version_label)
 	_hq._title_version_label = version_label
 
 	# EXTERIOR is now driven by menu_left/menu_right/menu_select over _title_cursor (see

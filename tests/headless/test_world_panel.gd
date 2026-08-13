@@ -342,3 +342,62 @@ func test_menu_nav_is_inert_inside_a_hidden_world_panel() -> void:
 	await wait_frames(1)
 	assert_false(MenuNav.is_on_screen(btn),
 		"a widget inside a hidden world panel must not count as on screen")
+
+
+# --- layout_frame_size: which canvas is this laid out against? -----------------
+# Anything that FITS content (a scroll's height cap, a modal column's width) has to measure
+# the canvas the tree is really on. Inside a panel that is `_frame`, NOT get_viewport() —
+# the SubViewport is `logical * SUPERSAMPLE`, several times larger, and a cap taken from it
+# lets content overflow the panel. Asserts the relationship, never a pinned size.
+
+func test_layout_frame_size_reports_the_panels_frame_not_its_supersampled_viewport() -> void:
+	var inner := Control.new()
+	_host_full_rect(inner)
+	await wait_frames(2)
+	var frame := WorldPanel.layout_frame_size(inner)
+	assert_eq(frame, _panel.frame().size, "a hosted control measures the panel's own frame")
+	var vp_size := Vector2(inner.get_viewport().get_visible_rect().size)
+	assert_lt(frame.y, vp_size.y,
+		"which is SMALLER than the supersampled SubViewport it would otherwise have measured")
+
+
+func test_layout_frame_size_falls_back_to_the_viewport_outside_a_panel() -> void:
+	var flat := Control.new()
+	add_child_autofree(flat)
+	await get_tree().process_frame
+	assert_eq(WorldPanel.layout_frame_size(flat),
+		Vector2(flat.get_viewport().get_visible_rect().size),
+		"a control on an ordinary layer measures its viewport, so callers need no host branch")
+
+
+func test_apply_host_style_can_be_forced_over_content_added_after_adopting() -> void:
+	# The cheap early-out keys off the tree ROOT, so a rebuild that adds nodes while hosted
+	# used to leave them with the flat (empty) backing — a bare label over a sunlit car park.
+	var holder := Control.new()
+	_panel.host(holder)
+	WorldPanel.apply_host_style(holder, true)
+	var late := WorldPanel.text_backing(Label.new())
+	holder.add_child(late)
+	WorldPanel.apply_host_style(holder, true)  # unforced: the root already says "world"
+	var unforced := late.get_theme_stylebox("panel")
+	WorldPanel.apply_host_style(holder, true, true)
+	var forced := late.get_theme_stylebox("panel")
+	assert_true(unforced is StyleBoxEmpty,
+		"setup: an unforced re-apply skips the walk, so late content keeps the flat backing")
+	assert_false(forced is StyleBoxEmpty,
+		"forcing the re-walk gives content added after adopting its panel backing")
+
+
+func test_hosted_forgets_a_tree_that_was_taken_back() -> void:
+	# WorldPanelHost.release_tree re-parents the tree to the flat layer directly, without
+	# telling the panel — so a stored reference would answer "yes, I'm holding it" for a menu
+	# sitting on its CanvasLayer, and callers asking "is this screen on its panel?" would force
+	# panel styling onto the flat host.
+	var tree := Control.new()
+	_panel.host(tree)
+	assert_eq(_panel.hosted(), tree as Control, "setup: the panel holds the tree")
+	var flat := CanvasLayer.new()
+	add_child_autofree(flat)
+	_panel.frame().remove_child(tree)
+	flat.add_child(tree)
+	assert_null(_panel.hosted(), "once the tree is taken back, the panel reports nothing hosted")

@@ -213,7 +213,7 @@ it exactly as they reach the car beside it. That cohesion is the point of puttin
 menu in the world, so its fog/exposure flags are **not** disabled. The standing risk
 is that the grade was tuned against terrain and car paint rather than UI text, so a
 grade retune can quietly hurt panel legibility — worth an eyeball when the grade
-changes. Currently the car-park overlay only, and off by default.
+changes. Shipped ON in `config/game_config.tres`.
 
 The HUD, menus **and the speed
 lines** are all on CanvasLayers above the container, so the shader never sees them.

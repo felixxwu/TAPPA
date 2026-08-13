@@ -504,6 +504,13 @@ var _title_settings_button: Button  # EXTERIOR title Settings
 var _title_exit_button: Button  # EXTERIOR title Exit Game (last in the row)
 @warning_ignore("unused_private_class_variable")
 var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
+# ITS OWN LAYER, not _title_layer. The watermark is not part of the title MENU — it is a
+# corner stamp that has to be legible on whichever host the title is using. Parented to the
+# title's flat layer it went invisible for the entire session the moment that screen migrated
+# to a WorldPanel (WorldPanelHost stands the flat layer down), so the one readout that tells
+# you WHICH BUILD you are looking at was missing from the shipped configuration. Shown/hidden
+# with the title screen by _update_overlays.
+var _version_layer: CanvasLayer
 var _no_eligible_label: Label
 # Car-park damage UI: the "wrecked beyond repair" note on a wrecked focused car.
 var _car_warning_label: Label
@@ -1705,16 +1712,14 @@ func _make_overlay(margin := 24.0) -> Array:
 # would eat those picks (and its drag gesture would fight the map pan), so plain
 # _make_overlay stays exactly as it was — do NOT wrap a passthrough overlay in this.
 func _make_modal_overlay(margin := 24.0) -> Array:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	# MenuPage is the shared implementation of this shape — a content-hugging body box with
-	# a gapped horizontal action row under it (see menu_page.gd for the two layout rules and
-	# why they are not per-screen choices). This wrapper survives so the three existing
-	# callers keep their [layer, body, footer, root] contract; new pages should build a
-	# MenuPage directly.
-	var page := MenuPage.new({"margin": margin})
-	layer.add_child(page)
-	return [layer, page.body(), page.actions(), page]
+	# MenuPage.open_modal is the shared implementation of BOTH halves of this shape — the
+	# content-hugging body box with a gapped horizontal action row under it (see menu_page.gd
+	# for the two layout rules and why they are not per-screen choices), AND the hosting: its
+	# own CanvasLayer below ConfirmPopup, claiming the screen so a 3D WorldPanel underneath
+	# cannot eat the page's clicks. This wrapper survives so the three existing callers keep
+	# their [layer, body, footer, root] contract; new pages should call open_modal directly.
+	var page := MenuPage.open_modal(self, {"margin": margin})
+	return [page.get_parent(), page.body(), page.actions(), page]
 
 
 # The widest a centred modal column may ask for on the CURRENT logical canvas. The frame's
@@ -1723,11 +1728,13 @@ func _make_modal_overlay(margin := 24.0) -> Array:
 # preferred width, and a hard-coded 460-wide column can already be wider than the whole
 # screen. `chrome` is the horizontal space the surrounding container costs (overlay margins,
 # panel padding). Desktop keeps the authored `preferred` width; only the narrow tiers shrink.
-func _modal_body_width(preferred: float, chrome := 88.0) -> float:
-	var vp := get_viewport()
-	if vp == null:
-		return preferred
-	var w := float(vp.get_visible_rect().size.x)
+#
+# `host` is the node the sized content will actually live under; it defaults to HQ itself,
+# which resolves to the main viewport. Pass the real host if the content could ever sit on a
+# WorldPanel — inside one, the canvas is the panel's `_frame`, unrelated to the main viewport
+# width, and a column measured off the wrong one is either clipped or absurdly narrow.
+func _modal_body_width(preferred: float, chrome := 88.0, host: Node = null) -> float:
+	var w := WorldPanel.layout_frame_size(host if host != null else self, Vector2.ZERO).x
 	if w <= 0.0:
 		return preferred
 	return maxf(160.0, minf(preferred, w - chrome))
@@ -1800,13 +1807,20 @@ func _should_show_android_app_notice() -> bool:
 
 
 # One-per-boot notice over the title shot: mobile-web performance is poor, the APK
-# is much faster. Hides the title overlay while it's up so its MenuNav can't fight
+# is much faster. Stands the title screen down while it's up so its MenuNav can't fight
 # this one for focus; dismissing restores the title (whose MenuNav re-grabs focus
 # via visibility_changed).
+#
+# THROUGH _update_overlays, NOT `_title_layer.visible = false` — the same correction the
+# challenge overlay already carries (see _update_overlays). With world menus on, the title
+# TREE is not in that layer at all: it has been migrated into a 3D WorldPanel, and the flat
+# layer is already hidden and empty. Writing it stood nothing down, so the notice was drawn
+# over a live, still-navigable title menu with both MenuNavs answering the same keypress.
+# The title's own visibility rule now reads `_android_notice_layer == null`, so it is one
+# authoritative answer that reaches whichever host is actually holding the tree.
 func _show_android_app_notice() -> void:
 	if _android_notice_layer != null:
 		return
-	_title_layer.visible = false
 	# Scrolled body + pinned footer (_make_modal_overlay): this is the FIRST thing a
 	# mobile-web player sees, on a narrow portrait canvas, and a dismissal they can't
 	# reach means they never get into the game at all.
@@ -1815,6 +1829,9 @@ func _show_android_app_notice() -> void:
 	var root_box: VBoxContainer = made[1]
 	var footer: HBoxContainer = made[2]
 	var root: Control = made[3]  # the MenuPage itself — for MenuNav.attach / UITheme.enforce
+	# _android_notice_layer is set above, so this stands the title down on whichever host is
+	# holding it (flat layer or world panel).
+	_update_overlays()
 	root_box.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var msg := Label.new()
@@ -1849,7 +1866,10 @@ func _dismiss_android_app_notice() -> void:
 		return
 	_android_notice_layer.queue_free()
 	_android_notice_layer = null
-	_title_layer.visible = _view == View.EXTERIOR
+	# _update_overlays, not `_title_layer.visible = ...`: with world menus on, writing the
+	# flat layer un-hid an EMPTY layer beside the live panel, breaking the "whichever host
+	# isn't holding the tree must be hidden" invariant until the next view change.
+	_update_overlays()
 	_refresh_title_focus()
 
 
@@ -1982,8 +2002,18 @@ func _update_overlays() -> void:
 	# _unhandled_input needs one authoritative answer to "is the challenge up?" so the garage below
 	# cannot react to the same keypress.
 	_challenge_layer.visible = _challenge_shown
-	_sync_panel("title", _title_layer, _title_root, _view == View.EXTERIOR,
+	# The title stands down while the ANDROID BOOT NOTICE is over it, for the same reason the
+	# garage does under the challenge modal below: the modal owns the screen, and two live
+	# MenuNavs would fight over one keypress. Driven from the notice's own existence rather
+	# than by writing `_title_layer.visible` in its open/close handlers — that only ever
+	# addressed the FLAT host, so with world menus on it stood nothing down at all.
+	var title_shown := _view == View.EXTERIOR and _android_notice_layer == null
+	_sync_panel("title", _title_layer, _title_root, title_shown,
 		_title_panel_xform, _title_panel_spec)
+	# The build watermark follows the title screen but lives on its own layer, so it is legible
+	# on either host (see _version_layer).
+	if _version_layer != null:
+		_version_layer.visible = title_shown
 	# The garage stands down while the CHALLENGE modal is over it — the modal owns the screen. This
 	# used to be an ad-hoc `_garage_layer.visible = false` inside _open_challenge_overlay, which
 	# stopped working the moment that function also had to call _update_overlays (this function then
@@ -2006,24 +2036,36 @@ func _update_overlays() -> void:
 # after any dynamic text refresh so the rules keep holding as labels change.
 func _normalize_menus() -> void:
 	for layer in [_title_layer, _garage_layer, _table_layer, _detail_layer,
-			_lift_layer, _car_layer, _settings_layer]:
+			_lift_layer, _car_layer, _settings_layer, _version_layer]:
 		if layer != null:
 			UITheme.enforce(layer)
 	# A migrated tree may not be under its CanvasLayer at all (world-space host), and the
 	# house rules have to reach it wherever it lives — enforce walks from a node DOWN, so an
 	# empty layer enforces nothing.
-	for pair in [[_car_root, _car_layer], [_lift_root, _lift_layer],
-			[_title_root, _title_layer], [_garage_root, _garage_layer]]:
-		var tree := pair[0] as Control
-		if tree != null and tree.get_parent() != pair[1]:
-			UITheme.enforce(tree)
+	#
+	# ASKS THE HOST, not the tree's parent. `tree.get_parent() != layer` was a second spelling
+	# of "is this migrated?", duplicated from WorldPanelHost.release_tree and wrong the moment a
+	# tree is parked anywhere but its two homes. WorldPanelHost.is_world() is the one answer.
+	#
+	# AND RE-APPLIES THE HOST STYLE (force). This function is the house convention for "content
+	# changed, re-assert the rules" — hq.gd calls it after rebuilding the garage row for a
+	# Mystery Box repaint, which never goes through _go_to. WorldPanel.apply_host_style's cheap
+	# early-out keys off the tree ROOT, so nodes added by such a rebuild kept their flat
+	# StyleBoxEmpty and never got centred: a bare label over a sunlit car park. Forcing the
+	# re-walk here means every rebuild path already in the convention gets the panel pass too.
+	for key in ["car", "lift", "title", "garage"]:
+		var host := _panel_host(key)
+		if host == null or host.tree == null or not host.is_world():
+			continue
+		UITheme.enforce(host.tree)
+		WorldPanel.apply_host_style(host.tree, true, true)
 
 
 # Re-read the authored config from disk and re-apply it, keeping the player where they are. The F8
 # debug key (see _unhandled_input) and the tuning loop in features/world-panel.md.
 #
-# PRESERVES THE WORLD-MENU TOGGLE. `world_space_menus` is stored false in game_config.tres, so a
-# straight reload switched world menus OFF — F8 fought F7 and looked like "reload just resets it to
+# PRESERVES THE WORLD-MENU TOGGLE. `world_space_menus` is the one value here that F7 flips live, so a
+# straight reload put it back to whatever the file says — F8 fought F7 and looked like "reload just resets it to
 # the flat menus". The toggle is a live A/B switch for this session, not one of the values being
 # tuned, so it survives the reload while everything else is taken from the file.
 #
@@ -2201,6 +2243,27 @@ func _position_car_panel() -> void:
 		host.place()
 
 
+# DROP GUI FOCUS ON EVERY HOST, not just the main viewport.
+#
+# `get_viewport().gui_release_focus()` is answered by the viewport HQ itself sits in — but a
+# migrated station's tree lives in its WorldPanel's SubViewport, which keeps its OWN focus
+# owner. So the stale-focus bug this exists to prevent (a button on the station we just left
+# still swallowing arrow keys / Enter in the next, spatially-navigated one) was live again in
+# world-menu mode, and WorldPanel._unhandled_input goes on pumping keys into that stale owner
+# for as long as the panel is visible.
+func _release_all_focus() -> void:
+	var vp := get_viewport()
+	if vp != null:
+		vp.gui_release_focus()
+	for key in _panel_hosts:
+		var host := _panel_hosts[key] as WorldPanelHost
+		if host == null or host.panel == null:
+			continue
+		var sub := host.panel.viewport()
+		if sub != null:
+			sub.gui_release_focus()
+
+
 # --- Station transitions -----------------------------------------------------
 
 # Move to a station: update overlays + fly the camera there. CARPARK framing tracks
@@ -2219,7 +2282,7 @@ func _go_to(view: int, snap := false) -> void:
 	# focus and silently swallow arrow keys / Enter in the next, spatially-navigated
 	# station. The native-focus views (the title, below; Settings + lift sub-pages
 	# via their own paths) re-grab a control immediately after.
-	get_viewport().gui_release_focus()
+	_release_all_focus()
 	# The selected car sits on the lift whenever we're inside (garage/lift); it costs
 	# nothing once frozen, so keep it around while inside and drop it otherwise. In the
 	# garage it rests LOWERED on the ground; entering the bay (_enter_lift) raises it.
@@ -2753,7 +2816,7 @@ func _open_lift_page(page: int) -> void:
 # the sub-page's sliders/buttons held.
 func _lift_hub() -> void:
 	_lift_page = LiftPage.HUB
-	get_viewport().gui_release_focus()
+	_release_all_focus()
 	_refresh_lift_ui()
 
 

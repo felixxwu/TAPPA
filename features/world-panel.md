@@ -28,8 +28,10 @@ composed around it. Don't "fix" `billboard = BILLBOARD_DISABLED`.
 
 ## Status
 
-**Four screens migrated** — car park, tuning lift, title and garage — behind a toggle that is **OFF by
-default** (`Config.data.world_space_menus`). The flat `CanvasLayer` path stays fully wired for all four.
+**Four screens migrated** — car park, tuning lift, title and garage — behind
+`Config.data.world_space_menus`, which the SHIPPED `config/game_config.tres` sets **ON** (the code default
+in `game_config.gd` is off, so a test or tool that never loads the resource sees the flat path — do not
+mistake that for what players get). The flat `CanvasLayer` path stays fully wired for all four.
 
 **Nothing further is planned.** The map table was considered and dropped — it reads well flat, and both
 screens at that station were tried on panels and reverted. Settings is not a task but a CONSTRAINT:
@@ -459,10 +461,72 @@ visibility.** It is a modal rather than a `View`, and in world mode its layer is
 that asked `_challenge_layer.visible` (including `hq.gd::_unhandled_input`'s guard that stops the
 garage reacting to the same keypress) had to move to the flag.
 
-**One known consequence on the title screen:** the build-version watermark is a separate child of
-`_title_layer`, not part of the menu tree, so while the title menu is on a panel the flat layer is
-hidden and the version label goes with it. It is a dev watermark, so this is accepted rather than
-worked around.
+**The same rule caught a second screen: the Android boot notice.** It hid the title with
+`_title_layer.visible = false`, which in world mode addressed an already-hidden, empty layer — so the
+notice drew over a live title menu and both `MenuNav`s answered the same keypress. The title's
+shown-ness is now part of the rule here (`_view == View.EXTERIOR and _android_notice_layer == null`)
+and both handlers call `_update_overlays()`. Guarded by
+`test_menu_flow.gd` -> `test_android_notice_stands_down_a_world_hosted_title`.
+
+**And the mirror-image rule for runtime UI: a modal never goes ON a station's layer.** Adding a page
+to `_car_layer` puts it on the host that `sync` hides, so it renders nowhere. `MenuPage.open_modal`
+owns the correct hosting (own `CanvasLayer` below `ConfirmPopup`, plus a
+`MenuNav.SCREEN_CLAIMER_GROUP` claim so `WorldPanel._input` stops projecting the page's clicks into
+the station behind it) — see features/menus.md -> "Hosting a modal".
+
+**Formerly a known consequence on the title screen, now fixed:** the build-version watermark is a
+separate child of the title layer rather than part of the menu tree, so a panelled title took the
+watermark down with the flat layer — the readout naming the build was missing from the shipped
+configuration. It has its own `CanvasLayer` now (`hq.gd::_version_layer`), shown with the title
+screen on either host.
+
+## Which host is live — ask, never derive
+
+`WorldPanelHost.is_world()` is the one answer to "is this screen on its panel right now?".
+Callers used to spell it `tree.get_parent() != flat_layer`, duplicated between
+`release_tree` and `hq.gd::_normalize_menus` — a spelling that changes meaning the moment a
+tree is parked anywhere else. `WorldPanel.hosted()` is **self-correcting** for the same
+reason: `release_tree` re-parents the tree straight back to the flat layer (it must — freeing
+a panel that still holds the tree takes the menu with it), so a stored `_hosted` went stale on
+every revert and reported a flat screen as panelled. It answers from the scene tree instead.
+
+Two things depend on that answer being right:
+
+- **`gui_release_focus` must reach both hosts.** `hq.gd::_release_all_focus` releases the main
+  viewport AND every panel's `SubViewport`, because a migrated station's focus owner lives in
+  the latter. Without it, a button on the station you just left keeps focus and swallows arrow
+  keys / Enter in the next one — the exact bug the release exists to prevent, live again in
+  world mode.
+- **Rebuilt content must be re-styled.** `WorldPanel.apply_host_style(root, world, force)`
+  takes a `force` flag, and `_normalize_menus` passes it for whichever trees are currently
+  panelled. The cheap early-out keys off the tree ROOT, so nodes added by a rebuild that
+  happens *while hosted* (the Mystery Box garage repaint never goes through `_go_to`) kept
+  their flat `StyleBoxEmpty` — a bare label over a sunlit car park — and never got centred.
+
+## Fitting content: measure the frame, not the viewport
+
+Anything that sizes content to the screen must ask `WorldPanel.layout_frame_size(node)`, not
+`node.get_viewport().get_visible_rect()`. Inside a panel the viewport is the `SubViewport`,
+sized `logical * SUPERSAMPLE` — several times the `_frame` the tree is actually laid out on —
+so a cap taken from it is far too generous and the content overflows the panel it is on.
+Outside a panel the helper just returns the viewport rect, so callers need no host branch at
+all. `UITheme._refit_body_scroll` and `hq.gd::_modal_body_width` both go through it.
+
+## The layers a host manages hold ONE thing
+
+A `WorldPanelHost`'s flat `CanvasLayer` holds its screen tree and nothing else. Anything else
+parented there renders nowhere the moment world menus are on, silently — see
+[menus.md](menus.md) → "Hosting a modal" for the modal rule, and note the **build-version
+watermark** now has its own `CanvasLayer` (`hq.gd::_version_layer`, shown with the title
+screen) rather than riding on `_title_layer`, where it was invisible for the whole session in
+the shipped configuration. In debug builds `WorldPanelHost._stand_down_flat` `push_warning`s
+any stray it finds, naming the node — the invalid state announces itself at the moment it is
+created instead of turning up as "that menu does nothing". A stray that genuinely means to go
+down with the layer sets `ALLOW_HIDDEN_META`; nothing does today.
+
+Guarded by `test_menu_flow.gd` -> `test_migratable_layers_gain_no_runtime_children`, which
+drives every runtime-UI entry point over a station and asserts each managed layer still holds
+only its tree.
 
 ## The `menu_nav.gd` change this required
 
@@ -493,6 +557,10 @@ entirely. The cases that matter most:
   relationship (double the scale = half the canvas, same rendered coverage), never as a
   particular scale value. Get the second half wrong and the menu is bigger but cropped.
 - **Keys reach a hosted `MenuNav`** and move focus inside the panel's own viewport.
+- **`layout_frame_size` reports the frame, not the supersampled viewport** (and falls back to
+  the viewport outside a panel), **`apply_host_style` can be forced** over content added after
+  adopting, and **`hosted()` forgets a tree that was taken back** — the three helpers the
+  host-awareness rules above are built on.
 - **A hidden panel stops compositing and forwards nothing**, and **`MenuNav` is inert
   inside one.**
 

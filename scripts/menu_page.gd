@@ -36,11 +36,15 @@ extends Control
 # the body's width at the call site (set_body_width + hq._modal_body_width is the existing
 # pattern) rather than relying on this opt.
 #
-# Usage:
+# Usage — for a page that lives on a station's own overlay tree:
 #     var page := MenuPage.new({"title": "Upgrades", "width": 380.0})
 #     page.body().add_child(my_rows)
 #     page.add_action(UITheme.row_button("< Back", on_back))
-#     layer.add_child(page)
+#     station_tree.add_child(page)
+#
+# For a MODAL page — one that covers the screen — use `open_modal` instead and let it own
+# the hosting. DO NOT hand-roll it by adding the page to a station's CanvasLayer: see
+# open_modal for the two bugs that costs.
 #
 # Hand `page` (or its owning layer) to MenuNav.attach / UITheme.enforce as usual: the
 # action row is a sibling of the body box, and MenuNav drives focus across container
@@ -70,6 +74,48 @@ var _fixed_body_height := 0.0
 #   "padding" (float)  the body box's inner padding (default UITheme.panel_box's own)
 #   "dim"    (bool)    paint UITheme.MODAL_DIM over the WHOLE frame behind the page, for a
 #                      true modal that must read as blocking what's underneath
+# THE MODAL CANVAS LEVEL. Above the station overlays (which take CanvasLayer's default 1)
+# and STRICTLY BELOW ConfirmPopup's 101, because a modal page HOSTS confirms rather than
+# being one: the car park's Change-Upgrades page opens a ConfirmPopup from its Auto-Upgrade
+# row, and the reward / detune prompts open over these pages. On a tie the confirm can be
+# drawn UNDER the page's opaque panel while its own full-screen MOUSE_FILTER_STOP dim goes
+# on swallowing every click — an invisible confirm behind a menu that has gone dead.
+const MODAL_LAYER := 100
+
+
+# A MODAL MenuPage, hosted correctly. The one way to put a full-screen page on screen.
+#
+# It exists because hosting a modal was being re-derived per call site, and two of the three
+# derivations were wrong in ways nothing reported:
+#
+# 1. NEVER A STATION'S CanvasLayer. `WorldPanelHost.sync` migrates a station's UI tree into a
+#    3D WorldPanel and hides its flat layer outright (`flat_layer.visible = false`) whenever
+#    `world_space_menus` is on — the SHIPPED value. A page added to `_car_layer` was built,
+#    gated and nav-wired but rendered NOWHERE: pressing "Change Upgrades" on the car park's
+#    "Too powerful" prompt looked like it dropped the player back to car-select. Its own
+#    layer makes the page independent of where the station's tree currently lives.
+# 2. IT MUST CLAIM THE SCREEN, POINTER INCLUDED. `WorldPanel._input` projects clicks that
+#    land inside its 3D quad into the panel's SubViewport and marks them handled, standing
+#    down only for `MenuNav.input_blocked`. A page outside that predicate rendered on top
+#    while the station underneath quietly ate its clicks. Joining SCREEN_CLAIMER_GROUP —
+#    and NOT ConfirmPopup's MODAL_GROUP, which would make the page refuse the very confirms
+#    it hosts — is what makes the page's own buttons reachable.
+#
+# `opts` is passed through to _init verbatim, plus "layer" to override MODAL_LAYER. Returns
+# the page; its CanvasLayer is `page.get_parent()` (freeing that frees the page with it).
+static func open_modal(host: Node, opts: Dictionary = {}) -> MenuPage:
+	var page := MenuPage.new(opts)
+	var layer := CanvasLayer.new()
+	layer.layer = int(opts.get("layer", MODAL_LAYER))
+	host.add_child(layer)
+	layer.add_child(page)
+	# On the PAGE, not the layer, so that hiding the page releases the claim: hosts keep
+	# these pages alive and toggle `visible` (hq_carpark.gd _close_upgrades_popup), and a
+	# hidden page must not go on blocking the world behind it.
+	page.add_to_group(MenuNav.SCREEN_CLAIMER_GROUP)
+	return page
+
+
 func _init(opts: Dictionary = {}) -> void:
 	var margin: float = float(opts.get("margin", UITheme.MARGIN))
 	set_anchors_preset(Control.PRESET_FULL_RECT)

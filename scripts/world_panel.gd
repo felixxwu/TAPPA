@@ -218,8 +218,20 @@ func host(control: Control) -> void:
 
 
 
+# The tree this panel is holding RIGHT NOW, or null.
+#
+# SELF-CORRECTING, because the tree can be taken back without the panel being told:
+# WorldPanelHost.release_tree re-parents it to the flat layer directly (it must — freeing a
+# panel that still held the tree would free the menu with it). A stored `_hosted` therefore
+# went stale on every revert to the flat host, and any caller asking "is this screen on its
+# panel?" got YES for a screen sitting on its CanvasLayer — which is exactly how a forced
+# re-style painted the panel's opaque label boxes onto the flat menu. Answer from the scene
+# tree instead, and let the stale reference go.
 func hosted() -> Control:
-	return _hosted
+	if _hosted != null and is_instance_valid(_hosted) and _hosted.get_parent() == _frame:
+		return _hosted
+	_hosted = null
+	return null
 
 
 func viewport() -> SubViewport:
@@ -234,6 +246,34 @@ func surface() -> Sprite3D:
 # Exposed so callers/tests can ask about the layout canvas without depending on a node path.
 func frame() -> Control:
 	return _frame
+
+
+# THE CANVAS `node` IS ACTUALLY LAID OUT AGAINST, whichever host is holding it.
+#
+# Ask this instead of `get_viewport().get_visible_rect().size` whenever the answer is used to
+# FIT something (a body scroll's height cap, a column's width). Inside a panel the viewport is
+# the SubViewport, whose size is `logical * SUPERSAMPLE` — several times the `_frame` the tree
+# is really laid out in (see the `_frame` header) — so a cap measured off it is far too
+# generous and the content overflows the panel it is on. Outside a panel this is just the
+# viewport rect, so callers need no host special-casing at all.
+#
+# `fallback` is returned only when the node is in no tree/viewport (a bare unit test).
+static func layout_frame_size(node: Node, fallback := Vector2(480, 360)) -> Vector2:
+	if not is_instance_valid(node):
+		return fallback
+	var n: Node = node
+	while n != null:
+		var panel := n as WorldPanel
+		if panel != null:
+			var f := panel.frame()
+			if f != null:
+				return f.size
+		n = n.get_parent()
+	if node.is_inside_tree():
+		var vp := node.get_viewport()
+		if vp != null:
+			return vp.get_visible_rect().size
+	return fallback
 
 
 # Panel size in METRES, derived from the sprite's own pixel_size and viewport size rather than stored
@@ -462,15 +502,26 @@ static func text_backing(ctrl: Control) -> PanelContainer:
 
 
 # Restyle a hosted tree for the panel (`world` true) or back for its flat layer (false).
-# Idempotent, and safe on a tree with no backings at all.
-static func apply_host_style(root: Control, world: bool) -> void:
+# Idempotent per node, and safe on a tree with no backings at all.
+#
+# `force` RE-WALKS A TREE THAT IS ALREADY ON THE HOST IT ASKS FOR. The cheap early-out below
+# keys off the ROOT, so it also skipped nodes added to the tree AFTER it was adopted: content
+# rebuilt while hosted (hq.gd rebuilds the garage row on a Mystery Box repaint without going
+# through _go_to) kept the flat StyleBoxEmpty on any new backing — a bare label over a sunlit
+# car park — and never got centred or left-aligned. Every pass below is idempotent per node
+# (backings just re-set their box; _apply_centering / _apply_left_align stash each node's
+# authored values on ITS OWN first adopt), so re-walking is safe; it is skipped by default
+# only because it is a whole-tree walk on every view change. hq.gd::_normalize_menus passes
+# force, which is what makes "rebuilt content gets the house rules" true on both hosts.
+static func apply_host_style(root: Control, world: bool, force := false) -> void:
 	if not is_instance_valid(root):
 		return
 	# NOTHING TO DO WHEN THE HOST HASN'T CHANGED. This runs on every sync, which runs on every view
 	# change — and each pass below walks the whole tree. In the shipped flat path every walk is a
 	# guaranteed no-op after the first restore, so the common case was three full tree walks per
 	# screen per view change to change nothing.
-	if root.has_meta(APPLIED_META) and bool(root.get_meta(APPLIED_META)) == world:
+	if not force and root.has_meta(APPLIED_META) \
+			and bool(root.get_meta(APPLIED_META)) == world:
 		return
 	root.set_meta(APPLIED_META, world)
 	for n in root.find_children("*", "PanelContainer", true, false):

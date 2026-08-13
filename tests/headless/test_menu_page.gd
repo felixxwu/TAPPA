@@ -253,3 +253,48 @@ func test_a_pinned_height_stops_the_box_tracking_its_content() -> void:
 	await get_tree().process_frame
 	assert_almost_eq(page.panel().size.y, before, 1.0,
 		"the box keeps its pinned height after 600px of content is added")
+
+
+# --- open_modal: the hosting contract ----------------------------------------
+# A modal page must be independent of any station's CanvasLayer (WorldPanelHost hides those
+# when it migrates a station's tree into a 3D panel), must draw BELOW ConfirmPopup (it hosts
+# confirms rather than being one), and must claim the screen so WorldPanel._input stops
+# projecting its clicks into the 3D station behind it.
+
+func test_open_modal_hosts_the_page_on_its_own_canvas_layer() -> void:
+	var host := Node.new()
+	add_child_autofree(host)
+	var page := MenuPage.open_modal(host)
+	assert_not_null(page, "a page comes back")
+	var layer := page.get_parent() as CanvasLayer
+	assert_not_null(layer, "the page's parent is a CanvasLayer of its own")
+	assert_eq(layer.get_parent(), host, "which hangs off the host that was asked")
+
+
+func test_open_modal_draws_below_a_confirm_popup() -> void:
+	# Compared against ConfirmPopup's own level, never a pinned number: a tie lets the confirm
+	# hide behind this page's opaque panel while its click-swallowing dim stays live.
+	var host := Node.new()
+	add_child_autofree(host)
+	var page := MenuPage.open_modal(host)
+	var confirm := ConfirmPopup.open(host, "T", "B", [{"label": "OK", "callback": Callable()}])
+	assert_not_null(confirm, "a confirm opens over the page rather than being refused")
+	if confirm == null:
+		return
+	assert_lt((page.get_parent() as CanvasLayer).layer, (confirm as CanvasLayer).layer,
+		"the modal page draws below any confirm popup opened over it")
+	confirm.trigger_back()
+
+
+func test_open_modal_claims_the_screen_while_visible() -> void:
+	var host := Node.new()
+	add_child_autofree(host)
+	var outsider := Control.new()
+	add_child_autofree(outsider)
+	var page := MenuPage.open_modal(host)
+	await get_tree().process_frame
+	assert_true(MenuNav.input_blocked(outsider),
+		"while the modal is up, everything outside it goes deaf (pointer included)")
+	page.visible = false
+	assert_false(MenuNav.input_blocked(outsider),
+		"and hiding the page releases the claim — hosts keep these pages and toggle visible")

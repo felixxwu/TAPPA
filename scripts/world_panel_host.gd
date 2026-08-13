@@ -70,18 +70,56 @@ func sync(world: bool, shown: bool) -> void:
 	if world and panel != null:
 		if panel.hosted() != tree:
 			panel.host(tree)
-		flat_layer.visible = false
+		_stand_down_flat()
 		panel.visible = shown
 		place()
 	elif world:
 		# World mode, but this screen isn't showing and has no panel yet — leave both hosts down.
-		flat_layer.visible = false
+		_stand_down_flat()
 	else:
 		release_tree()
 		if flat_layer != null:
 			flat_layer.visible = shown
 		if panel != null:
 			panel.visible = false
+
+
+# IS THE TREE ON THE PANEL RIGHT NOW? The one authoritative answer to "which host is live",
+# so callers stop deriving it from parent identity (`tree.get_parent() != flat_layer`) — a
+# spelling of the question that quietly changes meaning the moment a tree is parked anywhere
+# else, and which was already duplicated in hq.gd::_normalize_menus.
+func is_world() -> bool:
+	return panel != null and panel.hosted() == tree
+
+
+# Stand the flat layer down — and SAY SO when something else is riding on it.
+#
+# This is the exact line that made the car park's Change-Upgrades modal invisible: UI parented
+# to a station's CanvasLayer renders nowhere once the tree migrates, and nothing failed, warned
+# or looked wrong in code review. The modal was built, gated, nav-wired and on nobody's screen.
+#
+# So the moment the invalid state comes into existence, name it. Debug builds only (same gating
+# as the F7/F8 panel keys) — it costs nothing shipped, and it prints while the developer is
+# looking at the blank screen, which is the difference between "Change Upgrades does nothing"
+# and a named node in the log. UI that legitimately belongs to the flat layer and accepts going
+# with it sets ALLOW_HIDDEN_META — nothing does today (the build watermark, which used to be the
+# one accepted stray, now has its own layer), so the warning firing means a real mistake.
+const ALLOW_HIDDEN_META := "world_panel_ok_hidden"
+
+
+func _stand_down_flat() -> void:
+	if flat_layer == null:
+		return
+	flat_layer.visible = false
+	if not OS.is_debug_build():
+		return
+	for child in flat_layer.get_children():
+		if child == tree or child.has_meta(ALLOW_HIDDEN_META) or not (child is CanvasItem):
+			continue
+		push_warning(("WorldPanelHost: '%s' is parented to the hidden flat layer '%s' and will "
+			+ "render nowhere. Give it its own CanvasLayer (MenuPage.open_modal / ConfirmPopup), "
+			+ "or set ALLOW_HIDDEN_META if it is meant to go down with the layer.")
+			% [child.name, flat_layer.name])
 
 
 # Hand the tree back to its flat layer. Safe to call when it is already there.

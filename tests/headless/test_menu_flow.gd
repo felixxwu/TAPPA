@@ -418,8 +418,29 @@ func test_hq_title_shows_build_version() -> void:
 	# version renders capped (e.g. "V0.0-DEV").
 	assert_eq(hq._title_version_label.text, UITheme.caps("v" + ver),
 		"the title version label mirrors application/config/version")
-	assert_eq(hq._title_version_label.get_parent(), hq._title_layer,
-		"the version label lives on the title overlay (shown only there)")
+	# NOT on _title_layer: that layer is stood down when the title screen migrates to a
+	# WorldPanel, and the watermark went invisible for the whole session with it — the one
+	# readout that says which build you are looking at, missing from the shipped config. It has
+	# its own layer now, shown with the title screen.
+	assert_ne(hq._title_version_label.get_parent(), hq._title_layer as Node,
+		"the version label is not riding on the title's migratable layer")
+	assert_true(MenuNav.is_on_screen(hq._title_version_label),
+		"and it is on screen at the title station")
+
+
+func test_the_build_watermark_survives_a_world_hosted_title() -> void:
+	# The whole point of giving it its own layer: it must be legible on either host.
+	Config.data.world_space_menus = true
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_false(hq._title_layer.visible, "precondition: the title is on its panel, flat layer down")
+	assert_true(MenuNav.is_on_screen(hq._title_version_label),
+		"the build watermark is still on screen with world menus on")
+	hq._go_to(hq.View.GARAGE)
+	await get_tree().process_frame
+	assert_false(MenuNav.is_on_screen(hq._title_version_label),
+		"and it goes away with the title screen, rather than following you round the HQ")
 
 
 # The pan path repaints the focus highlight only when the selection CHANGES (it runs every
@@ -2463,7 +2484,8 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 	assert_lt(forward.z, 0.0, "the camera looks back toward the car and the garage (−Z)")
 
 
-# WORLD-SPACE CAR-PARK MENU (features/world-panel.md), off by default. Three things have to
+# WORLD-SPACE CAR-PARK MENU (features/world-panel.md) — the mode game_config.tres SHIPS (this file's
+# before_each pins it off, so world-mode tests opt back in). Three things have to
 # move together when it is on, and all three are invisible in the flat default:
 #   1. the overlay tree is hosted on the WorldPanel, not its CanvasLayer;
 #   2. the bare labels get an opaque backing (the panel is transparent, so text would
@@ -4451,6 +4473,68 @@ func test_engine_swap_button_is_focusable() -> void:
 	assert_true(found, "the upgrades page has a Swap Engine button")
 
 
+func test_migratable_layers_gain_no_runtime_children() -> void:
+	# THE STRUCTURAL NET for the class of bug that made the Change-Upgrades modal invisible.
+	# A CanvasLayer managed by a WorldPanelHost holds exactly one thing: the screen tree it
+	# migrates. Anything else parented there renders nowhere as soon as world menus are on
+	# (WorldPanelHost stands the flat layer down), and nothing fails — so assert it directly,
+	# in flat mode where every entry point is easy to drive.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var managed: Dictionary = {}
+	for key in ["car", "lift", "title", "garage"]:
+		var host: WorldPanelHost = hq._panel_host(key)
+		assert_not_null(host, "setup: the '%s' screen has a panel host" % key)
+		if host != null:
+			managed[key] = host
+	# Drive every path that creates UI at runtime over a station.
+	var id := int(_save.selected_car().get("instance_id", -1))
+	hq._selected_instance_id = id
+	hq._eligible = [_save.get_car(id)]
+	hq._focus = 0
+	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
+	hq._carpark_ui._show_over_limit_prompt(_save.get_car(id))
+	hq._show_android_app_notice()
+	hq._challenge_ui._open_challenge_overlay()
+	hq._enter_lift()
+	await get_tree().process_frame
+	for key in managed:
+		var host: WorldPanelHost = managed[key]
+		for child in host.flat_layer.get_children():
+			assert_eq(child, host.tree as Node,
+				("'%s' is on the migratable '%s' layer — it will render nowhere with world menus "
+				+ "on. Modals belong on their own layer (MenuPage.open_modal / ConfirmPopup).")
+				% [child.name, key])
+
+
+func test_leaving_a_station_releases_focus_on_both_hosts() -> void:
+	# `get_viewport().gui_release_focus()` is answered by the viewport HQ sits in, so it never
+	# reached a migrated station's SubViewport: a button on the screen you just left kept focus
+	# and went on swallowing arrow keys / Enter in the next, spatially-navigated station.
+	Config.data.world_space_menus = true
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	var host: WorldPanelHost = hq._panel_host("lift")
+	assert_not_null(host, "setup: the lift has a panel host")
+	if host == null or host.panel == null:
+		return
+	assert_true(host.is_world(), "setup: the lift menu is on its panel")
+	var sub := host.panel.viewport()
+	var buttons := host.tree.find_children("*", "Button", true, false)
+	assert_gt(buttons.size(), 0, "setup: the lift page has a button to focus")
+	(buttons[0] as Button).grab_focus()
+	await get_tree().process_frame
+	assert_not_null(sub.gui_get_focus_owner(), "setup: the panel's own viewport holds focus")
+	hq._go_to(hq.View.GARAGE)
+	await get_tree().process_frame
+	assert_null(sub.gui_get_focus_owner(),
+		"leaving the station drops focus inside the panel, not just in the main viewport")
+
+
 # --- Android app boot notice (features/menus.md → "Android app notice") ------
 
 func _press(action: String) -> InputEventAction:
@@ -4496,6 +4580,30 @@ func test_android_notice_is_navigable_and_back_dismisses() -> void:
 	assert_null(hq._android_notice_layer, "back dismisses the notice")
 	assert_true(hq._title_layer.visible, "dismissing restores the title overlay")
 	assert_eq(hq._title_focus, hq._title_start_index(), "the title cursor is back on Start")
+
+
+func test_android_notice_stands_down_a_world_hosted_title() -> void:
+	# The notice must stand the title down on WHICHEVER host is holding it. With world menus
+	# on the title tree has migrated into a 3D WorldPanel and the flat layer is already hidden
+	# and empty, so the old `_title_layer.visible = false` stood nothing down: the notice drew
+	# over a live title menu and both MenuNavs answered the same keypress. Asserts the tree's
+	# on-screen-ness (MenuNav's own host-agnostic predicate), never a particular layer.
+	Config.data.world_space_menus = true
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_true(MenuNav.is_on_screen(hq._title_root),
+		"precondition: the title menu is on screen at the exterior station")
+	hq._show_android_app_notice()
+	await get_tree().process_frame
+	assert_not_null(hq._android_notice_layer, "the notice is up")
+	assert_false(MenuNav.is_on_screen(hq._title_root),
+		"the title menu is off screen while the notice owns it — on either host")
+	hq._dismiss_android_app_notice()
+	await get_tree().process_frame
+	assert_true(MenuNav.is_on_screen(hq._title_root), "dismissing restores the title menu")
+	assert_false(hq._title_layer.visible,
+		"and the flat layer stays down — the world panel is the live host, not both")
 
 
 # The final event used to skip straight to the podium. It now pauses on the SAME
