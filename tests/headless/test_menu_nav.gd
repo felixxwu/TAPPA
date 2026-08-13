@@ -215,6 +215,53 @@ func test_input_blocked_is_false_inside_the_open_modal() -> void:
 		"and so does the modal itself")
 
 
+func test_a_screen_claimer_blocks_everyone_but_its_own_subtree() -> void:
+	# A full-screen overlay that is NOT a ConfirmPopup still owns the screen — the car
+	# park's Change-Upgrades page, which can't join MODAL_GROUP because it HOSTS confirms
+	# (its Auto-Upgrade row opens one) and would refuse its own children. It claims via
+	# SCREEN_CLAIMER_GROUP instead. This matters for the pointer as much as for nav:
+	# WorldPanel._input asks input_blocked before projecting clicks into its 3D panel, so an
+	# unclaimed overlay is one the world underneath goes on eating clicks for.
+	var page := _make_flat_menu(2)
+	add_child_autofree(page)
+	var claimer := Control.new()
+	var inner := Button.new()
+	claimer.add_child(inner)
+	add_child_autofree(claimer)
+	claimer.add_to_group(MenuNav.SCREEN_CLAIMER_GROUP)
+	assert_true(MenuNav.input_blocked(page), "a page behind the claimed screen goes deaf")
+	assert_false(MenuNav.input_blocked(inner), "the claimer's own widgets keep their input")
+	assert_false(MenuNav.input_blocked(claimer), "and so does the claimer itself")
+
+
+func test_a_hidden_screen_claimer_releases_its_claim() -> void:
+	# Hosts keep these pages alive and toggle `visible` (hq_carpark.gd
+	# _close_upgrades_popup), so the claim has to follow visibility — otherwise closing the
+	# page leaves the whole screen permanently deaf.
+	var page := _make_flat_menu(2)
+	add_child_autofree(page)
+	var claimer := Control.new()
+	add_child_autofree(claimer)
+	claimer.add_to_group(MenuNav.SCREEN_CLAIMER_GROUP)
+	assert_true(MenuNav.input_blocked(page), "setup: the claim is live while shown")
+	claimer.visible = false
+	assert_false(MenuNav.input_blocked(page), "hiding the claimer releases the screen")
+
+
+func test_a_confirm_over_a_screen_claimer_keeps_its_own_input() -> void:
+	# The whole reason for the separate group: a claimer HOSTS confirms. The confirm must
+	# open (not be refused) and its buttons must not be blocked by the page underneath.
+	var claimer := Control.new()
+	add_child_autofree(claimer)
+	claimer.add_to_group(MenuNav.SCREEN_CLAIMER_GROUP)
+	var popup := _open_modal(claimer)
+	assert_not_null(popup, "a confirm still opens over a screen claimer")
+	if popup == null:
+		return
+	var btn := popup.find_children("*", "Button", true, false)[0] as Button
+	assert_false(MenuNav.input_blocked(btn), "the confirm's own buttons keep their input")
+
+
 func test_input_blocked_follows_text_editing() -> void:
 	var line := LineEdit.new()
 	add_child_autofree(line)

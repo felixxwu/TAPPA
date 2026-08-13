@@ -4371,10 +4371,6 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 	hq._selected_instance_id = id
 	hq._eligible = [_save.get_car(id)]
 	hq._focus = 0
-	# The popup is only ever opened from the detune prompt over the (visible) car-park
-	# layer; mirror that precondition so its controls are visible-in-tree (the layer is
-	# hidden outside View.CARPARK, which would make first_control() see nothing).
-	hq._car_layer.visible = true
 	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
 	assert_true(hq._upgrades_popup.visible, "the popup is shown")
@@ -4387,6 +4383,56 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 	assert_false(has_swap, "the engine-swap row is dropped in the popup")
 	hq._carpark_ui._close_upgrades_popup()
 	assert_false(hq._upgrades_popup.visible, "Done / back closes the popup")
+
+
+func test_carpark_upgrades_popup_renders_with_world_space_menus() -> void:
+	# The Change-Upgrades modal must be ON SCREEN whichever host the car-park overlay is
+	# using. With world_space_menus on, the car-park tree migrates into a 3D WorldPanel and
+	# its flat CanvasLayer is hidden (WorldPanelHost.sync) — a modal parented to that layer
+	# was fully built and navigable but invisible, so "Change Upgrades" on the "Too powerful"
+	# prompt looked like it just dropped the player back to car-select.
+	Config.data.world_space_menus = true
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var id := int(_save.selected_car().get("instance_id", -1))
+	hq._selected_instance_id = id
+	hq._eligible = [_save.get_car(id)]
+	hq._focus = 0
+	hq._go_to(hq.View.CARPARK)
+	await get_tree().process_frame
+	assert_false(hq._car_layer.visible, "precondition: the flat car-park layer stands down")
+	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
+	await get_tree().process_frame
+	assert_true(hq._upgrades_popup.is_visible_in_tree(),
+		"the upgrades modal is actually on screen, not on the hidden flat car-park layer")
+	assert_not_null(hq._upgrades_popup_menu.first_control(),
+		"and its options are focusable (a hidden tree has no focusable controls)")
+
+
+func test_carpark_upgrades_modal_sits_below_a_confirm_popup() -> void:
+	# The Change-Upgrades modal HOSTS ConfirmPopups (the Auto-Upgrade row opens one), so its
+	# CanvasLayer must be strictly BELOW ConfirmPopup's. On a tie the confirm can be drawn
+	# under this modal's opaque panel while its own full-screen MOUSE_FILTER_STOP dim goes on
+	# swallowing clicks — the menu reads as frozen. Compares the two layers against each
+	# other, never against a pinned number.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var id := int(_save.selected_car().get("instance_id", -1))
+	hq._selected_instance_id = id
+	hq._eligible = [_save.get_car(id)]
+	hq._focus = 0
+	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
+	await get_tree().process_frame
+	var modal_layer := hq._upgrades_popup.get_parent() as CanvasLayer
+	assert_not_null(modal_layer, "the modal is hosted on its own CanvasLayer")
+	var confirm := ConfirmPopup.open(hq, "Fixture", "body",
+		[{"label": "Ok", "callback": Callable()}])
+	assert_not_null(confirm, "a confirm can open over the modal")
+	assert_lt(modal_layer.layer, (confirm as CanvasLayer).layer,
+		"the upgrades modal draws BELOW any confirm popup opened over it")
+	confirm.trigger_back()
 
 
 func test_engine_swap_button_is_focusable() -> void:

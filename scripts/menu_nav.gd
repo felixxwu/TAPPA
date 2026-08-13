@@ -192,11 +192,48 @@ static func input_blocked(node: Node) -> bool:
 	var tree := loop as SceneTree
 	if tree != null:
 		var modal := ConfirmPopup.any_open(tree)
+		if modal == null:
+			modal = screen_claimer(tree)
 		if modal != null:
 			if is_instance_valid(node) and (node == modal or modal.is_ancestor_of(node)):
 				return false  # the modal's own widgets keep their input
 			return true
 	return is_text_editing()
+
+
+# A FULL-SCREEN OVERLAY THAT IS NOT A ConfirmPopup, but owns the screen just the same.
+#
+# ConfirmPopup's MODAL_GROUP does double duty: it answers "does something own the screen?"
+# AND it enforces one-modal-at-a-time by REFUSING a second open (confirm_popup.gd
+# MODAL_GROUP). A modal that legitimately HOSTS confirms — the car park's Change-Upgrades
+# page, whose Auto-Upgrade row opens its own ConfirmPopup — cannot join that group without
+# refusing its own children, so it needs the first half of the answer without the second.
+# Hence a separate group, read here and nowhere else.
+#
+# WHY IT MATTERS BEYOND NAV: WorldPanel._input claims POINTER events for the panel quad
+# unless this predicate says otherwise (world_panel.gd _input). An overlay outside both
+# groups therefore rendered on top while the 3D panel underneath quietly ate every click
+# that landed inside the quad and marked it handled — the modal was on screen and visibly
+# focused, and clicking it did nothing.
+#
+# Membership is on the overlay's own Control (not its CanvasLayer) so that hiding the page
+# releases the claim: hosts keep these pages alive and toggle `visible` (see
+# hq_carpark.gd _close_upgrades_popup), and a hidden page must not go on blocking the world.
+const SCREEN_CLAIMER_GROUP := "screen_claimer"
+
+
+static func screen_claimer(tree: SceneTree) -> Node:
+	if tree == null:
+		return null
+	for n in tree.get_nodes_in_group(SCREEN_CLAIMER_GROUP):
+		var node := n as Node
+		if not is_instance_valid(node) or node.is_queued_for_deletion():
+			continue
+		var ci := node as CanvasItem
+		if ci != null and not ci.is_visible_in_tree():
+			continue
+		return node
+	return null
 
 
 func _unhandled_input(event: InputEvent) -> void:

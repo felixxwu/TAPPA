@@ -1992,7 +1992,12 @@ warning label, the plain enabled Start (saves overlay space). Pressing Start pop
 (`_detune_change_upgrades`) opens the **Change-Upgrades popup** — the shared
 `UpgradesSimple` component (see [upgrade-catalogue.md](upgrade-catalogue.md)) in a
 matching centred modal (`_show_upgrades_popup`, engine-swap row dropped, passed the
-rally's `pw_limit`) so the player can strip / switch parts — or use the menu's own
+rally's `pw_limit`; `_make_carpark_modal` hosts it on **its own `CanvasLayer`**, never on
+`_car_layer` — with `world_space_menus` on the car-park tree migrates into a 3D
+`WorldPanel` and its flat layer is hidden, which used to render this modal invisible so
+Change Upgrades looked like a no-op back to car-select; it sits at layer 100, strictly below
+`ConfirmPopup`'s 101, and claims the screen via `MenuNav.SCREEN_CLAIMER_GROUP` so the 3D
+panel underneath stops eating its clicks) so the player can strip / switch parts — or use the menu's own
 **engine-detune slider** (at the bottom of the menu) — to shed power. Because the popup
 is passed the rally's `pw_limit`, its close button is the gated **Done** (red,
 **"Over limit — reduce to N hp/tonne"**, blocking both the button and back) until the

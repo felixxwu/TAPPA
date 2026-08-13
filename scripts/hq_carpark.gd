@@ -607,7 +607,32 @@ func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Co
 		# longer be pushed off the bottom by a growing body — the failure the old comment here
 		# was guarding against by hand.
 		build_footer.call(page.actions())
-	_hq._car_layer.add_child(page)
+	# ITS OWN CANVASLAYER, NOT _car_layer. With `world_space_menus` on (the shipped value in
+	# game_config.tres) the car-park overlay is migrated INTO a 3D WorldPanel and its flat
+	# CanvasLayer is hidden outright (WorldPanelHost.sync sets `flat_layer.visible = false`),
+	# so a modal parented to _car_layer was built, wired and navigable but rendered NOWHERE:
+	# pressing "Change Upgrades" on the "Too powerful" prompt looked like it dropped you back
+	# to car-select. Hosting the modal on its own layer — exactly what ConfirmPopup does, which
+	# is why the prompt itself was always visible — makes it independent of where the car-park
+	# tree currently lives.
+	var layer := CanvasLayer.new()
+	# STRICTLY BELOW ConfirmPopup (101), and above the station overlays (CanvasLayer's
+	# default 1). This modal is a HOST for ConfirmPopups, not a peer of them: the
+	# Auto-Upgrade row inside it opens its own confirm (auto_upgrade_row.gd _on_pressed),
+	# and the reward/detune prompts open over it. On a TIE at 101 the confirm can be drawn
+	# UNDER this modal's opaque panel while its own full-screen MOUSE_FILTER_STOP dim keeps
+	# swallowing every click — an invisible confirm behind a menu that has gone dead. So the
+	# ordering is explicit and one-directional rather than left to how Godot happens to
+	# break a same-layer tie.
+	layer.layer = 100
+	_hq.add_child(layer)
+	layer.add_child(page)
+	# CLAIM THE SCREEN (pointer included). Not ConfirmPopup's MODAL_GROUP — this page HOSTS
+	# confirms (the Auto-Upgrade row opens one) and joining that group would make it refuse
+	# its own children. Without the claim, WorldPanel._input goes on projecting clicks that
+	# land inside the panel quad into the car park underneath and marking them handled, so
+	# this modal's buttons never see them. See MenuNav.SCREEN_CLAIMER_GROUP.
+	page.add_to_group(MenuNav.SCREEN_CLAIMER_GROUP)
 	return page
 
 
