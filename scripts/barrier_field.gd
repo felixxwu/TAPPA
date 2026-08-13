@@ -37,7 +37,10 @@ var _protos := {}
 
 
 # Build one module per layout entry. `params` is GameConfig.barrier_render_params().
-func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
+# `ground_at` is a `func(pos: Vector2) -> float` terrain-height sampler
+# (TerrainManager.height_at); with none supplied the run is laid on flat ground at
+# y = 0, which is what the render harness wants.
+func build(layout: Array, params: Dictionary, ground_at := Callable()) -> void:
 	if layout.is_empty():
 		return
 	var pitch: float = maxf(float(params.get("section_length_m", 2.0)), 0.1)
@@ -51,8 +54,8 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 	for entry in layout:
 		var style := int(entry["style"])
 		var proto := _prototype(style, pitch, params)
-		var xform := _module_transform(entry, terrain, half_w, road_gap,
-			float(proto["aabb"].end.x), sink)
+		var xform := _module_transform(entry, ground_at, half_w, road_gap,
+			float(proto["aabb"].end.x), sink, pitch)
 		var key := Vector2i(int(entry.get("run", 0)), style)
 		if not groups.has(key):
 			groups[key] = []
@@ -67,9 +70,20 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 # Where one module sits in the world: at its road edge, `road_gap` clear of the
 # visible road edge (measured to the model's nearest face, which differs per style
 # — the jersey rail's foot reaches further toward the road than the armco beam), Z
-# along the road tangent and +X turned in toward the racing line.
-func _module_transform(entry: Dictionary, terrain: TerrainManager, half_w: float,
-		road_gap: float, face_reach: float, sink: float) -> Transform3D:
+# along the road tangent, +X turned in toward the racing line, and PITCHED to the
+# ground so a run climbing a hill stays joined up.
+#
+# The pitch comes from sampling the ground under the module's two ENDS rather than
+# under its centre: each end then sits ON the terrain, so a module's far end and its
+# neighbour's near end — the same point on the ground — arrive at the same height and
+# the rail is continuous over a crest or a climb. Reading a single centre height and
+# leaving the module level instead is what makes a stepped, gap-toothed run uphill.
+#
+# The barrier line lies INSIDE the road's flatten band (`track_transition_cells`), so
+# the heights it reads are the carved road's own smooth gradient, not raw verge noise
+# — the pitch follows the road up the hill and can't jitter module to module.
+func _module_transform(entry: Dictionary, ground_at: Callable, half_w: float,
+		road_gap: float, face_reach: float, sink: float, pitch: float) -> Transform3D:
 	var pos: Vector2 = entry["pos"]
 	var tangent: Vector2 = (entry["tangent"] as Vector2).normalized()
 	var side: int = int(entry["side"])
@@ -77,18 +91,28 @@ func _module_transform(entry: Dictionary, terrain: TerrainManager, half_w: float
 	var edge := pos + float(side) * perp * (half_w + road_gap + face_reach)
 	# Inward normal — from the barrier back toward the road, i.e. where +X must point.
 	var inward := -float(side) * perp
+	# Local +Z is the run direction (the module's length axis).
+	var run_dir := tangent * float(side)
+	var back := edge - run_dir * (pitch * 0.5)
+	var front := edge + run_dir * (pitch * 0.5)
 	# Ground height AT THE BARRIER, not at the centerline: the run sits outside the
-	# flattened road band, so the centerline height (what the signs and arches use,
-	# standing on the road itself) would float or bury it on a cambered verge. Sunk a
-	# few cm so small unevenness under a rigid 2 m module buries rather than floats.
-	var y := -sink   # no terrain (the render harness): flat ground at y = 0
-	if terrain != null:
-		y = terrain.height_at(edge.x, edge.y) - sink
-	# Basis.looking_at(d) puts -Z on d and +X on (-d.z, 0, d.x); solving that for
-	# +X == inward gives the look direction below.
-	return Transform3D(
-		Basis.looking_at(Vector3(inward.y, 0.0, -inward.x), Vector3.UP),
-		Vector3(edge.x, y, edge.y))
+	# flattened road's full-weight band, so the centerline height (what the signs and
+	# arches use, standing on the road itself) would float or bury it. Sunk a few cm so
+	# small unevenness under a rigid module buries its foot rather than floating.
+	var y_back := _ground(ground_at, back) - sink
+	var y_front := _ground(ground_at, front) - sink
+	# Length axis follows the slope; the road-facing axis stays horizontal (the barrier
+	# leans along the run, it never rolls sideways — posts stand up).
+	var z_axis := Vector3(front.x - back.x, y_front - y_back, front.y - back.y).normalized()
+	var x_axis := Vector3(inward.x, 0.0, inward.y).normalized()
+	x_axis = (x_axis - z_axis * x_axis.dot(z_axis)).normalized()
+	return Transform3D(Basis(x_axis, z_axis.cross(x_axis), z_axis),
+		Vector3(edge.x, (y_back + y_front) * 0.5, edge.y))
+
+
+# Terrain height at a world XZ, or 0 with no sampler (the render harness's flat world).
+func _ground(ground_at: Callable, p: Vector2) -> float:
+	return float(ground_at.call(p)) if ground_at.is_valid() else 0.0
 
 
 # One style's geometry, built once: a prototype BarrierSection is created off-tree,

@@ -961,8 +961,14 @@ func _build_barriers(cfg: GameConfig, result: Dictionary) -> void:
 	# the barrier can't drift from the surface the player actually drives on.
 	var tarmac_at := func(p: Vector2) -> float:
 		return terrain.surface_at(p.x, p.y).y
+	# The carved terrain the player actually drives on and collides with (road flatten
+	# and cliff offsets included). The planner reads it to tell a drop from a bank, and
+	# the builder to pitch each module onto the slope.
+	var ground_at := func(p: Vector2) -> float:
+		return terrain.height_at(p.x, p.y)
 	var params := cfg.barrier_render_params()
-	var layout := BarrierLayout.plan(result["centerline"], result["pieces"], params, tarmac_at)
+	var layout := BarrierLayout.plan(result["centerline"], result["pieces"], params,
+		tarmac_at, ground_at)
 	if layout.is_empty():
 		return
 	# Replace rather than stack, like the arches — the barriers rebuild wholesale for
@@ -971,7 +977,7 @@ func _build_barriers(cfg: GameConfig, result: Dictionary) -> void:
 	var field := BarrierField.new()
 	field.name = "BarrierField"
 	add_child(field)
-	field.build(layout, terrain, params)
+	field.build(layout, params, ground_at)
 
 
 # Finish + start arches: the inflatable gates straddling the road
