@@ -6,8 +6,7 @@ they spin faster than the ground — a standing burnout, a wheelspin launch, or 
 spinning slide. **One pool serves every surface**, with each particle carrying its
 own colour, dimensions and roll picked at emit time: grey-brown clods on gravel,
 slim green blades on grass, nothing on tarmac (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
-across event regenerations, re-targeted on a car swap in `world.gd.cycle_car`),
-exactly like `TireMarks`.
+across event regenerations), exactly like `TireMarks`.
 
 ## Why a hand-rolled CPU pool + MultiMesh
 

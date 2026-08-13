@@ -38,10 +38,6 @@ var _global_page: GlobalStandings = null
 var _global_shown := false
 var _root_box: VBoxContainer = null  # page 1's content, hidden while page 2 is up
 
-# Seconds between each leaderboard line appearing. Shorter than it was when this
-# screen showed one list at a time: two stacked sections mean roughly twice as many
-# lines, and the whole fill-in should still be over in a couple of seconds.
-const REVEAL_STEP := 0.3
 # How many finishers each section lists before it cuts to the player's own row.
 const PODIUM_ROWS := 3
 
@@ -330,14 +326,17 @@ func _add_section(parent: VBoxContainer, heading: String, rows: Array) -> Array[
 	return built
 
 
-# Reveal leaderboard rows from P1 downward, one every REVEAL_STEP seconds,
-# starting from an empty list. Guarded by _reveal_gen so a rebuild (page
-# toggle / rebuild) mid-reveal abandons the coroutine without touching freed nodes.
+# Reveal leaderboard rows from P1 downward, one every
+# GameConfig.standings_reveal_step seconds, starting from an empty list. Guarded by
+# _reveal_gen so a rebuild (page toggle / rebuild) mid-reveal abandons the coroutine
+# without touching freed nodes. Shorter than podium_reveal_step deliberately: this
+# screen stacks TWO sections (stage + overall), roughly twice as many lines, so the
+# whole fill-in should still be over in about the same couple of seconds.
 func _reveal_standings(rows: Array) -> void:
 	_reveal_gen += 1
 	var gen := _reveal_gen
 	for row in rows:
-		await get_tree().create_timer(REVEAL_STEP).timeout
+		await get_tree().create_timer(Config.data.standings_reveal_step).timeout
 		if gen != _reveal_gen:
 			return
 		if is_instance_valid(row):

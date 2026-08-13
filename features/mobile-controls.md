@@ -118,9 +118,10 @@ title-screen Settings page has no live controls, so there it just saves.)
 On non-touch devices the layer is hidden and its input/process are disabled, so
 desktop keyboard play is unchanged. On the web export `is_touchscreen_available()`
 reflects the browser's touch support, so it is true on phones and false on ordinary
-desktops. (The game uses `stretch/mode="viewport"`, so the *internal* viewport is
-always 480×360 — viewport width can't distinguish phone from desktop, which is why
-touch availability is the detection signal.)
+desktops. (The game uses `stretch/mode="viewport"`, so the *internal* viewport's
+logical height is always the fixed `DisplayStretch.DESIGN_HEIGHT` regardless of device
+— viewport width can't distinguish phone from desktop, which is why touch availability
+is the detection signal.)
 
 ## Web fullscreen + landscape
 

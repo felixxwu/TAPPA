@@ -350,6 +350,15 @@ static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 
 
+# The catalogue entry an OWNED car dict (a `profile["cars"]` row, keyed by "model_id")
+# resolves to — the one spelling of `by_id(String(owned.get("model_id", "")))`, which was
+# repeated at ~30 call sites. Returns the SAME empty Dictionary `by_id` does when the row
+# has no `model_id` or names a model the catalogue no longer carries, so a caller can keep
+# using `is_empty()` as its "this car is gone" test.
+static func for_owned(owned: Dictionary) -> Dictionary:
+	return by_id(String(owned.get("model_id", "")))
+
+
 # Every OWNED car's WHEELS, offered as a cosmetic style that car can wear (see
 # features/wheel-customization.md). `profile` is a Save profile Dictionary (the same
 # shape Save keeps) — only cars in `profile["cars"]` donate

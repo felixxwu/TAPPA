@@ -64,30 +64,7 @@ static func build_level(data: Dictionary, stride: int, skirt_m: float) -> ArrayM
 			if has_uv2:
 				uv2s.append(full_uv2[fidx])
 
-	var indices := PackedInt32Array()
-	for zi in n - 1:
-		for xi in n - 1:
-			var a := zi * n + xi
-			var b := a + 1
-			var c := a + n
-			var d := c + 1
-			# Clockwise a,b,c / b,d,c — matches TerrainChunkBuilder.data().
-			indices.append_array([a, b, c, b, d, c])
-
-	if skirt_m > 0.0:
-		_add_skirt(verts, uvs, colors, uv2s, indices, n, has_uv2, skirt_m)
-
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	if has_uv2:
-		arrays[Mesh.ARRAY_TEX_UV2] = uv2s
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return grid_mesh(verts, uvs, colors, uv2s, n, skirt_m)
 
 
 # All LOD levels for a chunk, one ArrayMesh per LOD_STRIDES entry (index = level).
@@ -192,29 +169,7 @@ static func mesh_from_grid(data: Dictionary, skirt_m: float) -> ArrayMesh:
 	var has_uv2: bool = data.has("uv2s") and not (data["uv2s"] as PackedVector2Array).is_empty()
 	var uv2s: PackedVector2Array = (data["uv2s"] as PackedVector2Array).duplicate() if has_uv2 else PackedVector2Array()
 
-	var indices := PackedInt32Array()
-	for zi in n - 1:
-		for xi in n - 1:
-			var a := zi * n + xi
-			var b := a + 1
-			var c := a + n
-			var d := c + 1
-			indices.append_array([a, b, c, b, d, c])
-
-	if skirt_m > 0.0:
-		_add_skirt(verts, uvs, colors, uv2s, indices, n, has_uv2, skirt_m)
-
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	if has_uv2:
-		arrays[Mesh.ARRAY_TEX_UV2] = uv2s
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return grid_mesh(verts, uvs, colors, uv2s, n, skirt_m)
 
 
 # LOD meshes for a COARSE chunk: null for pruned fine levels (< l_min); for l_min..last,
@@ -233,6 +188,52 @@ static func build_levels_from(manager: TerrainManager, coord: Vector2i, l_min: i
 		b.build()
 		out[i] = mesh_from_grid(b.data(), skirt_m)
 	return out
+
+
+# Triangle indices for an n×n grid of vertices (row-major, index = zi*n+xi), one
+# quad (two tris) per cell: clockwise a,b,c / b,d,c — matches TerrainChunkBuilder.data()
+# and DistantTerrain's tile grid. Shared by every grid mesh builder in this file and
+# by DistantTerrain._build_tile so the triangulation is written exactly once.
+static func build_grid_indices(n: int) -> PackedInt32Array:
+	var indices := PackedInt32Array()
+	indices.resize((n - 1) * (n - 1) * 6)
+	var ii := 0
+	for zi in n - 1:
+		for xi in n - 1:
+			var a := zi * n + xi
+			var b := a + 1
+			var c := a + n
+			var d := c + 1
+			indices[ii + 0] = a; indices[ii + 1] = b; indices[ii + 2] = c
+			indices[ii + 3] = b; indices[ii + 4] = d; indices[ii + 5] = c
+			ii += 6
+	return indices
+
+
+# Assemble an n×n grid of (verts, uvs, colors, optional uv2s) into a triangulated
+# ArrayMesh, with an optional downward skirt around the perimeter (skirt_m > 0).
+# `uv2s` empty means "no UV2 channel" (mirrors the has_uv2 checks this replaces).
+# The single shared assembly point for build_level, mesh_from_grid, and
+# DistantTerrain._build_tile — see features/terrain.md "Mesh assembly".
+static func grid_mesh(verts: PackedVector3Array, uvs: PackedVector2Array,
+		colors: PackedColorArray, uv2s: PackedVector2Array, n: int,
+		skirt_m: float) -> ArrayMesh:
+	var indices := build_grid_indices(n)
+	var has_uv2 := not uv2s.is_empty()
+	if skirt_m > 0.0:
+		_add_skirt(verts, uvs, colors, uv2s, indices, n, has_uv2, skirt_m)
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
+	if has_uv2:
+		arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 # Append a downward skirt around the n×n grid perimeter: for each edge vertex,

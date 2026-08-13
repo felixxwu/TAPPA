@@ -15,21 +15,28 @@ var _scene: Node3D
 var _car: VehicleBody3D
 
 
-func before_each() -> void:
+func before_all() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
 	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
 	_car = _scene.get_node("Car")
-	# Field a fixture car from an owned dict so retune has its pre-tune baseline snapshot.
-	_car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {}})
 
 
-func after_each() -> void:
+func after_all() -> void:
+	_scene.free()
 	UpgradeFixtures.restore()
 	CarFixtures.restore()
 	Config.reset()
+
+
+func before_each() -> void:
+	# Every test mutates only the live config via retune/refit; re-field the fixture car
+	# from a clean owned dict so each test starts from the same pre-tune baseline snapshot
+	# (retune/refit_upgrades re-derive from the baseline captured at fielding, so this is
+	# the reset point — without it, one test's tuning would leak into the next).
+	_car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {}})
 
 
 func test_retune_applies_the_changed_tuning_to_the_live_config() -> void:

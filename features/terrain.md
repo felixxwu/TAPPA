@@ -83,13 +83,16 @@ Key methods:
   chunks, no meshes, never added to the tree, so it costs the distance-field pass and
   nothing else. Exists so a preview with no run scene (the Seed Lab) can still sample
   cliff-accurate ground. Free it when done.
-- `build_heights(center)` — a `SAMPLES²` height array centred on a chunk centre,
-  sampling absolute world coords with the noises built once (fast path for the
-  ~10k samples per chunk).
 - `_build_noises()` / `_sample_height(noises, amplitudes, x, z)` — shared layer
-  sampling. `_build_noises` returns a fresh `[noises, amplitudes]` pair; worker
-  paths (`compute_chunk_data`, `build_heights`) build their own (FastNoiseLite is
-  shared mutable state), the main thread reuses the cached pair.
+  sampling. `_build_noises` returns a fresh `[noises, amplitudes]` pair; the worker
+  path (`compute_chunk_data`, via `TerrainChunkBuilder`) builds its own (FastNoiseLite
+  is shared mutable state), the main thread reuses the cached pair via
+  `_ensure_noise_cache`/`_noise_height_at`. (There used to be a second, unused
+  `build_heights(center)` height-grid builder duplicating `compute_chunk_data`'s
+  math — deleted; it had no production caller, and the test that pinned it against
+  `compute_chunk_data` was a circular oracle. That test now checks
+  `compute_chunk_data`'s heights against `_noise_height_at` directly — see
+  `test_terrain.gd` → `test_compute_chunk_data_shapes_and_heights`.)
 - `chunk_coord_for(pos)` / `target_coords(center)` — integer chunk-grid math.
 - `update_focus(pos)` — recompute the car's chunk coord and, when it changes,
   `_reconcile` the loaded set: free chunks outside the 7×7 ring, instantiate and
@@ -240,6 +243,19 @@ default; deferring the finest one to an on-demand runtime build is an opt-in esc
 hatch (see **Lazy finest LOD level** below). All tunables live in `GameConfig`
 (`apply_terrain_lod`); `TerrainLod` is pure/static and headless-tested
 (`tests/headless/test_terrain_lod.gd`).
+
+**Mesh assembly is one shared function.** `build_level` (decimate from a full-res
+grid), `mesh_from_grid` (mesh a grid that was already generated at its target
+stride — coarse chunks), and `DistantTerrain._build_tile` (the backdrop's own
+coarse grid) all triangulate an n×n vertex grid and assemble it into an
+`ArrayMesh` identically, so the triangulation + `arrays[Mesh.ARRAY_*]` wiring
+lives in exactly one place: `TerrainLod.grid_mesh(verts, uvs, colors, uv2s, n,
+skirt_m) -> ArrayMesh` (plus its `TerrainLod.build_grid_indices(n)` helper for
+the a,b,c/b,d,c triangle indices alone). Each caller only does its OWN sampling
+loop and hands the resulting flat arrays to `grid_mesh`. `uv2s` empty means "no
+UV2 channel" — `grid_mesh` writes `ARRAY_TEX_UV2` only when it's non-empty, and
+skips the skirt entirely when `skirt_m <= 0.0` (the backdrop passes `0.0`: it
+has its own sink instead, see "Fog & distant backdrop" below).
 
 The band set is **per-target**: `world.gd._ready` picks it via
 `GameConfig.terrain_lod_bands_for(web, touch)` — a web **touch** device (the low-end
@@ -596,6 +612,12 @@ below is currently switched off; and the ring radius and the fog are entirely
 independent — no cull anywhere reads a fog value, so a foggy/wet stage still draws
 the geometry the fog hides (see [rendering.md](rendering.md) → "Fog does not shorten
 the cull").
+
+`_build_tile`'s own job is just the sampling loop (world-XZ → `height_at`/
+`light_at` → flat vertex/uv/color arrays); the triangulation and `ArrayMesh`
+assembly are the same `TerrainLod.grid_mesh` used by the LOD levels above
+(called with `skirt_m = 0.0` and no UV2 — the backdrop has no road blend and
+relies on `sink_m` instead of a skirt to hide seams).
 
 Because the play area is a **bounded corridor** (see the caveat under Performance —
 in practice the band reaches hundreds of metres off the road), the backdrop no longer

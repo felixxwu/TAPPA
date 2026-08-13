@@ -49,6 +49,29 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 
 ### Keeping the suite fast
 
+**Measured floor (2026-08-13): 406 s wall-clock, 2683 tests, warmup 6 s.** The
+`minimal_world()` lever below is **fully applied** — of the 24 files that
+instantiate `main.tscn`, only `test_smoke.gd` still pays full generation, and it
+does so because it asserts on the generated content. So there is no
+15-s-per-file conversion left to find, and the remaining cost decomposes as:
+
+| Cost | Measured | Reducible? |
+|---|---|---|
+| Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly` 52.7 s, `test_smoke`'s two generation tests 10.8 s, `test_lakes_integration` 6.1 s, `test_track_gen_frame_consistency` 3.6 s) | ~78 s | **No** — see "The irreducible sweeps" below |
+| `test_menu_flow.gd` | 55.7 s / 229 tests (~0.24 s each) | **No** — cost is test COUNT, not per-test waste; `hq_tree_count = 8` already trims each build, and a shared-`before_all` attempt leaked state (title-layer visibility, car-park focus indices) and was reverted |
+| `before_all` builds + loading 173 scripts | ~110 s (the gap between the 295.7 s per-test sum and wall-clock) | Largely no — ~1 s of `minimal_world()` per file, already minimal |
+
+**The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
+generates every authored rally event live (~0.7 s each). It is the regression guard
+for the seed-3002 blow-up, where one seed once took ~474 s. Sampling a subset
+defeats it (the original bug was a *single* seed), and it covers what
+`data/track_cache.json` cannot: a DFS **control-flow** regression that
+`constants_fingerprint()` does not capture, so a fresh lockfile does not imply live
+generation is still fast. **Do not weaken it to hit the budget.** If the ~5 min
+budget must be met, the structural options are to move these sweeps into a slow
+CI/pre-release lane (as `run_benchmark.sh` is to the suite), or to re-base the
+budget here and in `CLAUDE.md` with the measured floor.
+
 By default Godot's headless main loop is **paced to real time** at the tick
 rate, so each `await get_tree().physics_frame` costs ~1/60 s of wall-clock
 regardless of how trivial the scene is.
@@ -243,7 +266,9 @@ same pattern for the rally and upgrade catalogues:
 
 - **RallyFixtures:** `fx_open` (open restriction, 3 events — the "any rally with
   events" workhorse), `fx_rwd_band` / `fx_fwd_band` (drive-mode + power-band
-  gates), `fx_country_us` (country gate), `fx_gated` (`reveal_after`), and
+  gates), `fx_country_us` (country gate), `fx_gated` (a MAP-REVEAL gate — its
+  `map_pos` sits outside HQ's lit circle, and `fx_open` authors a wide
+  `reveal_radius` that reaches it, so completing `fx_open` reveals `fx_gated`), and
   `fx_showdown` — all in the real `home` region so reveal/region grouping
   resolves. Events use a very low `water_level` so track generation never has to
   route around lakes (fast, deterministic). Eligibility reads `CarLibrary`, so a

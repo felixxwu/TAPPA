@@ -17,8 +17,6 @@ signal standings_ready(stage_index: int)
 # RallySession.event_started, and is emitted whether or not the scene load is
 # enabled so the advance is observable with auto_load_scenes off.
 signal stage_started(stage_index: int)
-signal stage_upgrade_revealed(item_id: String)
-signal completion_reward_revealed(item_id: String)
 signal run_finished(result: Dictionary)
 
 # Test seam mirroring RallySession.auto_load_scenes — tests drive
@@ -77,9 +75,9 @@ func events_completed() -> int:
 # The per-stage reward drawn by the stage that just finished ("" on the final
 # stage, which draws none, and before any stage completes) — mirrors
 # RallySession.current_event_upgrade(), and is what the standings interstitial
-# reveals. Exposed as a getter as well as the stage_upgrade_revealed signal
-# because the interstitial does not exist yet when report_event_result emits
-# (the scene is loaded afterwards), so it can only READ the state.
+# reveals. Exposed as a getter because the interstitial does not exist yet when
+# report_event_result runs (the scene is loaded afterwards), so it can only
+# READ the state.
 func stage_upgrade() -> String:
 	return _stage_upgrade
 
@@ -192,8 +190,8 @@ static func classify_cars(kind_str: String, profile: Dictionary, unix_time: int)
 		return out
 	var raw_ceiling := ChallengeLibrary.ceiling_for(String(period["key"]))
 	out["ceiling"] = roundi(raw_ceiling)
-	for car in profile.get("cars", []):
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	for car in profile.get(Save.KEY_CARS, []):
+		var entry := CarLibrary.for_owned(car)
 		if entry.is_empty():
 			continue
 		var verdict := classify_car(raw_ceiling, car, entry)
@@ -315,21 +313,18 @@ func resume(unix_time: int) -> bool:
 func discard_stale_run(unix_time: int) -> void:
 	if not has_stale_run(Save.profile, unix_time):
 		return
-	Save.profile["challenge_run"] = {}
-	Save.save()
+	Save.clear_challenge_run()
 
 
 func _persist() -> void:
-	Save.profile["challenge_run"] = {
+	Save.set_challenge_run({
 		"period_key": _period_key, "kind": _kind, "car_instance_id": _car_instance_id,
 		"stage_index": _stage_index, "stage_times_ms": _stage_times_ms.duplicate(), "dnf": _dnf,
-	}
-	Save.save()
+	})
 
 
 func _clear_persisted() -> void:
-	Save.profile["challenge_run"] = {}
-	Save.save()
+	Save.clear_challenge_run()
 
 
 # --- Terminal per-period outcome (one attempt per period) ------------------------
@@ -369,7 +364,7 @@ func _record_outcome(unix_time: int) -> void:
 	for key in results:
 		if live.has(key):
 			pruned[key] = results[key]
-	Save.profile["challenge_results"] = pruned
+	Save.set_challenge_results(pruned)
 
 
 # --- Per-stage flow ------------------------------------------------------------
@@ -421,8 +416,6 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	standings_ready.emit(_stage_index)
 	if is_final:
 		_finish_locally()
-	if not is_final and _stage_upgrade != "":
-		stage_upgrade_revealed.emit(_stage_upgrade)
 
 
 # --- Local standings (a field of one) ------------------------------------------
@@ -455,7 +448,7 @@ func _player_car_model_id() -> String:
 # Mirrors RallySession._player_car_name — "" when nothing resolves (headless).
 func _player_car_name() -> String:
 	var owned := Save.get_car(_car_instance_id)
-	return EngineSwap.display_name(CarLibrary.by_id(String(owned.get("model_id", ""))), owned)
+	return EngineSwap.display_name(CarLibrary.for_owned(owned), owned)
 
 
 # --- Stage-to-stage advancement -------------------------------------------------
@@ -578,6 +571,14 @@ func _end_as_dnf() -> void:
 # One attempt per period and the outcome is terminal, so a period cannot be re-farmed —
 # but unlike career stars this income IS renewable over real time, which is deliberate:
 # it is the only star source that keeps flowing once the roster is complete.
+# The single source of truth for "how much of the board counts as PLACING" — the reward
+# RULE below (`rank > ceili(float(total) * CHALLENGE_TOP_FRACTION)`) and the win-condition
+# label the HQ entry screen shows (hq_challenge.gd -> _CHALLENGE_WIN_CONDITION, formatted
+# from this) both read it, so the rule and its label cannot silently disagree. It lives
+# here as a const rather than in game_config.tres because it is a REWARD RULE, not a look
+# or feel tunable: moving it changes who gets paid.
+const CHALLENGE_TOP_FRACTION := 0.5
+
 const _COMPLETION_REWARD := {
 	ChallengeLibrary.DAILY: {"boxes": 2},
 	ChallengeLibrary.WEEKLY: {"boxes": 3},
@@ -593,7 +594,7 @@ const _COMPLETION_REWARD := {
 # no username / the final checkpoint never posted (all read the same way:
 # Cloud.challenge_leaderboard.fetch_final_rank returning not-ok). Grants via
 # the same RewardSystem the per-stage draws use and returns what (if
-# anything) was granted, emitting completion_reward_revealed on a grant.
+# anything) was granted.
 func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	if not bool(result.get("completed", false)):
 		return {}  # DNF gets nothing from this path (§6)
@@ -607,7 +608,7 @@ func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 		return {}  # no cloud rank available — same graceful skip as a signed-out finish
 	var rank := int(rank_info["rank"])
 	var total := int(rank_info["total_entries"])
-	if rank > ceili(float(total) / 2.0):
+	if rank > ceili(float(total) * CHALLENGE_TOP_FRACTION):
 		return {"placed": false, "rank": rank, "total_entries": total}
 	var reward: Dictionary = _COMPLETION_REWARD.get(kind_str, {})
 	if reward.is_empty():
@@ -622,6 +623,5 @@ func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	var stars := RallyLibrary.stars_for_placement(rank)
 	if stars > 0:
 		Save.award_stars(stars, false)
-	completion_reward_revealed.emit("")
 	return {"placed": true, "rank": rank, "total_entries": total,
 		"item_id": "", "boxes": boxes, "stars": stars}

@@ -140,5 +140,12 @@ func place() -> void:
 
 func _spec_now() -> Vector2:
 	if not spec.is_valid():
-		return Vector2(WorldPanel.DEFAULT_HEIGHT_M, WorldPanel.DEFAULT_UI_SCALE)
+		# Every shipped station supplies its own `spec`, so this only fires for a host built
+		# with none at all (a test seam). Reads GameConfig.world_panel_fallback_height /
+		# world_panel_fallback_ui_scale rather than WorldPanel's own DEFAULT_HEIGHT_M /
+		# DEFAULT_UI_SCALE consts — those exist only because GDScript default-argument values
+		# must be compile-time constants (see WorldPanel's header comment on them) and so
+		# can't be retuned from config; this IS the retunable path.
+		var cfg: GameConfig = Config.data
+		return Vector2(cfg.world_panel_fallback_height, cfg.world_panel_fallback_ui_scale)
 	return spec.call() as Vector2

@@ -31,7 +31,8 @@ func _ready() -> void:
 	for k in sorted_keys:
 		ordered[k] = entries[k]
 	var out := {
-		"version": 1,
+		# No "version" field: invalidation rides entirely on CACHE_VERSION (folded into
+		# each entry's lookup key) plus source_hash below.
 		"source_hash": TrackCache.source_hash_of(keys),
 		"entries": ordered,
 	}

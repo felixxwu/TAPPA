@@ -7,14 +7,81 @@ extends RefCounted
 # Holds a back-reference to the HqController and reaches into it for state, node parenting and
 # widget helpers — the same shape as HqOverlays / HqChallenge / HQEnvironment.
 #
-# FUNCTIONS ONLY: the table/reveal/detail STATE stays on HqController, as does `_process` (an
-# engine callback Godot would never fire on a RefCounted) and the shared
-# `_eligibility_summary` / `_qualifying_cars_text` helpers hq_challenge.gd also uses.
+# The reveal parade's own bookkeeping lives HERE (below) because nothing else touches it. The
+# rest of the table/detail STATE stays on HqController, as does `_process` (an engine callback
+# Godot would never fire on a RefCounted) and the shared `_eligibility_summary` /
+# `_qualifying_cars_text` helpers hq_challenge.gd also uses.
 
 var _hq: HqController
 
+# The new-rally reveal parade's state. `_hq._revealing` is the public half of it — hq.gd's
+# input lock and the prewarm idle gate both read that flag — but the queue itself is private
+# to the coroutine that walks it.
+var _reveal_queue: Array[String] = []   # ids still to show (all get marked seen either way)
+var _reveal_shown: Array[String] = []   # ids already flipped this sequence
+# Bumped at the start of every _run_reveal_sequence; each sequence captures its own copy as
+# `token` before its first await. Lets a coroutine parked mid-sequence (skipped, then a second
+# sequence re-armed before it resumes) recognise it has been superseded and bail without
+# mutating the NEW sequence's shared state — see _reveal_continue.
+var _reveal_token := 0
+
 func _init(hq: HqController) -> void:
 	_hq = hq
+
+
+# --- Input (the TABLE branch of hq.gd's _unhandled_input dispatch) -----------
+
+# The whole keyboard/gamepad/pointer contract for this station, in the order the sub-states
+# nest: the reveal parade, then the rally-detail panel, then the pin cursor / pan. Returns
+# true when the event was this station's to act on.
+func handle_input(event: InputEvent) -> bool:
+	if _hq._revealing:
+		# CONTROLS LOCKED for the duration of the parade. A press used to skip the
+		# whole queue, but skipping marked every queued rally SEEN, so one stray
+		# keypress permanently burned the "NEW RALLY - …" beat for up to
+		# hq_reveal_max_queue rallies with no way to replay it. The parade is short
+		# (pan + hold per rally, capped), so it simply plays. Presses are SWALLOWED
+		# rather than ignored, so nothing underneath reacts either.
+		if _is_any_press(event):
+			_hq.get_viewport().set_input_as_handled()
+			return true
+		return false
+	if _hq._detail_open:
+		if event.is_action_pressed("menu_select"):
+			_hq._enter_car_screen()
+		elif event.is_action_pressed("menu_back"):
+			_hide_detail()
+		elif event.is_action_pressed("dev_complete_rally"):
+			# Dev cheat (F10, features/debug-tools.md): win the open rally outright.
+			# The keyboard route to the panel's "DEV: win" button — the panel has no
+			# MenuNav, so the button itself is pointer-only and this is what makes
+			# the cheat reachable without a mouse.
+			_hq._dev_complete_selected_rally()
+		else:
+			return false
+		return true
+	if event.is_action_pressed("menu_back"):
+		_hq.go_to(_hq.View.GARAGE)
+	elif event.is_action_pressed("menu_select"):
+		_activate_table_focus()
+	else:
+		# Up/down/left/right glide the camera continuously while held — polled
+		# in _process, not per-press — so only pointer drag is handled here.
+		_hq._table_pan_input(event)
+		return false
+	return true
+
+
+# Any deliberate "press" from any device — the skip gesture for the new-rally reveal.
+# Echoes (key auto-repeat) don't count; releases don't either, so the release that ends
+# the skipping press can't also fall through into something else.
+static func _is_any_press(event: InputEvent) -> bool:
+	if event is InputEventKey:
+		return event.pressed and not event.echo
+	if event is InputEventJoypadButton or event is InputEventMouseButton \
+			or event is InputEventScreenTouch:
+		return event.is_pressed()
+	return false
 
 
 func _enter_table() -> void:
@@ -45,7 +112,7 @@ func _enter_table() -> void:
 	# else refreshes normally (newly-earned stars / a special unlocking).
 	_hq._refresh_map_pins(pending)
 	if not pending.is_empty():
-		_hq._go_to(_hq.View.TABLE)
+		_hq.go_to(_hq.View.TABLE)
 		_run_reveal_sequence(pending)
 		return
 	# On entry, steer straight to the toughest event the player hasn't finished yet:
@@ -60,7 +127,7 @@ func _enter_table() -> void:
 	# fallback was taken (every event completed). See _focus_nearest_target.
 	if not _focus_hardest_incomplete():
 		_focus_nearest_target()
-	_hq._go_to(_hq.View.TABLE)
+	_hq.go_to(_hq.View.TABLE)
 
 
 # --- New-rally reveal --------------------------------------------------------
@@ -68,8 +135,8 @@ func _enter_table() -> void:
 # The rally ids waiting to be shown to the player, in roster order (newest-unlocked
 # last). A rally qualifies only when ALL THREE hold:
 #
-#   * it is unlocked (RallyLibrary.rally_revealed — reveal_after met, or a special
-#     whose region gate has opened),
+#   * it is unlocked (RallyLibrary.rally_revealed — its map position is inside a lit
+#     circle from a completed or opening rally),
 #   * the player owns a car that can ACTUALLY enter it (_has_eligible_car — the same
 #     authoritative answer the green/grey pin flag uses), and
 #   * it has not already been revealed (Save.rally_revealed_seen).
@@ -105,11 +172,11 @@ func _pending_reveals() -> Array:
 # instead of going on to pan the camera / bump banners / `erase()` entries out of the
 # NEW queue it has no business touching.
 func _run_reveal_sequence(pending: Array) -> void:
-	_hq._reveal_token += 1
-	var token := _hq._reveal_token
-	_hq._reveal_queue.clear()
+	_reveal_token += 1
+	var token := _reveal_token
+	_reveal_queue.clear()
 	for rid in pending:
-		_hq._reveal_queue.append(String(rid))
+		_reveal_queue.append(String(rid))
 	_hq._revealing = true
 	# Defensive: _enter_table already drains the queue instantly under headless, but
 	# nothing may await in a display-less run (it would hang the suite).
@@ -118,8 +185,8 @@ func _run_reveal_sequence(pending: Array) -> void:
 		return
 	var cfg: GameConfig = Config.data
 	var cap: int = maxi(1, cfg.hq_reveal_max_queue)
-	var shown := _hq._reveal_queue.slice(0, cap)
-	var overflow: int = _hq._reveal_queue.size() - shown.size()
+	var shown := _reveal_queue.slice(0, cap)
+	var overflow: int = _reveal_queue.size() - shown.size()
 	for rid in shown:
 		if not _reveal_continue(token):
 			return
@@ -133,9 +200,9 @@ func _run_reveal_sequence(pending: Array) -> void:
 			return
 		# 2. Flip it: rebuild the pins with this id no longer held back, so the grey flag
 		#    becomes the live one and the readout box pops in.
-		_hq._reveal_queue.erase(rid)  # …but it still gets marked seen — see _finish_reveals
-		var still_held := _hq._reveal_queue.duplicate()
-		_hq._reveal_shown.append(rid)
+		_reveal_queue.erase(rid)  # …but it still gets marked seen — see _finish_reveals
+		var still_held := _reveal_queue.duplicate()
+		_reveal_shown.append(rid)
 		_hq._refresh_map_pins(still_held)
 		_focus_pin(rid)
 		var lead := "SPECIAL EVENT UNLOCKED" if special else "NEW RALLY"
@@ -159,7 +226,7 @@ func _run_reveal_sequence(pending: Array) -> void:
 # pin rebuild) from what read as a plain query; see `_reveal_continue` for the explicit
 # abort step that replaces that side effect at the call sites that actually need it.
 func _reveal_active() -> bool:
-	return _hq._revealing and _hq.is_inside_tree() and _hq._view == _hq.View.TABLE
+	return _hq._revealing and _hq.is_inside_tree() and _hq.view() == _hq.View.TABLE
 
 
 # The abort point `_run_reveal_sequence` actually calls between steps. Returns true to
@@ -172,11 +239,11 @@ func _reveal_active() -> bool:
 # stale coroutine whose token has been superseded by a newer sequence returns false
 # immediately, without finishing anything (the newer sequence owns that now).
 func _reveal_continue(token: int) -> bool:
-	if token != _hq._reveal_token:
+	if token != _reveal_token:
 		return false
 	if _reveal_active():
 		return true
-	if _hq._revealing and _hq.is_inside_tree() and _hq._view != _hq.View.TABLE:
+	if _hq._revealing and _hq.is_inside_tree() and _hq.view() != _hq.View.TABLE:
 		_finish_reveals()
 	return false
 
@@ -189,22 +256,22 @@ func _reveal_continue(token: int) -> bool:
 # input comes back live, and selection is left on the LAST revealed pin — the player
 # wants to look at the new thing, not be yanked to _focus_hardest_incomplete().
 func _finish_reveals() -> void:
-	var last_shown: String = _hq._reveal_shown[-1] if not _hq._reveal_shown.is_empty() else ""
-	for rid in _hq._reveal_queue:
+	var last_shown: String = _reveal_shown[-1] if not _reveal_shown.is_empty() else ""
+	for rid in _reveal_queue:
 		Save.mark_rally_revealed(rid, false)
 		if last_shown == "":
 			last_shown = rid
-	for rid in _hq._reveal_shown:
+	for rid in _reveal_shown:
 		Save.mark_rally_revealed(rid, false)
 	Save.save()
-	_hq._reveal_queue.clear()
-	_hq._reveal_shown.clear()
+	_reveal_queue.clear()
+	_reveal_shown.clear()
 	_hq._revealing = false
 	if not _hq.is_inside_tree():
 		return
 	_set_reveal_banner("")
 	_hq._refresh_map_pins()
-	if _hq._view == _hq.View.TABLE and last_shown != "":
+	if _hq.view() == _hq.View.TABLE and last_shown != "":
 		_focus_pin(last_shown)
 
 
@@ -318,7 +385,7 @@ func _pan_table_step(dir2: Vector2, dist: float) -> void:
 	var half := cfg.hq_map_plane_size
 	_hq._table_pan.x = clampf(_hq._table_pan.x + want.x * dist, -half.x * 0.5, half.x * 0.5)
 	_hq._table_pan.z = clampf(_hq._table_pan.z + want.z * dist, -half.y * 0.5, half.y * 0.5)
-	if _hq._view == _hq.View.TABLE:
+	if _hq.view() == _hq.View.TABLE:
 		_hq._move_camera_to(_hq._station_xform(_hq.View.TABLE), true)
 	_select_target_under_center()
 
@@ -482,7 +549,7 @@ func _pan_table_to(target: Vector3) -> void:
 	var half: Vector2 = cfg.hq_map_plane_size
 	_hq._table_pan.x = clampf(target.x - cfg.hq_table_cam_look.x, -half.x * 0.5, half.x * 0.5)
 	_hq._table_pan.z = clampf(target.z - cfg.hq_table_cam_look.z, -half.y * 0.5, half.y * 0.5)
-	if _hq._view == _hq.View.TABLE:
+	if _hq.view() == _hq.View.TABLE:
 		_hq._move_camera_to(_hq._station_xform(_hq.View.TABLE), false)
 
 
@@ -521,7 +588,7 @@ func _on_rally_pin(rally_id: String) -> void:
 			await _hq.get_tree().create_timer(glide).timeout
 			# The player can leave the table (or tap elsewhere) mid-glide; opening the panel
 			# then would drop them into a menu they have navigated away from.
-			if _hq._view != _hq.View.TABLE or _hq._selected_rally_id != rally_id:
+			if _hq.view() != _hq.View.TABLE or _hq._selected_rally_id != rally_id:
 				return
 	_show_detail()
 
@@ -545,7 +612,7 @@ func _show_detail() -> void:
 
 	# --- Eligibility: restriction + how many of the player's cars can enter.
 	_hq._detail_restriction.text = _hq._restriction_text(rally.get("restriction", {}))
-	var elig := _hq._eligibility_summary(rally, Save.profile.get("cars", []))
+	var elig := _hq._eligibility_summary(rally, Save.profile.get(Save.KEY_CARS, []))
 	var total := int(elig["total"])
 	var qualify := int(elig["qualify"])
 	if total == 0:
@@ -574,9 +641,9 @@ func _show_detail() -> void:
 
 	_hq._detail_open = true
 	_hq._view = _hq.View.TABLE
-	_hq._update_overlays()
+	_hq.update_overlays()
 
 
 func _hide_detail() -> void:
 	_hq._detail_open = false
-	_hq._update_overlays()
+	_hq.update_overlays()

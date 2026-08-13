@@ -99,7 +99,7 @@ func _persist() -> void:
 
 
 # Re-point the chase camera and re-parent the bonnet camera onto a (possibly
-# fresh) car. Called by world.gd:cycle_car() after a car swap.
+# fresh) car.
 func retarget(car: Node3D) -> void:
 	chase_camera.target = car
 	if bonnet_camera.get_parent() != car:

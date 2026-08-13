@@ -38,7 +38,8 @@ static var DESIGN_HEIGHT: float = base_design_height()
 
 # The authored logical height from project.godot.
 static func base_design_height() -> float:
-	return float(ProjectSettings.get_setting("display/window/size/viewport_height", 360))
+	# Default must match display/window/size/viewport_height in project.godot.
+	return float(ProjectSettings.get_setting("display/window/size/viewport_height", 400))
 
 
 var _last_window_size := Vector2i.ZERO

@@ -20,8 +20,8 @@ func _ready() -> void:
 
 	var first_rally := String(RallyLibrary.RALLIES[0]["id"])
 
-	await _shot("exterior", func() -> void: _hq._go_to(_hq.View.EXTERIOR, true))
-	await _shot("garage", func() -> void: _hq._go_to(_hq.View.GARAGE, true))
+	await _shot("exterior", func() -> void: _hq.go_to(_hq.View.EXTERIOR, true))
+	await _shot("garage", func() -> void: _hq.go_to(_hq.View.GARAGE, true))
 	await _shot("worldmap", func() -> void: _hq._enter_table())
 	await _shot("rally_detail", func() -> void:
 		_hq._selected_rally_id = first_rally

@@ -24,14 +24,15 @@ func _first_model_car() -> Dictionary:
 	return {}
 
 
-func before_each() -> void:
+func before_all() -> void:
 	SceneHelpers.minimal_world()
 	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
 
 
-func after_each() -> void:
+func after_all() -> void:
+	_scene.free()
 	UpgradeFixtures.restore()
 	Config.reset()
 
@@ -45,6 +46,7 @@ func test_body_reveal_hides_wing_by_default() -> void:
 	var body := car.get_node(String(found.spec["model_node"]))
 	var stub := MeshInstance3D.new()
 	stub.name = "stub_aero"
+	autofree(stub)
 	body.add_child(stub)
 	car.apply_car(int(found.index))
 	assert_false(stub.visible, "wing hidden by default when a body is revealed")
@@ -59,6 +61,7 @@ func test_aero_visibility_follows_enabled_state() -> void:
 	var body := car.get_node(String(found.spec["model_node"]))
 	var stub := MeshInstance3D.new()
 	stub.name = "stub_aero"
+	autofree(stub)
 	body.add_child(stub)
 	car.apply_car(int(found.index))
 	var model_id := String(found.spec["id"])
@@ -85,6 +88,7 @@ func test_set_body_hidden_restore_keeps_wing_for_upgraded_car() -> void:
 	var body := car.get_node(String(found.spec["model_node"]))
 	var stub := MeshInstance3D.new()
 	stub.name = "stub_aero"
+	autofree(stub)
 	body.add_child(stub)
 	car.apply_car(int(found.index))
 	car._apply_aero_visibility({
@@ -115,10 +119,12 @@ func test_aero_meshes_keep_their_own_material() -> void:
 	wing.name = "wing_aero"
 	wing.mesh = BoxMesh.new()  # needs a surface for a surface-0 material slot
 	wing.set_surface_override_material(0, sentinel)
+	autofree(wing)
 	body.add_child(wing)
 	var panel := MeshInstance3D.new()
 	panel.name = "spare_panel"  # non-aero: should be re-skinned
 	panel.mesh = BoxMesh.new()
+	autofree(panel)
 	body.add_child(panel)
 	# _apply_model_material walks find_children(..., owned=true) like the real glb
 	# import, so injected nodes need an owner to be seen (mirrors imported meshes).

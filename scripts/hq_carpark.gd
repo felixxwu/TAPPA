@@ -2,22 +2,63 @@ class_name HqCarpark
 extends RefCounted
 # The car park: the eligible-lineup build, the parked-car prop cache, focus
 # cycling, the swap/damage readouts and the carpark modals. Split out of hq.gd
-# (see todo/hq-split.md) — the FUNCTIONS moved here, every `_carpark_*` / `_lineup`
-# / `_car_cache` STATE var stayed on HqController, which this reaches back into
-# through `_hq`. Same shape as HqOverlays / HqChallenge / HqTable.
+# (see todo/hq-split.md) — the FUNCTIONS moved here, along with the state NOTHING ELSE reads
+# (below). The shared `_carpark_*` / `_lineup` / `_car_cache` state stayed on HqController,
+# which this reaches back into through `_hq`. Same shape as HqOverlays / HqChallenge / HqTable.
 
 var _hq: HqController
+
+# The car-park "Change Upgrades" popup, opened from the over-limit prompt as an alternative
+# to detuning: a house-themed overlay hosting an UpgradesMenu for the focused car (no
+# engine-swap row) — see _show_upgrades_popup, and MenuPage.open_modal for why it gets its own
+# CanvasLayer rather than the car park's. Built lazily. _dirty tracks whether any upgrade
+# changed, so closing rebuilds the eligible lineup (see _show/_close_upgrades_popup).
+var _upgrades_popup: Control
+var _upgrades_popup_menu: UpgradesSimple
+var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
+var _upgrades_popup_dirty := false
+# Tracks the currently open car-park ConfirmPopup (detune confirm), so
+# _carpark_modal_open can detect it without a dedicated visible flag.
+var _active_carpark_popup: ConfirmPopup = null
+# Plays a short engine rev for the focused car each time the lineup selection
+# changes (see _preview_rev). Created lazily on first focus.
+var _preview_audio: CarPreviewAudio = null
+# Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
+# lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
+var _settle_generation := 0
+# The off-screen stow marker the prewarmed / hidden lineup props seat at until a real lineup
+# re-seats them at bays (see _prewarm_stow_marker). `_hq._prewarm_complete` /
+# `_hq._prewarm_running` stay on the controller — tests read them there.
+var _prewarm_marker: Marker3D = null
+# ONE CONSEQUENCE OF HOLDING THE STATE HERE: it does not survive a SWAP of `_hq._carpark_ui`
+# (tests/headless/carpark_null_spawn_double.gd does exactly that — see hq.gd::_nav_cycle_focus
+# for the Callable half of the same hazard). A fresh instance starts with `_settle_generation`
+# back at 0, so an in-flight settle belonging to the OLD instance is no longer cancelled by the
+# new one's rebuild, and an open modal is no longer seen by `_carpark_modal_open`. Today the
+# only swap happens at boot with nothing in flight and no modal up. Swap EARLY or not at all.
 
 
 func _init(hq: HqController) -> void:
 	_hq = hq
 
 
+# --- Input (the CARPARK branch of hq.gd's _unhandled_input dispatch) ---------
+
+# Returns true when the event was this station's to act on.
+func handle_input(event: InputEvent) -> bool:
+	# While an on-brand modal is up (detune prompt / Change-Upgrades popup) its
+	# MenuNav owns navigation — don't also drive the lineup underneath. Answered FALSE
+	# rather than true: the modal's own MenuNav is what consumes the event, not this.
+	if _carpark_modal_open():
+		return false
+	return _hq._cars_input(event)
+
+
 # Release just the CURRENTLY-PARKED page's props + markers, cancelling any in-flight
 # settle. Leaves `_lineup` and the detune/drivetrain maps intact — a page flip re-renders
 # on top of the same list.
 func _release_page_props() -> void:
-	_hq._settle_generation += 1  # cancel any pending settle-then-freeze for this lineup
+	_settle_generation += 1  # cancel any pending settle-then-freeze for this lineup
 	# Hide the parked cars rather than freeing them, so a re-entry into any lineup can
 	# reuse the cached instances (see _car_cache / _build_lineup). Their frozen bodies stay
 	# ray-pickable (CarProp.stop_physics), so STOW them off-screen too — otherwise a hidden
@@ -63,7 +104,7 @@ func _free_cached_car(instance_id: int) -> void:
 # in `keep` (the list currently being built) are preserved too.
 func _evict_unowned_cached_cars(keep: Array = []) -> void:
 	var owned_ids := {}
-	for car in Save.profile.get("cars", []):
+	for car in Save.profile.get(Save.KEY_CARS, []):
 		owned_ids[int(car.get("instance_id", -1))] = true
 	for car in keep:
 		owned_ids[int(car.get("instance_id", -1))] = true
@@ -83,7 +124,7 @@ func _build_eligible_lineup() -> void:
 	var eligible: Array = []
 	var needs_detune := {}
 	var needs_drivetrain := {}
-	for car in Save.profile.get("cars", []):
+	for car in Save.profile.get(Save.KEY_CARS, []):
 		# NO challenge-lock exclusion (the rationale is spelled out in _swap_targets): a
 		# car fielded by an active challenge run can still be entered into a career rally.
 		var plan := _hq._entry_plan(rally, car)
@@ -169,7 +210,7 @@ func _meta_with_drive(full: Dictionary, entry: Dictionary, drive_override: int) 
 # fresh player (no car owned yet, starter not picked) has an empty lot, so show the
 # three starter cars as previews instead — the same set the starter picker offers.
 func _build_title_lineup() -> void:
-	var owned: Array = Save.profile.get("cars", [])
+	var owned: Array = Save.profile.get(Save.KEY_CARS, [])
 	if owned.is_empty():
 		_build_lineup(_hq._starter_previews())
 	else:
@@ -226,14 +267,14 @@ func _render_lineup_page() -> void:
 	# lets a car that takes longer than one frame to instance spill into its own frame
 	# without piling onto the others. Guarded by _settle_generation so a rebuild (or a
 	# back-out) abandons a half-spawned lineup cleanly.
-	_spawn_lineup_progressive(_hq._eligible, _hq._settle_generation)
+	_spawn_lineup_progressive(_hq._eligible, _settle_generation)
 
 
 # Stream the parked car props in across frames (see _build_lineup), then let them
 # settle and freeze. Bails the moment a newer lineup supersedes this one.
 func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
 	for i in cars.size():
-		if generation != _hq._settle_generation:
+		if generation != _settle_generation:
 			return  # a rebuild / back-out replaced this lineup mid-stream
 		var car := _obtain_parked_car(cars[i], _hq._markers[i])
 		# A failed spawn (e.g. a car model/texture that couldn't load) returns null —
@@ -251,13 +292,13 @@ func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
 		# hitching; a cached car reappears with no per-frame cost.
 		if car.get_meta("lineup_fresh", false):
 			await _hq.get_tree().process_frame
-	if generation != _hq._settle_generation:
+	if generation != _settle_generation:
 		return
 	# Refine the analytic seating: droop each parked car's wheels onto the actual lot
 	# floor via a downward raycast. Runs after a physics frame so newly-added bodies are
 	# visible to the space query; guarded so a rebuild/back-out abandons it cleanly.
 	await _hq.get_tree().physics_frame
-	if generation != _hq._settle_generation:
+	if generation != _settle_generation:
 		return
 	for car in _hq._cars:
 		if is_instance_valid(car):
@@ -302,11 +343,11 @@ func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 # them at real bays. Sunk far below the lot so the hidden, frozen props never intersect the
 # garage / lift cars or get ray-picked. Created lazily and kept for the HQ's lifetime.
 func _prewarm_stow_marker() -> Marker3D:
-	if not is_instance_valid(_hq._prewarm_marker):
-		_hq._prewarm_marker = Marker3D.new()
-		_hq._prewarm_marker.position = Vector3(0.0, -1000.0, 0.0)
-		_hq.add_child(_hq._prewarm_marker)
-	return _hq._prewarm_marker
+	if not is_instance_valid(_prewarm_marker):
+		_prewarm_marker = Marker3D.new()
+		_prewarm_marker.position = Vector3(0.0, -1000.0, 0.0)
+		_hq.add_child(_prewarm_marker)
+	return _prewarm_marker
 
 
 # Pre-warm the Free Roam picker: spawn each catalogue preview as a HIDDEN, cached parked
@@ -468,7 +509,7 @@ func _focus_changed(snap := false) -> void:
 		return
 	var owned: Dictionary = _hq._eligible[_hq._focus]
 	_hq._selected_instance_id = int(owned.get("instance_id", -1))
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(owned)
 	# Let the player hear the focused car: rev its (possibly swapped) engine. Fires
 	# on every flick and on the initial lineup show; a new rev cancels the previous.
 	if not entry.is_empty():
@@ -504,10 +545,10 @@ func _focus_changed(snap := false) -> void:
 func _preview_rev(engine_id: String, owned_car: Dictionary = {}) -> void:
 	if engine_id.is_empty():
 		return
-	if _hq._preview_audio == null:
-		_hq._preview_audio = CarPreviewAudio.new()
-		_hq.add_child(_hq._preview_audio)
-	_hq._preview_audio.rev(engine_id, owned_car)
+	if _preview_audio == null:
+		_preview_audio = CarPreviewAudio.new()
+		_hq.add_child(_preview_audio)
+	_preview_audio.rev(engine_id, owned_car)
 
 
 # The two-way power-to-weight preview shown only while picking an engine-swap partner.
@@ -526,8 +567,8 @@ func _refresh_swap_preview() -> void:
 	if lift_owned.is_empty() or partner_owned.is_empty():
 		_hq._swap_preview_label.visible = false
 		return
-	var lift_entry := CarLibrary.by_id(String(lift_owned.get("model_id", "")))
-	var partner_entry := CarLibrary.by_id(String(partner_owned.get("model_id", "")))
+	var lift_entry := CarLibrary.for_owned(lift_owned)
+	var partner_entry := CarLibrary.for_owned(partner_owned)
 	var lift_stock := String(lift_entry.get("engine", ""))
 	var partner_stock := String(partner_entry.get("engine", ""))
 	var lift_engine := EngineSwap.current_engine_id(lift_owned, lift_stock)
@@ -621,7 +662,7 @@ func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Co
 # Cancel. No auto-detune button: the player makes the change themselves and re-presses
 # Start (the fix persists like any garage edit — see todo/detune-min-pw-interaction.md).
 func _show_over_limit_prompt(_owned: Dictionary) -> void:
-	_hq._active_carpark_popup = ConfirmPopup.open(_hq, "Too powerful",
+	_active_carpark_popup = ConfirmPopup.open(_hq, "Too powerful",
 		"Change your upgrades to get under the power-to-weight limit.",
 		[ {"label": "Cancel", "callback": _close_detune_panel},
 		  {"label": "Change Upgrades", "callback": _detune_change_upgrades} ], 1, 0)
@@ -630,8 +671,8 @@ func _show_over_limit_prompt(_owned: Dictionary) -> void:
 # Whether a car-park modal overlay (detune prompt / Change-Upgrades popup) is showing,
 # so _unhandled_input hands navigation to its MenuNav instead of the lineup beneath.
 func _carpark_modal_open() -> bool:
-	return is_instance_valid(_hq._active_carpark_popup) \
-		or (_hq._upgrades_popup != null and _hq._upgrades_popup.visible)
+	return is_instance_valid(_active_carpark_popup) \
+		or (_upgrades_popup != null and _upgrades_popup.visible)
 
 
 func _close_detune_panel() -> void:
@@ -649,8 +690,8 @@ func _detune_change_upgrades() -> void:
 # invalid — the swap flow would change the HQ view). Nav-wired so it's keyboard/gamepad
 # navigable; Done / back closes it (see _close_upgrades_popup).
 func _show_upgrades_popup(owned: Dictionary) -> void:
-	if _hq._upgrades_popup == null:
-		_hq._upgrades_popup = _make_carpark_modal(
+	if _upgrades_popup == null:
+		_upgrades_popup = _make_carpark_modal(
 			func(vbox: VBoxContainer) -> void:
 				# 460 was wider than the whole logical canvas on the short web-touch tier
 				# (~445 units on a 16:9 phone), so it's now the DESKTOP preference and
@@ -659,21 +700,21 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 				vbox.custom_minimum_size = Vector2(_hq._modal_body_width(460.0, 72.0), 0)
 				# No title here: UpgradesSimple draws its own heading, which is what
 				# carries the star balance (UpgradesMenu.build_title_row).
-				_hq._upgrades_popup_menu = UpgradesSimple.new()
-				vbox.add_child(_hq._upgrades_popup_menu),
+				_upgrades_popup_menu = UpgradesSimple.new()
+				vbox.add_child(_upgrades_popup_menu),
 			func(footer: HBoxContainer) -> void:
 				# Done is the gated exit (bind_close_button below blocks it, AND back,
 				# while the car is over the p/w cap). It is PINNED outside the scroll:
 				# the controls the player needs in order to get under the cap are the very
 				# ones that grow this list, so letting them push Done off the bottom would
 				# lock a touch player inside a modal they are not allowed to leave.
-				_hq._upgrades_popup_done = Button.new()
-				_hq._upgrades_popup_done.text = "Done"
-				_hq._upgrades_popup_done.focus_mode = Control.FOCUS_ALL
+				_upgrades_popup_done = Button.new()
+				_upgrades_popup_done.text = "Done"
+				_upgrades_popup_done.focus_mode = Control.FOCUS_ALL
 				# NOTE: press is wired by bind_close_button below (gated), not here.
-				footer.add_child(_hq._upgrades_popup_done))
-	_hq._upgrades_popup_dirty = false
-	_hq._upgrades_popup.visible = true
+				footer.add_child(_upgrades_popup_done))
+	_upgrades_popup_dirty = false
+	_upgrades_popup.visible = true
 	var pw_limit := -1.0
 	if _hq._carpark_mode == _hq.CarparkMode.CHALLENGE:
 		pw_limit = ChallengeLibrary.current_ceiling(
@@ -682,14 +723,14 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 		var rally := RallyLibrary.by_id(_hq._selected_rally_id)
 		var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
 		pw_limit = float(restriction.get("pw_max", -1.0))
-	_hq._upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
+	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
 	# Gate Done + Esc/back on the rally's p/w cap: over the cap, the button goes red and
 	# neither it nor MenuNav's on_back closes the popup until the player detunes under it.
-	_hq._upgrades_popup_menu.bind_close_button(_hq._upgrades_popup_done, _close_upgrades_popup)
-	UITheme.enforce(_hq._upgrades_popup)
-	MenuNav.attach(_hq._upgrades_popup, {
-		"first": _hq._upgrades_popup_menu.first_control(),
-		"on_back": _hq._upgrades_popup_menu.request_close,
+	_upgrades_popup_menu.bind_close_button(_upgrades_popup_done, _close_upgrades_popup)
+	UITheme.enforce(_upgrades_popup)
+	MenuNav.attach(_upgrades_popup, {
+		"first": _upgrades_popup_menu.first_control(),
+		"on_back": _upgrades_popup_menu.request_close,
 	})
 
 
@@ -697,21 +738,21 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 # label + gated Done button (the visible feedback); the parked-car prop + lineup are rebuilt
 # on close so a live rebuild can't steal focus from the popup mid-edit.
 func _on_popup_upgrade_changed() -> void:
-	_hq._upgrades_popup_dirty = true
+	_upgrades_popup_dirty = true
 
 
 # Close the upgrades popup and return to car-select. If anything changed, rebuild the
 # eligible lineup so a now-ineligible car drops out; the player re-presses Start and the
 # normal flow recomputes (eligible → launch; still over → detune prompt reappears).
 func _close_upgrades_popup() -> void:
-	if _hq._upgrades_popup != null:
-		_hq._upgrades_popup.visible = false
-	if _hq._upgrades_popup_dirty:
+	if _upgrades_popup != null:
+		_upgrades_popup.visible = false
+	if _upgrades_popup_dirty:
 		if _hq._carpark_mode == _hq.CarparkMode.CHALLENGE:
 			_hq._challenge_ui._build_challenge_lineup(_hq._challenge_kind)
 		else:
 			_build_eligible_lineup()
-		_hq._upgrades_popup_dirty = false
+		_upgrades_popup_dirty = false
 	_focus_changed()
 
 

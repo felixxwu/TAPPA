@@ -171,6 +171,24 @@ func test_world_values_applied() -> void:
 	# override, so this is a genuine config->shader pass-through, not a region look.
 	var floor_mat: ShaderMaterial = _scene.get_node("Floor").chunk_material
 	assert_eq(floor_mat.get_shader_parameter("tarmac_color"), cfg.tarmac_color, "tarmac color from config")
+	# Speed-lines shader params are authored twice — once as scene fallbacks on
+	# SpeedLines/ColorRect's material (main.tscn), once again from config at boot
+	# (speed_lines.gd:32-36) — so the scene values are dead and drift silently if
+	# they ever diverge from config. Assert the RELATIONSHIP (scene agrees with
+	# config), never the values themselves, so retuning speed_lines_* can't break
+	# this. `intensity` is excluded: it is legitimately scene-authored at 0.0 and
+	# driven per-frame, not from config.
+	var speed_lines_mat: ShaderMaterial = _scene.get_node("SpeedLines/ColorRect").material
+	var speed_lines_params := {
+		"line_color": cfg.speed_lines_color,
+		"density": cfg.speed_lines_density,
+		"inner_radius": cfg.speed_lines_inner_radius,
+		"outer_radius": cfg.speed_lines_outer_radius,
+		"flicker_speed": cfg.speed_lines_flicker_speed,
+	}
+	for param in speed_lines_params:
+		assert_eq(speed_lines_mat.get_shader_parameter(param), speed_lines_params[param],
+			"speed lines %s from config" % param)
 
 
 func test_speed_lines_config_defaults_present() -> void:

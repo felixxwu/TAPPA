@@ -259,6 +259,13 @@ cost four lines, not eight:
 
 1. **Win condition** — `Top 50%`, plus the CURRENT time on that cut line
    appended to the same row when the board can answer it: `Top 50% - 1:52.24`.
+   **The label is DERIVED, not typed:** `hq_challenge.gd._CHALLENGE_WIN_CONDITION`
+   is formatted (`"Top %d%%"`) from `ChallengeSession.CHALLENGE_TOP_FRACTION`, the
+   same const the placing rule in `try_grant_completion_reward` compares against
+   (`rank > ceili(float(total) * CHALLENGE_TOP_FRACTION)`), so the rule and its
+   label cannot drift apart. That fraction is a const on `ChallengeSession`, not a
+   `GameConfig` export — it decides who gets PAID, so it is a reward rule rather
+   than a look/feel tunable.
    The time comes from `ChallengeLeaderboard.fetch_cutoff`, fired
    non-blocking by `hq_challenge.gd._fetch_challenge_cutoff` — the row is already
    correct without it, so there's no `CloudBusy` cover and an unreachable
@@ -656,11 +663,11 @@ does after a career rally event (both are driven by the same `StageManager` /
   zero rivals produces — rather than introducing a "no standings" UI state. The
   player's row carries that stage's time and the cumulative time respectively.
 - **The per-stage reward now actually shows.** `standings.gd` reads
-  `ChallengeSession.stage_upgrade()` (a plain accessor alongside the existing
-  `stage_upgrade_revealed` signal — the interstitial doesn't exist yet when
-  `report_event_result` emits, so it can only read the state) and reveals it with
-  the SAME `UpgradeReveal` card / `_collect_reward` flow a career event's reward
-  uses. Before this it was installed on the car silently.
+  `ChallengeSession.stage_upgrade()` (a plain accessor — the interstitial
+  doesn't exist yet when `report_event_result` runs, so it can only read the
+  state) and reveals it with the SAME `UpgradeReveal` card / `_collect_reward`
+  flow a career event's reward uses. Before this it was installed on the car
+  silently.
 
 ### Known deferred: field-repair timing
 
@@ -721,9 +728,8 @@ Two separate reward paths:
   since it is the only star source still flowing once every career rally is won at
   P1 and `complete_rally` has no improvement left to credit.
 
-  Emits `completion_reward_revealed(item_id)` on a grant — always `""` now, since
-  nothing item-shaped is granted — and returns `{"placed", "rank",
-  "total_entries", "item_id", "boxes", "stars"}`.
+  Returns `{"placed", "rank", "total_entries", "item_id", "boxes", "stars"}`
+  (`item_id` always `""`, since nothing item-shaped is granted).
   `world.gd._completion_reward_body` renders whatever actually landed, so a win
   that banked only boxes is never silent.
 

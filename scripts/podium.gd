@@ -55,8 +55,6 @@ var _headless := false
 var _reveal_done := true
 var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed rows
 
-const REVEAL_STEP := 0.5  # seconds between each leaderboard name appearing
-
 # The stars beat wears a much bigger StarRow than the HQ map pins (11 px): this is the
 # reward moment, not a readout. Radius/gap are plain vars on StarRow, so "big stars" needs
 # no new widget.
@@ -690,14 +688,15 @@ func _show_leaderboard() -> void:
 	_reveal_standings(rows)
 
 
-# Reveal leaderboard rows from P1 downward, one every REVEAL_STEP seconds,
-# starting from an empty list. Guarded by _reveal_gen so leaving the stage
-# mid-reveal abandons the coroutine without touching freed nodes.
+# Reveal leaderboard rows from P1 downward, one every
+# GameConfig.podium_reveal_step seconds, starting from an empty list. Guarded by
+# _reveal_gen so leaving the stage mid-reveal abandons the coroutine without touching
+# freed nodes.
 func _reveal_standings(rows: Array) -> void:
 	_reveal_gen += 1
 	var gen := _reveal_gen
 	for row in rows:
-		await get_tree().create_timer(REVEAL_STEP).timeout
+		await get_tree().create_timer(Config.data.podium_reveal_step).timeout
 		if gen != _reveal_gen or _stage != Stage.LEADERBOARD:
 			return
 		if is_instance_valid(row):
@@ -726,7 +725,7 @@ func _show_stars() -> void:
 	_star_caption.text = _stars_caption(gained, rating)
 	UITheme.enforce(_layer)
 	# Nothing to animate when the finish scored nothing: leave all three dim and let the
-	# player step on. Also the headless path — tests must not pay REVEAL_STEP per star.
+	# player step on. Also the headless path — tests must not pay podium_reveal_step per star.
 	if rating <= 0 or _headless:
 		_star_row.setup(rating, RallyLibrary.MAX_STARS_PER_RALLY)
 		_reveal_done = true
@@ -738,14 +737,14 @@ func _show_stars() -> void:
 	_reveal_stars(rating)
 
 
-# Fill the row one star every REVEAL_STEP. Guarded by _reveal_gen exactly like
-# _reveal_standings, so leaving the stage mid-reveal abandons the coroutine instead of
-# touching a freed row.
+# Fill the row one star every GameConfig.podium_reveal_step. Guarded by _reveal_gen
+# exactly like _reveal_standings, so leaving the stage mid-reveal abandons the coroutine
+# instead of touching a freed row.
 func _reveal_stars(rating: int) -> void:
 	_reveal_gen += 1
 	var gen := _reveal_gen
 	for i in rating:
-		await get_tree().create_timer(REVEAL_STEP).timeout
+		await get_tree().create_timer(Config.data.podium_reveal_step).timeout
 		if gen != _reveal_gen or _stage != Stage.STARS:
 			return
 		if is_instance_valid(_star_row):

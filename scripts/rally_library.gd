@@ -1265,7 +1265,7 @@ static func _rally_seed(rally: Dictionary) -> int:
 # Count of completed rallies in a save profile — the single progression metric
 # (caps the car reward tier).
 static func completed_count(profile: Dictionary) -> int:
-	var rallies: Dictionary = profile.get("rallies", {})
+	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	var n := 0
 	for rally_id in rallies:
 		if rallies[rally_id].get("completed", false):
@@ -1441,7 +1441,7 @@ static func lit_sources(profile: Dictionary) -> Array:
 	var hq_radius: float = Config.data.map_hq_reveal_radius
 	if hq_radius > 0.0:
 		out.append([HQ_MAP_POS, hq_radius])
-	var rallies: Dictionary = profile.get("rallies", {})
+	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	# ONE pass over the roster. The opening rally is picked out HERE rather than through
 	# opening_rally_id_for + by_id, which would each walk `all()` again — and this function
 	# is called once per rally by the reveal predicate, so an extra scan is paid n times
@@ -1530,10 +1530,10 @@ static func distance_beyond_frontier(rally: Dictionary, profile: Dictionary) -> 
 # is tools/sim_career.gd::solve_reachability.
 static func reveal_depths() -> Dictionary:
 	var out := {}
-	var profile := {"rallies": {}}
+	var profile := {Save.KEY_RALLIES: {}}
 	for rally in all():
 		if prize_car_id(rally) != "" and CarLibrary.STARTER_MODEL_IDS.has(prize_car_id(rally)):
-			profile["rallies"][String(rally["id"])] = {"completed": true}
+			profile[Save.KEY_RALLIES][String(rally["id"])] = {"completed": true}
 			out[String(rally["id"])] = 1
 	var wave := 1
 	while true:
@@ -1549,7 +1549,7 @@ static func reveal_depths() -> Dictionary:
 		wave += 1
 		for rid in fresh:
 			out[rid] = wave
-			profile["rallies"][rid] = {"completed": true}
+			profile[Save.KEY_RALLIES][rid] = {"completed": true}
 	return out
 
 
@@ -1584,7 +1584,7 @@ static func engine_swap_unlock_rally_name() -> String:
 
 
 static func engine_swaps_unlocked(profile: Dictionary) -> bool:
-	return bool((profile.get("rallies", {}) as Dictionary)
+	return bool((profile.get(Save.KEY_RALLIES, {}) as Dictionary)
 		.get(ENGINE_SWAP_UNLOCK_RALLY, {}).get("completed", false))
 
 
@@ -1602,7 +1602,7 @@ const ENGINE_SWAP_UNLOCK_RALLY := "sp_woodland_trial"
 # Whether EVERY special on the roster is won — the win/credits beat, replacing the old
 # the retired per-region gate. A roster with no specials reads as completed.
 static func all_specials_completed(profile: Dictionary) -> bool:
-	var rallies: Dictionary = profile.get("rallies", {})
+	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	for rally in all():
 		if is_special(rally) and not bool(rallies.get(rally["id"], {}).get("completed", false)):
 			return false
@@ -1696,7 +1696,7 @@ static func reveal_link_pairs(profile: Dictionary) -> Array:
 # rescues a car that is over the CEILING, and a genuine soft-lock is the opposite
 # case — a car too weak for everything left, which no amount of detuning fixes.
 static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dictionary, floor_meta: Dictionary = {}) -> Array:
-	var rallies: Dictionary = profile.get("rallies", {})
+	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	var out: Array = []
 	for rally in all():
 		if rallies.get(rally["id"], {}).get("completed", false):

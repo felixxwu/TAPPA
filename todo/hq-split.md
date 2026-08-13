@@ -11,8 +11,11 @@ Status: **all three cuts are DONE.** `hq.gd` delegates to `HqChallenge`
 third of the file at the time it landed; `hq.gd` has since grown again as
 unrelated feature work landed on top, so run `wc -l scripts/hq*.gd` for current
 sizes rather than trusting a number written here — the earlier snapshot counts in
-this spec had all rotted by ~10-30% within weeks. The only item left is the
-**`_unhandled_input` follow-up** at the bottom of this file.
+this spec had all rotted by ~10-30% within weeks.
+
+**The two follow-ups are also DONE** — see "Making the split a real boundary" at the
+bottom of this file. Nothing in this spec is outstanding; it is kept as the record of how
+the cuts were done and which failure categories to expect from the next one.
 
 ## Which cluster to cut first, and why
 
@@ -201,9 +204,80 @@ collaborator: it is now `tests/headless/carpark_null_spawn_double.gd`
 `set_script` on the HQ node. **Before any future cut, grep for
 `extends "res://scripts/hq.gd"`** and check whether the double overrides anything in the slice.
 
-Once all three land, `hq.gd`'s `_unhandled_input` (~122 lines of `_view` dispatch) should hand
-each cluster its own input branch (`_carpark_ui.handle_input(event)`) rather than keeping every
-view's input logic centralised.
+## Making the split a real boundary — DONE
+
+The three cuts left the split COSMETIC: 43 fields on `HqController` carried
+`@warning_ignore("unused_private_class_variable")` purely because only a collaborator touched
+them, and `_unhandled_input` still held every view's input logic. Both are now closed.
+
+### 1. DONE — state follows its single user
+
+The rule: a field moves to a collaborator when **exactly one** collaborator touches it and
+`hq.gd` itself does not; it stays on `HqController` when two or more do. **19 of the 43** moved:
+
+| Moved to | Fields |
+|---|---|
+| `HqTable` | `_reveal_queue`, `_reveal_shown`, `_reveal_token` |
+| `HqCarpark` | `_upgrades_popup`, `_upgrades_popup_menu`, `_upgrades_popup_done`, `_upgrades_popup_dirty`, `_active_carpark_popup`, `_preview_audio`, `_settle_generation`, `_prewarm_marker` |
+| `HqChallenge` | `_challenge_refresh_generation`, `_challenge_cutoff_cache`, `_challenge_placing_cache` |
+| `HqOverlays` | `_title_free_roam_button`, `_title_settings_button`, `_title_exit_button`, `_title_version_label`, `_detail_dev_win_button` |
+
+The **24 that stayed** did so for one of two reasons, both real:
+
+- **Two collaborators genuinely share them.** `hq_overlays.gd` BUILDS most widgets that
+  `hq_table.gd` / `hq_challenge.gd` then read, so every `_detail_*` label, every
+  `_challenge_*_label` / `_challenge_kind_buttons` / `_challenge_start_button`,
+  `_reveal_banner`, `_car_hint_label` and `_car_nav_row` has two owners. `_challenge_kind` has
+  three (`hq.gd`, `hq_carpark.gd`, `hq_challenge.gd`).
+- **A test file OUTSIDE the HQ set reads them off the controller.** `_prewarm_complete` and
+  `_prewarm_running` are asserted by `tests/headless/test_lineup_cache.gd`; moving them would
+  have meant editing a test whose subject is the lineup cache, not the split.
+
+`hq.gd` also grew a small **public** API so the calls that reach for controller BEHAVIOUR stop
+reading as private access: `view()` (the read-only half of `_view`), `go_to(view_id, snap)`,
+`update_overlays()`, and the widget factories `label()`, `detail_heading()`,
+`detail_wrap_label()`, `challenge_info_row()`. That converted **108** of the ~588 `_hq._private`
+accesses. The remainder is deliberate: it is state, and the fields above are where the boundary
+actually was — renaming the rest would be churn without one. Note `_go_to` / `_update_overlays`
+are referenced by NAME in comments in `scripts/world_panel.gd` and
+`scripts/world_panel_host.gd`; those two mentions are now spelled without the underscore in the
+code but were left alone in those files.
+
+**Two collisions the rename caused**, both parse errors so both loud: `label()` collided with
+locals named `label` in `_make_pin` / `_build_readout_sprite` (renamed `pin_label` / `lbl`), and
+`view()` collided with the `view` PARAMETER of `go_to` and `_station_xform` (renamed `view_id`).
+Adding a method whose name a local already uses is the one hazard in this step.
+
+### 2. DONE — per-view input dispatch
+
+`_unhandled_input` keeps only what applies to every station in order (the
+`MenuNav.is_text_editing()` bail, the debug F7/F8 keys, the `ConfirmPopup.any_open()` bail) and
+then dispatches: `_challenge_ui.handle_input(event)` first (the challenge modal owns the screen,
+so it answers `true` and every station stands down — this replaced hq.gd reading
+`_challenge_shown` by hand), then `match _view` over `_exterior_input` / `_settings_input` /
+`_garage_input` / `_lift_input` / `_table_ui.handle_input` / `_carpark_ui.handle_input`.
+
+Each returns whether it CONSUMED the event. Nothing chains off the answer after the `match` —
+`_unhandled_input` is the last stop — but the contract is what makes the challenge early-out
+expressible. `_is_any_press` moved to `hq_table.gd` with the branch that was its only caller,
+and `hq.gd::_cars_input` became `-> bool` so the carpark branch has a real answer to give.
+The four stations with no collaborator of their own (title, settings, garage, lift) got private
+`_*_input` methods on `HqController` rather than an invented collaborator.
+
+**No keyboard/gamepad binding changed** — the refactor is branch-for-branch, and
+`test_menu_nav.gd` / `test_menu_flow.gd` / `test_world_panel.gd` pass unchanged.
+
+### 3. DONE — the two duplicated challenge coroutines
+
+`hq_challenge.gd`'s `_fetch_challenge_placing` and `_fetch_challenge_cutoff` were the same
+~30-line coroutine twice (arg guard → per-period cache hit → `Cloud`/signed-in guards →
+"Loading…" → `await` → cache when ok → `is_inside_tree()` + generation staleness → apply),
+differing only in cache, row-text setter, leaderboard method and renderer. Both are now
+two-line wrappers over **`_fetch_decoration(cache, key, stage_count, generation, set_text,
+fetch_method, apply)`**. The fetch is passed as a method NAME, not a `Callable`, because
+`Cloud.challenge_leaderboard` may only be dereferenced after the null guard inside the helper.
+Likewise `_set_challenge_win_text` / `_set_challenge_completed_text` are wrappers over
+**`_set_row_text(label, prefix, tail)`**.
 
 ## Why this is worth doing carefully rather than quickly
 

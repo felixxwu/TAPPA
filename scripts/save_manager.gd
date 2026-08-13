@@ -33,6 +33,15 @@ signal flushed()
 # forward on load (see _migrate), newer files are refused rather than truncated.
 const SCHEMA_VERSION := 2
 
+# The two profile keys the REST of the codebase reads (the owned-car array and the
+# per-rally record map) — named here because SaveManager owns the save schema, and a
+# ~50-site spread of the bare literals made a rename a silent cross-device data bug
+# (scripts/cloud/cloud_sync.gd keys off the same strings). These are ON-DISK key
+# STRINGS: changing either VALUE breaks every existing profile, so they are frozen
+# unless a SCHEMA_VERSION bump plus a _migrate_step comes with the change.
+const KEY_CARS := "cars"
+const KEY_RALLIES := "rallies"
+
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
 # headless tests can redirect to a throwaway file.
@@ -218,7 +227,7 @@ func _read_file(path: String) -> Dictionary:
 # the content evolves.
 func _sanitise(p: Dictionary) -> Dictionary:
 	var kept: Array = []
-	for car in p.get("cars", []):
+	for car in p.get(KEY_CARS, []):
 		if CarLibrary.index_of(car.get("model_id", "")) >= 0:
 			# Backfill per-wheel damage misalignment on saves that predate it (straight).
 			if not car.has("wheel_toe"):
@@ -228,7 +237,7 @@ func _sanitise(p: Dictionary) -> Dictionary:
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
-	p["cars"] = kept
+	p[KEY_CARS] = kept
 	# Drop the retired `repair_kit` consumable from older profiles. Done HERE, in the
 	# tolerant sanitise pass, rather than as a schema migration: the key is inert once
 	# nothing reads it, and a SCHEMA_VERSION bump would make every older build refuse
@@ -408,10 +417,10 @@ func _default_profile() -> Dictionary:
 		"starter_picked": false,
 		"starter_model_id": "",
 		"next_instance_id": 1,
-		"cars": [],
+		KEY_CARS: [],
 		"selected_instance_id": -1,
 		"inventory": {},
-		"rallies": {},
+		KEY_RALLIES: {},
 		"reward_history": [],
 		"settings": {},
 		# --- Star ledger (see todo/star-economy.md) ---
@@ -525,7 +534,7 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 # WRECK STATE IS IGNORED on purpose — a wrecked car is still a car the player owns, and
 # under the current damage model it can be repaired back into service.
 func owns_model(model_id: String) -> bool:
-	for car in profile.get("cars", []):
+	for car in profile.get(KEY_CARS, []):
 		if String((car as Dictionary).get("model_id", "")) == model_id:
 			return true
 	return false
@@ -545,7 +554,7 @@ func grant_car(model_id: String) -> Dictionary:
 		"drivetrain_override": -1,
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
-	profile["cars"].append(car)
+	profile[KEY_CARS].append(car)
 	if not profile.get("reward_history", []).has(model_id):
 		profile["reward_history"].append(model_id)
 	save()
@@ -559,7 +568,7 @@ func grant_car(model_id: String) -> Dictionary:
 # rather than simply not matching. -1 can never be a real instance id (they count up from
 # 1), so a keyless entry is skipped, which is the only sensible reading of it.
 func get_car(instance_id: int) -> Dictionary:
-	for car in profile["cars"]:
+	for car in profile[KEY_CARS]:
 		if int((car as Dictionary).get("instance_id", -1)) == instance_id:
 			return car
 	return {}
@@ -607,7 +616,7 @@ func record_wreck(instance_id: int) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	var max_hp := float(entry.get("max_hp", 1000.0))
 	car["hp"] = max_hp * clampf(Config.data.wreck_recovery_hp_fraction, 0.0, 1.0)
 	# Bent wheels stay bent — the repair bill is the point, and a wreck should feel like
@@ -699,6 +708,28 @@ func is_challenge_locked(instance_id: int) -> bool:
 	return not run.is_empty() and int(run.get("car_instance_id", -1)) == instance_id
 
 
+# Persist `run` as the in-progress challenge_run (ChallengeSession._persist /
+# pause_run), replacing whatever was there. The one writer of this key's shape —
+# ChallengeSession no longer reaches into profile["challenge_run"] directly.
+func set_challenge_run(run: Dictionary) -> void:
+	profile["challenge_run"] = run
+	save()
+
+
+# Clear the stored challenge_run (ChallengeSession.discard_stale_run /
+# _clear_persisted on finish/DNF) — no run stored, nothing to resume.
+func clear_challenge_run() -> void:
+	profile["challenge_run"] = {}
+	save()
+
+
+# Replace the challenge_results map (ChallengeSession._record_outcome, already
+# pruned to the live period keys by the caller).
+func set_challenge_results(results: Dictionary) -> void:
+	profile["challenge_results"] = results
+	save()
+
+
 # Set a car's engine to engine_id, clearing the swap field when it matches stock.
 func _set_engine(car: Dictionary, stock_id: String, engine_id: String) -> void:
 	if engine_id == stock_id or engine_id.is_empty():
@@ -740,7 +771,7 @@ func set_drivetrain_override(instance_id: int, mode: int) -> void:
 # records) the first owned car when the stored id is unset or no longer owned —
 # so the selection self-heals after a wreck removes the selected instance.
 func selected_car() -> Dictionary:
-	var cars: Array = profile.get("cars", [])
+	var cars: Array = profile.get(KEY_CARS, [])
 	if cars.is_empty():
 		return {}
 	var id := int(profile.get("selected_instance_id", -1))
@@ -762,7 +793,7 @@ func set_selected_car(instance_id: int) -> void:
 	# selected car appears first — persisted via the cars array, so it survives
 	# a relaunch. Car park lineups iterate profile["cars"], so reordering here is
 	# all it takes. No-op for unowned/-1 ids (e.g. starter previews).
-	var cars: Array = profile.get("cars", [])
+	var cars: Array = profile.get(KEY_CARS, [])
 	for i in cars.size():
 		if int(cars[i].get("instance_id", -1)) == instance_id:
 			if i > 0:
@@ -984,7 +1015,7 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 # `best_placed` is still tracked (it drives the map's star rating) — it just no longer gates
 # what gets paid.
 func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
-	var rallies: Dictionary = profile["rallies"]
+	var rallies: Dictionary = profile[KEY_RALLIES]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
 	rec["completed"] = true
 	# Only a REAL time can become the best time. A DNF arrives as combined_ms <= 0, and
@@ -1081,7 +1112,7 @@ func car_handles_badly(instance_id: int) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return false
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	var max_hp := float(entry.get("max_hp", 1000.0))
 	if max_hp <= 0.0:
 		return false
@@ -1098,7 +1129,7 @@ func car_needs_repair(instance_id: int) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return false
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	if float(car.get("hp", 0.0)) < float(entry.get("max_hp", 1000.0)):
 		return true
 	for toe in car.get("wheel_toe", []):
@@ -1121,7 +1152,7 @@ func repair_car(instance_id: int) -> bool:
 		return false
 	if not spend_stars(repair_price(instance_id), false):
 		return false
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	car["hp"] = float(entry.get("max_hp", 1000.0))
 	car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
 	save()
@@ -1212,7 +1243,7 @@ func restore_free_build(instance_id: int, restriction: Dictionary = {}) -> Dicti
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return {"applied": false, "notice": ""}
-	var meta := CarLibrary.by_id(String(car.get("model_id", "")))
+	var meta := CarLibrary.for_owned(car)
 	var plan := UpgradeLibrary.auto_build_plan(car, meta, profile, 0, restriction, true)
 	if not apply_build_plan(instance_id, plan):
 		return {"applied": false, "notice": ""}
@@ -1222,7 +1253,7 @@ func restore_free_build(instance_id: int, restriction: Dictionary = {}) -> Dicti
 
 
 func rally_completed(rally_id: String) -> bool:
-	return profile["rallies"].get(rally_id, {}).get("completed", false)
+	return profile[KEY_RALLIES].get(rally_id, {}).get("completed", false)
 
 
 # --- New-rally reveal acknowledgement ----------------------------------------
@@ -1237,11 +1268,11 @@ func rally_completed(rally_id: String) -> bool:
 # eligible car). A missing key reads false through the normal .get default, so no
 # SCHEMA_VERSION bump was needed. See features/save-persistence.md.
 func rally_revealed_seen(rally_id: String) -> bool:
-	return bool(profile["rallies"].get(rally_id, {}).get("revealed", false))
+	return bool(profile[KEY_RALLIES].get(rally_id, {}).get("revealed", false))
 
 
 func mark_rally_revealed(rally_id: String, save_now := true) -> void:
-	var rallies: Dictionary = profile["rallies"]
+	var rallies: Dictionary = profile[KEY_RALLIES]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
 	rec["revealed"] = true
 	rallies[rally_id] = rec
@@ -1260,7 +1291,7 @@ func needs_reveal_seeding() -> bool:
 	# RallyLibrary.completed_count, so the backfill decision doesn't depend on the
 	# shipped roster still containing the rallies this save finished.
 	var progressed := false
-	for rec in profile["rallies"].values():
+	for rec in profile[KEY_RALLIES].values():
 		var r: Dictionary = rec
 		if bool(r.get("revealed", false)):
 			return false
@@ -1372,7 +1403,7 @@ func _grant_rally_prizes(rally_id: String) -> void:
 # Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
 # Drives the world-map star rating via RallyLibrary.stars_for_placement (1st = the most).
 func best_placement(rally_id: String) -> int:
-	return int(profile["rallies"].get(rally_id, {}).get("best_placed", 0))
+	return int(profile[KEY_RALLIES].get(rally_id, {}).get("best_placed", 0))
 
 
 # Number of rallies top-3'd — the progression metric driving the CAR reward-tier ceiling.

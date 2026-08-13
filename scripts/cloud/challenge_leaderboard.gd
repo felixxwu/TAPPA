@@ -1,5 +1,5 @@
 class_name ChallengeLeaderboard
-extends Node
+extends FirestoreBoard
 # The Daily/Weekly/Monthly Rally Challenge world leaderboard: one Firestore
 # document per player per period, at
 #   challenge_runs/{period_key}/entries/{uid}
@@ -25,9 +25,8 @@ const POST_OUT_OF_ORDER := "out_of_order"        # a prior checkpoint never land
 const POST_DENIED := "denied"
 const POST_FAILED := "failed"
 
-# Injected by Cloud, same as Leaderboard.
-var rest = null
-var auth: AuthService = null
+# The subcollection this board's per-player documents live in.
+const COLLECTION_ID := "entries"
 
 
 # --- Posting -------------------------------------------------------------------
@@ -279,39 +278,17 @@ func _write_failure(response: Dictionary) -> Dictionary:
 
 func _run_query(period_key: String, order_field: String, token: String,
 		limit := PODIUM_ROWS, offset := 0) -> Dictionary:
-	var query := {
-		"from": [{"collectionId": "entries"}],
-		"orderBy": [{"field": {"fieldPath": order_field}, "direction": "ASCENDING"}],
-		"limit": limit,
-	}
-	if offset > 0:
-		query["offset"] = offset
-	var body := {"structuredQuery": query}
-	var response = await rest.request_json(HTTPClient.METHOD_POST,
-		_period_doc(period_key) + ":runQuery",
-		RestClient.json_headers(token), JSON.stringify(body))
-	if not response.ok:
-		return {"ok": false, "error": _classify(response), "rows": []}
-	if typeof(response.json) != TYPE_ARRAY:
-		return {"ok": false, "error": "unreadable", "rows": []}
-	var rows: Array = []
-	for element in response.json as Array:
-		if typeof(element) != TYPE_DICTIONARY:
-			continue
-		var doc: Variant = (element as Dictionary).get("document", null)
-		if typeof(doc) != TYPE_DICTIONARY:
-			continue  # an empty collection's single readTime-only element
-		rows.append(_row_from_document(doc as Dictionary))
-	return {"ok": true, "error": "", "rows": rows}
+	return await _board_run_query(_period_doc(period_key), COLLECTION_ID, order_field,
+		token, limit, offset, _row_from_document)
 
 
 func _count_all(period_key: String, token: String) -> Dictionary:
-	return await _count(period_key, {"from": [{"collectionId": "entries"}]}, token)
+	return await _count(period_key, {"from": [{"collectionId": COLLECTION_ID}]}, token)
 
 
 func _count_field_less_than(period_key: String, field: String, token: String, value: int) -> Dictionary:
 	var query := {
-		"from": [{"collectionId": "entries"}],
+		"from": [{"collectionId": COLLECTION_ID}],
 		"where": {"fieldFilter": {"field": {"fieldPath": field}, "op": "LESS_THAN",
 			"value": FirestoreCodec.int_value(value)}},
 	}
@@ -320,7 +297,7 @@ func _count_field_less_than(period_key: String, field: String, token: String, va
 
 func _count_field_greater_than(period_key: String, field: String, token: String, value: int) -> Dictionary:
 	var query := {
-		"from": [{"collectionId": "entries"}],
+		"from": [{"collectionId": COLLECTION_ID}],
 		"where": {"fieldFilter": {"field": {"fieldPath": field}, "op": "GREATER_THAN",
 			"value": FirestoreCodec.int_value(value)}},
 	}
@@ -328,29 +305,7 @@ func _count_field_greater_than(period_key: String, field: String, token: String,
 
 
 func _count(period_key: String, structured_query: Dictionary, token: String) -> Dictionary:
-	var body := {
-		"structuredAggregationQuery": {
-			"structuredQuery": structured_query,
-			"aggregations": [{"alias": "count", "count": {}}],
-		}
-	}
-	var response = await rest.request_json(HTTPClient.METHOD_POST,
-		_period_doc(period_key) + ":runAggregationQuery",
-		RestClient.json_headers(token), JSON.stringify(body))
-	if not response.ok:
-		return {"ok": false, "error": _classify(response), "count": 0}
-	if typeof(response.json) != TYPE_ARRAY or (response.json as Array).is_empty():
-		return {"ok": false, "error": "unreadable", "count": 0}
-	var first: Variant = (response.json as Array)[0]
-	if typeof(first) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "unreadable", "count": 0}
-	var result: Variant = (first as Dictionary).get("result", {})
-	if typeof(result) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "unreadable", "count": 0}
-	var aggregate: Variant = (result as Dictionary).get("aggregateFields", {})
-	if typeof(aggregate) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "unreadable", "count": 0}
-	return {"ok": true, "error": "", "count": FirestoreCodec.int_field(aggregate as Dictionary, "count")}
+	return await _board_count(_period_doc(period_key), structured_query, token)
 
 
 # The player's own entry. A 404 is the expected "never posted here" answer.
@@ -389,35 +344,9 @@ static func _row_from_document(doc: Dictionary) -> Dictionary:
 	}
 
 
-static func _uid_from_path(path: String) -> String:
-	if path == "":
-		return ""
-	var parts := path.split("/")
-	return parts[parts.size() - 1]
-
-
-func _classify(response: Dictionary) -> String:
-	if response.get("network", false):
-		return "offline"
-	return "http_%d" % int(response.get("status", 0))
-
-
 func _unavailable(reason: String) -> Dictionary:
 	return {"ok": false, "error": reason, "rows": [], "total_entries": 0,
 		"not_yet_complete": 0, "player_rank": 0, "signed_in": _signed_in()}
-
-
-func _signed_in() -> bool:
-	return auth != null and rest != null and auth.is_signed_in()
-
-
-func _uid() -> String:
-	return auth.uid if auth != null else ""
-
-
-static func _documents_root() -> String:
-	return "%s/projects/%s/databases/(default)/documents" % [
-		FirebaseConfig.FIRESTORE_URL, FirebaseConfig.PROJECT_ID]
 
 
 static func _period_doc(period_key: String) -> String:
@@ -425,4 +354,4 @@ static func _period_doc(period_key: String) -> String:
 
 
 static func _entry_doc(period_key: String, uid: String) -> String:
-	return "%s/entries/%s" % [_period_doc(period_key), uid.uri_encode()]
+	return FirestoreBoard._board_entry_doc(_period_doc(period_key), COLLECTION_ID, uid)

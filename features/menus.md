@@ -508,7 +508,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   (`world._on_session_event_completed`'s no-session branch).
   Because HQ hides overlays by toggling their
   **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
-  the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
+  the visibility chain), `go_to` / `_lift_hub` call `hq.gd::_release_all_focus()`
   on every transition so a button on the view just left can't keep focus and silently
   swallow arrow keys / Enter in the next, spatially-navigated station; the
   native-focus views re-grab a control right after.
@@ -611,14 +611,14 @@ turn and flips its pin from the locked to the unlocked look.
   `hq_reveal_hold_time` each, a special holding double, capped at `hq_reveal_max_queue`), so
   it simply plays out. Guarded by
   `test_menu_flow.gd::test_a_press_during_the_reveal_cannot_cancel_it`. Leaving the map
-  mid-parade (`_go_to`) still banks the queue.
+  mid-parade (`go_to`) still banks the queue.
 - **Persistence + backfill.** A per-rally `revealed` bool beside `completed`. The seeding
   itself lives entirely in `Save` (`Save._seed_reveals_if_needed`), run at the points a
   profile actually becomes live — `load_or_new` and `adopt_profile` — rather than as a
   call `hq.gd` has to remember to make at every scene/entry point that reaches the map or
   replaces the profile. Details (what it seeds, why the eligible-car clause is
   deliberately NOT part of it) are in [save-persistence.md](save-persistence.md).
-- **Generation guard.** `_run_reveal_sequence` bumps `_reveal_token` and captures it as
+- **Generation guard.** `_run_reveal_sequence` bumps `hq_table.gd::_reveal_token` and captures it as
   `token` before its first `await`; every abort check calls `_reveal_continue(token)`
   instead of a bare predicate. This stops a STALE coroutine — parked mid-`await` after a
   skip, then woken up next to a second sequence that started before it resumed — from
@@ -862,7 +862,7 @@ wrong, each with a silent failure mode:
 `hq.gd::_make_modal_overlay` and `hq_carpark.gd::_make_carpark_modal` are both thin wrappers
 over it now, so all three HQ modals (rally detail, challenge, Android notice) get the same
 hosting. The **Android boot notice** additionally stands the title down through
-`_update_overlays` — `_title_layer.visible = false` only ever addressed the flat host, so
+`update_overlays` — `_title_layer.visible = false` only ever addressed the flat host, so
 with world menus on it stood nothing down and left two live `MenuNav`s fighting one keypress.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
@@ -897,7 +897,7 @@ Pages on this shape: the rally detail card (`build_detail_overlay` — its `< Ma
 TABLE view), the challenge entry screen (`build_challenge_overlay`), Settings
 (`build_settings_overlay`), the Android
 app notice (`hq._show_android_app_notice`), and the car-park Change-Upgrades popup
-(`hq._show_upgrades_popup`, whose Done is additionally p/w-gated).
+(`hq_carpark.gd::_show_upgrades_popup`, whose Done is additionally p/w-gated).
 
 **Widths, not just heights.** A centred modal column asking for a fixed pixel width can
 also exceed the frame: a narrow/portrait phone aspect can leave well under 445 logical units wide.
@@ -927,7 +927,7 @@ it (`_build_hq`), then reveals — bridging the gap after Godot's boot bar so th
 never looks frozen. Under the headless test runner it builds synchronously with no
 cover (so tests see a ready HQ after one frame). HQ is **one diegetic 3D space** the camera flies through; an
 `enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }` names the camera **stations** and
-`_go_to(view)` tweens the single `Camera3D` between their poses
+`go_to(view)` tweens the single `Camera3D` between their poses
 (`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D
 objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_pickable`
 (`get_viewport().physics_object_picking` is on); their handlers also respond to
@@ -994,12 +994,9 @@ in `_build_hq`. It owns the 18 `*_challenge_*` functions — building and refres
 Daily/Weekly/Monthly overlay, fetching its leaderboard placing and cutoff, and the entry path
 into a challenge stage.
 
-The split is deliberately **functions-only**: the `_challenge_*` state (labels, buttons, the
-layer, the caches) still lives on `HqController`, because far more code reads that state
-directly than calls these functions, and property access on the wrong object fails at runtime
-rather than at parse time. `HqOverlays` already reaches into `_hq` for the same state, so this
-follows the established pattern. The two player-facing text constants moved with the functions
-and are reached statically as `HqChallenge._CHALLENGE_WIN_CONDITION` /
+The cut started **functions-only**, then followed up by moving the state each collaborator is
+the SOLE user of — see "Where a field lives" below. The two player-facing text constants moved
+with the functions and are reached statically as `HqChallenge._CHALLENGE_WIN_CONDITION` /
 `._CHALLENGE_REWARD_TEXT`. See [../todo/hq-split.md](../todo/hq-split.md).
 
 **The car park is likewise split out** into **`HqCarpark`** (`scripts/hq_carpark.gd`), held as
@@ -1014,6 +1011,65 @@ code passed `self` as a parent or host `Node` (`CarProp.spawn`, `ConfirmPopup.op
 passes `_hq`; `self` would compile fine and fail only when the line ran. The boot-instrumentation
 helpers (`_log_boot_cost` and friends, driven from `_ready`) and the shared `_car_stats_text` /
 `_restriction_text` also stayed, below the carpark code under a banner saying so.
+
+### Where a field lives: ONE user means it is not shared state
+
+The rule the cuts settled on. A field belongs to a collaborator when **exactly one**
+collaborator reads or writes it and `hq.gd` itself never does; it stays on `HqController` when
+two or more touch it. That second case is common and not a failure — `hq_overlays.gd` BUILDS
+most of the widgets that `hq_table.gd` / `hq_challenge.gd` then read, so a widget handle
+genuinely has two owners.
+
+The tell for a field on the wrong side is `@warning_ignore("unused_private_class_variable")` on
+`hq.gd`: the analyzer sees one file at a time, so a field only a collaborator touches reads as
+dead there, and the tag was suppressing that. Nineteen such fields have moved to their single
+user — the reveal parade's queue/token (`HqTable`), the Change-Upgrades popup handles, the
+lineup settle generation, the focus-rev audio player and the prewarm stow marker (`HqCarpark`),
+the challenge refresh generation and its two per-period board caches (`HqChallenge`), and the
+title row's Free Roam / Settings / Exit buttons, the build watermark and the dev-win button
+(`HqOverlays`). The tags that remain name genuinely shared state. **Don't add a new
+`@warning_ignore` to `hq.gd` for a field one collaborator owns — put the field there instead.**
+
+`hq.gd` grew a small **public** API for what collaborators legitimately need back from the
+controller, so those calls stop reading as private reach-through: **`view()`** (which station is
+live), **`go_to(view_id, snap)`**, **`update_overlays()`**, and the widget factories
+**`label()`**, **`detail_heading()`**, **`detail_wrap_label()`**, **`challenge_info_row()`**.
+The rest of the traffic is still `_hq._field` state access, deliberately: converting it all
+would be churn without a boundary, and the fields above are where the boundary actually was.
+
+### Input: one branch per station, and each cluster owns its own
+
+`hq.gd::_unhandled_input` is a **dispatch**, not a switchboard. It still owns the things that
+apply to every station in order — the `MenuNav.is_text_editing()` bail, the debug F7 world-menu
+A/B and F8 config reload, and the `ConfirmPopup.any_open()` modal bail — and then hands the
+event on:
+
+```
+if _challenge_ui.handle_input(event):   # the challenge modal owns the screen: stations stand down
+    return
+match _view:
+    View.EXTERIOR: _exterior_input(event)
+    View.SETTINGS: _settings_input(event)
+    View.GARAGE:   _garage_input(event)
+    View.LIFT:     _lift_input(event)
+    View.TABLE:    _table_ui.handle_input(event)
+    View.CARPARK:  _carpark_ui.handle_input(event)
+```
+
+Every handler returns **whether it consumed the event**. Nothing chains off the answer after
+the `match` — `_unhandled_input` is the last stop, and the one handler that must really mark the
+viewport handled (the reveal parade's press swallow, now `hq_table.gd::_is_any_press`) does that
+itself — but the contract is what lets `HqChallenge.handle_input` stand every station down by
+answering `true` instead of `hq.gd` reading `_challenge_shown` by hand. The four stations whose
+handlers stayed on `HqController` (title, settings, garage, lift) have no collaborator of their
+own; their widgets are built by `HqOverlays` but their focus cursors and transitions are
+`hq.gd`'s.
+
+**No binding moved.** The keyboard/gamepad map is unchanged: EXTERIOR left/right/select, GARAGE
+left/right/select/back, LIFT hub up/down/left/right/select/back (sub-page: back), TABLE
+select/back plus `dev_complete_rally` and pointer pan, CARPARK left/right/select/back plus
+up/down in the wheel view. `test_menu_nav.gd`, `test_menu_flow.gd` and `test_world_panel.gd`
+guard it.
 
 **A car that fails to spawn must never hang boot forever (regression, fixed).**
 `_spawn_lineup_progressive` (`hq_carpark.gd`) loops `_obtain_parked_car` → `_spawn_parked_car`
@@ -1050,7 +1106,7 @@ the garage row and lift hub use: `FOCUS_NONE` buttons (`_station_button`) over a
 left/right cursor (`_title_cursor`/`_title_focus`), painted by `UITheme.mark_focused`
 and driven by `menu_left`/`menu_right`/`menu_select` in the EXTERIOR branch of
 `_unhandled_input` (mirroring the GARAGE branch exactly). The cursor re-seats on **Start**
-(index 0) every time `_go_to(View.EXTERIOR)` runs. Start (`_on_exterior_start`) flies the
+(index 0) every time `go_to(View.EXTERIOR)` runs. Start (`_on_exterior_start`) flies the
 camera into the garage; **Free Roam** (`_enter_free_roam`, `CarparkMode.FREEROAM`) opens
 the whole-catalogue car park for a session-less drive — it lives here rather than in the
 garage because it needs no owned car, no session and no lift, so reaching it through the
@@ -1165,7 +1221,7 @@ the same path the map-table pan uses).
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
 spawned whenever the camera is inside — garage/lift — and dropped otherwise). The
-**map table is the one exception**: `_go_to(View.TABLE)` deliberately KEEPS the lift
+**map table is the one exception**: `go_to(View.TABLE)` deliberately KEEPS the lift
 car rather than clearing it. The table never shows the lift, but tearing the prop
 down landed in the very frame the camera starts its flight to the table, which is
 exactly where a hitch is most visible; the car is frozen with process disabled, so
@@ -1564,12 +1620,12 @@ throwaway test and still clip in the real game.
     judged on, so the bar can never disagree with the gate. **Grip** is
     `CarLibrary.max_lateral_g` over `UpgradeLibrary.grip_meta` (the aero kit's downforce
     *and* the race tyres' compound multiplier) rated at
-    `GRIP_REFERENCE_KMH`, since downforce is purely a speed effect and would otherwise never
-    move the row. The reference speed is **not printed**: it is identical for every car and
-    every row, so the comparison is like-for-like whether or not the player knows the
-    number, and the "at 50 km/h" label was eating width the blocks want.
-    `GRIP_REFERENCE_KMH` is the named constant it's rated at, matched by `CarStatBounds` so
-    the scale and the figure can't diverge.
+    `GameConfig.grip_reference_kmh`, since downforce is purely a speed effect and would
+    otherwise never move the row. The reference speed is **not printed**: it is identical
+    for every car and every row, so the comparison is like-for-like whether or not the
+    player knows the number, and the "at 50 km/h" label was eating width the blocks want.
+    `GameConfig.grip_reference_kmh` is the single config field it's rated at, read by both
+    `UpgradesSimple` and `CarStatBounds` so the scale and the figure can't diverge.
   - **Lightness is INVERTED mass** (`1.0 - CarStatBounds.fraction("mass", …)`, labelled in
     kg) so that a longer bar is always better on **every** row. A page where more is better
     on three lines and worse on one is exactly the trap the simple page exists to remove.
@@ -1987,7 +2043,7 @@ stream finishes. The props **drop in live**
 (raised by `menu_car_drop_height` onto a collision floor under the lot) so they
 **settle onto their suspension**, then `_freeze_lineup` freezes the settled pose after
 `menu_car_settle_seconds` (both the per-frame stream and the freeze are guarded by the
-same `_settle_generation` id so re-entering the lot — or backing out — abandons a
+same `hq_carpark.gd::_settle_generation` id so re-entering the lot — or backing out — abandons a
 half-spawned lineup and cancels a stale freeze) — so a full car park costs nothing to
 keep parked. Re-entry is also cheap: a **reuse cache** (`_car_cache`, keyed by the
 owned car's `instance_id` → the built node + a deep `owned.hash()`) means

@@ -22,8 +22,8 @@ extends Node3D
 # force overlay is up. Set tire_mark_alpha_enabled false to go back to flat opaque
 # marks; that changes only how solid they are, never where they appear.
 #
-# Created + wired by world.gd._generate_track once the centerline exists; re-targeted
-# on a car swap (world.gd.cycle_car). Marks are capped per wheel (a ring buffer).
+# Created + wired by world.gd._generate_track once the centerline exists.
+# Marks are capped per wheel (a ring buffer).
 
 # Windowed nearest-offset search of the centerline (around the car's last offset),
 # mirroring TrackProgress — local, so it never snaps to a far part of a winding road.
@@ -118,12 +118,6 @@ func setup(centerline: Curve2D, car: Node, terrain: Node, half_width: float) -> 
 	_segment_step = Config.data.tire_mark_segment_step_for(
 		Platform.is_web(), Platform.is_touch())
 	_ensure_material()
-	_retarget_internal(car)
-
-
-# Re-point at a freshly spawned car (a car swap) and clear all marks.
-func retarget(car: Node) -> void:
-	_offset = 0.0
 	_retarget_internal(car)
 
 

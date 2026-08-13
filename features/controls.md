@@ -18,6 +18,15 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
+| `menu_up` | W | ↑ | D-pad up | Menu navigation: move up |
+| `menu_down` | S | ↓ | D-pad down | Menu navigation: move down |
+| `menu_left` | A | ← | D-pad left | Menu navigation: move left |
+| `menu_right` | D | → | D-pad right | Menu navigation: move right |
+| `menu_select` | Enter | — | A / Cross (South) | Menu navigation: activate focused widget |
+| `menu_back` | Esc | — | B / Circle (East) | Menu navigation: back out / cancel |
+| `reload_config` | F8 | — | — | Dev: re-read `config/game_config.tres` from disk and re-apply, no restart |
+| `toggle_world_menus` | F7 | — | — | Dev: toggle A/B world-space menus against the flat overlays (see [debug-tools.md](debug-tools.md)) |
+| `dev_complete_rally` | F12 | — | — | Dev: instantly complete the current rally |
 
 All actions use a 0.2 deadzone.
 

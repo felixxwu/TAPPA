@@ -53,9 +53,6 @@ func test_health_gain_pct_scales_with_max_hp() -> void:
 	var tough := {"repaired": true, "hp_before": 100.0, "hp_after": 200.0, "max_hp": 5000.0}
 	assert_gt(RepairReveal.health_gain_pct(fragile), RepairReveal.health_gain_pct(tough),
 		"the same HP gain reads as a larger share of a fragile car")
-	# The absolute helper is still pure and correct, just not displayed.
-	assert_eq(RepairReveal.health_gain_hp(fragile), RepairReveal.health_gain_hp(tough),
-		"while the absolute figure is by definition the same on both")
 
 
 func test_worth_showing_needs_at_least_the_min_health_gain() -> void:

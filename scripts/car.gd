@@ -200,10 +200,6 @@ var _hold_anchor_set := false
 # up pointing the wrong way by the time the countdown reached GO.
 var _hold_anchor_yaw := 0.0
 
-func replay_cursor() -> float:
-	return _replay_t
-
-
 # The Gearbox setting (SettingsMenu.gearbox_auto()) as last mirrored onto this car's
 # engine, as a tri-state int: -1 = not yet seen, 0 = manual, 1 = auto. An int rather than a
 # Variant because this is compared every tick. Only CHANGES are pushed, so nothing else that
@@ -1396,11 +1392,6 @@ static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node
 	parent.add_child(fresh)
 	fresh.apply_car(index)
 	return fresh
-
-
-# The next car index after this one, wrapping around.
-func next_car_index() -> int:
-	return (_car_index + 1) % CarLibrary.all().size()
 
 
 func current_car_name() -> String:

@@ -242,10 +242,9 @@ scene child of `$Car` (not re-parented at boot), `world.gd` calls
 car swap. `retarget()` (car swap) re-parents the camera and then calls
 `refresh_bonnet_offset()` itself.
 
-The `CameraManager` applies these on `_ready()` and re-applies them when the
-active car is swapped: `world.gd:cycle_car()` parks the bonnet camera on the
-world root while the old car is freed, then `CameraManager.retarget(fresh)`
-re-parents it onto the new car (and re-points the chase camera's `target`).
+The `CameraManager` applies these on `_ready()` and via `retarget(fresh)`,
+which re-parents the bonnet camera onto a fresh car and re-points the chase
+camera's `target`.
 
 ## Replay camera (cinematic director)
 

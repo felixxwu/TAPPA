@@ -148,7 +148,7 @@ since the axles then no longer carry equal shares, returns the **load-weighted**
 rally eligibility. A quoted
 speed-rated figure must **always show its speed** — the effect grows with v², so a
 speed-dependent grip number without its speed reads as a promise; the Simple upgrades
-page's Grip row does exactly that (`UpgradesSimple.GRIP_REFERENCE_KMH`). Note `wheel_width_*` is dual-purpose: it sizes
+page's Grip row does exactly that (`GameConfig.grip_reference_kmh`). Note `wheel_width_*` is dual-purpose: it sizes
 the wheel meshes AND drives grip, so staggered cars both look and handle staggered.
 
 ## Per-wheel surface grip

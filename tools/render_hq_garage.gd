@@ -23,7 +23,7 @@ func _initialize() -> void:
 
 	# Capture each camera station that frames the garage, snapping between them.
 	for shot in [["garage", hq.View.GARAGE], ["table", hq.View.TABLE], ["lift", hq.View.LIFT]]:
-		hq._go_to(shot[1], true)
+		hq.go_to(shot[1], true)
 		for _i in 18:
 			await process_frame
 		var img := svp.get_texture().get_image()

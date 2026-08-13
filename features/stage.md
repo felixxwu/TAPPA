@@ -145,8 +145,6 @@ right after the car, track and `TrackProgress` exist, then calls
 `setup(car, hud, progress)`. Initialisation lives in `setup()` (not `_ready()`)
 because `add_child` runs `_ready` before `world.gd` hands over the refs. On track
 regeneration (entering a new event) the prior manager is freed so only one ticks.
-A car swap (`world.cycle_car`) re-arms the manager on the fresh car, restarting
-the countdown.
 
 ## Config knobs
 

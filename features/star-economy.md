@@ -74,21 +74,27 @@ Sources:
   boxes were already unconditional, which was written for the days when it could bank
   nothing, so nothing there needed changing. See [rally-challenge.md](rally-challenge.md).
 
-## Gating is on COMPLETIONS, not stars
+## Gating is GEOMETRIC, not stars and not completions
 
-Special events gate on the player's global count of completed **ordinary** rallies
-(`requires_completions`, read through `RallyLibrary.completions_required`), not on a
-star total — because a spendable balance goes *down*, and an unlock must never be
-revoked by a purchase. `special_gate_open`, `stars_required`, `stars_needed` and
-`engine_swap_star_requirement` are gone, replaced by `completions_required`,
-`completions_needed` and `engine_swap_completion_requirement`.
-`RallyLibrary.rally_revealed` no longer branches on `is_special` at all — one rule for
-every rally. `_completed_count` still excludes specials, so a special never advances the
-gate governing its own ladder. The map quotes the requirement as "N/M **rallies**" — an
-*event* is one stage inside a rally, so "rallies" is what the gate actually counts — and
-only on the **next** locked special (`RallyLibrary.next_locked_special_id`); the specials
-above it stand their trophies and say nothing until it is their turn. Details in
-[rally-roster.md](rally-roster.md) and [menus.md](menus.md).
+Special events gate exactly like every ordinary rally: `RallyLibrary.rally_revealed`
+compares a rally's `map_pos` against the lit circles of every completed rally on the
+roster (`lit_sources`), with no `is_special` branch at all — see
+[map-exploration.md](map-exploration.md). This replaced an earlier completion-count
+ladder (`requires_completions` / `completions_required` / `completions_needed`), which
+itself replaced gating on the roster-wide STAR TOTAL; both were retired because their
+unlocks had no visible relationship to the rally just won, whereas a pin's position
+does — and a spendable star balance goes *down*, so a gate reading it would have closed
+behind a player who had already passed it. `special_gate_open`, `stars_required`,
+`stars_needed`, `engine_swap_star_requirement`, `completions_required`,
+`completions_needed` and `engine_swap_completion_requirement` are all gone. The
+engine-swap *capability* gate is now a per-rally hook, `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`
+(`sp_woodland_trial`), checked via `RallyLibrary.engine_swaps_unlocked(profile)` — see
+`features/save-persistence.md` (`scripts/save_manager.gd`) and
+[map-exploration.md](map-exploration.md). The map's locked-special teaser now names the
+event and what it unlocks rather than quoting a progress fraction, and only on the
+**nearest** locked special (`RallyLibrary.nearest_locked_special_id`); the specials
+beyond it stand their trophies and say nothing until the frontier reaches them. Details
+in [rally-roster.md](rally-roster.md) and [menus.md](menus.md).
 
 Nothing in the game gates on the star balance. Upgrade parts gate on **winning a
 particular special** (`UpgradeDef.unlocked_by_rally`, see
@@ -222,13 +228,14 @@ the player the car, and no balance is ever consulted. See
 and the whole thing surviving a save/reload).
 `tests/headless/test_reward_system.gd` — the consumables-only draw.
 `tests/headless/test_rally_library.gd` — the star curve's shape and the
-completion gate. `tests/headless/test_rally_session.gd` — `star_rating` /
+geometric reveal gate. `tests/headless/test_rally_session.gd` — `star_rating` /
 `stars_gained` on the result. `tests/headless/test_menu_flow.gd` — the HQ/purchase
 flow. `tests/headless/test_sim_career.gd` — the career simulator over the real
 predicates.
 
 Per `CLAUDE.md` the authored numbers are NOT test-pinned: `star_cost_per_part`,
-`star_cost_per_repair`, `MAX_STARS_PER_RALLY` and the `requires_completions` rungs are all
+`star_cost_per_repair`, `MAX_STARS_PER_RALLY` and every rally's `map_pos` /
+`reveal_radius` are all
 tunable content, so tests assert the logic (a debit moves the balance by the price; a
 purchase needs the part discovered and its prerequisite fitted) and never the chosen
 values.

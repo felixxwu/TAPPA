@@ -6,7 +6,7 @@ extends GutTest
 # thinned to the requested count. Reads only in-memory data, no scene.
 
 
-const CELL := 0.5  # SpectatorScatter.CELL_M
+const CELL := ScatterMath.CELL_M
 
 
 func _cell_of(p: Vector2) -> Vector2i:

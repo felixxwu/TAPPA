@@ -56,7 +56,8 @@ exactly the GO→finish drive.
 
 ## Car playback (`replay_playback`)
 
-`car.gd` exposes `begin_replay(recorder)` / `end_replay()` / `replay_cursor()`. Entering
+`car.gd` exposes `begin_replay(recorder)` / `end_replay()` (the playback cursor itself is
+private state, `car.gd` → `_replay_t`). Entering
 replay sets `replay_playback = true`, `custom_integrator = true` (so the physics body
 takes no gravity/forces and won't fall between our per-frame writes), and
 `process_priority = REPLAY_PROCESS_PRIORITY` (a named const); `end_replay()` reverses all three and clears

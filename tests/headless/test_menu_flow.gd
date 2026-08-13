@@ -39,6 +39,7 @@ func before_each() -> void:
 	Config.data.map_hq_reveal_radius = 10.0
 	CarFixtures.install()
 	UpgradeFixtures.install()
+	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -244,16 +245,16 @@ func test_title_has_a_reachable_exit_game_button_on_desktop() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_not_null(hq._title_exit_button, "the title screen has an Exit Game button")
-	assert_true(hq._title_cursor.buttons.has(hq._title_exit_button),
+	assert_not_null(hq._overlays._title_exit_button, "the title screen has an Exit Game button")
+	assert_true(hq._title_cursor.buttons.has(hq._overlays._title_exit_button),
 		"Exit Game is a stop on the title's left/right cursor")
 	# CHANGED DELIBERATELY: Exit Game used to sit AFTER Start. The house order is
 	# exit-left / proceed-right (features/menus.md → "Button order"), so it now leads
 	# the row and Start closes it.
 	var parent: Node = hq._title_start_button.get_parent()
-	assert_lt(hq._title_exit_button.get_index(), hq._title_start_button.get_index(),
+	assert_lt(hq._overlays._title_exit_button.get_index(), hq._title_start_button.get_index(),
 		"Exit Game sits BEFORE Start — leaving is leftmost, proceeding is rightmost")
-	assert_eq(hq._title_exit_button.get_parent(), parent,
+	assert_eq(hq._overlays._title_exit_button.get_parent(), parent,
 		"Exit Game lives in the same title button row")
 
 
@@ -346,8 +347,8 @@ func test_hq_title_is_a_left_right_cursor() -> void:
 	assert_eq(cursor[cursor.size() - 1], hq._title_start_button,
 		"Start is LAST — it is the proceeding action")
 	assert_eq(hq._title_focus, cursor.size() - 1, "the title cursor starts on Start")
-	if hq._title_exit_button != null:
-		assert_eq(cursor[0], hq._title_exit_button, "Exit Game is FIRST — it is the way out")
+	if hq._overlays._title_exit_button != null:
+		assert_eq(cursor[0], hq._overlays._title_exit_button, "Exit Game is FIRST — it is the way out")
 	hq._move_title_focus(1)
 	assert_eq(hq._title_focus, 0, "right from the end wraps to the first stop")
 	hq._move_title_focus(-1)
@@ -361,7 +362,7 @@ func test_hq_title_is_a_left_right_cursor() -> void:
 	assert_eq(seen.size(), cursor.size(), "every button in the row is reachable")
 
 	# Select on Settings opens the settings page.
-	hq._title_focus = cursor.find(hq._title_settings_button)
+	hq._title_focus = cursor.find(hq._overlays._title_settings_button)
 	hq._activate_title_focus()
 	assert_eq(hq._view, hq.View.SETTINGS, "select on Settings opens the settings page")
 
@@ -413,18 +414,18 @@ func test_hq_title_shows_build_version() -> void:
 	await get_tree().process_frame
 	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
 	assert_ne(ver, "", "project.godot defines application/config/version")
-	assert_not_null(hq._title_version_label, "the title overlay has a version label")
+	assert_not_null(hq._overlays._title_version_label, "the title overlay has a version label")
 	# UITheme.enforce() uppercases every overlay label (house style), so the
 	# version renders capped (e.g. "V0.0-DEV").
-	assert_eq(hq._title_version_label.text, UITheme.caps("v" + ver),
+	assert_eq(hq._overlays._title_version_label.text, UITheme.caps("v" + ver),
 		"the title version label mirrors application/config/version")
 	# NOT on _title_layer: that layer is stood down when the title screen migrates to a
 	# WorldPanel, and the watermark went invisible for the whole session with it — the one
 	# readout that says which build you are looking at, missing from the shipped config. It has
 	# its own layer now, shown with the title screen.
-	assert_ne(hq._title_version_label.get_parent(), hq._title_layer as Node,
+	assert_ne(hq._overlays._title_version_label.get_parent(), hq._title_layer as Node,
 		"the version label is not riding on the title's migratable layer")
-	assert_true(MenuNav.is_on_screen(hq._title_version_label),
+	assert_true(MenuNav.is_on_screen(hq._overlays._title_version_label),
 		"and it is on screen at the title station")
 
 
@@ -435,11 +436,11 @@ func test_the_build_watermark_survives_a_world_hosted_title() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_false(hq._title_layer.visible, "precondition: the title is on its panel, flat layer down")
-	assert_true(MenuNav.is_on_screen(hq._title_version_label),
+	assert_true(MenuNav.is_on_screen(hq._overlays._title_version_label),
 		"the build watermark is still on screen with world menus on")
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	await get_tree().process_frame
-	assert_false(MenuNav.is_on_screen(hq._title_version_label),
+	assert_false(MenuNav.is_on_screen(hq._overlays._title_version_label),
 		"and it goes away with the title screen, rather than following you round the HQ")
 
 
@@ -508,7 +509,7 @@ func test_hq_table_entry_reuses_unchanged_pins() -> void:
 	var settled := _pin_ids(hq)
 	assert_eq(settled.size(), 2, "both rallies are pinned")
 
-	hq._go_to(hq.View.GARAGE, true)
+	hq.go_to(hq.View.GARAGE, true)
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_eq(_pin_ids(hq), settled, "re-entering the table with nothing changed keeps the pins")
@@ -1230,9 +1231,9 @@ func test_returning_to_the_title_still_parks_the_selected_car() -> void:
 	await _await_lineup(hq)
 
 	# Go inside (the selected car moves onto the lift), then back out to the title.
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	await get_tree().process_frame
-	hq._go_to(hq.View.EXTERIOR)
+	hq.go_to(hq.View.EXTERIOR)
 	await get_tree().process_frame
 	await _await_lineup(hq)
 
@@ -1377,14 +1378,14 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 
 	# Select on Garage goes straight to the tuning lift bay (there is no car-pick step in
 	# between any more — the bay's own selector chevrons change the car in place).
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	hq._garage_focus = 2  # Back(0) | Career(1) | Garage(2) | ...
 	hq._activate_garage_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "select on Garage opens the tuning lift bay")
 
 	# Back-to-garage, then select on the Back item leaves for the exterior.
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	assert_eq(hq._garage_focus, hq._garage_career_index,
 		"re-entering the garage re-seats the cursor on Career")
 	hq._garage_focus = 0
@@ -1445,8 +1446,8 @@ func test_opening_the_map_keeps_the_lift_car_but_the_car_park_still_gets_it_back
 
 	# Back to the garage and out to the title: the title parks the collection, which
 	# borrows the cached node, so the lift must have released it.
-	hq._go_to(hq.View.GARAGE)
-	hq._go_to(hq.View.EXTERIOR)
+	hq.go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.EXTERIOR)
 	assert_null(hq._lift_car, "leaving for a station that parks cars still clears the lift")
 
 
@@ -1729,7 +1730,7 @@ func test_hq_challenge_start_opens_carpark_then_resume() -> void:
 	assert_eq(ChallengeSession.kind(), ChallengeLibrary.DAILY, "the run is for the selected kind")
 
 	# Reopening the same kind's entry now offers Resume, since a run is stored for it.
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	hq._challenge_ui._open_challenge_overlay()
 	hq._challenge_ui._select_challenge_kind(ChallengeLibrary.DAILY)
 	assert_eq(hq._challenge_start_button.text.to_upper(), "RESUME",
@@ -1791,7 +1792,7 @@ func test_hq_challenge_carpark_routes_over_ceiling_car_to_change_upgrades() -> v
 	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
 
 	await hq._on_start_pressed()
-	assert_true(is_instance_valid(hq._active_carpark_popup),
+	assert_true(is_instance_valid(hq._carpark_ui._active_carpark_popup),
 		"pressing Start on an over-ceiling car pops the over-limit prompt instead of launching")
 	assert_false(ChallengeSession.is_active(), "no run began — the prompt intercepted Start")
 
@@ -1852,7 +1853,7 @@ func test_hq_garage_button_goes_straight_to_the_tuning_bay() -> void:
 		"the car on the lift is the currently selected one")
 
 	# The bay's own Back returns to the garage.
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.GARAGE, "Back from the bay returns to the garage")
 
@@ -1900,7 +1901,6 @@ func test_free_roam_finish_next_returns_to_hq() -> void:
 # crowd around it (features/opponent-wrecks.md). Drives the real world build with an
 # active session whose field wrecks one rival in event 0.
 func test_run_scene_stages_a_roadside_opponent_wreck() -> void:
-	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	# Overwrite the field so a known rival (in a resolvable fixture car) wrecks event 0.
@@ -2011,6 +2011,13 @@ func test_hq_map_fogs_a_special_the_player_has_not_explored_out_to() -> void:
 	# Needs the REAL reveal radius: before_each lights the whole map so the layout tests can
 	# see their pins, and this test is about a rally being out in the dark.
 	_dark_map_radius()
+	# Needs a roster with a special that is genuinely NOT reachable from a fresh profile.
+	# RallyFixtures' one special (fx_showdown) is deliberately parked inside HQ's lit
+	# circle so it's open from the start (see rally_fixtures.gd) — there is no dark special
+	# in that roster to assert against, so fall back to the shipped roster's shape here.
+	# This depends on the roster's STRUCTURE (some special is unreached from a fresh
+	# profile), never on any specific rally's identity or stats.
+	RallyLibrary.reset()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2037,6 +2044,14 @@ func test_hq_unavailable_ordinary_rally_fades_its_floating_readout() -> void:
 	# Needs the REAL reveal radius: before_each lights the whole map, which would leave no
 	# unavailable ordinary pin to look at and quietly turn this into a no-op.
 	_dark_map_radius()
+	# _first_reachable_rally_id() derives reachability from the OPENING-RALLY seeding
+	# mechanism (RallyLibrary.reveal_depths -> a rally whose prize_car is a starter model),
+	# which RallyFixtures' roster does not model at all (none of its rallies award a
+	# starter car) — so reveal_depths() over the fixtures returns nothing reachable, and
+	# there is no "first reachable rally" to find. Fall back to the shipped roster's shape
+	# here; this depends on the roster's STRUCTURE (an opening rally exists and is
+	# reachable), never on any specific rally's identity or stats.
+	RallyLibrary.reset()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2109,18 +2124,18 @@ func test_hq_pins_stars_reflect_best_placement() -> void:
 	# unplayed rally rates nothing.
 	var podium_stars := RallyLibrary.stars_for_placement(1)
 	var finish_stars := RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1)
-	_save.complete_rally("shakedown", 60000, 1)
-	_save.complete_rally("coastal_sprint", 90000, RallyLibrary.PODIUM_PLACES + 1)
+	_save.complete_rally("fx_open", 60000, 1)
+	_save.complete_rally("fx_fwd_band", 90000, RallyLibrary.PODIUM_PLACES + 1)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(hq._stars_for("shakedown"), podium_stars, "a podium best rates the full count")
-	assert_eq(hq._stars_for("coastal_sprint"), finish_stars, "a finish rates less, but not zero")
+	assert_eq(hq._stars_for("fx_open"), podium_stars, "a podium best rates the full count")
+	assert_eq(hq._stars_for("fx_fwd_band"), finish_stars, "a finish rates less, but not zero")
 	assert_gt(podium_stars, finish_stars, "and the podium really does rate more")
-	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
+	assert_eq(hq._stars_for("fx_rwd_band"), 0, "an unplayed rally earns 0 stars")
 	# The readout box on the pin is the design-system black panel (a Sprite3D) carrying
 	# a StarRow lit to the earned count — and no leftover 3D sphere "stars".
-	var pin := _pin_for(hq, "shakedown")
+	var pin := _pin_for(hq, "fx_open")
 	assert_gt(pin.find_children("*", "Sprite3D", true, false).size(), 0,
 		"the pin carries a billboarded readout box (Sprite3D)")
 	var rows := pin.find_children("*", "StarRow", true, false)
@@ -2139,19 +2154,24 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	# Tapping CENTRES the camera on the pin and only then opens the panel, so the detail
 	# lands one camera glide later — await the handler rather than reading _detail_open
 	# before the glide it deliberately waits out.
-	await hq._table_ui._on_rally_pin("rwd_masters")
+	await hq._table_ui._on_rally_pin("fx_rwd_band")
 	assert_true(hq._detail_open, "tapping a pin opens the rally detail")
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
 	# Name and stage count both ride on the title (there is no per-stage column); derive both
 	# from the rally itself so renaming or retuning the roster can't break this.
-	var rally: Dictionary = RallyLibrary.by_id("rwd_masters")
+	var rally: Dictionary = RallyLibrary.by_id("fx_rwd_band")
 	assert_string_contains(hq._detail_title.text, String(rally.get("name", "")).to_upper(),
 		"the detail names the rally")
 	var stages: int = (rally.get("events", []) as Array).size()
 	assert_string_contains(hq._detail_title.text, "%d STAGE" % stages,
 		"the title carries the rally's stage count")
-	assert_string_contains(hq._detail_restriction.text, "RWD CARS", "the detail spells out the eligibility")
+	# Derive the expected restriction text the same way the detail panel does (rather than
+	# pinning an authored string like "RWD CARS"), so retuning the fixture's restriction
+	# can't break this.
+	assert_string_contains(hq._detail_restriction.text,
+		hq._restriction_text(rally["restriction"]).to_upper(),
+		"the detail spells out the eligibility")
 
 
 func test_hq_table_drag_pans_and_clamps() -> void:
@@ -2223,19 +2243,18 @@ func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
-	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "shakedown")
+	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "fx_open")
 	assert_false(hq._detail_open, "dragging the map does not open the pin under the finger")
 	# A clean tap (no drag) on a pin DOES open it (selection fires on release). The handler
 	# is fire-and-forget and _on_rally_pin centres the camera on the pin before opening the
 	# panel, so the detail arrives one camera glide later.
 	hq._table_dragged = false
-	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "shakedown")
+	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "fx_open")
 	await get_tree().create_timer(Config.data.menu_camera_move_time).timeout
 	assert_true(hq._detail_open, "a tap with no drag opens the rally detail")
 
 
 func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
-	RallyFixtures.install()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2295,7 +2314,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: all three are eligible
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: all three are eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2319,7 +2338,7 @@ func test_hq_parked_cars_rest_on_their_wheels_frozen() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: starter + the granted car both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2340,7 +2359,7 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2383,7 +2402,7 @@ func test_hq_carpark_swipe_cycles_the_focus() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	var swipe: float = Config.data.menu_swipe_min_px + 20.0
@@ -2402,7 +2421,7 @@ func test_hq_carpark_tap_on_a_parked_car_focuses_it() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -2448,7 +2467,7 @@ func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: starter + the two granted cars
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: starter + the two granted cars
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._markers.size(), 3, "three eligible cars are parked")
@@ -2474,7 +2493,7 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	var car_pos: Vector3 = hq._focused_car_pos()
@@ -2498,7 +2517,7 @@ func test_hq_carpark_world_space_menu_hosts_backs_and_reframes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 
@@ -2547,7 +2566,7 @@ func test_hq_carpark_world_space_menu_hosts_backs_and_reframes() -> void:
 
 	# ...and flipping back off returns the tree to the flat host with its boxes cleared,
 	# which is what makes the F7 A/B honest rather than one-way.
-	hq._update_overlays()
+	hq.update_overlays()
 	assert_eq(hq._car_root.get_parent(), hq._car_layer as Node,
 		"turning world menus off returns the tree to its CanvasLayer")
 	for n in backings:
@@ -2583,7 +2602,7 @@ func test_hq_lift_hosts_its_menu_on_a_world_panel() -> void:
 
 	# And it reverts: the tree goes home and the flat layer takes over again.
 	Config.data.world_space_menus = false
-	hq._update_overlays()
+	hq.update_overlays()
 	assert_eq(hq._lift_root.get_parent(), hq._lift_layer as Node,
 		"turning world menus off returns the lift tree to its CanvasLayer")
 	assert_true(hq._lift_layer.visible, "...and the flat lift layer comes back up")
@@ -2643,7 +2662,7 @@ func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: starter + the granted car both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# Focus the wrecked XJS in the lineup.
@@ -2724,9 +2743,9 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 	# Press Start: instead of launching, the "Too powerful" confirm pops offering Change
 	# Upgrades (not a one-press detune). Nothing is applied and the rally doesn't launch.
 	await hq._on_start_pressed()
-	assert_true(is_instance_valid(hq._active_carpark_popup),
+	assert_true(is_instance_valid(hq._carpark_ui._active_carpark_popup),
 		"pressing Start on an over-powered car pops the over-limit prompt")
-	var popup: ConfirmPopup = hq._active_carpark_popup
+	var popup: ConfirmPopup = hq._carpark_ui._active_carpark_popup
 	# Exit-left / proceed-right (features/menus.md → "Button order"): Cancel leads, the
 	# action that gets you moving is last. Asserted by identity, not by index 0.
 	var choices: Array = []
@@ -2743,7 +2762,7 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 		"nothing is applied to the car by the prompt")
 	# Choosing Change Upgrades opens the gated upgrades popup where the player sheds power.
 	hq._carpark_ui._detune_change_upgrades()
-	assert_true(hq._upgrades_popup != null and hq._upgrades_popup.visible,
+	assert_true(hq._carpark_ui._upgrades_popup != null and hq._carpark_ui._upgrades_popup.visible,
 		"Change Upgrades opens the upgrades popup")
 
 
@@ -3066,7 +3085,7 @@ func test_hq_back_steps_carpark_to_table_to_garage() -> void:
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	hq._table_ui._enter_table()
-	hq._table_ui._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "in the car park after entering")
@@ -3076,7 +3095,7 @@ func test_hq_back_steps_carpark_to_table_to_garage() -> void:
 	assert_eq(hq._cars.size(), 0, "the parked lineup is cleared when leaving the car park")
 	assert_true(hq._table_layer.visible, "the map HUD is shown again")
 	# Back from the table returns to the garage.
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	assert_eq(hq._view, hq.View.GARAGE, "Back from the table returns to the garage")
 
 
@@ -3086,7 +3105,7 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	await get_tree().process_frame
 	# Pick a rally → enter, then Start with the focused car. auto_load_scenes is off,
 	# so no scene change; start_rally derives targets.
-	hq._table_ui._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_false(hq._start_button.disabled, "Start is enabled once a rally + eligible car are chosen")
@@ -3096,7 +3115,7 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	assert_gt(hq.find_children("*", "LoadingScreen", true, false).size(), 0,
 		"a loading overlay is shown immediately on Start")
 	assert_true(RallySession.is_active(), "Start hands off to an active RallySession")
-	assert_eq(RallySession.rally_id(), "shakedown", "the chosen rally is running")
+	assert_eq(RallySession.rally_id(), "fx_open", "the chosen rally is running")
 
 
 func test_hq_starting_a_rally_selects_the_fielded_car() -> void:
@@ -3106,7 +3125,7 @@ func test_hq_starting_a_rally_selects_the_fielded_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._table_ui._on_rally_pin("fx_open")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -3131,7 +3150,7 @@ func test_hq_mobile_first_start_gates_on_control_scheme_pick() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# No control scheme saved yet -> Start shows the picker as a gate, not the rally.
@@ -3161,7 +3180,7 @@ func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("shakedown")
+	hq._table_ui._on_rally_pin("fx_open")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# A preference exists, so Start goes straight to the rally (no gate).
@@ -3173,7 +3192,6 @@ func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
 func test_standings_interstitial_renders_the_leaderboard() -> void:
 	# After a non-final event the rally pauses on the standings; the scene shows the
 	# cumulative leaderboard so far. (auto_load_scenes is off, so no scene loads.)
-	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = [
@@ -3207,7 +3225,6 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	# global leaderboard; the reward is collected from PAGE 2, after the player has
 	# seen where they placed in the world, and the reveal is the last thing before
 	# the rally resumes.
-	RallyFixtures.install()
 	var driven: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
 	RallySession._opponent_field = [
@@ -3342,7 +3359,6 @@ func test_standings_final_challenge_stage_has_no_collect_reward() -> void:
 
 
 func test_standings_final_event_has_no_collect_reward() -> void:
-	RallyFixtures.install()
 	var driven: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
 	RallySession._opponent_field = [
@@ -3833,7 +3849,6 @@ func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 
 
 func test_run_scene_fields_the_bound_session_car() -> void:
-	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
@@ -3852,6 +3867,11 @@ func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 	# catalogue ids (mx5/focus/twingo) — it can't be pointed at the synthetic fixtures
 	# without touching production code, so restore the real catalogue for this one test.
 	CarFixtures.restore()
+	# Likewise the OPENING RALLY the picked starter drops the player into is found by
+	# matching a real rally's prize_car against one of those hardcoded ids — none of
+	# RallyFixtures' roster awards a starter model — so restore the shipped rally roster
+	# too, or picking a starter would have no opening rally to start.
+	RallyLibrary.reset()
 	_reset_to_first_run()
 	# Fresh profile has no starter picked and an empty garage.
 	assert_false(bool(_save.profile.get("starter_picked", false)), "fresh profile: no starter yet")
@@ -4395,16 +4415,16 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 	hq._focus = 0
 	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
-	assert_true(hq._upgrades_popup.visible, "the popup is shown")
-	assert_not_null(hq._upgrades_popup_menu, "the popup hosts an UpgradesMenu")
-	assert_not_null(hq._upgrades_popup_menu.first_control(), "has a focusable option (navigable)")
+	assert_true(hq._carpark_ui._upgrades_popup.visible, "the popup is shown")
+	assert_not_null(hq._carpark_ui._upgrades_popup_menu, "the popup hosts an UpgradesMenu")
+	assert_not_null(hq._carpark_ui._upgrades_popup_menu.first_control(), "has a focusable option (navigable)")
 	var has_swap := false
-	for node in hq._upgrades_popup_menu.find_children("*", "Button", true, false):
+	for node in hq._carpark_ui._upgrades_popup_menu.find_children("*", "Button", true, false):
 		if String((node as Button).text).to_lower().begins_with("swap engine"):
 			has_swap = true
 	assert_false(has_swap, "the engine-swap row is dropped in the popup")
 	hq._carpark_ui._close_upgrades_popup()
-	assert_false(hq._upgrades_popup.visible, "Done / back closes the popup")
+	assert_false(hq._carpark_ui._upgrades_popup.visible, "Done / back closes the popup")
 
 
 func test_carpark_upgrades_popup_renders_with_world_space_menus() -> void:
@@ -4421,14 +4441,14 @@ func test_carpark_upgrades_popup_renders_with_world_space_menus() -> void:
 	hq._selected_instance_id = id
 	hq._eligible = [_save.get_car(id)]
 	hq._focus = 0
-	hq._go_to(hq.View.CARPARK)
+	hq.go_to(hq.View.CARPARK)
 	await get_tree().process_frame
 	assert_false(hq._car_layer.visible, "precondition: the flat car-park layer stands down")
 	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
-	assert_true(hq._upgrades_popup.is_visible_in_tree(),
+	assert_true(hq._carpark_ui._upgrades_popup.is_visible_in_tree(),
 		"the upgrades modal is actually on screen, not on the hidden flat car-park layer")
-	assert_not_null(hq._upgrades_popup_menu.first_control(),
+	assert_not_null(hq._carpark_ui._upgrades_popup_menu.first_control(),
 		"and its options are focusable (a hidden tree has no focusable controls)")
 
 
@@ -4447,7 +4467,7 @@ func test_carpark_upgrades_modal_sits_below_a_confirm_popup() -> void:
 	hq._focus = 0
 	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
-	var modal_layer := hq._upgrades_popup.get_parent() as CanvasLayer
+	var modal_layer := hq._carpark_ui._upgrades_popup.get_parent() as CanvasLayer
 	assert_not_null(modal_layer, "the modal is hosted on its own CanvasLayer")
 	var confirm := ConfirmPopup.open(hq, "Fixture", "body",
 		[{"label": "Ok", "callback": Callable()}])
@@ -4529,7 +4549,7 @@ func test_leaving_a_station_releases_focus_on_both_hosts() -> void:
 	(buttons[0] as Button).grab_focus()
 	await get_tree().process_frame
 	assert_not_null(sub.gui_get_focus_owner(), "setup: the panel's own viewport holds focus")
-	hq._go_to(hq.View.GARAGE)
+	hq.go_to(hq.View.GARAGE)
 	await get_tree().process_frame
 	assert_null(sub.gui_get_focus_owner(),
 		"leaving the station drops focus inside the panel, not just in the main viewport")
@@ -4874,7 +4894,6 @@ func _global_page(fetch: Callable, opts: Dictionary = {}) -> GlobalStandings:
 # Park the rally on the standings after a non-final stage, with a rival field, and
 # return the built interstitial.
 func _standings_after_stage_one() -> Control:
-	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = [
@@ -6107,8 +6126,8 @@ func test_a_press_during_the_reveal_cannot_cancel_it() -> void:
 	# the suite), so this is the only way to stand in the middle of one.
 	_save.profile["rallies"] = {}
 	hq._revealing = true
-	hq._reveal_queue.append("rv_open")
-	hq._reveal_queue.append("rv_hot")
+	hq._table_ui._reveal_queue.append("rv_open")
+	hq._table_ui._reveal_queue.append("rv_hot")
 
 	var key := InputEventKey.new()
 	key.keycode = KEY_SPACE
@@ -6154,19 +6173,19 @@ func test_a_stale_reveal_token_cannot_touch_a_newer_sequences_state() -> void:
 	await get_tree().process_frame
 
 	# Simulate: a first sequence started and captured this token...
-	var stale_token: int = hq._reveal_token
+	var stale_token: int = hq._table_ui._reveal_token
 	# ...then, before it resumed, a second sequence started (bumping the token) and is
 	# now mid-flight with its own queue.
-	hq._reveal_token += 1
+	hq._table_ui._reveal_token += 1
 	hq._revealing = true
-	hq._reveal_queue.clear()
-	hq._reveal_queue.append("rv_hot")
-	hq._reveal_shown.clear()
+	hq._table_ui._reveal_queue.clear()
+	hq._table_ui._reveal_queue.append("rv_hot")
+	hq._table_ui._reveal_shown.clear()
 	hq._view = hq.View.TABLE
 
 	assert_false(hq._table_ui._reveal_continue(stale_token),
 		"a coroutine carrying an outdated token is told to stop, not to keep going")
-	assert_eq(hq._reveal_queue, ["rv_hot"] as Array[String],
+	assert_eq(hq._table_ui._reveal_queue, ["rv_hot"] as Array[String],
 		"the stale coroutine's abort must not mutate the new sequence's queue")
 	assert_true(hq._revealing,
 		"nor may a stale coroutine's abort clear the new sequence's _revealing flag")
@@ -6180,14 +6199,14 @@ func test_free_roam_is_on_the_title_row_and_account_is_not() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
-	assert_not_null(hq._title_free_roam_button, "the title screen has a Free Roam button")
-	assert_true(hq._title_cursor.buttons.has(hq._title_free_roam_button),
+	assert_not_null(hq._overlays._title_free_roam_button, "the title screen has a Free Roam button")
+	assert_true(hq._title_cursor.buttons.has(hq._overlays._title_free_roam_button),
 		"Free Roam is a stop on the title's left/right cursor, not pointer-only")
 	for b: Button in hq._title_cursor.buttons:
 		assert_false(b.text.to_upper().contains("ACCOUNT"),
 			"the title row no longer carries Account — Settings hosts the only route")
 	# Firing it from the title drops straight into the free-roam picker.
-	hq._title_focus = hq._title_cursor.buttons.find(hq._title_free_roam_button)
+	hq._title_focus = hq._title_cursor.buttons.find(hq._overlays._title_free_roam_button)
 	hq._activate_title_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Free Roam from the title opens the car park")
@@ -6492,7 +6511,7 @@ func test_hq_hot_reload_keeps_the_world_menu_toggle() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	Config.data.world_space_menus = true
-	hq._update_overlays()
+	hq.update_overlays()
 	assert_not_null(hq._panel_host("title").panel, "world mode is on before the reload")
 
 	assert_true(hq.hot_reload_config(), "the config re-reads from disk")
@@ -6501,7 +6520,7 @@ func test_hq_hot_reload_keeps_the_world_menu_toggle() -> void:
 
 	# ...and the flat direction survives too, so F8 is neutral either way.
 	Config.data.world_space_menus = false
-	hq._update_overlays()
+	hq.update_overlays()
 	assert_true(hq.hot_reload_config(), "the config re-reads from disk again")
 	assert_false(bool(Config.data.world_space_menus), "and a flat session stays flat")
 
@@ -6519,11 +6538,11 @@ func test_hq_panel_ui_scale_retune_reaches_the_panel() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	Config.data.world_space_menus = true
-	hq._update_overlays()
+	hq.update_overlays()
 	var before: Vector2 = hq._panel_host("title").panel.frame().size
 
 	Config.data.world_panel_title_ui_scale = float(Config.data.world_panel_title_ui_scale) * 2.0
-	hq._update_overlays()
+	hq.update_overlays()
 	var after: Vector2 = hq._panel_host("title").panel.frame().size
 	assert_lt(after.x, before.x, "doubling ui_scale must halve the layout canvas — the panel rebuilt")
 
@@ -6532,7 +6551,7 @@ func test_hq_panel_ui_scale_retune_reaches_the_panel() -> void:
 	assert_true(hq.hot_reload_config(), "the config re-reads from disk")
 	var reloaded: Vector2 = hq._panel_host("title").panel.frame().size
 	Config.data.world_panel_title_ui_scale = float(Config.data.world_panel_title_ui_scale) * 2.0
-	hq._update_overlays()
+	hq.update_overlays()
 	assert_lt(hq._panel_host("title").panel.frame().size.x, reloaded.x,
 		"a retune AFTER a hot reload must still reach the panel (no stale GameConfig capture)")
 

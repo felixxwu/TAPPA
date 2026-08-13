@@ -24,12 +24,12 @@ extends VBoxContainer
 
 const NO_LIMIT := UpgradesMenu.NO_LIMIT
 
-# The speed the Grip row's aero-inclusive figure is rated at. ~two-thirds of what is
-# realistically flat out in this game (GameConfig.speed_lines_full_kmh), i.e. a fast
-# corner rather than a straight — which is where lateral grip actually decides a stage.
-# ALWAYS SHOWN next to the figure: downforce grows with v², so a speed-dependent grip
-# number quoted without its speed reads as a promise.
-const GRIP_REFERENCE_KMH := 50.0
+# The speed the Grip row's aero-inclusive figure is rated at, read from
+# GameConfig.grip_reference_kmh. ~two-thirds of what is realistically flat out in this game
+# (GameConfig.speed_lines_full_kmh), i.e. a fast corner rather than a straight — which is
+# where lateral grip actually decides a stage. ALWAYS SHOWN next to the figure: downforce
+# grows with v², so a speed-dependent grip number quoted without its speed reads as a
+# promise.
 
 # Which upgrades belong to which STAT ROW — the categories the wrench buttons open.
 # {slots, detune, swap} per row; a row absent from here gets no wrench.
@@ -187,7 +187,7 @@ func _build_advanced() -> void:
 # shipped with, gold for what the player's upgrades added on top. See StatBar for why that
 # split is safe where the old dimmed "headroom" tier was not.
 func _stat_rows() -> Array:
-	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(_owned)
 	var out: Array = []
 	if entry.is_empty():
 		return out
@@ -213,13 +213,14 @@ func _stat_rows() -> Array:
 	# all, since downforce is purely a speed effect) and the race tyres' compound
 	# multiplier. The reference speed is NOT printed: it is
 	# the same for every car and every row, so the comparison is like-for-like either way,
-	# and the label was eating the width the blocks want. GRIP_REFERENCE_KMH is the single
-	# place it is set, shared with CarStatBounds so the scale and the figure can't diverge.
+	# and the label was eating the width the blocks want. GameConfig.grip_reference_kmh is
+	# the single place it is set, shared with CarStatBounds so the scale and the figure
+	# can't diverge.
 	var grip := CarLibrary.max_lateral_g(
-		UpgradeLibrary.grip_meta(_owned, entry), Config.data, GRIP_REFERENCE_KMH)
+		UpgradeLibrary.grip_meta(_owned, entry), Config.data, Config.data.grip_reference_kmh)
 	out.append(StatBar.build("Grip", CarStatBounds.fraction("grip", grip), "%.2f G" % grip,
 		CarStatBounds.fraction("grip",
-			CarLibrary.max_lateral_g(stock, Config.data, GRIP_REFERENCE_KMH)),
+			CarLibrary.max_lateral_g(stock, Config.data, Config.data.grip_reference_kmh)),
 		-1.0, _wrench_for("Grip")))
 
 	# LIGHTNESS — inverted mass, so a longer bar is always better on every row of the page.

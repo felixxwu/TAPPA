@@ -4,7 +4,21 @@ Findings from a `/refactor-after-bugfix` investigation run on 2026-07-31, after
 fixing the "Daily challenge road drives into the water" bug. Every item below was
 verified against the code by reading it; none are speculative.
 
-**Nothing in this spec is implemented yet** except where a section says otherwise.
+| Section | Status |
+|---|---|
+| 1. Invert the config direction (the class fix) | IMPLEMENTED |
+| 2. The final challenge stage's interstitial reads the wrong session | IMPLEMENTED |
+| 3. Free roam re-implements `apply_event_config` partially | IMPLEMENTED |
+| 4. The car lock is scoped far too widely — REDESIGNED | REDESIGNED — implemented per new rule; test migration outstanding (five test files off the deprecated `abandon()` alias, then delete it) |
+| 5. Challenge does not repair after its final stage — it should | IMPLEMENTED |
+| 6. Challenge start skips part of the career start composite | IMPLEMENTED |
+| 7. `Benchmark._OVERRIDDEN_FIELDS` is a hand-maintained subset | IMPLEMENTED |
+| 8. `ChallengeSession` has no phase gate on wreck / result reporting | IMPLEMENTED |
+| 9. Free-roam region leaks into a challenge stage | IMPLEMENTED |
+| 10. The sync-conflict prompt is owned by an OPTIONAL screen | IMPLEMENTED |
+| 11. No standard "waiting on Firebase" loading state | IMPLEMENTED |
+| 12. "Return to HQ" DNFs a challenge — it should just pause it | IMPLEMENTED — test migration outstanding (five test files off the deprecated `abandon()` alias, then delete it) and a synthetic period-key seam for tests |
+| 13. The title screen repopulates in front of the player — IMPLEMENTED | IMPLEMENTED |
 
 ## The mechanism
 

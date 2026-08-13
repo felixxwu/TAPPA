@@ -467,7 +467,10 @@ func test_wheel_view_uses_the_side_on_camera() -> void:
 	assert_almost_eq(xform.origin, car_pos + cfg.hq_wheel_cam_offset, Vector3.ONE * 0.001,
 		"the wheel view poses the camera from hq_wheel_cam_offset")
 	hq._carpark_mode = hq.CarparkMode.RALLY
-	assert_almost_eq(hq._camera_target_xform().origin, car_pos + cfg.menu_camera_offset,
+	var expected_eye: Vector3 = car_pos + cfg.menu_camera_offset
+	if bool(cfg.world_space_menus):
+		expected_eye += cfg.world_panel_camera_eye_shift
+	assert_almost_eq(hq._camera_target_xform().origin, expected_eye,
 		Vector3.ONE * 0.001, "every other mode keeps the normal menu framing")
 
 

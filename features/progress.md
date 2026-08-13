@@ -20,9 +20,9 @@ to make here:
 `world.gd._generate_track()` creates a `TrackProgress`, adds it as a child, and
 calls `setup(centerline, car, terrain, finish_offset)` — passing the arc length of
 the generated track (before the post-finish runoff is appended) as the finish
-offset (see Readouts). On a car swap (`cycle_car`) it `retarget()`s the fresh car
-(progress resets to the spawn offset, since the new car respawns at the start,
-preserving the finish offset).
+offset (see Readouts). `retarget()` re-acquires the offset for a car that has
+been teleported/respawned elsewhere on the same road, preserving the finish
+offset.
 
 Each `_physics_process` tick:
 - Find the car's nearest offset on the curve via `_local_closest_offset` — a

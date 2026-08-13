@@ -396,8 +396,9 @@ was the only thing it folded in.)
 reaches across the whole car roster** — `pw` (hp/tonne), `grip` (max lateral G) and `mass`
 — as `{key: [lo, hi]}` from `all()`, with `fraction(key, value)` mapping a car's figure to
 the 0..1 the Simple upgrades page's `StatBar` fills (see [menus.md](menus.md) →
-`UpgradesSimple`). Grip is speed-dependent, so bounds are rated at `GRIP_REFERENCE_KMH`,
-the same reference speed `UpgradesSimple` rates its Grip row at, so bounds can't be
+`UpgradesSimple`). Grip is speed-dependent, so bounds are rated at
+`GameConfig.grip_reference_kmh`, the same reference speed `UpgradesSimple` rates its Grip
+row at, so bounds can't be
 computed at one speed and the figure displayed at another. The speed itself is never shown on the row — it's the same
 for every car, so the comparison holds either way and the label's width goes to the blocks.
 

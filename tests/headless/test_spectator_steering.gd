@@ -4,7 +4,7 @@ extends GutTest
 # scene — the functions take plain arrays/dicts and return XZ Vector2s.
 
 
-const CELL := 0.5  # SpectatorGroup.CELL_M
+const CELL := ScatterMath.CELL_M
 
 
 # --- separation ---------------------------------------------------------------

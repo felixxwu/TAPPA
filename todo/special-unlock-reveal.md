@@ -1,15 +1,19 @@
 # Special-event unlock reveal
 
+Status: **IMPLEMENTED.** `scripts/podium.gd` has `Stage.SPECIAL_UNLOCK` in its stage enum,
+appended conditionally, rendered by `_show_special_unlock()`; `scripts/rally_session.gd`
+builds a `special_unlock` payload via `RewardSystem.grant_special_unlock`.
+
 When the player completes a **special event** for the first time, give them a big reveal
 naming the upgrade it unlocked — and award that upgrade to the car they just drove.
 
 Today a special silently opens a gate: `UpgradeLibrary.rally_gate_met`
-(`upgrade_library.gd:262`) checks `profile.rallies[rid].completed`, which lets
-`RewardSystem._eligible_parts` (`reward_system.gd:141`) start drawing the gated part. The
+(`upgrade_library.gd`) checks `profile.rallies[rid].completed`, which lets
+`RewardSystem._eligible_parts` (`reward_system.gd`) start drawing the gated part. The
 player is told nothing at the moment it happens.
 
 **`completed` means a TOP-3 finish, not merely finishing.** `Save.complete_rally` is only
-called inside the `if top3:` branch of the resolve path (`rally_session.gd:511-515`), so the
+called inside the `if top3:` branch of the resolve path (`rally_session.gd`), so the
 gate — and therefore this reveal — is earned by placing, not by turning up. Anywhere below
 that says "completed", read "finished top-3". The map pin advertises what a special
 *will* unlock beforehand; nothing marks the unlock itself.

@@ -52,13 +52,25 @@ func test_layout_label_resolves_the_engine_then_formats() -> void:
 
 
 func test_display_name_prefixes_layout_only_when_swapped() -> void:
-	# display_name resolves the swapped engine's layout via EngineLibrary by id,
-	# so it needs a real engine id to resolve — restore the real catalogue for this test.
-	CarFixtures.restore()
-	var entry := {"name": "Twingo", "engine": "renault_12_i4"}
+	# display_name resolves the swapped engine's layout via EngineLibrary by id.
+	# Find two catalogue entries with DIFFERENT layouts by opaque iteration (not a
+	# hard-coded id) — any two distinct-layout engines exercise the same contract.
+	var engines: Array = EngineLibrary.all()
+	var stock: Dictionary = engines[0]
+	var other: Dictionary = {}
+	for engine: Dictionary in engines:
+		if String(engine.get("layout", "")) != String(stock.get("layout", "")):
+			other = engine
+			break
+	if other.is_empty():
+		pass_test("catalogue has only one layout; nothing to distinguish")
+		return
+	var entry := {"name": "Twingo", "engine": String(stock.get("id", ""))}
 	assert_eq(EngineSwap.display_name(entry, {}), "Twingo", "stock -> plain name")
-	var swapped := {"swapped_engine": "mopar_440_v8"}
-	assert_eq(EngineSwap.display_name(entry, swapped), "V8 Twingo", "swapped -> layout prefix")
+	var swapped := {"swapped_engine": String(other.get("id", ""))}
+	var expected_label := EngineSwap.layout_label_from(String(other.get("layout", "")))
+	assert_eq(EngineSwap.display_name(entry, swapped), "%s Twingo" % expected_label,
+		"swapped -> the swapped engine's own layout prefix")
 
 
 func test_recompute_mass_swaps_the_engine_component() -> void:

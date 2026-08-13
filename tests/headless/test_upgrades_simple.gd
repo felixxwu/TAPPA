@@ -230,10 +230,16 @@ func test_there_is_no_general_advanced_button() -> void:
 	# just invites the player back into the page the simple view exists to replace — and
 	# the partition test below is what guarantees nothing becomes unreachable without it.
 	var p := _page()
-	for c in p._simple_box.get_children():
-		if c is Button:
-			assert_false(String((c as Button).text).to_upper().contains("ADVANCED"),
-				"no general Advanced button on the summary")
+	# Sweep the whole summary subtree, not just _simple_box's direct children: the buttons
+	# live inside the per-category rows, so a top-level-only loop finds nothing and passes
+	# vacuously — which is how this guard sat green without checking anything. The count
+	# assertion keeps it that way: if the summary ever stops building buttons, this fails
+	# loudly instead of silently protecting nothing.
+	var buttons: Array[Node] = p._simple_box.find_children("*", "Button", true, false)
+	assert_gt(buttons.size(), 0, "the summary builds buttons for the sweep to check")
+	for c in buttons:
+		assert_false(String((c as Button).text).to_upper().contains("ADVANCED"),
+			"no general Advanced button on the summary")
 
 
 func test_the_categories_partition_the_slots() -> void:

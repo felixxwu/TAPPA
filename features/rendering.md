@@ -5,13 +5,18 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 
 ## Display / renderer (`project.godot`)
 
-- Logical frame height: **400** (`display/window/size/viewport_height`) — the value every
-  menu is laid out against, read by `DisplayStretch.DESIGN_HEIGHT`. Raised from 360; the
-  post-process dither grid (`virtual_resolution`, below) was deliberately NOT changed with it,
-  since it is a look value rather than a render size.
-- Internal viewport: **480×360**, window **1280×960** (upscaled). Lower than
-  the old 640×480 — fewer fragments to shade (the full-screen post-process runs
-  per internal pixel), and closer to the PS1's ~320×240.
+- Logical frame height: `display/window/size/viewport_height` (`project.godot`) — the
+  value every menu is laid out against, read by `DisplayStretch.DESIGN_HEIGHT`
+  (`scripts/display_stretch.gd`, a `static var` initialised from that project setting).
+  Logical WIDTH is not a fixed number: it follows the device's aspect ratio off
+  `DESIGN_HEIGHT` (`DisplayStretch.logical_size()`), then `Config.data.horizontal_stretch`
+  applies the stylistic horizontal stretch on top. Raised once from an earlier, lower
+  value; the post-process dither grid (`virtual_resolution`, below) was deliberately NOT
+  changed with it, since it is a look value rather than a render size.
+- Post-process dither grid: `GameConfig.virtual_resolution` (`cfg.virtual_resolution`) —
+  a **separate, deliberately decoupled** value from the logical viewport size above; it
+  is the PS1 look's fragment grid, not a render resolution. Window size is upscaled from
+  the logical size (`stretch/mode="viewport"`).
 - Stretch mode: viewport, `keep_height` aspect — but the `DisplayStretch`
   autoload (below) overrides the aspect at runtime to apply the stylistic
   horizontal stretch.
@@ -284,8 +289,7 @@ hard-cut flicker → mask by a hard, per-streak-varied radial start → output
 look from config once in `_ready()`, then each frame maps the car's airspeed
 across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 `speed_lines_max_intensity`, and eases the `intensity` uniform toward that target
-(`speed_lines_response`) so the streaks fade in/out rather than pop. `world.gd`'s
-`cycle_car()` re-points the overlay at the swapped car, like the HUD. All tunables
+(`speed_lines_response`) so the streaks fade in/out rather than pop. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
 ## Authored body models (MX-5, Focus, Twingo, Acty, Charger, The Beast)

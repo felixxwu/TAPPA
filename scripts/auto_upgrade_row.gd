@@ -86,7 +86,7 @@ func _plan_now() -> Dictionary:
 	if car.is_empty():
 		return {}
 	var restriction := {} if _pw_limit < 0.0 else {"pw_max": _pw_limit}
-	return UpgradeLibrary.auto_build_plan(car, CarLibrary.by_id(String(car.get("model_id", ""))),
+	return UpgradeLibrary.auto_build_plan(car, CarLibrary.for_owned(car),
 		Save.profile, Save.stars_available(), restriction)
 
 
@@ -125,7 +125,7 @@ func _summary(plan: Dictionary) -> String:
 		var blocked := String(plan.get("blocked", ""))
 		return blocked if blocked != "" else "This car is already running its best build."
 	var car := Save.get_car(_instance_id)
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	var before := CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta(car, entry))
 	var after := CarLibrary.power_to_weight_hp_tonne(
 		UpgradeLibrary.effective_meta(_previewed_car(car, plan), entry))

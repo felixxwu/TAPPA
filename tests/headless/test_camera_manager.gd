@@ -10,17 +10,15 @@ var _save: Node
 
 # minimal_world() trims main.tscn's expensive terrain/track/foliage generation
 # (see scene_helpers.gd), and we build the scene ONCE for the whole script. The
-# two mutating tests are order-safe: the
-# camera-cycle test wraps back to chase (net-neutral), and the destructive
-# cycle_car test (which swaps the Car node) is defined last. GUT runs tests in
-# definition order, so a single shared instance is safe.
+# camera-cycle test wraps back to chase (net-neutral), so a single shared
+# instance is safe.
 #
 # The manager now persists the chosen mode to the save profile, so redirect Save to
 # a throwaway file (a fresh profile has no camera_mode → defaults to chase) — both so
 # the "starts on chase" assertion is deterministic and so the test doesn't touch the
 # real profile.
 func before_all() -> void:
-	# Cameras/CameraManager/cycle_car need the wired world, but not its track shape
+	# Cameras/CameraManager need the wired world, but not its track shape
 	# or foliage — minimal_world() trims generation to a 1-turn, tree-free build.
 	SceneTestHelpers.minimal_world()
 	_save = get_node("/root/Save")
@@ -99,14 +97,3 @@ func test_bonnet_offset_composes_base_plus_per_car() -> void:
 	_mgr.retarget(car)
 	assert_almost_eq(bonnet.transform.origin, cfg.bonnet_offset + per_car,
 		Vector3(0.001, 0.001, 0.001), "bonnet origin = base offset + per-car offset")
-
-
-func test_cycle_car_retargets_both_cameras() -> void:
-	var old_car := _scene.get_node("Car")
-	_scene.cycle_car()
-	var fresh := _scene.get_node("Car")
-	assert_ne(fresh, old_car, "cycle_car spawns a fresh car node")
-	var chase := _scene.get_node("ChaseCamera") as Camera3D
-	assert_eq(chase.target, fresh, "chase camera re-targeted to fresh car")
-	var bonnet := _mgr.bonnet_camera as Camera3D
-	assert_eq(bonnet.get_parent(), fresh, "bonnet camera re-parented onto fresh car")

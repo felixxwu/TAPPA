@@ -189,9 +189,9 @@ pass for `RewardSystem` to offer the part in a car's reward draw
   pool entirely until a particular special event has been WON (top-3 finish).
   In the shipped table, `turbo_large` ("Big Turbo") is gated on
   `sp_dust_trial` and `supercharger` on `sp_archipelago_trial` — see
-  `todo/star-gated-special-events.md` (the spec's filename; the special's OWN
-  gate is the count of completed ordinary rallies now — `RallyLibrary.
-  completions_required` — not a star total, see
+  `todo/star-gated-special-events.md` (the spec's filename only; the special's
+  OWN gate is geometric now, like any other rally — `RallyLibrary.rally_revealed`
+  — not a completion count or a star total, see
   [star-economy.md](star-economy.md)). This gates EARNING only:
   `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the
   gate, so a part already fitted keeps working even if the gate that unlocked

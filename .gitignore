@@ -1,5 +1,7 @@
 # macOS finder cruft
 .DS_Store
+Thumbs.db
+*.swp
 
 # Godot 4 editor cache
 /.godot/
@@ -28,15 +30,6 @@ sign_controlled.png
 /tools/menu_*.png
 /tools/menu_*.png.import
 
-# Font-comparison scratch (tools/font_compare.tscn) — candidate fonts being
-# evaluated + the comparison render. Kept out of the repo until a font is chosen.
-/fonts/candidates/
-/tools/font_compare.gd
-/tools/font_compare.gd.uid
-/tools/font_compare.tscn
-/tools/font_compare.png
-/tools/font_compare.png.import
-
 # Local secrets / env
 .env
 
@@ -60,3 +53,7 @@ service-account*.json
 # (its build number is the commit count of the commit being released, so it can
 # never be committed). See features/update-check.md.
 /docs/version.json
+
+# GUT JUnit output — should be written to user:// (see features/testing.md),
+# but wasn't always; a regenerated build artifact, never meant to be tracked.
+test_results.xml

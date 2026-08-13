@@ -45,7 +45,7 @@ func test_replay_loops_at_end() -> void:
 	_car.begin_replay(rec)
 	# Run past the end; cursor should wrap rather than run off.
 	await _wait_physics(int(rec.duration() * 60.0) + 30)
-	assert_lt(_car.replay_cursor(), rec.duration() + 0.5, "cursor wrapped, did not run away")
+	assert_lt(_car._replay_t, rec.duration() + 0.5, "cursor wrapped, did not run away")
 	_car.end_replay()
 
 func test_replay_ghost_takes_no_damage_and_never_wrecks() -> void:

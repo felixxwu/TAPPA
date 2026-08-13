@@ -5,9 +5,10 @@ documents one feature area: what it does, where it lives, how the pieces fit
 together, and which config knobs control it. Read this folder first to get
 oriented before diving into source.
 
-`rally` is a small PS1-aesthetic arcade driving sandbox built in **Godot 4.6**
-(GL Compatibility renderer). You drive a single car over procedurally generated
-rolling terrain. There is no scoring or objective — it's a physics/feel sandbox.
+`rally` is a small PS1-aesthetic rally career game built in **Godot 4.6**
+(GL Compatibility renderer). You drive a garage of cars through a curated roster
+of rallies on one world map, earning stars for placement, buying/upgrading cars
+with them, and working toward the special-event finale.
 
 ## How to use this folder
 

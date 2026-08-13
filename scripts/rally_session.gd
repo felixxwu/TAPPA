@@ -665,7 +665,7 @@ func _resolve_results() -> void:
 		# Captured BEFORE complete_rally, which is what sets `completed` — afterwards the
 		# profile can no longer tell a first win from a re-win, and the unlock reveal must
 		# fire exactly once (todo/special-unlock-reveal.md).
-		var was_completed: bool = bool((Save.profile.get("rallies", {}) as Dictionary)
+		var was_completed: bool = bool((Save.profile.get(Save.KEY_RALLIES, {}) as Dictionary)
 			.get(rally_id, {}).get("completed", false))
 		# complete_rally records the FIRST completion (idempotent) and returns the STARS it
 		# credited for THIS finish — every finish pays, so a replay pays again.

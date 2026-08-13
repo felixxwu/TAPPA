@@ -261,7 +261,7 @@ func push_wipe() -> Dictionary:
 # either, which is exactly the case reported: signed in, progress gone, happily
 # offered a starter car while a real career sat in the cloud.
 func _local_is_wiped() -> bool:
-	return Array(Save.profile.get("cars", [])).is_empty()
+	return Array(Save.profile.get(Save.KEY_CARS, [])).is_empty()
 
 
 # The cloud copy has a career worth restoring. Guards the auto-take: replacing an
@@ -271,7 +271,7 @@ func _remote_has_progress(remote: Dictionary) -> bool:
 	var parsed: Variant = _parse_profile(String(remote.get("profile", "")))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return false
-	return not Array((parsed as Dictionary).get("cars", [])).is_empty()
+	return not Array((parsed as Dictionary).get(Save.KEY_CARS, [])).is_empty()
 
 
 func conflict_summary() -> Dictionary:
@@ -384,9 +384,9 @@ static func from_document(doc: Variant) -> Dictionary:
 # A short human summary of a profile, for the conflict prompt. Counting is done
 # here rather than in the UI so the prompt cannot drift from what is compared.
 static func describe_profile(p: Dictionary) -> String:
-	var cars: int = (p.get("cars", []) as Array).size()
+	var cars: int = (p.get(Save.KEY_CARS, []) as Array).size()
 	var done := 0
-	var rallies: Variant = p.get("rallies", {})
+	var rallies: Variant = p.get(Save.KEY_RALLIES, {})
 	if typeof(rallies) == TYPE_DICTIONARY:
 		for key in rallies as Dictionary:
 			var entry: Variant = (rallies as Dictionary)[key]

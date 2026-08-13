@@ -218,10 +218,10 @@ func test_adjacent_chunks_agree_on_shared_edge() -> void:
 	# Chunk (0,0) and chunk (1,0) are side by side; their shared edge (the plane
 	# x = CHUNK_M) must produce identical heights from each chunk's sampling.
 	var m := _make_manager([_make_layer(60.0, 1.5), _make_layer(15.0, 0.4)] as Array[TerrainLayer], 9)
-	var c0 := Vector3((0 + 0.5) * ManagerScript.CHUNK_M, 0, (0 + 0.5) * ManagerScript.CHUNK_M)
-	var c1 := Vector3((1 + 0.5) * ManagerScript.CHUNK_M, 0, (0 + 0.5) * ManagerScript.CHUNK_M)
-	var h0: PackedFloat32Array = m.build_heights(c0)
-	var h1: PackedFloat32Array = m.build_heights(c1)
+	var d0: Dictionary = m.compute_chunk_data(Vector2i(0, 0))
+	var d1: Dictionary = m.compute_chunk_data(Vector2i(1, 0))
+	var h0: PackedFloat32Array = d0["heights"]
+	var h1: PackedFloat32Array = d1["heights"]
 	var samples: int = ManagerScript.SAMPLES
 	for zi in samples:
 		var right_edge: float = h0[zi * samples + (samples - 1)]  # x = c0.x + half = 100
@@ -264,10 +264,28 @@ func test_compute_chunk_data_shapes_and_heights() -> void:
 	assert_eq(indices.size(), cells * 6, "two triangles per cell")
 	assert_eq(heights.size(), samples * samples, "height array still one per sample (collision)")
 
+	# Oracle: re-derive the expected height at a few grid vertices directly from
+	# _noise_height_at — the live pure-noise generator that both compute_chunk_data
+	# and height_at's fallback ultimately sample from. This is independent of the
+	# code under test: it does not go through TerrainChunkBuilder (which owns the
+	# grid-walking/indexing logic being verified here) at all — it just evaluates
+	# the noise sum at an absolute world XZ computed from first principles (center
+	# minus half the chunk plus the grid step), the same way TerrainChunkBuilder is
+	# documented to. If TerrainChunkBuilder's row/column indexing or its world-coord
+	# math ever drifts from the noise it's supposed to sample, this comparison catches
+	# it; the previous version compared against a second copy of the same generation
+	# code (build_heights), so it could never fail from a shared bug in that code.
 	var center: Vector3 = data["center"]
-	var bh: PackedFloat32Array = m.build_heights(center)
-	for i in [0, samples * samples / 2, samples * samples - 1]:
-		assert_almost_eq(heights[i], bh[i], 1e-5, "compute_chunk_data height %d matches build_heights" % i)
+	var half := ManagerScript.CHUNK_M / 2.0
+	var cell_m: float = ManagerScript.CELL_M
+	for i: int in [0, samples * samples / 2, samples * samples - 1]:
+		var zi: int = i / samples
+		var xi: int = i % samples
+		var x: float = center.x - half + float(xi) * cell_m
+		var z: float = center.z - half + float(zi) * cell_m
+		var expected: float = m._noise_height_at(x, z)
+		assert_almost_eq(heights[i], expected, 1e-5,
+			"compute_chunk_data height %d matches the live noise generator" % i)
 
 
 func test_vertex_colors_carry_road_weight_in_alpha() -> void:

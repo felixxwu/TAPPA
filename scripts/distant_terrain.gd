@@ -57,25 +57,9 @@ func _build_tile(terrain: TerrainManager, origin: Vector2) -> void:
 			uvs[idx] = Vector2(wx, wz) * tile_uv
 			var lgt := terrain.light_at(wx, wz)
 			colors[idx] = Color(lgt.r, lgt.g, lgt.b, 0.0)
-	var indices := PackedInt32Array(); indices.resize(per_edge * per_edge * 6)
-	var ii := 0
-	for zi in per_edge:
-		for xi in per_edge:
-			var a := zi * samples + xi
-			var b := a + 1
-			var c := a + samples
-			var d := c + 1
-			indices[ii + 0] = a; indices[ii + 1] = b; indices[ii + 2] = c
-			indices[ii + 3] = b; indices[ii + 4] = d; indices[ii + 5] = c
-			ii += 6
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var am := ArrayMesh.new()
-	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	# No skirt (backdrop tiles are already sunk below the detail ring, see sink_m)
+	# and no UV2 (no road blend out here) — same shared grid assembly as TerrainLod.
+	var am := TerrainLod.grid_mesh(verts, uvs, colors, PackedVector2Array(), samples, 0.0)
 	var mi := MeshInstance3D.new()
 	mi.mesh = am
 	mi.position = Vector3(origin.x, 0.0, origin.y)

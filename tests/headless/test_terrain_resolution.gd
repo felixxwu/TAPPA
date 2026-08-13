@@ -30,7 +30,7 @@ func test_classify_picks_finest_reachable_level() -> void:
 	var m := _make_manager()
 	m.lod_band_ends_m = PackedFloat32Array([30.0, 70.0, 100.0, 130.0])
 	m.precompute_safety_slack_m = 0.0
-	var near := m._classify_chunk(0.0, 50.0, m._collision_band_chunks(50.0), true)
+	var near := m._classify_chunk(0.0, 50.0, true)
 	assert_eq(near["l_min"], 0, "on-track chunk keeps the finest level")
 	assert_true(near["full_res"], "on-track chunk is full-res")
 
@@ -41,7 +41,7 @@ func test_classify_prunes_fine_levels_for_far_chunk() -> void:
 	m.lod_band_ends_m = PackedFloat32Array([30.0, 70.0, 100.0, 130.0])
 	m.precompute_safety_slack_m = 0.0
 	# closest cam dist = 300 - 50 - 0 = 250 > all band ends -> l_min = 4 (coarsest only)
-	var far := m._classify_chunk(300.0, 50.0, m._collision_band_chunks(50.0), false)
+	var far := m._classify_chunk(300.0, 50.0, false)
 	assert_eq(far["l_min"], m.lod_band_ends_m.size(), "far chunk: only the coarsest level")
 	assert_false(far["full_res"], "far chunk is coarse")
 
@@ -51,7 +51,7 @@ func test_classify_forces_full_res_inside_collision_band() -> void:
 	var m := _make_manager()
 	m.lod_band_ends_m = PackedFloat32Array([30.0, 70.0, 100.0, 130.0])
 	m.precompute_safety_slack_m = 0.0
-	var c := m._classify_chunk(90.0, 50.0, m._collision_band_chunks(50.0), true)
+	var c := m._classify_chunk(90.0, 50.0, true)
 	assert_true(c["full_res"], "collision-band chunk is full-res regardless of LOD reach")
 
 func _straight_centerline() -> Curve2D:

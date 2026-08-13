@@ -475,7 +475,6 @@ Guarded by `test_braking_to_a_stop_while_steering_still_anchors_the_car`.
 | `Car._apply_steer_assist` + `GameConfig.steer_assist_torque` | **already inert in the shipped game**: the config default is `0.0`, `game_config.tres` does not override it, and all 9 entries in `CarLibrary.CARS` author `"steer_assist_torque": 0`. It fires only in `tests/fixtures/test_config.tres` (`2000.0`). Also remove the field from all 9 `CARS` entries and its doc block in `car_library.gd` |
 | `GameConfig.steer_assist_min_speed` | both users (the alignment fade and the assist fade) are going |
 | `Drivetrain.steering_axle_slip_peak` | only caller is `optimum_steer_limit`'s call site |
-| `tests/headless/test_speed_steer_limit.gd` | tests only deleted functions (8 tests) |
 
 Kept: `steer_limit`, `steer_speed`, `_apply_wheel_toe`, `_apply_level_assist`, and
 `_apply_spin_protection`.
@@ -574,9 +573,8 @@ assert to change, so say so in the summary rather than silently weakening them:
   `::test_steer_assist_tapers_with_slip_angle` — the assist is gone.
 - `test_car.gd::test_spin_assist_*` (3 tests) — behaviour kept, gate changed.
 - `tests/fixtures/test_config.tres` — drop `steer_assist_torque = 2000.0`.
-- `tests/headless/test_speed_steer_limit.gd` — delete.
 
-Blast radius to re-run: `test_car`, `test_drivetrain`, `test_speed_steer_limit`,
+Blast radius to re-run: `test_car`, `test_drivetrain`,
 `test_damage_model` (wheel toe layers on the new angle), `test_replay_playback` and
 `test_replay_recorder`, `test_countdown_hold` (frozen-car path), `test_benchmark_mode` (the
 autopilot feeds `ai_steer`), `test_mobile_controls` (same input actions), `test_debug_arrows`,

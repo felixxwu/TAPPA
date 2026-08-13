@@ -69,19 +69,6 @@ func _build_ui() -> void:
 	UITheme.enforce(self)
 
 
-# The rounded ABSOLUTE health a repair put back on the car, in HP. NOT what the card shows
-# any more — it reports percentage points (health_gain_pct), the same unit the popup gate
-# uses and the same unit health is shown in everywhere else. Kept as a pure helper because
-# it is the honest way to express "what moved" independently of max_hp, and it is covered by
-# tests; delete it if nothing takes it up.
-# Derived from hp_before/hp_after rather than read from the summary's own `hp_gained`, so it
-# is always the difference between the two values the same summary reports.
-static func health_gain_hp(summary: Dictionary) -> int:
-	var before := float(summary.get("hp_before", 0.0))
-	var after := float(summary.get("hp_after", 0.0))
-	return int(round(after)) - int(round(before))
-
-
 # The rounded health gain (percentage points of max_hp) a repair summary represents. What
 # the card SHOWS and what the popup GATE reads — one unit for both, so the number the player
 # sees is the number that decided whether to show it at all. Proportional is the right unit

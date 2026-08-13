@@ -73,6 +73,16 @@ const SUPERSAMPLE := 4
 
 # Panel height in metres. The width follows from the 16:9 logical aspect, so the panel
 # can never be authored to a shape its hosted tree wasn't laid out for. A look tunable.
+#
+# KEPT AS A SCRIPT CONST, not read from GameConfig, because it is only ever used as this
+# constructor's DEFAULT PARAMETER VALUE — and GDScript default-argument values must be
+# compile-time constants, so they cannot call `Config.data` at all. Every shipped station
+# calls `WorldPanel.new(height_m, ui_scale)` with its own explicit values (its own
+# world_panel_*_height / *_ui_scale pair), so this default only fires for a bare
+# `WorldPanel.new()` — test seams and WorldPanelHost's no-spec fallback. THAT fallback is
+# the one place a designer can actually retune this number: see
+# GameConfig.world_panel_fallback_height / world_panel_fallback_ui_scale and
+# WorldPanelHost._spec_now, which read the config field rather than these consts.
 const DEFAULT_HEIGHT_M := 2.2
 
 # HOW BIG THE UI READS ON THE PANEL — the lever for "I can see it but it's way too small",

@@ -281,7 +281,7 @@ static func _tokens_owned(profile: Dictionary) -> int:
 # if some other car can receive it.
 static func _other_car_has_room(profile: Dictionary, owned_car: Dictionary) -> bool:
 	var current_instance_id := int(owned_car.get("instance_id", -1))
-	for car in profile.get("cars", []):
+	for car in profile.get(Save.KEY_CARS, []):
 		if int(car.get("instance_id", -1)) == current_instance_id:
 			continue
 		if not _car_has_nothing_left(profile, car):
@@ -302,7 +302,7 @@ static func _other_car_has_room(profile: Dictionary, owned_car: Dictionary) -> b
 # assumption no longer holds and excluding the selected car just made boxes dead
 # weight for a one-car garage.
 static func any_car_has_room(profile: Dictionary) -> bool:
-	for car in profile.get("cars", []):
+	for car in profile.get(Save.KEY_CARS, []):
 		if not _car_has_nothing_left(profile, car):
 			return true
 	return false
@@ -320,7 +320,7 @@ static func any_car_has_room(profile: Dictionary) -> bool:
 static func pick_mystery_box_grant(profile: Dictionary, rng: RandomNumberGenerator = null) -> Dictionary:
 	rng = _ensure_rng(rng)
 	var candidates: Array = []
-	for car in profile.get("cars", []):
+	for car in profile.get(Save.KEY_CARS, []):
 		if not _eligible_parts(profile, car.get("installed_upgrades", []), car).is_empty():
 			candidates.append(car)
 	if candidates.is_empty():
@@ -387,8 +387,8 @@ static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: Random
 # actually worked up to, rather than always paying out at the bottom of the ladder.
 static func highest_owned_tier(profile: Dictionary) -> int:
 	var best := 0
-	for car in profile.get("cars", []):
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	for car in profile.get(Save.KEY_CARS, []):
+		var entry := CarLibrary.for_owned(car)
 		best = maxi(best, int(entry.get("reward_tier", 0)))
 	return best
 
@@ -404,13 +404,13 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 
 # The unlock-fallback pool: non-empty ONLY when the garage is stuck — no owned
 # car (on its EFFECTIVE stats, so installed upgrades count) can enter any
-# still-incomplete rally. Then: walk the still-locked (incomplete, REVEALED — its
-# reveal_after met and, for a special, its star gate open) rallies by difficulty
+# still-incomplete rally. Then: walk the incomplete, revealed (RallyLibrary.rally_revealed
+# returns true) rallies by difficulty
 # ASCENDING and return every CarLibrary model eligible for one at the lowest
 # difficulty ANY catalogue car can actually enter, so the grant opens progression in
 # difficulty order (all tier-1/2 beaten -> a car for a difficulty-3 rally, not 4).
 # Only REVEALED rallies count: granting a car for a rally whose pin is still hidden
-# (reveal_after not met) wouldn't open anything. Stepping past a difficulty whose
+# (RallyLibrary.rally_revealed returns false) wouldn't open anything. Stepping past a difficulty whose
 # restriction bands no catalogue car fits matters: giving up there (and silently
 # falling back to the standard draw) would leave the player soft-locked even though a
 # grant for the next difficulty up re-opens progression.
@@ -447,8 +447,8 @@ static func stars_available_in(profile: Dictionary) -> int:
 # back repairable (Save.record_wreck) — so there is no such thing as a car that is
 # permanently out of service, and skipping one would understate what the player can drive.
 static func is_stranded(profile: Dictionary) -> bool:
-	for car in profile.get("cars", []):
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	for car in profile.get(Save.KEY_CARS, []):
+		var entry := CarLibrary.for_owned(car)
 		var meta := UpgradeLibrary.effective_meta(car, entry)
 		# Judge the pw_min floor at the car's max potential (the player can always tune up to
 		# enter), so a car detuned/ballasted for a lower rally doesn't read as stuck. Passing
@@ -465,7 +465,7 @@ static func is_stranded(profile: Dictionary) -> bool:
 static func _unlock_candidates(profile: Dictionary) -> Array:
 	if not is_stranded(profile):
 		return []  # a rally is already enterable — standard draw applies
-	var rallies: Dictionary = profile.get("rallies", {})
+	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	# Locked rallies grouped by difficulty, so we can walk difficulties ascending.
 	var locked_by_difficulty := {}
 	for rally in RallyLibrary.all():
@@ -526,7 +526,7 @@ static func _all_owned(pool: Array, owned: Dictionary) -> bool:
 # The most recently granted car model, or "" for an empty garage. grant_car appends,
 # so the last entry is the newest — no extra state to persist or migrate.
 static func _last_granted_model_id(profile: Dictionary) -> String:
-	var cars: Array = profile.get("cars", [])
+	var cars: Array = profile.get(Save.KEY_CARS, [])
 	if cars.is_empty():
 		return ""
 	return String((cars[cars.size() - 1] as Dictionary).get("model_id", ""))
@@ -534,7 +534,7 @@ static func _last_granted_model_id(profile: Dictionary) -> String:
 
 static func _owned_model_ids(profile: Dictionary) -> Dictionary:
 	var owned := {}
-	for car in profile.get("cars", []):
+	for car in profile.get(Save.KEY_CARS, []):
 		owned[car.get("model_id", "")] = true
 	return owned
 

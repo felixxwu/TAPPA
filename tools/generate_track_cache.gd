@@ -58,7 +58,8 @@ func _ready() -> void:
 	# source_hash lets CI verify freshness without regenerating any track (compares
 	# the library's current input fingerprint against this stored value).
 	var out := {
-		"version": 1,
+		# No "version" field: invalidation rides entirely on CACHE_VERSION (folded into
+		# each entry's lookup key) plus source_hash below.
 		"source_hash": TrackCache.source_hash_of(keys),
 		"entries": ordered,
 	}

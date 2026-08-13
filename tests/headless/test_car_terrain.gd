@@ -9,21 +9,35 @@ const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 var _scene: Node3D
 var _car: VehicleBody3D
 
+# Resting transform of the settled car, captured once in before_all and restored
+# per test — mirrors the cached-settle pattern in test_car.gd / sim_test.gd.
+var _settled_xform := Transform3D()
 
-func before_each() -> void:
+
+func before_all() -> void:
 	# Real terrain is the whole point here (this is the terrain-regression canary),
-	# but the track shape and foliage are irrelevant — trim them so each build is
+	# but the track shape and foliage are irrelevant — trim them so the build is
 	# <1 s instead of ~15 s. minimal_world() only zeroes trees + shortens the track;
 	# the $Floor heightfield the car settles on is generated identically.
 	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
 	_car = _scene.get_node("Car")
 	await _wait_physics(150)  # let the car drop onto its suspension and settle
+	_settled_xform = _car.global_transform
 
 
-func after_each() -> void:
+func after_all() -> void:
+	_scene.free()
 	Config.reset()  # undo minimal_world()'s trim so later files see the full baseline
+
+
+func before_each() -> void:
+	# test_world_border_catches_car_beyond_terrain relocates the car far off the
+	# terrain; restore every test to the settled baseline pose so none of the 4
+	# tests can see another test's leftover position/velocity.
+	_car.reset_to(_settled_xform)
+	await _wait_physics(10)
 
 
 func _wait_physics(frames: int):

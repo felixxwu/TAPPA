@@ -133,7 +133,11 @@ var _reset_page: VBoxContainer
 var _reset_status: Label  # warning line, replaced with the outcome after a wipe
 var _account_page: VBoxContainer
 var _account: AccountMenu  # optional cloud save; see features/cloud-save.md
-var _pages: Array[Control] = []  # all swappable pages, list first; see _build()
+# The single source of truth for the swappable pages, id -> page. show_page(id)
+# swaps visibility over this; _page_on_show carries the rare per-page extra work
+# that used to live in a bespoke show_* override (only "seedlab" needs one).
+var _pages: Dictionary = {}
+var _page_on_show: Dictionary = {}
 
 # Seed-lab page: trial (seed, water level, …) combinations against a live
 # TrackPreview that animates the generation just like the loading screen
@@ -198,11 +202,17 @@ func _build() -> void:
 	_build_seedlab_page()
 
 	# Single source of truth for the swappable pages (list first — it's the
-	# default page). _show_page / focus_current_page fan out over this so adding
-	# a page only means appending it here.
-	_pages = [_list_page, _audio_page, _display_page, _camera_page, _gearbox_page,
-			_controls_page, _scheme_page, _benchmark_page, _dev_page, _account_page,
-			_reset_page, _seedlab_page]
+	# default page). show_page / _show_page / focus_current_page fan out over
+	# this so adding a page only means adding an entry here.
+	_pages = {
+		"list": _list_page, "audio": _audio_page, "display": _display_page,
+		"camera": _camera_page, "gearbox": _gearbox_page, "controls": _controls_page,
+		"schemes": _scheme_page, "benchmark": _benchmark_page, "dev": _dev_page,
+		"account": _account_page, "reset": _reset_page, "seedlab": _seedlab_page,
+	}
+	# Per-page extra work to run once the page is shown. Only the seed lab needs
+	# one (regenerate the preview); everything else is plain visibility swapping.
+	_page_on_show = {"seedlab": _regen_seedlab}
 
 	_refresh_camera_selection()
 	_refresh_gearbox_selection()
@@ -227,17 +237,17 @@ func _build_list_page() -> void:
 	list_grid.add_theme_constant_override("v_separation", 10)
 	_list_page.add_child(list_grid)
 	list_grid.add_child(_make_nav_button("Audio", show_audio))
-	list_grid.add_child(_make_nav_button("Display", show_display))
+	list_grid.add_child(_make_nav_button("Display", show_page.bind("display")))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Gearbox", show_gearbox))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
-	list_grid.add_child(_make_nav_button("Account", show_account))
+	list_grid.add_child(_make_nav_button("Account", show_page.bind("account")))
 	# Reset progress is a PLAYER setting, not dev tooling: starting over is something
 	# anyone is allowed to do, so it is offered unconditionally (the destructive part
 	# is guarded by a confirm modal, not by hiding the button). It goes after the
 	# everyday categories — it is the one row nobody should reach for by accident.
-	list_grid.add_child(_make_nav_button("Reset progress", show_reset))
+	list_grid.add_child(_make_nav_button("Reset progress", show_page.bind("reset")))
 	# Developer tooling is hidden from players. The pages are still BUILT (and the
 	# show_* methods still work, which is how the tests reach them) — only the way
 	# in is removed, so nothing else has to learn about the distinction.
@@ -276,9 +286,7 @@ func _build_display_page() -> void:
 	add_child(_display_page)
 	_display_page.add_child(_make_heading("Display"))
 	_display_page.add_child(_make_sub("Limit the frame rate:"))
-	fps_rows.clear()
-	for entry in FpsSetting.OPTIONS:
-		_display_page.add_child(_make_fps_row(int(entry["value"]), entry))
+	_build_option_page(_display_page, FpsSetting.OPTIONS, "value", fps_rows, select_fps)
 
 
 func _build_camera_page() -> void:
@@ -287,9 +295,7 @@ func _build_camera_page() -> void:
 	add_child(_camera_page)
 	_camera_page.add_child(_make_heading("Camera"))
 	_camera_page.add_child(_make_sub("Pick your camera angle:"))
-	camera_rows.clear()
-	for entry in CameraManager.MODES:
-		_camera_page.add_child(_make_camera_row(int(entry["mode"]), entry))
+	_build_option_page(_camera_page, CameraManager.MODES, "mode", camera_rows, select_camera)
 
 
 func _build_gearbox_page() -> void:
@@ -300,9 +306,7 @@ func _build_gearbox_page() -> void:
 	add_child(_gearbox_page)
 	_gearbox_page.add_child(_make_heading("Gearbox"))
 	_gearbox_page.add_child(_make_sub("Choose how you change gear:"))
-	gearbox_rows.clear()
-	for entry in GEARBOX_OPTIONS:
-		_gearbox_page.add_child(_make_gearbox_row(int(entry["value"]), entry))
+	_build_option_page(_gearbox_page, GEARBOX_OPTIONS, "value", gearbox_rows, select_gearbox)
 
 
 func _build_controls_page() -> void:
@@ -324,9 +328,8 @@ func _build_schemes_page() -> void:
 	add_child(_scheme_page)
 	_scheme_page.add_child(_make_heading("Mobile controls"))
 	_scheme_page.add_child(_make_sub("Pick a touch layout:"))
-	scheme_rows.clear()
-	for entry in MobileControls.SCHEMES:
-		_scheme_page.add_child(_make_scheme_row(int(entry["id"]), entry))
+	_build_option_page(_scheme_page, MobileControls.SCHEMES, "id", scheme_rows, select_scheme,
+		_make_scheme_row)
 
 
 func _build_benchmark_page() -> void:
@@ -521,8 +524,8 @@ func go_back() -> bool:
 # and on every page switch, so a controller always has a live cursor.
 func focus_current_page() -> void:
 	var page: Control = _list_page
-	for p in _pages:
-		if p.visible:
+	for p in _pages.values():
+		if (p as Control).visible:
 			page = p
 			break
 	_focus_first_in(page)
@@ -540,53 +543,50 @@ func _focus_first_in(page: Control) -> void:
 		UITheme.focus_grab(target)
 
 
+# Show the page registered under `id` in `_pages` and run its on-show extra work
+# (if any — see _page_on_show). The handful of show_* wrappers below exist only
+# because other files (and tests) call them by name; anything reached only from
+# inside this file goes through show_page directly.
+func show_page(id: String) -> void:
+	_show_page(_pages[id])
+	if _page_on_show.has(id):
+		(_page_on_show[id] as Callable).call()
+
+
 func show_list() -> void:
-	_show_page(_list_page)
+	show_page("list")
 
 
 func show_audio() -> void:
-	_show_page(_audio_page)
-
-
-func show_display() -> void:
-	_show_page(_display_page)
+	show_page("audio")
 
 
 func show_camera() -> void:
-	_show_page(_camera_page)
+	show_page("camera")
 
 
 func show_gearbox() -> void:
-	_show_page(_gearbox_page)
+	show_page("gearbox")
 
 
 func show_controls() -> void:
-	_show_page(_controls_page)
+	show_page("controls")
 
 
 func show_schemes() -> void:
-	_show_page(_scheme_page)
+	show_page("schemes")
 
 
 func show_benchmark() -> void:
-	_show_page(_benchmark_page)
+	show_page("benchmark")
 
 
 func show_dev() -> void:
-	_show_page(_dev_page)
-
-
-func show_account() -> void:
-	_show_page(_account_page)
-
-
-func show_reset() -> void:
-	_show_page(_reset_page)
+	show_page("dev")
 
 
 func show_seedlab() -> void:
-	_show_page(_seedlab_page)
-	_regen_seedlab()
+	show_page("seedlab")
 
 
 func _show_page(page: Control) -> void:
@@ -594,8 +594,8 @@ func _show_page(page: Control) -> void:
 	# Cancel any in-flight seed-lab generation whenever the page changes (including
 	# leaving the seed lab) so its animated search stops doing per-frame work.
 	_sl_gen += 1
-	for p in _pages:
-		p.visible = page == p
+	for p in _pages.values():
+		(p as Control).visible = page == p
 	page_changed.emit(at_root())
 	# Move the focus cursor onto the newly-shown page (deferred so it runs after the
 	# visibility change settles; no-op while the whole menu is still hidden on _ready).
@@ -903,35 +903,27 @@ func _make_action_button(text: String, on_press: Callable) -> Button:
 	return button
 
 
-# A camera row: a full-width flat Button carrying name + how-to (no diagram).
-func _make_camera_row(mode: int, entry: Dictionary) -> Button:
+# Fill an options page (camera / fps / gearbox / mobile-scheme) from a table of
+# entries: clear `rows`, then build + append one row per entry, keyed by
+# `key_field` (e.g. "mode", "value", "id"). `row_builder` lets a page swap in a
+# richer row (the scheme page's diagram-carrying _make_scheme_row) while sharing
+# everything else — the default is the flat name+blurb button every other page uses.
+func _build_option_page(page: VBoxContainer, options: Array, key_field: String,
+		rows: Array, on_select: Callable, row_builder := Callable(self, "_make_option_row")) -> void:
+	rows.clear()
+	for entry in options:
+		var key := int(entry[key_field])
+		page.add_child(row_builder.call(key, entry, rows, on_select))
+
+
+# The flat name+blurb row shared by the camera / fps / gearbox pages: a full-width
+# Button carrying the option's name and how-to text, no diagram.
+func _make_option_row(key: int, entry: Dictionary, rows: Array, on_select: Callable) -> Button:
 	var button := _make_row_button(64)
-	button.pressed.connect(select_camera.bind(mode))
+	button.pressed.connect(on_select.bind(key))
 	var text := _make_row_text(button)
 	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
-	camera_rows.append({"key": mode, "button": button})
-	return button
-
-
-# An FPS row: same flat name + blurb button as the camera rows; pressing it picks
-# that frame cap (value doubles as Engine.max_fps; 0 = uncapped).
-func _make_fps_row(value: int, entry: Dictionary) -> Button:
-	var button := _make_row_button(64)
-	button.pressed.connect(select_fps.bind(value))
-	var text := _make_row_text(button)
-	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
-	fps_rows.append({"key": value, "button": button})
-	return button
-
-
-# A gearbox row: the same flat name + blurb button as the camera / fps rows; pressing
-# it picks that transmission mode.
-func _make_gearbox_row(value: int, entry: Dictionary) -> Button:
-	var button := _make_row_button(64)
-	button.pressed.connect(select_gearbox.bind(value))
-	var text := _make_row_text(button)
-	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
-	gearbox_rows.append({"key": value, "button": button})
+	rows.append({"key": key, "button": button})
 	return button
 
 
@@ -995,9 +987,11 @@ func _make_binding_button(action: String, slot: String) -> Button:
 
 # A scheme row: the same flat Button, with a layout diagram beside the text so the
 # option visually shows its touch layout (the inner controls are mouse-transparent).
-func _make_scheme_row(id: int, entry: Dictionary) -> Button:
+# Same (key, entry, rows, on_select) shape as _make_option_row so _build_option_page
+# can drive this page too — it's the one row that carries an extra diagram.
+func _make_scheme_row(id: int, entry: Dictionary, rows: Array, on_select: Callable) -> Button:
 	var button := _make_row_button(92)
-	button.pressed.connect(select_scheme.bind(id))
+	button.pressed.connect(on_select.bind(id))
 
 	var row := HBoxContainer.new()
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1021,54 +1015,28 @@ func _make_scheme_row(id: int, entry: Dictionary) -> Button:
 	row.add_child(text)
 	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
 
-	scheme_rows.append({"key": id, "button": button})
+	rows.append({"key": id, "button": button})
 	return button
 
 
 # --- Audio -------------------------------------------------------------------
 
-# One volume row: [Name   <===slider===>   60%]. The slider is focusable so it's
-# keyboard/gamepad navigable (native ui_left/ui_right adjust it); dragging it
-# live-applies + persists via MusicDirector (Music autoload), which owns both the
-# Master and Music bus levels. Initial value comes from the saved setting, and
-# value_changed is wired AFTER seeding it so building the page never re-persists.
-# Returns {row, slider, value_label}.
+# One volume row, built through the shared SliderRow widget (the same builder the
+# tuning panel and upgrades-menu detune row use — see slider_row.gd) rather than a
+# third hand-copied slider row: that copy had already drifted from the other two
+# (18px name label vs. SliderRow's 16, no SLIDER_MIN_W floor, no focus highlight).
+# The slider is focusable so it's keyboard/gamepad navigable (native ui_left/
+# ui_right adjust it); dragging it live-applies + persists via MusicDirector (Music
+# autoload), which owns both the Master and Music bus levels. Initial value comes
+# from the saved setting, seeded with set_value_no_signal so building the page never
+# re-persists. Returns {row, slider, value_label}.
 func _make_volume_row(label_text: String, initial: float) -> Dictionary:
-	# The row sits on its own panel so the slider track/grabber stays readable
-	# against the busy 3D HQ backdrop behind the settings menu.
-	var row := UITheme.panel(0.85, 10)
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var inner := HBoxContainer.new()
-	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	inner.add_theme_constant_override("separation", 12)
-	row.add_child(inner)
-
-	var name_label := Label.new()
-	name_label.text = label_text
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	name_label.add_theme_font_size_override("font_size", 18)
-	inner.add_child(name_label)
-
-	var slider := HSlider.new()
-	slider.focus_mode = Control.FOCUS_ALL
-	slider.min_value = 0.0
-	slider.max_value = 1.0
-	slider.step = 0.05
-	slider.custom_minimum_size = Vector2(220, 24)
-	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	slider.value = clampf(initial, 0.0, 1.0)
-	inner.add_child(slider)
-
-	var value_label := Label.new()
-	value_label.custom_minimum_size = Vector2(56, 0)
-	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	value_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var built := SliderRow.build({"name": label_text, "min": 0.0, "max": 1.0, "step": 0.05})
+	var slider: HSlider = built["slider"]
+	slider.set_value_no_signal(clampf(initial, 0.0, 1.0))
+	var value_label: Label = built["value_label"]
 	value_label.text = _volume_percent(slider.value)
-	inner.add_child(value_label)
-
-	return {"row": row, "slider": slider, "value_label": value_label}
+	return {"row": built["panel"], "slider": slider, "value_label": value_label}
 
 
 func _on_master_volume_changed(v: float) -> void:

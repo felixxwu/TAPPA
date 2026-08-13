@@ -25,9 +25,9 @@ extends RefCounted
 # but keeps stale bounds would draw bars against a scale from a different game.
 
 # Grip is speed-dependent (downforce grows with v²), so its bounds are rated at the same
-# reference speed the Grip readout quotes. Kept here rather than read off UpgradesSimple so
-# the bounds can't be computed at one speed and displayed at another.
-const GRIP_REFERENCE_KMH := 50.0
+# reference speed the Grip readout quotes. Read from GameConfig.grip_reference_kmh — the
+# single source both this sweep and UpgradesSimple's Grip row read — so the bounds can't be
+# computed at one speed and displayed at another.
 
 # How far below the worst car the scale's zero sits, as a fraction of the roster span.
 # See _compute.
@@ -71,7 +71,7 @@ static func _compute() -> Dictionary:
 	for entry in CarLibrary.all():
 		var stock := UpgradeLibrary.effective_meta({}, entry)
 		_widen(out["pw"], CarLibrary.power_to_weight_hp_tonne(stock))
-		_widen(out["grip"], CarLibrary.max_lateral_g(stock, cfg, GRIP_REFERENCE_KMH))
+		_widen(out["grip"], CarLibrary.max_lateral_g(stock, cfg, cfg.grip_reference_kmh))
 		_widen(out["mass"], float(stock.get("mass", 0.0)))
 	for key in out:
 		if float((out[key] as Array)[0]) > float((out[key] as Array)[1]):

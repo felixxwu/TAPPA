@@ -73,12 +73,6 @@ func setup(car: Node) -> void:
 	_build_pool()
 
 
-# Re-point at a freshly spawned car (a car swap) and clear all live particles.
-func retarget(car: Node) -> void:
-	_car = car
-	_clear()
-
-
 # Build (or rebuild) the MultiMesh + particle pool to the configured cap. The mesh
 # is a single UNIT quad shared by every instance — the real size is per-particle,
 # baked into the instance basis, so one mesh covers both the square clods and the

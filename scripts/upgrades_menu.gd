@@ -250,7 +250,7 @@ func _make_detune_row(instance_id: int) -> Control:
 # column without wrapping or clipping. The max-p/w cap / OVER-LIMIT flag lives
 # on the close button now (bind_close_button), not here.
 func _detune_label_text() -> String:
-	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(_owned)
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_owned, entry)) * _KW_KG_TO_HP_TONNE
 	return "%.0f HP/T" % pw
 
@@ -317,7 +317,7 @@ func _on_detune_changed(value: float, instance_id: int) -> void:
 func over_pw_limit() -> bool:
 	if _pw_limit < 0.0:
 		return false
-	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(_owned)
 	var meta := UpgradeLibrary.effective_meta(_owned, entry)
 	# Compare the ROUNDED hp/tonne the player sees in _detune_label_text, not the raw float —
 	# otherwise a build displaying exactly the limit (e.g. 100 hp/t off a raw 100.4) reads as
@@ -390,7 +390,7 @@ static func _option_row() -> HBoxContainer:
 func _make_drivetrain_selector(instance_id: int) -> Control:
 	var row := _option_row()
 	var unlocked := UpgradeLibrary.drivetrain_swap_unlocked(_owned)
-	var stock := int(CarLibrary.by_id(String(_owned.get("model_id", ""))).get("drive_mode", CarLibrary.RWD))
+	var stock := int(CarLibrary.for_owned(_owned).get("drive_mode", CarLibrary.RWD))
 	var override := int(_owned.get("drivetrain_override", -1))
 	var current := (override if override >= 0 else stock) if unlocked else stock
 	var label := Label.new()
@@ -670,7 +670,7 @@ func _mass_mult(def: Dictionary) -> float:
 # by whichever weight mult is currently active (1.0 if none), so the per-option deltas
 # read off the same neutral base regardless of what's selected.
 func _base_mass_no_weight() -> float:
-	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(_owned)
 	var mass := float(UpgradeLibrary.effective_meta(_owned, entry).get("mass", 0.0))
 	var active := 1.0
 	for def in UpgradeLibrary.all():
@@ -716,7 +716,7 @@ func _set_weight_option(instance_id: int, item_id: String) -> void:
 # hiding them. See features/engine-swap.md and features/nitrous.md's sibling discussion.
 func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 	var owned := Save.get_car(instance_id)
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(owned)
 	var current := EngineSwap.current_engine_id(owned, String(entry.get("engine", "")))
 	var row := HBoxContainer.new()
 	var label := Label.new()
@@ -772,7 +772,7 @@ func _swap_targets(current_id: int) -> Array:
 	var targets: Array = []
 	if Save.get_car(current_id).is_empty():
 		return targets
-	for car in Save.profile.get("cars", []):
+	for car in Save.profile.get(Save.KEY_CARS, []):
 		if int(car.get("instance_id", -1)) == current_id:
 			continue
 		targets.append(car)

@@ -69,14 +69,6 @@ static func attach_synthetic(car: Node) -> EngineSmoke:
 	return smoke
 
 
-# Re-point at a freshly spawned car (a car swap rebuilds the engine, so its
-# misfire_count restarts) and clear all live smoke.
-func retarget(car: Node) -> void:
-	_car = car
-	_last_misfire_count = _engine_misfire_count()
-	_clear()
-
-
 # The current car's engine misfire counter, or our last value if the car/engine
 # isn't wired yet (so the delta is 0 and nothing spurious puffs).
 func _engine_misfire_count() -> int:

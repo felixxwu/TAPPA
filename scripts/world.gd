@@ -2121,43 +2121,6 @@ func _completion_reward_body(item_id: String, grant: Dictionary) -> String:
 	return "%s\nReward: %s\n\n%s" % [placing, ", ".join(lines), where]
 
 
-# Swap to the next car in the library: re-instantiate a fresh car (see
-# Car.respawn for why) and re-point the camera and HUD at it.
-func cycle_car() -> void:
-	var car: Node = $Car
-	# Move the bonnet camera off the outgoing car before it is freed, so it
-	# survives the swap and can be re-parented onto the fresh car.
-	var mgr := $CameraManager
-	var bonnet: Camera3D = mgr.bonnet_camera
-	if bonnet.get_parent() == car:
-		car.remove_child(bonnet)
-		add_child(bonnet)  # park on the world root during the swap
-	var fresh: Node = car.respawn(car, car.next_car_index(), _car_spawn)
-	mgr.retarget(fresh)
-	($HUD as CanvasLayer).car = fresh
-	# Re-point the speed-lines overlay at the fresh car too (it reads the car's
-	# velocity each frame), so it doesn't keep the freed outgoing node.
-	var lines := get_node_or_null("SpeedLines")
-	if lines != null:
-		lines.car = fresh
-	# Re-point progress tracking at the fresh car (it respawns at the start, so
-	# progress resets to the spawn offset too).
-	if _track_progress != null:
-		_track_progress.retarget(fresh, _floor())
-	# Re-point tire marks at the fresh car and clear the outgoing car's ribbons.
-	if _tire_marks != null:
-		_tire_marks.retarget(fresh)
-	# Re-point wheel dust at the fresh car and clear the outgoing car's clods.
-	if _wheel_particles != null:
-		_wheel_particles.retarget(fresh)
-	if _engine_smoke != null:
-		_engine_smoke.retarget(fresh)
-	# Re-arm the stage on the fresh car (it spawns at the start), so the countdown
-	# restarts and the manager doesn't keep a freed car reference.
-	if _stage_manager != null:
-		_stage_manager.setup(fresh, $HUD as CanvasLayer, _track_progress)
-
-
 func _layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:
 	if layers.size() != params.size():
 		return false

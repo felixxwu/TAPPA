@@ -311,7 +311,7 @@ static func rally_gate_met(item_id: String, profile: Dictionary) -> bool:
 	var rid := unlocked_by_rally(item_id)
 	if rid == "":
 		return true
-	return bool((profile.get("rallies", {}) as Dictionary).get(rid, {}).get("completed", false))
+	return bool((profile.get(Save.KEY_RALLIES, {}) as Dictionary).get(rid, {}).get("completed", false))
 
 
 # --- Prerequisite gate --------------------------------------------------------

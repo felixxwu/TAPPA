@@ -122,7 +122,7 @@ static func for_current_stage(force_challenge := false) -> Dictionary:
 static func _for_current_challenge_stage() -> Dictionary:
 	var done: int = ChallengeSession.events_completed()
 	var owned: Dictionary = Save.get_car(ChallengeSession.car_instance_id())
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(owned)
 	var driven_name := EngineSwap.display_name(entry, owned) if not entry.is_empty() else ""
 	return {
 		"is_challenge": true,

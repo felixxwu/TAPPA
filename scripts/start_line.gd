@@ -785,7 +785,7 @@ func launch() -> void:
 	if not _rally.is_empty():
 		var owned := _driven_car()
 		if not owned.is_empty():
-			var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+			var entry := CarLibrary.for_owned(owned)
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
 			# The pw_min floor is judged at the car's MAX potential (the player will tune
 			# up to enter), matching the car-park check; the ceiling stays on the current
@@ -1030,7 +1030,7 @@ func _on_upgrade_changed() -> void:
 func _rally_qualifying_detune(owned: Dictionary) -> float:
 	if _rally.is_empty():
 		return 1.0
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(owned)
 	var full := owned.duplicate(true)
 	var tuning: Dictionary = full.get("tuning", {})
 	tuning["engine_detune"] = 1.0

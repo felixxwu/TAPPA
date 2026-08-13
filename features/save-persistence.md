@@ -26,6 +26,15 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   authored-body cars); picking one calls `grant_car(model_id)`, sets
   these fields + the selection, and enters the garage. See `features/menus.md`.
 - `next_instance_id` — monotonic counter minting unique owned-car ids.
+- **The two most widely-read keys are NAMED on `SaveManager`:** `Save.KEY_CARS`
+  (`"cars"`) and `Save.KEY_RALLIES` (`"rallies"`), used by every consumer
+  (`reward_system.gd`, `rally_library.gd`, `upgrade_library.gd`, the HQ screens,
+  `cloud/cloud_sync.gd`, …) instead of the bare literal — the cloud-sync copy is
+  why a missed rename would be a cross-device DATA bug rather than a crash. Their
+  VALUES are on-disk key strings: frozen unless a `SCHEMA_VERSION` bump and a
+  `_migrate_step` come with the change. `car_library.gd` still spells `"cars"`
+  literally in `wheel_catalogue`, deliberately: it is the one profile reader with
+  no `Save` dependency at all, and naming the key is not worth adding one.
 - `cars` — array of **instance-based** owned cars. Each is a unique instance
   (`instance_id`) referencing a `CarLibrary` model id (`model_id`), carrying its
   own `hp`, `installed_upgrades`, `disabled_upgrades` (applied parts toggled off
@@ -94,12 +103,12 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   earlier `showdown_unlocked`/`showdown_completed` pair of persisted, never-read
   flags was removed — see `todo/one-map-four-corners.md`, "Resolved: the last
   six decisions" item 7.)
-- **The special-event gate rides entirely on the existing per-rally
-  `completed` flag — no new save state.** A `RallyLibrary` entry marked
-  `special: true` carries a `requires_completions: N`, and
-  `RallyLibrary.rally_revealed` is a live comparison of that against the profile's
-  count of completed **ordinary** rallies (`_completed_count`) — nothing is
-  precomputed or persisted for it. Winning a
+- **The reveal gate rides entirely on the existing per-rally `completed`
+  flag and each rally's authored `map_pos` — no new save state.**
+  `RallyLibrary.rally_revealed` is a live, geometric comparison of a rally's
+  `map_pos` against the lit circles of every completed rally in the profile
+  (`lit_sources`) — nothing is precomputed or persisted for it, and it treats
+  `special: true` rallies no differently from ordinary ones. Winning a
   gated upgrade part (`UpgradeDef.unlocked_by_rally`) reads the same
   `completed` flag on the naming special's rally record — again nothing new.
   See [rally-roster.md](rally-roster.md) for the ladder and
@@ -148,7 +157,12 @@ on: a stable string **`id`** (`mx5`, `focus`, `porsche911`, `viper`, `charger`,
 persistence), plus `country`, `car_type`, `max_hp`, and `reward_tier`. Helpers:
 `CarLibrary.index_of(id)` / `by_id(id)` resolve a stored id to the current array
 position, and `power_to_weight(entry)` is a derived (not stored) ranking
-heuristic.
+heuristic. **`CarLibrary.for_owned(owned)`** is the one spelling of "the
+catalogue entry this OWNED car row resolves to" (`by_id(String(owned.get(
+"model_id", "")))`, previously repeated at ~30 call sites); it returns the same
+empty Dictionary `by_id` does when the row's `model_id` is missing or names a
+model the catalogue no longer carries, so callers keep using `is_empty()` as the
+"this car is gone" test.
 
 ## API
 
@@ -265,9 +279,9 @@ API. `rally_completed(id)` /
 ## Not yet wired
 
 The special-event gate and the per-rally reveal gate are the one predicate, derived
-LIVE from the profile's completion records by `RallyLibrary`
-(`rally_revealed()` over `completions_required()`, see `rally-roster.md`), rather
-than being precomputed and stored on the save — `save_manager.gd` recomputes no
+LIVE from the profile's completion records and every rally's authored `map_pos` by
+`RallyLibrary` (`rally_revealed()` over `lit_sources()`, see `map-exploration.md`),
+rather than being precomputed and stored on the save — `save_manager.gd` recomputes no
 unlock state on `complete_rally`; the only thing it writes beyond the rally record
 itself is the star delta onto `stars_earned` (see the ledger above).
 `item_id`s come from the upgrade catalogue

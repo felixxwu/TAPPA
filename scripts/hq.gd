@@ -121,20 +121,9 @@ var _detail_open := false       # the rally-detail panel is up (a sub-state of T
 # suspended and player input is LOCKED — presses are swallowed, not acted on, so the parade
 # always plays out (see _unhandled_input's View.TABLE branch).
 var _revealing := false
-# The next three are read and written ONLY by hq_table.gd (which drives the parade), so the
-# analyzer — which sees one file at a time — flags them as unused here. They are shared HQ
-# state across the hq.gd / hq_table.gd split, exactly like _pins and _table_focus_index; the
-# ignores say so rather than leaving a warning the next person has to re-derive.
-@warning_ignore("unused_private_class_variable")
-var _reveal_queue: Array[String] = []   # ids still to show (all get marked seen either way)
-@warning_ignore("unused_private_class_variable")
-var _reveal_shown: Array[String] = []   # ids already flipped this sequence
-# Bumped at the start of every _table_ui._run_reveal_sequence; each sequence captures its own copy
-# as `token` before its first await. Lets a coroutine parked mid-sequence (skipped, then
-# a second sequence re-armed before it resumes) recognise it has been superseded and bail
-# without mutating the NEW sequence's shared state — see _table_ui._reveal_continue.
-@warning_ignore("unused_private_class_variable")
-var _reveal_token := 0
+# The parade's own bookkeeping (the queue, the ids already flipped, the sequence token) lives
+# on HqTable (scripts/hq_table.gd), which drives it and is its only user. `_revealing` above
+# stays here because hq.gd's input lock and prewarm gate both read it.
 # NOTE on the @warning_ignore tags below. hq.gd was split into helper scripts
 # (hq_table / hq_carpark / hq_challenge / hq_overlays) that reach back into this controller
 # for shared state. The analyzer sees one file at a time, so every field only THOSE helpers
@@ -216,22 +205,8 @@ var _drivetrain_needed: Dictionary = {}
 # Confirm popup shown when Start is pressed on an over-powered car: the car looks
 # eligible in the park; this dialog carries the "too powerful" nudge and routes to
 # Change Upgrades (_show_over_limit_prompt). Implemented via ConfirmPopup.
-# The car-park "Change Upgrades" popup, opened from the over-limit prompt as an alternative
-# to detuning: a house-themed overlay on the car CanvasLayer hosting an UpgradesMenu for
-# the focused car (no engine-swap row). Built lazily. _dirty tracks whether any upgrade
-# changed, so closing rebuilds the eligible lineup (see _show/_close_upgrades_popup).
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _upgrades_popup: Control
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _upgrades_popup_menu: UpgradesSimple
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _upgrades_popup_dirty := false
-# Tracks the currently open car-park ConfirmPopup (detune confirm), so
-# _carpark_modal_open can detect it without a dedicated visible flag.
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _active_carpark_popup: ConfirmPopup = null
+# The car-park "Change Upgrades" popup and the currently-open car-park ConfirmPopup live on
+# HqCarpark (scripts/hq_carpark.gd), which owns both and is their only user.
 # Confirm popup shown when a chosen engine-swap partner is picked: swapping costs one
 # engine swap token. Carries the token cost, or the "no tokens" block. Implemented via
 # ConfirmPopup. _pending_swap holds the two instance ids awaiting the OK press.
@@ -264,21 +239,14 @@ var _challenge_shown := false
 # and freed with the HQ node on exit-to-race.
 var _car_cache: Dictionary = {}
 var _focus := 0
-# Plays a short engine rev for the focused car each time the lineup selection
-# changes (see _preview_rev). Created lazily on first focus.
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _preview_audio: CarPreviewAudio = null
-# Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
-# lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _settle_generation := 0
+# The focus-rev audio player and the lineup spawn generation live on HqCarpark
+# (scripts/hq_carpark.gd), which is their only user.
 # Free Roam pre-warm: just AFTER boot (once the loading cover lifts, one prop per frame —
 # see _prewarm_free_roam_deferred) we spawn the catalogue's preview
 # props into _car_cache (hidden) so entering Free Roam reuses them with no fresh instancing
-# — killing the first-entry lag spike. _prewarm_marker is the off-screen stow marker the
-# hidden props seat at until Free Roam re-seats them at real bays.
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _prewarm_marker: Marker3D = null
+# — killing the first-entry lag spike. The off-screen stow marker the hidden props seat at
+# until Free Roam re-seats them at real bays lives on HqCarpark (_prewarm_marker), which is
+# its only user; the two flags below stay here because tests read them off the controller.
 # True once every catalogue preview is warm in _car_cache (the deferred prewarm ran to
 # completion, or _prewarm_free_roam was called synchronously). Read by tests; also lets a
 # stray re-start of the deferred loop bail immediately.
@@ -384,38 +352,14 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 # Rally Challenge entry point (Daily/Weekly/Monthly, spec §7): a modal overlay over
 # the garage, opened from the garage row's Challenge button, built as a dark detail-
 # card sibling to the rally-detail panel (build_detail_overlay's MODAL_DIM + header +
-# HSeparator + _detail_heading/_detail_wrap_label shape) rather than a flat button
+# HSeparator + detail_heading/detail_wrap_label shape) rather than a flat button
 # list. See hq_overlays.gd's build_challenge_overlay and the _challenge_ui._open_challenge_overlay
 # family below.
 var _challenge_layer: CanvasLayer
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_kind: String = ChallengeLibrary.DAILY
-# Bumped by every _challenge_ui._refresh_challenge_overlay. The board queries that decorate the entry
-# screen (placing, cut-line time) are async, so each captures the generation it was
-# fired for and writes its answer ONLY if that's still current — the row may have been
-# rebuilt, or the kind switched, while the request was in flight.
-#
-# This replaced "does the label still read the exact string I left it at", which looked
-# equivalent and was not: _challenge_ui._open_challenge_overlay runs UITheme.enforce right after
-# building the row, uppercasing every Label, so a mixed-case comparison never matched
-# and the answer was silently dropped. A counter can't be defeated by anything that
-# rewrites the text.
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _challenge_refresh_generation := 0
-# Board answers already fetched during THIS visit to the online challenge screen, keyed
-# by period key (so a period rolling over mid-session re-asks by itself). Switching
-# Daily/Weekly/Monthly re-renders the whole screen, which used to re-issue both queries
-# every time and flash "Loading…" on rows the player had already seen answered.
-#
-# Cleared in _challenge_ui._close_challenge_overlay — leaving the screen for the garage is the
-# invalidation point, so the numbers can't go stale behind the player's back for long,
-# and re-opening always asks again. Only OK answers are cached: a failure is a transient
-# condition (offline, board unreachable), not a value, so it retries on the next visit
-# to that tab instead of sticking for the rest of the session.
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _challenge_cutoff_cache: Dictionary = {}
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _challenge_placing_cache: Dictionary = {}
+# The refresh generation and the per-period board caches that go with it now live on
+# HqChallenge (scripts/hq_challenge.gd), which is their only user.
 # The Daily/Weekly/Monthly tab row: real FOCUS_ALL buttons (so keyboard/gamepad focus
 # can rest on and move across them via native left/right focus-neighbour nav — see
 # menu_nav.gd) but mouse_filter = MOUSE_FILTER_IGNORE and no `pressed` wiring at all, so
@@ -430,7 +374,7 @@ var _challenge_kind_buttons: Array[Button] = []
 var _challenge_title_label: Label
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_subtitle_label: Label
-# Four concise sections, each one _detail_heading + one/two _detail_wrap_label rows:
+# Four concise sections, each one detail_heading + one/two detail_wrap_label rows:
 # win condition, win reward, eligible cars, current progress. (The ceiling already
 # rides on the header subtitle, so it doesn't get its own "entry requirement" row.)
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
@@ -477,8 +421,8 @@ var _detail_record: Label        # best-finish text beside the StarRow
 var _detail_stars: StarRow       # medal row for the player's best finish
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _detail_enter_button: Button # "Enter Rally" — disabled when no owned car qualifies
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_dev_win_button: Button # DEV ONLY: win the rally outright; null in a release build
+# _detail_dev_win_button (DEV ONLY: win the rally outright; null in a release build) lives on
+# HqOverlays, which builds it and is its only user.
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
@@ -493,23 +437,15 @@ var _car_back_button: Button
 var _swap_preview_label: RichTextLabel
 var _start_button: Button
 var _title_start_button: Button  # EXTERIOR title Start — first cursor stop
-# These three are populated by HqOverlays.build_title_overlay (the assignment lives in
-# another class now) and read by tests, so GDScript's in-class "unused" check can't see
-# their use — silence it rather than reintroduce a dead in-class reference.
-@warning_ignore("unused_private_class_variable")
-var _title_free_roam_button: Button  # EXTERIOR title Free Roam (session-less drive)
-@warning_ignore("unused_private_class_variable")
-var _title_settings_button: Button  # EXTERIOR title Settings
-@warning_ignore("unused_private_class_variable")
-var _title_exit_button: Button  # EXTERIOR title Exit Game (last in the row)
-@warning_ignore("unused_private_class_variable")
-var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
+# The rest of the title row (Free Roam / Settings / Exit Game) and the build watermark live on
+# HqOverlays, which builds them and is their only user. _title_start_button stays here because
+# hq.gd's own _title_start_index reads it.
 # ITS OWN LAYER, not _title_layer. The watermark is not part of the title MENU — it is a
 # corner stamp that has to be legible on whichever host the title is using. Parented to the
 # title's flat layer it went invisible for the entire session the moment that screen migrated
 # to a WorldPanel (WorldPanelHost stands the flat layer down), so the one readout that tells
 # you WHICH BUILD you are looking at was missing from the shipped configuration. Shown/hidden
-# with the title screen by _update_overlays.
+# with the title screen by update_overlays.
 var _version_layer: CanvasLayer
 var _no_eligible_label: Label
 # Car-park damage UI: the "wrecked beyond repair" note on a wrecked focused car.
@@ -809,13 +745,13 @@ func _build_hq() -> void:
 	if reveal_id >= 0 and not Save.get_car(reveal_id).is_empty():
 		_enter_present_box(reveal_id)
 	elif want_map:
-		# Via _enter_table, not _go_to(View.TABLE): the reveal parade is armed there, and
+		# Via _enter_table, not go_to(View.TABLE): the reveal parade is armed there, and
 		# entering the view directly would show the neighbours already lit with no beat.
 		_table_ui._enter_table()
 	else:
 		# Boot to the garage (returning from a rally) or the title shot. The collection is
 		# unbounded, so there's no garage-full gate to clear first.
-		_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
+		go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
 	# Playing the WEB build in an Android browser: point the player at the itch.io
 	# APK once per boot — the native build performs far better than mobile web.
 	# Only over the title shot (a normal boot).
@@ -845,9 +781,8 @@ func _bay_center_x(i: int, bays: int) -> float:
 # (RallyFlag) at each rally's normalised map_pos, with a billboarded house-style black
 # box above it holding the rally name and a row of five-pointed stars (1st-place best →
 # 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
-# special pin is locked (grey/disabled, non-pickable) until its star gate opens,
-# and any rally whose reveal_after (global reveal order) isn't met yet is locked
-# the same way — a "coming up" hint (see RallyLibrary.rally_revealed).
+# special pin is locked (grey/disabled, non-pickable) until it falls inside a lit circle
+# from a completed or opening rally; see RallyLibrary.rally_revealed.
 #
 # `hold_locked` forces the pins with those rally ids to render in their LOCKED look even
 # though they are open — the new-rally reveal needs the "before" state on screen so the
@@ -1375,17 +1310,17 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# the garage that fits. A full-opacity box over a ghosted marker would read as a live menu,
 	# which is the opposite of what the fade says. The box is non-pickable either way (no hit
 	# sphere is added below), so the fade is the honest visual for "look, don't touch".
-	var label := (_build_special_teaser_label(rally) if locked_special
+	var pin_label := (_build_special_teaser_label(rally) if locked_special
 		else _build_pin_label(String(rally["name"]), earned, rally))
-	label.position = Vector3(0.0, PIN_LABEL_HEIGHT, 0.0)
-	pin.add_child(label)
-	label.visible = false
+	pin_label.position = Vector3(0.0, PIN_LABEL_HEIGHT, 0.0)
+	pin.add_child(pin_label)
+	pin_label.visible = false
 	if not available:
-		label.modulate = Color(1.0, 1.0, 1.0, FOGGED_PIN_DIM_ALPHA)
+		pin_label.modulate = Color(1.0, 1.0, 1.0, FOGGED_PIN_DIM_ALPHA)
 	# The PANEL so the focus cursor can paint the hover-style selection look, and the SPRITE
 	# so the focus pass can show/hide the whole box rather than only repainting its inside.
-	pin.set_meta("label_panel", label.get_meta("panel"))
-	pin.set_meta("label_sprite", label)
+	pin.set_meta("label_panel", pin_label.get_meta("panel"))
+	pin.set_meta("label_sprite", pin_label)
 
 	# Pickable hit spheres (skipped for a locked pin so it can't be entered), both bound
 	# to the same handler so a click on EITHER the flag/pole OR the floating readout box
@@ -1446,8 +1381,8 @@ func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	# loses resolution twice before the player sees it, and at the map's viewing distance the
 	# house 16 is genuinely hard to read. Every OTHER menu in the game keeps UITheme.FONT_SIZE
 	# — this is the one medium that needs its own, not a licence to grow type elsewhere.
-	for label in panel.find_children("*", "Label", true, false):
-		(label as Label).add_theme_font_size_override("font_size", PIN_LABEL_FONT_SIZE)
+	for lbl in panel.find_children("*", "Label", true, false):
+		(lbl as Label).add_theme_font_size_override("font_size", PIN_LABEL_FONT_SIZE)
 	# No drop shadow on a floating readout. The global theme gives every Label a hard black
 	# shadow (build_ui_theme.gd), which is the terminal look elsewhere but is invisible on a
 	# black panel. Cleared here rather than in the theme so the rest of the UI keeps the
@@ -1512,7 +1447,7 @@ func _build_readout_box(title: String, stars: int, unlock: String) -> Sprite3D:
 			box.add_child(row)
 			row.setup(stars, MAX_STARS)
 		if unlock != "":
-			box.add_child(_label(unlock, 13)))
+			box.add_child(label(unlock, 13)))
 
 
 # An enterable rally: name, medal row, and — for a special — what it unlocks, so the map
@@ -1580,7 +1515,7 @@ func _stars_for(rally_id: String) -> int:
 # need a switch, a detune, both, or neither. (There is no "underpowered but eligible"
 # state — the p/w band floor makes an under-powered car ineligible outright.)
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	var meta := UpgradeLibrary.effective_meta(car, entry)
 	# The pw_min floor is judged at the car's MAX potential (full tune + kits enabled +
 	# ballast off), so a car detuned/ballasted to fit a lower rally still qualifies for a
@@ -1623,7 +1558,7 @@ func _detuned_to_full(owned: Dictionary) -> Dictionary:
 # band floor is the power floor), so an owned eligible car is by construction
 # adequately powered — there's no separate "underpowered but eligible" case to exclude.
 func _has_eligible_car(rally: Dictionary) -> bool:
-	for car in Save.profile.get("cars", []):
+	for car in Save.profile.get(Save.KEY_CARS, []):
 		if bool(_entry_plan(rally, car)["eligible"]):
 			return true
 	return false
@@ -1755,7 +1690,7 @@ func _passthrough_overlay(root: Control) -> void:
 # add-child idiom repeated across the station overlays. Deliberately NOT UITheme.label,
 # which forces a role colour + uppercase (a different look). Any further overrides
 # (alignment, colour, autowrap, size flags) are applied by the caller after this returns.
-func _label(text: String, size: int) -> Label:
+func label(text: String, size: int) -> Label:
 	var lbl := Label.new()
 	lbl.text = text
 	lbl.add_theme_font_size_override("font_size", size)
@@ -1765,36 +1700,36 @@ func _label(text: String, size: int) -> Label:
 # A quiet section heading for the rally-detail card. UITheme.enforce flattens every
 # label to one size + uppercase, so a heading reads as a heading only by its dimmer
 # colour and the grouping/spacing around it — not a larger font.
-func _detail_heading(text: String) -> Label:
-	var lbl := _label(text, 16)
+func detail_heading(text: String) -> Label:
+	var lbl := label(text, 16)
 	lbl.add_theme_color_override("font_color", UITheme.INK_DIM)
 	return lbl
 
 
 # A sidebar Label that wraps to its column width instead of drawing off the panel edge.
-func _detail_wrap_label() -> Label:
-	var lbl := _label("", 16)
+func detail_wrap_label() -> Label:
+	var lbl := label("", 16)
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl.custom_minimum_size = Vector2(1, 0)  # don't let the longest word dictate column width
 	return lbl
 
 
-# A single-row "heading: value" pair — a fixed-width dim heading (_detail_heading)
-# beside the value (_detail_wrap_label), added to `parent` as one HBoxContainer row.
-# Used where the rally detail panel's heading-above-value-below shape (_detail_heading
-# + _detail_wrap_label stacked) would cost more vertical space than the info is worth —
+# A single-row "heading: value" pair — a fixed-width dim heading (detail_heading)
+# beside the value (detail_wrap_label), added to `parent` as one HBoxContainer row.
+# Used where the rally detail panel's heading-above-value-below shape (detail_heading
+# + detail_wrap_label stacked) would cost more vertical space than the info is worth —
 # the challenge screen's four sections, one line each instead of two. Returns the value
 # Label for the caller to keep populating. Lives here beside the two builders it calls
 # (and NOT with the challenge cut) because HqOverlays is its only caller.
-func _challenge_info_row(parent: VBoxContainer, heading_text: String) -> Label:
+func challenge_info_row(parent: VBoxContainer, heading_text: String) -> Label:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	parent.add_child(row)
-	var heading := _detail_heading(heading_text)
+	var heading := detail_heading(heading_text)
 	heading.custom_minimum_size = Vector2(140, 0)
 	row.add_child(heading)
-	var value := _detail_wrap_label()
+	var value := detail_wrap_label()
 	row.add_child(value)
 	return value
 
@@ -1811,8 +1746,8 @@ func _should_show_android_app_notice() -> bool:
 # this one for focus; dismissing restores the title (whose MenuNav re-grabs focus
 # via visibility_changed).
 #
-# THROUGH _update_overlays, NOT `_title_layer.visible = false` — the same correction the
-# challenge overlay already carries (see _update_overlays). With world menus on, the title
+# THROUGH update_overlays, NOT `_title_layer.visible = false` — the same correction the
+# challenge overlay already carries (see update_overlays). With world menus on, the title
 # TREE is not in that layer at all: it has been migrated into a 3D WorldPanel, and the flat
 # layer is already hidden and empty. Writing it stood nothing down, so the notice was drawn
 # over a live, still-navigable title menu with both MenuNavs answering the same keypress.
@@ -1831,7 +1766,7 @@ func _show_android_app_notice() -> void:
 	var root: Control = made[3]  # the MenuPage itself — for MenuNav.attach / UITheme.enforce
 	# _android_notice_layer is set above, so this stands the title down on whichever host is
 	# holding it (flat layer or world panel).
-	_update_overlays()
+	update_overlays()
 	root_box.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var msg := Label.new()
@@ -1866,10 +1801,10 @@ func _dismiss_android_app_notice() -> void:
 		return
 	_android_notice_layer.queue_free()
 	_android_notice_layer = null
-	# _update_overlays, not `_title_layer.visible = ...`: with world menus on, writing the
+	# update_overlays, not `_title_layer.visible = ...`: with world menus on, writing the
 	# flat layer un-hid an EMPTY layer beside the live panel, breaking the "whichever host
 	# isn't holding the tree must be hidden" invariant until the next view change.
-	_update_overlays()
+	update_overlays()
 	_refresh_title_focus()
 
 
@@ -1894,7 +1829,7 @@ func _build_carpark_nav_row() -> Array:
 	prev.focus_mode = Control.FOCUS_NONE
 	prev.pressed.connect(_nav_cycle_focus.bind(-1))
 	nav.add_child(prev)
-	var center := _label("", 18)
+	var center := label("", 18)
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# Wraps rather than clipping — the name + position ("SWERVE SURGER R/T  (1 OF 2)") is the
@@ -1933,7 +1868,7 @@ func _open_settings(gate: bool) -> void:
 		_settings_menu.show_schemes()  # emits page_changed → sets the bottom button label
 	else:
 		_settings_menu.show_list()
-	_go_to(View.SETTINGS)
+	go_to(View.SETTINGS)
 
 
 # Keep the single bottom button in step with the page: in the pre-rally gate the
@@ -1971,13 +1906,13 @@ func _on_settings_action() -> void:
 	if not _settings_menu.at_root():
 		_settings_menu.show_list()
 		return
-	_go_to(View.EXTERIOR)
+	go_to(View.EXTERIOR)
 
 
 # --- Confirmation dialog -----------------------------------------------------
 
 # Show only the active station's overlay (detail is a TABLE sub-state).
-func _update_overlays() -> void:
+func update_overlays() -> void:
 	# NOTE: there is deliberately NO `var cfg := Config.data` local here. The closures below read
 	# Config.data at call time instead, because the F8 hot reload swaps the whole GameConfig instance
 	# — a captured one goes stale the moment it is pressed, which is exactly how a ui_scale retune
@@ -2016,7 +1951,7 @@ func _update_overlays() -> void:
 		_version_layer.visible = title_shown
 	# The garage stands down while the CHALLENGE modal is over it — the modal owns the screen. This
 	# used to be an ad-hoc `_garage_layer.visible = false` inside _open_challenge_overlay, which
-	# stopped working the moment that function also had to call _update_overlays (this function then
+	# stopped working the moment that function also had to call update_overlays (this function then
 	# re-showed the garage a line later). It is a visibility RULE, so it belongs here with the rest.
 	_sync_panel("garage", _garage_layer, _garage_root,
 			_view == View.GARAGE and not _challenge_shown,
@@ -2049,7 +1984,7 @@ func _normalize_menus() -> void:
 	#
 	# AND RE-APPLIES THE HOST STYLE (force). This function is the house convention for "content
 	# changed, re-assert the rules" — hq.gd calls it after rebuilding the garage row for a
-	# Mystery Box repaint, which never goes through _go_to. WorldPanel.apply_host_style's cheap
+	# Mystery Box repaint, which never goes through go_to. WorldPanel.apply_host_style's cheap
 	# early-out keys off the tree ROOT, so nodes added by such a rebuild kept their flat
 	# StyleBoxEmpty and never got centred: a bare label over a sunlit car park. Forcing the
 	# re-walk here means every rebuild path already in the convention gets the panel pass too.
@@ -2070,7 +2005,7 @@ func _normalize_menus() -> void:
 # tuned, so it survives the reload while everything else is taken from the file.
 #
 # Re-applies rather than merely reloading, because the two things NOT read per frame have to be
-# poked: _update_overlays re-syncs the panel hosts (panel height and ui_scale are baked in at
+# poked: update_overlays re-syncs the panel hosts (panel height and ui_scale are baked in at
 # construction, so retuning either rebuilds the panel), and the camera is re-posed because a
 # station's pose is only recomputed when it moves. Panel offsets, yaw, pitch and the camera shifts
 # need none of this — WorldPanel re-reads its anchor every frame.
@@ -2079,7 +2014,7 @@ func hot_reload_config() -> bool:
 	if not Config.reload_from_disk():
 		return false
 	Config.data.world_space_menus = was_world
-	_update_overlays()
+	update_overlays()
 	_move_camera_to(_camera_target_xform() if _view == View.CARPARK
 		else _station_xform(_view), true)
 	return true
@@ -2103,7 +2038,7 @@ func _panel_host(key: String) -> WorldPanelHost:
 
 
 # Put ONE screen on the host the config asks for, creating its host on first use. Idempotent and
-# cheap, so it is safe to call from _update_overlays on every view change.
+# cheap, so it is safe to call from update_overlays on every view change.
 func _sync_panel(key: String, layer: CanvasLayer, tree: Control, shown: bool,
 		anchor: Callable, spec: Callable) -> void:
 	if layer == null or tree == null:
@@ -2129,7 +2064,7 @@ func _sync_panel(key: String, layer: CanvasLayer, tree: Control, shown: bool,
 
 # THE PANEL SIZE for each migrated screen, as (height_m, ui_scale).
 #
-# Methods, not closures. _update_overlays runs on every view change, so building four lambdas there
+# Methods, not closures. update_overlays runs on every view change, so building four lambdas there
 # allocated four Callables per call and left each captured on a long-lived WorldPanelHost. These read
 # Config.data at CALL time exactly as the lambdas did, which is what keeps them correct across the F8
 # hot reload (it replaces the whole GameConfig instance, so a captured one goes stale) — and they
@@ -2266,11 +2201,21 @@ func _release_all_focus() -> void:
 
 # --- Station transitions -----------------------------------------------------
 
+# WHICH STATION IS LIVE. The read-only half of the `_view` field, so a collaborator asking
+# "am I the screen that's up?" — the commonest question they ask this controller — does not
+# have to reach through `_hq._view` for it. The two places that SET it (hq_table's
+# _enter_table, hq_challenge's _enter_challenge_car_screen) do so as one step of a bespoke
+# station entry that go_to does not cover, so they still write the field directly rather than
+# getting a setter that would look like an alternative to go_to.
+func view() -> int:
+	return _view
+
+
 # Move to a station: update overlays + fly the camera there. CARPARK framing tracks
 # the focused car, so it's driven by _focus_changed (after the lineup is built).
-func _go_to(view: int, snap := false) -> void:
-	_view = view
-	if view != View.TABLE:
+func go_to(view_id: int, snap := false) -> void:
+	_view = view_id
+	if view_id != View.TABLE:
 		_detail_open = false
 		# Leaving the map mid-parade banks the queue as seen (the player has had their
 		# look, or chose to walk away) rather than replaying it on the next open.
@@ -2292,13 +2237,13 @@ func _go_to(view: int, snap := false) -> void:
 	# lineup first meant the selected car was parked in a bay and then immediately
 	# hidden by the clear below — and since set_selected_car promotes the selected car
 	# to index 0, the FIRST slot on the title screen was always empty.
-	if view == View.GARAGE:
+	if view_id == View.GARAGE:
 		_ensure_lift_car()
 		_lower_lift_car()
 		_refresh_garage_row(true)  # seat the cursor on Career each time we enter
-	elif view == View.LIFT:
+	elif view_id == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
-	elif view == View.TABLE:
+	elif view_id == View.TABLE:
 		pass  # KEEP the lift car: the map table never shows the lift, but tearing the
 		# prop down (and rebuilding it on the way back) landed in the very frame the
 		# camera starts its flight to the table, which is exactly when a hitch is most
@@ -2310,14 +2255,14 @@ func _go_to(view: int, snap := false) -> void:
 	else:
 		_clear_lift_car()
 	# The title screen shows the player's whole collection parked in the car park.
-	if view == View.EXTERIOR:
+	if view_id == View.EXTERIOR:
 		_carpark_ui._build_title_lineup()
 		_title_focus = _title_start_index()  # seat the cursor on Start each time
 		_refresh_title_focus()
-	_update_overlays()
-	if view == View.CARPARK:
+	update_overlays()
+	if view_id == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
-	_move_camera_to(_station_xform(view), snap)
+	_move_camera_to(_station_xform(view_id), snap)
 
 
 # The cloud replaced the local profile with a downloaded career (first sign-in on
@@ -2348,7 +2293,7 @@ func _on_cloud_profile_replaced() -> void:
 			and bool(Save.profile.get("starter_picked", false)):
 		_carpark_ui._clear_lineup()
 		_carpark_mode = CarparkMode.RALLY
-		_go_to(View.EXTERIOR)
+		go_to(View.EXTERIOR)
 		return
 	if _view == View.EXTERIOR:
 		# NOT the boot path any more — _await_boot_pull holds the build until the
@@ -2398,7 +2343,7 @@ func _on_exterior_start() -> void:
 		# The pull may have landed a real career while we waited, in which case
 		# there is no starter to pick — this player already has cars.
 		if bool(Save.profile.get("starter_picked", false)):
-			_go_to(View.GARAGE)
+			go_to(View.GARAGE)
 			return
 		# The pull may instead have settled as a CONFLICT: this device and the cloud
 		# both moved on, so the download was NOT applied and a real career may be
@@ -2412,11 +2357,11 @@ func _on_exterior_start() -> void:
 			if not is_inside_tree() or ConflictPrompt.is_blocked():
 				return  # still unresolved ("Decide later") — no new career is begun
 			if bool(Save.profile.get("starter_picked", false)):
-				_go_to(View.GARAGE)  # "Use cloud" restored a real career
+				go_to(View.GARAGE)  # "Use cloud" restored a real career
 				return
 		_enter_starter_pick()
 	else:
-		_go_to(View.GARAGE)
+		go_to(View.GARAGE)
 
 
 # Put an unresolved sync conflict to the player and WAIT for their answer, so the
@@ -2665,7 +2610,7 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	var adjust := 0
 	var names: Array[String] = []
 	for car in cars:
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		var entry := CarLibrary.for_owned(car)
 		if entry.is_empty():
 			continue  # a stale / removed model — not a countable car
 		total += 1
@@ -2701,7 +2646,7 @@ func _enter_lift() -> void:
 	_lift_row = LiftRow.ACTIONS  # ...on the actions row, not the car selector above it
 	_hub_focus = 1  # the cursor starts on Upgrades each time we enter the bay
 	_refresh_lift_ui()
-	_go_to(View.LIFT)
+	go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
 
 
@@ -2789,7 +2734,7 @@ func _apply_lift_height(animate: bool) -> void:
 # to the garage. (The hub's own Back-to-garage button goes straight to the garage.)
 func _lift_back() -> void:
 	if _lift_page == LiftPage.HUB:
-		_go_to(View.GARAGE)
+		go_to(View.GARAGE)
 	else:
 		_lift_hub()
 
@@ -2883,7 +2828,7 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 		c.queue_free()
 	var buttons: Array[Button] = []
 	var actions: Array[Callable] = []
-	var on_back := func() -> void: _go_to(View.EXTERIOR)
+	var on_back := func() -> void: go_to(View.EXTERIOR)
 	var back := UITheme.row_button("< Back", on_back)
 	_garage_actions_row.add_child(back)
 	buttons.append(back); actions.append(on_back)
@@ -2935,7 +2880,7 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	# Freshly-built buttons start life with raw (non-uppercase) text — _normalize_menus
 	# (UITheme.enforce) is what applies the house rules, and it only runs on a view
 	# change/dynamic-text refresh elsewhere; a Mystery Box repaint doesn't go through
-	# _go_to, so it has to re-apply the rules itself here.
+	# go_to, so it has to re-apply the rules itself here.
 	_normalize_menus()
 
 
@@ -3191,7 +3136,7 @@ func _on_dev_car_upgraded() -> void:
 # reads as a plain nameplate, disabled so neither cursor nor click can reach a button that
 # isn't on screen (ButtonCursor skips disabled stops, but knows nothing of visibility).
 func _refresh_lift_car_label() -> void:
-	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
+	var entry := CarLibrary.for_owned(_lift_owned)
 	_lift_car_label.text = EngineSwap.display_name(entry, _lift_owned)
 	_lift_car_stats_label.text = _car_stats_text(_lift_owned, entry)
 	var cyclable: bool = _lift_cycle_order().size() > 1
@@ -3218,7 +3163,7 @@ func _refresh_lift_car_label() -> void:
 # press and ping-pong between two cars instead of touring the collection.
 func _lift_cycle_order() -> Array:
 	var ids: Array = []
-	for car in Save.profile.get("cars", []):
+	for car in Save.profile.get(Save.KEY_CARS, []):
 		ids.append(int(car.get("instance_id", -1)))
 	ids.sort()
 	return ids
@@ -3244,7 +3189,7 @@ func _cycle_lift_car(step: int) -> void:
 # offers the OTHER owned cars.
 func _other_owned_cars(current_id: int) -> Array:
 	var targets: Array = []
-	for car in Save.profile.get("cars", []):
+	for car in Save.profile.get(Save.KEY_CARS, []):
 		if int(car.get("instance_id", -1)) == current_id:
 			continue
 		targets.append(car)
@@ -3320,7 +3265,7 @@ func _enter_car_screen() -> void:
 		_restriction_text(rally.get("restriction", {}))]
 	_view = View.CARPARK
 	_detail_open = false
-	_update_overlays()
+	update_overlays()
 	if _eligible.is_empty():
 		_show_empty_carpark("No eligible car for this rally — win or pick a qualifying car.")
 		return
@@ -3342,7 +3287,7 @@ func _repair_selected_car() -> void:
 	# Repaint the hub row and the star meter the purchase just moved. Re-fielding the car
 	# on the lift is not needed: repair changes health and wheel toe, neither of which the
 	# lift's frozen display prop shows.
-	_update_overlays()
+	update_overlays()
 
 
 # Write the Repair button's label and disabled state. Three states, all readable off the
@@ -3392,7 +3337,7 @@ func _enter_free_roam() -> void:
 	_start_button.disabled = _lineup.is_empty()
 	_view = View.CARPARK
 	_detail_open = false
-	_update_overlays()
+	update_overlays()
 	# Fly (don't snap) — a tween carries the player smoothly from the garage into the shot.
 	_carpark_ui._focus_changed(false)
 
@@ -3445,7 +3390,7 @@ func _enter_present_box(instance_id: int) -> void:
 		_car_hint_label.visible = true
 	_set_carpark_arrows_visible(false)  # nothing to cycle through
 	_refresh_present_button()
-	_update_overlays()
+	update_overlays()
 	_move_camera_to(_station_xform(View.CARPARK), true)
 
 	if is_instance_valid(_present_box):
@@ -3515,7 +3460,7 @@ func _open_present() -> void:
 
 	# Name it under the car. Set BEFORE the animation so a headless run — which never
 	# animates — still ends in the revealed state.
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var entry := CarLibrary.for_owned(car)
 	_car_name_label.text = String(entry.get("name", "A car")) if not entry.is_empty() else "A car"
 	_car_stats_label.text = "Parked up and ready to field."
 	if is_instance_valid(_car_hint_label):
@@ -3569,7 +3514,7 @@ func _animate_present_open() -> void:
 func _leave_present_to_garage() -> void:
 	_cleanup_present_reveal()
 	_carpark_mode = CarparkMode.RALLY
-	_go_to(View.GARAGE)
+	go_to(View.GARAGE)
 
 
 # Free the reveal props and restore the ordinary car-park chrome.
@@ -3619,18 +3564,18 @@ func _car_back() -> void:
 	_carpark_mode = CarparkMode.RALLY  # leaving the park in every case
 	match mode:
 		CarparkMode.STARTER:
-			_go_to(View.EXTERIOR)
+			go_to(View.EXTERIOR)
 		CarparkMode.FREEROAM:
 			# Free Roam is entered from the TITLE screen now, not the garage, so backing
 			# out of its picker returns there (see HqOverlays.build_title_overlay).
-			_go_to(View.EXTERIOR)
+			go_to(View.EXTERIOR)
 		CarparkMode.SWAP, CarparkMode.WHEELS:
 			_enter_lift()
 		CarparkMode.CHALLENGE:
-			_go_to(View.GARAGE)
+			go_to(View.GARAGE)
 			_challenge_ui._open_challenge_overlay()
 		_:
-			_go_to(View.TABLE)
+			go_to(View.TABLE)
 
 
 # Open the car park to pick an engine-swap partner: all OTHER owned cars at full
@@ -3646,7 +3591,7 @@ func _enter_engine_swap() -> void:
 	_start_button.text = "Swap Engine"
 	_view = View.CARPARK
 	_detail_open = false
-	_update_overlays()
+	update_overlays()
 	# No partner to swap with (only one car owned) — show a hint + disable Swap instead of
 	# a dead lot with an empty, no-op button (_select_swap_target bails on no selection).
 	if _eligible.is_empty():
@@ -3687,7 +3632,7 @@ func _on_open_mystery_box() -> void:
 			% String(won.get("name", result["item_id"]))
 	else:
 		var recipient := Save.get_car(int(result["recipient_instance_id"]))
-		var entry := CarLibrary.by_id(String(recipient.get("model_id", "")))
+		var entry := CarLibrary.for_owned(recipient)
 		var recipient_name := EngineSwap.display_name(entry, recipient)
 		var item_name := String(UpgradeLibrary.by_id(String(result["item_id"])).get("name", result["item_id"]))
 		body = "Reward: %s\nFor: %s\n\nInstalled disabled — enable it from that car's upgrades menu." \
@@ -3720,7 +3665,7 @@ func _enter_wheel_swap() -> void:
 	_start_button.text = "Fit Wheels"
 	_view = View.CARPARK
 	_detail_open = false
-	_update_overlays()
+	update_overlays()
 	if _eligible.is_empty():
 		_show_empty_carpark("No car to fit wheels to.")
 		return
@@ -3856,7 +3801,7 @@ func _enter_starter_pick() -> void:
 	_start_button.disabled = false
 	_view = View.CARPARK
 	_detail_open = false
-	_update_overlays()
+	update_overlays()
 	_focus = 0
 	_carpark_ui._focus_changed(true)
 
@@ -3893,7 +3838,7 @@ func _confirm_starter() -> void:
 	var opening_id := RallyLibrary.opening_rally_id_for(model_id)
 	if opening_id == "":
 		_selected_instance_id = -1
-		_go_to(View.GARAGE)
+		go_to(View.GARAGE)
 		return
 	# Field the car we just granted in the rally that awards it. Goes through the SHARED
 	# start path (_proceed_with_start), not a private handoff, so the opening run picks up
@@ -4017,9 +3962,9 @@ func _look_xform(eye: Vector3, look: Vector3) -> Transform3D:
 
 
 # The camera pose for a station.
-func _station_xform(view: int) -> Transform3D:
+func _station_xform(view_id: int) -> Transform3D:
 	var cfg: GameConfig = Config.data
-	match view:
+	match view_id:
 		# One framing now the garage row is a single level: the wide shell view. (The
 		# low 3/4 hero shot that used to come with the "Drive" sub-level went with it —
 		# see _refresh_garage_row.)
@@ -4386,7 +4331,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# the host swap reads, then re-runs the swap so the tree moves immediately.
 	if OS.is_debug_build() and event.is_action_pressed("toggle_world_menus"):
 		Config.data.world_space_menus = not Config.data.world_space_menus
-		_update_overlays()
+		update_overlays()
 		# The car-park framing differs between the two modes (world_panel_camera_look_shift /
 		# _eye_shift), so
 		# re-seat the camera or the A/B compares the new host against the old shot. Snapped
@@ -4401,7 +4346,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# it up: no restart, no losing your place in the HQ.
 	#
 	# Re-applies rather than merely reloading, because the two things that are NOT read per frame
-	# have to be poked: _update_overlays re-syncs the panel hosts (panel height and ui_scale are
+	# have to be poked: update_overlays re-syncs the panel hosts (panel height and ui_scale are
 	# baked in at construction, so a retune of either rebuilds the panel), and the camera is
 	# re-posed because a station's pose is only recomputed when it moves. Panel offsets, yaw, pitch
 	# and the camera shifts need none of this — WorldPanel re-reads its anchor every frame.
@@ -4420,116 +4365,94 @@ func _unhandled_input(event: InputEvent) -> void:
 	# challenge overlay, which owns input the same way.
 	if ConfirmPopup.any_open(get_tree()) != null:
 		return
-	# The challenge overlay is modal over the garage: it owns focus nav entirely via its
-	# own MenuNav (attached in build_challenge_overlay), including left/right — the kind
-	# tabs are real FOCUS_ALL controls now, so native ui_left/ui_right focus-neighbour
-	# movement (menu_nav.gd) does the job; hq must still bail out here (its
-	# _unhandled_input runs BEFORE the overlay's own MenuNav node, an HQ descendant) so
-	# the GARAGE view below doesn't also react to the same key.
-	# _challenge_shown, NOT the layer's visibility: while world menus are on the challenge tree sits
-	# on a WorldPanel and its layer is hidden, so reading the layer would let the GARAGE below react
-	# to the same keypress the challenge screen is handling.
-	if _challenge_shown:
+	# ONE BRANCH PER STATION, and each cluster owns its own (todo/hq-split.md). Every handler
+	# answers whether it CONSUMED the event, which is what lets the challenge modal below stand
+	# every station down without this function reading its flag by hand. Nothing is chained off
+	# the answer AFTER the match — _unhandled_input is the last stop in the chain, and the one
+	# handler that must really mark the viewport handled (the reveal parade's press swallow)
+	# does that itself.
+	if _challenge_ui.handle_input(event):
 		return
+	var _consumed := false
 	match _view:
-		View.EXTERIOR:
-			# The title row (Start / Account / Settings / Exit Game) is a single
-			# left/right cursor; select fires it. Same idiom as the garage row / lift
-			# hub — see build_title_overlay. No menu_back: EXTERIOR is the root station.
-			if event.is_action_pressed("menu_left"):
-				_move_title_focus(-1)
-			elif event.is_action_pressed("menu_right"):
-				_move_title_focus(1)
-			elif event.is_action_pressed("menu_select"):
-				_activate_title_focus()
-		View.SETTINGS:
-			if event.is_action_pressed("menu_back"):
-				# In the pre-rally gate we show only the mobile-controls page (no category
-				# list), so back cancels the gate straight back to the car park. Otherwise
-				# a sub-page backs out to the category list first, then back exits to the garage.
-				if _settings_gate:
-					_go_to(View.CARPARK)
-					_settings_gate = false
-				elif not _settings_menu.go_back():
-					_go_to(View.EXTERIOR)
-		View.GARAGE:
-			# The bottom action row is a single left/right cursor (one level — see
-			# _refresh_garage_row); select fires it, and menu_back leaves the station
-			# for the exterior, mirroring the row's own Back button.
-			if event.is_action_pressed("menu_left"):
-				_move_garage_focus(-1)
-			elif event.is_action_pressed("menu_right"):
-				_move_garage_focus(1)
-			elif event.is_action_pressed("menu_select"):
-				_activate_garage_focus()
-			elif event.is_action_pressed("menu_back"):
-				_go_to(View.EXTERIOR)
-		View.LIFT:
-			if _lift_page == LiftPage.HUB:
-				# Hub: two cursor rows (see LiftRow). up/down move between the car
-				# selector and the actions row, left/right move within whichever row is
-				# active, select fires it, menu_back is a shortcut to the garage.
-				if event.is_action_pressed("menu_up"):
-					_move_lift_row(LiftRow.SELECTOR)
-				elif event.is_action_pressed("menu_down"):
-					_move_lift_row(LiftRow.ACTIONS)
-				elif event.is_action_pressed("menu_left"):
-					_move_hub_focus(-1)
-				elif event.is_action_pressed("menu_right"):
-					_move_hub_focus(1)
-				elif event.is_action_pressed("menu_select"):
-					_activate_hub_focus()
-				elif event.is_action_pressed("menu_back"):
-					_go_to(View.GARAGE)
-			elif event.is_action_pressed("menu_back"):
-				_lift_hub()  # a sub-menu page backs out to the hub (its controls use
-				# native focus for up/down/left-right/select)
-		View.TABLE:
-			if _revealing:
-				# CONTROLS LOCKED for the duration of the parade. A press used to skip the
-				# whole queue, but skipping marked every queued rally SEEN, so one stray
-				# keypress permanently burned the "NEW RALLY - …" beat for up to
-				# hq_reveal_max_queue rallies with no way to replay it. The parade is short
-				# (pan + hold per rally, capped), so it simply plays. Presses are SWALLOWED
-				# rather than ignored, so nothing underneath reacts either.
-				if _is_any_press(event):
-					get_viewport().set_input_as_handled()
-			elif _detail_open:
-				if event.is_action_pressed("menu_select"):
-					_enter_car_screen()
-				elif event.is_action_pressed("menu_back"):
-					_table_ui._hide_detail()
-				elif event.is_action_pressed("dev_complete_rally"):
-					# Dev cheat (F10, features/debug-tools.md): win the open rally outright.
-					# The keyboard route to the panel's "DEV: win" button — the panel has no
-					# MenuNav, so the button itself is pointer-only and this is what makes
-					# the cheat reachable without a mouse.
-					_dev_complete_selected_rally()
-			elif event.is_action_pressed("menu_back"):
-				_go_to(View.GARAGE)
-			elif event.is_action_pressed("menu_select"):
-				_table_ui._activate_table_focus()
-			else:
-				# Up/down/left/right glide the camera continuously while held — polled
-				# in _process, not per-press — so only pointer drag is handled here.
-				_table_pan_input(event)
-		View.CARPARK:
-			# While an on-brand modal is up (detune prompt / Change-Upgrades popup) its
-			# MenuNav owns navigation — don't also drive the lineup underneath.
-			if _carpark_ui._carpark_modal_open():
-				return
-			_cars_input(event)
+		View.EXTERIOR: _consumed = _exterior_input(event)
+		View.SETTINGS: _consumed = _settings_input(event)
+		View.GARAGE: _consumed = _garage_input(event)
+		View.LIFT: _consumed = _lift_input(event)
+		View.TABLE: _consumed = _table_ui.handle_input(event)
+		View.CARPARK: _consumed = _carpark_ui.handle_input(event)
 
 
-# Any deliberate "press" from any device — the skip gesture for the new-rally reveal.
-# Echoes (key auto-repeat) don't count; releases don't either, so the release that ends
-# the skipping press can't also fall through into something else.
-static func _is_any_press(event: InputEvent) -> bool:
-	if event is InputEventKey:
-		return event.pressed and not event.echo
-	if event is InputEventJoypadButton or event is InputEventMouseButton \
-			or event is InputEventScreenTouch:
-		return event.is_pressed()
+# The EXTERIOR title row (Start / Free Roam / Account / Settings / Exit Game) is a single
+# left/right cursor; select fires it. Same idiom as the garage row / lift hub — see
+# HqOverlays.build_title_overlay. No menu_back: EXTERIOR is the root station.
+func _exterior_input(event: InputEvent) -> bool:
+	if event.is_action_pressed("menu_left"):
+		_move_title_focus(-1)
+	elif event.is_action_pressed("menu_right"):
+		_move_title_focus(1)
+	elif event.is_action_pressed("menu_select"):
+		_activate_title_focus()
+	else:
+		return false
+	return true
+
+
+func _settings_input(event: InputEvent) -> bool:
+	if not event.is_action_pressed("menu_back"):
+		return false
+	# In the pre-rally gate we show only the mobile-controls page (no category
+	# list), so back cancels the gate straight back to the car park. Otherwise
+	# a sub-page backs out to the category list first, then back exits to the garage.
+	if _settings_gate:
+		go_to(View.CARPARK)
+		_settings_gate = false
+	elif not _settings_menu.go_back():
+		go_to(View.EXTERIOR)
+	return true
+
+
+# The garage's bottom action row is a single left/right cursor (one level — see
+# _refresh_garage_row); select fires it, and menu_back leaves the station for the exterior,
+# mirroring the row's own Back button.
+func _garage_input(event: InputEvent) -> bool:
+	if event.is_action_pressed("menu_left"):
+		_move_garage_focus(-1)
+	elif event.is_action_pressed("menu_right"):
+		_move_garage_focus(1)
+	elif event.is_action_pressed("menu_select"):
+		_activate_garage_focus()
+	elif event.is_action_pressed("menu_back"):
+		go_to(View.EXTERIOR)
+	else:
+		return false
+	return true
+
+
+func _lift_input(event: InputEvent) -> bool:
+	if _lift_page == LiftPage.HUB:
+		# Hub: two cursor rows (see LiftRow). up/down move between the car
+		# selector and the actions row, left/right move within whichever row is
+		# active, select fires it, menu_back is a shortcut to the garage.
+		if event.is_action_pressed("menu_up"):
+			_move_lift_row(LiftRow.SELECTOR)
+		elif event.is_action_pressed("menu_down"):
+			_move_lift_row(LiftRow.ACTIONS)
+		elif event.is_action_pressed("menu_left"):
+			_move_hub_focus(-1)
+		elif event.is_action_pressed("menu_right"):
+			_move_hub_focus(1)
+		elif event.is_action_pressed("menu_select"):
+			_activate_hub_focus()
+		elif event.is_action_pressed("menu_back"):
+			go_to(View.GARAGE)
+		else:
+			return false
+		return true
+	if event.is_action_pressed("menu_back"):
+		_lift_hub()  # a sub-menu page backs out to the hub (its controls use
+		# native focus for up/down/left-right/select)
+		return true
 	return false
 
 
@@ -4625,9 +4548,9 @@ func _map_plane_y() -> float:
 	return cfg.hq_table_pos.y + cfg.hq_table_size.y
 
 
-func _cars_input(event: InputEvent) -> void:
+func _cars_input(event: InputEvent) -> bool:
 	if _lineup_pointer_input(event):
-		return
+		return true
 	if event.is_action_pressed("menu_left"):
 		_carpark_ui._cycle_focus(-1)
 	elif event.is_action_pressed("menu_right"):
@@ -4643,6 +4566,9 @@ func _cars_input(event: InputEvent) -> void:
 		_on_start_pressed()
 	elif event.is_action_pressed("menu_back"):
 		_car_back()
+	else:
+		return false
+	return true
 
 
 # Pointer navigation for the car-park lineup (mouse, or finger via

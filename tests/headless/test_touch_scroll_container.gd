@@ -4,7 +4,7 @@ extends GutTest
 # its `_input` directly with synthetic mouse events (touch arrives as mouse via
 # emulate_mouse_from_touch), the same way the map-table pan test does.
 
-const DEADZONE := 10.0  # TouchScrollContainer.DRAG_DEADZONE
+const DEADZONE := TouchScrollContainer.DRAG_DEADZONE
 
 
 func _make_scroll(rows: int) -> TouchScrollContainer:

@@ -19,9 +19,11 @@ frozen. Deliberately deferred so the map change wasn't blocked on art.
 
 **The corner already exists on the shipped map**; it just holds no pins. The NE is
 reserved for it and nothing has to be displaced. So the follow-up is purely:
-author the look, then site rallies there and give them `reveal_after` slots on the
-ladder. No map regeneration and no `map_pos` churn for existing rallies — which is
-the main reason deferring it was cheap.
+author the look, then site rallies there with `map_pos` values that fall inside
+the reach of an existing pin's lit circle (`RallyLibrary.lit_sources` /
+`reveal_radius_of`), so `rally_revealed` opens them the same geometric way as
+every other rally. No map regeneration and no `map_pos` churn for existing
+rallies — which is the main reason deferring it was cheap.
 
 The map's NE corner was also given a proper alpine massif (large ridgelines, snow
 on the crests, rock scoured off the steep faces) — see `tools/gen_map_texture.py`

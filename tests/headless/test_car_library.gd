@@ -1,5 +1,5 @@
 extends GutTest
-# The selectable car roster (CarLibrary) and car.gd's apply_car/cycle_car: each
+# The selectable car roster (CarLibrary) and car.gd's apply_car: each
 # entry must be sane, main.tscn must boot as the first car, and applying a car
 # must overlay its dimensions, mass, engine character and drive layout.
 
@@ -10,12 +10,12 @@ var _car: VehicleBody3D
 
 
 func before_each() -> void:
-	# These tests inspect the car roster + apply_car/cycle_car, not the track or
+	# These tests inspect the car roster + apply_car, not the track or
 	# its foliage, so boot a minimal world (~15s -> <1s per instance). minimal_world
 	# resets Config to baseline first, exactly as the old Config.reset() did.
 	# NB: a shared before_all instance is NOT safe here — several tests flip the roster
 	# to CarFixtures mid-test and rely on world.gd re-applying the freshly-built car,
-	# and test_cycle_car re-instantiates the Car node; a per-test build is the clean way.
+	# so a per-test build is the clean way.
 	CarLibrary.reset()
 	EngineLibrary.reset()  # guard against a leaked override from another test file
 	UpgradeFixtures.install()
@@ -129,22 +129,6 @@ func test_apply_owned_ignores_override_without_kit() -> void:
 	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": [],
 		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})
 	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.RWD, "stays stock RWD without the kit")
-
-
-func test_cycle_car_advances_and_wraps() -> void:
-	# The HUD button drives World.cycle_car(), which re-instantiates the car and
-	# re-points the camera/HUD. Boots on car 0; cycling N times returns to car 0.
-	CarFixtures.install()
-	var n := CarLibrary.all().size()
-	for i in range(1, n):
-		_scene.cycle_car()
-		var car: VehicleBody3D = _scene.get_node("Car")
-		assert_eq(car.current_car_name(), CarLibrary.all()[i]["name"], "cycle advances to car %d" % i)
-		assert_eq((_scene.get_node("ChaseCamera") as Camera3D).target, car,
-			"camera re-points at the new car")
-	_scene.cycle_car()
-	assert_eq((_scene.get_node("Car") as VehicleBody3D).current_car_name(),
-		CarLibrary.all()[0]["name"], "cycle wraps back to the first car")
 
 
 func test_mx5_renders_the_authored_model_others_render_boxes() -> void:

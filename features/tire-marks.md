@@ -10,8 +10,7 @@ the surface under each wheel:
   nothing at all.
 
 The grass off the road footprint never marks. Created + wired by
-`world.gd._generate_track` (reused across event regenerations, re-targeted on a car
-swap in `world.gd.cycle_car`).
+`world.gd._generate_track` (reused across event regenerations).
 
 ## Opacity: how hard the tire is working
 

@@ -238,6 +238,12 @@ var peak_torque_rpm := 4500.0
 ## its authored start position — keeps the wheels from clipping under the
 ## terrain when it drops in, especially on a slope or after resizing the car.
 @export var spawn_clearance := 2.5
+## Reference speed (km/h) grip readouts are rated at — downforce grows with v², so a
+## lateral-g figure means nothing without the speed it was measured at. THE SINGLE SOURCE:
+## CarStatBounds (the roster-wide bar scale) and UpgradesSimple (the per-car Grip row) both
+## read this rather than each carrying their own copy, so the bar and the figure it draws
+## can never be rated at different speeds.
+@export var grip_reference_kmh := 50.0
 
 @export_group("Tuning")
 # Free, reversible per-car tuning (features/tuning.md). Each OwnedCar stores three
@@ -265,7 +271,7 @@ var peak_torque_rpm := 4500.0
 ## for all cars at once WITHOUT touching the published peak_torque — the stats
 ## panel and power-to-weight still report the full, pre-scaling figure. Use it to
 ## globally dial back pace without re-balancing every car. 1.0 = no scaling.
-@export_range(0.1, 1.0) var global_torque_scale := 1
+@export_range(0.1, 1.0) var global_torque_scale := 1.0
 @export var idle_rpm := 900.0  # the no-stall floor: omega never drops below this
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
@@ -467,7 +473,7 @@ func has_nitrous() -> bool:
 @export_range(100.0, 4000.0) var engine_turbo_whistle_freq_min := 350.0
 @export_range(1000.0, 9000.0) var engine_turbo_whistle_freq_max := 2500.0
 ## Filter resonance: low Q = airier / breathier rush; high Q = a more tonal whistle.
-@export_range(0.5, 12.0) var engine_turbo_whistle_q := 2
+@export_range(0.5, 12.0) var engine_turbo_whistle_q := 2.0
 ## Blend of the broadband air-rush layer under the resonant whine: 0 = pure resonant
 ## whine, 1 = mostly airflow "whoosh". Keeps it from sounding like a test tone.
 @export_range(0.0, 1.0) var engine_turbo_air_mix := 0.45
@@ -844,7 +850,7 @@ func has_nitrous() -> bool:
 @export_range(0.0, 20.0) var shake_g_threshold := 2.5
 ## Intensity added per g of acceleration above shake_g_threshold. 1.0 means ~1 g of excess
 ## already reaches full amplitude.
-@export_range(0.0, 2.0) var shake_g_gain := 4.0
+@export_range(0.0, 6.0) var shake_g_gain := 4.0
 ## SPEED source: intensity added at chase_fov_speed and above (the same reference speed the FOV
 ## ramp uses, so the two "sense of speed" effects cannot disagree), ramping linearly from 0.
 ## A constant low-level buzz — keep it small.
@@ -937,6 +943,17 @@ func has_nitrous() -> bool:
 ## Roadside-style spectators standing in an arc facing the podium (+ a small
 ## cluster at the showroom). Static dressing — no steering/ragdoll AI.
 @export var podium_spectator_count := 26
+## Seconds between each row appearing as the podium's ranked leaderboard fills in
+## top-to-bottom (Podium._reveal_standings / _reveal_stars — the star row uses the same
+## cadence). Deliberately its own field rather than sharing standings_reveal_step: the
+## podium reveals ONE list at a time, where the between-event standings screen stacks TWO
+## sections (stage + overall) and was given a shorter step so the whole reveal still lands
+## in about the same couple of seconds.
+@export var podium_reveal_step := 0.5
+## Seconds between each row appearing as the between-event standings screen's two stacked
+## leaderboards (stage result + overall) fill in (Standings._reveal_standings). See
+## podium_reveal_step for why the two screens keep separate fields.
+@export var standings_reveal_step := 0.3
 ## Inner / outer radius (m) of the tree+bush scatter ring around each focal area.
 @export var podium_scenery_ring_inner := 14.0
 @export var podium_scenery_ring_outer := 34.0
@@ -1033,6 +1050,16 @@ func has_nitrous() -> bool:
 ## Trade-off: a smaller canvas FITS LESS, so pushed far enough a screen needs its content
 ## trimmed or scrolled rather than just scaled up.
 @export_range(0.5, 4.0, 0.1) var world_panel_ui_scale := 1.8
+## Fallback (height_m, ui_scale) a WorldPanelHost builds its panel at when its station
+## supplies no `spec` Callable at all — every shipped station DOES supply one (reading its
+## own world_panel_*_height/*_ui_scale pair above), so this is a defensive default rather
+## than a live look value. WorldPanel's own constructor keeps separate DEFAULT_HEIGHT_M /
+## DEFAULT_UI_SCALE consts for its `_init` default parameters — GDScript default-argument
+## values must be compile-time constants, so they cannot read this config field directly —
+## but the runtime no-spec fallback path (WorldPanelHost._spec_now) reads THIS, not those,
+## so a designer retuning this field actually changes the one case it can affect.
+@export_range(0.2, 8.0) var world_panel_fallback_height := 2.2
+@export_range(0.5, 4.0, 0.1) var world_panel_fallback_ui_scale := 1.6
 ## THE WHEEL-FITTING VIEW needs its own placement, because it is the one car-park mode that swaps the
 ## CAMERA out from under the panel: CarparkMode.WHEELS uses a low SIDE-ON framing (hq_wheel_cam_offset)
 ## so the settled car's flank and both wheels fill the frame, where every other mode uses the
@@ -1447,7 +1474,7 @@ func has_nitrous() -> bool:
 @export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.0
 
 @export_group("PS1 Look")
-@export var virtual_resolution := Vector2(480, 360)  # keep matching [display] in project.godot (360 tall, 4:3)
+@export var virtual_resolution := Vector2(480, 360)  # independent LOOK value (PS1 dither grid), deliberately decoupled from the window/viewport height (DisplayStretch.DESIGN_HEIGHT reads display/window/size/viewport_height) — do not "fix" this to match it
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
 ## and UI alike. 1.0 = off; 1.2 draws everything 20% wider than reality. Applied
 ## globally by the DisplayStretch autoload (scripts/display_stretch.gd).
@@ -1946,7 +1973,7 @@ func has_nitrous() -> bool:
 @export_range(0.0, 200.0) var tree_fell_speed_kmh := 45.0
 ## Seconds a felled tree takes to tilt from upright to flat on the ground. Purely
 ## a look value (the hitbox is gone the instant it's felled).
-@export_range(0.1, 5.0) var tree_fell_duration_s := 2
+@export_range(0.1, 5.0) var tree_fell_duration_s := 2.0
 ## Maximum fraction of shed forward momentum a felled tree returns to the car,
 ## approached as tree size -> the smallest tree. A felled full-size tree returns
 ## 0 (hard stop, as before); a small tree returns up to this fraction so the car

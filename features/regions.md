@@ -14,15 +14,15 @@ at once, and **regions do not unlock in sequence**: there is no "next region"
 gate, and **no region-level gate of any kind** —
 a region's only job is its LOOK and its `water_level`
 (`RegionLibrary.REGIONS`'s header comment states this explicitly). Progression
-gating now lives entirely in `RallyLibrary`: ordinary rallies gate on the
-global `reveal_after` wave count, and the eight **special events** gate on the
-player's count of **completed ordinary rallies**
-(`RallyLibrary.completions_required` / `completions_needed`, read through
-`rally_revealed`) — a purely global mechanism with no relationship to region.
-Specials used to gate on the roster-wide STAR TOTAL; stars became spendable
-currency (see [star-economy.md](star-economy.md)), so a gate on them would
-close again when the player bought a car — hence completions, which only ever
-go up. The credits/win beat fires once **every** special event is completed
+gating now lives entirely in `RallyLibrary`, and it is **geometric, not a
+counter**: a rally — ordinary or special, no distinction — becomes enterable
+once the player's lit map reaches its `map_pos` (`RallyLibrary.rally_revealed`
+/ `lit_sources`, one predicate for every rally — see
+[map-exploration.md](map-exploration.md)). Specials used to gate on the
+roster-wide STAR TOTAL, then on a global completed-rally counter
+(`completions_required`); both were retired because a counter's unlocks had no
+visible relationship to the rally just won, whereas a pin's position does. The
+credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
 [rally-roster.md](rally-roster.md).
 
@@ -205,7 +205,7 @@ are the baseline by construction.
 
 Every `RallyLibrary.RALLIES` entry carries `"region": "<region_id>"`. See
 [rally-roster.md](rally-roster.md) for the roster itself and per-rally
-`reveal_after` / `special`+`requires_completions` semantics.
+`map_pos` / `special` geometric-reveal semantics.
 
 **Regions are not quadrants, and membership is lopsided.** Pins are positioned by
 `tools/fit_map_pins.py`, which optimises the PROGRESSION GRAPH, not the scenery — so
@@ -223,8 +223,8 @@ all.
 **The old per-region invariant is retired.** Before globally-gated special
 events, the rule was "at most one showdown per region, and exactly one wherever
 a region holds rallies" (`RegionLibrary.showdown_of` picked that one rally out).
-Specials are now gated purely on the global completed-ordinary-rally count
-(`RallyLibrary.completions_required`), so they have no relationship to a region's
+Specials are now gated by the same geometric reveal rule as every other rally
+(`RallyLibrary.rally_revealed`), so they have no relationship to a region's
 contents: **a region may hold any number of specials, including none.** Today
 they are bunched — four sit in `home` and one in `greece`, with neither coastal
 region holding any — precisely because nothing in the code cares; it's map
@@ -234,21 +234,19 @@ its look/waterline normally.
 `RallyLibrary.incomplete_rallies_enterable_by` (the anti-soft-lock query used
 by the reward system) is no longer region-aware at all: a special is offered as
 enterable once `RallyLibrary.rally_revealed` says so — and `rally_revealed` no
-longer branches on `is_special` at all: EVERY rally reads
-`completions_required`, ordinary rallies simply author 0. A pure global count
-comparison, with no region lookup in the path.
+longer branches on `is_special` at all: EVERY rally reveals by the SAME
+geometric test, its `map_pos` falling inside a lit circle, with no separate
+completion count for specials at all. A pure position comparison, with no
+region lookup in the path.
 
-Non-special rallies also reveal in **waves**, but on a **global** count, not a
-per-region one: `RallyLibrary.rally_revealed` gates a rally's map pin (and its
-enterability) behind its `reveal_after` count of **completed non-special
-rallies across the whole roster** (`_completed_count`). This is deliberate,
-not an oversight carried over from the two-region days: the one world map
-pins every region's rallies at once, so "complete a rally in one corner to
-reveal one in another corner" is the intended drip-feed, and it's only
-expressible with a global count — a per-region count would also have quietly
-tightened gating when the old two regions split into four corners, since the
-same authored `reveal_after` values would draw from a smaller per-corner pool.
-See [rally-roster.md](rally-roster.md) (`reveal_after`) and
+Non-special rallies reveal the same geometric way, and it is deliberately
+**cross-region**: `RallyLibrary.rally_revealed` compares a rally's `map_pos`
+against the lit circles of every completed rally on the WHOLE roster
+(`lit_sources`), not just its own region's. The one world map pins every
+region's rallies at once, so "complete a rally in one corner to reveal one in
+another corner" is the intended drip-feed — a reveal scoped to one region
+would have cut that off at each corner's border. See
+[map-exploration.md](map-exploration.md) (the reveal rule itself) and
 [menus.md](menus.md) (the grey "coming up" pin).
 
 ## Theming the driven world (`world.gd._apply_region_look`)
@@ -323,13 +321,13 @@ to any region's patch of the image). `_make_pin` builds every
 pin's marker, readout label and hit targets the same way regardless of
 region; the only per-pin state is:
 
-- **locked** (`not RallyLibrary.rally_revealed(rally, Save.profile)`) — a
-  special whose `requires_completions` count isn't met yet, or a non-special
-  rally whose global `reveal_after` count isn't met yet (one predicate, one
-  count — see `completions_required`). A locked pin renders grey,
+- **locked** (`not RallyLibrary.rally_revealed(rally, Save.profile)`) — the
+  rally's `map_pos` doesn't yet fall inside any lit circle (one geometric
+  predicate for every rally, special or not — see
+  [map-exploration.md](map-exploration.md)). A locked pin renders grey,
   carries no hit spheres (can't be clicked/entered), and drops its readout box
   entirely — except a locked SPECIAL, which keeps a full-opacity non-pickable
-  teaser quoting "N/M events" (`hq._build_special_teaser_label`). Either way
+  teaser naming what it unlocks (`hq._build_special_teaser_label`). Either way
   it's a "coming up" hint, not a hidden pin: locked rallies are still pinned
   and visible; they are simply not enterable yet.
 - earned stars / eligible-car state, same as always (`RallyFlag.build`).
@@ -362,13 +360,13 @@ minute, while the snow corner's rally content is left for later work. See
 `todo/one-map-four-corners.md` → "Follow-up: the snow corner" for the planned
 scope. Nothing in `RegionLibrary`, `RallyLibrary`, or the HQ table needs to
 change to add it later — a new `REGIONS` entry with its own rallies would
-just start appearing as pins in its corner, subject to the same global
-`reveal_after` wave and the same global completion gate on its specials as any
-other region. Adding a region with no specials at all is also fine — the
+just start appearing as pins in its corner, subject to the same geometric
+reveal rule (`map_pos` falling inside a lit circle) as any other region's
+rallies, specials included. Adding a region with no specials at all is also fine — the
 retired per-region invariant means an empty-of-specials corner is now the
 ordinary case, not a special-cased one.
 
-## Progression: no sequence, no region gating, globally-gated specials
+## Progression: no sequence, no region gating, geometrically-gated specials
 
 - **No unlock sequence.** There is no derived-or-stored "region unlocked"
   concept any more — every authored region is reachable from the start.
@@ -379,12 +377,14 @@ ordinary case, not a special-cased one.
   those, plus `showdown_of` and `rally_showdown_gate_open`, are **deleted** —
   `RegionLibrary` no longer has any gating API. A region's only remaining job
   is `look_of` / `water_level_of`.
-- **Globally-gated specials.** `hq.gd` and `reward_system.gd` read
-  `RallyLibrary.rally_revealed`, which compares the player's count of completed
-  ordinary rallies against a special's authored `requires_completions` (via
-  `completions_required`) — no region lookup anywhere in the path, and no star
-  total either: `total_stars` / `max_total_stars` / `special_gate_open` /
-  `stars_required` / `stars_needed` are **deleted**. Stars are now a spent
+- **Geometrically-gated specials.** `hq.gd` and `reward_system.gd` read
+  `RallyLibrary.rally_revealed`, which compares a special's `map_pos` against
+  the lit circles of every completed rally on the roster, exactly like any
+  ordinary rally — no region lookup anywhere in the path, and no completion
+  counter or star total either: `total_stars` / `max_total_stars` /
+  `special_gate_open` / `stars_required` / `stars_needed` are **deleted**, and
+  so is the completion-count ladder that briefly replaced them
+  (`completions_required` / `completions_needed`). Stars are now a spent
   balance, and a gate reading a balance would close behind a player who had
   already passed it — see [star-economy.md](star-economy.md).
 - **Global-completion credits.** `rally_session.gd` emits `RallySession.game_won`
@@ -407,9 +407,9 @@ ordinary case, not a special-cased one.
 (never the shipped Greek roster or textures): `region_for_rally`/`rallies_in`
 round-trip, `look_of`'s override-vs-omit and
 `look_from` inheritance behaviour, and `has_water_level`/`water_level_of`
-with synthetic values. The special-event ladder (`completions_required` /
-`completions_needed`, `rally_revealed`, `all_specials_completed`) and the `region` tag
-on every rally are asserted in `tests/headless/test_rally_library.gd`. The
+with synthetic values. The geometric reveal rule (`rally_revealed`,
+`lit_sources`) and `all_specials_completed`, plus the `region` tag
+on every rally, are asserted in `tests/headless/test_rally_library.gd`. The
 map's pin set (every region's rallies pinned at once, locked pins
 non-pickable, keyboard + gamepad reachable) is covered in the HQ nav tests
 (`tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd`). The

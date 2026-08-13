@@ -7,6 +7,15 @@ extends RefCounted
 
 var _hq: HqController
 
+# Widget handles this class is the only user of — built here, read by the nav tests. The rest
+# of the overlay widgets stay on HqController because hq.gd or another collaborator also reads
+# them; a handle with two readers is not this class's private state.
+var _title_free_roam_button: Button  # EXTERIOR title Free Roam (session-less drive)
+var _title_settings_button: Button  # EXTERIOR title Settings
+var _title_exit_button: Button  # EXTERIOR title Exit Game (last in the row)
+var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
+var _detail_dev_win_button: Button # DEV ONLY: win the rally outright; null in a release build
+
 func _init(hq: HqController) -> void:
 	_hq = hq
 
@@ -41,7 +50,7 @@ func build_title_overlay() -> void:
 	if not Platform.is_web():
 		var exit_btn := UITheme.row_button("Exit Game", _hq._on_exterior_exit)
 		actions.add_child(exit_btn)
-		_hq._title_exit_button = exit_btn
+		_title_exit_button = exit_btn
 		buttons.append(exit_btn)
 		acts.append(_hq._on_exterior_exit)
 	# Free Roam: a session-less drive in any catalogue car. It lives HERE, not in the
@@ -52,7 +61,7 @@ func build_title_overlay() -> void:
 	# reachable as a Settings page instead — one route, not two.
 	var free_roam := UITheme.row_button("Free Roam", _hq._enter_free_roam)
 	actions.add_child(free_roam)
-	_hq._title_free_roam_button = free_roam
+	_title_free_roam_button = free_roam
 	buttons.append(free_roam)
 	acts.append(_hq._enter_free_roam)
 	# Settings: the shared camera/controls page. Moved here from the garage action row —
@@ -61,7 +70,7 @@ func build_title_overlay() -> void:
 	var to_settings_cb := _hq._open_settings.bind(false)
 	var settings := UITheme.row_button("Settings", to_settings_cb)
 	actions.add_child(settings)
-	_hq._title_settings_button = settings
+	_title_settings_button = settings
 	buttons.append(settings)
 	acts.append(to_settings_cb)
 	var start := UITheme.row_button("Start", _hq._on_exterior_start)
@@ -91,15 +100,15 @@ func build_title_overlay() -> void:
 	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	version_label.modulate = Color(1, 1, 1, 0.6)
 	# On its own CanvasLayer (see _hq._version_layer) so it survives the title screen
-	# migrating to a 3D panel; _update_overlays shows it with the title.
+	# migrating to a 3D panel; update_overlays shows it with the title.
 	_hq._version_layer = CanvasLayer.new()
 	_hq.add_child(_hq._version_layer)
 	_hq._version_layer.add_child(version_label)
-	_hq._title_version_label = version_label
+	_title_version_label = version_label
 
 	# EXTERIOR is now driven by menu_left/menu_right/menu_select over _title_cursor (see
 	# _unhandled_input), the same diegetic idiom as the garage row and lift hub — no
-	# MenuNav here. hq re-seats the cursor on Start itself on view entry (_go_to).
+	# MenuNav here. hq re-seats the cursor on Start itself on view entry (go_to).
 
 
 func build_garage_overlay() -> void:
@@ -144,7 +153,7 @@ func build_table_overlay() -> void:
 
 	# The new-rally reveal's one-line banner ("NEW RALLY - …" / "SPECIAL EVENT UNLOCKED - …"),
 	# hidden except while the reveal sequence is running. See hq_table.gd _set_reveal_banner.
-	_hq._reveal_banner = _hq._label("", 20)
+	_hq._reveal_banner = _hq.label("", 20)
 	_hq._reveal_banner.visible = false
 	root.add_child(_hq._reveal_banner)
 
@@ -165,7 +174,7 @@ func build_table_overlay() -> void:
 	star.star_radius = 8.0
 	star.setup(1, 1)
 	meter_row.add_child(star)
-	_hq._map_meter = _hq._label("", 20)
+	_hq._map_meter = _hq.label("", 20)
 	_hq._map_meter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	meter_row.add_child(_hq._map_meter)
 
@@ -173,7 +182,7 @@ func build_table_overlay() -> void:
 	back.text = "< Back to garage"
 	back.focus_mode = Control.FOCUS_NONE
 	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	back.pressed.connect(func() -> void: _hq._go_to(HqController.View.GARAGE))
+	back.pressed.connect(func() -> void: _hq.go_to(HqController.View.GARAGE))
 	root.add_child(back)
 
 	_hq._passthrough_overlay(root)  # let taps / drags reach the 3D map pins behind the HUD
@@ -218,17 +227,17 @@ func build_detail_overlay() -> void:
 	# AUTOWRAP both: set_body_width is only a FLOOR, so a non-wrapping label that wants more
 	# still widens the box past it. A long rally name ("Archipelago Trial - 3 stages") is
 	# exactly that, which would leave the width floored but still varying per pin. Everything
-	# else in this page already wraps (_detail_wrap_label).
-	_hq._detail_title = _hq._label("", 30)
+	# else in this page already wraps (detail_wrap_label).
+	_hq._detail_title = _hq.label("", 30)
 	_hq._detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hq._detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_child(_hq._detail_title)
-	_hq._detail_region = _hq._label("", 16)
+	_hq._detail_region = _hq.label("", 16)
 	_hq._detail_region.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hq._detail_region.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hq._detail_region.add_theme_color_override("font_color", UITheme.MUTED)
 	titles.add_child(_hq._detail_region)
-	_hq._detail_special = _hq._label("SPECIAL EVENT", 16)
+	_hq._detail_special = _hq.label("SPECIAL EVENT", 16)
 	_hq._detail_special.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_hq._detail_special.add_theme_color_override("font_color", UITheme.GOLD)
 	header.add_child(_hq._detail_special)
@@ -243,24 +252,24 @@ func build_detail_overlay() -> void:
 	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 4)
 	root.add_child(right)
-	right.add_child(_hq._detail_heading("Eligibility"))
+	right.add_child(_hq.detail_heading("Eligibility"))
 	# All sidebar text wraps within the column so a long restriction / caution can't
 	# draw past the panel edge (Labels don't clip by default).
-	_hq._detail_restriction = _hq._detail_wrap_label()
+	_hq._detail_restriction = _hq.detail_wrap_label()
 	right.add_child(_hq._detail_restriction)
-	_hq._detail_qualify = _hq._detail_wrap_label()
+	_hq._detail_qualify = _hq.detail_wrap_label()
 	right.add_child(_hq._detail_qualify)
-	_hq._detail_adjust = _hq._detail_wrap_label()
+	_hq._detail_adjust = _hq.detail_wrap_label()
 	_hq._detail_adjust.add_theme_color_override("font_color", UITheme.GOLD)
 	right.add_child(_hq._detail_adjust)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 12)
 	right.add_child(gap)
-	right.add_child(_hq._detail_heading("Your record"))
+	right.add_child(_hq.detail_heading("Your record"))
 	var record_row := HBoxContainer.new()
 	record_row.add_theme_constant_override("separation", 10)
 	right.add_child(record_row)
-	_hq._detail_record = _hq._label("", 16)
+	_hq._detail_record = _hq.label("", 16)
 	record_row.add_child(_hq._detail_record)
 	_hq._detail_stars = StarRow.new()
 	_hq._detail_stars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -303,7 +312,7 @@ func build_detail_overlay() -> void:
 		dev.focus_mode = Control.FOCUS_NONE
 		dev.pressed.connect(_hq._dev_complete_selected_rally)
 		actions.add_child(dev)
-		_hq._detail_dev_win_button = dev
+		_detail_dev_win_button = dev
 
 
 func build_lift_overlay() -> void:
@@ -347,7 +356,7 @@ func build_lift_overlay() -> void:
 	_hq._lift_menu_title_row = HBoxContainer.new()
 	_hq._lift_menu_title_row.add_theme_constant_override("separation", 5)
 	root.add_child(_hq._lift_menu_title_row)
-	_hq._lift_menu_title = _hq._label("", 22)
+	_hq._lift_menu_title = _hq.label("", 22)
 	_hq._lift_menu_title_row.add_child(_hq._lift_menu_title)
 
 	# MenuPage already wraps the body in a scroll safety net for very short logical
@@ -451,7 +460,7 @@ func build_lift_overlay() -> void:
 	name_box.custom_minimum_size.y = UITheme.MENU_ROW_H
 	name_box.add_theme_stylebox_override("panel", UITheme.readout_box())
 	selector.add_child(name_box)
-	_hq._lift_car_label = _hq._label("", 14)
+	_hq._lift_car_label = _hq.label("", 14)
 	_hq._lift_car_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_box.add_child(_hq._lift_car_label)
 
@@ -487,7 +496,7 @@ func build_lift_overlay() -> void:
 	stats_box.custom_minimum_size.y = UITheme.MENU_ROW_H
 	stats_box.add_theme_stylebox_override("panel", UITheme.readout_box())
 	info_panel.add_child(stats_box)
-	_hq._lift_car_stats_label = _hq._label("", 14)
+	_hq._lift_car_stats_label = _hq.label("", 14)
 	_hq._lift_car_stats_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	stats_box.add_child(_hq._lift_car_stats_label)
 
@@ -506,7 +515,7 @@ func build_lift_overlay() -> void:
 	# that index, so a click and a keyboard/gamepad select agree.
 	# (No Change Car button here: changing the car is the SELECTOR row above, whose
 	# chevrons swap it in place — see _cycle_lift_car.)
-	var on_back := func() -> void: _hq._go_to(HqController.View.GARAGE)
+	var on_back := func() -> void: _hq.go_to(HqController.View.GARAGE)
 	var to_tune_cb := _hq._open_lift_page.bind(HqController.LiftPage.TUNE)
 	var to_upgrades_cb := _hq._open_lift_page.bind(HqController.LiftPage.UPGRADES)
 	var back := UITheme.row_button("< Back", on_back)
@@ -544,7 +553,7 @@ func build_car_overlay() -> void:
 	# the same either way — only its container changes.
 	_hq._car_root = root
 
-	_hq._rally_banner = _hq._label("", 22)
+	_hq._rally_banner = _hq.label("", 22)
 	_hq._rally_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# Autowrap so a long rally name + restriction WRAPS instead of running off the edge. It
 	# never wraps on the flat full-width canvas; it is the narrow world-panel canvas that
@@ -558,14 +567,14 @@ func build_car_overlay() -> void:
 	# because CarparkMode.PRESENT still has something real to say ("Open it to see what is
 	# inside" — a one-off prompt for an object with no other affordance), and hq.gd hides it
 	# again when the present flow ends.
-	_hq._car_hint_label = _hq._label("", 14)
+	_hq._car_hint_label = _hq.label("", 14)
 	_hq._car_hint_label.visible = false
 	root.add_child(WorldPanel.text_backing(_hq._car_hint_label))
 
 	# Push the car nav + actions to the bottom so the 3D car park is visible above.
 	root.add_child(UITheme.vspacer())
 
-	_hq._no_eligible_label = _hq._label("", 16)
+	_hq._no_eligible_label = _hq.label("", 16)
 	_hq._no_eligible_label.visible = false
 	root.add_child(WorldPanel.text_backing(_hq._no_eligible_label))
 
@@ -578,7 +587,7 @@ func build_car_overlay() -> void:
 	_hq._car_nav_row = nav_made[0]
 	_hq._car_name_label = nav_made[1]
 
-	_hq._car_stats_label = _hq._label("", 12)
+	_hq._car_stats_label = _hq.label("", 12)
 	_hq._car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# Same reason as the banner: the stats line is long ("AWD | 307 HP | 1336 KG | HEALTH …")
 	# and was being cut off at the panel's edge rather than wrapping.
@@ -600,7 +609,7 @@ func build_car_overlay() -> void:
 	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
 	# An over-powered car does NOT warn here — the over-limit prompt pops as a confirm
 	# dialog on Start instead (_show_over_limit_prompt), keeping the overlay compact.
-	_hq._car_warning_label = _hq._label("", 14)
+	_hq._car_warning_label = _hq.label("", 14)
 	_hq._car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hq._car_warning_label.add_theme_color_override("font_color", UITheme.RED)
 	_hq._car_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -636,7 +645,7 @@ func build_settings_overlay() -> void:
 	_hq._settings_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	var title := _hq._label("SETTINGS", 32)
+	var title := _hq.label("SETTINGS", 32)
 	root.add_child(title)
 
 	# Subtitle for the PRE-RALLY GATE only ("choose your touch controls to start"), where it
@@ -644,7 +653,7 @@ func build_settings_overlay() -> void:
 	# title-screen / pause entry shows nothing here — the SETTINGS heading plus the category
 	# buttons already say everything a "Camera & controls:" line did, so it was pure chrome.
 	# _open_settings owns both the text and the visibility.
-	_hq._settings_sub = _hq._label("", 16)
+	_hq._settings_sub = _hq.label("", 16)
 	_hq._settings_sub.visible = false
 	root.add_child(_hq._settings_sub)
 
@@ -680,7 +689,7 @@ func build_settings_overlay() -> void:
 # A dark detail-card SIBLING to the rally-detail panel (build_detail_overlay, above):
 # same MODAL_DIM backing, two-line header (kind + ceiling) with a non-mouse-interactive
 # tab row for the kind, HSeparator, then a status column of one-row-per-section
-# (_hq._challenge_info_row) so the two panels read as the same design system.
+# (_hq.challenge_info_row) so the two panels read as the same design system.
 # A pointer press on a kind tab selects that kind and nothing else. Grabbing focus is
 # what selects (focus_entered -> _select_challenge_kind), and accept_event() swallows the
 # press so the Button never emits `pressed` — which is wired to START the challenge. That
@@ -734,13 +743,13 @@ func build_challenge_overlay() -> void:
 	# only labels here that don't wrap: "Daily/Weekly/Monthly Challenge" are three different
 	# lengths, and each kind's ceiling subtitle differs too, so their min width was setting
 	# the panel's width and the box grew and shrank by a few px per tab. The info rows below
-	# already wrap (_challenge_info_row -> _detail_wrap_label), which is why they never did
+	# already wrap (challenge_info_row -> detail_wrap_label), which is why they never did
 	# this.
-	_hq._challenge_title_label = _hq._label("", 30)
+	_hq._challenge_title_label = _hq.label("", 30)
 	_hq._challenge_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hq._challenge_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_child(_hq._challenge_title_label)
-	_hq._challenge_subtitle_label = _hq._label("", 16)
+	_hq._challenge_subtitle_label = _hq.label("", 16)
 	_hq._challenge_subtitle_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hq._challenge_subtitle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hq._challenge_subtitle_label.add_theme_color_override("font_color", UITheme.MUTED)
@@ -793,10 +802,10 @@ func build_challenge_overlay() -> void:
 	body.add_theme_constant_override("separation", 4)
 	root.add_child(body)
 
-	_hq._challenge_win_label = _hq._challenge_info_row(body, "Win condition")
-	_hq._challenge_reward_label = _hq._challenge_info_row(body, "Win reward")
-	_hq._challenge_eligible_label = _hq._challenge_info_row(body, "Eligible cars")
-	_hq._challenge_progress_label = _hq._challenge_info_row(body, "Progress")
+	_hq._challenge_win_label = _hq.challenge_info_row(body, "Win condition")
+	_hq._challenge_reward_label = _hq.challenge_info_row(body, "Win reward")
+	_hq._challenge_eligible_label = _hq.challenge_info_row(body, "Eligible cars")
+	_hq._challenge_progress_label = _hq.challenge_info_row(body, "Progress")
 
 	# Back / Start live in the pinned footer. Both stay FOCUS_ALL: MenuNav moves focus
 	# across container boundaries by geometry, so down-nav off the last info row still
@@ -825,6 +834,6 @@ func build_challenge_overlay() -> void:
 
 	# Hidden until _open_challenge_overlay shows it — this overlay is built eagerly in
 	# _ready (like the per-view stations) but is a MODAL over the garage, not one of the
-	# _view-switched layers _update_overlays drives, so it must start hidden by hand.
+	# _view-switched layers update_overlays drives, so it must start hidden by hand.
 	_hq._challenge_shown = false
 	_hq._challenge_layer.visible = false

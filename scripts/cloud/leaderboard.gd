@@ -1,5 +1,5 @@
 class_name Leaderboard
-extends Node
+extends FirestoreBoard
 # Global per-stage leaderboards: one Firestore document per player per stage, at
 #   stage_times/{stage_key}/times/{uid}
 #
@@ -51,9 +51,8 @@ const POST_TOO_FAST := "too_fast"          # below MIN_POST_MS — not a real ru
 # features/global-leaderboards.md.
 const MIN_POST_MS := 10000
 
-# Injected by Cloud.
-var rest = null
-var auth: AuthService = null
+# The subcollection this board's per-player documents live in.
+const COLLECTION_ID := "times"
 
 
 # --- Public API ---------------------------------------------------------------
@@ -230,41 +229,14 @@ static func display_rows(rows: Array, player_row: Dictionary) -> Array:
 # The top PODIUM_ROWS entries, fastest first. Only the automatic single-field
 # index on time_ms is needed, so there is no composite index to deploy.
 func _run_query(stage_key: String, token: String) -> Dictionary:
-	var body := {
-		"structuredQuery": {
-			"from": [{"collectionId": "times"}],
-			"orderBy": [{
-				"field": {"fieldPath": "time_ms"},
-				"direction": "ASCENDING",
-			}],
-			"limit": PODIUM_ROWS,
-		}
-	}
-	var response = await rest.request_json(HTTPClient.METHOD_POST,
-		_stage_doc(stage_key) + ":runQuery",
-		RestClient.json_headers(token), JSON.stringify(body))
-	if not response.ok:
-		return {"ok": false, "error": _classify(response), "rows": []}
-	if typeof(response.json) != TYPE_ARRAY:
-		return {"ok": false, "error": "unreadable", "rows": []}
-
-	var rows: Array = []
-	for element in response.json as Array:
-		if typeof(element) != TYPE_DICTIONARY:
-			continue
-		var doc: Variant = (element as Dictionary).get("document", null)
-		if typeof(doc) != TYPE_DICTIONARY:
-			# runQuery answers an empty collection with a single element carrying
-			# only a readTime. That is a legitimately empty board, not a failure.
-			continue
-		rows.append(_row_from_document(doc as Dictionary))
-	return {"ok": true, "error": "", "rows": rows}
+	return await _board_run_query(_stage_doc(stage_key), COLLECTION_ID, "time_ms",
+		token, PODIUM_ROWS, 0, _row_from_document)
 
 
 # A COUNT aggregation. `slower_than` > 0 counts entries strictly faster than it
 # (rank = that + 1); 0 counts the whole board.
 func _count(stage_key: String, token: String, slower_than: int) -> Dictionary:
-	var query := {"from": [{"collectionId": "times"}]}
+	var query := {"from": [{"collectionId": COLLECTION_ID}]}
 	if slower_than > 0:
 		query["where"] = {
 			"fieldFilter": {
@@ -273,32 +245,7 @@ func _count(stage_key: String, token: String, slower_than: int) -> Dictionary:
 				"value": FirestoreCodec.int_value(slower_than),
 			}
 		}
-	var body := {
-		"structuredAggregationQuery": {
-			"structuredQuery": query,
-			"aggregations": [{"alias": "count", "count": {}}],
-		}
-	}
-	var response = await rest.request_json(HTTPClient.METHOD_POST,
-		_stage_doc(stage_key) + ":runAggregationQuery",
-		RestClient.json_headers(token), JSON.stringify(body))
-	if not response.ok:
-		return {"ok": false, "error": _classify(response), "count": 0}
-	if typeof(response.json) != TYPE_ARRAY or (response.json as Array).is_empty():
-		return {"ok": false, "error": "unreadable", "count": 0}
-
-	var first: Variant = (response.json as Array)[0]
-	if typeof(first) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "unreadable", "count": 0}
-	var result: Variant = (first as Dictionary).get("result", {})
-	if typeof(result) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "unreadable", "count": 0}
-	var aggregate: Variant = (result as Dictionary).get("aggregateFields", {})
-	if typeof(aggregate) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "unreadable", "count": 0}
-	# COUNT comes back as an integerValue, i.e. a JSON string.
-	return {"ok": true, "error": "",
-		"count": FirestoreCodec.int_field(aggregate as Dictionary, "count")}
+	return await _board_count(_stage_doc(stage_key), query, token)
 
 
 # The player's own entry. A 404 is the expected "never posted here" answer.
@@ -374,23 +321,6 @@ static func _row_from_document(doc: Dictionary) -> Dictionary:
 	}
 
 
-# A document's REST "name" is its full resource path; the uid is the last segment.
-static func _uid_from_path(path: String) -> String:
-	if path == "":
-		return ""
-	var parts := path.split("/")
-	return parts[parts.size() - 1]
-
-
-# Every failure class lands in the same place. The distinction between offline,
-# 5xx, 429 and a parse failure matters to CloudSync (which retries); here it does
-# not, because there is nothing to retry — the player is about to leave the page.
-func _classify(response: Dictionary) -> String:
-	if response.get("network", false):
-		return "offline"
-	return "http_%d" % int(response.get("status", 0))
-
-
 func _unavailable(reason: String) -> Dictionary:
 	return {
 		"ok": false,
@@ -432,19 +362,6 @@ func _log(result: Dictionary, state: String, stage_key: String, detail: String) 
 	return result
 
 
-func _signed_in() -> bool:
-	return auth != null and rest != null and auth.is_signed_in()
-
-
-func _uid() -> String:
-	return auth.uid if auth != null else ""
-
-
-static func _documents_root() -> String:
-	return "%s/projects/%s/databases/(default)/documents" % [
-		FirebaseConfig.FIRESTORE_URL, FirebaseConfig.PROJECT_ID]
-
-
 # The per-stage parent document. It need not exist for its `times` subcollection
 # to be queryable — Firestore parents are implicit.
 static func _stage_doc(stage_key: String) -> String:
@@ -452,4 +369,4 @@ static func _stage_doc(stage_key: String) -> String:
 
 
 static func _entry_doc(stage_key: String, uid: String) -> String:
-	return "%s/times/%s" % [_stage_doc(stage_key), uid.uri_encode()]
+	return FirestoreBoard._board_entry_doc(_stage_doc(stage_key), COLLECTION_ID, uid)

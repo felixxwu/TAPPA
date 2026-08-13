@@ -205,7 +205,7 @@ var on_demand_builds: int = 0
 # to build, and height_at used to rebuild all layers on every call (it is hit
 # once per centerline sample in bake_track). The cache is invalidated by every
 # terrain mutation path via _rebuild_loaded. NOT shared with the worker threads:
-# compute_chunk_data / build_heights build their own local instances via
+# compute_chunk_data builds its own local instances via
 # _build_noises (FastNoiseLite is shared mutable state), so the cache only ever
 # serves the main thread.
 var _cached_noises: Array[FastNoiseLite] = []
@@ -388,7 +388,7 @@ func baked_height_at(x: float, z: float) -> float:
 # a Dictionary, so the cache-first accessors below (called per physics frame via
 # height_at) stay allocation-free. Value types (Vector2i / int / float) live inline
 # in the fields, no heap churn. Safe as bare instance state: these accessors run one
-# at a time on the main thread (the threaded chunk build uses build_heights, not these).
+# at a time on the main thread (the threaded chunk build uses compute_chunk_data, not these).
 var _bl_coord: Vector2i
 var _bl_xi: int
 var _bl_zi: int
@@ -475,25 +475,6 @@ func _cached_light_at(x: float, z: float) -> Color:
 	out.a = 1.0
 	return out
 
-
-# SAMPLES x SAMPLES heights centred on `center` (a chunk centre), sampled at
-# absolute world coords so adjacent chunks agree on shared edges. Noises are
-# built once here (height_at rebuilds per call — fine for single samples, too
-# slow for 40k).
-func build_heights(center: Vector3) -> PackedFloat32Array:
-	var pair := _build_noises()
-	var noises: Array = pair[0]
-	var amplitudes: PackedFloat32Array = pair[1]
-
-	var heights := PackedFloat32Array()
-	heights.resize(SAMPLES * SAMPLES)
-	var half := CHUNK_M / 2.0
-	for zi in SAMPLES:
-		var z := center.z - half + zi * CELL_M
-		for xi in SAMPLES:
-			var x := center.x - half + xi * CELL_M
-			heights[zi * SAMPLES + xi] = _sample_height(noises, amplitudes, x, z)
-	return heights
 
 
 # Pure CPU work for one chunk: heights + mesh arrays. Reads only the
@@ -686,10 +667,10 @@ func _collision_band_chunks(leash_m: float) -> int:
 # Classify one chunk by its nearest distance to the centerline. `l_min` is the finest
 # LOD level index the chunk's closest-possible camera distance can ever select
 # (count of band-ends <= that distance). `full_res` is true when the chunk is inside
-# the collision band OR can display the finest level (l_min == 0). `band_chunks` is
-# accepted for caller symmetry; the collision decision is passed in as `in_collision_band`.
-func _classify_chunk(min_dist_m: float, leash_m: float, band_chunks: int,
-		in_collision_band: bool) -> Dictionary:
+# the collision band OR can display the finest level (l_min == 0). The collision
+# decision is passed in as `in_collision_band` (callers compute it via
+# `_collision_band_chunks`; this function doesn't need the chunk radius itself).
+func _classify_chunk(min_dist_m: float, leash_m: float, in_collision_band: bool) -> Dictionary:
 	var closest_cam := maxf(0.0, min_dist_m - leash_m - precompute_safety_slack_m)
 	var l_min := 0
 	for e in lod_band_ends_m:
@@ -739,7 +720,7 @@ func corridor_coords(centerline: Curve2D, leash_m: float) -> Array[Vector2i]:
 			if maxi(absi(cc.x - centre_c.x), absi(cc.y - centre_c.y)) <= band_chunks:
 				in_coll = true
 				break
-		_corridor_class[cc] = _classify_chunk(near_pt, leash_m, band_chunks, in_coll)
+		_corridor_class[cc] = _classify_chunk(near_pt, leash_m, in_coll)
 	return out
 
 

@@ -96,7 +96,7 @@ func _render_in_context() -> void:
 	svp.add_child(hq)
 	for _i in 40:
 		await process_frame
-	hq._go_to(hq.View.TABLE, true)
+	hq.go_to(hq.View.TABLE, true)
 	for _i in 20:
 		await process_frame
 	_save(svp, "hq_table_flags.png")

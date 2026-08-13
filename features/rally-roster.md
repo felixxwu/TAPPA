@@ -42,8 +42,9 @@ Each `RALLIES` entry:
 - `special` (bool) — a **part-unlock event**: the rally that opens one upgrade for the
   whole garage (`unlocked_by_rally`, see [upgrade-catalogue.md](upgrade-catalogue.md)).
   There is no completion counter — the retired `requires_completions` /
-  `completions_required` gate went with the wave system, and a special now unlocks by
-  being explored out to like any other pin ([map-exploration.md](map-exploration.md)).
+  `completions_required` gate went with the old global wave-counter system, and a special
+  now unlocks the same geometric way as any other pin: it reveals once the player's lit
+  map reaches its `map_pos` ([map-exploration.md](map-exploration.md)).
   It has no relationship to region: a region may hold any number of specials, including
   none (see [regions.md](regions.md)).
 
@@ -73,7 +74,7 @@ Each `RALLIES` entry:
   field cache still hits. **`gc_showdown` stays ordinary** — the longest of the three,
   gating no part, so it remains the pure star-payer.
 
-  Every special keeps `"restriction": {}` (open-class) so the ladder cannot deadlock — **a
+  Every special keeps `"restriction": {}` (open-class) so it can never lock itself out — **a
   special must never gate on a part it unlocks.** They award stars like any other rally.
   `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` names `sp_woodland_trial` as the special whose
   completion flips `engine_swaps_unlocked` — a *capability* gate on engine swapping,
@@ -124,7 +125,7 @@ Each `RALLIES` entry:
   only trimming the extremes. A *narrow* band picks 2-3 cars arbitrarily and silently
   re-picks them the moment a car is retuned; "four-cylinder, two-door" or "British cars"
   picks a group that reads as a real class and survives retuning. The open-class rallies
-  are the specials (see `special`/`requires_completions` above).
+  are the specials (see `special` above).
 
   > **Standing rule — author the data, don't approximate it.** When a rally wants to
   > group cars by a property the catalogue does not record, ADD that property to the
@@ -141,21 +142,21 @@ Each `RALLIES` entry:
   predicate — run it after touching any restriction. The target is 2-3 eligible cars
   per rally (~2 is fine on today's nine-car roster and widens on its own as cars are
   added); the hard floor is **≥1**, since an unenterable rally is a logic bug.
-- `reveal_after` — an `int` (default 0): the **global reveal gate**. A non-special
-  rally's map pin stays locked (grey, non-pickable — a "coming up" hint) until the player
-  has completed that many non-special rallies **anywhere on the roster**, so the world
-  map reveals a couple of fresh rallies at a time instead of dumping them all at once — and
-  a win in one corner of the map can open a rally in another (see
-  `RallyLibrary.rally_revealed` / `_completed_count`). The count is deliberately global,
-  not per-region: every corner's pins share one world map, and a per-region count would
-  draw from a much smaller pool now that the world is split into four corners. Wave-0 rallies (`reveal_after`
-  omitted / 0) are visible from the start. Completed rallies stay farmable — this gates
-  first *reveal* only, never re-entry.
-  **`reveal_after` gates the PIN; the reveal SEQUENCE has a second gate on top of it.**
+- `map_pos` is what gates the pin now — **there is no `reveal_after` field any more**. A
+  rally's map pin stays locked (grey, non-pickable — a "coming up" hint) until its
+  `map_pos` falls inside a circle lit by a completed rally (or by the player's opening
+  rally): `RallyLibrary.rally_revealed` / `lit_sources`, the single geometric predicate
+  detailed in [map-exploration.md](map-exploration.md), which is the canonical description
+  of this mechanism. The retired `reveal_after` (an `int`, default 0, compared against a
+  global non-special completion count) and its special-side sibling
+  `requires_completions` are **deleted** — see the "What the retired mechanism was"
+  section of that doc. Completed rallies stay farmable — reveal gates first *entry* only,
+  never re-entry.
+  **Reveal gates the PIN; the reveal SEQUENCE has a second gate on top of it.**
   When the map table opens, `hq_table.gd._pending_reveals()` picks out the rallies to
   announce to the player, and a rally qualifies only if `rally_revealed` is true AND the
-  player owns a car that can actually enter it (`_has_eligible_car` → `_entry_plan`) AND
-  it isn't already `Save.rally_revealed_seen`. So an unlocked rally the garage cannot
+  player owns a car that can actually enter it (`hq.gd._has_eligible_car` → `_entry_plan`)
+  AND it isn't already `Save.rally_revealed_seen`. So a revealed rally the garage cannot
   field is *held back* and announced later — the day a bought / won / engine-swapped car
   qualifies for it. The queue is derived fresh on every map open from current state
   (never cached when a rally is completed), which is what makes it work for any unlock
@@ -163,15 +164,17 @@ Each `RALLIES` entry:
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, cliffiness?, weather?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; specials'
-  events are longer, and length ramps with the rung (the four new lower-rung
-  specials run shorter than the four upper-rung ex-showdowns). `forestiness` (0–1, default 1.0 via
+  events are longer, and length varies by which kind of special it is: the purpose-built
+  `sp_*` part-unlock trials run shorter than the ex-showdown specials
+  (`the_showdown`/`hc_showdown`/`gr_showdown` — see the `special` field above for the
+  showdown-to-special history). `forestiness` (0–1, default 1.0 via
   `event_forestiness`) sets how wooded the stage is — trees only spawn where the
   forest noise clears `1 - forestiness`, so each event can read as dense forest or
   open clearings (bushes ignore it). See [trees.md](trees.md). `straightness` (0–1,
   default 0.0 via `event_straightness`) biases generation toward gentler corners +
   longer straights for an easier, less twisty stage — **earlier, lower-tier events
   run higher** so the start of the game is easier, while the hardest events
-  (the upper-rung specials) sit at the bottom of the authored band. Authored values now span
+  (the ex-showdown specials) sit at the bottom of the authored band. Authored values now span
   ~0.5–1.0 (a 2026-08 rescale mapped every authored value `v -> 0.5 + 0.5 * v`),
   so even the twistiest shipped stage carries a moderate gentle-corner bias. It is not
   the only thing shaping the corner mix: `TrackGenerator.CORNER_WEIGHTS` keeps the
@@ -180,7 +183,7 @@ Each `RALLIES` entry:
   `event_cliffiness`) sets how cliffy the stage is — 0 = flat, 1 = the tallest
   cliffs/deepest drops (`cliff_max_height_m`). It only scales the height ceiling
   (the noise wavelength is global); **earlier, lower-tier events run tamer**,
-  coastal/mountain and the upper-rung specials crank it up. Written to `GameConfig.cliff_amount`
+  coastal/mountain and the ex-showdown specials crank it up. Written to `GameConfig.cliff_amount`
   by `RallySession`. Unlike `straightness`/`width`/`surface_mix`, it does **not**
   change the centerline or the flat lengthwise road profile, so it does **not** feed
   opponent target-time derivation. See [terrain.md](terrain.md) → *Cliffs & drops*.
@@ -318,10 +321,12 @@ Note the floor is judged at `max_potential_meta`, but a **fresh** starter has no
 upgrades installed, so its potential equals its stock figure — the "qualifies on
 upgrades it hasn't bought" trap only appears once a car is modified.
 
-`shitbox_cup` stays in wave 0 deliberately: it is the **anti-soft-lock cover**. Its
-open 50–90 band takes any car — including one drawn from a Mystery Box after a wreck —
-because any faster car can detune into it. Without an open-class rally revealed from
-the start, a player could hold a car with nowhere to race; that is what
+`shitbox_cup`'s pin is deliberately close enough to every starter's opening rally to be
+revealed from the very start (see [map-exploration.md](map-exploration.md) — the opening
+rally lights its circle before it's even completed): it is the **anti-soft-lock cover**.
+Its open 50–90 band takes any car — including one drawn from a Mystery Box after a
+wreck — because any faster car can detune into it. Without an open-class rally revealed
+from the start, a player could hold a car with nowhere to race; that is what
 `test_incomplete_enterable_query_respects_eligibility_and_lock` guards, and the failure
 is real rather than pedantic.
 
@@ -400,16 +405,19 @@ generator also uses it per-rival.
   `incomplete_rallies_enterable_by`, `RewardSystem.draw_car`) over a synthetic profile
   dict. Where `report_eligibility.sh` answers the STATIC question (which cars can enter
   which rallies), this answers the DYNAMIC one that static analysis can't: reveal gating
-  depends on progress (both `reveal_after` and the special ladder count completions), so you
-  only learn whether the drip-feed sustains a career by walking one. Reports, per rally
+  depends on progress (which rallies the player has already completed, which lights their
+  pins' circles on the geometric map — see [map-exploration.md](map-exploration.md)), so
+  you only learn whether the drip-feed sustains a career by walking one. Reports, per rally
   index, mean cars owned / **revealed**-unfinished / **enterable**-unfinished / stars, and
   the **soft-lock rate** (rallies left but no owned car in band) with the rallies most often
-  stranded. It also prints the authored reveal schedule (the `reveal_after` buckets and the
-  cumulative curve) up front, because that curve is the ceiling on how much choice the
-  player can ever have. The `revealed` vs `eligible` gap is the diagnostic that separates
-  the two gates governing breadth: reveal gating vs restriction bands. When the two columns
-  are equal, restrictions have stopped filtering anything and reveal is the only live gate.
-  Models
+  stranded. The `revealed` vs `eligible` gap is the diagnostic that separates the two gates
+  governing breadth: reveal gating vs restriction bands. When the two columns are equal,
+  restrictions have stopped filtering anything and reveal is the only live gate.
+  It also prints a `reveal_after` bucket table up front, but this is now **vestigial**:
+  no shipped rally authors a `reveal_after` field any more (the geometric reveal replaced
+  it), so `tools/sim_career.gd`'s `reveal.get("reveal_after", 0)` always reads the 0
+  default and every rally lands in the same bucket — worth knowing before reading that
+  section of the output, not worth relying on for reveal-pacing signal. Models
   stock cars only, so eligible counts are a lower bound and the soft-lock rate an upper
   bound. Report signal, not a gate — always exits 0. Design:
   `docs/superpowers/specs/2026-08-05-career-sim-design.md`.
@@ -482,10 +490,10 @@ generator also uses it per-rival.
 - `placement(field, player_combined_ms)` / `is_top3(...)` — the player's 1-based
   placement among the non-DNF field on combined time.
 - `completed_count(profile)` — count of every completed rally in the profile
-  (includes specials); the single progression metric feeding reward tier.
-- `_completed_count(profile)` — count of completed **non-special** rallies
-  roster-wide; the wave metric `reveal_after` compares against. Deliberately
-  global, not per-region (see `reveal_after` above).
+  (includes specials); the single progression metric feeding reward tier. The retired
+  `_completed_count` (a non-special-only count the old `reveal_after` gate compared
+  against) is **deleted** along with that gate — reveal no longer counts completions at
+  all, see `rally_revealed` below.
 - `stars_for_placement(placed)` — the per-rally scoring curve: a podium place
   (1st–`PODIUM_PLACES`) pays `STARS_FOR_PODIUM`, any other finish pays
   `STARS_FOR_FINISH`, not finishing pays 0. Flat within each tier — no 1st/2nd/3rd
@@ -504,21 +512,26 @@ generator also uses it per-rival.
   special hangs no readout box at all, just its trophy (see [menus.md](menus.md)) — one the
   player cannot work toward yet is not worth a menu. The map table is now the **only**
   surface that names it: the garage's permanent next-carrot line quoted the same id and has
-  been deleted. It replaced `next_locked_special_id`, which walked an authored ladder;
-  `completions_required` / `completions_needed` /
+  been deleted. It replaced the retired `next_locked_special_id`, which walked an
+  authored ladder of rungs; the retired `completions_required` / `completions_needed` /
   `engine_swap_completion_requirement` went with that ladder — see
-  [map-exploration.md](map-exploration.md).
+  [map-exploration.md](map-exploration.md) for the geometric replacement
+  (`distance_beyond_frontier`).
 - `engine_swaps_unlocked(profile)` — whether `ENGINE_SWAP_UNLOCK_RALLY`
-  (`sp_woodland_trial`, the lowest rung) is recorded completed — the engine-swap *capability*
-  gate (tokens themselves always drop; see `features/engine-swap.md`).
+  (`sp_woodland_trial`, the special the reachability walk in
+  [map-exploration.md](map-exploration.md) reaches earliest) is recorded completed — the
+  engine-swap *capability* gate (tokens themselves always drop; see
+  `features/engine-swap.md`).
 - `all_specials_completed(profile)` — true once every special on the roster is
   completed; a roster with no specials reads as completed. Replaces the old
   `RegionLibrary.all_showdowns_completed` as the credits/win-beat gate.
 - `rally_revealed(rally, profile)` — the single reveal predicate shared by the map
-  pins, the enterable query, and the reward-draw walk. It no longer branches on
-  `is_special` at all: EVERY rally reveals once
-  `_completed_count(profile) >= completions_required(rally)` (no region coupling
-  anywhere), which is what collapsed the old two-predicate shape into one.
+  pins, the enterable query, and the reward-draw walk. It is **geometric, not a
+  counter**: `rally_revealed` delegates to `position_revealed(map_pos_of(rally),
+  profile)`, which checks whether the pin falls inside any circle in `lit_sources(profile)`
+  — one circle per completed rally (plus the player's opening rally, lit from the start)
+  — so it no longer branches on `is_special` at all. See
+  [map-exploration.md](map-exploration.md) for the full rule.
 - `incomplete_rallies_enterable_by(car_meta, profile, floor_meta := {})` — the
   anti-soft-lock query the reward system uses (incomplete ∧ revealed ∧ eligible in-band).
   `floor_meta` (the owned car's max potential) judges the floor at max, as in `is_eligible`.
@@ -620,17 +633,24 @@ so beaten rallies stay farmable).
 each, the **starter floor**), eligibility (open-class + drive_mode +
 country + power-to-weight **band** filters — floor + ceiling + ceiling-only + floor-only,
 the floor judged at a supplied `floor_meta` (max potential), and `qualifying_detune`'s
-duck-under-the-cap / already-eligible / unfixable cases), the **reveal-order** gate
-(`reveal_after` on GLOBAL non-special completion — a completion in another region
-counts; the enterable query excludes unrevealed), the **engine-derived restrictions**
-(displacement / cylinders resolved through the fitted engine, so an engine swap flips
-eligibility; an unresolvable engine is rejected) and `doors_min`/`doors_max`, plus a
-guard that **every shipped rally has at least one eligible car**,
-a check that the roster's `map_pos` values are well formed, track-gen
+duck-under-the-cap / already-eligible / unfixable cases), the **geometric reveal** gate
+on a synthetic roster (`test_a_rally_inside_the_opening_rallys_circle_is_revealed_from_the_start`,
+`test_a_profile_with_no_starter_sees_a_wholly_dark_map`,
+`test_completing_a_rally_lights_the_map_around_that_rally`,
+`test_an_incomplete_rally_lights_nothing`,
+`test_a_rally_beyond_every_circle_stays_dark`,
+`test_distance_beyond_frontier_is_zero_once_revealed_and_shrinks_as_you_approach`,
+`test_spending_stars_cannot_close_a_reveal_gate` — see
+[map-exploration.md](map-exploration.md) → "Testing" for the fixture pattern), the
+**engine-derived restrictions** (displacement / cylinders resolved through the fitted
+engine, so an engine swap flips eligibility; an unresolvable engine is rejected) and
+`doors_min`/`doors_max`, plus a guard that **every shipped rally has at least one
+eligible car**, a check that the roster's `map_pos` values are well formed, track-gen
 determinism, target-time positivity + override, opponent-field
 shape/bounds/determinism + DNF semantics + names drawn uniquely from the pool,
-placement/top-3, progress count, and the special-event completion gate
-(`completions_required`/`completions_needed`/`rally_revealed`) + the enterable query.
+placement/top-3, progress count, and the specials-completion gate
+(`test_all_specials_completed_needs_every_rung`) + the enterable query
+(`test_incomplete_enterable_query_respects_eligibility_and_reveal`).
 There is **no** test asserting sandstorm sits only on `greece` events (the `RALLIES`
 header comment claims one exists; it does not) — the terrain/weather-per-zone rules are
 authoring conventions, checked by reading the map, not by the suite. The
@@ -638,7 +658,8 @@ start-line queue cars being eligible for the rally is asserted in
 `test_start_line.gd`. An integration smoke (write a rally seed into `Config.data`
 → `_generate_track`) lives in `test_smoke.gd`.
 
-Per `CLAUDE.md`, the ladder's authored numbers (`requires_completions` rungs, turn
-counts, `difficulty`, `map_pos`) are tunable content, not test-pinned contracts —
-tests cover the logic (the star curve's shape, the gate predicate, the single
-reveal rule), never the specific rung values.
+Per `CLAUDE.md`, the roster's authored numbers (`map_pos`, `reveal_radius`, turn
+counts, `difficulty`) are tunable content, not test-pinned contracts — tests cover the
+logic (the star curve's shape, the geometric reveal predicate, the closure guards), never
+the specific authored positions or radii. (The retired `requires_completions` rungs this
+line used to reference no longer exist — see the `special` field entry above.)

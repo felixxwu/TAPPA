@@ -7,21 +7,65 @@ extends RefCounted
 # Holds a back-reference to the HqController and reaches into it for state, node parenting,
 # widget helpers and callbacks — the same shape as HqOverlays / HQEnvironment.
 #
-# NOTE the split is deliberately FUNCTIONS-ONLY: the `_challenge_*` state still lives on
-# HqController, because ~88 references (64 in test_menu_flow.gd, ~24 in hq_overlays.gd) read
-# that state directly, against ~64 that call these functions. Moving the state would have
-# tripled the churn for ~3% more of the line count. See todo/hq-split.md.
+# The `_challenge_*` state that ONLY this class touches now lives here (the refresh generation
+# and the two per-period board caches). The rest stays on HqController because hq_overlays.gd
+# builds those widgets and test_menu_flow.gd reads them: a field with two owners is not this
+# class's private state. See todo/hq-split.md.
 
 var _hq: HqController
+
+# The autoload's SCRIPT, preloaded so its consts are reachable from a static context
+# (the ChallengeSession singleton instance may not exist when this class first loads).
+const _ChallengeSessionScript := preload("res://scripts/challenge_session.gd")
+
+# Bumped by every _refresh_challenge_overlay. The board queries that decorate the entry
+# screen (placing, cut-line time) are async, so each captures the generation it was
+# fired for and writes its answer ONLY if that's still current — the row may have been
+# rebuilt, or the kind switched, while the request was in flight.
+#
+# This replaced "does the label still read the exact string I left it at", which looked
+# equivalent and was not: _open_challenge_overlay runs UITheme.enforce right after
+# building the row, uppercasing every Label, so a mixed-case comparison never matched
+# and the answer was silently dropped. A counter can't be defeated by anything that
+# rewrites the text.
+var _challenge_refresh_generation := 0
+# Board answers already fetched during THIS visit to the online challenge screen, keyed
+# by period key (so a period rolling over mid-session re-asks by itself). Switching
+# Daily/Weekly/Monthly re-renders the whole screen, which used to re-issue both queries
+# every time and flash "Loading…" on rows the player had already seen answered.
+#
+# Cleared in _close_challenge_overlay — leaving the screen for the garage is the
+# invalidation point, so the numbers can't go stale behind the player's back for long,
+# and re-opening always asks again. Only OK answers are cached: a failure is a transient
+# condition (offline, board unreachable), not a value, so it retries on the next visit
+# to that tab instead of sticking for the rest of the session.
+var _challenge_cutoff_cache: Dictionary = {}
+var _challenge_placing_cache: Dictionary = {}
 
 func _init(hq: HqController) -> void:
 	_hq = hq
 
 
+# --- Input (runs BEFORE hq.gd's per-station dispatch) ------------------------
+
+# The challenge overlay is MODAL over the garage: it owns focus nav entirely via its own
+# MenuNav (attached in build_challenge_overlay), including left/right — the kind tabs are real
+# FOCUS_ALL controls, so native ui_left/ui_right focus-neighbour movement (menu_nav.gd) does
+# the job. So this handler drives nothing itself; it reports that the event is SPOKEN FOR, and
+# hq.gd's _unhandled_input (which runs BEFORE the overlay's own MenuNav node, an HQ descendant)
+# stops there so the GARAGE view below doesn't also react to the same key.
+#
+# _challenge_shown, NOT the layer's visibility: while world menus are on the challenge tree
+# sits on a WorldPanel and its layer is hidden, so reading the layer would let the GARAGE below
+# react to the same keypress the challenge screen is handling.
+func handle_input(_event: InputEvent) -> bool:
+	return _hq._challenge_shown
+
+
 # --- Rally Challenge overlay (Daily/Weekly/Monthly, spec §7) -----------------
 # A modal over the GARAGE: same shape the (now-removed) title-screen Account overlay had —
 # _challenge_layer built once in _ready (build_challenge_overlay), shown/hidden here
-# rather than folded into the View enum / _update_overlays switch.
+# rather than folded into the View enum / update_overlays switch.
 
 func _open_challenge_overlay() -> void:
 	var unix_time := int(Time.get_unix_time_from_system())
@@ -38,10 +82,10 @@ func _open_challenge_overlay() -> void:
 		ChallengeSession.discard_stale_run(unix_time)
 	# Through the FLAG, not the layer, and the garage is not hidden by hand here either: while world
 	# menus are on the tree lives on a WorldPanel and its layer is empty, so writing layer.visible
-	# would show nothing. _update_overlays owns which host is up for both screens — including the
+	# would show nothing. update_overlays owns which host is up for both screens — including the
 	# rule that the garage stands down while this modal is over it (hq.gd::_sync_panel).
 	_hq._challenge_shown = true
-	_hq._update_overlays()
+	_hq.update_overlays()
 	_refresh_challenge_overlay()
 	UITheme.enforce(_hq._challenge_layer)
 	# Land on the CURRENT kind's own tab, not just tree-order-first (which would always
@@ -54,11 +98,11 @@ func _close_challenge_overlay() -> void:
 		return
 	# Leaving for the garage is the cache's invalidation point: the board keeps moving,
 	# so the next visit asks again rather than showing numbers from the last one.
-	_hq._challenge_cutoff_cache.clear()
-	_hq._challenge_placing_cache.clear()
+	_challenge_cutoff_cache.clear()
+	_challenge_placing_cache.clear()
 	_hq._challenge_shown = false
-	# Brings the garage back up too, since _update_overlays gates it on _challenge_shown.
-	_hq._update_overlays()
+	# Brings the garage back up too, since update_overlays gates it on _challenge_shown.
+	_hq.update_overlays()
 
 
 # Switching kind resets any prior car-picker context and instantly re-derives the whole
@@ -83,38 +127,12 @@ func _select_challenge_kind(kind_str: String) -> void:
 # label, so it gets no CloudBusy cover — there is nothing to wait for and nothing the
 # player is prevented from doing — and a failure is simply not rendered.
 func _fetch_challenge_placing(period_key_str: String, stage_count: int, generation: int) -> void:
-	if period_key_str == "" or stage_count <= 0:
-		return
-	# Already answered this visit (a tab switch, not a fresh open) — render it straight
-	# away. No query, and no "Loading…" flash on a row the player has already seen.
-	if _hq._challenge_placing_cache.has(period_key_str):
-		_apply_challenge_placing(_hq._challenge_placing_cache[period_key_str])
-		return
-	if Cloud == null or Cloud.challenge_leaderboard == null:
-		return
-	# SIGNED OUT: don't ask. fetch_final_rank needs a token to find the player's own
-	# row, so it can only ever answer "not ok" here — but fetch_standings_at issues
-	# the board query BEFORE it discovers that, which would mean a real network round
+	# SIGNED OUT the helper does not ask, which matters here because fetch_final_rank needs a
+	# token to find the player's own row: it can only ever answer "not ok", yet
+	# fetch_standings_at issues the board query BEFORE discovering that — a real network round
 	# trip on every visit to the page, for an answer that cannot exist.
-	if not Cloud.is_signed_in():
-		return
-	# Say we're fetching rather than leaving the placing to pop in later. Only from
-	# here — past every "we are not going to ask" guard above — so a row that will
-	# never gain a placing doesn't advertise one.
-	_set_challenge_completed_text("Loading…")
-	var info := await Cloud.challenge_leaderboard.fetch_final_rank(period_key_str, stage_count)
-	# Cached BEFORE the staleness check: the answer is valid for its period whatever is
-	# on screen now, so a player who switched tabs mid-flight still gets it instantly on
-	# switching back, rather than paying for the same query twice.
-	if bool(info.get("ok", false)):
-		_hq._challenge_placing_cache[period_key_str] = info
-	# The player can switch tabs (or leave HQ entirely) while this is in flight, so
-	# check the row hasn't been rebuilt under us before writing to it — otherwise the
-	# Daily's placing lands on the Weekly's row. See _challenge_refresh_generation for
-	# why this is a counter and not "does the label still read what I left it at".
-	if not _hq.is_inside_tree() or generation != _hq._challenge_refresh_generation:
-		return
-	_apply_challenge_placing(info)
+	await _fetch_decoration(_challenge_placing_cache, period_key_str, stage_count, generation,
+		_set_challenge_completed_text, "fetch_final_rank", _apply_challenge_placing)
 
 
 # Render a placing answer onto the COMPLETED row (shared by the live and cached paths).
@@ -136,18 +154,25 @@ func _apply_challenge_placing(info: Dictionary) -> void:
 # uppercased here, because UITheme.enforce only runs on the open path and this row is
 # also rewritten later, asynchronously, long after that pass.
 func _set_challenge_win_text(tail: String) -> void:
-	if not is_instance_valid(_hq._challenge_win_label):
+	_set_row_text(_hq._challenge_win_label, _CHALLENGE_WIN_CONDITION, tail)
+
+
+# "<prefix>" or "<prefix> - <tail>", uppercased, on a label that may already be freed.
+# The shared body of the two rules above: rebuild from the PREFIX rather than appending to
+# what is on screen, and caps() here rather than relying on the one-shot UITheme.enforce.
+func _set_row_text(label: Label, prefix: String, tail: String) -> void:
+	if not is_instance_valid(label):
 		return
-	var text := _CHALLENGE_WIN_CONDITION
+	var text := prefix
 	if tail != "":
 		text += " - " + tail
-	_hq._challenge_win_label.text = UITheme.caps(text)
+	label.text = UITheme.caps(text)
 
 
 # Display name for one owned car dict from a ChallengeSession.classify_cars bucket
 # (whose entries always resolve to a real catalogue entry — classify skips the rest).
 func _challenge_car_name(car: Dictionary) -> String:
-	return EngineSwap.display_name(CarLibrary.by_id(String(car.get("model_id", ""))), car)
+	return EngineSwap.display_name(CarLibrary.for_owned(car), car)
 
 
 # Write the progress row's COMPLETED state as "COMPLETED" or "COMPLETED - <tail>".
@@ -156,12 +181,7 @@ func _challenge_car_name(car: Dictionary) -> String:
 # front of the placing, and uppercased here because this row is rewritten
 # asynchronously long after the one-shot UITheme.enforce pass.
 func _set_challenge_completed_text(tail: String) -> void:
-	if not is_instance_valid(_hq._challenge_progress_label):
-		return
-	var text := "COMPLETED"
-	if tail != "":
-		text += " - " + tail
-	_hq._challenge_progress_label.text = UITheme.caps(text)
+	_set_row_text(_hq._challenge_progress_label, "COMPLETED", tail)
 
 
 # Fill in the CURRENT time on the top-50% cut line, so the win condition reads
@@ -179,36 +199,57 @@ func _set_challenge_completed_text(tail: String) -> void:
 # time, so there's no CloudBusy cover and an unreachable board just leaves
 # "Top 50%" standing.
 func _fetch_challenge_cutoff(period_key_str: String, stage_count: int, generation: int) -> void:
+	# SIGNED OUT the helper does not ask. The board itself is world-readable (firestore.rules
+	# `allow read: if true`), so this query WOULD answer — but a signed-out player cannot post a
+	# checkpoint at all, so there is no cut for them to make, and asking anyway means a real
+	# network round trip on every visit to this page.
+	await _fetch_decoration(_challenge_cutoff_cache, period_key_str, stage_count, generation,
+		_set_challenge_win_text, "fetch_cutoff", _apply_challenge_cutoff)
+
+
+# ONE coroutine for BOTH board decorations (the completed row's placing, the win row's cut
+# line). They were the same 30 lines twice, differing only in which cache, which row-text
+# setter, which leaderboard method and which renderer — and every rule below is a rule about
+# decoration in general, not about either particular number, so a fix applied to one copy and
+# not the other was the standing hazard.
+#
+# `set_text` writes the row's transient state, `fetch_method` is called on
+# `Cloud.challenge_leaderboard` by NAME (rather than passed as a Callable) because it may only
+# be resolved AFTER the null guard below, and `apply` renders the answer.
+func _fetch_decoration(cache: Dictionary, period_key_str: String, stage_count: int,
+		generation: int, set_text: Callable, fetch_method: String, apply: Callable) -> void:
 	if period_key_str == "" or stage_count <= 0:
 		return
 	# Already answered this visit (a tab switch, not a fresh open) — render it straight
 	# away. No query, and no "Loading…" flash on a row the player has already seen.
-	if _hq._challenge_cutoff_cache.has(period_key_str):
-		_apply_challenge_cutoff(_hq._challenge_cutoff_cache[period_key_str])
+	if cache.has(period_key_str):
+		apply.call(cache[period_key_str])
 		return
 	if Cloud == null or Cloud.challenge_leaderboard == null:
 		return
-	# SIGNED OUT: don't ask. The board itself is world-readable (firestore.rules
-	# `allow read: if true`), so this query WOULD answer — but a signed-out player
-	# cannot post a checkpoint at all, so there is no cut for them to make, and asking
-	# anyway means a real network round trip on every visit to this page.
+	# SIGNED OUT: don't ask — see each caller for why its own query is pointless without a
+	# token, and note that neither is worth a network round trip on every visit to the page.
 	if not Cloud.is_signed_in():
 		return
-	# Say we're fetching rather than leaving a gap the time will pop into. Only from
-	# here — past every "we are not going to ask" guard above — so a signed-out player
-	# never sees a "Loading…" that resolves to nothing.
-	_set_challenge_win_text("Loading…")
-	var info := await Cloud.challenge_leaderboard.fetch_cutoff(period_key_str, stage_count)
-	# Cached BEFORE the staleness check — see the same note in _fetch_challenge_placing.
+	# Say we're fetching rather than leaving the answer to pop in later. Only from here —
+	# past every "we are not going to ask" guard above — so a row that will never gain a
+	# decoration doesn't advertise one.
+	set_text.call("Loading…")
+	var info: Dictionary = await Cloud.challenge_leaderboard.call(
+		fetch_method, period_key_str, stage_count)
+	# Cached BEFORE the staleness check: the answer is valid for its period whatever is
+	# on screen now, so a player who switched tabs mid-flight still gets it instantly on
+	# switching back, rather than paying for the same query twice.
 	if bool(info.get("ok", false)):
-		_hq._challenge_cutoff_cache[period_key_str] = info
-	# The player can switch tabs (or leave HQ) while this is in flight — don't land the
-	# Daily's cut line on the Weekly's row. Generation, not a text comparison: the row is
-	# UPPERCASED by UITheme.enforce after it is built (see _challenge_refresh_generation),
-	# so matching on the text silently dropped every answer.
-	if not _hq.is_inside_tree() or generation != _hq._challenge_refresh_generation:
+		cache[period_key_str] = info
+	# The player can switch tabs (or leave HQ entirely) while this is in flight, so check the
+	# row hasn't been rebuilt under us before writing to it — otherwise the Daily's answer
+	# lands on the Weekly's row. Generation, not a text comparison: the row is UPPERCASED by
+	# UITheme.enforce after it is built (see _challenge_refresh_generation), so matching on the
+	# text silently dropped every answer.
+	if not _hq.is_inside_tree() or generation != _challenge_refresh_generation:
 		return
-	_apply_challenge_cutoff(info)
+	apply.call(info)
 
 
 # Render a cut-line answer onto the win row (shared by the live and cached paths).
@@ -247,7 +288,12 @@ const _CHALLENGE_REWARD_TEXT := {
 	"weekly": "3 mystery boxes + up to 3 stars",
 	"monthly": "4 mystery boxes + up to 3 stars",
 }
-const _CHALLENGE_WIN_CONDITION := "Top 50%"
+# FORMATTED from the rule itself (ChallengeSession.CHALLENGE_TOP_FRACTION) rather than
+# carrying its own string, so the label can never drift from the placing rule that decides
+# the reward. A `static var` and not a `const` because a const expression cannot call
+# roundi().
+static var _CHALLENGE_WIN_CONDITION: String = "Top %d%%" % roundi(
+	_ChallengeSessionScript.CHALLENGE_TOP_FRACTION * 100.0)
 
 
 # Rebuild the whole entry screen from ChallengeSession/ChallengeLibrary's current state:
@@ -258,8 +304,8 @@ func _refresh_challenge_overlay() -> void:
 	if _hq._challenge_layer == null:
 		return
 	# Invalidate any board query still in flight for the PREVIOUS build of this screen.
-	_hq._challenge_refresh_generation += 1
-	var generation := _hq._challenge_refresh_generation
+	_challenge_refresh_generation += 1
+	var generation := _challenge_refresh_generation
 	_hq._challenge_title_label.text = "%s Challenge" % _hq._challenge_kind.capitalize()
 	# Highlight the current kind's tab — a font-colour swap (GOLD vs. the house default)
 	# rather than a toggled "pressed" look, since these buttons have no toggle_mode/press
@@ -311,7 +357,7 @@ func _refresh_challenge_overlay() -> void:
 		# actually picked instead, which also explains why it has disappeared from the
 		# garage/career pickers.
 		var locked := Save.get_car(int(resumable.get("car_instance_id", -1)))
-		var locked_entry := CarLibrary.by_id(String(locked.get("model_id", "")))
+		var locked_entry := CarLibrary.for_owned(locked)
 		_hq._challenge_eligible_label.text = EngineSwap.display_name(locked_entry, locked) \
 			if not locked_entry.is_empty() else "Your locked car"
 		_hq._challenge_eligible_label.add_theme_color_override("font_color", UITheme.GOLD)
@@ -438,7 +484,7 @@ func _enter_challenge_car_screen(kind_str: String) -> void:
 	_hq._rally_banner.text = "%s Challenge — needs <= %d hp/tonne" % [kind_str.capitalize(), ceiling]
 	_hq._view = _hq.View.CARPARK
 	_hq._detail_open = false
-	_hq._update_overlays()
+	_hq.update_overlays()
 	if _hq._eligible.is_empty():
 		_hq._show_empty_carpark("No eligible car for this challenge — none of your cars meet the ceiling.")
 		return
