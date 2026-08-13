@@ -16,13 +16,22 @@ const ROAD_GAP := 0.5
 const LATERAL := TRACK_WIDTH * 0.5 + ROAD_GAP
 
 
-func _params(lead := 0.0, threshold := 0.5) -> Dictionary:
+# The hill-or-drop probe: `PROBE` out from the road edge, so the far sample lands
+# TRACK_WIDTH/2 + PROBE from the centerline and the near one at 55% of that.
+const PROBE := 5.0
+const DROP_MIN := 1.0
+
+
+func _params(lead := 0.0, threshold := 0.5, min_run := 1) -> Dictionary:
 	return {
 		"section_length_m": PITCH,
 		"lead_m": lead,
 		"tarmac_threshold": threshold,
 		"track_width": TRACK_WIDTH,
 		"road_gap_m": ROAD_GAP,
+		"slope_probe_m": PROBE,
+		"drop_min_m": DROP_MIN,
+		"min_run_modules": min_run,
 	}
 
 
@@ -53,6 +62,30 @@ func _right_bend_curve() -> Curve2D:
 	for x in range(4, 41, 4):
 		c.add_point(Vector2(BEND_CENTRE.x + float(x), BEND_CENTRE.y + BEND_R))
 	return c
+
+
+# The bend as TWO pieces, so the sharp corner's span ends where the arc does (the next
+# piece's entry pose) instead of running on down the trailing straight. That keeps the
+# planned run inside the arc, where the radial ground fields below are exact.
+func _bend_pieces() -> Array:
+	var arc_end := BEND_CENTRE + Vector2(0.0, BEND_R)   # (16, 56): heading +X from here
+	return [
+		_piece("Square"),
+		{"corner": "Straight", "flip": false, "straight": 0.0,
+			"entry_pos": arc_end, "entry_heading": Vector2(1.0, 0.0)},
+	]
+
+
+# A ground field for the bend: flat at road level out to `BEND_R + 5` from the corner's
+# centre, then stepping to `outboard` beyond it. The step sits OUTSIDE the barrier line
+# (BEND_R + ~4) but inside both probes (BEND_R + 6.25 and + 8.5), so the barrier stands
+# on level ground and only the probes read the change — a drop with `outboard` negative,
+# a bank with it positive. `only_beyond_z` restricts the change to part of the arc.
+func _radial_ground(outboard: float, only_beyond_z := -INF) -> Callable:
+	return func(p: Vector2) -> float:
+		if p.distance_to(BEND_CENTRE) <= BEND_R + 5.0:
+			return 0.0
+		return outboard if p.y > only_beyond_z else 0.0
 
 
 # A straight curve up +Z.
@@ -202,3 +235,128 @@ func test_plan_is_deterministic() -> void:
 	for i in range(a.size()):
 		assert_eq(a[i]["pos"], b[i]["pos"], "module %d lands in the same place" % i)
 		assert_eq(a[i]["side"], b[i]["side"], "module %d picks the same edge" % i)
+
+
+# --- The terrain rule: barriers guard drops, not banks -------------------------
+
+func test_a_drop_on_the_outside_gets_a_barrier() -> void:
+	var plan := BarrierLayout.plan(_right_bend_curve(), _bend_pieces(), _params(),
+		Callable(), _radial_ground(-8.0))
+	assert_gt(plan.size(), 2, "a corner with the land falling away outboard is barriered")
+
+
+func test_a_bank_on_the_outside_gets_no_barrier() -> void:
+	# The hillside already stops the car, and a guardrail buried in a slope looks wrong.
+	var plan := BarrierLayout.plan(_right_bend_curve(), _bend_pieces(), _params(),
+		Callable(), _radial_ground(8.0))
+	assert_eq(plan.size(), 0, "a corner cut into a bank gets nothing")
+
+
+func test_flat_ground_gets_no_barrier() -> void:
+	# "Only if there is a drop" — level verge is not a drop, so it goes unguarded.
+	var flat := func(_p: Vector2) -> float: return 0.0
+	var plan := BarrierLayout.plan(_right_bend_curve(), _bend_pieces(), _params(),
+		Callable(), flat)
+	assert_eq(plan.size(), 0, "flat ground either side gets nothing")
+
+
+func test_only_the_falling_stretch_of_a_corner_is_barriered() -> void:
+	# Half the corner falling away, half level: the barrier covers the falling half only,
+	# rather than the whole corner or none of it.
+	var pieces := _bend_pieces()
+	var full := BarrierLayout.plan(_right_bend_curve(), pieces, _params(),
+		Callable(), _radial_ground(-8.0))
+	var partial := BarrierLayout.plan(_right_bend_curve(), pieces, _params(),
+		Callable(), _radial_ground(-8.0, 48.0))
+	assert_gt(partial.size(), 0, "the falling stretch is barriered")
+	assert_lt(partial.size(), full.size(), "the level stretch is not")
+
+
+func test_a_stretch_shorter_than_the_minimum_is_dropped() -> void:
+	# A one- or two-module stub reads as debris on the verge, so it is not built at all.
+	var pieces := _bend_pieces()
+	var ground := _radial_ground(-8.0, 54.0)   # only the last sliver of the arc falls
+	var kept := BarrierLayout.plan(_right_bend_curve(), pieces, _params(0.0, 0.5, 1),
+		Callable(), ground)
+	assert_gt(kept.size(), 0, "setup: the falling sliver does yield modules")
+	# Raise the minimum past everything that survived: whatever stretches those modules
+	# formed, each is now too short, so the whole lot goes.
+	var filtered := BarrierLayout.plan(_right_bend_curve(), pieces,
+		_params(0.0, 0.5, kept.size() + 1), Callable(), ground)
+	assert_eq(filtered.size(), 0, "a stub shorter than the minimum is not built")
+
+
+func test_no_ground_sampler_keeps_every_module() -> void:
+	# A caller with no terrain to read (the render harness, a bare unit test) must still
+	# get a full run rather than silently nothing.
+	var pieces := _bend_pieces()
+	var blind := BarrierLayout.plan(_right_bend_curve(), pieces, _params())
+	var seeing := BarrierLayout.plan(_right_bend_curve(), pieces, _params(),
+		Callable(), _radial_ground(-8.0))
+	assert_gt(blind.size(), 0, "no sampler still plans a run")
+	assert_eq(blind.size(), seeing.size(), "…the same run a fully-falling corner gets")
+
+
+func test_each_separated_stretch_is_its_own_run() -> void:
+	# Runs are the batching unit, so two stretches split by a level middle must not share
+	# a run index (they would end up in one MultiMesh anchored between them).
+	var ground := func(p: Vector2) -> float:
+		if p.distance_to(BEND_CENTRE) <= BEND_R + 5.0:
+			return 0.0
+		# Falls away at both ends of the arc, level across its middle.
+		return 0.0 if p.y > 46.0 and p.y < 52.0 else -8.0
+	var plan := BarrierLayout.plan(_right_bend_curve(), _bend_pieces(),
+		_params(0.0, 0.5, 1), Callable(), ground)
+	var runs := {}
+	for entry in plan:
+		runs[entry["run"]] = true
+	assert_gt(runs.size(), 1, "the split corner yields more than one run")
+
+
+# --- Slope: spacing follows the sloping ground, not its shadow -----------------
+
+# Ground for the STRAIGHT curve: climbs `grade` along the run (+Z) and falls away 8 m on
+# the -X side, which is the outside the planner picks for a straight. The fall starts
+# outboard of the barrier but inside both probes, and does not vary along the run, so the
+# whole straight is one unbroken barriered stretch on a constant gradient.
+func _straight_ramp(grade: float) -> Callable:
+	return func(p: Vector2) -> float:
+		var climb := grade * p.y
+		return climb - 8.0 if p.x < -6.0 else climb
+
+
+func _spacings_along_the_barrier(plan: Array) -> Array:
+	var out: Array = []
+	for i in range(1, plan.size()):
+		if int(plan[i]["run"]) != int(plan[i - 1]["run"]):
+			continue   # a joint between separate runs is not a module joint
+		out.append(_barrier_point(plan[i]).distance_to(_barrier_point(plan[i - 1])))
+	return out
+
+
+func test_a_climb_tightens_the_horizontal_spacing() -> void:
+	# A module is a rigid PITCH-long bar: laid on a climb it covers only
+	# PITCH * cos(slope) of GROUND, so centres have to be spaced along the sloping
+	# ground. Space them horizontally instead and every joint opens a gap that grows with
+	# the gradient. So on a ramp the horizontal spacing must come out short of the pitch,
+	# by exactly the cosine.
+	var grade := 0.30
+	var plan := BarrierLayout.plan(_straight_curve(), [_piece("Hairpin", 5.0)], _params(),
+		Callable(), _straight_ramp(grade))
+	var spacings := _spacings_along_the_barrier(plan)
+	assert_gt(spacings.size(), 2, "the climb is barriered as one run")
+	var expected: float = PITCH / sqrt(1.0 + grade * grade)
+	for i in range(spacings.size()):
+		assert_almost_eq(float(spacings[i]), expected, 0.05,
+			"joint %d is a pitch apart ALONG THE GROUND" % i)
+
+
+func test_level_ground_still_spaces_by_the_pitch() -> void:
+	# The 3D spacing must collapse back to the plain pitch with no gradient, or every
+	# flat run silently changes length.
+	var plan := BarrierLayout.plan(_straight_curve(), [_piece("Hairpin", 5.0)], _params(),
+		Callable(), _straight_ramp(0.0))
+	var spacings := _spacings_along_the_barrier(plan)
+	assert_gt(spacings.size(), 2, "the run is barriered")
+	for i in range(spacings.size()):
+		assert_almost_eq(float(spacings[i]), PITCH, 0.02, "joint %d is one pitch along" % i)

@@ -2087,6 +2087,24 @@ func has_nitrous() -> bool:
 ## How far, in metres, each module is sunk into the ground. Small: enough that a rigid
 ## module on slightly uneven verge buries its foot rather than floating above it.
 @export_range(0.0, 0.5) var barrier_sink_m := 0.06
+## How far OUT FROM THE ROAD EDGE, in metres, the hill-or-drop probe reads the ground.
+## A barrier only goes up where the land falls away; where the corner is cut into a bank
+## the hillside already stops the car. This MUST clear the road's flatten band
+## (`track_transition_cells`, 3 m by default) — inside it the carve pass has blended the
+## ground to road height, so every corner would read as flat.
+@export_range(1.0, 30.0) var barrier_slope_probe_m := 5.0
+## How far, in metres, the ground outboard of the barrier must sit BELOW the road before
+## the stretch counts as a drop worth guarding. Also the flat-ground cutoff: level verge
+## gets no barrier.
+@export_range(0.0, 20.0) var barrier_drop_min_m := 1.0
+## How far, in metres, the ground outboard of the barrier may rise ABOVE the road before
+## the stretch counts as banked (and so gets no barrier). Small but non-zero: terrain
+## noise puts a verge a few cm above road level even where the land genuinely falls away
+## further out, and a zero tolerance would veto those on a coin flip.
+@export_range(0.0, 5.0) var barrier_hill_tolerance_m := 0.15
+## Shortest barrier worth building, in modules. A one- or two-module stub reads as debris
+## on the verge rather than as a barrier, so stretches shorter than this are dropped.
+@export_range(1, 20) var barrier_min_run_modules := 3
 
 @export_group("Finish Arch")
 # The inflatable rally gates straddling the road (features/finish-arch.md): a
@@ -2570,6 +2588,10 @@ func barrier_render_params() -> Dictionary:
 		"lead_m": barrier_lead_m,
 		"tarmac_threshold": barrier_tarmac_threshold,
 		"sink_m": barrier_sink_m,
+		"slope_probe_m": barrier_slope_probe_m,
+		"drop_min_m": barrier_drop_min_m,
+		"hill_tolerance_m": barrier_hill_tolerance_m,
+		"min_run_modules": barrier_min_run_modules,
 		"track_width": track_width,
 		"render_distance_m": tree_render_distance_m,
 		"render_fade_m": tree_render_fade_m,

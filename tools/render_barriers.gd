@@ -69,6 +69,22 @@ func _render_all() -> void:
 		_look_from(Vector3(10.4, 2.3, -5.0), Vector3(14.5, 0.9, 7.5))
 		corner_shots.append(await _capture("%s/%s.png" % [OUT_DIR, case[0]]))
 	_save_sheet(corner_shots, "%s/sheet_corner.png" % OUT_DIR)
+
+	# Sloped ground: the same corner climbing a hill, once with the land falling away
+	# outboard (barrier goes up, pitched to the slope) and once cut into a bank (no
+	# barrier at all — the hillside already stops the car).
+	var slope_shots: Array[Image] = []
+	var slope_cases := [
+		["corner_slope_drop", -1.0, "CLIMB + DROP"],
+		["corner_slope_bank", 1.0, "CLIMB + BANK"],
+	]
+	for case in slope_cases:
+		var ground := _slope_ground(float(case[1]))
+		_lay_terrain_corner(ground, String(case[2]))
+		_look_from(Vector3(10.4, _ground_at(ground, Vector2(10.4, -5.0)) + 2.4, -5.0),
+			Vector3(14.5, _ground_at(ground, Vector2(14.5, 7.5)) + 1.0, 7.5))
+		slope_shots.append(await _capture("%s/%s.png" % [OUT_DIR, case[0]]))
+	_save_sheet(slope_shots, "%s/sheet_slope.png" % OUT_DIR)
 	quit()
 
 
@@ -81,8 +97,9 @@ func _barrier_params() -> Dictionary:
 		return cfg.barrier_render_params()
 	print("NOTE: could not load ", CONFIG_PATH, " — using fallback barrier params")
 	return {
-		"section_length_m": SECTION_LEN, "road_gap_m": 0.7, "lead_m": 5.0,
+		"section_length_m": SECTION_LEN, "road_gap_m": 0.4, "lead_m": 5.0,
 		"tarmac_threshold": 0.5, "sink_m": 0.06, "track_width": 7.0,
+		"slope_probe_m": 5.0, "drop_min_m": 1.0, "min_run_modules": 3,
 		"render_distance_m": 0.0, "render_fade_m": 0.0,
 	}
 
@@ -210,21 +227,19 @@ func _lay_straight(style: int) -> void:
 # picks a side or a style by hand — that is the point of the shot.
 func _lay_planned_corner(tarmac_at: Callable) -> void:
 	_clear_run()
-	var curve := Curve2D.new()
-	var steps := 24
-	for i in range(steps + 1):
-		var a: float = lerpf(-0.55, 1.55, float(i) / float(steps))
-		curve.add_point(Vector2(cos(a), sin(a)) * CORNER_RADIUS)
+	var curve := _corner_curve()
 	var start := curve.sample_baked(0.0)
 	var pieces := [{
 		"corner": "Hairpin", "flip": false, "straight": 0.0,
 		"entry_pos": start,
 		"entry_heading": (curve.sample_baked(1.0) - start).normalized(),
 	}]
+	# No ground sampler: the harness stage is flat, so the planner keeps every module
+	# (there is no drop to find) and the builder lays the run level.
 	var layout := BarrierLayout.plan(curve, pieces, _params, tarmac_at)
 	var field := BarrierField.new()
 	_run.add_child(field)
-	field.build(layout, null, _params)   # flat ground, so no terrain sampling needed
+	field.build(layout, _params)
 
 	_run.add_child(_road_ring(Vector2.ZERO, CORNER_RADIUS - _track_width * 0.5))
 	var car_a := 0.15
@@ -238,8 +253,102 @@ func _lay_planned_corner(tarmac_at: Callable) -> void:
 	_run.add_child(_nameplate(label, Vector3(14.0, 4.3, 5.0)))
 
 
-# A flat tarmac annulus under the corner run, so the barrier reads as roadside.
-func _road_ring(centre: Vector2, inner_r: float) -> MeshInstance3D:
+# A synthetic height field for the slope shots: the road CLIMBS along the run (+Z), and
+# beyond the barrier line the land either falls away (outboard_sign = -1) or banks up
+# (+1). The fall/rise starts outside the barrier so the barrier itself stands on the
+# road's own level — exactly the situation the planner's probes have to read.
+func _slope_ground(outboard_sign: float) -> Callable:
+	return func(p: Vector2) -> float:
+		# Climb by ANGLE around the corner, not by world Z: a hillside climbing along a
+		# world axis also lifts the outboard probes, which cancels the drop and makes the
+		# demo lie about the rule. Angle-based, the climb is radially constant, so the
+		# outboard term below is the only thing the probes can read.
+		var climb: float = 1.6 * (atan2(p.y, p.x) + 0.55)
+		# The fall (or bank) starts just outside the barrier line, so the barrier itself
+		# stands on the road's own level and only the probes see the change. Deep enough
+		# to clear barrier_drop_min_m by a margin — a demo sitting on the threshold tells
+		# you nothing about which way the rule went.
+		var out: float = clampf((p.length() - 16.5) / 5.0, 0.0, 1.0)
+		return climb + outboard_sign * 6.0 * out * out
+
+
+func _ground_at(ground: Callable, p: Vector2) -> float:
+	return float(ground.call(p))
+
+
+# The REAL pipeline over a height field: same planner and builder as the flat corner
+# shots, but with a ground sampler, so the shots show the terrain rules — modules
+# pitched onto the slope, and nothing built where the corner is banked.
+func _lay_terrain_corner(ground: Callable, label: String) -> void:
+	_clear_run()
+	var curve := _corner_curve()
+	var start := curve.sample_baked(0.0)
+	var pieces := [{
+		"corner": "Hairpin", "flip": false, "straight": 0.0,
+		"entry_pos": start,
+		"entry_heading": (curve.sample_baked(1.0) - start).normalized(),
+	}]
+	var gravel := func(_p: Vector2) -> float: return 0.0
+	var layout := BarrierLayout.plan(curve, pieces, _params, gravel, ground)
+	var field := BarrierField.new()
+	_run.add_child(field)
+	field.build(layout, _params, ground)
+
+	_run.add_child(_terrain_mesh(ground))
+	_run.add_child(_road_ring(Vector2.ZERO, CORNER_RADIUS - _track_width * 0.5, ground))
+	var car_a := 0.15
+	var car_pos := Vector2(cos(car_a), sin(car_a)) * CORNER_RADIUS
+	_run.add_child(_car_proxy(Vector3(car_pos.x, _ground_at(ground, car_pos), car_pos.y), -car_a))
+	var built := "%d MODULES" % layout.size() if layout.size() > 0 else "NO BARRIER"
+	_run.add_child(_nameplate("%s — %s" % [label, built],
+		Vector3(12.0, _ground_at(ground, Vector2(12.0, 4.0)) + 4.6, 4.0), 0.0045))
+
+
+# The test corner: a road centerline arcing through ~115 degrees at CORNER_RADIUS.
+func _corner_curve() -> Curve2D:
+	var curve := Curve2D.new()
+	var steps := 24
+	for i in range(steps + 1):
+		var a: float = lerpf(-0.55, 1.55, float(i) / float(steps))
+		curve.add_point(Vector2(cos(a), sin(a)) * CORNER_RADIUS)
+	return curve
+
+
+# A grass grid over the corner, following `ground` — the visible stand-in for terrain.
+func _terrain_mesh(ground: Callable) -> MeshInstance3D:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var step := 1.5
+	var x0 := -8.0
+	var z0 := -14.0
+	var nx := int((30.0 - x0) / step)
+	var nz := int((22.0 - z0) / step)
+	for i in range(nx):
+		for j in range(nz):
+			var a := Vector2(x0 + i * step, z0 + j * step)
+			var b := a + Vector2(step, 0.0)
+			var c := a + Vector2(step, step)
+			var d := a + Vector2(0.0, step)
+			var va := Vector3(a.x, _ground_at(ground, a), a.y)
+			var vb := Vector3(b.x, _ground_at(ground, b), b.y)
+			var vc := Vector3(c.x, _ground_at(ground, c), c.y)
+			var vd := Vector3(d.x, _ground_at(ground, d), d.y)
+			for tri in [[va, vc, vb], [va, vd, vc]]:
+				var nrm: Vector3 = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalized()
+				for v: Vector3 in tri:
+					st.set_normal(nrm)
+					st.add_vertex(v)
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var mat := StandardMaterial3D.new()   # lit, so the slope actually reads as a slope
+	mat.albedo_color = Color(0.44, 0.47, 0.30)
+	mi.material_override = mat
+	return mi
+
+
+# A tarmac annulus under the corner run, so the barrier reads as roadside. Follows
+# `ground` when one is given, otherwise sits flat.
+func _road_ring(centre: Vector2, inner_r: float, ground := Callable()) -> MeshInstance3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var steps := 72
@@ -252,8 +361,10 @@ func _road_ring(centre: Vector2, inner_r: float) -> MeshInstance3D:
 			Vector2(cos(a0), sin(a0)) * (inner_r + _track_width),
 		]
 		var v := []
-		for p in pts:
-			v.append(Vector3(centre.x + p.x, 0.02, centre.y + p.y))
+		for p: Vector2 in pts:
+			var w: Vector2 = centre + p
+			var h := 0.0 if not ground.is_valid() else _ground_at(ground, w)
+			v.append(Vector3(w.x, h + 0.02, w.y))
 		for tri in [[0, 2, 1], [0, 3, 2], [0, 1, 2], [0, 2, 3]]:
 			for idx in tri:
 				st.set_normal(Vector3.UP)
