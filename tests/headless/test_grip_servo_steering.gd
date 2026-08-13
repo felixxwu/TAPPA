@@ -12,6 +12,16 @@ extends "res://tests/headless/sim_test.gd"
 # car.gd carries no class_name, so reach the pure statics through the script itself.
 const CarScript := preload("res://scripts/car.gd")
 
+# The simulated climb (see _climb_and_read): a speed the car is HELD at, and the world
+# longitudinal force imposed on it as a share of its front axle's measured available grip.
+#
+# The speed is held rather than accelerated up to, and that is the whole point — see
+# _climb_and_read. 8 m/s is chosen so first gear at full throttle still overdrives the wheels,
+# which is what keeps the front axle saturated (measured: `long_used` 1.83 at 8 m/s, but only
+# 0.68 at 12 m/s, where gear 1 is at redline and can no longer spin them).
+const CLIMB_SPEED_MPS := 8.0
+const GRADE_FRACTION_OF_GRIP := 0.9
+
 
 func before_each() -> void:
 	await setup_settled_car()
@@ -538,38 +548,114 @@ func test_the_lateral_share_ignores_the_sign_of_the_spend() -> void:
 		CarScript.lateral_grip_share(1.0, 0.9), 1e-6, "spend competes by magnitude, not sign")
 
 
+# The longitudinal force the front (steering) axle can currently hold: Σ μN over its
+# contacts. Read from the live contacts rather than computed from the config, so it accounts
+# for the real normal load — which is the whole point below.
+#
+# Discriminates the axle by `use_as_steering`, NOT by `use_as_traction` the way `_front_usage`
+# does: this test runs in FWD, where the front wheels ARE the traction wheels, so the
+# traction flag would select the wrong axle (or none).
+func _front_axle_grip_n() -> float:
+	var total := 0.0
+	for c in _car.drivetrain._contacts:
+		if not c.wheel.use_as_steering or c.n_force <= 0.0:
+			continue
+		total += c.n_force * c.mu
+	return total
+
+
+# One graded-climb run holding `steer`: reports the front axle's longitudinal spend, the
+# angle the servo held, the yaw it produced and the speed the car actually reached.
+#
+# Resets to the cached settled pose first (not `_reset()`, which drops from the spawn
+# clearance and needs ~120 frames to settle) so the two mirrored runs below start identical.
+func _climb_and_read(steer: String) -> Dictionary:
+	_car.reset_to(_settled_xform)
+	await _wait_physics(RESTORE_FRAMES)
+	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
+	_car.drivetrain.engine.gear = 1
+	# THE CAR IS HELD AT SPEED, and the grade is derived from the axle's own grip. Both
+	# replace an approach that could not work, so both are worth spelling out.
+	#
+	# It used to start from REST and accelerate against `mass * 9.8 * 0.34` — "~20 degrees of
+	# climb". A front-driven car cannot climb that: its front axle holds
+	# μ · weight_front · load ≈ 0.5 · 0.5 · mg = 0.25 mg against 0.34 mg of grade, so the
+	# tires lose and it sits there spinning them. It only ever passed because the warm restore
+	# happened to leave the car carrying ~40% MORE wheel load than its own weight (measured:
+	# nf/mg = 1.404 when passing, 1.008 when failing), lifting available grip to 0.351 mg — a
+	# 3% margin. The test was riding on an incidental suspension state.
+	#
+	# Deriving the grade from measured grip fixed the arithmetic but not the test, because the
+	# real limit is not the grade at all: a standing start at full throttle in first gear is
+	# WHEELSPIN-limited. The tire sits far past peak slip, in the sliding regime, so usable
+	# thrust is well below μN — and the steering demand takes lateral budget on top. Getting a
+	# saturated-axle FWD car moving from rest is marginal however gentle the slope.
+	#
+	# So the manoeuvre no longer asks it to. `linear_velocity` is re-asserted every tick along
+	# the car's CURRENT forward (the `_hold_and_read` idiom, so the held speed follows the yaw
+	# instead of becoming a sideslip), which takes traction out of the question entirely: the
+	# car is definitionally under way, and the yaw the assertions read is a well-conditioned
+	# lateral-force measurement rather than a race between thrust and gravity. Measured margin
+	# went from ~1e-10 to ±0.43 rad/s. The world longitudinal force still saturates the axle
+	# (`spent` ~1.8), which is the trap being tested — the pedal cannot bound a world force,
+	# and the servo must keep its authority anyway.
+	var grade_force := _front_axle_grip_n() * GRADE_FRACTION_OF_GRIP
+	Input.action_press("accelerate")
+	Input.action_press(steer)
+	for i in 45:
+		_car.constant_force = _car.global_transform.basis.z * grade_force
+		_car.linear_velocity = -_car.global_transform.basis.z * CLIMB_SPEED_MPS
+		await get_tree().physics_frame
+	var out := {
+		"spent": absf(float(_car.drivetrain.front_axle_state(Config.data)["long_used"])),
+		"angle": _car.steering,
+		"yaw": _car.angular_velocity.y,
+		"speed": _car.linear_velocity.length(),
+	}
+	Input.action_release(steer)
+	Input.action_release("accelerate")
+	_car.constant_force = Vector3.ZERO
+	return out
+
+
 func test_a_climbing_front_driven_car_can_still_be_steered() -> void:
 	# The same trap end-to-end, through the real servo and tire model. A constant force
 	# opposing travel stands in for gravity down a slope (the fixture is flat), which is what
 	# makes this specifically a WORLD-imposed longitudinal spend: the pedal arbitration cannot
 	# bound it, so the old reservation reading zeroed the steering authority.
+	#
+	# RUN MIRRORED. This used to be a single left-hand run whose last assertion was a bare
+	# `yaw > 0`, and it flaked: the car was usually not climbing at all (see _climb_and_read),
+	# and a stationary car makes no lateral force — normalized slip is zero at zero ground
+	# speed — so the yaw read ~1e-10 and the sign check failed on noise, while the spend and
+	# angle assertions passed and said nothing was wrong.
+	#
+	# Holding the speed is what gives the yaw a real magnitude to be signed. Mirroring then
+	# replaces "yaw is positive" with "yaw follows the side the driver asked for", which is the
+	# claim actually being made and, unlike a single sign check, cannot be satisfied by a car
+	# that merely drifts one way. The speed precondition is kept as a rule-out guard: the speed
+	# is pinned, so it should be trivially met, and if it ever is not then something stopped the
+	# car outright and every reading below is meaningless — better to say so than to report a
+	# steering bug.
 	var cfg: GameConfig = Config.data
-	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
-	_car.drivetrain.engine.gear = 1
-	# ~20 degrees of climb: m·g·sin(theta), opposing the direction of travel.
-	var grade_force := _car.mass * 9.8 * 0.34
-	Input.action_press("accelerate")
-	Input.action_press("steer_left")
-	for i in 60:
-		_car.constant_force = _car.global_transform.basis.z * grade_force
-		await get_tree().physics_frame
-	var state: Dictionary = _car.drivetrain.front_axle_state(Config.data)
-	var spent := absf(float(state["long_used"]))
-	var angle := _car.steering
-	var yaw_rate := _car.angular_velocity.y
-	Input.action_release("steer_left")
-	Input.action_release("accelerate")
-	_car.constant_force = Vector3.ZERO
-	# Precondition: the climb really has the front axle spending most of its grip, or this
-	# proves nothing about the trap.
-	assert_gt(spent, 0.9,
+	var left := await _climb_and_read("steer_left")
+	var right := await _climb_and_read("steer_right")
+	# Preconditions: the climb really has the front axle spending most of its grip, and the
+	# car really is climbing rather than sitting still, or this proves nothing about the trap.
+	assert_gt(float(left["spent"]), 0.9,
 		"precondition: the graded climb has the driven front axle at/past peak longitudinally (%.2f)"
-			% spent)
-	assert_gt(angle, cfg.steer_limit * 0.15,
-		"a climbing FWD car still holds a real steering angle (%.3f rad)" % angle)
-	# And the angle is doing something: steering left yaws the car left (+Y in Godot).
-	assert_gt(yaw_rate, 0.0,
-		"the retained angle actually rotates the car toward the demanded side (%.3f rad/s)" % yaw_rate)
+			% left["spent"])
+	assert_gt(float(left["speed"]), CLIMB_SPEED_MPS * 0.5,
+		"precondition: the car is actually under way, so its tires can make a lateral force at all (%.3f m/s)"
+			% left["speed"])
+	assert_gt(float(left["angle"]), cfg.steer_limit * 0.15,
+		"a climbing FWD car still holds a real steering angle (%.3f rad)" % left["angle"])
+	# And the angle is doing something: the yaw follows the side the driver asked for
+	# (+Y is left in Godot), both ways round.
+	assert_gt(float(left["yaw"]), 0.0,
+		"steering left rotates the car toward the demanded side (%.3f rad/s)" % left["yaw"])
+	assert_lt(float(right["yaw"]), 0.0,
+		"steering right rotates it the other way (%.3f rad/s)" % right["yaw"])
 
 
 # --- The front-axle reading the servo closes its loop on -----------------------
