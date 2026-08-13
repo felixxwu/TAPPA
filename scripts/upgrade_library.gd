@@ -126,18 +126,26 @@ const UPGRADES: Array[Dictionary] = [
 	},
 	{
 		# The `gearbox` slot's one part: a dog-ring sequential shift in place of the car's
-		# H-pattern. It multiplies whatever shift_time the car's CURRENT transmission
-		# authors (EngineLibrary owns gear_ratios / final_drive / shift_time, and an engine
-		# swap carries its whole gearbox with it — see features/engine-swap.md), so the kit
-		# is worth the same PROPORTION on a slow old manual as on a quick twin-clutch rather
-		# than pinning every car to one number.
+		# H-pattern. It SETS shift_time outright rather than scaling the car's own — the kit
+		# IS a specific piece of hardware, so it shifts at its own rate whatever it replaces,
+		# and one authored number is what a designer tunes.
+		#
+		# NOTE the consequence, which is deliberate: this is an absolute figure, not a
+		# guaranteed improvement. shift_time is per-ENGINE (EngineLibrary owns gear_ratios /
+		# final_drive / shift_time, and an engine swap carries its whole gearbox with it — see
+		# features/engine-swap.md), and any engine whose own gearbox is already quicker than
+		# this gets SLOWER by fitting the kit. On the shipped roster that is the 7-speed
+		# S tronic at 0.08 s; every other transmission sits at 0.22-0.35 s and gains. Fitting
+		# is the player's choice and the part is never auto-fitted, so a car that would lose
+		# out simply leaves it on Stock — but if that ever wants to be impossible, the fix is
+		# a "take the better of the two" op here, NOT a per-engine table of exceptions.
 		#
 		# menu_label "Sequential" — the slot label already says "Gearbox", so the full name
 		# would read "Gearbox   Stock  Sequential Gearbox".
 		"id": "sequential_gearbox", "name": "Sequential Gearbox", "menu_label": "Sequential",
 		"slot": "gearbox", "unlocked_by_rally": "hc_showdown",
 		"consumable": false,
-		"effect": {"shift_time_mult": 0.3},
+		"effect": {"shift_time_set": 0.1},
 	},
 	{
 		"id": "aero_kit", "name": "Aero Kit", "slot": "aero",
@@ -363,9 +371,11 @@ static func fitted_nitrous_id(owned_car: Dictionary) -> String:
 # and effective_meta() (power-to-weight inputs) can't silently drift — adding an
 # effect means adding one row here. Each row:
 #   field    — the target GameConfig / meta field ("" for induction / flag-only)
-#   op       — "mult" (field *= val), "add" (field += val), "install_induction"
-#              (special: enable one flag, clear the rival's, splat the sub-dict), or
-#              "flag" (gates a tuning slider, no config effect)
+#   op       — "mult" (field *= val), "add" (field += val), "set" (field = val — an
+#              ABSOLUTE figure that replaces the baseline rather than scaling it),
+#              "install_induction" (special: enable one flag, clear the rival's, splat the
+#              sub-dict), "write_fields" (splat a sub-dict, no flag), or "flag" (gates a
+#              tuning slider, no config effect)
 #   feeds_pw — whether it changes a power-to-weight input (mass / torque), so
 #              effective_meta must mirror it; the rest are cfg-only.
 #   feeds_grip — whether it changes a MAX-LATERAL-G input (tyre μ / downforce), so
@@ -417,9 +427,11 @@ const EFFECTS := {
 		"field": "tire_compound", "op": "mult", "feeds_pw": false, "feeds_grip": true,
 		"cfg_fields": ["wheel_friction_slip_front", "wheel_friction_slip_rear"],
 	},
-	# Sequential gearbox. shift_time is re-seeded from the fitted engine on every fielding
-	# (EngineLibrary.apply, step 1), so this multiplier can never compound across re-fields.
-	"shift_time_mult":     {"field": "shift_time", "op": "mult", "feeds_pw": false},
+	# Sequential gearbox: an ABSOLUTE shift time, not a scaling of the car's own. "set" is
+	# order-independent and idempotent, so unlike "mult" it needs no argument about
+	# re-fielding compounding it (shift_time is re-seeded from the fitted engine by
+	# EngineLibrary.apply in step 1 either way).
+	"shift_time_set":      {"field": "shift_time", "op": "set", "feeds_pw": false},
 	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false, "feeds_grip": true},
 	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false, "feeds_grip": true},
 	"unlocks_aero_tuning": {"field": "", "op": "flag", "feeds_pw": false},
@@ -471,6 +483,11 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 				"add":
 					for f in _cfg_fields(desc):
 						cfg.set(f, float(cfg.get(f)) + float(val))
+				"set":
+					# Replaces the baseline outright: the authored figure IS the value, so
+					# what the car brought to the slot does not enter into it.
+					for f in _cfg_fields(desc):
+						cfg.set(f, float(val))
 				_:
 					pass  # "flag" (gates tuning sliders) + unknown ids: no cfg effect
 

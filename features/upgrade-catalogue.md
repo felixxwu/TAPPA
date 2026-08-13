@@ -121,12 +121,19 @@ rally class (a p/w lever alongside engine detune). Weight Reduction is the slot'
 The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
 earn-gated option row — see below.
 The **`gearbox` slot** holds one part, the **Sequential Gearbox** (`sequential_gearbox`),
-whose `shift_time_mult` effect scales the `shift_time` of whatever transmission the car is
-currently running. `shift_time` is a **per-engine** field (`EngineLibrary`, so an engine
-swap carries its gearbox — see [engine-and-transmission.md](engine-and-transmission.md)),
-which is exactly why the kit is a multiplier rather than an absolute time: it is worth the
-same proportion on a slow old manual as on a quick twin-clutch, instead of flattening every
-car onto one number. It sits under **Speed** on the Simple page and moves **no bar** there —
+whose `shift_time_set` effect **replaces** `shift_time` with its own absolute figure (the
+`"set"` op) rather than scaling the car's. The kit IS a specific piece of hardware, so it
+shifts at its own rate whatever it replaces, and one authored number is what a designer tunes.
+
+**It is therefore not a guaranteed improvement, deliberately.** `shift_time` is a
+**per-engine** field (`EngineLibrary`, so an engine swap carries its gearbox — see
+[engine-and-transmission.md](engine-and-transmission.md)), and an engine whose own gearbox is
+already quicker than the kit gets **slower** by fitting it. On the shipped roster that is the
+7-speed S tronic alone (0.08 s); every other transmission sits at 0.22–0.35 s and gains.
+Fitting is the player's choice and nothing auto-fits it, so a car that would lose out just
+stays on Stock. If that ever needs to be impossible, the fix is a "take the better of the
+two" op — never a per-engine exception table.
+It sits under **Speed** on the Simple page and moves **no bar** there —
 Speed reads power-to-weight, which a shift time cannot touch — the same position nitrous is
 in.
 The **`tires` slot** holds one part, **Race Tires** (`race_tires`), whose `tire_grip_mult`
@@ -322,8 +329,9 @@ predictably:
 4. **Damage multipliers** — power/steer degraded by HP fraction (`features/damage.md`).
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored
-`.tres`. `*_mult` keys multiply the baseline (`mass` / `shift_time` / tyre μ); additive
-keys add (`downforce_front` / `downforce_rear`); `install_turbo` writes the turbo
+`.tres`. `*_mult` keys multiply the baseline (`mass` / tyre μ); additive
+keys add (`downforce_front` / `downforce_rear`); `*_set` keys **replace** it outright with an
+absolute figure (`shift_time`); `install_turbo` writes the turbo
 fields (see above); `install_nitrous` (`"write_fields"` op) straight-splats its
 fields onto `cfg` with no enable flag and no slot rival to clear — `has_nitrous()`
 in the live sim reads the values themselves, so a zero gain/tank already reads
@@ -597,7 +605,8 @@ delegated `can_close` gate).
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, consumables have no slot), lookups, effect application (multiplies/adds on a
 baseline incl. `mass_mult`; `tire_grip_mult` reaching BOTH axle μ fields via `cfg_fields`;
-`shift_time_mult`; empty list is a no-op), `effective_meta`
+`shift_time_set` replacing two different baselines with the same absolute figure, which is
+what separates a `set` from a `mult`; empty list is a no-op), `effective_meta`
 (lightens/empowers a meta copy without mutating the source), `grip_meta` folding tyres and
 downforce in **while `effective_meta` leaves power-to-weight untouched** — the safeguard
 that keeps a grip part out of eligibility — the aero

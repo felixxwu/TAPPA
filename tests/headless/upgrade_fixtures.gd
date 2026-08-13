@@ -7,7 +7,8 @@ extends RefCounted
 #
 # The fixture parts cover every EFFECT shape the apply / effective_meta / grip_meta pipeline
 # reads: install_turbo, install_supercharger, mass_mult (both a reduction < 1 and a `free` ballast > 1),
-# unlocks_aero_tuning + downforce, shift_time_mult, tire_grip_mult (the one row whose meta
+# unlocks_aero_tuning + downforce, shift_time_set (the "set" op — an absolute value, not a
+# scaling), tire_grip_mult (the one row whose meta
 # field and live-config fields differ — see UpgradeLibrary._cfg_fields), and
 # unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
 # their real constant ids (UpgradeLibrary.ENGINE_SWAP_TOKEN_ID / MYSTERY_BOX_ID) —
@@ -50,12 +51,12 @@ static func upgrades() -> Array[Dictionary]:
 			}},
 		},
 		{
-			# Covers the plain single-field "mult" shape on a NON-power-to-weight config
-			# field (shift_time), so a test can tell "apply wrote it" from "effective_meta
-			# mirrored it" — mass_mult, the other mult row, feeds both.
+			# Covers the "set" shape — an ABSOLUTE config value that replaces the baseline
+			# instead of scaling it — on a field that feeds neither power-to-weight nor grip,
+			# so a test can tell "apply wrote it" from "effective_meta/grip_meta mirrored it".
 			"id": "fx_gearbox", "name": "Fixture Sequential", "menu_label": "Sequential",
 			"slot": "gearbox", "consumable": false,
-			"effect": {"shift_time_mult": 0.3},
+			"effect": {"shift_time_set": 0.1},
 		},
 		{
 			"id": "fx_aero", "name": "Fixture Aero", "slot": "aero",

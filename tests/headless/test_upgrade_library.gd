@@ -219,12 +219,19 @@ func test_a_tire_part_multiplies_BOTH_axle_grips_on_the_live_config() -> void:
 	assert_almost_eq(cfg.wheel_friction_slip_rear, 0.7 * mult, 0.001, "rear axle grip multiplied")
 
 
-func test_a_gearbox_part_multiplies_shift_time() -> void:
-	var cfg := GameConfig.new()
-	cfg.shift_time = 0.4
-	var mult := float(UpgradeLibrary.by_id("fx_gearbox")["effect"]["shift_time_mult"])
-	UpgradeLibrary.apply({"installed_upgrades": ["fx_gearbox"]}, cfg)
-	assert_almost_eq(cfg.shift_time, 0.4 * mult, 0.001, "the kit scales the fitted gearbox's shift time")
+func test_a_gearbox_part_sets_an_absolute_shift_time() -> void:
+	# The "set" op REPLACES the baseline rather than scaling it, so what the car brought to
+	# the slot must not survive. Asserted from two different baselines — one slower than the
+	# kit and one faster — because a multiplier would land on two different answers while a
+	# set lands on the same one. The expected figure is read from the catalogue, so retuning
+	# the kit can't break this.
+	var want := float(UpgradeLibrary.by_id("fx_gearbox")["effect"]["shift_time_set"])
+	for baseline in [0.4, want * 0.5]:
+		var cfg := GameConfig.new()
+		cfg.shift_time = baseline
+		UpgradeLibrary.apply({"installed_upgrades": ["fx_gearbox"]}, cfg)
+		assert_almost_eq(cfg.shift_time, want, 0.0001,
+			"the kit's own shift time replaces a %.2fs baseline outright" % baseline)
 
 
 func test_grip_parts_move_grip_meta_and_are_invisible_to_eligibility() -> void:

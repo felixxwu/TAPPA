@@ -160,12 +160,12 @@ gate accepted everything.
   (the 2.5T i5's 7-speed S tronic) snap through gears (~0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
   **`shift_time` is upgradeable**: the `gearbox` upgrade slot holds the **Sequential
-  Gearbox** (`sequential_gearbox`), whose `shift_time_mult` effect scales whatever the
-  fitted engine authors, in pipeline step 2. A *multiplier* rather than an absolute time
-  precisely because the baseline is per-engine — the kit is then worth the same proportion
-  on a slow old manual as on a quick twin-clutch, instead of flattening every car to one
-  number (and, being re-seeded by `EngineLibrary.apply` on every fielding, it can never
-  compound across re-fields). `EngineSim` reads `config.shift_time` live at each shift, so
+  Gearbox** (`sequential_gearbox`), whose `shift_time_set` effect **replaces** whatever the
+  fitted engine authors with its own absolute figure, in pipeline step 2. Because the
+  baseline is per-engine and the kit's figure is not, fitting it makes a car with an
+  already-quicker gearbox **slower** — the S tronic (0.08 s) is the only one on the shipped
+  roster; the 0.22–0.35 s manuals all gain. That is accepted: fitting is the player's choice
+  and nothing auto-fits it. `EngineSim` reads `config.shift_time` live at each shift, so
   fitting or unfitting the kit needs no drivetrain rebuild. See
   [upgrade-catalogue.md](upgrade-catalogue.md).
 - **`engine_inertia` (crank + flywheel rotating inertia, kg·m²) is per-car**
