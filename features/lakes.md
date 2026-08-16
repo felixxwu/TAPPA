@@ -135,6 +135,16 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   see [rendering.md](rendering.md)). A **seamless (tileable) 128x128 noise texture**
   (`textures/water_noise.png`, `LakeField.WATER_TEX`) is scrolled in two directions
   for visible movement, tinted between deep/shore colours, with a sparkle glint.
+- **The water dims with the weather.** The shader is `unshaded` and takes an
+  authored colour straight to `ALBEDO`, so nothing dims for free: `LakeField.build`
+  passes both `water_color` and `shore_color` (and their `ice_*` counterparts)
+  through `GameConfig.weather_lit`, and scales `sparkle_strength` by
+  `weather_sun_mult` — the sparkle is a *sun* glint, and a full-strength band on an
+  otherwise dark lake reads as light from a sun that isn't there. Without this a
+  lake rendered full daylight blue at night and was the brightest thing on screen.
+  `weather_lit` preserves alpha on purpose: the water colours carry meaningful
+  alpha, and scaling it would make a dim lake *transparent* rather than *dark*.
+  See [weather.md](weather.md) → "Unshaded means nothing dims for free".
 - **The water tile is a committed asset, not baked at load.** It used to be a
   `NoiseTexture2D` built by `LakeField._make_water_texture` on every stage load.
   `NoiseTexture2D` bakes on a *worker thread* — but the web export ships

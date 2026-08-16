@@ -75,7 +75,7 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 	parent.add_child(billboards)
 	billboards.build(positions, terrain, size, tex,
 		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, with_collision,
-		render_distance, render_fade, ground_offset, tree_silhouette_mesh(tex), true,
+		render_distance, render_fade, ground_offset, tree_silhouette_mesh(tex),
 		size_jitter, aspect_jitter)
 	return billboards
 

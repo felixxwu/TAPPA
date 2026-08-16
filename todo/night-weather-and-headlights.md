@@ -1,8 +1,24 @@
 # Night weather + fake headlight cone — implementation spec
 
-> Status: **NOT STARTED — spec only, design settled.** All five open questions
-> were decided on 2026-08-16 (see § Decisions); nothing is left to agree before
-> implementation. Grounded in the code as of 2026-08-16.
+> Status: **IMPLEMENTED 2026-08-16 — awaiting an in-app look.** Everything below landed:
+> the shared cone (`shaders/headlight_cone.gdshaderinc`), the driver
+> (`scripts/headlight_cone.gd` → `HeadlightCone`), the five including shaders, the
+> `[shader_globals]` block, the `night` weather entry and its `GameConfig` fields,
+> the `apply_car_light` sun-multiplier fix, the `billboard.gdshader` dead-code
+> removal, and `tests/headless/test_headlight_cone.gd`.
+>
+> **Authored on five stages**, one per region, always a rally's first event and
+> always one that was previously dry: `hm_timber_trophy` (home, seed 32001),
+> `rwd_masters` (home_coast, 3001), `rising_sun` (greece, 4001), `gc_island_gp`
+> (greece_coast, 54001), `sn_icefall_climb` (snow, 87001). The snow pick is
+> deliberate — it is the only one running `ps1_terrain_snow`, so it exercises the
+> variant shader's copy of the cone.
+>
+> **Not yet verified on a real GPU.** Headless tests confirm the shaders parse
+> and the maths is right, but whether `RenderingServer.global_shader_parameter_set`
+> actually reaches shaders under this project's `gl_compatibility` renderer has NOT
+> been observed in a running frame. Check that first when authoring the first night
+> event — it is the one load-bearing assumption the test suite cannot cover.
 > Includes a dead-code removal (`shaders/billboard.gdshader` and the
 > `BillboardField` quad path) that is independent of the night feature and can
 > land first on its own.
@@ -40,17 +56,47 @@ An **analytic cone evaluated in the shaders**, fed by three values updated once
 per frame. No geometry, no draw calls, no CPU per-frame work beyond the update.
 
 ```glsl
-vec3 v     = world_pos - headlight_pos;
+vec3 v     = world_pos - hl_pos;
 float d    = length(v);
 float cone = smoothstep(hl_cos_outer, hl_cos_inner, dot(v / max(d, 0.001), hl_dir));
 float att  = 1.0 - smoothstep(0.0, hl_range, d);
-float lit  = cone * att;
-// darken to night, then re-light inside the cone
-tint *= mix(1.0, mix(night_darkness, 1.0, lit), night_amount);
+float lit  = cone * att * night_amount;
 ```
 
-`night_amount` at 0 makes every shader below a bit-for-bit no-op, matching the
-existing `light_amount = 0` convention in `billboard_opaque.gdshader`.
+### The cone must be ADDITIVE — this is the critical detail
+
+The darkening is **not** done in the shader. It comes for free from the existing
+`sun_energy_mult` path: a low `night_sun_energy_mult` scales `tm.sun_color` in
+`_apply_overcast_look`, and the terrain bakes that dark light into `COLOR.rgb` at
+chunk generation. By the time a shader runs, the world is already dark.
+
+Which means the cone **cannot be a multiply**. `ps1_models` computes
+`ALBEDO = mix(ground, road, road_t) * albedo_color.rgb * COLOR.rgb`; with a dark
+bake, `COLOR.rgb` is near zero, and multiplying near-zero by a bright cone factor
+is still near zero. A multiplicative cone literally cannot re-light a darkened
+bake.
+
+Add into the **light term**, keeping the surface term untouched:
+
+```glsl
+// ps1_models / ps1_terrain_snow — fragment
+vec3 surface = mix(ground, road, road_t) * albedo_color.rgb;
+ALBEDO = surface * (COLOR.rgb + headlight_color * lit);
+```
+
+This works because every shader here already separates surface from light:
+`COLOR.rgb` on terrain, `v_light` in `ps1_models_lit`, `v_tint` in
+`billboard_opaque`. In each case the cone is `+= headlight_color * lit` on the
+light term, never a multiply on the result.
+
+`night_amount` at 0 makes `lit` exactly 0, so every shader below is a
+bit-for-bit no-op — matching the existing `light_amount = 0` convention in
+`billboard_opaque.gdshader`.
+
+**Pass `lit` as `varying float`, not `vec3`,** wherever a new varying is needed
+(`tree_canopy` has none today). Only fold into an existing `vec3` where one
+already exists. Bushes are numerous and interpolator bandwidth is a real mobile
+cost.
 
 ### Per-fragment vs per-vertex
 
@@ -116,7 +162,10 @@ each with a `##` doc comment. Values go in `config/game_config.tres`.
 
 Plus new fields for the cone itself: `night_amount`, `night_darkness`,
 `headlight_range_m`, `headlight_inner_deg`, `headlight_outer_deg`,
-`headlight_color`, `headlight_offset_m`.
+`headlight_color`, `headlight_offset_m`, `headlight_pitch_deg` (downward aim —
+this, not the offset, is what sets where the lit pool starts) and
+`headlight_separation_frac` (lamp spacing as a fraction of the fielded car's
+width; 0 = a single cone).
 
 ### Bug this exposes
 
@@ -211,6 +260,81 @@ Also stale and worth correcting in the same sweep: `todo/backlog.md` claims
 `features/trees.md` + `features/README.md` (billboard removal),
 `features/terrain.md` (terrain is no longer purely flat-shaded at night).
 
+## Night sky (added after the first in-app look)
+
+`textures/sky-night.jpg` — Poly Haven's `rogland_clear_night` (**CC0**), darkened to
+55% and resized to the house 1024×512 to match `sky-greece.jpg` / `sky-snow.jpg`.
+Chosen by measuring mean sky luminance across all 26 outdoor natural-light night
+HDRIs on Poly Haven rather than by eye; the first shortlist was all blue-hour
+bright. A Milky Way arch was preferred over a smooth gradient partly because
+visible structure survives the PS1 quantise pass better than a gradient does.
+
+Wiring: the `night` entry gained an **optional** `sky_panorama` key naming a
+GameConfig field, applied in `_apply_weather_look` after the region look. It is
+deliberately NOT a sixth mandatory `LOOK_KEYS` entry — every existing condition
+would then have to author a sky it does not want, and rain and dust are things
+happening *under* the region's sky rather than replacements for it.
+
+**It also exposed a pre-existing bug.** `_apply_region_look` assigned the sky only
+`if look.has("sky_panorama")`, but the `PanoramaSkyMaterial` is a shared
+`main.tscn` sub-resource with no `resource_local_to_scene` and `home` /
+`home_coast` author no sky — so a Greece or snow sky followed the player into the
+next home stage and stayed. Same class as the road-tint compounding bug, same fix:
+assign unconditionally, falling back to `default_sky_panorama`.
+
+**Retuned lighter after the first look.** Night rendered essentially pure black.
+The lever was `night_sky_color` (0.06 → 0.20): terrain normals face up, so the
+hemisphere ambient resolves almost entirely to `sky_color`, making it — not
+`sun_energy_mult` — the thing that sets the terrain's floor. `night_sun_energy_mult`
+0.12 → 0.30 and `night_road_darken` 0.7 → 0.85 alongside it.
+
+## Risks and known holes
+
+**Night is the most expensive weather, not the cheapest.** Decision 4 keeps it
+purely visual, so full `render_distance` terrain, trees and props still render
+and shade to draw a nearly-black frame, plus the cone ALU on top. Accepted, but
+it makes night the mobile worst case. Shortening `render_distance` is the obvious
+lever if it bites — deliberately not taken now.
+
+**The PS1 post-process is untested at night.** `ps1_post_process` grades then
+quantises/dithers; a near-black frame quantised to few levels bands badly, and
+`grade_shadow_tint` operates on exactly the range night lives in. Nothing in the
+grade was tuned for a dark frame. This is the biggest *looks-wrong* risk and
+should be eyeballed early, not left to the end.
+
+**Baked light quantises to RGB8** via `TerrainLod.encode_lights`, so dark values
+get coarse absolute steps — terrain ambient may band before the post-process even
+touches it.
+
+**Fog is not lit by the cone.** Fog is environment-side (`fog_light_color`), so
+the cone lights the ground but not the haze above it, giving a lit pool under
+flat grey. Keep `night_fog_density_mult` low for this reason.
+
+**Per-fragment matrix multiply on terrain.** With no vertex stage permitted on
+`ps1_models`, world position must come from
+`(INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz` — a mat4 mul per fragment on the
+highest-coverage surface. Doing the cone in view space would remove it, but the
+uniforms are global and camera-agnostic while the game has several cameras
+(`BonnetCamera`, `ChaseCamera`, replay cams), so view space would be wrong. World
+space is the correct choice; the cost is real and accepted.
+
+**Shader recompilation stutter.** Adding uniforms to five shaders invalidates
+their cached variants and Godot compiles on first draw — a one-time hitch at
+stage load, most visible when the first tree enters view.
+
+**Felled trees need the cone too.** `billboard_opaque`'s felled branch computes
+`v_tint` ambient-only (no `ndl` term), so a knocked-over tree would sit unlit
+inside the headlight pool unless the cone is added to **both** branches.
+
+**Signs and props carry no baked light term.** `sign_field.gd` and
+`mesh_util.gd` props use `ps1_models` but do not get terrain's baked `COLOR.rgb`
+light. Verify how they actually read once the additive form lands — they may need
+an explicit ambient floor so they aren't pure black outside the cone.
+
+*Checked and cleared:* `data/track_cache.json` stores turn **layouts** keyed by
+`TrackCache.terrain_fingerprint` (terrain shape params), not vertex colours, so
+weather never enters it and night causes no cache churn or regeneration.
+
 ## Decisions (settled 2026-08-16)
 
 1. **Night is a weather type** — a 7th `WeatherLibrary.CONDITIONS` entry, not an
@@ -219,9 +343,14 @@ Also stale and worth correcting in the same sweep: `todo/backlog.md` claims
    night gets promoted to its own flag with a composed look-blend in
    `world.gd::_apply_weather_look` — a materially bigger change, deliberately
    deferred rather than designed for now.
-2. **One cone**, not two headlights. Cheaper, and in keeping with the PS1 look.
-   Splitting it into two offset cones later is a localised change to the cone
-   math, so nothing here forecloses it.
+2. ~~**One cone**, not two headlights.~~ **REVISED after seeing it in-app: two
+   lamps.** The split turned out to be exactly as localised as this decision
+   predicted — one extra `_headlight_cone_at` call, two more globals
+   (`hl_right`, `hl_separation`), no change to any of the five call sites.
+   Combined with `max()` rather than summed, and `hl_separation == 0` still
+   collapses to the original single cone on a uniform branch, so the cheaper look
+   remains one config value away. Spacing is a fraction of the FIELDED CAR'S
+   width (`car.gd` → `half_width`), not an absolute distance.
 3. **Player car only** — no cones on opponent or ghost cars. The global uniforms
    therefore carry exactly one cone, and the shaders need no array uniform or
    loop, keeping the cost fixed rather than scaling with field size.

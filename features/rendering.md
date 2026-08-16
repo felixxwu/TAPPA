@@ -110,6 +110,12 @@ mirroring the car shader's math) — so the hills (and tarmac) get the same
 hemisphere+sun shading as the car at zero per-frame cost, valid because the
 terrain and sun never move.
 
+It `#include`s `shaders/headlight_cone.gdshaderinc` and adds the night cone into
+that light term in the fragment — `ALBEDO = surface * (COLOR.rgb + hl_color *
+headlight_lit(world_pos))`, with `world_pos` recovered from `INV_VIEW_MATRIX`
+since there is no vertex stage to hand one down. The no-`vertex()` rule is
+untouched by this and stays test-enforced. See "The fake headlight cone" below.
+
 Used by: the terrain floor.
 
 ### `ps1_models_lit.gdshader` — `spatial`, `unshaded`
@@ -133,7 +139,15 @@ vertex, interpolated for free by the rasteriser. `light_amount`
 materials, and `car.gd._apply_model_material()` does the same for the authored bodies (MX-5, Focus, Twingo).
 The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
 `sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
-alongside `terrain_light_amount` for the baked terrain shading.
+alongside `terrain_light_amount` for the baked terrain shading. `sun_color` and
+`sky_color` are pushed **scaled by the runtime `GameConfig.weather_sun_mult`**,
+so the car dims with the world on an overcast/dark condition instead of staying
+at full daylight. The scaling itself is `GameConfig.weather_lit` — the shared rule
+for every fake-lit material, see below.
+
+The night headlight cone folds into the existing `varying vec3 v_light` in
+`vertex()` (`v_light += hl_color * headlight_lit(...)`), so lit models need no
+new interpolator and no fragment cost.
 
 Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Twingo)
 (see below).
@@ -255,7 +269,7 @@ roll, which keeps the MultiMesh stride at the standard 12 transform floats (+4 f
 `use_colors`) with no `INSTANCE_CUSTOM` stream. The vertex shader scales the unit
 quad, rolls it in the billboard plane, then projects onto `INV_VIEW_MATRIX`'s
 right/up columns and rewrites `POSITION` directly (same bypass as
-`billboard.gdshader`). Fully screen-aligned (spherical) rather than the
+`billboard_opaque.gdshader`). Fully screen-aligned (spherical) rather than the
 world-Y-up cylindrical form the tree billboards use — a flung clod has no
 meaningful "upright". Per-instance `COLOR` goes straight to `ALBEDO` (unshaded).
 Opaque, so a pool at its cap costs no transparency sorting. **The basis layout is a
@@ -348,6 +362,23 @@ model. Each per-car material also carries the tread `albedo_color`
 | Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
 | PostProcess (SubViewportContainer) | `virtual_resolution` | `cfg.virtual_resolution` |
 
+### `weather_lit` — the shared rule for fake lighting
+
+Every material here is `unshaded`, so **nothing dims when the world gets darker
+unless it is told to**. A material that is never told keeps rendering full
+daylight against a dimmed scene and reads as glowing. `GameConfig.weather_lit(col)`
+is the one place that knows the rule: multiply RGB by the runtime
+`weather_sun_mult`, preserve alpha (alpha carries meaning — scaling it would make
+a dim lake transparent rather than dark).
+
+Route any new fake-lit material through it. The existing users:
+`apply_car_light` (`ps1_models_lit.gdshader`), `apply_foliage_light`
+(`billboard_opaque.gdshader`, mirroring the car helper so trees and car can't
+drift apart), `LakeField.build` (`water.gdshader` colours + the sun-glint sparkle)
+and `SignField._material_for` (`albedo_color`). Terrain is the exception — it
+takes the same dimming through the vertex-colour bake instead. Full write-up in
+[weather.md](weather.md) → "Unshaded means nothing dims for free".
+
 ## Environment
 
 - No light nodes and no engine lighting pass — the materials stay `unshaded`.
@@ -356,11 +387,26 @@ model. Each per-car material also carries the tread `albedo_color`
   gets the same hemisphere+sun look **baked into its vertex colours** once at
   generation time, so its shader keeps a pass-through vertex path and the
   heaviest geometry pays nothing per frame. Trees/bushes/signs stay flat.
+  **This still holds with the night headlight cone** — the cone added no light
+  node either; it is arithmetic in the fragment/vertex code. What it did add is
+  a *named mechanism* for fake LOCAL lighting, so "we have no lights" no longer
+  means "we cannot light a spot": see "The fake headlight cone" below.
 - **Skybox** (`main.tscn` env `background_mode = Sky`): a `PanoramaSkyMaterial`
   with a CC0 photographic open-field sky equirect (`textures/sky_field.png`, a tonemapped
   LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
   to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
   `hq.gd` builds the same sky in code so HQ matches.
+  **The panorama is re-seeded every stage boot, not conditionally overridden.**
+  `world.gd._apply_region_look` assigns it unconditionally, falling back to
+  `GameConfig.default_sky_panorama` when the region names none, then
+  `_apply_weather_look` may swap it again for the condition — **night does, and
+  only night** (`textures/sky-night.jpg`, via `GameConfig.night_sky_panorama`
+  named by the night entry's optional `sky_panorama` key). The material is a
+  shared `main.tscn` sub-resource with no `resource_local_to_scene`, so without
+  that unconditional re-seed a Greece/snow/night sky followed the player into the
+  next home stage and stayed — the same leak the ground-material re-seed below
+  prevents. See [regions.md](regions.md) → "The sky no longer leaks between
+  stages".
 - **Sun alignment.** The car/terrain fake light (`sun_direction`) must point at
   the visible sun. Convention: panoramas are pre-rolled with
   `tools/align_sky_sun.py` so the sun sits at the image CENTRE — which is `+Z` in
@@ -410,6 +456,10 @@ Wet applies `rain_background_color` (to `background_color` + `fog_light_color`),
 inputs (written onto the manager, never onto the shared `GameConfig`, so a later dry
 stage isn't left dimmed), and scales the floor material's `albedo_color` /
 `tarmac_color` by `rain_road_darken`.
+
+Night is the exception that proves the fog rule below: it is the one condition whose
+entry names a `sky_panorama`, applied here **after** the region look so it wins, and
+it is the only extra sky texture in the bundle.
 
 **Overcast/dust look is made of fog, not a second sky.** Dry keeps `fog_sky_affect`
 low (0.15) so the panorama reads above the haze; rain and sandstorm each invert that
@@ -495,6 +545,126 @@ the one thing the pipeline is built to avoid. It never touches the `TerrainManag
 baked sun/ambient (that would need a chunk rebake, not a per-frame tween). Kept
 subtle and infrequent by authoring — a flash that blanks the screen mid-corner is a
 gameplay event, not an effect — and purely cosmetic, so it may use `randf()`.
+
+### The fake headlight cone (`shaders/headlight_cone.gdshaderinc`)
+
+The night weather condition darkens the whole world and re-lights a wedge in
+front of the player's car. Design doc: `todo/night-weather-and-headlights.md`;
+the weather-table half is in [weather.md](weather.md) → "Night".
+
+**Why it is not a light node.** Every material here is `unshaded`, so the engine
+runs no lighting pass at all — a `SpotLight3D` would have literally zero effect
+on any existing material. That is not a limitation to route around; it is the
+design, and the cone respects it.
+
+**Why it is not a vertex-colour rebake.** Terrain shading is baked on the CPU by
+`TerrainManager.vertex_colors` (RGB = light, alpha = road blend). Driving a
+*moving* light that way would mean regenerating `ARRAY_COLOR` for the whole
+loaded ring — ~49 chunks × 51×51 verts, ~127k verts at LOD0 — **every frame**.
+That is chunk-*generation* cost paid per frame. It is the one approach the
+design exists to rule out.
+
+**What it is instead:** an analytic cone pair, evaluated in the shaders from nine
+global uniforms. No geometry, no draw calls, no per-frame CPU work beyond one
+uniform push. The include declares the uniforms (`hl_pos`, `hl_dir`, `hl_right`,
+`hl_color`, `hl_range`, `hl_cos_inner`, `hl_cos_outer`, `hl_separation`,
+`night_amount`) and two functions: `_headlight_cone_at(world_pos, apex)` — a
+`smoothstep` between the outer and inner cosines against `dot(dir, to_fragment)`,
+times a linear range attenuation — and `headlight_lit(world_pos)`, which combines
+the lamps and scales by `night_amount`. It is the ONE source of truth — the five
+shaders that can be lit at night all `#include` it rather than restating the maths.
+
+**Two lamps, combined with `max()` not a sum.** The pair shares aim, range, angles
+and colour; only the apex differs, offset along `hl_right` by half `hl_separation`.
+So the second lamp costs one more `_headlight_cone_at` and no extra parameters.
+Summing them would produce a double-bright wedge straight ahead that reads as a
+third light; `max()` holds the overlap at lamp brightness so the pair reads as a
+widened pool. **`hl_separation == 0` skips the second cone entirely** on a branch
+taken uniformly across the whole draw — the cheap case for a GPU — which is why the
+single-cone setting is genuinely cheaper and not just a look. The doubling is paid
+per-FRAGMENT only on terrain; the other four shaders evaluate per-vertex.
+
+**Aim.** `hl_dir` is not simply the car's forward: the driver pitches it down by
+`headlight_pitch_deg` about the car's own right axis. Without that the cone runs
+parallel to the ground and the lit pool only begins where the outer edge descends
+to ground level, several metres past the bumper. Pitching about the car's axis
+(rather than the world's) keeps the aim glued to the road over crests and camber.
+
+**It returns a `float`, not a colour**, so a shader that must carry it across the
+vertex→fragment boundary can use a `varying float` instead of a whole `vec3`
+interpolator. `hl_color` is multiplied in at the point of use. Bushes are
+instanced densely and interpolator bandwidth is a real cost on tile-based mobile
+GPUs.
+
+**It is ADDITIVE on the light term — never a multiply.** This is the load-bearing
+detail. The darkening is not done in any shader: it comes from the low
+`night_sun_energy_mult`, which the terrain has already baked into `COLOR.rgb`. By
+the time a shader runs the bake is near-zero, and a near-zero light term
+multiplied by a bright cone factor is still near-zero — **a multiplicative cone
+cannot re-light a darkened bake.** Every shader here already separates surface
+from light (`COLOR.rgb` on terrain, `v_light` in `ps1_models_lit`, `v_tint` in
+`billboard_opaque`), so the form is always:
+
+```glsl
+ALBEDO = surface * (light + hl_color * headlight_lit(world_pos));
+```
+
+At `night_amount == 0` the function returns exactly `0.0`, making every one of
+these shaders a **bit-for-bit no-op** — which is what lets the cone ship inside
+shaders that every daytime stage, the podium and the HQ also use.
+
+**Fragment on terrain, vertex everywhere else:**
+
+| Shader | Stage | Why |
+|---|---|---|
+| `ps1_models` (terrain), `ps1_terrain_snow` | **fragment** | Terrain cells reach 25 m across at the coarsest LOD band, so a per-vertex cone would snap its soft edge to triangle boundaries. World position comes from `(INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz` — a mat4 multiply per fragment, accepted because `ps1_models` is banned from having a `vertex()` stage to hand one down. |
+| `ps1_models_lit` (cars, barriers, arch) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. |
+| `billboard_opaque` (trees) | vertex | Folded into the existing `varying vec3 v_tint`, in **both** branches — the felled branch computes an ambient-only tint, so a knocked-over tree would otherwise sit unlit inside the pool. Cards are small, so per-vertex is visually identical. |
+| `tree_canopy` (bushes) | vertex + fragment | Had no lighting term at all, so it gets a new `varying float v_headlight`; `hl_color` is applied in the fragment so the varying stays scalar. |
+
+Fragment cost therefore lands only on terrain — the one surface with near-total
+screen coverage — while everything else rides an existing vertex computation.
+
+**Transport is `global uniform`**, declared in `project.godot`'s
+`[shader_globals]` section (the project had none before) and written via
+`RenderingServer.global_shader_parameter_set`. The rationale is **correctness
+under streaming, not speed**: materials are already shared per batch, so a
+per-material push would only be ~10–30 calls a frame — but those materials are
+built in five different scripts with no common registry, and terrain chunks
+stream in continuously, so a per-material push would need re-registration
+bookkeeping on every chunk load. Globals cannot go stale when a chunk appears
+mid-frame.
+
+**The scene-leak trap:** global shader parameters **persist across scene
+changes**, and the podium and HQ draw trees and ground with these same shaders.
+A night stage that did not clear up after itself would leave those screens in the
+dark. `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
+unconditionally — every exit path, regardless of destination — which a
+per-destination reset would not cover. Same reasoning as
+`_apply_deep_snow_ground` being called unconditionally each stage boot.
+
+**The driver** is `scripts/headlight_cone.gd` (`class_name HeadlightCone`), all
+statics: `is_night(cfg)` gates on the weather id; `params(cfg, xform)` returns
+the name→value dictionary (split out from the push so the maths is testable
+without a live `RenderingServer`, and so it can force the outer half-angle
+strictly wider than the inner one however the two are authored); `push()` is
+pure transport; `reset()` zeroes `night_amount`. `world.gd::_process` calls
+`push()` once per frame with `$Car.global_transform` and early-outs off a night
+stage, and `world.gd::_ready` seeds it once so the opening frame is already
+correct rather than dark for a tick.
+
+**Not yet verified on a real GPU.** Headless tests confirm the shaders parse and
+the maths is right, but whether `global_shader_parameter_set` actually reaches
+shaders under this project's `gl_compatibility` renderer has not been observed in
+a running frame. Five stages now author night (one per region — see
+[weather.md](weather.md) → "Night"), so this is checkable simply by driving one;
+do that before trusting any of it. Known open risks, all from the design doc: the
+PS1 post-process grade
+and 5-bit quantise were never tuned for a near-black frame (banding), the baked
+light quantises to RGB8 so dark ambient steps coarsely, fog is environment-side
+so the cone lights the ground but not the haze above it, and night is the
+*most* expensive weather, not the cheapest — full render distance still draws a
+nearly-black frame, plus the cone ALU on top.
 
 ### Fog does not shorten the cull (an unclaimed performance win)
 
@@ -617,7 +787,7 @@ shipped knobs in `GameConfig`:
   native Android APK has a real audio thread and runs fine at 60. `0` = uncapped.
   Physics stays at the project physics tick. See [engine-audio.md](engine-audio.md).
 - **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
-  cheaper mip levels (a `lod_bias` uniform in `shaders/billboard.gdshader`, set
+  cheaper mip levels (a `lod_bias` uniform in `shaders/billboard_opaque.gdshader`, set
   from `BillboardField.build()`). The tree/bush textures now have **mipmaps
   enabled** (`textures/tree.png.import`, `textures/tree-greece.webp.import`), so distant
   billboards no longer thrash the texture cache. `filter_nearest` is kept (PS1
@@ -727,7 +897,12 @@ geometry in the game and this renderer targets low-end phones — a ban enforced
 `ps1_models_lit.gdshader`, which exists so the car's fake lighting does not land on the
 terrain either. Only snow stages pay for it.
 
-**The two fragment stages must be kept in sync.** `world.gd._apply_deep_snow_ground`
+**The two fragment stages must be kept in sync**, and so must their **uniform
+sets** — `ps1_terrain_snow` `#include`s `headlight_cone.gdshaderinc` and applies
+the cone exactly as `ps1_models` does, because the swap below relies on
+`ShaderMaterial` keeping its by-name parameter map across a shader change. A
+uniform added to one and not the other silently drops its value on a snow stage.
+`world.gd._apply_deep_snow_ground`
 swaps the floor material between them every stage boot, including restoring the base
 shader, because that material is a shared `main.tscn` sub-resource that survives scene
 instantiation. See [snow-region.md](snow-region.md).

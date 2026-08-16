@@ -1,4 +1,4 @@
-# Weather (dry / rain / sandstorm / fog / storm / snow)
+# Weather (dry / rain / sandstorm / fog / storm / snow / night)
 
 Design doc: `docs/superpowers/specs/2026-08-02-weather-design.md` (anticipated a
 string enum specifically so later conditions — "fog / snow / night" — would have
@@ -14,6 +14,10 @@ restriction.
 Fog and storm (`docs/superpowers/specs/2026-08-02-fog-and-storm-weather-design.md`)
 are the two later conditions; **fog is deliberately NOT variety-only** — see
 "Rival times" for why that asymmetry is intended rather than a bug.
+**Night** (`todo/night-weather-and-headlights.md`) is the seventh entry and the
+odd one out: it is the only condition that re-lights the world instead of only
+recolouring it — see "Night" below. Five stages author it, one per region, so
+every region's palette can be seen after dark.
 
 ## The weather table (`WeatherLibrary`) — the single source of truth
 
@@ -41,6 +45,14 @@ omitted key means "this condition does not have that feature":
 | `road_tint` | `{"amount": <field>, "color": <field>}`. `color` names the colour the albedo is **lerped toward**; **omitted ⇒ a plain darkening multiply**. Omitted entirely ⇒ road albedo untouched |
 | `wind` | lateral **crosswind body force**: `strength` / `gust` / `dir_deg` → GameConfig fields (`WIND_KEYS`). Omitted ⇒ no wind force. Read by the crosswind force in `car.gd` — see [car-physics.md](car-physics.md) |
 | `lightning` | cosmetic **flash**: `flash` / `duration` / `interval_min` / `interval_max` → GameConfig fields (`LIGHTNING_KEYS`). Omitted ⇒ no flashes. Read by `world.gd` → `_start_lightning` |
+| `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
+
+**`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
+all-or-nothing — an entry with a `look` block must name every one of the five
+environment knobs — and rain, sandstorm, fog, storm and snowfall are all things
+happening *under* the region's sky, not a different sky. Making it mandatory would
+have forced five entries to author a field they don't want, so it sits beside the
+`look` block as its own optional top-level key instead.
 
 There is **no `"mode"` string and no colour literal in `world.gd`** — a condition that
 tints the road toward something new (dust today, snow tomorrow) just names a colour
@@ -159,6 +171,27 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
   forest stage would look wrong. Note the `RALLIES` header comment calls this
   "test-enforced" — **it is not**: no test in `tests/headless/` asserts it today, so
   treat it as a placement convention like fog and storm, not a logic contract.
+- **Night** — deliberately spread ONE PER REGION, always on a rally's **first**
+  event, so each region's palette can be compared after dark without playing
+  through a whole championship:
+
+  | Region | Rally | Event seed |
+  |---|---|---|
+  | `home` | `hm_timber_trophy` ("Win: Fjord Focal") | 32001 |
+  | `home_coast` | `rwd_masters` ("Win: The Beast") | 3001 |
+  | `greece` | `rising_sun` ("Heavy Hitters") | 4001 |
+  | `greece_coast` | `gc_island_gp` ("Win: Swerve Serpent RT/10") | 54001 |
+  | `snow` | `sn_icefall_climb` ("Icefall Climb") | 87001 |
+
+  Every one of those events was **dry before**, chosen so that opting them into
+  night destroyed no authored weather. The snow pick is deliberate: it is the
+  only one that runs `ps1_terrain_snow`, so it exercises the terrain shader
+  variant's copy of the cone rather than only the base shader's.
+
+  There is no terrain/region restriction — night is a time of day, so any pin can
+  run it. Note it is a **visibility** condition like fog (see "Rival times"), so
+  the same authoring discipline applies: keep it off difficulty-1 rallies. All
+  five picks are difficulty 2 or higher.
 
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
@@ -226,6 +259,70 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
     — the cosmetic flash. Subtle and infrequent on purpose: a flash that blanks the
     screen mid-corner is a gameplay event, not an effect.
 
+- The night block, prefixed **`night_`** — a `look` block plus a road darken, and
+  nothing else (it authors no `grip_mult`, no `wind`, no `particles`, no
+  `lightning`):
+  - `night_background_color`, `night_sky_color` — near-black, slightly blue-lifted.
+    Not pure black on purpose: `night_sky_color` is the ambient floor everything
+    OUTSIDE the headlight cone is lit by, so zeroing it turns unlit geometry into
+    an unreadable silhouette, and a pure-black horizon reads as a hole in the frame.
+  - `night_sun_energy_mult` — **the dominant knob**: this, and nothing in any
+    shader, is what makes the world dark. Its `@export_range` starts at `0.0`
+    (unlike the daytime conditions) because night lives at the bottom of it.
+  - `night_fog_density_mult` — deliberately kept LOW. Fog is environment-side
+    (`fog_light_color`), so the headlight cone cannot light it; thick haze at
+    night gives a lit pool of ground under a flat grey sheet.
+  - `night_fog_sky_affect` — high, so the panorama sinks into the dark.
+  - `night_road_darken` — rain's shape (a straight albedo multiply, no target
+    colour): a night road is unlit, not recoloured.
+  - `night_sky_panorama` — the sky texture night swaps in
+    (`textures/sky-night.jpg`, a Milky-Way night equirect — see
+    [asset-pipeline.md](asset-pipeline.md)). Named by the entry's optional
+    `sky_panorama` key, so "a condition wants its own sky" stays authored data
+    rather than a branch in `world.gd`. An empty string keeps the region's sky.
+  - `default_sky_panorama` — not a night field as such: the sky every stage falls
+    back to when its REGION names none (`home` / `home_coast`). Lives in the night
+    block because night is what exposed the need for it — see
+    [regions.md](regions.md) → "The sky no longer leaks between stages".
+
+  **Night was authored too dark at first and has been lifted.** The first pass
+  rendered the terrain near-black: `night_sky_color` is the dominant lever, because
+  terrain normals face mostly UP, so the hemisphere ambient
+  (`mix(ground_color, sky_color, N.y·0.5+0.5)`, see [rendering.md](rendering.md))
+  resolves almost entirely to `sky_color` — a near-zero value there leaves the
+  ground with nothing but the headlight cone. The retune raised `night_sky_color`,
+  `night_sun_energy_mult`, `night_road_darken` (i.e. darkened less) and
+  `night_background_color`. The numbers themselves are inspector tuning and are not
+  quoted here; the point to carry forward is *which knob to reach for* when night
+  reads too dark or too washed out.
+- The **headlight-cone block**, prefixed `headlight_` plus `night_amount`. These
+  are the odd ones out in this file: they are **not named by the weather table
+  at all** and are not `look` keys — they are pushed to the shaders as global
+  shader parameters once per frame. See "Night" below.
+  - `night_amount` — strength of the cone, 0..1; at exactly 0 every night
+    uniform is a bit-for-bit no-op.
+  - `headlight_color` — the light the cone ADDS to the light term.
+  - `headlight_range_m` — how far the cone reaches before attenuating to nothing.
+    A genuine difficulty knob: it sets how far ahead the road can be read.
+  - `headlight_inner_deg` / `headlight_outer_deg` — HALF-angles of the fully-lit
+    core and of the faded edge, in degrees; converted to cosines before upload.
+  - `headlight_offset_m` — offset from the car origin to the cone apex in the
+    **car's own space** (x right, y up, z FORWARD), putting the apex on the
+    bonnet line so the cone does not light the car's own nose.
+  - `headlight_pitch_deg` — how far below horizontal the cone is aimed, and the
+    knob that actually decides **where the lit pool starts**. A perfectly
+    horizontal cone only reaches the ground where its OUTER edge descends to
+    ground level — roughly `headlight_offset_m.y / tan(outer)` past an apex that
+    is already pushed forward — so the light appears to begin several metres in
+    front of the bumper. Real headlights are aimed down for the same reason.
+    Raise it to pull the pool toward the car.
+  - `headlight_separation_frac` — spacing of the TWO lamps, as a fraction of the
+    fielded car's width rather than an absolute distance, so a wide GT throws a
+    wider pair than a kei car. The driver reads the body width from `car.gd` →
+    `half_width` (doubled) — the same dimension the replay wheel-cam rig measures
+    its clearance from. **0 collapses to a single cone** and makes the shader skip
+    the second evaluation, so this is the cost knob as well as the look knob.
+
 All authored in `config/game_config.tres`, per the project rule that tuning values
 live in the resource, not script literals — the `@export` defaults in
 `game_config.gd` are fallbacks only.
@@ -282,6 +379,98 @@ It touches **only** the Environment, never the `TerrainManager`'s baked sun/ambi
 it is **purely cosmetic** — it changes no physics and no time, so unlike the
 crosswind it need not be deterministic and is free to use `randf()`. That is also
 why its config fields stay out of `config_fields`/`fingerprint`.
+
+## Night
+
+The seventh condition, and **purely a look** — deliberately. Its entry authors a
+`look` block and a `road_tint` and nothing else: no `grip_mult` (μ is exactly
+1.0, identical to dry), no `wind`, no `particles`, no `lightning`. It therefore
+names nothing in `physics_fields()`, so it changes no lap time, needs no
+rebalancing and never re-keys the opponent cache. Design rationale and the four
+other settled decisions are in `todo/night-weather-and-headlights.md`.
+
+**The darkening is not done in a shader.** It comes for free from the existing
+path every condition uses: the low `night_sun_energy_mult` scales
+`TerrainManager.sun_color` in `world.gd::_apply_overcast_look`, and the terrain
+bakes that dark light into its vertex colours at chunk generation. By the time
+any shader runs, the world is already dark.
+
+**The re-lighting is a fake headlight cone**, evaluated analytically in the
+shaders from a handful of `global uniform`s — no light node is added, and none
+could be: every material in this renderer is `unshaded`, so a `SpotLight3D`
+would have zero effect. `scripts/headlight_cone.gd` (`class_name HeadlightCone`)
+is the whole driver: `is_night(cfg)` gates on the weather id (NOT on
+`night_amount`, which is the cone's strength), `params(cfg, xform)` turns the
+car pose plus the authored knobs into a name→value dictionary, `push()` is pure
+transport onto `RenderingServer.global_shader_parameter_set`, and `reset()`
+zeroes it. `world.gd::_process` pushes once per frame and early-outs off a night
+stage; `world.gd::_exit_tree` calls `reset()` because shader globals persist
+across scene changes and the podium and HQ draw with the same shaders. The
+shader half — why additive, why fragment on terrain and vertex elsewhere — is in
+[rendering.md](rendering.md) → "The fake headlight cone".
+
+### Unshaded means nothing dims for free — `weather_lit` is the rule
+
+This is a **bug class**, not a list of unrelated fixes. Every material in this
+renderer is `unshaded`, so **no material dims because the world got darker** —
+each one has to be *told*, and each one that isn't told keeps rendering full
+daylight while everything around it goes dark. That glows: a bright object
+against a dimmed world reads as lit from a sun that isn't there. It bit four
+separate surfaces before the rule was consolidated (car, trees, lakes, signs),
+and it will bite the next fake-lit material added unless that material is routed
+through the one place that knows the rule.
+
+**The rule lives in `GameConfig.weather_lit(col)`** (`scripts/game_config.gd`) —
+multiply the RGB of an authored colour by the runtime `weather_sun_mult` and
+**leave alpha alone**. Alpha carries meaning (the water colours use it), so
+scaling it would make a dim lake *transparent* rather than *dark*. Anything that
+hands an authored colour straight to a shader goes through it.
+
+**The multiplier**: `GameConfig.weather_sun_mult` is **not exported and not
+authored** — a runtime value on the shared `Config.data`.
+`world.gd::_apply_overcast_look` seeds it from the condition's `sun_energy_mult`
+(the same number it bakes into `TerrainManager.sun_color`), and
+`_apply_weather_look` re-seeds it to **1.0 every stage boot**, for the same
+reason the road tint is re-seeded: a condition with no `look` block must leave a
+clean 1.0 behind, or a dry stage would inherit the previous stage's dimming. It
+defaults to 1.0 so a session-less boot is unaffected.
+
+**Every surface, and how the weather reaches it:**
+
+| Surface | Route |
+|---|---|
+| Terrain / road | the bake — `TerrainManager.sun_color`/`sky_color` are scaled directly and baked into vertex colours at chunk generation (never via `weather_lit`) |
+| Car (chassis, cabin, wheels, swapped-in body models) | `GameConfig.apply_car_light` → `weather_lit(sun_color)` / `weather_lit(sky_color)` |
+| Foliage billboards (trees) | `GameConfig.apply_foliage_light` → same two colours, `billboard_opaque.gdshader` |
+| Water / ice (`scripts/lake_field.gd` → `build`) | `weather_lit` on the water + shore colours, and `sparkle_strength` scaled by `weather_sun_mult` (the sparkle is a sun glint) |
+| Roadside signs (`scripts/sign_field.gd` → `_material_for`) | `weather_lit` on `albedo_color` |
+
+`ground_color` — the bounce off the surface below — is deliberately **not**
+dimmed in either `apply_car_light` or `apply_foliage_light`: it is dominated by
+the ground's own albedo, not by the sun.
+
+**Why signs need `albedo_color` specifically**: unlike the terrain, signs carry
+**no baked vertex light** (their `COLOR` is the default white), so `albedo_color`
+is the *only* channel the weather has into them.
+
+**Why foliage needed its own helper**: `scripts/billboard_field.gd` used to push
+five raw `Config.data` values at the billboard shader inline. The directional
+term there is `sun_color * ndl`, so a raw `sun_color` left every tree lit on its
+sunward side at night — where there is no sun. `apply_foliage_light` mirrors
+`apply_car_light` exactly, so trees, car and ground now agree on the light by
+construction rather than by three copies staying in sync.
+
+**The reset**: `world.gd::_exit_tree` sets `Config.data.weather_sun_mult = 1.0`
+alongside the existing `HeadlightCone.reset()`. `weather_sun_mult` is a runtime
+value on the **shared** `Config.data` and nothing anywhere calls
+`Config.reset()`, so without this a night stage would leave the HQ and the podium
+dimmed — both spawn trees through `Foliage.spawn_trees`, which now reads it via
+`apply_foliage_light`. `_exit_tree` covers every exit path regardless of
+destination, and runs before the incoming scene's `_ready`.
+
+**This visibly changes rain and storm** as well as night, which is intended:
+their cars, trees, lakes and signs are now dimmer than before, matching the
+ground they sit on.
 
 ## Rival times — why rain/sandstorm are variety, not difficulty (and fog is not)
 
@@ -358,6 +547,17 @@ table.
 `world.gd._apply_weather_look` looks the condition up in `WeatherLibrary` once and
 applies whatever its entry authors — nothing more.
 
+**Night is the one condition that does swap the sky.** If the entry names a
+`sky_panorama` field, `_apply_weather_look` loads the path that field holds onto the
+`PanoramaSkyMaterial`, **after** `_apply_region_look` has run — so a condition that
+names a sky wins over the region's choice, and the five that don't leave the region's
+sky exactly as the region look seeded it. That ordering is only safe because the
+region look now assigns the sky **unconditionally** (falling back to
+`GameConfig.default_sky_panorama`) instead of only when the region authors one;
+without that re-seed the night sky would survive into the next stage, since the sky
+material is a shared `main.tscn` sub-resource just like the floor material below. See
+[regions.md](regions.md) → "The sky no longer leaks between stages".
+
 **The road tint is idempotent, and that is load-bearing.** `_tint_road` does a
 read-modify-write on the floor `ShaderMaterial`, which is a **shared sub-resource of
 `main.tscn`** (no `resource_local_to_scene`), so it survives every scene
@@ -380,8 +580,11 @@ entry, rather than a copy-pasted path each. Note it is called after `apply_terra
 `_apply_region_look` — the lines between clobber `tarmac_color` and the terrain's
 sun/ambient, so calling it earlier would let the clear-day values win. The
 darkened/tinted sun/ambient is written onto the `TerrainManager`, never onto the
-shared `GameConfig`, so a later dry stage in the same process is not left
-dimmed/tinted.
+shared `GameConfig`'s authored colours, so a later dry stage in the same process
+is not left dimmed/tinted. The one runtime value it does write back to the config
+is `weather_sun_mult` (so the car dims with the ground) — and that is explicitly
+re-seeded to 1.0 at the top of `_apply_weather_look` for exactly the same
+leak reason. See "Cars now dim with the world" above.
 
 Particles (`scripts/rain_field.gd`, class `WeatherField`) are camera-parented and
 constructed only when the entry names a particle **kind**: `world.gd` calls
@@ -428,6 +631,29 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   brightens the environment colour, returns EXACTLY to the stage's own colour (a leak
   would leave the stage permanently mis-lit) and re-arms its timer, driven with a
   synthetic lightning block so no authored brightness or interval is pinned.
+- `tests/headless/test_headlight_cone.gd` — the night condition and the cone,
+  behaviour only: the gate is the weather id (and a null config is not night);
+  `params` is empty off a night stage; the cone points and its apex offset
+  rotates with the car; the outer edge is always wider than the inner one and
+  the range is never zero however the two are authored; strength clamps to
+  0..1; the night entry authors every `LOOK_KEYS` field and touches no physics
+  field; `apply_car_light` scales with `weather_sun_mult` and defaults to no
+  dimming; `weather_lit` dims RGB and leaves **alpha untouched** (a scaled alpha
+  would make a dim lake transparent instead of dark);
+  `apply_foliage_light` dims the trees' sun with the weather (strictly darker,
+  proportionally); and trees and car take the **same** sun colour on every
+  channel, so the two helpers can't drift apart; every night-lit shader `#include`s the cone and ADDS it to the light
+  term rather than multiplying; and `ps1_models` still has no vertex stage. No
+  authored angle, range, colour or strength is pinned. Plus the sky override:
+  `test_night_names_a_sky_and_no_other_condition_does` — night's `sky_panorama`
+  key names a real `GameConfig` string field holding a non-empty path, and every
+  OTHER entry in `WeatherLibrary.all()` (iterated opaquely, no id named) has no
+  `sky_panorama` at all, pinning that the mechanism stays opt-in rather than
+  drifting into a sixth mandatory look key. `test_there_is_a_default_sky_for_regions_that_name_none`
+  — `default_sky_panorama` is non-empty and `ResourceLoader.exists` on it (and on
+  `night_sky_panorama`); an empty default would silently reintroduce the
+  cross-stage sky leak, since the region look falls back to it. Neither test names
+  a texture path.
 - `tests/headless/test_rally_library.gd` → `test_event_weather_defaults_to_dry` —
   dry for an omitted key, dry for an unrecognised string, and every other condition
   in `WeatherLibrary.all()` (opaque, no id named) resolves to itself. Region/count

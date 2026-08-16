@@ -79,7 +79,14 @@ the hitbox. Per sign:
   would unwrap its six faces into an atlas, showing only a zoomed-in slice.
 - **Material** — `shaders/ps1_models.gdshader`; the atlas face texture if one is
   wired in `sign_textures` for the key, otherwise a **flat per-kind colour
-  fallback** so geometry is visible before the art lands.
+  fallback** so geometry is visible before the art lands. Built by
+  `SignField._material_for`, which passes `albedo_color` (white over a texture, the
+  fallback colour without one) through `GameConfig.weather_lit` so signs **dim with
+  the weather**. Signs carry **no baked vertex light** — unlike the terrain, their
+  `COLOR` is the default white — so `albedo_color` is the *only* channel the weather
+  has into them; without the dim they rendered at full daylight brightness on a
+  night stage and glowed beside the terrain they are planted in. See
+  [weather.md](weather.md) → "Unshaded means nothing dims for free".
 - **Body** — a `RigidBody3D` of mass `sign_mass_kg` (light, so it scatters readily)
   with a `BoxShape3D` child sized `panel_size × sign_base_depth_m`, centred half its
   height up so the box bottom rests on the ground and the centre of mass sits above

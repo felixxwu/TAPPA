@@ -121,7 +121,9 @@ func _prototype(style: int, pitch: float, params: Dictionary) -> Dictionary:
 	if _protos.has(style):
 		return _protos[style]
 	var proto := BarrierSection.new()
-	proto.style = style
+	# Explicit cast: `style` is carried as an int through the batching maps (dictionary
+	# keys), while BarrierSection.style is typed as its own enum.
+	proto.style = style as BarrierSection.Style
 	proto.length = pitch
 	if params.has("sun_direction"):
 		proto.sun_direction = params["sun_direction"]
@@ -144,7 +146,8 @@ func _build_group(style: int, xforms: Array, pitch: float, params: Dictionary) -
 		centre += x.origin
 	centre /= float(xforms.size())
 	var anchor := Transform3D(Basis.IDENTITY, centre)
-	var to_local := anchor.affine_inverse()
+	# NOT named `to_local`: that shadows Node3D.to_local on this very node.
+	var to_anchor := anchor.affine_inverse()
 	var render_dist := float(params.get("render_distance_m", 0.0))
 	var render_fade := float(params.get("render_fade_m", 0.0))
 
@@ -154,7 +157,7 @@ func _build_group(style: int, xforms: Array, pitch: float, params: Dictionary) -
 		mm.mesh = part["mesh"]
 		mm.instance_count = xforms.size()
 		for i in range(xforms.size()):
-			mm.set_instance_transform(i, to_local * (xforms[i] as Transform3D) * part["transform"])
+			mm.set_instance_transform(i, to_anchor * (xforms[i] as Transform3D) * part["transform"])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = part["material"]

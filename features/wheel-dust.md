@@ -74,7 +74,7 @@ re-applies the instance *scale* after the fact, but never a roll.
 
 So the billboard is done by hand in `shaders/billboard_particle.gdshader`
 (screen-aligned off `INV_VIEW_MATRIX`'s right/up columns, direct `POSITION`
-rewrite — the same approach as `shaders/billboard.gdshader`), and the instance
+rewrite — the same approach as `shaders/billboard_opaque.gdshader`), and the instance
 basis is *read* instead of thrown away:
 
     column 0 = (cos * half_w,  sin * half_w, 0)   -> length = half_w, direction = roll

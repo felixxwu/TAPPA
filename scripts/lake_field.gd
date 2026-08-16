@@ -30,13 +30,23 @@ func build(water_level: float, cfg: GameConfig) -> void:
 	var frozen := cfg.frozen_water_grip > 0.0
 	var mat := ShaderMaterial.new()
 	mat.shader = WATER_SHADER
-	mat.set_shader_parameter("water_color", cfg.ice_color if frozen else cfg.water_color)
+	# Dimmed by the weather's sun multiplier like every other fake-lit surface. The
+	# water shader is `unshaded` and takes an authored colour straight to ALBEDO, so
+	# without this a lake renders full daylight blue on a night stage and glows
+	# against the dark terrain around it — the brightest thing on screen, and the
+	# opposite of what water does at night.
+	mat.set_shader_parameter("water_color",
+		cfg.weather_lit(cfg.ice_color if frozen else cfg.water_color))
 	mat.set_shader_parameter("shore_color",
-		cfg.ice_shore_color if frozen else cfg.water_shore_color)
+		cfg.weather_lit(cfg.ice_shore_color if frozen else cfg.water_shore_color))
 	# Ice does not flow. Zeroing the scroll is what separates it from water at a glance,
 	# and it needs no second shader — the existing one simply stops animating.
 	mat.set_shader_parameter("scroll_speed", 0.0 if frozen else cfg.water_ripple_speed)
-	mat.set_shader_parameter("sparkle_strength", cfg.water_sparkle_strength)
+	# The sparkle is a sun glint, so it scales with the sun too — a full-strength
+	# sparkle band on an otherwise dark lake reads as the surface being lit from
+	# somewhere that isn't there.
+	mat.set_shader_parameter("sparkle_strength",
+		cfg.water_sparkle_strength * cfg.weather_sun_mult)
 	mat.set_shader_parameter("water_tex", WATER_TEX)
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(SPAN, SPAN)

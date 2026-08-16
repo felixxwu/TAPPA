@@ -79,14 +79,34 @@ Neither pins a number; both re-derive from whatever is authored.
 
 ## The graph on the table (dotted links)
 
-The HQ map table draws that graph under the pins: a faint dotted line between two rallies
+The HQ map table draws that graph under the pins: a dashed line between two rallies
 whenever completing either would light the other. `RallyLibrary.reveal_link_pairs(profile)`
 decides the pairs — **one unordered entry per pair**, emitted when the link works in either
 direction, since `reveal_radius` is per-rally and A can reach B without B reaching A.
 `hq._build_reveal_links` is only the geometry: ids in, dashes on the table top, laid by
 `hq._dash_line` at a fixed metre pitch so a long link and a short one read as the same kind
-of line. Look values live in `GameConfig` (`map_link_alpha` — 0 turns the graph off
-entirely — `map_link_dash_m`, `map_link_gap_m`).
+of line.
+
+**The dashes are RIBBONS, not line primitives.** They were originally
+`Mesh.PRIMITIVE_LINES`, which is one *pixel* wide however far away the camera is — on a
+400-px-tall render target that made the graph a hairline that aliased into a shimmer and
+disappeared against the lit map, so the table still read as an unconnected scatter of pins.
+`hq._add_link_ribbons` now emits each dash as a quad with a real width in metres, extruded
+in the table's **XZ plane** (not toward the camera, so it stays drawn *on* the map as the
+view orbits) and extended by half a width at each end so consecutive dashes don't notch.
+A darker, slightly wider ribbon is drawn underneath as an outline — the map plane is a
+full-colour texture at full brightness where explored, so a light line needs its own edge
+to separate it from pale terrain. Both live on one `ImmediateMesh` as two surfaces with
+their own materials (outline first), so the pair can't be split or drawn out of order;
+`hq.MAP_LINK_CORE_LIFT` is the second, smaller separation that stops the two coplanar
+ribbons z-fighting each other.
+
+Look values live in `GameConfig` and are authored in `config/game_config.tres`:
+`map_link_alpha` (0 turns the graph off entirely), `map_link_color`, `map_link_width_m`
+(the knob that actually governs readability), `map_link_dash_m`, `map_link_gap_m`, and the
+`map_link_outline_width_m` / `map_link_outline_color` pair (outline width 0 drops that pass).
+All of them are in `hq._map_pins_stamp`, so retuning any one rebuilds the map rather than
+leaving a stale cache.
 
 **Both ends must already be REVEALED.** An edge drawn across the dark hands the player the
 shape of a roster they have not explored, which is exactly what the fog is there to

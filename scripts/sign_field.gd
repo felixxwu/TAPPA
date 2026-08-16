@@ -368,11 +368,17 @@ func _material_for(kind: String, texture_key: String, textures: Dictionary) -> S
 	var mat := ShaderMaterial.new()
 	mat.shader = SIGN_SHADER
 	mat.set_shader_parameter("blend_road", false)
+	# Signs carry NO baked vertex light — unlike the terrain, their COLOR is the
+	# default white — so albedo_color is the only place the weather can reach them.
+	# Without the dim they render at full daylight brightness on a night stage and
+	# glow beside the terrain they are planted in.
+	var cfg: GameConfig = Config.data
 	var path := String(textures.get(texture_key, ""))
 	if not path.is_empty() and ResourceLoader.exists(path):
 		mat.set_shader_parameter("albedo_texture", load(path) as Texture2D)
-		mat.set_shader_parameter("albedo_color", Color.WHITE)
+		mat.set_shader_parameter("albedo_color", cfg.weather_lit(Color.WHITE))
 	else:
 		# No texture: hint_default_white samples white, so albedo_color shows solid.
-		mat.set_shader_parameter("albedo_color", FALLBACK_COLORS.get(kind, Color.WHITE))
+		mat.set_shader_parameter("albedo_color",
+			cfg.weather_lit(FALLBACK_COLORS.get(kind, Color.WHITE)))
 	return mat

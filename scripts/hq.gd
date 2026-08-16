@@ -883,6 +883,8 @@ func _map_pins_stamp(hold_locked: Array) -> Array:
 		cfg.map_fog_unlit_brightness, cfg.map_fog_edge_softness,
 		cfg.map_reveal_radius, cfg.map_hq_reveal_radius,
 		cfg.map_link_alpha, cfg.map_link_dash_m, cfg.map_link_gap_m,
+		cfg.map_link_width_m, cfg.map_link_color,
+		cfg.map_link_outline_width_m, cfg.map_link_outline_color,
 	]
 
 
@@ -923,9 +925,14 @@ func _detach_prize_car_props() -> void:
 # is what opened those two, and that the corner they reached hangs off a different thread
 # entirely. Where it runs OUT into the dark it is not drawn — see reveal_link_pairs.
 #
-# Deliberately FAINT and dotted (GameConfig.map_link_alpha): it is a hint under the pins,
-# not a subway map. At full strength 32 pins' worth of edges reads as a web and the markers
-# stop being the thing you look at.
+# It is drawn to be READ, not hinted at. It began as a near-transparent hairline on the
+# theory that a bold graph would compete with the pins; in practice the opposite was true —
+# 1-pixel PRIMITIVE_LINES at 22% alpha over a full-brightness map texture were invisible,
+# so the table still looked like an unconnected scatter and the feature paid for itself in
+# nothing. It is now a real-width ribbon with a dark outline under it (see
+# _add_link_ribbons). Everything about that is authored: map_link_width_m, map_link_color,
+# map_link_alpha and the map_link_outline_* pair, so it can be dialled back down without
+# touching this code if it ever does start crowding the pins.
 #
 # Only edges with BOTH ends out of the fog are drawn — the pairing rule and its reasoning
 # live in RallyLibrary.reveal_link_pairs, next to the reveal predicate they come from, so
@@ -953,19 +960,70 @@ func _build_reveal_links(table_pos: Vector3, plane_size: Vector2, top_y: float) 
 	if segments.is_empty():
 		return
 	var mesh := ImmediateMesh.new()
-	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	for v in segments:
-		mesh.surface_add_vertex(v)
-	mesh.surface_end()
+	# OUTLINE FIRST, then the bright core on top of it. Two surfaces on one mesh rather
+	# than two nodes, so the pair can never be separated or drawn out of order.
+	var core: Color = cfg.map_link_color
+	core.a = cfg.map_link_alpha
+	if cfg.map_link_outline_width_m > 0.0:
+		_add_link_ribbons(mesh, segments, cfg.map_link_outline_width_m,
+			cfg.map_link_outline_color, 0.0)
+	_add_link_ribbons(mesh, segments, cfg.map_link_width_m, core, MAP_LINK_CORE_LIFT)
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
+	_pins_root.add_child(mi)
+
+
+# How far the bright core floats above its own outline. Both sit above the map plane by
+# MAP_LINK_LIFT; this is the second, smaller separation that keeps the two coplanar ribbons
+# from z-fighting with EACH OTHER.
+const MAP_LINK_CORE_LIFT := 0.0015
+
+
+# Turn a flat list of dash endpoint PAIRS into flat ribbons of the given width, as one
+# unshaded surface on `mesh`.
+#
+# WHY RIBBONS AND NOT PRIMITIVE_LINES: a line primitive is one PIXEL wide whatever the
+# camera does, and the game renders at a 400-px-tall target — so the graph came out as a
+# hairline that aliased into a dashed shimmer and vanished against the lit map. A quad has
+# a real width in metres, so it scales with the table like everything else on it.
+#
+# The ribbon is extruded in the table's PLANE (XZ) rather than toward the camera: the map
+# is a flat surface viewed from roughly above, so an in-plane extrusion reads as a drawn
+# line on the map, while a camera-facing one would lift off it as the view swung round.
+func _add_link_ribbons(mesh: ImmediateMesh, segments: Array[Vector3], width: float,
+		col: Color, lift: float) -> void:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(1.0, 1.0, 1.0, cfg.map_link_alpha)
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # the table is orbited; never cull a face
 	mat.disable_receive_shadows = true
-	mi.material_override = mat
-	_pins_root.add_child(mi)
+	mat.albedo_color = col
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, mat)
+	var half: float = maxf(width, 0.001) * 0.5
+	var up := Vector3(0.0, lift, 0.0)
+	for i in range(0, segments.size() - 1, 2):
+		var a: Vector3 = segments[i] + up
+		var b: Vector3 = segments[i + 1] + up
+		var span := a.distance_to(b)
+		if span <= 0.00001:
+			continue
+		var dir := (b - a) / span
+		# Perpendicular within the table plane. The dash is also extended by half a width
+		# at each end, so the corners of consecutive dashes don't leave a visible notch and
+		# a very short dash still renders as a square rather than a sliver.
+		var perp := Vector3(-dir.z, 0.0, dir.x) * half
+		var cap := dir * half
+		var p0 := a - cap - perp
+		var p1 := a - cap + perp
+		var p2 := b + cap + perp
+		var p3 := b + cap - perp
+		mesh.surface_add_vertex(p0)
+		mesh.surface_add_vertex(p1)
+		mesh.surface_add_vertex(p2)
+		mesh.surface_add_vertex(p0)
+		mesh.surface_add_vertex(p2)
+		mesh.surface_add_vertex(p3)
+	mesh.surface_end()
 
 
 # A rally's normalised map_pos as a world point on the table top. Mirrors _make_pin's

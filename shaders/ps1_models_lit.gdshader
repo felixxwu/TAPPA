@@ -24,6 +24,8 @@ uniform vec3 ground_color : source_color = vec3(0.35);  // ambient bounce from b
 
 varying vec3 v_light;
 
+#include "res://shaders/headlight_cone.gdshaderinc"
+
 void vertex() {
 	// World-space normal (uniform-scaled meshes only, which is all of ours).
 	vec3 wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
@@ -33,6 +35,12 @@ void vertex() {
 	vec3 lit = ambient + sun_color * ndl;
 	// light_amount == 0 → exactly vec3(1.0), i.e. a no-op multiply.
 	v_light = mix(vec3(1.0), lit, light_amount);
+	// Fake headlight cone (night weather), ADDED to the light term for the same
+	// reason as everywhere else: at night this term is already dark, so a multiply
+	// could not brighten it. Per-vertex, reusing the existing varying — no new
+	// interpolator. Car bodywork sits at the cone apex and so is lit by its own
+	// headlights, which is wanted: the car must not float unlit in the dark.
+	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 }
 
 void fragment() {

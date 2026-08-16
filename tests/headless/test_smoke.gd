@@ -300,7 +300,7 @@ func test_floor_is_terrain_manager() -> void:
 
 
 func test_shaders_load_with_code() -> void:
-	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard.gdshader", "res://shaders/billboard_opaque.gdshader"]:
+	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard_opaque.gdshader"]:
 		var shader := load(path) as Shader
 		assert_not_null(shader, path + " loads")
 		assert_true(shader.code.length() > 0, path + " has code")
@@ -369,7 +369,8 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12), Vector2(-5, 8)])
-	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0)
+	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0,
+		0.0, _silhouette_stand_in())
 	assert_gt(field.bin_count, 0, "field builds per-bin MultiMeshes")
 	assert_eq(field.instance_positions.size(), positions.size(),
 		"one instance per scattered position")
@@ -387,7 +388,7 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 		"box rests on the ground at the tree position")
 	# Render distance is wired into the billboard material as shader params.
 	var smat := field.render_mesh.surface_get_material(0) as ShaderMaterial
-	assert_not_null(smat, "quad has a ShaderMaterial")
+	assert_not_null(smat, "billboard surface has a ShaderMaterial")
 	assert_eq(smat.get_shader_parameter("render_distance"), 80.0, "render_distance param set")
 	assert_eq(smat.get_shader_parameter("fade_band"), 15.0, "fade_band param set")
 
@@ -408,10 +409,9 @@ func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12)])
 	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0,
-		0.0, silhouette, true)
+		0.0, silhouette)
 
 	assert_eq(field.render_mesh, silhouette, "field instances the supplied silhouette mesh")
-	assert_false(field.render_mesh is QuadMesh, "not a QuadMesh in the opaque path")
 	assert_eq(field.instance_positions.size(), positions.size(), "one instance per position")
 	var smat := field.render_mesh.surface_get_material(0) as ShaderMaterial
 	assert_not_null(smat, "silhouette surface has a ShaderMaterial")
@@ -427,18 +427,25 @@ func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -
 	assert_not_null(field.get_node_or_null("Collision"), "opaque path still builds collision")
 
 
-func _opaque_billboard_field(positions: PackedVector2Array) -> BillboardField:
-	var floor_node := _scene.get_node("Floor") as TerrainManager
-	var tex := load("res://textures/tree.png") as Texture2D
+# A trivial normalized silhouette stand-in (unit quad, x in [-0.5,0.5], y in [0,1])
+# — BillboardField requires a supplied mesh, and its geometry is irrelevant to the
+# placement / collision / material logic these tests assert on.
+func _silhouette_stand_in() -> Mesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for uv in [Vector2(0,1), Vector2(1,1), Vector2(1,0), Vector2(0,1), Vector2(1,0), Vector2(0,0)]:
 		st.set_uv(uv)
 		st.add_vertex(Vector3(uv.x - 0.5, 1.0 - uv.y, 0.0))
+	return st.commit()
+
+
+func _opaque_billboard_field(positions: PackedVector2Array) -> BillboardField:
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var tex := load("res://textures/tree.png") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0,
-		0.0, st.commit(), true)
+		0.0, _silhouette_stand_in())
 	return field
 
 
@@ -490,17 +497,17 @@ func test_billboard_field_reset_fallen_stands_trees_back_up() -> void:
 	assert_true(field.is_fallen(0), "a reset tree can be knocked over again")
 
 
-func test_billboard_field_knock_down_safe_without_collision_or_quad_path() -> void:
-	# Quad path (no supplied mesh) is camera-billboarded, so it isn't fellable; a
-	# collision-less field and out-of-range indices must also be safe no-ops.
+func test_billboard_field_knock_down_safe_without_collision_or_bad_index() -> void:
+	# Felling disables a hitbox, so a field built without collision (bushes) isn't
+	# fellable; out-of-range indices must also be safe no-ops.
 	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/tree.png") as Texture2D
-	var quad_field := BillboardField.new()
-	add_child_autofree(quad_field)
-	quad_field.build(PackedVector2Array([Vector2(1, 1)]), floor_node, Vector2(4, 6), tex,
-		0.5, 4.0, true, 80.0, 15.0)  # no mesh -> quad path, _use_opaque false
-	quad_field.knock_down(0, Vector3(1, 0, 0), 0.6)
-	assert_false(quad_field.is_fallen(0), "quad-path billboards are not fellable")
+	var bodyless := BillboardField.new()
+	add_child_autofree(bodyless)
+	bodyless.build(PackedVector2Array([Vector2(1, 1)]), floor_node, Vector2(4, 6), tex,
+		0.5, 4.0, false, 80.0, 15.0, 0.0, _silhouette_stand_in())
+	bodyless.knock_down(0, Vector3(1, 0, 0), 0.6)
+	assert_false(bodyless.is_fallen(0), "a field without collision is not fellable")
 
 	var opaque_field := _opaque_billboard_field(PackedVector2Array([Vector2(2, 2)]))
 	opaque_field.knock_down(99, Vector3(1, 0, 0), 0.6)
@@ -525,7 +532,7 @@ func test_opaque_billboard_size_jitter_scales_within_range_deterministically() -
 	var jittered := BillboardField.new()
 	add_child_autofree(jittered)
 	jittered.build(PackedVector2Array([Vector2(3, 4), Vector2(-8, 9), Vector2(15, -6)]),
-		floor_node, Vector2(4, 6), tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 0.5)
+		floor_node, Vector2(4, 6), tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, 0.5)
 	for pos in jittered.instance_positions:
 		var f := jittered._size_factor(pos)
 		assert_between(f, 0.5, 1.0, "jittered size factor stays within [floor, 1.0]")
@@ -534,7 +541,7 @@ func test_opaque_billboard_size_jitter_scales_within_range_deterministically() -
 	var plain := BillboardField.new()
 	add_child_autofree(plain)
 	plain.build(PackedVector2Array([Vector2(3, 4)]), floor_node,
-		Vector2(4, 6), tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 1.0)
+		Vector2(4, 6), tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, 1.0)
 	assert_eq(plain._size_factor(plain.instance_positions[0]), 1.0, "floor 1.0 disables jitter")
 
 
@@ -560,7 +567,7 @@ func test_opaque_billboard_aspect_jitter_stretches_x_and_y_independently() -> vo
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	field.build(PackedVector2Array([Vector2(3, 4), Vector2(-8, 9), Vector2(15, -6)]),
-		floor_node, size, tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 1.0, k)
+		floor_node, size, tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, 1.0, k)
 	var saw_non_square := false
 	for pos in field.instance_positions:
 		var s := field._instance_scale(pos)
@@ -580,7 +587,7 @@ func test_opaque_billboard_aspect_jitter_stretches_x_and_y_independently() -> vo
 	var plain := BillboardField.new()
 	add_child_autofree(plain)
 	plain.build(PackedVector2Array([Vector2(3, 4)]), floor_node,
-		size, tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 1.0, 0.0)
+		size, tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, 1.0, 0.0)
 	var ps := plain._instance_scale(plain.instance_positions[0])
 	assert_almost_eq(ps.x / size.x, ps.y / size.y, 1e-6, "k=0 keeps the authored aspect")
 
@@ -618,7 +625,8 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(3, 4), Vector2(6, 9)])
-	field.build(positions, floor_node, Vector2(1, 1.5), tex, 0.5, 4.0, false, 80.0, 15.0, -0.5)
+	field.build(positions, floor_node, Vector2(1, 1.5), tex, 0.5, 4.0, false, 80.0, 15.0,
+		-0.5, _silhouette_stand_in())
 	assert_eq(field.instance_positions.size(), positions.size(),
 		"bush field still renders one instance per position")
 	assert_null(field.get_node_or_null("Collision"),

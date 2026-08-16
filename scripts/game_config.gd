@@ -281,6 +281,13 @@ var peak_torque_rpm := 4500.0
 ## scene-entry site can't route weather around it. Session-less callers (free roam,
 ## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
 @export var weather := RallyLibrary.WEATHER_DRY
+# The active condition's sun_energy_mult, seated by world.gd::_apply_overcast_look
+# each stage boot (and reset to 1.0 there when the condition has no look block).
+# NOT exported and NOT authored: it is a derived runtime value, mirroring onto the
+# CAR the same dimming the terrain already bakes into its vertex colours, so a
+# dimmed stage doesn't leave a full-brightness car floating in it. Read only by
+# apply_car_light. Defaults to 1.0 so a session-less boot is unaffected.
+var weather_sun_mult := 1.0
 ## Global tyre μ multiplier applied on top of the surface grip when weather ==
 ## WEATHER_RAIN (Drivetrain.surface_tire_params). A single multiplier regardless of
 ## surface — see features/weather.md for the per-surface trade-off this defers.
@@ -1355,12 +1362,25 @@ func has_nitrous() -> bool:
 ## a menu the player did not ask for, for a place they were not looking at.
 @export_range(0.05, 3.0, 0.05) var map_select_radius_m := 0.55
 ## Opacity of the dotted lines drawn between rallies that unlock one another on the map
-## table. FAINT on purpose: the links are there to be read when you look for them, not to
-## become a web the pins have to compete with. 0 hides them entirely.
-@export_range(0.0, 1.0, 0.01) var map_link_alpha := 0.22
+## table. 0 hides them entirely.
+@export_range(0.0, 1.0, 0.01) var map_link_alpha := 0.85
+## Colour of those lines (RGB only — map_link_alpha supplies the opacity).
+@export var map_link_color := Color(1.0, 0.96, 0.86)
 ## Dash and gap length (metres, on the map plane) of those lines.
 @export_range(0.005, 0.2, 0.005) var map_link_dash_m := 0.035
 @export_range(0.005, 0.2, 0.005) var map_link_gap_m := 0.030
+## WIDTH of the dashes, in metres on the map plane. This is the knob that actually governs
+## whether the graph is readable: the links used to be drawn as PRIMITIVE_LINES, which are
+## one PIXEL wide no matter the camera distance, so on a 400-px-tall render target they were
+## a shimmering hairline. They are triangle strips now and have a real world width.
+@export_range(0.002, 0.06, 0.001) var map_link_width_m := 0.011
+## A darker line drawn UNDER each dash, slightly wider, purely for contrast. The map plane
+## is a full-colour world texture at full brightness where explored, so a light line has
+## nothing to separate it from pale terrain; the outline gives it an edge everywhere. Set
+## the width to 0 to drop the outline pass entirely.
+@export_range(0.0, 0.08, 0.001) var map_link_outline_width_m := 0.020
+## Colour AND opacity of that outline (alpha is used here, unlike map_link_color).
+@export var map_link_outline_color := Color(0.03, 0.02, 0.0, 0.55)
 ## How bright the UNEXPLORED map reads, as a fraction of its lit colour (0 = black,
 ## 1 = no fog at all). The terrain stays legible through it on purpose: the world should
 ## look like somewhere you have not been yet, not a hole in the table — the player is meant
@@ -1619,6 +1639,107 @@ func has_nitrous() -> bool:
 @export_range(0.1, 30.0) var snowfall_particle_speed := 2.4
 ## Fixed world-space heading the snow drifts toward (0 = +X, 90 = +Z).
 @export_range(0.0, 360.0) var snowfall_wind_dir_deg := 200.0
+
+# --- Night (weather == RallyLibrary.WEATHER_NIGHT) ----------------------------
+# A DARK stage re-lit only by a fake headlight cone in front of the player's car
+# (todo/night-weather-and-headlights.md). Two halves:
+#   1. The LOOK block below — the same five environment knobs every other condition
+#      authors. The darkening comes entirely from night_sun_energy_mult, which scales
+#      the sun the terrain bakes into its vertex colours; no shader darkens anything.
+#   2. The CONE fields — pushed to the shaders as global shader parameters, NOT read
+#      out of the weather table.
+# Night authors no grip multiplier and no wind: it is purely a look, so it changes no
+# lap time. See features/weather.md.
+## Near-black background / fog / horizon colour on a night stage. Not pure black —
+## a slight blue lift keeps the horizon from reading as a hole in the frame, and the
+## PS1 post-process quantises hard down here (banding is the known risk).
+@export var night_background_color := Color(0.04, 0.05, 0.09)
+## Very dim, cool ambient sky colour (upward-facing surfaces) on a night stage. This
+## is the floor everything outside the headlight cone is lit by, so it must not be
+## zero or unlit geometry becomes an unreadable silhouette.
+@export var night_sky_color := Color(0.06, 0.07, 0.12)
+## Sun energy on a night stage. THE dominant knob: this is what actually makes the
+## world dark, and the cone's additive re-lighting is only readable against a low
+## value here. Its range starts at 0.0 (unlike the daytime conditions, which never
+## want to go this low) because night lives at the bottom of it.
+@export_range(0.0, 1.0) var night_sun_energy_mult := 0.12
+## Scales fog_density on a night stage. Kept LOW on purpose: fog is environment-side
+## (fog_light_color), so the headlight cone cannot light it — thick haze at night
+## gives a lit pool of ground under a flat grey sheet. Raise this only carefully.
+@export_range(0.1, 4.0) var night_fog_density_mult := 0.8
+## How far the fog tints the sky on a night stage. High, so the panorama sinks into
+## the dark rather than punching a lit horizon through it.
+@export_range(0.0, 1.0) var night_fog_sky_affect := 0.9
+## Darkens the road/ground albedo on a night stage (albedo × amount, like rain's — a
+## night road is not tinted toward a new colour, just unlit).
+@export_range(0.1, 1.0) var night_road_darken := 0.7
+## The sky panorama a night stage swaps in, overriding whatever the REGION chose.
+## Named by the night entry's `sky_panorama` key in WeatherLibrary, so a condition
+## that wants its own sky is authored data rather than a branch in world.gd. Empty
+## string = keep the region's sky.
+@export_file("*.jpg", "*.png") var night_sky_panorama := "res://textures/sky-night.jpg"
+## The sky every stage falls back to when its region does not name one (home and
+## home_coast do not). Re-seeded on every stage boot BEFORE the region and weather
+## looks are layered on, for the same reason `albedo_color` and `tarmac_color` are:
+## the PanoramaSkyMaterial is a shared sub-resource of main.tscn with no
+## resource_local_to_scene, so without a re-seed a Greece or night sky would follow
+## the player into the next home stage.
+@export_file("*.jpg", "*.png") var default_sky_panorama := "res://textures/sky_field.png"
+
+# Headlight cone. These do NOT go through the weather table: they are uploaded once
+# per frame as GLOBAL SHADER PARAMETERS (hl_pos / hl_dir / night_amount and friends)
+# and evaluated analytically in the shaders — there is no light node anywhere in this
+# renderer (features/rendering.md).
+## Master switch and strength of the cone, 0..1. At exactly 0 the shaders' `lit` term
+## is exactly 0, making every night uniform a BIT-FOR-BIT NO-OP — which is what lets
+## the cone ship in shaders that every daytime stage, the podium and the HQ also use.
+## The per-frame driver early-outs on 0, and it is reset to 0 unconditionally when
+## entering any non-stage scene (shader globals persist across scene changes).
+@export_range(0.0, 1.0) var night_amount := 1.0
+## Colour the cone ADDS to the light term (ALBEDO = surface * (baked + this * lit)).
+## Additive, never a multiply: the bake is already near-black, so a multiplicative
+## cone could not re-light it. Warm-white reads as headlights against the cool dark.
+@export var headlight_color := Color(1.0, 0.94, 0.78)
+## How far the cone reaches, in metres, before it attenuates to nothing. Sets how far
+## ahead the player can read the road, so it is a genuine difficulty knob.
+@export_range(1.0, 200.0) var headlight_range_m := 45.0
+## HALF-angle in degrees of the cone's fully-lit core. Converted to a cosine before
+## upload (the shader compares against dot(dir, to_fragment), never an angle).
+@export_range(1.0, 89.0) var headlight_inner_deg := 12.0
+## HALF-angle in degrees where the cone has faded to nothing; the falloff runs from
+## the inner half-angle to this one. Also uploaded as a cosine. Must be larger than
+## headlight_inner_deg or the cone has no soft edge.
+@export_range(1.0, 89.0) var headlight_outer_deg := 26.0
+## Offset from the car's origin to the cone's emission point, in the car's own space:
+## X = right, Y = up, Z = FORWARD (the driver notes: the car's forward is -basis.z, so
+## the driver adds this Z along forward, not along +Z). Puts the origin on the bonnet
+## line rather than the car's centre, so the cone does not light the car's own nose.
+@export var headlight_offset_m := Vector3(0.0, 0.6, 1.8)
+## Downward aim of the cone, in degrees below horizontal. THIS is the knob that sets
+## how far ahead the lit pool starts, and it matters more than it looks: with a
+## perfectly horizontal cone the ground only enters it where the OUTER edge finally
+## drops to ground level — about headlight_offset_m.y / tan(outer) metres past the
+## apex, with the bright inner core starting further out still — which reads as the
+## light starting several metres in front of the bumper. Real headlights are aimed
+## down for exactly this reason. Raise it to pull the pool toward the car, lower it
+## to throw the light further down the road.
+@export_range(0.0, 45.0) var headlight_pitch_deg := 7.0
+## Distance between the two headlamps, as a FRACTION OF THE FIELDED CAR'S WIDTH —
+## not an absolute figure, so a wide GT throws a visibly wider pair than a kei car
+## and the lights always sit in a believable place on whatever body is fielded. The
+## driver multiplies this by the car's own width (`car.gd` → `half_width`, doubled),
+## the same body dimension the replay wheel-cam rig measures its clearance from.
+## Around 0.6 puts the lamps inboard of the corners, where headlights actually live.
+##
+## The pair shares aim, range, angles and colour — only the apex differs — and the
+## two cones are combined with max() rather than added, so the overlap straight
+## ahead stays at lamp brightness instead of reading as a third, brighter light.
+##
+## SET TO 0 for a single cone: the shader then skips the second cone entirely, on a
+## branch taken uniformly across the whole draw. So this is both the look knob and
+## the cost knob — 0 is measurably cheaper on terrain, which is the only surface that
+## evaluates the cone per-fragment.
+@export_range(0.0, 1.5) var headlight_separation_frac := 0.62
 
 @export_group("Terrain Layers")
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.
@@ -2681,12 +2802,40 @@ func apply_post_process(mat: ShaderMaterial) -> void:
 # for every lit car mesh (chassis/cabin/wheels in world.gd, the MX-5 body in
 # car.gd) so the light parameters live in one place. Terrain materials are never
 # passed here, so they keep the shader's default light_amount of 0 (flat).
+# Dim an authored colour by the ACTIVE weather's sun multiplier, preserving alpha.
+#
+# THE ONE PLACE THAT KNOWS THE RULE. Every material in the game is `unshaded`, so
+# nothing dims automatically — each one has to be told, and each one that ISN'T told
+# keeps rendering full daylight while the world around it goes dark. That was a real
+# bug three times over: the car (full sun on rain and storm stages), the trees (lit
+# on their sunward side at night, with no sun), and the lakes (bright daylight blue
+# at night). Route any new fake-lit material through here rather than pushing an
+# authored colour straight at a shader.
+func weather_lit(col: Color) -> Color:
+	return Color(col.r * weather_sun_mult, col.g * weather_sun_mult,
+		col.b * weather_sun_mult, col.a)
+
+
 func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("light_amount", car_light_amount)
 	mat.set_shader_parameter("light_dir", sun_direction)
-	mat.set_shader_parameter("sun_color", sun_color)
-	mat.set_shader_parameter("sky_color", sky_color)
+	# Sun and sky ambient dim with the weather; ground_color (the bounce off the
+	# surface below) does not, since it is dominated by the ground's own albedo.
+	mat.set_shader_parameter("sun_color", weather_lit(sun_color))
+	mat.set_shader_parameter("sky_color", weather_lit(sky_color))
 	mat.set_shader_parameter("ground_color", ground_color)
+
+
+# The same fake sun/ambient block for FOLIAGE billboards (billboard_opaque.gdshader).
+# Mirrors apply_car_light so trees sit in the same light as the ground and the car —
+# in particular so a tree's sunward side stops being lit on a night stage, where
+# there is no sun to light it.
+func apply_foliage_light(mat: ShaderMaterial) -> void:
+	mat.set_shader_parameter("sun_dir", sun_direction.normalized())
+	mat.set_shader_parameter("sun_color", weather_lit(sun_color))
+	mat.set_shader_parameter("sky_color", weather_lit(sky_color))
+	mat.set_shader_parameter("ground_color", ground_color)
+	mat.set_shader_parameter("light_amount", foliage_light_amount)
 
 
 # Push the shared sun/ambient values + the terrain amount onto a TerrainManager,

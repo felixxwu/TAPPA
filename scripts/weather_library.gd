@@ -203,6 +203,41 @@ const CONDITIONS: Array[Dictionary] = [
 		# (sandstorm's caking mechanism) rather than darkening it the way rain does.
 		"road_tint": {"amount": "snowfall_road_tint", "color": "snowfall_road_tint_color"},
 	},
+	# Night. PURELY A LOOK (todo/night-weather-and-headlights.md, Decision 4): the world
+	# is darkened by a very low sun_energy_mult, which the terrain bakes into its vertex
+	# colours, and a fake headlight cone re-lights a wedge in front of the player's car
+	# additively in the shaders. Nothing here is physics.
+	#
+	# Note what is ABSENT, and that this is the point: no "grip_mult" (μ is exactly 1.0,
+	# as dry — night is a visibility condition, not a grip one), no "wind", no
+	# "particles" (no field is constructed at all), no "lightning". It therefore names
+	# nothing in physics_fields(), so it changes no lap time, needs no rebalancing and
+	# never invalidates the opponent cache.
+	#
+	# The cone's own fields (night_amount, headlight_*) are deliberately NOT named here:
+	# they are not part of the weather table's shape — they are driven per-frame as
+	# shader globals, not read out of an entry like a look key.
+	#
+	# Keep night_fog_density_mult LOW: fog is environment-side, so the cone cannot light
+	# it, and thick haze at night reads as a flat grey sheet over a lit pool.
+	{
+		"id": "night",
+		"look": {
+			"background_color": "night_background_color",
+			"sky_color": "night_sky_color",
+			"sun_energy_mult": "night_sun_energy_mult",
+			"fog_density_mult": "night_fog_density_mult",
+			"fog_sky_affect": "night_fog_sky_affect",
+		},
+		# No "color": a night road is DARKENED (albedo × amount) like rain's, not tinted
+		# toward a new colour the way dust or settled snow is.
+		"road_tint": {"amount": "night_road_darken"},
+		# Names a GameConfig field holding a sky path. OPTIONAL and unique to night so
+		# far: no other condition changes the sky, because rain and dust are things
+		# happening UNDER the region's sky while night replaces it outright. Applied
+		# after the region look, so it overrides whatever the region chose.
+		"sky_panorama": "night_sky_panorama",
+	},
 ]
 
 # Sub-keys of a "road_tint" block, in a stable order — both name GameConfig fields.

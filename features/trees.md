@@ -95,7 +95,7 @@ disables early-Z for the whole draw and pays overdraw every frame).
 carries a **felled flag** in its MultiMesh custom data (`INSTANCE_CUSTOM.x`: 0
 standing, 1 knocked over), and `billboard_opaque.gdshader` branches on it:
 - **Standing** — plane 0 (XY) is Y-billboarded about world Y so its face always
-  points at the camera (upright, like `billboard.gdshader`), and plane 1 (ZY, the
+  points at the camera (upright, cylindrical), and plane 1 (ZY, the
   vertex-`COLOR.r == 1` plane) is **collapsed to a point**. A standing tree is thus
   a single camera-facing card — no "+" grid look, and no doubled overdraw. The
   instance basis carries only the `tree_size_m` scale (identity rotation), which the
@@ -216,6 +216,16 @@ the MultiMesh transform buffer lives in the RenderingServer (a no-op stub under
 `--headless`, so tests read this instead). The opaque billboard shader avoids the
 per-fragment `discard` (early-Z stays on, overdraw collapses to coverage), the win
 on tile-based mobile-web GPUs.
+
+**Foliage light goes through `GameConfig.apply_foliage_light`.** `BillboardField`
+used to push the five sun/ambient uniforms at `billboard_opaque.gdshader` as raw
+`Config.data` values; it now hands the material to `apply_foliage_light`, which
+mirrors `apply_car_light` and dims sun + sky by the weather's `weather_sun_mult`
+(see [weather.md](weather.md) → "Unshaded means nothing dims for free"). So trees
+dim with the ground and the car instead of keeping a lit sunward side on a night
+stage, where there is no sun to light them. `ground_color` (the bounce) is
+deliberately not dimmed. Anything new that fakes lighting should route its
+authored colours through `GameConfig.weather_lit` for the same reason.
 
 ## Collision (`BillboardField` + `ObstacleBody`)
 

@@ -40,6 +40,12 @@ const WEATHER_STORM := "storm"
 # whole corner, dry stages included, so weather must not stack a second lever on it.
 # See features/snow-region.md.
 const WEATHER_SNOW := "snow"
+# Night — a DARKENED stage lit by a fake headlight cone in front of the player's car
+# (todo/night-weather-and-headlights.md). Purely a LOOK: it carries no grip multiplier
+# and no wind, so it contributes nothing to WeatherLibrary.physics_fields and never
+# re-keys the opponent cache. Consequence of night being a weather VALUE rather than an
+# orthogonal flag: night-and-raining is not expressible.
+const WEATHER_NIGHT := "night"
 
 # Opponent-field shape (gameplay.md): 10–15 rivals. A rival can CRASH OUT of an event
 # (a wreck = a DNF; a DNF in any event disqualifies the whole rally). Wrecks are rare
@@ -249,9 +255,9 @@ const RALLIES: Array[Dictionary] = [
 		# capability every starter needs must never sit behind a class its car can't meet.
 		"restriction": {},  # open-class: the capability specials gate on nothing
 		"events": [
-			{"seed": 1201, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.4, "straightness": 0.925, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
-			{"seed": 1102, "turn_count": 20, "forestiness": 0.35, "surface_mix": 0.6, "straightness": 0.9, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
-			{"seed": 1103, "turn_count": 20, "forestiness": 0.60, "surface_mix": 0.3, "straightness": 0.9, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 20.0, "weather": "rain"},
+			{"seed": 1201, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.4, "straightness": 0.925, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
+			{"seed": 1102, "turn_count": 20, "forestiness": 0.35, "surface_mix": 0.6, "straightness": 0.9, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "storm"},
+			{"seed": 1103, "turn_count": 20, "forestiness": 0.60, "surface_mix": 0.3, "straightness": 0.9, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 20.0},
 		],
 	},
 	{
@@ -262,8 +268,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.581, 0.590),
 		"restriction": {"doors_max": 3},  # small two/three-door cars; it awards a kei, not a hatch
 		"events": [
-			{"seed": 31001, "turn_count": 22, "forestiness": 0.73, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
-			{"seed": 31002, "turn_count": 22, "forestiness": 0.55, "surface_mix": 0.9, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
+			{"seed": 31001, "turn_count": 22, "forestiness": 0.73, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
+			{"seed": 31002, "turn_count": 22, "forestiness": 0.55, "surface_mix": 0.9, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "fog"},
 			{"seed": 31003, "turn_count": 23, "forestiness": 0.85, "surface_mix": 0.35, "straightness": 0.75, "cliffiness": 0.45, "water_level": -12.0, "terrain_layer1_amplitude": 26.0},
 		],
 	},
@@ -300,7 +306,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"doors_max": 3},  # small two/three-door cars, like the Twingo it awards
 		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
-			{"seed": 33001, "turn_count": 30, "forestiness": 0.70, "surface_mix": 0.7, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
+			{"seed": 33001, "turn_count": 30, "forestiness": 0.70, "surface_mix": 0.7, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
 		],
 	},
 	{
@@ -308,8 +314,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.613, 0.709),
 		"restriction": {"cylinders_min": 8},  # a grand tourer needs a big engine
 		"events": [
-			{"seed": 5001, "turn_count": 40, "forestiness": 0.47, "surface_mix": 1.0, "straightness": 0.75, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
-			{"seed": 5004, "turn_count": 40, "forestiness": 0.35, "surface_mix": 0.4, "straightness": 0.575, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 5001, "turn_count": 40, "forestiness": 0.47, "surface_mix": 1.0, "straightness": 0.75, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
+			{"seed": 5004, "turn_count": 40, "forestiness": 0.35, "surface_mix": 0.4, "straightness": 0.575, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "storm"},
 			{"seed": 5003, "turn_count": 40, "forestiness": 0.60, "surface_mix": 0.0, "straightness": 0.55, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 20.0},
 		],
 	},
@@ -328,9 +334,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.716, 0.409),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
-			{"seed": 81001, "turn_count": 28, "forestiness": 0.62, "surface_mix": 0.35, "cliffiness": 0.8, "water_level": -13.0, "terrain_layer1_amplitude": 34.0},
-			{"seed": 81002, "turn_count": 30, "forestiness": 0.45, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -13.0, "terrain_layer1_amplitude": 39.0, "weather": "fog"},
-			{"seed": 81003, "turn_count": 28, "forestiness": 0.70, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 44.0},
+			{"seed": 81001, "turn_count": 28, "forestiness": 0.62, "surface_mix": 0.35, "cliffiness": 0.8, "water_level": -13.0, "terrain_layer1_amplitude": 34.0, "weather": "rain"},
+			{"seed": 81002, "turn_count": 30, "forestiness": 0.45, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -13.0, "terrain_layer1_amplitude": 39.0, "weather": "night"},
+			{"seed": 81003, "turn_count": 28, "forestiness": 0.70, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 44.0, "weather": "fog"},
 		],
 	},
 	{
@@ -340,7 +346,7 @@ const RALLIES: Array[Dictionary] = [
 		"events": [
 			{"seed": 9101, "turn_count": 46, "forestiness": 0.85, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
 			{"seed": 9102, "turn_count": 46, "forestiness": 0.55, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "storm"},
-			{"seed": 9003, "turn_count": 46, "forestiness": 0.70, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0},
+			{"seed": 9003, "turn_count": 46, "forestiness": 0.70, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
 		],
 	},
 	{
@@ -350,9 +356,9 @@ const RALLIES: Array[Dictionary] = [
 		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
 		"restriction": {"engine_max_l": 1.5},  # the cheapest, smallest engines in the game
 		"events": [
-			{"seed": 7031, "turn_count": 12, "forestiness": 0.55, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 7102, "turn_count": 14, "forestiness": 0.85, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 7233, "turn_count": 12, "forestiness": 0.70, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "terrain_layer2_amplitude": 3.0, "weather": "rain"},
+			{"seed": 7031, "turn_count": 12, "forestiness": 0.55, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "terrain_layer2_amplitude": 3.0, "weather": "night"},
+			{"seed": 7102, "turn_count": 14, "forestiness": 0.85, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "terrain_layer2_amplitude": 3.0, "weather": "fog"},
+			{"seed": 7233, "turn_count": 12, "forestiness": 0.70, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "terrain_layer2_amplitude": 3.0},
 		],
 	},
 	{
@@ -362,9 +368,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.361, 0.424),
 		"restriction": {"country": "JP"},
 		"events": [
-			{"seed": 34001, "turn_count": 16, "forestiness": 0.57, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.35, "water_level": -7.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
-			{"seed": 34002, "turn_count": 16, "forestiness": 0.70, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0},
-			{"seed": 34003, "turn_count": 17, "forestiness": 0.45, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.45, "water_level": -7.0, "terrain_layer1_amplitude": 18.0, "weather": "rain"},
+			{"seed": 34001, "turn_count": 16, "forestiness": 0.57, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.35, "water_level": -7.0, "terrain_layer1_amplitude": 26.0},
+			{"seed": 34002, "turn_count": 16, "forestiness": 0.70, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "storm"},
+			{"seed": 34003, "turn_count": 17, "forestiness": 0.45, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.45, "water_level": -7.0, "terrain_layer1_amplitude": 18.0},
 		],
 	},
 	{
@@ -372,9 +378,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.599, 0.286),
 		"restriction": {"doors_max": 2},  # two-door sprint: no family hatches
 		"events": [
-			{"seed": 2204, "turn_count": 24, "forestiness": 0.85, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
+			{"seed": 2204, "turn_count": 24, "forestiness": 0.85, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "storm"},
 			{"seed": 2105, "turn_count": 24, "forestiness": 0.85, "surface_mix": 0.7, "straightness": 0.6, "cliffiness": 0.65, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
-			{"seed": 2207, "turn_count": 24, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "fog"},
+			{"seed": 2207, "turn_count": 24, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "night"},
 		],
 	},
 	{
@@ -384,9 +390,9 @@ const RALLIES: Array[Dictionary] = [
 		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
 		"restriction": {"drive_mode": CarLibrary.RWD},  # rear-drive only, like The Beast it awards
 		"events": [
-			{"seed": 3001, "turn_count": 29, "forestiness": 0.53, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0},
-			{"seed": 3012, "turn_count": 29, "forestiness": 0.70, "surface_mix": 1.0, "straightness": 0.725, "cliffiness": 0.5, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
-			{"seed": 3004, "turn_count": 29, "forestiness": 0.45, "surface_mix": 0.0, "straightness": 0.75, "cliffiness": 0.6, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
+			{"seed": 3001, "turn_count": 29, "forestiness": 0.53, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
+			{"seed": 3012, "turn_count": 29, "forestiness": 0.70, "surface_mix": 1.0, "straightness": 0.725, "cliffiness": 0.5, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "night"},
+			{"seed": 3004, "turn_count": 29, "forestiness": 0.45, "surface_mix": 0.0, "straightness": 0.75, "cliffiness": 0.6, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "fog"},
 		],
 	},
 	{
@@ -395,9 +401,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.788, 0.491),
 		"restriction": {"car_type": "roadster"},
 		"events": [
-			{"seed": 35001, "turn_count": 28, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.65, "cliffiness": 0.7, "water_level": -13.0, "terrain_layer1_amplitude": 44.0},
-			{"seed": 35002, "turn_count": 28, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.625, "cliffiness": 0.8, "water_level": -13.0, "terrain_layer1_amplitude": 39.0, "weather": "fog"},
-			{"seed": 35003, "turn_count": 29, "forestiness": 0.70, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.75, "water_level": -13.0, "terrain_layer1_amplitude": 34.0},
+			{"seed": 35001, "turn_count": 28, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.65, "cliffiness": 0.7, "water_level": -13.0, "terrain_layer1_amplitude": 44.0, "weather": "fog"},
+			{"seed": 35002, "turn_count": 28, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.625, "cliffiness": 0.8, "water_level": -13.0, "terrain_layer1_amplitude": 39.0},
+			{"seed": 35003, "turn_count": 29, "forestiness": 0.70, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.75, "water_level": -13.0, "terrain_layer1_amplitude": 34.0, "weather": "storm"},
 		],
 	},
 	{
@@ -407,8 +413,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.746, 0.714),
 		"restriction": {"cylinders_min": 12},
 		"events": [
-			{"seed": 36001, "turn_count": 35, "forestiness": 0.33, "surface_mix": 1.0, "straightness": 0.6, "cliffiness": 0.75, "water_level": -4.0, "terrain_layer1_amplitude": 22.0, "weather": "storm"},
-			{"seed": 36002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.8, "straightness": 0.575, "cliffiness": 0.85, "water_level": -4.0, "terrain_layer1_amplitude": 19.0, "weather": "rain"},
+			{"seed": 36001, "turn_count": 35, "forestiness": 0.33, "surface_mix": 1.0, "straightness": 0.6, "cliffiness": 0.75, "water_level": -4.0, "terrain_layer1_amplitude": 22.0},
+			{"seed": 36002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.8, "straightness": 0.575, "cliffiness": 0.85, "water_level": -4.0, "terrain_layer1_amplitude": 19.0, "weather": "storm"},
 			{"seed": 36003, "turn_count": 36, "forestiness": 0.25, "surface_mix": 0.6, "straightness": 0.575, "cliffiness": 0.8, "water_level": -4.0, "terrain_layer1_amplitude": 16.0, "weather": "rain"},
 		],
 	},
@@ -423,8 +429,8 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {},  # open-class
 		"events": [
 			{"seed": 83001, "turn_count": 37, "forestiness": 0.60, "surface_mix": 0.5, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
-			{"seed": 83002, "turn_count": 39, "forestiness": 0.45, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
-			{"seed": 83003, "turn_count": 37, "forestiness": 0.70, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 18.0},
+			{"seed": 83002, "turn_count": 39, "forestiness": 0.45, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 22.0, "weather": "night"},
+			{"seed": 83003, "turn_count": 37, "forestiness": 0.70, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 18.0, "weather": "fog"},
 		],
 	},	# The three region showdowns below were each demoted from special to ORDINARY when the
 	# four-rung NOS ladder they used to gate collapsed to a single part
@@ -452,8 +458,8 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
 			{"seed": 39001, "turn_count": 48, "forestiness": 0.73, "surface_mix": 0.6, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
-			{"seed": 39002, "turn_count": 51, "forestiness": 0.55, "surface_mix": 0.9, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
-			{"seed": 39003, "turn_count": 48, "forestiness": 0.85, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "storm"},
+			{"seed": 39002, "turn_count": 51, "forestiness": 0.55, "surface_mix": 0.9, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "storm"},
+			{"seed": 39003, "turn_count": 48, "forestiness": 0.85, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
 		],
 	},
 	{
@@ -465,7 +471,7 @@ const RALLIES: Array[Dictionary] = [
 		"events": [
 			{"seed": 41001, "turn_count": 16, "forestiness": 0.28, "surface_mix": 0.2, "straightness": 0.85, "cliffiness": 0.35, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 			{"seed": 41002, "turn_count": 16, "forestiness": 0.15, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
-			{"seed": 41003, "turn_count": 17, "forestiness": 0.40, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.45, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 12.0},
+			{"seed": 41003, "turn_count": 17, "forestiness": 0.40, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.45, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 12.0},
 		],
 	},
 	{
@@ -477,8 +483,8 @@ const RALLIES: Array[Dictionary] = [
 		# than a single car.
 		"restriction": {"country": "US"},  # American iron, like the Charger it awards
 		"events": [
-			{"seed": 6001, "turn_count": 40, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.85, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
-			{"seed": 6102, "turn_count": 40, "forestiness": 0.85, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
+			{"seed": 6001, "turn_count": 40, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.85, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "night"},
+			{"seed": 6102, "turn_count": 40, "forestiness": 0.85, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "fog"},
 			{"seed": 6003, "turn_count": 40, "forestiness": 0.70, "surface_mix": 1.0, "straightness": 0.825, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 26.0},
 		],
 	},
@@ -488,9 +494,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.348, 0.157),
 		"restriction": {"cylinders_min": 8, "doors_max": 2},
 		"events": [
-			{"seed": 42001, "turn_count": 23, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.725, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 40.0},
+			{"seed": 42001, "turn_count": 23, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.725, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 40.0, "weather": "storm"},
 			{"seed": 42002, "turn_count": 23, "forestiness": 0.25, "surface_mix": 0.05, "straightness": 0.7, "cliffiness": 0.7, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 35.0},
-			{"seed": 42003, "turn_count": 24, "forestiness": 0.45, "surface_mix": 0.25, "straightness": 0.675, "cliffiness": 0.65, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 30.0},
+			{"seed": 42003, "turn_count": 24, "forestiness": 0.45, "surface_mix": 0.25, "straightness": 0.675, "cliffiness": 0.65, "water_level": -12.0, "weather": "night", "terrain_layer1_amplitude": 30.0},
 		],
 	},
 	{
@@ -499,9 +505,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.185, 0.382),
 		"restriction": {"country": "GB"},  # a British hill climb, and it awards a British car
 		"events": [
-			{"seed": 22001, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.8, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 26.0},
+			{"seed": 22001, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.8, "water_level": -7.0, "weather": "night", "terrain_layer1_amplitude": 26.0},
 			{"seed": 22102, "turn_count": 21, "forestiness": 0.70, "surface_mix": 0.05, "straightness": 0.575, "cliffiness": 0.9, "water_level": -7.0, "weather": "fog", "terrain_layer1_amplitude": 22.0},
-			{"seed": 22203, "turn_count": 20, "forestiness": 0.57, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.85, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 18.0},
+			{"seed": 22203, "turn_count": 20, "forestiness": 0.57, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.85, "water_level": -7.0, "terrain_layer1_amplitude": 18.0},
 		],
 	},
 	{
@@ -512,7 +518,7 @@ const RALLIES: Array[Dictionary] = [
 		"events": [
 			{"seed": 23201, "turn_count": 21, "forestiness": 0.15, "surface_mix": 0.2, "straightness": 0.65, "cliffiness": 0.7, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 			{"seed": 23202, "turn_count": 23, "forestiness": 0.23, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.85, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
-			{"seed": 23103, "turn_count": 21, "forestiness": 0.40, "surface_mix": 0.35, "straightness": 0.625, "cliffiness": 0.75, "water_level": -11.0, "terrain_layer1_amplitude": 12.0},
+			{"seed": 23103, "turn_count": 21, "forestiness": 0.40, "surface_mix": 0.35, "straightness": 0.625, "cliffiness": 0.75, "water_level": -11.0, "terrain_layer1_amplitude": 12.0, "weather": "sandstorm"},
 		],
 	},
 	{
@@ -522,8 +528,8 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"car_type": "muscle"},
 		"events": [
 			{"seed": 43001, "turn_count": 32, "forestiness": 0.28, "surface_mix": 0.3, "straightness": 0.6, "cliffiness": 0.9, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
-			{"seed": 43002, "turn_count": 35, "forestiness": 0.15, "surface_mix": 0.1, "straightness": 0.575, "cliffiness": 0.95, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
-			{"seed": 43003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.2, "straightness": 0.575, "cliffiness": 1.0, "water_level": -11.0, "terrain_layer1_amplitude": 12.0},
+			{"seed": 43002, "turn_count": 35, "forestiness": 0.15, "surface_mix": 0.1, "straightness": 0.575, "cliffiness": 0.95, "water_level": -11.0, "terrain_layer1_amplitude": 15.5, "weather": "rain"},
+			{"seed": 43003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.2, "straightness": 0.575, "cliffiness": 1.0, "water_level": -11.0, "terrain_layer1_amplitude": 12.0, "weather": "sandstorm"},
 		],
 	},
 	{
@@ -534,9 +540,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.274, 0.297),
 		"restriction": {},  # open-class
 		"events": [
-			{"seed": 82001, "turn_count": 32, "forestiness": 0.65, "surface_mix": 0.15, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
+			{"seed": 82001, "turn_count": 32, "forestiness": 0.65, "surface_mix": 0.15, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "fog"},
 			{"seed": 82002, "turn_count": 35, "forestiness": 0.55, "surface_mix": 0.25, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
-			{"seed": 82003, "turn_count": 32, "forestiness": 0.85, "surface_mix": 0.1, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
+			{"seed": 82003, "turn_count": 32, "forestiness": 0.85, "surface_mix": 0.1, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "storm"},
 		],
 	},
 	{
@@ -549,8 +555,8 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
 			{"seed": 29001, "turn_count": 51, "forestiness": 0.28, "surface_mix": 0.15, "cliffiness": 0.85, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
-			{"seed": 29102, "turn_count": 53, "forestiness": 0.15, "surface_mix": 0.25, "cliffiness": 0.95, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 15.5},
-			{"seed": 29103, "turn_count": 51, "forestiness": 0.40, "surface_mix": 0.1, "cliffiness": 1.0, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 12.0},
+			{"seed": 29102, "turn_count": 53, "forestiness": 0.15, "surface_mix": 0.25, "cliffiness": 0.95, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
+			{"seed": 29103, "turn_count": 51, "forestiness": 0.40, "surface_mix": 0.1, "cliffiness": 1.0, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 12.0},
 		],
 	},
 	{
@@ -558,9 +564,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.203, 0.649),
 		"restriction": {"engine_max_l": 2.0},  # a gentle riverbed run for small-engined cars
 		"events": [
-			{"seed": 51001, "turn_count": 14, "forestiness": 0.28, "surface_mix": 0.4, "straightness": 0.875, "cliffiness": 0.3, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 19.0},
-			{"seed": 51002, "turn_count": 14, "forestiness": 0.15, "surface_mix": 0.6, "straightness": 0.85, "cliffiness": 0.35, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 12.0},
-			{"seed": 51003, "turn_count": 15, "forestiness": 0.40, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.4, "water_level": -11.0, "terrain_layer1_amplitude": 12.0},
+			{"seed": 51001, "turn_count": 14, "forestiness": 0.28, "surface_mix": 0.4, "straightness": 0.875, "cliffiness": 0.3, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
+			{"seed": 51002, "turn_count": 14, "forestiness": 0.15, "surface_mix": 0.6, "straightness": 0.85, "cliffiness": 0.35, "water_level": -11.0, "terrain_layer1_amplitude": 12.0, "weather": "rain"},
+			{"seed": 51003, "turn_count": 15, "forestiness": 0.40, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.4, "water_level": -11.0, "terrain_layer1_amplitude": 12.0, "weather": "sandstorm"},
 		],
 	},
 	{
@@ -570,9 +576,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.681, 0.576),
 		"restriction": {"doors_max": 2},
 		"events": [
-			{"seed": 21001, "turn_count": 17, "forestiness": 0.47, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
-			{"seed": 21002, "turn_count": 18, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "rain"},
-			{"seed": 21003, "turn_count": 17, "forestiness": 0.60, "surface_mix": 0.3, "straightness": 0.675, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 21001, "turn_count": 17, "forestiness": 0.47, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "rain"},
+			{"seed": 21002, "turn_count": 18, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "night"},
+			{"seed": 21003, "turn_count": 17, "forestiness": 0.60, "surface_mix": 0.3, "straightness": 0.675, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "fog"},
 		],
 	},
 	{
@@ -582,8 +588,8 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"engine_max_l": 3.0, "doors_max": 2},
 		"events": [
 			{"seed": 52001, "turn_count": 20, "forestiness": 0.70, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
-			{"seed": 52002, "turn_count": 20, "forestiness": 0.55, "surface_mix": 0.7, "straightness": 0.725, "cliffiness": 0.55, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 32.0},
-			{"seed": 52003, "turn_count": 21, "forestiness": 0.85, "surface_mix": 0.35, "straightness": 0.7, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
+			{"seed": 52002, "turn_count": 20, "forestiness": 0.55, "surface_mix": 0.7, "straightness": 0.725, "cliffiness": 0.55, "water_level": -12.0, "weather": "storm", "terrain_layer1_amplitude": 32.0},
+			{"seed": 52003, "turn_count": 21, "forestiness": 0.85, "surface_mix": 0.35, "straightness": 0.7, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
 		],
 	},
 	{
@@ -596,8 +602,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.508, 0.724),
 		"restriction": {"engine_min_l": 4.0},  # "Heavy Hitters": big-displacement only
 		"events": [
-			{"seed": 4001, "turn_count": 33, "forestiness": 0.29, "surface_mix": 0.6, "straightness": 0.625, "cliffiness": 0.55, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
-			{"seed": 4004, "turn_count": 33, "forestiness": 0.15, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.7, "water_level": -11.0, "terrain_layer1_amplitude": 15.5, "weather": "sandstorm"},
+			{"seed": 4001, "turn_count": 33, "forestiness": 0.29, "surface_mix": 0.6, "straightness": 0.625, "cliffiness": 0.55, "water_level": -11.0, "terrain_layer1_amplitude": 15.5, "weather": "sandstorm"},
+			{"seed": 4004, "turn_count": 33, "forestiness": 0.15, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.7, "water_level": -11.0, "terrain_layer1_amplitude": 15.5, "weather": "fog"},
 			{"seed": 3734559043, "turn_count": 33, "forestiness": 0.40, "surface_mix": 1.0, "straightness": 0.625, "cliffiness": 0.6, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
 		],
 	},
@@ -607,8 +613,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.132, 0.289),
 		"restriction": {"engine_min_l": 5.0},
 		"events": [
-			{"seed": 53001, "turn_count": 30, "forestiness": 0.65, "surface_mix": 0.8, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
-			{"seed": 53002, "turn_count": 30, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 32.0},
+			{"seed": 53001, "turn_count": 30, "forestiness": 0.65, "surface_mix": 0.8, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "night"},
+			{"seed": 53002, "turn_count": 30, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "weather": "fog", "terrain_layer1_amplitude": 32.0},
 			{"seed": 53003, "turn_count": 31, "forestiness": 0.85, "surface_mix": 0.6, "straightness": 0.75, "cliffiness": 0.45, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
 		],
 	},
@@ -624,8 +630,8 @@ const RALLIES: Array[Dictionary] = [
 		# is what leaves it reachable — see tools/sim_career.gd.
 		"restriction": {"cylinders_min": 10},  # a ten-cylinder-plus GP, and it awards a V10
 		"events": [
-			{"seed": 54001, "turn_count": 35, "forestiness": 0.30, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
-			{"seed": 54002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.9, "straightness": 0.6, "cliffiness": 0.8, "water_level": -4.0, "weather": "storm", "terrain_layer1_amplitude": 19.0},
+			{"seed": 54001, "turn_count": 35, "forestiness": 0.30, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 19.0, "weather": "sandstorm"},
+			{"seed": 54002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.9, "straightness": 0.6, "cliffiness": 0.8, "water_level": -4.0, "weather": "night", "terrain_layer1_amplitude": 19.0},
 			{"seed": 54104, "turn_count": 36, "forestiness": 0.25, "surface_mix": 0.7, "straightness": 0.6, "cliffiness": 0.85, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
 		],
 	},
@@ -638,8 +644,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.122, 0.580),
 		"restriction": {},  # open-class
 		"events": [
-			{"seed": 84001, "turn_count": 41, "forestiness": 0.38, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -11.0, "terrain_layer1_amplitude": 20.0},
-			{"seed": 84002, "turn_count": 44, "forestiness": 0.30, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -11.0, "terrain_layer1_amplitude": 20.0, "weather": "rain"},
+			{"seed": 84001, "turn_count": 41, "forestiness": 0.38, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -11.0, "terrain_layer1_amplitude": 20.0, "weather": "storm"},
+			{"seed": 84002, "turn_count": 44, "forestiness": 0.30, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -11.0, "terrain_layer1_amplitude": 20.0, "weather": "sandstorm"},
 			{"seed": 84003, "turn_count": 41, "forestiness": 0.50, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -11.0, "terrain_layer1_amplitude": 20.0, "weather": "rain"},
 		],
 	},
@@ -648,9 +654,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.299, 0.877),
 		"restriction": {},  # open-class: a long, hard star-payer with no part to gate against
 		"events": [
-			{"seed": 59001, "turn_count": 53, "forestiness": 0.30, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
-			{"seed": 59002, "turn_count": 55, "forestiness": 0.15, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 15.5},
-			{"seed": 59003, "turn_count": 53, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 15.5},
+			{"seed": 59001, "turn_count": 53, "forestiness": 0.30, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -11.0, "terrain_layer1_amplitude": 15.5, "weather": "night"},
+			{"seed": 59002, "turn_count": 55, "forestiness": 0.15, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -11.0, "weather": "fog", "terrain_layer1_amplitude": 15.5},
+			{"seed": 59003, "turn_count": 53, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
 		],
 	},
 	# --- THE ALPS (region "snow"), the map's NE massif -------------------------
@@ -685,9 +691,9 @@ const RALLIES: Array[Dictionary] = [
 		# the strand rate unchanged from the pre-Alps roster.
 		"restriction": {"car_type": "hatch"},
 		"events": [
-			{"seed": 85001, "turn_count": 24, "forestiness": 0.55, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
-			{"seed": 85002, "turn_count": 26, "forestiness": 0.45, "surface_mix": 0.45, "straightness": 0.8, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 14.0, "weather": "snow"},
-			{"seed": 85003, "turn_count": 24, "forestiness": 0.60, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
+			{"seed": 85001, "turn_count": 24, "forestiness": 0.55, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 14.0, "weather": "snow"},
+			{"seed": 85002, "turn_count": 26, "forestiness": 0.45, "surface_mix": 0.45, "straightness": 0.8, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
+			{"seed": 85003, "turn_count": 24, "forestiness": 0.60, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 14.0, "weather": "snow"},
 		],
 	},
 	{
@@ -697,7 +703,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"country": "JP"},  # the light Japanese pair, at home on a loose surface
 		"events": [
 			{"seed": 86001, "turn_count": 30, "forestiness": 0.40, "surface_mix": 0.2, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 15.0, "weather": "snow"},
-			{"seed": 86002, "turn_count": 32, "forestiness": 0.30, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 86002, "turn_count": 32, "forestiness": 0.30, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 16.0, "weather": "night"},
 			{"seed": 86003, "turn_count": 30, "forestiness": 0.45, "surface_mix": 0.15, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 15.0, "weather": "snow"},
 		],
 	},
@@ -707,9 +713,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.836, 0.353),
 		"restriction": {"car_type": "coupe"},  # heavier rear-drive coupes on a low-grip climb
 		"events": [
-			{"seed": 87001, "turn_count": 32, "forestiness": 0.35, "surface_mix": 0.4, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 16.0},
-			{"seed": 87002, "turn_count": 34, "forestiness": 0.25, "surface_mix": 0.55, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
-			{"seed": 87003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -12.0, "terrain_layer1_amplitude": 17.0},
+			{"seed": 87001, "turn_count": 32, "forestiness": 0.35, "surface_mix": 0.4, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
+			{"seed": 87002, "turn_count": 34, "forestiness": 0.25, "surface_mix": 0.55, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 87003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -12.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
 		],
 	},
 	{
@@ -719,7 +725,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"country": "US"},
 		"events": [
 			{"seed": 88001, "turn_count": 38, "forestiness": 0.25, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -13.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
-			{"seed": 88002, "turn_count": 40, "forestiness": 0.20, "surface_mix": 0.5, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 17.0},
+			{"seed": 88002, "turn_count": 40, "forestiness": 0.20, "surface_mix": 0.5, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "storm"},
 			{"seed": 88003, "turn_count": 38, "forestiness": 0.30, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
 		],
 	},
@@ -734,7 +740,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
 			{"seed": 89001, "turn_count": 46, "forestiness": 0.25, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
-			{"seed": 89002, "turn_count": 48, "forestiness": 0.15, "surface_mix": 0.5, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 18.0},
+			{"seed": 89002, "turn_count": 48, "forestiness": 0.15, "surface_mix": 0.5, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 18.0, "weather": "night"},
 			{"seed": 89003, "turn_count": 46, "forestiness": 0.30, "surface_mix": 0.2, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
 		],
 	},
@@ -746,8 +752,8 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.760, 0.108),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
-			{"seed": 89101, "turn_count": 48, "forestiness": 0.20, "surface_mix": 0.35, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0},
-			{"seed": 89102, "turn_count": 50, "forestiness": 0.10, "surface_mix": 0.55, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 18.0, "weather": "snow"},
+			{"seed": 89101, "turn_count": 48, "forestiness": 0.20, "surface_mix": 0.35, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
+			{"seed": 89102, "turn_count": 50, "forestiness": 0.10, "surface_mix": 0.55, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 18.0},
 			{"seed": 89103, "turn_count": 48, "forestiness": 0.25, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
 		],
 	},

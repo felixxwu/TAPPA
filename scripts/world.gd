@@ -174,6 +174,9 @@ func _ready() -> void:
 	# still well before the initial terrain build in _generate_track(), so the darker
 	# sun/ambient is what gets baked into the first chunks' vertex colours.
 	_apply_weather_look(cfg)
+	# Seed the headlight cone for the first frame (a no-op reset off a night stage),
+	# so the opening frame is already correct rather than dark for one tick.
+	HeadlightCone.push(cfg, $Car.global_transform, $Car.half_width() * 2.0)
 	# Terrain LOD tunables — also before the precompute (LOD meshes + skirt are
 	# prebaked in cache_chunk) and the initial build.
 	cfg.apply_terrain_lod(_floor())
@@ -2221,6 +2224,31 @@ func _current_region_look() -> Dictionary:
 # every scene instantiation in the process — exactly the trap that once left the ground
 # at rain_road_darken². Without the else-branch restoring the base shader, one snow
 # stage would leave every later stage's ground floating in mid-air.
+# The headlight cone follows the car every frame on a night stage. This is the only
+# per-frame work the night feature does: three-to-seven global uniform writes, no
+# geometry, no draw calls. Off a night stage push() early-outs into a reset, so the
+# cost on every other stage is one branch.
+func _process(_delta: float) -> void:
+	if not HeadlightCone.is_night(Config.data):
+		return
+	HeadlightCone.push(Config.data, $Car.global_transform, $Car.half_width() * 2.0)
+
+
+# Global shader parameters PERSIST ACROSS SCENE CHANGES, and the podium and HQ draw
+# trees and ground with the same shaders — so a night stage must clear up after
+# itself or it leaves those screens in the dark. _exit_tree covers every exit path
+# regardless of destination, which a per-destination reset would not.
+func _exit_tree() -> void:
+	HeadlightCone.reset()
+	# Same reasoning, different mechanism: weather_sun_mult is a runtime value on the
+	# SHARED Config.data, and nothing calls Config.reset(), so a night stage would
+	# otherwise leave the HQ and podium dimmed — both spawn trees through
+	# Foliage.spawn_trees, which now reads this via apply_foliage_light. The scene
+	# tree frees the outgoing scene before the incoming one's _ready, so clearing it
+	# here lands before anything else can read it.
+	Config.data.weather_sun_mult = 1.0
+
+
 func _apply_deep_snow_ground(cfg: GameConfig) -> void:
 	var floor_mat := $Floor.chunk_material as ShaderMaterial
 	if floor_mat == null:
@@ -2243,10 +2271,18 @@ func _apply_region_look() -> void:
 	if look.has("gravel_texture"):
 		floor_mat.set_shader_parameter("road_texture", load(look["gravel_texture"]))
 	var env: Environment = $WorldEnvironment.environment
-	if look.has("sky_panorama"):
-		var sky_mat := env.sky.sky_material as PanoramaSkyMaterial
-		if sky_mat:
-			sky_mat.panorama = load(look["sky_panorama"])
+	# ALWAYS assigned, never `if look.has(...)`. The PanoramaSkyMaterial is a shared
+	# sub-resource of main.tscn (no resource_local_to_scene), and home / home_coast
+	# author no sky of their own — so a conditional assign let Greece's or snow's sky
+	# follow the player into the next home stage and stay there. Falling back to the
+	# authored default makes every stage boot seed a clean sky exactly once, the same
+	# idempotence `albedo_color` and `tarmac_color` get above. Weather layers on top
+	# of this afterwards, so a night sky still wins for the stage that asked for it.
+	var sky_mat := env.sky.sky_material as PanoramaSkyMaterial
+	if sky_mat:
+		var sky_path: String = look.get("sky_panorama", Config.data.default_sky_panorama)
+		if sky_path != "":
+			sky_mat.panorama = load(sky_path)
 	if look.has("background_color"):
 		env.background_color = look["background_color"]
 		env.fog_light_color = look["background_color"]
@@ -2276,6 +2312,10 @@ func _apply_weather_look(cfg: GameConfig) -> void:
 	# no "road_tint" and no "particles", so all three blocks are skipped and the stage
 	# is left byte-identical to a world with no weather system at all.
 	var entry := WeatherLibrary.by_id(cfg.weather)
+	# Re-seeded from the authored baseline every stage boot for the same reason the
+	# road tint is: a condition with no look block must leave a CLEAN 1.0 behind, or
+	# a dry stage would inherit the previous night/storm dimming on its car.
+	cfg.weather_sun_mult = 1.0
 	var look: Dictionary = entry.get("look", {})
 	if not look.is_empty():
 		var background: Color = cfg.get(String(look["background_color"]))
@@ -2284,6 +2324,16 @@ func _apply_weather_look(cfg: GameConfig) -> void:
 			float(cfg.get(String(look["sun_energy_mult"]))),
 			float(cfg.get(String(look["fog_density_mult"]))),
 			float(cfg.get(String(look["fog_sky_affect"]))), cfg)
+	# Sky override. Optional, and applied AFTER the region look so a condition that
+	# names one wins over the region's choice; conditions that omit it (all but night)
+	# leave the region's sky exactly as _apply_region_look seeded it. Safe against a
+	# stale value because that seeding is now unconditional.
+	var sky_field := String(entry.get("sky_panorama", ""))
+	if sky_field != "":
+		var sky_path := String(cfg.get(sky_field))
+		var sky_mat := $WorldEnvironment.environment.sky.sky_material as PanoramaSkyMaterial
+		if sky_mat and sky_path != "":
+			sky_mat.panorama = load(sky_path)
 	var road_tint: Dictionary = entry.get("road_tint", {})
 	if not road_tint.is_empty():
 		# The entry says WHAT to tint toward, never how: naming a "color" field means
@@ -2373,6 +2423,12 @@ func _apply_overcast_look(background: Color, sky: Color, sun_mult: float,
 	sun.a = cfg.sun_color.a
 	tm.sun_color = sun
 	tm.sky_color = sky
+	# Hand the same dimming to the car materials. The terrain bakes `sun` into its
+	# vertex colours below; apply_car_light reads this to match, so the car dims with
+	# the world instead of staying at full sun. Set here rather than passed around
+	# because the car meshes are lit later in _ready, and car.gd lights swapped-in
+	# body models later still.
+	cfg.weather_sun_mult = sun_mult
 
 
 # Tint the road/ground albedo for a condition. Two shapes, chosen by whether the

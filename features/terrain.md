@@ -744,6 +744,42 @@ within the leash band, including straight-span sub-sampling), `set_corridor`/
 (matches the flattened/lit chunk data, not raw noise), and the empty-cache /
 populated-cache-miss fallback behaviour in `_reconcile`.
 
+## Night: the one thing the terrain shader does not bake
+
+Terrain shading is otherwise entirely baked (vertex colours, generated once — see
+"TerrainManager"), but the terrain is **no longer purely flat-shaded**: on a night
+stage `shaders/ps1_models.gdshader` adds the fake headlight cone into the light
+term in its **fragment** stage,
+`ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos))`. World
+position is recovered per fragment from `INV_VIEW_MATRIX`.
+
+Three constraints this had to respect, all still true:
+
+- **`ps1_models` still has NO `vertex()` stage**, and must not gain one — terrain
+  is the heaviest geometry in the game, so its vertex path stays pass-through.
+  Enforced by `test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`
+  (which also bans the string `light_amount` from it) and re-asserted by
+  `test_headlight_cone.gd`. That ban is *why* the cone is fragment-side here and
+  why world position costs a mat4 multiply per fragment; view space would be
+  cheaper but is wrong, since the uniforms are global and the game has several
+  cameras.
+- **Fragment, not vertex, is the right stage anyway**: cells reach 25 m across at
+  the coarsest LOD stride, so a per-vertex cone would snap its soft edge to
+  triangle boundaries. (Everything else — cars, trees, bushes — takes it per
+  vertex.)
+- **Uniform-set parity with `ps1_terrain_snow` is load-bearing.**
+  `world.gd::_apply_deep_snow_ground` swaps the floor material between the two
+  shaders every stage boot and re-applies only `snow_depth`, relying on
+  `ShaderMaterial` keeping its by-name parameter map across the swap. That works
+  only while the two declare identical uniform sets, so **any uniform added to
+  one must be added to the other** — both `#include`
+  `shaders/headlight_cone.gdshaderinc` for exactly this reason.
+
+Nothing about the bake, the chunk cache or `data/track_cache.json` changes: the
+cone is per-frame arithmetic from global uniforms, and weather never reaches
+`TrackGenParams`. See [rendering.md](rendering.md) → "The fake headlight cone"
+and [weather.md](weather.md) → "Night" (five stages author it, one per region).
+
 ## Region look overrides
 
 A rally's `region` (see [regions.md](regions.md)) can override the ground

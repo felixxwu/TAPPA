@@ -228,3 +228,42 @@ shading/overrides/force_vertex_shading=true
 textures/default_filters/anisotropic_filtering_level=0
 limits/opengl/max_lights_per_object=4
 mesh_lod/lod_change/threshold_pixels=4.0
+
+[shader_globals]
+
+hl_pos={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+hl_dir={
+"type": "vec3",
+"value": Vector3(0, 0, -1)
+}
+hl_right={
+"type": "vec3",
+"value": Vector3(1, 0, 0)
+}
+hl_separation={
+"type": "float",
+"value": 0.0
+}
+hl_color={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+hl_range={
+"type": "float",
+"value": 45.0
+}
+hl_cos_inner={
+"type": "float",
+"value": 0.97
+}
+hl_cos_outer={
+"type": "float",
+"value": 0.89
+}
+night_amount={
+"type": "float",
+"value": 0.0
+}

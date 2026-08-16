@@ -51,6 +51,8 @@ uniform float light_amount = 0.0;
 
 varying vec3 v_tint;
 
+#include "res://shaders/headlight_cone.gdshaderinc"
+
 void vertex() {
 	// Per-instance world origin (base, column 3 of the model matrix) and its scaled
 	// height (column 1 length — the authored size baked into the instance basis).
@@ -107,6 +109,14 @@ void vertex() {
 		vec3 lit = ambient + sun_color * ndl;
 		v_tint = mix(vec3(1.0), lit, light_amount);
 	}
+	// Fake headlight cone (night weather), ADDED to the light term — never a
+	// multiply, since at night v_tint is already near-black and scaling it by a
+	// bright cone stays near-black. Applied here rather than inside the branches so
+	// FELLED trees get it too: their branch is ambient-only, and a knocked-over tree
+	// sitting unlit inside the headlight pool would read as a hole in the light.
+	// Per-vertex is exact enough — cards are small in world space — and it avoids
+	// paying the cone per fragment across a dense tree field.
+	v_tint += hl_color * headlight_lit(world_pos);
 	// Rewrite to clip space directly; the default MODELVIEW path is bypassed.
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world_pos, 1.0);
 }

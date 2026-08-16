@@ -138,6 +138,29 @@ shipped cost is removed.
   3D — which is how these files drifted to mode 2 in the first place. Leaving it at
   `1` would undo this within one editor session.
 
+### Sky panoramas
+
+The region/weather skies (`textures/sky-greece.jpg`, `sky-snow.jpg`,
+`sky-night.jpg`) share a **house format: 1024×512 equirectangular JPEG**, a
+tonemapped LDR downscale of a CC0 Poly Haven HDRI. 1024×512 is plenty at the
+shipped 480×360 internal resolution with the 5-bit dither post-process on top, and
+keeps each sky in the tens-of-KB range (`sky-night.jpg` is ~81 KB) rather than the
+hundreds a full-size panorama costs — download size gates installs on the phones
+this game targets, so a per-condition sky has to stay cheap to justify itself.
+They import on the project default (mode 1, lossy) rather than the mode-2 list
+below; `sky_field.png`, the scene's original open-field sky, predates the
+convention and stays mode 2.
+
+`textures/sky-night.jpg` — Poly Haven `rogland_clear_night` (CC0), a deep dark sky
+with a Milky Way arch over rocky scrubland. Prepared from the 1920×960 tonemapped
+preview: **multiplied to 55% brightness**, saturation nudged **+18%**, then resized
+to 1024×512. The darkening is deliberate and belongs in the ASSET, not the
+environment — night's `fog_sky_affect` is already high so the horizon sinks into the
+fog, and a bright source panorama punched a lit dome through it. Consumed via
+`GameConfig.night_sky_panorama` (see [weather.md](weather.md) → "Night"). A new sky
+also needs `tools/align_sky_sun.py` run over it if it has a visible sun — see
+[rendering.md](rendering.md) → "Sun alignment".
+
 Still mode 2 (VRAM) on purpose: `grass.jpg`, `gravel.jpg`, `sky_field.png`,
 `groundcover_opaque__albedo.png`, `blender/mx5/wheel.png`. Still mode 1: the tree
 atlas and the UI/garage textures — foliage alpha edges block-compress badly, and

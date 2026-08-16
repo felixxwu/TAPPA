@@ -33,6 +33,15 @@ uniform vec4 tarmac_color : source_color = vec4(0.32, 0.32, 0.34, 1.0);
 // is what stops the car looking like it is floating through the drift.
 uniform float snow_depth = 0.0;
 
+// Kept in sync with ps1_models.gdshader — see the note above. Uniform-set parity
+// between the two is load-bearing: world.gd::_apply_deep_snow_ground swaps the
+// floor material between them and re-applies only snow_depth, relying on
+// ShaderMaterial keeping its by-name parameter map across the swap. These are
+// GLOBAL uniforms rather than material parameters, so they survive the swap
+// regardless — but the fragment maths must still match or a snow stage would light
+// differently from a dry one.
+#include "res://shaders/headlight_cone.gdshaderinc"
+
 void vertex() {
 	// Raise off-road only. COLOR.a is the baked road weight the fragment stage blends
 	// with (1.0 on the road, ramping to 0.0 off it), so the road is never lifted and
@@ -48,5 +57,7 @@ void fragment() {
 	vec3 ground = texture(albedo_texture, UV * texture_tile).rgb;
 	vec3 gravel = texture(road_texture, UV * texture_tile * road_uv_scale).rgb;
 	vec3 road = mix(gravel, tarmac_color.rgb, tarmac_t);
-	ALBEDO = mix(ground, road, road_t) * albedo_color.rgb * COLOR.rgb;
+	vec3 surface = mix(ground, road, road_t) * albedo_color.rgb;
+	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos));
 }

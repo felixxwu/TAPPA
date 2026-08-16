@@ -51,7 +51,7 @@ void vertex() {
 	vec3 up = INV_VIEW_MATRIX[1].xyz;
 	vec3 world_pos = origin + right * rolled.x + up * rolled.y;
 	// Rewrite to clip space directly; the default MODELVIEW path is bypassed
-	// (same approach as shaders/billboard.gdshader).
+	// (same approach as shaders/billboard_opaque.gdshader).
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world_pos, 1.0);
 	// Per-instance colour: MultiMesh instance colours (mm.use_colors) arrive here
 	// in COLOR. Unshaded, so it goes straight to albedo.

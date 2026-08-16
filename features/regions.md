@@ -223,6 +223,12 @@ override-only keys — because the grass/gravel/sky **baselines live in
 `world.gd` applies overrides selectively, so home's un-overridden scene values
 are the baseline by construction.
 
+**One field has since moved to the merged model:** `sky_panorama` now HAS a
+`GameConfig` baseline (`default_sky_panorama`) and is applied unconditionally,
+because leaving the sky at "whatever the shared scene material currently holds"
+leaked the previous stage's sky — see "The sky no longer leaks between stages"
+below. Grass and gravel still follow the override-only rule.
+
 ## Rallies tagged by region
 
 Every `RallyLibrary.RALLIES` entry carries `"region": "<region_id>"`. See
@@ -294,7 +300,9 @@ settles):
    - `grass_texture` → `$Floor.chunk_material.set_shader_parameter("albedo_texture", ...)`.
    - `gravel_texture` → the same material's `"road_texture"` parameter.
    - `sky_panorama` → `$WorldEnvironment.environment.sky.sky_material.panorama`
-     (cast to `PanoramaSkyMaterial`).
+     (cast to `PanoramaSkyMaterial`). **This one is the exception to "apply only
+     the keys present": it is assigned unconditionally, falling back to
+     `GameConfig.default_sky_panorama` when the region names none** — see below.
    - `background_color` → `env.background_color` **and** `env.fog_light_color`.
    - `terrain_tint` / `terrain_layers` — reserved; no region ships them yet, so
      there's no application code for them beyond a comment marking the hook.
@@ -318,6 +326,36 @@ settles):
    - `spawn_bush_mesh` → when false, `world.gd` skips the entire bush pass
      (no `Foliage.spawn_bushes`, no `BushField` interaction node); defaults true.
    - `bush_billboard` is still a reserved slot — nothing authors it yet.
+
+### The sky no longer leaks between stages
+
+`sky_panorama` used to be applied like every other key — `if look.has(...)` — and
+that was a **bug**. The `PanoramaSkyMaterial` hanging off `main.tscn`'s
+`WorldEnvironment` is a **shared sub-resource with no `resource_local_to_scene`**, so
+it is the same object for every instantiation of the scene in the process; and
+`home` / `home_coast` author no `sky_panorama` at all. Drive a Greece or snow stage,
+then a home stage, and the home stage skipped the assign — leaving Greece's or the
+Alps' sky overhead, permanently, for the rest of the session.
+
+The fix, in `world.gd._apply_region_look`, is to assign **always**:
+`look.get("sky_panorama", Config.data.default_sky_panorama)`, loaded onto the
+material (an empty path is still skipped). Every stage boot therefore seeds a clean
+sky exactly once, which is the same idempotence `albedo_color` and `tarmac_color`
+already get — and the same class of bug as the compounding road tint documented in
+[weather.md](weather.md) → "Look", with the same shape of fix: **re-seed a clean
+baseline every stage boot rather than conditionally overriding a shared resource.**
+Any future look key that writes to a shared `main.tscn` sub-resource needs the same
+treatment.
+
+`GameConfig.default_sky_panorama` holds that baseline (the open-field sky
+`main.tscn` was authored with), so home's "un-overridden scene value" is now an
+explicit config value rather than whatever the material happened to be carrying. The
+weather look runs **after** this and may override the sky again — night does, and
+only night — so the ordering is: default → region → condition, re-derived from
+scratch on every stage. See [weather.md](weather.md) → "Look" and
+[rendering.md](rendering.md) → "Skybox". Guarded by
+`tests/headless/test_headlight_cone.gd` →
+`test_there_is_a_default_sky_for_regions_that_name_none`.
 5. Road paint is region-aware in `world.gd._build_persistent_managers` (also NOT
    `_apply_region_look`, since the paint mesh is built at track generation, not
    with the materials): before calling `_road_markings.build`, it takes

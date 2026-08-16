@@ -1,8 +1,9 @@
 class_name BillboardField
 extends Node3D
 # Renders scattered positions as cylindrical billboards, using a caller-supplied
-# texture. Each instance is lifted onto the terrain via TerrainManager.height_at;
-# the quad pivot is its bottom edge so sprites sit on the ground. When
+# silhouette mesh + texture. Each instance is lifted onto the terrain via
+# TerrainManager.height_at; the mesh pivot is its bottom edge so sprites sit on
+# the ground (the mesh is normalized: x in [-0.5,0.5], y in [0,1]). When
 # with_collision is true, a child StaticBody3D carries one box hitbox per instance,
 # all sharing a single BoxShape3D resource instanced via the physics server. Used
 # for both trees (with collision) and bushes (without).
@@ -18,7 +19,6 @@ extends Node3D
 # shader reads each instance's world origin from MODEL_MATRIX[3], which stays
 # correct = bin centre + local).
 
-const BILLBOARD_SHADER := preload("res://shaders/billboard.gdshader")
 const BILLBOARD_OPAQUE_SHADER := preload("res://shaders/billboard_opaque.gdshader")
 
 # Held so the shape RID added to the body via PhysicsServer3D stays alive for
@@ -29,18 +29,13 @@ var _collision_shape: BoxShape3D
 # can disable one instance's box in place via the physics server.
 var _collision_body: StaticBody3D
 
-# True when this field renders the opaque tree path (silhouette card + opaque
-# shader). Only that path is fellable: its shader honours the instance rotation,
-# so a topple tilt shows; the legacy quad path ignores the basis. Set in build().
-var _use_opaque: bool = false
-
-# Minimum per-instance size multiplier for the opaque path: each tree is scaled by a
+# Minimum per-instance size multiplier: each tree is scaled by a
 # deterministic random factor in [_size_jitter_min, 1.0] (hashed off its position), so
 # a stand varies in height. 1.0 means no jitter (every instance at full authored size).
 # Set in build(); recomputed in _upright_basis so felling restores the same size.
 var _size_jitter_min: float = 1.0
 
-# Per-instance ASPECT jitter amplitude for the opaque path: on top of the uniform size
+# Per-instance ASPECT jitter amplitude: on top of the uniform size
 # factor, width (x/z) and height (y) each get their own deterministic random multiplier
 # in [1 - _aspect_jitter, 1 + _aspect_jitter] (independent hashes), so some trees read
 # taller-and-narrower and others shorter-and-wider. 0.0 disables it (pure size jitter).
@@ -61,7 +56,7 @@ var _slot_of: Dictionary = {}
 var _fallen: Dictionary = {}
 var _falling: Array = []
 
-# The shared render mesh (quad or supplied silhouette), instanced by every bin.
+# The shared render mesh (the supplied silhouette), instanced by every bin.
 # Exposed so headless tests can read the mesh/material without a live MultiMesh
 # buffer (which the RenderingServer stubs out under --headless).
 var render_mesh: Mesh
@@ -76,9 +71,8 @@ var bin_count: int = 0
 # array is the only way headless tests can verify placement. Populated by build().
 var instance_positions: PackedVector3Array
 
-# The per-instance scale baked into every instance transform's basis by the
-# opaque mesh path (Vector3.ONE for the quad path, which bakes size into the
-# quad geometry instead). Mirrors instance_positions' role: MultiMesh's
+# The per-instance scale baked into every instance transform's basis.
+# Mirrors instance_positions' role: MultiMesh's
 # transform buffer lives in the RenderingServer, a no-op stub under
 # --headless, so get_instance_transform comes back empty there — this is the
 # only way headless tests can verify the scale that was set. Populated by build().
@@ -88,49 +82,37 @@ var instance_scale: Vector3 = Vector3.ONE
 func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2,
 		texture: Texture2D, collision_radius: float, collision_height: float,
 		with_collision: bool, render_distance: float, render_fade: float,
-		y_offset: float = 0.0, mesh: Mesh = null, opaque: bool = false,
+		y_offset: float, mesh: Mesh,
 		size_jitter_min: float = 1.0, aspect_jitter: float = 0.0) -> void:
-	# Two render paths share this field:
-	#  - Quad + alpha-cutout shader (mesh == null): the classic sprite billboard.
-	#  - Supplied silhouette mesh + opaque shader (mesh != null and opaque): the
-	#    tree cutout baked into geometry, no discard (early-Z friendly). The mesh
-	#    is normalized (x in [-0.5,0.5], y in [0,1]); size is carried as per-
-	#    instance scale so the opaque shader reads it from MODEL_MATRIX.
-	var use_opaque := mesh != null and opaque
-	_use_opaque = use_opaque
+	# One render path: the supplied silhouette mesh + opaque shader — the tree
+	# cutout baked into geometry, no discard (early-Z friendly). The mesh is
+	# normalized (x in [-0.5,0.5], y in [0,1]); size is carried as per-instance
+	# scale so the opaque shader reads it from MODEL_MATRIX.
+	if mesh == null:
+		push_error("BillboardField.build requires a silhouette mesh")
+		return
+	render_mesh = mesh
 	_size_jitter_min = clampf(size_jitter_min, 0.0, 1.0)
 	# Clamp below 1.0 so 1 - _aspect_jitter stays positive (no zero/negative scale).
 	_aspect_jitter = clampf(aspect_jitter, 0.0, 0.9)
-	if use_opaque:
-		render_mesh = mesh
-	else:
-		var quad := QuadMesh.new()
-		quad.size = size
-		# Shift the quad up by half its height so its pivot is the bottom edge.
-		quad.center_offset = Vector3(0.0, size.y * 0.5, 0.0)
-		render_mesh = quad
 
 	var mat := ShaderMaterial.new()
-	mat.shader = BILLBOARD_OPAQUE_SHADER if use_opaque else BILLBOARD_SHADER
+	mat.shader = BILLBOARD_OPAQUE_SHADER
 	mat.set_shader_parameter("albedo", texture)
 	mat.set_shader_parameter("render_distance", render_distance)
 	mat.set_shader_parameter("fade_band", render_fade)
 	# Bias distant foliage to cheaper mips (mobile texture-bandwidth win).
 	mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
 	# The opaque tree cutout dissolves near the camera (same dither as the 3D canopy)
-	# so a tree the camera pushes inside stops blocking the view — the quad path uses
-	# its own alpha-cutout distance fade and has no such uniforms.
-	if use_opaque:
-		mat.set_shader_parameter("near_fade_start", Config.data.tree_near_fade_start_m)
-		mat.set_shader_parameter("near_fade_end", Config.data.tree_near_fade_end_m)
-		# Trees take the terrain's hemisphere-ambient + directional-sun model so
-		# they match the lit ground (billboard_opaque.gdshader). sun_dir is
-		# normalised to match apply_terrain_light; no source_color decode either side.
-		mat.set_shader_parameter("sun_dir", Config.data.sun_direction.normalized())
-		mat.set_shader_parameter("sun_color", Config.data.sun_color)
-		mat.set_shader_parameter("sky_color", Config.data.sky_color)
-		mat.set_shader_parameter("ground_color", Config.data.ground_color)
-		mat.set_shader_parameter("light_amount", Config.data.foliage_light_amount)
+	# so a tree the camera pushes inside stops blocking the view.
+	mat.set_shader_parameter("near_fade_start", Config.data.tree_near_fade_start_m)
+	mat.set_shader_parameter("near_fade_end", Config.data.tree_near_fade_end_m)
+	# Trees take the terrain's hemisphere-ambient + directional-sun model so they
+	# match the lit ground (billboard_opaque.gdshader). Pushed through
+	# apply_foliage_light rather than set here, so the sun/ambient dim with the
+	# weather exactly as the terrain bake and the car do — without it a tree keeps a
+	# lit sunward side on a night stage, where there is no sun to light it.
+	Config.data.apply_foliage_light(mat)
 	# A supplied silhouette mesh can be empty (0 surfaces) if its source texture
 	# had no opaque area; skip material assignment then (the field renders nothing)
 	# rather than indexing a missing surface.
@@ -140,10 +122,9 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
-	# Opaque path scales the normalized mesh by size; quad path bakes size in.
-	# The opaque mesh is a "+" cross, so its Z (the second plane) scales with the
-	# horizontal size.x just like X.
-	instance_scale = Vector3(size.x, size.y, size.x) if use_opaque else Vector3.ONE
+	# The normalized mesh is scaled by size. It is a "+" cross, so its Z (the
+	# second plane) scales with the horizontal size.x just like X.
+	instance_scale = Vector3(size.x, size.y, size.x)
 
 	# World positions in build (caller) order — the collision shapes are added in
 	# this order too, so a contact's shape index == the global instance index.
@@ -165,11 +146,10 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		# The opaque tree path carries a per-instance FELLED flag in custom data
-		# (INSTANCE_CUSTOM.x): 0 while standing (shader billboards a single card), 1
-		# once knocked over (shader locks the full "+" cross and topples it). The quad
-		# path doesn't read custom data, so only enable it for the opaque path.
-		mm.use_custom_data = use_opaque
+		# Each instance carries a FELLED flag in custom data (INSTANCE_CUSTOM.x): 0
+		# while standing (shader billboards a single card), 1 once knocked over
+		# (shader locks the full "+" cross and topples it).
+		mm.use_custom_data = true
 		mm.mesh = render_mesh
 		mm.instance_count = idxs.size()
 
@@ -184,12 +164,9 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 			# carries only the authored size scale (rotation stays identity) — no
 			# per-instance yaw, which would pre-rotate the card off the camera. A felled
 			# tree's topple tilt is applied on top of this identity basis later.
-			var xform_basis := Basis.IDENTITY
-			if use_opaque:
-				xform_basis = Basis.IDENTITY.scaled(_instance_scale(pos))
+			var xform_basis := Basis.IDENTITY.scaled(_instance_scale(pos))
 			mm.set_instance_transform(j, Transform3D(xform_basis, pos - centre))
-			if use_opaque:
-				mm.set_instance_custom_data(j, Color(0.0, 0.0, 0.0, 0.0))
+			mm.set_instance_custom_data(j, Color(0.0, 0.0, 0.0, 0.0))
 			# Bridge the global index (== shape index) back to its binned slot so
 			# knock_down / reset_fallen can find and animate the one struck tree.
 			_slot_of[gi] = {"mmi": mmi, "mm": mm, "j": j, "base_pos": pos, "centre": centre}
@@ -216,7 +193,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 # The deterministic per-instance size multiplier in [_size_jitter_min, 1.0], hashed
 # off the instance's world XZ so the same position always yields the same size (build
 # and felling-restore agree). Returns 1.0 when jitter is disabled (_size_jitter_min ==
-# 1.0). Only the opaque tree path calls this.
+# 1.0).
 func _size_factor(pos: Vector3) -> float:
 	if _size_jitter_min >= 1.0:
 		return 1.0
@@ -224,8 +201,8 @@ func _size_factor(pos: Vector3) -> float:
 	return lerpf(_size_jitter_min, 1.0, r)
 
 
-# The full per-instance scale (x, y, z) build() bakes into the instance basis for the
-# opaque path: the authored size (instance_scale) times the uniform size factor, times
+# The full per-instance scale (x, y, z) build() bakes into the instance basis: the
+# authored size (instance_scale) times the uniform size factor, times
 # an independent ASPECT stretch on width (x/z) and height (y). Deterministic per world
 # XZ (distinct hash salts 13/17) so build and felling-restore agree. The cross's Z
 # (second plane) tracks width just like X.
@@ -241,8 +218,7 @@ func _instance_scale(pos: Vector3) -> Vector3:
 
 # Public: the per-instance size multiplier for collision shape / instance `idx`
 # (shape index == global instance index; instance_positions stays in build order
-# even though rendering is binned). Mirrors the size the opaque tree path bakes into
-# the instance basis. Returns 1.0 for a bad index or when jitter is disabled. Used
+# even though rendering is binned). Mirrors the size baked into the instance basis. Returns 1.0 for a bad index or when jitter is disabled. Used
 # by car.gd to scale felling + plough-through.
 func size_factor(idx: int) -> float:
 	if idx < 0 or idx >= instance_positions.size():
@@ -251,12 +227,9 @@ func size_factor(idx: int) -> float:
 
 
 # The upright instance basis build() authored for the instance at world `pos`, so a
-# fall animation can rebuild the transform. Mirrors the build() loop: the opaque
-# tree path is identity rotation + authored size scale (the shader billboards it);
-# the legacy quad path is identity (and not fellable — see _use_opaque).
+# fall animation can rebuild the transform. Mirrors the build() loop: identity
+# rotation + authored size scale (the shader billboards it).
 func _upright_basis(pos: Vector3) -> Basis:
-	if not _use_opaque:
-		return Basis.IDENTITY
 	# Identity rotation + authored size scale (times the per-instance jitter factor);
 	# the shader yaws the card to the camera, so there is no authored yaw to restore.
 	# A topple tilt is composed on top of this in _process / knock_down.
@@ -266,10 +239,9 @@ func _upright_basis(pos: Vector3) -> Basis:
 # Fell instance `idx`, toppling it in horizontal unit direction `dir` over
 # `duration` seconds — the BillboardField twin of TreeMeshField.knock_down. Disables
 # the hitbox in place (next step, so the car still stops now) and tilts the cross to
-# the ground. Idempotent; a no-op without collision, off the opaque path, or on a
-# bad index.
+# the ground. Idempotent; a no-op without collision or on a bad index.
 func knock_down(idx: int, dir: Vector3, duration: float) -> void:
-	if _collision_body == null or not _use_opaque:
+	if _collision_body == null:
 		return
 	if _fallen.has(idx) or not _slot_of.has(idx):
 		return

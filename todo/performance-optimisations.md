@@ -174,7 +174,7 @@
 > `BUFFER_SECONDS`=0.2 + `audio/driver/output_latency.web`=150 in `project.godot`).
 > The native APK has an audio thread and runs fine at 60. See features/rendering.md and
 > features/engine-audio.md), **item 1** (mipmaps on
-> tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
+> tree/bush `.import` + `lod_bias` uniform in `billboard_opaque.gdshader` driven by
 > `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
 > hoisted out of the firing-phase loop in `_voice`; scratch `slice()` allocation
 > dropped in `engine_audio.gd`; **6.3** shipped `engine_harmonics`=3; generator
@@ -431,7 +431,7 @@ phone the bandwidth cost outweighs the aesthetic.
    foliage/ground resolves to a cheaper mip sooner. Two options:
    - **Per-texture import:** there is no direct LOD-bias field in the import
      dock for GL Compatibility; prefer the shader route.
-   - **Shader (preferred, controllable):** in `shaders/billboard.gdshader`
+   - **Shader (preferred, controllable):** in `shaders/billboard_opaque.gdshader`
      `fragment()`, replace `texture(albedo, UV)` with `texture(albedo, UV, lod_bias)`
      where `lod_bias` is a `uniform float` (default ~0.5–1.0). Same idea for the
      ground in `shaders/ps1_models.gdshader` if ground bandwidth shows up in the
@@ -444,7 +444,7 @@ phone the bandwidth cost outweighs the aesthetic.
 
 ### Files
 `textures/tree.png.import`, `textures/tree-greece.webp.import`,
-`shaders/billboard.gdshader`, `shaders/ps1_models.gdshader`,
+`shaders/billboard_opaque.gdshader`, `shaders/ps1_models.gdshader`,
 `scripts/game_config.gd` (+ `config/game_config.tres`), `features/rendering.md`.
 
 ### Risk / notes
@@ -462,7 +462,7 @@ alpha-scissor cutout (`alpha_scissor = 0.5`) eats the edges; clamp bias modestly
 `visible_instance_count`** (confirmed: no `visible_instance_count` /
 `custom_aabb` / `VisibilityRange` anywhere in `scripts/`). So all ~6,000 tree +
 ~6,000 bush quads are vertex-processed and rasterized **every frame**. The
-distance cull in `shaders/billboard.gdshader fragment()` is a per-fragment
+distance cull in `shaders/billboard_opaque.gdshader fragment()` is a per-fragment
 `discard` past `render_distance` (~80 m) — it saves some fill but **not** the
 vertex/setup cost, and does nothing for instances behind the camera.
 Meanwhile the terrain only keeps ~150 m of ground loaded. This is the single
