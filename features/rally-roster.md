@@ -50,11 +50,11 @@ Each `RALLIES` entry:
   It has no relationship to region: a region may hold any number of specials, including
   none (see [regions.md](regions.md)).
 
-  **Seven ship today**: `sp_dust_trial` (Big Turbo), `sp_lakeshore_trial` (Drivetrain
+  **Ten ship today**: `sp_dust_trial` (Big Turbo), `sp_lakeshore_trial` (Drivetrain
   Conversion), `sp_archipelago_trial` (Supercharger), `the_showdown` (NOS),
-  `hc_showdown` (Sequential Gearbox), `gr_showdown` (Race Tires) — and
-  `sp_woodland_trial`, the one that gates a **capability** rather than a part
-  (`ENGINE_SWAP_UNLOCK_RALLY`, below).
+  `sp_woodland_trial` (Snow Tires), `sn_showdown` (Race Tires), `sp_summit_trial`
+  (Sequential Gearbox), plus `hc_showdown` and `gr_showdown` — and `front_runners`, the
+  one that gates a **capability** rather than a part (`ENGINE_SWAP_UNLOCK_RALLY`, below).
 
   Three of them are **region showdowns that have been a special twice**. `hc_showdown`,
   `gr_showdown` and `gc_showdown` each existed to gate one rung of the four-rung NOS
@@ -78,7 +78,7 @@ Each `RALLIES` entry:
 
   Every special keeps `"restriction": {}` (open-class) so it can never lock itself out — **a
   special must never gate on a part it unlocks.** They award stars like any other rally.
-  `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` names `sp_woodland_trial` as the special whose
+  `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` names `front_runners` as the special whose
   completion flips `engine_swaps_unlocked` — a *capability* gate on engine swapping,
   separate from the swap-token currency (which keeps dropping unconditionally), honoured by
   `RewardSystem._box_gate_open`, the garage swap row and the car-park confirm popup. On the
@@ -185,7 +185,12 @@ Each `RALLIES` entry:
   (default, omittable), `"rain"`, `"sandstorm"`, `"fog"` or `"storm"`. Authored, never
   random, so a wet stage is wet every attempt. It is authored **per zone, not per
   region-name**: sandstorm only on desert pins, storm on the exposed water pins, fog on
-  the damp forest/foothill ones. See [weather.md](weather.md).
+  the damp forest/foothill ones, snow only in the Alps. See [weather.md](weather.md).
+  **No multi-stage rally may run one condition end to end** — every rally with two
+  or more stages changes weather at least once, so an outing is varied rather than
+  three helpings of the same thing. `test_rally_library` →
+  `test_every_multi_stage_rally_mixes_weather` enforces it; it pins no particular
+  condition, only that the stages disagree.
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). `(0,0)` is the map image's top-left, `(1,1)` its bottom-right
   (`hq.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
@@ -248,6 +253,11 @@ Each `RALLIES` entry:
   hilliest (`hc_headland_dash` / `sp_woodland_trial`, ~34–44), the pine forest and the
   quarry country behind it sit in the middle (~26–40), the river plain and the sea
   shore lower (~16–26), and the **southern desert flats** are the flattest (~12–19).
+  The **NE Alps break the "high ground is hilly" pattern on purpose** (~14–18 — the flattest
+  band on the map, under its highest terrain): relief and grip multiply, and at the region's
+  snow grip its original ~34–52 produced pitches steeper than a 2WD car can climb at all.
+  Altitude there is carried by `cliffiness` instead — see the note above `RALLIES` and
+  [snow-region.md](snow-region.md).
   Each rally staggers its 3 events so a zone doesn't read as uniform — usually a ramp
   down (or up, where a stage climbs into the hills), occasionally flat where the
   ground genuinely is.
@@ -289,9 +299,12 @@ arriving at the map with a rally already won. Every other rally keeps its full s
 so `RallySession.EVENTS_PER_RALLY` is the DEFAULT rather than the rule: ask
 `RallySession.stage_count()` for the active rally's real figure.
 
-This is why `front_runners` no longer has to admit everybody. It was widened to a
-class-free 60–200 purely so all three starters could enter the one rally a fresh profile
-could reach; nothing depends on that now, and it is back to an ordinary width.
+This is why `front_runners` no longer has to admit everybody *for that reason*. It was
+widened to a class-free 60–200 purely so all three starters could enter the one rally a
+fresh profile could reach; nothing depends on that now. It is nonetheless **fully
+open-class** (`"restriction": {}`) today, because it has since become the engine-swap
+special — and a special must never gate on what it unlocks, least of all a capability
+every starter needs.
 
 **A class field on a prize rally is dangerous.** It can make the prize its own
 prerequisite: `shakedown` was roadster-only, and since the catalogue's only other roadster
@@ -360,6 +373,41 @@ computes a car's **physics-optimal velocity profile** over a track centerline:
   catalogue car has downforce, so times are byte-identical to before these terms
   existed (`test_defaults_are_an_exact_no_op`). Moving either off its default
   *does* move every rival time (fields are generated live, so it takes effect at once).
+
+  **Road gradient.** The model is a point mass on a 2D centerline and has no
+  elevation of its own, so a caller that wants hills must seat a height sampler on
+  the track result as `road_height` — `TerrainNoise.make_sampler(cfg.track_seed,
+  cfg.terrain_layers())`, the same headless sampler the generator's water constraint
+  uses. `_slope_profile` turns it into `sin θ` per sample (positive uphill, smoothed
+  over roughly a car length by `SLOPE_SMOOTH_SAMPLES`); the forward pass subtracts
+  `G·sinθ` **outside** the traction `min` (gravity is not a traction limit), and the
+  braking pass adds it (a climb helps the brakes, a descent fights them).
+
+  Pure noise is the correct road height even though the player collides with the
+  *baked* terrain: `TerrainManager.bake_track` sets a road vertex's height to the noise
+  height at its perpendicular foot on the centerline, and a point that IS on the
+  centerline is its own foot, while cliff offsets are zero under the road band. That
+  equivalence is what lets the rival grid be solved in `RallySession` before any terrain
+  node exists.
+
+  Both producers must seat it: `RallySession._generate_event_tracks` (the grid) and
+  `world.gd` (the live result behind the "vs P1" splits and the ghost's pace solve).
+  Attach it in only one and the ghost re-solves a flat road to hit a time set on a hilly
+  one, and drifts.
+
+  Without a sampler the slope profile is all zeros and the term is an **exact no-op** —
+  which is what keeps `CarPerformance`'s frozen benchmark and every synthetic-track
+  test unchanged. Measured over the shipped roster it is a small net cost (mean +0.6%,
+  worst +2.9%): climbs and descents largely cancel, but not symmetrically, because
+  braking is already grip-limited so a descent refunds less than the matching climb
+  costs. The residue concentrates in the Alps — 14 of its 18 stages get slower — since
+  `G·sinθ` is a fixed subtraction from a drive budget that low grip has already shrunk.
+
+  A steep enough climb at low enough grip is genuinely unclimbable; rather than park the
+  car at zero forever and hand the field a nonsense time, the forward pass floors at
+  `V_CRAWL_MS` (only when a gradient profile is present, so the flat path stays
+  byte-identical). The mirror case — a descent too steep to brake — is floored at zero
+  in the backward pass so it cannot cascade into a NaN.
 
   **Still not modelled**: brake torque/bias, gearbox ratios, shift time, turbo
   lag, suspension, weight distribution, tyre width. Braking is one
@@ -509,10 +557,13 @@ generator also uses it per-rival.
   [map-exploration.md](map-exploration.md) for the geometric replacement
   (`distance_beyond_frontier`).
 - `engine_swaps_unlocked(profile)` — whether `ENGINE_SWAP_UNLOCK_RALLY`
-  (`sp_woodland_trial`, the special the reachability walk in
-  [map-exploration.md](map-exploration.md) reaches earliest) is recorded completed — the
-  engine-swap *capability* gate (tokens themselves always drop; see
-  `features/engine-swap.md`).
+  (`front_runners`, the difficulty-1 special beside HQ, so the special the reachability
+  walk in [map-exploration.md](map-exploration.md) reaches earliest) is recorded
+  completed — the engine-swap *capability* gate (tokens themselves always drop; see
+  `features/engine-swap.md`). It first checks `Save.KEY_LEGACY_ENGINE_SWAP`, set by the
+  5 → 6 migration for careers that won the capability where it used to live
+  (`sp_woodland_trial`), so a re-sited unlock is never taken back — the same shape as
+  `KEY_LEGACY_PART_UNLOCKS` (see [save-persistence.md](save-persistence.md)).
 - `all_specials_completed(profile)` — true once every special on the roster is
   completed; a roster with no specials reads as completed. Replaces the old
   `RegionLibrary.all_showdowns_completed` as the credits/win-beat gate.
@@ -706,7 +757,8 @@ line used to reference no longer exist — see the `special` field entry above.)
 
 Six rallies in the map's NE massif, added when the snow corner was filled in. They form a
 **chain** rather than a cluster: `sn_glacier_run` is the only pin reachable from outside
-the corner (from The Foothills Trial's lit circle), every other Alps pin is revealed from
+the corner (from the Snow Tires special's lit circle — `sp_woodland_trial`, the gateway
+pin that awards the rubber for the frozen corner), every other Alps pin is revealed from
 inside, and the two specials are the deepest pins on the map.
 
 Two part unlocks were re-sited here — Race Tires (`gr_showdown` → `sn_showdown`) and

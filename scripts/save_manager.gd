@@ -31,7 +31,7 @@ signal flushed()
 
 # Bump on any breaking shape change to PlayerProfile; older files are migrated
 # forward on load (see _migrate), newer files are refused rather than truncated.
-const SCHEMA_VERSION := 5
+const SCHEMA_VERSION := 6
 
 # The two profile keys the REST of the codebase reads (the owned-car array and the
 # per-rally record map) — named here because SaveManager owns the save schema, and a
@@ -46,6 +46,12 @@ const KEY_RALLIES := "rallies"
 # to live must not lose it because the catalogue re-sited it. See features/snow-region.md
 # and UpgradeLibrary.rally_gate_met.
 const KEY_LEGACY_PART_UNLOCKS := "legacy_part_unlocks"
+# The engine-swap CAPABILITY granted directly, bypassing its unlock rally. Written only by
+# the 5 -> 6 migration, when that unlock moved off The Foothills Trial (which now awards
+# Snow Tires) onto the Proving Ground. Same rule as the part key above: a player who already
+# won the capability where it used to live must not lose it. Read by
+# RallyLibrary.engine_swaps_unlocked.
+const KEY_LEGACY_ENGINE_SWAP := "legacy_engine_swap"
 
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
@@ -429,6 +435,7 @@ func _default_profile() -> Dictionary:
 		# Empty for every new career: nothing has been re-sited under this player, so
 		# every part is gated purely by the CURRENT unlocked_by_rally mapping.
 		KEY_LEGACY_PART_UNLOCKS: [],
+		KEY_LEGACY_ENGINE_SWAP: false,
 		# Adaptive difficulty (features/adaptive-difficulty.md). Zero is "field matched to
 		# the player", i.e. the behaviour before the system existed.
 		AiDifficulty.KEY_STEPS: 0,
@@ -517,7 +524,11 @@ func _migrate(p: Dictionary) -> Dictionary:
 # Versions we know how to step FROM (each _migrate_step(v, p) bumps schema_version
 # to v+1). Kept as a plain const list (a const dict of Callables isn't a constant
 # expression in GDScript, and would null this autoload at parse time).
-const _MIGRATABLE_FROM := [1, 2, 3, 4]
+const _MIGRATABLE_FROM := [1, 2, 3, 4, 5]
+
+# The rally that used to unlock engine swapping before it moved to
+# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY. Read ONLY by the 5 -> 6 migration.
+const OLD_ENGINE_SWAP_UNLOCK_RALLY := "sp_woodland_trial"
 
 # Parts whose unlocked_by_rally moved, as [old_rally_id, upgrade_id]. Read ONLY by the
 # 4 -> 5 migration. Kept as data next to that step so a future move adds a row and an
@@ -538,6 +549,9 @@ const MOVED_PART_UNLOCKS := [
 #   4 -> 5: two part unlocks MOVED to the new Alps rallies (Race Tires gr_showdown ->
 #           sn_showdown, Sequential Gearbox hc_showdown -> sp_summit_trial). A player who
 #           already won the old rally keeps the part, via KEY_LEGACY_PART_UNLOCKS.
+#   5 -> 6: the ENGINE SWAP unlock moved (sp_woodland_trial -> front_runners) so the old
+#           rally could carry Snow Tires instead. A player who already won it keeps the
+#           capability, via KEY_LEGACY_ENGINE_SWAP.
 #   2 -> 3: rally entry stopped gating on power-to-weight, so a saved
 #           `tuning.engine_detune` set purely to duck under a rally ceiling now has
 #           nothing to duck under — and the detune slider that set it is gone with the
@@ -587,6 +601,15 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 					legacy.append(item_id)
 			p[KEY_LEGACY_PART_UNLOCKS] = legacy
 			p["schema_version"] = 5
+		5:
+			# The engine-swap unlock moved off The Foothills Trial (now the Snow Tires
+			# special) onto the Proving Ground beside HQ. Anyone who already won the old
+			# rally keeps the capability outright — and, as with the 4 -> 5 part moves, this
+			# grants the CAPABILITY only: marking the new rally completed would also light
+			# its reveal circle and pay stars the player never earned.
+			p[KEY_LEGACY_ENGINE_SWAP] = bool((p.get(KEY_RALLIES, {}) as Dictionary)
+				.get(OLD_ENGINE_SWAP_UNLOCK_RALLY, {}).get("completed", false))
+			p["schema_version"] = 6
 	return p
 
 

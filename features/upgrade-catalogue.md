@@ -62,10 +62,12 @@ part already fitted keeps working even if its gate would no longer be met.
 Gated parts today: `turbo_large` → `sp_dust_trial`, `supercharger` →
 `sp_archipelago_trial`, `drivetrain_swap` (now named "Drivetrain Conversion") →
 `sp_lakeshore_trial`, `nitrous` → `the_showdown`, `sequential_gearbox` →
-`hc_showdown`, and `race_tires` → `gr_showdown`. The last two are **region showdowns
-promoted back to specials** to carry those unlocks rather than new pins being authored —
-see [rally-roster.md](rally-roster.md) for why. `sp_woodland_trial` gates no part: it
-gates the engine-swap *capability* ([engine-swap.md](engine-swap.md)). See
+`sp_summit_trial`, `snow_tires` → `sp_woodland_trial`, and `race_tires` →
+`sn_showdown`. The two tyre parts bracket the Alps: `sp_woodland_trial` is the gateway
+pin into the frozen corner, `sn_showdown` sits at the far end of that chain — see
+[rally-roster.md](rally-roster.md) and [snow-region.md](snow-region.md) for why.
+`front_runners` gates no part: it gates the engine-swap *capability*
+([engine-swap.md](engine-swap.md)). See
 `reward-system.md` for how `RewardSystem` reads this gate into the draw pool.
 
 **Prerequisite gate (`requires_upgrade_id`).** The **per-car** counterpart to
@@ -136,26 +138,30 @@ two" op — never a per-engine exception table.
 It has its own `gearbox` tile on the upgrades grid, and fitting it moves the page's
 `PERFORMANCE` line not at all — the rating reads power-to-weight, which a shift time cannot
 touch — the same position nitrous is in.
-The **`tires` slot** holds one part, **Race Tires** (`race_tires`), whose `tire_grip_mult`
-effect multiplies the car's tyre μ. Its **own slot rather than sharing `aero`**: grip from
+The **`tires` slot** holds two parts, **Snow Tires** (`snow_tires`) and **Race Tires**
+(`race_tires`), whose `tire_grip_mult` effect multiplies the car's tyre μ. Snow Tires is
+the early rung — the smaller multiplier, won at `sp_woodland_trial`, the gateway pin into
+the Alps, so the player arrives in the frozen region with grip rubber rather than earning
+it afterwards; Race Tires is the top rung, won at `sn_showdown` deep in the chain. One
+enabled part per slot, so they are alternatives and the choice is trivial once both are
+owned — that is what a ladder rung is. Its **own slot rather than sharing `aero`**: grip from
 rubber and grip from downforce are not alternatives — a car wants both — and one enabled
-part per slot would have made them mutually exclusive. Like the aero kit it is deliberately
-**not** a power-to-weight input, so it can never move a car's rally eligibility; its grip
-contribution is folded in by `grip_meta` below.
+part per slot would have made them mutually exclusive. Like the aero kit they are
+deliberately **not** power-to-weight inputs, so they can never move a car's rally
+eligibility; their grip contribution is folded in by `grip_meta` below.
 Current set: three **forced-induction kits** (turbo slot — `turbo_small` ungated,
 `turbo_large` prerequisite-gated on the same car having `turbo_small` plus its own
 event gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own
 event gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
-an aero kit, the race tyres, the sequential gearbox, the three **weight** parts above, the
+an aero kit, the two tyre compounds (snow and race), the sequential gearbox, the three **weight** parts above, the
 drivetrain conversion kit, the `nitrous` slot's part (see below), and two consumables — the **engine
 swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
 `slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
 damage is one-way now; see [damage.md](damage.md).) The token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md); the swap
 **capability** itself is unlocked by winning the engine-swap special
-(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` / `RallyLibrary.engine_swaps_unlocked`;
-`engine_swap_completion_requirement()` reports how many ordinary rallies that
-special needs), but tokens drop and accumulate from
+(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` — `front_runners`, the difficulty-1 pin beside
+HQ — checked via `RallyLibrary.engine_swaps_unlocked`), but tokens drop and accumulate from
 the start regardless (see `reward-system.md`). The mystery box
 is drawn instead of a normal upgrade once a car has nothing left to gain (and,
 once swapping is unlocked, the player is token-rich too — see
@@ -271,7 +277,9 @@ gate (the gate governs earning, never keeping), and an unlocked-but-unfitted par
 selectable as a purchase, priced.
 
 The turbo slot has three parts — `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
-`turbo_large` / `supercharger`, shown by their `menu_label`); the single-part slots read `Stock` /
+`turbo_large` / `supercharger`, shown by their `menu_label`), and the tyre slot two —
+`Stock` / `Snow` / `Race` (`snow_tires` / `race_tires`, likewise by `menu_label`); the
+single-part slots read `Stock` /
 `<Kit>` (e.g. the aero tile's `Stock` / `Aero Kit`, using the part's full `name`). Under the
 hood it's the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled`):
 picking a part enables it (same-slot exclusivity switches any sibling off), picking `Stock`
@@ -652,3 +660,9 @@ player who won the part where it used to live keeps it. That set is written only
 save migration (v4 → v5, from `Save.MOVED_PART_UNLOCKS`) and is empty for every career
 started after the move. See [snow-region.md](snow-region.md) and
 [save-persistence.md](save-persistence.md).
+
+The engine-swap **capability** was re-sited the same way (`sp_woodland_trial` →
+`front_runners`, freeing the old rally to carry Snow Tires), and follows the same shape
+one level up: `RallyLibrary.engine_swaps_unlocked` checks `Save.KEY_LEGACY_ENGINE_SWAP`
+before the rally, written by the v5 → v6 migration. See
+[engine-swap.md](engine-swap.md).

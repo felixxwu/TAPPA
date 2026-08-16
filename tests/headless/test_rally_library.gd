@@ -454,6 +454,24 @@ func test_event_weather_defaults_to_dry() -> void:
 			"authored '%s' resolves to itself" % wid)
 
 
+func test_every_multi_stage_rally_mixes_weather() -> void:
+	# AUTHORING CONTRACT: no rally runs a single condition end to end — every
+	# multi-stage rally changes weather at least once across its stages, so a
+	# rally is a varied outing rather than three helpings of the same one. This
+	# pins no PARTICULAR condition anywhere (a designer can retune any stage to
+	# any id); it only requires that the stages don't all agree.
+	for rally in RallyLibrary.RALLIES:
+		var events: Array = rally.get("events", [])
+		if events.size() < 2:
+			continue  # a one-stage rally has nothing to mix
+		var seen := {}
+		for event in events:
+			seen[RallyLibrary.event_weather(event)] = true
+		assert_gt(seen.size(), 1,
+			"rally '%s' runs '%s' for all %d stages" % [
+				rally.get("id", "?"), ",".join(PackedStringArray(seen.keys())), events.size()])
+
+
 func test_starter_always_has_an_enterable_rally() -> void:
 	# SHIPPED-CONTENT guarantee: this must run against the REAL catalogue, not the
 	# fixtures installed by before_each — restore first so CarLibrary sees the real

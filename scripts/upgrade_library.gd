@@ -153,7 +153,7 @@ const UPGRADES: Array[Dictionary] = [
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
 	},
 	{
-		# The `tires` slot's one part: competition rubber, a flat multiplier on the car's
+		# The `tires` slot's top part: competition rubber, a flat multiplier on the car's
 		# tyre μ. Its OWN slot rather than sharing `aero`, because grip from rubber and grip
 		# from downforce are not alternatives — a car wants both, and one enabled part per
 		# slot would have made them mutually exclusive.
@@ -163,6 +163,19 @@ const UPGRADES: Array[Dictionary] = [
 		# Simple page's GRIP row, via grip_meta.
 		#
 		# menu_label "Race" — the slot label already says "Tires".
+		# The EARLY rung of the same slot: won at The Foothills Trial, the gateway pin into
+		# the Alps, so the player has grip rubber before the frozen corner rather than after
+		# it. Same shape as Race Tires (a flat multiplier on tyre μ, no power-to-weight
+		# input, so it can never move eligibility) but a smaller one — Race Tires, won at
+		# the far end of the Alps chain, stays the part this one is eventually replaced by.
+		# One enabled part per slot, so the two are alternatives and the choice is trivial
+		# once both are owned; that is the point of a ladder rung, not a flaw.
+		"id": "snow_tires", "name": "Snow Tires", "menu_label": "Snow",
+		"slot": "tires", "unlocked_by_rally": "sp_woodland_trial",
+		"consumable": false,
+		"effect": {"tire_grip_mult": 1.08},
+	},
+	{
 		"id": "race_tires", "name": "Race Tires", "menu_label": "Race",
 		"slot": "tires", "unlocked_by_rally": "sn_showdown",
 		"consumable": false,

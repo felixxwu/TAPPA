@@ -1398,6 +1398,23 @@ static func bake_args(cfg: GameConfig) -> Array:
 	]
 
 
+# The config's terrain layers as TerrainLayer resources, in layer order — the same
+# wavelengths/amplitudes the run scene uses (world.gd seats $Floor.layers the same
+# way), so an off-tree sampler agrees with the terrain the player drives.
+#
+# This builds NODE STATE. For a pure height
+# SAMPLER with no node at all, use TerrainNoise.make_sampler(seed, cfg.terrain_layers())
+# instead — that is the headless path.
+static func layers_from_config(cfg: GameConfig) -> Array[TerrainLayer]:
+	var built: Array[TerrainLayer] = []
+	for params in cfg.terrain_layers():
+		var layer := TerrainLayer.new()
+		layer.wavelength_m = params.x
+		layer.amplitude_m = params.y
+		built.append(layer)
+	return built
+
+
 # A bare, off-tree TerrainManager baked for `centerline` under `cfg` — noise layers,
 # seed and cliff params all seated from the config, then bake_track run so
 # `baked_height_at` answers with road flatten + cliff offsets included.
@@ -1411,13 +1428,7 @@ static func baked_preview(cfg: GameConfig, centerline: Curve2D) -> TerrainManage
 	var tm := TerrainManager.new()
 	tm.defer_initial_build = true  # never build a ring; this is a sampler, not a scene
 	tm.noise_seed = cfg.track_seed
-	var built: Array[TerrainLayer] = []
-	for params in cfg.terrain_layers():
-		var layer := TerrainLayer.new()
-		layer.wavelength_m = params.x
-		layer.amplitude_m = params.y
-		built.append(layer)
-	tm.layers = built
+	tm.layers = layers_from_config(cfg)
 	cfg.apply_cliffs(tm)
 	var a := bake_args(cfg)
 	await tm.bake_track(centerline, a[0], a[1], a[2], a[3], a[4])

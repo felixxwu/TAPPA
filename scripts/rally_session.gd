@@ -1002,6 +1002,23 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 		var cfg := canonical_event_config(event)
 		var params := TrackGenParams.for_event(event, cfg)
 		var result := await TrackGenerator.generate_cached(params, cfg)
+		# Let the rival grid feel the stage's hills. LapTimeModel is a point mass on a
+		# 2D centerline and knows nothing about elevation on its own, so without this it
+		# solves a flat version of a road that climbs — and the error is not symmetric:
+		# braking is already grip-limited, so a descent refunds less than the matching
+		# climb cost. That made the field systematically optimistic on hilly stages, and
+		# worst exactly where grip is lowest (the Alps) because the g*sin(theta) penalty
+		# is a fixed subtraction from a drive budget that low grip has already shrunk.
+		# Keyed off `cfg`, which is this event's canonical config — the same one the run
+		# scene seats $Floor from — so the grid solves the hills the player drives.
+		#
+		# Pure noise is the right height ON THE ROAD even though the terrain the player
+		# collides with is the baked one: bake_track sets a road vertex's height to the
+		# noise height at its perpendicular foot on the centerline, and a point that IS on
+		# the centerline is its own foot; cliff offsets are zero under the road band. So
+		# along the centerline the baked height and the noise agree, and this needs no
+		# terrain node — which is what lets it run here, before any world exists.
+		result["road_height"] = TerrainNoise.make_sampler(cfg.track_seed, cfg.terrain_layers())
 		results.append(result)
 	return results
 

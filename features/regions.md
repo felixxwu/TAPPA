@@ -97,7 +97,7 @@ call site (and auditing for other hardcoded `"home"` checks).
 `sky_panorama`, `grass_texture`, `gravel_texture`, `tree_mix`,
 `bush_billboard`, `spawn_bush_mesh`, `background_color`, `terrain_tint`,
 `terrain_layers`, `tarmac_color`, `road_marking_color`,
-`grass_particle_color`. `bush_billboard`/`terrain_tint`/`terrain_layers` are
+`grass_particle_color`, `grass_particle_square`. `bush_billboard`/`terrain_tint`/`terrain_layers` are
 reserved slots — schema support exists, nothing authors them yet.
 
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —

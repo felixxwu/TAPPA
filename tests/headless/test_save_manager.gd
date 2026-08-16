@@ -1330,7 +1330,56 @@ func test_migration_v4_does_not_fake_the_new_rally_completion() -> void:
 	assert_true(bool(rallies[old_rally]["completed"]), "the real completion survives")
 
 
+# --- v5 -> v6: the engine-swap capability's unlock rally moved -----------------
+# Same rule as the part moves above, one rung down: the capability follows the player,
+# not the rally it happened to be authored on.
+
+func test_migration_v5_keeps_engine_swapping_for_a_career_that_won_the_old_rally() -> void:
+	var v5: Dictionary = _save._default_profile()
+	v5["schema_version"] = 5
+	v5.erase(_save.KEY_LEGACY_ENGINE_SWAP)
+	v5[_save.KEY_RALLIES] = {
+		_save.OLD_ENGINE_SWAP_UNLOCK_RALLY: {"completed": true, "best_placed": 1},
+	}
+
+	var migrated: Dictionary = _save._migrate(v5)
+	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
+	assert_true(RallyLibrary.engine_swaps_unlocked(migrated),
+		"a career that won the capability where it used to live still has it")
+	# The grant is the CAPABILITY and nothing else — no invented rally completion, so no
+	# map-reveal circle and no stars the player never earned.
+	var rallies: Dictionary = migrated[_save.KEY_RALLIES]
+	assert_eq(rallies.size(), 1, "no rally completion was invented by the migration")
+	assert_false(rallies.has(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY),
+		"the new unlock rally is not faked as completed")
+
+
+func test_migration_v5_does_not_grant_engine_swapping_to_a_career_that_never_won_it() -> void:
+	var v5: Dictionary = _save._default_profile()
+	v5["schema_version"] = 5
+	v5.erase(_save.KEY_LEGACY_ENGINE_SWAP)
+	v5[_save.KEY_RALLIES] = {}
+
+	var migrated: Dictionary = _save._migrate(v5)
+	assert_false(RallyLibrary.engine_swaps_unlocked(migrated),
+		"the capability is still earned, not handed out by the migration")
+
+
+func test_engine_swaps_unlock_by_winning_the_current_rally() -> void:
+	# The ordinary path, independent of any legacy flag: completing the rally the constant
+	# names is what opens swapping.
+	var profile: Dictionary = _save._default_profile()
+	assert_false(RallyLibrary.engine_swaps_unlocked(profile), "setup: locked on a fresh career")
+	profile[_save.KEY_RALLIES] = {
+		RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY: {"completed": true, "best_placed": 1},
+	}
+	assert_true(RallyLibrary.engine_swaps_unlocked(profile),
+		"winning the unlock rally opens engine swapping")
+
+
 func test_a_fresh_profile_has_no_legacy_grants() -> void:
+	assert_false(bool(_save._default_profile()[_save.KEY_LEGACY_ENGINE_SWAP]),
+		"a career started after the move earns the capability the current way")
 	# A career started after the move is gated purely by the CURRENT mapping.
 	assert_eq(_save._default_profile()[_save.KEY_LEGACY_PART_UNLOCKS], [],
 		"nothing has been re-sited under this player")

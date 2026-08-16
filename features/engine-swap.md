@@ -26,12 +26,22 @@ so a car can qualify for a lower class by adding weight as well as by cutting
 power.
 
 **Capability gate.** Tokens drop and bank from the very start, but cannot be
-SPENT until the 32-star special is won
-(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "sp_woodland_trial"` — the LOWEST star rung, so swapping is the first thing the ladder opens, predicate
+SPENT until the engine-swap special is won
+(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "front_runners"`, "Upgrade: Engine Swap" — the
+difficulty-1 pin right beside HQ, revealed from the very first map view, so swapping is
+the first thing the ladder opens and a player can go and win the garage's most
+interesting mechanic immediately; predicate
 `RallyLibrary.engine_swaps_unlocked(profile)`). Separating the capability from
 the currency is deliberate: a visible stack of tokens you cannot use yet is a
 stronger pull toward the event than any prize description, so the locked UI names
 the banked tokens rather than hiding them.
+
+The gate used to hang on `sp_woodland_trial` (now the Snow Tires special). A career that
+already won it keeps the capability outright through `Save.KEY_LEGACY_ENGINE_SWAP`, set
+by the **5 → 6** save migration and checked FIRST by `engine_swaps_unlocked` — the same
+shape as `KEY_LEGACY_PART_UNLOCKS` for the 4 → 5 part moves, and deliberately not done by
+marking the new rally completed, which would light its map circle and pay stars nobody
+earned. See [save-persistence.md](save-persistence.md).
 
 Three consumers:
 

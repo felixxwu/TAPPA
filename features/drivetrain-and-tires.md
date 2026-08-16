@@ -109,9 +109,10 @@ A car authors **one `tire_compound`** (the rubber's intrinsic μ, ~0.85 hard eco
 (the `grip_balance` tuning slider then trims them apart) and copies the widths onto the
 config.
 
-**The compound is upgradeable.** The `tires` upgrade slot holds **Race Tires**
-(`race_tires`), whose `tire_grip_mult` effect multiplies **both** axle μ figures in
-pipeline step 2 — i.e. *after* `apply_car` seeds them and *before* the `grip_balance`
+**The compound is upgradeable.** The `tires` upgrade slot holds two parts — **Snow Tires**
+(`snow_tires`, the early rung, won at the Alps gateway pin) and **Race Tires**
+(`race_tires`, the top rung, won deep in the Alps) — whose `tire_grip_mult` effect
+multiplies **both** axle μ figures in pipeline step 2 — i.e. *after* `apply_car` seeds them and *before* the `grip_balance`
 slider shifts them apart, so a player's front/rear balance is scaled, never overwritten.
 It gets its own slot rather than sharing `aero` because rubber grip and downforce are not
 alternatives: a car wants both, and one-enabled-part-per-slot would have made them

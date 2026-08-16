@@ -89,7 +89,7 @@ behind a player who had already passed it. `special_gate_open`, `stars_required`
 `stars_needed`, `engine_swap_star_requirement`, `completions_required`,
 `completions_needed` and `engine_swap_completion_requirement` are all gone. The
 engine-swap *capability* gate is now a per-rally hook, `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`
-(`sp_woodland_trial`), checked via `RallyLibrary.engine_swaps_unlocked(profile)` — see
+(`front_runners`), checked via `RallyLibrary.engine_swaps_unlocked(profile)` — see
 `features/save-persistence.md` (`scripts/save_manager.gd`) and
 [map-exploration.md](map-exploration.md). The map's locked-special teaser now names the
 event and what it unlocks rather than quoting a progress fraction, and only on the

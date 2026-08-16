@@ -30,6 +30,13 @@ So the ghost is **kinematic**, posed from the very model that produced the rival
 centerline exactly. Inverting its cumulative-time array gives position at any elapsed
 time.
 
+The ghost therefore climbs the same hills the player does, but ONLY because `world.gd`
+seats `road_height` on the live track result before the pace solve (see
+[rally-roster.md](rally-roster.md) -> the QSS model). That sampler has to be attached in
+both producers — `RallySession._generate_event_tracks` for the drawn times and `world.gd`
+for the solve — or the ghost re-solves a flat road chasing a time that was set on a hilly
+one, and visibly drifts against its own split table.
+
 ## `RivalPace` — the pace model
 
 Pure `RefCounted`; no nodes, no scene, no knowledge of the rendered world.

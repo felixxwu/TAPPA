@@ -53,6 +53,16 @@ since the region is fixed for the world's lifetime. A region that authors no
 override falls back to the GameConfig default (alpha-0 `Color()` is the "unset"
 sentinel).
 
+A region may also override the off-road particle's SHAPE, via
+`RegionLibrary.look_of()["grass_particle_square"]` and the matching
+`WheelParticles.set_grass_square_override()`. The default particle is modelled as a
+torn-up blade of grass — slim and tall (`wheel_particle_grass_width_m` /
+`wheel_particle_grass_length_m`) — which stays wrong when merely recoloured: the Alps
+throws clods of powder, not white blades. When set, `_grass_look` returns the square the
+gravel clod already uses, sized off the same `wheel_particle_size_m` so the two cannot
+drift apart. The COLOUR is still the region's, so this stays white spray rather than
+becoming dirt. Every other region omits the key and keeps the blade.
+
 ### Why a hand-written billboard shader
 
 `BaseMaterial3D`'s `BILLBOARD_ENABLED` rebuilds the model-view basis from the

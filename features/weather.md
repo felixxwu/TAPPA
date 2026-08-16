@@ -137,8 +137,8 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
   forest and foothill pins (`region` `home` / `home_coast`), and is authored
   DELIBERATELY SPARINGLY — it's the roster's only difficulty lever (see "Rival
   times"), so keep it a minority of the roster and off any difficulty-1 rally so
-  a new player never meets it first. Shipped today onto one stage each of The
-  Foothills Trial, Pinewood Sprint and Ridgeline Dash — all difficulty 2/3, all in the
+  a new player never meets it first. Shipped today onto one stage each of the
+  Snow Tires special (`sp_woodland_trial`), Pinewood Sprint and Ridgeline Dash — all difficulty 2/3, all in the
   northern pines or the eastern foothills.
 - **Storm** — authoring guidance, same caveat as fog above: a storm's crosswind reads
   as belonging to **exposed water**, so it is authored ONLY on a pin actually on the

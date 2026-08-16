@@ -197,6 +197,17 @@ static func _pace_band(tier: int) -> Vector2:
 # (test-enforced), storms are for exposed coasts, high `terrain_layer1_amplitude` is for
 # the mountain foothills and low for the desert flats.
 #
+# The ALPS ARE THE EXCEPTION to that last rule, and deliberately so: they read as the
+# highest ground on the map but are authored GENTLE (14-18, below even the desert flats
+# rather than near the foothills' 34-44). Relief and grip multiply. A gradient costs a fixed
+# `G*sin(theta)` out of a drive budget that the region's low grip has already shrunk, so
+# the ~34-52 the corner first shipped with put its steepest pitches above what a 2WD car
+# could climb at snow grip at all (FWD tops out near a 22% grade, RWD near 33%) — the car
+# simply sat and spun. Altitude is carried by `cliffiness` (0.7-1.0, the highest on the
+# map) instead, which drops the ground away BESIDE the road without touching the
+# lengthwise profile the car has to climb. Keep it that way: if the Alps need more drama,
+# reach for cliffiness, not amplitude.
+#
 # The table below is grouped by AUTHORING ORDER, not by geography — array order carries no
 # meaning and a rally's own `region` + `map_pos` are the only truth about where it is.
 const RALLIES: Array[Dictionary] = [
@@ -216,7 +227,13 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "front_runners", "name": "Proving Ground", "region": "home", "difficulty": 1, "special": false,
+		# Unlocks ENGINE SWAPPING (the capability, not the token — see
+		# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY). It is the lowest rung on the ladder, so it
+		# sits on the difficulty-1 event right beside HQ: revealed from the very first map
+		# view, so a player can go and win the garage's most interesting mechanic
+		# immediately. It was The Foothills Trial, which now carries Snow Tires instead.
+		"id": "front_runners", "name": "Upgrade: Engine Swap", "region": "home", "difficulty": 1,
+		"special": true,
 		"map_pos": Vector2(0.465, 0.615),
 		# An ordinary early event beside HQ, CLASS-FREE (no body or class field, just a p/w
 		# band) so it admits an RWD roadster and a FWD hatch alike.
@@ -227,8 +244,10 @@ const RALLIES: Array[Dictionary] = [
 		# the slowest starter. Neither holds now — each starter begins inside its OWN event
 		# (RallyLibrary.opening_rally_id_for, todo/opening-rally.md) — so the floor comes
 		# back up to a normal width. It stays class-free because a broad early event beside
-		# HQ is good for the map whichever branch the player opened.
-		"restriction": {"doors_min": 3},  # the front-drive family-hatch proving ground
+		# HQ is good for the map whichever branch the player opened. Now that it carries the
+		# engine-swap unlock it is fully OPEN — the same rule the other specials follow: a
+		# capability every starter needs must never sit behind a class its car can't meet.
+		"restriction": {},  # open-class: the capability specials gate on nothing
 		"events": [
 			{"seed": 1201, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.4, "straightness": 0.925, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
 			{"seed": 1102, "turn_count": 20, "forestiness": 0.35, "surface_mix": 0.6, "straightness": 0.9, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
@@ -297,7 +316,14 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# The gentlest special (a player is only ~3 wins in), pinned east where the forest
 		# climbs into the mountains' foothills — hence the relief, and the name.
-		"id": "sp_woodland_trial", "name": "The Foothills Trial", "region": "home", "difficulty": 2,
+		#
+		# Awards SNOW TIRES (UpgradeLibrary snow_tires, gated the usual way round by
+		# unlocked_by_rally). The grip part belongs at the gateway to the grip corner: this
+		# pin is the only way into the Alps — sn_glacier_run sits inside ITS lit circle — so
+		# the player arrives in the frozen region with the rubber for it, and the stronger
+		# Race Tires still wait at the far end of that chain. It used to unlock engine
+		# swapping, which has moved to the Proving Ground beside HQ.
+		"id": "sp_woodland_trial", "name": "Upgrade: Snow Tires", "region": "home", "difficulty": 2,
 		"special": true,
 		"map_pos": Vector2(0.716, 0.409),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
@@ -313,7 +339,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
 			{"seed": 9101, "turn_count": 46, "forestiness": 0.85, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
-			{"seed": 9102, "turn_count": 46, "forestiness": 0.55, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
+			{"seed": 9102, "turn_count": 46, "forestiness": 0.55, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "storm"},
 			{"seed": 9003, "turn_count": 46, "forestiness": 0.70, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0},
 		],
 	},
@@ -337,7 +363,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"country": "JP"},
 		"events": [
 			{"seed": 34001, "turn_count": 16, "forestiness": 0.57, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.35, "water_level": -7.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
-			{"seed": 34002, "turn_count": 16, "forestiness": 0.70, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
+			{"seed": 34002, "turn_count": 16, "forestiness": 0.70, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0},
 			{"seed": 34003, "turn_count": 17, "forestiness": 0.45, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.45, "water_level": -7.0, "terrain_layer1_amplitude": 18.0, "weather": "rain"},
 		],
 	},
@@ -425,9 +451,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.529, 0.205),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
-			{"seed": 39001, "turn_count": 48, "forestiness": 0.73, "surface_mix": 0.6, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
+			{"seed": 39001, "turn_count": 48, "forestiness": 0.73, "surface_mix": 0.6, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
 			{"seed": 39002, "turn_count": 51, "forestiness": 0.55, "surface_mix": 0.9, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
-			{"seed": 39003, "turn_count": 48, "forestiness": 0.85, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
+			{"seed": 39003, "turn_count": 48, "forestiness": 0.85, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 26.0, "weather": "storm"},
 		],
 	},
 	{
@@ -462,7 +488,7 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.348, 0.157),
 		"restriction": {"cylinders_min": 8, "doors_max": 2},
 		"events": [
-			{"seed": 42001, "turn_count": 23, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.725, "cliffiness": 0.6, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 40.0},
+			{"seed": 42001, "turn_count": 23, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.725, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 40.0},
 			{"seed": 42002, "turn_count": 23, "forestiness": 0.25, "surface_mix": 0.05, "straightness": 0.7, "cliffiness": 0.7, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 35.0},
 			{"seed": 42003, "turn_count": 24, "forestiness": 0.45, "surface_mix": 0.25, "straightness": 0.675, "cliffiness": 0.65, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 30.0},
 		],
@@ -474,7 +500,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"country": "GB"},  # a British hill climb, and it awards a British car
 		"events": [
 			{"seed": 22001, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.8, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 26.0},
-			{"seed": 22102, "turn_count": 21, "forestiness": 0.70, "surface_mix": 0.05, "straightness": 0.575, "cliffiness": 0.9, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 22.0},
+			{"seed": 22102, "turn_count": 21, "forestiness": 0.70, "surface_mix": 0.05, "straightness": 0.575, "cliffiness": 0.9, "water_level": -7.0, "weather": "fog", "terrain_layer1_amplitude": 22.0},
 			{"seed": 22203, "turn_count": 20, "forestiness": 0.57, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.85, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 18.0},
 		],
 	},
@@ -545,7 +571,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"doors_max": 2},
 		"events": [
 			{"seed": 21001, "turn_count": 17, "forestiness": 0.47, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
-			{"seed": 21002, "turn_count": 18, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 21002, "turn_count": 18, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 24.0, "weather": "rain"},
 			{"seed": 21003, "turn_count": 17, "forestiness": 0.60, "surface_mix": 0.3, "straightness": 0.675, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
 		],
 	},
@@ -571,7 +597,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"engine_min_l": 4.0},  # "Heavy Hitters": big-displacement only
 		"events": [
 			{"seed": 4001, "turn_count": 33, "forestiness": 0.29, "surface_mix": 0.6, "straightness": 0.625, "cliffiness": 0.55, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
-			{"seed": 4004, "turn_count": 33, "forestiness": 0.15, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.7, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
+			{"seed": 4004, "turn_count": 33, "forestiness": 0.15, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.7, "water_level": -11.0, "terrain_layer1_amplitude": 15.5, "weather": "sandstorm"},
 			{"seed": 3734559043, "turn_count": 33, "forestiness": 0.40, "surface_mix": 1.0, "straightness": 0.625, "cliffiness": 0.6, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
 		],
 	},
@@ -604,9 +630,9 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		# Unlocks ENGINE SWAPPING (the capability, not the token — see
-		# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY). Pinned on the arid fringe in the west,
-		# inland: despite the id there is no archipelago here, so no coastal waterline.
+		# Unlocks the SUPERCHARGER (UpgradeLibrary.unlocked_by_rally). Pinned on the arid
+		# fringe in the west, inland: despite the id there is no archipelago here, so no
+		# coastal waterline.
 		"id": "sp_archipelago_trial", "name": "Upgrade: Supercharger", "region": "greece", "difficulty": 3,
 		"special": true,
 		"map_pos": Vector2(0.122, 0.580),
@@ -659,9 +685,9 @@ const RALLIES: Array[Dictionary] = [
 		# the strand rate unchanged from the pre-Alps roster.
 		"restriction": {"car_type": "hatch"},
 		"events": [
-			{"seed": 85001, "turn_count": 24, "forestiness": 0.55, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 34.0},
-			{"seed": 85002, "turn_count": 26, "forestiness": 0.45, "surface_mix": 0.45, "straightness": 0.8, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 36.0, "weather": "snow"},
-			{"seed": 85003, "turn_count": 24, "forestiness": 0.60, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 34.0},
+			{"seed": 85001, "turn_count": 24, "forestiness": 0.55, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
+			{"seed": 85002, "turn_count": 26, "forestiness": 0.45, "surface_mix": 0.45, "straightness": 0.8, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 14.0, "weather": "snow"},
+			{"seed": 85003, "turn_count": 24, "forestiness": 0.60, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
 		],
 	},
 	{
@@ -670,9 +696,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.690, 0.196),
 		"restriction": {"country": "JP"},  # the light Japanese pair, at home on a loose surface
 		"events": [
-			{"seed": 86001, "turn_count": 30, "forestiness": 0.40, "surface_mix": 0.2, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 40.0, "weather": "snow"},
-			{"seed": 86002, "turn_count": 32, "forestiness": 0.30, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 42.0},
-			{"seed": 86003, "turn_count": 30, "forestiness": 0.45, "surface_mix": 0.15, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 40.0, "weather": "snow"},
+			{"seed": 86001, "turn_count": 30, "forestiness": 0.40, "surface_mix": 0.2, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 15.0, "weather": "snow"},
+			{"seed": 86002, "turn_count": 32, "forestiness": 0.30, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 86003, "turn_count": 30, "forestiness": 0.45, "surface_mix": 0.15, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 15.0, "weather": "snow"},
 		],
 	},
 	{
@@ -681,9 +707,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.836, 0.353),
 		"restriction": {"car_type": "coupe"},  # heavier rear-drive coupes on a low-grip climb
 		"events": [
-			{"seed": 87001, "turn_count": 32, "forestiness": 0.35, "surface_mix": 0.4, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
-			{"seed": 87002, "turn_count": 34, "forestiness": 0.25, "surface_mix": 0.55, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 41.0, "weather": "snow"},
-			{"seed": 87003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -12.0, "terrain_layer1_amplitude": 44.0},
+			{"seed": 87001, "turn_count": 32, "forestiness": 0.35, "surface_mix": 0.4, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 87002, "turn_count": 34, "forestiness": 0.25, "surface_mix": 0.55, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
+			{"seed": 87003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -12.0, "terrain_layer1_amplitude": 17.0},
 		],
 	},
 	{
@@ -692,9 +718,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.900, 0.268),
 		"restriction": {"country": "US"},
 		"events": [
-			{"seed": 88001, "turn_count": 38, "forestiness": 0.25, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -13.0, "terrain_layer1_amplitude": 46.0, "weather": "snow"},
-			{"seed": 88002, "turn_count": 40, "forestiness": 0.20, "surface_mix": 0.5, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 48.0},
-			{"seed": 88003, "turn_count": 38, "forestiness": 0.30, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 46.0, "weather": "snow"},
+			{"seed": 88001, "turn_count": 38, "forestiness": 0.25, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -13.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
+			{"seed": 88002, "turn_count": 40, "forestiness": 0.20, "surface_mix": 0.5, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 17.0},
+			{"seed": 88003, "turn_count": 38, "forestiness": 0.30, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 16.0, "weather": "snow"},
 		],
 	},
 	{
@@ -707,9 +733,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.812, 0.216),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
-			{"seed": 89001, "turn_count": 46, "forestiness": 0.25, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 48.0, "weather": "snow"},
-			{"seed": 89002, "turn_count": 48, "forestiness": 0.15, "surface_mix": 0.5, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 50.0},
-			{"seed": 89003, "turn_count": 46, "forestiness": 0.30, "surface_mix": 0.2, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 48.0, "weather": "snow"},
+			{"seed": 89001, "turn_count": 46, "forestiness": 0.25, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
+			{"seed": 89002, "turn_count": 48, "forestiness": 0.15, "surface_mix": 0.5, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 18.0},
+			{"seed": 89003, "turn_count": 46, "forestiness": 0.30, "surface_mix": 0.2, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
 		],
 	},
 	{
@@ -720,9 +746,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.760, 0.108),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
-			{"seed": 89101, "turn_count": 48, "forestiness": 0.20, "surface_mix": 0.35, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 50.0},
-			{"seed": 89102, "turn_count": 50, "forestiness": 0.10, "surface_mix": 0.55, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 52.0, "weather": "snow"},
-			{"seed": 89103, "turn_count": 48, "forestiness": 0.25, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 50.0, "weather": "snow"},
+			{"seed": 89101, "turn_count": 48, "forestiness": 0.20, "surface_mix": 0.35, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0},
+			{"seed": 89102, "turn_count": 50, "forestiness": 0.10, "surface_mix": 0.55, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 18.0, "weather": "snow"},
+			{"seed": 89103, "turn_count": 48, "forestiness": 0.25, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 17.0, "weather": "snow"},
 		],
 	},
 ]
@@ -1889,6 +1915,12 @@ static func engine_swap_unlock_rally_name() -> String:
 
 
 static func engine_swaps_unlocked(profile: Dictionary) -> bool:
+	# Careers that won the capability where it USED to live (The Foothills Trial) carry it
+	# directly, written by the 5 -> 6 migration — checked first so a re-sited unlock is
+	# never taken back. Empty for every career started after the move, exactly like
+	# UpgradeLibrary.rally_gate_met's legacy part set.
+	if bool(profile.get(Save.KEY_LEGACY_ENGINE_SWAP, false)):
+		return true
 	return bool((profile.get(Save.KEY_RALLIES, {}) as Dictionary)
 		.get(ENGINE_SWAP_UNLOCK_RALLY, {}).get("completed", false))
 
@@ -1901,7 +1933,7 @@ static func engine_swaps_unlocked(profile: Dictionary) -> bool:
 # experiment with every car they win, where a turbo is just a number going up. The part
 # unlocks shifted one rung later to make room; the turbo -> supercharger dependency order is
 # unchanged (see UpgradeLibrary's unlocked_by_rally fields).
-const ENGINE_SWAP_UNLOCK_RALLY := "sp_woodland_trial"
+const ENGINE_SWAP_UNLOCK_RALLY := "front_runners"
 
 
 # Whether EVERY special on the roster is won — the win/credits beat, replacing the old

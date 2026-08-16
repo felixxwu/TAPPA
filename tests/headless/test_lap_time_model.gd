@@ -250,3 +250,106 @@ func test_an_absent_drive_mode_is_neutral():
 	var rwd := CAR.duplicate(); rwd["drive_mode"] = CarLibrary.RWD
 	assert_eq(LapTimeModel.optimum_ms(track, CAR, {}), LapTimeModel.optimum_ms(track, rwd, {}),
 		"a meta with no drive_mode times as RWD")
+
+
+# --- Road gradient ----------------------------------------------------------
+#
+# The model is a point mass on a 2D centerline, so it only knows about hills when the
+# caller hands it a road_height sampler (TerrainNoise.make_sampler). These
+# pin the CONTRACT of that term — direction, no-op-ness and finiteness — not any
+# authored terrain amplitude, which is a tunable.
+
+# A road_height Callable for a constant gradient: `grade` metres of rise per metre of
+# horizontal travel. TrackFixtures.straight runs from (0,0) to (0,-length) — along -Z —
+# so distance travelled is -z, and the height must climb with that, not with x.
+func _constant_grade(grade: float) -> Callable:
+	return func(_x: float, z: float) -> float: return -z * grade
+
+
+func test_a_climb_costs_time_and_a_descent_saves_it():
+	var flat := _straight_track(400.0)
+	var up := _straight_track(400.0)
+	up["road_height"] = _constant_grade(0.10)
+	var down := _straight_track(400.0)
+	down["road_height"] = _constant_grade(-0.10)
+	var t_flat := LapTimeModel.optimum_ms(flat, CAR, {})
+	assert_gt(LapTimeModel.optimum_ms(up, CAR, {}), t_flat, "climbing the same road is slower")
+	assert_lt(LapTimeModel.optimum_ms(down, CAR, {}), t_flat, "descending the same road is faster")
+
+
+func test_a_steeper_climb_costs_more_than_a_shallow_one():
+	var shallow := _straight_track(400.0)
+	shallow["road_height"] = _constant_grade(0.05)
+	var steep := _straight_track(400.0)
+	steep["road_height"] = _constant_grade(0.15)
+	assert_gt(LapTimeModel.optimum_ms(steep, CAR, {}), LapTimeModel.optimum_ms(shallow, CAR, {}),
+		"a steeper climb costs more time")
+
+
+func test_without_a_sampler_the_model_is_unchanged():
+	# The whole gradient term must be an exact no-op for callers that have no terrain —
+	# CarPerformance's frozen benchmark and every synthetic-track caller depend on it.
+	# An INVALID Callable and an absent key must both mean "flat", not "crash".
+	var bare := _straight_track(400.0)
+	var explicit := _straight_track(400.0)
+	explicit["road_height"] = Callable()
+	var baseline := LapTimeModel.optimum_ms(bare, CAR, {})
+	assert_eq(LapTimeModel.optimum_ms(explicit, CAR, {}), baseline,
+		"an invalid sampler is identical to no sampler")
+	var level := _straight_track(400.0)
+	level["road_height"] = _constant_grade(0.0)
+	assert_eq(LapTimeModel.optimum_ms(level, CAR, {}), baseline,
+		"a dead-level sampler is identical to no sampler")
+
+
+func test_a_climb_too_steep_to_drive_still_returns_a_finite_time():
+	# A gradient can exceed what the car's grip can put down — on snow especially. The
+	# model must degrade to a crawl rather than parking the car at zero forever and
+	# handing the whole rival field a nonsense stage time.
+	var cliff := _straight_track(400.0)
+	cliff["road_height"] = _constant_grade(5.0)   # far beyond anything drivable
+	var slow := CAR.duplicate(); slow["tire_compound"] = 0.2
+	var ms := LapTimeModel.optimum_ms(cliff, slow, {})
+	assert_gt(ms, 0, "an unclimbable slope still yields a positive time")
+	assert_lt(ms, 100 * 60 * 60 * 1000, "...and a finite one, not a hang or an overflow")
+
+
+func test_a_descent_too_steep_to_brake_does_not_produce_a_bad_number():
+	# The mirror case: gravity beats grip + rolling + drag, so the backward braking pass
+	# cannot slow the car for the corner ahead. That is real physics, but it must not
+	# drive the recursion below zero and cascade into a NaN.
+	var plunge := _arc_track(40.0, PI)
+	plunge["road_height"] = _constant_grade(-5.0)
+	var prof: Dictionary = LapTimeModel.optimum_profile(plunge, CAR, {})
+	assert_gt(int(prof["total_ms"]), 0, "a plunging corner still yields a positive time")
+	var v: PackedFloat32Array = prof["v"]
+	for i in v.size():
+		assert_false(is_nan(v[i]), "velocity sample %d is a number" % i)
+		assert_true(v[i] >= 0.0, "velocity sample %d is non-negative" % i)
+
+
+func test_the_gradient_term_reaches_the_rival_field_through_the_track_result():
+	# The seam itself: rivals are timed off the same optimum_ms, so seating road_height
+	# on the track result is what makes the AI field climb the hills the player climbs.
+	# Without this the ghost solves a flat version of a road that goes up.
+	var track := _straight_track(400.0)
+	var flat_field := RallyLibrary.generate_opponent_field(
+		{"id": "t", "difficulty": 2, "events": [{}]}, [track], [{}], 100.0)
+	track["road_height"] = _constant_grade(0.12)
+	var hilly_field := RallyLibrary.generate_opponent_field(
+		{"id": "t", "difficulty": 2, "events": [{}]}, [track], [{}], 100.0)
+	assert_gt(hilly_field.size(), 0, "a field was drawn")
+	assert_eq(hilly_field.size(), flat_field.size(), "the same number of rivals either way")
+	# The grid is drawn from the same rng for the same inputs, so rival i is the same
+	# build in both — only the hill differs, and every classified one must have paid for
+	# it. A rival can carry a non-positive combined_ms (the unclassified sentinel); it has
+	# no time to compare, so it is skipped rather than asserted on.
+	var compared := 0
+	for i in hilly_field.size():
+		var flat_ms := int(flat_field[i]["combined_ms"])
+		if flat_ms <= 0:
+			continue
+		compared += 1
+		assert_gt(int(hilly_field[i]["combined_ms"]), flat_ms,
+			"rival %d is slower up the hill" % i)
+	assert_gt(compared, 0, "at least one classified rival was compared")

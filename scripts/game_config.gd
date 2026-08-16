@@ -955,7 +955,7 @@ func has_nitrous() -> bool:
 ## The result is clamped to ±chase_tilt_max_deg and eased at chase_tilt_smoothing
 ## (higher = snappier; the same 1-exp(-rate·dt) idiom as the orbit/FOV smoothing),
 ## so the tilt decays back to level once the g-forces drop.
-@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.3
+@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.4
 @export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.0
 @export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
 @export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0

@@ -36,6 +36,15 @@ const V_UNBOUNDED := 1.0e12     # m^2/s^2 sentinel for "no cornering cap"
 # real car and only exists to keep a degenerate combination finite.
 const V_CAP_MAX_MS := 150.0
 const KAPPA_DENOM_MIN := 1.0e-6  # floor for (kappa - aero term); pairs with V_CAP_MAX_MS
+# Speed floor (m/s) for the forward pass, applied ONLY on a track with a gradient
+# profile. See the forward pass for why a climb needs one at all.
+const V_CRAWL_MS := 1.0
+# Half-width, in samples, of the smoothing applied to the gradient profile. The road
+# follows terrain noise whose finest layers turn over in a few metres, so the raw
+# per-sample gradient at SAMPLE_STEP_M carries spikes no real car experiences — a
+# wheelbase spans several samples and bridges them. Smoothing over roughly a car length
+# is both the physical reading and what keeps those spikes from dominating the solve.
+const SLOPE_SMOOTH_SAMPLES := 2
 
 # Full velocity/time profile. Returns parallel arrays sampled every ~SAMPLE_STEP_M
 # along the centerline, plus the total time in ms. Empty/zero for a degenerate track.
@@ -65,9 +74,16 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 	if length <= 0.0:
 		return empty
 
-	var prof := _curvature_profile(centerline, length)
+	# The road's lengthwise gradient, when the caller supplied a height sampler (see
+	# the "slope" notes below). Absent -> an all-zero profile, i.e. exactly the old
+	# flat-earth model, so every synthetic-track caller and the frozen CarPerformance
+	# benchmark are byte-identical to before this existed.
+	var prof := _curvature_profile(centerline, length,
+		track_result.get("road_height", Callable()) as Callable)
 	var s: PackedFloat32Array = prof["s"]
 	var kappa: PackedFloat32Array = prof["kappa"]
+	var slope: PackedFloat32Array = prof["slope"]
+	var has_slope: bool = prof["has_slope"]
 	var n := s.size()
 	if n < 2:
 		return empty
@@ -116,9 +132,21 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 		var a_engine := p_peak_w / (maxf(v_prev, 0.5) * mass) - drag * v_prev2 / mass - rolling
 		# Drive mode gates how much of the available grip can be PUT DOWN as drive.
 		# Forward pass only: braking is not a drivetrain function.
-		var a := minf(grip_long * traction, a_engine)
+		# Gravity along the slope is subtracted OUTSIDE the min, not folded into
+		# a_engine: it is not a traction limit and the drivetrain does not gate it. A
+		# grip-limited car on a climb still puts down all the grip it has AND still
+		# carries its own weight backwards, so both terms bite at once.
+		var a := minf(grip_long * traction, a_engine) - G * slope[i - 1]
 		var v_next2 := v_prev2 + 2.0 * a * step
-		fwd2[i] = clampf(v_next2, 0.0, cap2[i])
+		# Floored at a crawl rather than 0: on a steep enough climb at low grip `a` goes
+		# negative from a standstill, and the honest physical answer is "this car cannot
+		# climb this". Left at 0 the car would sit there forever and the integrator would
+		# hand the whole rival field a nonsense stage time. The floor keeps the solve
+		# finite and monotonic; a stage leaning on it is already unreasonable, and the
+		# thing to retune is grip, not this.
+		# Zero without a gradient profile, so the flat path stays byte-identical.
+		var floor2 := (V_CRAWL_MS * V_CRAWL_MS) if has_slope else 0.0
+		fwd2[i] = clampf(v_next2, floor2, maxf(cap2[i], floor2))
 
 	# --- Pass 3: backward braking pass (v^2); finish line unconstrained -------
 	var v2 := PackedFloat32Array(); v2.resize(n)
@@ -128,9 +156,16 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 		var v_next2 := v2[i + 1]
 		var a_lat := v_next2 * kappa[i + 1]
 		var grip_long := _grip_long(mu_g, aero_a, v_next2, a_lat)
-		# Braking is grip-limited; rolling + drag also help slow the car.
-		var a_brake := grip_long + rolling + drag * v_next2 / mass
-		var v_here2 := v_next2 + 2.0 * a_brake * step
+		# Braking is grip-limited; rolling + drag also help slow the car. So does gravity
+		# when the interval i -> i+1 climbs, and it works against the brakes when that
+		# interval drops — the SAME signed slope[i] the forward pass used over the same
+		# interval, which is what keeps the two passes describing one consistent hill.
+		var a_brake := grip_long + rolling + drag * v_next2 / mass + G * slope[i]
+		# a_brake can go NEGATIVE on a steep descent, where gravity beats grip + rolling +
+		# drag and the car simply cannot shed speed for the corner ahead. That is the
+		# right physics, but it must not run the backward recursion below zero and
+		# cascade, so the running v^2 is floored here rather than only at the final sqrt.
+		var v_here2 := maxf(v_next2 + 2.0 * a_brake * step, 0.0)
 		v2[i] = minf(v_here2, fwd2[i])
 
 	# --- Integrate time t[i] = sum ds / v_avg --------------------------------
@@ -178,7 +213,16 @@ static func _traction_factor(car_meta: Dictionary) -> float:
 # Sampled curvature kappa(s) = |d(heading)| / ds along the baked centerline, with
 # a light 3-tap smoothing to kill discretization spikes. Endpoints are treated as
 # straight (kappa = 0).
-static func _curvature_profile(centerline: Curve2D, length: float) -> Dictionary:
+#
+# `road_height`, when valid, is a Callable(x, z) -> float giving the road surface height
+# at a world XZ point — the headless TerrainNoise.make_sampler, the same one the track
+# generator's water constraint uses. It adds a "slope"
+# entry: sin(theta) per sample, POSITIVE UPHILL in the direction of travel, so the
+# forward pass can subtract G * slope. Without it "slope" is all zeros and "has_slope"
+# is false, which is what makes the gradient term an exact no-op for every caller that
+# has no terrain (CarPerformance's frozen benchmark, synthetic test tracks).
+static func _curvature_profile(centerline: Curve2D, length: float,
+		road_height: Callable = Callable()) -> Dictionary:
 	var n := maxi(int(ceil(length / SAMPLE_STEP_M)) + 1, 2)
 	var s := PackedFloat32Array(); s.resize(n)
 	var pts: Array[Vector2] = []
@@ -201,7 +245,42 @@ static func _curvature_profile(centerline: Curve2D, length: float) -> Dictionary
 		var lo := maxi(i - 1, 0)
 		var hi := mini(i + 1, n - 1)
 		kappa[i] = (raw[lo] + raw[i] + raw[hi]) / 3.0
-	return {"s": s, "kappa": kappa}
+	return {"s": s, "kappa": kappa, "has_slope": road_height.is_valid(),
+		"slope": _slope_profile(s, pts, road_height)}
+
+
+# sin(theta) per sample along the centerline, positive uphill. Entry i describes the
+# interval i -> i+1 (the last entry repeats the one before it, so both passes can index
+# it without a bounds branch).
+#
+# sin, not the rise/run tangent: the model resolves gravity along the direction of
+# TRAVEL, and s is measured in the horizontal plane, so rise/run would overstate the
+# term on the steepest sections — exactly where it matters most.
+static func _slope_profile(s: PackedFloat32Array, pts: Array[Vector2],
+		road_height: Callable) -> PackedFloat32Array:
+	var n := s.size()
+	var slope := PackedFloat32Array(); slope.resize(n)
+	if not road_height.is_valid() or n < 2:
+		return slope   # all zeros: the flat-earth model, unchanged
+	var h := PackedFloat32Array(); h.resize(n)
+	for i in n:
+		h[i] = float(road_height.call(pts[i].x, pts[i].y))
+	var raw := PackedFloat32Array(); raw.resize(n)
+	for i in range(n - 1):
+		var run := s[i + 1] - s[i]
+		var rise := h[i + 1] - h[i]
+		var hyp := sqrt(run * run + rise * rise)
+		raw[i] = (rise / hyp) if hyp > 0.0 else 0.0
+	raw[n - 1] = raw[n - 2]
+	# Box-smooth over ~a car length; see SLOPE_SMOOTH_SAMPLES.
+	for i in n:
+		var lo := maxi(i - SLOPE_SMOOTH_SAMPLES, 0)
+		var hi := mini(i + SLOPE_SMOOTH_SAMPLES, n - 1)
+		var sum := 0.0
+		for k in range(lo, hi + 1):
+			sum += raw[k]
+		slope[i] = sum / float(hi - lo + 1)
+	return slope
 
 
 # Average tyre grip (front+rear) blended by the event's surface mix, using the

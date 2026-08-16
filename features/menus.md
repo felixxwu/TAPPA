@@ -1798,7 +1798,7 @@ finishing a rally; they are **bought with stars** at a procedural gift box stand
 the map (`scripts/present_box.gd` — `class_name PresentBox`, `build()` for the map prop
 and `build_openable(scale)` for the openable reveal copy). `hq._make_present_pin` builds
 it at `hq.PRESENT_MAP_POS` — **(0.52, 0.50), deliberately not dead centre**, because
-`front_runners` is pinned at (0.45, 0.45) and every hit radius must stay under half the
+`front_runners` is pinned nearby (0.465, 0.615) and every hit radius must stay under half the
 closest pin spacing (`_add_pin_hit`), so a box at the exact centre would leave the
 nearest-to-centre cursor ambiguous between the two. Its readout is an
 **accent (inverted) box** — the box is not a rally and must not read as one more pin, see

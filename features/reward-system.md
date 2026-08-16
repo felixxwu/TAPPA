@@ -69,7 +69,8 @@ so a part fitted before a gate closes (or that never needed one) keeps working.
 Gated parts, per the authored `UPGRADES` table: `turbo_large` → `sp_dust_trial`,
 `supercharger` → `sp_archipelago_trial`, `drivetrain_swap` (renamed "Drivetrain
 Conversion") → `sp_lakeshore_trial`, `nitrous` → `the_showdown`,
-`sequential_gearbox` → `hc_showdown`, and `race_tires` → `gr_showdown`.
+`sequential_gearbox` → `sp_summit_trial`, `snow_tires` → `sp_woodland_trial`, and
+`race_tires` → `sn_showdown`.
 See `upgrade-catalogue.md` and (for the nitrous mechanic itself)
 `features/nitrous.md`.
 

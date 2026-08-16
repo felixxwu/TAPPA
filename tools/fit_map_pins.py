@@ -480,10 +480,11 @@ DEPTH_TARGET = 5
 DEPTH_WEIGHT = 30.0
 DEGREE_TARGET = 3              # neighbours a pin should have, so finishing it opens a choice
 DEGREE_WEIGHT = 10.0
-ENGINE_SWAP_RALLY = "sp_woodland_trial"
+ENGINE_SWAP_RALLY = "front_runners"
 # Wave 1 is exactly ONE rally: the opening event beside the garage. That works because
-# "Proving Ground" (id front_runners) carries no class field and a band wide enough for
-# every starter, so a single lit rally strands nobody. It used to take TWO — an RWD intro
+# "Upgrade: Engine Swap" (id front_runners) is fully open-class — no class field and an
+# empty restriction, since a special must never gate on what it unlocks — so a single lit
+# rally strands nobody. It used to take TWO — an RWD intro
 # and an FWD one — purely because each opening rally admitted only one kind of car.
 # test_every_starter_car_can_enter_something_on_a_fresh_profile enforces the guarantee;
 # this constraint is how the geometry gets there.

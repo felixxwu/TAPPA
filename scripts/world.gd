@@ -595,6 +595,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		if not bool(result.get("complete", false)):
 			push_error("ChallengeSession stage generation failed after retries (period=%s stage seed=%d turn_count=%d) — falling back to whatever partial track was found" \
 				% [ChallengeSession.period_key(), base_seed, params.turn_count])
+	# Same gradient profile the rival grid was solved against (RallySession
+	# ._generate_event_tracks). It must be attached HERE too, because this live result —
+	# not the one the grid used — is what feeds the "vs P1" split table and the rival
+	# ghost's pace solve. Attach it in one place only and the ghost would be re-solving a
+	# flat road to hit a time that was set on a hilly one, and drift.
+	#
+	# Keyed off `cfg`, matching $Floor above (seeded from cfg.track_seed), so this is the
+	# terrain the player actually drives even on a challenge stage whose seed was bumped.
+	result["road_height"] = TerrainNoise.make_sampler(cfg.track_seed, cfg.terrain_layers())
 	# Reconcile the live config to the waterline generation ACTUALLY used. `params` is
 	# the single source of truth for water: TrackGenParams.recompute_origin can clamp
 	# water_level down (or switch water_enabled off entirely) when no dry start exists
@@ -1054,6 +1063,8 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	# Region grass-blade colour override (e.g. Greece's dry olive vs. home's
 	# green) — falls back to GameConfig when the region authors none.
 	_wheel_particles.set_grass_color_override(region_look.get("grass_particle_color", Color(0, 0, 0, 0)))
+	# ...and its shape: snow throws square clods of powder, not slim grass blades.
+	_wheel_particles.set_grass_square_override(bool(region_look.get("grass_particle_square", false)))
 
 	# Grey smoke puffed from the bonnet each time a damaged engine misfires. Its own
 	# small MultiMesh pool; reads the car's engine misfire counter live. See

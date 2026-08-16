@@ -90,10 +90,48 @@ computes μ the same way, so the windscreen ghost stays consistent too.
 cannot drift. Worth stating, because a grip change that *did* reach the rating would
 silently re-pitch every field in the game.
 
+## Relief: deliberately gentle
+
+The Alps are authored **flat for their altitude** — `terrain_layer1_amplitude` 14-18, the
+flattest band on the map, under its highest ground, where the eastern foothills run 34-44.
+This is the one place the roster's "high ground is hilly" rule is broken on purpose.
+
+Relief and grip MULTIPLY. A climb costs a fixed `G*sin(theta)`, subtracted from a drive
+budget that this region's grip has already shrunk: on snow road grip a FWD car tops out
+around a 22% grade and a RWD car around 33%. The corner first shipped at ~34-52, whose
+steepest pitches measured 31-38% — at or past that ceiling, so the car sat and spun while
+the field drove away. At 14-18 the steepest pitch on any Alps stage is 19.2% and the RMS
+gradient roughly halved (9-17% -> 5.3-8.1%), leaving most of the drive budget for actually
+accelerating. For scale, the rest of the map has a median worst pitch of 19.2% and reaches
+32.2% — so the Alps' WORST hill is now the median hill everywhere else.
+
+Altitude is carried by **`cliffiness` (0.7-1.0, the highest on the map)** instead. Cliffs
+drop the ground away BESIDE the road without touching the lengthwise profile the car has
+to climb, so the corner still reads as a high massif while staying drivable. If the Alps
+ever need more drama, reach for cliffiness, not amplitude.
+
+Consequence worth knowing: less relief means fewer deep hollows for the waterline to fill,
+so **frozen lakes are rarer here than they were**. The waterlines were left at -12/-13
+(the "up in the foothills" rung of the roster's ladder) rather than raised to chase the
+ice back, because a high sea over low relief floods the track — the pairing constraint in
+[rally-roster.md](rally-roster.md).
+
+The Alps also feel the lap-time model's **road gradient** term more than anywhere else
+(see [rally-roster.md](rally-roster.md) -> the QSS model). `G*sin(theta)` is a fixed
+subtraction from a drive budget that low grip has already shrunk, so 14 of the region's
+18 stages get slower once hills are modelled, up to about +2%. That term exists precisely
+so the rival field pays for a climb the player is paying for; before it, a 2WD car
+scrabbling up an icy opening straight watched a ghost that had no weight walk away.
+
 Residual: the deep-snow drag is **player-only** (no drag term exists in the lap-time
 model, and a rival never leaves the road), so the corner is slightly harder in practice
 than a matched field implies — the same asymmetry storm's crosswind has. Mild, named, and
 a fraction of fog's, since the dominant effect *is* scaled.
+
+Off-road wheel spray is square here, not blade-shaped: the region authors
+`grass_particle_square` (see [wheel-dust.md](wheel-dust.md)). Colouring the grass blade
+white was not enough — a snowfield throws clods of powder, and the slim tall sliver read
+as white grass being torn up.
 
 ## Deep snow
 
@@ -227,8 +265,8 @@ load-bearing in non-obvious ways:
 
 Six rallies tagged `region: "snow"`, pinned in the NE massif, difficulty 1–4, weather
 mixed dry/snow. They form a **chain** rather than a cluster: `sn_glacier_run` is the only
-pin reachable from outside (from The Foothills Trial), and the two specials are the
-deepest pins.
+pin reachable from outside (from `sp_woodland_trial`, "Upgrade: Snow Tires"), and the two
+specials are the deepest pins.
 
 Two part unlocks moved north so the corner is worth working toward:
 
@@ -240,11 +278,23 @@ Two part unlocks moved north so the corner is worth working toward:
 The grip part belongs to the grip corner. Both source rallies were named after their
 prize and were renamed; their `id`s stay put because they key saved progress.
 
+**Snow Tires at the gateway.** The `tires` slot has since gained a second, weaker part —
+`snow_tires`, awarded by `sp_woodland_trial`, the ONLY pin that lights the way in here.
+So the player arrives in the frozen corner with grip rubber rather than earning it
+afterwards, and Race Tires still waits at the far end of the chain as the top rung. That
+rally used to gate the engine-swap capability, which moved to `front_runners` beside HQ
+to make room; see [engine-swap.md](engine-swap.md).
+
 **Save migration v4 → v5.** A player who already won the old rally keeps the part, via
 `Save.KEY_LEGACY_PART_UNLOCKS` — an early-out in `UpgradeLibrary.rally_gate_met`.
 Marking the new rally completed would have been wrong: it would also light its map-reveal
 circle and pay its placement stars. `Save.MOVED_PART_UNLOCKS` is the data the migration
 reads, so a future move is a row plus an arm.
+
+**Save migration v5 → v6.** The follow-up move of the engine-swap capability off
+`sp_woodland_trial` (so it could carry Snow Tires) uses the same pattern for the same
+reason: a career that completed that rally is granted the capability directly via
+`Save.KEY_LEGACY_ENGINE_SWAP`, which `RallyLibrary.engine_swaps_unlocked` checks first.
 
 Verified with `./report_eligibility.sh` (2/2/2/3 eligible cars on the four restricted
 rallies) and `./sim_career.sh`.

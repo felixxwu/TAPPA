@@ -18,7 +18,7 @@ const LOOK_KEYS := [
 	"sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
 	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
-	"grass_particle_color",
+	"grass_particle_color", "grass_particle_square",
 ]
 
 # The home region's billboard tree (also the fallback when a region authors no
@@ -146,6 +146,13 @@ const REGIONS: Array[Dictionary] = [
 		"spawn_bush_mesh": false,
 		"tarmac_color": Color(0.46, 0.47, 0.50),
 		"grass_particle_color": Color(0.90, 0.92, 0.95),
+		# ...and grass_particle_square makes it the right SHAPE as well as the right
+		# colour. The off-road particle is modelled as a torn-up blade of grass — slim
+		# and tall — which stays wrong when merely painted white: a snowfield throws
+		# clods of powder, not white blades. This swaps it to the square the gravel
+		# clod already uses, sized off the same wheel_particle_size_m, so the two can
+		# never drift apart.
+		"grass_particle_square": true,
 		# NOT optional here, unlike in the other regions. world.gd drives BOTH
 		# env.background_color and env.fog_light_color off this, and the scene baseline
 		# in main.tscn is an olive green (0.482, 0.498, 0.403) chosen for the home

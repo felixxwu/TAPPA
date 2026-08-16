@@ -54,6 +54,12 @@ var _car: Node                 # the VehicleBody3D (read for drivetrain + positi
 # setup()/retarget(); this pool has no region awareness of its own.
 var _grass_color_override := Color(0.0, 0.0, 0.0, 0.0)
 
+# Region override for the off-road particle's SHAPE (RegionLibrary look_of()'s
+# "grass_particle_square"). False — every region but the Alps — keeps the slim tall
+# blade. True swaps it for the gravel clod's square, because a snowfield throws powder,
+# not blades of grass. Seated by world.gd alongside the colour override.
+var _grass_square_override := false
+
 
 func _stride() -> int:
 	return STRIDE
@@ -63,6 +69,12 @@ func _stride() -> int:
 # grass colour (or an unset Color() to fall back to the GameConfig default).
 func set_grass_color_override(c: Color) -> void:
 	_grass_color_override = c
+
+
+# Called by world.gd alongside set_grass_color_override: true makes the off-road
+# particle a square clod instead of a grass blade (see _grass_square_override).
+func set_grass_square_override(square: bool) -> void:
+	_grass_square_override = square
 
 
 # Wire to the current car. The wheel/surface state is read live off the car's
@@ -122,6 +134,12 @@ func _grass_look(cfg: GameConfig) -> Look:
 	var color := cfg.wheel_particle_grass_color
 	if _grass_color_override.a > 0.0:
 		color = _grass_color_override
+	# A region may state that its off-road surface throws clods rather than blades (the
+	# Alps: snow). Only the SHAPE comes from the gravel look — the colour is still the
+	# region's, so this stays white spray rather than becoming dirt.
+	if _grass_square_override:
+		var half := cfg.wheel_particle_size_m * 0.5
+		return Look.new(half, half, color)
 	return Look.new(
 		cfg.wheel_particle_grass_width_m * 0.5,
 		cfg.wheel_particle_grass_length_m * 0.5,

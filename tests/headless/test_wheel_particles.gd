@@ -327,3 +327,34 @@ func test_look_for_surface_picks_by_surface() -> void:
 	assert_null(wp._look_for_surface(cfg, Vector2(1.0, 1.0)), "tarmac throws nothing")
 	assert_not_null(wp._look_for_surface(cfg, Vector2(1.0, 0.0)), "gravel road throws clods")
 	assert_not_null(wp._look_for_surface(cfg, Vector2(0.0, 0.0)), "off-road throws grass")
+
+
+func test_a_region_can_make_the_off_road_particle_a_square_clod() -> void:
+	# The Alps: snow throws clods of powder, not blades of grass. The region override
+	# swaps the SHAPE to the gravel clod's square while keeping the region's COLOUR, so
+	# the spray stays white rather than turning into dirt. Relations only — no authored
+	# width/length/size value is pinned, so a designer can retune any of them.
+	var wp := _make()
+	var cfg: GameConfig = Config.data
+	var blade: WheelParticles.Look = wp._grass_look(cfg)
+	assert_ne(blade.half_w, blade.half_h, "by default the off-road particle is a blade")
+
+	wp.set_grass_square_override(true)
+	var clod: WheelParticles.Look = wp._grass_look(cfg)
+	assert_eq(clod.half_w, clod.half_h, "the override makes it square")
+	var gravel: WheelParticles.Look = WheelParticles._gravel_look(cfg)
+	assert_eq(clod.half_w, gravel.half_w,
+		"...sized off the same field as the gravel clod, so the two cannot drift apart")
+	assert_ne(clod.color, gravel.color, "but it keeps its own colour, not the gravel's")
+
+
+func test_the_square_override_still_honours_the_region_colour() -> void:
+	# Shape and colour are independent overrides; setting one must not discard the other.
+	var wp := _make()
+	var cfg: GameConfig = Config.data
+	var tint := Color(0.9, 0.92, 0.95)
+	wp.set_grass_color_override(tint)
+	wp.set_grass_square_override(true)
+	var look: WheelParticles.Look = wp._grass_look(cfg)
+	assert_eq(look.color, tint, "the region colour survives the shape override")
+	assert_eq(look.half_w, look.half_h, "and the shape is still square")

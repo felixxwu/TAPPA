@@ -226,11 +226,11 @@ API. `rally_completed(id)` /
   (`_prune_unknown_upgrades`) drops fitted / toggled-off part ids that no longer
   resolve against `UpgradeLibrary`, so a part retired from the catalogue can't
   linger in a car's `installed_upgrades` and occupy a phantom slot in the menu.
-- **Migration** is keyed by version (`_MIGRATABLE_FROM`, currently `[1, 2, 3, 4]`) as
+- **Migration** is keyed by version (`_MIGRATABLE_FROM`, currently `[1, 2, 3, 4, 5]`) as
   pure `Dictionary -> Dictionary` transforms (`_migrate_step`); a newer-than-known
   version, or a version with no step in `_MIGRATABLE_FROM`, refuses to load and
-  runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is **5**,
-  and the four authored steps are:
+  runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is **6**,
+  and the five authored steps are:
   - **1 → 2**, alongside upgrades becoming CAR-BOUND: the old shared `inventory` pool of
     slottable parts is gone (parts now live on the `OwnedCar` they were won for), so the
     step strips **every** entry from `inventory` — those unbound parts were never applied
@@ -249,6 +249,13 @@ API. `rally_completed(id)` /
     map-reveal circle and pay its placement stars, handing over progress and currency
     never earned. `MOVED_PART_UNLOCKS` is the data it reads, so a future move is one row
     plus one arm. See [snow-region.md](snow-region.md).
+  - **5 → 6**, the engine-swap CAPABILITY moving (`sp_woodland_trial` → `front_runners`,
+    the difficulty-1 pin beside HQ) so the old rally could carry Snow Tires instead. Same
+    shape one level up: a player who already won the old rally keeps the capability,
+    granted directly via `KEY_LEGACY_ENGINE_SWAP` (a bool), which
+    `RallyLibrary.engine_swaps_unlocked` checks BEFORE the rally record — again not by
+    marking the new rally completed, which would light its reveal circle and pay stars
+    never earned. See [engine-swap.md](engine-swap.md).
 
   A retired `repair_kit` key on a CURRENT-version profile is dropped by `_sanitise`
   instead of by a migration, so no `SCHEMA_VERSION` bump is needed and older builds
