@@ -23,12 +23,19 @@ const WATER_TEX := preload("res://textures/water_noise.png")
 const SPAN := 10000.0
 
 
+# `frozen` (cfg.frozen_water_grip > 0.0, i.e. the Alps) turns the lake to ICE: pale
+# cold colours, a still surface instead of scrolling ripples, and — the point — a SOLID
+# collider the car drives out onto. See features/snow-region.md.
 func build(water_level: float, cfg: GameConfig) -> void:
+	var frozen := cfg.frozen_water_grip > 0.0
 	var mat := ShaderMaterial.new()
 	mat.shader = WATER_SHADER
-	mat.set_shader_parameter("water_color", cfg.water_color)
-	mat.set_shader_parameter("shore_color", cfg.water_shore_color)
-	mat.set_shader_parameter("scroll_speed", cfg.water_ripple_speed)
+	mat.set_shader_parameter("water_color", cfg.ice_color if frozen else cfg.water_color)
+	mat.set_shader_parameter("shore_color",
+		cfg.ice_shore_color if frozen else cfg.water_shore_color)
+	# Ice does not flow. Zeroing the scroll is what separates it from water at a glance,
+	# and it needs no second shader — the existing one simply stops animating.
+	mat.set_shader_parameter("scroll_speed", 0.0 if frozen else cfg.water_ripple_speed)
 	mat.set_shader_parameter("sparkle_strength", cfg.water_sparkle_strength)
 	mat.set_shader_parameter("water_tex", WATER_TEX)
 	var plane := PlaneMesh.new()
@@ -38,6 +45,36 @@ func build(water_level: float, cfg: GameConfig) -> void:
 	mi.material_override = mat
 	mi.position = Vector3(0.0, water_level, 0.0)
 	add_child(mi)
+	if frozen:
+		_add_ice_collider(water_level)
+
+
+# The ice surface the car drives on.
+#
+# A WorldBoundaryShape3D — an INFINITE half-space plane — rather than a mesh matching
+# the lake outline, and that is the whole trick. There is no lake geometry in this game
+# (see the class comment: one plane, terrain occludes it by depth test), so there is no
+# outline to match. An infinite plane at the waterline gives the right answer anyway,
+# because the TERRAIN collider is still there: wherever the ground is above the
+# waterline the car rests on the ground as usual, and wherever it dips below — which is
+# exactly where a lake is drawn — the car rests on the ice instead. The two colliders
+# together reproduce the lake's shape for free.
+#
+# It is also the cheapest collider the physics engine has: no vertices, no broadphase
+# volume, one plane test. A 10 km trimesh matching the visual plane would cost far more
+# and be no more correct.
+#
+# Side effect, accepted and arguably desirable: nothing can fall below the waterline
+# anywhere on a frozen stage, including a car that goes off a cliff into a dry basin
+# below sea level. On these stages that reads as landing on ice, not as a bug.
+func _add_ice_collider(water_level: float) -> void:
+	var body := StaticBody3D.new()
+	body.name = "IceSurface"
+	var shape := CollisionShape3D.new()
+	shape.shape = WorldBoundaryShape3D.new()
+	body.add_child(shape)
+	body.position = Vector3(0.0, water_level, 0.0)
+	add_child(body)
 
 
 # Below-water cell CENTRES over `bounds` (world XZ), for the 2D loading/seed-lab

@@ -226,15 +226,30 @@ API. `rally_completed(id)` /
   (`_prune_unknown_upgrades`) drops fitted / toggled-off part ids that no longer
   resolve against `UpgradeLibrary`, so a part retired from the catalogue can't
   linger in a car's `installed_upgrades` and occupy a phantom slot in the menu.
-- **Migration** is keyed by version (`_MIGRATABLE_FROM`, currently `[1]`) as pure
-  `Dictionary -> Dictionary` transforms (`_migrate_step`); a newer-than-known
+- **Migration** is keyed by version (`_MIGRATABLE_FROM`, currently `[1, 2, 3, 4]`) as
+  pure `Dictionary -> Dictionary` transforms (`_migrate_step`); a newer-than-known
   version, or a version with no step in `_MIGRATABLE_FROM`, refuses to load and
-  runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is
-  `2`; the one authored step is **1 → 2**, added alongside upgrades becoming
-  CAR-BOUND: the old shared `inventory` pool of slottable parts is gone (parts
-  now live on the `OwnedCar` they were won for), so the step strips **every** entry
-  from `inventory` — those unbound parts were never applied and have no car to belong
-  to, and the repair kits the step used to preserve no longer exist as an item.
+  runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is **5**,
+  and the four authored steps are:
+  - **1 → 2**, alongside upgrades becoming CAR-BOUND: the old shared `inventory` pool of
+    slottable parts is gone (parts now live on the `OwnedCar` they were won for), so the
+    step strips **every** entry from `inventory` — those unbound parts were never applied
+    and have no car to belong to.
+  - **2 → 3**, after rally entry stopped gating on power-to-weight: a saved
+    `tuning.engine_detune` set purely to duck under a ceiling had nothing left to duck
+    under and no player-reachable way to restore it, so every car is reset to full power.
+  - **3 → 4**, adaptive difficulty's offset + streak counters, all zero — which IS the
+    pre-adaptive "matched field" behaviour, so a migrated career resumes at parity. See
+    [adaptive-difficulty.md](adaptive-difficulty.md).
+  - **4 → 5**, two part unlocks moving into the Alps (Race Tires `gr_showdown` →
+    `sn_showdown`, Sequential Gearbox `hc_showdown` → `sp_summit_trial`). A player who
+    already won the old rally keeps the part, granted directly via
+    `KEY_LEGACY_PART_UNLOCKS` — an early-out in `UpgradeLibrary.rally_gate_met`. It is
+    deliberately NOT done by marking the new rally completed, which would also light its
+    map-reveal circle and pay its placement stars, handing over progress and currency
+    never earned. `MOVED_PART_UNLOCKS` is the data it reads, so a future move is one row
+    plus one arm. See [snow-region.md](snow-region.md).
+
   A retired `repair_kit` key on a CURRENT-version profile is dropped by `_sanitise`
   instead of by a migration, so no `SCHEMA_VERSION` bump is needed and older builds
   can still read the file.

@@ -1382,26 +1382,28 @@ func test_every_finish_scores_and_the_podium_scores_more() -> void:
 	# ledger on the profile now (Save.stars_earned — see test_save_manager.gd); this only
 	# guards the scoring curve, which the ledger and the HQ star row both read.
 	#
-	# Two tiers, FLAT within each: what must hold for any tuning of the two amounts is that
-	# finishing pays something, the podium pays more, and not finishing pays nothing.
-	var podium: int = RallyLibrary.stars_for_placement(1)
+	# Three tiers: what must hold for any tuning of the three amounts is that finishing pays
+	# something, the podium pays more, the win pays most, and not finishing pays nothing.
+	var win: int = RallyLibrary.stars_for_placement(1)
+	var podium: int = RallyLibrary.stars_for_placement(2)
 	var also_ran: int = RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1)
 	assert_gt(also_ran, 0, "merely finishing is worth something")
 	assert_gt(podium, also_ran, "a podium finish is worth more than finishing")
-	assert_eq(podium, RallyLibrary.MAX_STARS_PER_RALLY,
-		"the podium pays the most a rally can pay — the denominator the star rows draw")
+	assert_gt(win, podium, "winning outright is worth more than the rest of the podium")
+	assert_eq(win, RallyLibrary.MAX_STARS_PER_RALLY,
+		"the win pays the most a rally can pay — the denominator the star rows draw")
 	assert_eq(RallyLibrary.stars_for_placement(0), 0, "never placed scores nothing")
 	assert_eq(RallyLibrary.stars_for_placement(-1), 0, "nor does a negative placement")
 
 
 func test_the_scoring_curve_is_flat_within_each_tier() -> void:
-	# No 1st/2nd/3rd gradient: winning outright is rewarded with the rally's car/part prize and
-	# the leaderboard time, not a bigger pile of the same currency. Every podium place pays the
-	# same, and so does every finish behind it.
-	for placed in range(1, RallyLibrary.PODIUM_PLACES + 1):
+	# The win is its own tier; below it the curve is flat. Every non-winning podium place pays
+	# the same as every other, and so does every finish behind the podium — there is no 2nd/3rd
+	# gradient and no decay with how far down the field a finish lands.
+	for placed in range(2, RallyLibrary.PODIUM_PLACES + 1):
 		assert_eq(RallyLibrary.stars_for_placement(placed),
-			RallyLibrary.stars_for_placement(1),
-			"podium place %d pays the same as 1st" % placed)
+			RallyLibrary.stars_for_placement(2),
+			"podium place %d pays the same as 2nd" % placed)
 	for placed in [RallyLibrary.PODIUM_PLACES + 1, RallyLibrary.PODIUM_PLACES + 5, 50]:
 		assert_eq(RallyLibrary.stars_for_placement(placed),
 			RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1),

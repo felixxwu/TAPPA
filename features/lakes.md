@@ -258,3 +258,22 @@ unaffected.
 `test_track_gen_frame_consistency` (run-scene vs derivation shape),
 `test_lake_field` (single water plane + `submerged_cells`), `test_car_water` (drag +
 recoverable), `test_track_preview`, `test_seedlab`.
+
+
+## Frozen lakes
+
+In a region that authors `frozen_water` (the Alps), the lake is **solid** and driven on
+instead of being a soft drag hazard. `LakeField._add_ice_collider` adds a
+`WorldBoundaryShape3D` — an infinite half-space plane at the waterline.
+
+That works precisely because of the design above: there is no lake geometry, just one
+plane with terrain occluding it, so there is no outline to match. The terrain collider is
+still present, so above the waterline the car drives on ground and where terrain dips
+below — exactly where a lake is drawn — it rests on the ice. The two colliders reproduce
+the lake's shape for free, at the cost of the cheapest collider physics has.
+
+The water-drag query is **not** wired on a frozen stage, the ice grip overrides the
+surface blend in `Drivetrain.surface_tire_params`, and the look reuses this same water
+shader with ice colours and `scroll_speed = 0`. The track still routes around water, so a
+frozen lake is an off-road hazard or shortcut and rival times are unaffected. See
+[snow-region.md](snow-region.md).

@@ -35,6 +35,11 @@ const WEATHER_FOG := "fog"
 # Storm — heavy rain plus a crosswind and lightning. Authored onto the two COASTAL
 # regions ("home_coast" / "greece_coast"), where an exposed crosswind reads.
 const WEATHER_STORM := "storm"
+# Snowfall — authored onto region == "snow" events. Unlike every other precipitation
+# condition it carries NO grip multiplier: the snow region already owns grip for its
+# whole corner, dry stages included, so weather must not stack a second lever on it.
+# See features/snow-region.md.
+const WEATHER_SNOW := "snow"
 
 # Opponent-field shape (gameplay.md): 10–15 rivals. A rival can CRASH OUT of an event
 # (a wreck = a DNF; a DNF in any event disqualifies the whole rally). Wrecks are rare
@@ -172,7 +177,7 @@ static func _pace_band(tier: int) -> Vector2:
 # `textures/map_world.jpg` is one continent, and every rally is pinned somewhere real on
 # it. Reading it as the player does:
 #
-#   NE            a snow massif — RESERVED, no rally sits on it (todo/one-map-four-corners.md)
+#   NE            a high snow MASSIF — the Alps (region "snow"), six rallies
 #   N / centre    dark pine FOREST, the bulk of the map
 #   E             forest climbing into the mountains' foothills
 #   centre-W      open plain threaded with RIVERS and lakes
@@ -410,9 +415,12 @@ const RALLIES: Array[Dictionary] = [
 	# and the other three decide the opponent field. `gc_showdown` stays ordinary: it is the longest of the three and gates no
 	# part, so it remains the pure star-payer the endgame finishes on.
 	{
-		# Unlocks the Sequential Gearbox. Reached a wave before the Greek showdown below
-		# (RallyLibrary.reveal_depths), so the gentler of the two parts opens first.
-		"id": "hc_showdown", "name": "Upgrade: Sequential Gearbox", "region": "home", "difficulty": 4,
+		# Gates no part any more: the Sequential Gearbox moved to sp_summit_trial in the
+		# Alps, to give that corner something worth working toward. The `id` stays put
+		# because it keys saved progress, so the name is what changed. It remains a
+		# special — a long, open-class star-payer — which is what it always was besides
+		# the part it happened to carry.
+		"id": "hc_showdown", "name": "The Northern Trial", "region": "home", "difficulty": 4,
 		"special": true,
 		"map_pos": Vector2(0.529, 0.205),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
@@ -506,9 +514,10 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		# Unlocks the Race Tires — see the note above hc_showdown for why a demoted region
-		# showdown is what these two parts are gated on.
-		"id": "gr_showdown", "name": "Upgrade: Race Tires", "region": "greece", "difficulty": 4,
+		# Gates no part any more: the Race Tires moved to sn_showdown in the Alps, the
+		# grip part to the grip corner. Same as hc_showdown above — the `id` keys saved
+		# progress and stays; only the name changed.
+		"id": "gr_showdown", "name": "The Greek Showdown", "region": "greece", "difficulty": 4,
 		"special": true,
 		"map_pos": Vector2(0.455, 0.854),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
@@ -616,6 +625,104 @@ const RALLIES: Array[Dictionary] = [
 			{"seed": 59001, "turn_count": 53, "forestiness": 0.30, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
 			{"seed": 59002, "turn_count": 55, "forestiness": 0.15, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 15.5},
 			{"seed": 59003, "turn_count": 53, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 15.5},
+		],
+	},
+	# --- THE ALPS (region "snow"), the map's NE massif -------------------------
+	#
+	# The corner reserved from the start and filled in later (features/snow-region.md).
+	# Every stage here is frozen whether or not it is snowing: the REGION drops all
+	# three surface grips, so weather is free to vary for flavour without carrying the
+	# handling. Roughly half the events are authored "snow" and half dry, and snowfall
+	# is authored ONLY here — the same placement convention that keeps sandstorms in
+	# the desert.
+	#
+	# Terrain reads the pixels: this is a high massif, so amplitudes run 34-52 (the
+	# highest on the map, above even the eastern foothills' 34-44), cliffiness is high
+	# throughout, and forestiness falls as the pins climb — conifers thin out with
+	# altitude, and the deepest two pins are near bare rock and snow.
+	#
+	# The pins form a CHAIN into the corner rather than a cluster: sn_glacier_run sits
+	# inside The Foothills Trial's lit circle and is the only way in, and the two
+	# specials are the deepest pins, so their parts genuinely have to be worked toward.
+	{
+		"id": "sn_glacier_run", "name": "Glacier Run", "region": "snow", "difficulty": 1,
+		"special": false,
+		"map_pos": Vector2(0.752, 0.302),
+		# The gateway pin: reachable from The Foothills Trial (0.716, 0.409), and the ONLY
+		# snow rally that is — every other Alps pin is revealed from inside the corner, so
+		# this one entrance gates the whole region. Worth knowing before retuning its
+		# restriction: a class nobody owns delays the whole corner rather than one rally.
+		#
+		# The hatch class is safe on that count because both eligible cars (Fjord Focal,
+		# Rondel Twist) are prizes from difficulty-2 home rallies, long since won by the
+		# time the map lights this far. Verified with sim_career: adding the Alps leaves
+		# the strand rate unchanged from the pre-Alps roster.
+		"restriction": {"car_type": "hatch"},
+		"events": [
+			{"seed": 85001, "turn_count": 24, "forestiness": 0.55, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 34.0},
+			{"seed": 85002, "turn_count": 26, "forestiness": 0.45, "surface_mix": 0.45, "straightness": 0.8, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 36.0, "weather": "snow"},
+			{"seed": 85003, "turn_count": 24, "forestiness": 0.60, "surface_mix": 0.25, "straightness": 0.85, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 34.0},
+		],
+	},
+	{
+		"id": "sn_powder_pass", "name": "Powder Pass", "region": "snow", "difficulty": 2,
+		"special": false,
+		"map_pos": Vector2(0.690, 0.196),
+		"restriction": {"country": "JP"},  # the light Japanese pair, at home on a loose surface
+		"events": [
+			{"seed": 86001, "turn_count": 30, "forestiness": 0.40, "surface_mix": 0.2, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 40.0, "weather": "snow"},
+			{"seed": 86002, "turn_count": 32, "forestiness": 0.30, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 42.0},
+			{"seed": 86003, "turn_count": 30, "forestiness": 0.45, "surface_mix": 0.15, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 40.0, "weather": "snow"},
+		],
+	},
+	{
+		"id": "sn_icefall_climb", "name": "Icefall Climb", "region": "snow", "difficulty": 2,
+		"special": false,
+		"map_pos": Vector2(0.836, 0.353),
+		"restriction": {"car_type": "coupe"},  # heavier rear-drive coupes on a low-grip climb
+		"events": [
+			{"seed": 87001, "turn_count": 32, "forestiness": 0.35, "surface_mix": 0.4, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 38.0},
+			{"seed": 87002, "turn_count": 34, "forestiness": 0.25, "surface_mix": 0.55, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 41.0, "weather": "snow"},
+			{"seed": 87003, "turn_count": 32, "forestiness": 0.40, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -12.0, "terrain_layer1_amplitude": 44.0},
+		],
+	},
+	{
+		"id": "sn_summit_dash", "name": "Summit Dash", "region": "snow", "difficulty": 3,
+		"special": false,
+		"map_pos": Vector2(0.900, 0.268),
+		"restriction": {"country": "US"},
+		"events": [
+			{"seed": 88001, "turn_count": 38, "forestiness": 0.25, "surface_mix": 0.35, "cliffiness": 0.9, "water_level": -13.0, "terrain_layer1_amplitude": 46.0, "weather": "snow"},
+			{"seed": 88002, "turn_count": 40, "forestiness": 0.20, "surface_mix": 0.5, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 48.0},
+			{"seed": 88003, "turn_count": 38, "forestiness": 0.30, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 46.0, "weather": "snow"},
+		],
+	},
+	{
+		# Unlocks the Race Tires, moved here from the Greek showdown: the grip part
+		# belongs to the grip corner, which is the most legible pairing the map offers.
+		# See features/snow-region.md for the save migration that keeps it for anyone
+		# who already won it where it used to be.
+		"id": "sn_showdown", "name": "Upgrade: Race Tires", "region": "snow", "difficulty": 4,
+		"special": true,
+		"map_pos": Vector2(0.812, 0.216),
+		"restriction": {},  # open-class: a special must never gate on a part it unlocks
+		"events": [
+			{"seed": 89001, "turn_count": 46, "forestiness": 0.25, "surface_mix": 0.3, "cliffiness": 0.95, "water_level": -13.0, "terrain_layer1_amplitude": 48.0, "weather": "snow"},
+			{"seed": 89002, "turn_count": 48, "forestiness": 0.15, "surface_mix": 0.5, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 50.0},
+			{"seed": 89003, "turn_count": 46, "forestiness": 0.30, "surface_mix": 0.2, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 48.0, "weather": "snow"},
+		],
+	},
+	{
+		# Unlocks the Sequential Gearbox, moved here from hc_showdown. The DEEPEST pin
+		# on the map: the last thing the corner gives up.
+		"id": "sp_summit_trial", "name": "Upgrade: Sequential Gearbox", "region": "snow",
+		"difficulty": 4, "special": true,
+		"map_pos": Vector2(0.760, 0.108),
+		"restriction": {},  # open-class: a special must never gate on a part it unlocks
+		"events": [
+			{"seed": 89101, "turn_count": 48, "forestiness": 0.20, "surface_mix": 0.35, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 50.0},
+			{"seed": 89102, "turn_count": 50, "forestiness": 0.10, "surface_mix": 0.55, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 52.0, "weather": "snow"},
+			{"seed": 89103, "turn_count": 48, "forestiness": 0.25, "surface_mix": 0.25, "cliffiness": 1.0, "water_level": -13.0, "terrain_layer1_amplitude": 50.0, "weather": "snow"},
 		],
 	},
 ]
@@ -1477,26 +1584,28 @@ static func completed_count(profile: Dictionary) -> int:
 # rallies instead (see "Completion gating" below). Those two facts are linked: while specials
 # were star-gated, paying them stars would have let a special bootstrap the next rung.
 
-# How many places count as the podium. NOT a star count — it used to be the same number
-# doing both jobs (the curve ran 1st -> 3, 2nd -> 2, 3rd -> 1, so the podium size and the top
-# rating were necessarily equal). The curve is flat within the podium now, so the two are
-# independent and conflating them would tie the size of the podium to what a win pays.
+# How many places count as the podium. NOT a star count — the two were once the same number
+# doing both jobs (a 1st -> 3, 2nd -> 2, 3rd -> 1 ramp made the podium size and the top rating
+# necessarily equal). They are separate constants now, so widening the podium does not silently
+# change what a win pays.
 const PODIUM_PLACES := 3
-## What a podium finish pays.
+## What winning outright (1st) pays — the top of the curve.
+const STARS_FOR_WIN := 3
+## What a podium finish pays, 2nd place down to PODIUM_PLACES.
 const STARS_FOR_PODIUM := 2
 ## What merely FINISHING pays, anywhere off the podium.
 const STARS_FOR_FINISH := 1
 # The most a single rally can pay — i.e. the denominator the star rows draw against.
-const MAX_STARS_PER_RALLY := STARS_FOR_PODIUM
+const MAX_STARS_PER_RALLY := STARS_FOR_WIN
 
 
-# Stars a finishing position is worth: a podium place -> STARS_FOR_PODIUM, any other finish ->
-# STARS_FOR_FINISH, and not finishing at all -> 0.
+# Stars a finishing position is worth: 1st -> STARS_FOR_WIN, the rest of the podium ->
+# STARS_FOR_PODIUM, any other finish -> STARS_FOR_FINISH, and not finishing at all -> 0.
 #
-# TWO TIERS, deliberately flat within each. There is no 1st/2nd/3rd gradient: the reward for
-# winning outright rather than scraping 3rd is the rally's CAR or PART prize plus the leaderboard
-# time, not a bigger pile of the same currency. Turning up and finishing always pays something,
-# so a rally the player cannot podium is still worth driving.
+# THREE TIERS. Winning outright pays strictly more than scraping the podium — the win is the
+# thing the player is chasing, and the rally's car/part prize alone did not make that legible
+# in the currency itself. Below that, turning up and finishing always pays something, so a
+# rally the player cannot podium is still worth driving.
 #
 # `placed <= 0` is "did not finish / never placed" and pays nothing — the one case that must
 # stay at zero, since the opening rally can complete on a DNF (todo/opening-rally.md) and a
@@ -1513,6 +1622,8 @@ const MAX_STARS_PER_RALLY := STARS_FOR_PODIUM
 static func stars_for_placement(placed: int) -> int:
 	if placed <= 0:
 		return 0
+	if placed == 1:
+		return STARS_FOR_WIN
 	return STARS_FOR_PODIUM if placed <= PODIUM_PLACES else STARS_FOR_FINISH
 
 

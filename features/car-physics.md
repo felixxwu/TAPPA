@@ -522,3 +522,17 @@ player put during the countdown (`handbrake_locked` forces the handbrake).
 `crosswind_gust_wavelength_m`, `crosswind_nose_on_fraction`,
 `suspension_*`, `brake_torque`, `handbrake_torque`. See
 [configuration.md](configuration.md).
+
+
+## Deep-snow drag
+
+`car.gd._apply_deep_snow_drag`, applied next to the lake soft hazard in `_apply_aero`.
+A linear drag on the chassis while off-road, feathered by the terrain's road weight so it
+ramps in across the same band the visual snow is drawn rising — the bog appears exactly
+where the snow does.
+
+Deliberately separate from the snow region's low grip: low μ makes the car **slide**, this
+makes it **bog**, and neither alone reads as deep snow. `cfg.deep_snow_drag` is `0.0`
+outside the Alps, so elsewhere it costs one float compare. Player-only — no drag term
+exists in the lap-time model and a rival never leaves the road. See
+[snow-region.md](snow-region.md).

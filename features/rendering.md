@@ -713,3 +713,21 @@ compared directly.
 > rasterised the whole screen (an `atan` plus three `sin`-based hashes) to blend a
 > fully transparent result. `speed_lines.gd::_apply_intensity` now toggles visibility and
 > skips the `set_shader_parameter` when the value hasn't changed.
+
+
+## The snow terrain shader variant
+
+`shaders/ps1_terrain_snow.gdshader` is `ps1_models.gdshader` plus a single vertex stage
+that raises the ground off-road, so the car visibly sinks into deep snow.
+
+It exists as a **separate shader** rather than a uniform on the shared one because the
+terrain shader is deliberately kept free of any vertex stage — terrain is the heaviest
+geometry in the game and this renderer targets low-end phones — a ban enforced by
+`test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`. Same pattern as
+`ps1_models_lit.gdshader`, which exists so the car's fake lighting does not land on the
+terrain either. Only snow stages pay for it.
+
+**The two fragment stages must be kept in sync.** `world.gd._apply_deep_snow_ground`
+swaps the floor material between them every stage boot, including restoring the base
+shader, because that material is a shared `main.tscn` sub-resource that survives scene
+instantiation. See [snow-region.md](snow-region.md).

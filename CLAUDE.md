@@ -96,6 +96,23 @@
 - When adding or changing functionality, add or update tests in the same piece
   of work: gameplay/logic tests in `tests/headless/`, scene/structure checks in
   `tests/headless/test_smoke.gd`.
+- **Implementation first, tests at the end.** Land the working code change
+  before writing any tests, so the user can pull the change and try it manually
+  while you're still working. Then — before declaring the work complete — write
+  the tests the change needs and RUN them. Tests are not optional and not a
+  follow-up task: a piece of work isn't finished until the tests for it exist
+  and pass (or you've explicitly said which failed and why). The only exception
+  is a change that genuinely needs no test under the rules above (pure tunable
+  values, docs, comments) — say so rather than silently skipping.
+- **Subagents implement; the parent tests.** The rule above applies to work
+  split across subagents too, but the test RUN belongs to the parent. A spawned
+  subagent should land its code change (and may write the test files its change
+  needs), then report back — it must NOT invoke `./run_tests.sh` itself.
+  Concurrent per-subagent runs multiply the runtime, trash each other's output,
+  and violate the "never run concurrent test runs" rule. Say so explicitly in
+  the subagent's prompt ("do not run the tests; the parent will"). Once every
+  subagent has reported, the parent works out the combined blast radius and does
+  a single targeted run covering all of it before declaring the work complete.
 - After any change, run the tests that are relevant to the work before
   declaring it complete — you do NOT need to run the entire suite after every
   prompt. Decide which tests cover what you touched and run just those (e.g.

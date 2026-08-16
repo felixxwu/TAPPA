@@ -11,6 +11,12 @@ const CarScript := preload("res://scripts/car.gd")
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
 const WRECK_CAR_SCENE := "res://car.tscn"
+# The two terrain shaders the floor material swaps between per stage. The base one is
+# kept deliberately free of a vertex stage (terrain is the heaviest geometry in the game
+# and this renderer targets low-end phones); the snow variant adds the off-road ground
+# raise the Alps need, so only a snow stage pays for it. See _apply_deep_snow_ground.
+const TERRAIN_BASE_SHADER := preload("res://shaders/ps1_models.gdshader")
+const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 
 # Frame cap applied for the DURATION of world generation only (see _ready). Loading
 # yields hundreds of frames, and a low cap makes each of those yields idle away most
@@ -143,6 +149,7 @@ func _ready() -> void:
 	# test_render_smoke.gd::test_road_tint_is_idempotent_across_stages.
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter(
 		"albedo_color", _current_region_look().get("terrain_tint", cfg.terrain_tint))
+	_apply_deep_snow_ground(cfg)
 	# Terrain seed follows the per-event track_seed so each event has its own
 	# landscape (and lake layout). The road DFS doesn't read terrain when water is
 	# off, so this changes only the visible elevation for water-off events, not the
@@ -844,8 +851,16 @@ func _build_lakes(cfg: GameConfig) -> void:
 	# submerged (terrain below the water level).
 	var wl := cfg.track_water_level_m
 	if has_node("Car"):
-		($Car as Node).call("set_water_query",
-			func(p: Vector3) -> bool: return floor_tm.height_at(p.x, p.z) < wl)
+		# NOT wired on a frozen stage: the water query exists to apply water_drag, and
+		# a car sliding across ice is not wading through anything. The ice is a solid
+		# surface with its own (very low) grip instead — LakeField._add_ice_collider and
+		# Drivetrain.surface_tire_params. Leaving it wired would drag the car down on a
+		# surface it is supposed to slide across, which is the opposite of the feature.
+		if cfg.frozen_water_grip > 0.0:
+			($Car as Node).call("set_water_query", Callable())
+		else:
+			($Car as Node).call("set_water_query",
+				func(p: Vector3) -> bool: return floor_tm.height_at(p.x, p.z) < wl)
 	# The loading preview already painted the waterline up-front (before generation,
 	# see _generate_track → LakeField.preview_cells), so nothing to feed here.
 
@@ -894,7 +909,8 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 		var entry: Dictionary = mix[i]
 		Foliage.spawn_trees(self, tree_groups[i], _floor(), true,
 			cfg.tree_render_distance_m, cfg.tree_render_fade_m,
-			load(entry["texture"]), String(entry.get("profile", "home")) == "region")
+			load(entry["texture"]), String(entry.get("profile", "home")) == "region",
+			entry.get("size_scale", Vector2.ONE))
 
 	# The region also defines whether the 3D ground-cover bushes spawn (spawn_bush_mesh —
 	# e.g. Greece's arid map has no lush undergrowth); skip the whole bush pass if off.
@@ -2177,6 +2193,33 @@ func _current_region_look() -> Dictionary:
 	_region_look_cache = RegionLibrary.look_of(region_id)
 	_region_look_ready = true
 	return _region_look_cache
+
+
+# Deep snow: draw the ground ABOVE the collision surface off-road, so the car sinks in
+# (features/snow-region.md). Collision is untouched, so the wheels rest at true ground
+# level; car.gd's matching drag is what makes it read as ploughing rather than floating.
+#
+# Done by SWAPPING THE SHADER rather than setting a uniform on the shared one, because
+# the base terrain shader is deliberately kept free of a vertex stage — terrain is the
+# heaviest geometry in the game and this renderer targets low-end phones. See the header
+# of ps1_terrain_snow.gdshader and test_terrain_shader_has_no_vertex_stage. Non-snow
+# stages therefore pay literally nothing: they run the same shader they always did.
+#
+# Called UNCONDITIONALLY every stage boot, and that is load-bearing. The floor material
+# is a shared sub-resource of main.tscn with no resource_local_to_scene, so it survives
+# every scene instantiation in the process — exactly the trap that once left the ground
+# at rain_road_darken². Without the else-branch restoring the base shader, one snow
+# stage would leave every later stage's ground floating in mid-air.
+func _apply_deep_snow_ground(cfg: GameConfig) -> void:
+	var floor_mat := $Floor.chunk_material as ShaderMaterial
+	if floor_mat == null:
+		return
+	if cfg.deep_snow_depth_m > 0.0:
+		if floor_mat.shader != TERRAIN_SNOW_SHADER:
+			floor_mat.shader = TERRAIN_SNOW_SHADER
+		floor_mat.set_shader_parameter("snow_depth", cfg.deep_snow_depth_m)
+	elif floor_mat.shader != TERRAIN_BASE_SHADER:
+		floor_mat.shader = TERRAIN_BASE_SHADER
 
 
 func _apply_region_look() -> void:

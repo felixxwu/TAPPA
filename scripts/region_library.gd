@@ -24,8 +24,12 @@ const LOOK_KEYS := [
 # The home region's billboard tree (also the fallback when a region authors no
 # `tree_mix`). Its "profile" selects the GameConfig sizing/jitter block a species
 # uses — "home" → tree_size_m et al., "region" → region_tree_billboard_size_m et al.
-# (see Foliage.spawn_trees). All balance values stay in GameConfig; the region only
-# authors WHICH texture, WHICH profile, and the mix WEIGHT.
+# (see Foliage.spawn_trees). Balance values stay in GameConfig; a species authors WHICH
+# texture, WHICH profile, the mix WEIGHT, and optionally `size_scale` — a Vector2
+# width/height multiplier on the profile's base size, stating that TEXTURE'S OWN
+# proportions. That last one is art metadata rather than balance: the profile card is
+# square, so without it a tall narrow cutout is stretched to 1:1 and drawn far too wide.
+# Omitted (every home/Greece species) it is Vector2.ONE and changes nothing.
 const DEFAULT_TREE_MIX: Array = [
 	{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
 ]
@@ -97,6 +101,90 @@ const REGIONS: Array[Dictionary] = [
 		"look_from": "greece",
 		"water_level": -5.0,
 	},
+	# The alpine NE corner. The one region that does more than look different: it is
+	# also the first to influence HANDLING, via the two non-LOOK_KEYS blocks below.
+	# See features/snow-region.md.
+	#
+	# Look: the road and the open ground are both snow — near-white, deliberately
+	# textured rather than flat, because this renderer is unshaded with baked vertex
+	# lighting and a dead-flat albedo reads as a silhouette with no form. Tarmac is
+	# home's asphalt lightened, as a dusting rather than a different material.
+	# Conifers only, and no 3D ground cover at all (nothing grows through snow).
+	# grass_particle_color turns the wheel spray white — the home green would read as
+	# grass blades flung off a snowfield.
+	{
+		"id": "snow", "name": "The Alps",
+		"water_level": -12.0,
+		"sky_panorama": "res://textures/sky-snow.jpg",
+		"grass_texture": "res://textures/snow-ground.jpg",
+		"gravel_texture": "res://textures/snow-road.jpg",
+		# Two conifers rather than one, for a reason the art forced: the source pack's
+		# densest spruce has the best silhouette but carries almost no snow, while the
+		# one that genuinely does is shorter and scruffier. Mixing them gives a stand
+		# that has both a strong skyline and visible snow load. 60/40 so the taller tree
+		# sets the shape of the forest and the laden one breaks it up.
+		# Both are CC0 photographs — see tools/gen_snow_trees.py for provenance.
+		#
+		# `size_scale` states each species' BASELINE PROPORTIONS. The profile card is
+		# square (tree_size_m 7.5 x 7.5), so a billboard is stretched to 1:1 whatever
+		# shape its cutout really is — and these conifers are tall and narrow (natural
+		# w/h 0.49 and 0.63), so unscaled they were drawn at up to twice their real
+		# width and read as fat christmas trees. The x values restore each texture's own
+		# ratio; the y values add a little height, because a spruce stand wants to be
+		# taller than the home broadleaf forest. Every other species omits the key and
+		# is therefore untouched.
+		"tree_mix": [
+			{"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
+			 "size_scale": Vector2(0.55, 1.15)},   # 4.1 x 8.6 m, ratio 0.48
+			{"texture": "res://textures/tree-snow-laden.webp", "profile": "home", "weight": 0.4,
+			 "size_scale": Vector2(0.68, 1.10)},   # 5.1 x 8.3 m, ratio 0.62
+		],
+		# No undergrowth, same as Greece: under real snow cover there is nothing
+		# growing through. A snowed version of the ground-cover clump was tried and
+		# dropped — it read as debris scattered on the snow rather than as buried
+		# shrubs, and the clean snow surface is the better look.
+		"spawn_bush_mesh": false,
+		"tarmac_color": Color(0.46, 0.47, 0.50),
+		"grass_particle_color": Color(0.90, 0.92, 0.95),
+		# NOT optional here, unlike in the other regions. world.gd drives BOTH
+		# env.background_color and env.fog_light_color off this, and the scene baseline
+		# in main.tscn is an olive green (0.482, 0.498, 0.403) chosen for the home
+		# forest. Left unauthored, the Alps inherit it and the distant terrain hazes
+		# GREEN behind white snow — the single most obvious thing wrong with the region
+		# before this was set. (Greece gets away with inheriting it because olive haze
+		# suits arid ground; snow does not.)
+		#
+		# Sampled from the horizon band of sky-snow.jpg (avg rgb 144,154,167) so the fog
+		# resolves into the panorama instead of banding against it.
+		"background_color": Color(0.567, 0.604, 0.658),
+		# Lane paint is buried; road_marking_color is deliberately omitted rather than
+		# set to white, which would read as fresh paint on a snowy road.
+
+		# --- Handling. NOT LOOK_KEYS, and deliberately so: these are consumed by
+		# RallySession.apply_event_config at stage setup, not by world.gd's look pass
+		# after generation, so folding them into look_of would deliver them too late
+		# AND leak non-look keys into the dict world.gd treats as look overrides. Same
+		# reasoning that keeps `water_level` out of the whitelist.
+		#
+		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
+		# pattern), so every tunable stays in config/game_config.tres.
+		"surface_grip": {
+			"grass": "snow_grass_grip",     # deep snow at the roadside
+			"gravel": "snow_gravel_grip",   # packed snow road
+			"tarmac": "snow_tarmac_grip",   # a dusting over asphalt
+		},
+		"deep_snow": {
+			"depth": "snow_visual_depth_m",
+			"drag": "snow_deep_drag",
+		},
+		# The lakes up here are FROZEN: the water plane becomes a solid surface the car
+		# drives out onto and slides across, instead of the soft drag hazard it is in
+		# every other region. Same config-block indirection as the two blocks above.
+		# Only the GRIP is named here. The ice colours are read straight off GameConfig
+		# by LakeField.build — they are a global look for ice, not a per-region choice,
+		# and naming them here would be data nothing reads.
+		"frozen_water": {"grip": "ice_grip"},
+	},
 ]
 
 static var _seam := Registry.Seam.new(REGIONS)
@@ -135,6 +223,81 @@ static func water_level_of(region_id: String) -> float:
 # unknown id.
 static func has_water_level(region_id: String) -> bool:
 	return by_id(region_id).has("water_level")
+
+
+# --- Handling overrides (features/snow-region.md) -----------------------------
+# A region may override the per-surface grip scales and author a deep-snow block. Both
+# are read at stage setup by RallySession.apply_event_config, NOT through look_of — see
+# the comment on the snow entry for why they are not LOOK_KEYS.
+#
+# Like water_level, each is a has_*/­*_of PAIR rather than one function returning a
+# sentinel: GDScript has no null, and "the region authors no override" must never be
+# confused with a real value. Callers gate on the has_* before trusting the resolver.
+#
+# Also like water_level, NEITHER is inherited through `look_from`. A snow-coast child
+# would author its own or have none — "same look, own handling" is the same split that
+# makes the coastal regions work.
+
+# The three per-surface μ scales this region overrides, resolved from the GameConfig
+# fields it NAMES (it never authors numbers, so all tuning stays in game_config.tres).
+# {} when the region authors none — the overwhelmingly common case, and the reason
+# every other region's grip is byte-identical to the authored baseline.
+static func surface_grip_of(cfg: GameConfig, region_id: String) -> Dictionary:
+	return _resolve_fields(cfg, by_id(region_id).get("surface_grip", {}))
+
+# Whether this region overrides per-surface grip at all. False for an unknown id.
+static func has_surface_grip(region_id: String) -> bool:
+	return by_id(region_id).has("surface_grip")
+
+# The deep-snow block — {depth, drag} — resolved from the named GameConfig fields.
+# {} when the region authors none, which is how every non-snow stage gets a zero
+# drag and a zero visual raise for free.
+static func deep_snow_of(cfg: GameConfig, region_id: String) -> Dictionary:
+	return _resolve_fields(cfg, by_id(region_id).get("deep_snow", {}))
+
+# Whether this region authors deep snow at all. False for an unknown id.
+static func has_deep_snow(region_id: String) -> bool:
+	return by_id(region_id).has("deep_snow")
+
+# The frozen-lake block — {grip, color, shore_color} — resolved from the named
+# GameConfig fields. {} when the region's water is liquid, which is every region but
+# the Alps, so the lake stays the soft hazard it has always been by default.
+static func frozen_water_of(cfg: GameConfig, region_id: String) -> Dictionary:
+	return _resolve_fields(cfg, by_id(region_id).get("frozen_water", {}))
+
+# Whether this region's water is frozen at all. False for an unknown id.
+static func has_frozen_water(region_id: String) -> bool:
+	return by_id(region_id).has("frozen_water")
+
+# Shared resolver for a {key: <GameConfig field name>} block.
+#
+# Returns the config values AS-IS, deliberately un-coerced: these blocks name floats
+# today but nothing about the pattern is numeric, and an earlier float() here crashed
+# rally start the moment a block named a Color field. Callers coerce at the point of
+# use, where the expected type is actually known.
+#
+# A field the config does not carry is SKIPPED rather than defaulted, so a typo shows up
+# as the baseline value plus a warning, never as a silent 0.0 that would read as
+# "no grip at all".
+static func _resolve_fields(cfg: GameConfig, block: Dictionary) -> Dictionary:
+	var out := {}
+	if cfg == null:
+		return out
+	for key in block:
+		var field := String(block[key])
+		if field == "":
+			continue
+		# Test the RESOLVED VALUE for null rather than probing the property with `in`:
+		# on an Object `in` does not mean "has this property", so it let a mis-named
+		# field through to float(null) — which fails as "Nonexistent 'float'
+		# constructor" at rally start rather than anywhere near the typo.
+		var value: Variant = cfg.get(field)
+		if value != null:
+			out[key] = value
+		else:
+			push_warning("RegionLibrary: '%s' names GameConfig.%s, which does not exist"
+				% [key, field])
+	return out
 
 static func region_for_rally(rally_id: String) -> Dictionary:
 	return by_id(String(RallyLibrary.by_id(rally_id).get("region", "")))

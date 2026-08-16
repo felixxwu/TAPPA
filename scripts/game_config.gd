@@ -145,6 +145,62 @@ var peak_torque_rpm := 4500.0
 @export_range(0.1, 2.0) var grass_grip := 0.7
 @export_range(0.1, 2.0) var gravel_grip := 1.0
 @export_range(0.1, 2.0) var tarmac_grip := 1.3
+## SNOW REGION (features/snow-region.md). A region may override the three μ scales
+## above for every stage tagged to it — the first case of a region influencing
+## HANDLING rather than only look. The region names these fields (it never authors
+## numbers), exactly as a WeatherLibrary condition does, so all tuning stays here.
+##
+## RegionLibrary.surface_grip_of resolves them; RallySession.apply_event_config seats
+## them onto grass_grip/gravel_grip/tarmac_grip for the stage. Every other region
+## leaves those at the authored baseline above, so this is an exact no-op elsewhere.
+##
+## LapTimeModel._surface_grip reads the same live fields, so the AI field scales with
+## the player automatically: snow is a VARIETY lever, not a difficulty one (like rain
+## and sandstorm, unlike fog). CarPerformance is unaffected — it benchmarks at a
+## frozen BENCHMARK_SURFACE_GRIP, so ratings and the matched field cannot drift.
+##
+## Keep the grass < gravel < tarmac ordering; snow drops all three well below home.
+@export_range(0.1, 2.0) var snow_grass_grip := 0.30
+@export_range(0.1, 2.0) var snow_gravel_grip := 0.55
+@export_range(0.1, 2.0) var snow_tarmac_grip := 0.70
+## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two
+## different jobs: the low grip above makes the car SLIDE, this makes it BOG.
+## Neither alone reads as deep snow.
+##
+## Linear drag coefficient applied to the chassis while off-road, feathered by the
+## same road weight the visual raise uses so the bog appears exactly where the snow
+## is drawn. Player-only: no drag term exists in the lap-time model (a rival never
+## drives off the road), so this is a small residual difficulty edge on top of the
+## scaled grip — the same asymmetry storm's crosswind has, and deliberate.
+@export_range(0.0, 400.0) var snow_deep_drag := 90.0
+## Metres the VISUAL ground is drawn above the collision surface off-road, so the car
+## visibly sinks in. Collision is untouched, so the wheels rest at true ground level.
+## Applied in ps1_models.gdshader's vertex stage against the baked road weight, so the
+## road itself is never raised and the existing feather turns the step into a bank.
+@export_range(0.0, 2.0) var snow_visual_depth_m := 0.35
+## LIVE per-stage values, seated by RallySession.apply_event_config from the driven
+## region (0.0 for every region that authors no deep snow). Never author these — they
+## are the deep-snow counterpart to `weather`, written by the funnel and read by
+## car.gd (drag) and world.gd (the shader uniform).
+@export var deep_snow_drag := 0.0
+@export var deep_snow_depth_m := 0.0
+## FROZEN LAKES (features/snow-region.md). In the Alps the water is ice: the lake plane
+## becomes SOLID and is driven on, rather than being the soft drag hazard it is
+## everywhere else. Authored values, named by the region like the grip block above.
+##
+## Tyre μ on the ice. An OVERRIDE, not a multiplier — what is under the ice does not
+## matter, so this replaces the surface blend rather than scaling it. Well below even
+## snow's grass value: sliding is the whole point of a frozen lake.
+@export_range(0.02, 1.0) var ice_grip := 0.12
+## The frozen lake's surface colours, replacing water_color / water_shore_color. Pale
+## and cold; the shore colour is what reads as the ice thinning at the bank.
+@export var ice_color := Color(0.80, 0.86, 0.90)
+@export var ice_shore_color := Color(0.88, 0.92, 0.95)
+## LIVE per-stage: the ice μ, or 0.0 when this stage's water is liquid. Seated by
+## RallySession.apply_event_config from the driven region. 0.0 is the "not frozen"
+## sentinel and is what every non-Alps stage runs, so the lake stays a soft hazard
+## everywhere it always was.
+@export var frozen_water_grip := 0.0
 ## ADAPTIVE DIFFICULTY (features/adaptive-difficulty.md). The field is drawn matched to
 ## the player's rating; these steer it AWAY from that match based on results — harder when
 ## the player keeps winning stages, easier when they keep losing them.
@@ -1530,6 +1586,39 @@ func has_nitrous() -> bool:
 @export_range(1.0, 300.0) var storm_lightning_interval_min_s := 18.0
 ## Longest gap between flashes, in seconds. Infrequent on purpose.
 @export_range(1.0, 300.0) var storm_lightning_interval_max_s := 45.0
+
+## SNOWFALL (features/weather.md). Prefixed `snowfall_` rather than `snow_` so it
+## cannot collide with the snow REGION's `snow_*_grip` block above — the same
+## collision-avoidance that made fog's fields `mist_*`.
+##
+## Deliberately authors NO grip multiplier. The snow region already owns grip in the
+## corner these stages sit in; a weather multiplier on top would be a second, redundant
+## lever over the same variable, and would make a snowfall stage arbitrarily slipperier
+## than a dry one in the same region. Consequence: snowfall contributes nothing to
+## WeatherLibrary.physics_fields, so it never re-keys the opponent cache — correct,
+## since it changes no lap time.
+##
+## Flat, bright overcast: like fog, the common mistake is authoring snow dark enough to
+## read as dusk. It is a WHITE-OUT, so these stay light.
+@export var snowfall_background_color := Color(0.78, 0.80, 0.84)
+@export var snowfall_sky_color := Color(0.82, 0.84, 0.88)
+## Barely knocked back — a snowy sky is bright, the diffuse glare is the point.
+@export_range(0.0, 2.0) var snowfall_sun_energy_mult := 0.85
+## Thickens the haze into falling-snow murk. Between rain's and fog's.
+@export_range(0.1, 20.0) var snowfall_fog_density_mult := 4.0
+## High, so the panorama washes into a featureless white dome.
+@export_range(0.0, 1.0) var snowfall_fog_sky_affect := 0.9
+## Fresh snow SETTLES white on the road, so this lerps the albedo toward a colour
+## (like sandstorm's dust caking) rather than darkening it the way rain does.
+@export_range(0.0, 1.0) var snowfall_road_tint := 0.35
+@export var snowfall_road_tint_color := Color(0.88, 0.90, 0.93)
+## Flakes alive at once in the camera-parented field; only built on a snowfall stage.
+@export_range(0, 4000) var snowfall_particle_count := 900
+## Metres per second the flakes fall. Much slower than rain — this, more than the
+## quad size, is what separates snow from grey streaks.
+@export_range(0.1, 30.0) var snowfall_particle_speed := 2.4
+## Fixed world-space heading the snow drifts toward (0 = +X, 90 = +Z).
+@export_range(0.0, 360.0) var snowfall_wind_dir_deg := 200.0
 
 @export_group("Terrain Layers")
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.

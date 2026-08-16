@@ -6,13 +6,13 @@ extends RefCounted
 # the rally's state across two independent axes:
 #
 # Pennant (the flag itself):
-#   placed 3rd or better  → black-and-white CHECKERED racing flag (a result earned)
+#   finished the rally (any placement that scores) → black-and-white CHECKERED racing flag
 #   has an eligible car    → light green   (raceable now, not yet podiumed)
 #   no eligible car         → dark grey      (can't field a qualifying car — also
 #                                            the look of a still-locked special)
 #
 # Tip + base (finial bead and base disk, which always share one colour):
-#   finished 1st (3 stars) → warm gold      (the rally is won)
+#   won outright (the top star tier) → warm gold      (the rally is won)
 #   otherwise               → metal grey
 #
 # All geometry is built procedurally (no .glb asset) so the marker stays a few
@@ -59,17 +59,17 @@ static var _checker_tex: Texture2D
 # car eligible to enter, else grey. A locked rally can never be podiumed and is
 # treated as having no eligible car, so it reads grey/disabled.
 static func pennant_kind(locked: bool, stars: int, has_eligible_car: bool) -> int:
-	if not locked and clampi(stars, 0, 3) >= 1:
+	if not locked and clampi(stars, 0, RallyLibrary.MAX_STARS_PER_RALLY) >= 1:
 		return PENNANT_CHECKERED
 	if not locked and has_eligible_car:
 		return PENNANT_SOLID_GREEN
 	return PENNANT_SOLID_GREY
 
 
-# The tip + base colour: warm gold once the rally is WON (3 stars = finished 1st),
-# metal grey otherwise (including locked).
+# The tip + base colour: warm gold once the rally is WON (the top star tier = finished
+# 1st), metal grey otherwise (including locked).
 static func accent_color(locked: bool, stars: int) -> Color:
-	if not locked and clampi(stars, 0, 3) == 3:
+	if not locked and clampi(stars, 0, RallyLibrary.MAX_STARS_PER_RALLY) >= RallyLibrary.STARS_FOR_WIN:
 		return ACCENT_GOLD
 	return ACCENT_METAL
 

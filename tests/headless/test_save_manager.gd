@@ -1290,3 +1290,68 @@ func test_the_migration_never_installs_nitrous_a_car_lacks() -> void:
 	for item_id in installed:
 		assert_ne(UpgradeLibrary.slot_of(String(item_id)), "nitrous",
 			"no nitrous is invented for a car that had none")
+
+
+# --- v4 -> v5: two part unlocks moved into the Alps ----------------------------
+# See features/snow-region.md. The migration must hand the part to a player who already
+# won it where it used to live, WITHOUT handing over the new rally's other rewards.
+
+func test_migration_v4_grants_parts_whose_unlock_rally_moved() -> void:
+	var v4: Dictionary = _save._default_profile()
+	v4["schema_version"] = 4
+	v4.erase(_save.KEY_LEGACY_PART_UNLOCKS)
+	# Completed the OLD rally for the first moved part only.
+	var moved: Array = _save.MOVED_PART_UNLOCKS
+	assert_gt(moved.size(), 1, "setup: more than one part moved, so the split below is real")
+	v4[_save.KEY_RALLIES] = {String(moved[0][0]): {"completed": true, "best_placed": 1}}
+
+	var migrated: Dictionary = _save._migrate(v4)
+	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
+	var legacy: Array = migrated[_save.KEY_LEGACY_PART_UNLOCKS]
+	assert_true(legacy.has(String(moved[0][1])),
+		"the part whose old rally was won is granted directly")
+	assert_false(legacy.has(String(moved[1][1])),
+		"a part whose old rally was NOT won is not granted")
+
+
+func test_migration_v4_does_not_fake_the_new_rally_completion() -> void:
+	# Marking the destination rally completed would also light its map-reveal circle and
+	# pay its placement stars — progress and currency the player never earned. The grant
+	# must be the PART and nothing else.
+	var moved: Array = _save.MOVED_PART_UNLOCKS
+	var old_rally := String(moved[0][0])
+	var v4: Dictionary = _save._default_profile()
+	v4["schema_version"] = 4
+	v4[_save.KEY_RALLIES] = {old_rally: {"completed": true, "best_placed": 1}}
+
+	var migrated: Dictionary = _save._migrate(v4)
+	var rallies: Dictionary = migrated[_save.KEY_RALLIES]
+	assert_eq(rallies.size(), 1, "no rally completion was invented by the migration")
+	assert_true(bool(rallies[old_rally]["completed"]), "the real completion survives")
+
+
+func test_a_fresh_profile_has_no_legacy_grants() -> void:
+	# A career started after the move is gated purely by the CURRENT mapping.
+	assert_eq(_save._default_profile()[_save.KEY_LEGACY_PART_UNLOCKS], [],
+		"nothing has been re-sited under this player")
+
+
+func test_the_legacy_set_satisfies_the_rally_gate() -> void:
+	# The mechanism itself: an id in the set passes rally_gate_met even though its
+	# unlock rally has not been completed.
+	#
+	# Against a SYNTHETIC catalogue, not the shipped one — both because CLAUDE.md says
+	# not to lean on a real entry, and because another test in this file may have left a
+	# fixture installed, under which a real part id resolves to no gate at all and this
+	# would pass vacuously.
+	UpgradeLibrary.override_for_test([
+		{"id": "test_part", "name": "Test Part", "slot": "tires",
+		 "unlocked_by_rally": "test_rally"},
+	] as Array[Dictionary])
+	var profile: Dictionary = _save._default_profile()
+	assert_false(UpgradeLibrary.rally_gate_met("test_part", profile),
+		"setup: the part is gated with an empty profile")
+	profile[_save.KEY_LEGACY_PART_UNLOCKS] = ["test_part"]
+	assert_true(UpgradeLibrary.rally_gate_met("test_part", profile),
+		"a legacy grant opens the gate without the rally")
+	UpgradeLibrary.reset()

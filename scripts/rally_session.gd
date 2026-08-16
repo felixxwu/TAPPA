@@ -1036,6 +1036,28 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	# event -> event's region (if the caller seated one, see current_event() /
 	# _generate_event_tracks) -> the authored baseline. See TrackGenParams.resolve_water_level.
 	cfg.track_water_level_m = TrackGenParams.resolve_water_level(event, base.track_water_level_m)
+	# Per-region HANDLING overrides (features/snow-region.md). The snow region drops
+	# every surface's grip and adds deep snow at the roadside; every other region
+	# authors neither, so these resolve to the authored baseline and a zero deep-snow
+	# block — an exact no-op. Read off the event's own region, which the caller already
+	# seated for resolve_water_level above, so no signature change was needed.
+	#
+	# Note the grip is seated onto the SAME live fields the lap-time model reads
+	# (LapTimeModel._surface_grip), so the rival field scales with the player
+	# automatically: snow is a variety lever, not a difficulty one. CarPerformance is
+	# unaffected — it benchmarks at a frozen mu, so ratings cannot drift.
+	var region_id := String(event.get("region", ""))
+	var sgrip := RegionLibrary.surface_grip_of(base, region_id)
+	cfg.grass_grip = float(sgrip.get("grass", base.grass_grip))
+	cfg.gravel_grip = float(sgrip.get("gravel", base.gravel_grip))
+	cfg.tarmac_grip = float(sgrip.get("tarmac", base.tarmac_grip))
+	var deep_snow := RegionLibrary.deep_snow_of(base, region_id)
+	cfg.deep_snow_drag = float(deep_snow.get("drag", 0.0))
+	cfg.deep_snow_depth_m = float(deep_snow.get("depth", 0.0))
+	# Frozen lakes: 0.0 means liquid, which is every region but the Alps, so the lake
+	# stays the soft drag hazard it has always been unless a region says otherwise.
+	cfg.frozen_water_grip = float(
+		RegionLibrary.frozen_water_of(base, region_id).get("grip", 0.0))
 	# Per-event terrain hill shape: any of the 3 Perlin layers' wavelength/amplitude
 	# may be overridden; omitted ones use the authored global default (features/terrain.md).
 	cfg.terrain_layer1_wavelength = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))

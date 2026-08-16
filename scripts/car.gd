@@ -376,6 +376,34 @@ func _resolve_terrain() -> Node:
 	return _sibling_with_method("surface_at")
 
 
+# Soft hazard: ploughing resistance in the deep snow at the roadside, the snow
+# equivalent of driving into the grass (features/snow-region.md).
+#
+# Paired with — and deliberately separate from — the snow region's low grip. Low mu
+# makes the car SLIDE; this makes it BOG. Neither alone reads as deep snow.
+#
+# Feathered on the road weight rather than gated on a hard predicate (as the lake
+# query is), so the drag ramps in across the same band the visual snow is drawn
+# rising: the bog appears exactly where the snow appears, physically and visually.
+#
+# cfg.deep_snow_drag is 0.0 on every stage outside a snow region, so the cost there is
+# one float compare — the same "costs nothing when absent" discipline dry weather
+# holds to. The terrain node is already resolved for the drivetrain, so reaching it
+# needs no new plumbing, and this adds ONE query per physics tick against the
+# per-wheel queries the drivetrain already makes.
+func _apply_deep_snow_drag(cfg: GameConfig) -> void:
+	if cfg.deep_snow_drag <= 0.0:
+		return
+	var terrain := drivetrain.terrain if drivetrain != null else null
+	if terrain == null or not terrain.has_method("surface_at"):
+		return
+	var s: Vector2 = terrain.surface_at(global_position.x, global_position.z)
+	var off_road := 1.0 - s.x   # s.x is the road weight: 1.0 on the road, 0.0 off it
+	if off_road <= 0.0:
+		return
+	apply_central_force(-linear_velocity * cfg.deep_snow_drag * off_road)
+
+
 # Axle midpoints for the downforce application points, classified the same way
 # the drivetrain splits the wheels: use_as_traction = rear. Recomputed after a
 # car swap moves the wheels.
@@ -722,6 +750,7 @@ func _apply_aero() -> void:
 	# out (no reset). See features/lakes.md.
 	if _water_query.is_valid() and _water_query.call(global_position):
 		apply_central_force(-linear_velocity * cfg.water_drag)
+	_apply_deep_snow_drag(cfg)
 	var v2 := linear_velocity.length_squared()
 	var down := -global_transform.basis.y
 	apply_force(down * v2 * cfg.downforce_front, global_transform.basis * _front_axle)

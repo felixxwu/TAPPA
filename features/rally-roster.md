@@ -485,10 +485,10 @@ generator also uses it per-rival.
   `_completed_count` (a non-special-only count the old `reveal_after` gate compared
   against) is **deleted** along with that gate — reveal no longer counts completions at
   all, see `rally_revealed` below.
-- `stars_for_placement(placed)` — the per-rally scoring curve: a podium place
-  (1st–`PODIUM_PLACES`) pays `STARS_FOR_PODIUM`, any other finish pays
-  `STARS_FOR_FINISH`, not finishing pays 0. Flat within each tier — no 1st/2nd/3rd
-  gradient. THE one definition: `Save.complete_rally`'s credit, the Rally Challenge
+- `stars_for_placement(placed)` — the per-rally scoring curve: 1st pays
+  `STARS_FOR_WIN`, the rest of the podium (2nd–`PODIUM_PLACES`) pays
+  `STARS_FOR_PODIUM`, any other finish pays `STARS_FOR_FINISH`, not finishing pays 0.
+  Flat below the win — no 2nd/3rd gradient. THE one definition: `Save.complete_rally`'s credit, the Rally Challenge
   payout and `hq._stars_for` all delegate to it, so the medals drawn on a pin cannot
   disagree with what the ledger was paid. `MAX_STARS_PER_RALLY` (the star rows'
   denominator) is a SEPARATE constant from `PODIUM_PLACES` — see
@@ -700,3 +700,28 @@ counts, `difficulty`) are tunable content, not test-pinned contracts — tests c
 logic (the star curve's shape, the geometric reveal predicate, the closure guards), never
 the specific authored positions or radii. (The retired `requires_completions` rungs this
 line used to reference no longer exist — see the `special` field entry above.)
+
+
+## The Alps (region `snow`)
+
+Six rallies in the map's NE massif, added when the snow corner was filled in. They form a
+**chain** rather than a cluster: `sn_glacier_run` is the only pin reachable from outside
+the corner (from The Foothills Trial's lit circle), every other Alps pin is revealed from
+inside, and the two specials are the deepest pins on the map.
+
+Two part unlocks were re-sited here — Race Tires (`gr_showdown` → `sn_showdown`) and
+Sequential Gearbox (`hc_showdown` → `sp_summit_trial`) — so the corner has real pull. Both
+source rallies were named after their prize and were renamed ("The Greek Showdown", "The
+Northern Trial"); their `id`s stay put because ids key saved progress. Existing saves keep
+the parts via the v4 → v5 migration.
+
+Verified with `./report_eligibility.sh` (2/2/2/3 eligible cars on the four restricted
+rallies; the two specials are open-class as every special is) and `./sim_career.sh`.
+
+> `sim_career` reports ~3% of careers hitting a frontier with no enterable rally. That is
+> **pre-existing, not caused by the Alps**: at 1500 runs the pre-Alps roster strands 52
+> times and this one 40 — adding rallies slightly reduced it. The signature is always
+> `hc_v12_promenade` / `gr_mountain_pass` / `gc_island_gp` and a player who never won the
+> GB / high-cylinder prize cars. Worth fixing, separately.
+
+See [snow-region.md](snow-region.md).

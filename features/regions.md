@@ -6,9 +6,17 @@
 
 A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
 height — applied to whichever rallies are tagged with it. It is **not a corner
-of the map**, even though it started life that way. The game ships four:
+of the map**, even though it started life that way. The game ships five:
 `home` (the original green forest/plain world), `home_coast` (that same look
-with the sea raised), `greece` (arid) and `greece_coast` (arid, sea raised).
+with the sea raised), `greece` (arid), `greece_coast` (arid, sea raised) and `snow`
+(the alpine NE massif — see [snow-region.md](snow-region.md)).
+
+**A region is no longer look-only.** `snow` also carries HANDLING: per-surface grip
+overrides, a deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS`
+(exactly as `water_level` does) because they are consumed by
+`RallySession.apply_event_config` at stage setup, not by `world.gd`'s look pass after
+generation. Each is a `has_*` / `*_of` pair for the same value-vs-absent reason
+`water_level_of` documents, and none is inherited through `look_from`.
 Every rally is pinned on the one world map (`textures/map_world.jpg`, 848x848)
 at once, and **regions do not unlock in sequence**: there is no "next region"
 gate, and **no region-level gate of any kind** —
@@ -26,8 +34,8 @@ credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
 [rally-roster.md](rally-roster.md).
 
-The map's NE snow massif carries no pins and no region of its own, reserved for
-a future region. See "The empty snow corner" below.
+The map's NE snow massif is now the `snow` region ("The Alps") and carries six
+rallies. See [snow-region.md](snow-region.md).
 
 ## `RegionLibrary` (`scripts/region_library.gd`)
 
@@ -68,6 +76,16 @@ baseline), and an optional `look_from` (see below). Ships today:
   rally on the SE sea:
   `look_from: "greece"` plus its own, higher `water_level` (`-5.0`), the same
   "same look, sea raised" pattern as `home_coast`.
+- `snow` ("The Alps", the NE alpine massif) — `sky_panorama`, `grass_texture`
+  (snow), `gravel_texture` (packed snow), a lightened `tarmac_color` (a dusting
+  over asphalt, not a different material), a white `grass_particle_color` (the
+  home green would read as grass blades flung off a snowfield),
+  `spawn_bush_mesh` = `false` (nothing grows through snow) and a 60/40
+  `tree_mix` of two CC0 photographic conifers. `road_marking_color` is
+  deliberately OMITTED rather than set to white — buried lane paint, not fresh
+  paint. It is also the ONLY region carrying handling blocks
+  (`surface_grip` / `deep_snow` / `frozen_water`); see
+  [snow-region.md](snow-region.md).
 
 Note on ids: `home` and `greece` were **not renamed** when the map went from
 two swapped regions to four map corners, because `"home"` in particular is a
@@ -81,6 +99,10 @@ call site (and auditing for other hardcoded `"home"` checks).
 `terrain_layers`, `tarmac_color`, `road_marking_color`,
 `grass_particle_color`. `bush_billboard`/`terrain_tint`/`terrain_layers` are
 reserved slots — schema support exists, nothing authors them yet.
+
+Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
+are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
+`water_level`; see the handling note at the top and [snow-region.md](snow-region.md).
 
 Two fields a region can author are **deliberately excluded** from `LOOK_KEYS`,
 for two different reasons:
@@ -214,7 +236,7 @@ re-read afterwards (the 2026-08 pass did exactly that: names, `region` tags and
 per-event terrain were all re-authored to match the pixels, while the save-key `id`s
 stayed put). A region tag says only "this stage wears this look at this waterline",
 and the tags follow the terrain, so the split today is **19 `home`, 8 `greece`,
-4 `home_coast`, 1 `greece_coast`** — `greece_coast` is one rally on the SE sea, and
+6 `snow`, 4 `home_coast`, 1 `greece_coast`** — `greece_coast` is one rally on the SE sea, and
 the coastal looks are worn only by the handful of pins genuinely standing on water
 (the SE bay at a -4 waterline, the central rivers at -7). Nothing may assume a region
 owns a contiguous patch of map, holds a minimum number of rallies, or holds any at
@@ -350,21 +372,18 @@ one map's full pin set instead of a per-region subset — see
 [menus.md](menus.md) → TABLE for the pan/select/enter flow, which this section
 no longer needs to distinguish from a "swap" mode.
 
-## The empty snow corner (deliberate deferral)
+## The snow corner (filled in)
 
-The NE corner of `map_world.jpg` is alpine/snow-themed terrain with **no
-authored region, no rallies, and no pins on it**. This is intentional, not a
-gap: the map asset (`tools/gen_map_texture.py`) was generated with all four
-visual corners baked in up front so the terrain variety reads from the first
-minute, while the snow corner's rally content is left for later work. See
-`todo/one-map-four-corners.md` → "Follow-up: the snow corner" for the planned
-scope. Nothing in `RegionLibrary`, `RallyLibrary`, or the HQ table needs to
-change to add it later — a new `REGIONS` entry with its own rallies would
-just start appearing as pins in its corner, subject to the same geometric
-reveal rule (`map_pos` falling inside a lit circle) as any other region's
-rallies, specials included. Adding a region with no specials at all is also fine — the
-retired per-region invariant means an empty-of-specials corner is now the
-ordinary case, not a special-cased one.
+The NE alpine corner was deliberately deferred when the four-corner map shipped — the map
+asset was generated with all four visual corners baked in up front so terrain variety read
+from the first minute, while the snow corner's content waited. It is now authored as the
+`snow` region, and nothing in `RegionLibrary`, `RallyLibrary` or the HQ table had to
+change to accept it: a new `REGIONS` entry with rallies simply started appearing as pins,
+under the same geometric reveal rule as every other rally.
+
+The one thing it DID add is the handling axis described above — the first time a region
+influenced how a stage drives rather than only how it looks. See
+[snow-region.md](snow-region.md).
 
 ## Progression: no sequence, no region gating, geometrically-gated specials
 

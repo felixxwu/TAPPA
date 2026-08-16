@@ -639,3 +639,16 @@ draw trigger, `pick_mystery_box_grant`, `Save.open_mystery_box`'s atomic
 install/fallback, and the garage button's nav/gating — are covered in
 `test_reward_system.gd` / `test_save_manager.gd` / `test_menu_flow.gd`; see
 `features/reward-system.md` → "Mystery box" for the full breakdown.
+
+
+## Re-sited unlocks and the legacy grant
+
+`unlocked_by_rally` can be re-pointed when the roster changes — two parts moved into the
+Alps (Race Tires → `sn_showdown`, Sequential Gearbox → `sp_summit_trial`) to give that
+corner something worth working toward.
+
+`rally_gate_met` therefore checks `Save.KEY_LEGACY_PART_UNLOCKS` **before** the rally: a
+player who won the part where it used to live keeps it. That set is written only by the
+save migration (v4 → v5, from `Save.MOVED_PART_UNLOCKS`) and is empty for every career
+started after the move. See [snow-region.md](snow-region.md) and
+[save-persistence.md](save-persistence.md).

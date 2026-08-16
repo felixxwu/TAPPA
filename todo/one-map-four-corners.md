@@ -11,66 +11,19 @@ works — those are the living docs now, and this file is only what's still open
 What's left is the **snow corner**, which was deferred from the start because it
 is the one look that can't be produced by re-mixing existing art.
 
-## Follow-up: the snow corner
+## The snow corner — DONE
 
-Snow is the one look the game genuinely doesn't have — unlike "coastal", it can't
-be produced by re-mixing what's authored, because nothing in the roster reads as
-frozen. Deliberately deferred so the map change wasn't blocked on art.
+Shipped as the `snow` region ("The Alps"): six rallies in the NE massif, a snow look,
+per-surface grip overrides, deep snow, frozen lakes and a snowfall condition. Two part
+unlocks (Race Tires, Sequential Gearbox) moved there so the corner is worth working
+toward. See [../features/snow-region.md](../features/snow-region.md) and
+`docs/superpowers/specs/2026-08-16-snow-region-design.md`.
 
-**The corner already exists on the shipped map**; it just holds no pins. The NE is
-reserved for it and nothing has to be displaced. So the follow-up is purely:
-author the look, then site rallies there with `map_pos` values that fall inside
-the reach of an existing pin's lit circle (`RallyLibrary.lit_sources` /
-`reveal_radius_of`), so `rally_revealed` opens them the same geometric way as
-every other rally. No map regeneration and no `map_pos` churn for existing
-rallies — which is the main reason deferring it was cheap.
-
-The map's NE corner was also given a proper alpine massif (large ridgelines, snow
-on the crests, rock scoured off the steep faces) — see `tools/gen_map_texture.py`
-→ `alpine_gate` / `ridged_big`. So the terrain is already there to sell a snow
-region; only the *driven-world* look is missing.
-
-### What authoring it involves
-
-It slots in as a **fifth region** in `RegionLibrary.REGIONS` alongside the four
-that exist. Greece's entry is the template for how much a region needs:
-
-| `LOOK_KEYS` field | snow region |
-| --- | --- |
-| `sky_panorama` | overcast / alpine sky |
-| `grass_texture` | snow / patchy alpine ground |
-| `gravel_texture` | grit / packed snow |
-| `tree_mix` | conifers — a new billboard, and a sizing `profile` (see `DEFAULT_TREE_MIX`) |
-| `terrain_tint`, `background_color` | cooler cast |
-
-Because a region owns its waterline as well as its look, the snow region also
-multiplies against that axis — an alpine-lake corner comes free once the look
-exists, via a `look_from` child with a higher `water_level` (the same trick
-`home_coast` uses).
-
-### Things to get right when it's picked up
-
-- **It gains its own showdown**, taking the count from four to five. Nothing
-  special is needed for the ending: `RegionLibrary.all_showdowns_completed` counts
-  every region, so adding one simply raises the bar. Note this makes an
-  already-finished save read as unfinished again — correct for a content update,
-  but don't mistake it for a regression.
-- **Until it has rallies, the empty-corner guard is what protects it.**
-  `RegionLibrary.showdown_unlocked` rejects a region that authors no non-showdown
-  rallies; without that, an empty corner's showdown would read as unlocked
-  immediately, because the "all rallies completed" loop passes vacuously over zero
-  rallies. That guard exists *for* this deferral — don't remove it when adding the
-  region, and keep its test.
-- **Grip is a bigger question than the textures.** Snow implies a surface that
-  drives differently, but `surface_mix` is authored per event and `LOOK_KEYS` is
-  look-only, so a genuinely icy region would be the first case where a region wants
-  to influence *handling*, not just appearance. Worth scoping deliberately rather
-  than smuggling in.
-- **Rally placement.** Pins must sit on land, on region-appropriate terrain, inside
-  roughly `[0.045, 0.955]` on both axes (the map plane is 4.2 x 4.2, so the extremes
-  crowd the table rim), and no closer together than the existing roster's ~0.05
-  spacing. `features/rally-roster.md` documents the rules and the verification
-  approach.
+Note for anyone reading an older copy of this file: its guidance here referred to
+`RegionLibrary.all_showdowns_completed`, `showdown_unlocked`, `showdown_of` and an
+"empty-corner guard". **All of those were deleted** when region gating was retired —
+regions gate nothing now, and the credits fire on `RallyLibrary.all_specials_completed`.
+Adding the region needed none of that machinery.
 
 ## Also outstanding: catalogue fields for richer rally classes
 

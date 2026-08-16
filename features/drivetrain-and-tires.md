@@ -291,3 +291,20 @@ config by `apply_car`).
 `wheel_friction_slip_front/rear`, `grass_grip`, `gravel_grip`, `tarmac_grip`,
 `wheel_roll_influence`, `drive_mode`, `suspension_*`, `brake_torque`,
 `handbrake_torque`, `gear_ratios`, `final_drive`, `drag_coefficient`.
+
+
+## Region grip overrides and ice
+
+Two ways the per-surface μ scales can be replaced for a stage, both introduced with the
+Alps (see [snow-region.md](snow-region.md)):
+
+- **Per-surface overrides.** A region may override `grass_grip` / `gravel_grip` /
+  `tarmac_grip` for every stage tagged to it. `RallySession.apply_event_config` seats the
+  values, so `surface_tire_params` needs no change at all — it reads the same live config
+  fields it always did, and so does `LapTimeModel`, which is why the rival field scales
+  automatically.
+- **Ice.** On a stage whose region freezes its water, a contact over a submerged cell
+  **overrides** the surface blend with `cfg.frozen_water_grip` rather than scaling it —
+  what is under the ice is irrelevant to a tyre resting on top of it. Gated on
+  `frozen_water_grip > 0.0`, which is `0.0` everywhere else, so the added cost off a
+  frozen stage is one float compare.

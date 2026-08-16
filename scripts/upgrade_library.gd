@@ -143,7 +143,7 @@ const UPGRADES: Array[Dictionary] = [
 		# menu_label "Sequential" — the slot label already says "Gearbox", so the full name
 		# would read "Gearbox   Stock  Sequential Gearbox".
 		"id": "sequential_gearbox", "name": "Sequential Gearbox", "menu_label": "Sequential",
-		"slot": "gearbox", "unlocked_by_rally": "hc_showdown",
+		"slot": "gearbox", "unlocked_by_rally": "sp_summit_trial",
 		"consumable": false,
 		"effect": {"shift_time_set": 0.1},
 	},
@@ -164,7 +164,7 @@ const UPGRADES: Array[Dictionary] = [
 		#
 		# menu_label "Race" — the slot label already says "Tires".
 		"id": "race_tires", "name": "Race Tires", "menu_label": "Race",
-		"slot": "tires", "unlocked_by_rally": "gr_showdown",
+		"slot": "tires", "unlocked_by_rally": "sn_showdown",
 		"consumable": false,
 		"effect": {"tire_grip_mult": 1.15},
 	},
@@ -310,6 +310,12 @@ static func unlocked_by(rally_id: String) -> Dictionary:
 static func rally_gate_met(item_id: String, profile: Dictionary) -> bool:
 	var rid := unlocked_by_rally(item_id)
 	if rid == "":
+		return true
+	# Parts whose unlock rally MOVED are granted directly to players who won them where
+	# they used to live (Save.KEY_LEGACY_PART_UNLOCKS, written by the 4 -> 5 migration).
+	# Checked before the rally so a re-sited part is never taken back; empty for every
+	# career that started after the move. See features/snow-region.md.
+	if (profile.get(Save.KEY_LEGACY_PART_UNLOCKS, []) as Array).has(item_id):
 		return true
 	return bool((profile.get(Save.KEY_RALLIES, {}) as Dictionary).get(rid, {}).get("completed", false))
 

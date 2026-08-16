@@ -66,7 +66,8 @@ const ChallengeSessionScript := preload("res://scripts/challenge_session.gd")
 # full-height page (reached from the hub) so neither has to scroll.
 enum LiftPage { HUB, TUNE, UPGRADES }
 
-# 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
+# 1st place earns 3 stars, the rest of the podium 2, any other finish 1, not finishing
+# (incl. not completed) 0 — see RallyLibrary.stars_for_placement, the one definition.
 # Shown on the 3D map pins inside the house-style readout box as proper five-pointed
 # stars (gold = earned, dim = not) drawn by StarRow — polygons, so they need no font
 # glyph (Syne Mono has no ★/☆; same reason the UI uses ASCII like `<`/`>` for nav).
@@ -2528,8 +2529,19 @@ func _prepare_free_roam() -> void:
 	# from the whole RegionLibrary roster (not the unlocked subset — free roam is a
 	# sandbox, and Greece was always reachable here), so a newly authored region shows
 	# up in free roam automatically.
+	#
+	# The region is drawn FIRST and seated onto the event dict, because a region can now
+	# carry handling as well as look (the Alps drop every surface's grip and add deep
+	# snow — features/snow-region.md) and apply_event_config resolves that off
+	# event["region"], exactly as it resolves the waterline. Drawn afterwards, free roam
+	# would get the white look with home grip: it would LOOK like snow and drive like
+	# a summer forest.
+	var regions := RegionLibrary.all()
+	RallySession.free_roam_region_id = "" if regions.is_empty() \
+		else String(regions[randi() % regions.size()].get("id", ""))
 	RallySessionScript.apply_event_config(cfg, {
 		"seed": randi(),
+		"region": RallySession.free_roam_region_id,
 		"straightness": base.free_roam_straightness,
 		"forestiness": base.free_roam_forestiness,
 		"surface_mix": base.free_roam_tarmac_fraction,
@@ -2538,9 +2550,6 @@ func _prepare_free_roam() -> void:
 		"water_level": randf_range(base.free_roam_water_level_min_m, base.free_roam_water_level_max_m),
 		"terrain_layer1_amplitude": randf_range(base.free_roam_relief_min, base.free_roam_relief_max),
 	})
-	var regions := RegionLibrary.all()
-	RallySession.free_roam_region_id = "" if regions.is_empty() \
-		else String(regions[randi() % regions.size()].get("id", ""))
 
 
 # --- Kept on HqController, NOT moved with the table cut ----------------------

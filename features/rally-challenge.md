@@ -719,7 +719,7 @@ Two separate reward paths:
   are bought with stars at the HQ present box rather than handed out
   ([star-economy.md](star-economy.md)). A placing challenge instead pays **stars
   by placement**, on the SAME `RallyLibrary.stars_for_placement` curve a career
-  rally uses (a podium place pays more, any other finish still pays), credited via
+  rally uses (winning pays most, the rest of the podium next, any other finish still pays), credited via
   `Save.award_stars`. The placement gate here (top HALF of the board) is far more
   lenient than the podium, so a mid-table finish banks the smaller
   `STARS_FOR_FINISH` amount rather than the podium's — it used to bank **0**, back

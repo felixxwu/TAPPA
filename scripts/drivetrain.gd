@@ -684,6 +684,24 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 		_surf_scratch.slip_peak = cfg.tire_slip_peak
 		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
 		return _surf_scratch
+	# Frozen lake: on a stage whose region freezes its water (features/snow-region.md),
+	# a contact over a submerged cell is on ICE, not on whatever is under the ice. So
+	# this OVERRIDES the surface blend rather than scaling it — the lake bed's grass or
+	# gravel is irrelevant to a tyre resting on a frozen surface above it.
+	#
+	# Gated on frozen_water_grip, which is 0.0 on every stage outside the Alps, so the
+	# added cost elsewhere is one float compare on an already hot path. The height query
+	# is the same cache-first lookup the ice COLLIDER is positioned against, so the grip
+	# boundary and the solid surface agree exactly.
+	# has_method guarded like the surface_at check above: a terrain-like stub (or a
+	# future provider) may implement the surface query without the height one, and a
+	# frozen stage must degrade to ordinary ground rather than crash.
+	if cfg.frozen_water_grip > 0.0 and terrain.has_method("height_at") \
+			and terrain.height_at(cp.x, cp.z) < cfg.track_water_level_m:
+		_surf_scratch.mu_mult = cfg.frozen_water_grip * _weather_mu
+		_surf_scratch.slip_peak = cfg.tarmac_slip_peak
+		_surf_scratch.slide_ratio = cfg.tarmac_slide_ratio
+		return _surf_scratch
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
 	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s) * _weather_mu
 	_surf_scratch.slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s)

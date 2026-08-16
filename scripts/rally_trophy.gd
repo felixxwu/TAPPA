@@ -10,10 +10,10 @@ extends RefCounted
 #
 # Cup + finial (the prize itself) — your BEST RESULT here, which a trophy can say more
 # precisely than a pennant can:
-#   finished 1st (3 stars) → warm gold
-#   finished 2nd (2 stars) → silver
-#   finished 3rd (1 star)  → bronze
-#   never podiumed          → plain metal grey (nothing won yet)
+#   won outright (3 stars)      → warm gold
+#   rest of the podium (2 stars) → silver
+#   finished off the podium (1)  → bronze
+#   never finished               → plain metal grey (nothing won yet)
 #
 # Plinth + base disk — RACEABILITY, mirroring the flag's green/grey pennant axis:
 #   an eligible car is owned → green   (you can enter this now)
@@ -64,16 +64,22 @@ const BASE_RACEABLE := Color(0.10, 0.34, 0.13)
 const BASE_INERT := Color(0.20, 0.21, 0.24)
 
 
-# The cup colour for a best-finish medal count (hq._stars_for: 3 = 1st ... 0 = never
-# podiumed). A locked special can't have been podiumed, so it always reads as unwon.
+# The cup colour for a best-finish medal count (hq._stars_for: 3 = won outright, 2 = the
+# rest of the podium, 1 = finished off the podium, 0 = never finished). A locked special
+# can't have been raced, so it always reads as unwon.
 static func medal_color(locked: bool, stars: int) -> Color:
 	if locked:
 		return MEDAL_NONE
-	match clampi(stars, 0, 3):
-		3: return MEDAL_GOLD
-		2: return MEDAL_SILVER
-		1: return MEDAL_BRONZE
-		_: return MEDAL_NONE
+	# if/elif rather than `match`: the tiers are constants on another class, which match
+	# patterns can't take, and thresholds keep the mapping right if an amount is retuned.
+	var rated := clampi(stars, 0, RallyLibrary.MAX_STARS_PER_RALLY)
+	if rated >= RallyLibrary.STARS_FOR_WIN:
+		return MEDAL_GOLD
+	if rated >= RallyLibrary.STARS_FOR_PODIUM:
+		return MEDAL_SILVER
+	if rated >= RallyLibrary.STARS_FOR_FINISH:
+		return MEDAL_BRONZE
+	return MEDAL_NONE
 
 
 # The plinth/base colour: green when the player owns a car that may enter, else grey.
@@ -83,8 +89,8 @@ static func base_color(locked: bool, has_eligible_car: bool) -> Color:
 
 
 # Build a complete trophy marker. Returns a Node3D rooted at the base (local y = 0).
-# `stars` is the best-finish medal count (0..3), `has_eligible_car` whether the player owns
-# a car that may enter, `locked` forces the unwon + inert look.
+# `stars` is the best-finish medal count (0..MAX_STARS_PER_RALLY), `has_eligible_car`
+# whether the player owns a car that may enter, `locked` forces the unwon + inert look.
 static func build(locked: bool, stars: int, has_eligible_car: bool) -> Node3D:
 	var root := Node3D.new()
 	root.name = "RallyTrophy"

@@ -26,7 +26,7 @@ extends GPUParticles3D
 # stage builds no node and pays exactly zero new per-frame cost. See
 # features/rendering.md.
 
-enum Mode { RAIN, SANDSTORM }
+enum Mode { RAIN, SANDSTORM, SNOW }
 
 # The emission volume around the camera, in metres (half-extents). Generous enough
 # that, combined with the lifetime below, drops/dust spawned at the box's leading
@@ -50,6 +50,15 @@ const _SAND_DRIFT_SPEED := 10.0
 # the "trailing behind the car" case from lingering).
 const _RAIN_LIFETIME := 1.6
 const _SAND_LIFETIME := 3.0
+# Snow: a small, near-square flake. Reusing the "rain" kind would have needed no code
+# at all, but a thin tall quad streaked to its own velocity reads as grey rain however
+# it is coloured — the flake SHAPE, and not streaking it, is the whole difference.
+const _SNOW_QUAD_SIZE := Vector2(0.07, 0.07)
+# Fallback fall speed (m/s) for a snow field spawned without one — structural, not the
+# authored value (that is snowfall_particle_speed, and reaches here via the table).
+const _SNOW_FALL_SPEED := 2.4
+# Snow falls slowly, so it needs to live much longer than rain to cross the same box.
+const _SNOW_LIFETIME := 7.0
 
 
 # Build the particle field for a weather-table "particles" kind ("rain" / "sand")
@@ -68,6 +77,8 @@ static func spawn(parent: Node3D, kind: String, count: int, wind_dir_deg: float,
 			return spawn_rain(parent, count)
 		"sand":
 			return spawn_sandstorm(parent, count, wind_dir_deg, speed_mps)
+		"snow":
+			return spawn_snow(parent, count, wind_dir_deg, speed_mps)
 	return null
 
 
@@ -94,9 +105,28 @@ static func spawn_sandstorm(parent: Node3D, count: int, wind_dir_deg: float,
 	return field
 
 
+# Build a SNOWFALL field under `parent` (the chase camera) with `count` quads alive,
+# drifting toward `wind_dir_deg` while falling at `speed_mps` (0.0 = the kind's own
+# constant). Snow is the only kind that combines a downward fall with a lateral
+# heading — rain falls straight and dust blows flat.
+static func spawn_snow(parent: Node3D, count: int, wind_dir_deg: float,
+		speed_mps := 0.0) -> WeatherField:
+	var field := WeatherField.new()
+	field.name = "WeatherField"
+	field._configure(Mode.SNOW, count, wind_dir_deg, speed_mps)
+	parent.add_child(field)
+	return field
+
+
 func _configure(mode: Mode, count: int, wind_dir_deg: float, speed_mps := 0.0) -> void:
 	amount = maxi(1, count)
-	lifetime = _RAIN_LIFETIME if mode == Mode.RAIN else _SAND_LIFETIME
+	match mode:
+		Mode.RAIN:
+			lifetime = _RAIN_LIFETIME
+		Mode.SNOW:
+			lifetime = _SNOW_LIFETIME
+		_:
+			lifetime = _SAND_LIFETIME
 	# World-space simulation (see class doc comment): the node still follows the
 	# camera so the emission box stays where the player can see it, but once spawned
 	# a particle's motion is independent of the emitter's own movement.
@@ -130,6 +160,26 @@ func _configure(mode: Mode, count: int, wind_dir_deg: float, speed_mps := 0.0) -
 		proc.initial_velocity_max = _RAIN_FALL_SPEED * 1.15
 		quad.size = _RAIN_QUAD_SIZE
 		mat.albedo_color = Color(0.85, 0.87, 0.92, 0.5)
+	elif mode == Mode.SNOW:
+		# The only kind that both FALLS and DRIFTS: a flake is light enough that the
+		# wind moves it as much as gravity does, so the heading is a normalised blend
+		# of straight down and the wind direction rather than one or the other.
+		var drift := Vector3(cos(deg_to_rad(wind_dir_deg)), 0.0, sin(deg_to_rad(wind_dir_deg)))
+		proc.direction = (Vector3(0.0, -1.0, 0.0) + drift * 0.55).normalized()
+		# Wide scatter: flakes tumble, and a tight spread reads as a machine spraying
+		# polystyrene. This is the cheapest thing that sells snow as snow.
+		proc.spread = 25.0
+		var snow_speed := speed_mps if speed_mps > 0.0 else _SNOW_FALL_SPEED
+		proc.initial_velocity_min = snow_speed * 0.7
+		proc.initial_velocity_max = snow_speed * 1.3
+		quad.size = _SNOW_QUAD_SIZE
+		# Nearly opaque white — a flake is a solid speck, not a translucent smear like
+		# a raindrop, and against the white-out sky a low alpha would vanish entirely.
+		mat.albedo_color = Color(0.97, 0.98, 1.0, 0.85)
+		# Override the velocity-aligned billboarding set above: streaking a flake to
+		# its own motion is exactly what makes cheap snow look like rain. A flake must
+		# stay a round speck facing the camera however fast it is travelling.
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	else:
 		var wind := Vector3(cos(deg_to_rad(wind_dir_deg)), 0.0, sin(deg_to_rad(wind_dir_deg)))
 		proc.direction = wind

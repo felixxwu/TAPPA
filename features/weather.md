@@ -1,4 +1,4 @@
-# Weather (dry / rain / sandstorm / fog / storm)
+# Weather (dry / rain / sandstorm / fog / storm / snow)
 
 Design doc: `docs/superpowers/specs/2026-08-02-weather-design.md` (anticipated a
 string enum specifically so later conditions — "fog / snow / night" — would have
@@ -121,7 +121,8 @@ funnel below does not change.
 Roughly **38 of the 90 authored events are wet**, chosen at random with a fixed
 seed and written into the table. They are spread across the roster rather than
 clustered in one region, so weather reads as a property of the individual stage.
-**4 events are sandstorm, 3 fog and 2 storm.** One string
+**4 events are sandstorm, 3 fog and 2 storm**, and 9 of the Alps' 18 events are
+snowfall. One string
 field per event, so a condition is never ambiguous — the later conditions were only
 authored onto events that had no `weather` key at all.
 
@@ -145,6 +146,13 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
   genuine sea pins. A river valley gets heavy rain instead: RWD Masters and the
   Drivetrain Conversion trial both carried a storm through an earlier pass and were
   re-authored to rain, since a crosswind inland is just weather with a costume on.
+- **Snowfall** — authoring guidance: authored ONLY onto `region == "snow"` events (the
+  alpine NE), the same placement convention sandstorm follows for the desert, and mixed
+  roughly half-and-half with dry stages there. Unlike every other precipitation
+  condition it authors **no `grip_mult`**: the snow REGION already owns grip for that
+  whole corner, dry stages included, so weather must not stack a second lever on the
+  same variable. It therefore names nothing in `physics_fields` and never re-keys the
+  opponent cache. See [snow-region.md](snow-region.md).
 - **Sandstorm** — authoring guidance: desert-only, which today means
   `region == "greece"` (the arid look/palette) and a pin in the SW/S sand — Dust
   Devils, Ancient Ruins, The Hot Gates and the Greek Showdown. A sandstorm on a green

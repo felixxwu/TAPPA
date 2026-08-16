@@ -37,18 +37,19 @@ worth. Every surface that pays stars and every surface that *shows* them goes th
 `Save.complete_rally`, the Rally Challenge payout, `hq._stars_for`'s per-pin star row and
 the podium's stars beat — so a paid star and a drawn star can never disagree.
 
-**Two tiers, flat within each:** a podium place (1st–`PODIUM_PLACES`) pays
-`STARS_FOR_PODIUM`, **any other finish** pays `STARS_FOR_FINISH`, and not finishing
-(`placed <= 0`) pays nothing. There is no 1st/2nd/3rd gradient — winning outright is
-rewarded with the rally's car or part prize and the leaderboard time, not a bigger pile of
-the same currency — and turning up and finishing always pays something, so a rally the
-player cannot podium is still worth driving. It was a descending curve (1st = 3, 2nd = 2,
-3rd = 1, off the podium = 0).
+**Three tiers:** **1st** pays `STARS_FOR_WIN` (3), the **rest of the podium**
+(2nd–`PODIUM_PLACES`) pays `STARS_FOR_PODIUM` (2), **any other finish** pays
+`STARS_FOR_FINISH` (1), and not finishing (`placed <= 0`) pays nothing. Winning outright
+pays strictly more than scraping the podium — the win is what the player is chasing, and
+the rally's car/part prize alone did not make that legible in the currency itself. Below
+the win the curve is FLAT: 2nd and 3rd pay alike, and so does every finish behind them, so
+a rally the player cannot podium is still worth driving. This briefly ran as two flat tiers
+(podium = 2, any other finish = 1) with no win bonus; the 1st-place tier is back.
 
-`PODIUM_PLACES` and `MAX_STARS_PER_RALLY` are now **separate constants**. They used to be
-one number doing both jobs, which the old descending curve made necessarily equal; with a
-flat tier they are independent, and conflating them would tie the size of the podium to
-what a win pays. `MAX_STARS_PER_RALLY` is the denominator the star rows draw against.
+`PODIUM_PLACES` and `MAX_STARS_PER_RALLY` are **separate constants**. They used to be one
+number doing both jobs (a 1st→3 / 2nd→2 / 3rd→1 ramp made them necessarily equal); kept
+apart, widening the podium cannot silently change what a win pays. `MAX_STARS_PER_RALLY`
+(= `STARS_FOR_WIN`) is the denominator the star rows draw against.
 
 Sources:
 

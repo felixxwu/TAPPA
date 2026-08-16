@@ -31,7 +31,7 @@ signal flushed()
 
 # Bump on any breaking shape change to PlayerProfile; older files are migrated
 # forward on load (see _migrate), newer files are refused rather than truncated.
-const SCHEMA_VERSION := 4
+const SCHEMA_VERSION := 5
 
 # The two profile keys the REST of the codebase reads (the owned-car array and the
 # per-rally record map) — named here because SaveManager owns the save schema, and a
@@ -41,6 +41,11 @@ const SCHEMA_VERSION := 4
 # unless a SCHEMA_VERSION bump plus a _migrate_step comes with the change.
 const KEY_CARS := "cars"
 const KEY_RALLIES := "rallies"
+# Upgrade ids granted DIRECTLY, bypassing their unlocked_by_rally gate. Written only by
+# migration, when a part's unlock rally MOVES: a player who won the part where it used
+# to live must not lose it because the catalogue re-sited it. See features/snow-region.md
+# and UpgradeLibrary.rally_gate_met.
+const KEY_LEGACY_PART_UNLOCKS := "legacy_part_unlocks"
 
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
@@ -421,6 +426,9 @@ func _default_profile() -> Dictionary:
 		"selected_instance_id": -1,
 		"inventory": {},
 		KEY_RALLIES: {},
+		# Empty for every new career: nothing has been re-sited under this player, so
+		# every part is gated purely by the CURRENT unlocked_by_rally mapping.
+		KEY_LEGACY_PART_UNLOCKS: [],
 		# Adaptive difficulty (features/adaptive-difficulty.md). Zero is "field matched to
 		# the player", i.e. the behaviour before the system existed.
 		AiDifficulty.KEY_STEPS: 0,
@@ -509,7 +517,15 @@ func _migrate(p: Dictionary) -> Dictionary:
 # Versions we know how to step FROM (each _migrate_step(v, p) bumps schema_version
 # to v+1). Kept as a plain const list (a const dict of Callables isn't a constant
 # expression in GDScript, and would null this autoload at parse time).
-const _MIGRATABLE_FROM := [1, 2, 3]
+const _MIGRATABLE_FROM := [1, 2, 3, 4]
+
+# Parts whose unlocked_by_rally moved, as [old_rally_id, upgrade_id]. Read ONLY by the
+# 4 -> 5 migration. Kept as data next to that step so a future move adds a row and an
+# arm rather than another bespoke block.
+const MOVED_PART_UNLOCKS := [
+	["gr_showdown", "race_tires"],
+	["hc_showdown", "sequential_gearbox"],
+]
 
 # Apply the single version N -> N+1 transform.
 #   1 -> 2: upgrades became CAR-BOUND. The old shared `inventory` pool of
@@ -519,6 +535,9 @@ const _MIGRATABLE_FROM := [1, 2, 3]
 #           to be kept here no longer exists as an item at all.
 #   3 -> 4: adaptive difficulty gained its offset + streak counters (all zero, which is
 #           the pre-adaptive "matched field" behaviour).
+#   4 -> 5: two part unlocks MOVED to the new Alps rallies (Race Tires gr_showdown ->
+#           sn_showdown, Sequential Gearbox hc_showdown -> sp_summit_trial). A player who
+#           already won the old rally keeps the part, via KEY_LEGACY_PART_UNLOCKS.
 #   2 -> 3: rally entry stopped gating on power-to-weight, so a saved
 #           `tuning.engine_detune` set purely to duck under a rally ceiling now has
 #           nothing to duck under — and the detune slider that set it is gone with the
@@ -549,6 +568,25 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 			p[AiDifficulty.KEY_WIN_STREAK] = 0
 			p[AiDifficulty.KEY_LOSS_STREAK] = 0
 			p["schema_version"] = 4
+		4:
+			# Two parts were re-sited into the Alps to give that corner something worth
+			# working toward. Grant them directly to anyone who already won them where
+			# they used to be.
+			#
+			# Deliberately NOT done by marking the new rally completed: that would also
+			# light its map-reveal circle and pay its placement stars, handing the player
+			# progress and currency they never earned. The legacy set grants the PART and
+			# nothing else.
+			var legacy: Array = p.get(KEY_LEGACY_PART_UNLOCKS, [])
+			var rallies: Dictionary = p.get(KEY_RALLIES, {})
+			for moved in MOVED_PART_UNLOCKS:
+				var old_rally: String = moved[0]
+				var item_id: String = moved[1]
+				if bool((rallies.get(old_rally, {}) as Dictionary).get("completed", false)) \
+						and not legacy.has(item_id):
+					legacy.append(item_id)
+			p[KEY_LEGACY_PART_UNLOCKS] = legacy
+			p["schema_version"] = 5
 	return p
 
 

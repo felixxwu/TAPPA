@@ -57,3 +57,6 @@ service-account*.json
 # GUT JUnit output — should be written to user:// (see features/testing.md),
 # but wasn't always; a regenerated build artifact, never meant to be tracked.
 test_results.xml
+
+# Downloaded source art for tools/gen_snow_trees.py (CC0, re-fetched on demand).
+tools/.cache/

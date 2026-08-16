@@ -919,3 +919,35 @@ func test_authored_wing_meshes_are_hidden_mesh_instances() -> void:
 		assert_true(w is MeshInstance3D, "wing node '%s' is a MeshInstance3D" % w.name)
 		assert_false((w as Node3D).is_visible_in_tree(),
 			"wing '%s' not visible on an un-upgraded car (revealed only by the aero kit)" % w.name)
+
+
+# --- Per-species baseline proportions (tree_mix size_scale) ---------------------
+# The billboard card both sizing profiles describe is SQUARE, so a tall narrow cutout is
+# stretched to 1:1 and drawn far too wide. A species may state its own proportions.
+# See features/trees.md.
+
+func test_a_species_without_size_scale_keeps_the_profile_size_exactly() -> void:
+	# Every species that does not state proportions must be byte-identical to the
+	# profile, or adding this feature would silently resize every tree in the game.
+	var cfg: GameConfig = Config.data
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var parent := Node3D.new()
+	add_child_autofree(parent)
+	var field := Foliage.spawn_trees(parent, PackedVector2Array([Vector2(2, 2)]),
+		floor_node, false, 80.0, 15.0, load("res://textures/tree.png"))
+	assert_eq(field.instance_scale.x, cfg.tree_size_m.x, "width is the profile's")
+	assert_eq(field.instance_scale.y, cfg.tree_size_m.y, "height is the profile's")
+
+
+func test_size_scale_narrows_and_heightens_a_species_independently() -> void:
+	# The relation, not the numbers: the two axes must move independently, which a
+	# single uniform scale could not express.
+	var cfg: GameConfig = Config.data
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var parent := Node3D.new()
+	add_child_autofree(parent)
+	var field := Foliage.spawn_trees(parent, PackedVector2Array([Vector2(2, 2)]),
+		floor_node, false, 80.0, 15.0, load("res://textures/tree.png"), false,
+		Vector2(0.5, 1.2))
+	assert_lt(field.instance_scale.x, cfg.tree_size_m.x, "x scale narrows the card")
+	assert_gt(field.instance_scale.y, cfg.tree_size_m.y, "y scale heightens it")

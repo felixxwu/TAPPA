@@ -414,3 +414,33 @@ selects that texture's cutout; the silhouette cutout is cached per texture; a
 true`) bins instances, skips the collision body, and enables per-instance MultiMesh
 colour; and the live world carries a colliding tree field (`BillboardField`) plus a
 non-colliding bush field (`TreeMeshField`).
+
+
+## Per-species baseline proportions (`size_scale`)
+
+Both sizing profiles describe a **square** card (`tree_size_m` 7.5 x 7.5,
+`region_tree_billboard_size_m` 4.0 x 4.0), so a billboard is stretched to a 1:1 ratio
+whatever shape its cutout actually is. That is invisible on a broad deciduous tree and
+very obvious on a conifer: the Alps' dense spruce is a 125x256 cutout (natural w/h 0.49)
+and was being drawn at roughly twice its real width.
+
+A `tree_mix` species may therefore author `"size_scale": Vector2(w, h)`, a multiplier on
+its profile's base size:
+
+```gdscript
+{"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
+ "size_scale": Vector2(0.55, 1.15)},   # 4.1 x 8.6 m, ratio 0.48
+```
+
+- Defaults to `Vector2.ONE`, so every species that omits it — every home and Greece
+  species — is completely unaffected.
+- It scales the BASE size only. Per-instance size jitter (`*_min_scale`) and aspect
+  jitter (`*_aspect_jitter`) still apply on top, so a stand still varies; this sets what
+  it varies *around*.
+- It is deliberately authored on the SPECIES rather than in `GameConfig`, because it
+  describes that texture's own proportions — art metadata, not a balance value. It sits
+  alongside `weight` and `profile` for the same reason.
+
+This is the lightweight alternative to a third sizing profile: it gives a region control
+of its trees' shape without touching the two shared profiles (retuning `home` would move
+every tree in the game, and `region` is shared with Greece's olive canopy).

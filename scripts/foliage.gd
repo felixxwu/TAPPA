@@ -44,10 +44,23 @@ static var _tree_silhouette_cache: Dictionary = {}
 # RegionLibrary.tree_mix / features/regions.md).
 static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: TerrainManager,
 		with_collision: bool, render_distance: float, render_fade: float,
-		billboard_texture: Texture2D = null, use_region_profile: bool = false) -> Node:
+		billboard_texture: Texture2D = null, use_region_profile: bool = false,
+		size_scale: Vector2 = Vector2.ONE) -> Node:
 	var cfg: GameConfig = Config.data
 	var tex: Texture2D = billboard_texture if billboard_texture != null else TREE_TEXTURE
 	var size := cfg.region_tree_billboard_size_m if use_region_profile else cfg.tree_size_m
+	# Per-species BASELINE PROPORTIONS, on top of the profile's size (features/trees.md).
+	#
+	# The card the two profiles describe is SQUARE (7.5 x 7.5), so every billboard is
+	# stretched to a 1:1 ratio no matter what shape its texture actually is. A broad
+	# deciduous tree survives that; a conifer does not — the Alps' dense spruce is a
+	# 125x256 cutout (natural 0.49) and was being drawn at twice its real width.
+	#
+	# So a species may state its own width/height multiplier. Vector2.ONE (the default,
+	# and what every home/Greece species uses) leaves the profile size untouched, so this
+	# is an exact no-op everywhere it is not authored. It multiplies the BASE size only —
+	# the per-instance size and aspect jitter still apply on top, so a stand still varies.
+	size = Vector2(size.x * size_scale.x, size.y * size_scale.y)
 	# Both billboard paths get per-instance random size jitter so a stand isn't
 	# uniform, each with its own tunable floor: the region path (e.g. Greece)
 	# uses region_tree_billboard_min_scale, the home path tree_billboard_min_scale.

@@ -174,6 +174,35 @@ const CONDITIONS: Array[Dictionary] = [
 			"interval_max": "storm_lightning_interval_max_s",
 		},
 	},
+	# Snowfall. Authored onto the alpine region's events (features/snow-region.md); the
+	# same placement convention sandstorm follows for the desert.
+	#
+	# It deliberately authors NO grip_mult. The snow REGION already owns grip for every
+	# stage in that corner, dry or not, so a weather multiplier here would be a second,
+	# redundant lever over the same variable — and would make a snowfall stage
+	# arbitrarily slipperier than a dry stage on the same frozen ground. Consequence,
+	# and it is the correct one: snowfall names nothing in physics_fields, so it never
+	# re-keys the opponent cache, because it changes no lap time.
+	#
+	# Like fog, this is a BRIGHT condition — a white-out, not a dusk. The common
+	# mistake is authoring it dark.
+	{
+		"id": "snow",
+		"particles": "snow",
+		"particle_count": "snowfall_particle_count",
+		"particle_speed": "snowfall_particle_speed",
+		"wind_dir": "snowfall_wind_dir_deg",
+		"look": {
+			"background_color": "snowfall_background_color",
+			"sky_color": "snowfall_sky_color",
+			"sun_energy_mult": "snowfall_sun_energy_mult",
+			"fog_density_mult": "snowfall_fog_density_mult",
+			"fog_sky_affect": "snowfall_fog_sky_affect",
+		},
+		# Fresh snow SETTLES white on the road, so this lerps the albedo toward a colour
+		# (sandstorm's caking mechanism) rather than darkening it the way rain does.
+		"road_tint": {"amount": "snowfall_road_tint", "color": "snowfall_road_tint_color"},
+	},
 ]
 
 # Sub-keys of a "road_tint" block, in a stable order — both name GameConfig fields.
