@@ -74,6 +74,24 @@ slower. Re-run that audit after changing either exponent.
 Both multipliers default to exactly `1.0` and are pure no-ops there, which is what keeps
 every existing caller, and every rival time, unchanged.
 
+### The one thing that must never ask for more
+
+Adaptive difficulty ([adaptive-difficulty.md](adaptive-difficulty.md)) can make rivals
+quicker in two ways, and only one of them touches this solver. Better MACHINERY is free:
+a faster car has a genuinely lower optimum, so the target stays a sane multiple of that
+car's own optimum and `k` never leaves its bracket. The residual PACE trim is the one that
+could overrun it, so it is clamped at `RallyLibrary.GHOST_SOLVABLE_PACE` — 0.976× the
+rival's optimum, measured as where the shipped exponents put `k_max`. **That bound exists
+for this file's sake, not for physics'**: the optimum is a point-mass centreline
+reference, and a real driver beats it routinely. Whenever either ghost exponent is
+retuned, re-measure and move that constant with it.
+
+Note also that a rival carries a BUILD (`upgrades`, see
+[rally-roster.md](rally-roster.md)) as well as an engine, and its time was drawn off a
+meta that includes those parts. `RallySession._effective_meta_for` rebuilds that same meta
+via `CarPerformance.merged_meta`; dropping the parts would hand this solver a slower car
+than the one that set the time and push every solve to the clamp.
+
 ### Bracket, clamps and exactness
 
 - Bracket is `[rival_ghost_skill_min, rival_ghost_skill_max]`, and `skill_max` is

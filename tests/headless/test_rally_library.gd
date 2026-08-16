@@ -758,9 +758,10 @@ func test_opponent_field_shape_and_bounds() -> void:
 				# (each entry names the build it runs).
 				var band := RallyLibrary._pace_band(int(rally.get("difficulty", 1)))
 				var min_factor: float = maxf(band.x * (1.0 - RallyLibrary.PACE_EVENT_NOISE), RallyLibrary.PACE_MIN_FLOOR)
-				var own_meta := UpgradeLibrary.effective_meta(
-					{"swapped_engine": String(opp.get("engine_id", ""))},
-					CarLibrary.by_id(String(opp.get("car_id", ""))))
+				# The rival's OWN build — car, fitted engine AND build level. A built
+				# rival's optimum is lower than its stock car's, so measuring the band
+				# against the stock meta would read a legitimate time as impossible.
+				var own_meta := _rival_meta(opp)
 				var floor_ms := int(LapTimeModel.optimum_ms(event_results[i], own_meta, events[i]) * min_factor)
 				assert_gte(t, floor_ms - 1, "event time >= its own car's floor * fastest possible pace")
 				sum += t
@@ -851,7 +852,11 @@ func test_every_rival_runs_a_distinct_car_and_engine_build() -> void:
 	var max_repeats: int = ceili(float(field.size()) / float(pool_size))
 	var counts := {}
 	for opp in field:
-		var key := "%s|%s" % [String(opp.get("car_id", "")), String(opp.get("engine_id", ""))]
+		# A BUILD is car + engine + fitted parts: rivals now also carry a build level
+		# (RallyLibrary._build_levels), so two rivals in the same car and engine at
+		# different build levels are different builds, not a duplicate.
+		var key := "%s|%s|%s" % [String(opp.get("car_id", "")), String(opp.get("engine_id", "")),
+			",".join(PackedStringArray(opp.get("upgrades", [])))]
 		counts[key] = int(counts.get(key, 0)) + 1
 		assert_lte(int(counts[key]), max_repeats,
 			"build %s appears at most ceil(field/pool) = %d times" % [key, max_repeats])
@@ -1300,6 +1305,12 @@ func test_opponent_times_apply_stock_turbo_boost() -> void:
 	for i in boosted.size():
 		if boosted[i]["dnf"]:
 			continue
+		# Skip a rival whose BUILD LEVEL fits forced induction: an installed turbo /
+		# supercharger REPLACES the stock engine's boost (UpgradeLibrary.effective_meta),
+		# so for that rival the two rosters are the same car and the times must match. The
+		# stock-boost claim is only about rivals not carrying an induction part.
+		if _fits_induction(boosted[i]):
+			continue
 		for k in results.size():
 			assert_lt(int(boosted[i]["event_times_ms"][k]), int(natural[i]["event_times_ms"][k]),
 				"turbo car posts a faster rival time than the same car with no boost")
@@ -1715,13 +1726,13 @@ func _install_spread_roster() -> void:
 	CarPerformance.reset()
 
 
+# The rating the field itself claims for each rival — the number the draw matched on.
+# Re-deriving it from car_id + engine_id would miss the rival's BUILD LEVEL and read a
+# fully-built rival as a stock one.
 func _mean_field_rating(field: Array) -> float:
 	var total := 0.0
 	for opp in field:
-		var meta := UpgradeLibrary.effective_meta(
-			{"swapped_engine": String(opp.get("engine_id", ""))},
-			CarLibrary.by_id(String(opp.get("car_id", ""))))
-		total += float(CarPerformance.rating(meta))
+		total += float(int(opp.get("rating", 0)))
 	return total / float(field.size())
 
 
@@ -1797,3 +1808,211 @@ func test_the_career_roster_is_not_entirely_open_class() -> void:
 			restricted += 1
 	assert_gt(career, 0, "the roster has non-special rallies (else this test asserts nothing)")
 	assert_gt(restricted, 0, "some non-special rally restricts entry to a class of car")
+
+
+# --- Rival build levels (features/rally-roster.md, adaptive difficulty §5) ----
+
+# Every build level is a build a car could actually carry: at most one part per slot, no
+# consumables, and no nitrous (CarPerformance excludes nitrous from the rating, so a rival
+# running it would be quicker than the rating the field was matched on claims). Asserted
+# over the FIXTURE catalogue — the rule is about the shape of a level, not about which
+# parts the shipped game happens to author.
+func test_build_levels_are_valid_builds() -> void:
+	UpgradeFixtures.install()
+	var levels: Array = RallyLibrary._build_levels()
+	assert_gt(levels.size(), 1, "there is more than the stock level (else this asserts nothing)")
+	var seen: Array = []
+	for level in levels:
+		assert_false(seen.has(level), "build level %s appears once" % [level])
+		seen.append(level)
+		var slots := {}
+		for item_id in level:
+			var item := UpgradeLibrary.by_id(String(item_id))
+			assert_false(item.is_empty(), "%s is a real catalogue part" % item_id)
+			assert_false(bool(item.get("consumable", false)), "%s is not a consumable" % item_id)
+			var slot := String(item.get("slot", ""))
+			assert_ne(slot, "", "%s occupies a slot" % item_id)
+			assert_ne(slot, "nitrous", "%s is not a nitrous part" % item_id)
+			assert_false(slots.has(slot), "level fits at most one part in slot %s" % slot)
+			slots[slot] = item_id
+	assert_true(levels.has([]), "the stock build is still one of the levels")
+	UpgradeFixtures.restore()
+
+
+# The point of build levels: they raise the top of what the pool can field ABOVE the
+# best stock car+engine pairing, which is where a dominating player sits and where the
+# difficulty lever previously had no room. Asserted as pool-against-pool, so no rating
+# value, part or catalogue entry is pinned.
+func test_build_levels_raise_the_pools_top_rating() -> void:
+	_install_spread_roster()
+	UpgradeFixtures.install()
+	var rally := {"id": "synthetic_levels", "difficulty": 2, "restriction": {}, "events": []}
+	var stock_top := 0
+	var pool_top := 0
+	var pool_floor := 1 << 30
+	for combo in RallyLibrary._eligible_combos(rally):
+		var r := int(combo["rating"])
+		pool_top = maxi(pool_top, r)
+		pool_floor = mini(pool_floor, r)
+		if (combo.get("upgrades", []) as Array).is_empty():
+			stock_top = maxi(stock_top, r)
+	assert_gt(stock_top, 0, "the pool holds stock combos (else this test asserts nothing)")
+	assert_gt(pool_top, stock_top, "a built rival out-rates the best stock car+engine pairing")
+	assert_lt(pool_floor, stock_top, "the pool still reaches below the stock ceiling")
+	UpgradeFixtures.restore()
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+# The difficulty lever end to end: the SAME rally drawn against a harder target fields
+# better machinery than against an easier one. Relationship-only — the two means are
+# compared against each other, never against a number.
+func test_a_harder_target_draws_a_faster_field_than_an_easier_one() -> void:
+	_install_spread_roster()
+	UpgradeFixtures.install()
+	var rally := {"id": "synthetic_adapt", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 11}, {"seed": 12}, {"seed": 13}]}
+	var track := _track_with_pieces()
+	var ratings: Array = []
+	for combo in RallyLibrary._eligible_combos(rally):
+		ratings.append(int(combo["rating"]))
+	ratings.sort()
+	var mid: int = int(ratings[ratings.size() / 2])
+	# Targets INSIDE the pool's range at both ends, so this measures the draw and not the
+	# residual trim (which only engages outside the range).
+	var easier := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(ratings[0]))
+	var harder := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(ratings[-1]))
+	assert_gt(int(ratings[-1]), mid, "the pool spans a spread (else this test asserts nothing)")
+	assert_lt(_mean_field_rating(easier), _mean_field_rating(harder),
+		"an easier target fields worse machinery than a harder one")
+	UpgradeFixtures.restore()
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+# The residual (adaptive difficulty §6): when the target is beyond anything the pool can
+# field, the shortfall is taken up by pace, so the field is still harder than one drawn at
+# the pool's own ceiling. Without the trim the two fields would post identical times — the
+# draw has nothing better left to pick.
+func test_the_residual_trim_covers_a_target_the_pool_cannot_reach() -> void:
+	_install_spread_roster()
+	var rally := {"id": "synthetic_residual", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 21}, {"seed": 22}, {"seed": 23}]}
+	var track := _track_with_pieces()
+	var pool: Array = RallyLibrary._eligible_combos(rally)
+	var top := 0
+	var bottom := 1 << 30
+	for combo in pool:
+		top = maxi(top, int(combo["rating"]))
+		bottom = mini(bottom, int(combo["rating"]))
+	assert_eq(RallyLibrary._residual_pace_trim(pool, top), 1.0,
+		"a target the pool can reach needs no trim")
+	assert_lt(RallyLibrary._residual_pace_trim(pool, top * 2), 1.0,
+		"a target above the pool's ceiling trims rival times down")
+	assert_gt(RallyLibrary._residual_pace_trim(pool, maxi(bottom / 2, 1)), 1.0,
+		"a target below the pool's floor trims rival times up")
+	var at_ceiling := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], top)
+	var beyond := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(round(top * 1.2)))
+	assert_gt(at_ceiling.size(), 0, "a field is fielded")
+	var compared_rivals := 0
+	for i in at_ceiling.size():
+		if bool(at_ceiling[i]["dnf"]):
+			continue   # a DNF has no time to compare
+		assert_lt(int(beyond[i]["combined_ms"]), int(at_ceiling[i]["combined_ms"]),
+			"rival %d is quicker once the shortfall is taken up by pace" % i)
+		compared_rivals += 1
+	assert_gt(compared_rivals, 0, "at least one classified rival was compared")
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+# The trim's hard bound: however absurd the target, no rival's time may go under what
+# RivalPace can solve for that rival's own car, or the windscreen ghost stops being able
+# to show the standings. Checked against each rival's OWN optimum, computed from the build
+# the field says they ran.
+func test_the_residual_trim_never_outruns_the_ghost() -> void:
+	_install_spread_roster()
+	var rally := {"id": "synthetic_absurd", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 31}, {"seed": 32}, {"seed": 33}]}
+	var track := _track_with_pieces()
+	var top := 0
+	for combo in RallyLibrary._eligible_combos(rally):
+		top = maxi(top, int(combo["rating"]))
+	var field := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], top * 50)
+	assert_gt(field.size(), 0, "a field is fielded")
+	for opp in field:
+		var optimum := LapTimeModel.optimum_ms(track, _rival_meta(opp), {})
+		assert_gt(optimum, 0, "the rival's car has a solvable optimum")
+		for t in opp["event_times_ms"]:
+			if int(t) < 0:
+				continue   # crashed out: no time this event
+			# +1 ms of slack: the drawn time is an int round of the scaled float.
+			assert_gte(int(t) + 1, int(RallyLibrary.GHOST_SOLVABLE_PACE * float(optimum)),
+				"%s never runs quicker than the ghost can be solved for" % opp["name"])
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+# THE NO-OP PROPERTY. A target inside the pool's range — which every unadapted, matched
+# field is — must leave the pace path exactly as it was before the residual trim existed:
+# no trim applied, and every rival still inside the authored pace band above its own
+# optimum. Expressed against the band CONSTANTS rather than a measured time, so retuning
+# the band cannot break it.
+func test_a_reachable_target_leaves_rival_pace_untouched() -> void:
+	_install_spread_roster()
+	var rally := {"id": "synthetic_noop", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 41}, {"seed": 42}, {"seed": 43}]}
+	var track := _track_with_pieces()
+	var pool: Array = RallyLibrary._eligible_combos(rally)
+	var ratings: Array = []
+	for combo in pool:
+		ratings.append(int(combo["rating"]))
+	ratings.sort()
+	for r in [int(ratings[0]), int(ratings[ratings.size() / 2]), int(ratings[-1])]:
+		assert_eq(RallyLibrary._residual_pace_trim(pool, r), 1.0,
+			"a target of %d, which the pool holds, applies no trim" % r)
+	var fastest_possible := RallyLibrary.PACE_FAST_BASE * (1.0 - RallyLibrary.PACE_EVENT_NOISE)
+	var field := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(ratings[ratings.size() / 2]))
+	assert_gt(field.size(), 0, "a field is fielded")
+	for opp in field:
+		var optimum := LapTimeModel.optimum_ms(track, _rival_meta(opp), {})
+		for t in opp["event_times_ms"]:
+			if int(t) < 0:
+				continue   # crashed out: no time this event
+			assert_gte(int(t) + 1, int(fastest_possible * float(optimum)),
+				"%s stays inside the authored pace band, i.e. nothing trimmed it" % opp["name"])
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+# The meta a rival actually raced: their car, their fitted engine AND their build level.
+# The same builder the field generator rated the combo with (CarPerformance.merged_meta),
+# so tyres and downforce are included.
+func _rival_meta(opp: Dictionary) -> Dictionary:
+	var owned := {
+		"swapped_engine": String(opp.get("engine_id", "")),
+		"installed_upgrades": (opp.get("upgrades", []) as Array).duplicate(),
+		"disabled_upgrades": [],
+	}
+	return CarPerformance.merged_meta(owned, CarLibrary.by_id(String(opp.get("car_id", ""))))
+
+
+# Whether this rival's build level fits a forced-induction part, which overrides whatever
+# boost its engine came with.
+func _fits_induction(opp: Dictionary) -> bool:
+	for item_id in opp.get("upgrades", []):
+		var effect: Dictionary = UpgradeLibrary.by_id(String(item_id)).get("effect", {})
+		if effect.has("install_turbo") or effect.has("install_supercharger"):
+			return true
+	return false

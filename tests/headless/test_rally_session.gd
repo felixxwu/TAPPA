@@ -679,6 +679,12 @@ func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
 
 
 func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
+	# What is under test is the RALLY-SEED determinism: the same rally, re-entered with the
+	# same car, fields the same grid. Adaptive difficulty is switched off for it because it
+	# deliberately breaks that: the three lost stages below move the offset, so the re-draw
+	# is matched to a different rating on purpose (see features/adaptive-difficulty.md, and
+	# test_refielding_keeps_the_difficulty_offset for the property that replaces it).
+	Config.data.ai_adapt_enabled = false
 	var owned := _start("fx_open")
 	var id := int(owned["instance_id"])
 	var field1: Array = RallySession.opponent_field().duplicate(true)
@@ -1236,3 +1242,82 @@ func test_a_refused_refield_announces_nothing() -> void:
 	RallySession.opponent_field_changed.connect(func(): fired[0] += 1)
 	assert_false(RallySession.refield_opponents(), "nothing changed")
 	assert_eq(fired[0], 0, "so nothing was announced")
+
+
+# --- Adaptive difficulty: the stage-result signal -----------------------------
+#
+# The session's job is narrow: decide whether the player won the stage, hand that to
+# AiDifficulty, and draw the field against the OFFSET rating rather than the raw one.
+# The rule itself is tested in test_ai_difficulty.gd.
+
+func test_a_stage_result_moves_the_difficulty_offset() -> void:
+	var owned := _start("fx_open")
+	# One rival, and the player comfortably beats it.
+	RallySession._opponent_field = [{
+		"name": "Rival", "car_id": "fx_light_rwd", "engine_id": "fx_i4",
+		"car_name": "Fixture", "event_times_ms": [90000, 90000, 90000],
+		"dnf": false, "combined_ms": 0, "wreck_event": -1, "rating": 400, "skill_k": [],
+	}]
+	var before := AiDifficulty.steps_of(_save.profile)
+	for _i in Config.data.ai_adapt_stages_per_step:
+		# Reporting a result advances the phase out of RUNNING and the event index on, so
+		# both are rewound to replay the same stage — this test is about the difficulty
+		# signal, not about walking a whole rally.
+		RallySession._event_index = 0
+		RallySession._phase = RallySession.Phase.RUNNING
+		RallySession.report_event_result(60000)
+	assert_gt(AiDifficulty.steps_of(_save.profile), before,
+		"a run of stage wins pushes the field harder")
+	assert_eq(int(owned["instance_id"]), RallySession.car_instance_id(),
+		"and the fielded car is untouched by it")
+
+
+func test_losing_a_stage_pushes_the_other_way() -> void:
+	_start("fx_open")
+	RallySession._opponent_field = [{
+		"name": "Rival", "car_id": "fx_light_rwd", "engine_id": "fx_i4",
+		"car_name": "Fixture", "event_times_ms": [60000, 60000, 60000],
+		"dnf": false, "combined_ms": 0, "wreck_event": -1, "rating": 400, "skill_k": [],
+	}]
+	for _i in Config.data.ai_adapt_stages_per_step:
+		RallySession._event_index = 0
+		RallySession._phase = RallySession.Phase.RUNNING
+		RallySession.report_event_result(90000)   # slower than the rival every time
+	assert_lt(AiDifficulty.steps_of(_save.profile), 0,
+		"a run of stage losses eases the field")
+
+
+func test_a_stage_with_no_rivals_is_not_counted_as_a_win() -> void:
+	# With nobody to beat there is no evidence the player is quick, and treating an empty
+	# field as a win would ratchet difficulty up on no information at all.
+	_start("fx_open")
+	RallySession._opponent_field = []
+	for _i in Config.data.ai_adapt_stages_per_step:
+		RallySession._event_index = 0
+		RallySession._phase = RallySession.Phase.RUNNING
+		RallySession.report_event_result(60000)
+	assert_lte(AiDifficulty.steps_of(_save.profile), 0,
+		"an empty field never hardens the game")
+
+
+func test_the_field_is_drawn_against_the_offset_rating() -> void:
+	# The wiring that matters: if the offset did not reach the draw, the whole system would
+	# compute a number nothing ever read.
+	var owned := _start("fx_open")
+	var matched := RallySession._fielded_rating
+	assert_gt(matched, 0, "setup: the field was matched to a real rating")
+	_save.profile[AiDifficulty.KEY_STEPS] = Config.data.ai_adapt_max_hard_steps
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
+	assert_gt(RallySession._fielded_rating, matched,
+		"a hardened offset asks the matcher for a quicker field")
+
+
+func test_refielding_keeps_the_difficulty_offset() -> void:
+	# A re-draw after a start-line upgrade edit must not silently reset the difficulty.
+	var owned := _start("fx_open")
+	_save.profile[AiDifficulty.KEY_STEPS] = Config.data.ai_adapt_max_hard_steps
+	_change_build(int(owned["instance_id"]))
+	assert_true(RallySession.refield_opponents(), "the field was re-drawn")
+	var raw := RallySession._player_rating(_save.get_car(int(owned["instance_id"])))
+	assert_gt(RallySession._fielded_rating, raw,
+		"and the re-draw still carries the offset, not the raw rating")

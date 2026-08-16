@@ -71,7 +71,26 @@ const PACE_SLOW_BASE := 2.00     # tier-1 slowest-rival pace (skill 1)
 const PACE_FAST_STEP := 0.00     # fast end does not move with tier
 const PACE_SLOW_STEP := 0.1667   # each tier above 1 pulls the slow end down (2.0 -> 1.5 by tier 4)
 const PACE_EVENT_NOISE := 0.05   # ±5% per-event jitter around a rival's persistent base pace
-const PACE_MIN_FLOOR := 1.10     # hard clamp: rivals never beat their car's physics optimum
+# SANITY GUARD ONLY — deliberately far below anything the pace band can produce (the
+# fastest rival draws 1.10 with at most -5% noise, i.e. 1.045), so it never binds in
+# normal play. Its old value (1.10) and its old rationale ("rivals never beat their car's
+# physics optimum") are both retired: LapTimeModel's optimum is a point-mass centreline
+# REFERENCE, not a physical limit — a driver straightening a corner takes a larger radius
+# than the model considers — so there was never anything to protect. What a floor still
+# earns its place for is the degenerate case: an empty combo pool, a divide-by-zero or an
+# absurd difficulty target must produce a SLOW field, not a negative or impossible one.
+# The real upper bound on rival speed is GHOST_SOLVABLE_PACE below.
+const PACE_MIN_FLOOR := 0.50
+# The fastest a rival's time may be, as a multiple of that rival's own optimum, once the
+# residual difficulty trim has been applied (_residual_pace_trim).
+#
+# This is not a physics limit either — it is what the WINDSCREEN GHOST can represent.
+# RivalPace.solve bisects a skill factor over [rival_ghost_skill_min, rival_ghost_skill_max];
+# with the shipped exponents the profile bottoms out at 0.976x the car's optimum at
+# k_max = 1.15, and past that RivalPace warns, clamps, and the ghost visibly stops matching
+# the standings. So a target quicker than this would be a time no ghost could drive.
+# See features/rival-ghost.md and the adaptive-difficulty design doc.
+const GHOST_SOLVABLE_PACE := 0.976
 
 # Opponent name pool (cosmetic). A rival is named by drawing from this fixed pool of
 # 20 driver names, WITHOUT replacement within a rally, using the same rally-seeded RNG
@@ -861,6 +880,9 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	# Draw distinct names from the pool for this rally (stable across re-attempts via
 	# the rally-seeded rng); names[i] is rival i's name, held across all 3 events.
 	var names := _draw_rival_names(rng, count)
+	# Whatever slice of the difficulty target the machinery could not cover (§6 of the
+	# design). 1.0 in the normal case, where the target lies inside the pool's rating range.
+	var pace_trim := _residual_pace_trim(combo_pool, player_rating)
 	# One distinct build per rival, same rng, so the grid is stable across re-attempts.
 	var combos := _draw_distinct_combos(rng, combo_pool, count, player_rating)
 	var field: Array = []
@@ -886,8 +908,13 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			var ev: Dictionary = events[k] if k < events.size() else {}
 			var floor_ms := LapTimeModel.optimum_ms(event_results[k], car_meta, ev)
 			var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * PACE_EVENT_NOISE
-			var factor := maxf(base_pace * noise, PACE_MIN_FLOOR)
-			times.append(int(round(floor_ms * factor)))
+			# The trim is applied AFTER the sanity floor, not before it: the fastest rival
+			# sits near the bottom of the pace band at every tier, so a trim folded in
+			# before a binding floor would be clamped straight back off — which is exactly
+			# where hardening is needed most. The only bound on the result is what the
+			# ghost can drive.
+			var factor := maxf(base_pace * noise, PACE_MIN_FLOOR) * pace_trim
+			times.append(int(round(floor_ms * maxf(factor, GHOST_SOLVABLE_PACE))))
 		field.append({
 			"name": names[i],
 			"car_id": String(car.get("id", "")),
@@ -896,6 +923,12 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			# Twist"), the plain car name otherwise — the same EngineSwap.display_name
 			# convention the garage and the leaderboards use for the player's own car.
 			"car_name": EngineSwap.display_name(car, {"swapped_engine": engine_id}),
+			# The parts this rival is running (_build_levels). Part of the rival's IDENTITY,
+			# not decoration: the times below were drawn off a meta that includes them, so
+			# anything re-deriving this rival's meta from car_id + engine_id alone (the
+			# ghost's pace solve, most of all) would be looking at a slower car than the one
+			# that set the time.
+			"upgrades": (combo.get("upgrades", []) as Array).duplicate(),
 			"event_times_ms": times,
 			"dnf": false,
 			"combined_ms": 0,
@@ -963,15 +996,24 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 #
 # Declared here, beside generate_opponent_field which mints them, so adding a per-rival
 # attribute is ONE edit plus this list rather than four hand-copied dict literals.
-const RIVAL_IDENTITY_KEYS := ["name", "car_id", "engine_id", "car_name"]
+const RIVAL_IDENTITY_KEYS := ["name", "car_id", "engine_id", "car_name", "upgrades"]
+
+# The identity keys that are NOT strings, with the empty value a missing one defaults to.
+# `upgrades` is a list of fitted part ids (see _build_levels), so it cannot go through the
+# String() coercion the rest take.
+const RIVAL_IDENTITY_LIST_KEYS := ["upgrades"]
 
 
-# Copy just the identity keys out of a rival entry, defaulting each to "" so a caller can
-# rely on every key being present. Use this instead of re-listing fields by hand.
+# Copy just the identity keys out of a rival entry, defaulting each to "" (or an empty
+# list) so a caller can rely on every key being present. Use this instead of re-listing
+# fields by hand.
 static func identity_of(opp: Dictionary) -> Dictionary:
 	var out: Dictionary = {}
 	for key in RIVAL_IDENTITY_KEYS:
-		out[key] = String(opp.get(key, ""))
+		if RIVAL_IDENTITY_LIST_KEYS.has(key):
+			out[key] = (opp.get(key, []) as Array).duplicate()
+		else:
+			out[key] = String(opp.get(key, ""))
 	return out
 
 
@@ -1038,12 +1080,130 @@ static func _eligible_cars(rally: Dictionary) -> Array:
 	return pool if not pool.is_empty() else CarLibrary.all()
 
 
-# Every (car, engine) pairing a rally's restriction admits, each carrying the effective
-# meta that pairing produces — the pool the opponent field draws its rivals from.
+# The BUILD LEVELS a rival may turn up in — each a list of part ids fitted ENABLED, in
+# addition to whatever engine the combo carries. Derived from the catalogue, never
+# hardcoded ids, so it follows a retune / a new part / a test fixture roster.
 #
-# Opponents get ONE upgrade: the engine swap (features/rally-roster.md). That turns a
-# 10-car roster into 10 x EngineLibrary.ENGINES candidates, which is what stops a field of
-# nine rivals being nine near-identical stock cars.
+# Rivals scale by the same mechanism the player does. With an engine swap as their only
+# lever the pool topped out well below what an upgraded player car reaches, so exactly
+# where a dominating player sits — the top of the range — the difficulty lever had no room
+# to hand the matcher a rating above the player's (see the adaptive-difficulty design, §5).
+#
+# Four levels, from slowest to fastest:
+#   * stock          — no parts at all. Keeps today's combos in the pool unchanged.
+#   * ballasted      — the heaviest mass-ADDING part alone. Ballast makes a car slower, so
+#                      this is headroom at the EASY end, below a car's own stock rating.
+#   * lightly built  — the most modest improving part in each slot.
+#   * fully built    — the best part in each slot.
+# "Best" / "most modest" are measured ONCE against CarPerformance's synthetic reference car
+# (_part_ranking), not per car+engine: ranking every part against every combo would multiply
+# the benchmark sims by the catalogue size for an ordering that barely moves between cars.
+#
+# Rules a level must obey, so a rival is a car that could actually exist:
+#   * at most one part per UpgradeLibrary.SLOTS entry (the same exclusivity
+#     Save._enable_exclusive enforces on the player's cars)
+#   * no consumables (they are not slotted parts)
+#   * no ballast in a BUILT level — ballast is a p/w handicap, so fitting it to a level
+#     that is meant to be quick would just make it slower
+#   * no NITROUS, ever. CarPerformance deliberately excludes it from the rating (it is a
+#     per-stage bottle, not a permanent power level), so a rival carrying it would be
+#     faster than the rating the field was matched on claims — the one way a build level
+#     could lie to the matcher.
+# Star gates are deliberately NOT consulted: rivals may carry parts the player has not
+# unlocked, exactly as the engine-swap pool already ignores unlock state (design D2).
+static func _build_levels() -> Array:
+	var key := _build_levels_key()
+	if _cached_build_levels_key == key:
+		return _cached_build_levels
+	var ranking := _part_ranking()
+	var levels: Array = [[]]   # stock is always a level
+	var ballast := String(ranking.get("ballast", ""))
+	if ballast != "":
+		levels.append([ballast])
+	for tier in ["modest", "best"]:
+		var build: Array = []
+		for slot in UpgradeLibrary.SLOTS:
+			var picked := String((ranking.get(tier, {}) as Dictionary).get(slot, ""))
+			if picked != "":
+				build.append(picked)
+		if not build.is_empty() and not levels.has(build):
+			levels.append(build)
+	_cached_build_levels = levels
+	_cached_build_levels_key = key
+	return levels
+
+
+static var _cached_build_levels: Array = []
+static var _cached_build_levels_key := ""
+
+
+# What the cached build levels are only valid FOR: the upgrade catalogue they were derived
+# from (a test seam can swap it wholesale) and the config fingerprint every rating is keyed
+# under (a designer retuning the benchmark re-scores every part).
+static func _build_levels_key() -> String:
+	var ids := PackedStringArray()
+	for item in UpgradeLibrary.all():
+		ids.append(String(item.get("id", "")))
+	return "|".join(ids) + "#" + CarPerformance.config_key()
+
+
+# Per-slot part ranking: {"best": {slot: id}, "modest": {slot: id}, "ballast": id}.
+#
+# Each candidate is scored by the rating it gives CarPerformance's REFERENCE car when it is
+# the only part fitted. "best" is the top scorer in the slot; "modest" is the lowest-scoring
+# part that still IMPROVES on the bare reference, so a "lightly built" rival gets a real but
+# small step up rather than a second copy of the fully-built car. A slot with one improving
+# part reports the same id for both, and the duplicate level is dropped by _build_levels.
+static func _part_ranking() -> Dictionary:
+	var base := CarPerformance.rating(CarPerformance.REFERENCE_CAR)
+	var best := {}
+	var best_score := {}
+	var modest := {}
+	var modest_score := {}
+	var ballast := ""
+	var ballast_mass := 1.0
+	for item in UpgradeLibrary.all():
+		var slot := String(item.get("slot", ""))
+		if slot == "" or slot == "nitrous" or bool(item.get("consumable", false)):
+			continue
+		var item_id := String(item["id"])
+		var mass_mult := float((item.get("effect", {}) as Dictionary).get("mass_mult", 1.0))
+		if mass_mult > 1.0:
+			# Ballast: its own easy-end level, never part of a built one.
+			if mass_mult > ballast_mass:
+				ballast = item_id
+				ballast_mass = mass_mult
+			continue
+		var score := CarPerformance.rating(CarPerformance.merged_meta(
+			{"installed_upgrades": [item_id]}, CarPerformance.REFERENCE_CAR))
+		if score <= base:
+			# A part the rating cannot see (the sequential gearbox's shift time, the
+			# drivetrain kit's flag) is left off every level. It would not move the rival's
+			# time either — the same LapTimeModel drives both — so fitting it would only
+			# dress a rival in hardware that does nothing.
+			continue
+		if score > int(best_score.get(slot, -1)):
+			best_score[slot] = score
+			best[slot] = item_id
+		if score < int(modest_score.get(slot, 1 << 30)):
+			modest_score[slot] = score
+			modest[slot] = item_id
+	return {"best": best, "modest": modest, "ballast": ballast}
+
+
+# Every (car, engine, build level) combination a rally's restriction admits, each carrying
+# the meta that build produces — the pool the opponent field draws its rivals from.
+#
+# Opponents get an engine swap (features/rally-roster.md) AND a build level (_build_levels).
+# The swap alone turns a 10-car roster into 10 x EngineLibrary.ENGINES candidates, which is
+# what stops a field of nine rivals being nine near-identical stock cars; the build levels
+# multiply that again and, more importantly, extend the pool's rating range at BOTH ends —
+# which is what gives adaptive difficulty something to aim at.
+#
+# The stored `meta` is CarPerformance.merged_meta, not effective_meta: a build level can
+# fit tyres and a wing, and those reach the rating and the lap-time model only through the
+# grip fields effective_meta deliberately withholds. For a stock (no-parts) combo the two
+# are identical, so today's fields are unchanged.
 #
 # effective_meta re-points meta["engine"] at the fitted engine and runs the engine-swap
 # mass model, so ineligibility_reason judges the swapped displacement, cylinder count and
@@ -1061,14 +1221,29 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 		var pw_stock := CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta({}, entry))
 		for eng in EngineLibrary.all():
 			var eid := String(eng.get("id", ""))
-			var owned: Dictionary = {} if eid == stock else {"swapped_engine": eid}
-			var meta := UpgradeLibrary.effective_meta(owned, entry)
-			if is_eligible(rally, meta):
+			# The swap bias measures the ENGINE only — the pairing's stock-build p/w against
+			# the car's own. Folding a build level's parts in here would make swap_weight
+			# read a fully-built rival as a wild engine swap and all but exclude it, which
+			# is precisely the top-end headroom the levels exist to add.
+			var pw_swap := CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta(
+				{} if eid == stock else {"swapped_engine": eid}, entry))
+			for level in _build_levels():
+				var owned: Dictionary = {"installed_upgrades": level, "disabled_upgrades": []}
+				if eid != stock:
+					owned["swapped_engine"] = eid
+				var pw_meta := UpgradeLibrary.effective_meta(owned, entry)
+				# Eligibility is judged on the power-to-weight meta, as it always has been:
+				# a rally's restriction is categorical, and no build level touches a
+				# categorical field, so the grip fields would be noise here.
+				if not is_eligible(rally, pw_meta):
+					continue
+				var meta := CarPerformance.merged_meta(owned, entry)
 				pool.append({
 					"car": entry,
 					"engine_id": eid,
+					"upgrades": level,
 					"meta": meta,
-					"pw_delta": absf(CarLibrary.power_to_weight_hp_tonne(meta) - pw_stock),
+					"pw_delta": absf(pw_swap - pw_stock),
 					# What the rating-matched draw weighs the combo by
 					# (_draw_distinct_combos / rating_match_weight).
 					"rating": CarPerformance.rating(meta),
@@ -1080,11 +1255,47 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 		pool.append({
 			"car": entry,
 			"engine_id": String(entry.get("engine", "")),
+			"upgrades": [],
 			"meta": stock_meta,
 			"pw_delta": 0.0,  # the stock combo IS the reference
 			"rating": CarPerformance.rating(stock_meta),
 		})
 	return pool
+
+
+# The residual pace scale: the part of a difficulty target the CARS could not express.
+#
+# The field is matched to `target_rating` by drawing better or worse machinery, which is
+# the whole point of the design — a rival in a quicker car is legible, and its time stays a
+# sane multiple of its OWN optimum so the windscreen ghost can still show it. But the
+# roster is finite, and a categorical restriction can thin it hard (a country-locked rally
+# may offer only a handful of cars at any rating). When the closest thing the pool can
+# field is still short of the target, the SHORTFALL — never the whole offset — is taken up
+# by scaling every rival's time.
+#
+# Rating is proportional to average speed (CarPerformance.rating), so the scale is just the
+# ratio of what the pool can reach to what was asked for: a pool topping out at 90% of the
+# target runs its rivals at 0.90x their times. 1.0 whenever the target sits inside the
+# pool's range, which is the normal case — including a target of 0 (unmatched) and every
+# target an unadapted, matched-to-the-player field asks for.
+#
+# Returns the multiplier only; the caller applies and clamps it (see GHOST_SOLVABLE_PACE).
+static func _residual_pace_trim(pool: Array, target_rating: int) -> float:
+	if target_rating <= 0 or pool.is_empty():
+		return 1.0
+	var lo := 1 << 30
+	var hi := 0
+	for combo in pool:
+		var r := int(combo.get("rating", 0))
+		lo = mini(lo, r)
+		hi = maxi(hi, r)
+	if hi <= 0:
+		return 1.0
+	if target_rating > hi:
+		return float(hi) / float(target_rating)      # < 1: the pool is too slow, so drive it harder
+	if target_rating < lo and lo > 0:
+		return float(lo) / float(target_rating)      # > 1: the pool is too fast, so drive it slower
+	return 1.0
 
 
 # How much a combo is favoured in the draw, from how far its power-to-weight sits from
@@ -1209,6 +1420,9 @@ static func build_standings(field: Array, player_combined_ms: int, player_dnf: b
 		# The player's fitted engine, so the podium stages their real build rather than the
 		# catalogue stock car. "" when the caller doesn't know it (headless / tests).
 		"engine_id": player_engine_id,
+		# Present so a player row carries every identity key a rival row does; the player's
+		# own fitted parts are not needed by any standings consumer.
+		"upgrades": [],
 		"combined_ms": player_combined_ms,
 		"dnf": player_dnf,
 		"is_player": true,

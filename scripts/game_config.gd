@@ -145,6 +145,31 @@ var peak_torque_rpm := 4500.0
 @export_range(0.1, 2.0) var grass_grip := 0.7
 @export_range(0.1, 2.0) var gravel_grip := 1.0
 @export_range(0.1, 2.0) var tarmac_grip := 1.3
+## ADAPTIVE DIFFICULTY (features/adaptive-difficulty.md). The field is drawn matched to
+## the player's rating; these steer it AWAY from that match based on results — harder when
+## the player keeps winning stages, easier when they keep losing them.
+##
+## The lever is deliberately the opponents' MACHINERY rather than their pace: a rival in a
+## quicker car has a genuinely lower optimum, so the ghost can still represent its time.
+## Scaling pace instead would need rivals to beat their own physics optimum, which the
+## ghost cannot show.
+##
+## Turning ai_adapt_enabled off restores the pre-adaptive behaviour exactly — as does an
+## offset of 0, which is where every career starts.
+@export var ai_adapt_enabled := true
+## One step, as a fraction of the player's rating. 0.04 => each step moves the field the
+## opponents are drawn from by 4%.
+@export_range(0.005, 0.25) var ai_adapt_step_fraction := 0.04
+## Consecutive stages (won, or not won) needed to push PAST a matched field. One rally is
+## three stages, so 3 means a clean sweep or a clean loss is what commits to a handicap.
+## Coming BACK toward matched always takes a single result, never this many.
+@export_range(1, 10) var ai_adapt_stages_per_step := 3
+## Caps, separate per direction because the car roster is not symmetric around the player:
+## there is far more of it below a mid-pack car than above a quick one, so the easy side is
+## fully reachable while the hard side is limited by what can actually be fielded.
+## Placeholders — set these from real play (design D4).
+@export_range(0, 12) var ai_adapt_max_ease_steps := 5
+@export_range(0, 12) var ai_adapt_max_hard_steps := 5
 ## How tightly the AI field is matched to the player's CarPerformance rating, in
 ## rating points. Rivals are drawn with a weight of exp(-|their rating - yours| /
 ## this), so it is a BIAS, not a filter: a mismatched car stays possible, just

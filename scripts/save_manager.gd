@@ -31,7 +31,7 @@ signal flushed()
 
 # Bump on any breaking shape change to PlayerProfile; older files are migrated
 # forward on load (see _migrate), newer files are refused rather than truncated.
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 4
 
 # The two profile keys the REST of the codebase reads (the owned-car array and the
 # per-rally record map) — named here because SaveManager owns the save schema, and a
@@ -421,6 +421,11 @@ func _default_profile() -> Dictionary:
 		"selected_instance_id": -1,
 		"inventory": {},
 		KEY_RALLIES: {},
+		# Adaptive difficulty (features/adaptive-difficulty.md). Zero is "field matched to
+		# the player", i.e. the behaviour before the system existed.
+		AiDifficulty.KEY_STEPS: 0,
+		AiDifficulty.KEY_WIN_STREAK: 0,
+		AiDifficulty.KEY_LOSS_STREAK: 0,
 		"reward_history": [],
 		"settings": {},
 		# --- Star ledger (see todo/star-economy.md) ---
@@ -504,7 +509,7 @@ func _migrate(p: Dictionary) -> Dictionary:
 # Versions we know how to step FROM (each _migrate_step(v, p) bumps schema_version
 # to v+1). Kept as a plain const list (a const dict of Callables isn't a constant
 # expression in GDScript, and would null this autoload at parse time).
-const _MIGRATABLE_FROM := [1, 2]
+const _MIGRATABLE_FROM := [1, 2, 3]
 
 # Apply the single version N -> N+1 transform.
 #   1 -> 2: upgrades became CAR-BOUND. The old shared `inventory` pool of
@@ -512,6 +517,8 @@ const _MIGRATABLE_FROM := [1, 2]
 #           for), so strip EVERY entry from `inventory` — those unbound parts were
 #           never applied and have no car to belong to, and the repair kit that used
 #           to be kept here no longer exists as an item at all.
+#   3 -> 4: adaptive difficulty gained its offset + streak counters (all zero, which is
+#           the pre-adaptive "matched field" behaviour).
 #   2 -> 3: rally entry stopped gating on power-to-weight, so a saved
 #           `tuning.engine_detune` set purely to duck under a rally ceiling now has
 #           nothing to duck under — and the detune slider that set it is gone with the
@@ -534,6 +541,14 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 				if tuning.has("engine_detune"):
 					tuning["engine_detune"] = 1.0
 			p["schema_version"] = 3
+		3:
+			# Adaptive difficulty. All three start at zero, and zero means "field matched
+			# to the player exactly", which IS the pre-adaptive behaviour — so a migrated
+			# career resumes at parity and only diverges once it produces results.
+			p[AiDifficulty.KEY_STEPS] = 0
+			p[AiDifficulty.KEY_WIN_STREAK] = 0
+			p[AiDifficulty.KEY_LOSS_STREAK] = 0
+			p["schema_version"] = 4
 	return p
 
 
@@ -1241,6 +1256,17 @@ func apply_build_plan(instance_id: int, plan: Dictionary) -> bool:
 		set_drivetrain_override(instance_id, int(plan["drivetrain"]))
 	set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
 	return true
+
+
+# Fold one stage result into the adaptive-difficulty offset and persist it.
+#
+# Called once per finished stage from RallySession. The RULE lives in AiDifficulty; this
+# only stores the answer, so the difficulty logic stays testable without a save.
+func record_stage_result(won: bool) -> void:
+	var out := AiDifficulty.apply_stage_result(profile, won)
+	for k in out:
+		profile[k] = out[k]
+	save()
 
 
 func rally_completed(rally_id: String) -> bool:

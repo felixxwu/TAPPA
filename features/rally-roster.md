@@ -440,8 +440,13 @@ generator also uses it per-rival.
   pace_slow, skill)` held across all 3 events — so a fast rival stays fast and the
   field spreads into a ranked ladder instead of everyone's per-event draws
   averaging to mid-pack. Each event adds a small ±`PACE_EVENT_NOISE` (±5%) jitter
-  around that base, clamped by `PACE_MIN_FLOOR` (1.0×) so no rival ever beats their
-  car's physics optimum — always beatable by design. In the `[pace_fast, pace_slow]`
+  around that base. `PACE_MIN_FLOOR` is now only a **sanity guard** (0.5×, far below
+  anything the band can draw): its old value of 1.1× and its old rationale ("rivals
+  never beat their car's physics optimum") both went with adaptive difficulty — the
+  optimum is a point-mass centreline *reference*, not a limit. The real bound is
+  `GHOST_SOLVABLE_PACE` (0.976×), applied after the residual difficulty trim, and it is
+  set by what `RivalPace` can solve rather than by physics
+  ([rival-ghost.md](rival-ghost.md)). In the `[pace_fast, pace_slow]`
   band the **fast end is a constant 1.1×** (the fastest rival runs just off their
   car's physics optimum at every tier); only the **slow end scales with the rally's
   hidden `difficulty` tier (1–4)** via `_pace_band`, tightening toward the fast end as
@@ -524,7 +529,7 @@ generator also uses it per-rival.
 ### Rival builds — car + engine combos
 
 **Carrying a rival onwards.** `RallyLibrary.RIVAL_IDENTITY_KEYS`
-(`["name", "car_id", "engine_id", "car_name"]`) + `identity_of(opp)` are the contract for
+(`["name", "car_id", "engine_id", "car_name", "upgrades"]`) + `identity_of(opp)` are the contract for
 every hop that passes a rival to another surface — the start-line leaders
 (`RallySession.current_event_leaders`), the wreck record (`event_wreck`) and the standings
 rows (`build_standings`). Each used to re-list fields by hand, and dropping `engine_id` is
@@ -534,11 +539,53 @@ rather than a fresh dict literal, and add new per-rival attributes to the const 
 `test_rally_library.gd::test_no_hop_drops_a_rival_identity_key` walks it and fails until
 every hop carries them.
 
-Rivals get exactly **one** upgrade: the engine swap. The draw pool is therefore not the car roster
-but every **(car, engine) pairing** the rally admits.
+`upgrades` is the list of parts a rival's BUILD LEVEL fits (below). It is identity, not
+decoration: the rival's time was drawn off a meta that includes those parts, so anything
+re-deriving the meta from `car_id` + `engine_id` alone — `RallySession._effective_meta_for`,
+which feeds the ghost's pace solve, most of all — would be looking at a slower car than
+the one that set the time. It is the one identity key that is a LIST rather than a string,
+hence `RIVAL_IDENTITY_LIST_KEYS`.
+
+Rivals get an engine swap **and a build level**. The draw pool is therefore not the car
+roster but every **(car, engine, build level)** combination the rally admits.
+
+### Build levels
+
+`_build_levels()` derives a small set of builds from the upgrade catalogue — never
+hardcoded ids, so it follows a retune, a new part or a test fixture roster — and each one
+enters the pool as its own combo with its own rating:
+
+| Level | Fits | Why |
+|---|---|---|
+| stock | nothing | today's combos, unchanged |
+| ballasted | the heaviest mass-ADDING part alone | headroom at the EASY end (ballast makes a car slower) |
+| lightly built | the most modest *improving* part in each slot | a real but small step up |
+| fully built | the best part in each slot | the top of the range |
+
+"Best" / "most modest" are scored ONCE against `CarPerformance`'s synthetic reference car
+(`_part_ranking`), not per car+engine: ranking every part against every combo would
+multiply the benchmark sims by the catalogue size for an ordering that barely moves.
+A part the rating cannot see at all (the sequential gearbox's shift time, the drivetrain
+kit's flag — neither reaches `LapTimeModel`) is left off every level rather than dressing
+a rival in hardware that does nothing.
+
+Rules a level obeys: at most one part per `UpgradeLibrary.SLOTS` entry (the same
+exclusivity `Save._enable_exclusive` enforces on the player's cars), no consumables, no
+ballast in a *built* level, and **never nitrous** — `CarPerformance` deliberately excludes
+nitrous from the rating, so a rival carrying it would be quicker than the rating the field
+was matched on claims. Star gates are deliberately NOT consulted: rivals may run parts the
+player has not unlocked, exactly as the engine-swap pool already ignores unlock state
+([adaptive-difficulty.md](adaptive-difficulty.md), design D2).
+
+**Why they exist:** with an engine swap as the only lever, the shipped pool ran
+`min 207 / p50 475 / max 536` over 99 combos and had almost nothing above 510 — while an
+upgraded player climbs well past it. Build levels take that to **396 combos,
+`min 141 / p25 453 / p50 503 / p75 598 / p90 646 / max 706`**, which is what gives adaptive
+difficulty room at the top, where a dominating player sits. Cost is ~300 ms to build the
+pool cold and ~35 ms warm (`CarPerformance` memoises per input), once per field draw.
 
 - **Pool** — `_eligible_combos(rally)` walks `CarLibrary.all()` ×
-  `EngineLibrary.all()`, builds each pairing's effective meta
+  `EngineLibrary.all()` × `_build_levels()`, builds each pairing's effective meta
   (`UpgradeLibrary.effective_meta({"swapped_engine": eid}, entry)`, or `{}` when
   `eid` is the car's stock engine) and keeps it if `is_eligible(rally, meta)`
   passes. Because `effective_meta` re-points `meta["engine"]` at the fitted engine
@@ -561,14 +608,19 @@ but every **(car, engine) pairing** the rally admits.
   rng, so every rival is a *different* build and modest engine swaps are picked ahead
   of wild ones (`pw_delta` is |combo p/w − the car's STOCK p/w| in hp/tonne; the
   weight is `exp(-pw_delta / OPPONENT_SWAP_PW_SPREAD)`, a bias and never a filter, so
-  a wild swap stays reachable). Sampling without replacement replaced an independent
+  a wild swap stays reachable). `pw_delta` measures the **engine only** — folding a build
+  level's parts into it would make `swap_weight` read a fully-built rival as a wild engine
+  swap and all but exclude it, which is precisely the top-end headroom the levels add. Sampling without replacement replaced an independent
   per-rival draw **with replacement**: with 10 cars and 9 rivals, all-distinct
   happened ~0.4% of the time, so fields were routinely several copies of the same
   car. When the pool is smaller than the field it **cycles** the pool (a 3-combo
   rally fields 3+3+3) instead of drawing random repeats, so even the degenerate case
   is as varied as the pool allows.
 - **Pace** — the per-rival pace math is unchanged, but `car_meta` is now the
-  combo's meta, so the swap feeds `LapTimeModel.optimum_ms`. An engine carries its
+  combo's `CarPerformance.merged_meta` (not `effective_meta`: a build level can fit tyres
+  and a wing, and those reach the rating and the lap-time model only through the grip
+  fields `effective_meta` withholds — for a stock combo the two are identical), so the
+  swap and the build both feed `LapTimeModel.optimum_ms`. An engine carries its
   whole **transmission** (`gear_ratios`, `final_drive`, `shift_time`), so a swap
   moves gearing as well as power.
 - **Naming** — the entry carries `engine_id`, and `car_name` is

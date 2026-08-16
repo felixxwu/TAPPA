@@ -261,6 +261,20 @@ move every AI, rival and ghost time in the game, so treat it as a balance change
 across the whole roster rather than a local tweak, and expect the invariance
 test to fail (correctly) when you do it.
 
+## The rating is also a DIFFICULTY lever
+
+Matching the field to the player's rating is what
+[adaptive-difficulty.md](adaptive-difficulty.md) steers: it hands
+`generate_opponent_field` a rating deliberately above or below the player's, and rivals
+turn up in better or worse machinery accordingly. Two consequences for this file:
+
+- Rival builds now include **build levels** as well as an engine swap
+  ([rally-roster.md](rally-roster.md)), so a combo's rating is computed from
+  `CarPerformance.merged_meta` — tyres and downforce included, as the rating requires.
+- Anything the rating cannot see becomes a way for a rival to be quicker than the number
+  it was matched on. That is exactly why **nitrous is barred from every build level**: it
+  is excluded from the rating on purpose.
+
 ## The grid is re-drawn if you change your build on the start line
 
 The rival field is matched to the player's rating, and the start line lets the player

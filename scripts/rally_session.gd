@@ -183,7 +183,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		# gets empty lists so rivals have empty event_times_ms and combined_ms=0
 		# (placeholder). Tests MUST overwrite _opponent_field before making assertions.
 		_event_results = []
-		_fielded_rating = _player_rating(owned_car)
+		_fielded_rating = _field_rating(owned_car)
 		_opponent_field = RallyLibrary.generate_opponent_field(
 			rally, [], [], _fielded_rating)
 		_log_opponent_field("drawn (no tracks — test path)")
@@ -195,7 +195,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		# (data/opponent_cache.json) consulted here, keyed on rally properties; it went
 		# with the car-performance rating rework, because the grid is now drawn matched
 		# to the PLAYER'S car rating and so is a function of the player, not the rally.
-		_fielded_rating = _player_rating(owned_car)
+		_fielded_rating = _field_rating(owned_car)
 		_opponent_field = RallyLibrary.generate_opponent_field(
 			rally, results, rally.get("events", []), _fielded_rating)
 		_log_opponent_field("drawn at rally start")
@@ -221,7 +221,7 @@ func refield_opponents() -> bool:
 		return false
 	if _rally.is_empty():
 		return false
-	var rating := _player_rating(Save.get_car(_car_instance_id))
+	var rating := _field_rating(Save.get_car(_car_instance_id))
 	if rating == _fielded_rating:
 		return false
 	_fielded_rating = rating
@@ -246,11 +246,64 @@ func _log_opponent_field(context: String) -> void:
 			"driver": String((rival as Dictionary).get("name", "?")),
 		})
 	rows.sort_custom(func(a, b): return int(a["rating"]) > int(b["rating"]))
-	print("[opponent field] %s — %s | player rating %d | %d rivals"
-		% [String(_rally.get("id", "?")), context, _fielded_rating, rows.size()])
+	print("[opponent field] %s — %s | target rating %d (%s) | %d rivals"
+		% [String(_rally.get("id", "?")), context, _fielded_rating,
+			AiDifficulty.describe(Save.profile), rows.size()])
 	for row in rows:
 		var delta: int = int(row["rating"]) - _fielded_rating
 		print("  %4d  (%+5d)  %-28s %s" % [int(row["rating"]), delta, row["name"], row["driver"]])
+
+
+# Fold the stage into the difficulty offset and say so on the console.
+#
+# The system is SILENT to the player, so this log is the only way to see it working — and
+# it deliberately reports the DIRECTION OF TRAVEL, not just the current state: two stages
+# out of every three change nothing, and without the streak fraction those look identical
+# to a system that has stopped responding.
+#
+# The margin is printed because it is the thing the offset is reacting to: losing by 0.2 s
+# and losing by 30 s both read as "LOST" to the rule, and only the log can tell you which
+# kind of trouble the player is in.
+func _record_and_log_stage_result(elapsed_ms: int) -> void:
+	var before := {
+		AiDifficulty.KEY_STEPS: Save.profile.get(AiDifficulty.KEY_STEPS, 0),
+		AiDifficulty.KEY_WIN_STREAK: Save.profile.get(AiDifficulty.KEY_WIN_STREAK, 0),
+		AiDifficulty.KEY_LOSS_STREAK: Save.profile.get(AiDifficulty.KEY_LOSS_STREAK, 0),
+	}
+	var won := _won_stage(elapsed_ms)
+	Save.record_stage_result(won)
+	if not Config.data.ai_adapt_enabled:
+		return
+	var leaders := current_event_leaders(1)
+	var margin := ""
+	if not leaders.is_empty():
+		var p1 := int((leaders[0] as Dictionary).get("time_ms", 0))
+		margin = "  (%s%.1fs vs P1)" % ["+" if elapsed_ms > p1 else "", (elapsed_ms - p1) / 1000.0]
+	print("[difficulty] %s stage %d — %s%s" % [String(_rally.get("id", "?")),
+		_event_index + 1, AiDifficulty.describe_result(before, Save.profile, won), margin])
+
+
+# Did the player beat every rival on the stage that just finished?
+#
+# The whole input to adaptive difficulty. Deliberately per-STAGE rather than per-rally: a
+# rally is three stages, so stage-level results give the system three times the evidence
+# and let it respond within a single event rather than after a whole rally has gone badly.
+#
+# An empty field (a rally with no rivals, or the test path) counts as NOT won: with nobody
+# to beat there is no evidence the player is fast, and treating it as a win would ratchet
+# the difficulty up on no information at all.
+func _won_stage(elapsed_ms: int) -> bool:
+	var leaders := current_event_leaders(1)
+	if leaders.is_empty():
+		return false
+	return elapsed_ms > 0 and elapsed_ms < int((leaders[0] as Dictionary).get("time_ms", 0))
+
+
+# The rating the FIELD is matched to: the player's own, pushed up or down by the adaptive
+# offset. Everything that draws a field goes through here so a re-draw cannot silently
+# reset the difficulty back to a plain match.
+func _field_rating(owned_car: Dictionary) -> int:
+	return AiDifficulty.target_rating(_player_rating(owned_car), Save.profile)
 
 
 # The fielded car's CarPerformance rating, used to match the rival grid to the player's
@@ -271,6 +324,14 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if _phase != Phase.RUNNING:
 		return
 	_event_times_ms.append(elapsed_ms)
+	# Adaptive difficulty (features/adaptive-difficulty.md). Read the stage BEFORE
+	# _event_index advances, because current_event_leaders() answers for the current index.
+	# A DNF is not a measurement of pace or skill, so it moves nothing.
+	if not _dnf:
+		_record_and_log_stage_result(elapsed_ms)
+	elif Config.data.ai_adapt_enabled:
+		print("[difficulty] %s stage %d — DNF, ignored | %s"
+			% [String(_rally.get("id", "?")), _event_index + 1, AiDifficulty.describe(Save.profile)])
 	# HP persists at each event boundary. Only a fielded (bound) car has an instance
 	# to write back to. The damage + the upgrade write below share a single Save.save()
 	# at the end so a damaged non-final event doesn't serialise/write the file twice.
@@ -560,7 +621,15 @@ func _effective_meta_for(row: Dictionary) -> Dictionary:
 		return {}
 	var eid := String(row.get("engine_id", ""))
 	var owned: Dictionary = {"swapped_engine": eid} if eid != "" else {}
-	return UpgradeLibrary.effective_meta(owned, entry)
+	# Rivals also run a BUILD LEVEL (RallyLibrary._build_levels), and their times were drawn
+	# off a meta that includes those parts — so the parts have to come back with the row or
+	# the ghost solves a slower car than the one that set the time and RivalPace clamps.
+	owned["installed_upgrades"] = (row.get("upgrades", []) as Array).duplicate()
+	owned["disabled_upgrades"] = []
+	# merged_meta, not effective_meta: a build level can carry tyres and a wing, which reach
+	# the lap-time model only through the grip fields effective_meta withholds. Same builder
+	# the field generator rated the combo with.
+	return CarPerformance.merged_meta(owned, entry)
 
 
 # The rival (if any) who crashed out of the CURRENT event, so the run scene can stage
