@@ -529,30 +529,6 @@ func test_launch_is_gated_by_rally_eligibility() -> void:
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the sequence does not advance when blocked")
 
 
-func test_over_powered_car_gets_change_upgrades_prompt_on_start() -> void:
-	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.set_selected_car(int(owned["instance_id"]))
-	RallySession.start_rally(_rally(), owned, true)
-	var sl := _make(_leaders())
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
-	sl._rally = {"restriction": {"pw_max": pw * 0.8}}
-	sl.launch()
-	assert_false(sl.has_launched(), "an over-powered car is blocked at Start")
-	var popups := sl.find_children("*", "ConfirmPopup", true, false)
-	assert_eq(popups.size(), 1, "the gate shows a ConfirmPopup")
-	var offers_change := false
-	var offers_detune := false
-	for b in popups[0].find_children("*", "Button", true, false):
-		var txt := (b as Button).text.to_lower()
-		if "change upgrades" in txt:
-			offers_change = true
-		if "detune" in txt:
-			offers_detune = true
-	assert_true(offers_change, "the popup offers Change Upgrades")
-	assert_false(offers_detune, "there is no one-press auto-detune button anymore")
-
-
 func test_launch_proceeds_when_the_car_is_eligible() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
@@ -561,29 +537,6 @@ func test_launch_proceeds_when_the_car_is_eligible() -> void:
 	sl._rally = {}  # open class: no restriction to fail
 	sl.launch()
 	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
-
-
-func test_under_band_car_cannot_start() -> void:
-	# The p/w band floor is a HARD gate now: a car below the floor is INELIGIBLE, so launch
-	# is blocked with a "Can't start" popup (the old non-blocking "start anyway" underpower
-	# warning — which briefly moved to HQ car selection — is retired: there is no
-	# eligible-but-underpowered state anymore).
-	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.set_selected_car(int(owned["instance_id"]))
-	RallySession.start_rally(_rally(), owned, true)
-	var sl := _make(_leaders())
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	# Built off the car's upgrade CEILING (the meta the pw_min floor is judged against), not
-	# its current p/w: the floor now asks "could this car ever reach the band", so a band it
-	# could grow into by fitting catalogue parts is NOT a lockout.
-	var ceiling := UpgradeLibrary.max_potential_meta(owned, entry)
-	var pw := CarLibrary.power_to_weight(ceiling) * CarLibrary.KW_KG_TO_HP_TONNE
-	# A band whose floor sits well above even that -> genuinely too weak -> ineligible.
-	sl._rally = {"restriction": {"pw_min": pw * 1.5}}
-	sl.launch()
-	assert_false(sl.has_launched(), "an under-floor (underpowered) car is ineligible and does not launch")
-	var popups := sl.find_children("*", "ConfirmPopup", true, false)
-	assert_eq(popups.size(), 1, "an ineligible car shows a Can't start popup")
 
 
 # --- Pre-race menus (unchanged behaviour) ------------------------------------
@@ -673,11 +626,10 @@ func test_prune_silences_before_free() -> void:
 # than fabricating rivals to stage against.
 
 # The synthetic event dict world.gd._build_start_line hands StartLine for a challenge:
-# a display name plus the period's power-to-weight ceiling as an ordinary rally-shaped
-# restriction, so the launch gate and the Upgrades cap are the same code as a rally's.
+# a display name and nothing else. The performance ceiling is NOT smuggled in here as a
+# restriction key — restrictions are categorical — the screen asks DrivingContext for it.
 func _challenge_rally() -> Dictionary:
-	var ceiling := ChallengeLibrary.ceiling_for(ChallengeSession.period_key())
-	return {"name": "Daily Challenge", "restriction": {"pw_max": ceiling}}
+	return {"name": "Daily Challenge", "restriction": {}}
 
 
 # Start a real Daily challenge run on a freshly granted fixture car and return it.
@@ -710,7 +662,7 @@ func test_challenge_menus_bind_to_the_challenge_car_not_the_rally_one() -> void:
 	var want := int(owned["instance_id"])
 	assert_eq(int(sl._tune_panel._owned.get("instance_id", -1)), want,
 		"the Tune Car panel is bound to the challenge's locked car")
-	assert_eq(int(sl._upgrades_menu.advanced()._owned.get("instance_id", -1)), want,
+	assert_eq(int(sl._upgrades_menu._owned.get("instance_id", -1)), want,
 		"the Upgrades menu is bound to the challenge's locked car")
 	assert_eq(int(sl._driven_car().get("instance_id", -1)), want,
 		"the shared driven-car resolver answers with the challenge car")
@@ -729,13 +681,7 @@ func test_challenge_shows_no_rival_panel_and_fades_straight_to_the_countdown() -
 	# fabricated rival list.
 	var owned := _start_challenge()
 	var sl := _make_challenge()
-	# The car park never commits an over-ceiling car (hq.gd's CHALLENGE branch makes the
-	# player tune down first), so judge the gate against a ceiling this car clears —
-	# whether the period's ROLLED ceiling happens to suit the fixture car is a tunable
-	# roll, not the behaviour under test.
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
-	sl._rally = {"name": "Daily Challenge", "restriction": {"pw_max": pw * 1.5}}
+	sl._rally = _challenge_rally()
 	assert_eq(sl.queue_count(), 0, "a challenge lines up no rival cars")
 	assert_false(sl._reveal_overlay.visible, "the rival-times card is not shown")
 	sl.launch()
@@ -756,21 +702,21 @@ func test_challenge_header_counts_the_runs_own_stages() -> void:
 	assert_string_contains(sl._subtitle_label.text.to_upper(), "STAGE 1 OF %d" % ChallengeSession.stage_count())
 
 
-# --- The pre-race p/w ceiling goes through DrivingContext -----------------------
+# --- The pre-race performance ceiling goes through DrivingContext ---------------
 #
-# _pw_limit() no longer digs the restriction out of the event dict itself — it asks
+# _rating_limit() no longer digs the restriction out of the event dict itself — it asks
 # DrivingContext, which answers for whichever session is fielding the car. These
-# tests cover the CHALLENGE branch (the career branch is covered by the pw_max
-# tests above); both must reach the same close-button gate.
+# tests cover the CHALLENGE branch, which is the only place a performance ceiling
+# still exists — career rally entry is purely categorical now, with no gate at all.
 
-func test_challenge_pw_limit_comes_from_the_periods_ceiling() -> void:
+func test_challenge_rating_limit_comes_from_the_periods_ceiling() -> void:
 	_start_challenge()
 	var sl := _make_challenge()
 	# Derived from the same accessor chain the code under test uses — no band value
 	# is pinned (CEILING_BAND_HP_TONNE is authored/tunable).
-	assert_eq(sl._pw_limit(), ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
+	assert_eq(sl._rating_limit(), ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
 		"a challenge's pre-race ceiling is its period's rolled cap")
-	assert_ne(sl._pw_limit(), DrivingContext.NO_LIMIT,
+	assert_ne(sl._rating_limit(), DrivingContext.NO_LIMIT,
 		"a real ceiling applies during a challenge — not the silent 'no limit' fallback")
 
 
@@ -778,23 +724,24 @@ func test_challenge_upgrades_close_button_gates_on_the_ceiling() -> void:
 	var owned := _start_challenge()
 	var id := int(owned["instance_id"])
 	var sl := _make_challenge()
-	# Force the car OVER the period's ceiling by running it at full power against a
-	# stand-in ceiling of half its own ratio — the same "derive the expectation from
-	# the car under test" trick test_upgrades_menu.gd uses, so nothing is pinned.
+	# Force the car OVER the ceiling by running it at full power against a stand-in
+	# ceiling one point below its own rating — the same "derive the expectation from the
+	# car under test" trick test_upgrades_grid.gd uses, so nothing tunable is pinned.
 	_save.set_engine_detune(id, 1.0)
-	var full_meta := UpgradeLibrary.effective_meta(_save.get_car(id), CarLibrary.by_id(String(owned["model_id"])))
-	var full_pw := CarLibrary.power_to_weight_hp_tonne(full_meta)
 	sl._open_upgrades()
+	var entry := CarLibrary.by_id(String(owned["model_id"]))
+	var full_rating := CarPerformance.rating(
+		CarPerformance.merged_meta(_save.get_car(id), entry))
 	# Re-bind the live menu to a ceiling this car provably busts at full power.
-	sl._upgrades_menu.setup(_save.get_car(id), Callable(), Callable(), full_pw * 0.5)
+	sl._upgrades_menu.setup(_save.get_car(id), Callable(), Callable(), float(full_rating - 1))
 	sl._upgrades_menu.bind_close_button(sl._upgrades_back, sl._close_upgrades)
-	assert_true(sl._upgrades_menu.over_pw_limit(), "setup: full power busts the stand-in ceiling")
+	assert_true(sl._upgrades_menu.over_rating_limit(), "setup: full power busts the stand-in ceiling")
 	assert_false(sl._upgrades_menu.can_close(), "the close button blocks while over the ceiling")
 	assert_true(String(sl._upgrades_back.text).begins_with("Over limit"),
-		"the close button paints as blocked, exactly like a career rally's pw_max gate")
+		"the close button paints as blocked")
 	# Detune under the cap: the gate clears with no challenge-specific mechanism.
-	sl._upgrades_menu.advanced()._detune_slider.value = 25.0
-	assert_false(sl._upgrades_menu.over_pw_limit(), "detuning under the ceiling clears the gate")
+	sl._upgrades_menu._apply_detune(25.0, id)
+	assert_false(sl._upgrades_menu.over_rating_limit(), "detuning under the ceiling clears the gate")
 	assert_true(sl._upgrades_menu.can_close(), "proceeding is allowed once under the ceiling")
 	assert_false(String(sl._upgrades_back.text).begins_with("Over limit"),
 		"the close button returns to its plain label")
@@ -845,3 +792,47 @@ func test_the_action_row_fits_across_the_screen() -> void:
 	var needed := row.get_combined_minimum_size().x
 	assert_lt(needed, float(DisplayStretch.DESIGN_HEIGHT) * 16.0 / 9.0,
 		"the whole row fits a 16:9 canvas at the design height (needs %.0f)" % needed)
+
+
+# --- Re-staging the grid after a start-line build change ---------------------
+
+func test_restaging_replaces_the_grid_with_the_current_field() -> void:
+	# The bug this guards: the grid props are spawned ONCE from `_leaders` when the start
+	# line is built, but the field is matched to the player's rating and the player can
+	# edit upgrades while standing on it. Without a re-stage, a re-drawn field would leave
+	# the OLD cars parked in front of the player — the grid lying about who they are racing.
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.set_selected_car(int(owned["instance_id"]))
+	RallySession.start_rally(_rally(), owned, true)
+	# Field the start line with a deliberately WRONG leader set, so a successful re-stage
+	# is visible as the grid changing to the session's real one.
+	var sl := _make(_leaders())
+	var stale := sl.queue_car_ids().duplicate()
+
+	sl._restage_grid()
+
+	var want: Array[String] = []
+	for row in RallySession.current_event_leaders():
+		want.append(String((row as Dictionary).get("car_id", "")))
+	assert_eq(sl.queue_car_ids(), want, "the grid now shows the session's current field")
+	assert_ne(sl.queue_car_ids(), stale, "and is no longer the field it was built with")
+	assert_eq(sl._grid.back(), _player, "the player survives the re-stage as the grid tail")
+
+
+func test_restaging_does_not_leave_the_old_props_on_the_grid() -> void:
+	# remove_child before queue_free: the free is deferred, so a bare queue_free would
+	# leave the outgoing car clipping through its replacement for a frame.
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.set_selected_car(int(owned["instance_id"]))
+	RallySession.start_rally(_rally(), owned, true)
+	var sl := _make(_leaders())
+	var before: Array[Node] = []
+	for car in sl._grid:
+		if car != _player:
+			before.append(car)
+
+	sl._restage_grid()
+
+	for car in before:
+		assert_false(is_instance_valid(car) and sl.is_ancestor_of(car),
+			"an outgoing prop is out of the tree immediately, not at end-of-frame")

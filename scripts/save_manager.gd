@@ -31,7 +31,7 @@ signal flushed()
 
 # Bump on any breaking shape change to PlayerProfile; older files are migrated
 # forward on load (see _migrate), newer files are refused rather than truncated.
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 
 # The two profile keys the REST of the codebase reads (the owned-car array and the
 # per-rally record map) — named here because SaveManager owns the save schema, and a
@@ -504,7 +504,7 @@ func _migrate(p: Dictionary) -> Dictionary:
 # Versions we know how to step FROM (each _migrate_step(v, p) bumps schema_version
 # to v+1). Kept as a plain const list (a const dict of Callables isn't a constant
 # expression in GDScript, and would null this autoload at parse time).
-const _MIGRATABLE_FROM := [1]
+const _MIGRATABLE_FROM := [1, 2]
 
 # Apply the single version N -> N+1 transform.
 #   1 -> 2: upgrades became CAR-BOUND. The old shared `inventory` pool of
@@ -512,6 +512,14 @@ const _MIGRATABLE_FROM := [1]
 #           for), so strip EVERY entry from `inventory` — those unbound parts were
 #           never applied and have no car to belong to, and the repair kit that used
 #           to be kept here no longer exists as an item at all.
+#   2 -> 3: rally entry stopped gating on power-to-weight, so a saved
+#           `tuning.engine_detune` set purely to duck under a rally ceiling now has
+#           nothing to duck under — and the detune slider that set it is gone with the
+#           ceiling. Left alone, that car would be permanently and INVISIBLY down on
+#           power with no player-reachable way to restore it. Reset every car to full
+#           power. This is one-way and deliberate: the handful of players who detuned
+#           for feel lose that setting, which is a far smaller harm than a silently
+#           crippled car nobody can diagnose.
 func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 	match from_version:
 		1:
@@ -520,6 +528,12 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 				inv.erase(item_id)
 			p["inventory"] = inv
 			p["schema_version"] = 2
+		2:
+			for car in p.get(KEY_CARS, []):
+				var tuning: Dictionary = (car as Dictionary).get("tuning", {})
+				if tuning.has("engine_detune"):
+					tuning["engine_detune"] = 1.0
+			p["schema_version"] = 3
 	return p
 
 
@@ -604,8 +618,8 @@ func set_wheel_toe(instance_id: int, toe: Array) -> void:
 #
 # Wrecking used to be TERMINAL — 0 HP, unrepairable, the car a permanent hulk. That single
 # rule needed a whole scaffolding around it to stay survivable (an every-car-wrecked check, a free
-# mystery box when the garage was wrecked out, is_stranded skipping wrecks, a price-0 car
-# rescue), and it could still end a career on one mistake. Making a wreck a bad RESULT
+# mystery box when the garage was wrecked out, a soft-lock check that had to skip wrecks, a
+# price-0 car rescue), and it could still end a career on one mistake. Making a wreck a bad RESULT
 # instead of a lost ASSET deletes all of that: the punishment is the DNF plus the repair
 # bill (features/star-economy.md), and the player can always drive again.
 #
@@ -700,8 +714,8 @@ func mystery_boxes_owned() -> int:
 # between-event field repair applying mid-run is an accepted consequence (a
 # challenge is a time competition, not a survival one).
 #
-# It has never disabled the detune slider either — the p/w ceiling is enforced by
-# the close-button gate, exactly like a career rally's pw_max.
+# It has never disabled the detune slider either — the challenge's performance ceiling
+# is enforced by the close-button gate (UpgradesGrid.over_rating_limit).
 # See features/rally-challenge.md → "Car lock".
 func is_challenge_locked(instance_id: int) -> bool:
 	var run: Dictionary = profile.get("challenge_run", {})
@@ -1227,29 +1241,6 @@ func apply_build_plan(instance_id: int, plan: Dictionary) -> bool:
 		set_drivetrain_override(instance_id, int(plan["drivetrain"]))
 	set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
 	return true
-
-
-# The Start-gate free restore: put a car back on the upgrades it already owns before it
-# races — the motivating case being a detune left down from a previous rally that the
-# player forgot to bring back up. Spends nothing, never moves power DOWN (an over-limit
-# car is the "Too powerful" prompt's business, a decision point this must not bypass),
-# and is PERMANENT rather than reverted afterwards: a stale detune is not a deliberate
-# per-rally choice the way the drivetrain switch is, so reverting it would leave the
-# tuning lift showing a detuned car while races quietly ran at full power.
-#
-# Returns {applied: bool, notice: String} — the notice is the one line the player is
-# shown, in outcome words. See todo/simplified-upgrade-menu.md §4 → "Free-only restore".
-func restore_free_build(instance_id: int, restriction: Dictionary = {}) -> Dictionary:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return {"applied": false, "notice": ""}
-	var meta := CarLibrary.for_owned(car)
-	var plan := UpgradeLibrary.auto_build_plan(car, meta, profile, 0, restriction, true)
-	if not apply_build_plan(instance_id, plan):
-		return {"applied": false, "notice": ""}
-	var after := UpgradeLibrary.effective_meta(get_car(instance_id), meta)
-	return {"applied": true, "notice": "Restored your upgrades — %d hp/t"
-		% CarLibrary.power_to_weight_hp_tonne(after)}
 
 
 func rally_completed(rally_id: String) -> bool:

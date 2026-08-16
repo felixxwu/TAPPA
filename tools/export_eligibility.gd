@@ -13,13 +13,12 @@ extends Node
 #
 # The reason this works at all is that eligibility does NOT depend on map_pos. Bands and
 # cars decide it; the fitter only ever moves pins. So the matrix is computed once and stays
-# valid for the whole anneal — it only needs regenerating when a restriction band, a car or
+# valid for the whole anneal — it only needs regenerating when a restriction, a car or
 # an engine changes.
 #
-# "Can enter" matches what the car park actually allows: eligible outright, OR able to duck
-# under a pw_max ceiling by detuning, with the pw_min floor judged at the car's MAX
-# potential (the player may always tune up for free). Same three allowances as
-# hq._entry_plan, so the fitter and the game agree on who can start what.
+# "Can enter" is now exactly RallyLibrary.is_eligible: entry is purely CATEGORICAL
+# (car_type / country / doors / cylinders / displacement / drive_mode), so there is no
+# tuning or detuning allowance to model — the fitter and the game agree by construction.
 #
 # Run via ./export_eligibility.sh.
 
@@ -34,9 +33,7 @@ func _ready() -> void:
 			var car := {"model_id": String(spec.get("id", "")), "instance_id": 1,
 				"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}}
 			var meta := UpgradeLibrary.effective_meta(car, spec)
-			var floor_meta := UpgradeLibrary.max_potential_meta(car, spec)
-			if RallyLibrary.is_eligible(rally, meta, floor_meta) \
-					or RallyLibrary.qualifying_detune(rally, meta) > 0.0:
+			if RallyLibrary.is_eligible(rally, meta):
 				admitted.append(String(spec.get("id", "")))
 		matrix[String(rally["id"])] = admitted
 
@@ -48,7 +45,12 @@ func _ready() -> void:
 		# rally_id -> the car it awards ("" for none), so the fitter can grow the garage as
 		# its closure walks outward.
 		"prize_car": _prizes(),
-		# car_id -> stock power-to-weight in hp/tonne. The fitter ranks car prizes by this to
+		# car_id -> stock power-to-weight in hp/tonne. NOT an eligibility currency any more
+		# (entry is categorical) — this is purely the fitter's pin-placement metric, and it
+		# must stay exactly this metric: tools/fit_map_pins.py places pins from it, so
+		# swapping in (say) CarPerformance.rating would silently re-derive the revealed-rally
+		# frontier for every existing save. Leave it alone.
+		# The fitter ranks car prizes by this to
 		# push FASTER cars further from HQ, so the long drive to a corner is what earns the
 		# quick machinery. Deliberately not CarLibrary.reward_tier, which is a curated slot in
 		# the reward ladder rather than a measure of pace — a tier-2 car can be quicker than a

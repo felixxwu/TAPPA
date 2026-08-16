@@ -31,25 +31,6 @@ func _owned(model_id: String, tuning := {}, upgrades := []) -> Dictionary:
 	return {"model_id": model_id, "tuning": tuning, "installed_upgrades": upgrades}
 
 
-# The car's power-to-weight (hp/tonne) at full tune, derived through the SAME helpers
-# the code uses — so restrictions built relative to it survive a fixture retune.
-func _pw(model_id: String) -> float:
-	var entry := CarLibrary.by_id(model_id)
-	var meta := UpgradeLibrary.effective_meta(_owned(model_id), entry)
-	return CarLibrary.power_to_weight(meta) * CarLibrary.KW_KG_TO_HP_TONNE
-
-
-# The car's power-to-weight at its upgrade CEILING — the meta the pw_min floor is actually
-# judged against (RallyLibrary.is_eligible's floor_meta). A floor above THIS is genuinely
-# unreachable; a floor merely above the car's current p/w is not, because the ceiling now
-# counts catalogue parts the car doesn't own yet. Tests that want "too weak, full stop" must
-# build their band off this, not off _pw() times a guessed multiple.
-func _ceiling_pw(model_id: String) -> float:
-	var entry := CarLibrary.by_id(model_id)
-	var maxed := UpgradeLibrary.max_potential_meta(_owned(model_id), entry)
-	return CarLibrary.power_to_weight(maxed) * CarLibrary.KW_KG_TO_HP_TONNE
-
-
 func test_empty_roster_counts_nothing() -> void:
 	var summary: Dictionary = _hq._eligibility_summary({"restriction": {}}, [])
 	assert_eq(summary["total"], 0, "no owned cars means nothing to count")
@@ -158,66 +139,27 @@ func test_enter_button_enabled_when_a_car_qualifies() -> void:
 	Save.profile["cars"] = saved_cars
 
 
-func test_over_cap_car_lands_in_adjust_via_detune() -> void:
-	# A ceiling just under the car's power-to-weight: it's over the cap, but tuning the
-	# engine down ducks it under — so it qualifies, flagged as needing a tune to fit.
-	var rally := {"restriction": {"pw_max": _pw("fx_rwd_coupe") * 0.9}}
-	var summary: Dictionary = _hq._eligibility_summary(rally, [_owned("fx_rwd_coupe")])
-	assert_eq(summary["qualify"], 1, "a detune brings it under the cap, so it qualifies")
-	assert_eq(summary["adjust"], 1, "it counts as needing a tune / swap to fit")
-
-
-func test_entry_plan_over_cap_car_qualifies_via_detune() -> void:
-	# A ceiling just under the car's p/w: eligible only after a detune ducks it under.
-	var rally := {"restriction": {"pw_max": _pw("fx_rwd_coupe") * 0.9}}
-	var plan: Dictionary = _hq._entry_plan(rally, _owned("fx_rwd_coupe"))
-	assert_true(plan["eligible"], "a detune qualifies it")
-	assert_gt(float(plan["detune"]), 0.0, "it needs a detune to fit under the cap")
-
-
-func test_below_band_floor_is_ineligible() -> void:
-	# A rally whose p/w BAND floor sits above the car's upgrade CEILING: too weak even fully
-	# maxed out, so it can't enter (there is no eligible-but-underpowered state). Derived from
-	# the ceiling, not from the car's current p/w — the floor is judged against what the car
-	# COULD become, so a band it can grow into is not a lockout.
-	var rally := {"restriction": {"pw_min": _ceiling_pw("fx_light_rwd") * 1.5}}
+func test_a_car_outside_the_class_is_ineligible() -> void:
+	# Entry is purely CATEGORICAL, so a car of the wrong class is simply out — there is no
+	# tune, detune or upgrade that can buy its way in, and no "eligible but underpowered"
+	# middle state. The restriction names a country no fixture car has, so the case holds
+	# whatever the fixtures are retuned to.
+	var rally := {"restriction": {"country": "__nowhere__"}}
 	var plan: Dictionary = _hq._entry_plan(rally, _owned("fx_light_rwd"))
-	assert_false(plan["eligible"], "below the band floor even at max potential → ineligible")
+	assert_false(plan["eligible"], "outside the class → ineligible")
 	var summary: Dictionary = _hq._eligibility_summary(rally, [_owned("fx_light_rwd")])
+	assert_eq(summary["total"], 1, "the car is still counted in the roster size")
 	assert_eq(summary["qualify"], 0, "and it's not counted as qualifying")
 
 
-func test_floor_is_judged_at_full_potential_for_a_detuned_car() -> void:
-	# The pw_min FLOOR is judged at the car's MAX potential, so a car currently DETUNED
-	# below the floor is still eligible — the player can tune back up to enter. Floor just
-	# under full pw; at 50% detune the car sits below it, but at full tune it clears it.
-	var full_pw := _pw("fx_rwd_coupe")
-	var rally := {"restriction": {"pw_min": full_pw * 0.9}}
-	var owned := _owned("fx_rwd_coupe", {"engine_detune": 0.5})
-	var plan: Dictionary = _hq._entry_plan(rally, owned)
-	assert_true(plan["eligible"],
-		"eligible: max potential (full tune) clears the floor, though the current detune is under it")
-
-
-func test_floor_is_judged_with_ballast_dropped() -> void:
-	# The floor is judged at max potential, which drops freely-removable ballast — so a
-	# ballasted car below the floor on current stats is still eligible (shed the ballast).
-	var base_pw := _pw("fx_rwd_coupe")  # full tune, no ballast
-	var rally := {"restriction": {"pw_min": base_pw * 0.9}}
-	var owned := _owned("fx_rwd_coupe", {}, ["fx_ballast"])
-	var plan: Dictionary = _hq._entry_plan(rally, owned)
-	assert_true(plan["eligible"], "eligible: dropping the removable ballast clears the floor")
-
-
-func test_pin_unavailable_when_the_only_car_is_below_the_band_floor() -> void:
-	# _has_eligible_car drives the green (available) vs grey (unavailable) map pin; a car
-	# below the band floor even at max potential is ineligible, so the pin is unavailable,
-	# same as owning no car.
+func test_pin_unavailable_when_no_owned_car_is_in_the_class() -> void:
+	# _has_eligible_car drives the green (available) vs grey (unavailable) map pin: a
+	# roster with nothing in the rally's class leaves the pin unavailable, same as owning
+	# no car at all.
 	var saved: Array = Save.profile.get("cars", [])
 	Save.profile["cars"] = [_owned("fx_light_rwd")]
-	var high_rally := {"restriction": {"pw_min": _ceiling_pw("fx_light_rwd") * 1.5}}
-	assert_false(_hq._has_eligible_car(high_rally),
-		"a below-floor-only roster leaves the pin unavailable")
+	assert_false(_hq._has_eligible_car({"restriction": {"country": "__nowhere__"}}),
+		"an out-of-class-only roster leaves the pin unavailable")
 	assert_true(_hq._has_eligible_car({"restriction": {}}),
 		"the same car makes an open-class rally available")
 	Save.profile["cars"] = saved

@@ -109,8 +109,8 @@ func test_effective_meta_applies_detune_to_torque() -> void:
 
 func test_max_potential_meta_undoes_detune_and_drops_ballast() -> void:
 	# max_potential_meta reports the car's BEST achievable power-to-weight: it undoes any
-	# engine detune AND removes mass-adding ballast (a free, always-removable part), so a car
-	# gimped to fit a lower rally still reads at its true potential for a pw_min floor check.
+	# engine detune AND removes mass-adding ballast (a free, always-removable part), so a
+	# currently-gimped car still reads at its true potential wherever a ceiling is wanted.
 	var meta := CarLibrary.by_id("fx_light_rwd")
 	var gimped := {"model_id": "fx_light_rwd", "tuning": {"engine_detune": 0.5},
 		"installed_upgrades": ["fx_ballast"], "disabled_upgrades": []}
@@ -127,32 +127,6 @@ func test_max_potential_meta_undoes_detune_and_drops_ballast() -> void:
 		meta.duplicate())
 	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(clean),
 		"the ceiling fits catalogue parts the car does not own, so it beats a bare clean car")
-
-
-func test_the_aspirational_ceiling_ignores_star_gates_and_the_reachable_one_respects_them() -> void:
-	# THE load-bearing distinction: max_potential_meta's optional `profile` selects which
-	# ceiling you get. Omitted = ASPIRATIONAL ("could this car EVER?"), used for entry
-	# eligibility and display, so a locked part still counts. Supplied = REACHABLE ("can this
-	# player get there NOW?"), used by the soft-lock rescue — judging that aspirationally
-	# would conclude nobody is ever stuck. fx_gated is the fixture's star-gated part and is
-	# the lightest thing in its slot, so it moves power-to-weight when it counts.
-	var meta := CarLibrary.by_id("fx_light_rwd")
-	var car := {"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [],
-		"disabled_upgrades": []}
-	var unwon := {"rallies": {}}
-	var aspirational := UpgradeLibrary.max_potential_meta(car, meta.duplicate())
-	var reachable := UpgradeLibrary.max_potential_meta(car, meta.duplicate(), unwon)
-	var bare := UpgradeLibrary.effective_meta(car, meta.duplicate())
-	assert_gt(CarLibrary.power_to_weight(aspirational), CarLibrary.power_to_weight(bare),
-		"the ceiling beats the car's bare stats")
-	assert_gt(CarLibrary.power_to_weight(aspirational), CarLibrary.power_to_weight(reachable),
-		"a gate the player has not opened LOWERS the reachable ceiling but not the aspirational one")
-	# Win the gating rally and the two ceilings converge — nothing is out of reach any more.
-	var won := {"rallies": {UpgradeFixtures.FX_GATE_RALLY: {"completed": true, "best_placed": 1}}}
-	assert_almost_eq(
-		CarLibrary.power_to_weight(UpgradeLibrary.max_potential_meta(car, meta.duplicate(), won)),
-		CarLibrary.power_to_weight(aspirational), 0.0001,
-		"once the gate is open the reachable ceiling equals the aspirational one")
 
 
 func test_rally_gate_met_defaults_open_and_closes_only_on_an_authored_gate() -> void:

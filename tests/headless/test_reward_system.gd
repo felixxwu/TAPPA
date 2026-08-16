@@ -20,7 +20,7 @@ func before_each() -> void:
 	# The rally roster too: reveal is geometric now, so which rallies a garage can enter
 	# depends on authored PIN POSITIONS. Reading the shipped map here would make these
 	# tests fail the moment a designer nudges a pin — the fixture roster keeps an
-	# open-class rally lit from the start, which is all the stranded/pricing checks need.
+	# open-class rally lit from the start, which is all the pricing checks need.
 	RallyFixtures.install()
 	# Some tests below assign Save.profile (grants mutate through Save).
 	# Stash the real one so nothing leaks into the next test — or the next FILE.
@@ -389,7 +389,7 @@ func test_draw_car_clamped_by_progress_ceiling() -> void:
 	# the upgrade draw uses (gameplay.md) — NOT by the garage's highest owned tier. At 0
 	# completed the ceiling is tier_ceiling(0), so even beating a top-difficulty rally can't
 	# drop a car above it. Synthetic open-class rally (reveal_after 0, incomplete) keeps the
-	# owned car eligible so the player is NOT stuck — the standard-draw path this asserts.
+	# owned car eligible — the standard-draw path this asserts.
 	RallyLibrary.override_for_test([
 		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
 	])
@@ -481,53 +481,6 @@ func test_draw_car_always_grants_even_with_everything_completed() -> void:
 	var model: Variant = RewardSystem.draw_car(profile, 0, _rng(1))
 	assert_not_null(model, "a car is always granted, even post-completion")
 	assert_false(CarLibrary.by_id(String(model)).is_empty(), "and it is a catalogue car")
-
-
-func test_draw_car_unlocks_locked_rally_when_stuck() -> void:
-	# When STUCK — no owned car can enter any incomplete, REVEALED rally — the draw grants a
-	# car that OPENS a locked rally, guaranteeing fresh progression. Synthetic roster
-	# (reveal_after 0, so the reveal-order gate doesn't interfere): a low band r_low the
-	# owned car fits, and r_high which it can never qualify for.
-	#
-	# r_high restricts by CAR TYPE, not by power band, and that choice is deliberate. Now
-	# that eligibility is judged against a car's upgrade CEILING, a power floor is no longer
-	# a lock — the player just fits parts and grows into it, so the rescue would rightly
-	# decline to fire. A car_type restriction is a real lock: no upgrade in the catalogue
-	# changes what type a car is, so a different car is genuinely the only way through.
-	var low_car := _lowest_tier_model()
-	var low_type := String(low_car.get("car_type", ""))
-	var other_type := ""
-	for entry in CarLibrary.all():
-		if String(entry.get("car_type", "")) != low_type:
-			other_type = String(entry.get("car_type", ""))
-			break
-	if other_type == "":
-		return  # single-type fixture roster: no type lock to demonstrate
-	RallyLibrary.override_for_test([
-		{"id": "r_low", "region": "home", "special": false, "difficulty": 1,
-			"restriction": {"car_type": low_type}},
-		{"id": "r_high", "region": "home", "special": false, "difficulty": 2,
-			"restriction": {"car_type": other_type}},
-	])
-	var r_low := RallyLibrary.by_id("r_low")
-	var r_high := RallyLibrary.by_id("r_high")
-	if not RallyLibrary.is_eligible(r_low, low_car):
-		RallyLibrary.reset()
-		return
-	var owned_low := {"instance_id": 1, "model_id": String(low_car["id"]), "hp": 100.0,
-		"installed_upgrades": [], "tuning": {}}
-	var profile := _profile(["r_low"], [String(low_car["id"])])
-	assert_true(RallyLibrary.incomplete_rallies_enterable_by(low_car, profile,
-		UpgradeLibrary.max_potential_meta(owned_low, low_car, profile)).is_empty(),
-		"setup: the owned car can't reach any incomplete rally even fully upgraded (stuck)")
-	for i in 20:
-		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
-		var meta := CarLibrary.by_id(String(model))
-		assert_true(RallyLibrary.is_eligible(r_high, meta),
-			"the stuck-player grant is a car that opens the locked rally")
-		assert_false(RallyLibrary.incomplete_rallies_enterable_by(meta, profile).is_empty(),
-			"the granted car can enter a still-incomplete rally")
-	RallyLibrary.reset()
 
 
 # --- Map-reveal gating -------------------------------------------------------

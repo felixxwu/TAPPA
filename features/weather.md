@@ -53,12 +53,11 @@ itself, so the "every consumer goes through the table" rule holds without except
   used for validation and tests.
 - `physics_fields(entry)` — **only** `grip_mult` and the `wind` block, i.e. the values
   that can change *how fast the stage is driven*. This, and only this, is what
-  `fingerprint()` feeds to `OpponentCache.global_fingerprint`.
+  `fingerprint()` hashes.
 
 Everything else — particle counts, every colour and fog value in `look`, the road
-tint, the lightning flash — is LOOK, and deliberately does **not** key the cache:
-folding it in would mean a full multi-minute `./cache_all.sh` rebake of all 86
-rallies' rival fields every time someone nudges a colour. The safety net for a *new*
+tint, the lightning flash — is LOOK, and deliberately stays out of the physics
+fingerprint. The safety net for a *new*
 condition (or a new key) that does affect times is `fingerprint()`'s `str(all())`:
 any structural edit to the table re-keys everything regardless. Both sets
 de-duplicate — storm points both its particle `wind_dir` and its force's
@@ -75,8 +74,7 @@ Public API (a contract — other conditions are added against it):
 - `physics_fields(entry) -> Array` — the subset that can change a lap time
   (`grip_mult` + the `wind` block). See the rule above.
 - `fingerprint(cfg) -> String` — hash of the whole table plus every *time-affecting*
-  config value it names; the one thing `OpponentCache.global_fingerprint` folds in
-  for weather.
+  config value it names.
 
 **Dry is the absence of every feature** — its entry is literally `{"id": "dry"}`. That
 is load-bearing, not tidiness: grip becomes an unconditional multiply by 1.0, and the
@@ -321,18 +319,14 @@ higher-difficulty rallies pinned on open water.
 
 - **Track cache: unaffected.** Weather is not a shape determinant and never reaches
   `TrackGenParams`, so no track entry is invalidated by a wet event.
-- **Opponent cache: invalidated globally.** `OpponentCache.global_fingerprint`'s
-  grip string folds in **`WeatherLibrary.fingerprint(base)`** — one hash of the
-  whole weather table plus every **time-affecting** config value it names
-  (`physics_fields`: `grip_mult` + `wind`) — rather than listing each condition's
-  grip field by hand. Adding a condition, adding a key to one, or retuning any
-  time-affecting value the table points at therefore re-keys **every** rally's field
-  automatically, and it is impossible to forget an edit here and silently serve
-  stale rival times. Any such change needs a full `./cache_all.sh` rebake.
-  (Marking an event wet or sandstorm
-  also re-keys its own rally automatically, via `rally_content_fingerprint`
-  hashing the whole rally dict — so the 7 events newly authored sandstorm got new
-  keys on top of the global grip-string change.)
+- **Opponent field: nothing to invalidate.** The rival grid is generated live in
+  `RallySession.start_rally` (it is matched to the player's car rating, so it was
+  never cacheable per rally), and a weather retune therefore lands on the next start
+  with no bake step. `WeatherLibrary.fingerprint(cfg)` survives as the structural
+  guard on the rule above — one hash of the whole weather table plus every
+  **time-affecting** config value it names (`physics_fields`: `grip_mult` + `wind`),
+  rather than a hand-written list of grip fields, so adding a condition or a key can
+  never silently slip a lap-time change past review.
 - **Global leaderboards:** `RallyLibrary.stage_key` hashes the whole authored event
   dict, so the 28 wet events and 7 sandstorm events each got new boards; every
   other stage kept its own. No `TrackCache.BOARD_EPOCH` bump — this is not a
@@ -440,7 +434,6 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   the identical dry one, in both branches.
 - `tests/headless/test_lap_time_model.gd` — a wet event's optimum is strictly
   longer than the same event dry.
-- `tests/headless/test_opponent_cache.gd` — dry and wet events get different keys.
 - `tests/headless/test_render_smoke.gd` — no rain field exists on a dry stage.
 - `tests/headless/test_loading_screen.gd` — the wet tell changes the headline.
 

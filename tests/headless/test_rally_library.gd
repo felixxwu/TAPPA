@@ -168,12 +168,9 @@ func test_every_starter_car_opens_in_a_rally_that_admits_it() -> void:
 		var car := {"model_id": String(model_id), "instance_id": 1,
 			"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}}
 		var meta := UpgradeLibrary.effective_meta(car, entry)
-		# The power FLOOR is judged at max potential (the player may always tune up for free)
-		# and the CEILING may be ducked by detuning — the same two allowances the car park
-		# gives, so this matches what the player can really start.
-		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
-		assert_true(RallyLibrary.is_eligible(opening, meta, floor_meta)
-				or RallyLibrary.qualifying_detune(opening, meta) > 0.0,
+		# Entry is purely CATEGORICAL, so the stock car either fits the class or it doesn't —
+		# there is no tuning-up or detuning allowance left to model.
+		assert_true(RallyLibrary.is_eligible(opening, meta),
 			"starter %s can enter its own opening rally" % model_id)
 
 
@@ -231,7 +228,7 @@ func test_a_rallys_car_prize_is_a_real_catalogue_car() -> void:
 # Pins no band and no car: it reads each rally's own prize and asks the real eligibility
 # rule about it, so a designer moving a ceiling re-derives the answer. What it will not
 # let them do is move a ceiling BELOW the prize, which is the design rule itself.
-func test_a_car_prize_tops_the_band_of_the_rally_that_awards_it() -> void:
+func test_a_rally_admits_the_car_it_awards() -> void:
 	CarFixtures.restore()
 	var checked := 0
 	for rally in RallyLibrary.all():
@@ -243,18 +240,8 @@ func test_a_car_prize_tops_the_band_of_the_rally_that_awards_it() -> void:
 			continue  # covered by test_a_rallys_car_prize_is_a_real_catalogue_car
 		checked += 1
 		var prize_meta := UpgradeLibrary.effective_meta({}, prize)
-		assert_true(RallyLibrary.is_eligible(rally, prize_meta, prize_meta),
+		assert_true(RallyLibrary.is_eligible(rally, prize_meta),
 			"%s admits the %s it awards" % [rally.get("id", "?"), car_id])
-		var prize_pw := CarLibrary.power_to_weight_hp_tonne(prize_meta)
-		for entry in CarLibrary.all():
-			if String(entry.get("id", "")) == car_id:
-				continue
-			var meta := UpgradeLibrary.effective_meta({}, entry)
-			if not RallyLibrary.is_eligible(rally, meta, meta):
-				continue
-			assert_lte(CarLibrary.power_to_weight_hp_tonne(meta), prize_pw,
-				"%s admits nothing quicker than the %s it awards (%s)"
-					% [rally.get("id", "?"), car_id, entry.get("id", "?")])
 	assert_gt(checked, 0, "some rally awards a car (else this asserts nothing)")
 
 
@@ -339,9 +326,9 @@ func test_a_prize_rallys_restriction_governs_its_field() -> void:
 	var rally := {
 		"id": "fx_prize_narrow", "name": "Prize Narrow", "region": "home", "special": false,
 		"difficulty": 1, "prize_car": prize_id,
-		# A band no catalogue car satisfies. Previously the prize short-circuit returned the
+		# A class no catalogue car satisfies. Previously the prize short-circuit returned the
 		# prize car regardless; now the ordinary empty-pool fallback answers.
-		"restriction": {"pw_min": 5000.0, "pw_max": 9000.0}, "events": [],
+		"restriction": {"country": "__nowhere__"}, "events": [],
 	}
 	var pool := RallyLibrary._eligible_cars(rally)
 	assert_eq(pool.size(), CarLibrary.all().size(),
@@ -619,168 +606,10 @@ func test_every_shipped_rally_has_at_least_one_car_that_can_enter_it() -> void:
 		var found := ""
 		for spec in CarLibrary.all():
 			var meta := UpgradeLibrary.effective_meta({}, spec)
-			var maxed := UpgradeLibrary.max_potential_meta({}, spec)
-			# "Can enter" includes ducking under a pw_max ceiling by detuning, which the
-			# player is always free to do (qualifying_detune returns 1.0 when already in).
-			if RallyLibrary.is_eligible(rally, meta, maxed) or RallyLibrary.qualifying_detune(rally, meta) > 0.0:
+			if RallyLibrary.is_eligible(rally, meta):
 				found = String(spec.get("id", ""))
 				break
 		assert_ne(found, "", "some car in the roster can enter rally '%s'" % rally.get("id", "?"))
-
-
-func test_no_shipped_rally_has_an_over_wide_power_band() -> void:
-	# SHIPPED-CONTENT guarantee, in the same spirit as the "every rally is enterable"
-	# test above: a p/w band whose floor is less than HALF its ceiling lets wildly
-	# mismatched cars into the same event, so the field stops being a class and the
-	# rally loses its identity. This asserts the RATIO invariant only — never a
-	# particular floor or ceiling, both of which a designer may retune freely, and
-	# never which rallies carry a band at all (an open-class finale authors none).
-	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
-	CarFixtures.restore()
-	for rally in RallyLibrary.all():
-		var restriction: Dictionary = rally.get("restriction", {})
-		if not (restriction.has("pw_min") and restriction.has("pw_max")):
-			continue  # ceiling-only / floor-only / open class: no band to be too wide
-		var lo := float(restriction["pw_min"])
-		var hi := float(restriction["pw_max"])
-		assert_gte(lo, hi * 0.5,
-			"rally '%s' p/w band %s-%s is too wide (floor must be >= half the ceiling)"
-				% [rally.get("id", "?"), lo, hi])
-
-
-func test_power_to_weight_restriction_filters() -> void:
-	# The p/w gate is a BAND: pw_min..pw_max (both in hp/tonne; is_eligible converts each
-	# car's kW/kg to hp/tonne before comparing). A car must sit INSIDE the band — under the
-	# floor is ineligible, over the ceiling is capped out, in-band is eligible. Either edge
-	# may be omitted (ceiling-only or floor-only). Use synthetic cars spanning low / mid /
-	# high p/w and derive the band edges from those figures, so the test leans on the
-	# eligibility LOGIC — never on authored catalogue values (which are free to change).
-	# power_to_weight() reads peak_torque + redline straight off the entry, so no real
-	# engine id is needed.
-	var low := {"mass": 1200.0, "peak_torque": 200.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
-	var mid := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
-	var high := {"mass": 1000.0, "peak_torque": 600.0, "redline": 8000.0, "drive_mode": CarLibrary.RWD}
-	var pw_low := CarLibrary.power_to_weight(low) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var pw_mid := CarLibrary.power_to_weight(mid) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var pw_high := CarLibrary.power_to_weight(high) * RallyLibrary.KW_KG_TO_HP_TONNE
-	# A band around the mid car: only the mid car sits inside it.
-	var band := {"restriction": {"pw_min": (pw_low + pw_mid) * 0.5, "pw_max": (pw_mid + pw_high) * 0.5}}
-	assert_true(RallyLibrary.is_eligible(band, mid), "the in-band car is eligible")
-	assert_false(RallyLibrary.is_eligible(band, low), "the under-floor car is ineligible")
-	assert_false(RallyLibrary.is_eligible(band, high), "the over-ceiling car is capped out")
-	# Ceiling-only (no pw_min): no floor, so a weak car still clears it.
-	var ceiling_only := {"restriction": {"pw_max": pw_high * 1.1}}
-	assert_true(RallyLibrary.is_eligible(ceiling_only, low), "no pw_min: a weak car clears a ceiling-only gate")
-	# Floor-only (no pw_max): no ceiling, so a strong car still clears it but a weak one fails.
-	var floor_only := {"restriction": {"pw_min": (pw_low + pw_mid) * 0.5}}
-	assert_true(RallyLibrary.is_eligible(floor_only, high), "no pw_max: a strong car clears a floor-only gate")
-	assert_false(RallyLibrary.is_eligible(floor_only, low), "a car under the floor fails a floor-only gate")
-
-
-func test_pw_gate_rounds_before_comparing_like_the_display_does() -> void:
-	# Regression: the player-facing hp/tonne readouts (detune slider, close-button cap,
-	# ineligibility message) all round to the nearest whole number via "%.0f"/roundi, so a
-	# car whose RAW power-to-weight sits just a hair under a whole-number requirement can
-	# still display as meeting it exactly (e.g. raw 99.6 shows "100 hp/t"). The eligibility
-	# gate must compare the SAME rounded figure the player sees, not the raw float, or a car
-	# that visually meets the requirement gets blocked anyway. Build a synthetic car whose
-	# raw hp/tonne lands just under a whole number, then set the rally's pw_min to exactly
-	# that rounded whole number.
-	var car := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
-	var raw_pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var rounded_pw := CarLibrary.power_to_weight_hp_tonne(car)
-	assert_ne(raw_pw, float(rounded_pw), "the synthetic car's raw p/w must not already be a whole number")
-	var rally := {"restriction": {"pw_min": float(rounded_pw)}}
-	assert_true(RallyLibrary.is_eligible(rally, car),
-		"a car whose displayed (rounded) p/w meets the floor must be eligible, even if the raw float sits a hair under it")
-
-
-func test_pw_floor_is_judged_at_the_supplied_floor_meta() -> void:
-	# The pw_min floor accepts a separate floor_meta so an owned car currently DETUNED or
-	# ballasted below the floor is still eligible when its MAX potential clears it (the
-	# player will tune up to enter — mirroring how an over-cap car detunes down to duck the
-	# ceiling). Synthetic metas: a weak "current" meta and a strong "max potential" one.
-	var weak := {"mass": 1200.0, "peak_torque": 150.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
-	var strong := {"mass": 1200.0, "peak_torque": 450.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
-	var pw_weak := CarLibrary.power_to_weight(weak) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var pw_strong := CarLibrary.power_to_weight(strong) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var rally := {"restriction": {"pw_min": (pw_weak + pw_strong) * 0.5}}
-	# Point check (no floor_meta): the current-weak meta is under the floor -> ineligible.
-	assert_false(RallyLibrary.is_eligible(rally, weak),
-		"a point check judges the floor at the current (weak) meta -> ineligible")
-	# With a max-potential floor_meta above the floor: eligible (the car can tune up to it).
-	assert_true(RallyLibrary.is_eligible(rally, weak, strong),
-		"eligible when the floor is judged at the car's max potential")
-	# A car whose MAX potential is still under the floor stays ineligible.
-	assert_false(RallyLibrary.is_eligible(rally, weak, weak),
-		"still too weak even at max potential -> ineligible")
-
-
-func test_installed_upgrades_change_rally_eligibility() -> void:
-	# An upgrade shifts a car's effective power-to-weight, so fitting one can qualify
-	# or disqualify it for a rally's pw band — the HQ passes the car's effective_meta
-	# (baseline + installed upgrades) to is_eligible, not the raw roster entry. Use a
-	# synthetic car and derive each band from the ACTUAL before/after p/w so the test
-	# leans on the mechanism (upgrades flow through effective_meta into eligibility),
-	# not on the MX-5's authored stats or a kit's tuned magnitude.
-	UpgradeFixtures.install()
-	var car := {"mass": 1100.0, "peak_torque": 200.0, "redline": 6500.0,
-		"tire_compound": 1.0, "drive_mode": CarLibrary.RWD}
-	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": []}, car)
-	var powered := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_turbo_big"]}, car)
-	var maxed := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_turbo_big", "fx_lightweight"]}, car)
-	var pw_bare := CarLibrary.power_to_weight(bare) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var pw_powered := CarLibrary.power_to_weight(powered) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var pw_maxed := CarLibrary.power_to_weight(maxed) * RallyLibrary.KW_KG_TO_HP_TONNE
-	assert_gt(pw_powered, pw_bare, "an engine kit raises effective p/w")
-	assert_gt(pw_maxed, pw_powered, "adding weight reduction raises it further")
-	# A ceiling between bare and maxed: the bare car clears it, the fully-built one is capped out.
-	var cap_gate := {"restriction": {"pw_max": (pw_bare + pw_maxed) * 0.5}}
-	assert_true(RallyLibrary.is_eligible(cap_gate, bare), "bare car clears the ceiling gate")
-	assert_false(RallyLibrary.is_eligible(cap_gate, maxed), "engine kit + weight reduction push it over the cap")
-
-
-func test_qualifying_detune_ducks_an_over_powered_car_under_the_cap() -> void:
-	# An over-powered car can enter a pw_max-capped rally by agreeing to a detune:
-	# qualifying_detune returns the whole-percent engine tune that scales its p/w
-	# under the cap. Synthetic car; the cap is derived from the car's own figure, so
-	# the test exercises the LOGIC (linear torque scaling + the is_eligible
-	# verification), never an authored value.
-	var car := {"mass": 1000.0, "peak_torque": 500.0, "redline": 7000.0, "drive_mode": CarLibrary.RWD}
-	var pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var rally := {"restriction": {"pw_max": pw * 0.8}}
-	assert_false(RallyLibrary.is_eligible(rally, car), "the car is over the cap at full tune")
-	var frac := RallyLibrary.qualifying_detune(rally, car)
-	assert_between(frac, 0.01, 0.99, "an over-cap car needs a real down-tune (not 0, not full power)")
-	assert_almost_eq(frac * 100.0, roundf(frac * 100.0), 0.0001,
-		"the tune is a whole slider percent, so it round-trips through the detune slider")
-	# It is the LARGEST such percent: within one slider step of the exact cap ratio.
-	assert_gt(frac, 0.8 - 0.011, "the proposed tune sits within one percent step of the cap ratio")
-	# And the detuned car really is eligible (the helper verifies through is_eligible).
-	var detuned := car.duplicate()
-	detuned["peak_torque"] = float(car["peak_torque"]) * frac
-	assert_true(RallyLibrary.is_eligible(rally, detuned), "the proposed detune makes the car eligible")
-
-
-func test_qualifying_detune_full_power_and_unfixable_cases() -> void:
-	var car := {"mass": 1000.0, "peak_torque": 500.0, "redline": 7000.0, "drive_mode": CarLibrary.RWD}
-	var pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
-	# Already eligible at full tune -> 1.0 (an absolute slider setting: full power).
-	assert_eq(RallyLibrary.qualifying_detune({"restriction": {"pw_max": pw * 1.1}}, car), 1.0,
-		"a car already under the cap needs no detune")
-	# A non-power restriction failing too -> no detune can fix it.
-	var wrong_drive := {"restriction": {"drive_mode": CarLibrary.AWD, "pw_max": pw * 0.8}}
-	assert_eq(RallyLibrary.qualifying_detune(wrong_drive, car), -1.0,
-		"detuning can't fix a drive-mode mismatch")
-	# The contract everywhere: the result is either -1.0 or a tune that verifies
-	# eligible — even against a tight cap where the whole-percent rounding can land off.
-	var narrow := {"restriction": {"pw_max": pw * 0.8}}
-	var frac := RallyLibrary.qualifying_detune(narrow, car)
-	if frac > 0.0:
-		var detuned := car.duplicate()
-		detuned["peak_torque"] = float(car["peak_torque"]) * frac
-		assert_true(RallyLibrary.is_eligible(narrow, detuned),
-			"a returned tune always verifies eligible against the whole restriction")
 
 
 # --- Determinism -------------------------------------------------------------
@@ -924,13 +753,16 @@ func test_opponent_field_shape_and_bounds() -> void:
 			var sum := 0
 			for i in event_results.size():
 				var t: int = opp["event_times_ms"][i]
-				var best_car := RallyLibrary._best_eligible_car(rally)
 				# Fastest a rival can go: the tier's fast end minus the ±noise, clamped so
-				# they never beat the physics optimum. Every rival's event time is >= that.
+				# they never beat the physics optimum, measured against the rival's OWN car
+				# (each entry names the build it runs).
 				var band := RallyLibrary._pace_band(int(rally.get("difficulty", 1)))
 				var min_factor: float = maxf(band.x * (1.0 - RallyLibrary.PACE_EVENT_NOISE), RallyLibrary.PACE_MIN_FLOOR)
-				var floor_ms := int(LapTimeModel.optimum_ms(event_results[i], best_car, events[i]) * min_factor)
-				assert_gte(t, floor_ms - 1, "event time >= best eligible car floor * fastest possible pace")
+				var own_meta := UpgradeLibrary.effective_meta(
+					{"swapped_engine": String(opp.get("engine_id", ""))},
+					CarLibrary.by_id(String(opp.get("car_id", ""))))
+				var floor_ms := int(LapTimeModel.optimum_ms(event_results[i], own_meta, events[i]) * min_factor)
+				assert_gte(t, floor_ms - 1, "event time >= its own car's floor * fastest possible pace")
 				sum += t
 			assert_eq(int(opp["combined_ms"]), sum, "combined time is the sum of event times")
 
@@ -988,35 +820,6 @@ func test_opponents_drive_eligible_cars() -> void:
 			"car name is the engine-aware display name for the fielded build")
 
 
-func test_opponents_are_fielded_in_band() -> void:
-	# Rivals are drawn only from the rally's eligible (in-band) pool — the band floor IS
-	# the power floor now, so no rival can be underpowered. Build a band that admits only
-	# part of the roster (floor below the weakest car, ceiling at the median so the strong
-	# half is excluded — guaranteeing a non-empty pool AND a real exclusion, not the
-	# admits-none fallback), then assert every fielded rival is eligible for the rally.
-	# Synthetic roster (fixtures).
-	var pws: Array = []
-	for entry in CarLibrary.all():
-		pws.append(CarLibrary.power_to_weight(UpgradeLibrary.effective_meta({}, entry)) * CarLibrary.KW_KG_TO_HP_TONNE)
-	pws.sort()
-	var median: float = pws[pws.size() / 2]
-	var rally := {"id": "synthetic_band", "difficulty": 2,
-		"restriction": {"pw_min": pws[0] - 1.0, "pw_max": median},
-		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
-	var track := _track_with_pieces()
-	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
-	assert_gt(field.size(), 0, "a field is fielded")
-	for opp in field:
-		# Judged on the build the rival ACTUALLY runs: an engine swap moves displacement,
-		# mass and power-to-weight, so checking the stock meta would be checking a car that
-		# isn't on the grid.
-		var meta := UpgradeLibrary.effective_meta(
-			{"swapped_engine": String(opp.get("engine_id", ""))},
-			CarLibrary.by_id(String(opp.get("car_id", ""))))
-		assert_true(RallyLibrary.is_eligible(rally, meta),
-			"%s is fielded in-band (eligible for the rally)" % opp["name"])
-
-
 # --- Opponent engine swaps (features/rally-roster.md) ------------------------
 
 # Every rival runs a DISTINCT car+engine build. This is the whole point of the feature:
@@ -1058,21 +861,22 @@ func test_every_rival_runs_a_distinct_car_and_engine_build() -> void:
 
 
 # Every fielded build satisfies the rally's restriction once the fitted engine is resolved.
-# This is the guard that stops a swap smuggling an over-powered build onto the grid: the
-# restriction bounds power-to-weight, displacement and cylinder count, and effective_meta
-# re-points the engine, so eligibility must hold for the SWAPPED meta, not the stock one.
+# This is the guard that stops a swap smuggling an out-of-class build onto the grid: the
+# restriction bounds displacement and cylinder count, and effective_meta re-points the
+# engine, so eligibility must hold for the SWAPPED meta, not the stock one.
 func test_every_fielded_build_is_eligible_with_its_fitted_engine() -> void:
 	CarFixtures.install()
-	# A ceiling that admits only part of the combo pool, derived from the fixtures' own
-	# spread so no authored number is pinned.
-	var pws: Array = []
-	for entry in CarLibrary.all():
-		for eng in EngineLibrary.all():
-			var meta := UpgradeLibrary.effective_meta({"swapped_engine": String(eng.get("id", ""))}, entry)
-			pws.append(CarLibrary.power_to_weight_hp_tonne(meta))
-	pws.sort()
+	# A CATEGORICAL restriction that admits only part of the combo pool. Cylinder count is
+	# engine-derived, so it is exactly the case that only holds if the SWAPPED engine is
+	# resolved — the stock meta would answer differently for half the pool. Derived from
+	# the fixtures' own engine spread rather than pinning an authored number: the cap sits
+	# below the widest fixture engine.
+	var cyls: Array = []
+	for eng in EngineLibrary.all():
+		cyls.append(EngineLibrary.cylinders(eng))
+	cyls.sort()
 	var rally := {"id": "synthetic_capped", "difficulty": 2,
-		"restriction": {"pw_max": pws[pws.size() / 2]},
+		"restriction": {"cylinders_max": int(cyls[0])},
 		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
 	var track := _track_with_pieces()
 	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
@@ -1254,11 +1058,10 @@ func test_engine_swapping_is_the_first_special_the_map_reaches() -> void:
 		"engine swapping is on the first special the map reaches — it opens first")
 
 
-# EVERY value in a generated rival entry must survive a JSON round-trip unchanged. The
-# opponent cache's entire contract is that a cached field equals a freshly generated one
-# (data/opponent_cache.json is committed and consulted instead of re-simulating), and JSON
-# is the transport — so a value that doesn't round-trip means cache and live silently
-# disagree. Floats are the only risk: `wreck_progress` used to be a raw double, which
+# EVERY value in a generated rival entry must survive a JSON round-trip unchanged: a
+# field is persisted with the run's standings, and JSON is the transport — so a value
+# that doesn't round-trip means the reloaded field silently disagrees with the one that
+# was raced. Floats are the only risk: `wreck_progress` used to be a raw double, which
 # prints to ~14 significant digits and parses back to a DIFFERENT double.
 #
 # Asserted over the whole entry rather than on wreck_progress alone, so any FUTURE float
@@ -1774,10 +1577,10 @@ func test_all_specials_completed_needs_every_rung() -> void:
 func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:
 	# The query integrates is_eligible with the map-reveal gate. Runs on a SYNTHETIC roster
 	# rather than the shipped one: what a given car can enter depends on authored
-	# restriction bands and authored pin positions, both of which a designer retunes freely.
+	# restrictions and authored pin positions, both of which a designer retunes freely.
 	#
-	# Three rallies, all incomplete: one lit and enterable, one lit but out of the car's
-	# band, one enterable-but-DARK. A correct query returns exactly the first.
+	# Three rallies, all incomplete: one lit and enterable, one lit but of a class the car
+	# is not in, one enterable-but-DARK. A correct query returns exactly the first.
 	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
 	var far: Vector2 = hq + Vector2(Config.data.map_reveal_radius * 5.0, 0.0)
 	RallyLibrary.override_for_test([
@@ -1785,12 +1588,12 @@ func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:
 		# until something is completed (HQ lights nothing).
 		{"id": "q_open", "name": "Open", "region": "home", "special": false, "difficulty": 1,
 			"prize_car": START_CAR,
-			"map_pos": hq, "restriction": {"pw_min": 50.0, "pw_max": 400.0}, "events": []},
-		{"id": "q_out_of_band", "name": "Out Of Band", "region": "home", "special": false,
+			"map_pos": hq, "restriction": {"drive_mode": CarLibrary.AWD}, "events": []},
+		{"id": "q_out_of_class", "name": "Out Of Class", "region": "home", "special": false,
 			"difficulty": 1, "map_pos": hq,
-			"restriction": {"pw_min": 900.0, "pw_max": 1200.0}, "events": []},
+			"restriction": {"drive_mode": CarLibrary.FWD}, "events": []},
 		{"id": "q_dark", "name": "Dark", "region": "home", "special": false, "difficulty": 1,
-			"map_pos": far, "restriction": {"pw_min": 50.0, "pw_max": 400.0}, "events": []},
+			"map_pos": far, "restriction": {"drive_mode": CarLibrary.AWD}, "events": []},
 	] as Array[Dictionary])
 	var profile := {"rallies": {}, "starter_model_id": START_CAR}
 	# The car carries an ENGINE (a before_each fixture, not a shipped entry) and a door
@@ -1803,7 +1606,7 @@ func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:
 	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
 		ids.append(String(r["id"]))
 	assert_eq(ids, ["q_open"],
-		"only the rally that is BOTH lit and in-band is offered")
+		"only the rally that is BOTH lit and in-class is offered")
 
 
 func test_a_completed_rally_is_never_offered_as_enterable() -> void:
@@ -1888,3 +1691,109 @@ func test_stage_key_is_document_id_safe() -> void:
 	assert_lt(key.length(), 1500, "well under Firestore's 1500-byte id limit")
 
 
+
+
+# --- Rating-matched rival draw ----------------------------------------------
+# The power band that used to gate ENTRY now shapes the FIELD instead: rivals are drawn
+# weighted toward the player's CarPerformance rating (rating_match_weight), so bringing a
+# quick car means racing quick cars. Both tests below are relational — they compare two
+# draws against each other, never a rating value, a spread, or a catalogue entry.
+
+# A widened synthetic engine set, so the combo pool spans a real spread of ratings and
+# "matched toward the fast end" is distinguishable from "matched toward the slow end".
+# Fully synthetic: no shipped catalogue entry is involved.
+func _install_spread_roster() -> void:
+	CarFixtures.install()
+	var engines := CarFixtures.engines()
+	for i in 4:
+		var clone: Dictionary = engines[0].duplicate(true)
+		clone["id"] = "fx_spread_%d" % i
+		clone["name"] = "Fixture Spread %d" % i
+		clone["peak_torque"] = float(clone["peak_torque"]) * (1.0 + 0.6 * float(i + 1))
+		engines.append(clone)
+	EngineLibrary.override_for_test(engines)
+	CarPerformance.reset()
+
+
+func _mean_field_rating(field: Array) -> float:
+	var total := 0.0
+	for opp in field:
+		var meta := UpgradeLibrary.effective_meta(
+			{"swapped_engine": String(opp.get("engine_id", ""))},
+			CarLibrary.by_id(String(opp.get("car_id", ""))))
+		total += float(CarPerformance.rating(meta))
+	return total / float(field.size())
+
+
+func test_the_field_is_drawn_toward_the_players_rating() -> void:
+	_install_spread_roster()
+	var rally := {"id": "synthetic_matched", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var track := _track_with_pieces()
+	# The pool's own extremes, so the two targets are real ratings the draw can reach
+	# rather than invented numbers.
+	var ratings: Array = []
+	for combo in RallyLibrary._eligible_combos(rally):
+		ratings.append(int(combo["rating"]))
+	ratings.sort()
+	assert_gt(int(ratings[-1]), int(ratings[0]),
+		"the synthetic pool spans a spread of ratings (else this test asserts nothing)")
+	var slow := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(ratings[0]))
+	var fast := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(ratings[-1]))
+	assert_gt(fast.size(), 0, "a field is fielded")
+	assert_lt(_mean_field_rating(slow), _mean_field_rating(fast),
+		"a slow player draws a slower grid than a fast player does, from the same rally")
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+func test_a_zero_player_rating_leaves_the_draw_unmatched() -> void:
+	# 0 is the "no rating supplied" sentinel — every caller that doesn't know the player's
+	# car (a test, a tool, a free-roam handoff) passes it, and the draw must then behave
+	# EXACTLY as it did before matching existed: weighted by swap plausibility alone.
+	# Asserted as identity against the defaulted call, so the sentinel can never quietly
+	# become "match against a rating of zero" (which would bias every such field slow).
+	_install_spread_roster()
+	var rally := {"id": "synthetic_unmatched", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 4}, {"seed": 5}, {"seed": 6}]}
+	var track := _track_with_pieces()
+	var defaulted := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	var zeroed := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"], 0)
+	assert_gt(defaulted.size(), 0, "a field is fielded")
+	assert_eq(zeroed, defaulted, "player_rating = 0 draws exactly the unmatched field")
+	# And matching really is doing something on this pool — otherwise the assertion above
+	# would pass even if the sentinel were ignored entirely.
+	var ratings: Array = []
+	for combo in RallyLibrary._eligible_combos(rally):
+		ratings.append(int(combo["rating"]))
+	ratings.sort()
+	var matched := RallyLibrary.generate_opponent_field(
+		rally, [track, track, track], rally["events"], int(ratings[0]))
+	assert_ne(matched, defaulted, "a supplied rating changes the draw (else the sentinel is vacuous)")
+	CarFixtures.restore()
+	EngineLibrary.reset()
+	CarPerformance.reset()
+
+
+# SHIPPED-CONTENT guard, in the same spirit as "every rally is enterable": now that entry
+# is purely categorical, a roster that authored no restrictions at all would still pass
+# every eligibility test while quietly deleting the game's classes — every rally would
+# admit every car and the map would stop asking the player to own anything in particular.
+# Asserts existence only: never how many carry a restriction, never which, never what it
+# says. Specials are exempt by design (a showdown is open to whatever you have brought).
+func test_the_career_roster_is_not_entirely_open_class() -> void:
+	CarFixtures.restore()
+	RallyFixtures.restore()
+	var career := 0
+	var restricted := 0
+	for rally in RallyLibrary.all():
+		if RallyLibrary.is_special(rally):
+			continue
+		career += 1
+		if not (rally.get("restriction", {}) as Dictionary).is_empty():
+			restricted += 1
+	assert_gt(career, 0, "the roster has non-special rallies (else this test asserts nothing)")
+	assert_gt(restricted, 0, "some non-special rally restricts entry to a class of car")

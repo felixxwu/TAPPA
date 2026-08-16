@@ -335,46 +335,39 @@ static func pick_mystery_box_grant(profile: Dictionary, rng: RandomNumberGenerat
 
 # Draw the car model id to grant for a top-3 finish. Fires on EVERY top-3
 # finish — re-winning a completed rally re-grants a car (renewable supply).
-# The draw is GUARANTEED: the standard pool (tier <= the ceiling) always has
-# the tier-1 roster in it, so a car is always granted. Two paths:
-#   * Standard: any car whose reward_tier is at or below the DRAW CEILING —
-#     clamp(f(rally difficulty), 1, tier_ceiling(rallies completed)), the same
-#     progress clamp the per-event upgrade draw uses (gameplay.md). So a higher-
-#     difficulty rally pays a better car, but only up to the tier the player's
-#     progress has earned — a lucky early win can't drop a top car. Prefers un-owned.
-#   * Unlock fallback: if the player has completed (>=1 star) every rally their
-#     garage can currently enter — nothing new left to enter — grant a car that
-#     opens a still-locked, REVEALED rally instead: candidates eligible for the
-#     lowest-difficulty such rally, preferring un-owned. This keeps a fresh rally
-#     reachable after every reward.
+# The draw is GUARANTEED: the pool (tier <= the ceiling) always has the tier-1
+# roster in it, so a car is always granted. Any car whose reward_tier is at or
+# below the DRAW CEILING — clamp(f(rally difficulty), 1, tier_ceiling(rallies
+# completed)), the same progress clamp the per-event upgrade draw uses
+# (gameplay.md). So a higher-difficulty rally pays a better car, but only up to
+# the tier the player's progress has earned — a lucky early win can't drop a top
+# car. Prefers un-owned.
 # rally_difficulty defaults to 0 (garage tier alone governs). Returns a model_id
 # (Variant only for the defensive empty-roster null); caller delivers via
 # Save.grant_car.
 static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: RandomNumberGenerator = null) -> Variant:
 	rng = _ensure_rng(rng)
-	var pool := _unlock_candidates(profile)
-	if pool.is_empty():
-		# gameplay.md's progress clamp: reward tier = f(difficulty), capped by the
-		# progress ceiling (rallies completed), so a lucky early win at a higher-difficulty
-		# rally still can't drop a car above the player's earned tier. This is the SAME
-		# clamp. (The per-event UPGRADE draw no longer uses a tier at all — see the note on
-		# MAX_TIER — so this is now the car ladder's own clamp.) Cars deliberately don't key
-		# off the garage's highest owned tier, which let one d2 win open the whole roster.
-		var earned := tier_ceiling(RallyLibrary.completed_count(profile))
-		var ceiling := target_tier(rally_difficulty, profile)
+	# gameplay.md's progress clamp: reward tier = f(difficulty), capped by the
+	# progress ceiling (rallies completed), so a lucky early win at a higher-difficulty
+	# rally still can't drop a car above the player's earned tier. This is the SAME
+	# clamp. (The per-event UPGRADE draw no longer uses a tier at all — see the note on
+	# MAX_TIER — so this is now the car ladder's own clamp.) Cars deliberately don't key
+	# off the garage's highest owned tier, which let one d2 win open the whole roster.
+	var earned := tier_ceiling(RallyLibrary.completed_count(profile))
+	var ceiling := target_tier(rally_difficulty, profile)
+	var pool := _cars_at_or_below_tier(ceiling)
+	# EXHAUSTED-TIER STEP-UP. The tier is min(difficulty, earned), so a difficulty-1
+	# rally always draws the tier-1 pool however far the player has come — and there
+	# are far more low-difficulty rallies than low-tier cars, so that pool runs out
+	# and every later win hands back a car already in the garage. When that happens,
+	# climb toward the tier the player has actually EARNED until something new
+	# appears. This never exceeds the earned ceiling, so the progress clamp
+	# (gameplay.md — a lucky early win can't drop a car above your tier) still holds;
+	# it only stops an exhausted pool turning a win into a no-op reward.
+	var owned_ids := _owned_model_ids(profile)
+	while ceiling < earned and _all_owned(pool, owned_ids):
+		ceiling += 1
 		pool = _cars_at_or_below_tier(ceiling)
-		# EXHAUSTED-TIER STEP-UP. The tier is min(difficulty, earned), so a difficulty-1
-		# rally always draws the tier-1 pool however far the player has come — and there
-		# are far more low-difficulty rallies than low-tier cars, so that pool runs out
-		# and every later win hands back a car already in the garage. When that happens,
-		# climb toward the tier the player has actually EARNED until something new
-		# appears. This never exceeds the earned ceiling, so the progress clamp
-		# (gameplay.md — a lucky early win can't drop a car above your tier) still holds;
-		# it only stops an exhausted pool turning a win into a no-op reward.
-		var owned_ids := _owned_model_ids(profile)
-		while ceiling < earned and _all_owned(pool, owned_ids):
-			ceiling += 1
-			pool = _cars_at_or_below_tier(ceiling)
 	# Avoid handing out the same model twice running when there is any alternative —
 	# back-to-back duplicates read as a broken reward even when a duplicate is the
 	# only honest outcome.
@@ -402,18 +395,6 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 	return out
 
 
-# The unlock-fallback pool: non-empty ONLY when the garage is stuck — no owned
-# car (on its EFFECTIVE stats, so installed upgrades count) can enter any
-# still-incomplete rally. Then: walk the incomplete, revealed (RallyLibrary.rally_revealed
-# returns true) rallies by difficulty
-# ASCENDING and return every CarLibrary model eligible for one at the lowest
-# difficulty ANY catalogue car can actually enter, so the grant opens progression in
-# difficulty order (all tier-1/2 beaten -> a car for a difficulty-3 rally, not 4).
-# Only REVEALED rallies count: granting a car for a rally whose pin is still hidden
-# (RallyLibrary.rally_revealed returns false) wouldn't open anything. Stepping past a difficulty whose
-# restriction bands no catalogue car fits matters: giving up there (and silently
-# falling back to the standard draw) would leave the player soft-locked even though a
-# grant for the next difficulty up re-opens progression.
 # --- Spending stars ----------------------------------------------------------
 # Cars are NOT bought. They are won at the rally that advertises them
 # (features/prize-rallies.md), so what the player owns is exactly what they went out and
@@ -421,11 +402,12 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 # map something worth exploring toward.
 #
 # The retired API was `car_price` / `purchase_car` / `stars_available_in`'s pricing role,
-# plus the present box on the HQ map and `GameConfig.star_cost_per_car`. It also carried a
-# dead-end rescue (price 0 when stranded AND broke) which is gone with it: the reachability
-# guarantee is now a CONTENT invariant proven over the map
+# plus the present box on the HQ map and `GameConfig.star_cost_per_car`. The soft-lock
+# rescue that once rode along with it (a price-0 car when stranded, then an unlock-draw
+# fallback) is gone too: entry requirements are purely categorical, so no build can be
+# too slow to enter anything, and reachability is a CONTENT invariant proven over the map
 # (test_every_starter_car_can_enter_something_on_a_fresh_profile and the roster's
-# reachability closure), not a runtime discount.
+# reachability closure) rather than a runtime rescue.
 #
 # What stars buy instead: repairs and copies of discovered parts — see
 # features/star-economy.md.
@@ -436,60 +418,6 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 static func stars_available_in(profile: Dictionary) -> int:
 	return maxi(0, int(profile.get("stars_earned", 0)) - int(profile.get("stars_spent", 0)))
 
-
-# Whether NOTHING the player owns can enter any incomplete, revealed rally.
-#
-# THE shared predicate (todo/star-economy.md): the present box's price readout and the
-# purchase itself must agree on this, or the pin would quote a price the purchase then
-# refuses. Also drives the anti-soft-lock rescue below.
-#
-# EVERY owned car counts, wrecked or not. A wreck is no longer terminal — the car comes
-# back repairable (Save.record_wreck) — so there is no such thing as a car that is
-# permanently out of service, and skipping one would understate what the player can drive.
-static func is_stranded(profile: Dictionary) -> bool:
-	for car in profile.get(Save.KEY_CARS, []):
-		var entry := CarLibrary.for_owned(car)
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		# Judge the pw_min floor at the car's max potential (the player can always tune up to
-		# enter), so a car detuned/ballasted for a lower rally doesn't read as stuck. Passing
-		# `profile` selects the REACHABLE ceiling — only parts whose gate is already open. The
-		# aspirational ceiling would conclude nobody is ever stuck (any car could in principle
-		# be turbo'd), silently disabling the rescue for a player whose turbo is locked behind
-		# an event they can't yet reach.
-		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry, profile)
-		if not RallyLibrary.incomplete_rallies_enterable_by(meta, profile, floor_meta).is_empty():
-			return false
-	return true
-
-
-static func _unlock_candidates(profile: Dictionary) -> Array:
-	if not is_stranded(profile):
-		return []  # a rally is already enterable — standard draw applies
-	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
-	# Locked rallies grouped by difficulty, so we can walk difficulties ascending.
-	var locked_by_difficulty := {}
-	for rally in RallyLibrary.all():
-		if rallies.get(rally["id"], {}).get("completed", false):
-			continue
-		if not RallyLibrary.rally_revealed(rally, profile):
-			continue
-		var d := int(rally.get("difficulty", 1))
-		if not locked_by_difficulty.has(d):
-			locked_by_difficulty[d] = []
-		locked_by_difficulty[d].append(rally)
-	var difficulties: Array = locked_by_difficulty.keys()
-	difficulties.sort()
-	for d in difficulties:
-		var out := {}
-		for rally in locked_by_difficulty[d]:
-			for entry in CarLibrary.all():
-				if RallyLibrary.is_eligible(rally, entry):
-					out[entry["id"]] = true
-		if not out.is_empty():
-			return out.keys()
-	# Nothing is locked, or no catalogue car can enter any locked rally (a hard
-	# data hole no grant can fix) — the standard draw applies.
-	return []
 
 
 # Uniform pick from `pool`, restricted to not-yet-owned models when any exist

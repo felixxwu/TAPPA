@@ -18,8 +18,7 @@
     ],
     "coastal_sprint": [
       "mx5",
-      "focus",
-      "twingo",
+      "acty",
       "charger",
       "porsche911",
       "viper",
@@ -27,34 +26,16 @@
       "beast"
     ],
     "front_runners": [
-      "mx5",
       "focus",
-      "twingo",
-      "acty",
-      "charger",
-      "porsche911",
-      "viper",
-      "xjs",
-      "beast"
+      "twingo"
     ],
     "gc_fishermens_run": [
       "mx5",
       "focus",
       "twingo",
-      "acty",
-      "charger",
-      "porsche911",
-      "viper",
-      "xjs",
-      "beast"
+      "acty"
     ],
     "gc_island_gp": [
-      "mx5",
-      "focus",
-      "twingo",
-      "acty",
-      "charger",
-      "porsche911",
       "viper",
       "xjs",
       "beast"
@@ -86,11 +67,7 @@
       "focus",
       "twingo",
       "acty",
-      "charger",
-      "porsche911",
-      "viper",
-      "xjs",
-      "beast"
+      "porsche911"
     ],
     "gr_dust_devils": [
       "mx5",
@@ -105,13 +82,6 @@
       "beast"
     ],
     "gr_mountain_pass": [
-      "mx5",
-      "focus",
-      "twingo",
-      "acty",
-      "charger",
-      "porsche911",
-      "viper",
       "xjs",
       "beast"
     ],
@@ -140,10 +110,7 @@
       "beast"
     ],
     "grand_tour": [
-      "mx5",
-      "focus",
       "charger",
-      "porsche911",
       "viper",
       "xjs",
       "beast"
@@ -198,10 +165,7 @@
       "acty"
     ],
     "rising_sun": [
-      "mx5",
-      "focus",
       "charger",
-      "porsche911",
       "viper",
       "xjs",
       "beast"
@@ -226,15 +190,8 @@
       "beast"
     ],
     "shitbox_cup": [
-      "mx5",
-      "focus",
       "twingo",
-      "acty",
-      "charger",
-      "porsche911",
-      "viper",
-      "xjs",
-      "beast"
+      "acty"
     ],
     "sp_archipelago_trial": [
       "mx5",

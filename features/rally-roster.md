@@ -37,8 +37,10 @@ Each `RALLIES` entry:
   re-read its geography** and rename/re-tag/re-author terrain in the same pass.
 - `difficulty` — a **hidden** tier; drives reward tier (clamped by progress) and
   sort order. It is **never shown to the player** (no "Difficulty: N" / "TIER N" in
-  the detail panel, car-park banner, or finish arch) — the power-to-weight gate is
-  the only visible requirement.
+  the detail panel, car-park banner, or finish arch) — the class restriction is the
+  only visible requirement. Since the rework it no longer decides how fast the field's
+  CARS are (they match the player); it decides how hard they are DRIVEN, via the pace
+  band.
 - `special` (bool) — a **part-unlock event**: the rally that opens one upgrade for the
   whole garage (`unlocked_by_rally`, see [upgrade-catalogue.md](upgrade-catalogue.md)).
   There is no completion counter — the retired `requires_completions` /
@@ -70,8 +72,8 @@ Each `RALLIES` entry:
   specials all along, and it reads the gate/prerequisite chain straight out of
   `UpgradeLibrary` rather than duplicating it. Their
   `id` / `difficulty` / `restriction` / `events` were left untouched: ids key saved
-  progress, and the other three are `OpponentCache.FIELD_DETERMINANTS`, so the committed
-  field cache still hits. **`gc_showdown` stays ordinary** — the longest of the three,
+  progress, and the other three decide the opponent field. **`gc_showdown` stays
+  ordinary** — the longest of the three,
   gating no part, so it remains the pure star-payer.
 
   Every special keeps `"restriction": {}` (open-class) so it can never lock itself out — **a
@@ -88,44 +90,36 @@ Each `RALLIES` entry:
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `doors_min`/`doors_max` (vs the car's `doors`),
   `engine_min_l`/`engine_max_l` and `cylinders_min`/`cylinders_max` (both **resolved
-  through the car's CURRENT engine** — see "Engine-derived restrictions" below), and a
-  **power-to-weight band** `pw_min`..`pw_max` (vs
-  `CarLibrary.power_to_weight`, derived from the referenced `EngineLibrary` engine's
-  torque + redline (× the global `TORQUE_POWER_FALLOFF` calibration, boosted torque
-  for turbos via `effective_meta`), so the gate compares against the same hp/tonne
-  shown on the stats panels — within ~±8% of the cars' real published figures —
-  see [engine-and-transmission.md](engine-and-transmission.md)). Both band edges are
-  **authored in hp/tonne** — the same unit shown on every player-facing p/w readout —
-  so a designer tunes them in the numbers on screen; `is_eligible` converts a car's
-  `power_to_weight` (kW/kg) to hp/tonne via `RallyLibrary.KW_KG_TO_HP_TONNE` before comparing.
-  **Progression is primarily gated on power-to-weight as a BAND:** every non-special
-  rally carries a `pw_min`..`pw_max` band, so a car must sit inside it — an over-powered
-  car is **capped out** (it can duck under `pw_max` by detuning, see `qualifying_detune`)
-  and an **under-powered** car is **ineligible outright** (the band floor IS the power
-  floor — there is no separate soft "underpowered" warning; that was retired with the
-  hard floor). **A band is never wider than 2:1** — `pw_min` must be at least half of
-  `pw_max`, so an event stays a recognisable class instead of admitting wildly
-  mismatched cars. This is a shipped-content invariant guarded by
-  `test_no_shipped_rally_has_an_over_wide_power_band`; retune the edges freely, but
-  keep the ratio. Narrow from whichever end preserves the guarantee that every rally
-  still has an eligible car — raising a floor is what orphans a thin class (see
-  `test_every_shipped_rally_has_at_least_one_car_that_can_enter_it`).
-  **The floor is judged at a car's MAX potential:** callers pass a
-  `floor_meta` (the car's `UpgradeLibrary.max_potential_meta` — full engine tune, every
-  installed kit enabled, ballast removed) so a car detuned or ballasted to fit a *lower*
-  rally isn't ruled too weak for a *higher* one it could reach by tuning up (the player
-  always can, for free — the mirror of ducking the ceiling). `floor_meta` defaults to the
-  passed meta (a plain point check) for stock catalogue cars / rivals / synthetic tests.
-  **The band is usually WIDE, and the CLASS FIELD is what defines the rally.** Most
-  rallies pair a wide band with a class field — `car_type` (Hatchback Cup, Forest GT,
-  Ridgeline Dash, The Hot Gates), `country` (American Muscle, Lakeside Cup, Island Grand
-  Prix), `doors_max` (Long Meadow), `cylinders_min`/`cylinders_max` (Slate Quarry,
-  Twelve-Cylinder Promenade, Timber Trophy), `engine_min_l`/`engine_max_l` (Dust Devils,
-  Fernway Dash, Timberline Loop) or `drive_mode` (Front Runners, RWD Masters) — with the band
-  only trimming the extremes. A *narrow* band picks 2-3 cars arbitrarily and silently
-  re-picks them the moment a car is retuned; "four-cylinder, two-door" or "British cars"
-  picks a group that reads as a real class and survives retuning. The open-class rallies
-  are the specials (see `special` above).
+  through the car's CURRENT engine** — see "Engine-derived restrictions" below), and
+  `drive_mode`.
+
+  **Entry requirements are PURELY CATEGORICAL — performance is not one of them.**
+  There is no `pw_min`/`pw_max` band, no ceiling and no floor. A restriction's job is
+  to make the player experience DIFFERENT CARS ("Japanese only", "hatchbacks only",
+  "ten cylinders or more"), never to police how fast they are. There is consequently
+  nothing to upgrade *into* and nothing to detune back *out of*: fit whatever parts
+  you like and your eligibility does not move.
+
+  How fast a car is instead shapes the **opponent field**, which is matched to the
+  player's `CarPerformance` rating — see
+  [car-performance.md](car-performance.md) and `generate_opponent_field` below. So a
+  quicker car earns you quicker rivals rather than access to different events, and a
+  rally's `difficulty` sets how hard the field is DRIVEN rather than what it drives.
+
+  Most non-special rallies carry a categorical restriction; a handful are deliberately
+  open (the specials, which must never gate on a part they unlock, and the opening
+  rally, which must admit every starter car).
+
+  **The CLASS FIELD is the whole restriction.** Each restricted rally names one or two
+  categorical fields — `car_type` (Ridgeline Dash, The Hot Gates), `country` (American
+  Muscle, Lakeside Cup, the British hill climb), `doors_min`/`doors_max` (Proving
+  Ground, Long Meadow, the two-door sprint), `cylinders_min`/`cylinders_max` (Slate
+  Quarry, Twelve-Cylinder Promenade, Timber Trophy, Grand Tour),
+  `engine_min_l`/`engine_max_l` (Dust Devils, Fernway Dash, Sh*tbox Cup, Heavy Hitters)
+  or `drive_mode` (RWD Masters). A class picked this way reads as a real category and
+  survives retuning — which is exactly why the old power band was a poor fit for the
+  job: a band picks 2-3 cars arbitrarily and silently re-picks them the moment a car is
+  retuned.
 
   > **Standing rule — author the data, don't approximate it.** When a rally wants to
   > group cars by a property the catalogue does not record, ADD that property to the
@@ -312,31 +306,18 @@ retune away from admitting a car that out-guns the prize. So that one cuts on **
 (Twingo three, Focus five), which is a fact about the cars rather than a number a balance
 pass moves.
 
-Note a ceiling is porous **downward**: `qualifying_detune` lets any over-ceiling car detune
-INTO a lower rally (the floor is then re-checked against the *detuned* figure), so `pw_max`
-blocks moving up, never down. That is the intended direction here — a stronger car choosing
-to come down to an early event is a player decision, not an outclassing.
-
-Note the floor is judged at `max_potential_meta`, but a **fresh** starter has no
-upgrades installed, so its potential equals its stock figure — the "qualifies on
-upgrades it hasn't bought" trap only appears once a car is modified.
-
 `shitbox_cup`'s pin is deliberately close enough to every starter's opening rally to be
 revealed from the very start (see [map-exploration.md](map-exploration.md) — the opening
 rally lights its circle before it's even completed): it is the **anti-soft-lock cover**.
-Its open 50–90 band takes any car — including one drawn from a Mystery Box after a
-wreck — because any faster car can detune into it. Without an open-class rally revealed
+Its restriction is deliberately permissive, so it takes almost any car — including one
+drawn from a Mystery Box after a wreck. Without a widely-admitting rally revealed
 from the start, a player could hold a car with nowhere to race; that is what
 `test_incomplete_enterable_query_respects_eligibility_and_lock` guards, and the failure
 is real rather than pedantic.
 
-`incomplete_rallies_enterable_by` **counts a detune as enterable**, matching
-`hq.gd._entry_plan` and the shipped-roster test — all three now share one definition of
-"can enter". This does not weaken the guarantee: `qualifying_detune` only ever rescues a
-car that is over the CEILING, whereas a genuine soft-lock is the opposite case, a car too
-weak for everything left, which detuning cannot fix. Judging the query more strictly than
-the screen that actually gates entry made the reward system see phantom soft-locks and
-hand rescue cars to players who were never stuck.
+`incomplete_rallies_enterable_by` is a plain categorical eligibility check now: with no
+performance ceiling there is nothing to duck under, so "can enter" means exactly what the
+screen that gates entry means.
 
 The result is **2 clickable rallies for each of the three starters**.
 
@@ -359,11 +340,30 @@ computes a car's **physics-optimal velocity profile** over a track centerline:
 
 - `optimum_profile(track_result, car_meta, event := {}) -> { s, v, t, total_ms }` —
   three-pass velocity sweep over the sampled centerline:
-  1. **Cornering ceiling** — `v = sqrt(µg/κ)` at each sample (curvature `κ`,
-     combined grip `µ`).
+  1. **Cornering ceiling** — `v² = µg/(κ − µ·D/m)` at each sample (curvature `κ`,
+     combined grip `µ`, total downforce coefficient `D`). With no downforce this
+     is the classic `v = sqrt(µg/κ)`. The form is *linear in v²* and singular as
+     `µ·D/m` approaches `κ`, so it is clamped at `V_CAP_MAX_MS`.
   2. **Forward accel pass** — power-limited `F = P_peak / v` (from `peak_torque ×
-     redline`), friction-circle limited, drag `= drag·v²`, rolling resistance ≈ 0.2 g.
+     redline`), friction-circle limited, drag `= drag·v²`, rolling resistance ≈ 0.2 g,
+     and gated by a per-drive-mode **traction factor** (`GameConfig.traction_factor_rwd
+     / _awd / _fwd`) standing in for the real drivetrain's per-patch slip behaviour.
+     Forward pass only — braking is not a drivetrain function.
   3. **Backward braking pass** — friction-circle limited.
+
+  The friction circle **grows with speed** when the car makes downforce: the
+  envelope is `µ(g + D·v²/m)` (`_grip_long`), applied identically in all three
+  passes. Applying it to the ceiling alone would let a car sit at a speed where
+  its longitudinal grip had collapsed to zero.
+
+  **Exact no-ops at their defaults.** Traction factors ship at 1.0 and no
+  catalogue car has downforce, so times are byte-identical to before these terms
+  existed (`test_defaults_are_an_exact_no_op`). Moving either off its default
+  *does* move every rival time (fields are generated live, so it takes effect at once).
+
+  **Still not modelled**: brake torque/bias, gearbox ratios, shift time, turbo
+  lag, suspension, weight distribution, tyre width. Braking is one
+  friction-circle term, so two cars alike but for their brakes time identically.
   Grip `µ` is the average of front + rear tyre grip coefficients, blended by the
   event's surface mix via `GameConfig.gravel_grip` / `tarmac_grip`, then further
   scaled by `GameConfig.rain_grip_mult` when `RallyLibrary.event_weather(event)`
@@ -383,18 +383,19 @@ generator also uses it per-rival.
 - `index_of(id)` / `by_id(id)` / `event_width(event)` / `event_forestiness(event)` /
   `event_tarmac_fraction(event)` / `event_straightness(event)` /
   `event_cliffiness(event)` / `event_weather(event)` — lookups.
-- `is_eligible(rally, car_meta, floor_meta := {})` — restriction match (open-class →
-  always true). `car_meta` is a CarLibrary entry, resolved by the owned car's stable
-  `model_id`. The optional `floor_meta` judges the `pw_min` floor at a different meta
-  (the car's `UpgradeLibrary.max_potential_meta`) so an owned car's floor is checked at
-  its max potential, not its current detuned/ballasted tune (defaults to `car_meta`). The
-  menus' field-a-car rig and map pins filter on this.
+- `is_eligible(rally, car_meta)` / `ineligibility_reason(rally, car_meta)` —
+  categorical restriction match (open-class → always true); the reason form returns a
+  player-facing string, empty when eligible. `car_meta` is a CarLibrary entry, resolved
+  by the owned car's stable `model_id`; pass `UpgradeLibrary.effective_meta` for an
+  owned car so an engine swap or drivetrain conversion moves the categorical fields
+  with it. There is no `floor_meta` and no performance term — see `restriction` above.
+  The menus' field-a-car rig and map pins filter on this.
 - **Authoring check**: `tools/report_eligibility.gd`/`.tscn` + `./report_eligibility.sh`
-  (repo root, follows the `verify_track_cache`/`cache_opponents.sh` pattern) reports, for
-  every rally x every `CarLibrary.CARS` entry, whether it's eligible stock (raw `CARS`
-  entry, no `floor_meta`) and whether it could enter fully tuned (`floor_meta` from
-  `UpgradeLibrary.max_potential_meta`) — always via the real `is_eligible` /
-  `ineligibility_reason`, never a re-implementation. Flags rallies with < 2 or > 4 stock-
+  (repo root, follows the `verify_track_cache` pattern) reports, for
+  every rally x every `CarLibrary.CARS` entry, whether it's eligible — always via the
+  real `is_eligible` / `ineligibility_reason`, never a re-implementation. Eligibility is
+  categorical and upgrade-independent now, so there is only one answer per pairing
+  rather than a stock-vs-fully-tuned pair. Flags rallies with < 2 or > 4 stock-
   eligible cars and cars that can enter almost nothing (report signal, not a gate — the
   authoring target is 2-3 per rally); exits non-zero only if a rally has zero eligible
   cars even at max potential (genuinely unenterable). See
@@ -421,21 +422,6 @@ generator also uses it per-rival.
   stock cars only, so eligible counts are a lower bound and the soft-lock rate an upper
   bound. Report signal, not a gate — always exits 0. Design:
   `docs/superpowers/specs/2026-08-05-career-sim-design.md`.
-- `qualifying_detune(rally, full_meta)` — the largest whole-percent
-  `engine_detune` fraction at which a car passes the restriction: `1.0` when it's
-  already eligible at full tune, `-1.0` when no detune can qualify it (a non-power
-  field fails, or the band floor is unreachable). `full_meta` is the car's
-  effective stats at FULL tune (`effective_meta` with detune 1.0), so the result
-  is an absolute detune-slider setting; it's floored to the slider's whole-percent
-  steps and verified back through `is_eligible`. It's now used only to CLASSIFY a
-  car for the car park's **over-limit prompt** — a result in `(0, 1)` marks the car
-  as over-cap-but-fixable, so it parks looking eligible and pressing Start pops the
-  prompt (the frac value itself is no longer shown to the player). The prompt's
-  **Change Upgrades** option opens the gated upgrades menu where the player sheds
-  power for themselves (detune slider, ballast, or stripping parts) as a
-  **permanent** garage edit, then re-presses Start (see
-  [menus.md](menus.md) → CARPARK). There is no longer a one-press "agree to the
-  tune" button that applies it temporarily.
 - `derive_target_ms(track_result, car_meta, event)` — per-event PAR time: physics
   floor of the **best eligible car** (see `LapTimeModel` below) × `GameConfig.driver_factor`
   (default 1.08, the driver-imperfection multiplier that turns the physics floor into a
@@ -532,9 +518,8 @@ generator also uses it per-rival.
   — one circle per completed rally (plus the player's opening rally, lit from the start)
   — so it no longer branches on `is_special` at all. See
   [map-exploration.md](map-exploration.md) for the full rule.
-- `incomplete_rallies_enterable_by(car_meta, profile, floor_meta := {})` — the
+- `incomplete_rallies_enterable_by(car_meta, profile)` — the
   anti-soft-lock query the reward system uses (incomplete ∧ revealed ∧ eligible in-band).
-  `floor_meta` (the owned car's max potential) judges the floor at max, as in `is_eligible`.
 
 ### Rival builds — car + engine combos
 
@@ -600,7 +585,7 @@ but every **(car, engine) pairing** the rally admits.
   raced on their real, boosted power (the pace model has always used
   `effective_meta`). Both halves now agree, and it matches the player's own
   eligibility path (`hq_carpark.gd::_entry_plan`). **Consequence:** a car whose
-  stock boost lifts it over a band's `pw_max` no longer appears in fields it used
+  stock boost changes its rating no longer sits at the wrong pace in fields it used
   to.
 - `eligible_car_indices` still deals in **cars only** — the start-line queue props
   are cosmetic scenery and an engine doesn't change a body.

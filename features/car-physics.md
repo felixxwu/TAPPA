@@ -170,9 +170,12 @@ for each).
 	 coefficient may be negative, which produces lift (an upward force that
 	 unloads that axle at speed). The coefficients are **per-car**: `apply_car`
 	 *sets* `cfg.downforce_{front,rear}` from the CarLibrary spec (so a car with 0
-	 has none — no hidden global), and the aero_kit upgrade adds on top. Every car
-	 carries a small `downforce_rear` to keep the tail planted under power; front
-	 is 0 unless a spec sets it.
+	 has none — no hidden global), and the aero_kit upgrade adds on top. As shipped,
+	 **every catalogue car has `downforce_rear: 0`** — downforce exists in the game
+	 only via the `aero_kit` upgrade, so a stock car makes none at all. (This
+	 previously claimed every car carried a small `downforce_rear`; it never did.)
+	 `LapTimeModel` now reads the same coefficients, so an aero kit moves AI and
+	 ghost times as well as the driven car — see rally-roster.md → Lap-time model.
    - *Crosswind:* on a windy condition only — see "Crosswind" below.
 5. **Self-righting assist:** a roll+pitch torque (`level_assist_torque`) eases the
    chassis back toward level (`car.gd` → `_apply_level_assist`). The torque axis is
@@ -501,7 +504,7 @@ player put during the countdown (`handbrake_locked` forces the handbrake).
 
 | Input | Torque | Target |
 |-------|--------|--------|
-| S (foot brake) | `brake_torque` (300) per axle | all 4 wheels |
+| S (foot brake) | `brake_torque` (300) per axle, split front/rear by the car's `brake_bias` | all 4 wheels |
 | Space (handbrake) | `handbrake_torque` (400) | rear axle only (drift) |
 | Auto parking | `brake_torque` | all 4 below ~2 m/s |
 

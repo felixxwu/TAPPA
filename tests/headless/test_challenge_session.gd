@@ -53,20 +53,32 @@ func _grant(model := "fx_light_rwd") -> Dictionary:
 	return _save.grant_car(model)
 
 
-# Highest member of the (tunable) ceiling band — used only to place a fixture
-# car definitively ABOVE any possible roll, never to assert on the band's
-# contents itself.
-var CEILING_BAND_MAX: float = ChallengeLibrary.CEILING_BAND_HP_TONNE.max()
+# The extremes of the (tunable) rating ceiling band — used ONLY to sanity-check that a
+# fixture car sits definitively on one side of whatever the period happens to roll,
+# never to assert on the band's contents itself.
+var CEILING_BAND_MAX: float = ChallengeLibrary.CEILING_BAND_RATING.max()
+var CEILING_BAND_MIN: float = ChallengeLibrary.CEILING_BAND_RATING.min()
 
 
-# Invert CarLibrary.power_to_weight_hp_tonne's own formula: given the target
-# hp/tonne figure a fixture car should read as, solve for the peak_torque that
-# produces it at `mass`/`redline` (both fixed and arbitrary) — so the fixture
-# exercises the SAME derivation the code under test uses, without pinning any
-# authored stat.
-func _torque_for_target_hp_tonne(target_hp_tonne: float, mass: float, redline: float) -> float:
-	var power_kw := target_hp_tonne / CarLibrary.KW_KG_TO_HP_TONNE * mass
-	return power_kw / (redline * (TAU / 60.0) / 1000.0 * CarLibrary.TORQUE_POWER_FALLOFF)
+# A synthetic catalogue entry whose CarPerformance rating is far below anything the band
+# can roll: heavy, weak and draggy. Nothing is pinned — the tests below assert the
+# resulting RATING against the band, so a retune of either surfaces as a fixture-sanity
+# failure rather than a silently vacuous test.
+func _slow_entry(id: String) -> Dictionary:
+	return {"id": id, "mass": 3000.0, "engine": "fx_i4", "redline": 4000.0,
+		"peak_torque": 60.0, "drive_mode": CarLibrary.FWD, "tire_compound": 0.6}
+
+
+# The mirror image: light and very powerful, so its rating clears the whole band.
+func _fast_entry(id: String) -> Dictionary:
+	return {"id": id, "mass": 500.0, "engine": "fx_v8", "redline": 9000.0,
+		"peak_torque": 1200.0, "drive_mode": CarLibrary.AWD, "tire_compound": 1.4}
+
+
+# The rating the challenge path judges an owned car by (the same merged meta
+# ChallengeSession.classify_car uses, so the fixture can never drift from it).
+func _rating_of(owned: Dictionary, entry: Dictionary) -> int:
+	return CarPerformance.rating(CarPerformance.merged_meta(owned, entry))
 
 
 # --- start() ------------------------------------------------------------------
@@ -224,35 +236,18 @@ func test_resuming_a_challenge_clears_a_pending_free_roam_pick() -> void:
 
 # --- eligible_cars --------------------------------------------------------------
 
-func test_eligible_cars_includes_at_or_under_and_detune_reachable_over_ceiling() -> void:
+func test_eligible_cars_admits_under_the_ceiling_and_excludes_over_it() -> void:
+	# The whole challenge eligibility rule: a car whose RATING is at or under the period's
+	# displayed ceiling can enter, one above it cannot. There is no detune escape any more
+	# (design doc D5) — over the ceiling is simply out, and the player brings another car.
 	var t := int(Time.get_unix_time_from_system())
-	var period := ChallengeLibrary.current_period(ChallengeLibrary.WEEKLY, t)
-	var ceiling: float = ChallengeLibrary.ceiling_for(String(period["key"]))
-
-	# Build a synthetic profile with two cars whose effective p/w straddle the
-	# ceiling: one clearly under, one clearly over. Rather than pin a max_hp
-	# number (power_to_weight_hp_tonne is actually derived from peak_torque +
-	# redline via the engine, not a max_hp field — see CarLibrary.peak_power_kw),
-	# invert CarLibrary's own formula to author a peak_torque that lands each
-	# fixture's hp/tonne definitively on one side of whatever ceiling rolled.
-	var mass := 1000.0
-	var redline := 6000.0
-	var band_max: float = CEILING_BAND_MAX
-	var target_under: float = maxf(1.0, ceiling - 10.0)
-	var target_over: float = band_max + 100.0
-
-	var entry_under := {
-		"id": "fx_under", "mass": mass, "engine": "fx_i4",
-		"peak_torque": _torque_for_target_hp_tonne(target_under, mass, redline), "redline": redline,
-	}
-	var entry_over := {
-		"id": "fx_over", "mass": mass, "engine": "fx_i4",
-		"peak_torque": _torque_for_target_hp_tonne(target_over, mass, redline), "redline": redline,
-	}
+	var entry_under := _slow_entry("fx_under")
+	var entry_over := _fast_entry("fx_over")
 	var roster: Array[Dictionary] = CarFixtures.cars()
 	roster.append(entry_under)
 	roster.append(entry_over)
 	CarLibrary.override_for_test(roster)
+	CarPerformance.reset()
 
 	var profile := {
 		"cars": [
@@ -260,69 +255,57 @@ func test_eligible_cars_includes_at_or_under_and_detune_reachable_over_ceiling()
 			{"instance_id": 2, "model_id": "fx_over", "installed_upgrades": [], "detune": 0.0},
 		]
 	}
-	var eligible := ChallengeSession.eligible_cars(ChallengeLibrary.WEEKLY, profile, t)
+	# Fixture sanity: the two cars straddle the WHOLE band, so the assertions below hold
+	# whichever ceiling this period rolled.
+	assert_lt(float(_rating_of(profile["cars"][0], entry_under)), CEILING_BAND_MIN,
+		"fixture sanity: the slow car is under every ceiling the band can roll")
+	assert_gt(float(_rating_of(profile["cars"][1], entry_over)), CEILING_BAND_MAX,
+		"fixture sanity: the fast car is over every ceiling the band can roll")
 
 	var ids: Array = []
-	for car in eligible:
+	for car in ChallengeSession.eligible_cars(ChallengeLibrary.WEEKLY, profile, t):
 		ids.append(int(car["instance_id"]))
-	assert_true(ids.has(1), "a car at/under the ceiling is eligible")
-	# Consistent with career-mode rally entry (hq_carpark.gd._qualifying_detune_for):
-	# a car over the ceiling STOCK still counts as eligible if detuning down
-	# would fit it under — no forced auto-detune, but it isn't excluded just
-	# because its slider currently sits above what's needed.
-	assert_true(ids.has(2), "a car over the ceiling but reachable via detune is still eligible")
-	var entry_meta := CarLibrary.by_id("fx_over")
-	var frac := ChallengeSession.qualifying_detune_for(
-		{"restriction": {"pw_max": ceiling}}, profile["cars"][1], entry_meta)
-	assert_gt(frac, 0.0, "a real detune fraction exists for the over-ceiling car")
-	assert_lt(frac, 1.0, "and it is genuinely a reduction, not a no-op")
+	assert_eq(ids, [1], "only the car under the ceiling is eligible")
 
 
 # --- the displayed-ceiling boundary (classify_car) -------------------------------
 #
-# The challenge path must judge a car against the ceiling AS DISPLAYED (rounded),
-# exactly as career entry does (hq_carpark.gd._qualifying_detune_for /
-# RallyLibrary.ineligibility_reason). Both cases below author their OWN ceiling with a
-# fractional part — nothing is read from CEILING_BAND_HP_TONNE — and derive it FROM the
-# fixture car's displayed hp/tonne, so no specific number is pinned.
+# The challenge path must judge a car against the ceiling AS DISPLAYED (rounded). Both
+# cases below author their OWN ceiling with a fractional part — nothing is read from
+# CEILING_BAND_RATING — and derive it FROM the fixture car's own rating, so no specific
+# number is pinned.
 
-# A synthetic owned car + entry pair whose displayed hp/tonne is whatever the fixture
-# derivation lands on, returned alongside that figure.
+# A synthetic owned car + entry pair, returned alongside the rating the challenge path
+# judges it by.
 func _boundary_car() -> Dictionary:
-	var mass := 1000.0
-	var redline := 6000.0
-	var entry := {
-		"id": "fx_boundary", "mass": mass, "engine": "fx_i4", "redline": redline,
-		"peak_torque": _torque_for_target_hp_tonne(150.0, mass, redline),
-	}
+	var entry := _slow_entry("fx_boundary")
 	var owned := {"instance_id": 1, "model_id": "fx_boundary", "installed_upgrades": [], "detune": 0.0}
-	var displayed := CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta(owned, entry))
-	return {"entry": entry, "owned": owned, "displayed": displayed}
+	CarPerformance.reset()
+	return {"entry": entry, "owned": owned, "rating": _rating_of(owned, entry)}
 
 
 func test_car_at_the_displayed_ceiling_is_ready_even_though_the_raw_ceiling_is_lower() -> void:
 	var c := _boundary_car()
-	# A ceiling that PRINTS as the car's own displayed hp/tonne but is fractionally
-	# below it: the two numbers on screen match, so the car must be ready to go.
-	var raw_ceiling: float = float(c["displayed"]) - 0.4
-	assert_eq(roundi(raw_ceiling), int(c["displayed"]),
-		"fixture sanity: this ceiling displays as the car's own hp/tonne")
+	# A ceiling that PRINTS as the car's own rating but is fractionally below it: the two
+	# numbers on screen match, so the car must be admitted.
+	var raw_ceiling: float = float(c["rating"]) - 0.4
+	assert_eq(roundi(raw_ceiling), int(c["rating"]),
+		"fixture sanity: this ceiling displays as the car's own rating")
 	var verdict := ChallengeSession.classify_car(raw_ceiling, c["owned"], c["entry"])
 	assert_eq(String(verdict["state"]), ChallengeSession.READY,
-		"a car whose displayed hp/tonne equals the displayed ceiling needs no detune")
+		"a car whose displayed rating equals the displayed ceiling is admitted")
 
 
-func test_car_above_the_displayed_ceiling_still_needs_a_tune() -> void:
+func test_car_above_the_displayed_ceiling_is_excluded() -> void:
 	var c := _boundary_car()
 	# Rounds DOWN to one below the car's figure — the car really is over the cap the
 	# player is shown, so rounding must not wave it through.
-	var raw_ceiling: float = float(c["displayed"]) - 0.6
-	assert_eq(roundi(raw_ceiling), int(c["displayed"]) - 1,
-		"fixture sanity: this ceiling displays BELOW the car's own hp/tonne")
+	var raw_ceiling: float = float(c["rating"]) - 0.6
+	assert_eq(roundi(raw_ceiling), int(c["rating"]) - 1,
+		"fixture sanity: this ceiling displays BELOW the car's own rating")
 	var verdict := ChallengeSession.classify_car(raw_ceiling, c["owned"], c["entry"])
-	assert_eq(String(verdict["state"]), ChallengeSession.NEEDS_TUNE,
-		"a car over the DISPLAYED ceiling is still only eligible with a detune")
-	assert_gt(float(verdict["detune"]), 0.0, "and a real detune fraction comes back with it")
+	assert_eq(String(verdict["state"]), ChallengeSession.EXCLUDED,
+		"a car over the DISPLAYED ceiling is simply out — there is no detune escape")
 
 
 # displayed_ceiling is what every challenge label prints, so it must be the rounding of
@@ -334,38 +317,36 @@ func test_displayed_ceiling_is_the_rounded_rolled_ceiling() -> void:
 			roundi(ChallengeLibrary.current_ceiling(kind, t)), "%s ceiling is rounded" % kind)
 
 
-# classify_cars' buckets must partition the eligible list — the HQ reads `ready` /
-# `needs_tune` / `detune` straight out of it instead of re-deriving the comparison.
-func test_classify_cars_buckets_partition_the_eligible_list() -> void:
+# classify_cars is the ONE place the rule lives — the HQ reads `ready` / `eligible` /
+# `ceiling` straight out of it instead of re-deriving the comparison, so the two lists
+# must agree with each other and with eligible_cars.
+func test_classify_cars_reports_one_consistent_verdict_per_car() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	var mass := 1000.0
-	var redline := 6000.0
-	var ceiling: float = ChallengeSession.displayed_ceiling(ChallengeLibrary.WEEKLY, t)
-	var entry_under := {
-		"id": "fx_under", "mass": mass, "engine": "fx_i4", "redline": redline,
-		"peak_torque": _torque_for_target_hp_tonne(maxf(1.0, ceiling - 10.0), mass, redline),
-	}
-	var entry_over := {
-		"id": "fx_over", "mass": mass, "engine": "fx_i4", "redline": redline,
-		"peak_torque": _torque_for_target_hp_tonne(CEILING_BAND_MAX + 100.0, mass, redline),
-	}
+	var entry_under := _slow_entry("fx_under")
+	var entry_over := _fast_entry("fx_over")
 	var roster: Array[Dictionary] = CarFixtures.cars()
 	roster.append(entry_under)
 	roster.append(entry_over)
 	CarLibrary.override_for_test(roster)
+	CarPerformance.reset()
 
 	var profile := {"cars": [
 		{"instance_id": 1, "model_id": "fx_under", "installed_upgrades": [], "detune": 0.0},
 		{"instance_id": 2, "model_id": "fx_over", "installed_upgrades": [], "detune": 0.0},
 	]}
+	assert_lt(float(_rating_of(profile["cars"][0], entry_under)), CEILING_BAND_MIN,
+		"fixture sanity: the slow car is under every ceiling the band can roll")
+	assert_gt(float(_rating_of(profile["cars"][1], entry_over)), CEILING_BAND_MAX,
+		"fixture sanity: the fast car is over every ceiling the band can roll")
+
 	var classified := ChallengeSession.classify_cars(ChallengeLibrary.WEEKLY, profile, t)
-	assert_eq(classified["eligible"].size(),
-		classified["ready"].size() + classified["needs_tune"].size(),
-		"eligible is exactly ready + needs_tune")
-	assert_eq(classified["ready"], [profile["cars"][0]], "the under-ceiling car is ready as tuned")
-	assert_eq(classified["needs_tune"], [profile["cars"][1]], "the over-ceiling car needs a tune")
-	assert_true(classified["detune"].has(2), "and carries its qualifying detune fraction")
-	assert_eq(classified["ceiling"], int(ceiling), "the reported ceiling is the displayed one")
+	assert_eq(classified["ready"], classified["eligible"],
+		"ready and eligible hold the same cars — the two keys are for the UI's benefit")
+	assert_eq(classified["eligible"], [profile["cars"][0]],
+		"only the under-ceiling car is admitted")
+	assert_eq(classified["ceiling"],
+		ChallengeSession.displayed_ceiling(ChallengeLibrary.WEEKLY, t),
+		"the reported ceiling is the displayed one")
 	assert_eq(ChallengeSession.eligible_cars(ChallengeLibrary.WEEKLY, profile, t),
 		classified["eligible"], "eligible_cars is the same list")
 

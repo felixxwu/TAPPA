@@ -62,15 +62,12 @@ var _tune_layer: CanvasLayer         # the pre-race tuning overlay (built lazily
 var _tune_panel: TuningPanel         # the shared handling-axis tuning sliders (detune is in Upgrades)
 var _upgrades_button: Button
 var _upgrades_layer: CanvasLayer     # the pre-race upgrades overlay (built lazily)
-var _upgrades_menu: UpgradesSimple   # the shared upgrades page (same as the HQ garage)
+var _upgrades_menu: UpgradesGrid   # the shared upgrades page (same as the HQ garage)
 var _upgrades_back: Button           # the upgrades overlay's Back/Done button (p/w-gated)
 var _menu_last_back: Button          # back button _build_menu_overlay just created
 var _pause_menu: PauseMenu           # for the Exit button; pause itself is off while staged
 var _exit_button: Button
-var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
-# One line announcing the free upgrade restore (Save.restore_free_build), "" when it
-# did nothing. Set in setup() before the overlay is built, which renders it.
-var _restore_notice := ""
+var _rally: Dictionary = {}          # this event's rally (its restriction gates launch)
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
@@ -169,7 +166,7 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_pause_menu = pause_menu
 	_player = player
 	_terrain = terrain
-	_rally = rally  # kept so Tune Car can cap detune at the rally's qualifying power
+	_rally = rally  # kept so launch() can re-check eligibility after a pre-race edit
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
 	_hud = hud
@@ -191,13 +188,6 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	if _mobile != null:
 		_mobile.visible = false
 	_build_orbit_camera()
-	# Put the car back on the upgrades it already owns BEFORE the overlay is built, so the
-	# restore has a line to announce itself on and the Start gate below judges the restored
-	# car. Free and never power-raising past the cap, so it asks for no confirmation — see
-	# Save.restore_free_build. Done as the start line OPENS rather than on the Start press
-	# because that is where the player has a screen to read it on.
-	_restore_notice = String(Save.restore_free_build(
-		int(_driven_car().get("instance_id", -1)), rally.get("restriction", {})).get("notice", ""))
 	_build_overlay(rally, event_index)
 	_build_reveal_overlay()
 	_build_fade()
@@ -323,14 +313,6 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	var total := _stage_total(rally)
 	_subtitle_label = UITheme.title("%s — Stage %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
 	top_box.add_child(_subtitle_label)
-	# The free restore, when it did something. A quiet second line rather than a modal:
-	# it spends nothing, so it must not cost the player a press to dismiss.
-	if _restore_notice != "":
-		var notice := UITheme.label(_restore_notice)
-		notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		notice.modulate = Color(1, 1, 1, 0.75)
-		top_box.add_child(notice)
-
 	# --- Clear band: lets the orbiting car show between the cards -------------
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -787,23 +769,14 @@ func launch() -> void:
 		if not owned.is_empty():
 			var entry := CarLibrary.for_owned(owned)
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
-			# The pw_min floor is judged at the car's MAX potential (the player will tune
-			# up to enter), matching the car-park check; the ceiling stays on the current
-			# meta (an over-cap car routes to the detune prompt below).
-			var floor_meta := UpgradeLibrary.max_potential_meta(owned, entry)
-			var reason := RallyLibrary.ineligibility_reason(_rally, meta, floor_meta)
+			# Entry is categorical (body / country / doors / engine / drive mode), so a
+			# mid-rally upgrade can only break eligibility by changing the KIND of car —
+			# an engine swap or a drivetrain conversion. Route those to the upgrades menu.
+			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
 			if reason != "":
-				var frac := _rally_qualifying_detune(owned)
-				var over_power := frac > 0.0 and frac < 1.0
-				if over_power:
-					ConfirmPopup.open(self, "Too powerful",
-						"Change your upgrades to get under the power-to-weight limit.",
-						[ {"label": "Cancel", "callback": Callable()},
-						  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
-				else:
-					ConfirmPopup.open(self, "Can't start", reason,
-						[ {"label": "Cancel", "callback": Callable()},
-						  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
+				ConfirmPopup.open(self, "Can't start", reason,
+					[ {"label": "Cancel", "callback": Callable()},
+					  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
 				return
 	_launched = true
 	if _overlay != null:
@@ -897,12 +870,12 @@ func _despawn_grid() -> void:
 
 # --- Pre-race menus (Upgrades / Tune Car) ------------------------------------
 
-# The power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no cap).
-# A thin wrapper over DrivingContext.pw_limit(), which answers for whichever
-# session is fielding the car — a career rally's authored `restriction.pw_max`
-# or a challenge period's rolled ceiling — so this screen never has to branch.
-func _pw_limit() -> float:
-	return DrivingContext.pw_limit()
+# The CarPerformance rating ceiling for the pre-race tune / upgrades menus (-1 = none).
+# A thin wrapper over DrivingContext.rating_limit(), which answers for whichever session
+# is fielding the car — only a challenge period's rolled ceiling today, since career
+# entry is categorical — so this screen never has to branch.
+func _rating_limit() -> float:
+	return DrivingContext.rating_limit()
 
 
 # Body width both pre-race menu overlays use. Sized for the narrow logical UI canvas rather
@@ -998,23 +971,56 @@ func _open_upgrades() -> void:
 	if _upgrades_layer == null:
 		_build_upgrades_overlay()
 	var owned := _driven_car()
-	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _pw_limit())
+	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _rating_limit())
 	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
 	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
 
 
+# Closing the Upgrades page is the commit point for an edit made ON THE GRID, so the
+# rival field has to be re-drawn against the build the player is actually about to race.
+# The grid is matched to the player's rating (features/car-performance.md), so without
+# this a turbo fitted here would leave them racing a field picked for the car they
+# arrived in — the matching would stop meaning anything exactly when the player engages
+# with it. RallySession decides whether a re-draw is allowed (it refuses mid-rally, where
+# it would rewrite standings already raced) and whether anything actually changed.
 func _close_upgrades() -> void:
 	_close_menu(_upgrades_layer, _upgrades_button)
+	if RallySession.is_active() and RallySession.refield_opponents():
+		_restage_grid()
+
+
+# Re-stage the cars physically sitting on the grid after the field has been re-drawn.
+#
+# The props are spawned ONCE from `_leaders` when the start line is built, so a re-draw
+# would otherwise change who the player is racing while leaving the old cars parked in
+# front of them — the grid would be lying about the field. `_leaders` itself is re-read
+# here too; the reveal cards index into it lazily, so refreshing the array is enough for
+# those (no overlay rebuild needed).
+#
+# The player is the tail of `_grid` and must survive: it is the live car, not a prop.
+func _restage_grid() -> void:
+	for car in _grid:
+		if car == _player or not is_instance_valid(car):
+			continue
+		# remove_child BEFORE queue_free: the free is deferred to end-of-frame, so a bare
+		# queue_free would leave the outgoing prop sitting on the grid — visibly clipping
+		# through the replacement _spawn_grid stages at the same slot this same frame.
+		remove_child(car)
+		car.queue_free()
+	_grid = []
+	_grid_car_ids = []
+	_leaders = RallySession.current_event_leaders()
+	_build_overall_ranks()
+	_spawn_grid(_terrain)
 
 
 func _build_upgrades_overlay() -> void:
-	_upgrades_menu = UpgradesSimple.new()
-	# Narrower than Tune Car's default 520: Upgrades' rows (short slot-option buttons +
-	# the one detune slider) need far less room than the handling-axis sliders, and the
-	# shared 520 floor was stretching the detune slider's SIZE_EXPAND_FILL bar across the
-	# leftover width for no reason — reading as an oversized panel.
-	# No page title: UpgradesSimple draws its own heading, and that heading is what carries
-	# the star balance beside the prices this page quotes (UpgradesMenu.build_title_row).
+	_upgrades_menu = UpgradesGrid.new()
+	# Narrower than Tune Car's default 520: the 3x3 tile grid asks for far less room than
+	# the handling-axis sliders, and the shared 520 floor only stretched it across leftover
+	# width — reading as an oversized panel.
+	# No page title: UpgradesGrid draws its own heading, and that heading is what carries
+	# the star balance beside the prices its slot pickers quote (UpgradesGrid.build_title_row).
 	_upgrades_layer = _build_menu_overlay("", _upgrades_menu, _close_upgrades, false)
 	_upgrades_back = _menu_last_back
 
@@ -1024,18 +1030,6 @@ func _build_upgrades_overlay() -> void:
 func _on_upgrade_changed() -> void:
 	if _player != null and _player.has_method("refit_upgrades"):
 		_player.refit_upgrades(_driven_car())
-
-
-# The engine-detune fraction at which the car passes the rally's power-to-weight ceiling.
-func _rally_qualifying_detune(owned: Dictionary) -> float:
-	if _rally.is_empty():
-		return 1.0
-	var entry := CarLibrary.for_owned(owned)
-	var full := owned.duplicate(true)
-	var tuning: Dictionary = full.get("tuning", {})
-	tuning["engine_detune"] = 1.0
-	full["tuning"] = tuning
-	return RallyLibrary.qualifying_detune(_rally, UpgradeLibrary.effective_meta(full, entry))
 
 
 # --- Readouts (for tests) ----------------------------------------------------

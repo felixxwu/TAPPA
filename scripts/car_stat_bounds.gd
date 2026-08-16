@@ -26,7 +26,7 @@ extends RefCounted
 
 # Grip is speed-dependent (downforce grows with v²), so its bounds are rated at the same
 # reference speed the Grip readout quotes. Read from GameConfig.grip_reference_kmh — the
-# single source both this sweep and UpgradesSimple's Grip row read — so the bounds can't be
+# single source both this sweep and any grip readout read — so the bounds can't be
 # computed at one speed and displayed at another.
 
 # How far below the worst car the scale's zero sits, as a fraction of the roster span.
@@ -34,20 +34,29 @@ extends RefCounted
 const FLOOR_PAD := 0.10
 
 static var _cache: Dictionary = {}
+# The GameConfig fingerprint the cached sweep was computed under. The RATING bound is a
+# benchmark-lap solve whose track geometry and traction factors live in GameConfig, so a
+# config edit mid-session must re-scale the bar — otherwise the rating cache correctly
+# refreshes while the scale it is drawn against stays stale. Grip's reference speed is
+# folded in for the same reason.
+static var _cache_key := ""
 
 
-# {"pw": [lo, hi], "grip": [lo, hi], "mass": [lo, hi]} in each stat's own units.
-# Empty ranges (a one-car roster where lo == hi) are widened by the reader, not here —
-# see `fraction`.
+# {"rating": [lo, hi], "pw": [lo, hi], "grip": [lo, hi], "mass": [lo, hi]} in each stat's
+# own units. Empty ranges (a one-car roster where lo == hi) are widened by the reader, not
+# here — see `fraction`.
 static func all() -> Dictionary:
-	if _cache.is_empty():
+	var key := _config_key()
+	if _cache.is_empty() or _cache_key != key:
 		_cache = _compute()
+		_cache_key = key
 	return _cache
 
 
 # Drop the cached sweep. Called by the catalogue seams; harmless to call spuriously.
 static func invalidate() -> void:
 	_cache = {}
+	_cache_key = ""
 
 
 # Where `value` sits in `key`'s roster range, as 0..1. A degenerate range (a single car,
@@ -67,9 +76,14 @@ static func fraction(key: String, value: float) -> float:
 
 static func _compute() -> Dictionary:
 	var cfg: GameConfig = Config.data
-	var out := {"pw": [INF, -INF], "grip": [INF, -INF], "mass": [INF, -INF]}
+	var out := {"rating": [INF, -INF], "pw": [INF, -INF], "grip": [INF, -INF],
+		"mass": [INF, -INF]}
 	for entry in CarLibrary.all():
 		var stock := UpgradeLibrary.effective_meta({}, entry)
+		# The rating needs the grip-side fields too, which effective_meta drops — see
+		# CarPerformance.merged_meta. Each call is a benchmark-lap solve, but memoised per
+		# car by CarPerformance, so the whole sweep is paid once per config fingerprint.
+		_widen(out["rating"], CarPerformance.rating(CarPerformance.merged_meta({}, entry)))
 		_widen(out["pw"], CarLibrary.power_to_weight_hp_tonne(stock))
 		_widen(out["grip"], CarLibrary.max_lateral_g(stock, cfg, cfg.grip_reference_kmh))
 		_widen(out["mass"], float(stock.get("mass", 0.0)))
@@ -85,6 +99,13 @@ static func _compute() -> Dictionary:
 		var hi := float((out[key] as Array)[1])
 		(out[key] as Array)[0] = lo - (hi - lo) * FLOOR_PAD
 	return out
+
+
+# What the cached sweep depends on beyond the catalogue: the rating's own config inputs
+# (shared with CarPerformance so the scale and the figures can't diverge) plus the speed
+# the grip bound is rated at.
+static func _config_key() -> String:
+	return "%s|%.2f" % [CarPerformance.config_key(), Config.data.grip_reference_kmh]
 
 
 static func _widen(pair: Array, value: float) -> void:

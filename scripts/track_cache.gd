@@ -127,10 +127,9 @@ static func source_hash_of(keys: Array) -> String:
 	return "|".join(PackedStringArray(sorted)).sha256_text()
 
 
-# The source_hash committed in the track lockfile (not recomputed). Lets dependent
-# caches (OpponentCache) fold the track cache's state into their key cheaply.
-# Memoised: the naive form parses the whole 248 KB lockfile, and OpponentCache calls
-# this on every lookup(). The memo is keyed on the file's modified time so a generator
+# The source_hash committed in the track lockfile (not recomputed). Lets a caller fold
+# the track cache's state into a key cheaply.
+# Memoised: the naive form parses the whole 248 KB lockfile. The memo is keyed on the file's modified time so a generator
 # that REWRITES the lockfile in-process (cache_*.sh, the editor) can't read a stale
 # hash back; reset_source_hash_cache() is the explicit seam for tests.
 static var _source_hash := ""

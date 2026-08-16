@@ -459,11 +459,10 @@ static func max_car_bounds() -> Vector3:
 
 # The player-facing hp/tonne figure, ROUNDED to the nearest whole number — the same
 # rounding every hp/tonne readout applies via "%.0f" (HUD, detail panel, detune slider).
-# Single source of truth for "what number does the player see": any code that gates
-# eligibility against a rally's pw_min/pw_max band must compare THIS value, not the raw
-# kW/kg-derived float, so a car showing e.g. "100 hp/t" that's actually 99.6 is judged
-# eligible for a 100 hp/t floor exactly as displayed (see RallyLibrary.ineligibility_reason,
-# UpgradesMenu.over_pw_limit).
+# Single source of truth for "what number does the player see" in hp/tonne. It no longer
+# gates anything: entry is categorical and the one surviving ceiling (Rally Challenge) is
+# judged in CarPerformance rating units (UpgradesGrid.over_rating_limit). This is now a
+# pure DISPLAY figure — the Speed bar and the detune slider label.
 static func power_to_weight_hp_tonne(entry: Dictionary) -> float:
 	return roundi(power_to_weight(entry) * KW_KG_TO_HP_TONNE)
 

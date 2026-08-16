@@ -105,9 +105,9 @@ particular special** (`UpgradeDef.unlocked_by_rally`, see
 **Cars are not bought.** A car is won at the rally that advertises it — see
 [prize-rallies.md](prize-rallies.md). `RewardSystem.purchase_car`, `car_price`, the
 stranded-and-broke price-0 rescue and `GameConfig.star_cost_per_car` are all **deleted**.
-Two things outlived the purchase flow: `RewardSystem.is_stranded` (no longer a pricing
-input — it now only arms the anti-soft-lock rally unlock in `_unlock_candidates`), and the
-present-box PROP, re-purposed as the free prize-car reveal (see "Where the player sees it"
+So is the anti-soft-lock rally unlock that `is_stranded` / `_unlock_candidates` armed:
+entry is purely categorical now, so nothing can be too slow to enter anything. One thing
+outlived the purchase flow: the present-box PROP, re-purposed as the free prize-car reveal (see "Where the player sees it"
 below). What replaced the dead-end rescue is a
 CONTENT invariant proven over the map (every rally reachable, every starter able to enter
 something from a fresh profile — see [map-exploration.md](map-exploration.md)), rather than
@@ -147,8 +147,10 @@ cannot diverge. It requires the part to be **discovered** (its part-unlock rally
 never a shortcut past the exploration that reveals it — and honours the **per-car**
 prerequisite ladder, so buying cannot skip a rung.
 
-The UI is the upgrades menu's existing slot rows (`upgrades_menu._make_option_selector`):
-a discovered part not on this car renders as `Name N★` and buys on press. No separate
+The UI is the upgrades grid's slot popups (`UpgradeOptions.options_for` fills in a
+`price`; `UpgradeSlotPopup` hangs a drawn `StarRow.price_icon()` on the row): a discovered
+part not on this car is an ordinary selectable option carrying its price, and buys on
+press. No separate
 shop screen, because it is the same question the player is already asking there — "can this
 car run a big turbo?" — and the answer is now "yes, for N stars" instead of a dead grey
 option. Bought parts fit **disabled**, like every other award.
@@ -177,12 +179,14 @@ of being one weight among others.
   both figures as `star_rating` and `stars_gained`.
 - **The HQ map meter** — bottom centre of the table HUD: a drawn star plus the digits of
   `Save.stars_available()`, the spendable balance, again with no denominator.
-- **The upgrades menu's slot rows** — `Name N★` on any discovered part not yet on this
-  car, disabled when the balance is short (the price is information the player can act on
-  even when they cannot pay it). The menu's own FIRST ROW carries the balance
-  (`UpgradesMenu._make_balance_row`, a "Balance" caption then digits + a drawn star),
-  because this is where stars are spent. It lives in the COMPONENT rather than in each
-  host's heading so all FOUR hosts of the menu show it — the HQ lift, the car-park detune
+- **The upgrades grid's slot popups** — a price beside any discovered part not yet on this
+  car, greyed when the balance is short (the price is information the player can act on
+  even when they cannot pay it). The page's own HEADING ROW carries the balance
+  (`UpgradesGrid.build_title_row`: the page title, then digits + a drawn star),
+  because this is where stars are spent — and because the prices sit one press away inside
+  a popup, so a balance remembered from another screen would turn every purchase into
+  arithmetic. It lives in the COMPONENT rather than in each
+  host's heading so all FOUR hosts show it — the HQ lift, the car-park detune
   popup, the start line's Upgrades overlay and the upgrade reveal's — and so every
   `rebuild()` (which a purchase triggers) re-reads it. It used to be spliced into the HQ
   lift's page title, which is why the other three showed no balance at all. See "Part
@@ -196,22 +200,23 @@ Godot a system fallback font. The **web export has no system fonts**, so on mobi
 every price read as a tofu box. Two shapes, both from `scripts/star_row.gd`, so the
 geometry has one definition:
 - **A star beside a Label** → a `StarRow` node as the label's SIBLING, the label carrying
-  the digits alone (`UpgradesMenu._make_balance_row`, and the map meter in
+  the digits alone (`UpgradesGrid.build_title_row`, and the map meter in
   `HqOverlays.build_table_overlay`).
 - **A star inside a Button** → `StarRow.price_icon()` on the button's `icon` with
   `icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT`, because a Button lays out no children
-  (`UpgradesMenu._option_button`, `hq._refresh_repair_button`). Button's own
+  (`UpgradeSlotPopup`'s priced option rows, `hq._refresh_repair_button`). Button's own
   `icon_disabled_color` dims the star with the label, so an unaffordable price greys as one
   piece. `StarRow.PRICE_RADIUS` is the one size, so no price star can drift from another.
 
 The polygon RASTERISER behind both shapes lives in `PolygonIcon` (`scripts/polygon_icon.gd`),
 not in `StarRow` any more: `StarRow.texture` delegates to `PolygonIcon.texture`, which the
-simple upgrades page's `WrenchIcon` shares. Same tofu reasoning, applied once — the star just
+`WrenchIcon` shares (the grid's slot pictures are authored SVGs — `UpgradeIcons` — with
+the drawn wrench as the fallback for a slot no artwork exists for yet). Same tofu reasoning, applied once — the star just
 happened to be the first drawn icon that needed it.
 
 The parentheses went with the glyph — `SMALL 2★`, not `SMALL (2★)`: a star after the digits
-already reads as a price, and the two characters matter on the weight row, which is the
-widest slot row in the menu (see `UpgradesMenu._OPTION_BUTTON_PAD`).
+already reads as a price, and the two characters matter in an option row, where the price
+shares its line with the option's name.
 
 **Not a star sink: the present box.** `scripts/present_box.gd` (`class_name PresentBox`,
 `build()` / `build_openable(...)`) survives, but purely as the **prize-car reveal** for a

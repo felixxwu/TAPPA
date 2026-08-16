@@ -29,12 +29,12 @@ Phases (`StartLine.Seq`), driven in `_process`:
    `Button`. (The later REVEAL phase keeps tap-to-advance, since the run has already begun
    there.) Guarded by
    `test_start_line.gd::test_a_tap_on_the_start_menu_does_not_launch`.
-   - **Tune Car** opens the shared `TuningPanel` (grip / brake-bias / aero / detune for
-     this race, mirroring the HQ lift; edits re-field the live car via `car.retune()`;
-     passed the rally's `pw_max` so the detune label flags **OVER LIMIT**, detune spans the
-     full 0–100 % since eligibility is enforced at Start).
-   - **Upgrades** opens the shared `UpgradesMenu` (swap parts/engine for this race; edits
-     re-field via `car.refit_upgrades()`; Back/Done gated on the rally's p/w cap).
+   - **Tune Car** opens the shared `TuningPanel` (grip / brake-bias / aero for this race,
+     mirroring the HQ lift; edits re-field the live car via `car.retune()`). Detune is not
+     here — it is a power lever, so it lives on the Upgrades overlay's `tune` tile.
+   - **Upgrades** opens the shared `UpgradesGrid` (swap parts, or detune, for this race
+     from its slot tiles; edits re-field via `car.refit_upgrades()`; Back/Done gated on the
+     session's performance ceiling, which only a Rally Challenge sets).
    - Both overlays are built by `_build_menu_overlay`, which ends the page with ONE centred
      horizontal **bottom action row** gapped off the body: a compact `UITheme.row_button`
      **Back** leads it, then any actions the hosted component contributes — picked up

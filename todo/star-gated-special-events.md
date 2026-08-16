@@ -124,8 +124,9 @@ complete in `profile.rallies`. Two readers:
 - **`RewardSystem._parts_at_or_below`** — AND it in at the *same* call site that
   already ANDs `prerequisite_met`. This is the only place the draw pool is built,
   so the gate lands once.
-- **The garage upgrades menu** (`upgrades_menu.gd`) — grey the row (see
-  *Presentation* below).
+- **The garage upgrades grid** (`scripts/upgrade_options.gd`, `UpgradeOptions` — the
+  single option model every tile and popup reads) — grey the option (see *Presentation*
+  below).
 
 No new save state: it rides entirely on existing rally-completion plumbing. And
 `completed` already means **top-3**, not merely finished — `Save.complete_rally`
@@ -242,7 +243,11 @@ decide — an unwanted nitrous is simply a button you don't press, and uninstall
 would change nothing about the car (it is excluded from `effective_meta`, so it
 cannot affect eligibility). So:
 
-- Skip the nitrous slot when `upgrades_menu.gd` builds its slot rows.
+- Skip the nitrous slot when the upgrades page builds its slots.
+  **(NOT what shipped.** The page is an icon grid now, and nitrous is an ordinary tile in
+  it like every other slot — a tile costs no vertical space to carry, so there was nothing
+  to buy by hiding it, and a missing tile reads as a broken grid. See
+  `UpgradeOptions.grid_slots()`; `UpgradeLibrary.HIDDEN_SLOTS` is empty.)
 - **Install it ENABLED on award.** This is the one real trap: `rally_session.gd`
   currently installs awarded parts with `enabled := false`, because the reveal
   overlay is what enables the pick. With no UI row, a disabled nitrous would be
@@ -444,16 +449,16 @@ So separate the capability from the currency:
 - The 20-star event unlocks **swapping** — the swap station becomes usable and
   tokens become spendable. Until then tokens are banked but inert.
 - Two readers need the locked state, both of which already read
-  `Save.engine_swap_tokens_owned()`: `hq.gd` (the `CarparkMode.SWAP` station) and
-  `upgrades_menu.gd`.
+  `Save.engine_swap_tokens_owned()`: `hq.gd` (the `CarparkMode.SWAP` station) and the
+  upgrades page's engine surface (now `UpgradeOptions._engine_options`).
 
 > **SHIPPED (partial).** `RallyLibrary.engine_swaps_unlocked(profile)` and
 > `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "sp_archipelago_trial"` exist, and the
 > reward side honours them: `RewardSystem._box_gate_open` skips the
 > `MYSTERY_BOX_TOKEN_THRESHOLD` requirement while swapping is locked, since tokens
 > are meant to be inert then. **But neither UI reader was wired.** `hq.gd`'s swap
-> station (`_on_swap_confirmed` / the swap-confirm popup) and
-> `upgrades_menu.gd`'s engine-swap row still gate purely on
+> station (`_on_swap_confirmed` / the swap-confirm popup) and the upgrades page's engine
+> surface still gate purely on
 > `Save.engine_swap_tokens_owned() > 0`, so in the shipped build a swap is
 > spendable as soon as a token is held, and the "banked but inert / locked teaser"
 > framing does not exist anywhere in the UI. See *Still outstanding* below.
@@ -643,8 +648,15 @@ a row of greyed options the player cannot act on reads as a nag, and it raises
 exactly the question the garage has no way to answer. Availability and information
 are both withheld here; the *map* is the surface that answers "where do I earn X?".
 
-The rule, in `upgrades_menu.gd._slot_parts` (the one seam every selector goes
-through, so it covers the turbo/aero option rows, the bespoke weight selector and
+**Since REVERSED again by the icon-grid rewrite.** `UpgradeOptions.options_for` now LISTS
+every rung and greys the unavailable ones with a `locked_reason`, because a tile hides its
+ladder behind a press: a turbo popup showing only `Stock | Small` looks like the whole
+slot, so omission stopped being "withholding information" and became "misinformation".
+Keyboard/gamepad nav skips the greyed rows (`FOCUS_NONE`), which is what kept the nag from
+returning. See [features/upgrade-catalogue.md](../features/upgrade-catalogue.md) →
+"Locked options are LISTED, GREYED". The rule as originally specified, for the record
+(then in `upgrades_menu.gd._slot_parts`, the one seam every selector went
+through, so it covered the turbo/aero option rows, the bespoke weight selector and
 the drivetrain picker at once):
 
 - A part whose **star gate is shut** is omitted from its slot's options entirely.
@@ -658,8 +670,9 @@ the drivetrain picker at once):
 - A slot whose **every** real option is still locked gets **no row at all** — not
   even the label (`_make_slot_row` returns null). For a new player that means the
   drivetrain row is simply absent.
-- The **engine-swap row** is likewise absent while the capability is star-locked,
-  rather than showing a disabled `Swap Engine — locked`.
+- The **engine swap** is likewise absent while the capability is star-locked,
+  rather than showing a disabled `Swap Engine — locked`. (Today the `engine` tile's
+  options are listed with a `"Locked"` / `"Needs token"` reason instead.)
 
 Trade-off accepted: the "banked tokens you can't spend yet" teaser no longer
 appears in the garage, so a player holding swap tokens before the 20-star special
@@ -888,8 +901,8 @@ values:
 - The nitrous gauge is hidden unless the part is fitted, and its caption carries no
   drop shadow (the gauge-caption exception — see `features/ui-design-system.md`).
 - Nitrous is installed **enabled** on award, so it works with no menu interaction.
-- The nitrous slot is absent from the upgrades menu's slot rows, and its absence
-  doesn't strand the menu's keyboard walk.
+- The nitrous slot has an ordinary tile on the upgrades grid, and its popup's keyboard
+  walk behaves like every other slot's.
 - Holding the nitrous action multiplies drive torque and drains the bar; releasing it
   stops both; an empty bar applies no multiplier.
 - The nitrous hue differs from `_BOOST_HUE`, so a car with both fitted shows two
@@ -967,8 +980,8 @@ Everything else has shipped. These three are the remainder:
 
 3. **The engine-swap capability gate's UI half.** `RallyLibrary.engine_swaps_unlocked`
    is honoured by `RewardSystem._box_gate_open` only. To deliver the design in
-   *Engine swaps: capability, not currency*, `hq.gd`'s swap station and
-   `upgrades_menu.gd`'s engine-swap row must also consult it and frame banked tokens
+   *Engine swaps: capability, not currency*, `hq.gd`'s swap station and the upgrades
+   grid's `engine` tile must also consult it and frame banked tokens
    as a locked teaser (`3 TOKENS — LOCKED · Win the 20-star event`) rather than as a
    usable item. Until then the 20-star special's advertised unlock ("unlocks engine
    swaps", which `hq._special_unlock_line` already prints on its pin) is not real —

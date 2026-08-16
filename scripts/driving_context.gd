@@ -5,14 +5,14 @@ extends RefCounted
 # Challenge (ChallengeSession) both feed this identically — screens that read
 # RallySession/ChallengeSession directly for these questions are exactly how a
 # past bug (a challenge car's detune slider got a redundant, undocumented hard
-# lock instead of reusing the existing pw_limit/close-button gate) happened.
+# lock instead of reusing the existing rating_limit/close-button gate) happened.
 # Free roam is session-less and has no equivalent — it answers "no context"
 # (see world.gd's car-fielding chain for how free roam resolves its own car).
 #
 # Static-only, no autoload (same shape as RallyLibrary / ChallengeLibrary).
 
-# Sentinel for "no power-to-weight ceiling applies". Mirrored locally by
-# UpgradesMenu.NO_LIMIT (that component takes a bare limit and knows nothing
+# Sentinel for "no performance ceiling applies". Mirrored locally by
+# UpgradesGrid.NO_LIMIT (that component takes a bare limit and knows nothing
 # about sessions).
 const NO_LIMIT := -1.0
 
@@ -48,29 +48,28 @@ static func driven_car() -> Dictionary:
 	return Save.get_car(iid)
 
 
-# The p/w ceiling (hp/tonne) that applies to whichever session is currently
-# active, or NO_LIMIT if none / no restriction. Career reads the authored
-# rally's restriction; a challenge reads its period's rolled ceiling from the
-# period key the running session already knows.
-static func pw_limit() -> float:
+# The CarPerformance RATING ceiling that applies to whichever session is currently
+# active, or NO_LIMIT if none.
+#
+# Only Rally Challenge has one. Career rallies dropped their performance ceiling with
+# the rating rework — entry there is categorical, so there is nothing to cap and
+# nothing to detune under. A Challenge keeps its ceiling because there the constraint
+# IS the content: "beat this stage in a car no quicker than X".
+static func rating_limit() -> float:
 	if ChallengeSession.is_active():
 		var key := ChallengeSession.period_key()
 		if key == "":
 			return NO_LIMIT
 		return ChallengeLibrary.ceiling_for(key)
-	if RallySession.is_active():
-		var rally := RallyLibrary.by_id(RallySession.rally_id())
-		var restriction: Dictionary = rally.get("restriction", {})
-		return float(restriction.get("pw_max", NO_LIMIT))
 	return NO_LIMIT
 
 
-# pw_limit() if `instance_id` is the car actually fielded by the active session,
+# rating_limit() if `instance_id` is the car actually fielded by the active session,
 # else NO_LIMIT (a car that ISN'T the active one has no ceiling from this).
-static func pw_limit_for_car(instance_id: int) -> float:
+static func rating_limit_for_car(instance_id: int) -> float:
 	if instance_id < 0 or instance_id != active_car_instance_id():
 		return NO_LIMIT
-	return pw_limit()
+	return rating_limit()
 
 
 # The ONE place a stage's/event's track parameters reach the live config, pulled

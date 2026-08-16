@@ -4,7 +4,7 @@ extends VBoxContainer
 # brake bias, aero balance). Owns its sliders and Save persistence; reports edits
 # via on_change so the host can re-field the car. Used by the HQ lift (hq.gd) and
 # the start-line pre-event grid (start_line.gd). Engine detune is a power (p/w)
-# knob, so its slider lives in the upgrades menu (UpgradesMenu), not here. See
+# knob, so its slider lives in the upgrades grid's tune tile (UpgradesGrid), not here. See
 # features/tuning.md.
 
 var _owned: Dictionary = {}
@@ -95,7 +95,7 @@ func _on_wheels_pressed() -> void:
 # Build one handling-axis row via the shared SliderRow builder, then bind the axis-
 # specific bits (value persistence + the axis's slider/value/panel handles refresh()
 # and _reset() reach for). The layout + focus-highlight live in SliderRow so this row
-# can't drift from the detune row in UpgradesMenu.
+# can't drift from the detune slider in UpgradeSlotPopup.
 func _make_slider_row(spec: Dictionary) -> Control:
 	var axis := String(spec["axis"])
 	var handles := SliderRow.build(spec)

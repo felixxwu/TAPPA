@@ -1,7 +1,7 @@
 extends Node
 # Autoload "ChallengeSession" — the Daily/Weekly/Monthly Rally Challenge's own
 # small state machine, parallel to RallySession rather than a reuse of it (a
-# challenge has no rival/OpponentCache, no special/star unlock, no
+# challenge has no rival field, no special/star unlock, no
 # Save.complete_rally bookkeeping). See
 # docs/superpowers/specs/2026-07-31-rally-challenge-design.md §3-4-6 and
 # features/rally-challenge.md.
@@ -145,46 +145,37 @@ static func has_stale_run(profile: Dictionary, unix_time: int) -> bool:
 	return resumable_run(profile, unix_time).is_empty()
 
 
-# Owned cars eligible for `kind_str` at `unix_time`: current effective p/w
-# (installed upgrades + current detune) at/under the period's rolled ceiling —
-# OR reachable by lowering detune, same as a career rally's over-the-cap car
-# (RallyLibrary.qualifying_detune / hq_carpark.gd._qualifying_detune_for): a car isn't
-# excluded just because its slider happens to sit above what the ceiling
-# needs right now, it shows up "eligible with a note" per spec §2, and the
-# player tunes down before starting (Start still re-checks the CURRENT p/w —
-# eligible_cars only answers "is there a path in for this car", not "is it
-# ready to start AS TUNED"). Recomputed live, never cached at grant time.
+# Owned cars eligible for `kind_str` at `unix_time`: cars whose CURRENT build rates
+# at/under the period's rolled rating ceiling. There is no detune escape — an
+# over-ceiling build is plainly ineligible and the player picks or builds another car
+# (the rating design doc's D5). Recomputed live, never cached at grant time.
 static func eligible_cars(kind_str: String, profile: Dictionary, unix_time: int) -> Array:
 	return classify_cars(kind_str, profile, unix_time)["eligible"]
 
 
-# The period's p/w ceiling AS THE PLAYER SEES IT — hp/tonne, rounded to a whole
-# number, which is how every challenge label prints it ("%d hp/t max"). Eligibility
-# is judged against THIS, never the raw float: CarLibrary.power_to_weight_hp_tonne is
-# itself rounded, so comparing a rounded figure to an unrounded ceiling would reject a
-# car whose displayed hp/tonne exactly equals the displayed cap. Same rule (and same
-# reason) as hq_carpark.gd._qualifying_detune_for and RallyLibrary.ineligibility_reason,
-# which round `pw_max` before comparing.
-# classify_car verdicts. READY/NEEDS_TUNE double as the classify_cars bucket keys.
+# classify_car verdicts. READY doubles as the classify_cars bucket key.
 const READY := "ready"
-const NEEDS_TUNE := "needs_tune"
 const EXCLUDED := "excluded"
 
 
+# The period's rating ceiling AS THE PLAYER SEES IT — rounded to a whole number, which
+# is how every challenge label prints it. Eligibility is judged against THIS, never the
+# raw float: CarPerformance.rating is itself an int, so comparing it to an unrounded
+# ceiling would reject a car whose displayed rating exactly equals the displayed cap.
 static func displayed_ceiling(kind_str: String, unix_time: int) -> int:
 	return roundi(ChallengeLibrary.current_ceiling(kind_str, unix_time))
 
 
 # The ONE place the challenge eligibility rule lives. Classifies every owned car in
 # `profile` against `kind_str`'s current period and returns
-#   {"ceiling": int, "eligible": Array, "ready": Array, "needs_tune": Array,
-#    "detune": {instance_id: qualifying absolute detune fraction}}
-# `ready` = at/under the displayed ceiling as currently tuned; `needs_tune` = over it
-# but reachable by lowering the engine detune; `eligible` = both, in the profile's own
-# car order (what the car park parks). The UI reads these lists rather than re-deriving
-# the comparison, so the "compare against the DISPLAYED ceiling" rule can't drift.
+#   {"ceiling": int, "eligible": Array, "ready": Array}
+# `ready` and `eligible` hold the same cars (in the profile's own car order, which is
+# what the car park parks) — the two keys are kept distinct because the UI reads
+# `eligible` as "what can enter" and `ready` as "what to name on the screen". The UI
+# reads these lists rather than re-deriving the comparison, so the "compare against the
+# DISPLAYED ceiling" rule can't drift.
 static func classify_cars(kind_str: String, profile: Dictionary, unix_time: int) -> Dictionary:
-	var out := {"ceiling": 0, "eligible": [], "ready": [], "needs_tune": [], "detune": {}}
+	var out := {"ceiling": 0, "eligible": [], "ready": []}
 	var period := ChallengeLibrary.current_period(kind_str, unix_time)
 	if period.is_empty():
 		return out
@@ -194,46 +185,33 @@ static func classify_cars(kind_str: String, profile: Dictionary, unix_time: int)
 		var entry := CarLibrary.for_owned(car)
 		if entry.is_empty():
 			continue
-		var verdict := classify_car(raw_ceiling, car, entry)
-		var state := String(verdict["state"])
-		if state == EXCLUDED:
+		if String(classify_car(raw_ceiling, car, entry)["state"]) == EXCLUDED:
 			continue
-		out[state].append(car)
+		out["ready"].append(car)
 		out["eligible"].append(car)
-		if state == NEEDS_TUNE:
-			out["detune"][int(car.get("instance_id", -1))] = float(verdict["detune"])
 	return out
 
 
 # classify_cars' per-car verdict, and the ONE implementation of the challenge
-# eligibility comparison: {"state": READY|NEEDS_TUNE|EXCLUDED, "detune": frac}.
-# `raw_ceiling` is the period's rolled hp/tonne as ChallengeLibrary returns it; it is
+# eligibility comparison: {"state": READY|EXCLUDED}.
+#
+# A plain rating comparison, deliberately NOT routed through
+# RallyLibrary.ineligibility_reason: rally restrictions are purely categorical now, and
+# the challenge's numeric ceiling stays on its own path rather than reintroducing a
+# numeric key into the shared restriction schema. Over the ceiling means simply
+# ineligible — there is no detune escape and no auto-disabling of parts (design doc D5);
+# the player picks or builds another car.
+#
+# `raw_ceiling` is the period's rolled rating as ChallengeLibrary returns it; it is
 # ROUNDED here before anything is compared against it (see displayed_ceiling), so the
 # whole challenge path judges a car against the same number the screen prints.
 static func classify_car(raw_ceiling: float, owned: Dictionary, entry: Dictionary) -> Dictionary:
-	var ceiling := float(roundi(raw_ceiling))
-	var meta := UpgradeLibrary.effective_meta(owned, entry)
-	if CarLibrary.power_to_weight_hp_tonne(meta) <= ceiling:
-		return {"state": READY, "detune": -1.0}
-	var frac := qualifying_detune_for({"restriction": {"pw_max": ceiling}}, owned, entry)
-	if frac > 0.0:
-		return {"state": NEEDS_TUNE, "detune": frac}
-	return {"state": EXCLUDED, "detune": -1.0}
-
-
-# The largest engine-detune fraction (an ABSOLUTE slider setting, 0..1) at
-# which `owned` would qualify under `synthetic_rally`'s `{"restriction": {
-# "pw_max": ceiling}}` shape, or -1.0 if no detune helps. Judged at the car's
-# FULL power (detune 1.0), mirroring hq_carpark.gd._full_power_meta / hq.gd._detuned_to_full —
-# duplicated here rather than reused since ChallengeSession stays a pure,
-# Save-free static surface (testable with a synthetic profile, per CLAUDE.md).
-static func qualifying_detune_for(synthetic_rally: Dictionary, owned: Dictionary, entry: Dictionary) -> float:
-	var full := owned.duplicate(true)
-	var tuning: Dictionary = (full.get("tuning", {}) as Dictionary).duplicate()
-	tuning["engine_detune"] = 1.0
-	full["tuning"] = tuning
-	var full_meta := UpgradeLibrary.effective_meta(full, entry)
-	return RallyLibrary.qualifying_detune(synthetic_rally, full_meta)
+	# merged_meta, not effective_meta: the rating must see tyres and aero, which
+	# effective_meta deliberately withholds (they never fed power-to-weight).
+	var meta := CarPerformance.merged_meta(owned, entry)
+	if CarPerformance.rating(meta) <= roundi(raw_ceiling):
+		return {"state": READY}
+	return {"state": EXCLUDED}
 
 
 # --- Lifecycle -----------------------------------------------------------------

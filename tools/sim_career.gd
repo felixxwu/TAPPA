@@ -144,7 +144,7 @@ func _seed_opening_rally(profile: Dictionary, starter_model_id: String) -> void:
 	profile["starter_model_id"] = starter_model_id
 
 
-# An owned car carrying just the fields effective_meta / max_potential_meta read, plus `hp`.
+# An owned car carrying just the fields effective_meta reads, plus `hp`.
 #
 # `hp` MATTERS even though this tool models no damage: the eligibility walk skips
 # damaged cars, and health reads `hp` with a default of 0 — so a car
@@ -250,14 +250,13 @@ func _pick(enterable: Array, rng: RandomNumberGenerator) -> Dictionary:
 
 # Every still-incomplete rally that ANY owned car can currently enter, deduped.
 # incomplete_rallies_enterable_by already folds in "incomplete AND revealed AND
-# in-band (or detunable into band)" for ONE car, so the union across the garage is
-# all this has to add — the same thing the HQ map shows the player.
+# admitted by the rally's categorical restriction" for ONE car, so the union across the
+# garage is all this has to add — the same thing the HQ map shows the player.
 func _enterable(profile: Dictionary) -> Array:
 	var seen: Dictionary = {}
 	var out: Array = []
 	for car in profile["cars"]:
-		var pair := _meta_pair(car)
-		for rally in RallyLibrary.incomplete_rallies_enterable_by(pair[0], profile, pair[1]):
+		for rally in RallyLibrary.incomplete_rallies_enterable_by(_meta_of(car), profile):
 			var rid := String(rally["id"])
 			if seen.has(rid):
 				continue
@@ -266,30 +265,24 @@ func _enterable(profile: Dictionary) -> Array:
 	return out
 
 
-# The (live, max-potential) meta pair eligibility is judged on — the ceiling is
-# checked against live stats and the floor against max potential. Mirrors the HQ's
-# own entry plan (hq.gd _entry_plan).
+# The live meta eligibility is judged on. Entry is purely CATEGORICAL now, so there is
+# no second "max potential" meta to carry: no amount of tuning changes who is admitted.
 #
 # CACHED BY MODEL ID, which is sound ONLY because this tool models stock cars: no
 # upgrades, no swaps, no tuning, so every car of a model has identical meta and a
 # car's meta never changes over its life. Without the cache this is the tool's hot
-# spot by a wide margin — _enterable recomputes it per owned car per call, and
-# max_potential_meta deep-copies (`owned_car.duplicate(true)`), so a full run costs
-# millions of deep copies. If this tool ever grows upgrade/swap modelling, this
-# cache MUST become per-instance-and-state or it will silently report stale bands.
+# spot by a wide margin — _enterable recomputes it per owned car per call. If this tool
+# ever grows upgrade/swap modelling, this cache MUST become per-instance-and-state or it
+# will silently report stale eligibility.
 var _meta_cache: Dictionary = {}
 
-func _meta_pair(car: Dictionary) -> Array:
+func _meta_of(car: Dictionary) -> Dictionary:
 	var model_id := String(car.get("model_id", ""))
 	if _meta_cache.has(model_id):
 		return _meta_cache[model_id]
-	var entry := CarLibrary.by_id(model_id)
-	var pair := [
-		UpgradeLibrary.effective_meta(car, entry),
-		UpgradeLibrary.max_potential_meta(car, entry),
-	]
-	_meta_cache[model_id] = pair
-	return pair
+	var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(model_id))
+	_meta_cache[model_id] = meta
+	return meta
 
 
 # Every still-incomplete rally whose REVEAL gate is open, regardless of whether any

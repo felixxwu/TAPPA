@@ -16,10 +16,10 @@ func test_wrong_drive_mode_gives_reason() -> void:
 
 func test_reason_empty_iff_is_eligible() -> void:
 	# The reason string and the bool must always agree.
-	var rally := _rally({"pw_max": 100.0})
-	var over := {"peak_torque": 500.0, "redline": 8000.0, "mass": 900.0}
-	var under := {"peak_torque": 100.0, "redline": 4000.0, "mass": 1500.0}
-	for meta in [over, under]:
+	var rally := _rally({"doors_max": 2})
+	var admitted := {"doors": 2}
+	var rejected := {"doors": 5}
+	for meta in [admitted, rejected]:
 		assert_eq(RallyLibrary.ineligibility_reason(rally, meta) == "",
 			RallyLibrary.is_eligible(rally, meta),
 			"reason=='' agrees with is_eligible")

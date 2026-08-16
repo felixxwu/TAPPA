@@ -72,9 +72,6 @@ func _ready() -> void:
 	# the loading tip for this one load — it is about the car the player is sitting in,
 	# which beats a generic tip, and taking it here clears it so the remaining stages
 	# go back to tips.
-	var start_notice := RallySession.take_start_notice()
-	if start_notice != "":
-		loading.set_step(start_notice)
 	# Tell the player which stage of the rally is loading (no-op for a one-stage rally or a
 	# session-less drive). Replaced the weather tell that used to own this line.
 	if RallySession.is_active():
@@ -1453,6 +1450,10 @@ var _ghost: GhostCar = null
 # Captured at generation, consumed at GO: the P1 snapshot, the raw turn boundaries, and
 # whether this run is staged (which decides the raw->profile offset shift).
 var _p1_snapshot: Dictionary = {}
+# The inputs _setup_stage_splits was last run with, so the P1 snapshot can be REDONE if
+# the field is re-drawn while the player is still on the start line. Regenerating the
+# track to get them back would be absurd for what is a pure re-read.
+var _splits_track_result: Dictionary = {}
 var _split_boundaries: Array = []
 var _splits_staged := false
 var _replay_camera: ReplayCamera
@@ -1500,6 +1501,7 @@ func _setup_stage_splits(track_result: Dictionary, staged: bool, _cfg: GameConfi
 	_p1_snapshot = {}
 	_split_boundaries = []
 	_splits_staged = staged
+	_splits_track_result = track_result
 	if _stage_manager == null or not RallySession.is_active():
 		return
 	# ONE snapshot: the time, the car id, the engine id and the meta all come from the
@@ -1515,6 +1517,23 @@ func _setup_stage_splits(track_result: Dictionary, staged: bool, _cfg: GameConfi
 	for sp in splits:
 		_split_boundaries.append(float(sp["end_offset_m"]))
 	_setup_rival_ghost()
+
+
+# The rival grid was re-drawn under us (RallySession.opponent_field_changed) — re-read P1
+# and rebuild the ghost against it.
+#
+# WHY THIS IS NEEDED: the stage snapshots P1 when it builds, which happens BEFORE the
+# start-line overlay appears. The player can edit upgrades on that overlay, which
+# re-matches the whole field to their new rating — so the leader they are about to chase
+# is not the one the ghost was built from. Left alone, the windscreen ghost and the
+# "vs P1" delta would both be describing a rival who is no longer in the race.
+#
+# Ignored once the stage has actually started (GO solves the pace and sets _rival_pace):
+# swapping the ghost out from under a running stage would move the target mid-lap.
+func _on_opponent_field_changed() -> void:
+	if _rival_pace != null or _splits_track_result.is_empty():
+		return
+	_setup_stage_splits(_splits_track_result, _splits_staged, Config.data)
 
 
 # Phase 2, at GO: solve the pace over the span the player is actually timed on, then feed
@@ -1709,22 +1728,14 @@ func _build_start_line() -> void:
 	var rally := RallyLibrary.by_id(RallySession.rally_id())
 	var leaders: Array = RallySession.current_event_leaders(3) if RallySession.is_active() else []
 	if ChallengeSession.is_active():
-		# A challenge has no authored rally. StartLine reads a display name and the
-		# power-to-weight restriction off this dict, so hand it the SAME synthetic
-		# {"restriction": {"pw_max": ceiling}} shape hq.gd's challenge car park and
-		# ChallengeSession.eligible_cars already judge the car against — the gate is
-		# then literally the same code path a rally's p/w-capped class takes.
-		# The `restriction` key is NOT redundant with DrivingContext.pw_limit(): the
-		# Upgrades cap now goes through DrivingContext, but start_line.gd's launch
-		# eligibility gate (RallyLibrary.ineligibility_reason) and its Tune Car
-		# detune cap (_rally_qualifying_detune -> RallyLibrary.qualifying_detune)
-		# both take the whole rally dict and read `restriction` themselves.
+		# A challenge has no authored rally, so synthesise just enough for StartLine's
+		# header. NO `restriction`: a rally restriction is categorical now, and a
+		# challenge's ceiling is a CarPerformance rating that only challenge_session.gd
+		# knows how to compare — putting it in this dict would send it through
+		# RallyLibrary.ineligibility_reason, which no longer speaks that language.
 		# `leaders` stays empty: no rival field (spec §3), so StartLine's existing
 		# empty-leaders path skips the reveal and fades straight to the countdown.
-		rally = {
-			"name": String(info["rally_name"]),
-			"restriction": {"pw_max": ChallengeLibrary.ceiling_for(ChallengeSession.period_key())},
-		}
+		rally = {"name": String(info["rally_name"])}
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)
@@ -1836,6 +1847,11 @@ func _wire_session_signals() -> void:
 		RallySession.standings_overlay_host = not _headless
 		if not RallySession.standings_ready.is_connected(_present_standings_overlay):
 			RallySession.standings_ready.connect(_present_standings_overlay)
+		# The start-line overlay lets the player change the car AFTER this stage snapshotted
+		# P1, and that re-matches the whole field — so the ghost has to be rebuilt against
+		# whoever is actually leading now. See _on_opponent_field_changed.
+		if not RallySession.opponent_field_changed.is_connected(_on_opponent_field_changed):
+			RallySession.opponent_field_changed.connect(_on_opponent_field_changed)
 	elif ChallengeSession.is_active():
 		if not ChallengeSession.run_finished.is_connected(_on_challenge_run_finished):
 			ChallengeSession.run_finished.connect(_on_challenge_run_finished)

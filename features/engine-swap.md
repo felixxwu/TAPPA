@@ -6,8 +6,9 @@ the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 `effective_meta` feed-through in `scripts/upgrade_library.gd`, the
 `engine_detune` scaling read by `TuningLibrary.apply` in
 `scripts/tuning_library.gd` (detune is stored in the per-car `tuning` bag but is
-**not** a `TuningLibrary.AXES` entry), the swap-row and engine-detune slider UI
-in `scripts/upgrades_menu.gd` (`UpgradesMenu`), and the car-park swap-mode UI in
+**not** a `TuningLibrary.AXES` entry), the `engine` and `tune` tiles on the upgrades grid
+(`scripts/upgrades_grid.gd` / `scripts/upgrade_options.gd` / `scripts/upgrade_slot_popup.gd`),
+and the car-park swap-mode UI in
 `scripts/hq.gd`.
 
 **Engine swap** lets the player move any owned car's engine into any other
@@ -36,14 +37,15 @@ Three consumers:
 
 - `RewardSystem._box_gate_open` — waives the mystery-box token threshold while
   swapping is locked, so tokens don't also gate boxes before they're spendable.
-- `UpgradesMenu._rebuild` — the swap row is **absent entirely** while the
-  capability is locked, on the same rule that hides star-locked part options: a
-  permanently-disabled row only raises "when do I get this?", which the garage
-  cannot answer. It appears the moment the gating special is won. (Trade-off: a
-  player banking tokens beforehand gets no in-garage explanation of what they are
-  for — the map pin advertises the unlock instead.)
+- `UpgradeOptions._engine_options` — the `engine` tile's options are always LISTED, and
+  every engine other than the fitted one carries a `locked_reason` of `"Locked"` while the
+  capability is unwon, or `"Needs token"` once it is unlocked but the player holds none.
+  This is the grid-wide rule (see [upgrade-catalogue.md](upgrade-catalogue.md) → "Locked
+  options are LISTED, GREYED"): a tile hides its contents behind a press, so an omitted
+  option is an option the player can never learn exists. Naming the reason is also what
+  turns a banked-but-unspendable token stack into a pull toward the gating event.
 - `hq._show_swap_confirm` — the car-park station's confirm popup, which is
-  reachable independently of the (now hidden) garage row, so it re-checks rather
+  reachable independently of the garage grid, so it re-checks rather
   than trusting the caller, and is where the locked explanation still lives. Its OK button is disabled on `_pending_swap.is_empty()`, which is
   set on exactly the one path where a swap can proceed — so a locked (or
   tokenless) popup can't present a live button that silently no-ops.
@@ -282,19 +284,19 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 
 ## UI
 
-- **Upgrades page, engine-swap row** (`UpgradesMenu._make_engine_swap_row`,
-  `scripts/upgrades_menu.gd:215`) — shown on the tuning-lift's Upgrades page below
-  the slot rows: a label with the car's current engine name
-  (`EngineLibrary.by_id(current).name`) and a **Swap Engine** button. The button's
-  label and behaviour track the token count (`Save.engine_swap_tokens_owned()`):
-  **"Swap Engine (N tokens)"** and enabled when a token is held and another owned car
-  exists; at 0 tokens the button is **DISABLED** with the label **"Swap Engine — no
-  tokens"** and a tooltip explaining that tokens are won from a rally reward (it does
-  NOT pop an info dialog — the old `_no_tokens_dialog` / `_show_no_tokens_info` path
-  was removed); plain **"Swap Engine"** and disabled only when there's no other owned
-  car to swap with. Health never affects it.
-- **Mystery box — NOT on this page.** It used to be a lift-only Upgrades-page row
-  (`UpgradesMenu._make_mystery_box_row`, since deleted): a box is a garage-WIDE
+- **Upgrades grid, the `engine` tile** (`UpgradeOptions.SLOT_ENGINE`, drawn by
+  `scripts/upgrades_grid.gd` like any other slot) — the tile reads the car's current
+  engine name (`EngineSwap.current_engine_id` → `EngineLibrary`), and its popup lists
+  **every roster engine**, the fitted one marked. Engines other than the fitted one are
+  greyed with their reason — `"Locked"` before the capability special is won, `"Needs
+  token"` at 0 tokens (`Save.engine_swap_tokens_owned()`). Health never affects it.
+  Picking an engine does not perform the swap: the tile calls the host's `on_swap`
+  callback (`UpgradesGrid._apply_option`) and the HOST runs the flow, because a swap needs
+  a partner car to be picked out in the car park. So the tile is effectively **lift-only** —
+  only `hq.gd` passes `on_swap`. For the same reason the tile does **not** grey itself for
+  "no other car to swap with": whether a partner exists is a fact about the swap flow, not
+  about this car's engine, and `hq.gd._enter_engine_swap` is the one place that knows.
+- **Mystery box — NOT on this page.** It used to be a lift-only upgrades-page row: a box is a garage-WIDE
   reward, not a property of the car on the lift, so it moved to the **garage
   action row** as a "Mystery Box (N)" button (`hq.gd._refresh_garage_row` ->
   `_on_open_mystery_box`). Omitted entirely at 0 boxes held; disabled with the
@@ -324,18 +326,22 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   `EngineSwap.pw_after_swap(owned, entry, donor_engine_id)` (returns kW/kg;
   scaled by `CarLibrary.KW_KG_TO_HP_TONNE` for display). Hidden outside swap
   mode.
-- **Upgrades menu, detune slider** — an "Engine detune" row (`0%`–`100%`, step
-  5) at the **bottom** of `UpgradesMenu` (below the part-slot selectors and the
-  lift-only engine-swap row), the final power adjustment. It is NOT a
+- **Upgrades grid, the `tune` tile** (`UpgradeOptions.SLOT_TUNE`) — the detune, sitting in
+  the grid beside the parts. It is NOT a
   `TuningLibrary.AXES` row and no longer lives on the tuning page — detune is a
   power / power-to-weight knob, so it belongs with upgrades. Always **available**
-  (no upgrade gate). The slider stores `frac = value / 100.0` via
-  `Save.set_engine_detune`, at `tuning.engine_detune`, and its value label pairs
-  the percent with the live power-to-weight only (`N% - M hp/tonne`); the label
-  no longer flags the limit. The `pw_limit` cap is instead enforced by the
-  overlay's **gated Done button** (red, blocks closing and Esc while over the
-  cap — the start-line Upgrades overlay and the car-park Change-Upgrades popup
-  pass a `pw_limit`; the HQ lift omits it, keeping a plain Back for free tuning).
+  (no upgrade gate). The tile reads the live percentage, and it is the ONE tile whose
+  press opens a **slider** rather than a list (`UpgradeSlotPopup.open_slider`, `0%`–`100%`
+  step 5, built from the shared `SliderRow`): detune is continuous, and quantising it into
+  21 list rows would be a slider drawn badly. The slider writes live —
+  `frac = value / 100.0` through `Save.set_engine_detune` at `tuning.engine_detune`, with
+  no rebuild, since rebuilding mid-drag would free the popup out from under the grab — and
+  its value label reads the resulting live power-to-weight (`200 HP/T`,
+  `UpgradesGrid._detune_label_text`); the label does not flag the limit. A `rating_limit` ceiling is instead enforced by the
+  overlay's **gated Done button** (red, blocks closing and Esc while over — the
+  start-line Upgrades overlay, the reward reveal and the car-park Change-Upgrades popup
+  all source one from `DrivingContext`, and only a Rally Challenge has one; the HQ lift
+  omits it, keeping a plain Back for free tuning).
   The tuning panel's **Reset to neutral** (now a button in the Tuning page's bottom
   action row, see [tuning.md](tuning.md)) no longer touches detune — it clears
   only the handling axes and **preserves** `tuning.engine_detune`.
@@ -343,8 +349,8 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   cap still parks in the rally car-select lineup and LOOKS eligible there (no
   warning label, plain Start — saves overlay space); pressing Start pops a
   **"Too powerful" confirm** whose only route through is **Change Upgrades**
-  (the other button is Cancel). It opens the gated `UpgradesMenu` popup where the
-  player sheds power for themselves — the engine-detune slider, the weight
+  (the other button is Cancel). It opens the gated `UpgradesGrid` popup where the
+  player sheds power for themselves — the `tune` tile's detune slider, the weight
   slot's ballast, or stripping parts — and the popup's gated **Done** button
   refuses to close until the build is under the cap. That fix is an **ordinary
   garage edit and permanent** (it persists after the rally); there is **no**
@@ -361,10 +367,10 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 
 ### Navigation
 
-The swap row's **Swap Engine** button is an ordinary `Control.FOCUS_ALL`
-button on the Upgrades page (native-focus regime — see
-[menus.md](menus.md) → "Menu navigation"), so it's reachable by
-keyboard/gamepad exactly like every other upgrades-menu button, with no extra
+The `engine` tile is an ordinary `Control.FOCUS_ALL`
+button in the upgrades grid, and the engine rows in its popup are ordinary focusable rows
+(native-focus regime — see [menus.md](menus.md) → "Menu navigation"), so the swap is
+reachable by keyboard/gamepad exactly like every other tile, with no extra
 wiring. Once pressed, the car park it opens is the SAME diegetic 3D station
 used by the wheel view and the starter picker — it reuses that station's existing
 `menu_left`/`menu_right` (cycle the focused car), `menu_select` (confirm via
@@ -373,10 +379,11 @@ which returns to the lift when `_carpark_swap_mode` is set) handlers in
 `hq.gd._unhandled_input`, so swap mode is fully keyboard/gamepad navigable by
 construction — it adds no new input surface, only a new car-park **mode flag**
 that changes what `_on_start_pressed`/`_car_back` do at the existing
-confirm/back actions. The detune slider is a row in the `UpgradesMenu`
-(upgrades page / start-line Upgrades overlay / car-park Change-Upgrades popup),
-using the same left/right-nudges-the-focused-slider handling as every other
-upgrades-menu slider (see [menus.md](menus.md) → "Menu navigation"). The
+confirm/back actions. The detune slider lives in the `tune`
+tile's popup (`UpgradeSlotPopup.open_slider`, wherever `UpgradesGrid` is hosted), which
+opens with the slider focused and uses the same left/right-nudges-the-focused-slider
+handling as every other slider in the game (see [menus.md](menus.md) → "Menu
+navigation"). The
 mystery-box row's **Open** button is likewise an ordinary `Control.FOCUS_ALL`
 button (`set_meta("upgrade_focus_key", "open_box")` keeps the cursor on it
 across a rebuild, same trick the other rows use), so it needs no extra nav
@@ -399,8 +406,9 @@ one, succeeding between damaged cars (HP untouched), `engine_swap_tokens_owned`,
 `test_reward_system.gd` covers the token being a drawable pool member. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
-covers `TuningLibrary.apply`'s `engine_detune` torque scaling. `test_menu_flow.gd` covers the
-swap row, car-park swap mode, the detune slider's navigation/persistence, and
+covers `TuningLibrary.apply`'s `engine_detune` torque scaling. `test_upgrades_grid.gd` covers the
+`engine` and `tune` tiles (their options, locked reasons and the slider popup);
+`test_menu_flow.gd` covers car-park swap mode and
 the car-park detune-to-enter prompt (over-cap car parks looking eligible; Start
 pops the "Too powerful" confirm; Change Upgrades opens the gated upgrades popup).
 `test_rally_library.gd`

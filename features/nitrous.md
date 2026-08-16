@@ -50,7 +50,8 @@ grown `gearbox` and `tires` — see [upgrade-catalogue.md](upgrade-catalogue.md)
 with the turbo and the supercharger — exactly wrong, since nitrous is meant to
 stack on top of whatever induction the car carries.
 
-The slot behaves like every other one: `upgrades_menu.gd` builds it a row, the part
+The slot behaves like every other one: it gets an ordinary tile on the upgrades grid
+(`UpgradeOptions.grid_slots()` → `scripts/upgrades_grid.gd`), the part
 installs **disabled** and the player enables it, and the single authored entry is gated
 on winning its special via `unlocked_by_rally` (see
 [upgrade-catalogue.md](upgrade-catalogue.md) and [rally-roster.md](rally-roster.md)).

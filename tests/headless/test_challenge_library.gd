@@ -129,7 +129,7 @@ func test_ceiling_for_is_deterministic_and_from_the_band() -> void:
 	var a := ChallengeLibrary.ceiling_for(key)
 	var b := ChallengeLibrary.ceiling_for(key)
 	assert_eq(a, b, "same key -> same ceiling roll across repeated calls")
-	assert_true(ChallengeLibrary.CEILING_BAND_HP_TONNE.has(a),
+	assert_true(ChallengeLibrary.CEILING_BAND_RATING.has(a),
 		"the rolled ceiling is a member of the authored band, not a specific value")
 
 

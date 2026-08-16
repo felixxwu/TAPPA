@@ -1170,3 +1170,69 @@ func test_a_profile_with_no_starter_has_no_opening_carve_out() -> void:
 	_report_losing_run()
 	assert_false((finish[0] as Dictionary)["completed"],
 		"no starter recorded means no opening rally, so the podium rule stands")
+
+
+# --- Re-fielding the grid after a start-line upgrade edit --------------------
+#
+# The start line lets the player change upgrades while standing on the grid, AFTER the
+# rival field has been drawn. Because the field is matched to the player's
+# CarPerformance rating, an edit there has to re-draw it or the matching quietly stops
+# meaning anything at the exact moment the player engages with it.
+
+# Move the car's rating without needing the upgrade fixtures installed: a detune scales
+# peak torque, which is exactly what the benchmark reads.
+func _change_build(instance_id: int) -> void:
+	_save.set_engine_detune(instance_id, 0.5)
+
+
+func test_refielding_redraws_the_grid_when_the_build_changes() -> void:
+	var owned := _start("fx_open")
+	_change_build(int(owned["instance_id"]))
+	assert_true(RallySession.refield_opponents(), "a changed build re-draws the field")
+	# Deliberately NOT asserting the grid membership changed. The fixture roster yields
+	# fewer combos than a field holds, so every combo is fielded whatever the weighting —
+	# the pool cannot express matching at all. That the draw actually FOLLOWS the rating
+	# is tested where a pool big enough to show it exists
+	# (test_rally_library.test_the_field_is_drawn_toward_the_players_rating).
+
+
+func test_refielding_is_a_no_op_when_the_build_is_unchanged() -> void:
+	_start("fx_open")
+	var before := RallySession.opponent_field().duplicate(true)
+	assert_false(RallySession.refield_opponents(), "nothing changed, so nothing is re-drawn")
+	assert_eq(str(RallySession.opponent_field()), str(before), "the grid is untouched")
+
+
+func test_refielding_is_refused_once_a_stage_has_been_raced() -> void:
+	# The guard that protects the standings: a rally's results accumulate across its
+	# events, so re-drawing mid-rally would rewrite times the rivals have already set.
+	var owned := _start("fx_open")
+	RallySession.report_event_result(60000)
+	var before := RallySession.opponent_field().duplicate(true)
+	_change_build(int(owned["instance_id"]))
+	assert_false(RallySession.refield_opponents(), "mid-rally the grid is locked")
+	assert_eq(str(RallySession.opponent_field()), str(before),
+		"already-raced standings are not rewritten under the player")
+
+
+func test_refielding_announces_itself_so_the_ghost_can_rebuild() -> void:
+	# The run scene snapshots P1 (for the windscreen ghost and the "vs P1" delta) when the
+	# stage BUILDS, which is before the start-line overlay the player edits upgrades on.
+	# Without this signal the ghost keeps chasing the leader of the field the player
+	# turned up with, not the one they are about to race.
+	var owned := _start("fx_open")
+	var fired := [0]
+	RallySession.opponent_field_changed.connect(func(): fired[0] += 1)
+	_change_build(int(owned["instance_id"]))
+	assert_true(RallySession.refield_opponents(), "the field was re-drawn")
+	assert_eq(fired[0], 1, "and it announced the change exactly once")
+
+
+func test_a_refused_refield_announces_nothing() -> void:
+	# A no-op must stay silent, or the run scene would tear down and rebuild the ghost
+	# every time the player opened the upgrades page and closed it again unchanged.
+	_start("fx_open")
+	var fired := [0]
+	RallySession.opponent_field_changed.connect(func(): fired[0] += 1)
+	assert_false(RallySession.refield_opponents(), "nothing changed")
+	assert_eq(fired[0], 0, "so nothing was announced")

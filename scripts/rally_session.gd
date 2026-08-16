@@ -36,6 +36,13 @@ signal phase_changed(phase: int)
 signal event_started(event_index: int, event: Dictionary)
 # A between-event standings interstitial should show (after events 0 and 1).
 signal standings_ready(event_index: int)
+
+# The rival grid was RE-DRAWN mid-flow (refield_opponents), so anything derived from it
+# is now stale. The run scene listens: it snapshots P1 for the ghost and the "vs P1"
+# popup when the stage builds, which is BEFORE the start-line overlay the player can
+# edit upgrades on — so without this the ghost would keep racing the field the player
+# turned up with rather than the one they are actually about to race.
+signal opponent_field_changed()
 # A per-event upgrade was drawn + granted — reward reveal hook (menus rig 5).
 signal upgrade_revealed(item_id: String)
 # A top-3 car reward was drawn + granted — reward reveal (car arrives in HQ).
@@ -49,7 +56,10 @@ var _car_instance_id := -1             # the fielded OwnedCar instance
 var _car_model_id := ""                # the fielded car's CarLibrary model id (for the player's standings car)
 var _event_index := 0                  # 0..2
 var _event_times_ms: Array[int] = []   # accumulated, one per completed event
-var _opponent_field: Array = []        # fixed per rally seed (never saved)
+var _opponent_field: Array = []        # drawn per rally seed + the player's rating (never saved)
+var _event_results: Array = []         # this rally's generated track results, kept so the field
+                                       # can be re-drawn without regenerating terrain (refield_opponents)
+var _fielded_rating := 0               # the player rating _opponent_field was matched to
 var _dnf := false
 var _upgrades_won: Array[String] = []  # every per-event upgrade id drawn this rally (record)
 var _event_upgrade := ""               # the upgrade id won for the just-completed event ("" if none)
@@ -87,23 +97,6 @@ var return_to_map := false
 # biggest thing that happens in this game and it deserves the beat where the car physically
 # is, rather than a slot-machine reel on the results screen. See hq.gd::_enter_present_box.
 var pending_car_reveal_instance_id := -1
-
-# A one-line notice from the Start gate, shown on the NEXT loading screen and then
-# forgotten (world.gd, take_start_notice). Today it carries the free upgrade restore
-# (Save.restore_free_build): that edit is automatic and permanent, so the player has to
-# be told — but it spends nothing, so it must not cost them a press to acknowledge. The
-# loading screen is the one surface every start path already passes through, which is
-# why the notice lives here rather than in either car park.
-var start_notice := ""
-
-
-# Read the pending start notice and clear it, so it shows once rather than on every
-# stage of a multi-stage rally.
-func take_start_notice() -> String:
-	var out := start_notice
-	start_notice = ""
-	return out
-
 
 # Free-roam handoff: the car the player picked for a session-LESS free-roam drive.
 #   free_roam_instance_id — an OWNED instance (Test Drive of the tuned car on the lift,
@@ -189,20 +182,85 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		# TEST-ONLY path: no real track results are available; generate_opponent_field
 		# gets empty lists so rivals have empty event_times_ms and combined_ms=0
 		# (placeholder). Tests MUST overwrite _opponent_field before making assertions.
-		_opponent_field = RallyLibrary.generate_opponent_field(rally, [], [])
+		_event_results = []
+		_fielded_rating = _player_rating(owned_car)
+		_opponent_field = RallyLibrary.generate_opponent_field(
+			rally, [], [], _fielded_rating)
+		_log_opponent_field("drawn (no tracks — test path)")
 	else:
-		# results feed the run scene / target-time path and the live fallback below.
+		# results feed the run scene / target-time path.
 		var results := await _generate_event_tracks(rally)
-		_opponent_field = OpponentCache.lookup(rally)
-		if _opponent_field.is_empty():
-			# Editor/tests warn; exported builds error — always live-fallback, never
-			# crash (the CI lockfile check is the real coverage guarantee).
-			if OS.has_feature("editor"):
-				push_warning("OpponentCache miss (%s) — generating field live" % OpponentCache.key_for(rally))
-			else:
-				push_error("OpponentCache miss in exported build (%s) — generating live; regenerate the lockfile (./cache_all.sh)" % OpponentCache.key_for(rally))
-			_opponent_field = RallyLibrary.generate_opponent_field(rally, results, rally.get("events", []))
+		_event_results = results
+		# ALWAYS generated live. There used to be a committed lockfile
+		# (data/opponent_cache.json) consulted here, keyed on rally properties; it went
+		# with the car-performance rating rework, because the grid is now drawn matched
+		# to the PLAYER'S car rating and so is a function of the player, not the rally.
+		_fielded_rating = _player_rating(owned_car)
+		_opponent_field = RallyLibrary.generate_opponent_field(
+			rally, results, rally.get("events", []), _fielded_rating)
+		_log_opponent_field("drawn at rally start")
 	_enter_event()
+
+
+# Re-draw the rival grid against the player's CURRENT build, and report whether it
+# actually changed.
+#
+# WHY THIS EXISTS: the grid is matched to the player's rating, and the start line lets
+# the player edit upgrades AFTER the field was drawn. Without this, fitting a turbo on
+# the grid would leave you racing a field picked for the car you turned up in — the
+# matching silently stops meaning anything at exactly the moment the player engages with
+# it. Recomputing is cheap (the tracks are already generated and held in _event_results;
+# this only re-solves point-mass times), which is why it can run on a menu close.
+#
+# ONLY BEFORE THE FIRST STAGE. A rally's standings accumulate across its events, so
+# re-drawing at stage 2 would rewrite times the rivals have already "set" and silently
+# rewrite the leaderboard the player has been racing against. Mid-rally the grid is
+# locked, which is also the honest reading of a rally: you enter it with a car.
+func refield_opponents() -> bool:
+	if _event_index != 0 or not _event_times_ms.is_empty():
+		return false
+	if _rally.is_empty():
+		return false
+	var rating := _player_rating(Save.get_car(_car_instance_id))
+	if rating == _fielded_rating:
+		return false
+	_fielded_rating = rating
+	_opponent_field = RallyLibrary.generate_opponent_field(
+		_rally, _event_results, _rally.get("events", []), rating)
+	_log_opponent_field("re-drawn after a start-line build change")
+	opponent_field_changed.emit()
+	return true
+
+
+# Print the grid and what it was matched against. The field is now a function of the
+# PLAYER'S car, so "why am I racing these cars" is a question with an actual answer —
+# this is that answer, in the one place it can be read against the player's own rating.
+# Sorted fastest-first so the shape of the match is visible at a glance rather than
+# having to be reconstructed from the draw order.
+func _log_opponent_field(context: String) -> void:
+	var rows: Array = []
+	for rival in _opponent_field:
+		rows.append({
+			"rating": int((rival as Dictionary).get("rating", 0)),
+			"name": String((rival as Dictionary).get("car_name", "?")),
+			"driver": String((rival as Dictionary).get("name", "?")),
+		})
+	rows.sort_custom(func(a, b): return int(a["rating"]) > int(b["rating"]))
+	print("[opponent field] %s — %s | player rating %d | %d rivals"
+		% [String(_rally.get("id", "?")), context, _fielded_rating, rows.size()])
+	for row in rows:
+		var delta: int = int(row["rating"]) - _fielded_rating
+		print("  %4d  (%+5d)  %-28s %s" % [int(row["rating"]), delta, row["name"], row["driver"]])
+
+
+# The fielded car's CarPerformance rating, used to match the rival grid to the player's
+# pace. 0 (unmatched draw) when the car doesn't resolve to a catalogue entry — a
+# synthetic/free-roam handoff in a test, say — so the field still forms.
+func _player_rating(owned_car: Dictionary) -> int:
+	var entry := CarLibrary.by_id(String(owned_car.get("model_id", "")))
+	if entry.is_empty():
+		return 0
+	return CarPerformance.rating(CarPerformance.merged_meta(owned_car, entry))
 
 
 # An event finished cleanly (from StageManager.stage_completed in the run scene).

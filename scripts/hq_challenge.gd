@@ -322,7 +322,7 @@ func _refresh_challenge_overlay() -> void:
 	# ChallengeSession.displayed_ceiling.
 	@warning_ignore("static_called_on_instance")
 	var ceiling := ChallengeSession.displayed_ceiling(_hq._challenge_kind, unix_time)
-	_hq._challenge_subtitle_label.text = "%d hp/t max" % ceiling
+	_hq._challenge_subtitle_label.text = "Rating %d max" % ceiling
 
 	_set_challenge_win_text("")
 	_fetch_challenge_cutoff(String(period.get("key", "")),
@@ -338,18 +338,14 @@ func _refresh_challenge_overlay() -> void:
 
 	# Eligible cars — NAME them (capped + "+N more"), same as the rally pin detail
 	# panel's own eligibility read-out (_eligibility_summary/_qualifying_cars_text),
-	# not just a count. ChallengeSession.classify_cars owns the ready-now vs.
-	# needs-a-tune split (the latter mirroring _eligibility_summary's "adjust" bucket);
-	# this site only turns the two buckets into names.
+	# not just a count. ChallengeSession.classify_cars owns the comparison; this site
+	# only turns its bucket into names.
 	@warning_ignore("static_called_on_instance")
 	var classified := ChallengeSession.classify_cars(_hq._challenge_kind, Save.profile, unix_time)
 	var eligible: Array = classified["eligible"]
 	var ready_names: Array[String] = []
-	var tune_names: Array[String] = []
 	for car in classified["ready"]:
 		ready_names.append(_challenge_car_name(car))
-	for car in classified["needs_tune"]:
-		tune_names.append(_challenge_car_name(car))
 	if resuming:
 		# A run in progress has no choice left to make — the car was committed when it
 		# started and is locked to it for the rest of the period. Listing the whole
@@ -365,12 +361,8 @@ func _refresh_challenge_overlay() -> void:
 		_hq._challenge_eligible_label.text = "No eligible car"
 		_hq._challenge_eligible_label.add_theme_color_override("font_color", UITheme.RED)
 	else:
-		var text := _hq._qualifying_cars_text(ready_names) if not ready_names.is_empty() else "None ready"
-		if not tune_names.is_empty():
-			text += "\nNeeds tune: %s" % _hq._qualifying_cars_text(tune_names)
-		_hq._challenge_eligible_label.text = text
-		_hq._challenge_eligible_label.add_theme_color_override(
-			"font_color", UITheme.GREEN if not ready_names.is_empty() else UITheme.GOLD)
+		_hq._challenge_eligible_label.text = _hq._qualifying_cars_text(ready_names)
+		_hq._challenge_eligible_label.add_theme_color_override("font_color", UITheme.GREEN)
 
 	# Current progress — the stored run for THIS kind, if any, else this period's
 	# terminal outcome. A finished period is one attempt spent: completed or DNF'd,
@@ -470,8 +462,7 @@ func _hand_off_to_challenge_scene() -> void:
 
 
 # Open the car park for the currently-shown challenge kind: park the eligible owned cars
-# (plus any over-ceiling car a detune would fit under, tracked via _detune_needed — see
-# _build_challenge_lineup) and frame the first. With none, show a hint + disable Start.
+# (see _build_challenge_lineup) and frame the first. With none, show a hint + disable Start.
 # Mirrors _enter_car_screen's shape for _hq.CarparkMode.RALLY.
 func _enter_challenge_car_screen(kind_str: String) -> void:
 	_hq._carpark_mode = _hq.CarparkMode.CHALLENGE
@@ -481,7 +472,7 @@ func _enter_challenge_car_screen(kind_str: String) -> void:
 	var unix_time := int(Time.get_unix_time_from_system())
 	@warning_ignore("static_called_on_instance")
 	var ceiling := ChallengeSession.displayed_ceiling(kind_str, unix_time)
-	_hq._rally_banner.text = "%s Challenge — needs <= %d hp/tonne" % [kind_str.capitalize(), ceiling]
+	_hq._rally_banner.text = "%s Challenge — rating %d max" % [kind_str.capitalize(), ceiling]
 	_hq._view = _hq.View.CARPARK
 	_hq._detail_open = false
 	_hq.update_overlays()
@@ -494,18 +485,15 @@ func _enter_challenge_car_screen(kind_str: String) -> void:
 
 
 # Park the owned cars ChallengeSession.classify_cars(kind, ...) reports for `kind_str`
-# (already challenge-lock-excluded per §2). The classification — including which of them
-# are over the DISPLAYED ceiling but reachable by lowering detune, and at what absolute
-# slider setting — is computed once there and simply forwarded here: those cars park
-# looking eligible, and pressing Start pops the same over-limit prompt
-# _build_eligible_lineup's rally cars use.
+# (already challenge-lock-excluded per §2). A challenge car either rates under the
+# ceiling or cannot enter at all, so there is nothing to park "with a note": the
+# classification is a straight eligible/not split computed once there.
 func _build_challenge_lineup(kind_str: String) -> void:
 	var unix_time := int(Time.get_unix_time_from_system())
 	@warning_ignore("static_called_on_instance")
 	var classified := ChallengeSession.classify_cars(kind_str, Save.profile, unix_time)
-	# clears _detune_needed / _drivetrain_needed, repopulated below
+	# clears _detune_needed / _drivetrain_needed
 	_hq._carpark_ui._build_lineup(classified["eligible"])
-	_hq._detune_needed = classified["detune"]
 	_hq._drivetrain_needed = {}
 
 

@@ -158,8 +158,9 @@ Surfaces that used to quote a count now name a destination instead:
 - The map's **locked-special teaser** (`hq._build_special_teaser_label`) shows the event's
   NAME over what it unlocks, with no progress fraction: there is no counter to show, and a
   distance readout would be noise. The dark map around it already says "not yet".
-- The **engine-swap locked hints** (`hq`'s car-park confirm popup, `upgrades_menu`'s
-  `_swap_locked_hint`) name the rally via `RallyLibrary.engine_swap_unlock_rally_name()`.
+- The **engine-swap locked hint** (`hq`'s car-park confirm popup) names the rally via
+  `RallyLibrary.engine_swap_unlock_rally_name()`. In the upgrades grid the same lock reads
+  as a greyed engine option on the `engine` tile (`UpgradeOptions._engine_options`).
 
 ## Testing
 

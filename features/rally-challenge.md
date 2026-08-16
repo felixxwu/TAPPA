@@ -11,14 +11,14 @@ stages and damage carries over between them. Full design:
   no autoload) — pure period/seed math. `current_period(kind, unix_time) ->
   {key, stage_count, starts_at, ends_at}` for `ChallengeLibrary.DAILY` /
   `WEEKLY` / `MONTHLY`; `ceiling_for(period_key) -> float` (the period's
-  rolled hp/tonne cap, picked from `CEILING_BAND_HP_TONNE`); `stages_for(key,
+  rolled `CarPerformance` rating cap, picked from `CEILING_BAND_RATING`); `stages_for(key,
   stage_count)` rolls each stage's `TrackGenParams`. Same key → same seed →
   same stages/ceiling for every player; a new period rolls new values the
   moment its date key changes. `CHALLENGE_EPOCH` lives inside the key itself
   (bump it when the seed roll's inputs change).
 - **`ChallengeSession`** (`scripts/challenge_session.gd`, autoload) — the
   per-run state machine, parallel to `RallySession` rather than a reuse of it
-  (no rival/`OpponentCache`, no special-event unlock, no
+  (no rival field, no special-event unlock, no
   `Save.complete_rally` — so no career star credit; its own star payout is
   placement-based, see *Completion reward* below). Read surface: `is_active()`, `car_instance_id()`,
   `kind()`, `stage_count()`, `events_completed()`, `current_stage_params()`.
@@ -143,11 +143,10 @@ section only records what differs for a challenge.
   the staged start line, then that session's pending pit repair); only the
   `take_pending_repair()` source differs.
 - **`world.gd._build_start_line()`** hands `StartLine` a synthetic event dict for a
-  challenge: `{"name": "<Kind> Challenge", "restriction": {"pw_max": ceiling}}` —
-  the SAME rally-shaped restriction `hq.gd`'s challenge car park and
-  `ChallengeSession.eligible_cars` already judge cars against, so the start line's
-  launch eligibility gate and its Upgrades p/w cap are literally the career code
-  path, not a challenge copy of it. (The car park never commits an over-ceiling car
+  challenge: `{"name": "<Kind> Challenge", "restriction": {}}`. The performance ceiling is
+  NOT smuggled in as a restriction key — restrictions are categorical — the start line
+  asks `DrivingContext.rating_limit()` for it, so its launch gate and its Upgrades ceiling
+  are literally the career code path, not a challenge copy of it. (The car park never commits an over-ceiling car
   — `hq.gd`'s `CarparkMode.CHALLENGE` branch makes the player tune down first — but
   the detune slider itself stays editable at the line either way, same as career;
   see "Car lock" below for why it's no longer frozen.)
@@ -163,9 +162,9 @@ section only records what differs for a challenge.
   — a thin wrapper over `DrivingContext.driven_car()` (see "Car lock" below),
   which answers `ChallengeSession.car_instance_id()` when a challenge is active,
   else `RallySession`'s. All four consumers — the launch eligibility gate, the
-  `TuningPanel`, the `UpgradesMenu`, and the live `refit_upgrades` on an edit — go
+  `TuningPanel`, the `UpgradesGrid`, and the live `refit_upgrades` on an edit — go
   through it, so there is exactly one answer to "whose car is on the line". The
-  `TuningPanel`/`UpgradesMenu` components themselves are reused **unchanged**; they
+  `TuningPanel`/`UpgradesGrid` components themselves are reused **unchanged**; they
   are per-car and were never rally-specific. `_stage_total()` is the same idea for
   "Stage N of M": the rally's authored `events` list, or the run's
   `ChallengeSession.stage_count()` when there isn't one.
@@ -185,31 +184,45 @@ for it), and its car may be a bare catalogue MODEL rather than an `OwnedCar`
 
 ## Car eligibility (§2)
 
+Rally Challenge is the ONE place a performance ceiling survives — career rally
+restrictions are purely categorical (see
+`docs/superpowers/specs/2026-08-15-car-performance-rating-design.md`). The
+ceiling is a **`CarPerformance` rating**, not hp/tonne.
+
 `ChallengeSession.eligible_cars(kind, profile, unix_time)` lists the player's
-owned cars whose *current* effective power-to-weight (installed upgrades +
-detune, via `UpgradeLibrary.effective_meta` + `CarLibrary.power_to_weight_hp_tonne`)
-is at or under that period's ceiling **as the player sees it** — see "Rounding"
-below — **or reachable by lowering
-detune**, consistent with how a career rally treats an over-the-cap car
-(`hq_carpark.gd._qualifying_detune_for` / `RallyLibrary.qualifying_detune`):
-`ChallengeSession.qualifying_detune_for({"restriction": {"pw_max": ceiling}},
-owned, entry)` judges the car at FULL power and returns the absolute detune
-fraction that would fit it, or `-1.0` if none does. A car isn't excluded just
-because its slider happens to sit above what the ceiling needs right now —
-it shows up eligible-with-a-note, and the player tunes down (in the garage,
-before starting) same as any other rally. Recomputed live, not cached at
-grant time. Zero eligible cars (none reachable even via detune) blocks
-starting outright — no loaner car, no forced auto-detune.
+owned cars whose *current build* rates at or under that period's ceiling **as
+the player sees it** — see "Rounding" below. The build's rating comes from
+`CarPerformance.rating(CarPerformance.merged_meta(owned, entry))`:
+`merged_meta`, not `effective_meta` alone, because the rating must see tyres and
+aero, which `effective_meta` withholds.
+
+**Over the ceiling means plainly ineligible** (design doc D5). There is no
+detune escape and no auto-disabling of parts — the player picks or builds
+another car, and the upgrade screen's rating readout shows why. Recomputed live,
+not cached at grant time. Zero eligible cars blocks starting outright — no
+loaner car.
+
+The check deliberately does NOT go through `RallyLibrary.ineligibility_reason`,
+which handles only categorical keys now; the challenge's numeric ceiling stays
+on its own path rather than reintroducing a numeric key into the shared
+restriction schema.
+
+### The ceiling band, and how it was authored
+
+`ChallengeLibrary.CEILING_BAND_RATING` is the four-rung ladder a period's seed
+picks from. It was re-authored from the old hp/tonne band `[120, 150, 180, 220]`
+by rating the shipped roster and reading off the rating each hp/tonne figure
+corresponded to, so each rung admits broadly the cars it used to. Ratings are
+normalised against `CarPerformance.REFERENCE_CAR`, which is what keeps these
+authored numbers meaningful when a benchmark knob moves. Tunable — never assert
+a specific value in a test.
 
 ### Rounding: the ceiling is judged as displayed
 
 `ChallengeLibrary.ceiling_for` returns a raw `float`, but every label prints it
-whole (`"%d hp/t max"`), and `CarLibrary.power_to_weight_hp_tonne` is itself
-rounded. Comparing a rounded car figure against an unrounded ceiling would
-reject a car whose displayed hp/tonne exactly equals the displayed cap — the
-confusing case `hq_carpark.gd._qualifying_detune_for` and
-`RallyLibrary.ineligibility_reason` already `roundi(pw_max)` to avoid. So the
-challenge path rounds too, in exactly one place:
+whole and `CarPerformance.rating` returns an `int`. Comparing an int rating
+against an unrounded ceiling would reject a car whose displayed rating exactly
+equals the displayed cap, so the challenge path rounds in exactly one place:
 
 - `ChallengeSession.displayed_ceiling(kind, unix_time) -> int` — the ceiling as
   printed, and the number eligibility is judged against. Every challenge label
@@ -217,19 +230,13 @@ challenge path rounds too, in exactly one place:
   rather than rounding locally.
 - `ChallengeSession.classify_car(raw_ceiling, owned, entry)` — the single
   implementation of the comparison. Rounds `raw_ceiling`, then returns
-  `{"state": READY | NEEDS_TUNE | EXCLUDED, "detune": frac}` (the synthetic
-  `{"restriction": {"pw_max": <rounded ceiling>}}` it feeds
-  `qualifying_detune_for` carries the rounded cap too).
+  `{"state": READY | EXCLUDED}`.
 - `ChallengeSession.classify_cars(kind, profile, unix_time)` — runs that over
-  the profile and returns `{"ceiling": int, "eligible", "ready", "needs_tune",
-  "detune": {instance_id: frac}}`. `eligible_cars` is now just its `"eligible"`
-  list, and the UI reads the buckets instead of re-deriving the comparison, so
-  the rule cannot drift between the entry screen and the car park.
-
-The start-line launch gate (`world.gd`'s synthetic rally →
-`RallyLibrary.ineligibility_reason`) needs no change: that path rounds `pw_max`
-itself. `DrivingContext.pw_limit()` / the upgrades popup cap stay raw floats —
-they are a *display* cap for the upgrades screen, not the eligibility verdict.
+  the profile and returns `{"ceiling": int, "eligible", "ready"}` (the two lists
+  hold the same cars; the UI reads `eligible` as "what can enter" and `ready` as
+  "what to name"). `eligible_cars` is just its `"eligible"` list, and the UI
+  reads the buckets instead of re-deriving the comparison, so the rule cannot
+  drift between the entry screen and the car park.
 
 ## HQ entry point (`hq_challenge.gd`)
 
@@ -426,15 +433,10 @@ for a normal rally: it sets `_carpark_mode = CarparkMode.CHALLENGE`, calls
 eligible car" empty state if none qualify. `_build_challenge_lineup` parks
 exactly what `ChallengeSession.classify_cars(kind, Save.profile, unix_time)`
 reports as `"eligible"` (challenge-lock-excluded via `Save.is_challenge_locked`),
-and forwards that same call's `"detune"` map into the SAME `_detune_needed` dict
-the rally car-select uses — it does NOT redo the comparison itself (see
-"Rounding" above). An over-ceiling car therefore
-parks looking eligible, and pressing Start on it pops the SAME
-`_show_over_limit_prompt` "Too powerful" agreement a normal rally's
-over-cap car does, routing to the gated upgrades popup
-(`_show_upgrades_popup`, which reads the ceiling from
-`ChallengeLibrary.ceiling_for` instead of a rally's `pw_max` restriction
-when `_carpark_mode == CarparkMode.CHALLENGE`).
+— it does NOT redo the comparison itself (see "Rounding" above). A car either
+rates under the ceiling or is not parked at all: there is no
+"parks looking eligible, prompts at Start" middle state for a challenge, since
+an over-ceiling build has no detune escape.
 
 `_on_start_pressed`'s mode-dispatch `match` gained a `CarparkMode.CHALLENGE`
 branch alongside `STARTER`/`SWAP`/`WHEELS`/`GARAGE`/`FREEROAM`: instead of
@@ -479,7 +481,7 @@ Two earlier designs were both WRONG and have been removed:
 - **Freezing the detune slider.** An early draft set `editable = false` on the slider
   for the locked car. It looked broken (the slider silently wouldn't move, with no
   explanation) and duplicated the p/w enforcement a career rally already does through
-  the close-button gate (`UpgradesMenu.bind_close_button` / `_pw_limit`). Removed; the
+  the close-button gate (`UpgradesGrid.bind_close_button` / its rating gate). Removed; the
   ceiling is enforced by that one shared mechanism.
 - **Excluding the car everywhere else.** A later fix made the garage's car picking, the
   engine-swap partner list, the career rally lineup and the reward reveal's "Repair
@@ -786,8 +788,8 @@ the driving scene**, before the hand-off to HQ.
   staleness, `eligible_cars`/`classify_cars` filtering and bucket partition (via
   `CarFixtures`, never the real catalogue), the displayed-ceiling boundary rule
   (`classify_car` with a self-authored fractional ceiling: a car whose displayed
-  hp/tonne equals the displayed ceiling is `READY`; one over it is still
-  `NEEDS_TUNE`) and `displayed_ceiling == roundi(current_ceiling)`, stage accumulation/final-stage termination, DNF via
+  rating equals the displayed ceiling is `READY`; one over it is `EXCLUDED`)
+  and `displayed_ceiling == roundi(current_ceiling)`, stage accumulation/final-stage termination, DNF via
   wreck/abandon, the completion-reward DNF short-circuit, plus the full
   multi-stage drive-through (`report_event_result` + `continue_to_next_stage()`
   for every stage of the longest kind, reaching `events_completed() ==

@@ -200,9 +200,8 @@ your current one included; cars with nothing left are still skipped, on
 **Wrecked out? The box pays a CAR.** `open_mystery_box` checks
 `Save.all_cars_wrecked()` **first**, ahead of the part grant: with every owned car a
 write-off, a part fitted to one would be worthless, so the box grants a whole new car
-via `RewardSystem.draw_car` (whose stuck-player fallback already picks something that
-re-opens progression). This is the game's anti-soft-lock floor now that repair kits are
-gone — see [damage.md](damage.md). The button and its label are unchanged; which of the
+via `RewardSystem.draw_car`. This is the game's anti-soft-lock floor now that repair kits
+are gone — see [damage.md](damage.md). The button and its label are unchanged; which of the
 two outcomes you get is decided at OPEN time by the state of the garage.
 
 **Opening it** — `Save.open_mystery_box(rng=null) ->
@@ -253,11 +252,10 @@ Only **two** callers remain, and both are deliberate:
 
 - `Save.open_mystery_box` — the **wreck safety net**: the one place a car is still
   free, because a player whose last car wrecked has no way to earn.
-- `RewardSystem.purchase_car` — the **purchase**, so a bought car inherits the
-  anti-soft-lock pick below for free. It passes `rally_difficulty = 0`, letting the
-  progress clamp alone choose the tier: a purchase isn't tied to any rally.
+- `RewardSystem.purchase_car` — the **purchase**. It passes `rally_difficulty = 0`,
+  letting the progress clamp alone choose the tier: a purchase isn't tied to any rally.
 
-Two paths inside the draw:
+Two steps inside the draw:
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
    is at or below the **progress-clamped draw ceiling**:
@@ -269,33 +267,7 @@ Two paths inside the draw:
    can't drop a top car. This replaces the old `max(garage_tier, difficulty)` ceiling,
    which let one difficulty-2 win open the whole roster (all cars were tier ≤ 2).
    `rally_difficulty` defaults to 0 (→ tier 1 floor) for callers that don't supply it.
-2. **Unlock fallback** (`_unlock_candidates`) — takes over only when the player
-   is *stuck*: every rally their garage can currently enter is already completed
-   (each owned car is checked on its **effective** stats via
-   `UpgradeLibrary.effective_meta`, with a `floor_meta` of
-   `UpgradeLibrary.max_potential_meta(car, entry, profile)` — passing `profile`
-   selects the REACHABLE ceiling, event gates respected, not the aspirational
-   one; see `upgrade-catalogue.md` — so the pw_min floor is judged at what the
-   car can *actually* reach right now, against
-   `RallyLibrary.incomplete_rallies_enterable_by`, which is reveal-aware — a rally
-   counts as enterable only once **revealed** (`rally_revealed`: its `reveal_after`
-   met — `rally_revealed` now applies that one rule to specials too, keyed on the
-   global count of completed ordinary rallies, not a per-region concept), see
-   [regions.md](regions.md)).
-   That query also counts a rally the car can reach by **detuning** under its `pw_max`
-   as enterable — the same definition `hq.gd._entry_plan` uses on the screen that
-   actually gates entry. Judging it more strictly here made the reward system see
-   phantom soft-locks and hand rescue cars to players who were never stuck. It does not
-   loosen the safety net: detuning only rescues an over-CEILING car, while a real
-   soft-lock is a car too weak for everything left.
-   Candidates then become the models eligible for the still-locked, **revealed**
-   rallies at the **lowest difficulty any catalogue car can actually enter** — e.g.
-   all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a difficulty-3
-   rally, never 4. A locked difficulty whose restriction bands no catalogue car fits
-   is stepped past (giving up there would leave the player soft-locked even though a
-   grant one difficulty up re-opens progression). This guarantees a fresh rally opens
-   after every reward whenever one is openable.
-3. **Exhausted-tier step-up** — the standard draw's tier is
+2. **Exhausted-tier step-up** — the standard draw's tier is
    `min(rally_difficulty, earned_ceiling)`, so a low-difficulty rally keeps drawing the
    low-tier pool however far the player has come. The roster has **more low-difficulty
    rallies than low-tier cars** (six difficulty-1 rallies against three tier-1 cars), so
@@ -324,29 +296,16 @@ the same answer:
 
 - `stars_available_in(profile)` — the spendable balance, mirroring
   `Save.stars_available()` but reading the dict it is given.
-- `car_price(profile)` — normally `GameConfig.star_cost_per_car`. See the
-  **dead-end rescue** below.
-- `is_stranded(profile)` — nothing the player owns can enter any incomplete, revealed
-  rally. THE shared predicate: the present box's price readout and the purchase itself
-  must agree on it, or the pin would quote a price the purchase then refuses. It also
-  drives `_unlock_candidates`. **Wrecked cars don't count** — a wreck can never be
-  repaired, so a garage whose only in-band car is wrecked is as stuck as an empty one,
-  and counting it would deny the rescue to exactly the player who needs it most. The
-  `pw_min` floor is judged at `max_potential_meta(car, entry, profile)` — the
-  REACHABLE ceiling, since the aspirational one would conclude nobody is ever stuck.
+- `car_price(profile)` — `GameConfig.star_cost_per_car`.
 - `purchase_car(rng)` — buys exactly ONE car (a reveal is a moment, not a slot
   machine), mutating through `Save`. **Nothing to give = nothing spent:** the draw is
   resolved BEFORE any stars move, and the whole transaction is abandoned if it comes
   back empty — the same rule `Save.open_mystery_box` applies to a box it can't fill.
 
-**The dead-end rescue.** `car_price` returns **0** when the player `is_stranded` AND
-cannot afford a car. Without it, a stranded, broke player has no eligible rally, so no
-way to earn, so no way to buy the car that would unlock one — an unrecoverable state
-the old free-car model couldn't produce. **Both** halves of the condition are
-load-bearing: free-whenever-merely-stranded is farmable (take the free car, finish the
-rally it unlocks, be stranded again, repeat a whole career for nothing), and requiring
-the player to also be BROKE closes that, because anyone making progress is earning
-stars and so isn't broke. It's a rescue, not a discount.
+There is **no dead-end rescue** any more. Entry requirements are purely
+categorical (see the car-performance rating design), so no build can be too slow
+to enter anything, and reachability is a CONTENT invariant proven over the map
+rather than a runtime discount or a rescue draw.
 
 ## The LAST special won (was "the final showdown")
 
@@ -429,8 +388,7 @@ player's grant opens a locked rally with a car eligible for it; and `draw_car` s
 pays a real car even with everything completed (the guaranteed-reward property).
 Purchase side: `car_price` charges the authored price when the player can afford it,
 `purchase_car` debits exactly that and grants one car, an unaffordable purchase moves
-nothing, and the rescue frees the price only when stranded AND broke (never when merely
-stranded, never when merely broke) — with `is_stranded` ignoring wrecked cars.
+nothing.
 Mystery-box coverage (synthetic cars/upgrades, per CLAUDE.md — never the real
 catalogue): a maxed owned car with tokens at/above `MYSTERY_BOX_TOKEN_THRESHOLD`
 and a non-maxed second car draws the box; the same maxed car draws normally

@@ -23,7 +23,6 @@ func before_each() -> void:
 
 func after_each() -> void:
 	SaveTestHelpers.cleanup(TEST_PATH)
-	RallySession.start_notice = ""
 	Config.data.star_cost_per_part = _price_before
 	UpgradeFixtures.restore()
 	CarFixtures.restore()
@@ -45,6 +44,12 @@ func _car(installed: Array = [], disabled: Array = [], detune := 1.0) -> Diction
 
 func _pw(car: Dictionary, meta: Dictionary) -> float:
 	return CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta(car, meta))
+
+
+# The figure the solver actually optimises. merged_meta, not effective_meta — the rating
+# must see tyres and downforce too.
+func _rating(car: Dictionary, meta: Dictionary) -> int:
+	return CarPerformance.rating(CarPerformance.merged_meta(car, meta))
 
 
 # The car as the plan would leave it — the thing every "the result is legal" assertion
@@ -106,82 +111,39 @@ func test_a_car_at_its_ceiling_yields_an_empty_plan() -> void:
 	assert_false(bool(plan["changed"]), "a car already at its reachable ceiling is a no-op")
 
 
-# --- The power-to-weight objective -------------------------------------------
+# --- The rating objective -----------------------------------------------------
+#
+# The solver scores builds by CarPerformance rating, not by power-to-weight: p/w was the
+# old eligibility currency, and a solver still maximising it could pick a build the game
+# now calls slower. There is no ceiling term — a Rally Challenge ceiling is an
+# eligibility line its host filters against, never something the solver optimises towards.
 
-func test_unconstrained_plan_maximises_power_to_weight() -> void:
+func test_unconstrained_plan_maximises_the_rating() -> void:
 	var meta := _meta()
 	var car := _car()
 	var plan := UpgradeLibrary.auto_build_plan(car, meta, {"rallies": {}}, 999)
 	assert_true(bool(plan["changed"]), "an empty car has something to gain")
-	assert_gt(_pw(_applied(car, plan), meta), _pw(car, meta),
-		"the plan raises power-to-weight")
-	assert_almost_eq(float(plan["detune"]), 1.0, 0.0001,
-		"with no cap the plan runs at full power")
-
-
-func test_constrained_plan_is_never_over_the_limit() -> void:
-	var meta := _meta()
-	var car := _car(["fx_turbo_big", "fx_lightweight"])
-	var full := _pw(car, meta)
-	# Sweep caps from well under the car's current figure to just over it.
-	for frac in [0.4, 0.6, 0.8, 0.95, 1.1]:
-		var cap := roundi(full * frac)
-		var plan := UpgradeLibrary.auto_build_plan(
-			car, meta, {"rallies": {}}, 999, {"pw_max": float(cap)})
-		assert_true(_pw(_applied(car, plan), meta) <= cap,
-			"at a %d hp/t cap the resulting build is legal" % cap)
-
-
-func test_constrained_plan_does_not_needlessly_undershoot() -> void:
-	# The cap sits just under the fully-built figure, so stripping the turbo would
-	# throw away far more power than needed — detune is the right lever there.
-	var meta := _meta()
-	var car := _car(["fx_turbo_big", "fx_lightweight"])
-	var full := _pw(car, meta)
-	var cap := roundi(full * 0.95)
-	var plan := UpgradeLibrary.auto_build_plan(
-		car, meta, {"rallies": {}}, 999, {"pw_max": float(cap)})
-	assert_true((plan["strip"] as Array).is_empty(),
-		"a part is not stripped when detune can make up the difference")
-	assert_true(float(plan["detune"]) < 1.0, "the trim is taken on the detune slider")
-
-
-func test_detune_stays_at_full_when_the_build_already_fits() -> void:
-	var meta := _meta()
-	var car := _car(["fx_turbo_big", "fx_lightweight"])
-	var cap := _pw(car, meta) * 2.0
-	var plan := UpgradeLibrary.auto_build_plan(
-		car, meta, {"rallies": {}}, 0, {"pw_max": cap})
-	assert_almost_eq(float(plan["detune"]), 1.0, 0.0001,
-		"a build under the cap is not detuned")
+	assert_gt(_rating(_applied(car, plan), meta), _rating(car, meta),
+		"the plan raises the performance rating")
 
 
 # --- Ballast ------------------------------------------------------------------
 
 func test_plan_never_fits_ballast() -> void:
 	var meta := _meta()
-	var car := _car(["fx_turbo_big"])
-	var full := _pw(car, meta)
-	for frac in [0.2, 0.5, 0.9, 2.0]:
-		var plan := UpgradeLibrary.auto_build_plan(
-			car, meta, {"rallies": {}}, 999, {"pw_max": full * frac})
+	for car in [_car(), _car(["fx_turbo_big"]), _car(["fx_turbo_big", "fx_lightweight"])]:
+		var plan := UpgradeLibrary.auto_build_plan(car, meta, {"rallies": {}}, 999)
 		var touched: Array = (plan["buy"] as Array) + (plan["enable"] as Array)
-		assert_false(touched.has("fx_ballast"),
-			"ballast is never fitted (cap at %d%% of full)" % roundi(frac * 100.0))
+		assert_false(touched.has("fx_ballast"), "ballast is never fitted")
 
 
 func test_plan_strips_ballast_the_player_left_on() -> void:
 	var meta := _meta()
 	var car := _car(["fx_ballast"])
-	var unconstrained := UpgradeLibrary.auto_build_plan(car, meta, {"rallies": {}}, 0)
-	assert_true((unconstrained["strip"] as Array).has("fx_ballast"),
-		"ballast is stripped with no cap")
-	var capped := UpgradeLibrary.auto_build_plan(
-		car, meta, {"rallies": {}}, 0, {"pw_max": _pw(car, meta)})
-	assert_true((capped["strip"] as Array).has("fx_ballast"),
-		"ballast is stripped under a cap too — detune covers the difference")
-	assert_true(_pw(_applied(car, capped), meta) <= _pw(car, meta),
-		"and the result still clears the cap the ballast was satisfying")
+	var plan := UpgradeLibrary.auto_build_plan(car, meta, {"rallies": {}}, 0)
+	assert_true((plan["strip"] as Array).has("fx_ballast"), "ballast is stripped")
+	assert_gt(_rating(_applied(car, plan), meta), _rating(car, meta),
+		"which is what makes the car faster")
 
 
 # --- What Auto must not pretend to fix ---------------------------------------
@@ -215,41 +177,12 @@ func test_free_only_buys_nothing_even_at_zero_price() -> void:
 	assert_eq(int(plan["cost"]), 0, "and therefore costs nothing")
 
 
-func test_free_only_raises_a_stale_detune() -> void:
-	var car := _car(["fx_turbo_big"], [], 0.5)
-	var plan := UpgradeLibrary.auto_build_plan(car, _meta(), {"rallies": {}}, 0, {}, true)
-	assert_almost_eq(float(plan["detune"]), 1.0, 0.0001, "with no cap the detune goes back to full")
-	assert_true(bool(plan["changed"]), "and that counts as a change worth announcing")
-
-
-func test_free_only_respects_the_cap_when_restoring() -> void:
-	var meta := _meta()
-	var car := _car(["fx_turbo_big"], [], 0.5)
-	var full := _pw(_car(["fx_turbo_big"]), meta)
-	var cap := roundi(full * 0.8)
-	var plan := UpgradeLibrary.auto_build_plan(
-		car, meta, {"rallies": {}}, 0, {"pw_max": float(cap)}, true)
-	assert_true(float(plan["detune"]) < 1.0, "the restore stops at the cap")
-	assert_true(_pw(_applied(car, plan), meta) <= cap, "so the result is still legal")
-
-
 func test_free_only_enables_an_owned_but_parked_part() -> void:
 	var meta := _meta()
 	var car := _car(["fx_turbo_big"], ["fx_turbo_big"])
 	var plan := UpgradeLibrary.auto_build_plan(car, meta, {"rallies": {}}, 0, {}, true)
 	assert_true((plan["enable"] as Array).has("fx_turbo_big"), "a parked part is switched on")
 	assert_gt(_pw(_applied(car, plan), meta), _pw(car, meta), "which is a real gain")
-
-
-func test_free_only_never_reduces_power() -> void:
-	# An over-limit car is the "Too powerful" prompt's business — the restore must not
-	# quietly detune it into legality behind that gate.
-	var meta := _meta()
-	var car := _car(["fx_turbo_big", "fx_lightweight"])
-	var cap := _pw(car, meta) * 0.5
-	var plan := UpgradeLibrary.auto_build_plan(
-		car, meta, {"rallies": {}}, 0, {"pw_max": cap}, true)
-	assert_false(bool(plan["changed"]), "an over-limit car yields a no-op restore")
 
 
 func test_free_only_predicate_is_plan_difference_not_power() -> void:
@@ -300,38 +233,7 @@ func test_apply_build_plan_ignores_a_no_op_plan() -> void:
 	assert_false(_save.apply_build_plan(id, plan), "a no-op plan applies nothing")
 
 
-func test_restore_free_build_raises_a_stale_detune_and_announces_it() -> void:
-	var id := _granted(["fx_turbo_big"], 0.5)
-	var result: Dictionary = _save.restore_free_build(id)
-	assert_true(bool(result["applied"]), "a stale detune is restored")
-	assert_ne(String(result["notice"]), "", "and the player is told, in one line")
-	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 0.0)),
-		1.0, 0.0001, "the car goes back to full power")
-
-
-func test_restore_free_build_spends_no_stars() -> void:
-	var id := _granted([], 0.5)
-	var before: int = _save.stars_available()
-	_save.restore_free_build(id)
-	assert_eq(_save.stars_available() as int, before, "the restore never spends")
-	assert_true((_save.get_car(id).get("installed_upgrades", []) as Array).is_empty(),
-		"and never buys")
-
-
-func test_restore_free_build_is_quiet_on_a_utilised_car() -> void:
-	var id := _granted(["fx_turbo_big"])
-	var result: Dictionary = _save.restore_free_build(id)
-	assert_false(bool(result["applied"]), "nothing to restore, nothing announced")
-	assert_eq(String(result["notice"]), "", "and no notice")
-
-
-func test_restore_free_build_is_permanent_not_reverted() -> void:
-	# Unlike the rally-scoped drivetrain switch, the restore is PERMANENT — reverting it
-	# would leave the tuning lift showing a detuned car while races quietly ran at full
-	# power, a worse confusion than the one being fixed. So it must never register itself
-	# for the end-of-rally revert.
-	var id := _granted(["fx_turbo_big"], 0.5)
-	_save.restore_free_build(id)
-	RallySession._reset_to_idle()
-	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 0.0)),
-		1.0, 0.0001, "the restored tune survives the end of the rally")
+# There is deliberately NO auto-restore at the start gate. Switching a player's parts
+# back on for them behind a loading screen is an edit they never asked for and cannot
+# watch happen; the car races exactly the build they left it on. apply_build_plan below
+# is still how the Auto button commits a plan the player pressed for.

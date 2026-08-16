@@ -77,19 +77,6 @@ Three, all set by the finish and all read + cleared by HQ on its next `_ready`
 3. `return_to_garage` (bool) — the podium's final Continue: boot to the **garage**
    rather than the exterior title.
 
-A fourth one-shot, read on the way IN rather than out: **`start_notice`** (String) and
-**`take_start_notice()`**. The Start gate leaves one line here and `world.gd._ready`
-takes it, showing it in place of the loading tip for that one load — the notice is about
-the car the player is sitting in, which beats a generic tip. `take_start_notice` clears
-as it reads, so a multi-stage rally shows it once and the remaining stages go back to
-tips. Today it carries the free upgrade restore (`Save.restore_free_build`, set by
-`hq.gd::_apply_free_restore` on both the career and CHALLENGE start branches): that edit
-is automatic and permanent, so the player has to be told — but it spends nothing, so it
-must not cost them a press to acknowledge. It lives on the session rather than in either
-car park because the loading screen is the one surface every start path passes through.
-(The start line shows the same notice itself, via `start_line.gd::_restore_notice` set in
-`setup()`.)
-
 ## Results & rewards
 
 On resolve: `combined = sum(event_times)`, `placed =
@@ -268,57 +255,25 @@ could derive times against a different shape than the run scene generated. See
 [track.md](track.md) → *Turn cache* and
 `docs/superpowers/specs/2026-07-21-track-turn-cache-design.md`.
 
-## Opponent field cache
+## The opponent field is generated live
 
 The whole opponent field (`generate_opponent_field` — names, cars, per-event times,
-wrecks, DNF) is deterministic (rally-seeded RNG + `LapTimeModel.optimum_ms` over the
-cached tracks, no player input), so it is **precomputed and committed** to
-`data/opponent_cache.json` (`scripts/opponent_cache.gd` → `OpponentCache`). `start_rally`
-now does `OpponentCache.lookup(rally)` and only falls back to live
-`generate_opponent_field` on a miss (editor warns / export errors, never crashes) —
-removing ~30–45 lap-time sims from every `start_rally`.
+wrecks, DNF) is built fresh in `start_rally`, once the event tracks are ready.
 
-- **Key:** `rally_id | rally_content_fingerprint | global_fingerprint`.
-  `rally_content_fingerprint` = `str(rally).sha256` (captures `difficulty` → pace band,
-  `restriction` → eligible pool, per-event `surface_mix` → grip — none of which are
-  track-*shape* determinants). `global_fingerprint` folds the track lockfile's
-  committed `source_hash`, the car/engine catalogue (incl. `CarLibrary.TORQUE_POWER_FALLOFF`),
-  the authored-base grip (`gravel_grip`/`tarmac_grip` from `Config.CONFIG_PATH`), the
-  field-gen constants + `RIVAL_NAMES`, and `OpponentCache.CACHE_VERSION` (bump only for
-  `LapTimeModel` physics / field-assembly algorithm changes).
-- **Field entry shape** (one dict per rival, as `generate_opponent_field` produces and
-  `deserialize_field` restores): `name`, `car_id`, `engine_id`, `car_name`,
-  `event_times_ms`, `dnf`, `combined_ms`, `wreck_event`, `wreck_progress`,
-  `wreck_side`. `engine_id` + the layout-prefixed `car_name` come from the rival engine
-  swaps (see [rally-roster.md](rally-roster.md) → *Rival builds*).
-- **`deserialize_field` is a WHITELIST.** It rebuilds each rival field-by-field (to
-  restore int/bool types JSON flattens to floats), so **any field not listed there is
-  silently dropped on the way out of the cache** and silently defaults downstream —
-  with a live-generation fallback masking it in the editor. Adding a field to a rival
-  means adding it to `deserialize_field` in the same change.
-- **`CACHE_VERSION` is `"2"`** — bumped from `"1"` for the rival engine swaps. The
-  auto-folded fingerprint covers `EngineLibrary.ENGINES` *data* but not generator
-  *logic*, and here both the entry shape (a new `engine_id`) and the **rng draw order**
-  changed, so identical inputs now yield a different field. Hence the manual bump: it
-  re-keys and therefore re-rolls **every** rally's field.
-- **Depends on the track cache** — regenerate tracks first. `./cache_all.sh` runs
-  `cache_tracks.sh` then `cache_opponents.sh` in order; `./cache_opponents.sh` alone
-  regenerates just this file. A car/rally/grip/physics retune requires a regen — as
-  does a `CACHE_VERSION` bump, so the rival-engine-swap change requires re-baking
-  `data/opponent_cache.json` via `./cache_opponents.sh` or CI fails the freshness
-  check.
-- **Validation:** `tools/verify_opponent_cache.tscn` (a `source_hash` over the sorted
-  per-rally keys) gates CI alongside the track verifier; `test_opponent_cache.gd`
-  runs the same freshness check locally.
+There **used to be** a committed lockfile (`data/opponent_cache.json`, `OpponentCache`,
+`cache_opponents.sh`, `tools/generate_opponent_cache.gd`, `tools/verify_opponent_cache.gd`
+and a CI freshness gate) that precomputed every rally's field and made `start_rally` a
+lookup. It is gone, and cannot come back in that form: the field is now drawn **matched
+to the player's own car rating** (`generate_opponent_field`'s `player_rating`, weighted by
+`RallyLibrary.rating_match_weight`), so a field is a function of the PLAYER as well as the
+rally. A cache keyed on rally properties alone could not express that. The TRACK cache
+(`data/track_cache.json`) is untouched and still the thing that makes this affordable —
+the lap-time sims run over already-cached tracks.
 
-
-**Fingerprint memoisation.** `OpponentCache.global_fingerprint()` used to re-parse the
-full 248 KB `data/track_cache.json`, `load()` the config resource and SHA-256 the whole
-car + engine catalogue on **every** `lookup()` — i.e. once per rally start, likely
-50-150 ms of a menu transition on wasm. It is now memoised, keyed on the modified-times
-of the lockfile and the config resource, so an in-process rewrite invalidates it
-automatically. `OpponentCache.reset_cache()` / `TrackCache.reset_source_hash_cache()` are
-the explicit invalidation seams (both are called from the existing `reset()` paths).
+- `start_rally` computes the player's rating as
+  `CarPerformance.rating(CarPerformance.merged_meta(owned_car, entry))`, or `0` (the
+  "unmatched draw" sentinel) when the fielded car doesn't resolve to a catalogue entry.
+- `./cache_all.sh` now runs `cache_tracks.sh` and nothing else.
 
 ## Tests
 

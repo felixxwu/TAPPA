@@ -626,7 +626,7 @@ func _show_detail() -> void:
 		_hq._detail_qualify.add_theme_color_override("font_color", UITheme.GREEN)
 	var adjust := int(elig["adjust"])
 	_hq._detail_adjust.visible = adjust > 0
-	_hq._detail_adjust.text = "%d need a tune / swap to fit" % adjust
+	_hq._detail_adjust.text = "%d need a drivetrain conversion to fit" % adjust
 	# No owned car qualifies for this rally yet — the button would only lead to an
 	# empty car park, so disable it rather than let the player tap through to it.
 	_hq._detail_enter_button.disabled = qualify == 0

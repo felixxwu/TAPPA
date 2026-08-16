@@ -49,8 +49,7 @@ const OPPONENT_WRECK_CHANCE := 0.5   # per-event: probability ONE rival crashes 
 # is weighted exp(-|pw - pw_stock| / this), where the deltas are hp/tonne against the
 # car's OWN stock engine — so a stock combo is weighted 1.0, a swap this many hp/tonne
 # from stock ~0.37, twice that ~0.14. Small = near-stock fields; large = anything goes.
-# NOTE: folded into OpponentCache.global_fingerprint(), so retuning it re-keys every
-# cached field automatically — do not remove it from that list.
+# Retuning it reshapes every rally's grid immediately (fields are generated live).
 const OPPONENT_SWAP_PW_SPREAD := 25.0
 
 # Rival pace, as multiples of each rival's OWN physics floor (optimum_ms for THEIR
@@ -88,12 +87,10 @@ const RIVAL_NAMES: Array[String] = [
 	"Mireia Costa", "Sami Korhonen", "Bruno Alves", "Katya Orlova",
 ]
 
-# The rally p/w ceiling (pw_max below) is AUTHORED in hp/tonne — the same
-# unit the HUD / detail panel / detune slider show (hq.gd) — so a designer tunes
-# the ceilings in the numbers they see on screen. CarLibrary.power_to_weight() returns
-# kW/kg, so is_eligible converts a car's figure to hp/tonne with this factor before
-# comparing it against the authored ceiling. Uses CarLibrary.KW_KG_TO_HP_TONNE — the
-# single source of truth for the conversion, shared with hq.gd.
+# Power-to-weight is no longer an entry gate (see ineligibility_reason), but it is
+# still DISPLAYED in hp/tonne on the HUD and detail panel, and still exported for
+# tools/fit_map_pins.py. CarLibrary.power_to_weight() returns kW/kg, so this converts.
+# Uses CarLibrary.KW_KG_TO_HP_TONNE — the single source of truth, shared with hq.gd.
 const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 
 
@@ -107,17 +104,15 @@ static func _pace_band(tier: int) -> Vector2:
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
 # (every car eligible); otherwise every present field must match the car's
-# CarLibrary metadata. Every ordinary rally carries a `pw_min`..`pw_max` BAND
-# (both in hp/tonne), so a car must sit inside the band to enter — an over-powered
-# car is capped out (it can duck under `pw_max` via detune, see `qualifying_detune`)
-# and an under-powered one is simply ineligible (the band floor IS the power floor —
-# there is no separate soft warning).
+# CarLibrary metadata.
 #
-# The band is deliberately WIDE on most rallies, because the band is not what defines
-# the class — the CLASS FIELD is (`car_type`, `country`, `doors_min`/`doors_max`,
-# `cylinders_min`/`cylinders_max`, `engine_min_l`/`engine_max_l`, `drive_mode`), with
-# the band only trimming the extremes off it. A narrow band picks 2-3 cars
-# ARBITRARILY and silently re-picks them the moment a car is retuned; "four-cylinder,
+# Entry requirements are PURELY CATEGORICAL — `car_type`, `country`,
+# `doors_min`/`doors_max`, `cylinders_min`/`cylinders_max`,
+# `engine_min_l`/`engine_max_l`, `drive_mode`. Their job is to make the player
+# experience DIFFERENT CARS, never to police how fast they are: there is no
+# performance band, no ceiling to upgrade into, and nothing to detune out of.
+# How fast a car is instead shapes the OPPONENT FIELD, which is matched to the
+# player's CarPerformance rating. See features/car-performance.md.
 # two-door" or "British cars" picks a group that reads as a real class and survives
 # retuning. When a rally wants to group by a property the catalogue does not record,
 # ADD that property to the car/engine definitions — never approximate it with a proxy
@@ -190,7 +185,7 @@ const RALLIES: Array[Dictionary] = [
 		# late prize, so a Focus or Twingo player could not enter the rally standing next
 		# to them and had to cross the whole map before the MX-5 became winnable. The
 		# ceiling alone still puts the MX-5 at the top of the field.
-		"restriction": {"pw_min": 85.0, "pw_max": 165.0},
+		"restriction": {},  # OPEN: an opening rally must admit every starter car
 		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
 			{"seed": 1007, "turn_count": 20, "forestiness": 0.70, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "terrain_layer2_amplitude": 3.0},
@@ -209,7 +204,7 @@ const RALLIES: Array[Dictionary] = [
 		# (RallyLibrary.opening_rally_id_for, todo/opening-rally.md) — so the floor comes
 		# back up to a normal width. It stays class-free because a broad early event beside
 		# HQ is good for the map whichever branch the player opened.
-		"restriction": {"pw_min": 100.0, "pw_max": 200.0},
+		"restriction": {"doors_min": 3},  # the front-drive family-hatch proving ground
 		"events": [
 			{"seed": 1201, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.4, "straightness": 0.925, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
 			{"seed": 1102, "turn_count": 20, "forestiness": 0.35, "surface_mix": 0.6, "straightness": 0.9, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
@@ -222,7 +217,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "hm_hatch_cup", "name": "Win: Honcho Actus", "region": "home", "difficulty": 2, "special": false,
 		"prize_car": "acty",  # wave 3  — a cheap kei runabout, the first car won
 		"map_pos": Vector2(0.581, 0.590),
-		"restriction": {"doors_max": 3, "pw_min": 35.0, "pw_max": 65.0},  # ceiling just over the Acty it awards (a kei, not a hatch)
+		"restriction": {"doors_max": 3},  # small two/three-door cars; it awards a kei, not a hatch
 		"events": [
 			{"seed": 31001, "turn_count": 22, "forestiness": 0.73, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
 			{"seed": 31002, "turn_count": 22, "forestiness": 0.55, "surface_mix": 0.9, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
@@ -242,7 +237,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "hm_timber_trophy", "name": "Win: Fjord Focal", "region": "home", "difficulty": 2, "special": false,
 		"prize_car": "focus",  # wave 4
 		"map_pos": Vector2(0.584, 0.387),
-		"restriction": {"cylinders_max": 4, "pw_min": 60.0, "pw_max": 120.0},  # ceiling just over the Focus it awards
+		"restriction": {"cylinders_max": 4},  # four cylinders or fewer, like the Focus it awards
 		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
 			{"seed": 32001, "turn_count": 21, "forestiness": 0.70, "surface_mix": 0.1, "straightness": 0.75, "cliffiness": 0.45, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
@@ -259,7 +254,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "hm_forest_gt", "name": "Win: Rondel Twist", "region": "home", "difficulty": 3, "special": false,
 		"prize_car": "twingo",  # wave 3
 		"map_pos": Vector2(0.344, 0.580),
-		"restriction": {"doors_max": 3, "pw_min": 58.0, "pw_max": 115.0},  # ceiling just over the Twingo it awards
+		"restriction": {"doors_max": 3},  # small two/three-door cars, like the Twingo it awards
 		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
 		"events": [
 			{"seed": 33001, "turn_count": 30, "forestiness": 0.70, "surface_mix": 0.7, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
@@ -268,7 +263,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 4, "special": false,
 		"map_pos": Vector2(0.613, 0.709),
-		"restriction": {"pw_min": 260.0, "pw_max": 400.0},  # the top ordinary band: Viper ~264 / The Beast ~350
+		"restriction": {"cylinders_min": 8},  # a grand tourer needs a big engine
 		"events": [
 			{"seed": 5001, "turn_count": 40, "forestiness": 0.47, "surface_mix": 1.0, "straightness": 0.75, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
 			{"seed": 5004, "turn_count": 40, "forestiness": 0.35, "surface_mix": 0.4, "straightness": 0.575, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
@@ -303,7 +298,7 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.527, 0.476),
 		# The bottom band, below even Shakedown: a sub-100 hp/tonne class the true
 		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
-		"restriction": {"pw_min": 50.0, "pw_max": 90.0},
+		"restriction": {"engine_max_l": 1.5},  # the cheapest, smallest engines in the game
 		"events": [
 			{"seed": 7031, "turn_count": 12, "forestiness": 0.55, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "terrain_layer2_amplitude": 3.0},
 			{"seed": 7102, "turn_count": 14, "forestiness": 0.85, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "terrain_layer2_amplitude": 3.0},
@@ -315,7 +310,7 @@ const RALLIES: Array[Dictionary] = [
 		# country that picks the field rather than a power slice.
 		"id": "hc_lakeside_kei", "name": "Lakeside Cup", "region": "home_coast", "difficulty": 1, "special": false,
 		"map_pos": Vector2(0.361, 0.424),
-		"restriction": {"country": "JP", "pw_min": 80.0, "pw_max": 160.0},
+		"restriction": {"country": "JP"},
 		"events": [
 			{"seed": 34001, "turn_count": 16, "forestiness": 0.57, "surface_mix": 0.3, "straightness": 0.85, "cliffiness": 0.35, "water_level": -7.0, "terrain_layer1_amplitude": 26.0, "weather": "rain"},
 			{"seed": 34002, "turn_count": 16, "forestiness": 0.70, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
@@ -325,7 +320,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "coastal_sprint", "name": "Pinewood Sprint", "region": "home", "difficulty": 2, "special": false,
 		"map_pos": Vector2(0.599, 0.286),
-		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
+		"restriction": {"doors_max": 2},  # two-door sprint: no family hatches
 		"events": [
 			{"seed": 2204, "turn_count": 24, "forestiness": 0.85, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
 			{"seed": 2105, "turn_count": 24, "forestiness": 0.85, "surface_mix": 0.7, "straightness": 0.6, "cliffiness": 0.65, "water_level": -12.0, "terrain_layer1_amplitude": 32.0, "weather": "rain"},
@@ -337,7 +332,7 @@ const RALLIES: Array[Dictionary] = [
 		"prize_car": "beast",  # wave 15 — RWD Masters awards the rear-drive monster
 		"map_pos": Vector2(0.229, 0.488),
 		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 180.0, "pw_max": 360.0},  # ceiling just over The Beast it awards
+		"restriction": {"drive_mode": CarLibrary.RWD},  # rear-drive only, like The Beast it awards
 		"events": [
 			{"seed": 3001, "turn_count": 29, "forestiness": 0.53, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 22.0},
 			{"seed": 3012, "turn_count": 29, "forestiness": 0.70, "surface_mix": 1.0, "straightness": 0.725, "cliffiness": 0.5, "water_level": -7.0, "terrain_layer1_amplitude": 22.0, "weather": "rain"},
@@ -348,7 +343,7 @@ const RALLIES: Array[Dictionary] = [
 		# Open-top cars only — a body class, wide on power.
 		"id": "hc_headland_dash", "name": "Ridgeline Dash", "region": "home", "difficulty": 3, "special": false,
 		"map_pos": Vector2(0.788, 0.491),
-		"restriction": {"car_type": "roadster", "pw_min": 135.0, "pw_max": 265.0},
+		"restriction": {"car_type": "roadster"},
 		"events": [
 			{"seed": 35001, "turn_count": 28, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.65, "cliffiness": 0.7, "water_level": -13.0, "terrain_layer1_amplitude": 44.0},
 			{"seed": 35002, "turn_count": 28, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.625, "cliffiness": 0.8, "water_level": -13.0, "terrain_layer1_amplitude": 39.0, "weather": "fog"},
@@ -360,7 +355,7 @@ const RALLIES: Array[Dictionary] = [
 		# fitted engine's layout, so an engine swap moves a car in or out of it.
 		"id": "hc_v12_promenade", "name": "12 Cylinder Promenade", "region": "home_coast", "difficulty": 4, "special": false,
 		"map_pos": Vector2(0.746, 0.714),
-		"restriction": {"cylinders_min": 12, "pw_min": 170.0, "pw_max": 330.0},
+		"restriction": {"cylinders_min": 12},
 		"events": [
 			{"seed": 36001, "turn_count": 35, "forestiness": 0.33, "surface_mix": 1.0, "straightness": 0.6, "cliffiness": 0.75, "water_level": -4.0, "terrain_layer1_amplitude": 22.0, "weather": "storm"},
 			{"seed": 36002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.8, "straightness": 0.575, "cliffiness": 0.85, "water_level": -4.0, "terrain_layer1_amplitude": 19.0, "weather": "rain"},
@@ -393,8 +388,7 @@ const RALLIES: Array[Dictionary] = [
 	# takes. Promoting them beat authoring two new pins, which would have re-fitted the whole
 	# map (tools/fit_map_pins.py) and moved every other rally's neighbourhood with it. Their
 	# `id` / `difficulty` / `restriction` / `events` are untouched — ids key saved progress,
-	# and the other three are OpponentCache.FIELD_DETERMINANTS, so the committed field cache
-	# still hits. `gc_showdown` stays ordinary: it is the longest of the three and gates no
+	# and the other three decide the opponent field. `gc_showdown` stays ordinary: it is the longest of the three and gates no
 	# part, so it remains the pure star-payer the endgame finishes on.
 	{
 		# Unlocks the Sequential Gearbox. Reached a wave before the Greek showdown below
@@ -414,7 +408,7 @@ const RALLIES: Array[Dictionary] = [
 		# engine — an engine swap moves a car in or out of it.
 		"id": "gr_dust_devils", "name": "Dust Devils", "region": "greece", "difficulty": 1, "special": false,
 		"map_pos": Vector2(0.181, 0.792),
-		"restriction": {"engine_max_l": 2.0, "pw_min": 100.0, "pw_max": 200.0},
+		"restriction": {"engine_max_l": 2.0},
 		"events": [
 			{"seed": 41001, "turn_count": 16, "forestiness": 0.28, "surface_mix": 0.2, "straightness": 0.85, "cliffiness": 0.35, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 			{"seed": 41002, "turn_count": 16, "forestiness": 0.15, "surface_mix": 0.1, "straightness": 0.825, "cliffiness": 0.4, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
@@ -428,7 +422,7 @@ const RALLIES: Array[Dictionary] = [
 		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
 		# (Charger ~216, Viper ~264). Country-gated, not car_type-gated, so it fields more
 		# than a single car.
-		"restriction": {"country": "US", "pw_min": 115.0, "pw_max": 225.0},  # ceiling just over the Charger it awards
+		"restriction": {"country": "US"},  # American iron, like the Charger it awards
 		"events": [
 			{"seed": 6001, "turn_count": 40, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.85, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 38.0, "weather": "rain"},
 			{"seed": 6102, "turn_count": 40, "forestiness": 0.85, "surface_mix": 0.5, "straightness": 0.8, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
@@ -439,7 +433,7 @@ const RALLIES: Array[Dictionary] = [
 		# Big-bore two-doors: eight cylinders or more AND two doors.
 		"id": "gr_marble_quarry", "name": "Slate Quarry", "region": "home", "difficulty": 2, "special": false,
 		"map_pos": Vector2(0.348, 0.157),
-		"restriction": {"cylinders_min": 8, "doors_max": 2, "pw_min": 200.0, "pw_max": 400.0},
+		"restriction": {"cylinders_min": 8, "doors_max": 2},
 		"events": [
 			{"seed": 42001, "turn_count": 23, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.725, "cliffiness": 0.6, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 40.0},
 			{"seed": 42002, "turn_count": 23, "forestiness": 0.25, "surface_mix": 0.05, "straightness": 0.7, "cliffiness": 0.7, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 35.0},
@@ -450,7 +444,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "gr_mountain_pass", "name": "Win: Panthera XJS", "region": "home_coast", "difficulty": 3, "special": false,
 		"prize_car": "xjs",  # wave 6
 		"map_pos": Vector2(0.185, 0.382),
-		"restriction": {"pw_min": 90.0, "pw_max": 180.0},  # ceiling just over the XJS it awards
+		"restriction": {"country": "GB"},  # a British hill climb, and it awards a British car
 		"events": [
 			{"seed": 22001, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.8, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 26.0},
 			{"seed": 22102, "turn_count": 21, "forestiness": 0.70, "surface_mix": 0.05, "straightness": 0.575, "cliffiness": 0.9, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 22.0},
@@ -461,7 +455,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "gr_ancient_ruins", "name": "Win: Porker 930 Turbo", "region": "greece", "difficulty": 3, "special": false,
 		"prize_car": "porsche911",  # wave 9
 		"map_pos": Vector2(0.266, 0.736),
-		"restriction": {"pw_min": 115.0, "pw_max": 230.0},  # ceiling just over the 911 it awards
+		"restriction": {"cylinders_max": 6},  # small-capacity classics on a tight ruins stage
 		"events": [
 			{"seed": 23201, "turn_count": 21, "forestiness": 0.15, "surface_mix": 0.2, "straightness": 0.65, "cliffiness": 0.7, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 			{"seed": 23202, "turn_count": 23, "forestiness": 0.23, "surface_mix": 0.1, "straightness": 0.6, "cliffiness": 0.85, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
@@ -472,7 +466,7 @@ const RALLIES: Array[Dictionary] = [
 		# Muscle bodies only — the class is the body style, wide open on power.
 		"id": "gr_thermopylae", "name": "The Hot Gates", "region": "greece", "difficulty": 4, "special": false,
 		"map_pos": Vector2(0.072, 0.676),
-		"restriction": {"car_type": "muscle", "pw_min": 170.0, "pw_max": 330.0},
+		"restriction": {"car_type": "muscle"},
 		"events": [
 			{"seed": 43001, "turn_count": 32, "forestiness": 0.28, "surface_mix": 0.3, "straightness": 0.6, "cliffiness": 0.9, "water_level": -11.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 			{"seed": 43002, "turn_count": 35, "forestiness": 0.15, "surface_mix": 0.1, "straightness": 0.575, "cliffiness": 0.95, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
@@ -508,7 +502,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "gc_fishermens_run", "name": "Dry Riverbed Run", "region": "greece", "difficulty": 1, "special": false,
 		"map_pos": Vector2(0.203, 0.649),
-		"restriction": {"pw_min": 60.0, "pw_max": 110.0},
+		"restriction": {"engine_max_l": 2.0},  # a gentle riverbed run for small-engined cars
 		"events": [
 			{"seed": 51001, "turn_count": 14, "forestiness": 0.28, "surface_mix": 0.4, "straightness": 0.875, "cliffiness": 0.3, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 19.0},
 			{"seed": 51002, "turn_count": 14, "forestiness": 0.15, "surface_mix": 0.6, "straightness": 0.85, "cliffiness": 0.35, "water_level": -11.0, "weather": "rain", "terrain_layer1_amplitude": 12.0},
@@ -520,7 +514,7 @@ const RALLIES: Array[Dictionary] = [
 		# this grouping is stable under retuning.
 		"id": "gr_olive_coast", "name": "Long Meadow", "region": "home", "difficulty": 2, "special": false,
 		"map_pos": Vector2(0.681, 0.576),
-		"restriction": {"doors_max": 2, "pw_min": 120.0, "pw_max": 200.0},
+		"restriction": {"doors_max": 2},
 		"events": [
 			{"seed": 21001, "turn_count": 17, "forestiness": 0.47, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
 			{"seed": 21002, "turn_count": 18, "forestiness": 0.35, "surface_mix": 0.15, "straightness": 0.65, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
@@ -531,7 +525,7 @@ const RALLIES: Array[Dictionary] = [
 		# Small-engined two-doors — displacement resolved through the fitted engine.
 		"id": "gc_island_hop", "name": "Timberline Loop", "region": "home", "difficulty": 2, "special": false,
 		"map_pos": Vector2(0.238, 0.190),
-		"restriction": {"engine_max_l": 3.0, "doors_max": 2, "pw_min": 120.0, "pw_max": 240.0},
+		"restriction": {"engine_max_l": 3.0, "doors_max": 2},
 		"events": [
 			{"seed": 52001, "turn_count": 20, "forestiness": 0.70, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
 			{"seed": 52002, "turn_count": 20, "forestiness": 0.55, "surface_mix": 0.7, "straightness": 0.725, "cliffiness": 0.55, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 32.0},
@@ -546,7 +540,7 @@ const RALLIES: Array[Dictionary] = [
 		# (Charger ~216, Viper ~264 hp/tonne — the Viper's only stock rally).
 		"id": "rising_sun", "name": "Heavy Hitters", "region": "greece", "difficulty": 3, "special": false,
 		"map_pos": Vector2(0.508, 0.724),
-		"restriction": {"pw_min": 210.0, "pw_max": 320.0},  # Charger/Viper
+		"restriction": {"engine_min_l": 4.0},  # "Heavy Hitters": big-displacement only
 		"events": [
 			{"seed": 4001, "turn_count": 33, "forestiness": 0.29, "surface_mix": 0.6, "straightness": 0.625, "cliffiness": 0.55, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
 			{"seed": 4004, "turn_count": 33, "forestiness": 0.15, "surface_mix": 0.0, "straightness": 0.6, "cliffiness": 0.7, "water_level": -11.0, "terrain_layer1_amplitude": 15.5},
@@ -557,7 +551,7 @@ const RALLIES: Array[Dictionary] = [
 		# Big-block class: 5.0 L or more, resolved through the fitted engine.
 		"id": "gc_salt_flats", "name": "Fernway Dash", "region": "home", "difficulty": 3, "special": false,
 		"map_pos": Vector2(0.132, 0.289),
-		"restriction": {"engine_min_l": 5.0, "pw_min": 185.0, "pw_max": 365.0},
+		"restriction": {"engine_min_l": 5.0},
 		"events": [
 			{"seed": 53001, "turn_count": 30, "forestiness": 0.65, "surface_mix": 0.8, "straightness": 0.775, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 32.0},
 			{"seed": 53002, "turn_count": 30, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.8, "cliffiness": 0.35, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 32.0},
@@ -574,7 +568,7 @@ const RALLIES: Array[Dictionary] = [
 		# prerequisite (the only other roadster is the MX-5, itself a prize), stranding
 		# every player who did not start in one. Open class, ceilinged just over the Viper,
 		# is what leaves it reachable — see tools/sim_career.gd.
-		"restriction": {"pw_min": 140.0, "pw_max": 275.0},
+		"restriction": {"cylinders_min": 10},  # a ten-cylinder-plus GP, and it awards a V10
 		"events": [
 			{"seed": 54001, "turn_count": 35, "forestiness": 0.30, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
 			{"seed": 54002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.9, "straightness": 0.6, "cliffiness": 0.8, "water_level": -4.0, "weather": "storm", "terrain_layer1_amplitude": 19.0},
@@ -716,17 +710,10 @@ static func stage_key(rally: Dictionary, event_index: int) -> String:
 # Whether `car_meta` (a CarLibrary entry dict, resolved by the owned car's stable
 # model_id — never array index) satisfies a rally's restriction. Open-class
 # (empty restriction) always matches. For an OWNED car, callers pass the car's
-# effective stats (UpgradeLibrary.effective_meta) so an installed engine kit or
-# weight reduction can qualify / disqualify it via the pw_max ceiling; the
-# raw CARS entry is only the right input for an unmodified roster car (rivals).
-# `floor_meta` (optional) lets the caller judge the pw_MIN floor against a DIFFERENT meta
-# than the ceiling / secondary fields — pass a car's MAX-potential meta
-# (UpgradeLibrary.max_potential_meta) so a currently-detuned or ballasted owned car isn't
-# ruled "too weak" when maxing it out would clear the floor (the player will always tune up
-# to enter, just as an over-cap car detunes down to duck the ceiling). Defaults to car_meta
-# — a plain point check for stock catalogue cars / rivals / synthetic tests, where current
-# stats already ARE the car's potential.
-static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary, floor_meta: Dictionary = {}) -> String:
+# effective stats (UpgradeLibrary.effective_meta) so a drivetrain conversion or an
+# engine swap moves the categorical fields with it; the raw CARS entry is only the
+# right input for an unmodified roster car (rivals).
+static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary) -> String:
 	var r: Dictionary = rally.get("restriction", {})
 	if r.is_empty():
 		return ""
@@ -764,69 +751,18 @@ static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary, floor_
 			return "Too few cylinders for this class"
 		if r.has("cylinders_max") and cyl > int(r["cylinders_max"]):
 			return "Too many cylinders for this class"
-	# power_to_weight is kW/kg; the authored band edges are hp/tonne — convert before comparing.
-	# Compare the ROUNDED hp/tonne figure (CarLibrary.power_to_weight_hp_tonne) — the exact
-	# number the player sees on screen — not the raw float, so a car displaying e.g. "100 hp/t"
-	# that's actually 99.6 isn't blocked by a 100 hp/t requirement it visually meets.
-	# The requirement itself is also rounded before comparing — authored bands are already
-	# whole numbers, so this is a no-op for real rally data, but it keeps BOTH sides of the
-	# comparison on the same rounding rule (matters for synthetic thresholds in tests/tools).
-	var pw := CarLibrary.power_to_weight_hp_tonne(car_meta)
-	if r.has("pw_max") and pw > roundi(float(r["pw_max"])):
-		return "Power-to-weight too high (%d hp/t, max %d)" % [pw, roundi(float(r["pw_max"]))]
-	if r.has("pw_min"):
-		# The floor is judged at the car's MAX potential when the caller supplies floor_meta.
-		var floor_pw := pw if floor_meta.is_empty() else CarLibrary.power_to_weight_hp_tonne(floor_meta)
-		if floor_pw < roundi(float(r["pw_min"])):
-			return "Power-to-weight too low (%d hp/t, min %d)" % [floor_pw, roundi(float(r["pw_min"]))]
+	# PERFORMANCE IS NOT AN ENTRY REQUIREMENT. Rally entry is purely CATEGORICAL — its
+	# job is to make the player experience different cars ("Japanese only", "hatchbacks
+	# only"), never to police how fast they are. The old pw_min..pw_max band lived here
+	# and went with the car-performance rating rework: how fast a car is now shapes the
+	# OPPONENT FIELD (rivals are matched to the player's rating) instead of blocking
+	# entry, so there are no performance walls to upgrade into and detune back out of.
+	# See docs/superpowers/specs/2026-08-15-car-performance-rating-design.md.
 	return ""
 
 
-static func is_eligible(rally: Dictionary, car_meta: Dictionary, floor_meta: Dictionary = {}) -> bool:
-	return ineligibility_reason(rally, car_meta, floor_meta) == ""
-
-
-# The largest engine-detune fraction at which a car passes `rally`'s restriction,
-# or -1.0 when no detune can qualify it (a non-power restriction field fails).
-# `full_meta` is the car's effective stats at FULL
-# tune (UpgradeLibrary.effective_meta with engine_detune 1.0), so the result is an
-# absolute detune-slider setting, not a value relative to the current tune; a car
-# already eligible at full tune returns 1.0. Torque — hence peak power and
-# power-to-weight — scales linearly with the detune fraction, so the target is the
-# cap/full ratio, floored to the tune slider's whole-percent steps so the value
-# round-trips through the UI. The result is verified back through is_eligible.
-static func qualifying_detune(rally: Dictionary, full_meta: Dictionary) -> float:
-	if is_eligible(rally, full_meta):
-		return 1.0
-	var r: Dictionary = rally.get("restriction", {})
-	var pw := CarLibrary.power_to_weight(full_meta) * KW_KG_TO_HP_TONNE
-	if not r.has("pw_max") or pw <= float(r["pw_max"]):
-		return -1.0  # ineligible for a reason detuning can't fix
-	var frac := floorf(float(r["pw_max"]) / pw * 100.0) / 100.0
-	if frac <= 0.0:
-		return -1.0
-	var eng := EngineLibrary.by_id(String(full_meta.get("engine", "")))
-	var scaled := full_meta.duplicate()
-	scaled["peak_torque"] = float(full_meta.get("peak_torque", eng.get("peak_torque", 0.0))) * frac
-	return frac if is_eligible(rally, scaled) else -1.0
-
-
-# The eligible car with the highest power-to-weight for a rally. Falls back to the
-# best car in the whole roster when `rally` is empty (legacy/test callers).
-static func _best_eligible_car(rally: Dictionary) -> Dictionary:
-	var pool: Array = _eligible_cars(rally) if not rally.is_empty() else CarLibrary.all()
-	var best: Dictionary = {}
-	var best_pw := -1.0
-	for car in pool:
-		# Rank by the STOCK-boosted meta (mirrors how rivals actually drive in
-		# generate_opponent_field), so the "fastest possible car" reflects the same
-		# forced induction a turbo car's rival gets — not the unboosted figure.
-		var meta := UpgradeLibrary.effective_meta({}, car)
-		var pw := CarLibrary.power_to_weight(meta)
-		if pw > best_pw:
-			best_pw = pw
-			best = meta
-	return best
+static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
+	return ineligibility_reason(rally, car_meta) == ""
 
 
 # --- In-stage turn splits (for the live "vs P1" pace popup) ------------------
@@ -897,6 +833,15 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 # car's physics floor (optimum_ms) scaled by a per-rival factor in the pace band,
 # so a faster car fields a faster time.
 #
+# `player_rating` (CarPerformance.rating of the build the player is fielding; 0 to
+# skip) MATCHES the grid to the player's pace — see rating_match_weight. This is why
+# the field can no longer be precomputed per rally: it is a function of the player's
+# car as well as the rally, so the old data/opponent_cache.json could not express it.
+#
+# The rally's `difficulty` therefore no longer decides how fast the CARS are — it
+# decides how hard they are DRIVEN, via the pace band. Matched machinery, harder
+# driving: that is what a higher tier means now.
+#
 # Wrecks (features/opponent-wrecks.md): after the times are drawn, each event
 # independently rolls OPPONENT_WRECK_CHANCE to crash ONE not-yet-wrecked rival out.
 # A wrecked rival has event_times_ms[wreck_event..] = -1 and DNFs the rally
@@ -904,11 +849,12 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 # (`wreck_progress` along the track, `wreck_side` = which verge) the run scene reads
 # to stage the wreck. `wreck_event` = -1 for a rival who finishes. At most one rival
 # wrecks per event, so the run scene shows at most one roadside wreck per stage.
-static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array) -> Array:
+static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array,
+		player_rating := 0) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
-	# Every car+engine pairing the rally admits (features/rally-roster.md), in-band
-	# (the band floor is the power floor now).
+	# Every car+engine pairing the rally's CATEGORICAL restriction admits
+	# (features/rally-roster.md).
 	var combo_pool := _eligible_combos(rally)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var band := _pace_band(int(rally.get("difficulty", 1)))
@@ -916,7 +862,7 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	# the rally-seeded rng); names[i] is rival i's name, held across all 3 events.
 	var names := _draw_rival_names(rng, count)
 	# One distinct build per rival, same rng, so the grid is stable across re-attempts.
-	var combos := _draw_distinct_combos(rng, combo_pool, count)
+	var combos := _draw_distinct_combos(rng, combo_pool, count, player_rating)
 	var field: Array = []
 	for i in count:
 		var combo: Dictionary = combos[i]
@@ -956,6 +902,11 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			"wreck_event": -1,
 			"wreck_progress": 0.0,
 			"wreck_side": 1.0,
+			# The build's CarPerformance rating — what the grid was MATCHED on. Carried
+			# on the rival so the match can be inspected after the fact (rally_session
+			# logs the whole grid against the player's own rating) rather than being a
+			# number that only existed inside the draw.
+			"rating": int(combo.get("rating", 0)),
 			# Rival-ghost pace seed, one entry per event, -1 = "not solved"
 			# (features/rival-ghost.md). Left empty HERE on purpose: solving it needs
 			# RivalPace, which needs the whole per-event track, and this function is the pure
@@ -980,12 +931,10 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		field[pick]["wreck_event"] = k
 		# Seeded roadside placement: a fraction along the timed track (kept off the
 		# start/finish) and which verge (±1). The run scene turns these into a world pose.
-		# Quantised so the value survives a JSON round-trip EXACTLY. This entry is baked
-		# into data/opponent_cache.json and the cache's whole contract is that a cached
-		# field equals a freshly generated one; a raw double here prints to ~14 significant
-		# digits and parses back to a DIFFERENT double, so cache and live silently diverged
-		# in the last bits (and test_opponent_cache's round-trip assertion failed as soon as
-		# the rng happened to land on such a value). 1e-4 of track length is far below
+		# Quantised so the value survives a JSON round-trip EXACTLY. Quantised so the value
+		# survives a JSON round-trip EXACTLY (it is persisted with the run's standings; a raw
+		# double prints to ~14 significant digits and parses back to a DIFFERENT double).
+		# 1e-4 of track length is far below
 		# anything visible in the roadside staging.
 		field[pick]["wreck_progress"] = snappedf(rng.randf_range(0.15, 0.85), 0.0001)
 		field[pick]["wreck_side"] = 1.0 if rng.randf() < 0.5 else -1.0
@@ -1120,15 +1069,20 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 					"engine_id": eid,
 					"meta": meta,
 					"pw_delta": absf(CarLibrary.power_to_weight_hp_tonne(meta) - pw_stock),
+					# What the rating-matched draw weighs the combo by
+					# (_draw_distinct_combos / rating_match_weight).
+					"rating": CarPerformance.rating(meta),
 				})
 	if not pool.is_empty():
 		return pool
 	for entry in CarLibrary.all():
+		var stock_meta := UpgradeLibrary.effective_meta({}, entry)
 		pool.append({
 			"car": entry,
 			"engine_id": String(entry.get("engine", "")),
-			"meta": UpgradeLibrary.effective_meta({}, entry),
+			"meta": stock_meta,
 			"pw_delta": 0.0,  # the stock combo IS the reference
+			"rating": CarPerformance.rating(stock_meta),
 		})
 	return pool
 
@@ -1138,6 +1092,22 @@ static func _eligible_combos(rally: Dictionary) -> Array:
 # admitted combo is ever unreachable. Pure — see OPPONENT_SWAP_PW_SPREAD.
 static func swap_weight(pw_delta: float) -> float:
 	return exp(-absf(pw_delta) / maxf(OPPONENT_SWAP_PW_SPREAD, 0.001))
+
+
+# How much a combo is favoured for being CLOSE TO THE PLAYER'S PACE, from the gap
+# between its CarPerformance rating and the player's.
+#
+# This is what replaced the old power band. Rallies no longer gate on performance, so
+# instead of the RALLY deciding how fast the field is, the PLAYER'S OWN CAR does —
+# bring a quick car and you race quick cars. That is what keeps every stage a fight
+# for P1 instead of a walkover once the player is well upgraded, and it is why
+# upgrading is an intrinsic reward here rather than a route to easier wins.
+#
+# Same shape as swap_weight and for the same reason: a bias, never a filter, so a
+# rally whose restriction admits only a handful of cars still fields a full grid.
+static func rating_match_weight(rating_delta: float) -> float:
+	var spread: float = maxf(Config.data.opponent_rating_match_spread, 0.001)
+	return exp(-absf(rating_delta) / spread)
 
 
 # `count` combos drawn WITHOUT replacement from `pool`, using the rally-seeded rng so the
@@ -1155,7 +1125,14 @@ static func swap_weight(pw_delta: float) -> float:
 # When the pool holds fewer than `count`, CYCLE it rather than drawing random repeats: a
 # three-combo rally fields 3+3+3 instead of a lopsided random multiset, so even the
 # degenerate case is as varied as the pool allows.
-static func _draw_distinct_combos(rng: RandomNumberGenerator, pool: Array, count: int) -> Array:
+#
+# `target_rating` (0 = unmatched) additionally biases the draw toward builds whose
+# CarPerformance rating is near the player's, via rating_match_weight — see there for
+# why the field is matched to the player at all. The two weights MULTIPLY: a rival is
+# most likely to be both a plausible build for its car and a plausible match for the
+# player's pace.
+static func _draw_distinct_combos(rng: RandomNumberGenerator, pool: Array, count: int,
+		target_rating := 0) -> Array:
 	var out: Array = []
 	if pool.is_empty():
 		return out
@@ -1164,7 +1141,10 @@ static func _draw_distinct_combos(rng: RandomNumberGenerator, pool: Array, count
 	var remaining: Array = pool.duplicate()
 	var weights: Array = []
 	for combo in remaining:
-		weights.append(swap_weight(float(combo.get("pw_delta", 0.0))))
+		var w := swap_weight(float(combo.get("pw_delta", 0.0)))
+		if target_rating > 0:
+			w *= rating_match_weight(float(int(combo.get("rating", 0)) - target_rating))
+		weights.append(w)
 	var ordered: Array = []
 	while not remaining.is_empty():
 		var total := 0.0
@@ -1685,17 +1665,9 @@ static func reveal_link_pairs(profile: Dictionary) -> Array:
 # given car can currently enter (revealed — inside the lit region of the map — and
 # eligible in-band).
 #
-# "Can enter" INCLUDES ducking under a pw_max by detuning, exactly as the HQ's
-# _entry_plan and test_every_shipped_rally_has_at_least_one_car_that_can_enter_it
-# already define it — the player is always free to turn the wick down, so a rally
-# they can reach that way is not a rally they are locked out of. Judging this query
-# more strictly than the screen that actually gates entry made the reward system see
-# phantom soft-locks and hand out rescue cars to players who were never stuck.
-#
-# This deliberately does NOT weaken the guarantee: qualifying_detune only ever
-# rescues a car that is over the CEILING, and a genuine soft-lock is the opposite
-# case — a car too weak for everything left, which no amount of detuning fixes.
-static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dictionary, floor_meta: Dictionary = {}) -> Array:
+# Entry is categorical now, so "can enter" is a plain eligibility check — there is no
+# performance ceiling to duck under and no detune to consider.
+static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dictionary) -> Array:
 	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	var out: Array = []
 	for rally in all():
@@ -1703,6 +1675,6 @@ static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dicti
 			continue
 		if not rally_revealed(rally, profile):
 			continue
-		if is_eligible(rally, car_meta, floor_meta) or qualifying_detune(rally, car_meta) > 0.0:
+		if is_eligible(rally, car_meta):
 			out.append(rally)
 	return out

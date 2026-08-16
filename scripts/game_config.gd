@@ -145,6 +145,55 @@ var peak_torque_rpm := 4500.0
 @export_range(0.1, 2.0) var grass_grip := 0.7
 @export_range(0.1, 2.0) var gravel_grip := 1.0
 @export_range(0.1, 2.0) var tarmac_grip := 1.3
+## How tightly the AI field is matched to the player's CarPerformance rating, in
+## rating points. Rivals are drawn with a weight of exp(-|their rating - yours| /
+## this), so it is a BIAS, not a filter: a mismatched car stays possible, just
+## unlikely, and a rally whose categorical restriction admits only a handful of
+## cars still fields a full grid.
+##
+## Smaller = a tighter, more evenly-matched grid. Larger = a more ragged field with
+## clearer front-runners and backmarkers. Zero would make the draw degenerate, so it
+## is floored. See features/car-performance.md.
+@export_range(5.0, 400.0) var opponent_rating_match_spread := 60.0
+## Geometry of the CarPerformance benchmark track (scripts/benchmark_track.gd) —
+## a straight, then a hairpin, then N sweepers, scored on the TOTAL time only.
+## See docs/superpowers/specs/2026-08-15-car-performance-rating-design.md.
+##
+## benchmark_straight_m is the PRIMARY balance lever: it shifts the rating between
+## rewarding power and rewarding cornering. Shorten it if the rating is found to
+## favour straight-line speed. benchmark_sweeper_radius_m is the secondary lever —
+## it trades low-speed grip against high-speed aero, since downforce only asserts
+## itself above a certain speed.
+##
+## Changing any of these RE-SCORES EVERY CAR. That is safe for career (nothing is
+## persisted) because CarPerformance normalises against a reference car, but see
+## features/car-performance.md before moving them.
+@export_range(50.0, 2000.0) var benchmark_straight_m := 500.0
+@export_range(5.0, 60.0) var benchmark_hairpin_radius_m := 15.0
+@export_range(30.0, 400.0) var benchmark_sweeper_radius_m := 90.0
+@export_range(1, 8) var benchmark_sweeper_count := 3
+## Corner-exit traction ceiling per drive mode, used by LapTimeModel's forward
+## pass (a = min(factor * grip_long, a_engine)). The real Drivetrain couples the
+## driveline so AWD spreads drive torque across four contact patches — less slip
+## per patch, less wheelspin — while FWD asks the front tyres to steer and drive
+## at once. The QSS model has no wheels, so this scalar stands in for that.
+##
+## The values follow the CONTACT PATCHES. An AWD car drives through all four, so it is
+## the 1.0 reference; a 2WD car drives through two and can put down roughly half. The
+## 2WD split is asymmetric because acceleration transfers weight REARWARD, loading a
+## RWD car's driven axle and unloading a FWD car's — hence RWD 0.6, FWD 0.4.
+##
+## This ONLY binds where the car is grip-limited. The forward pass takes
+## min(factor * grip_long, a_engine), so a power-limited car — most of a long straight —
+## is unaffected whatever these are, and every drivetrain times identically there. That
+## is the intended shape: drivetrain buys traction, not power.
+##
+## Setting all three to 1.0 makes the whole term an exact no-op. Changing any of them
+## moves every AI, rival and ghost time in the game, so treat it as a roster-wide
+## balance change. Indexed by CarLibrary.RWD / AWD / FWD.
+@export_range(0.2, 1.0) var traction_factor_rwd := 0.6
+@export_range(0.2, 1.0) var traction_factor_awd := 1.0
+@export_range(0.2, 1.0) var traction_factor_fwd := 0.4
 ## The LIVE weather condition for the stage currently being played (RallyLibrary.
 ## WEATHER_DRY / WEATHER_RAIN). Seated by RallySession.apply_event_config from the
 ## event's authored `weather` field — the ONE funnel into the live config, so a new
@@ -240,7 +289,7 @@ var peak_torque_rpm := 4500.0
 @export var spawn_clearance := 2.5
 ## Reference speed (km/h) grip readouts are rated at — downforce grows with v², so a
 ## lateral-g figure means nothing without the speed it was measured at. THE SINGLE SOURCE:
-## CarStatBounds (the roster-wide bar scale) and UpgradesSimple (the per-car Grip row) both
+## CarStatBounds (the roster-wide bar scale) and any per-car grip readout both
 ## read this rather than each carrying their own copy, so the bar and the figure it draws
 ## can never be rated at different speeds.
 @export var grip_reference_kmh := 50.0
@@ -1379,8 +1428,7 @@ func has_nitrous() -> bool:
 @export var sand_road_tint_color := Color(0.62, 0.5, 0.32)
 ## Global tyre μ multiplier on a sandstorm stage (Drivetrain.surface_tire_params),
 ## applied the same way as rain_grip_mult so the AI field and the player agree.
-## Folded into OpponentCache.global_fingerprint — changing this value invalidates
-## every rally's cached opponent field and needs a full ./cache_all.sh rebake.
+## Changing this value moves every rival time (the field is generated live).
 @export_range(0.1, 1.0) var sand_grip_mult := 0.9
 ## Dust quads alive at once in the camera-parented particle system on a sandstorm
 ## stage. Only instantiated when sandstorm, so a non-sandstorm stage carries zero
@@ -1418,8 +1466,8 @@ func has_nitrous() -> bool:
 # occasional lightning flash. See features/weather.md.
 ## Global tyre μ multiplier on a storm stage — a storm is wetter than plain rain, so
 ## this is normally the lower of the two. Applied exactly like rain_grip_mult, so the
-## AI field and the player agree. Folded into OpponentCache.global_fingerprint —
-## changing it invalidates every rally's cached field and needs a full ./cache_all.sh.
+## AI field and the player agree. Changing it moves every rival time (the field is
+## generated live).
 @export_range(0.1, 1.0) var storm_grip_mult := 0.72
 ## Flat, dark storm-grey background/fog colour on a storm stage.
 @export var storm_background_color := Color(0.42, 0.43, 0.47)

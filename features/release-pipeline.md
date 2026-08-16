@@ -31,9 +31,10 @@ all, so a rules failure can't hold up a game release — see
 [cloud-save.md](cloud-save.md) → *Deploying the rules* for why `deploy-rules`
 lives here and how its change-detection works.
 
-The gate re-checks the committed lockfiles (`data/track_cache.json`,
-`data/opponent_cache.json`) by **hash only** — it never regenerates them, so a
-stale lockfile fails the release rather than being silently papered over. See
+The gate re-checks the committed track lockfile (`data/track_cache.json`) by
+**hash only** — it never regenerates it, so a stale lockfile fails the release rather
+than being silently papered over. (The opponent lockfile and its verifier job are gone:
+the rival field is drawn against the player's car rating, so it is generated live.) See
 [track.md](track.md) → *Turn cache*.
 
 Each export job builds through the same `build_*.sh` script you'd run locally

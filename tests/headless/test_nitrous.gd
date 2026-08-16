@@ -256,8 +256,8 @@ func test_nitrous_has_a_garage_row_and_installs_like_any_other_part() -> void:
 
 func test_nitrous_never_reaches_power_to_weight() -> void:
 	# The load-bearing rule: nitrous is a per-stage resource, not a stat. If it fed
-	# effective_meta, fitting the reward could shove a car OVER a rally's pw_max and lock
-	# it out of events it could previously enter.
+	# effective_meta, a bottle the player empties in one stage would read as a permanent
+	# power level everywhere a build is compared or displayed.
 	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
 		"drive_mode": CarLibrary.RWD}
 	var bare := {"model_id": "x", "installed_upgrades": [], "disabled_upgrades": [], "tuning": {}}

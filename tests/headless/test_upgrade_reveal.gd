@@ -126,7 +126,7 @@ func test_drivetrain_kit_installs_enabled_without_choice() -> void:
 		"the drivetrain kit installs enabled")
 
 
-# --- Upgrades button: opens the real UpgradesMenu, reusing the same rally p/w-limit
+# --- Upgrades button: opens the real UpgradesGrid, reusing the same rally p/w-limit
 # warning the pre-stage start line / HQ garage popup use. -----------------------------
 
 func test_upgrades_button_opens_the_real_upgrades_menu_component() -> void:
@@ -139,36 +139,36 @@ func test_upgrades_button_opens_the_real_upgrades_menu_component() -> void:
 	assert_true(w._action_box.visible, "precondition: the action row is showing")
 	w._upgrades_button.pressed.emit()
 	assert_not_null(w._upgrades_menu, "pressing Upgrades builds the menu component")
-	assert_true(w._upgrades_menu is UpgradesSimple,
-		"it's the real UpgradesMenu component, not a stub reimplementation")
+	assert_true(w._upgrades_menu is UpgradesGrid,
+		"it's the real UpgradesGrid component, not a stub reimplementation")
 	assert_true(w._upgrades_overlay.visible, "the upgrades overlay is shown")
 	assert_eq(int(w._upgrades_menu._owned.get("instance_id", -1)), id,
 		"the menu is fed the driven car")
 
-func test_upgrades_menu_surfaces_the_same_rally_over_limit_warning_as_pre_stage() -> void:
-	# A synthetic rally with a p/w ceiling far below any fixture car's ratio — mirrors
-	# test_upgrades_menu.gd's "1 hp/tonne is below any real car's ratio" pattern, so
-	# this never depends on a specific catalogue rally/car, only the logic.
-	var tiny_limit_rally: Dictionary = {
-		"id": "fx_tiny_limit_reveal", "name": "Fixture Tiny Limit", "region": "home",
-		"difficulty": 1, "special": false, "restriction": {"pw_max": 1.0}, "events": [],
-	}
-	RallyLibrary.override_for_test([tiny_limit_rally])
-	RallySession.auto_load_scenes = false
+func test_upgrades_menu_surfaces_the_same_over_limit_warning_as_pre_stage() -> void:
+	# The reveal's overlay is the same gated component the pre-stage popup uses, so it
+	# must block on a ceiling identically. The ceiling is re-bound by hand rather than
+	# taken from a rally: career entry is categorical and sets none, and the challenge
+	# period's rolled ceiling is a tunable that may or may not suit the fixture car.
+	# A limit of 1 is below any drivable car's rating, so it always reads as over.
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
-	RallySession.start_rally(tiny_limit_rally, _save.get_car(id), true)
 	_save.install_upgrade(id, "fx_aero", false)
 	var w := _make()
 	w.reveal("fx_aero", id)
 	await get_tree().process_frame
 	w._upgrades_button.pressed.emit()
-	assert_true(w._upgrades_menu.over_pw_limit(),
-		"the driven car's build reads as over the active rally's p/w ceiling")
+	# Seat the ceiling on the LIVE page rather than re-running setup(): setup rebuilds, and
+	# the discarded page's own request_close is still wired to the host's Done button, so
+	# the ungated old instance would close the overlay first.
+	w._upgrades_menu._rating_limit = 1.0
+	w._upgrades_menu._refresh_close_button()
+	assert_true(w._upgrades_menu.over_rating_limit(),
+		"the driven car's build reads as over the bound ceiling")
 	assert_false(w._upgrades_menu.can_close(),
 		"the menu blocks closing over the limit — same gate as the pre-stage popup")
 	assert_true(String(w._upgrades_back.text).begins_with("Over limit"),
-		"the Done button reddens/reprompts exactly like UpgradesMenu.bind_close_button does pre-stage")
+		"the Done button reddens/reprompts exactly like UpgradesGrid.bind_close_button does pre-stage")
 	w._upgrades_back.pressed.emit()
 	assert_true(w._upgrades_overlay.visible,
 		"pressing Done while over the limit does not close the overlay")
@@ -194,7 +194,7 @@ func test_finishing_the_upgrades_menu_continues_the_flow_like_next() -> void:
 #
 # The reveal's Upgrades overlay used to read RallySession.rally_id()'s restriction
 # directly, which resolves to "no limit" mid-challenge (rally_id() is "") — so a
-# challenge car had NO p/w gate here at all. It now goes through DrivingContext.
+# challenge car had NO performance gate here at all. It now goes through DrivingContext.
 
 func _start_challenge_on(id: int) -> void:
 	ChallengeSession.auto_load_scenes = false
@@ -213,7 +213,7 @@ func test_upgrades_overlay_gets_the_challenges_ceiling_not_no_limit() -> void:
 	w._upgrades_button.pressed.emit()
 	# Derived from the same accessor the code uses — the authored ceiling BAND is
 	# tunable, so nothing pins a number; what matters is that a real cap arrived.
-	assert_ne(w._upgrades_menu._pw_limit, DrivingContext.NO_LIMIT,
-		"a challenge run's mid-run Upgrades overlay carries a real p/w ceiling")
-	assert_eq(w._upgrades_menu._pw_limit, ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
+	assert_ne(w._upgrades_menu._rating_limit, DrivingContext.NO_LIMIT,
+		"a challenge run's mid-run Upgrades overlay carries a real performance ceiling")
+	assert_eq(w._upgrades_menu._rating_limit, ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
 		"and it's the period's own rolled ceiling")

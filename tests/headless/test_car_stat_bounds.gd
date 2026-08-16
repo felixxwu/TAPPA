@@ -19,10 +19,13 @@ func after_each() -> void:
 
 func test_bounds_bracket_every_car_on_the_roster() -> void:
 	var bounds := CarStatBounds.all()
-	assert_true(bounds.has("pw") and bounds.has("grip") and bounds.has("mass"),
-		"every comparable stat has a range")
+	assert_true(bounds.has("rating") and bounds.has("pw") and bounds.has("grip")
+		and bounds.has("mass"), "every comparable stat has a range")
 	for entry in CarLibrary.all():
 		var meta := UpgradeLibrary.effective_meta({}, entry)
+		var rating := CarPerformance.rating(CarPerformance.merged_meta({}, entry))
+		assert_between(float(rating), float(bounds["rating"][0]), float(bounds["rating"][1]),
+			"%s's stock rating is inside the roster range" % entry.get("id", "?"))
 		var pw := CarLibrary.power_to_weight_hp_tonne(meta)
 		assert_between(pw, float(bounds["pw"][0]), float(bounds["pw"][1]),
 			"%s's stock power-to-weight is inside the roster range" % entry.get("id", "?"))
@@ -70,6 +73,20 @@ func test_a_degenerate_range_does_not_divide_by_zero() -> void:
 		UpgradeLibrary.effective_meta({}, single[0])))
 	assert_true(is_finite(frac), "the fraction is a real number")
 	assert_between(frac, 0.0, 1.0, "and still inside the unit range")
+
+
+func test_the_cache_follows_the_config_fingerprint() -> void:
+	# The rating bound is a benchmark-lap solve whose geometry lives in GameConfig, so a
+	# config edit must re-scale the bar — the rating cache already refreshes on exactly
+	# this signal, and a bounds cache that didn't would draw fresh figures on a stale scale.
+	var cfg: GameConfig = Config.data
+	var before_len := cfg.benchmark_straight_m
+	var before: Array = (CarStatBounds.all()["rating"] as Array).duplicate()
+	cfg.benchmark_straight_m = before_len * 3.0
+	var after: Array = CarStatBounds.all()["rating"] as Array
+	cfg.benchmark_straight_m = before_len
+	assert_false(is_equal_approx(float(after[1]), float(before[1])),
+		"moving the benchmark geometry re-derives the rating scale")
 
 
 func test_the_cache_follows_the_catalogue_seam() -> void:

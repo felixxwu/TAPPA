@@ -34,12 +34,12 @@ const MYSTERY_BOX_ID := "mystery_box"
 # The valid non-consumable slot ids. A car holds at most one ENABLED upgrade per slot
 # (Save._enable_exclusive), so parts sharing a slot are alternatives, not stackables.
 #
-# Order is the GARAGE ROW ORDER (upgrades_menu walks this list), so a slot sits next to the
+# Order is the GARAGE TILE ORDER (UpgradeOptions.grid_slots walks this list), so a slot sits next to the
 # one it is read alongside: `gearbox` follows `turbo` (both are Speed levers) and `tires`
 # follows `aero` (both are Grip). It is also the order _best_part_per_slot reports in.
 const SLOTS := ["turbo", "gearbox", "aero", "tires", "weight", "drivetrain", "nitrous"]
 
-# Slots that are HIDDEN from the garage (upgrades_menu skips their rows) and whose parts
+# Slots that are HIDDEN from the garage (they get no grid tile) and whose parts
 # are therefore fitted ENABLED whenever they are installed — enforced centrally in
 # Save.install_upgrade, NOT at each award site.
 #
@@ -172,7 +172,7 @@ const UPGRADES: Array[Dictionary] = [
 	# options add weight and are `free` (always selectable on every car, never drawn as
 	# a reward — see reward_system) so the player can shed p/w to enter a lower class;
 	# the LIGHTWEIGHT option removes weight and is the one earned reward-pool drop. The
-	# menu shows each as a rounded kg delta off the car's base mass (upgrades_menu).
+	# menu lists each weight part by its authored label (UpgradeOptions).
 	{
 		"id": "ballast_large", "name": "Heavy Ballast", "slot": "weight",
 		"consumable": false, "free": true, "effect": {"mass_mult": 1.5},
@@ -414,8 +414,8 @@ const EFFECTS := {
 	},
 	# Nitrous writes its config fields and NOTHING else. feeds_pw is deliberately FALSE:
 	# nitrous is a per-stage resource, not a permanent power level, so it must never reach
-	# effective_meta's power-to-weight — otherwise fitting the reward could shove a car
-	# over a rally's pw_max and lock it out of events it could previously enter.
+	# effective_meta's power-to-weight — a bottle the player empties in one stage must not
+	# read as a permanent power level anywhere a build is compared or displayed.
 	"install_nitrous": {"field": "", "op": "write_fields", "feeds_pw": false},
 	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
 	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`
@@ -575,12 +575,10 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 # parts are still locked — so judging the floor on fitted hardware would lock players out
 # of rallies they will comfortably grow into.
 #
-# This is the meta a rally's pw_MIN floor is judged against (RallyLibrary.is_eligible's
-# `floor_meta`). pw_MAX still uses the car's REAL current stats, so a player can't sandbag
-# into a class they'd dominate — the ceiling only ever makes a car eligible, never
-# ineligible. The consequence, accepted deliberately: the floor is now very permissive
-# (almost any car could eventually be turbo'd and lightened), so its remaining job is
-# soft-lock prevention rather than class balance. pw_max is where balance lives.
+# It no longer feeds ELIGIBILITY at all: rally entry became purely categorical with the
+# car-performance rating rework, so nothing about a car's power can admit or exclude it.
+# What remains is the calibration/reporting question "what could this car become?" —
+# tools/calibrate_benchmark.gd is the one caller left in the repo.
 #
 # Per-slot maximisation is EXACT here, not a heuristic: only one part per slot can be
 # enabled (Save._enable_exclusive) and the slots' effects are independent (turbo → torque,
@@ -589,20 +587,12 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 # slot taken separately.
 #
 # Pure: builds a fresh owned-car dict, never mutates the input.
-# `profile` selects WHICH ceiling — and the distinction is load-bearing:
 #
-#   {} (default)  ASPIRATIONAL: the whole catalogue, star gates ignored. "Could this car
-#                 EVER do it?" Used for entry eligibility and the displayed ceiling, so a
-#                 player is never locked out of a rally for lacking a part they will
-#                 obviously grow into.
-#   a profile     REACHABLE: only parts whose star gate is already open. "Can this player
-#                 get there NOW?" Used by the SOFT-LOCK rescue check
-#                 (RewardSystem._unlock_candidates) — judging that on the aspirational
-#                 ceiling would conclude nobody is ever stuck, because every car could in
-#                 principle be turbo'd, even when the turbo is locked behind an event the
-#                 player cannot yet reach. That would silently disable the rescue grant.
-static func max_potential_meta(owned_car: Dictionary, meta: Dictionary,
-		profile: Dictionary = {}) -> Dictionary:
+# ASPIRATIONAL by construction: the whole catalogue counts, star gates ignored — "could
+# this car EVER do it?". There used to be a second, REACHABLE mode (a `profile` argument
+# restricting candidates to parts whose gate was already open) for the soft-lock rescue
+# draw; the rescue is gone, and with it the only caller that wanted it.
+static func max_potential_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 	if meta.is_empty():
 		return meta
 	var maxed := owned_car.duplicate(true)
@@ -610,16 +600,15 @@ static func max_potential_meta(owned_car: Dictionary, meta: Dictionary,
 	tuning["engine_detune"] = 1.0  # full power
 	maxed["tuning"] = tuning
 	maxed["disabled_upgrades"] = []  # nothing parked
-	maxed["installed_upgrades"] = _best_part_per_slot(maxed, meta, profile)
+	maxed["installed_upgrades"] = _best_part_per_slot(maxed, meta)
 	return effective_meta(maxed, meta)
 
 
 # The highest-power-to-weight part in each slot. Skips consumables (not slotted) and any
 # part that ADDS mass (ballast is always removable, so it can't be part of a ceiling).
 # Scores each candidate on its own — see the note above on why per-slot independence makes
-# this exact. A non-empty `profile` restricts candidates to parts whose star gate is open.
-static func _best_part_per_slot(base_car: Dictionary, meta: Dictionary,
-		profile: Dictionary = {}) -> Array:
+# this exact. Star gates are ignored: this is the aspirational ceiling.
+static func _best_part_per_slot(base_car: Dictionary, meta: Dictionary) -> Array:
 	var probe := base_car.duplicate(true)
 	probe["disabled_upgrades"] = []
 	# ONE pass over the catalogue, dispatching each candidate onto its own slot, rather than
@@ -633,8 +622,6 @@ static func _best_part_per_slot(base_car: Dictionary, meta: Dictionary,
 		if float((item.get("effect", {}) as Dictionary).get("mass_mult", 1.0)) > 1.0:
 			continue
 		var item_id := String(item["id"])
-		if not profile.is_empty() and not rally_gate_met(item_id, profile):
-			continue
 		probe["installed_upgrades"] = [item_id]
 		var pw := CarLibrary.power_to_weight(effective_meta(probe, meta))
 		if pw > float(best_pw.get(slot, -1.0)):
@@ -700,11 +687,12 @@ static func grip_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 # something no build can fix, and which the solver must NAME rather than silently
 # hand back a plan that doesn't work.
 #
-# `restriction` is a rally restriction dict (`RallyLibrary` shape), not the bare
-# pw_max float the spec first sketched: the hosts that only have a p/w ceiling pass
-# `{"pw_max": limit}` in one line, while a host that has the real rally passes the
-# real thing — which is what lets `blocked` distinguish "wrong build" from "wrong
-# car" at all.
+# `restriction` is a rally restriction dict (`RallyLibrary` shape) and is entirely
+# CATEGORICAL — car type, country, drive mode. It carries no performance ceiling: a
+# Rally Challenge ceiling is an eligibility line its own host enforces against the
+# finished plan's rating, never a numeric key smuggled in here.
+# Passing the real restriction is what lets `blocked` distinguish "wrong build" (a
+# drivetrain conversion fixes it) from "wrong car" (nothing does).
 #
 # `free_only` forbids spending, and is a FLAG rather than a `stars = 0` call on
 # purpose: `star_cost_per_part` is an exported range that a designer may set to 0,
@@ -721,9 +709,12 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 	var owned: Array = owned_car.get("installed_upgrades", [])
 
 	# --- Candidates per slot.
-	# Only parts that feed power-to-weight take part in the search below; the rest
-	# (aero, tires, gearbox, drivetrain kit, nitrous) can't be scored against the objective,
-	# so Auto never BUYS them — it only switches on ones the car already owns and left parked.
+	# Only parts that feed power-to-weight take part in the SEARCH below; the rest
+	# (aero, tires, gearbox, drivetrain kit, nitrous) Auto never BUYS — it only switches on
+	# ones the car already owns and left parked. They do reach the rating now (the benchmark
+	# lap sees tyres and downforce), so widening the search to them is a real option — but it
+	# would let Auto spend the player's stars on handling parts they never asked for, which
+	# is a design change, not a scorer change.
 	# Ballast is excluded everywhere: it is a p/w lever that also destroys grip, and
 	# detune buys the same reduction for free (§4 → "Auto never fits ballast").
 	var pw_slots: Array = []
@@ -749,14 +740,19 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 
 	# --- Search the p/w-feeding slots.
 	# Exhaustive over the product of their candidate lists (a handful of parts across
-	# two slots today) rather than greedy, because the constrained objective —
-	# "smallest p/w that still clears the cap" — is not something a per-slot greedy
-	# pass can express. Per-slot independence makes each combination's score exact,
-	# the same property _best_part_per_slot leans on.
-	var pw_max := float(restriction.get("pw_max", 0.0)) if restriction.has("pw_max") else 0.0
-	var current_pw := CarLibrary.power_to_weight(effective_meta(owned_car, meta))
+	# two slots today) rather than greedy, because the objective is scored on the WHOLE
+	# build at once (CarPerformance simulates a benchmark lap), not summed per part.
+	# Per-slot independence makes each combination's score exact, the same property
+	# _best_part_per_slot leans on.
+	#
+	# The objective is the performance RATING, not power-to-weight: p/w was the old
+	# eligibility currency, and a solver still maximising it would happily pick a build
+	# the game now calls slower. There is no ceiling term here — a Rally Challenge
+	# ceiling is an ELIGIBILITY line, not something to optimise towards, and its host
+	# withholds a plan that would breach it.
+	var current_rating := CarPerformance.rating(CarPerformance.merged_meta(owned_car, meta))
 	var best: Array = []
-	var best_pw := -1.0
+	var best_rating := -1
 	var best_cost := 0
 	for combo in _slot_combinations(pw_slots, candidates):
 		var cost := 0
@@ -766,13 +762,13 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 				cost += price
 		if cost > budget:
 			continue
-		var pw := _combo_pw(owned_car, meta, combo, pw_slots)
-		if free_only and pw < current_pw:
-			continue  # a free restore only ever moves power UP, or sideways
-		if not _combo_better(pw, cost, best_pw, best_cost, pw_max, best.is_empty()):
+		var rating := _combo_rating(owned_car, meta, combo, pw_slots)
+		if free_only and rating < current_rating:
+			continue  # a free restore only ever moves the car forward, or sideways
+		if not _combo_better(rating, cost, best_rating, best_cost, best.is_empty()):
 			continue
 		best = combo
-		best_pw = pw
+		best_rating = rating
 		best_cost = cost
 
 	# --- Turn the winning combination into toggles.
@@ -808,30 +804,26 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 		if slot_of(item_id) != "" and not keep.has(item_id):
 			(plan["strip"] as Array).append(item_id)
 
-	# --- Detune: the final fine trim, never the first lever.
-	# The build above is already the smallest one that clears the cap, so whatever
-	# is left over is trimmed here — and only here.
+	# --- Restriction check. Entry is CATEGORICAL now, so there is no power ceiling to
+	# trim under: a build either satisfies the class or it doesn't. The one categorical
+	# field a build CAN change is drive_mode, via a drivetrain conversion, so that stays
+	# as the single fix this solver is allowed to propose.
 	var final_car := _car_with_plan(owned_car, plan)
 	var full_meta := effective_meta(final_car, meta)
-	var detune := 1.0
 	if not restriction.is_empty():
 		var rally := {"restriction": restriction}
-		detune = RallyLibrary.qualifying_detune(rally, full_meta)
-		if detune < 0.0:
-			# Nothing a build can do — name it instead of returning a plan that lies.
-			plan["blocked"] = RallyLibrary.ineligibility_reason(rally, full_meta)
+		var reason := RallyLibrary.ineligibility_reason(rally, full_meta)
+		if reason != "":
+			# Name it rather than returning a plan that lies about qualifying.
+			plan["blocked"] = reason
 			var wanted := _drivetrain_fix(owned_car, restriction, full_meta, meta)
-			if wanted >= 0:
+			if wanted >= 0 and RallyLibrary.is_eligible(rally, _with_drive(full_meta, wanted)):
 				plan["drivetrain"] = wanted
 				plan["blocked"] = ""
-				detune = RallyLibrary.qualifying_detune(rally, _with_drive(full_meta, wanted))
-			if detune < 0.0:
-				return _finish(plan, owned_car, 1.0)
-	if free_only:
-		# Never trim DOWN: an over-limit car is the "Too powerful" prompt's business,
-		# a deliberate decision point this must not quietly bypass.
-		detune = maxf(detune, float(owned_car.get("tuning", {}).get("engine_detune", 1.0)))
-	return _finish(plan, owned_car, detune)
+	# The detune is carried through untouched. It survives as a HANDLING lever the
+	# player sets deliberately; it is no longer something a build plan reaches for,
+	# because there is nothing left to duck under.
+	return _finish(plan, owned_car, float(owned_car.get("tuning", {}).get("engine_detune", 1.0)))
 
 
 # Stamp the chosen detune on the plan and work out whether it does anything at all.
@@ -877,11 +869,12 @@ static func _slot_combinations(slots: Array, candidates: Dictionary) -> Array:
 	return out
 
 
-# Power-to-weight of a hypothetical build: the p/w-slot picks in `combo`, plus every
-# owned non-p/w part left as-is (they can't move the figure, but leaving them out
-# would mean scoring a car nobody is proposing to build).
-static func _combo_pw(owned_car: Dictionary, meta: Dictionary, combo: Array,
-		pw_slots: Array) -> float:
+# Performance rating of a hypothetical build: the searched-slot picks in `combo`, plus
+# every owned part from the other slots left as-is. Those DO move the rating (tyres and
+# aero reach the benchmark lap even though they never reached power-to-weight), so
+# leaving them out would score a car nobody is proposing to build.
+static func _combo_rating(owned_car: Dictionary, meta: Dictionary, combo: Array,
+		pw_slots: Array) -> int:
 	var probe := owned_car.duplicate(true)
 	var fitted: Array = []
 	for item_id in combo:
@@ -895,32 +888,20 @@ static func _combo_pw(owned_car: Dictionary, meta: Dictionary, combo: Array,
 	var tuning: Dictionary = (probe.get("tuning", {}) as Dictionary).duplicate()
 	tuning["engine_detune"] = 1.0   # the build is judged at full tune; detune trims after
 	probe["tuning"] = tuning
-	return CarLibrary.power_to_weight(effective_meta(probe, meta))
+	return CarPerformance.rating(CarPerformance.merged_meta(probe, meta))
 
 
-# Is `pw`/`cost` a better pick than the incumbent? Unconstrained the objective is the
-# highest p/w (cheapest on a tie). Under a cap it inverts to the SMALLEST p/w that
-# still clears the cap, so detune has the least work to do and the car keeps as much
-# of itself as possible — with "nothing clears it" falling back to plain maximisation,
-# because then every build is legal anyway.
-static func _combo_better(pw: float, cost: int, best_pw: float, best_cost: int,
-		pw_max: float, first: bool) -> bool:
+# Is `rating`/`cost` a better pick than the incumbent? The objective is the highest
+# rating, cheapest on a tie — stars the player doesn't have to spend for the same car
+# are stars kept. The ONE shared scorer: every caller of auto_build_plan ranks builds
+# through here, so the restore-to-race path and the Auto button can't disagree about
+# what "best" means.
+static func _combo_better(rating: int, cost: int, best_rating: int, best_cost: int,
+		first: bool) -> bool:
 	if first:
 		return true
-	if pw_max > 0.0:
-		# Compare in the ROUNDED hp/tonne the eligibility gate itself uses, so a build
-		# the search calls a fit really does pass is_eligible.
-		var cap := roundi(pw_max)
-		var fits := roundi(pw * CarLibrary.KW_KG_TO_HP_TONNE) >= cap
-		var best_fits := roundi(best_pw * CarLibrary.KW_KG_TO_HP_TONNE) >= cap
-		if fits != best_fits:
-			return fits
-		if fits:
-			if not is_equal_approx(pw, best_pw):
-				return pw < best_pw
-			return cost < best_cost
-	if not is_equal_approx(pw, best_pw):
-		return pw > best_pw
+	if rating != best_rating:
+		return rating > best_rating
 	return cost < best_cost
 
 

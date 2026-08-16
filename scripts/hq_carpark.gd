@@ -9,13 +9,13 @@ extends RefCounted
 var _hq: HqController
 
 # The car-park "Change Upgrades" popup, opened from the over-limit prompt as an alternative
-# to detuning: a house-themed overlay hosting an UpgradesMenu for the focused car (no
+# to detuning: a house-themed overlay hosting an UpgradesGrid for the focused car (no
 # engine-swap row) — see _show_upgrades_popup, and MenuPage.open_modal for why it gets its own
 # CanvasLayer rather than the car park's. Built lazily. _dirty tracks whether any upgrade
 # changed, so closing rebuilds the eligible lineup (see _show/_close_upgrades_popup).
 var _upgrades_popup: Control
-var _upgrades_popup_menu: UpgradesSimple
-var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
+var _upgrades_popup_menu: UpgradesGrid
+var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesGrid.bind_close_button)
 var _upgrades_popup_dirty := false
 # Tracks the currently open car-park ConfirmPopup (detune confirm), so
 # _carpark_modal_open can detect it without a dedicated visible flag.
@@ -115,14 +115,12 @@ func _evict_unowned_cached_cars(keep: Array = []) -> void:
 			_free_cached_car(id)
 
 
-# Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
-# any OVER-POWERED car a detune could fit under the rally's pw_max cap — those park
-# looking eligible, and pressing Start pops the over-limit prompt routing to the
-# upgrades menu (_show_over_limit_prompt / _on_start_pressed).
+# Park the owned cars ELIGIBLE for the selected rally (the car-select screen). Rally
+# entry is categorical, so the only car that parks needing a change first is one whose
+# drive mode a conversion would fix (_drivetrain_needed).
 func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_hq._selected_rally_id)
 	var eligible: Array = []
-	var needs_detune := {}
 	var needs_drivetrain := {}
 	for car in Save.profile.get(Save.KEY_CARS, []):
 		# NO challenge-lock exclusion (the rationale is spelled out in _swap_targets): a
@@ -134,34 +132,14 @@ func _build_eligible_lineup() -> void:
 		var id := int(car.get("instance_id", -1))
 		if int(plan["drivetrain"]) >= 0:
 			needs_drivetrain[id] = int(plan["drivetrain"])
-		if float(plan["detune"]) > 0.0:
-			needs_detune[id] = float(plan["detune"])
-	_build_lineup(eligible)  # clears _detune_needed / _drivetrain_needed, then repopulated below
-	_hq._detune_needed = needs_detune
+	_build_lineup(eligible)  # clears _drivetrain_needed, then repopulated below
 	_hq._drivetrain_needed = needs_drivetrain
-
-
-# The engine-detune fraction that would let `owned` enter `rally`, for the one case
-# the car-park prompt covers: the car is TOO POWERFUL (its current p/w sits over the
-# rally's pw_max cap) but tuning the engine down would duck it under. -1.0 when the
-# car is under the cap (already eligible, or ineligible for a reason detuning can't
-# fix — those cars keep today's behaviour) or when no detune qualifies it.
-func _qualifying_detune_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary, drive_override := -1) -> float:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("pw_max"):
-		return -1.0
-	# Compare the ROUNDED hp/tonne (the figure the player actually sees) so this agrees with
-	# RallyLibrary.ineligibility_reason — a car already at/under the displayed cap shouldn't
-	# be treated as needing a detune.
-	if CarLibrary.power_to_weight_hp_tonne(meta) <= roundi(float(r["pw_max"])):
-		return -1.0
-	var frac := RallyLibrary.qualifying_detune(rally, _full_power_meta(owned, entry, drive_override))
-	return frac if frac > 0.0 and frac < 1.0 else -1.0
 
 
 # The drive mode this car would switch to for `rally` (the rally's required mode), or -1
 # when the rally has no drive_mode rule, the car lacks the swap kit, or it's already in
-# that mode. Judges ONLY the drive_mode dimension — callers layer detune on top.
+# that mode. Judges ONLY the drive_mode dimension — the caller still has to check that
+# the switched car clears the rally's other categorical rules.
 func _switch_target_for(rally: Dictionary, owned: Dictionary, meta: Dictionary) -> int:
 	var r: Dictionary = rally.get("restriction", {})
 	if not r.has("drive_mode"):
@@ -175,35 +153,15 @@ func _switch_target_for(rally: Dictionary, owned: Dictionary, meta: Dictionary) 
 
 
 # The drive mode `owned` must switch to in order to enter `rally`, or -1 when it's
-# already compliant OR can't be switched (no swap kit / rally has no drive_mode rule /
-# fails for another reason). Accepts a switch that qualifies ALONE, or a switch that
-# qualifies when STACKED with an engine detune (see _qualifying_detune_for).
-func _qualifying_drivetrain_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary) -> int:
+# already compliant OR the switch wouldn't help (no swap kit / rally has no drive_mode
+# rule / the car still fails another categorical rule after switching).
+func _qualifying_drivetrain_for(rally: Dictionary, owned: Dictionary, _entry: Dictionary, meta: Dictionary) -> int:
 	var target := _switch_target_for(rally, owned, meta)
 	if target < 0:
 		return -1
 	var switched := meta.duplicate()
 	switched["drive_mode"] = target
-	if RallyLibrary.is_eligible(rally, switched):
-		return target
-	return target if _qualifying_detune_for(rally, owned, entry, switched, target) > 0.0 else -1
-
-
-# The car's effective stats at FULL engine tune (detune 1.0), whatever the stored
-# slider value — the base the qualifying-detune math scales down from, so the prompt
-# always proposes an absolute slider setting. `drive_override` stamps a switched
-# drive_mode on top, so a switch+detune stack is evaluated on the POST-switch mode.
-func _full_power_meta(owned: Dictionary, entry: Dictionary, drive_override := -1) -> Dictionary:
-	return _meta_with_drive(_hq._detuned_to_full(owned), entry, drive_override)
-
-
-# effective_meta for `full`, optionally stamping a switched drive_mode on top (so a
-# switch+detune stack is evaluated on the POST-switch mode). Shared meta tail.
-func _meta_with_drive(full: Dictionary, entry: Dictionary, drive_override: int) -> Dictionary:
-	var out := UpgradeLibrary.effective_meta(full, entry)
-	if drive_override >= 0:
-		out["drive_mode"] = drive_override
-	return out
+	return target if RallyLibrary.is_eligible(rally, switched) else -1
 
 # Park ALL owned cars for the title screen, so the player's whole collection is on
 # show in the car park behind the title overlay (rebuilt on entering EXTERIOR). A
@@ -654,8 +612,8 @@ func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Co
 	return page
 
 
-# An over-powered focused car (parked because a detune would duck it under the rally's
-# pw_max cap — _build_eligible_lineup) looks eligible in the car park; pressing Start
+# An over-ceiling focused car (parked because a detune would duck it under a Rally
+# CHALLENGE's ceiling) looks eligible in the car park; pressing Start
 # pops this on-brand modal instead. It offers three left/right-navigable choices —
 # Change Upgrades (open the gated upgrades menu, where detune / ballast / stripping parts
 # brings the car under the cap — the menu won't let them leave until it's eligible) or
@@ -686,7 +644,7 @@ func _detune_change_upgrades() -> void:
 
 
 # Show the upgrades menu over the car-park car-select for the focused car, as an on-brand
-# centred modal. Reuses the UpgradesMenu component with NO engine-swap row (on_swap left
+# centred modal. Reuses the UpgradesGrid component with NO engine-swap action (on_swap left
 # invalid — the swap flow would change the HQ view). Nav-wired so it's keyboard/gamepad
 # navigable; Done / back closes it (see _close_upgrades_popup).
 func _show_upgrades_popup(owned: Dictionary) -> void:
@@ -698,9 +656,9 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 				# _modal_body_width clamps it to whatever the frame can actually show;
 				# chrome = the panel's 20-unit padding either side plus the modal margin.
 				vbox.custom_minimum_size = Vector2(_hq._modal_body_width(460.0, 72.0), 0)
-				# No title here: UpgradesSimple draws its own heading, which is what
-				# carries the star balance (UpgradesMenu.build_title_row).
-				_upgrades_popup_menu = UpgradesSimple.new()
+				# No title here: UpgradesGrid draws its own heading, which is what
+				# carries the star balance (UpgradesGrid.build_title_row).
+				_upgrades_popup_menu = UpgradesGrid.new()
 				vbox.add_child(_upgrades_popup_menu),
 			func(footer: HBoxContainer) -> void:
 				# Done is the gated exit (bind_close_button below blocks it, AND back,
@@ -715,17 +673,16 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 				footer.add_child(_upgrades_popup_done))
 	_upgrades_popup_dirty = false
 	_upgrades_popup.visible = true
-	var pw_limit := -1.0
+	var rating_limit := -1.0
 	if _hq._carpark_mode == _hq.CarparkMode.CHALLENGE:
-		pw_limit = ChallengeLibrary.current_ceiling(
+		rating_limit = ChallengeLibrary.current_ceiling(
 			_hq._challenge_kind, int(Time.get_unix_time_from_system()))
-	else:
-		var rally := RallyLibrary.by_id(_hq._selected_rally_id)
-		var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
-		pw_limit = float(restriction.get("pw_max", -1.0))
-	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
-	# Gate Done + Esc/back on the rally's p/w cap: over the cap, the button goes red and
-	# neither it nor MenuNav's on_back closes the popup until the player detunes under it.
+	# else: a career rally has no performance ceiling at all — its restrictions are
+	# categorical — so the upgrades popup opens uncapped (-1.0).
+	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), rating_limit)
+	# Gate Done + Esc/back on the challenge's ceiling: over it the button goes red and
+	# neither it nor MenuNav's on_back closes the popup until the build is back under —
+	# over the ceiling the car is ineligible, so closing would only defer the refusal.
 	_upgrades_popup_menu.bind_close_button(_upgrades_popup_done, _close_upgrades_popup)
 	UITheme.enforce(_upgrades_popup)
 	MenuNav.attach(_upgrades_popup, {
@@ -734,7 +691,7 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 	})
 
 
-# A popup upgrade edit: just flag dirty. The UpgradesMenu already repainted its own detune
+# A popup upgrade edit: just flag dirty. The UpgradesGrid already repainted its own detune
 # label + gated Done button (the visible feedback); the parked-car prop + lineup are rebuilt
 # on close so a live rebuild can't steal focus from the popup mid-edit.
 func _on_popup_upgrade_changed() -> void:

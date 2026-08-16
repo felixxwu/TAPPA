@@ -45,14 +45,15 @@ reads it and applies it **last** (after grip/brake/aero) — a direct `0–100%`
 scale on the fitted engine's torque, so it scales whatever torque the swapped-in
 engine + upgrade kits produced. But it is **not** a `TuningLibrary.AXES` entry
 and its **slider no longer lives in the tuning panel** — it moved to the
-**upgrades menu** (`UpgradesMenu`), because detune is a power / power-to-weight
+**upgrades grid** (`UpgradesGrid`, behind its `tune` tile), because detune is a power / power-to-weight
 knob rather than a handling axis. It needs no upgrade to unlock — every car can
 be detuned, e.g. to duck under a rally's power-to-weight ceiling. (Detune isn't
 the only p/w lever — the weight slot's **free ballast** adds mass to drop p/w the
 other way; see [upgrade-catalogue.md](upgrade-catalogue.md).) It also feeds
 `UpgradeLibrary.effective_meta`, so a detuned car's reduced torque affects
 displayed power-to-weight and rally eligibility, not just the live-fielded car.
-An over-powered car (over a rally's `pw_max` cap) still parks in the rally lineup
+An over-ceiling car (over a Rally Challenge's performance ceiling — career rallies have
+none) still parks in the lineup
 with a plain Start; pressing Start pops a **"Too powerful"** prompt whose only
 route through is **Change Upgrades**, which opens the gated upgrades menu so the
 player sheds power themselves (detune slider / ballast / stripping parts). That
@@ -63,14 +64,16 @@ CARPARK. The **pre-event start-line** menu offers the same
 Change-Upgrades prompt on Start (see [start-line.md](start-line.md)). (Rallies
 have no hard power floor, so an underpowered car can still enter a higher class — it
 just gets a non-blocking "Underpowered" warning at car selection in the HQ car park.) In the
-upgrades menu the detune slider's value label pairs the percent with the car's
-live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
-`UpgradesMenu`'s detune-label helper → `effective_meta`), so you can dial to a
-target band by eye. The label shows **only** the `N% - M hp/tonne` readout — no
-cap or limit text. When the host passes a `pw_limit` (the start line and
-car-park Change-Upgrades popup pass the rally's `pw_max`; the HQ lift omits it,
-for free tuning) the ceiling instead lives on the **gated close button** (which
-turns red and blocks closing while over the cap — see [menus.md](menus.md)). The
+upgrades grid the detune slider lives behind the `tune` tile, and its value label reads the
+car's live power-to-weight at that setting (`200 HP/T`, via
+`UpgradesGrid._detune_label_text` → `effective_meta`) while the tile beneath carries the
+percentage — the slider is the place you care about the OUTCOME, so you can dial to a
+target band by eye. The label shows **only** that power-to-weight readout — no
+cap or limit text — the whole-build **performance rating** and any ceiling live in the
+page's own readout row and on the **gated close button** (which turns red and blocks
+closing while over — see [menus.md](menus.md)). Hosts source that ceiling from
+`DrivingContext.rating_limit()`; only a Rally Challenge has one, and the HQ lift omits it
+for free tuning. The
 detune slider always spans the full 0–100 % — eligibility is enforced by that
 gated button, not by capping the slider.
 
@@ -150,8 +153,9 @@ The three handling-axis sliders live in one reusable control, `TuningPanel`
 (`scripts/tuning_panel.gd`, a `VBoxContainer`), shared by both places tuning is
 offered. Each labeled slider row (name + value column, slider, extremity labels,
 and the focus highlight) is built by the shared `SliderRow.build` helper
-(`scripts/slider_row.gd`), which the upgrades menu's detune row uses too — so the
-two panels' rows can't drift apart. It owns the slider rows, the locked-axis greying/"needs X kit" notes,
+(`scripts/slider_row.gd`), which the upgrades grid's detune slider popup uses too
+(`UpgradeSlotPopup.open_slider`) — so a slider looks and behaves the same wherever the
+game offers one. It owns the slider rows, the locked-axis greying/"needs X kit" notes,
 the **Reset to neutral** action, and the immediate `Save.set_tuning`
 persistence; a host binds it with `setup(owned_car, on_change, on_wheels := Callable())`
 and calls `refresh()`, and is notified via `on_change` after each edit so it can re-field
@@ -182,15 +186,15 @@ _on_wheels.is_valid()`) — the start-line's copy of the panel (below) has nowhe
 sensible to send a mid-rally wheel swap, so it leaves `on_wheels` unset and the
 button stays hidden there.
 
-`TuningPanel` has a sibling for the **upgrades** half: `UpgradesMenu`
-(`scripts/upgrades_menu.gd`, also a reusable `VBoxContainer` with the same
-`setup(owned, on_change, …)` shape), shared by the HQ lift and the car-park
-detune-to-enter prompt's Change-Upgrades popup — see
-[upgrade-catalogue.md](upgrade-catalogue.md). `UpgradesMenu` also hosts the
-**engine-detune slider** (0–100%, step 5) at the bottom of the menu, with the
-`N% - M hp/tonne` value label described above (the `pw_limit` ceiling lives on the
-gated close button, not the label) and its immediate `Save.set_engine_detune`
-persistence.
+`TuningPanel` has a sibling for the **upgrades** half: `UpgradesGrid`
+(`scripts/upgrades_grid.gd`, also a reusable `VBoxContainer` with the same
+`setup(owned, on_change, …)` shape), shared by the HQ lift, the car-park
+detune-to-enter prompt's Change-Upgrades popup, the start line and the reward reveal — see
+[upgrade-catalogue.md](upgrade-catalogue.md). `UpgradesGrid` also owns the
+**engine detune**, as a `tune` tile in its grid whose popup is a slider (0–100%, step 5)
+with the power-to-weight value label described above (the rating ceiling lives on the
+page's performance readout and the gated close button, not on this label) and its
+immediate `Save.set_engine_detune` persistence.
 
 - **Garage tuning lift** (`hq.gd`, `LiftPage.TUNE`) — embeds the panel with a
   no-op `on_change` (the change lands on the car's next fielding) and
@@ -205,11 +209,10 @@ persistence.
   live, staged `VehicleBody3D` via `apply_owned` would relocate its wheels
   (detach/re-attach) and reset its pose, corrupting the body (wheels drop through
   the floor — see the `Car.respawn` note). Handling tuning only — the
-  engine-detune slider now lives in the start line's **Upgrades** overlay
-  (`UpgradesMenu`), which is where the rally's `pw_limit` (=
-  `RallyLibrary.qualifying_detune`-relevant `pw_max`) is passed so the overlay's
-  gated **Done** button enforces the ceiling (red, blocks closing while over the
-  cap); car swaps are not offered.
+  engine detune now lives in the start line's **Upgrades** overlay
+  (`UpgradesGrid`, behind its `tune` tile), which is where `StartLine._rating_limit()` is passed so the overlay's
+  gated **Done** button enforces the ceiling (red, blocks closing while over); car swaps
+  are not offered.
 
 ## The tuning lift (UI)
 
@@ -249,15 +252,17 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
   refresh). Each row uses horizontal space: a left column
   with the axis name above its current value, beside a right column with the slider above
   its two extremity labels. Each change saves immediately via `Save.set_tuning`.
-- **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
-  (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
-  plus one button per catalogue part in that slot, with each part greyed until its kit
-  is fitted to this car and the active pick bracketed **and accent-green** (drivetrain is
-  instead an RWD/AWD/FWD picker). Upgrades are **car-bound**: nothing is consumed from an
-  unlocked pool — picking an option toggles the part on/off via `Save.set_upgrade_enabled`
-  (one enabled per slot). There is no stats line; the live power-to-weight readout rides on
-  the **engine-detune slider's value label** at the bottom of the menu, below the part rows
-  and the lift-only engine-swap row. See
+- **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesGrid` component
+  (`scripts/upgrades_grid.gd`): a heading row carrying the star balance, a single
+  `PERFORMANCE` line, and a 3-column grid of icon **tiles**, one per
+  `UpgradeOptions.grid_slots()` entry — the seven catalogue slots plus the `engine`
+  (swap) and `tune` (detune) pseudo-slots, so every lever the page offers is found by
+  looking rather than by scrolling. A tile reads `<slot>: <current pick>` and opens
+  `UpgradeSlotPopup` listing that slot's options, with locked ones shown greyed and
+  captioned with their reason and buyable ones carrying a star price. Upgrades are
+  **car-bound**: nothing is consumed from an unlocked pool — picking an option toggles the
+  part on/off via `Save.set_upgrade_enabled` (one enabled per slot), or buys it first
+  (drivetrain is instead an RWD/AWD/FWD pick). See
   [upgrade-catalogue.md](upgrade-catalogue.md) and [engine-swap.md](engine-swap.md).
   (There is no Repair action any more — see [damage.md](damage.md).)
 

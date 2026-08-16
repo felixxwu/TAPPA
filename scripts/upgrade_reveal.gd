@@ -3,7 +3,7 @@ class_name UpgradeReveal
 # A self-contained reward card: a slot-machine spin that lands on a won upgrade,
 # then an Upgrades/Next action row — normal parts are granted fitted-disabled to
 # the driven car and enabled later in the upgrades menu (no Apply/Keep here); Next
-# continues past the card, Upgrades opens the same real UpgradesMenu component the
+# continues past the card, Upgrades opens the same real UpgradesGrid component the
 # pre-stage start line / HQ garage use (features/upgrade-catalogue.md) so the player
 # can slot the just-won part right away, gated by the same rally p/w-limit warning.
 # Consumables and the drivetrain kit skip straight to the Upgrades/Next row. Emits
@@ -30,7 +30,7 @@ var _skip_button: Button
 var _action_box: HBoxContainer
 var _upgrades_button: Button
 var _next_button: Button
-var _upgrades_menu: UpgradesSimple
+var _upgrades_menu: UpgradesGrid
 var _upgrades_overlay: CanvasLayer
 var _upgrades_back: Button
 # The spin target + landing callback, stashed so a skip can run the SAME landing
@@ -258,9 +258,9 @@ func _on_next_pressed() -> void:
 	finished.emit()
 
 
-# Upgrades: open the SAME UpgradesMenu component the pre-stage start line / HQ garage
+# Upgrades: open the SAME UpgradesGrid component the pre-stage start line / HQ garage
 # use (features/upgrade-catalogue.md), fed the driven car + the active rally's p/w
-# ceiling so the over-limit warning (UpgradesMenu.bind_close_button/request_close)
+# ceiling so the over-limit warning (UpgradesGrid.bind_close_button/request_close)
 # behaves identically to the pre-stage usage — no bespoke warning logic here.
 func _on_upgrades_pressed() -> void:
 	if _upgrades_overlay == null:
@@ -269,9 +269,9 @@ func _on_upgrades_pressed() -> void:
 	# One accessor for the ceiling, so a CHALLENGE run's cap applies here too. This
 	# used to read RallySession.rally_id()'s restriction directly, which resolves to
 	# "no limit" mid-challenge (rally_id() is "") — the reveal's Upgrades overlay had
-	# no p/w gate at all for a challenge car.
-	var pw_limit := DrivingContext.pw_limit_for_car(_car_instance_id)
-	_upgrades_menu.setup(owned, Callable(), Callable(), pw_limit)
+	# no performance gate at all for a challenge car.
+	var rating_limit := DrivingContext.rating_limit_for_car(_car_instance_id)
+	_upgrades_menu.setup(owned, Callable(), Callable(), rating_limit)
 	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
 	_upgrades_overlay.visible = true
 	get_viewport().gui_release_focus()
@@ -281,7 +281,7 @@ func _on_upgrades_pressed() -> void:
 	})
 
 
-# Done (or back) in the Upgrades overlay: only reachable once UpgradesMenu.can_close()
+# Done (or back) in the Upgrades overlay: only reachable once UpgradesGrid.can_close()
 # is satisfied (the same p/w gate as the pre-stage popup). Hide the overlay and
 # continue exactly as Next would — the player is never stuck once they're done editing.
 func _close_upgrades() -> void:
@@ -293,7 +293,7 @@ func _close_upgrades() -> void:
 # shape as start_line._build_menu_overlay / hq's upgrades popup, just built locally
 # since this card doesn't have a shared host overlay builder to call into.
 func _build_upgrades_overlay() -> void:
-	_upgrades_menu = UpgradesSimple.new()
+	_upgrades_menu = UpgradesGrid.new()
 	var layer := CanvasLayer.new()
 	layer.layer = 6
 	add_child(layer)
@@ -306,8 +306,8 @@ func _build_upgrades_overlay() -> void:
 	col.add_theme_constant_override("separation", UITheme.GAP)
 	col.custom_minimum_size = Vector2(380.0, 0)
 	panel.add_child(col)
-	# No title here: UpgradesSimple draws its own heading, which is what carries the star
-	# balance (UpgradesMenu.build_title_row).
+	# No title here: UpgradesGrid draws its own heading, which is what carries the star
+	# balance (UpgradesGrid.build_title_row).
 	col.add_child(_upgrades_menu)
 	_upgrades_back = UITheme.button("Done")
 	_upgrades_back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

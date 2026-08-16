@@ -159,7 +159,7 @@ the dump valve. It's a pure edge-trigger flag read once by the audio bridge
 Three non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
 / `engine_stage2` power upgrades — `turbo_small`, `turbo_large`, and
 `supercharger` (see [Supercharger](#supercharger-belt-drive)). Each also
-carries a `menu_label` (the `UpgradesMenu` selector shows "Small" / "Big" /
+carries a `menu_label` (the turbo tile's option popup shows "Small" / "Big" /
 "Supercharger" rather than the full name) and a `turbo_parasitic_friction`
 term (the always-on backpressure N·m). `UpgradeLibrary.UPGRADES` no longer
 authors a `tier` field at all — that field is gone from the table entirely;

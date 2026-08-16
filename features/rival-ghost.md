@@ -72,8 +72,7 @@ target, so a low floor only extends what is REACHABLE and never makes a normal g
 slower. Re-run that audit after changing either exponent.
 
 Both multipliers default to exactly `1.0` and are pure no-ops there, which is what keeps
-every existing caller — and the baked rival times in `data/opponent_cache.json` —
-unchanged.
+every existing caller, and every rival time, unchanged.
 
 ### Bracket, clamps and exactness
 
@@ -256,6 +255,28 @@ feature untestable. Only *visibility* is headless-gated, inside `GhostCar`.
 The ghost node is `_replace_named_child`'d, not `_ensure_child`'d: reuse would carry the
 previous event's pace and car build into the next stage.
 
+## Rebuilt when the field is re-drawn
+
+Phase 1 snapshots P1 when the stage BUILDS — which is before the start-line overlay
+appears. The player can change upgrades on that overlay, and because the rival grid is
+matched to the player's `CarPerformance` rating
+([car-performance.md](car-performance.md)), that re-matches the whole field. The leader
+they are about to chase is then not the one the ghost was built from.
+
+So `RallySession.refield_opponents` emits **`opponent_field_changed`**, and
+`world.gd::_on_opponent_field_changed` re-runs `_setup_stage_splits` against the stored
+`_splits_track_result` — re-reading P1 and rebuilding the ghost node. The track is not
+regenerated; this is a pure re-read.
+
+Two guards, both load-bearing:
+
+- **Nothing happens once the stage has started.** `_rival_pace` is set at GO, so a
+  non-null pace means the refresh is skipped — swapping the ghost out mid-lap would move
+  the player's target while they are chasing it.
+- **A refused or no-op refield emits nothing.** `refield_opponents` returns `false` (and
+  stays silent) when the rating is unchanged or when a stage has already been raced, so
+  opening the upgrades page and closing it unchanged does not churn the ghost.
+
 ## One pace model, two consumers
 
 The in-stage "vs P1" delta popup ([stage.md](stage.md)) now takes its **times** from the
@@ -299,34 +320,33 @@ rival whose car is simultaneously staged as a roadside wreck.
 deficit split set the exponents themselves, precisely so retuning the ghost's look cannot
 break unrelated assertions.
 
-## Baked pace seeds (`skill_k`)
+## Pace seeds (`skill_k`) — the seam, now always unseeded
 
-The expensive part of the solve is the **search**, not the sweep, so the answer to the
-search is baked: one float per event, per rival, in `data/opponent_cache.json`.
+The expensive part of the solve is the **search**, not the sweep, so `RivalPace.solve`
+takes an optional precomputed `cached_k` seed to skip it.
 
-- **Filled only for each event's P1** by `tools/generate_opponent_cache.gd`
-  (`_fill_ghost_seeds`) — the only rival a ghost is built for. Every other rival gets `-1`
-  ("no seed"). Filling the whole field would be ~10x the bake cost for pace nobody
-  displays; a future multi-rival field is where that changes. Currently 96 seeds (32
-  rallies x 3 events), range ~0.15–0.62, adding under 1 KB to a 112 KB file.
-- **Deliberately not the profile arrays.** Storing P1's `s`/`v`/`t` per event would be
-  ~1.3 MB and would store the wrong thing: a speed profile is track-shaped, so a
-  cached-vs-live mismatch would apply baked corner speeds to corners that no longer exist.
-  A seed keeps the profile generated from the live curve.
-- **The seed is a hint, not gospel.** The bake has no `TrackProgress`, so it solves over the
-  cached track — an approximation of the live timed span. At runtime `RivalPace.solve` runs
-  **one** sweep with it, accepts it if the residual is inside
+**Nothing fills it today.** The seeds used to be baked into `data/opponent_cache.json`
+by `tools/generate_opponent_cache.gd`, one float per event for each event's P1. That
+lockfile is gone — the rival field is drawn matched to the player's car rating, so it is
+generated live and cannot be precomputed per rally (see
+[rally-session.md](rally-session.md)). `RallyLibrary.generate_opponent_field` therefore
+emits `"skill_k": []`, `current_event_p1()` surfaces no seed, and every ghost solves
+from scratch with the full bisection.
+
+- **The seam is kept deliberately.** A seed is VALIDATED, not trusted: `RivalPace.solve`
+  runs **one** sweep with it, accepts it if the residual is inside
   `rival_ghost_max_time_residual_ms`, and otherwise warns and falls through to the full
-  14-sweep solve. That check is what turns the cache into a real cached-vs-live divergence
-  detector rather than a silent risk.
-- `RallySession.current_event_p1()` surfaces the current event's seed as `skill_k`.
-  `_p1_skill_seed` takes the target time as an **argument** rather than calling
-  `current_event_target_ms()` — that delegates back to `current_event_p1()`, i.e. infinite
-  recursion.
-- Bumping the field required `OpponentCache.CACHE_VERSION` `"4"` -> `"5"` plus a re-bake.
-  `RallyLibrary.generate_opponent_field` emits `"skill_k": []` as a placeholder so a freshly
-  generated field and a round-tripped one stay dict-for-dict identical — the whitelist
-  round-trip test compares whole dicts, so a shape mismatch fails there.
+  14-sweep solve. Any future precompute can hand a seed back in without re-deriving that
+  safety check.
+- **Never bake the profile arrays instead.** Storing P1's `s`/`v`/`t` per event would be
+  ~1.3 MB and would store the wrong thing: a speed profile is track-shaped, so a
+  stale-vs-live mismatch would apply old corner speeds to corners that no longer exist.
+  A seed keeps the profile generated from the live curve.
+
+- `RallySession.current_event_p1()` surfaces the current event's seed as `skill_k`
+  (empty today). `_p1_skill_seed` takes the target time as an **argument** rather than
+  calling `current_event_target_ms()` — that delegates back to `current_event_p1()`,
+  i.e. infinite recursion.
 
 ## Ghost dust
 
@@ -447,8 +467,6 @@ feature shipped lived in the plumbing rather than the pieces (a wrong-arity call
 only fired at countdown zero, a solve scheduled before the timing origin was anchored, a
 180-degree facing error): the parts were tested, the ORDER was not. It builds the world once
 in `before_all` — per-test instantiation cost 28 s for the file.
-`tests/headless/test_opponent_cache.gd` — the `skill_k` round-trip, tolerance of a
-seed-less legacy entry, and that the committed lockfile actually carries seeds.
 `tests/headless/test_lap_time_model.gd` — the multiplier seam, and that its defaults are
 byte-identical no-ops. `tests/headless/test_track_progress.gd` — the two new accessors.
 Synthetic curves come from `tests/headless/track_fixtures.gd` (`TrackFixtures`).

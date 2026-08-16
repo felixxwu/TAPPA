@@ -625,6 +625,27 @@ func test_migration_refuses_newer_version() -> void:
 	assert_true(_save._migrate(future).is_empty(), "a newer-version profile is refused (returns empty)")
 
 
+func test_migration_v2_restores_full_power_to_detuned_cars() -> void:
+	# v2 -> v3: rally entry stopped gating on power-to-weight, so a saved engine_detune
+	# set to duck under a ceiling has nothing left to duck under — and the slider that
+	# set it went with the ceiling. Without this the car would be permanently and
+	# invisibly down on power with no way for the player to put it right.
+	var v2: Dictionary = _save._default_profile()
+	v2["schema_version"] = 2
+	v2[_save.KEY_CARS] = [
+		{"model_id": "a", "tuning": {"engine_detune": 0.72}},
+		{"model_id": "b", "tuning": {"engine_detune": 1.0}},
+		{"model_id": "c", "tuning": {}},
+	]
+	var migrated: Dictionary = _save._migrate(v2)
+	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
+	var cars: Array = migrated[_save.KEY_CARS]
+	assert_eq(float(cars[0]["tuning"]["engine_detune"]), 1.0, "the detuned car is restored to full power")
+	assert_eq(float(cars[1]["tuning"]["engine_detune"]), 1.0, "an already-full car is untouched")
+	assert_false((cars[2]["tuning"] as Dictionary).has("engine_detune"),
+		"a car that never carried a detune does not gain one")
+
+
 func test_migration_v1_strips_the_unbound_inventory() -> void:
 	# v1 -> v2: upgrades became car-bound, so the old shared pool of slottable parts is
 	# dropped (they were never applied and have no car to belong to). The repair kits

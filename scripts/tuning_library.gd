@@ -19,7 +19,7 @@ extends RefCounted
 
 # The three handling axes the tuning lift exposes. grip + brake_bias are always
 # available; aero is gated by the aero upgrade (UpgradeLibrary), matching the lift UI. engine_detune is NOT here — it's a power (p/w) knob, so
-# its slider lives in the upgrades menu (UpgradesMenu); apply() still reads the
+# its slider lives in the upgrades grid's tune tile (UpgradesGrid); apply() still reads the
 # stored tuning.engine_detune below, wherever it was set from.
 const AXES := ["grip_balance", "brake_bias", "aero_balance"]
 

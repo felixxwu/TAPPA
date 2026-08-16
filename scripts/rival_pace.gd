@@ -43,10 +43,10 @@ var _total_ms := 0
 
 # Solve for the envelope that puts this car's profile on `target_ms` over `track_result`.
 #
-# `cached_k` is an optional seed seeded from data/opponent_cache.json: pass <= 0 for
-# "none". A seed is VALIDATED, not trusted — one sweep, and if its residual is outside
-# the configured cap we warn and fall back to the full bisection. That check is what
-# turns the cache into a cached-vs-live divergence detector rather than a silent risk.
+# `cached_k` is an optional precomputed seed: pass <= 0 for "none" (the live path, and
+# the only one since the opponent lockfile was removed). A seed is VALIDATED, not
+# trusted — one sweep, and if its residual is outside the configured cap we warn and
+# fall back to the full bisection.
 static func solve(track_result: Dictionary, car_meta: Dictionary, event: Dictionary,
 		target_ms: int, cached_k := -1.0) -> RivalPace:
 	var pace := RivalPace.new()

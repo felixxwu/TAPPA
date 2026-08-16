@@ -28,6 +28,7 @@ with them, and working toward the special-event finale.
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
 | [global-leaderboards.md](global-leaderboards.md) | Optional per-stage world leaderboards — `Leaderboard`, `FirestoreCodec`, the standings interstitial's page 2, the one world-readable Firestore collection |
 | [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, the star-per-placement curve; reveal is geometric now — see map-exploration.md) |
+| [car-performance.md](car-performance.md) | `CarPerformance` — a car's speed as ONE number (Forza-style, higher = faster), derived from a simulated lap of the fixed `BenchmarkTrack` rather than a formula over stats; the `benchmark_*` knobs, the reference-car anchor, and the downforce / drive-mode solver enrichment behind it |
 | [rival-ghost.md](rival-ghost.md) | The rally leader shown on track while you drive — a kinematic ghost posed from `LapTimeModel` re-solved with a degraded driver-skill envelope, so it crosses the line exactly when the standings say it did |
 | [star-economy.md](star-economy.md) | Stars as the one currency — the persisted `stars_earned`/`stars_spent` ledger, what pays them, why gating counts completions instead, buying a car at the present box + the dead-end rescue, and the podium's stars beat |
 | [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm) — the `WeatherLibrary` table that is the single source of truth for every condition, `RallyLibrary.event_weather`, the `GameConfig` blocks it names, and the `RallySession.apply_event_config` funnel that seats it |
@@ -39,7 +40,7 @@ with them, and working toward the special-event finale.
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars (gated on 100% HP), engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
-| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (flat event-gated per-event upgrade pool that may award nothing, the mystery-box roll, the car pick/pricing with its tier clamp + anti-soft-lock) |
+| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (flat event-gated per-event upgrade pool that may award nothing, the mystery-box roll, the car pick/pricing with its tier clamp) |
 | [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, wreck/DNF, no-retry) |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeSession` autoload (resume persistence, per-stage flow, placement reward), the HQ entry-point screen |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
@@ -96,9 +97,10 @@ with them, and working toward the special-event finale.
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Track generation | `scripts/track_generator.gd` |
 | Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
-| Opponent field cache | `scripts/opponent_cache.gd` (`OpponentCache`), `data/opponent_cache.json`, `tools/generate_opponent_cache.gd`, `tools/verify_opponent_cache.gd`, `cache_opponents.sh`, `cache_all.sh` |
 | Eligibility report (rally x car authoring check) | `tools/report_eligibility.gd`/`.tscn`, `report_eligibility.sh` — see [rally-roster.md](rally-roster.md) |
 | Career simulation (progression pacing / soft-lock check) | `tools/sim_career.gd`/`.tscn`, `sim_career.sh`, `tests/headless/test_sim_career.gd` — see [rally-roster.md](rally-roster.md) |
+| Benchmark fidelity calibration (C1 — does the rating rank cars like real stages?) | `tools/calibrate_benchmark.gd`/`.tscn`, `calibrate_benchmark.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
+| Pace-floor calibration (C2 — what `PACE_MIN_FLOOR` can and cannot be derived from) | `tools/calibrate_pace_floor.gd`/`.tscn`, `calibrate_pace_floor.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
 | Cache freshness hook | `.githooks/pre-commit` (regenerates + stages stale `data/*.json` lockfiles on commit), `install_hooks.sh` (one-time `core.hooksPath` setup) — see [track.md](track.md) → *Turn cache* |
 | Lakes / water | `scripts/lake_field.gd` (`LakeField`), `scripts/track_gen_params.gd` (`TrackGenParams`), `scripts/terrain_noise.gd` (`TerrainNoise`), `shaders/water.gdshader` |
 | Track shape params | `scripts/track_gen_params.gd` (`TrackGenParams` — the required shape contract for `TrackGenerator.generate`) |
@@ -112,9 +114,11 @@ with them, and working toward the special-event finale.
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
+| Car performance rating | `scripts/car_performance.gd` (`CarPerformance` — rating, benchmark time, `merged_meta`), `scripts/benchmark_track.gd` (`BenchmarkTrack` — the fixed test track) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, sequential unlock) |
 | Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, consumables) |
-| Upgrades-page stat bars | `scripts/stat_bar.gd` (`StatBar` — segmented bar widget), `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max the bars scale against), `scripts/upgrades_simple.gd` (`_stat_rows`) |
+| Upgrades page | `scripts/upgrades_grid.gd` (`UpgradesGrid` — the slot-tile grid every host mounts), `scripts/upgrade_slot_popup.gd` (`UpgradeSlotPopup` — the per-slot option list / detune slider), `scripts/upgrade_options.gd` (`UpgradeOptions` — the pure option model), `scripts/upgrade_icons.gd` (`UpgradeIcons` — the per-slot SVG icons) |
+| Roster-wide stat scale | `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max), `scripts/stat_bar.gd` (`StatBar` — segmented bar widget drawn against it) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/hq.gd` (tuning lift) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`), `scripts/hq.gd` (`CarparkMode.WHEELS`) |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |

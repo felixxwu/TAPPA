@@ -69,9 +69,6 @@ jobs:
       - name: Verify track lockfile is fresh (hash check, no regeneration)
         run: godot --headless --path . res://tools/verify_track_cache.tscn
 
-      - name: Verify opponent lockfile is fresh (hash check, no regeneration)
-        run: godot --headless --path . res://tools/verify_opponent_cache.tscn
-
   export-web:
     name: Export & deploy web build
     runs-on: ubuntu-latest

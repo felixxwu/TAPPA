@@ -1,5 +1,18 @@
 # Simplified upgrade menu
 
+> **SUPERSEDED — kept only pending a decision to delete it.** The Simple/Advanced split
+> this spec describes no longer exists. The upgrades page was rewritten as a SINGLE view
+> for all four hosts: an icon grid of slot tiles (`scripts/upgrades_grid.gd`,
+> `UpgradesGrid`), each tile opening a popup that lists that slot's options
+> (`scripts/upgrade_slot_popup.gd`, `UpgradeSlotPopup`) off a pure option model
+> (`scripts/upgrade_options.gd`, `UpgradeOptions`). `UpgradesSimple`, `UpgradesMenu` and
+> `AutoUpgradeRow` are gone, along with the stat bars, the per-stat wrenches and the
+> Auto-Upgrade row; engine swap and detune are now tiles in the same grid. The one piece
+> of this spec still live is the solver, `UpgradeLibrary.auto_build_plan()`, which has no
+> menu surface any more. Read [features/upgrade-catalogue.md](../features/upgrade-catalogue.md)
+> and [features/menus.md](../features/menus.md) for the current design; everything below is
+> historical.
+
 **Goal:** someone with no car knowledge opens the upgrades page and leaves with a
 build that is *competitive and legal*, without learning what a supercharger,
 ballast or a detune slider is. Today's page is preserved verbatim behind an

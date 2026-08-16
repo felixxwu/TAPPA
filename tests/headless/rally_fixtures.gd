@@ -6,8 +6,10 @@ extends RefCounted
 # logic / session / eligibility test. Always restore() in teardown.
 #
 # The roster spans the axes tests exercise: an open (no-restriction) workhorse
-# with events, a drive-mode + power-band gate (RWD and FWD), a country gate, a
-# MAP-REVEAL gate (a pin parked outside HQ's lit circle), and a SPECIAL. All live in the
+# with events, a drive-mode gate (RWD and FWD), a country gate, a body/engine gate,
+# a MAP-REVEAL gate (a pin parked outside HQ's lit circle), and a SPECIAL.
+# Restrictions are purely CATEGORICAL, like the shipped roster — there is no
+# power band any more (see RallyLibrary.ineligibility_reason). All live in the
 # real "home" region (a structural id RegionLibrary always ships) so region grouping
 # resolves.
 #
@@ -52,19 +54,19 @@ static func rallies() -> Array[Dictionary]:
 		{
 			"id": "fx_rwd_band", "name": "Fixture RWD Band", "region": "home",
 			"difficulty": 2, "special": false, "map_pos": Vector2(0.56, 0.52),
-			"restriction": {"drive_mode": RWD, "pw_min": 150.0, "pw_max": 270.0},
+			"restriction": {"drive_mode": RWD},
 			"events": [_event(2001), _event(2002), _event(2003)],
 		},
 		{
 			"id": "fx_fwd_band", "name": "Fixture FWD Band", "region": "home",
 			"difficulty": 1, "special": false, "map_pos": Vector2(0.44, 0.52),
-			"restriction": {"drive_mode": FWD, "pw_min": 80.0, "pw_max": 140.0},
+			"restriction": {"drive_mode": FWD},
 			"events": [_event(2101), _event(2102), _event(2103)],
 		},
 		{
 			"id": "fx_country_us", "name": "Fixture US Muscle", "region": "home",
 			"difficulty": 2, "special": false, "map_pos": Vector2(0.50, 0.44),
-			"restriction": {"country": "US", "pw_min": 150.0, "pw_max": 300.0},
+			"restriction": {"country": "US"},
 			"events": [_event(3001), _event(3002), _event(3003)],
 		},
 		{
@@ -72,7 +74,7 @@ static func rallies() -> Array[Dictionary]:
 			# OUTSIDE HQ's lit circle on purpose: dark on a fresh profile, revealed once
 			# fx_open is completed (whose reveal_radius reaches this pin).
 			"difficulty": 3, "special": false, "map_pos": Vector2(0.50, 0.78),
-			"restriction": {"pw_min": 200.0, "pw_max": 320.0},
+			"restriction": {"doors_max": 2},  # two-door only — a body gate, not a performance one
 			"events": [_event(4001), _event(4002), _event(4003)],
 		},
 		{

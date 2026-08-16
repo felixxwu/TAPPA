@@ -216,11 +216,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   (`UpgradeReveal._show_actions`) instead of finishing on its own. **Next**
   (`_on_next_pressed`) is the plain continue — exactly the old immediate
   `finished.emit()`. **Upgrades** (`_on_upgrades_pressed`) builds and opens the SAME
-  `UpgradesSimple` component the pre-stage start line / HQ garage use
-  ([upgrade-catalogue.md](upgrade-catalogue.md)), fed the driven car and the active
-  rally's power-to-weight ceiling (`RallyLibrary.by_id(RallySession.rally_id())
-  .restriction.pw_max`) so `bind_close_button`/`request_close` (which `UpgradesSimple`
-  delegates to its Advanced `UpgradesMenu`) gate the
+  `UpgradesGrid` component the pre-stage start line / HQ garage use
+  ([upgrade-catalogue.md](upgrade-catalogue.md)), fed the driven car and the performance
+  ceiling from `DrivingContext.rating_limit_for_car()` (a Rally Challenge run's; career
+  rallies set none) so `bind_close_button`/`request_close` gate the
   **Done** button on the SAME over-limit warning the pre-stage popup shows — no
   bespoke warning logic in the reveal. Closing that overlay (`_close_upgrades`) resumes
   the flow exactly as Next would, so the player is never stranded mid-edit. The
@@ -247,12 +246,11 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   owns `menu_back`. There they lean on `MenuNav` purely for the WASD gap + `FOCUS_ALL`.
   The HQ lift attaches `MenuNav` to the **Tune/Upgrades sub-boxes only** — never the lift
   root — so the diegetic HUB buttons (`FOCUS_NONE`, manual left/right cursor) stay
-  untouched. The **Upgrades** page is the reusable `UpgradesSimple` component
-  (`scripts/upgrades_simple.gd`), whose Advanced page is `UpgradesMenu`
-  (`scripts/upgrades_menu.gd`); that one owns its OWN focus-preserving
-  `rebuild()` + `MenuNav.attach` (`upgrades_menu.gd` → `rebuild`) — the lift root itself is
-  never attached. `UpgradesMenu.rebuild()` runs on every refresh (per car / after an
-  option press); it frees only the row children (**not** the `MenuNav`
+  untouched. The **Upgrades** page is the reusable `UpgradesGrid` component
+  (`scripts/upgrades_grid.gd`), which owns its OWN focus-preserving
+  `rebuild()` + `MenuNav.attach` (`upgrades_grid.gd` → `rebuild`) — the lift root itself is
+  never attached. `UpgradesGrid.rebuild()` runs on every refresh (per car / after an
+  option is applied); it frees only the grid children (**not** the `MenuNav`
   child — freeing it would kill WASD/gamepad nav) and re-runs `MenuNav.attach` (carrying its
   own stored `_on_back`, so no caller ever has to re-attach) so the new
   buttons become focusable and its cursor-revive `first` re-seats on a live control. Note
@@ -260,9 +258,9 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `queue_free`d this frame) — the rebuild frees whole row containers, whose descendant
   buttons aren't themselves `is_queued_for_deletion()`, so a deferred grab that ignored
   ancestors would land on a doomed button and lose focus next frame. To keep the cursor
-  put when an **option press** triggers the rebuild (rather than flinging it to the
-  top of the list), each interactive row control carries a stable `upgrade_focus_key` meta
-  (`opt:<slot>:<id>`, `drivetrain:<mode>`, `swap`); `rebuild()` captures the focused
+  put when applying an option triggers the rebuild (rather than flinging it to the
+  first tile), each tile carries a stable `upgrade_focus_key` meta (its slot);
+  `rebuild()` captures the focused
   control's key before clearing and `_restore_focus` re-grabs the FRESH control with that
   key afterward (using the same dying-subtree guard so it doesn't grab the about-to-be-
   freed old one).
@@ -307,13 +305,14 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `car.retune()`. Opening
   **Upgrades** hides the start overlay and attaches `MenuNav` to the upgrades overlay
   (close routed via `on_back` — here the gated `request_close`); it opens the shared
-  `UpgradesSimple` (see below) — whose Advanced page hosts the **engine-detune slider**
-  (at the bottom) — edits re-field the live car via `car.refit_upgrades()`.
-  Here `UpgradesSimple` is passed the rally's `pw_max` as `pw_limit`, so the overlay's close
-  button reads **Done** and, while the build exceeds the cap, turns red
-  (**"Over limit — reduce to N hp/tonne"**) and blocks closing — both the button and Esc /
-  back are refused until the player detunes under the cap. The HQ garage lift omits `pw_limit`
-  (default `-1`) so the button stays a plain **Back** that closes freely. The detune slider
+  `UpgradesGrid` (see below) — whose `tune` tile hosts the **engine-detune slider** —
+  edits re-field the live car via `car.refit_upgrades()`.
+  Here `UpgradesGrid` is passed `StartLine._rating_limit()` (a thin wrapper over
+  `DrivingContext.rating_limit()`), so the overlay's close button reads **Done** and, while
+  the build exceeds the ceiling, turns red (**"Over limit — reduce to N performance"**) and
+  blocks closing — both the button and Esc / back are refused until the build is back
+  under. Only a Rally Challenge sets a ceiling; a career rally and the HQ garage lift leave
+  it at `NO_LIMIT` (`-1`) so the button stays a plain **Back** that closes freely. The detune slider in the `tune` tile's popup
   spans the full **0–100 %** in both places — eligibility is enforced by the gated Done
   button, not by capping the slider. The upgrade
   re-field is the upgrade-only re-field path
@@ -526,10 +525,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 > **Attach ONCE, not on every state change.** `attach` defers a focus **grab** (chore 2), so
 > re-attaching to refresh something — typically to keep an `on_back` route alive after a
 > rebuild — yanks the cursor to the first control every time. That is a real bug that shipped:
-> the Simple upgrades page re-attached `MenuNav` to the Advanced page after each edit, and
-> left/right on the engine-detune slider adjusted the value and then jumped the cursor to the
-> top of the page. The fix is for the page to **own** the thing that was being refreshed and
-> re-apply it from its own `rebuild()` (`UpgradesMenu.set_back_action` / `_on_back`), so
+> the upgrades page's host re-attached `MenuNav` after each edit to keep its back route alive,
+> and left/right on the engine-detune slider adjusted the value and then jumped the cursor to
+> the top of the page. The fix is for the page to **own** the thing that was being refreshed
+> and re-apply it from its own `rebuild()`, so
 > `attach` runs once per build and nobody re-attaches from outside.
 
 #### A third pattern: the single-action screen
@@ -847,8 +846,7 @@ wrong, each with a silent failure mode:
    nav-wired but rendered NOWHERE: "Change Upgrades" on the car park's "Too powerful" prompt
    looked like it dropped the player straight back to car-select.
 2. **`MenuPage.MODAL_LAYER` (100) — above the station overlays, strictly below
-   `ConfirmPopup`'s 101.** A modal page HOSTS confirms rather than being one (the
-   Auto-Upgrade row opens its own). On a tie the confirm can be drawn *under* the page's
+   `ConfirmPopup`'s 101.** A modal page HOSTS confirms rather than being one. On a tie the confirm can be drawn *under* the page's
    opaque panel while its full-screen `MOUSE_FILTER_STOP` dim goes on swallowing clicks — an
    invisible confirm behind a menu that has gone dead.
 3. **A screen claim via `MenuNav.SCREEN_CLAIMER_GROUP`.** `WorldPanel._input` projects clicks
@@ -1366,16 +1364,15 @@ SHRINKS the canvas UI actually lays out against — any measurement that skips t
 `/ horizontal_stretch` step overstates available space by that same factor.
 
 At the narrowest supported aspect (4:3, `project.godot`'s
-`window_width_override`/`window_height_override` = 1280×960) that canvas is tight enough that
-a busy row — `upgrades_menu.gd`'s WEIGHT slot: Stock plus several parts, with the selected
-option bracketed, since `_option_button` wraps the label in `[...]` and so adds width to
-whichever option happens to be selected — needed more room than the shared
-`theme/ui_theme.tres` Button style's 14px content margins left. The fix is
-`_tighten_option_padding` in `upgrades_menu.gd`: it duplicates each option button's stylebox
-with a smaller left/right content margin, scoped to just these multi-option selector buttons
-rather than the shared theme. That fix is still load-bearing — hugging the content does not
-make the row fit, it just means an over-wide row pushes the box out to the margin (and then
-clips) instead of wrapping inside a fixed fraction.
+`window_width_override`/`window_height_override` = 1280×960) that canvas is tight, which is
+part of why the upgrades page is a **3-column grid of tiles** rather than a row of options
+per slot: a tile's width is set by the layout, not by how many parts a slot happens to hold,
+so the widest row on the page is a known quantity instead of a function of the catalogue.
+The option labels that used to have to fit side by side now each get a full-width row inside
+`UpgradeSlotPopup`, which is sized and centred independently of the page behind it. Hugging
+the content does not make an over-wide row fit — it just pushes the box out to the margin
+(and then clips) — so keeping the page's widest element bounded by construction is the
+actual fix.
 
 When re-measuring this by hand, always go through `DisplayStretch.logical_size()` (or an
 equivalent `/ horizontal_stretch` step) and replicate the actual worst-case
@@ -1387,315 +1384,205 @@ throwaway test and still clip in the real game.
   brake bias are always tunable). **Reset to neutral** and **Wheels** sit in the page's
   bottom action row, not in the body; Reset clears only the handling axes and
   **preserves** engine detune. Each change saves via
-  `Save.set_tuning`. The engine-detune slider is NOT here — it moved to the **Upgrades**
-  page's `UpgradesMenu` (detune is a power / power-to-weight knob, not a handling axis).
+  `Save.set_tuning`. The engine-detune slider is NOT here — it lives on the **Upgrades**
+  page's `tune` tile (detune is a power / power-to-weight knob, not a handling axis).
   The slider holding the cursor lights up (its row wraps in a panel painted by
   `UITheme.mark_panel_focused` on `focus_entered`/`focus_exited`) so it's obvious which
   is selected, and left/right nudges it in place (see the `MenuNav` slider note above).
   No page title/subtitle — the sliders take the full height.
-- **Upgrades** (`LiftPage.UPGRADES`) — the reusable **`UpgradesSimple`** component
-  (`scripts/upgrades_simple.gd`), which wraps the `UpgradesMenu` described below as its
-  **Advanced** page (see "The upgrades page: Simple over Advanced" just below). The rest of
-  this entry describes that Advanced page — `UpgradesMenu`
-  (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
-  plus one button per UNLOCKED catalogue part in that slot (star-locked parts are
-  omitted entirely, and a slot with no unlocked parts gets no row — see
-  upgrade-catalogue.md), each part greyed until its kit is
-  fitted to this car and the active pick bracketed **and painted accent-green**
-  (`Save.set_upgrade_enabled`; free,
-  instant, at most one enabled per slot — picking one switches off a same-slot sibling).
-  The drivetrain slot is an RWD/AWD/FWD picker instead. The **weight slot** has its own
-  bespoke selector (`_make_weight_selector`): options ordered heaviest→lightest with
-  **Stock in the middle** (`+500kg  +200kg  [Stock]  -200kg` for a ~1000 kg car), each
-  button labelled by its mass delta off the car's base mass (rounded to the nearest
-  100 kg, signed, `kg` suffix). The two ballast options are **free** (always enabled)
-  while the lightweight (Weight Reduction) option **greys until earned**; picking a free
-  ballast the car doesn't own installs it on the spot, Stock disables all weight parts.
-  Nothing is consumed from an
-  unlocked pool — upgrades are car-bound. A part gated on a **special not yet won**
-  (`UpgradeDef.unlocked_by_rally`, checked via `UpgradeLibrary.rally_gate_met`) is
-  **omitted from the row entirely** rather than greyed (`UpgradesMenu._slot_parts`): a row
-  of locked options invites "when do I get the big turbo?", which is a question the garage
-  can't answer — so a new player's turbo row reads "Stock | Small" and grows as specials
-  are won. Greyed-but-visible is reserved for a part that is unlocked and merely **not yet
-  fitted to THIS car**, which the player can act on. A part already fitted is kept whatever
-  its gate says, so a car never displays less than it is actually running. Such a part is a
-  **BUY button** quoting its price as `Name N★` — and that star is **DRAWN**
-  (`StarRow.price_icon()` on the button's `icon`, `icon_alignment` RIGHT), never the `★`
-  CHARACTER: Syne Mono has no `★` glyph, so a `★` in a label only rendered at all because the
-  OS supplied a fallback font, and the **web export has no system fonts** — every price read
-  as a tofu box on mobile web. The menu's own balance row does it the other way round (a
-  sibling `StarRow` beside digit-only text, since a Label carries no icon), as does the hub's
-  **Repair N★**; see [star-economy.md](star-economy.md) → "Where the player sees it" for both
-  shapes. Guarded by
+- **Upgrades** (`LiftPage.UPGRADES`) — the reusable **`UpgradesGrid`** component
+  (`scripts/upgrades_grid.gd`). It is **one view, not a pair of pages**: a heading row, a
+  performance line, and a grid of slot tiles, each of which opens a popup listing that
+  slot's options. See "The upgrades page: a grid of slots" just below for the shape and the
+  reasoning; this entry covers what the page contains.
+
+  **The heading row** (`UpgradesGrid.build_title_row("Upgrades")`) carries the page title
+  and the player's **star balance** — the digits of `Save.stars_available()` beside a drawn
+  `StarRow` star. The balance rides on the component rather than on any one host's page
+  chrome, because the option popups quote **prices**: all four hosts show it, and every
+  `rebuild()` (which a purchase triggers) re-reads it.
+
+  **A single `PERFORMANCE <n>` line** sits under the heading — the whole build's
+  `CarPerformance.rating` (`current_rating()`), with the ceiling beside it (`512 / 480`, red
+  when over) when a host sets one. It is a plain `Label`, so it adds nothing to
+  keyboard/gamepad nav, and it is the page's only aggregate number: everything else on the
+  page is a part and its current setting.
+
+  **The grid** is a `GridContainer` of **3 columns and 9 tiles** — the seven
+  `UpgradeLibrary.SLOTS` (turbo, gearbox, aero, tires, weight, drivetrain, nitrous) plus two
+  **pseudo-slots**, `engine` (engine swap) and `tune` (engine detune). Swap and detune being
+  tiles rather than bespoke rows is the point of the layout: every way of changing this car
+  is one of nine equally-weighted squares, so "where do I change X?" is answered by looking
+  rather than by scrolling to the end of a list. Tile order and membership come from
+  `UpgradeOptions.grid_slots()`, not from the widget code.
+
+  **Each tile is a focusable `Button`** wrapping a full-rect `VBoxContainer`
+  (`MOUSE_FILTER_IGNORE`, so the whole tile stays one press target) holding an **SVG icon**
+  above a `Label` reading `"<slot>: <value>"` — `turbo: Small`, `tune: 80%`, `engine: V12`.
+  The value comes from `UpgradeOptions.current_label`, so a tile always states what is
+  fitted right now and the grid reads as a summary of the car before the player presses
+  anything.
+
+  **The label is ONE line — it neither wraps nor clips.** Wrapping makes a tile taller and
+  a grid of uneven rows stops reading as a grid; clipping truncates silently, which is worse
+  than overflowing because the player cannot tell it happened. Fitting is handled by keeping
+  the TEXT short rather than by growing the tile, in two places:
+
+  - `UpgradeOptions.tile_slot_name` abbreviates the long slot NAMES for the tile only —
+    `drivetrain` → `drive`, `gearbox` → `gears`, `nitrous` → `nos`.
+  - An option's optional `tile_label` abbreviates the VALUE, and the popup ignores it: the
+    engine shows its layout shorthand (`V12`) rather than its marketing name
+    (`27L Merlin V12`), and drivetrain drops the `(Stock)` qualifier that earns its place in
+    the list but not on a square that has to fit three across a phone.
+
+  With both, every stock caption fits inside `TILE_MIN_W` with room to spare (widest is
+  `WEIGHT: STOCK`). Tiles also `EXPAND_FILL`, so on any page wider than the phone floor
+  there is more room again — the floor is what the longest fitted part names lean on. Icons load
+  through `UpgradeIcons.texture(slot)` (`scripts/upgrade_icons.gd`) from
+  `textures/icons/<slot>.svg` into a `TextureRect`, tinted via `modulate` — an SVG rather
+  than a glyph for the same reason as the price star below: Syne Mono has no icon glyphs and
+  the web export has no system font to borrow one from, so a character would be a tofu box
+  on mobile web.
+
+  **A tile GREYS OUT when the slot offers no choice** (`UpgradeOptions.has_choice`, which
+  asks whether any option is selectable AND not already current — testing "is it current"
+  rather than "is it Stock", because drivetrain's options are drive MODES with no empty-id
+  Stock entry and the car's own layout is always selectable). If every part in a slot is
+  still locked, the only thing the popup could offer is the state the car is already in — a press, a read of greyed lines and a back-out that teach
+  nothing. The tile still shows what is fitted, dims, and drops out of the focus order, so
+  the grid says up front where there is a decision to make. It comes back the moment the
+  gating rally is won.
+
+  **The `engine` tile is an ACTION, not a list.** A swap TRADES this car's engine with
+  another car the player owns and spends a token, so the choice being made is *which car* —
+  and the host owns that screen (`hq.gd::_enter_engine_swap` puts the car park into SWAP
+  mode). Pressing the tile calls the host's `on_swap`; it never opens the engine catalogue,
+  which would imply you can simply fit any engine. Only the HQ lift supplies that action, so
+  on the other three hosts the tile is informational and greyed. It also greys when the
+  capability is still locked or no token is banked
+  (`UpgradeOptions.engine_swap_blocked_reason`), with the reason in its tooltip.
+
+  **The `tune` popup carries a Done button**, and it is the only variant that does. The
+  option list closes itself the moment a row is picked, so its exit is the gesture the
+  player already wanted; a slider has no equivalent, and Esc / gamepad-B are undiscoverable
+  and absent entirely for a pointer or touchscreen. The detune writes through live on every
+  drag, so Done confirms nothing — it just leaves.
+
+  **Pressing a tile opens `UpgradeSlotPopup`** (`scripts/upgrade_slot_popup.gd`) — see "The
+  slot popup" below. Applying an option closes the popup and rebuilds the page; **focus
+  survives the rebuild** via an `upgrade_focus_key` meta on each tile plus a deferred
+  `_restore_focus`, so pressing a tile and coming back lands the cursor on that same tile
+  rather than at the top of the grid.
+
+  What the individual slots hold is [upgrade-catalogue.md](upgrade-catalogue.md)'s subject,
+  but three are worth knowing here because their options do not read like "a part or not":
+  the **drivetrain** tile is an FWD/RWD/AWD picker (a `drive_mode` override, gated as a
+  whole on the swap kit); the **weight** tile lists its options **heaviest → lightest** with
+  `Stock` in the middle (`+500kg  +200kg  Stock  -200kg` for a ~1000 kg car), the two
+  ballast options free and the lightweight kit earned; and the **tune** tile is the one
+  slider in the grid (below). The `nitrous` tile is an ordinary slot tile — see
+  [nitrous.md](nitrous.md) for why the part installs pre-enabled.
+
+  Prices in the popup are quoted as `Name N★` where **the star is DRAWN**
+  (`StarRow.price_icon()` on the row's `icon`, `icon_alignment` RIGHT), never the `★`
+  CHARACTER: Syne Mono has no `★` glyph, so a `★` in a label only rendered at all because
+  the OS supplied a fallback font, and the **web export has no system fonts** — every price
+  read as a tofu box on mobile web. The heading's balance does it the other way round (a
+  sibling `StarRow` beside digit-only text, since a Label carries no icon), as does the
+  hub's **Repair N★**; see [star-economy.md](star-economy.md) → "Where the player sees it"
+  for both shapes. Guarded by
   `test_menu_flow.gd::test_hq_lift_text_only_uses_characters_the_bundled_font_can_draw`,
-  which sweeps the whole lift station for any character the bundled font cannot draw. The **`nitrous` slot is deliberately skipped** when building
-  slot rows (`UpgradeLibrary.SLOTS` iteration) — it has no garage row at all, by design;
-  see [nitrous.md](nitrous.md) for the mechanic and why it's installed pre-enabled instead. It also hosts the **engine-detune slider**
-  (0–100%, step 5) at the **bottom** of the menu (below the slot rows and the engine-swap
-  row) — detune lives here rather
-  than on the Tune page because it's a power / power-to-weight knob (saved via
-  `Save.set_engine_detune`; see [engine-swap.md](engine-swap.md)). There is no stats line;
-  the live power-to-weight readout rides on the detune slider's value label. Focus keys are
-  `opt:<slot>:<id>`, `drivetrain:<mode>`, and `swap`.
-  **`UpgradesMenu.setup(owned, on_change, on_swap, pw_limit)`** takes an optional
-  `pw_limit` (power-to-weight cap in hp/tonne); when set ≥ 0, the overlay's **close button
-  is gated** (`bind_close_button` + `request_close` / `can_close`): it reads **Done**, turns
-  red with **"Over limit — reduce to N hp/tonne"** and blocks closing (button + Esc / back)
-  while the live build exceeds the cap. The detune value label always shows just
-  `N% - M hp/tonne` (no cap text). Used by the start-line upgrades overlay (with
-  the rally's `pw_max` limit) and the HQ car-park Change-Upgrades / detune modal (with
-  the rally's limit); the HQ garage lift omits it so the button stays a plain **Back** and
-  the player upgrades freely.
-  (There is no Repair anywhere — see [damage.md](damage.md).) Below the slot rows sits an
-  **engine-swap row** (`UpgradesMenu._make_engine_swap_row`, `upgrades_menu.gd:215`): the
-  car's current engine name and a **Swap Engine** button gated on engine-swap **tokens**
-  (NOT on HP). The swap lineup (`_swap_targets`) is **every other owned car regardless of
-  health**; the button is disabled with a tooltip when there's no other car OR no token
-  held, and enabled ("Swap Engine (N tokens)") otherwise. Pressing it opens the car park
-  in **swap mode** (`_enter_engine_swap` / `_carpark_swap_mode`), where the normal car-park
-  cycle/confirm/back flow exchanges the two cars' engines (`Save.swap_engines`) and returns
-  to this page. See [engine-swap.md](engine-swap.md).
+  which sweeps the whole lift station for any character the bundled font cannot draw.
+
+  **`UpgradesGrid.setup(owned, on_change, on_swap, rating_limit)`** takes an optional
+  `rating_limit` (a `CarPerformance` rating ceiling, `NO_LIMIT` = `-1` for none); when set
+  ≥ 0, the overlay's **close button is gated** (`bind_close_button` + `request_close` /
+  `can_close` / `over_rating_limit`): it reads **Done**, turns red with **"Over limit —
+  reduce to N performance"** and blocks closing (button + Esc / back) while the live build
+  exceeds the ceiling — over it the car is ineligible, so closing would only defer the
+  refusal to the start line. Used by the start-line upgrades overlay, the reward reveal and
+  the HQ car-park Change-Upgrades modal, all of which source it from `DrivingContext`; only
+  a Rally Challenge actually has one, and the HQ garage lift omits it entirely.
+  (There is no Repair anywhere — see [damage.md](damage.md).)
+
+  The **`engine` tile** is the engine swap (`UpgradeOptions.SLOT_ENGINE`): it reads the
+  car's current engine, and its options are the swap targets, gated on engine-swap
+  **tokens** (NOT on HP) and on the capability being won. The lineup is **every other owned
+  car regardless of health**. It is effectively **lift-only** — the HQ lift is the one host
+  that passes `on_swap`, since pressing through opens the car park in **swap mode**
+  (`_enter_engine_swap` / `_carpark_swap_mode`), where the normal car-park cycle / confirm /
+  back flow exchanges the two cars' engines (`Save.swap_engines`) and returns here; the
+  other hosts leave `on_swap` unset, because that flow would tear down the screen they are
+  running on. See [engine-swap.md](engine-swap.md).
+
   The wreck-recovery safety net (`Save.ensure_wreck_safety_net`, a free **Mystery Box**
   when all owned cars are wrecked + none held) runs on save load, on garage entry, and on
   `_refresh_lift_ui` (`hq.gd._refresh_wreck_safety_net`); opening that box grants a new
   CAR rather than a part — see [reward-system.md](reward-system.md).
-  **The upgrades page: Simple over Advanced.** All four hosts — the HQ lift
-  (`hq_overlays.gd`), the HQ car-park Change-Upgrades popup (`hq_carpark.gd`), the
-  start-line upgrades overlay (`start_line.gd`) and the reward reveal
-  (`upgrade_reveal.gd`) — now instantiate **`UpgradesSimple`**, never `UpgradesMenu`
-  directly. It exposes the *identical* host interface (`setup(owned, on_change, on_swap,
-  pw_limit)` / `bind_close_button` / `request_close` / `can_close` / `first_control`), so
-  the hosts changed by one word and the gated-close machinery is reused rather than
-  reimplemented. The Simple page shows three things and nothing else: a stat block in
-  **outcomes**, the shared **Auto-Upgrade row**, and an **Advanced** button.
 
-  **The stat block is a CATEGORY INDEX, not just a readout.** Every stat row that has
-  upgrades behind it carries a small **wrench button** on its right-hand end, and pressing
-  it opens the Advanced page **filtered to the upgrades that move that stat** — so the bar
-  the player is unhappy with is itself the handle for changing it, and "where do I fix
-  Grip?" never requires knowing that the answer is called an aero kit.
-  `UpgradesSimple.CATEGORIES` is the whole mapping (`{slots, detune, swap}` per row; a row
-  absent from it gets no wrench, via `_wrench_for` returning an unset `Callable`):
-  - **Speed** → the `turbo`, `gearbox` and `nitrous` slots, **plus the engine-detune slider
-    and the engine-swap row** — all are power levers, and detune is specifically the one that
-    trades power for eligibility. Note `gearbox` and `nitrous` move **no bar** here: Speed
-    reads power-to-weight, which neither a shift time nor a per-stage boost can touch.
-  - **Grip** → `aero` + `tires`. **Lightness** → `weight`. **Stability** → `drivetrain`.
-  - **Condition has NO wrench**, deliberately: nothing in the catalogue repairs damage (see
-    [damage.md](damage.md)), so a wrench there would open an empty page.
+  **The upgrades page: a grid of slots.** All four hosts — the HQ lift (`hq_overlays.gd`),
+  the HQ car-park Change-Upgrades popup (`hq_carpark.gd`), the start-line upgrades overlay
+  (`start_line.gd`) and the reward reveal (`upgrade_reveal.gd`) — instantiate the same
+  **`UpgradesGrid`**, and the host-facing contract (`setup` / `rebuild` / `first_control` /
+  `bind_close_button` / `request_close` / `can_close` / `over_rating_limit` /
+  `current_rating`) is what they all speak, so the gated-close machinery is written once
+  rather than four times.
 
-  **A category with nothing in it gets no wrench either.** Being listed in `CATEGORIES` is
-  not enough: `_wrench_for` asks
-  **`UpgradesMenu.has_rows_for(slots, show_detune, show_swap)`** whether that category would
-  produce *any* row for this car right now, and returns an unset `Callable` when it wouldn't.
-  The motivating case is **Stability / `drivetrain`, which is empty until the swap kit is
-  discovered** — a wrench opening a blank page is exactly the "when do I get this?" prompt
-  the hidden-locked-options rule (see [upgrade-catalogue.md](upgrade-catalogue.md)) exists to
-  avoid, and it is worse than no wrench at all. `has_rows_for` short-circuits true when the
-  category includes the detune slider (every car always has one), then the swap row when it
-  is both wired and star-unlocked, then falls back to "does any non-hidden slot in it have a
-  visible part". This is why **`UpgradesSimple.rebuild()` builds Advanced FIRST**, via
-  `_build_advanced()`, even though Advanced is shown last: the stat rows query it before they
-  can decide whether to draw a wrench.
+  **Why a grid and not a list of rows.** A slot's options are a *choice among a few*, and a
+  row that lays every option out horizontally has to fit an unknown number of buttons into a
+  fixed width — which is what drove the old page's squeezing, wrapping and hidden-option
+  rules. Pushing the options into a popup makes the page itself a fixed 3×3 shape that never
+  reflows, gives each option a full-width row it can caption freely ("Needs Big", "3
+  stars"), and turns the top level into something the player can read at a glance: nine
+  tiles, each stating what is currently fitted. It is also **one page deep and no more**:
+  the whole car is on screen at once, so nothing needs a second page, a stat-to-category
+  index or a filter to reach it — the tile IS the index.
 
-  **A wrenchless row still reserves the wrench column** — `StatBar.build` adds a spacer of
-  `StatBar.WRENCH_MIN_W` when `on_wrench` is unset, so the figures stay in one vertical line.
-  Letting the value label slide right into the free space makes the wrenchless rows the odd
-  ones out, and the eye reads a ragged column of numbers as a mistake long before it works
-  out which rows happen to have a button. For the same reason **`StatBar.ROW_H`
-  (`= UITheme.MENU_ROW_H`) pins every row to one height**: `UITheme.enforce` pins a
-  single-line button to `MENU_ROW_H`, so a wrenched row is button-height while a wrenchless
-  one would only be text-height, leaving the bars unevenly spaced down the page for a reason
-  the player can't see. Pinning the ROW rather than padding the spacer keeps the two cases
-  identical even if the button metrics change.
+  **The slot popup** (`UpgradeSlotPopup`, `scripts/upgrade_slot_popup.gd`) is a
+  `CanvasLayer` modal joining **`ConfirmPopup.MODAL_GROUP`** — so one modal at a time (see
+  "One modal at a time"), and `MenuNav.input_blocked` deafens the grid behind it rather than
+  the two competing for arrow keys. It draws a dim backdrop and a centred `UITheme.panel`
+  and then, deliberately, **nothing but the options**: no title, no body text, no
+  Cancel/OK row. The tile the player just pressed is the title, the option labels are the
+  body, and a button row would only add a second way to do what pressing an option or
+  backing out already does.
+  - Selectable options are `FOCUS_ALL` buttons; **locked or unaffordable ones are shown
+    GREYED and `FOCUS_NONE`**, captioned with their reason ("Locked", "Needs Big",
+    "3 stars"). Showing them is a deliberate reversal of the old "hide what you can't have"
+    rule — a tile hides its ladder until pressed, so a popup that listed only the reachable
+    rungs would leave the player unable to learn the slot has more in it (see
+    [upgrade-catalogue.md](upgrade-catalogue.md) → "Locked options are LISTED, GREYED").
+    `FOCUS_NONE` is what keeps that from costing anything at the keyboard: nav **skips** the
+    dead rows, so the cursor only ever stops on something that does something.
+  - The current option is marked with `UITheme.mark_selected` and **the cursor opens on
+    it**, so the popup starts by answering "what is fitted now" without the player moving.
+  - Purchase options carry the drawn star price (`StarRow.price_icon()`).
+  - **Clicking a row applies and closes**; back closes without applying. One press per
+    decision — the option list IS the confirmation step, since the player chose the slot,
+    then chose the option.
 
-  The mapping is **disjoint on purpose** — every slot belongs to exactly one row, so "where
-  do I change this?" has one answer. The judgement call worth knowing is that `weight`
-  (ballast + the lightweight kit) sits under **Lightness** rather than Speed even though it
-  moves power-to-weight too: filing it under the row whose figure is literally its own units
-  is the less surprising of the two.
+  **The `tune` tile is the one exception: a SLIDER popup**
+  (`UpgradeSlotPopup.open_slider`) — a single `SliderRow`, 0–100 step 5, with a live label,
+  writing through `Save.set_engine_detune` on change. Detune is a continuous power /
+  power-to-weight knob (it lives here rather than on the Tune page for that reason, see
+  below), and chopping it into list rows would throw away the fine control the player
+  reaches for it for. It is the same widget the tuning sliders use, so left/right nudges the
+  value in place.
 
-  **The filter lives on `UpgradesMenu`, not in a second component.**
-  `UpgradesMenu.set_filter(slots, show_detune, show_swap)` stores `_filter_slots` /
-  `_filter_detune` / `_filter_swap`, which `rebuild()` honours when deciding which slot rows,
-  the swap row and the detune row to emit; an **empty slot list means no filter** (the whole
-  page, which is what the Advanced button opens), and `is_filtered()` reports which of the
-  two a page is currently showing. A filter rather than a cut-down sibling widget because the
-  rows, their `Save` persistence and the p/w gate all already live there — a second widget
-  rendering "just the turbo row" is how two pages start disagreeing about what a turbo row
-  does. `UpgradesSimple._show_advanced(category := "")` is the one entry point for both: it
-  sets the filter, calls `rebuild()`, and **retitles the page** via `_advanced_title` to the
-  category name (or "All upgrades"), so a filtered page says which category it is showing
-  rather than looking like the whole page with most of it missing.
+  **Navigation.** The grid is navigable on **both axes** — up / down / left / right, keyboard
+  AND gamepad — via `MenuNav` over the `GridContainer`'s geometry; because the tiles are
+  equal-sized cells in a real grid, Godot's geometric neighbour search is reliable here in a
+  way it was not for the old page's mix of full-width rows and right-pinned buttons, so
+  nothing needs hand-wiring. The popup list is navigable vertically, its unselectable rows
+  skipped, and back closes it. Both halves are covered by nav tests — a menu reachable only
+  by pointer is not shippable (see "Menu navigation" above).
 
-  **The wrench is a DRAWN icon** (`WrenchIcon`, `scripts/wrench_icon.gd`), built by
-  `StatBar._wrench` and hung on the button's `icon` — same reason as the price star: Syne
-  Mono has no 🔧 and the web export has no system font to borrow one from, so a glyph would
-  be a tofu box on mobile web, and a Button lays out no children so a drawn child Control
-  isn't an option either. The silhouette is an **open-ended spanner** — a **round** head with
-  a jaw bitten out of it, on a shaft with a rounded tail, laid at a **diagonal**
-  (`TILT_DEGREES`). All three choices are about the ~16px it is actually read at
-  (`WrenchIcon.HEIGHT`, matching the 16px caps beside it, and the proportions are tuned *at
-  that size*): the **round** head is what says "spanner" rather than "letter T", and a curve
-  survives the antialiasing where a corner does not; the **diagonal** fills a square box with
-  the longest possible silhouette and stops an upright tool reading as a screwdriver or an
-  exclamation mark next to a row of text; and a **spanner, not a gear**, because a gear
-  promises "settings", which is a different promise from "change this part of the car".
-  The outline is **generated, not hand-listed** (`_points` traces one closed polygon — head
-  arc, shaft, rounded tail, back up and across the jaw's mouth — via `_arc`, and `_fit`
-  tilts then normalises), so the proportions above stay adjustable instead of having to be
-  re-derived by eye every time the head or shaft changes. `_fit` normalises **after** the
-  tilt on purpose: scaling first would leave the rotated shape overflowing its nominal box,
-  so post-tilt normalisation is what keeps the icon's visual weight constant if the tilt is
-  retuned. The stat
-  name rides on the tooltip ("Change Grip") and on the focus key (`wrench:<stat>`), so
-  keyboard focus survives the page rebuild a press triggers and the wrenches can be told
-  apart in a nav test. `StatBar.WRENCH_MIN_W` is its width floor; the button is built by hand
-  rather than through `UITheme.button`, which pins a column-sized width and sets
-  `FOCUS_NONE`.
-
-  **Keyboard / gamepad: the summary column is wired EXPLICITLY**
-  (`UpgradesSimple._wire_summary_nav`), chaining each row's wrench top-to-bottom, then
-  Auto-Upgrade, then Advanced, through `TextField.wire_column`. Not left to Godot's
-  geometric neighbour search, because this is not a column of matching shapes — the wrenches
-  are small controls pinned to the **right edge** while Auto-Upgrade and Advanced span the
-  full width, and the geometric search can decline a neighbour whose projection doesn't
-  overlap. `wire_column` already encodes the "chain these top to bottom" rule and skips
-  `FOCUS_NONE` controls, which is why the wrenches are built `FOCUS_ALL` (see the
-  `focus_mode` trap under "Menu navigation" above).
-
-  **The stat block: segmented bars** (`UpgradesSimple._stat_rows`, drawn by
-  **`StatBar.build(name, value, text, stock, limit, on_wrench)`** in `scripts/stat_bar.gd`,
-  where a valid `on_wrench` is what adds the wrench described above). Every row
-  is Mario-Kart-style **`StatBar.SEGMENTS` (20) countable blocks** with the figure still
-  riding on the right-hand end; the blocks are the point — "twelve of twenty" is read and
-  compared between cars at a glance, which is the whole reason this page exists, while the
-  number is there for whoever wants it. The count went **12 → 20** because twelve was too
-  coarse: the roster's mid-field cars kept landing on the same block count, so the bars
-  stopped discriminating exactly where most of the garage sits. To pay for it the **name and
-  figure columns were narrowed** (`LABEL_MIN_W` / `VALUE_MIN_W`) — every unit they give back
-  goes to the blocks, which are the part the player actually reads.
-  - **Scaled against the ROSTER, not the car** (`CarStatBounds.fraction`, see
-    [upgrade-catalogue.md](upgrade-catalogue.md) → "`CarStatBounds`"). A per-car scale
-    would draw every car full and tell the player nothing; a roster scale makes a full bar
-    mean "as good as this game ships" and a starter car genuinely look like a starter car.
-    The scale spans **stock cars only** — see the rationale in `car_stat_bounds.gd`'s
-    header.
-  - **The filled run is split at STOCK: green, then gold.** `build`'s **`stock`** argument
-    is the same 0..1 roster fraction for the car with *nothing* fitted (`< 0` = "stock means
-    nothing here"). Blocks up to it are `UITheme.GREEN` — the car **as it ships** — and
-    blocks from there up to the current reading are `UITheme.GOLD`: what the player's
-    **upgrades added on top**. Gold is the **star colour** on purpose, so the blocks that
-    the stars bought are literally the star-coloured ones and the page shows a return on the
-    spend without a word of explanation. Past the current reading the blocks are empty (the
-    rest of the roster's range).
-  - **A stock reading ABOVE the current one draws no gold.** That means the player has
-    *given performance away* — a detune, or ballast left on — not gained it, so the whole
-    filled run stays green rather than inventing a backwards gold tier.
-  - **Gold is NOT the old "headroom" tier coming back.** There used to be a third, dimmed
-    headroom tier showing where the stat would sit with every part the player could
-    currently buy fitted; it was **cut for being confusing** — two different greens on one
-    bar invite the reading "the pale part is also mine", and a glanceable comparison between
-    two cars is worth more than an extra fact nobody asked the bar for. The distinction that
-    makes gold safe where headroom wasn't: **headroom coloured a stat the car does not yet
-    have (a promise); gold colours performance the car HAS, split by where it came from (a
-    fact).** Only the fact belongs on a bar read at a glance. Where the car can *get to*
-    remains the Auto-Upgrade button's job, stated in words ("210 to 260 hp/t") rather than
-    in a shade of green.
-  - **Red blocks past a limit.** When the host passes a `pw_limit`, Speed's `limit`
-    argument is that cap converted to the same fraction, and every filled block past it is
-    painted `UITheme.RED` — "over the line" is visible without reading a number, matching
-    the gated close button rather than duplicating its logic. Red **outranks** the
-    gold/green split: which side of a class line the car sits on matters more than where its
-    power came from.
-  - **Which rows carry a baseline.** Speed, Grip, Lightness and Stability all pass one,
-    derived from `UpgradeLibrary.effective_meta({}, entry)` — an **empty owned-car dict**, so
-    every upgrade, the detune and any drivetrain override drop out and what's left is the car
-    as it shipped. Stability's baseline is what makes a fitted **drivetrain kit** visible,
-    since swapping to AWD is the one upgrade that moves that row. **Condition passes none**:
-    every car leaves the showroom at 100%, so gold there could only ever mean "damaged",
-    which is not what gold says.
-  - **Speed** is power-to-weight in hp/t — deliberately the very figure eligibility is
-    judged on, so the bar can never disagree with the gate. **Grip** is
-    `CarLibrary.max_lateral_g` over `UpgradeLibrary.grip_meta` (the aero kit's downforce
-    *and* the race tyres' compound multiplier) rated at
-    `GameConfig.grip_reference_kmh`, since downforce is purely a speed effect and would
-    otherwise never move the row. The reference speed is **not printed**: it is identical
-    for every car and every row, so the comparison is like-for-like whether or not the
-    player knows the number, and the "at 50 km/h" label was eating width the blocks want.
-    `GameConfig.grip_reference_kmh` is the single config field it's rated at, read by both
-    `UpgradesSimple` and `CarStatBounds` so the scale and the figure can't diverge.
-  - **Lightness is INVERTED mass** (`1.0 - CarStatBounds.fraction("mass", …)`, labelled in
-    kg) so that a longer bar is always better on **every** row. A page where more is better
-    on three lines and worse on one is exactly the trap the simple page exists to remove.
-  - **Condition is self-relative** — this car's HP against its own `max_hp`, with **no
-    roster scale**, because comparing damage across the roster says nothing
-    useful. At 0 HP the figure reads "Wrecked".
-  - **Stability is a bar too, with the word as its figure.** The bar is
-    `_stability_index` — a 0..1 **INDEX**, deliberately not a measurement, because stability
-    has no single honest scalar: half the score is drivetrain forgiveness (AWD pulls a car
-    straight, RWD lets the back step out) and half is how close the weight sits to balanced,
-    so neither axis can dominate. Being normalised by construction, it is the one row that
-    needs **no roster scale** — every car is scored on the same two axes. The word
-    ("Forgiving / Balanced / Twitchy", `_stability_word`) still rides alongside as the
-    figure, since that is what a newcomer can actually act on; the bar exists so the two
-    cars they're choosing between can be compared at a glance.
-
-  Advanced is a **child, not a sibling page**: the `UpgradesMenu`
-  instance is built once and hidden, so a round trip keeps its scroll and focus keys and
-  there is exactly one component doing `Save` persistence for the car. It lives in its own
-  box so the Back button survives `UpgradesMenu.rebuild()`, which frees the menu's own
-  children on every edit. `can_close()` / `over_pw_limit()` **delegate to the Advanced
-  page** rather than re-deriving the cap — a Simple page with its own opinion would be a
-  way to walk out of the start line still over the limit — and `bind_close_button` hands
-  the same button down so the two pages can never disagree about whether the player may
-  leave. `advanced()` is the public accessor for that page (the p/w gate, the detune
-  slider and the per-slot rows all still live there; Simple owns the summary, not the
-  machinery) and is what hosts and tests reach through when they need it.
-
-  Navigation: `MenuNav.attach` is on the **summary box**, and **the Advanced page owns its
-  own back route** — `UpgradesSimple` calls `UpgradesMenu.set_back_action(_show_simple)`
-  *before* `setup()`, and the page stores it in `_on_back` and re-applies it from its own
-  `rebuild()`, so Esc / gamepad-B inside Advanced routes **back to Simple** rather than out
-  of the menu entirely, across every edit, with nothing re-attaching from outside.
-  **This replaced a real bug** (`_wire_advanced_back` is gone): the host used to re-run
-  `MenuNav.attach` on the Advanced page after every edit just to keep the back route alive,
-  and `attach` defers a focus **grab** — so left/right on the engine-detune slider adjusted
-  the value and then threw the cursor to the first control on the page. See the
-  re-attach warning under "Menu navigation" above. Both the Advanced and Back buttons are built by hand with
-  `focus_mode = FOCUS_ALL` rather than via `UITheme.button` (which sets `FOCUS_NONE` and
-  would leave the page pointer-only — see "Menu navigation" above).
-
-  **`AutoUpgradeRow`** (`scripts/auto_upgrade_row.gd`) is the player-facing half of
-  `UpgradeLibrary.auto_build_plan` (see
-  [upgrade-catalogue.md](upgrade-catalogue.md)), shared by the Simple and Advanced pages
-  rather than written twice — "what does Auto do" is one answer, and a second copy is how
-  the two pages start disagreeing about it. **Two presses, always — and the preview is a
-  MODAL, not a line under the button.** Pressing opens a `ConfirmPopup` (`_on_pressed`)
-  whose body is `_summary`: the parts bought by name, "fits parts you already own" /
-  "removes what is holding it back" for the free half, and the before → after hp/t, with
-  **Cancel** and a priced confirm action (`_confirm_label`, e.g. "Buy — 6 stars"); only that
-  confirm action (`_commit`) spends, via `Save.apply_build_plan`. Auto spends stars
-  irreversibly, so a one-press version would be two stars gone with one slider label as the
-  only visible change. The guarantee is unchanged — it just moved into a modal, because a
-  paragraph appearing under one button inside a stat block the player is skimming pushes the
-  whole page around and is easy to press straight past. The plan is **re-computed on
-  commit** rather than trusted from the preview, so stars spent elsewhere while the popup
-  was up can't let a stale plan overdraw the balance. The button translates the host's bare `pw_limit` into the solver's
-  `{"pw_max": …}` restriction shape; it disables itself (with "nothing to add") when the
-  plan is a no-op, and `worth_showing()` omits the row entirely for a car with no plan and
-  no stars — a permanently dead control is exactly the "when do I get this?" prompt the
-  rest of the menu hides locked options to avoid. Focus key `auto_upgrade`, `FOCUS_ALL` by
-  hand for the same reason as above.
-
-  Both sub-pages share one **`< Back`** button (`_lift_back_button`, returns to the hub)
-  that sits in the page `root` **below** the scroll container — a different node level
-  from the tune/upgrades body — but it's `FOCUS_ALL`, so `menu_down` off the last body
-  control reaches it by geometry (the box `MenuNav`s move focus across container
-  boundaries). It's also the focus fallback (`_grab_lift_page_focus`) when a page body
-  has no focusable control at all — a fresh car's Upgrades page (all slots empty, full
-  health, Swap Engine disabled) — so the page is never dead to keyboard/gamepad.
+  The page's **`< Back`** button (`_lift_back_button`, returns to the hub) sits in the page
+  `root` **below** the scroll container — a different node level from the tune/upgrades
+  body — but it's `FOCUS_ALL`, so `menu_down` off the bottom row of tiles reaches it by
+  geometry (the box `MenuNav`s move focus across container boundaries). It's also the focus
+  fallback (`_grab_lift_page_focus`) when a page body has no focusable control at all, so
+  the page is never dead to keyboard/gamepad.
 
 `_refresh_lift_ui` toggles which face (hub vs. a menu page) is shown from `_lift_page`.
 See [tuning.md](tuning.md) for the underlying config pipeline.
@@ -1744,8 +1631,8 @@ holds for **every** star in the game, including the star PRICES on buttons, whic
 rasteriser itself now lives in `PolygonIcon`** (`scripts/polygon_icon.gd`): its
 `texture(key, points, color)` supersamples a flat polygon (`PolygonIcon.SUPERSAMPLES`) into
 a cached, centred `ImageTexture`, and `StarRow.texture` is a thin delegate onto it. It was
-extracted from `StarRow` — which had the only copy — when the simple upgrades page's
-`WrenchIcon` needed the same thing; two hand-rolled supersamplers would drift, and the
+extracted from `StarRow` — which had the only copy — when a second drawn icon needed the
+same rasteriser; two hand-rolled supersamplers would drift, and the
 tofu-box rationale above is identical for every drawn icon, not just stars.
 (`StarRow.TEXTURE_SS` and its private texture cache are gone with the move.) The
 flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
@@ -2022,7 +1909,7 @@ table Back returns to the garage. Nav stays diegetic (`menu_select` → Enter,
 `menu_back` → Map; both buttons `FOCUS_NONE`).
 
 **CARPARK (the outdoor lineup).** The owned cars **eligible for the chosen
-rally** (`RallyLibrary.is_eligible`) — plus any **over-powered** car a detune
+rally** (`RallyLibrary.is_eligible`) — plus any car a **drivetrain conversion**
 would qualify (below) — are parked at `GameConfig.hq_carpark_origin`,
 in a **centred row ALONG X** — one car per painted bay (`menu_car_spacing` wide), with
 fewer cars than bays centred within the grid — each **parked nose-out toward the
@@ -2067,44 +1954,37 @@ overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
 only surfaces where it matters, in the upgrades-menu detune readout. There is
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **permanently too damaged to enter**: Start is disabled and the warning reads as final
-("wrecked beyond repair") rather than as an instruction, because nothing revives it. An **over-powered** focused car — its p/w sits over the rally's
-`pw_max` cap but detuning the engine would duck it under — still parks
-(`_build_eligible_lineup` records its qualifying tune from
-`RallyLibrary.qualifying_detune` in `_detune_needed`) and **looks eligible** — no
-warning label, the plain enabled Start (saves overlay space). Pressing Start pops an
-**on-brand modal** (`_show_detune_confirm` → `_make_carpark_modal`, i.e. a `MenuPage` with
-`dim`: a full-screen dimmer + centred house panel, NOT a native grey dialog) with a short
-"Too powerful" message and **two left/right-navigable buttons**: **Cancel** and
-**Change Upgrades**. **Change Upgrades**
+("wrecked beyond repair") rather than as an instruction, because nothing revives it.
+
+Rally entry is **purely categorical** — body type, country, doors, cylinders,
+displacement, drive mode. There is no performance band: a car is never too fast or too
+slow for a career rally, only the wrong KIND of car (`RallyLibrary.ineligibility_reason`).
+The one restriction the player can fix without changing car is **drive mode**, because a
+drivetrain conversion changes it: `_entry_plan` parks such a car as eligible and records
+the target mode in `_drivetrain_needed`, and the detail panel counts it under "N need a
+drivetrain conversion to fit".
+
+The **"Too powerful" modal** (`_show_over_limit_prompt` → `_make_carpark_modal`, i.e. a
+`MenuPage` with `dim`: a full-screen dimmer + centred house panel, NOT a native grey
+dialog) therefore belongs to **Rally Challenge only** — the one mode that still enforces a
+performance ceiling (as a `CarPerformance` rating, see
+[rally-challenge.md](rally-challenge.md)). Its **Change Upgrades** button
 (`_detune_change_upgrades`) opens the **Change-Upgrades popup** — the shared
-`UpgradesSimple` component (see [upgrade-catalogue.md](upgrade-catalogue.md)) in a
+`UpgradesGrid` component (see [upgrade-catalogue.md](upgrade-catalogue.md)) in a
 matching centred modal (`_show_upgrades_popup`, engine-swap row dropped, passed the
-rally's `pw_limit`; `_make_carpark_modal` hosts it via **`MenuPage.open_modal`** — see
-"Hosting a modal" below, which is not optional) so the player can strip / switch parts — or use the menu's own
-**engine-detune slider** (at the bottom of the menu) — to shed power. Because the popup
-is passed the rally's `pw_limit`, its close button is the gated **Done** (red,
-**"Over limit — reduce to N hp/tonne"**, blocking both the button and back) until the
-build is under the cap; closing it
-(`_close_upgrades_popup`) rebuilds the eligible lineup if anything changed, and the
-player re-presses Start (**close → re-press**, no auto-launch). Both modals are wired with `MenuNav.attach` (the upgrades popup
-hands its gated `request_close` as `on_back` so Esc is gated too), and `_carpark_modal_open` makes `_unhandled_input` hand navigation to the
-modal instead of the lineup beneath. The fix the player makes in the upgrades menu is
-an ordinary garage edit and **persists after the rally** — there is no longer a
-temporary, per-rally, auto-reverted detune here (the old **Detune to N%** button and
-its `RallySession.register_detune_revert` agreement are gone). Rallies gate p/w as a
-**band** (`pw_min`..`pw_max`), and the **floor is judged at the car's MAX potential**
-(`UpgradeLibrary.max_potential_meta`: 100% engine tune + every *installed* upgrade
-enabled + freely-removable **ballast dropped** — never inventing un-installed parts),
-passed to `RallyLibrary.is_eligible` as its `floor_meta`. So a car that's merely detuned,
-has parts toggled off, or is carrying ballast the player can shed is **eligible** as long
-as maxing it out clears the floor — the player will tune up to enter, the mirror of an
-over-cap car detuning down. A car whose max potential is still under the floor is
-**ineligible outright** (the old soft "underpowered" warning and the "N underpowered for
-the class" detail caution are retired — there is no eligible-but-underpowered state now).
-The map pin's green "raceable" pennant counts every owned in-band (or tunable-into-band)
-car (`_has_eligible_car` builds on `_entry_plan`). Rivals field only in-band cars: the
-opponent field is drawn from `RallyLibrary._eligible_cars` (the restriction's in-band
-pool). A **banner** names the rally + restriction; **Start** records the
+challenge's rating ceiling; `_make_carpark_modal` hosts it via **`MenuPage.open_modal`** — see
+"Hosting a modal" below, which is not optional) so the player can shed performance. Its
+close button is the gated **Done** (blocking both the button and back) until the build is
+under the ceiling; closing it (`_close_upgrades_popup`) rebuilds the lineup if anything
+changed, and the player re-presses Start (**close → re-press**, no auto-launch). Both
+modals are wired with `MenuNav.attach` (the upgrades popup hands its gated
+`request_close` as `on_back` so Esc is gated too), and `_carpark_modal_open` makes
+`_unhandled_input` hand navigation to the modal instead of the lineup beneath. Any fix
+the player makes is an ordinary garage edit and **persists after the run**.
+
+The map pin's green "raceable" pennant counts every owned car that fits the restriction
+(or could after a drivetrain conversion) — `_has_eligible_car` builds on `_entry_plan`. Rivals field only cars that fit the restriction: the
+opponent field is drawn from `RallyLibrary._eligible_cars` (the restriction's own pool). A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
 so the tuning lift shows the car last raced), shows the
 `LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)
@@ -2412,10 +2292,10 @@ opens the **rally detail**, and Enter flies to the
 RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
 wraps; a **wrecked car is gated in the car park permanently** (Start stays disabled —
-there is no repair); an **over-powered car parks with the
-detune-to-enter prompt** (looks eligible; Start pops the on-brand modal offering
-Cancel / Change Upgrades — Change Upgrades opens the gated shared `UpgradesSimple` to
-shed power permanently via the detune slider / ballast / stripping parts, then the
+there is no repair); an **over-ceiling Rally Challenge car parks with the
+over-limit prompt** (looks eligible; Start pops the on-brand modal offering
+Cancel / Change Upgrades — Change Upgrades opens the gated shared `UpgradesGrid` to
+shed performance permanently, then the
 player re-presses Start); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders

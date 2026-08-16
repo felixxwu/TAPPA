@@ -292,12 +292,11 @@ static func physics_fields(entry: Dictionary) -> Array:
 
 
 # A hash of the WHOLE weather table plus every value it names that can change a lap
-# time (physics_fields — see the rule there) — the one thing
-# OpponentCache.global_fingerprint folds in for weather. Deliberately not a list of
+# time (physics_fields — see the rule there). Deliberately not a list of
 # individual fields: adding a condition, adding a key to one, or retuning any
 # time-affecting value it points at all change this string automatically, so a new
-# condition can never silently serve stale rival times. Costs one hash on a memoised
-# path (see OpponentCache.global_fingerprint), not per rally.
+# condition can never silently change a stage's weather physics unnoticed. Costs one
+# hash on a memoised path, not per rally.
 static func fingerprint(cfg: GameConfig) -> String:
 	var parts := PackedStringArray([str(all())])
 	for entry in all():

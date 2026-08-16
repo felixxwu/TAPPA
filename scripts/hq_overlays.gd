@@ -348,16 +348,11 @@ func build_lift_overlay() -> void:
 	page.actions().set_meta(WorldPanel.ALIGN_BEGIN_META, true)
 	var root: VBoxContainer = page.body()
 
-	# The page heading. The STAR BALANCE used to sit beside it here (digits + a drawn star);
-	# it now belongs to the UpgradesMenu component's own first row, so that the three OTHER
-	# hosts of that menu (car-park popup, start line, upgrade reveal) show it too — see
-	# UpgradesMenu._make_balance_row. The row wrapper stays because hq toggles its
-	# visibility with the page.
-	_hq._lift_menu_title_row = HBoxContainer.new()
-	_hq._lift_menu_title_row.add_theme_constant_override("separation", 5)
-	root.add_child(_hq._lift_menu_title_row)
-	_hq._lift_menu_title = _hq.label("", 22)
-	_hq._lift_menu_title_row.add_child(_hq._lift_menu_title)
+	# NO PAGE HEADING HERE. The lift's own heading only ever read "UPGRADES" and was only
+	# ever visible on the UPGRADES page — which is exactly the page whose component draws
+	# its own heading (UpgradesGrid.build_title_row, carrying the star balance so all four
+	# hosts show it). Two identical titles stacked on one page; the component keeps its one
+	# because the other three hosts have no heading of their own to lend it.
 
 	# MenuPage already wraps the body in a scroll safety net for very short logical
 	# canvases, so the page's rows go straight into its body.
@@ -365,17 +360,17 @@ func build_lift_overlay() -> void:
 
 	_hq._tune_panel = TuningPanel.new()
 	content.add_child(_hq._tune_panel)
-	# The UPGRADES page is the reusable UpgradesMenu component (shared with the car-park
-	# detune popup). It attaches + preserves its own MenuNav across rebuilds and shows a
-	# p/w + G stats line; the lift wires on_change + the engine-swap action in
+	# The UPGRADES page is the reusable UpgradesGrid component (shared with the car-park
+	# Change-Upgrades popup, the start line and the upgrade reveal). It attaches + preserves
+	# its own MenuNav across rebuilds; the lift wires on_change + the engine-swap action in
 	# _refresh_lift_ui. See features/upgrade-catalogue.md.
-	_hq._lift_upgrades_box = UpgradesSimple.new()
+	_hq._lift_upgrades_box = UpgradesGrid.new()
 	content.add_child(_hq._lift_upgrades_box)
 
 	# Framework: WASD + arrow + gamepad focus nav for the native-focus TUNE (sliders)
 	# sub-page. Attached to the tune box ONLY — not the lift root — so the diegetic HUB
 	# buttons (FOCUS_NONE, manual left/right cursor) are left untouched. The box goes
-	# inert while hidden (_menu_visible). The UpgradesMenu self-attaches its own nav.
+	# inert while hidden (_menu_visible). The UpgradesGrid self-attaches its own nav.
 	MenuNav.attach(_hq._tune_panel)
 
 	# A sub-page's ACTIONS go along the bottom in ONE horizontal row, OUTSIDE the body box

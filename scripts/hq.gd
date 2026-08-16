@@ -148,10 +148,10 @@ var _selected_instance_id := -1
 #            wheels are judged by stance. See features/wheel-customization.md.
 #   CHALLENGE (_challenge_ui._enter_challenge_car_screen) — the Rally Challenge entry point's car
 #            picker (spec §7 / §2): owned cars ChallengeSession.eligible_cars(kind, ...)
-#            reports for the currently-shown kind, same over-cap-but-detune-reachable
-#            treatment as RALLY via _detune_needed (judged with
-#            ChallengeSession.qualifying_detune_for instead of RallyLibrary.qualifying_detune,
-#            since a challenge has no authored rally dict — see _challenge_ui._build_challenge_lineup).
+#            reports for the currently-shown kind. A challenge has no authored rally dict
+#            and is the one screen still judging a PERFORMANCE ceiling, so it runs its own
+#            check rather than the categorical rally one (see
+#            _challenge_ui._build_challenge_lineup).
 #            Start commits ChallengeSession.start + the scene hand-off instead of
 #            RallySession.start_rally (see _challenge_ui._begin_challenge_start).
 # One enum instead of mutually-exclusive booleans: entering a job sets the mode
@@ -195,11 +195,11 @@ var _lineup_drag_accum := Vector2.ZERO
 # `_eligible[_focus]` / `_markers[_focus]`. See scripts/car_list.gd.
 var _lineup := CarList.new()
 var _eligible: Array = []
-# instance_id -> the engine-detune fraction that would qualify an over-powered parked
-# car for the chosen rally (RallyLibrary.qualifying_detune). Populated only by the
-# rally car-select lineup (_build_eligible_lineup); for these cars Start opens the
-# over-limit prompt that routes to the upgrades menu (_show_over_limit_prompt /
-# _on_start_pressed) rather than launching.
+# instance_id -> the engine-detune fraction that would duck an over-ceiling parked car
+# under a Rally CHALLENGE's ceiling. Career rallies no longer gate on performance at
+# all, so only the challenge car-select lineup populates this (hq_challenge.gd); for
+# these cars Start opens the over-limit prompt that routes to the upgrades menu
+# (_show_over_limit_prompt / _on_start_pressed) rather than launching.
 var _detune_needed: Dictionary = {}
 var _drivetrain_needed: Dictionary = {}
 # Confirm popup shown when Start is pressed on an over-powered car: the car looks
@@ -506,10 +506,8 @@ var _lift_selector_focus := 0   # which chevron the cursor sits on (0 = prev, 1 
 # gapped horizontal action row below it (see menu_page.gd). Only the box is held here,
 # because its visibility is what shows/hides the page; reach the page as its parent.
 var _lift_menu_bg: PanelContainer
-var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 # The heading's row. Held because VISIBILITY is toggled here, not on the label —
 # see _refresh_lift_ui.
-var _lift_menu_title_row: HBoxContainer
 # A sub-page's bottom ACTION ROW: "< Back" always, plus the TUNE page's own actions (see
 # HqOverlays.build_lift_overlay). It is a SIBLING of the body box rather than a child — that
 # is what makes the gap between body and actions read as a gap — so its visibility is gated
@@ -518,7 +516,7 @@ var _lift_page_actions: HBoxContainer
 var _lift_back_button: Button   # the shared "< Back", leading the row above
 var _tune_action_buttons: Array[Button] = []  # TuningPanel's Reset / Wheels, placed in the row above
 var _tune_panel: TuningPanel         # the TUNE menu (sliders) — shared with the start line
-var _lift_upgrades_box: UpgradesSimple  # the UPGRADES page (shared UpgradesSimple component)
+var _lift_upgrades_box: UpgradesGrid  # the UPGRADES page (shared UpgradesGrid component)
 
 
 func _ready() -> void:
@@ -1509,54 +1507,28 @@ func _stars_for(rally_id: String) -> int:
 
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
 # the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
-# can't drift. Returns {eligible, detune, drivetrain}: `eligible` = whether the car can
-# enter at all (in-band); `detune` = the qualifying engine-detune fraction to apply
-# (0.0 = none); `drivetrain` = the drive mode it must switch to (-1 = none). A car may
-# need a switch, a detune, both, or neither. (There is no "underpowered but eligible"
-# state — the p/w band floor makes an under-powered car ineligible outright.)
+# can't drift. Returns {eligible, drivetrain}: `eligible` = whether the car can enter at
+# all; `drivetrain` = the drive mode it must be converted to first (-1 = none).
+#
+# Entry is purely CATEGORICAL now (body/country/doors/cylinders/displacement/drive mode),
+# so there is no "too fast" or "too slow" car — only a car of the wrong kind. The one
+# fixable dimension is drive mode, because a drivetrain conversion can change it.
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var entry := CarLibrary.for_owned(car)
 	var meta := UpgradeLibrary.effective_meta(car, entry)
-	# The pw_min floor is judged at the car's MAX potential (full tune + kits enabled +
-	# ballast off), so a car detuned/ballasted to fit a lower rally still qualifies for a
-	# higher one it could reach by tuning up. The ceiling stays on the current meta (an
-	# over-cap car detunes DOWN via _qualifying_detune_for).
-	var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
-	if RallyLibrary.is_eligible(rally, meta, floor_meta):
-		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
+	if RallyLibrary.is_eligible(rally, meta):
+		return {"eligible": true, "drivetrain": -1}
 	var target := _carpark_ui._switch_target_for(rally, car, meta)
-	var meta_sw := meta
 	if target >= 0:
-		meta_sw = meta.duplicate()
+		var meta_sw := meta.duplicate()
 		meta_sw["drive_mode"] = target
-	# Switch alone qualifies?
-	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw, floor_meta):
-		return {"eligible": true, "detune": 0.0, "drivetrain": target}
-	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
-	var frac := _carpark_ui._qualifying_detune_for(rally, car, entry, meta_sw, target)
-	if frac > 0.0:
-		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1}
-	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
-
-
-# Duplicate `owned` with engine tune forced to 100% (detune undone) — the "full power"
-# base the qualifying-detune prompt scales down from, so it always proposes an absolute
-# slider setting regardless of the car's stored tune. Upgrades / ballast are left as-is
-# (this only touches the tune); for the car's true MAX potential — full tune AND kits
-# enabled AND ballast dropped, used for the pw_min floor check — see
-# UpgradeLibrary.max_potential_meta.
-func _detuned_to_full(owned: Dictionary) -> Dictionary:
-	var full := owned.duplicate(true)
-	var tuning: Dictionary = full.get("tuning", {})
-	tuning["engine_detune"] = 1.0
-	full["tuning"] = tuning
-	return full
+		if RallyLibrary.is_eligible(rally, meta_sw):
+			return {"eligible": true, "drivetrain": target}
+	return {"eligible": false, "drivetrain": -1}
 
 
 # Whether the player owns at least one car that can enter `rally` — drives the pin
-# flag's green (raceable) vs grey (unavailable) pennant. Eligibility is in-band (the
-# band floor is the power floor), so an owned eligible car is by construction
-# adequately powered — there's no separate "underpowered but eligible" case to exclude.
+# flag's green (raceable) vs grey (unavailable) pennant.
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get(Save.KEY_CARS, []):
 		if bool(_entry_plan(rally, car)["eligible"]):
@@ -2601,9 +2573,10 @@ func _process(delta: float) -> void:
 # and the car-park lineup — the ONE eligibility decision, never re-derived here.
 # Returns {total, qualify, adjust, names}: `total` counts owned cars whose model still
 # resolves (a removed model is skipped, not counted); `qualify` = can enter at all
-# (matches the pin); `adjust` = qualify but only after a detune and/or drivetrain
-# switch. `adjust` is a subset of `qualify`. `names` lists the qualifying cars' display
-# names, in roster order, so the panel can name them instead of just counting them.
+# (matches the pin); `adjust` = qualify, but only after a drivetrain conversion — the
+# sole remaining fixable restriction (`adjust` is a subset of `qualify`). `names` lists
+# the qualifying cars' display names, in roster order, so the panel can name them
+# instead of just counting them.
 func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	var total := 0
 	var qualify := 0
@@ -2619,7 +2592,7 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 			continue
 		qualify += 1
 		names.append(EngineSwap.display_name(entry, car))
-		if float(plan["detune"]) > 0.0 or int(plan["drivetrain"]) >= 0:
+		if int(plan["drivetrain"]) >= 0:
 			adjust += 1
 	return {"total": total, "qualify": qualify, "adjust": adjust, "names": names}
 
@@ -2817,7 +2790,7 @@ func _refresh_garage_focus() -> void:
 # Mystery Box (N) / Online. Called on entry and whenever the Mystery Box button's
 # count/enabled-state needs a repaint (e.g. after opening one). Frees the row's previous
 # children each time (a plain HBoxContainer, not a MenuNav host, so nothing analogous to
-# UpgradesMenu.rebuild()'s "preserve the MenuNav child" carve-out is needed here).
+# UpgradesGrid.rebuild()'s "preserve the MenuNav child" carve-out is needed here).
 #
 # This row used to be TWO levels — a "Drive" button that swapped it for Career / Free
 # Roam / Online — but that only added a press in and a press back on the way to every
@@ -2950,7 +2923,7 @@ func _refresh_hub_focus() -> void:
 
 
 # Seat the sub-page cursor: the body's first focusable control, or the shared Back
-# button when the body has none (a fresh car's Upgrades page — see UpgradesMenu.rebuild)
+# button when the body has none (a fresh car's Upgrades page — see UpgradesGrid.rebuild)
 # so the page is never dead to keyboard/gamepad.
 func _grab_lift_page_focus(box: Node) -> void:
 	var first := UITheme.first_focusable(box)
@@ -3070,8 +3043,6 @@ func _refresh_lift_ui() -> void:
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
 	# without scrolling); UPGRADES keeps its heading.
 	# The ROW, not the label, so any sibling the heading grows hides with it.
-	_lift_menu_title_row.visible = _lift_page != LiftPage.TUNE
-	_refresh_lift_menu_title()
 	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
 	# on_change is a no-op: the HQ lift did not re-field the display car on a tune edit
 	# (the change lands on next fielding), so preserve that behaviour.
@@ -3087,36 +3058,25 @@ func _refresh_lift_ui() -> void:
 	# here — the gate lives at the start line / car park where a car is actually
 	# committed to an event.
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
-		UpgradesSimple.NO_LIMIT)
+		UpgradesGrid.NO_LIMIT)
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
 
-# The lift's UpgradesMenu on_change: a part / drivetrain edit changed the car's spec,
+# The lift's UpgradesGrid on_change: a part / drivetrain edit changed the car's spec,
 # so respawn the display prop (its hash flipped) and refresh the lift name + stats to
 # match — the component has already rebuilt its own rows + stats line.
 func _on_lift_upgrade_changed() -> void:
 	_ensure_lift_car()
 	_lift_owned = Save.selected_car()
 	_refresh_lift_car_label()
-	# The balance is repainted by the component's own rebuild() (UpgradesMenu), so nothing
+	# The balance is repainted by the component's own rebuild() (UpgradesGrid), so nothing
 	# to re-read here.
 
 
 # The UPGRADES page heading.
 #
-# The player's STAR BALANCE used to be spliced in here ("UPGRADES   7" + a drawn star).
-# It now lives in the UpgradesMenu component's own first row (UpgradesMenu._make_balance_row)
-# so that EVERY host of that menu shows it — the car-park popup, the start line and the
-# upgrade reveal open the same menu and had no balance at all. One implementation, drawn
-# and refreshed in one place.
-func _refresh_lift_menu_title() -> void:
-	if _lift_menu_title == null:
-		return
-	_lift_menu_title.text = "UPGRADES"
-
-
 # The Dev settings page fits a part straight onto Save.selected_instance_id() with no
 # reference back to the lift, so it can't rebuild the display car itself the way
 # _on_lift_upgrade_changed does. Same fix, reached via SettingsMenu.dev_car_upgraded
@@ -3303,7 +3263,7 @@ func _refresh_repair_button() -> void:
 		_lift_repair_button.disabled = true
 		return
 	var price := Save.repair_price(id)
-	# Same DRAWN price star as the upgrade options (UpgradesMenu._option_button): the ★
+	# Same DRAWN price star as the upgrade options (UpgradeSlotPopup._option_button): the ★
 	# character this label used to carry has no glyph in Syne Mono and rendered as a tofu
 	# box in the web export, which has no system font to fall back on.
 	_lift_repair_button.text = "Repair %d" % price
@@ -3909,6 +3869,7 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 
 
 # Human-readable summary of a rally's restriction (the detail panel + the car banner).
+# Every gate is categorical — what KIND of car may enter, never how fast it is.
 func _restriction_text(restriction: Dictionary) -> String:
 	if restriction.is_empty():
 		return "any car"
@@ -3933,20 +3894,6 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append(">= %d cylinders" % int(restriction["cylinders_min"]))
 	if restriction.has("cylinders_max"):
 		parts.append("<= %d cylinders" % int(restriction["cylinders_max"]))
-	# The p/w gate is a band: pw_min..pw_max (either edge may be absent). A car must sit
-	# inside it — over pw_max is capped out (detune to duck under), under pw_min is
-	# ineligible. Both edges are authored in hp/tonne (RallyLibrary converts a car's kW/kg
-	# to hp/tonne before comparing), the same unit as every player-facing p/w readout (the
-	# car stats + the detune slider), so display them straight — no conversion here. The
-	# unit carries the meaning, so there's no "power-to-weight" label on the figure.
-	var has_min: bool = restriction.has("pw_min")
-	var has_max: bool = restriction.has("pw_max")
-	if has_min and has_max:
-		parts.append("%.0f–%.0f hp/tonne" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
-	elif has_max:
-		parts.append("<= %.0f hp/tonne" % float(restriction["pw_max"]))
-	elif has_min:
-		parts.append(">= %.0f hp/tonne" % float(restriction["pw_min"]))
 	return ", ".join(parts)
 
 
@@ -4087,7 +4034,6 @@ func _on_start_pressed() -> void:
 				_open_present()
 			return
 		CarparkMode.CHALLENGE:  # commit the focused eligible car to a fresh challenge run
-			_apply_free_restore(_selected_instance_id, _challenge_restriction())
 			if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
 				_carpark_ui._show_over_limit_prompt(Save.get_car(_selected_instance_id))
 				return
@@ -4097,12 +4043,9 @@ func _on_start_pressed() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
-	# Put the car back on the upgrades it already owns before anything else judges it —
-	# most often a detune left down from a previous rally. Free, so it needs no
-	# confirmation; permanent, so it is announced on the loading screen. It runs BEFORE
-	# the over-limit check so that check judges the final build, and it can never create
-	# an over-limit car (the solver refuses to raise power past the cap).
-	_apply_free_restore(_selected_instance_id, rally.get("restriction", {}))
+	# NOTE: nothing auto-applies upgrades here. The car races exactly the build the
+	# player left it on — switching parts on for them behind a loading screen is an edit
+	# they never asked for and cannot see happen.
 	# Apply a qualifying drivetrain switch first (temporary, reverted after the rally),
 	# so the subsequent detune math sees the switched car.
 	var need_dm: int = _drivetrain_needed.get(_selected_instance_id, -1)
@@ -4123,36 +4066,23 @@ func _on_start_pressed() -> void:
 	await _proceed_with_start()
 
 
-# Put the fielded car back on the upgrades it already OWNS before it races — the
-# free-only arm of the Auto-Upgrade solver (UpgradeLibrary.auto_build_plan with
-# free_only), whose motivating case is a detune left down from a previous rally.
-#
-# Both career and challenge starts call this, and start_line.gd calls the same
-# Save.restore_free_build for the mid-rally start gate: the RULE lives in the solver
-# and each host contributes only the call plus the restriction it is racing under, so
-# this doesn't widen the hq/start_line detune duplication todo/backlog.md already flags.
-#
-# The notice is handed to RallySession rather than shown here — the car park is about to
-# be replaced by the loading screen, which is the surface the player will actually be
-# looking at.
-func _apply_free_restore(instance_id: int, restriction: Dictionary) -> void:
-	var result := Save.restore_free_build(instance_id, restriction)
-	if bool(result.get("applied", false)):
-		RallySession.start_notice = String(result.get("notice", ""))
-
-
 # The restriction a challenge run is judged against, in the same synthetic
-# {"restriction": {"pw_max": ceiling}} shape world.gd::_build_start_line hands the start
-# line — a challenge has no authored rally, but its ceiling is an ordinary p/w cap.
+# {"rating_max": ceiling} shape world.gd::_build_start_line hands the start line — a
+# challenge has no authored rally, and it is the ONE place a performance ceiling
+# survives, now expressed as a CarPerformance rating rather than hp/tonne.
+#
+# Deliberately just the number: the comparison itself belongs to challenge_session.gd,
+# and `rating_max` is NOT part of the shared rally restriction schema (which is purely
+# categorical now) — nothing in RallyLibrary reads it.
 func _challenge_restriction() -> Dictionary:
 	# Called through the SCRIPT, not the autoload instance. `ChallengeSession` is an autoload, so
 	# the bare name resolves to the node — and calling a `static func` on an instance raises
 	# STATIC_CALLED_ON_INSTANCE, which GUT reports as a test failure (it was failing
-	# test_render_smoke and test_upgrades_simple, and any other suite that checks for engine
+	# test_render_smoke and test_upgrades_grid, and any other suite that checks for engine
 	# errors while hq.gd is parsed). Same function, same result, no warning.
 	var ceiling: int = ChallengeSessionScript.displayed_ceiling(
 		_challenge_kind, int(Time.get_unix_time_from_system()))
-	return {} if ceiling <= 0 else {"pw_max": float(ceiling)}
+	return {} if ceiling <= 0 else {"rating_max": float(ceiling)}
 
 
 # The pre-flight EVERY start path shares — career, challenge (fresh and Resume) and free
@@ -4319,6 +4249,16 @@ func _prewarm_should_wait() -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# NOT BUILT YET. _build_hq runs behind the "Entering HQ…" cover, after two process
+	# frames and a possible boot-time cloud pull — and this handler is live for that whole
+	# window. A key pressed while the cover is up would otherwise reach station handlers
+	# that do not exist yet and crash on a null.
+	#
+	# Guarded on the station objects rather than _hq_built, because that flag is set at the
+	# TOP of _build_hq, several statements before these are constructed — it says "the build
+	# started", which is exactly the window that crashes.
+	if _challenge_ui == null or _table_ui == null or _carpark_ui == null:
+		return
 	# While the player is typing (the account sign-in form is the only text input
 	# in the game), the HQ must not read bare keys as station navigation, and Back
 	# belongs to the field — MenuNav turns it into "stop typing". One shared

@@ -159,7 +159,7 @@ func _init(opts: Dictionary = {}) -> void:
 		float(opts.get("alpha", 1.0)), int(opts.get("padding", UITheme.PANEL_PAD))))
 	# A row that wants more width than the box must never spill past the background into
 	# the 3D scene behind it. Content is also wrapped where it can be (the HFlowContainer
-	# option rows in upgrades_menu.gd), so this is a safety net, not the mechanism.
+	# tile grid in upgrades_grid.gd), so this is a safety net, not the mechanism.
 	_panel.clip_contents = true
 	col.add_child(_panel)
 

@@ -1,7 +1,7 @@
 class_name ChallengeLibrary
 extends RefCounted
 # Daily/Weekly/Monthly Rally Challenge — period definition, seed derivation, and
-# the procedural per-stage TrackGenParams + p/w ceiling roll. A pure static
+# the procedural per-stage TrackGenParams + rating-ceiling roll. A pure static
 # module (like RallyLibrary/UpgradeLibrary), no autoload/state: every client
 # computes the same period key -> seed -> stages/ceiling from nothing but the
 # wall clock, with no server round-trip. See
@@ -20,11 +20,23 @@ const CHALLENGE_EPOCH := 1
 
 const STAGE_COUNTS := {DAILY: 1, WEEKLY: 4, MONTHLY: 10}
 
-# The p/w ceiling band a period's roll picks from (hp/tonne). Placeholder — a
-# balance-pass GameConfig tunable, same treatment as RewardSystem's drop
-# weights. Never assert a SPECIFIC value from this list in a test, only that
-# the roll is stable and changes with the key (per CLAUDE.md's testing rules).
-const CEILING_BAND_HP_TONNE := [120.0, 150.0, 180.0, 220.0]
+# The performance-RATING ceiling band a period's roll picks from
+# (CarPerformance.rating units — higher is faster). Placeholder — a balance-pass
+# GameConfig tunable, same treatment as RewardSystem's drop weights. Never assert a
+# SPECIFIC value from this list in a test, only that the roll is stable and changes
+# with the key (per CLAUDE.md's testing rules).
+#
+# These were re-authored from the old hp/tonne band [120, 150, 180, 220] by rating the
+# shipped roster and picking rungs that each admit a DIFFERENT slice of it. Ratings are
+# normalised against CarPerformance.REFERENCE_CAR (rating 500), which is what keeps these
+# authored numbers meaningful when a benchmark knob moves.
+#
+# Re-spaced once already: the first pass used [440, 465, 490, 505], and 440/465 turned
+# out to admit an identical three cars because the roster has a rating gap there — a rung
+# that changes nothing is a wasted difficulty step. When retuning, check ADMISSION SETS
+# rather than eyeballing the numbers; the roster clusters, so evenly spaced rungs are not
+# evenly spaced in difficulty.
+const CEILING_BAND_RATING := [430.0, 475.0, 490.0, 500.0]
 
 # Turn-count ranges the per-stage roll picks from. Daily is one long stage
 # (~40 turns); weekly/monthly stages are ordinary rally-event length. Placeholder
@@ -131,16 +143,17 @@ static func _seed_from_key(period_key: String) -> int:
 	return period_key.sha256_text().substr(0, 8).hex_to_int()
 
 
-# This period's rolled p/w ceiling (hp/tonne) — picked deterministically from
-# CEILING_BAND_HP_TONNE by the period's seed. Same seed -> same ceiling, for
-# every player and for the whole period.
+# This period's rolled rating ceiling — picked deterministically from
+# CEILING_BAND_RATING by the period's seed. Same seed -> same ceiling, for
+# every player and for the whole period. Returned as a float purely so callers can
+# keep a single numeric type through the label/compare path; the value is a rating.
 static func ceiling_for(period_key: String) -> float:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _seed_from_key(period_key)
-	return CEILING_BAND_HP_TONNE[rng.randi_range(0, CEILING_BAND_HP_TONNE.size() - 1)]
+	return CEILING_BAND_RATING[rng.randi_range(0, CEILING_BAND_RATING.size() - 1)]
 
 
-# The p/w ceiling for whichever period of `kind` is live at `unix_time` — the
+# The rating ceiling for whichever period of `kind` is live at `unix_time` — the
 # current_period -> ceiling_for pair every caller needs together, so they don't each
 # have to know that the ceiling is keyed off the period's "key" field.
 static func current_ceiling(kind: String, unix_time: int) -> float:

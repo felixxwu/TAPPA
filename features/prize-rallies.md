@@ -83,7 +83,7 @@ Watch the reachability consequence: a band tight around its own prize can make t
 its **own prerequisite** (roadster-only Island GP meant only a Viper owner could win the
 Viper). `tools/sim_career.gd` is what catches it — run it after retuning a prize band.
 
-`prize_car` remains part of `OpponentCache.FIELD_DETERMINANTS`: it no longer swaps the
+`prize_car` still feeds the rally's content fingerprint: it no longer swaps the
 field wholesale, but it is still what a band is tuned around, and a field cached under the
 wrong pairing is the dangerous direction — the cache hits instead of missing.
 

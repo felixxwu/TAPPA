@@ -87,9 +87,9 @@ func test_config_fields_is_empty_for_a_featureless_entry() -> void:
 # --- the cache fingerprint ---------------------------------------------------
 
 func test_fingerprint_changes_when_the_table_changes() -> void:
-	# Adding a condition must re-key the opponent cache automatically — this is the
-	# property that replaced hand-listing each grip field in
-	# OpponentCache.global_fingerprint (forgetting once served stale rival times).
+	# Adding a condition must change the fingerprint automatically — this is the property
+	# that replaced hand-listing each grip field by name (forgetting one meant a weather
+	# change that moved lap times went unnoticed).
 	var cfg := GameConfig.new()
 	WeatherLibrary.override_for_test([{"id": "dry"}] as Array[Dictionary])
 	var before := WeatherLibrary.fingerprint(cfg)
@@ -97,7 +97,7 @@ func test_fingerprint_changes_when_the_table_changes() -> void:
 		{"id": "dry"},
 		{"id": "drizzle", "grip_mult": "rain_grip_mult"},
 	] as Array[Dictionary])
-	assert_ne(WeatherLibrary.fingerprint(cfg), before, "a new condition re-keys the field")
+	assert_ne(WeatherLibrary.fingerprint(cfg), before, "a new condition moves the fingerprint")
 
 
 func test_fingerprint_changes_when_a_referenced_config_value_is_retuned() -> void:
@@ -170,12 +170,11 @@ func test_a_visibility_only_condition_has_no_grip_no_particles_and_no_road_tint(
 
 # --- wind and lightning blocks -----------------------------------------------
 
-func test_only_time_affecting_values_key_the_opponent_cache() -> void:
-	# THE RULE: a weather value keys the rival-time cache if and only if it can change
-	# how fast the stage is driven — the grip multiplier and the wind force. Everything
-	# else (particle counts, every look colour, the road tint, the lightning flash) is
-	# LOOK, and folding it in would mean a full multi-minute rebake of every rally's
-	# field for a colour tweak. config_fields() still reports the entry's FULL surface;
+func test_only_time_affecting_values_enter_the_physics_fingerprint() -> void:
+	# THE RULE: a weather value belongs in the physics fingerprint if and only if it can
+	# change how fast the stage is driven — the grip multiplier and the wind force.
+	# Everything else (particle counts, every look colour, the road tint, the lightning
+	# flash) is LOOK. config_fields() still reports the entry's FULL surface;
 	# physics_fields() is the narrow set the fingerprint uses.
 	var entry := {
 		"id": "synthetic", "grip_mult": "g", "particles": "rain", "particle_count": "c",
@@ -188,17 +187,17 @@ func test_only_time_affecting_values_key_the_opponent_cache() -> void:
 	}
 	var physics := WeatherLibrary.physics_fields(entry)
 	for expected in ["g", "ws", "wg", "wd"]:
-		assert_true(physics.has(expected), "%s can change a lap time, so it re-keys" % expected)
+		assert_true(physics.has(expected), "%s can change a lap time, so it is folded in" % expected)
 	for cosmetic in ["c", "bg", "sky", "sun", "fd", "fs", "rt", "rc", "lf", "ld", "li", "lx"]:
-		assert_false(physics.has(cosmetic), "%s is look only, so it does not re-key" % cosmetic)
+		assert_false(physics.has(cosmetic), "%s is look only, so it is left out" % cosmetic)
 		assert_true(WeatherLibrary.config_fields(entry).has(cosmetic),
 			"%s is still reported as a field the entry references" % cosmetic)
 
 
-func test_a_cosmetic_retune_does_not_re_key_the_opponent_field() -> void:
-	# The consequence of the rule above, asserted end-to-end through the hash: nudging
-	# a colour must NOT invalidate 86 rallies' baked rival times, while changing a
-	# value that alters lap times must. Relations only — no colour or multiplier value
+func test_a_cosmetic_retune_does_not_move_the_physics_fingerprint() -> void:
+	# The consequence of the rule above, asserted end-to-end through the hash: nudging a
+	# colour must NOT move the fingerprint, while changing a value that alters lap times
+	# must. Relations only — no colour or multiplier value
 	# is pinned, and both are set to arbitrary distinct values here.
 	WeatherLibrary.override_for_test([
 		{"id": "dry"},
@@ -211,7 +210,7 @@ func test_a_cosmetic_retune_does_not_re_key_the_opponent_field() -> void:
 	var cfg := GameConfig.new()
 	var before := WeatherLibrary.fingerprint(cfg)
 	cfg.rain_background_color = Color(0.1, 0.2, 0.3)
-	assert_eq(WeatherLibrary.fingerprint(cfg), before, "a look retune keys nothing")
+	assert_eq(WeatherLibrary.fingerprint(cfg), before, "a look retune moves nothing")
 	cfg.rain_grip_mult = cfg.rain_grip_mult * 0.5
 	assert_ne(WeatherLibrary.fingerprint(cfg), before, "a grip retune re-keys the field")
 

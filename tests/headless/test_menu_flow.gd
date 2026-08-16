@@ -215,6 +215,23 @@ func _pin_ids(hq: Node3D) -> Array:
 	return ids
 
 
+func test_input_before_the_hq_is_built_does_not_crash() -> void:
+	# _build_hq runs behind the "Entering HQ…" cover, after two process frames and a
+	# possible boot-time cloud pull, and _unhandled_input is live for that whole window.
+	# A player mashing a key while the cover is up used to reach station handlers that had
+	# not been constructed yet and crash on a null base.
+	#
+	# No await here ON PURPOSE: the point is to drive input at a freshly-added, un-built HQ.
+	_reset_to_first_run()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	var press := InputEventAction.new()
+	press.action = "ui_accept"
+	press.pressed = true
+	hq._unhandled_input(press)   # must simply do nothing rather than crash
+	assert_true(true, "input arriving before the stations exist is ignored")
+
+
 func test_hq_boots_to_the_exterior_title() -> void:
 	_reset_to_first_run()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -925,8 +942,8 @@ func test_car_stats_text_names_a_fitted_nitrous_rung_after_health() -> void:
 # button) focus would land on nothing and the page would be dead to non-pointer input.
 # The UPGRADES menu shows the STAR BALANCE, because this menu is where stars are
 # spent — every part the player cannot afford quotes a price they would otherwise have to
-# leave the menu to check against. It is the COMPONENT that draws it (UpgradesMenu), so
-# every host of the menu gets it; see test_upgrades_menu_balance_row.
+# leave the menu to check against. It is the COMPONENT that draws it (UpgradesGrid), so
+# every host of the page gets it; see test_upgrades_grid.gd.
 func test_hq_upgrades_page_shows_the_star_balance() -> void:
 	_save.profile["stars_earned"] = 7
 	_save.profile["stars_spent"] = 0
@@ -1013,15 +1030,11 @@ func test_hq_upgrades_menunav_survives_rebuild() -> void:
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	# The nav helper lives on each PAGE — the Simple summary and the Advanced page behind
-	# it (UpgradesSimple wraps UpgradesMenu), so both are checked.
-	assert_eq(_count_menunav(hq._lift_upgrades_box._simple_box), 1,
-		"the summary has its focus-nav helper after opening")
-	assert_eq(_count_menunav(hq._lift_upgrades_box.advanced()), 1,
+	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
 		"the Upgrades box has its focus-nav helper after opening")
-	hq._lift_upgrades_box.advanced().rebuild()  # a fresh rebuild (as a car swap / toggle would trigger)
+	hq._lift_upgrades_box.rebuild()  # a fresh rebuild (as a car swap / edit would trigger)
 	await get_tree().process_frame
-	assert_eq(_count_menunav(hq._lift_upgrades_box.advanced()), 1,
+	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
 		"the rebuild preserves exactly one focus-nav helper (WASD/gamepad nav survives)")
 
 
@@ -1033,11 +1046,11 @@ func _count_menunav(box: Node) -> int:
 	return n
 
 
-# Regression: picking an option on the Upgrades page rebuilds the rows; the keyboard/gamepad
-# cursor must stay on THAT option, not jump to the top of the list (or go null when the
-# deferred re-grab lands on the freed old button). Uses whatever the catalogue offers
-# (opaque — no dependence on a specific entry), skipping the drivetrain slot (its selector
-# needs the swap kit; the fitted part below lands in one of the generic option slots).
+# Regression: picking an option rebuilds the whole grid; the keyboard/gamepad cursor must
+# stay on THAT TILE, not jump to the top of the page (or go null when the deferred re-grab
+# lands on the freed old button). Uses whatever the catalogue offers (opaque — no dependence
+# on a specific entry), skipping the drivetrain slot (its options need the swap kit; the
+# fitted part below lands in one of the generic slots).
 func test_hq_upgrades_toggle_keeps_focus_on_same_control() -> void:
 	var item_id := ""
 	for u in UpgradeLibrary.UPGRADES:
@@ -1056,29 +1069,26 @@ func test_hq_upgrades_toggle_keeps_focus_on_same_control() -> void:
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	# The per-slot option rows live on the ADVANCED page now (UpgradesSimple), so open it
-	# before hunting for a button — a control in a hidden subtree can't take focus.
-	hq._lift_upgrades_box._show_advanced()
-	await get_tree().process_frame
-	# Focus an available option button, then activate it (which rebuilds the rows).
+	# Focus a slot TILE, then rebuild the grid — which is exactly what applying an option
+	# from that tile's picker does once the edit has landed.
 	var opt: Button = null
 	for node in hq._lift_upgrades_box.find_children("*", "Button", true, false):
 		if node is Button and not (node as Button).disabled and node.has_meta("upgrade_focus_key") \
-				and String(node.get_meta("upgrade_focus_key")).begins_with("opt:"):
+				and String(node.get_meta("upgrade_focus_key")).begins_with("tile:"):
 			opt = node
 			break
-	assert_true(opt != null, "the slot shows a focusable option button")
+	assert_true(opt != null, "the grid shows a focusable slot tile")
 	var key := String(opt.get_meta("upgrade_focus_key"))
 	opt.grab_focus()
 	await get_tree().process_frame
-	opt.pressed.emit()
+	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var after: Control = hq.get_viewport().gui_get_focus_owner()
-	assert_true(after != null, "focus is not lost after picking an option")
+	assert_true(after != null, "focus is not lost across the rebuild")
 	assert_true(after != null and after.has_meta("upgrade_focus_key") \
 			and String(after.get_meta("upgrade_focus_key")) == key,
-		"focus stays on the same option after the rebuild (doesn't jump to the top)")
+		"focus stays on the same tile after the rebuild (doesn't jump to the top)")
 
 
 # The cursor resting on a tuning slider is enough to change it: a menu_left / menu_right
@@ -1675,17 +1685,15 @@ func _install_guaranteed_eligible_car() -> Dictionary:
 	return _save.grant_car("fx_challenge_eligible")
 
 
-# The flip side: a car so far ABOVE every band value (the highest is 220 hp/tonne) that
-# it's over the ceiling no matter which value rolls, but light enough on mass that a
-# detune always finds a fraction that ducks it under — the over-cap-but-detune-reachable
-# car ChallengeSession.eligible_cars now includes (spec §2 / the recent eligible_cars
-# change) and _build_challenge_lineup tracks via ChallengeSession.qualifying_detune_for.
+# The flip side: a car so far ABOVE every value the rating band can roll that it is over
+# the ceiling whichever one comes up — the car ChallengeSession.classify_car marks
+# EXCLUDED, so it never reaches the challenge car park at all.
 func _install_guaranteed_over_ceiling_car() -> Dictionary:
 	var cars := CarFixtures.cars()
 	var hot := CarFixtures.cars()[2].duplicate(true)  # fx_rwd_coupe (the fx_v8 engine)
 	hot["id"] = "fx_challenge_over_ceiling"
 	hot["name"] = "Fixture Challenge Over Ceiling"
-	hot["mass"] = 300.0  # crushes power-to-weight far OVER the highest band value
+	hot["mass"] = 300.0  # a featherweight V8: rated far OVER the highest band value
 	cars.append(hot)
 	CarLibrary.override_for_test(cars)
 	return _save.grant_car("fx_challenge_over_ceiling")
@@ -1760,19 +1768,18 @@ func test_hq_challenge_start_opens_carpark_then_resume() -> void:
 	assert_true(ChallengeSession.is_active(), "Resume keeps the same run active — no car park involved")
 
 
-# An over-ceiling-but-detune-reachable car parks looking eligible in the challenge car
-# park (mirrors test_hq_carpark_routes_over_powered_car_to_change_upgrades for a normal
-# rally) — the detune is tracked via ChallengeSession.qualifying_detune_for against the
-# synthetic {"restriction": {"pw_max": ceiling}} shape, and pressing Start pops the same
-# "Too powerful" agreement instead of launching.
-func test_hq_challenge_carpark_routes_over_ceiling_car_to_change_upgrades() -> void:
-	# Start from an empty garage: the default starter car (before_each's _pick_starter)
-	# also sits over today's lowest ceiling band, which would make it a SECOND
-	# over-ceiling-but-reachable park entry and break the "exactly one" assertion below
-	# for reasons that have nothing to do with what this test is checking.
+# An over-ceiling car is simply EXCLUDED from the challenge car park. There is no detune
+# escape any more (the rating design doc's D5): the ceiling is a CarPerformance rating,
+# over it means out, and the player brings or builds another car. The park showing it as
+# an enterable option with a "too powerful" prompt behind Start was the old p/w-band
+# behaviour and is gone with it.
+func test_hq_challenge_carpark_excludes_an_over_ceiling_car() -> void:
+	# Start from an empty garage so the ONLY owned car is the over-ceiling fixture —
+	# otherwise the default starter would fill the park and the emptiness assertion below
+	# would say nothing about the car under test.
 	_reset_to_first_run()
-	var owned := _install_guaranteed_over_ceiling_car()
-	var id := int(owned["instance_id"])
+	_save.profile["cars"] = []
+	_install_guaranteed_over_ceiling_car()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -1780,21 +1787,8 @@ func test_hq_challenge_carpark_routes_over_ceiling_car_to_change_upgrades() -> v
 	hq._challenge_ui._enter_challenge_car_screen(ChallengeLibrary.DAILY)
 	await get_tree().process_frame
 
-	assert_eq(hq._eligible.size(), 1, "the over-ceiling car still parks, looking eligible")
-	assert_true(hq._detune_needed.has(id),
-		"it carries its qualifying detune, via ChallengeSession.qualifying_detune_for")
-	var frac: float = hq._detune_needed.get(id, -1.0)
-	assert_between(frac, 0.01, 0.99, "the qualifying detune is a real down-tune")
-
-	hq._focus = 0
-	hq._carpark_ui._focus_changed()
-	assert_false(hq._car_warning_label.visible, "no warning label — the car looks eligible in the park")
-	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
-
-	await hq._on_start_pressed()
-	assert_true(is_instance_valid(hq._carpark_ui._active_carpark_popup),
-		"pressing Start on an over-ceiling car pops the over-limit prompt instead of launching")
-	assert_false(ChallengeSession.is_active(), "no run began — the prompt intercepted Start")
+	assert_eq(hq._eligible.size(), 0, "an over-ceiling car does not park — it cannot enter")
+	assert_false(ChallengeSession.is_active(), "and no run began")
 
 
 # Free roam (Test Drive) launches a plain drive: no rally session, and a fresh random seed each
@@ -2269,32 +2263,23 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
 	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
-	# Expected = exactly the owned cars RallyLibrary deems eligible, plus any
-	# over-powered car a detune would qualify (those park with a detune-to-enter
-	# prompt — see test_hq_carpark_offers_detune_to_enter_an_over_powered_car).
-	# Derived from the eligibility rule + owned roster (not a pinned model name), so
-	# it stays correct if cars or the rally's p/w band are retuned — what it really
-	# asserts is that HQ parks the library's enterable set, no more, no less.
-	# Derived over the player's OWNED cars (not bare catalogue specs), because eligibility
-	# is judged with a `floor_meta` — the car's upgrade CEILING — for the pw_MIN floor. A car
-	# that is currently too weak but could be upgraded into the band IS eligible, so the
-	# expectation has to be built the same way hq._entry_plan builds it or it under-counts.
+	# Expected = exactly the owned cars RallyLibrary deems eligible. Derived from the
+	# eligibility rule + owned roster (not a pinned model name), so it stays correct if the
+	# fixture cars or the rally's class are retuned — what it really asserts is that HQ
+	# parks the library's enterable set, no more, no less. Built over the player's OWNED
+	# cars (not bare catalogue specs) so a drivetrain conversion or engine swap counts.
 	var rally := RallyLibrary.by_id("fx_rwd_band")
 	var expected := {}
 	for car in _save.profile.get("cars", []):
 		var spec := CarLibrary.by_id(String(car.get("model_id", "")))
 		var meta := UpgradeLibrary.effective_meta(car, spec.duplicate())
-		var ceiling := UpgradeLibrary.max_potential_meta(car, spec.duplicate())
-		var frac := RallyLibrary.qualifying_detune(rally, meta)
-		var over_cap: bool = CarLibrary.power_to_weight(meta) * RallyLibrary.KW_KG_TO_HP_TONNE \
-			> float(rally["restriction"].get("pw_max", INF))
-		if RallyLibrary.is_eligible(rally, meta, ceiling) or (over_cap and frac > 0.0):
+		if RallyLibrary.is_eligible(rally, meta):
 			expected[String(spec["name"])] = true
 	await _await_lineup(hq)
 	var parked := {}
 	for car in hq._cars:
 		parked[car.current_car_name()] = true
-	assert_eq(parked, expected, "HQ parks exactly the eligible + detunable-to-fit cars")
+	assert_eq(parked, expected, "HQ parks exactly the eligible cars")
 	assert_gt(expected.size(), 0, "at least one owned car qualifies (else the test proves nothing)")
 	# The banner spells out the rally's restriction. Derive the expected text from the
 	# rally's actual restriction (same helper HQ uses) rather than pinning "RWD CARS",
@@ -2681,128 +2666,6 @@ func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
 	assert_true(_save.car_needs_repair(id), "and it does need a repair")
 
 
-func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
-	# A car OVER a rally's pw_max cap still parks in the car-select lineup and LOOKS
-	# eligible there (no warning label, plain Start — the overlay stays compact).
-	# Pressing Start pops a "Too powerful" confirm that routes to Change Upgrades (the
-	# gated upgrades menu) — NOT a one-press auto-detune. The player sheds power there.
-	var owned: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(owned["instance_id"])
-	# A synthetic rally whose pw_max sits between the starter's p/w and the coupe's,
-	# so the starter is plainly eligible and the coupe is over the cap — the cap is
-	# derived from the cars' own effective figures, never a pinned number.
-	var pw_starter := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(
-		_save.profile["cars"][0], CarLibrary.by_id("fx_light_rwd"))) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var pw_coupe := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(
-		owned, CarLibrary.by_id("fx_rwd_coupe"))) * RallyLibrary.KW_KG_TO_HP_TONNE
-	assert_gt(pw_coupe, pw_starter, "the coupe out-powers the starter (else this test proves nothing)")
-	var rallies: Array[Dictionary] = [
-		{
-			"id": "fx_capped", "name": "Fixture Capped", "difficulty": 1, "special": false,
-			"map_pos": Vector2(0.3, 0.3),
-			"restriction": {"pw_max": (pw_starter + pw_coupe) * 0.5},
-			"events": [
-				{"seed": 11, "turn_count": 4}, {"seed": 12, "turn_count": 4}, {"seed": 13, "turn_count": 4},
-			],
-		},
-		{
-			"id": "fx_showdown", "name": "Fixture Showdown", "difficulty": 4, "special": true,
-			"map_pos": Vector2(0.7, 0.7), "restriction": {},
-			"events": [
-				{"seed": 21, "turn_count": 4}, {"seed": 22, "turn_count": 4}, {"seed": 23, "turn_count": 4},
-			],
-		},
-	]
-	RallyLibrary.override_for_test(rallies)
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._table_ui._on_rally_pin("fx_capped")
-	hq._enter_car_screen()
-	await get_tree().process_frame
-	# Both cars park: the eligible starter AND the over-cap coupe, which carries the
-	# detune that would qualify it.
-	assert_eq(hq._eligible.size(), 2, "the over-powered car still parks alongside the eligible one")
-	assert_true(hq._detune_needed.has(id), "the over-cap car carries its qualifying detune")
-	var frac: float = hq._detune_needed.get(id, -1.0)
-	assert_between(frac, 0.01, 0.99, "the qualifying detune is a real down-tune")
-	# Focus the over-powered coupe: it LOOKS eligible — no warning label, the plain
-	# Start label, and Start enabled. The detune agreement only surfaces on press.
-	var idx := -1
-	for i in hq._eligible.size():
-		if int(hq._eligible[i]["instance_id"]) == id:
-			idx = i
-	assert_gt(idx, -1, "the over-powered car is in the lineup")
-	hq._focus = idx
-	hq._carpark_ui._focus_changed()
-	assert_false(hq._car_warning_label.visible, "no warning label — the car looks eligible in the park")
-	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
-	# The overlays upper-case their labels (house style), so compare case-insensitively.
-	assert_eq(hq._start_button.text.to_upper(), "START RALLY",
-		"the over-powered car keeps the plain Start label")
-	# Press Start: instead of launching, the "Too powerful" confirm pops offering Change
-	# Upgrades (not a one-press detune). Nothing is applied and the rally doesn't launch.
-	await hq._on_start_pressed()
-	assert_true(is_instance_valid(hq._carpark_ui._active_carpark_popup),
-		"pressing Start on an over-powered car pops the over-limit prompt")
-	var popup: ConfirmPopup = hq._carpark_ui._active_carpark_popup
-	# Exit-left / proceed-right (features/menus.md → "Button order"): Cancel leads, the
-	# action that gets you moving is last. Asserted by identity, not by index 0.
-	var choices: Array = []
-	for b in popup._buttons:
-		choices.append(String((b as Button).text).to_upper())
-	assert_eq(choices[0], "CANCEL", "Cancel is leftmost")
-	assert_string_contains(choices[choices.size() - 1], "CHANGE UPGRADES",
-		"and the proceeding choice — routing to the upgrades menu — is rightmost")
-	for b in popup._buttons:
-		assert_false("detune" in (b as Button).text.to_lower(),
-			"there is no one-press auto-detune button anymore")
-	assert_false(RallySession.is_active(), "the rally does not launch from the prompt")
-	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
-		"nothing is applied to the car by the prompt")
-	# Choosing Change Upgrades opens the gated upgrades popup where the player sheds power.
-	hq._carpark_ui._detune_change_upgrades()
-	assert_true(hq._carpark_ui._upgrades_popup != null and hq._carpark_ui._upgrades_popup.visible,
-		"Change Upgrades opens the upgrades popup")
-
-
-func test_hq_carpark_excludes_a_car_below_the_band_floor() -> void:
-	# A car below a rally's p/w BAND floor — even at its MAX potential (full tune + kits
-	# enabled + ballast dropped) — is INELIGIBLE, so it never parks in the rally's eligible
-	# lineup. This is the observable consequence of the retired soft "Underpowered but Start
-	# Anyway" prompt: there is no eligible-but-underpowered state to warn about anymore.
-	# Derived from the car's own max-potential figure so it's not pinned to authored stats.
-	var owned: Dictionary = _save.profile["cars"][0]
-	var id := int(owned["instance_id"])
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.max_potential_meta(owned, entry)) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var rallies: Array[Dictionary] = [
-		{
-			"id": "fx_high_band", "name": "Fixture High Band", "difficulty": 2, "special": false,
-			"map_pos": Vector2(0.4, 0.4),
-			# A band whose FLOOR sits above the car's max potential -> ineligible.
-			"restriction": {"pw_min": pw * 1.5},
-			"events": [
-				{"seed": 31, "turn_count": 4}, {"seed": 32, "turn_count": 4}, {"seed": 33, "turn_count": 4},
-			],
-		},
-	]
-	RallyLibrary.override_for_test(rallies)
-	hq._table_ui._on_rally_pin("fx_high_band")
-	hq._enter_car_screen()
-	await get_tree().process_frame
-	await _await_lineup(hq)
-	var idx := -1
-	for i in hq._eligible.size():
-		if int(hq._eligible[i]["instance_id"]) == id:
-			idx = i
-	assert_eq(idx, -1, "a car below the band floor (even at max potential) is not in the eligible lineup")
-	RallyLibrary.reset()
-
-
 func test_swap_car_qualifies_for_restricted_rally() -> void:
 	# A car whose STOCK mode fails a RWD-only rally becomes eligible once it carries the
 	# swap kit (it can switch to RWD); without the kit it stays ineligible.
@@ -2821,33 +2684,6 @@ func test_swap_car_qualifies_for_restricted_rally() -> void:
 	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, no_kit, entry,
 			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
 		"un-kitted car cannot switch, so no qualifying mode")
-
-
-func test_swap_and_detune_stack_for_a_rally_restricting_both() -> void:
-	# A rally that restricts BOTH drive_mode AND pw_max should be reachable by a car
-	# that needs to STACK a drivetrain switch with an engine detune — neither move
-	# alone qualifies it, but the two together do.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var entry := {"id": "t_fwd_stack", "name": "FWD stack car", "drive_mode": CarLibrary.FWD,
-		"engine": "", "peak_torque": 300.0, "redline": 6000.0, "mass": 1200.0}
-	var full_pw := CarLibrary.power_to_weight(entry) * CarLibrary.KW_KG_TO_HP_TONNE
-	# The cap sits well under the car's full-tune p/w (full pw ~= 1.5x the cap), so a
-	# partial detune is needed on top of the switch — comfortably inside (0, 1).
-	var pw_max := full_pw / 1.5
-	var rally := {"id": "t_rwd_pw", "name": "T2",
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_max": pw_max}}
-	var with_kit := {"instance_id": 3, "model_id": "t_fwd_stack",
-		"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": -1}
-	var no_kit := {"instance_id": 4, "model_id": "t_fwd_stack",
-		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
-	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, with_kit, entry,
-			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
-		"switch+detune stack qualifies the kitted car for the dual-restricted rally")
-	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, no_kit, entry,
-			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
-		"un-kitted car cannot switch, so no qualifying mode even with a detune available")
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
@@ -3038,45 +2874,6 @@ func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
 	assert_false(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
 		"nothing gets fitted from the pool")
 
-
-# A single-part slot (aero) is a None / <Kit> option selector, earn-gated like turbo:
-# None is always available, the kit is greyed until fitted, and picking it enables the part
-# (picking None parks it). Free, instant, reversible — no confirmation dialog.
-func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")
-	var id := int(owned["instance_id"])
-	_save.set_selected_car(id)
-	hq._enter_lift()
-	await get_tree().process_frame
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	# Before the kit is won: a greyed kit option sits beside an available None; no toggles.
-	var kit_name := String(UpgradeLibrary.by_id("fx_aero").get("name", "")).to_upper()
-	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
-		"no Enable/Disable toggle — the slot is a selector")
-	var kit_btn := _turbo_button(hq._lift_upgrades_box, kit_name)  # matches by (upper-cased) label
-	assert_not_null(kit_btn, "the slot shows its kit as an option")
-	assert_true(kit_btn.disabled, "the kit option is greyed until it's won")
-	assert_eq(kit_btn.focus_mode, Control.FOCUS_ALL, "the option is keyboard / gamepad focusable")
-	# Win + fit the kit (disabled), reopen: the kit option ungreys.
-	_save.add_item("fx_aero")
-	_save.install_upgrade(id, "fx_aero", false)
-	hq._lift_upgrades_box.rebuild()
-	await get_tree().process_frame
-	assert_false(_turbo_button(hq._lift_upgrades_box, kit_name).disabled,
-		"the kit option ungreys once fitted")
-	# Picking the kit enables the part; picking None parks it (still fitted, effect off).
-	_press_slot_button_with_text(hq._lift_upgrades_box, "aero", kit_name)
-	await get_tree().process_frame
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_aero"), "picking the kit enables it")
-	_press_slot_button_with_text(hq._lift_upgrades_box, "aero", "STOCK")
-	await get_tree().process_frame
-	var car: Dictionary = _save.get_car(id)
-	assert_true(car["installed_upgrades"].has("fx_aero"), "a parked part stays fitted to the car")
-	assert_false(UpgradeLibrary.is_enabled(car, "fx_aero"), "picking None switches the part off")
 
 
 func test_hq_back_steps_carpark_to_table_to_garage() -> void:
@@ -4060,55 +3857,7 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 		assert_almost_eq(float(w), float(widths[0]), 0.5, "all tuning sliders share the same length")
 
 
-func test_restriction_text_shows_power_to_weight_in_hp_per_tonne() -> void:
-	# The rally requirement string must show its p/w ceiling in hp/tonne, matching every
-	# other player-facing p/w readout. The ceiling is authored in hp/tonne, shown straight.
-	# Injected value, so no authored rally number is pinned.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var txt: String = hq._restriction_text({"pw_max": 300.0})
-	assert_true(txt.contains("hp/tonne"), "requirement carries the hp/tonne unit")
-	assert_true(txt.contains("300"), "authored hp/tonne ceiling is shown straight")
 
-
-func test_detune_label_shows_power_to_weight() -> void:
-	# The detune value label carries the percent AND the live power-to-weight readout
-	# (format, not a pinned value). Detune lives on the UPGRADES page (p/w knob).
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var id: int = _save.selected_instance_id()
-	hq._lift_upgrades_box.advanced()._on_detune_changed(80.0, id)
-	var txt := String(hq._lift_upgrades_box.advanced()._detune_value.text)
-	assert_true(txt.to_upper().contains("HP/T"), "detune label shows the power-to-weight readout")
-
-
-func test_detune_slider_is_present_and_focusable() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var slider: HSlider = hq._lift_upgrades_box.advanced()._detune_slider
-	assert_not_null(slider, "upgrades page has a detune slider")
-	assert_eq(slider.focus_mode, Control.FOCUS_ALL, "detune slider is keyboard/gamepad focusable")
-	assert_eq(slider.min_value, 0.0, "detune slider starts at 0%")
-	assert_eq(slider.max_value, 100.0, "detune slider tops at 100%")
-
-
-func test_detune_slider_persists_as_fraction() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var id: int = _save.selected_instance_id()
-	hq._lift_upgrades_box.advanced()._on_detune_changed(50.0, id)
-	assert_almost_eq(float(_save.get_car(id)["tuning"]["engine_detune"]), 0.5, 0.001,
-		"a 50% slider stores a 0.5 torque fraction")
 
 
 # Engine swapping is a star-gated CAPABILITY (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY): tokens
@@ -4119,88 +3868,13 @@ func _unlock_engine_swaps() -> void:
 	_save.complete_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60_000, 1)
 
 
-func _find_swap_button(hq: Node3D) -> Button:
-	for row in hq._lift_upgrades_box.advanced().get_children():
-		if row.is_queued_for_deletion():
-			continue  # a rebuild queue_free'd the old rows; ignore them
-		for child in row.get_children():
-			if child is Button and String(child.text).to_lower().begins_with("swap engine"):
-				return child
-	return null
 
 
-func test_swap_row_is_absent_until_the_capability_special_is_won() -> void:
-	# The swap row is HIDDEN while the capability is star-locked — not shown disabled. Same
-	# rule as a star-locked part option: a permanently-dead row only raises "when do I get
-	# this?", which the garage cannot answer. Holding a partner AND tokens must not conjure
-	# it; only winning the gating special does.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	assert_false(RallyLibrary.engine_swaps_unlocked(_save.profile), "setup: swapping is locked")
-	_save.grant_car("fx_rwd_coupe")            # a partner exists...
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 2)  # ...and tokens are banked
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	assert_null(_find_swap_button(hq),
-		"no swap row at all while locked, even with a partner and tokens in hand")
-	# Winning the gating special brings the row in, enabled.
-	_unlock_engine_swaps()
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	var btn := _find_swap_button(hq)
-	assert_not_null(btn, "winning the special brings the swap row in")
-	assert_false(btn.disabled, "and it is usable")
-
-
-func test_swap_button_disabled_without_an_eligible_partner() -> void:
-	# before_each grants a single Fixture Roadster starter — no other car to swap with, so the
-	# Swap Engine button is disabled. A token owned + a second car both present enables it.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	_unlock_engine_swaps()
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)  # isolate partner-presence as the variable
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var btn := _find_swap_button(hq)
-	assert_not_null(btn, "the upgrades page has a Swap Engine button")
-	assert_true(btn.disabled, "no partner -> swap button disabled")
-	_save.grant_car("fx_rwd_coupe")
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame  # let the rebuild's queue_free'd old rows clear
-	assert_false(_find_swap_button(hq).disabled, "a second car + a token enables the swap")
-
-
-func test_swap_button_without_a_token_is_disabled_until_one_is_owned() -> void:
-	# With an eligible partner but no token, the swap button is DISABLED and its label
-	# spells out the no-token state (a tooltip explains how to earn one) — it does NOT
-	# enter swap mode. A token then owned enables the button and lets it swap normally.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	_unlock_engine_swaps()
-	_save.grant_car("fx_rwd_coupe")  # a partner exists, but no token owned
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var btn := _find_swap_button(hq)
-	assert_not_null(btn, "the upgrades page has a Swap Engine button")
-	assert_true(btn.disabled, "partner but no token -> button disabled")
-	assert_true(String(btn.text).to_lower().contains("no token"), "label spells out the no-token state")
-	assert_ne(hq._view, hq.View.CARPARK, "no token -> not in swap mode")
-	# A token owned: the button is enabled and enters the real swap flow.
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	assert_false(_find_swap_button(hq).disabled, "a token enables the swap")
 
 
 # The Mystery Box button lives on the garage row's TOP level now (see
 # _refresh_garage_row), not the Lift Upgrades page — find it by its label text
-# ("Mystery Box (N)"), same convention as _find_swap_button. Skips queue_free'd
+# ("Mystery Box (N)"), matched by its label text. Skips queue_free'd
 # buttons still lingering in the tree from a rebuild (queue_free is deferred, so
 # the OLD button can coexist with the NEW one for the rest of this frame).
 func _find_mystery_box_button(hq: Node3D) -> Button:
@@ -4404,8 +4078,8 @@ func test_the_garage_row_ignores_select_while_a_modal_is_open() -> void:
 
 func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> void:
 	# The detune-to-enter prompt offers "Change Upgrades…" as an alternative to detuning:
-	# it opens a popup hosting the UpgradesMenu for the focused car, keyboard/gamepad
-	# navigable, with NO engine-swap row (the swap flow would change the HQ view).
+	# it opens a popup hosting the UpgradesGrid for the focused car, keyboard/gamepad
+	# navigable, with NO engine-swap action (the swap flow would change the HQ view).
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -4416,13 +4090,10 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 	hq._carpark_ui._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
 	assert_true(hq._carpark_ui._upgrades_popup.visible, "the popup is shown")
-	assert_not_null(hq._carpark_ui._upgrades_popup_menu, "the popup hosts an UpgradesMenu")
-	assert_not_null(hq._carpark_ui._upgrades_popup_menu.first_control(), "has a focusable option (navigable)")
-	var has_swap := false
-	for node in hq._carpark_ui._upgrades_popup_menu.find_children("*", "Button", true, false):
-		if String((node as Button).text).to_lower().begins_with("swap engine"):
-			has_swap = true
-	assert_false(has_swap, "the engine-swap row is dropped in the popup")
+	assert_not_null(hq._carpark_ui._upgrades_popup_menu, "the popup hosts an UpgradesGrid")
+	assert_not_null(hq._carpark_ui._upgrades_popup_menu.first_control(), "has a focusable tile (navigable)")
+	assert_false(hq._carpark_ui._upgrades_popup_menu._on_swap.is_valid(),
+		"no engine-swap action is wired here — the swap flow would change the HQ view")
 	hq._carpark_ui._close_upgrades_popup()
 	assert_false(hq._carpark_ui._upgrades_popup.visible, "Done / back closes the popup")
 
@@ -4476,21 +4147,6 @@ func test_carpark_upgrades_modal_sits_below_a_confirm_popup() -> void:
 		"the upgrades modal draws BELOW any confirm popup opened over it")
 	confirm.trigger_back()
 
-
-func test_engine_swap_button_is_focusable() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	_unlock_engine_swaps()
-	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	var found := false
-	for row in hq._lift_upgrades_box.advanced().get_children():
-		for child in row.get_children():
-			if child is Button and String(child.text).to_upper() == "SWAP ENGINE":
-				assert_eq(child.focus_mode, Control.FOCUS_ALL, "swap button is focusable")
-				found = true
-	assert_true(found, "the upgrades page has a Swap Engine button")
 
 
 func test_migratable_layers_gain_no_runtime_children() -> void:
@@ -4648,220 +4304,14 @@ func test_final_event_shows_both_leaderboards_before_proceeding() -> void:
 		"page 1 leads to the world board; the podium is one page further on")
 
 
-# Drivetrain selector on the upgrades page's drivetrain slot row (todo/drivetrain-swap):
-# ALWAYS shows three FOCUS_ALL mode buttons (RWD/AWD/FWD). Without the kit only the car's
-# stock mode is enabled + selected (the rest greyed, earn-gated); once the kit is owned all
-# three are selectable and pressing one stores the override on the car.
-func _count_buttons_with_text(box: Node, needles: Array) -> int:
-	var count := 0
-	for b in box.find_children("*", "Button", true, false):
-		for needle in needles:
-			if String(b.text).contains(needle):
-				count += 1
-				break
-	return count
 
 
-func _press_button_with_text(box: Node, needle: String) -> void:
-	for b in box.find_children("*", "Button", true, false):
-		if String(b.text).contains(needle):
-			b.pressed.emit()
-			return
-	fail_test("no button found containing '%s'" % needle)
 
 
-# The option-selector rows share button labels — every slot renders a "None" — so a
-# whole-box search over-counts and can press the wrong slot's button. Each option
-# button carries an "opt:<slot>:..." focus-key meta (hq.gd _make_option_selector), so
-# scope by that meta to confine a count / press to a single selector row.
-func _slot_buttons(box: Node, slot: String) -> Array:
-	var out: Array = []
-	var prefix := "opt:%s:" % slot
-	for b in box.find_children("*", "Button", true, false):
-		if String(b.get_meta("upgrade_focus_key", "")).begins_with(prefix):
-			out.append(b)
-	return out
 
 
-func _count_slot_buttons_with_text(box: Node, slot: String, needles: Array) -> int:
-	var count := 0
-	for b in _slot_buttons(box, slot):
-		for needle in needles:
-			if String(b.text).contains(needle):
-				count += 1
-				break
-	return count
 
 
-func _press_slot_button_with_text(box: Node, slot: String, needle: String) -> void:
-	for b in _slot_buttons(box, slot):
-		if String(b.text).contains(needle):
-			b.pressed.emit()
-			return
-	fail_test("no button in slot '%s' containing '%s'" % [slot, needle])
-
-
-func _drivetrain_mode_buttons(box: Node) -> Array:
-	var out: Array = []
-	for b in box.find_children("*", "Button", true, false):
-		if String(b.get_meta("upgrade_focus_key", "")).begins_with("drivetrain:"):
-			out.append(b)
-	return out
-
-
-func test_drivetrain_selector_always_shown_gated_until_unlocked() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")  # stock drive mode is AWD
-	var id := int(owned["instance_id"])
-	_save.set_selected_car(id)
-	hq._enter_lift()
-	await get_tree().process_frame
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	# All three modes are shown even without the kit — but only the stock mode (AWD) is
-	# enabled + selected; the other two are greyed (earn-gated, like a part option).
-	var buttons := _drivetrain_mode_buttons(hq._lift_upgrades_box)
-	assert_eq(buttons.size(), 3, "all three modes shown before the kit is owned")
-	for b in buttons:
-		var is_stock := String(b.text).contains("AWD")
-		assert_eq(b.disabled, not is_stock,
-			"only the stock mode is selectable without the kit (%s)" % b.text)
-		if is_stock:
-			assert_true(String(b.text).begins_with("["), "stock mode is selected")
-		assert_eq(b.focus_mode, Control.FOCUS_ALL, "each mode button is keyboard / gamepad focusable")
-	# Owning the kit (even DISABLED — the won-but-not-podium-applied state) enables all modes.
-	_save.add_item("fx_drivetrain")
-	_save.install_upgrade(id, "fx_drivetrain", false)
-	hq._lift_upgrades_box.rebuild()
-	await get_tree().process_frame
-	buttons = _drivetrain_mode_buttons(hq._lift_upgrades_box)
-	assert_eq(buttons.size(), 3, "all three modes shown once the kit is owned")
-	for b in buttons:
-		assert_false(b.disabled, "every mode is selectable once the kit is owned (%s)" % b.text)
-	# No Enable/Disable toggle for the drivetrain slot — the selector's stock choice is off.
-	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
-		"drivetrain slot has no enable/disable toggle")
-
-
-func test_drivetrain_selector_sets_override() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")
-	var id := int(owned["instance_id"])
-	_save.set_selected_car(id)
-	_save.add_item("fx_drivetrain")
-	_save.install_upgrade(id, "fx_drivetrain")
-	hq._enter_lift()
-	await get_tree().process_frame
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	_press_button_with_text(hq._lift_upgrades_box, "AWD")
-	await get_tree().process_frame
-	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.AWD,
-		"pressing a mode stores the override")
-
-
-# Regression: selecting a drivetrain rebuilds the upgrade rows via _set_drivetrain →
-# _rebuild_upgrades_box. The row builders author their own font_size (15); the house
-# rule is FONT_SIZE (16). The rebuild must re-apply the house rules so the text doesn't
-# visibly shrink 16 → 15 the moment you pick a mode (the live rebuild paths don't call
-# _normalize_menus, so the enforce must live in _rebuild_upgrades_box itself).
-func test_selecting_a_drivetrain_keeps_the_house_font_size() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")
-	var id := int(owned["instance_id"])
-	_save.set_selected_car(id)
-	_save.add_item("fx_drivetrain")
-	_save.install_upgrade(id, "fx_drivetrain")
-	hq._enter_lift()
-	await get_tree().process_frame
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	_press_button_with_text(hq._lift_upgrades_box, "AWD")
-	await get_tree().process_frame
-	for node in hq._lift_upgrades_box.find_children("*", "Control", true, false):
-		var c := node as Control
-		if c is Label or c is Button:
-			assert_eq(c.get_theme_font_size("font_size"), UITheme.FONT_SIZE,
-				"'%s' keeps the house font size after a drivetrain rebuild" % c.name)
-
-
-# The turbo slot is an earn-gated None / Small / Big selector, not enable/disable toggles.
-func _turbo_button(box: Node, needle: String) -> Button:
-	for b in box.find_children("*", "Button", true, false):
-		if String(b.text).contains(needle):
-			return b
-	return null
-
-
-func test_turbo_selector_is_earn_gated() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")
-	var id := int(owned["instance_id"])
-	_save.set_selected_car(id)
-	hq._enter_lift()
-	await get_tree().process_frame
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	# All three options always render; the turbo slot has no Enable/Disable toggles.
-	# (Button labels render uppercased by the theme, so match on the upper-cased text.)
-	assert_eq(_count_slot_buttons_with_text(hq._lift_upgrades_box, "turbo", ["STOCK", "SMALL", "BIG"]), 3,
-		"Stock / Small / Big always shown")
-	# With no kit won, Stock is selectable but Small / Big are greyed until earned.
-	assert_false(_turbo_button(hq._lift_upgrades_box, "STOCK").disabled, "Stock is always available")
-	assert_true(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small locked until its kit is won")
-	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big locked until its kit is won")
-	# Winning the Small kit unlocks Small only; Big stays greyed.
-	_save.add_item("fx_turbo_small")
-	_save.install_upgrade(id, "fx_turbo_small", false)
-	hq._lift_upgrades_box.rebuild()
-	await get_tree().process_frame
-	assert_false(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small unlocks once its kit is fitted")
-	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big still locked")
-	# Each option button is keyboard / gamepad focusable.
-	assert_eq(_turbo_button(hq._lift_upgrades_box, "STOCK").focus_mode, Control.FOCUS_ALL,
-		"turbo option buttons are focusable")
-
-
-func test_turbo_selector_sets_enabled_part() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")
-	var id := int(owned["instance_id"])
-	_save.set_selected_car(id)
-	_save.add_item("fx_turbo_small")
-	_save.install_upgrade(id, "fx_turbo_small", false)
-	_save.add_item("fx_turbo_big")
-	_save.install_upgrade(id, "fx_turbo_big", false)
-	hq._enter_lift()
-	await get_tree().process_frame
-	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	await get_tree().process_frame
-	# Picking Big enables the large turbo (exclusivity keeps the small one off).
-	# (Button labels render uppercased by the theme.)
-	_press_button_with_text(hq._lift_upgrades_box, "BIG")
-	await get_tree().process_frame
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_big"), "Big enables the large turbo")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_small"), "and switches the small one off")
-	# Picking Stock parks both — no turbo enabled.
-	_press_button_with_text(hq._lift_upgrades_box, "STOCK")
-	await get_tree().process_frame
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_big"), "Stock disables the large turbo")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_small"), "Stock disables the small turbo")
-
-
-# --- Global stage leaderboard (page 2 of the interstitial) -------------------
-# docs/superpowers/specs/2026-07-31-global-leaderboards-design.md §5/§6. The
-# interstitial has TWO exits to the rally and both must land on page 2 first; the
-# page then owns the only route onward.
 
 # A stand-in for Cloud.leaderboard.submit_and_fetch: no network, no catalogue, no
 # tunables — just the result shape the page reads.
@@ -6012,24 +5462,30 @@ func _install_reveal_roster() -> void:
 		# roster's one reveal edge, and what the parade tests drive.
 		{"id": "rv_hot", "name": "Reveal Hot", "region": "home", "difficulty": 2,
 			"special": false, "map_pos": hq_pos + Vector2(0.03, 0.0), "reveal_radius": 0.7,
-			"restriction": {"pw_min": 5000.0}, "events": []},
+			# A class no fixture car is in, so no owned car can enter it until the test
+			# grants one that is (_grant_in_class_car).
+			"restriction": {"country": RV_HOT_COUNTRY}, "events": []},
 		{"id": "rv_special", "name": "Reveal Special", "region": "home", "difficulty": 3,
 			"special": true, "map_pos": hq_pos + Vector2(0.5, 0.0),
 			"restriction": {}, "events": []},
 	])
 
 
-# A car whose power-to-weight is far beyond any authored band, so it qualifies for the
-# rv_hot floor no matter how the fixture engines are tuned.
-func _grant_featherweight() -> void:
+# The country rv_hot restricts entry to. Deliberately not one any fixture car carries, so
+# "no owned car can enter it" holds however the fixtures are retuned.
+const RV_HOT_COUNTRY := "__rv_hot_only__"
+
+
+# Grants a car in rv_hot's class — the only owned car that qualifies for it.
+func _grant_in_class_car() -> void:
 	var cars := CarFixtures.cars()
-	var light := CarFixtures.cars()[0].duplicate(true)
-	light["id"] = "fx_reveal_featherweight"
-	light["name"] = "Fixture Featherweight"
-	light["mass"] = 1.0
-	cars.append(light)
+	var in_class: Dictionary = CarFixtures.cars()[0].duplicate(true)
+	in_class["id"] = "fx_reveal_in_class"
+	in_class["name"] = "Fixture In Class"
+	in_class["country"] = RV_HOT_COUNTRY
+	cars.append(in_class)
 	CarLibrary.override_for_test(cars)
-	_save.grant_car("fx_reveal_featherweight")
+	_save.grant_car("fx_reveal_in_class")
 
 
 func _new_hq() -> Node3D:
@@ -6050,7 +5506,7 @@ func test_reveal_queue_holds_a_rally_until_a_car_can_enter_it() -> void:
 	assert_false(pending.has("rv_hot"), "a rally no owned car can enter is held back")
 	assert_false(pending.has("rv_special"), "a star-locked special is not revealed")
 
-	_grant_featherweight()
+	_grant_in_class_car()
 	assert_true(hq._table_ui._pending_reveals().has("rv_hot"),
 		"the held rally appears once the player owns a car that qualifies for it")
 
