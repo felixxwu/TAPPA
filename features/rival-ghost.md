@@ -50,6 +50,32 @@ skill factor `k`** until the profile's total lands on the rival's drawn time. `k
 | `grip_mult = pow(k, rival_ghost_grip_exponent)` | folds into `_surface_grip`'s `mu` | how much is lost in CORNERS |
 | `power_mult = pow(k, rival_ghost_power_exponent)` | scales `p_peak_w` | how much is lost on STRAIGHTS |
 
+`grip_mult` is the *driver's* share of μ, and it is not the last word on it: after either
+branch resolves μ, `optimum_profile` multiplies in `LapTimeModel._load_factor` — the tyre
+load-sensitivity term, the car's mass and tyre widths through the same
+`GameConfig.tire_load_factor` the live physics uses (see
+[car-performance.md](car-performance.md)). That is a property of the CAR, so it sits
+outside the skill arm entirely and bisection is unaffected: it shifts the whole
+time-vs-`k` curve rather than changing its shape, and time is still strictly decreasing
+in `k`. Practically it means a light or wide-tyred rival now has a genuinely lower
+optimum, so `k` lands *higher* (less deficit to hand out) for the same drawn target —
+another reason to keep the bracket wide.
+
+The same "property of the CAR, outside the skill arm" reasoning applies to the
+**geared top-speed cap** (`LapTimeModel._geared_top_speed_sq`, described in
+[car-performance.md](car-performance.md)): `optimum_profile` folds the rival
+car's top-gear speed ceiling into `cap2`, so a short-geared rival can no longer
+be solved into a straight-line speed its gearbox forbids. `power_mult` scales
+`p_peak_w` and therefore how *fast the rival gets there*; it does not raise the
+ceiling. Bisection is still well-behaved — time remains monotonically decreasing
+in `k` — but on a stage with a long straight the curve **flattens** once the
+rival is pinned at `v_max`, because extra power buys nothing more there. If a
+drawn target ever sits below what the ceiling allows, `k` will run to the top of
+the bracket rather than converge; that is the model correctly refusing to invent
+speed, not a bisection bug. Note the cap is skipped entirely for a meta that does
+not describe a gearbox (no engine id, no wheel radius) — synthetic rival metas in
+tests solve exactly as they did before.
+
 Two arms are required because the forward pass takes `min(grip_long, a_engine)`: grip does
 not bind at all on a power-limited straight, and power barely binds mid-corner. Either
 alone leaves a class of stage it cannot slow down.
@@ -236,6 +262,11 @@ when it isn't. That is what it computes now, instead of an invented per-surface 
   longitudinally, and slip drops accordingly.
 - **`mu` mirrors `LapTimeModel._surface_grip`**, including `pow(solved_k, grip_exponent)`,
   so the cosmetic agrees with the profile it is drawn from rather than assuming full grip.
+  It does **not** fold in the tyre load-sensitivity factor the profile applies on top of
+  that μ, and that is a knowing approximation rather than an oversight: this μ only sets
+  what *fraction* of the friction circle cornering is using, the factor is a gentle few
+  percent, and it moves the numerator and the circle together. If it is ever retuned hard
+  enough to matter, this is the site to revisit — the pace itself is already correct.
 - **Weather is deliberately absent from the ANGLE.** Rain lowers `mu`, and the pace profile
   already answers that by cornering slower. The angle at which a tyre peaks is a property
   of the rubber and surface, not of how much grip is on offer. An earlier version divided

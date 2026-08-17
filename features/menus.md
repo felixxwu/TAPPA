@@ -40,7 +40,7 @@ choice — apply it to every new row without asking.
 
 Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car | Start`),
 `hq_overlays.gd::build_title_overlay` (`Exit Game | Free Roam | Settings | Start`),
-`hq.gd::_refresh_garage_row` (`< Back | Career | Garage | Mystery Box | Online`),
+`hq.gd::_refresh_garage_row` (`< Back | Career | Garage | Online` — a fixed four),
 `build_detail_overlay` (`< Map | Enter Rally >`), `build_challenge_overlay`
 (`< Back | Start`).
 
@@ -53,11 +53,13 @@ Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car |
    this wrong and Escape abandons a rally or overwrites a career. Single-action popups
    are unaffected: first and last are the same button.
 2. **Cursor seat indices are not constants.** `ButtonCursor` rows seat the cursor by
-   index, and several rows have CONDITIONAL members — "Exit Game" is skipped on web,
-   "Mystery Box" is omitted when none is held. So "the proceeding action is last" is a
-   different index per platform and per save state. Compute it
+   index, and some rows have CONDITIONAL members — "Exit Game" is skipped on web. So
+   "the proceeding action is last" can be a different index per platform. Compute it
    (`hq.gd::_title_start_index`, `hq.gd::_garage_career_index`) rather than hardcoding,
-   and have tests assert by button IDENTITY rather than by literal index.
+   and have tests assert by button IDENTITY rather than by literal index. (The garage
+   row is no longer one of the varying ones — its four stops are unconditional, so its
+   focus chain is static — but keep asking `_garage_career_index` anyway: identity-based
+   lookups survive the next reorder, literals don't.)
 
 **Vertical columns are a separate convention and are deliberately NOT changed by this
 rule:** they put the exit at the BOTTOM (last) — see `pause_menu.gd::_build_menu_panel`
@@ -154,20 +156,16 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 
   **Page 2: the global stage leaderboard (`GlobalStandings`, see
   [global-leaderboards.md](global-leaderboards.md)).** `Standings._advance()` is
-  the **SOLE exit** from the whole standings screen and a strict three-step ladder:
-  page 1 → page 2 → reward reveal (if this stage drew one) → resume. This is a
-  reorder from an earlier version where the reward sat BETWEEN page 1 and page 2
-  — see [global-leaderboards.md](global-leaderboards.md) for why the user asked
-  for the swap and what it fixed about page 2's Back button (next paragraph). The
-  1st `_advance()` call shows page 2; the 2nd collects the reward if one is
-  pending, else resumes the rally via `RallySession.continue_to_next_event()` —
-  still the only call site for either. Page 1's action button is now
+  the **SOLE exit** from the whole standings screen and a strict two-step ladder:
+  page 1 (local standings) → page 2 (world standings) → resume. The
+  1st `_advance()` call shows page 2; the 2nd resumes the rally via
+  `RallySession.continue_to_next_event()` — still the only call site for it.
+  Page 1's action button is now
   unconditionally **"Next >"** — it only ever does one thing (open page 2), and the
   wording is deliberately generic rather than naming the destination. Page 2 is a sibling `Control` added over page 1 that REPLACES its content
   rather than sitting beside it: page 1's root VBox is hidden — `visible = false`
-  — which, because page 2 now always runs before any reward reveal, means page 1's
-  root VBox is ALWAYS still there to hide (no more "reveal already tore it down"
-  case) — which also makes page 1's
+  — which, because nothing else ever takes over the screen, means page 1's
+  root VBox is ALWAYS still there to hide — which also makes page 1's
   `MenuNav` inert (`MenuNav._unhandled_input` is gated on its root being visible), so
   only page 2's own `MenuNav.attach(self, {first = cont, on_back = _on_back})` (inside
   `global_standings.gd`) is live and the two can never race on a Back press. **This
@@ -192,7 +190,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   not reopen on decline) that re-runs the fetch on close so a just-set time can
   post without re-driving; the cursor seats on this button, not Continue, whenever
   it's showing. Back is offered on **every** stage now (`show_back :=
-  is_instance_valid(_root_box)`, which — with the reorder above — is always true
+  is_instance_valid(_root_box)`, which is always true
   in practice, since page 1 is never torn down before page 2 runs); `_on_back`'s
   `if not show_back: return` no-op guard is a defensive backstop for the case,
   not something the current flow exercises.
@@ -200,44 +198,12 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `MenuNav` with focus back on the action button — deliberately NOT re-running page 1's
   row reveal, since replaying a board the player already read is noise.
 
-  **Collect reward on the standings.** On the interstitial of a **non-final event**
-  that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`),
-  **page 2's** action button (not page 1's, which is now always the unconditional
-  "Next >") reads **`Collect reward >`** instead of `Continue to next
-  stage >`. Pressing it clears page 2 and takes over the screen with the shared
-  `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
-  as the podium** — which lands on the won part. Everything auto-resolves to the
-  Upgrades/Next row now: the Repair-now / Save-it choice a won repair kit used to offer
-  is gone with the kits themselves. Not shown when the driven car is locked by a Rally
-  Challenge run (`DrivingContext.is_car_locked`): repairing it would heal the damage
-  that run is contracted to carry across stages, so the reveal takes the plain
-  Save-it/inventory path and the kit becomes spendable once the run ends (see
-  [rally-challenge.md](rally-challenge.md) → "Car lock"). Every other landing shows an **Upgrades / Next** action row
-  (`UpgradeReveal._show_actions`) instead of finishing on its own. **Next**
-  (`_on_next_pressed`) is the plain continue — exactly the old immediate
-  `finished.emit()`. **Upgrades** (`_on_upgrades_pressed`) builds and opens the SAME
-  `UpgradesGrid` component the pre-stage start line / HQ garage use
-  ([upgrade-catalogue.md](upgrade-catalogue.md)), fed the driven car and the performance
-  ceiling from `DrivingContext.rating_limit_for_car()` (a Rally Challenge run's; career
-  rallies set none) so `bind_close_button`/`request_close` gate the
-  **Done** button on the SAME over-limit warning the pre-stage popup shows — no
-  bespoke warning logic in the reveal. Closing that overlay (`_close_upgrades`) resumes
-  the flow exactly as Next would, so the player is never stranded mid-edit. The
-  reveal's own **Next** (or Upgrades → Done) IS the continue step — `standings.gd`
-  connects `_reveal.finished` directly to `RallySession.continue_to_next_event`
-  (`CONNECT_ONE_SHOT`), so a single press resumes the rally. (There used to be a
-  separate host-side **Continue to next stage >** button that only appeared once
-  `finished` fired, requiring a second, redundant press with no work happening in
-  between — removed; `_action_button` is cleared to `null` for the reveal phase since
-  the reveal owns its own action row/focus.) While the reel is actually spinning (real
-  play, not headless/instant), a **Skip >** button is shown —
-  `UpgradeReveal._on_skip_pressed` fast-forwards straight to the actual won item,
-  running the same landing steps a natural finish would. The `UpgradeReveal` wires its
-  own `MenuNav` across Skip, the repair Apply/Keep choice, and the Upgrades/Next row
-  (no `on_back` — same linear, host-owns-back-but-doesn't-wire-one convention the
-  podium reward reveal uses), so the whole flow is keyboard/gamepad navigable. The
-  **final event** shows the same generic `Next >` with no reward step (the podium
-  reveals the car). See [reward-system.md](reward-system.md).
+  **Page 2's action button is the exit.** It reads **`Continue to next stage >`** on a
+  non-final event and a generic **`Next >`** on the last one, and pressing it calls
+  `RallySession.continue_to_next_event()`. There is no third rung: nothing is awarded
+  between stages any more, so the interstitial's only job is to show the player where
+  they stand locally and globally and hand them back to the rally. (Cars are still
+  revealed at the podium — see [reward-system.md](reward-system.md).)
 
   A few flat menus keep their own `_unhandled_input` and attach `MenuNav` **without**
   `on_back`: the **pause** menu (its handler also *opens* the menu when closed, and
@@ -431,9 +397,11 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `_activate_garage_focus`) over a **single** side-by-side row (`_refresh_garage_row`),
   seated on **Career** (`_garage_career_index`) on entry, with `menu_back` leaving for
   the exterior exactly as the row's own Back button does. The row is
-  **Back / Career / Garage / Mystery Box (N) / Online** — Mystery Box appears only when
-  one is held, so **no index in the row is a constant** (ask `_garage_career_index` /
-  the cursor's `buttons` array, never a literal). `_station_xform(View.GARAGE)` has one
+  **Back / Career / Garage / Online** — a **fixed four stops**, with no conditional
+  members, so the row's length and focus chain are **static**: left/right walks the same
+  four every time, on every save. (Still ask `_garage_career_index` / the cursor's
+  `buttons` array rather than hardcoding an index — that survives a reorder.)
+  `_station_xform(View.GARAGE)` has one
   framing, the wide shell view. **No header caption** on this view: it used to carry
   "GARAGE — tap the map table to choose a rally, or the lift to tune your car", which named
   the room you can see and gave instructions for two objects already lit, labelled and
@@ -586,7 +554,7 @@ turn and flips its pin from the locked to the unlocked look.
   (`_has_eligible_car` → `_entry_plan`, the same authoritative answer the green/grey pin
   flag uses), and it isn't already `Save.rally_revealed_seen`. That makes it a standing
   condition rather than an event, so it works for *any* unlock route: finishing a rally,
-  buying a car, a Mystery Box car, an engine swap that moves a car into a class, a cloud
+  buying a car, an engine swap that moves a car into a class, a cloud
   restore. A rally with no qualifying car is simply held back and appears later; nothing
   expires.
 - **The sequence** (`_run_reveal_sequence`) builds the pending pins in their LOCKED look
@@ -703,7 +671,8 @@ independent of the hosting scene. It's **MenuNav-wired** (keyboard + gamepad nav
 emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it. **New
 confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
 `ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause
-menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms**, HQ **detune-to-enter confirm** (over-powered car), and the HQ **"Update available" prompt** on the native builds (`hq.gd::_check_for_update` — see [update-check.md](update-check.md)).
+menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms** (`hq.gd::_show_swap_confirm`, which is just two branches now
+— capability locked, or go ahead — since a permitted swap costs nothing to spend), HQ **detune-to-enter confirm** (over-powered car), and the HQ **"Update available" prompt** on the native builds (`hq.gd::_check_for_update` — see [update-check.md](update-check.md)).
 
 **Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its
 own action buttons (`trigger_back` is reachable only from `ui_cancel`/`menu_back` — Escape
@@ -760,9 +729,10 @@ page), so a per-instance bool could never have answered the question.
 
 Because `open` can be **refused**, *an irreversible mutation must never run before the
 presentation that reports it.* Doing it the other way round is a silent data loss:
-`hq.gd` called `Save.open_mystery_box()` (consumes the box, installs the part, saves)
-and *then* opened the reveal — so a player holding two boxes opened both and saw one
-reveal, the second popup having been refused behind the first.
+the rule was learned the hard way by a since-deleted consumable flow that *consumed the
+item, installed the part and saved* and only **then** opened the reveal — so a player
+holding two of them spent both and saw one reveal, the second popup having been refused
+behind the first. The mechanism is gone; the ordering rule it taught is not.
 
 `ConfirmPopup.open_committing(host, title, placeholder, actions, commit, …)` inverts
 the order so that state is unrepresentable: it **acquires the modal slot first**, and
@@ -1189,8 +1159,9 @@ and each button drills into **its own sub-page**:
   longer yields a CAR: no rally pays one, and cars are bought at the present box.
   Upgrades are car-bound, so a slottable part **fits straight onto the selected car**
   (`Save.install_upgrade` — no-op with a "own a car first" note when nothing's owned);
-  only consumables (swap token, mystery box) go to the inventory
-  (`Save.add_item`). A status line reports the last action.
+  a consumable would instead go to the inventory (`Save.add_item`) — a path that still
+  works but has no occupants, since `UpgradeLibrary` ships no consumable entries today.
+  A status line reports the last action.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
 `show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes
@@ -1256,7 +1227,8 @@ garage the car rests **lowered on the ground** at its calculated settled ride he
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view) for the currently-selected car. A HUD hint + Back (to the exterior) +
 convenience buttons sit on top: the garage station row is **Back / Career / Garage /
-Mystery Box (N) / Online**. **Garage** (`_enter_lift`) drops straight into the **tuning bay**
+Online** — four fixed stops, so the left/right focus chain never changes length.
+**Garage** (`_enter_lift`) drops straight into the **tuning bay**
 for the selected car — the car is changed there, on the lift (see below). **Free
 Roam** (`_enter_free_roam`) — reached from the **title screen**, not here — opens the car
 park across the WHOLE catalogue for a session-less drive in any car (owned or not). Because `car.tscn` embeds **all** the
@@ -1454,13 +1426,15 @@ throwaway test and still clip in the real game.
   gating rally is won.
 
   **The `engine` tile is an ACTION, not a list.** A swap TRADES this car's engine with
-  another car the player owns and spends a token, so the choice being made is *which car* —
+  another car the player owns, so the choice being made is *which car* —
   and the host owns that screen (`hq.gd::_enter_engine_swap` puts the car park into SWAP
   mode). Pressing the tile calls the host's `on_swap`; it never opens the engine catalogue,
   which would imply you can simply fit any engine. Only the HQ lift supplies that action, so
-  on the other three hosts the tile is informational and greyed. It also greys when the
-  capability is still locked or no token is banked
-  (`UpgradeOptions.engine_swap_blocked_reason`), with the reason in its tooltip.
+  on the other three hosts the tile is informational and greyed. The only other thing that
+  greys it is the capability still being locked — `UpgradeOptions.engine_swap_blocked_reason`
+  returns just `"Locked"` or `""`, and the reason goes in the tooltip. Winning the
+  unlock rally is the WHOLE gate: after that, swapping is **free and unlimited**, so the
+  tile is permanently live and never has to report a spent resource.
 
   **The `tune` popup carries a Done button**, and it is the only variant that does. The
   option list closes itself the moment a row is picked, so its exit is the gesture the
@@ -1477,9 +1451,16 @@ throwaway test and still clip in the real game.
   What the individual slots hold is [upgrade-catalogue.md](upgrade-catalogue.md)'s subject,
   but three are worth knowing here because their options do not read like "a part or not":
   the **drivetrain** tile is an FWD/RWD/AWD picker (a `drive_mode` override, gated as a
-  whole on the swap kit); the **weight** tile lists its options **heaviest → lightest** with
-  `Stock` in the middle (`+500kg  +200kg  Stock  -200kg` for a ~1000 kg car), the two
-  ballast options free and the lightweight kit earned; and the **tune** tile is the one
+  whole on the swap kit); the **weight** tile is the one slot whose rows are NOT part names
+  — `UpgradeOptions._option_label` labels each weight option with a bare signed mass delta
+  (`+200`, `-200`, with `Stock` still reading `Stock`), because "Heavy Ballast" is three
+  words for a slot that is really one number and what the player is picking is how much
+  mass to add or shed. The kilos are derived from the part's mass MULTIPLIER against the
+  car with the slot empty, then rounded to the nearest 100 (floored at 100, so a real part
+  never reads `+0`) — a multiplier lands on figures like 243, which is precision the player
+  cannot act on where a round number reads as a decision. The tile caption — which is just
+  `UpgradeOptions.current_label` — reads `weight: +200`, and the two ballast options are
+  free while the lightweight kit is earned; and the **tune** tile is the one
   slider in the grid (below). The `nitrous` tile is an ordinary slot tile — see
   [nitrous.md](nitrous.md) for why the part installs pre-enabled.
 
@@ -1506,19 +1487,16 @@ throwaway test and still clip in the real game.
   (There is no Repair anywhere — see [damage.md](damage.md).)
 
   The **`engine` tile** is the engine swap (`UpgradeOptions.SLOT_ENGINE`): it reads the
-  car's current engine, and its options are the swap targets, gated on engine-swap
-  **tokens** (NOT on HP) and on the capability being won. The lineup is **every other owned
+  car's current engine, and its options are the swap targets, gated **only** on the
+  capability having been won (not on HP, and not on any consumable — swaps are free and
+  repeatable once unlocked). The lineup is **every other owned
   car regardless of health**. It is effectively **lift-only** — the HQ lift is the one host
   that passes `on_swap`, since pressing through opens the car park in **swap mode**
   (`_enter_engine_swap` / `_carpark_swap_mode`), where the normal car-park cycle / confirm /
-  back flow exchanges the two cars' engines (`Save.swap_engines`) and returns here; the
+  back flow exchanges the two cars' engines (`Save.swap_engines`, which consumes nothing)
+  and returns here; the
   other hosts leave `on_swap` unset, because that flow would tear down the screen they are
   running on. See [engine-swap.md](engine-swap.md).
-
-  The wreck-recovery safety net (`Save.ensure_wreck_safety_net`, a free **Mystery Box**
-  when all owned cars are wrecked + none held) runs on save load, on garage entry, and on
-  `_refresh_lift_ui` (`hq.gd._refresh_wreck_safety_net`); opening that box grants a new
-  CAR rather than a part — see [reward-system.md](reward-system.md).
 
   **The upgrades page: a grid of slots.** All four hosts — the HQ lift (`hq_overlays.gd`),
   the HQ car-park Change-Upgrades popup (`hq_carpark.gd`), the start-line upgrades overlay
@@ -1557,9 +1535,28 @@ throwaway test and still clip in the real game.
   - The current option is marked with `UITheme.mark_selected` and **the cursor opens on
     it**, so the popup starts by answering "what is fitted now" without the player moving.
   - Purchase options carry the drawn star price (`StarRow.price_icon()`).
+  - **Every row quotes the performance rating that option would give the car** —
+    `UpgradeSlotPopup._row_label` renders it as `Small (412)`, and both the pickable-button
+    and the greyed locked-row paths go through it, so a rung the player cannot take yet
+    still says what it would be worth. The figure is **parenthesised** precisely so it
+    cannot be misread as the star price, which is drawn after it with its own icon. There
+    is deliberately **no per-row "before → after" progression**: `Stock` is always the first
+    row and always rates the car as it stands, so the before-figure is stated once at the
+    top of the list instead of being repeated on every line.
+    The numbers come from `UpgradeOptions.rating_with` (via `UpgradeOptions.build_with`, a
+    pure hypothetical build — nothing is written to the save), stamped onto the rows by
+    `UpgradesGrid._rated_options` on the way into the popup rather than inside
+    `options_for`, because a rating is a simulated benchmark lap and `options_for` runs for
+    every tile on every grid rebuild — see
+    [upgrade-catalogue.md](upgrade-catalogue.md) → "The option model is pure data".
   - **Clicking a row applies and closes**; back closes without applying. One press per
     decision — the option list IS the confirmation step, since the player chose the slot,
-    then chose the option.
+    then chose the option. Applying a PURCHASE now also **switches the part on**
+    (`UpgradesGrid._apply_option` calls `Save.set_upgrade_enabled` after a successful
+    `Save.buy_part`): a granted part arrives parked precisely so
+    an unasked-for gift never changes how the car drives, but here the player opened the
+    slot, picked the rung and spent the stars — leaving it parked meant the menu took the
+    payment and visibly did nothing.
 
   **The `tune` tile is the one exception: a SLIDER popup**
   (`UpgradeSlotPopup.open_slider`) — a single `SliderRow`, 0–100 step 5, with a live label,
@@ -1843,13 +1840,29 @@ parade) assumes a `rally_id` meta and the box has no rally.
   car's name lands. `_car_hint_label` — hidden and empty in every ordinary lineup — is
   SHOWN here, and only here, for "Open it to see what is inside": the box is the one target
   with no other affordance, whereas a lot full of cars with a ◄ / ► row needed no caption.
+- **The empty lot still needs one marker — the panel is welded to it.** In world-space-menu
+  mode the car-park chrome rides a `WorldPanel` anchored to `_markers[_focus]`
+  (`hq.gd::_car_panel_xform`), and `_clear_lineup()` frees every marker
+  (`hq_carpark.gd::_release_page_props`). With no marker the transform is `null`,
+  `WorldPanel.place` early-returns, and the panel — bottom button and all — stays wherever
+  it last was, i.e. nowhere the player can see it. So `_enter_present_box` calls
+  `hq.gd::_add_present_marker()` immediately after clearing and seats `_focus = 0` **before**
+  `update_overlays()`: one bay marker at `HQEnvironment.carpark_center()` with the same
+  `rotation.y = PI` every other bay marker uses. It is kept on `_present_marker` and
+  **`_open_present` reuses it** to seat the revealed car rather than making a second one —
+  which is the point of the arrangement: "Open it" and the car detail that replaces it after
+  the name reveal are read at exactly the same position and angle, so the panel does not jump
+  when the lid comes off. See [world-panel.md](world-panel.md) → "The car-park host swap" for
+  the general rule; any future car-park mode that clears the lineup loses its panel the same
+  way.
 - **Opening it** (`hq._open_present`, on the bottom button): buys the car, then **puts it in
   the box BEFORE a single wall moves** — the car is spawned at the box centre while the
   walls still hide it, so the reveal is the box genuinely opening *on* the car rather than a
   car fading in afterwards. This is exactly why the purchase happens on the button press and
-  not on entry: you cannot put a car in the box until you know which car it is. Its marker
-  sets `rotation.y = PI` so the nose faces the courtyard/camera, matching every other bay
-  marker (`hq_carpark._render_lineup_page`) — without it the car presents its back. Then
+  not on entry: you cannot put a car in the box until you know which car it is. It seats the
+  car on the `_present_marker` created on entry (above), which already carries
+  `rotation.y = PI` so the nose faces the courtyard/camera, matching every other bay marker
+  (`hq_carpark._render_lineup_page`) — without that the car presents its back. Then
   `hq._refresh_map_pins()` (the balance dropped, so the box may now be gone entirely; and a
   new car can make previously un-enterable rallies raceable, so pin state changes too), and
   the car's name goes into `_car_name_label` **under the car** — **no result card, no
@@ -2150,9 +2163,9 @@ only when something was won.
    skipped past. The enum member and its showroom/slot helpers remain in `podium.gd` but
    are no longer reachable: `_compute_stages` never appends the stage.
 
-**Upgrades are no longer revealed on the podium** — the per-event upgrades are
-awarded and revealed on the between-event **standings** screens (see the
-Collect-reward flow above and [reward-system.md](reward-system.md)); the podium
+**No upgrade is revealed on the podium** — parts are unlocked by winning the prize
+rally that carries them, not handed out per event (see
+[reward-system.md](reward-system.md)); the podium
 closes on the **stars** beat (or the special-unlock card after it).
 
 During the car reveal the overlay's content stack drops to the **bottom of the
@@ -2181,7 +2194,7 @@ spectators just face the podium / showroom). Scenery is **skipped under headless
 are `podium_*` `GameConfig` tunables.
 
 `last_result` carries `rally_name`, `standings` (each entry with `car_id`),
-`upgrades` (the per-event ids won, revealed on the standings not here), `car_reward`, `car_reward_is_new`, and
+`upgrades` (the part ids this rally's win unlocked, if any), `car_reward`, `car_reward_is_new`, and
 `game_won` (renamed from `showdown_won`; see [rally-session.md](rally-session.md))
 alongside the original `placed`/`completed`/`combined_ms`/`dnf`.
 
@@ -2279,7 +2292,10 @@ in `hq_table._build_table_targets` with a `label_panel` and no `rally_id`, it is
 `hq._pins`, `_activate_table_focus` reaches it **with no pointer and opens no confirm** (it
 lands in `CarparkMode.PRESENT` with the box built), the bottom button prices itself and
 disables when broke, opening it buys exactly one car and names it under the car with no
-modal, and a second press cannot buy again. The purchase LOGIC itself is in
+modal, and a second press cannot buy again. `test_the_present_box_panel_is_anchored_before_it_is_opened`
+covers the anchor trap: the world panel already has a `Transform3D` anchor while the box is
+still shut, and that anchor is unchanged after opening — a relationship check, not authored
+offsets, so retuning the placement can't break it. The purchase LOGIC itself is in
 `tests/headless/test_reward_system.gd` (`purchase_car` / `car_price` / `is_stranded`).
 
 `tests/headless/test_menu_flow.gd` — HQ boots to the **exterior title** (one 3D map
@@ -2301,7 +2317,7 @@ garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
 both the stage-only and cumulative leaderboards stacked on one page (and the
 final event's interstitial hands off to the podium on `rally_finished`); the podium
-renders the finish summary **and the reward reveal + standings**; and the run scene
+renders the finish summary **and the car reveal + standings**; and the run scene
 fields the bound session car. The settings
 test also checks the shared `SettingsMenu` exposes a **camera-angle row per mode** and
 **persists the chosen angle**. The pure `RallyLibrary.build_standings` ranking and the

@@ -170,8 +170,9 @@ func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() ->
 	})
 
 	assert_null(ConfirmPopup.any_open(get_tree()), "headless never opens a popup")
-	var boxes := int(_save.profile.get("inventory", {}).get(UpgradeLibrary.MYSTERY_BOX_ID, 0))
-	assert_gt(boxes, 0, "the placement-gated reward was still granted with nothing on screen to show it")
+	# Stars, not boxes: the challenge completion payout replaced the mystery-box grant.
+	assert_gt(_save.stars_available(), 0,
+		"the placement-gated reward was still granted with nothing on screen to show it")
 	assert_eq(_scenes, ["res://hq.tscn"], "and the hand-off to HQ still happens")
 
 

@@ -43,8 +43,6 @@ signal standings_ready(event_index: int)
 # edit upgrades on — so without this the ghost would keep racing the field the player
 # turned up with rather than the one they are actually about to race.
 signal opponent_field_changed()
-# A per-event upgrade was drawn + granted — reward reveal hook (menus rig 5).
-signal upgrade_revealed(item_id: String)
 # A top-3 car reward was drawn + granted — reward reveal (car arrives in HQ).
 signal car_rewarded(model_id: String)
 # The final special event won: the game's win / credits beat fires instead of a draw.
@@ -61,8 +59,6 @@ var _event_results: Array = []         # this rally's generated track results, k
                                        # can be re-drawn without regenerating terrain (refield_opponents)
 var _fielded_rating := 0               # the player rating _opponent_field was matched to
 var _dnf := false
-var _upgrades_won: Array[String] = []  # every per-event upgrade id drawn this rally (record)
-var _event_upgrade := ""               # the upgrade id won for the just-completed event ("" if none)
 var _pending_repair: Dictionary = {}   # between-event pit-repair summary, shown once by the run scene (take_pending_repair)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 # Car-park detune-to-enter agreements are TEMPORARY, for this rally only:
@@ -176,7 +172,6 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 	_event_index = 0
 	_event_times_ms = []
 	_dnf = false
-	_upgrades_won = []
 	_pending_repair = {}
 	if skip_track_gen:
 		# TEST-ONLY path: no real track results are available; generate_opponent_field
@@ -339,26 +334,10 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if damaged:
 		Save.apply_damage(_car_instance_id, hp_lost)
 	_event_index += 1
-	# One upgrade is awarded for FINISHING each NON-FINAL event (events before the
-	# last). Earned by completing the event — kept even if the player later DNFs.
-	# Drawn + installed + saved here so the standings reveal only enables the pick,
-	# and so the unseeded draw is savescum-proof (reward-system.md). The final event
-	# awards no upgrade (the podium reveals the car instead).
-	_event_upgrade = ""
-	# Two SEPARATE questions, deliberately not one flag. `at_award_boundary` is about the
-	# flow (only non-final events pay out at all); `_event_upgrade` non-empty is about the
-	# draw actually yielding something. A maxed-out car can now legitimately win NOTHING
-	# (RewardSystem.NO_REWARD) — in that case we install nothing, record nothing, and fire
-	# no reveal, so the flow runs straight on to the standings interstitial.
-	var at_award_boundary := _event_index < stage_count()
-	if at_award_boundary:
-		_event_upgrade = RewardSystem.draw_and_grant_upgrade(_car_instance_id, Save.profile)
-		if _event_upgrade != "":
-			_upgrades_won.append(_event_upgrade)
-	if damaged or _event_upgrade != "":
+	# Events no longer pay out a random part: parts are bought with stars, so there is
+	# nothing left to draw and the standings interstitial goes straight through.
+	if damaged:
 		Save.save()
-	if _event_upgrade != "":
-		upgrade_revealed.emit(_event_upgrade)
 	# The rally now PAUSES on a standings interstitial after EVERY event — including
 	# the last, which shows an event-only leaderboard and then resolves to the podium.
 	_set_phase(Phase.STANDINGS)
@@ -666,18 +645,11 @@ func current_event() -> Dictionary:
 	return event
 
 
-# The upgrade id won for the just-completed non-final event, read by the standings
-# reveal. "" after the final event (no per-event award) or before any draw.
-func current_event_upgrade() -> String:
-	return _event_upgrade
-
-
 # --- Internals ---------------------------------------------------------------
 
 # Enter the current event: announce it (presence + StageManager handoff happen in
 # the run scene) and, in real play, load that event's run scene with its seed.
 func _enter_event() -> void:
-	_event_upgrade = ""
 	# Between-event pit repairs: at the start of EVERY event after the first, the
 	# engineers patch the fielded car up — restore a slice of the lost HP and bend the
 	# bent wheels part-way back toward straight. This mutates the OwnedCar BEFORE the
@@ -826,15 +798,13 @@ func _resolve_results() -> void:
 				# silence. The map pin has always handled this case
 				# (hq.gd::_special_unlock_line); this mirrors it.
 				#
-				# It also hands over ONE swap token, so the capability is usable the moment
-				# it is announced. Unlocking the station and then making the player wait on a
-				# rare drop (RewardSystem.ENGINE_SWAP_TOKEN_DROP_CHANCE) before they can
-				# try it would make the reveal a promise rather than a reward.
-				Save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1, false)
+				# Winning the rally IS the whole unlock now — swapping costs no consumable,
+				# so there is nothing to hand over alongside the announcement and `granted`
+				# is empty.
 				special_unlock = {
 					"item_id": "",
 					"capability": "engine_swap",
-					"granted": [UpgradeLibrary.ENGINE_SWAP_TOKEN_ID],
+					"granted": [],
 				}
 		# The endgame is completing EVERY special event on the star ladder — no designated
 		# final region (todo/star-gated-special-events.md). complete_rally() above has
@@ -908,8 +878,7 @@ func _resolve_results() -> void:
 		# would tell the player they won stars when the balance did not change.
 		"star_rating": star_rating,
 		"stars_gained": stars_gained,
-		# Reward reveal data (todo/menus.md): per-event upgrades + the top-3 car.
-		"upgrades": _upgrades_won.duplicate(),
+		# Reward reveal data (todo/menus.md): the top-3 car.
 		"car_reward": car_reward,
 		"car_reward_is_new": car_reward_is_new,
 		"game_won": game_won_now,
@@ -974,8 +943,6 @@ func _reset_to_idle() -> void:
 	_event_times_ms = []
 	_opponent_field = []
 	_dnf = false
-	_upgrades_won = []
-	_event_upgrade = ""
 	_set_phase(Phase.IDLE)
 
 

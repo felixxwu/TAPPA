@@ -1547,6 +1547,13 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# below + weight_front via the drivetrain's load-sensitivity term.
 	cfg.wheel_friction_slip_front = spec["tire_compound"]
 	cfg.wheel_friction_slip_rear = spec["tire_compound"]
+	# The surface-dependent half of the tyre model (features/drivetrain-and-tires.md)
+	# has no car-spec source — a car brings ONE compound coefficient, not a per-surface
+	# curve — so its neutral 1.0 is re-seeded HERE, with the axle μ, rather than being
+	# left to accumulate. UpgradeLibrary.apply multiplies the fitted tyre's figures in
+	# straight after; without this reset a re-field would compound them every time.
+	cfg.tire_snow_grip_mult = 1.0
+	cfg.tire_tarmac_grip_mult = 1.0
 	cfg.wheel_width_front = spec["wheel_width_front"]
 	cfg.wheel_width_rear = spec["wheel_width_rear"]
 	# Per-car aero downforce (N per (m/s)² at each axle). SET (not added) so a spec of

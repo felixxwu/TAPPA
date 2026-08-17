@@ -71,9 +71,12 @@ Sources:
 - **The Rally Challenge** — `challenge_session.gd` awards by placement through the same
   `stars_for_placement` curve, via `Save.award_stars`. It is renewable **over real time** (a
   new challenge each day), where career rallies are renewable **on demand**. Sharing the one
-  curve means a mid-table challenge finish now banks `STARS_FOR_FINISH` rather than 0 — its
-  boxes were already unconditional, which was written for the days when it could bank
-  nothing, so nothing there needed changing. See [rally-challenge.md](rally-challenge.md).
+  curve means a mid-table challenge finish now banks `STARS_FOR_FINISH` rather than 0.
+  **Completing a challenge also pays a flat star amount of its own**
+  (`ChallengeSession._COMPLETION_REWARD`, authored per kind — Daily smallest, Monthly
+  largest — granted through `Save.award_stars` alongside the placement credit). That
+  table used to pay mystery boxes; with the box retired, the reward became the currency
+  the boxes were always a detour around. See [rally-challenge.md](rally-challenge.md).
 
 ## Gating is GEOMETRIC, not stars and not completions
 
@@ -154,16 +157,28 @@ part not on this car is an ordinary selectable option carrying its price, and bu
 press. No separate
 shop screen, because it is the same question the player is already asking there — "can this
 car run a big turbo?" — and the answer is now "yes, for N stars" instead of a dead grey
-option. Bought parts fit **disabled**, like every other award.
+option. `Save.buy_part` itself fits the part **parked**, like every other award, but the
+picker path immediately enables it (`UpgradesGrid._apply_option`): the player chose this rung
+and paid for it, so it would be a poor trade to take the stars and leave the car driving
+exactly as before. Parked-on-arrival stays the rule for the paths that hand out a part
+nobody asked for — see [upgrade-catalogue.md](upgrade-catalogue.md) → "Acquisition".
+Each row also quotes the performance rating that option would give the car, drawn in
+parentheses BEFORE the price so the two figures cannot be confused (the price keeps its
+drawn star icon) — see [menus.md](menus.md) → "The slot popup".
 
-### What the random draw still does
+### The random draw is gone entirely
 
-`RewardSystem.draw_upgrade` is **consumables-only** now: the engine swap token and the
-mystery box, plus `NO_REWARD`. Parts left the pool because a stage-by-stage drop undercut
-both deliberate routes to one — why go and win a turbo, or pay for one, if it might fall
-out of the next stage? Most events therefore pay nothing, which is a real outcome rather
-than a bug. The mystery box keeps its own certainty curve (the first is guaranteed) instead
-of being one weight among others.
+`RewardSystem.draw_upgrade` no longer exists. Parts left its pool first, because a
+stage-by-stage drop undercut both deliberate routes to one — why go and win a turbo, or
+pay for one, if it might fall out of the next stage? That left it paying only the two
+consumables, and once those were deleted too (the mystery box and the engine swap token
+— see [reward-system.md](reward-system.md)) a draw that could only ever pay nothing had
+no reason to fire. **Stars are now the only thing a stage pays**, and buying is the only
+route to a part the player didn't win outright at a special.
+
+This makes the two sinks above load-bearing rather than optional: with no free parts
+falling out of the rally loop, the balance is what a player spends to make a car faster,
+and the prices are the whole difficulty curve of the economy.
 
 ## Where the player sees it
 
@@ -232,7 +247,8 @@ the player the car, and no balance is ever consulted. See
 `tests/headless/test_save_manager.gd` — the ledger (an empty fresh ledger,
 `award_stars` for non-rally sources, the `complete_rally` delta, a refused overdraft,
 and the whole thing surviving a save/reload).
-`tests/headless/test_reward_system.gd` — the consumables-only draw.
+`tests/headless/test_reward_system.gd` — the two gates that decide what may be BOUGHT
+(the per-car prerequisite rung, and a part refused until its event is won).
 `tests/headless/test_rally_library.gd` — the star curve's shape and the
 geometric reveal gate. `tests/headless/test_rally_session.gd` — `star_rating` /
 `stars_gained` on the result. `tests/headless/test_menu_flow.gd` — the HQ/purchase

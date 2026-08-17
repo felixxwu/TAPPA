@@ -1,7 +1,7 @@
 extends Node
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /
-# tuning), the consumable inventory (swap tokens, mystery boxes), and rally completion — JSON at
+# tuning), the shared item inventory, and rally completion — JSON at
 # user://profile.json so progress survives a restart on both desktop and the
 # web build (see todo/save-persistence.md).
 #
@@ -41,6 +41,18 @@ const SCHEMA_VERSION := 6
 # unless a SCHEMA_VERSION bump plus a _migrate_step comes with the change.
 const KEY_CARS := "cars"
 const KEY_RALLIES := "rallies"
+
+# Consumables that no longer exist, erased from `inventory` on load (see _sanitise).
+# A LIST rather than a branch per id, because retiring a consumable is a recurring event
+# and three copies of the same two lines is how one of them ends up forgotten:
+#   repair_kit          — repair kits are gone; between-event field repair is free.
+#   mystery_box         — parts are bought with stars at any time, so a random box that
+#                         opens onto a part had nothing left to offer.
+#   engine_swap_token   — engine swapping is unlimited once its rally unlocks it, so
+#                         there is no per-swap cost left to hold.
+# The ids are LITERALS, deliberately: the catalogue entries they name have been deleted,
+# so there is no constant left to reference, and an old profile still spells them this way.
+const RETIRED_ITEM_IDS := ["repair_kit", "mystery_box", "engine_swap_token"]
 # Upgrade ids granted DIRECTLY, bypassing their unlocked_by_rally gate. Written only by
 # migration, when a part's unlock rally MOVES: a player who won the part where it used
 # to live must not lose it because the catalogue re-sited it. See features/snow-region.md
@@ -249,15 +261,16 @@ func _sanitise(p: Dictionary) -> Dictionary:
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
 	p[KEY_CARS] = kept
-	# Drop the retired `repair_kit` consumable from older profiles. Done HERE, in the
-	# tolerant sanitise pass, rather than as a schema migration: the key is inert once
-	# nothing reads it, and a SCHEMA_VERSION bump would make every older build refuse
-	# the profile outright — too high a price for cleaning up a dead key, especially
-	# with cloud save moving profiles between devices on different builds.
+	# Drop RETIRED consumables from older profiles. Done HERE, in the tolerant sanitise
+	# pass, rather than as a schema migration: the key is inert once nothing reads it, and
+	# a SCHEMA_VERSION bump would make every older build refuse the profile outright — too
+	# high a price for cleaning up a dead key, especially with cloud save moving profiles
+	# between devices on different builds.
 	var inv: Dictionary = p.get("inventory", {})
-	if inv.has("repair_kit"):
-		inv.erase("repair_kit")
-		p["inventory"] = inv
+	for dead_id in RETIRED_ITEM_IDS:
+		if inv.has(dead_id):
+			inv.erase(dead_id)
+			p["inventory"] = inv
 	return p
 
 
@@ -694,7 +707,7 @@ func set_wheel_toe(instance_id: int, toe: Array) -> void:
 #
 # Wrecking used to be TERMINAL — 0 HP, unrepairable, the car a permanent hulk. That single
 # rule needed a whole scaffolding around it to stay survivable (an every-car-wrecked check, a free
-# mystery box when the garage was wrecked out, a soft-lock check that had to skip wrecks, a
+# free replacement car when the garage was wrecked out, a soft-lock check that had to skip wrecks, a
 # price-0 car rescue), and it could still end a career on one mistake. Making a wreck a bad RESULT
 # instead of a lost ASSET deletes all of that: the punishment is the DNF plus the repair
 # bill (features/star-economy.md), and the player can always drive again.
@@ -740,12 +753,16 @@ func set_wheels(instance_id: int, wheel_id: String) -> void:
 	save()
 
 
-# Exchange the CURRENT engines of two owned cars (features/engine-swap.md). Costs
-# one engine swap token per swap (including reverting to stock); health is irrelevant
-# and a damaged car keeps its HP. Each car's swapped_engine is set to the OTHER's
-# current engine, then cleared to "" when the result equals that car's own stock
-# engine (so "stock" is canonical and the name reverts). Returns false (no change) if
-# the swap is not allowed or no token is held.
+# Exchange the CURRENT engines of two owned cars (features/engine-swap.md).
+#
+# FREE AND UNLIMITED once the capability is unlocked by its special rally. Each swap used
+# to spend an engine swap token, including reverting to stock — that consumable is gone,
+# so the rally unlock is now the whole gate and a player can rearrange their garage as
+# often as they like. Health is irrelevant and a damaged car keeps its HP.
+#
+# Each car's swapped_engine is set to the OTHER's current engine, then cleared to "" when
+# the result equals that car's own stock engine (so "stock" is canonical and the name
+# reverts). Returns false (no change) when the swap is not allowed or would be a no-op.
 func swap_engines(id_a: int, id_b: int) -> bool:
 	if id_a == id_b:
 		return false
@@ -758,23 +775,11 @@ func swap_engines(id_a: int, id_b: int) -> bool:
 	var cur_a := EngineSwap.current_engine_id(a, stock_a)
 	var cur_b := EngineSwap.current_engine_id(b, stock_b)
 	if cur_a == cur_b:
-		return false  # nothing to exchange — don't spend a token on a no-op swap
-	if not consume_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1):
-		return false  # no swap token held
+		return false  # nothing to exchange
 	_set_engine(a, stock_a, cur_b)
 	_set_engine(b, stock_b, cur_a)
 	save()
 	return true
-
-
-# Engine swap tokens currently held in the shared inventory.
-func engine_swap_tokens_owned() -> int:
-	return int(profile.get("inventory", {}).get(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 0))
-
-
-# Mystery boxes currently held in the shared inventory.
-func mystery_boxes_owned() -> int:
-	return int(profile.get("inventory", {}).get(UpgradeLibrary.MYSTERY_BOX_ID, 0))
 
 
 # --- Challenge run car lock ---------------------------------------------------
@@ -937,44 +942,6 @@ func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 	return true
 
 
-# Open one mystery box: consume it and grant, as a SINGLE saved transaction (the
-# resolve happens before any mutation, so consume_item is called with do_save=false
-# and the grant's own save covers both).
-#
-# TWO OUTCOMES, decided by the state of the garage at OPEN time:
-# A box always opens onto a PART. It used to have a second branch — a whole new CAR when
-# every owned car was wrecked — as the anti-soft-lock rescue. That is gone with terminal
-# wrecking (see record_wreck): a wrecked car comes back repairable, so there is no
-# wrecked-out state to rescue, and a box handing out cars would undercut winning them at
-# the rally that advertises them (features/prize-rallies.md).
-#
-#   * A random upgrade for a random owned car with room. ANY owned car
-#     can receive it, the currently selected one included: a box is a garage-wide
-#     reward and is not tied to the car that won it (RewardSystem.any_car_has_room).
-#
-# NOTHING TO GIVE = NOTHING SPENT. When no car has room, the box is left unopened rather
-# than being burned for a consolation prize —
-# there is no repair kit to fall back on any more, and silently eating the box would
-# be strictly worse than the disabled button the garage row already shows.
-#
-# Returns {} when no box was held OR nothing could be granted (box retained);
-# otherwise {"car": bool, "item_id": String, "recipient_instance_id": int} — for a
-# car grant, item_id is the CarLibrary model id and the recipient is the new car.
-func open_mystery_box(rng: RandomNumberGenerator = null) -> Dictionary:
-	if mystery_boxes_owned() <= 0:
-		return {}
-	var grant := RewardSystem.pick_mystery_box_grant(profile, rng)
-	if grant.is_empty():
-		return {}  # nowhere for it to land — keep the box
-	var recipient_id := int(grant["instance_id"])
-	var item_id := String(grant["item_id"])
-	consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # no save yet
-	if not install_upgrade(recipient_id, item_id, false):
-		add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # put it back; nothing persisted
-		return {}
-	return {"car": false, "item_id": item_id, "recipient_instance_id": recipient_id}
-
-
 # Fit a won part to a car. Upgrades are CAR-BOUND: a part belongs to the car it
 # was won for (rally_session installs it on the driven car) and never moves to
 # another car or into a shared pool — so this takes no inventory, it just records
@@ -999,7 +966,7 @@ func install_upgrade(instance_id: int, item_id: String, enabled := true) -> bool
 	# A part in a HIDDEN slot is always fitted enabled, whatever the caller asked for: it has
 	# no garage row, so installing it disabled would leave it permanently dead AND block the
 	# slot from ever being re-awarded (the dedup above). Enforced here so it holds for every
-	# route a part arrives by — the per-event draw, the challenge draw and a mystery box.
+	# route a part arrives by — winning it at its prize rally, or buying a copy with stars.
 	if enabled or UpgradeLibrary.installs_enabled(item_id):
 		_enable_exclusive(car, item_id, slot)
 	else:
@@ -1471,10 +1438,8 @@ func _grant_rally_prizes(rally_id: String) -> void:
 	var unlocked := UpgradeLibrary.unlocked_by(rally_id)
 	if not unlocked.is_empty():
 		RewardSystem.grant_special_unlock(recipient, String(unlocked.get("id", "")))
-	elif rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
-		# The capability special hands over one token so swapping is usable immediately,
-		# same as a real win.
-		add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1, false)
+	# The engine-swap capability special needs nothing handed over: winning it unlocks
+	# swapping outright, and swaps are free and unlimited from then on.
 	return
 
 

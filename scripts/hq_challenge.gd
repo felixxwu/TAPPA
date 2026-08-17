@@ -281,12 +281,16 @@ func _challenge_kind_button(kind_str: String) -> Button:
 # you buy with stars (todo/star-economy.md), and advertising one here would promise a reward
 # the game no longer hands out.
 #
-# Stars are quoted as a range because the payout is placement-based (1st/2nd/3rd -> 3/2/1)
-# while PLACING is the top half of the board, so a mid-table finish legitimately banks none.
+# The whole payout is STARS now. Deliberately worded WITHOUT figures: both halves of it are
+# tunable (the completion grant in ChallengeSession._COMPLETION_REWARD, the placement bonus
+# in the stars-by-placement award), and a quoted number here would go stale the moment either
+# is retuned. The shape is what the player needs to know, and the shape doesn't move: you
+# bank stars for placing at all, and more of them the higher you finish. The per-kind split
+# survives so a longer challenge can say something richer than the daily one.
 const _CHALLENGE_REWARD_TEXT := {
-	"daily": "2 mystery boxes + up to 3 stars",
-	"weekly": "3 mystery boxes + up to 3 stars",
-	"monthly": "4 mystery boxes + up to 3 stars",
+	"daily": "stars for placing, more for a podium",
+	"weekly": "stars for placing, more for a podium",
+	"monthly": "stars for placing, more for a podium",
 }
 # FORMATTED from the rule itself (ChallengeSession.CHALLENGE_TOP_FRACTION) rather than
 # carrying its own string, so the label can never drift from the placing rule that decides

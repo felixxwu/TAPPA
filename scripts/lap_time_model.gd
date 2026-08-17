@@ -92,6 +92,23 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 	var mass: float = maxf(float(car_meta.get("mass", 1200.0)), 1.0)
 	var mu := (mu_override * maxf(grip_mult, 0.0)) if mu_override >= 0.0 \
 		else _surface_grip(car_meta, event, grip_mult)
+	# TIRE LOAD SENSITIVITY — applied to mu on BOTH branches, deliberately.
+	#
+	# It belongs here rather than inside _surface_grip because it is a property of the CAR,
+	# not of the conditions — exactly the reasoning that already keeps tire_compound out of
+	# the mu_override bypass. Putting it in _surface_grip would have left the benchmark
+	# RATING (which always overrides mu) completely blind to it, which is the one place it
+	# most needed to be seen.
+	#
+	# WHY IT EXISTS: without it, mass entered this model in exactly one term — a_engine =
+	# P/(v*m). Cornering (mu*g/kappa), braking and corner-exit traction were all exactly
+	# mass-invariant, so fitting weight reduction barely moved a car's rating while being
+	# plainly transformative to drive. The live physics has carried load sensitivity all
+	# along (Drivetrain.step -> GameConfig.tire_load_factor): a lighter car presses its
+	# tires less hard, and a less-loaded tire has a HIGHER coefficient. This makes the model
+	# agree with the car the player is actually driving, which is the whole contract between
+	# the two — the AI field is paced off this solve.
+	mu *= _load_factor(car_meta, mass)
 	var mu_g := mu * G
 	var rolling := ROLLING_G * G
 	var drag: float = float(car_meta.get("drag", 0.0))
@@ -111,14 +128,28 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 	# With aero:    kappa * v^2 = mu_g + aero_a*v^2 -> v^2 = mu_g / (kappa - aero_a)
 	# Note this is LINEAR in v^2, and singular as aero_a approaches kappa; see
 	# V_CAP_MAX_MS.
+	#
+	# GEARED TOP SPEED is folded in here as a ceiling of its own, including on the
+	# straights. Without it `a_engine = P/(v*m)` accelerates forever: the model had no
+	# gearbox and no rev limiter, so it scored every car as though it were driving an
+	# ideal CVT that never runs out of gears. That is the single largest disagreement
+	# between the rating and the car — a short-geared torque monster was credited with
+	# speeds it is physically pinned below, while a long-geared car was denied the top
+	# end it actually has. Applied to cap2 rather than to a_engine so BOTH the accel pass
+	# and the braking pass respect it: you cannot arrive at a corner above a speed you
+	# could never reach.
+	var top2 := _geared_top_speed_sq(car_meta)
 	var cap2 := PackedFloat32Array(); cap2.resize(n)
 	var cap_ceiling := V_CAP_MAX_MS * V_CAP_MAX_MS
 	for i in n:
 		if kappa[i] <= KAPPA_MIN:
 			cap2[i] = V_UNBOUNDED
-			continue
-		var denom := kappa[i] - aero_a
-		cap2[i] = cap_ceiling if denom <= KAPPA_DENOM_MIN else minf(mu_g / denom, cap_ceiling)
+		else:
+			var denom := kappa[i] - aero_a
+			cap2[i] = cap_ceiling if denom <= KAPPA_DENOM_MIN else minf(mu_g / denom, cap_ceiling)
+		# 0.0 means "this meta does not describe a gearbox" — see _geared_top_speed_sq.
+		if top2 > 0.0:
+			cap2[i] = minf(cap2[i], top2)
 
 	# --- Pass 2: forward accel pass (v^2), standing start at s=0 --------------
 	var fwd2 := PackedFloat32Array(); fwd2.resize(n)
@@ -295,11 +326,74 @@ static func _slope_profile(s: PackedFloat32Array, pts: Array[Vector2],
 #
 # The multiplier itself is the weather table's, not a local per-condition test —
 # see WeatherLibrary / features/weather.md.
+# The square of the car's geared top speed (m/s), or 0.0 when this meta does not carry
+# enough of a drivetrain to know — in which case there is NO cap and the solve is exactly
+# what it was before this existed.
+#
+# THE ZERO CASE IS LOAD-BEARING, not defensive padding. Most callers of this model outside
+# the game hand it a synthetic meta describing a point mass (a few stats, no engine id, no
+# wheel radius): the physics tests, the tuning harness, RallyLibrary's fixtures. Those have
+# no gearbox to run out of, and inventing one for them would silently re-time every one.
+#
+# v_max = omega_redline * wheel_radius / (top_ratio * final_drive), the same chain
+# Drivetrain gears the crank through to the axle. `wheel_radius` is a property of the CAR
+# (CarLibrary) while the ratios belong to the ENGINE (EngineLibrary), which is why this
+# reads from two places — and why an engine swap moves a car's top speed, correctly.
+#
+# The TOP gear is the SMALLEST ratio rather than the last entry: the shipped boxes happen
+# to be authored in descending order, but nothing enforces that and a mis-ordered list
+# would otherwise hand a car a first-gear top speed.
+static func _geared_top_speed_sq(car_meta: Dictionary) -> float:
+	var radius := float(car_meta.get("wheel_radius", 0.0))
+	var redline := float(car_meta.get("redline", 0.0))
+	if radius <= 0.0 or redline <= 0.0:
+		return 0.0
+	var eng := EngineLibrary.by_id(String(car_meta.get("engine", "")))
+	var ratios: Array = eng.get("gear_ratios", [])
+	var final_drive := float(eng.get("final_drive", 0.0))
+	if ratios.is_empty() or final_drive <= 0.0:
+		return 0.0
+	var top := INF
+	for r in ratios:
+		top = minf(top, float(r))
+	if top <= 0.0:
+		return 0.0
+	var v := (redline * TAU / 60.0) * radius / (top * final_drive)
+	return v * v
+
+
+# The car's tire load-sensitivity multiplier on mu: how much grip it gets back for being
+# light on its tires. Same curve the live physics uses (GameConfig.tire_load_factor), so
+# the two cannot drift — retuning tire_load_sensitivity moves the model and the car
+# together.
+#
+# A point mass with four equally-loaded corners, which is the same simplification the rest
+# of this file makes (no weight transfer, no per-axle split). Width is the mean of the two
+# axles for the same reason. That is coarser than Drivetrain, which resolves it per wheel
+# per tick against live normal force — but the point is to capture that mass moves grip AT
+# ALL, not to reproduce the sim.
+static func _load_factor(car_meta: Dictionary, mass: float) -> float:
+	var cfg: GameConfig = Config.data
+	var front := float(car_meta.get("wheel_width_front", cfg.wheel_width_front))
+	var rear := float(car_meta.get("wheel_width_rear", cfg.wheel_width_rear))
+	var width := (front + rear) * 0.5
+	return cfg.tire_load_factor(mass * G / 4.0, width)
+
+
 static func _surface_grip(car_meta: Dictionary, event: Dictionary, skill_grip_mult := 1.0) -> float:
 	var base := float(car_meta.get("tire_compound", 1.0))
 	var tarmac := RallyLibrary.event_tarmac_fraction(event)
 	var cfg: GameConfig = Config.data
 	var mu := base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
+	# The fitted tyre's SURFACE-DEPENDENT term, through the same rule the live physics
+	# uses (GameConfig.tire_surface_mult) so a snow compound moves the AI field exactly
+	# as it moves the player. Read off car_meta, not the live config, because this solves
+	# for a RIVAL's car as often as the player's; absent (every car without such a
+	# compound) reads as the 1.0 identity, which makes this an exact no-op there.
+	mu *= GameConfig.tire_surface_mult(
+		float(car_meta.get("tire_snow_grip_mult", 1.0)),
+		float(car_meta.get("tire_tarmac_grip_mult", 1.0)),
+		tarmac, cfg.ground_is_snow())
 	# Unconditional: WeatherLibrary resolves dry (and any unknown string) to exactly
 	# 1.0, so there is no per-condition branch here and a new condition needs no edit.
 	# skill_grip_mult is the ghost's driver-skill term (1.0 = no-op); it multiplies the

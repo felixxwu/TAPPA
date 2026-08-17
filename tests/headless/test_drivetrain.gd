@@ -531,3 +531,114 @@ func test_ice_degrades_safely_when_the_terrain_reports_no_height() -> void:
 	stub.s = Vector2(0.0, 0.0)
 	assert_almost_eq(dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult, cfg.grass_grip,
 		1e-6, "no height query available => ordinary ground")
+
+
+# --- Surface-dependent tyre compound (features/drivetrain-and-tires.md) --------
+#
+# The RULE first, as pure logic on GameConfig.tire_surface_mult, then the three
+# places surface_tire_params has to route through it. Nothing here pins the snow
+# compound's authored figures: every assertion is expressed as a relation between
+# the multipliers it is handed, so retuning the part cannot break it.
+
+func test_the_tire_surface_rule_is_neutral_for_a_car_with_no_such_compound() -> void:
+	# 1.0/1.0 is the identity every other compound (and every unfitted slot) reads
+	# as, on snow and off it and at any tarmac weight. This is what makes the whole
+	# mechanism an exact no-op for the rest of the catalogue.
+	for snowy in [false, true]:
+		for w in [0.0, 0.5, 1.0]:
+			assert_almost_eq(GameConfig.tire_surface_mult(1.0, 1.0, w, snowy), 1.0, 1e-6,
+				"identity multipliers leave mu alone (snowy=%s, tarmac=%s)" % [snowy, w])
+
+
+func test_the_snow_bonus_is_all_or_nothing_on_the_region() -> void:
+	# Snow ground is snow ground: the packed-snow road and the deep verge are the
+	# same white stuff, so the bonus must not feather with the tarmac weight.
+	for w in [0.0, 0.5, 1.0]:
+		assert_almost_eq(GameConfig.tire_surface_mult(1.2, 0.5, w, true), 1.2, 1e-6,
+			"snow bonus ignores tarmac weight (%s)" % w)
+
+
+func test_the_tarmac_penalty_feathers_with_the_tarmac_weight() -> void:
+	# Pure gravel costs the compound nothing; full tarmac costs it the whole
+	# penalty; in between it is monotonic. Direction only — no authored figure.
+	var penalty := 0.8
+	assert_almost_eq(GameConfig.tire_surface_mult(1.2, penalty, 0.0, false), 1.0, 1e-6,
+		"pure gravel is unpenalised")
+	assert_almost_eq(GameConfig.tire_surface_mult(1.2, penalty, 1.0, false), penalty, 1e-6,
+		"full tarmac pays the whole penalty")
+	var half := GameConfig.tire_surface_mult(1.2, penalty, 0.5, false)
+	assert_lt(half, 1.0, "a half-tarmac contact is penalised")
+	assert_gt(half, penalty, "...but by less than a full-tarmac one")
+
+
+func test_a_snow_stage_never_charges_the_tarmac_penalty() -> void:
+	# The two terms are exclusive. On a snow stage the "tarmac" channel is a
+	# dusting over asphalt, so charging the penalty there would cancel the point
+	# of the part — the player would be punished for the surface they fitted for.
+	assert_gt(GameConfig.tire_surface_mult(1.2, 0.5, 1.0, true), 1.0,
+		"a full-tarmac contact on a snow stage still gets the bonus")
+
+
+func test_ground_is_snow_follows_the_regions_deep_snow_block() -> void:
+	# The snow signal is derived, not a second flag to keep in sync: it is exactly
+	# "RallySession seated a deep-snow block off the region".
+	var cfg := GameConfig.new()
+	cfg.deep_snow_depth_m = 0.0
+	assert_false(cfg.ground_is_snow(), "no deep snow seated => not a snow stage")
+	cfg.deep_snow_depth_m = 0.3
+	assert_true(cfg.ground_is_snow(), "a deep-snow block seated => a snow stage")
+
+
+func test_a_snow_compound_trades_tarmac_grip_for_snow_grip() -> void:
+	# The end-to-end behaviour through the live resolver, on the terrain-backed
+	# path. Same contact, same weather, same car: only the fitted rubber differs.
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var stub := _StubTerrain.new()
+	dt.terrain = stub
+	stub.s = Vector2(1.0, 1.0)  # full tarmac road
+
+	cfg.deep_snow_depth_m = 0.0
+	var stock_tarmac: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	cfg.tire_snow_grip_mult = 1.2
+	cfg.tire_tarmac_grip_mult = 0.8
+	var snow_tyres_tarmac: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	assert_lt(snow_tyres_tarmac, stock_tarmac, "winter rubber gives grip away on tarmac")
+
+	cfg.deep_snow_depth_m = 0.3  # the same stage, now in a snowy region
+	var snow_tyres_snow: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	cfg.tire_snow_grip_mult = 1.0
+	cfg.tire_tarmac_grip_mult = 1.0
+	var stock_snow: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	assert_gt(snow_tyres_snow, stock_snow, "...and buys it back on snow")
+
+	cfg.deep_snow_depth_m = 0.0
+
+
+func test_the_tire_compound_reaches_the_off_terrain_and_ice_paths_too() -> void:
+	# Both early-return branches of surface_tire_params must route through the rule.
+	# The flat fixture matters because a headless physics test has no terrain at all;
+	# ice matters because a frozen lake is only ever authored by a snowy region, so it
+	# takes the SNOW side of the trade rather than the tarmac side.
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	cfg.deep_snow_depth_m = 0.3
+
+	dt.terrain = null
+	var flat_stock: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	cfg.tire_snow_grip_mult = 1.2
+	assert_gt(dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult, flat_stock,
+		"the no-terrain fallback applies the compound")
+
+	var stub := _StubTerrainWithHeight.new()
+	dt.terrain = stub
+	stub.s = Vector2(1.0, 1.0)
+	stub.height = cfg.track_water_level_m - 1.0  # a contact out on the ice
+	cfg.frozen_water_grip = 0.2
+	var ice_snow_tyres: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	cfg.tire_snow_grip_mult = 1.0
+	var ice_stock: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+	assert_gt(ice_snow_tyres, ice_stock, "ice takes the snow side of the trade")
+
+	cfg.frozen_water_grip = 0.0
+	cfg.deep_snow_depth_m = 0.0

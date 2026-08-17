@@ -3,11 +3,14 @@
 `TireMarks` (`scripts/tire_marks.gd`, `class_name TireMarks extends Node3D`) lays
 tyre marks behind the car's wheels while it drives on the road. The mark depends on
 the surface under each wheel:
-- **Gravel** — a gravel-coloured **rut**, laid whenever moving, whose **opacity tracks
+- **Gravel** — a **rut**, laid whenever moving, whose **opacity tracks
   the tire FORCE** (newtons) going through the contact.
-- **Tarmac** — a dark **skidmark**, laid only near the limit, whose **opacity tracks
+- **Tarmac** — a **skidmark**, laid only near the limit, whose **opacity tracks
   GRIP USAGE** across a narrow high band; a cleanly rolling wheel on tarmac leaves
   nothing at all.
+
+Both marks are **pure black**; only their opacity differs. See *Colour* below for why
+that is the whole design and not just a palette choice.
 
 The grass off the road footprint never marks. Created + wired by
 `world.gd._generate_track` (reused across event regenerations).
@@ -39,13 +42,16 @@ Two behaviours fall out of this rather than needing their own gates:
   hard corner. That is the physically right call and it is a deliberate change from the
   driven-only wheelspin gate this replaced.
 
-The authored colour's own alpha multiplies the result, so a surface can be tuned never
-to reach fully solid without touching the scales.
+The authored colour's own alpha multiplies the result — it is the per-surface ceiling,
+so a surface is tuned by how dark it may ever get, without touching the scales.
 
-### Toggling the fade
+### Toggling the fade — a debug/perf fallback, not a second look
 
-`tire_mark_alpha_enabled` (default on) switches the whole thing off: ribbons render
-**opaque**, exactly as before this landed. It changes only how *solid* marks are, never
+`tire_mark_alpha_enabled` (default on) is a **debug and performance escape hatch**, not
+an alternative art direction. Off, the ribbons go back in the **opaque** pass, which
+discards alpha — and since both mark colours are now pure black, that means **solid
+black trails**, not the flat grey it used to give. It buys back early-Z and the alpha
+pass; it does not give a usable look. It changes only how *solid* marks are, never
 *where* they appear — the min-alpha cull is gated on the raw strength, not the final
 alpha, so both modes lay the identical set of segments. The flag is checked once per
 `flush_uploads()` (one bool compare) and rebuilding the material re-dirties every
@@ -84,9 +90,9 @@ it was laid). `_process` is self-disabling — nothing dirty, no per-frame work.
 `_physics_process` directly. Same unshaded, cull-disabled
 material style as the `wheel_force_debug` overlay. Each segment carries its
 own **vertex colour** (the shared material has `vertex_color_use_as_albedo`), so one
-ribbon per wheel shows both the gravel rut and the tarmac skid in their own shades —
-and, with the fade on, its own **alpha**, so that one mesh also carries the whole range
-of mark strengths.
+ribbon per wheel carries both the gravel rut and the tarmac skid — which, both being
+black, differ *only* in their **alpha**, so with the fade on that one mesh carries both
+surfaces and the whole range of mark strengths in a single channel.
 
 With `tire_mark_alpha_enabled` the material adds `TRANSPARENCY_ALPHA` +
 **`DEPTH_DRAW_DISABLED`**. The depth setting is not optional: ribbons are flat, coplanar
@@ -149,14 +155,29 @@ table* for why, and for the rule that the lookup must interpolate rather than tr
 
 ## Colour
 
-Per-segment vertex colour, so the two surfaces read differently in one ribbon:
-- `tire_mark_color` — the gravel rut, a touch darker than the gravel (gravel.jpg
-  averages ~0.42 grey).
-- `tire_mark_tarmac_color` — the tarmac skid, a dark near-black scuff.
+Both authored colours — `tire_mark_color` (the gravel rut) and `tire_mark_tarmac_color`
+(the tarmac skid) — are **pure black**. Their RGB carries no information at all; the
+only thing that distinguishes the two surfaces is the **alpha**, which is that
+surface's **ceiling**: how dark a fully-worked tire can ever get on it. `tire_marks.gd`
+multiplies the segment's strength (see *Opacity* above) by that authored ceiling, so the
+ceiling sets the top of the range and the strength picks a point inside it. Gravel's
+ceiling is the **shallower** of the two, and that is the physical claim: a rut is
+*displaced surface*, while a tarmac skid is *deposited rubber* and goes darker at its
+worst. Both live in `config/game_config.tres` and are free to be retuned.
 
-Each colour's **alpha is the fully-worked ceiling**, multiplied by the segment's
-strength (see *Opacity* above) — so a surface can be tuned never to reach solid without
-touching the force/usage scales. Unshaded material, cull disabled,
+**Why black rather than an authored grey.** Every material in this renderer is
+`unshaded`, so nothing dims because the world got darker — the bug class
+[weather.md](weather.md) → *Unshaded means nothing dims for free* documents. A constant
+grey rut was exactly that bug: it stayed as bright at night, in fog and on snow as it
+did on a sunlit gravel road, and so it read as a stripe of **paint sitting on top of
+the world** rather than a scuff *in* it. Black at partial opacity instead **darkens
+whatever ground is underneath it**, so the mark is derived from the surface it is laid
+on and tracks the environment for free — every weather condition, every region,
+including snow — with **no per-weather plumbing**, no `weather_lit` call and nothing to
+re-seed per stage. Same problem as the `weather_lit` family, solved from the other
+side: opacity rather than a lit colour.
+
+Unshaded material, cull disabled,
 `vertex_color_use_as_albedo` on, plus `TRANSPARENCY_ALPHA`/`DEPTH_DRAW_DISABLED` while
 the fade is enabled.
 
@@ -183,7 +204,13 @@ gap (the landing point starts a new strip, not a stretched quad bridged back to 
 take-off point). Opacity: a gravel rut darkens with tire force and clamps solid at the
 reference, a negligible force lays no segment at all, a tarmac skid is absent below the
 grip band, fades in across it and is solid past it, and disabling the fade lays the SAME
-segments at full opacity. Material: the ribbons sit in the alpha pass with depth-write
+segments. The opacity tests assert the segment reaches its surface's **authored
+ceiling** at full strength (they used to assert a hardcoded 1.0, which the ceilings
+made wrong). Colour: `test_both_mark_colours_are_pure_black` and
+`test_a_laid_mark_is_black_whatever_the_surface` guard the contract that the RGB is
+black on both surfaces and stays black through the laying path — the alpha is the only
+channel allowed to differ, so a future retune can move the ceilings but not
+re-introduce a grey. Material: the ribbons sit in the alpha pass with depth-write
 off only while the fade is on, and flipping the toggle re-uploads every ribbon against
 the rebuilt material.
 

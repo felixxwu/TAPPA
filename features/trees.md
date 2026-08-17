@@ -190,7 +190,23 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
   `make_forest_noise` (wavelength in metres, default 300); a tree is kept only where
   `forest_density(p)` (the noise remapped to [0,1]) exceeds `1 - forestiness`. So
   `forestiness = 1` keeps everything (the noise is skipped), `0` keeps nothing, and
-  values between thin the trees into patches. It's **per rally event**
+  values between thin the trees into patches.
+
+  **The in-between is nowhere near linear, and the usable band is narrow.** The field is
+  a SINGLE-OCTAVE Perlin, which never approaches its nominal extremes — measured across
+  the shipped seeds it spans about 0.18–0.83, clustered around 0.5 — so most of the
+  authoring range does nothing at all:
+
+  | forestiness | 0.15 | 0.20 | 0.30 | 0.40 | 0.45 | 0.55 | 0.70 |
+  |---|---|---|---|---|---|---|---|
+  | area kept | none | ~0.01% | ~1% | ~14% | ~30% | ~70% | ~99% |
+
+  This has already shipped a bug: the Alps were authored at 0.15–0.30 reading those as
+  "sparse alpine forest", and several stages generated with **no trees at all**. Anything
+  below roughly 0.35 means *none*, not *few*; author sparse-but-present around 0.38–0.48.
+  See `TreeScatter.forest_density`.
+
+  It's **per rally event**
   (`RallyLibrary.event_forestiness` → `cfg.track_forestiness`, written by
   `RallySession`); free-roam defaults to 1.0 (fully wooded). **Bushes pass the default
   1.0**, so undergrowth covers the whole stage regardless of the forest pattern.
@@ -415,7 +431,9 @@ different seeds differ, no tree on a road cell, the grid's guaranteed minimum
 spacing `(1 - jitter) * cell`, within-radius of an anchor, density bounded by the
 grid cells a disc covers, a zero target placing nothing, an all-road area placing
 nothing, and the **forestiness gate** (1.0 = unfiltered, 0 = bare, monotonic in
-between, and every gated tree sits above the `1 - forestiness` noise threshold).
+between, and every gated tree sits above the `1 - forestiness` noise threshold). Monotonic
+is all that is asserted — the mapping from forestiness to coverage is steeply nonlinear
+and deliberately not pinned, since it falls out of the noise distribution.
 `tests/headless/test_smoke.gd` — the billboard shader loads with code; a built
 `BillboardField` has one MultiMesh instance per position (with/without collision);
 `Foliage.spawn_trees()` always produces a `BillboardField`, and a region texture

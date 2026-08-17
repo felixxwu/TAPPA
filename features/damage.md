@@ -20,11 +20,13 @@ the wheels for a flat star price (`Save.repair_car`, see
 
 It isn't any more, and that change deleted a whole layer of machinery. Previously 0 HP
 meant a permanent hulk with no way back, which needed constant scaffolding to stay
-survivable: `all_cars_wrecked`, a free rescue **Mystery Box** that granted a whole new car,
-`car_is_wrecked` exclusions in the stranded check, a price-0 car rescue, and a car park that
-refused to let a wrecked car start. All of it is **gone** — along with `Save.wreck_car`
-(now `record_wreck`), `car_is_wrecked`, `all_cars_wrecked` and
-`ensure_wreck_safety_net`. The mystery box no longer has a car branch at all.
+survivable: `all_cars_wrecked`, a free rescue that granted a whole new car when every
+owned car was a write-off, `car_is_wrecked` exclusions in the stranded check, a price-0
+car rescue, and a car park that refused to let a wrecked car start. All of it is **gone**
+— along with `Save.wreck_car` (now `record_wreck`), `car_is_wrecked`, `all_cars_wrecked`
+and `ensure_wreck_safety_net`. Nothing in the game hands out a rescue car, because
+nothing needs rescuing: `record_wreck` gives the car straight back at
+`wreck_recovery_hp_fraction` of max HP.
 
 Two reasons the change was worth making:
 
@@ -277,7 +279,7 @@ car exists). **There is no anti-soft-lock machinery, because a wreck can no long
 soft-lock anything**: since every wrecked car comes back drivable, a garage of
 write-offs is not a state the game has. `Save.wreck_car`, `car_is_wrecked`,
 `all_cars_wrecked` and `ensure_wreck_safety_net` were all retired with it, along
-with the free-Mystery-Box rescue that existed to dig the player out — see
+with the free rescue car that existed to dig the player out — see
 [reward-system.md](reward-system.md).
 
 The cost of a wreck is the **lost result**: a DNF, no podium, no prize, no progress
@@ -342,7 +344,7 @@ same repair (`RallySession._apply_field_repair()`, the shared helper both call s
 now use) for the just-finished car, with the identical `field_repair_hp_fraction`/
 `field_repair_toe_fraction` fractions. Unlike the between-event repair, this one is
 applied **silently** — the summary is discarded rather than stashed for
-`take_pending_repair()`, so it never fights with the podium/reward-reveal flow's own
+`take_pending_repair()`, so it never fights with the podium flow's own
 UI for the player's attention.
 
 ## In-run HUD (see [hud.md](hud.md))

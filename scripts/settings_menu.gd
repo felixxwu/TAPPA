@@ -373,16 +373,14 @@ func _build_dev_page() -> void:
 		var car_id := String(car["id"])
 		var car_name := String(car["name"])
 		_dev_page.add_child(_make_action_button("Unlock %s" % car_name, _grant_car.bind(car_id, car_name)))
-	_dev_page.add_child(_make_sub("Fit an upgrade to the selected car (consumables -> inventory):"))
+	_dev_page.add_child(_make_sub("Fit an upgrade to the selected car:"))
+	# Every catalogue part is car-bound — the consumables that used to need an
+	# inventory route (mystery box, engine swap token) are gone — so there is one
+	# path here and no branch.
 	for up in UpgradeLibrary.UPGRADES:
 		var up_id := String(up["id"])
 		var up_name := String(up["name"])
-		# Slottable parts are car-bound now, so fit them straight onto the selected
-		# car; consumables (swap token, mystery box) go to the shared inventory.
-		if UpgradeLibrary.is_consumable(up_id):
-			_dev_page.add_child(_make_action_button("Add %s" % up_name, _add_upgrade.bind(up_id, up_name)))
-		else:
-			_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
+		_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -861,12 +859,6 @@ func _grant_car(model_id: String, display_name: String) -> void:
 func _add_star() -> void:
 	Save.award_stars(1)
 	_dev_status.text = "Added 1 star (%d to spend)." % Save.stars_available()
-
-
-# Drop a consumable (swap token / mystery box) into the shared inventory.
-func _add_upgrade(item_id: String, display_name: String) -> void:
-	Save.add_item(item_id)
-	_dev_status.text = "Added %s." % display_name
 
 
 # Fit a slottable part straight onto the selected car — upgrades are car-bound, so

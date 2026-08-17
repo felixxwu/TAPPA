@@ -11,9 +11,15 @@ class_name CarPerformance
 #
 # See docs/superpowers/specs/2026-08-15-car-performance-rating-design.md.
 #
-# WHAT IT MEASURES: power, mass, drag, tyre grip, downforce, drive mode.
+# WHAT IT MEASURES: power, mass, drag, tyre grip, downforce, drive mode, tyre WIDTH (via
+# the load-sensitivity term, LapTimeModel._load_factor) and a car's GEARED TOP SPEED
+# (LapTimeModel._geared_top_speed_sq — the ratios and final drive off its engine against
+# its wheel radius).
 # WHAT IT DOES NOT: braking (there is no per-car brake data in the game — see the
-# spec's D7), gearbox ratios, shift time, turbo lag, suspension, weight distribution.
+# spec's D7), the SHIFTS themselves (time lost per upshift, so a close-ratio box is not
+# credited for it), the torque CURVE's shape (peak power is assumed available at every
+# speed below the top-gear cap), turbo lag (a boosted engine is rated at full boost),
+# suspension, weight distribution.
 # The hairpin therefore measures low-speed cornering and corner exit, NOT braking.
 # Do not describe it to the player as though it measures stopping power.
 
@@ -140,7 +146,12 @@ static func _reference_ms() -> int:
 # Only the fields the benchmark actually reads. Anything else in a meta (names, model
 # paths, ownership bookkeeping) would just fragment the cache.
 static func _cache_key(meta: Dictionary) -> String:
-	return "%.4f|%.4f|%.4f|%.4f|%.4f|%.4f|%.4f|%d|%s" % [
+	# The wheel widths are in the key because the model reads them: they set the contact
+	# pressure the tire load-sensitivity term works off (LapTimeModel._load_factor), so two
+	# otherwise identical metas on different rubber are genuinely different laps. Omitting
+	# them would serve one car's time for the other.
+	var cfg: GameConfig = Config.data
+	return "%.4f|%.4f|%.4f|%.4f|%.4f|%.4f|%.4f|%d|%.4f|%.4f|%.4f|%s|%s" % [
 		float(meta.get("mass", 1200.0)),
 		float(meta.get("peak_torque", 0.0)),
 		float(meta.get("redline", 0.0)),
@@ -149,14 +160,27 @@ static func _cache_key(meta: Dictionary) -> String:
 		float(meta.get("downforce_front", 0.0)),
 		float(meta.get("downforce_rear", 0.0)),
 		int(meta.get("drive_mode", CarLibrary.RWD)),
+		float(meta.get("wheel_width_front", cfg.wheel_width_front)),
+		float(meta.get("wheel_width_rear", cfg.wheel_width_rear)),
+		# The GEARED TOP SPEED inputs (LapTimeModel._geared_top_speed_sq): the wheel radius
+		# off the car, and the engine id standing in for the ratios + final drive that hang
+		# off it. The engine id matters on its own account here — two cars identical in every
+		# other field but wearing different gearboxes now genuinely lap differently, and an
+		# engine SWAP has to re-solve rather than serve the pre-swap time.
+		float(meta.get("wheel_radius", 0.0)),
+		String(meta.get("engine", "")),
 		_config_key(),
 	]
 
 
 static func _config_key() -> String:
 	var cfg: GameConfig = Config.data
-	return "%.2f|%.2f|%.2f|%d|%.3f|%.3f|%.3f" % [
+	# The two tire load-sensitivity tunables are in here for the same reason the traction
+	# factors are: the benchmark reads them (LapTimeModel._load_factor), so retuning either
+	# has to invalidate every cached rating rather than leaving stale numbers on screen.
+	return "%.2f|%.2f|%.2f|%d|%.3f|%.3f|%.3f|%.4f|%.1f" % [
 		cfg.benchmark_straight_m, cfg.benchmark_hairpin_radius_m,
 		cfg.benchmark_sweeper_radius_m, cfg.benchmark_sweeper_count,
 		cfg.traction_factor_rwd, cfg.traction_factor_awd, cfg.traction_factor_fwd,
+		cfg.tire_load_sensitivity, cfg.tire_ref_pressure,
 	]

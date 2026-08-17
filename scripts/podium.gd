@@ -31,8 +31,6 @@ const SHOWROOM_CENTER := Vector3(40.0, 0.0, 0.0)
 const CAR_SCENE_PATH := "res://car.tscn"
 # The special-unlock card is inverted, like a special's map-pin readout — a documented
 # exception to design-system house rule 4 (see UITheme / features/ui-design-system.md).
-const UNLOCK_CARD_BG := Color(1.0, 1.0, 1.0, 1.0)
-const UNLOCK_CARD_INK := Color(0.0, 0.0, 0.0, 1.0)
 
 # Floor + scenery assets. The ground reuses the terrain road-blend shader so the
 # tarmac pads feather into grass exactly the way the generated road does; the
@@ -597,9 +595,11 @@ func _show_special_unlock() -> void:
 	var capability := String(unlock.get("capability", ""))
 	_title_label.text = "UNLOCKED"
 	_slot_panel.visible = true
-	var box := UITheme.panel_box(1.0, 22)
-	box.bg_color = UNLOCK_CARD_BG
-	_slot_panel.add_theme_stylebox_override("panel", box)
+	# The HOUSE reward card, same as every other reveal in this file. This card used to
+	# invert to a white face on the argument that a full-screen celebration should sit at
+	# maximum contrast; in practice it was the only white surface in the game, so it read
+	# as a different app's dialog rather than as the loudest of our own.
+	_slot_panel.add_theme_stylebox_override("panel", UITheme.reward_card_box())
 	# A capability unlock (engine swaps) has no catalogue entry to name and nothing to fit —
 	# winning the rally IS the unlock — so it gets its own headline and tail.
 	_slot_label.text = UITheme.caps(
@@ -611,7 +611,6 @@ func _show_special_unlock() -> void:
 	var lines: Array[String] = []
 	if capability == "engine_swap":
 		lines.append("Swap engines between your cars in the garage")
-		lines.append("+1 swap token")
 		_slot_caption.text = UITheme.caps("\n".join(lines))
 		_finish_unlock_card()
 		return
@@ -625,20 +624,16 @@ func _show_special_unlock() -> void:
 	_finish_unlock_card()
 
 
-# Shared tail of the unlock card: frame it, apply the house text rules, then re-assert the
-# inverted ink (enforce re-runs them) and clear the drop shadow — the terminal look on a dark
-# card but grubby fringing on a light one (same reasoning as hq.gd::_build_readout_sprite).
+# Shared tail of the unlock card: frame it and apply the house text rules.
+#
+# Nothing is re-asserted after enforce any more. The card used to invert to black ink on a
+# white face and had to paint that back on (plus clear the drop shadow, which reads as the
+# terminal look on a dark card but as grubby fringing on a light one); on the house dark
+# card the ordinary rules are already right, so the overrides are gone rather than being
+# set to values that happen to match.
 func _finish_unlock_card() -> void:
 	_move_camera(_podium_cam())
 	UITheme.enforce(_layer)
-	# Re-assert the ink AFTER enforce, which re-runs the house text rules. The drop shadow
-	# goes too: it is the terminal look on a dark card but grubby fringing on a light one
-	# (same reasoning as the floating map readouts, hq.gd::_build_readout_sprite).
-	for lbl in [_slot_label, _slot_caption]:
-		lbl.add_theme_color_override("font_color", UNLOCK_CARD_INK)
-		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
-		lbl.add_theme_constant_override("shadow_offset_x", 0)
-		lbl.add_theme_constant_override("shadow_offset_y", 0)
 	_reveal_done = true
 	_refresh_next_button()
 

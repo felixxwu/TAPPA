@@ -2074,9 +2074,8 @@ func _on_session_rally_finished(result: Dictionary) -> void:
 #   emits run_finished from report_event_result, before the hand-off to HQ), and
 #   the scene change below is what ends the run, so the grant is awaited here and
 #   shown on a plain ConfirmPopup card over the world — the same shape hq.gd's
-#   mystery box uses for a "reward, but not mid-interstitial" moment. A full
-#   UpgradeReveal page belongs to the per-stage interstitial (standings.gd),
-#   which is not up at this point.
+#   HQ uses for a "reward, but not mid-interstitial" moment — the interstitial
+#   (standings.gd) is not up at this point.
 #
 #   DNF — flip the board's `dnf` field (spec §6). Best-effort and deliberately
 #   NOT awaited: the house posture is that no cloud call ever costs the player
@@ -2109,15 +2108,15 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 		var grant: Dictionary = await ChallengeSession.try_grant_completion_reward(result)
 		await busy.end()
 		var item_id := String(grant.get("item_id", ""))
-		# Boxes alone are a reward worth showing — a Daily grants no car at all, so
-		# gating the card on item_id would leave every Daily win silent.
-		var won_something := item_id != "" or int(grant.get("boxes", 0)) > 0
+		# Stars alone are a reward worth showing — a placing run's whole payout is stars
+		# now, so gating the card on item_id would leave every challenge win silent.
+		var won_something := item_id != "" or int(grant.get("stars", 0)) > 0
 		if won_something and not _headless:
 			# NOT open_committing. That helper's whole point is making a mutation
 			# unrepresentable without its reveal, by acquiring the modal slot BEFORE
 			# calling a commit callable and skipping the callable entirely when the
-			# slot is refused — the right shape for a mystery box, where "the box was
-			# never opened" is a true, harmless state to fall back to. This grant has
+			# slot is refused — the right shape for an action whose "it never happened"
+			# state is true and harmless to fall back to. This grant has
 			# no such fallback: try_grant_completion_reward already ran above (it has
 			# to — fetch_final_rank is judged against THIS run's own posted time, so
 			# it can't be deferred behind a modal check), and
@@ -2127,7 +2126,7 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 			# (period_outcome is terminal — start()/resume() both refuse once it's
 			# set), so skipping the reveal here would not defer the grant, it would
 			# silently keep it while making it undiscoverable — worse than today's
-			# bug, which never loses the boxes/car themselves, only their reveal.
+			# bug, which never loses the stars themselves, only their reveal.
 			# So: grant unconditionally (already done above), then GUARANTEE the
 			# reveal instead of letting it be dropped. `allow_stack` is the existing,
 			# sanctioned escape hatch for exactly this "must be seen even over
@@ -2146,23 +2145,24 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 
 
 # Body text for the completion-reward card: what was won and where it landed.
-# Every kind grants mystery boxes; Weekly and Monthly add a car on top, which may
-# be absent if the draw found nothing left to unlock — so both parts are optional
-# and the card lists whatever actually landed.
+# A placing run pays STARS — a flat per-kind amount plus a placement bonus
+# (ChallengeSession._COMPLETION_REWARD), reported as one total. A car on top is
+# still possible in principle, so both parts are optional and the card lists
+# whatever actually landed.
 func _completion_reward_body(item_id: String, grant: Dictionary) -> String:
 	var rank := int(grant.get("rank", 0))
 	var total := int(grant.get("total_entries", 0))
 	var placing := "Finished %d of %d" % [rank, total] if total > 0 else "Finished"
 	var lines: Array[String] = []
-	var boxes := int(grant.get("boxes", 0))
-	if boxes > 0:
-		lines.append("%d Mystery %s" % [boxes, "Box" if boxes == 1 else "Boxes"])
+	var stars := int(grant.get("stars", 0))
+	if stars > 0:
+		lines.append(UITheme.count_noun(stars, "star"))
 	var car_entry := CarLibrary.by_id(item_id)
 	if not car_entry.is_empty():
 		lines.append(String(car_entry.get("name", item_id)))
 	if lines.is_empty():
 		return placing
-	var where := "They're waiting in your garage." if car_entry.is_empty() \
+	var where := "Spend them at the present box." if car_entry.is_empty() \
 		else "Your new car is waiting in the car park."
 	return "%s\nReward: %s\n\n%s" % [placing, ", ".join(lines), where]
 

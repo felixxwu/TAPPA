@@ -18,6 +18,9 @@ class_name TreeScatter
 # is high enough, so a stage reads as stands of forest broken by clearings rather than
 # one continuous tree line. Bushes pass forestiness 1.0 and so cover everything.
 #
+# `forestiness` is NOT linear in the coverage it produces, and the useful band is much
+# narrower than [0,1] — see forest_density before authoring a value.
+#
 # `road_cells` must be the VISIBLE road footprint (rasterized at track_width), NOT
 # the clearance-inflated collision set from TrackGenerator.generate — that one is
 # track_width + 2*track_clearance wide and would push every tree metres back from the
@@ -86,6 +89,20 @@ static func make_forest_noise(seed_value: int, wavelength: float) -> FastNoiseLi
 
 
 # A noise sample remapped from ~[-1, 1] to [0, 1] — the "forestiness" at a point.
+#
+# MIND THE USABLE RANGE WHEN AUTHORING AGAINST THIS. It is a SINGLE-OCTAVE Perlin field,
+# which never approaches its nominal extremes: measured over the shipped event seeds it
+# spans roughly 0.18..0.83, clustered tightly around 0.5. The gate in scatter() keeps a
+# cell when this exceeds `1.0 - forestiness`, so authored forestiness is very far from
+# linear in the coverage it buys — roughly:
+#
+#   0.15 -> nothing at all      0.30 -> ~1%     0.45 -> ~30%    0.70 -> ~99%
+#   0.20 -> ~0.01%              0.40 -> ~14%    0.55 -> ~70%    0.85 -> everywhere
+#
+# The consequence has bitten once already: the Alps were authored at 0.15..0.30 on the
+# reasonable-looking reading that those meant "sparse alpine forest", and shipped with
+# literally zero trees on several stages. Anything below about 0.35 is not "sparse", it
+# is "none". Author sparse-but-present in the 0.38..0.48 band.
 static func forest_density(noise: FastNoiseLite, p: Vector2) -> float:
 	return noise.get_noise_2d(p.x, p.y) * 0.5 + 0.5
 

@@ -58,7 +58,7 @@ func test_default_profile_is_empty_and_valid() -> void:
 
 func test_round_trip_survives_save_and_reload() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 2)
+	_save.add_item("fx_consumable", 2)
 	_save.complete_rally("alpine", 123456)
 	_save.set_tuning(car["instance_id"], {"brake_bias": 0.55})
 	_save.save_now()
@@ -69,7 +69,7 @@ func test_round_trip_survives_save_and_reload() -> void:
 	_save.load_or_new()
 	assert_eq(_save.profile["cars"].size(), 1, "owned car reloaded")
 	assert_eq(_save.profile["cars"][0]["model_id"], "fx_light_rwd", "model id reloaded")
-	assert_eq(int(_save.profile["inventory"][UpgradeLibrary.MYSTERY_BOX_ID]), 2, "inventory reloaded")
+	assert_eq(int(_save.profile["inventory"]["fx_consumable"]), 2, "inventory reloaded")
 	assert_true(_save.rally_completed("alpine"), "rally completion reloaded")
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 123456, "best time reloaded")
 	assert_almost_eq(float(_save.profile["cars"][0]["tuning"]["brake_bias"]), 0.55, 0.001, "tuning reloaded")
@@ -348,11 +348,13 @@ func test_toggle_upgrade_enabled_is_exclusive_per_slot() -> void:
 
 func test_install_rejects_consumables_and_unknown_items() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
-	assert_false(_save.install_upgrade(car["instance_id"], UpgradeLibrary.ENGINE_SWAP_TOKEN_ID),
+	# The SYNTHETIC consumable: nothing shipped is one any more, but the refusal is still
+	# real code and still has to hold for whatever claims the flag next.
+	_save.add_item("fx_consumable", 1)
+	assert_false(_save.install_upgrade(car["instance_id"], "fx_consumable"),
 		"a consumable can't be slotted")
 	assert_false(_save.install_upgrade(car["instance_id"], "bogus"), "unknown item can't be installed")
-	assert_eq(int(_save.profile["inventory"][UpgradeLibrary.ENGINE_SWAP_TOKEN_ID]), 1,
+	assert_eq(int(_save.profile["inventory"]["fx_consumable"]), 1,
 		"rejected install leaves inventory intact")
 
 
@@ -509,7 +511,9 @@ func test_apply_damage_past_zero_wrecks_rather_than_going_negative() -> void:
 
 
 func test_consume_item_respects_counts() -> void:
-	var item := UpgradeLibrary.ENGINE_SWAP_TOKEN_ID
+	# Any id will do: add_item/consume_item are generic inventory bookkeeping and do not
+	# consult the catalogue.
+	var item := "fx_consumable"
 	_save.add_item(item, 2)
 	assert_true(_save.consume_item(item, 1), "consume succeeds when stock available")
 	assert_eq(int(_save.profile["inventory"][item]), 1, "count decremented")
@@ -518,99 +522,13 @@ func test_consume_item_respects_counts() -> void:
 
 
 # Every non-consumable, non-free part in the real catalogue, up to MAX_TIER —
-# derived from the live catalogue so a retune doesn't break the test. Mirrors
-# test_reward_system.gd's _maxed_car (open_mystery_box's grant resolution goes
-# through RewardSystem, which iterates the raw catalogue const, per that file's
-# note — so this test stays against the real shipped UPGRADES table).
+# derived from the live catalogue so a retune doesn't break the test.
 func _all_real_parts() -> Array:
 	var parts := []
 	for item in UpgradeLibrary.UPGRADES:
 		if not item["consumable"] and not bool(item.get("free", false)):
 			parts.append(String(item["id"]))
 	return parts
-
-
-func test_open_mystery_box_installs_a_disabled_part_on_a_car_with_room() -> void:
-	# Install_upgrade's slot_of()/is_consumable() lookups ARE override-aware, but
-	# RewardSystem.pick_mystery_box_grant iterates the raw UpgradeLibrary.UPGRADES
-	# const (same caveat test_reward_system.gd documents for draw_upgrade) — so
-	# with UpgradeFixtures installed (this file's shared before_each), the grant
-	# resolves to a REAL id that the overridden slot_of() doesn't recognise,
-	# spuriously falling back. Use the real catalogue for this test.
-	UpgradeFixtures.restore()
-	var maxed: Dictionary = _save.grant_car("fx_light_rwd")
-	maxed["installed_upgrades"] = _all_real_parts()
-	var other: Dictionary = _save.grant_car("fx_awd")
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var result: Dictionary = _save.open_mystery_box(_rng(1))
-	assert_false(bool(result.get("car", false)), "nobody is wrecked, so this is a part grant")
-	assert_eq(int(result["recipient_instance_id"]), int(other["instance_id"]),
-		"the gift lands on the car with room, not the maxed one")
-	var recipient: Dictionary = _save.get_car(int(other["instance_id"]))
-	assert_true((recipient["installed_upgrades"] as Array).has(result["item_id"]),
-		"the resolved item is fitted to the recipient")
-	assert_false((recipient["disabled_upgrades"] as Array).is_empty(),
-		"the gifted part installs DISABLED, same as any other per-event reward")
-	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
-
-
-func test_open_mystery_box_keeps_the_box_when_no_car_has_room() -> void:
-	# There is no consolation prize left to fall back on (repair kits are gone), so a
-	# box with nowhere to land is NOT spent — the garage row shows it disabled instead.
-	UpgradeFixtures.restore()  # see comment in the test above
-	var maxed: Dictionary = _save.grant_car("fx_light_rwd")
-	maxed["installed_upgrades"] = _all_real_parts()
-	var also_maxed: Dictionary = _save.grant_car("fx_awd")
-	also_maxed["installed_upgrades"] = _all_real_parts()
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var result: Dictionary = _save.open_mystery_box(_rng(1))
-	assert_true(result.is_empty(), "nothing could be granted, so nothing is reported")
-	assert_eq(_save.mystery_boxes_owned(), 1, "and the box is NOT spent")
-
-
-func test_a_mystery_box_never_pays_a_car() -> void:
-	# The box used to have a second branch — a whole new CAR when every owned car was
-	# wrecked — as the anti-soft-lock rescue. Both the rescue and the branch are gone:
-	# wrecks are recoverable (features/damage.md) so nothing needs rescuing, and cars are
-	# won at the rally that advertises them (features/prize-rallies.md), so a box handing
-	# one out would undercut that. A box opens onto a PART or stays unopened.
-	UpgradeFixtures.restore()  # see comment in the test above
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_awd")
-	_save.apply_damage(int(a["instance_id"]), 999999.0)
-	_save.apply_damage(int(b["instance_id"]), 999999.0)
-	var owned_before: int = (_save.profile["cars"] as Array).size()
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var result: Dictionary = _save.open_mystery_box(_rng(1))
-	assert_eq((_save.profile["cars"] as Array).size(), owned_before,
-		"however battered the garage is, a box never adds a car")
-	if not result.is_empty():
-		assert_false(bool(result["car"]), "and never reports one")
-
-
-# A ONE-CAR garage: the box now fits a part to the only car you own, instead of
-# being permanently unopenable because there was no "other" car to gift.
-func test_open_mystery_box_can_fit_a_part_to_your_only_car() -> void:
-	UpgradeFixtures.restore()  # see comment in the test above
-	var only: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var result: Dictionary = _save.open_mystery_box(_rng(1))
-	assert_false(bool(result.get("car", false)),
-		"your one car has empty slots, so a part is granted rather than a car")
-	assert_eq(int(result["recipient_instance_id"]), int(only["instance_id"]),
-		"the gift lands on the only car you own")
-	var recipient: Dictionary = _save.get_car(int(only["instance_id"]))
-	assert_true((recipient["installed_upgrades"] as Array).has(result["item_id"]),
-		"the resolved item is fitted to it")
-	assert_false((recipient["disabled_upgrades"] as Array).is_empty(),
-		"and installs DISABLED, same as every other gifted part")
-
-
-func test_open_mystery_box_returns_empty_when_none_held() -> void:
-	_save.grant_car("fx_light_rwd")
-	assert_eq(_save.mystery_boxes_owned(), 0, "setup: no box held")
-	var result: Dictionary = _save.open_mystery_box()
-	assert_true(result.is_empty(), "opening with none held is a no-op")
 
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
@@ -664,11 +582,11 @@ func test_migration_v1_strips_the_unbound_inventory() -> void:
 func test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile() -> void:
 	# Cleaned up in the tolerant sanitise pass rather than a schema migration, so older
 	# builds can still read the profile (no SCHEMA_VERSION bump).
-	_save.profile["inventory"] = {"repair_kit": 4, UpgradeLibrary.MYSTERY_BOX_ID: 2}
+	_save.profile["inventory"] = {"repair_kit": 4, "fx_consumable": 2}
 	_save.profile = _save._sanitise(_save.profile)
 	var inv: Dictionary = _save.profile["inventory"]
 	assert_false(inv.has("repair_kit"), "the dead consumable is stripped on load")
-	assert_eq(int(inv.get(UpgradeLibrary.MYSTERY_BOX_ID, 0)), 2, "live consumables are untouched")
+	assert_eq(int(inv.get("fx_consumable", 0)), 2, "live consumables are untouched")
 
 
 func test_migration_backfills_missing_keys() -> void:
@@ -761,56 +679,41 @@ func test_swap_engines_exchanges_current_engines() -> void:
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var stock_a: String = CarLibrary.by_id("fx_light_rwd")["engine"]
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
-	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "swap with a token succeeds")
+	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "the swap succeeds")
 	# Re-fetch (grant_car returns a live ref, but re-read to be explicit).
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
 	assert_eq(String(a.get("swapped_engine", "")), stock_b, "Fixture Roadster now runs the Fixture Coupe engine")
 	assert_eq(String(b.get("swapped_engine", "")), stock_a, "Fixture Coupe now runs the Fixture Roadster engine")
-	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
 
 
-func test_swap_with_identical_engines_is_a_noop_and_keeps_token() -> void:
+func test_swap_with_identical_engines_is_a_noop() -> void:
 	# Two instances of the same model run the same engine, so there is nothing to
-	# exchange — the swap must be refused WITHOUT spending a token (a token is a
-	# scarce reward; burning one on a no-op is a bug).
+	# exchange and the swap reports no change. Swaps are free now, so nothing is at stake
+	# in the refusal — but a caller that believed a no-op had happened would repaint the
+	# garage for a change that never occurred.
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]),
 		"swapping identical current engines is a no-op")
-	assert_eq(_save.engine_swap_tokens_owned(), 1, "a no-op swap must not spend the token")
 
 
 func test_swapping_back_restores_stock_and_clears_field() -> void:
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 2)  # each swap costs one, incl. the revert
 	_save.swap_engines(a["instance_id"], b["instance_id"])
 	_save.swap_engines(a["instance_id"], b["instance_id"])  # swap back
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
 	assert_eq(String(a.get("swapped_engine", "")), "", "Fixture Roadster back to stock -> field cleared")
 	assert_eq(String(b.get("swapped_engine", "")), "", "Fixture Coupe back to stock -> field cleared")
-	assert_eq(_save.engine_swap_tokens_owned(), 0, "reverting also spent a token (two swaps, two tokens)")
 
 
-func test_swap_blocked_without_a_token() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	assert_eq(_save.engine_swap_tokens_owned(), 0, "no tokens to start")
-	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]), "no token -> swap blocked")
-	a = _save.get_car(a["instance_id"])
-	assert_eq(String(a.get("swapped_engine", "")), "", "blocked swap leaves engines untouched")
-
-
-func test_swap_succeeds_between_damaged_cars_with_a_token() -> void:
+func test_swap_succeeds_between_damaged_cars() -> void:
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.apply_damage(b["instance_id"], 1.0)  # b below max HP — no longer a blocker
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
-	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "damaged car swaps fine with a token")
+	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "a damaged car swaps fine")
 	b = _save.get_car(b["instance_id"])
 	assert_lt(float(b.get("hp", 0.0)), float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"]),
 		"the swap did not repair the damaged car")

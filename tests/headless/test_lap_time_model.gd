@@ -353,3 +353,163 @@ func test_the_gradient_term_reaches_the_rival_field_through_the_track_result():
 		assert_gt(int(hilly_field[i]["combined_ms"]), flat_ms,
 			"rival %d is slower up the hill" % i)
 	assert_gt(compared, 0, "at least one classified rival was compared")
+
+
+# --- Surface-specialised tyre compounds (features/drivetrain-and-tires.md) --------
+# The snow compound trades tarmac grip for snow grip, and the model has to see that
+# trade or the AI field would silently diverge from the car the player is driving —
+# rivals would lap a tarmac stage on rubber the player no longer has. Relations only:
+# the two multipliers are supplied by the test, so retuning the shipped part is free.
+
+const SNOW_SHOD := {
+	"mass": 1200.0, "peak_torque": 300.0, "redline": 7000.0,
+	"tire_compound": 1.1, "drag": 0.2,
+	"tire_snow_grip_mult": 1.2, "tire_tarmac_grip_mult": 0.8,
+}
+
+
+func test_a_tarmac_penalty_is_slower_on_a_tarmac_stage() -> void:
+	var track := _arc_track(40.0, PI)
+	var event := {"surface_mix": 1.0}
+	assert_gt(LapTimeModel.optimum_ms(track, SNOW_SHOD, event),
+		LapTimeModel.optimum_ms(track, CAR, event),
+		"winter rubber is strictly slower round a tarmac corner")
+
+
+func test_a_gravel_stage_is_untouched_by_a_surface_compound() -> void:
+	# The tarmac penalty feathers with the stage's tarmac fraction, so a pure gravel
+	# event must come out byte-identical — the compound is neutral there by design.
+	var track := _arc_track(40.0, PI)
+	var event := {"surface_mix": 0.0}
+	assert_eq(LapTimeModel.optimum_ms(track, SNOW_SHOD, event),
+		LapTimeModel.optimum_ms(track, CAR, event),
+		"a gravel stage is unchanged by a surface-specialised compound")
+
+
+func test_a_snow_stage_rewards_the_compound_the_player_fitted() -> void:
+	# Snowiness is a property of the STAGE's region, seated on the live config, not of
+	# the event dict — so this drives it the same way RallySession.apply_event_config
+	# does. Restored afterwards: the config is shared across the suite.
+	var cfg: GameConfig = Config.data
+	var was := cfg.deep_snow_depth_m
+	cfg.deep_snow_depth_m = 0.3
+	var track := _arc_track(40.0, PI)
+	var event := {"surface_mix": 1.0}
+	var shod := LapTimeModel.optimum_ms(track, SNOW_SHOD, event)
+	var stock := LapTimeModel.optimum_ms(track, CAR, event)
+	cfg.deep_snow_depth_m = was
+	assert_lt(shod, stock, "on snow the same compound is strictly faster, penalty and all")
+
+
+# --- Tire load sensitivity (features/car-performance.md) -----------------------
+# Without this the model saw mass in ONE term (a_engine = P/(v*m)); cornering, braking
+# and corner-exit traction were all exactly mass-invariant, so shedding weight barely
+# moved a car's rating while being plainly transformative to drive. Relations only —
+# tire_load_sensitivity is a tunable, so nothing here pins how big the effect is.
+
+func test_a_lighter_car_corners_faster_not_just_accelerates_faster() -> void:
+	# A pure CORNER, where the engine term does almost nothing: the old model returned an
+	# identical time here however light the car was, because mu*g/kappa has no mass in it.
+	var track := _arc_track(40.0, PI)
+	var heavy := CAR.duplicate()
+	var light := CAR.duplicate()
+	light["mass"] = float(CAR["mass"]) * 0.8
+	assert_lt(LapTimeModel.optimum_ms(track, light, {}),
+		LapTimeModel.optimum_ms(track, heavy, {}),
+		"shedding mass is worth time in a corner, not only on a straight")
+
+
+func test_wider_tires_recover_grip_at_the_same_mass() -> void:
+	# The other half of the same term: load sensitivity is about contact PRESSURE, so a
+	# wider tire under an unchanged mass buys back the same kind of grip a diet does.
+	var track := _arc_track(40.0, PI)
+	var narrow := CAR.duplicate()
+	narrow["wheel_width_front"] = 0.185
+	narrow["wheel_width_rear"] = 0.185
+	var wide := CAR.duplicate()
+	wide["wheel_width_front"] = 0.285
+	wide["wheel_width_rear"] = 0.285
+	assert_lt(LapTimeModel.optimum_ms(track, wide, {}),
+		LapTimeModel.optimum_ms(track, narrow, {}),
+		"the wider-tired car is faster round the same corner")
+
+
+func test_the_load_term_applies_through_the_frozen_benchmark_override_too() -> void:
+	# CarPerformance solves with mu_override, which REPLACES the surface/weather lookup.
+	# A load term living inside _surface_grip would be bypassed there — i.e. invisible to
+	# the rating, the one place it most needed to be seen. Same assertion, override path.
+	var track := _arc_track(40.0, PI)
+	var heavy := CAR.duplicate()
+	var light := CAR.duplicate()
+	light["mass"] = float(CAR["mass"]) * 0.8
+	assert_lt(LapTimeModel.optimum_ms(track, light, {}, 1.0, 1.0, 1.0),
+		LapTimeModel.optimum_ms(track, heavy, {}, 1.0, 1.0, 1.0),
+		"the frozen-conditions solve sees mass in its grip too")
+
+
+# --- Geared top speed (features/car-performance.md) ---------------------------
+# The model has no gearbox and no rev limiter, so a_engine = P/(v*m) accelerated
+# forever and credited short-geared cars with speeds they are physically pinned below.
+# All of these run on the SYNTHETIC fixture roster: the ratios come from a fixture
+# engine, never a shipped one, and no assertion depends on which engine that is.
+
+const GEARED := {
+	"mass": 1200.0, "peak_torque": 600.0, "redline": 7000.0,
+	"tire_compound": 1.1, "drag": 0.0, "engine": "fx_i4", "wheel_radius": 0.30,
+}
+
+
+func test_a_meta_with_no_gearbox_is_left_uncapped() -> void:
+	# The zero case, and it is load-bearing: most callers of this model hand it a point-mass
+	# meta with no engine and no wheel radius (the physics tests, the rally fixtures). They
+	# have no gearbox to run out of, and inventing one would silently re-time every one.
+	assert_eq(LapTimeModel._geared_top_speed_sq(CAR), 0.0,
+		"a meta with no engine or wheel radius describes no gearbox")
+	assert_eq(LapTimeModel._geared_top_speed_sq({"wheel_radius": 0.3, "redline": 7000.0}),
+		0.0, "...and neither does one naming an engine that isn't in the catalogue")
+
+
+func test_a_taller_geared_car_reaches_a_higher_top_speed() -> void:
+	# Same engine, same everything: only the rolling radius differs, which is the one
+	# gearing input that lives on the CAR. Bigger wheel = taller gearing = higher cap.
+	CarFixtures.install()
+	var small := GEARED.duplicate()
+	small["wheel_radius"] = 0.25
+	var big := GEARED.duplicate()
+	big["wheel_radius"] = 0.40
+	assert_gt(LapTimeModel._geared_top_speed_sq(big), LapTimeModel._geared_top_speed_sq(small),
+		"the taller-geared car tops out higher")
+	# ...and it shows up as time on a long straight, which is what the rating reads.
+	var track := _straight_track(800.0)
+	assert_lt(LapTimeModel.optimum_ms(track, big, {}), LapTimeModel.optimum_ms(track, small, {}),
+		"and is therefore quicker down a long straight")
+	CarFixtures.restore()
+
+
+func test_the_cap_actually_binds_on_a_long_straight() -> void:
+	# The point of the change: a powerful car that runs out of gears must NOT be scored as
+	# though it kept pulling. Compared against the same meta with its drivetrain removed,
+	# which is exactly the uncapped solve this model used to do for everyone.
+	CarFixtures.install()
+	var geared := GEARED.duplicate()
+	geared["wheel_radius"] = 0.22   # deliberately short, so the cap bites well before the end
+	var ungeared := geared.duplicate()
+	ungeared.erase("engine")
+	var track := _straight_track(800.0)
+	assert_gt(LapTimeModel.optimum_ms(track, geared, {}),
+		LapTimeModel.optimum_ms(track, ungeared, {}),
+		"running out of gears costs time the old model handed over for free")
+	CarFixtures.restore()
+
+
+func test_the_cap_holds_the_braking_pass_too() -> void:
+	# Applied to the cornering ceiling rather than to a_engine, so the backward pass sees
+	# it as well: a car must not arrive at a corner above a speed it could never reach.
+	CarFixtures.install()
+	var geared := GEARED.duplicate()
+	geared["wheel_radius"] = 0.22
+	var prof := LapTimeModel.optimum_profile(_straight_track(800.0), geared, {})
+	var top := sqrt(LapTimeModel._geared_top_speed_sq(geared))
+	for v in (prof["v"] as PackedFloat32Array):
+		assert_lte(float(v), top + 0.01, "no point on the profile exceeds the geared top speed")
+	CarFixtures.restore()

@@ -4,9 +4,9 @@
 `benchmark_ms`, `merged_meta`, `reset`, `REFERENCE_CAR`, `RATING_SCALE`,
 `BENCHMARK_SURFACE_GRIP`), `scripts/benchmark_track.gd` (`BenchmarkTrack` —
 `build`, `build_from`, `ARC_STEPS_PER_QUARTER`), `scripts/lap_time_model.gd`
-(`optimum_profile`'s `mu_override`, `_grip_long`, `_traction_factor`,
-`V_CAP_MAX_MS`), `scripts/game_config.gd` (the `benchmark_*` and
-`traction_factor_*` exports), `tests/headless/test_car_performance.gd`,
+(`optimum_profile`'s `mu_override`, `_load_factor`, `_geared_top_speed_sq`,
+`_grip_long`, `_traction_factor`, `V_CAP_MAX_MS`), `scripts/game_config.gd` (the `benchmark_*`,
+`traction_factor_*` and `tire_load_*` exports), `tests/headless/test_car_performance.gd`,
 `tests/headless/test_lap_time_model.gd`. Design:
 `docs/superpowers/specs/2026-08-15-car-performance-rating-design.md`.
 
@@ -48,7 +48,9 @@ without writing to the live config. Both return the
 
 Layout, in order:
 
-1. **A straight** — acceleration and top speed.
+1. **A straight** — acceleration and top speed. Since the geared top-speed cap
+   landed this section genuinely measures top speed rather than just
+   acceleration: a short-geared car now runs out of gears on it.
 2. **A hairpin** (a PI arc) — low-speed cornering and corner exit.
 3. **N sweepers** (PI/2 arcs) — high-speed cornering, where downforce shows up.
 
@@ -128,11 +130,51 @@ into the override, because it is a property of the car, not the conditions.
 `mu_override < 0` (the default) is an exact no-op for every other caller.
 `test_the_scale_survives_a_surface_grip_retune` guards it.
 
+**The same reasoning now carries a second term through the bypass: tire load
+sensitivity.** `optimum_profile` multiplies `mu` by `LapTimeModel._load_factor`
+**after** `mu` has been resolved, on **both** branches — the `_surface_grip` path
+and the `mu_override` path. That placement is load-bearing, not stylistic:
+`_simulate` always passes `mu_override`, so a load term living inside
+`_surface_grip` would have been invisible to the rating, which is precisely the
+one place it most needed to be seen. Like `tire_compound`, it is a property of
+the *car* (its mass and its tyre widths), not of the conditions, so the frozen
+conditions must not freeze it out.
+
 ## What it measures, and what it does NOT
 
 **It measures:** power (`peak_torque` / `redline` via
-`CarLibrary.power_to_weight`), mass, drag, tyre grip (`tire_compound`),
-downforce (`downforce_front` + `downforce_rear`) and drive mode.
+`CarLibrary.power_to_weight`), mass, drag, tyre grip (`tire_compound`), tyre
+**width** (`wheel_width_front` / `wheel_width_rear`, through load sensitivity —
+see below), downforce (`downforce_front` + `downforce_rear`), drive mode, and the
+car's **geared top speed** (`LapTimeModel._geared_top_speed_sq` — see
+[The geared top-speed cap](#the-geared-top-speed-cap) below).
+
+### Mass is no longer only power-to-weight
+
+Worth stating explicitly, because this file used to say the opposite. Before the
+load-sensitivity term, mass reached the solver in exactly ONE place: `a_engine =
+P/(v·m)`. Cornering (`mu·g/κ`), braking and corner-exit traction were all exactly
+mass-invariant. Two bad consequences followed. Fitting weight reduction barely
+moved a car's rating, while being transformative to drive — the number and the
+car disagreed about the single most-felt modification in the game. And the only
+channel by which shedding mass bought *cornering* speed at all was the aero term
+(`aero_a = μ·D/m`), so the model rewarded a diet only on cars that already had
+downforce, and gave nothing at all to the light, aero-free classics where a diet
+matters most.
+
+The live physics has always modelled this (`Drivetrain.step` →
+`GameConfig.tire_load_factor`, `tire_load_sensitivity`): a less-loaded tyre has a
+higher coefficient, and a wider tyre spreads the same load over more rubber. So
+`LapTimeModel._load_factor(car_meta, mass)` calls **the same
+`GameConfig.tire_load_factor`** the wheels do, with a point-mass simplification —
+normal force is `mass·G/4` (four equally-loaded corners) and width is the mean of
+`wheel_width_front` / `wheel_width_rear`. That is deliberately coarser than
+`Drivetrain.step`, which resolves the factor per wheel per tick against the live
+suspension normal force and therefore picks up weight transfer; the point mass
+has no axles to transfer between. Coarse but the *same curve* is the point: the
+rating now moves in the direction the car does, which matters well beyond the
+number on the upgrades page, because the AI field is paced off this same solve
+([rally-roster.md](rally-roster.md)).
 
 **It does not measure — at all:**
 
@@ -141,8 +183,21 @@ downforce (`downforce_front` + `downforce_rear`) and drive mode.
   touches brakes. `brake_bias` alone cannot move a point-mass deceleration
   ceiling. So "two cars with different brakes time identically" is true only
   because there are no different brakes.
-- Gearbox ratios, shift time, turbo lag (only the *resulting* torque figure
-  reaches the solver), suspension, weight distribution, tyre width.
+- **The SHIFTS themselves.** Keep this distinction sharp, because the gearbox is
+  now half-modelled: the ratios DO reach the solver, but only through the top
+  gear, as a speed ceiling. Nothing models the time lost to an upshift, so a
+  close-ratio box that keeps an engine in its band is not credited for it, and
+  `shift_time` (per-engine, and upgradeable — see
+  [engine-and-transmission.md](engine-and-transmission.md)) is invisible to the
+  rating. Intermediate ratios are invisible for the same reason: only the
+  smallest one is read.
+- **The torque CURVE's shape.** Peak power is assumed available at every speed
+  below the cap, so a peaky engine and a flat one with the same peak rate alike.
+  Turbo lag follows from that (a boosted engine is rated at full boost — only the
+  *resulting* torque figure reaches the solver).
+- Suspension, weight distribution (`weight_front` — the point mass loads all four
+  corners equally, so front/rear balance is invisible even though the widths are
+  not).
 
 **Consequence, stated plainly because the next person will assume otherwise: the
 hairpin measures low-speed cornering and corner exit, NOT braking.** Do not
@@ -158,10 +213,17 @@ deferred follow-up (the spec's D7).
 
 `benchmark_ms` is memoised in a static dictionary. The key (`_cache_key`) is
 **only the fields the solver actually reads** — mass, peak torque, redline, tyre
-compound, drag, both downforce terms, drive mode — so names, model paths and
-ownership bookkeeping don't fragment the cache. It is concatenated with
-`_config_key()`, a fingerprint of the four `benchmark_*` knobs and the three
-`traction_factor_*` values, because a designer edit mid-session must not leave
+compound, **both tyre widths**, drag, both downforce terms, drive mode,
+**`wheel_radius` and the engine id** — so names, model paths and ownership
+bookkeeping don't fragment the cache. The last two are the geared top-speed
+inputs: the radius comes off the car, and the engine id stands in for the ratios
+and final drive that hang off the engine. The id earns its place on its own
+account — two metas identical in every other field but wearing different
+gearboxes now genuinely lap differently, so an engine **swap** has to re-solve
+rather than serve the pre-swap time. It is concatenated
+with `_config_key()`, a fingerprint of the four `benchmark_*` knobs, the three
+`traction_factor_*` values and `tire_load_sensitivity` / `tire_ref_pressure`,
+because a designer edit mid-session must not leave
 stale numbers on screen. The built track and the reference time are cached
 alongside and invalidated by the same fingerprint.
 
@@ -237,13 +299,71 @@ Note this applies along the **whole** track including the straight, so it also
 affects the launch. That is deliberate (a FWD car does launch worse) but it means
 the traction knobs interact with `benchmark_straight_m`.
 
+### The geared top-speed cap
+
+`a_engine = P/(v·m)` accelerates **forever**. Before this term the model had no
+gearbox and no rev limiter, so it scored every car as though it were driving an
+ideal CVT that never runs out of gears — a short-geared torque car was credited
+with speeds it is physically pinned below. `LapTimeModel._geared_top_speed_sq`
+gives the solver the top end the car actually has:
+
+```
+v_max = omega_redline * wheel_radius / (top_ratio * final_drive)
+```
+
+which is the **same chain `Drivetrain` gears the crank through to the axle**, so
+the two cannot describe different cars. Note it reads from *two* places:
+`wheel_radius` off the CAR (`CarLibrary`) while the ratios and `final_drive` come
+off the ENGINE (`EngineLibrary`, resolved from `car_meta["engine"]`) — which is
+exactly why an engine swap correctly moves a car's top speed, and why the engine
+id is in the cache key. **Top gear is the SMALLEST ratio, not the last entry**:
+the shipped boxes happen to be authored descending, nothing enforces that, and a
+mis-ordered list would otherwise hand a car a first-gear top speed.
+
+**Returning `0.0` means "no cap", and that zero is load-bearing rather than
+defensive padding.** A meta with no engine id, an unknown engine, or no wheel
+radius does not describe a gearbox at all — and most callers hand this model
+exactly that: a synthetic point-mass meta from a physics test or a rally fixture.
+Inventing a plausible gearbox for them would silently re-time every one of those
+solves. So the absence of a drivetrain is treated as an absence of information,
+not as a car with a very short top gear.
+
+**Where it is applied matters more than the formula.** It goes into `cap2`, the
+cornering-ceiling array — including on the straight sections — not into
+`a_engine`. That placement means **both** the forward acceleration pass and the
+backward braking pass respect it, which is the point: a car must not arrive at a
+corner carrying a speed it could never have reached. Capping `a_engine` alone
+would have left the braking pass free to back-solve from an impossible entry
+speed.
+
+Observed effect when this landed, and stated as a snapshot of the currently
+authored roster rather than a target: only **two** cars moved — `beast`
+526 → 508 and `xjs` 478 → 473 — and every other shipped car was unchanged,
+because on the benchmark track they never reach their geared top speed anyway.
+That is the useful shape of this term: it bites exactly the short-geared cars and
+is inert for the rest. Re-gear a car or swap its engine and the set of cars it
+touches changes; don't treat those two ids as fixed.
+
+`test_lap_time_model.gd` covers it in relations only, on the synthetic
+`CarFixtures` roster and never a shipped engine:
+`test_a_meta_with_no_gearbox_is_left_uncapped` (the zero case above),
+`test_a_taller_geared_car_reaches_a_higher_top_speed`,
+`test_the_cap_actually_binds_on_a_long_straight`, and
+`test_the_cap_holds_the_braking_pass_too` (the `cap2`-not-`a_engine` placement —
+if that one fails, someone has moved the cap onto the engine term).
+
 ## Invariance: the enrichment shipped inert
 
 `traction_factor_*` all default to `1.0` and **no shipped car has any
 downforce**, so the downforce and drive-mode terms are exact no-ops on current
 content and every existing time is byte-identical to before they existed.
 `test_defaults_are_an_exact_no_op` in `test_lap_time_model.gd` pins that
-property — keep it green, because it is the only thing standing between a solver
+property for those two terms — the **geared top-speed cap is the one enrichment
+that did not ship inert**, by design: it is a correction, not an opt-in, so it
+moved the times of the cars it binds on (see above). Its own no-op guarantee is
+narrower and is the zero case: a meta that doesn't describe a gearbox is left
+exactly as it was, which is what keeps every point-mass caller unchanged. Keep
+`test_defaults_are_an_exact_no_op` green — keep it green, because it is the only thing standing between a solver
 tweak and a silent, game-wide shift in every rival time.
 
 This mattered a great deal during the rework and matters less now: the opponent
@@ -274,6 +394,13 @@ turn up in better or worse machinery accordingly. Two consequences for this file
 - Anything the rating cannot see becomes a way for a rival to be quicker than the number
   it was matched on. That is exactly why **nitrous is barred from every build level**: it
   is excluded from the rating on purpose.
+
+**A rating never gates entry.** Rally eligibility is purely categorical
+(`RallyLibrary.ineligibility_reason` — drivetrain, era, class and the like), so a
+solver change that moves every rating cannot lock a player out of a rally they
+could enter yesterday. It changes who turns up to race them. Keep that
+distinction in mind when weighing how risky a change to this model is: the blast
+radius is the opponent field, not progression.
 
 ## The grid is re-drawn if you change your build on the start line
 
@@ -403,6 +530,19 @@ rates lower, an aero kit rates higher, AWD ≥ RWD when its ceiling is higher,
 unmodelled fields move nothing, the anchor survives a geometry or grip retune,
 the straight lever's direction). A designer retuning the knobs must not break
 that file.
+
+The load-sensitivity term is covered the same way, in relations only:
+`test_car_performance.gd` → `test_wider_tires_rate_higher_at_the_same_mass` and
+`test_shedding_mass_helps_a_car_that_cannot_use_more_power` (the second is the
+interesting one — it isolates the effect from `a_engine = P/(v·m)` by using a car
+that is not power-limited, so the gain can only have come through μ);
+`test_lap_time_model.gd` →
+`test_a_lighter_car_corners_faster_not_just_accelerates_faster`,
+`test_wider_tires_recover_grip_at_the_same_mass`, and
+`test_the_load_term_applies_through_the_frozen_benchmark_override_too`, which
+pins the `mu_override` placement described above — if that one fails, someone has
+moved the term back inside `_surface_grip` and the rating has gone blind to mass
+again.
 
 ## Related
 

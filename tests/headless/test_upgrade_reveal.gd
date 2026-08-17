@@ -61,9 +61,13 @@ func test_slottable_part_reveal_offers_upgrades_and_next() -> void:
 	assert_true(done[0], "Next continues the flow exactly like the old immediate finish")
 
 func test_a_won_consumable_lands_in_inventory_and_offers_next() -> void:
-	# Every consumable now takes the same plain path — no branch offers to spend one
-	# on the driven car, because the repair kit that used to do that is gone. A DAMAGED
-	# car is used deliberately: that is exactly the state that used to divert here.
+	# Every consumable takes the same plain path — no branch offers to spend one on the
+	# driven car, because the repair kit that used to do that is gone. A DAMAGED car is
+	# used deliberately: that is exactly the state that used to divert here.
+	#
+	# The consumable is the SYNTHETIC fixture one. Nothing shipped is a consumable any
+	# more (the swap token and the mystery box are both retired), but this branch is live
+	# code for whatever claims the flag next.
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
 	_save.apply_damage(id, 200.0)
@@ -72,7 +76,7 @@ func test_a_won_consumable_lands_in_inventory_and_offers_next() -> void:
 	var w := _make()
 	var done := [false]
 	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
-	w.reveal(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, id)
+	w.reveal("fx_consumable", id)
 	await get_tree().process_frame
 	assert_true(w._action_box.visible, "the Upgrades/Next row is shown, with no choice to make")
 	assert_false(done[0], "finished does not fire until Next is pressed")

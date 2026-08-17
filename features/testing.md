@@ -276,10 +276,15 @@ same pattern for the rally and upgrade catalogues:
 - **UpgradeFixtures:** a turbo slot-pair (`fx_turbo_small`/`fx_turbo_big`,
   distinct `menu_label`), `fx_aero`, `fx_lightweight` (`mass_mult < 1`),
   `fx_ballast` (free, `mass_mult > 1`), `fx_drivetrain` — one part
-  per effect shape the apply/`effective_meta` pipeline reads. It re-exports the
-  two **structural** consumables by their real constant ids
-  (`UpgradeLibrary.ENGINE_SWAP_TOKEN_ID` / `MYSTERY_BOX_ID`) so the save/reward
-  code that looks them up by constant isn't stranded under the override.
+  per effect shape the apply/`effective_meta` pipeline reads, plus
+  **`fx_consumable`** — a synthetic entry with the `consumable` flag set. Nothing
+  in the shipped `UpgradeLibrary` is a consumable any more, but the code paths
+  that respect the flag are still live (`Save.install_upgrade` refuses to slot a
+  consumable; `UpgradeReveal` routes one to the inventory instead of a slot), so
+  the fixture is the only way to exercise them. It replaced an earlier re-export
+  of the real engine-swap-token id, which stopped existing when the token was
+  deleted — a good argument for the fixture owning its own ids rather than
+  borrowing catalogue constants.
 - Same `install()` / `restore()` contract and the same **mandatory-restore**
   rule as `CarFixtures`. Two scoping styles are used, both fine: **global**
   `install()` in `before_each` when the whole file is generic; **per-test**
@@ -349,30 +354,16 @@ retried, so the retry can never mask a real failure. Budget is
 `TEST_CRASH_RETRIES` (default 2; a crash that persists past it still fails the
 run). If you see a `retrying (n/2)` warning, that's this flake being absorbed.
 
-## Trap: the per-event reward draw pollutes inventory assertions
+## Trap: assert on what the feature reported, not on the whole inventory
 
-Driving a rally through `_report_events` (or any path that calls
-`RallySession.report_event_result`) fires the **ordinary per-event upgrade draw**. That draw
-can grant a part or a consumable — including an engine-swap token
-(`RewardSystem.ENGINE_SWAP_TOKEN_DROP_CHANCE`) — to the driven car.
-
-So an assertion like "the car ends up with exactly one X" or "the car does NOT have Y" after
-driving events is **measuring two systems at once**, and whether it passes depends on RNG
-state. That state differs between a single-file run and the full suite, which makes it the
-worst kind of flake: green on `--fast`, red in CI, and it looks like the feature is broken
-rather than the test.
-
-Two ways out, both used in `test_rally_session.gd`:
-
-1. **Assert on what the feature itself reported**, not on the resulting inventory — e.g.
-   `special_unlock.granted` says what the unlock granted, and the draw cannot touch it. Keep
-   an inventory check if you want, but as `assert_gte(before + 1)` ("it arrived"), not as an
-   exact total.
-2. **Take the items out of the draw pool.** A synthetic upgrade authored with `free: true` is
-   skipped by `RewardSystem._eligible_parts`, so the ordinary draw can never grant it and an
-   exact assertion becomes meaningful again.
-
-Both were learned the hard way — twice, on the same feature.
+There is no longer a random per-event upgrade draw, so driving a rally no longer
+sprays RNG-chosen items into the profile — an exact inventory total after driving
+events is a fair assertion again. The habit the old draw forced is still the
+better one, though, and `test_rally_session.gd` keeps it: **assert on what the
+feature itself reported** (e.g. `special_unlock.granted` says what the unlock
+granted) rather than on a derived count that any future grant path could also
+move. It keeps the test pointed at the code under test instead of at the sum of
+everything that ran.
 
 ## Trap: async work that outlives the node that started it
 

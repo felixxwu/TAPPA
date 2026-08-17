@@ -297,7 +297,7 @@ func test_wipe_button_asks_before_destroying_anything() -> void:
 # Confirming does the wipe: a fresh new-game profile, and the page reports it.
 func test_confirming_the_modal_wipes_the_save() -> void:
 	_save.grant_car("fx_light_rwd")
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID)
+	_save.add_item("fx_consumable")
 	var menu := _make_menu()
 	_reset_button(menu, "Wipe all progress").pressed.emit()
 	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup

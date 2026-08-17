@@ -9,12 +9,11 @@ extends RefCounted
 # reads: install_turbo, install_supercharger, mass_mult (both a reduction < 1 and a `free` ballast > 1),
 # unlocks_aero_tuning + downforce, shift_time_set (the "set" op — an absolute value, not a
 # scaling), tire_grip_mult (the one row whose meta
-# field and live-config fields differ — see UpgradeLibrary._cfg_fields), and
-# unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
-# their real constant ids (UpgradeLibrary.ENGINE_SWAP_TOKEN_ID / MYSTERY_BOX_ID) —
-# these are referenced by constant across the save / reward code (like the engine
-# FIRING layout keys the car fixtures reuse), so keeping them present means an
-# override doesn't strand those lookups.
+# field and live-config fields differ — see UpgradeLibrary._cfg_fields),
+# tire_snow_grip_mult / tire_tarmac_grip_mult (the surface-dependent compound), and
+# unlocks_drivetrain_swap. It also carries `fx_consumable`, a synthetic stand-in: the
+# shipped catalogue has no consumable left (the engine swap token and the mystery box are
+# both retired), but the consumable BRANCHES survive and still need an input to exercise.
 
 static func upgrades() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
@@ -72,6 +71,21 @@ static func upgrades() -> Array[Dictionary]:
 			"effect": {"tire_grip_mult": 1.15},
 		},
 		{
+			# The SURFACE-DEPENDENT tyre shape: a second tyres-slot part carrying the two
+			# multipliers whose meta and config field names coincide, so the pipeline has a
+			# specialised compound to walk as well as a flat one. Deliberately trades in
+			# BOTH directions (a bonus above 1 and a penalty below it) — the point of the
+			# shape is the trade, and a fixture that only went one way would let a
+			# sign error through.
+			"id": "fx_snow_tires", "name": "Fixture Snow Tires", "menu_label": "Snow",
+			"slot": "tires", "consumable": false,
+			"effect": {
+				"tire_grip_mult": 1.08,
+				"tire_snow_grip_mult": 1.2,
+				"tire_tarmac_grip_mult": 0.8,
+			},
+		},
+		{
 			"id": "fx_lightweight", "name": "Fixture Lightweight", "slot": "weight",
 			"consumable": false, "effect": {"mass_mult": 0.80},
 		},
@@ -103,7 +117,13 @@ static func upgrades() -> Array[Dictionary]:
 			"effect": {"install_nitrous": {"nitrous_boost_gain": 0.3, "nitrous_tank_seconds": 2.0}},
 		},
 		{
-			"id": UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, "name": "Engine Swap Token", "slot": "",
+			# A SYNTHETIC consumable. The shipped catalogue no longer has one — the engine swap
+			# token and the mystery box are both retired — but "consumable" is still a real
+			# branch in the code (Save.install_upgrade refuses to slot one, UpgradeReveal sends
+			# one to the inventory rather than to a car), and a branch with no test input is a
+			# branch that quietly rots. Owning it here rather than borrowing a shipped id is
+			# also what these fixtures are for.
+			"id": "fx_consumable", "name": "Fixture Consumable", "slot": "",
 			"consumable": true, "effect": {},
 		},
 	]

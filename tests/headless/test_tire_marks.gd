@@ -188,8 +188,11 @@ func test_skidmarks_on_tarmac_above_the_grip_band() -> void:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
 		assert_gt(tm.segment_count(i), 1, "wheel %d sliding on tarmac lays a skidmark" % i)
-		assert_almost_eq(tm.segment_color(i, 1).a, 1.0, 0.001,
-			"wheel %d past the band is fully opaque" % i)
+		# The CEILING, not 1.0: intensity lives in the alpha now, so a fully-worked tire
+		# reaches the authored per-surface maximum rather than full opacity. Read from the
+		# config so retuning how dark a skid can get cannot break this.
+		assert_almost_eq(tm.segment_color(i, 1).a, Config.data.tire_mark_tarmac_color.a, 0.001,
+			"wheel %d past the band reaches the tarmac ceiling" % i)
 
 
 func test_tarmac_skid_fades_in_across_the_grip_band() -> void:
@@ -207,7 +210,8 @@ func test_tarmac_skid_fades_in_across_the_grip_band() -> void:
 	dt.grip_usage = 0.95
 	var high := _laid_alpha(_make_with_terrain(_tarmac_terrain()))
 	assert_gt(low, 0.0, "inside the band the skid is visible")
-	assert_lt(low, 1.0, "inside the band the skid is not yet solid")
+	assert_lt(low, Config.data.tire_mark_tarmac_color.a,
+		"inside the band the skid has not reached its ceiling")
 	assert_gt(high, low, "working the tire harder lays a darker skid")
 
 
@@ -225,7 +229,8 @@ func test_gravel_rut_opacity_scales_with_tire_force() -> void:
 	var hard := _laid_alpha(_make_with_terrain(StubTerrain.new()))
 	assert_gt(light, 0.0, "a lightly loaded tire still scuffs a faint rut")
 	assert_gt(hard, light, "a harder-working tire digs a darker rut")
-	assert_lt(hard, 1.0, "below the reference force the rut is not yet solid")
+	assert_lt(hard, Config.data.tire_mark_color.a,
+		"below the reference force the rut has not reached its ceiling")
 
 
 func test_gravel_rut_is_solid_at_and_above_the_reference_force() -> void:
@@ -233,8 +238,9 @@ func test_gravel_rut_is_solid_at_and_above_the_reference_force() -> void:
 	var dt := StubDrivetrain.new()
 	dt.force_n = 9000.0  # well past the reference — clamps, never overshoots
 	_car.drivetrain = dt
-	assert_almost_eq(_laid_alpha(_make_with_terrain(StubTerrain.new())), 1.0, 0.001,
-		"at or past the reference force the rut is fully opaque")
+	assert_almost_eq(_laid_alpha(_make_with_terrain(StubTerrain.new())),
+		Config.data.tire_mark_color.a, 0.001,
+		"at or past the reference force the rut reaches the gravel ceiling")
 
 
 func test_negligible_tire_force_lays_no_gravel_rut() -> void:
@@ -265,8 +271,11 @@ func test_disabling_the_fade_lays_solid_marks_in_the_same_places() -> void:
 	Config.data.tire_mark_alpha_enabled = false
 	var solid := _make_with_terrain(StubTerrain.new())
 	var solid_alpha := _laid_alpha(solid)
-	assert_lt(faded_alpha, 1.0, "with the fade on this mark is partly transparent")
-	assert_almost_eq(solid_alpha, 1.0, 0.001, "with the fade off the same mark is solid")
+	var ceiling: float = Config.data.tire_mark_color.a
+	assert_lt(faded_alpha, ceiling,
+		"with the fade on this mark sits below its surface's ceiling")
+	assert_almost_eq(solid_alpha, ceiling, 0.001,
+		"with the fade off the same mark is laid at the ceiling")
 	assert_eq(solid.segment_count(0), faded.segment_count(0),
 		"the same segments are laid either way")
 
@@ -456,3 +465,35 @@ func test_jump_leaves_a_gap_not_a_stretched_quad() -> void:
 	assert_true(bool(pairs[1][2]), "consecutive on-ground points stay connected")
 	assert_false(bool(pairs[pairs.size() - 1][2]),
 		"the landing point starts a new strip, leaving a gap across the jump")
+
+
+# --- Black marks, intensity in the alpha --------------------------------------
+
+func test_both_mark_colours_are_pure_black() -> void:
+	# NOT a pinned tunable: how DARK a mark gets is the alpha, and that is free to be
+	# retuned. The RGB being black is the contract — these materials are unshaded, so a
+	# mark with any colour of its own keeps that colour at full brightness at night and
+	# on snow, and reads as paint on top of the world instead of a scuff in it. Black at
+	# partial opacity darkens whatever is underneath, in every condition, for free.
+	for col: Color in [Config.data.tire_mark_color, Config.data.tire_mark_tarmac_color]:
+		assert_almost_eq(col.r, 0.0, 0.001, "mark colour carries no red")
+		assert_almost_eq(col.g, 0.0, 0.001, "mark colour carries no green")
+		assert_almost_eq(col.b, 0.0, 0.001, "mark colour carries no blue")
+
+
+func test_a_laid_mark_is_black_whatever_the_surface() -> void:
+	# The end-to-end version of the rule: whichever surface branch ran, what reaches the
+	# ribbon is black — so the only thing distinguishing a rut from a skid is opacity.
+	var dt := StubDrivetrain.new()
+	dt.force_n = 3000.0
+	dt.grip_usage = 1.4
+	_car.drivetrain = dt
+	for terrain in [StubTerrain.new(), _tarmac_terrain()]:
+		var tm := _make_with_terrain(terrain)
+		for s in 6:
+			_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+		var col := tm.segment_color(0, 1)
+		assert_almost_eq(col.r, 0.0, 0.001, "a laid mark has no red")
+		assert_almost_eq(col.g, 0.0, 0.001, "a laid mark has no green")
+		assert_almost_eq(col.b, 0.0, 0.001, "a laid mark has no blue")
+		assert_gt(col.a, 0.0, "...and is visible through its alpha alone")

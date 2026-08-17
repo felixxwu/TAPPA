@@ -346,6 +346,18 @@ Two wiring details worth knowing:
   marker are fixed and never recomputed against the camera, which keeps the weld honest.
   `hq_carpark.gd::_focus_changed` re-places the panel because that is the one place the
   selection actually changes.
+- **An empty lineup means NO anchor, and a panel that silently stays where it last was.**
+  `hq.gd::_car_panel_xform` reads `_markers[_focus]` and returns `null` when `_markers` is
+  empty; `WorldPanel.place` early-returns on a null transform, so the panel keeps its stale
+  pose — usually off-screen — and everything living on it (the shared `_start_button`
+  included) is simply not where the player is looking. Nothing errors, which is what makes
+  it a trap. This bit the present box: `hq.gd::_enter_present_box` clears the lineup for an
+  empty lot, and `hq_carpark.gd::_release_page_props` frees every marker with it, so the
+  "Open it" button had no anchor until `_open_present` happened to create one. The fix is
+  the rule for any future mode too — **if you clear the lineup, put a marker back before
+  `update_overlays()`**: `hq.gd::_add_present_marker` seats a single bay marker at
+  `HQEnvironment.carpark_center()` (with the usual `rotation.y = PI`) and `_focus = 0` is
+  set alongside it, so the panel is welded while the box is still shut.
 
 ### The marker's axes are FLIPPED — mind the signs
 

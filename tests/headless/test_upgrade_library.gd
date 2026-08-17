@@ -25,8 +25,6 @@ func test_catalogue_is_well_formed() -> void:
 		else:
 			assert_true(UpgradeLibrary.SLOTS.has(item["slot"]),
 				"%s has a known slot" % item["id"])
-	assert_true(UpgradeLibrary.is_consumable(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID),
-		"the swap token is consumable")
 
 
 func test_lookups() -> void:
@@ -470,3 +468,49 @@ func test_fitted_nitrous_id_ignores_other_slots() -> void:
 	var car := {"installed_upgrades": ["fx_turbo"], "disabled_upgrades": []}
 	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "",
 		"a fitted part in another slot is not reported as nitrous")
+
+
+func test_a_surface_dependent_compound_reaches_both_the_config_and_the_grip_meta() -> void:
+	# The surface-dependent tyre rows (features/drivetrain-and-tires.md) have to land in
+	# TWO places to work: on the live config, which the driving physics reads, and on
+	# grip_meta, which is what the lap-time model is handed for the AI field. A part that
+	# reached only the first would give the player an advantage the rivals never see.
+	# Derived from the fixture's own effect, so retuning it can't break this.
+	var eff: Dictionary = UpgradeLibrary.by_id("fx_snow_tires")["effect"]
+	var car := {"installed_upgrades": ["fx_snow_tires"]}
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply(car, cfg)
+	assert_almost_eq(cfg.tire_snow_grip_mult, float(eff["tire_snow_grip_mult"]), 1e-6,
+		"the snow bonus lands on the live config")
+	assert_almost_eq(cfg.tire_tarmac_grip_mult, float(eff["tire_tarmac_grip_mult"]), 1e-6,
+		"the tarmac penalty lands on the live config")
+	var meta := UpgradeLibrary.grip_meta(car, {"tire_compound": 1.0, "mass": 1000.0})
+	assert_almost_eq(float(meta["tire_snow_grip_mult"]), float(eff["tire_snow_grip_mult"]), 1e-6,
+		"the snow bonus is mirrored onto grip_meta")
+	assert_almost_eq(float(meta["tire_tarmac_grip_mult"]), float(eff["tire_tarmac_grip_mult"]), 1e-6,
+		"the tarmac penalty is mirrored onto grip_meta")
+
+
+func test_a_surface_dependent_compound_never_moves_power_to_weight() -> void:
+	# Same rule the flat compound and the aero kit follow: rubber must never change
+	# which rallies a car may enter. effective_meta is what eligibility is judged on.
+	var plain := UpgradeLibrary.effective_meta({"installed_upgrades": []},
+		{"tire_compound": 1.0, "mass": 1000.0, "peak_torque": 200.0, "redline": 6000.0})
+	var shod := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_snow_tires"]},
+		{"tire_compound": 1.0, "mass": 1000.0, "peak_torque": 200.0, "redline": 6000.0})
+	assert_almost_eq(float(shod["mass"]), float(plain["mass"]), 1e-6, "mass is untouched")
+	assert_almost_eq(float(shod["peak_torque"]), float(plain["peak_torque"]), 1e-6,
+		"peak torque is untouched")
+
+
+func test_a_car_with_no_surface_compound_leaves_the_multipliers_neutral() -> void:
+	# 1.0 is the identity the whole mechanism rests on, and the reason no other part
+	# in the catalogue needed an entry. A flat-compound tyre must not disturb it.
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply({"installed_upgrades": ["fx_tires"]}, cfg)
+	assert_almost_eq(cfg.tire_snow_grip_mult, 1.0, 1e-6, "flat rubber leaves the snow term at 1")
+	assert_almost_eq(cfg.tire_tarmac_grip_mult, 1.0, 1e-6, "flat rubber leaves the tarmac term at 1")
+	var meta := UpgradeLibrary.grip_meta({"installed_upgrades": ["fx_tires"]},
+		{"tire_compound": 1.0, "mass": 1000.0})
+	assert_almost_eq(float(meta.get("tire_snow_grip_mult", 1.0)), 1.0, 1e-6,
+		"and reads as 1 off the meta, present or absent")

@@ -37,12 +37,12 @@ with them, and working toward the special-event finale.
 | [map-exploration.md](map-exploration.md) | The world map's fog of war — HQ starts lit, every completed rally lights a circle around its own pin, `map_pos` IS the progression graph. Replaced the `reveal_after` / `requires_completions` wave counters |
 | [snow-region.md](snow-region.md) | The Alps — the map's NE corner. The first region to influence HANDLING as well as look: per-surface grip overrides, deep snow you sink into and bog down in, frozen lakes you drive on, snowfall, and the six rallies (two carrying re-sited part unlocks) |
 | [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, per-corner waterlines, the unconditional sky re-seed that stops one region's sky leaking into the next stage. Regions gate NOTHING any more — look + `water_level` only |
-| [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, consumables, tuning gates, the per-car prerequisite + won-event (`unlocked_by_rally`) gates, and the two flavours of `max_potential_meta`) |
+| [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, the `consumable` flag no shipped item claims any more, tuning gates, the per-car prerequisite + won-event (`unlocked_by_rally`) gates, and the two flavours of `max_potential_meta`) |
 | [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
-| [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars (gated on 100% HP), engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
-| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (flat event-gated per-event upgrade pool that may award nothing, the mystery-box roll, the car pick/pricing with its tier clamp) |
+| [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars — the only gate is the rally that unlocks the capability; neither a token nor car health blocks a swap — engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
+| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (the car pick/pricing with its tier clamp, the prize-rally part unlock). There is no random per-event upgrade draw any more |
 | [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, wreck/DNF, no-retry) |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeSession` autoload (resume persistence, per-stage flow, placement reward), the HQ entry-point screen |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
@@ -118,13 +118,13 @@ with them, and working toward the special-event finale.
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
 | Car performance rating | `scripts/car_performance.gd` (`CarPerformance` — rating, benchmark time, `merged_meta`), `scripts/benchmark_track.gd` (`BenchmarkTrack` — the fixed test track) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, sequential unlock) |
-| Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, consumables) |
+| Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots) |
 | Upgrades page | `scripts/upgrades_grid.gd` (`UpgradesGrid` — the slot-tile grid every host mounts), `scripts/upgrade_slot_popup.gd` (`UpgradeSlotPopup` — the per-slot option list / detune slider), `scripts/upgrade_options.gd` (`UpgradeOptions` — the pure option model), `scripts/upgrade_icons.gd` (`UpgradeIcons` — the per-slot SVG icons) |
 | Roster-wide stat scale | `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max), `scripts/stat_bar.gd` (`StatBar` — segmented bar widget drawn against it) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/hq.gd` (tuning lift) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`), `scripts/hq.gd` (`CarparkMode.WHEELS`) |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |
-| Reward draws | `scripts/reward_system.gd` (`RewardSystem` — upgrade/car draws; the tier clamp is car-draw-only) |
+| Reward draws | `scripts/reward_system.gd` (`RewardSystem` — the car draw + its tier clamp, and the prize-rally part unlock) |
 | Rally session | `scripts/rally_session.gd` (`RallySession` autoload — event-flow orchestration) |
 | Event replay | `scripts/replay_recorder.gd` (`ReplayRecorder`), `scripts/replay_camera.gd` (`ReplayCamera`), `scripts/car.gd` (`replay_playback`) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |

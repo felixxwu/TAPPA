@@ -679,8 +679,16 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 		_weather_mu_id = cfg.weather
 		_weather_mu_cfg = cfg
 		_weather_mu = WeatherLibrary.grip_mult(cfg, _weather_mu_id)
+	# The fitted tyre's SURFACE-DEPENDENT term (features/drivetrain-and-tires.md). Folded
+	# in here for the same reason weather is: this is the single per-contact resolver
+	# every wheel goes through, so a flat fixture with no terrain still gets the snow
+	# compound's behaviour instead of silently falling back to neutral rubber. The two
+	# multipliers are 1.0 on every car that has no such compound fitted, so the added
+	# steady-state cost off the snow stages is one lerp on an already-hot path.
+	var tire_snowy := cfg.ground_is_snow()
 	if terrain == null or not terrain.has_method("surface_at"):
-		_surf_scratch.mu_mult = _weather_mu
+		_surf_scratch.mu_mult = _weather_mu * GameConfig.tire_surface_mult(
+			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, 0.0, tire_snowy)
 		_surf_scratch.slip_peak = cfg.tire_slip_peak
 		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
 		return _surf_scratch
@@ -698,12 +706,21 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 	# frozen stage must degrade to ordinary ground rather than crash.
 	if cfg.frozen_water_grip > 0.0 and terrain.has_method("height_at") \
 			and terrain.height_at(cp.x, cp.z) < cfg.track_water_level_m:
-		_surf_scratch.mu_mult = cfg.frozen_water_grip * _weather_mu
+		# Ice takes the SNOW side of the tyre rule, not the tarmac side: a frozen lake is
+		# only ever authored by a snowy region, and winter rubber is exactly what the
+		# player should be rewarded for having fitted when they slide out onto it.
+		_surf_scratch.mu_mult = cfg.frozen_water_grip * _weather_mu * GameConfig.tire_surface_mult(
+			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, 0.0, tire_snowy)
 		_surf_scratch.slip_peak = cfg.tarmac_slip_peak
 		_surf_scratch.slide_ratio = cfg.tarmac_slide_ratio
 		return _surf_scratch
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
-	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s) * _weather_mu
+	# s.x is the road weight and s.y the tarmac weight WITHIN the road, so their product
+	# is how much tarmac this contact is actually on — the same quantity _surface_blend
+	# arrives at, expressed for the tyre rule.
+	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s) \
+		* _weather_mu * GameConfig.tire_surface_mult(
+			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, s.x * s.y, tire_snowy)
 	_surf_scratch.slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s)
 	_surf_scratch.slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s)
 	return _surf_scratch

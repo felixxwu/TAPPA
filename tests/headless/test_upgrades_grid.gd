@@ -252,6 +252,53 @@ func test_picking_an_option_applies_it_and_closes_the_picker() -> void:
 		"the tile's caption catches up")
 
 
+func test_buying_a_part_from_the_picker_also_fits_it() -> void:
+	# Save.buy_part fits a part PARKED, which is right for the paths that hand the player
+	# something they did not ask for (a reward draw, a mystery box). Picking it here is the
+	# opposite: the player opened the slot, chose the option and paid for it, so the menu
+	# closing on an unchanged car reads as taking the stars and doing nothing. The price is
+	# whatever Save.part_price says, so the balance is set from that rather than pinned.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	_save.profile["stars_earned"] = _save.part_price("fx_turbo_small")
+	_save.profile["stars_spent"] = 0
+	assert_false((_save.get_car(id).get("installed_upgrades", []) as Array).has("fx_turbo_small"),
+		"setup: the car does not own the part yet")
+	var g := _grid(_save.get_car(id))
+	_tile_for(g, "turbo").pressed.emit()
+	var p := _popup(g)
+	for b in _popup_rows(p):
+		if String((b as Button).text).to_upper().begins_with("SMALL"):
+			(b as Button).pressed.emit()
+			break
+	var car: Dictionary = _save.get_car(id)
+	assert_true((car.get("installed_upgrades", []) as Array).has("fx_turbo_small"),
+		"the part is bought onto the car")
+	assert_true(UpgradeLibrary.is_enabled(car, "fx_turbo_small"),
+		"and is RUNNING — a part the player paid for is not left parked")
+
+
+func test_a_bought_part_parks_the_one_it_replaces() -> void:
+	# The enable is exclusive, so the buy path gets the one-part-per-slot rule for free
+	# rather than leaving two parts in the same slot switched on.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	_save.install_upgrade(id, "fx_turbo_small", true)
+	_save.profile["stars_earned"] = _save.part_price("fx_turbo_big")
+	_save.profile["stars_spent"] = 0
+	var g := _grid(_save.get_car(id))
+	_tile_for(g, "turbo").pressed.emit()
+	var p := _popup(g)
+	for b in _popup_rows(p):
+		if String((b as Button).text).to_upper().begins_with("BIG"):
+			(b as Button).pressed.emit()
+			break
+	var car: Dictionary = _save.get_car(id)
+	assert_true(UpgradeLibrary.is_enabled(car, "fx_turbo_big"), "the bought part runs")
+	assert_false(UpgradeLibrary.is_enabled(car, "fx_turbo_small"),
+		"and the slot's outgoing part is parked")
+
+
 func test_picking_stock_parks_the_slot() -> void:
 	var owned := _car()
 	var id := int(owned["instance_id"])
@@ -330,14 +377,13 @@ func test_the_engine_tile_starts_the_hosts_swap_flow() -> void:
 	# choice is "which car" and the HOST owns that screen (hq.gd puts the car park into SWAP
 	# mode). The tile starts that flow; it must NOT offer the engine catalogue, which would
 	# imply you can simply fit any engine — a thing the game does not let you do.
-	# Unlock the capability and bank a token the way the game does: complete the special
-	# that gates swapping, and put a token in the shared inventory.
+	# Unlock the capability the way the game does: complete the special that gates
+	# swapping. That is the WHOLE gate now — swaps are free and unlimited afterwards.
 	_save.complete_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60000, 1)
-	_save.profile["inventory"][UpgradeLibrary.ENGINE_SWAP_TOKEN_ID] = 1
 	var fired := [0]
 	var g := _grid(_car(), UpgradesGrid.NO_LIMIT, Callable(), func(): fired[0] += 1)
 	var tile := _tile_for(g, UpgradeOptions.SLOT_ENGINE)
-	assert_false(tile.disabled, "with the capability, a token and a host flow, the tile is live")
+	assert_false(tile.disabled, "with the capability unlocked and a host flow, the tile is live")
 	tile.pressed.emit()
 	assert_eq(fired[0], 1, "pressing it hands off to the host's swap flow")
 	assert_null(_popup(g), "and opens no option list of its own")
@@ -480,3 +526,153 @@ func test_the_tune_popup_can_be_left_with_a_button() -> void:
 	assert_eq(done.focus_mode, Control.FOCUS_ALL, "and it is reachable by keyboard/gamepad")
 	done.pressed.emit()
 	assert_null(_popup(g), "pressing it closes the popup")
+
+
+# --- The rating each option would give the car --------------------------------
+
+func test_every_picker_row_quotes_the_rating_that_option_would_give() -> void:
+	# The point of the figure is that a slot's ladder can be read as numbers instead of
+	# part names the player has to already know. Asserted as "the row carries the same
+	# number rating_with reports", not as a specific rating — the benchmark is tuning.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	_save.install_upgrade(id, "fx_turbo_small", false)
+	var g := _grid(_save.get_car(id))
+	_tile_for(g, "turbo").pressed.emit()
+	var p := _popup(g)
+	var seen := 0
+	for opt in UpgradeOptions.options_for(g._owned, "turbo"):
+		var want := UpgradeOptions.rating_with(g._owned, "turbo", String(opt.get("id", "")))
+		var needle := "(%d)" % want
+		var found := false
+		for node in p.find_children("*", "Control", true, false):
+			var text := ""
+			if node is Button:
+				text = String((node as Button).text)
+			elif node is Label:
+				text = String((node as Label).text)
+			# .to_upper() both sides: UITheme.enforce uppercases row text, so a
+			# case-sensitive match here would never fire.
+			if text.to_upper().begins_with(String(opt.get("label", "")).to_upper()) \
+					and text.contains(needle):
+				found = true
+				break
+		assert_true(found, "the '%s' row quotes its rating %s" % [opt.get("label", ""), needle])
+		seen += 1
+	assert_gt(seen, 1, "setup: the slot offered more than just Stock")
+
+
+func test_the_stock_row_rates_the_car_as_it_stands() -> void:
+	# No per-row "before -> after" is drawn, so Stock being first and rating the CURRENT
+	# build is what supplies the baseline the other rows are read against.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	_save.install_upgrade(id, "fx_turbo_small", true)
+	var g := _grid(_save.get_car(id))
+	assert_eq(UpgradeOptions.rating_with(g._owned, "turbo", ""), _grid(
+		UpgradeOptions.build_with(g._owned, "turbo", "")).current_rating(),
+		"the Stock row's figure is the grid's own rating of that same build")
+
+
+func test_a_hypothetical_build_is_never_written_to_the_save() -> void:
+	# rating_with has to APPLY the option to work out what it is worth. Doing that on the
+	# real car would fit parts the player never bought by merely opening a picker.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	var before: Dictionary = _save.get_car(id).duplicate(true)
+	UpgradeOptions.rating_with(_save.get_car(id), "turbo", "fx_turbo_small")
+	var after: Dictionary = _save.get_car(id)
+	assert_eq(after.get("installed_upgrades", []), before.get("installed_upgrades", []),
+		"rating an option installs nothing")
+	assert_eq(after.get("disabled_upgrades", []), before.get("disabled_upgrades", []),
+		"and parks nothing")
+
+
+func test_a_hypothetical_build_parks_the_slots_other_parts() -> void:
+	# One part per slot: the figure quoted for the Big turbo must be the car running BIG,
+	# not the car running both turbos at once.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	_save.install_upgrade(id, "fx_turbo_small", true)
+	var hypo := UpgradeOptions.build_with(_save.get_car(id), "turbo", "fx_turbo_big")
+	assert_true(UpgradeLibrary.is_enabled(hypo, "fx_turbo_big"), "the picked part runs")
+	assert_false(UpgradeLibrary.is_enabled(hypo, "fx_turbo_small"),
+		"and the slot's other part is parked")
+	var stock := UpgradeOptions.build_with(_save.get_car(id), "turbo", "")
+	assert_false(UpgradeLibrary.is_enabled(stock, "fx_turbo_small"),
+		"Stock parks the whole slot")
+
+
+# --- The weight slot reads as a number, not a name ----------------------------
+
+func test_weight_options_read_as_a_signed_mass_delta() -> void:
+	# The weight slot is really one number, on a tile that must fit three across a phone,
+	# so its rows state the kilos rather than "Heavy Ballast" / "Weight Reduction". The
+	# figures are DERIVED from each part's mass multiplier against this car, so nothing
+	# here pins an authored value — only the sign and the format.
+	var owned := _car()
+	var g := _grid(owned)
+	var seen := 0
+	for opt in UpgradeOptions.options_for(g._owned, "weight"):
+		var id := String(opt.get("id", ""))
+		if id == "":
+			assert_eq(String(opt.get("label", "")), "Stock", "Stock keeps its name")
+			continue
+		var label := String(opt.get("label", ""))
+		assert_true(label.begins_with("+") or label.begins_with("-"),
+			"a weight row is a signed number, got '%s'" % label)
+		assert_true(label.substr(1).is_valid_int(),
+			"...and nothing but the number, got '%s'" % label)
+		# Sign follows the part: a multiplier above 1 adds mass, below 1 sheds it.
+		var mult := float((UpgradeLibrary.by_id(id).get("effect", {}) as Dictionary)
+			.get("mass_mult", 1.0))
+		assert_eq(label.begins_with("+"), mult > 1.0,
+			"'%s' has the sign its multiplier implies" % label)
+		seen += 1
+	assert_gt(seen, 1, "setup: the weight slot offered more than one part")
+
+
+func test_a_weight_delta_is_measured_against_the_empty_slot() -> void:
+	# Not against the car's CURRENT mass: swapping one ballast for another must report
+	# what the new part weighs, not the difference between the two, or the same part
+	# would quote a different number depending on what it is replacing.
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	var bare := _label_for_weight_part(_save.get_car(id), "fx_lightweight")
+	_save.install_upgrade(id, "fx_ballast", true)
+	var shod := _label_for_weight_part(_save.get_car(id), "fx_lightweight")
+	assert_eq(shod, bare,
+		"the same part quotes the same kilos whatever is currently fitted")
+
+
+func test_other_slots_keep_their_part_names() -> void:
+	# The number-only treatment is the weight slot's alone — every other slot names parts
+	# that are not interchangeable quantities.
+	var g := _grid(_car())
+	for opt in UpgradeOptions.options_for(g._owned, "turbo"):
+		var label := String(opt.get("label", ""))
+		assert_false(label.begins_with("+") or label.begins_with("-"),
+			"turbo rows are named, not numbered — got '%s'" % label)
+
+
+func _label_for_weight_part(owned: Dictionary, pid: String) -> String:
+	for opt in UpgradeOptions.options_for(owned, "weight"):
+		if String(opt.get("id", "")) == pid:
+			return String(opt.get("label", ""))
+	return ""
+
+
+func test_a_weight_delta_is_rounded_to_the_nearest_hundred() -> void:
+	# The exact kilos come from a multiplier against this car, so they land on figures like
+	# 243 — precision the player cannot act on. Asserted as "a round hundred, and never
+	# zero for a real part", which holds for any car mass and any authored multiplier.
+	var g := _grid(_car())
+	var seen := 0
+	for opt in UpgradeOptions.options_for(g._owned, "weight"):
+		if String(opt.get("id", "")) == "":
+			continue
+		var kilos := int(String(opt.get("label", "")))
+		assert_eq(kilos % 100, 0, "'%s' is a round hundred" % opt.get("label", ""))
+		assert_ne(kilos, 0, "a real part never reads as no change at all")
+		seen += 1
+	assert_gt(seen, 0, "setup: the weight slot offered a part")

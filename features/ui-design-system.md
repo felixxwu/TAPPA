@@ -41,10 +41,15 @@ defaults:
    pin readout (`hq._build_pin_label` via `RallyLibrary.is_special`), a locked special's
    teaser (`hq._build_special_teaser_label`), and the **present box** that trades stars
    for a car (`hq._make_present_pin` — the one non-rally target on the map, so it should
-   not read as another rally pin). The podium's `SPECIAL_UNLOCK` card inverts for the same
-   reason (`podium.gd` → `_show_special_unlock`), but keeps its own **white** face
-   (`UNLOCK_CARD_BG`): it is a full-screen celebration card, not a small marker competing
-   with map paper, so it stays at maximum contrast. Any further exception should be argued
+   not read as another rally pin). The podium's `SPECIAL_UNLOCK` card
+   (`podium.gd` → `_show_special_unlock`) used to be a fourth, keeping its own **white**
+   face on the argument that a full-screen celebration should sit at maximum contrast. It
+   no longer does: at panel size white was the only such surface in the game, so instead
+   of reading as the loudest of our own cards it read as another app's dialog dropped into
+   the frame. It now wears the ordinary `UITheme.reward_card_box`, like every other reveal
+   on that screen, and paints no ink of its own back on over the house rules. The lesson
+   generalises — the inversion earns its keep on a SMALL marker that has to win against
+   map paper, and stops paying at panel size. Any further exception should be argued
    and listed here, not added quietly; the rule is what makes the look coherent.
 
 Menu builders call `UITheme.enforce(root)` once after building; screens with

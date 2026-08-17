@@ -240,8 +240,22 @@ func _on_tile_pressed(slot: String) -> void:
 		if _on_swap.is_valid():
 			_on_swap.call()
 		return
-	UpgradeSlotPopup.open(self, UpgradeOptions.options_for(_owned, slot),
-		_apply_option.bind(slot))
+	UpgradeSlotPopup.open(self, _rated_options(slot), _apply_option.bind(slot))
+
+
+# The slot's options with the performance rating each one WOULD give the car stamped on.
+#
+# Stamped on the way into the popup rather than inside UpgradeOptions.options_for because a
+# rating is a simulated benchmark lap, and options_for is on the grid's hot path — every
+# tile asks it for a caption on every rebuild. Doing it here confines the cost to a picker
+# the player actually opened: a handful of sims, memoised by CarPerformance thereafter.
+func _rated_options(slot: String) -> Array:
+	var out: Array = []
+	for opt in UpgradeOptions.options_for(_owned, slot):
+		var row: Dictionary = (opt as Dictionary).duplicate()
+		row["rating"] = UpgradeOptions.rating_with(_owned, slot, String(row.get("id", "")))
+		out.append(row)
+	return out
 
 
 # Whether a tile can be pressed at all.
@@ -325,6 +339,15 @@ func _apply_option(id: String, slot: String) -> void:
 				Save.install_upgrade(instance_id, id, true)   # free ballast: fit + enable
 			elif not Save.buy_part(instance_id, id):
 				return   # the balance moved under the button; refuse rather than half-apply
+			else:
+				# ...then switch it on. `buy_part` fits every part PARKED, which is right for
+				# the paths that hand a player something they did not ask for (a reward draw,
+				# a prize-rally part award): those must never silently change how the car drives. This
+				# path is the opposite — the player opened the slot, picked this option and
+				# spent stars on it, so leaving it parked means the menu takes the payment and
+				# visibly does nothing. Enable is exclusive, so it parks the slot's outgoing
+				# part for free. Same buy-then-enable pair Save.apply_build_plan already uses.
+				Save.set_upgrade_enabled(instance_id, id, true)
 	_resync_owned(instance_id)
 	rebuild()
 	if _on_change.is_valid():

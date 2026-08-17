@@ -65,9 +65,11 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   most-recently-selected car first, and that order persists across relaunches
   (car park lineups iterate `cars`).
 - `inventory` — `{ item_id -> count }`: the **unlocked pool** of not-yet-applied
-  upgrades (won but kept for later) + the consumables (engine swap tokens + mystery
-  boxes). Adding a new consumable is just a new key — no `SCHEMA_VERSION` bump,
-  and an absent key reads as count 0.
+  upgrades (won but kept for later). Nothing shipped is a consumable any more, but
+  the key is deliberately generic — `Save.add_item` / `Save.consume_item` work on
+  any id — so it stays as the home for anything counted rather than slotted.
+  Adding one is just a new key: no `SCHEMA_VERSION` bump, and an absent key reads
+  as count 0.
 - `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed, revealed } }`.
   Completion count is the single progression metric; `best_placed` is the best (lowest)
   finishing position ever achieved there (drives the world-map star rating).
@@ -257,9 +259,15 @@ API. `rally_completed(id)` /
     marking the new rally completed, which would light its reveal circle and pay stars
     never earned. See [engine-swap.md](engine-swap.md).
 
-  A retired `repair_kit` key on a CURRENT-version profile is dropped by `_sanitise`
-  instead of by a migration, so no `SCHEMA_VERSION` bump is needed and older builds
-  can still read the file.
+  **Retired items are NOT a migration.** `SaveManager._sanitise` erases every id in
+  `SaveManager.RETIRED_ITEM_IDS` (the repair kit, the mystery box, the engine swap
+  token) from `inventory` on load, and no `SCHEMA_VERSION` bump goes with it. The
+  reasoning is the same each time an item is deleted: the stale key is already inert
+  once nothing reads it, whereas a version bump makes older builds refuse the profile
+  outright — a real cost when cloud save moves one profile between devices running
+  different builds. Deleting an item is therefore a one-row change to that list, not
+  a new migration arm. The `inventory` key itself always survives; only the dead ids
+  inside it go.
 - **Web build:** on the HTML5 export `user://` is IndexedDB (Emscripten IDBFS) —
   `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
   *asynchronously*, so a write that hasn't synced when the page goes away is

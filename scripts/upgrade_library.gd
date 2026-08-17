@@ -14,22 +14,13 @@ extends RefCounted
 # ENABLED parts contribute effects; a car keeps at most one enabled per slot
 # (Save.install_upgrade / set_upgrade_enabled).
 
-# THERE IS NO REPAIR KIT. Damage is one-way: a car's HP only ever climbs back via
-# the free between-event pit repair (Save.field_repair), and a WRECKED car is gone
-# for good. The old `repair_kit` consumable — already unearnable, its drop weight
-# pinned at 0 and its garage button hidden — is fully removed; wrecking out is now
-# rescued by the Mystery Box granting a fresh car instead. See features/damage.md.
-
-# The engine-swap consumable's id, spent by Save.swap_engines. Earned as a
-# low-weight reward-pool drop and held in the shared inventory.
-const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
-
-# The mystery-box consumable's id. Granted instead of a normal reward draw when
-# the driven car has nothing left to gain and the player is swap-token-rich
-# (see RewardSystem.draw_upgrade), and as the wrecked-out safety net
-# Opened from the HQ garage row to gift a random
-# upgrade to an owned car — or a whole new car when every car is wrecked.
-const MYSTERY_BOX_ID := "mystery_box"
+# THERE ARE NO CONSUMABLES LEFT. Every entry below is a PART fitted to a car. Three
+# consumables have been retired in turn — the repair kit (damage is one-way; HP climbs
+# back via the free between-event pit repair, Save.field_repair), the mystery box (parts
+# are bought with stars whenever the player likes, so a random one had nothing to offer)
+# and the engine swap token (swapping is free and unlimited once its rally unlocks it).
+# The `consumable` flag itself survives because the code paths that respect it do — see
+# Save.install_upgrade — but nothing shipped claims it. See features/damage.md.
 
 # The valid non-consumable slot ids. A car holds at most one ENABLED upgrade per slot
 # (Save._enable_exclusive), so parts sharing a slot are alternatives, not stackables.
@@ -47,8 +38,8 @@ const SLOTS := ["turbo", "gearbox", "aero", "tires", "weight", "drivetrain", "ni
 # DISABLED and the reveal overlay enables the player's pick, which would leave a part in a
 # hidden slot permanently dead — there is no row to switch it on from. Keeping the rule in
 # Save.install_upgrade is what makes it hold for EVERY route a part can arrive by (the
-# per-event draw, the challenge draw, and a mystery box), rather than only the ones someone
-# remembered to special-case.
+# winning it at its prize rally, or buying a copy with stars), rather than only the ones
+# someone remembered to special-case.
 #
 # CURRENTLY EMPTY. `nitrous` was the only member: it was hidden because a four-rung ladder
 # auto-fitting its highest rung left the player nothing to decide. Now that it is a single
@@ -163,17 +154,26 @@ const UPGRADES: Array[Dictionary] = [
 		# Simple page's GRIP row, via grip_meta.
 		#
 		# menu_label "Race" — the slot label already says "Tires".
-		# The EARLY rung of the same slot: won at The Foothills Trial, the gateway pin into
-		# the Alps, so the player has grip rubber before the frozen corner rather than after
-		# it. Same shape as Race Tires (a flat multiplier on tyre μ, no power-to-weight
-		# input, so it can never move eligibility) but a smaller one — Race Tires, won at
-		# the far end of the Alps chain, stays the part this one is eventually replaced by.
-		# One enabled part per slot, so the two are alternatives and the choice is trivial
-		# once both are owned; that is the point of a ladder rung, not a flaw.
+		# Won at The Foothills Trial, the gateway pin into the Alps, so the player has
+		# winter rubber before the frozen corner rather than after it.
+		#
+		# A SPECIALISED compound, not a smaller Race Tire. It used to be exactly that —
+		# one flat multiplier, a strictly-weaker rung of the same ladder — which made the
+		# choice between the two trivial the moment both were owned, and meant a part
+		# called "Snow Tires" behaved identically on snow and on dry asphalt. It now
+		# carries three figures: the flat term below is what it is worth on GRAVEL (the
+		# neutral surface, unchanged), and the two surface terms buy a large bonus on snow
+		# ground back for a penalty on tarmac. Net on asphalt it is WORSE than the car's
+		# own rubber — that is the trade, and it is what makes the slot a real decision
+		# per rally rather than a permanent upgrade. See features/drivetrain-and-tires.md.
 		"id": "snow_tires", "name": "Snow Tires", "menu_label": "Snow",
 		"slot": "tires", "unlocked_by_rally": "sp_woodland_trial",
 		"consumable": false,
-		"effect": {"tire_grip_mult": 1.08},
+		"effect": {
+			"tire_grip_mult": 1.08,
+			"tire_snow_grip_mult": 1.20,
+			"tire_tarmac_grip_mult": 0.85,
+		},
 	},
 	{
 		"id": "race_tires", "name": "Race Tires", "menu_label": "Race",
@@ -225,14 +225,6 @@ const UPGRADES: Array[Dictionary] = [
 		"unlocked_by_rally": "the_showdown", "consumable": false,
 		"effect": {"install_nitrous": {"nitrous_boost_gain": 0.6, "nitrous_tank_seconds": 20.0}},
 	},
-	{
-		"id": ENGINE_SWAP_TOKEN_ID, "name": "Engine Swap Token", "slot": "",
-		"consumable": true, "effect": {},
-	},
-	{
-		"id": MYSTERY_BOX_ID, "name": "Mystery Box", "slot": "",
-		"consumable": true, "effect": {},
-	},
 ]
 
 
@@ -280,9 +272,8 @@ static func is_free(id: String) -> bool:
 # --- Reward-pool weight -------------------------------------------------------
 # Relative likelihood of an item when it's drawn from the reward pool. Optional, defaulting
 # to 1.0 — and NOTHING authors one yet, so the pool is currently uniform. It exists because
-# retiring `tier` removed the only rarity lever, and weights are the direct replacement (the
-# pool already spoke in them — see ENGINE_SWAP_TOKEN_DROP_CHANCE); authoring the actual
-# values is the deferred balance pass. Tier gated by DIFFICULTY and had gone vestigial
+# retiring `tier` removed the only rarity lever, and weights are the direct replacement;
+# authoring the actual values is the deferred balance pass. Tier gated by DIFFICULTY and had gone vestigial
 # (everything sat at tier 1); the star gate now handles availability over time, and weight
 # handles rarity within what is available.
 
@@ -445,6 +436,25 @@ const EFFECTS := {
 	"tire_grip_mult": {
 		"field": "tire_compound", "op": "mult", "feeds_pw": false, "feeds_grip": true,
 		"cfg_fields": ["wheel_friction_slip_front", "wheel_friction_slip_rear"],
+	},
+	# The SURFACE-DEPENDENT half of the tyre model, and the only pair of effects in this
+	# table whose value depends on where the car is (GameConfig.tire_surface_mult applies
+	# them; see features/drivetrain-and-tires.md). Meta and config spell them the same, so
+	# no cfg_fields override is needed.
+	#
+	# `mult` rather than `set` deliberately: it makes 1.0 the identity on BOTH sides, so a
+	# car with no such compound fitted needs no entry anywhere — the meta key is simply
+	# absent (readers default it to 1.0) and the config field is the 1.0 car.gd re-seeds.
+	#
+	# feeds_grip so grip_meta carries them to the lap-time model; feeds_pw stays FALSE for
+	# the same reason the flat compound's does — rubber must never move rally eligibility.
+	# Note this does NOT move the menu's GRIP row, which reads `tire_compound` alone: a
+	# single headline number cannot honestly state a figure that changes with the surface.
+	"tire_snow_grip_mult": {
+		"field": "tire_snow_grip_mult", "op": "mult", "feeds_pw": false, "feeds_grip": true,
+	},
+	"tire_tarmac_grip_mult": {
+		"field": "tire_tarmac_grip_mult", "op": "mult", "feeds_pw": false, "feeds_grip": true,
 	},
 	# Sequential gearbox: an ABSOLUTE shift time, not a scaling of the car's own. "set" is
 	# order-independent and idempotent, so unlike "mult" it needs no argument about

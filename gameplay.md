@@ -33,9 +33,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Topic | Decision |
 |---|---|
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
-| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits have been **removed entirely**, and repair happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`) — a partial restore, and the only way HP ever climbs back. Wrecking (0 HP) is **terminal**: nothing revives a wreck. See `features/damage.md`. |
+| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits have been **removed entirely**, and repair happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`) — a partial restore. Wrecking is **not** terminal either: `Save.record_wreck` returns the car at a fraction of max HP. See `features/damage.md`. |
 | Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
-| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP**, not destroyed — but it is a write-off and can never race again. The anti-soft-lock floor is the **Mystery Box**: wreck every car you own and you're granted one, and opening it yields a **new car** (`Save.ensure_wreck_safety_net` / `Save.open_mystery_box`). See `features/damage.md`. |
+| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: the rally is a DNF and the run ends — but the car is **not lost**. `Save.record_wreck` hands it back at a fraction of max HP (bent wheels stay bent), so a wreck is a bad RESULT, not a lost ASSET: the punishment is the DNF plus the repair bill, and the player can always drive again. Because no car can ever be destroyed, **no anti-soft-lock floor is needed** — and the map's reachability guarantee holds, since a route can't be stranded by losing the car it depended on. See `features/damage.md`. |
 | Rally complete | **Finish top 3** in a rally (combined time). |
 | Special unlock | **Star total** (3 per rally won, 2 for 2nd, 1 for 3rd). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
@@ -63,8 +63,8 @@ roguelike**: do you risk your best car to win, or play it safe?
   torque + `mass`). Home for this: extend **`CarLibrary`** (per-car overrides
   already live there) with these tags. *(New: metadata schema → its own todo.)*
 - **Owned vs. catalog.** The garage holds owned cars + their per-car damage and
-  installed upgrades. The lootbox reveals double as the player's window into what
-  cars/upgrades *exist* in the game.
+  installed upgrades. The car reveal doubles as the player's window into what
+  cars *exist* in the game.
 
 <!-- Implementation: `features/damage.md`. -->
 
@@ -90,20 +90,19 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **Wreck at 0 HP.** When a car's HP hits **0 it is wrecked**: the current rally
   is an immediate **DNF**. The exit isn't abrupt — the crash is allowed to play
   out, then an **orbit camera + "car wrecked" menu** (the same slow orbit as the
-  start line) tells the player and offers to **return to HQ**. The wrecked car is
-  **kept in the garage at 0 HP** — **too damaged to enter a rally** until repaired,
-  and its installed upgrades **stay fitted** (parts are consumed on fit, so they're
-  never returned; the car is no longer destroyed). *(Updated: a wreck is never
-  repaired — see the Damage repair row in Locked decisions. The way back from a
-  fully-wrecked garage is the Mystery Box's new-car grant.)*
+  start line) tells the player and offers to **return to HQ**. The wrecked car goes
+  back to the garage **at a fraction of max HP** (`Save.record_wreck`) with its
+  installed upgrades **still fitted** — damaged and worth fixing, but immediately
+  enterable again. Nothing removes a car from the garage.
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
 - **Getting stuck auto-recovers for free.** If a car ends up trapped — pinned,
   flipped, or dropped into a pit it can't climb out of — it's snapped back onto the
   road at its last good spot after a few seconds, with no penalty (you've already lost
   the time). See `features/progress.md`.
-- **Starter is immune** (effectively infinite HP — never wrecked) — the
-  anti-soft-lock floor.
+- **Starter is immune** (effectively infinite HP — never wrecked). This was
+  conceived as the anti-soft-lock floor; since a wreck no longer costs the car,
+  it now just keeps the first car a dependable fallback rather than a safety net.
 - **In-run feedback.** Because wrecking ends the run, the run shows a **live
   health gauge** in the in-car HUD (labelled *Health* + a **percentage**, not a raw
   HP number — "HP" reads as horsepower) with a **low-health warning** and an impact
@@ -114,10 +113,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   spent at the tuning lift or the car-select screen, that fully restores a car's
   health. As implemented, repair kits never drop and the lift/car-park repair
   buttons are hidden; repair instead happens **automatically between events**
-  (`Save.field_repair`, `scripts/rally_session.gd:392-400`) — a partial
+  (`Save.field_repair`, called from `RallySession._enter_event`) — a partial
   restore (see `field_repair_hp_fraction` / `field_repair_toe_fraction` in
-  `config/game_config.tres`), and the only heal in the game. A fully-wrecked (0 HP)
-  car gets NO restore path: it is lost, and the Mystery Box grants a new car instead.
+  `config/game_config.tres`). A wreck is its own restore path: `Save.record_wreck`
+  hands the car back at a fraction of max HP rather than writing it off.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
   power degrade with HP lost are tuning numbers; defer exact values to a damage
   todo + playtesting. Reuses the existing collision on signs/trees as impact
@@ -172,10 +171,11 @@ roguelike**: do you risk your best car to win, or play it safe?
 
 ## Progression & rewards
 
-- **Per rally finished:** a **random upgrade** is unlocked and offered straight
-  onto the car the player just drove (Apply/Keep on the podium reveal); declined
-  parts stay unlocked to apply later from the garage upgrades menu, and applied
-  parts can be enabled/disabled per car there.
+- **Parts are bought, not drawn.** There is no random per-event upgrade draw any
+  more: the player spends stars on whichever catalogue part they want, whenever
+  they want, and a few parts are gated behind winning the rally that carries them
+  (`unlocked_by_rally`). Bought parts stay unlocked to apply later from the garage
+  upgrades menu, and applied parts can be enabled/disabled per car there.
 - **Per rally completed (top 3 on combined time):** a **random car** is granted.
 - **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
   again grants its car reward again** — completion itself is recorded once (it's
@@ -184,13 +184,13 @@ roguelike**: do you risk your best car to win, or play it safe?
   re-racing, and the player can grind any rally for replacements. **The
   progress-tier ceiling still clamps farmed rewards** (you farm at your current
   power band, not above it), so grinding builds *breadth*, not a difficulty skip.
-  Per-rally upgrade drops already repeat simply by running rallies (repair kits
-  no longer drop at all — see the Damage repair row in Locked decisions). This is
-  what guarantees the ladder stays reachable — see
-  *Anti-soft-lock*.
-- **Reveal as a lootbox / slot machine** — spinning reels that settle on the
-  reward, so the player glimpses the breadth of cars/upgrades that exist (a
-  discovery hook, not just a grant).
+  Parts are no longer drawn at random at all: they are **bought with stars** at
+  any time, and a handful are unlocked by winning the rally that carries them
+  (`unlocked_by_rally`). Between the buyable catalogue and the renewable car
+  reward, the ladder stays reachable — see *Anti-soft-lock*.
+- **Reveal as a slot machine** — spinning reels that settle on the granted car,
+  so the player glimpses the breadth of cars that exist (a discovery hook, not
+  just a grant). Implemented as `UpgradeReveal` behind the car-reveal present box.
 - **Reward balancing (both):** tier = **f(rally difficulty)** (harder rally →
   better reward) **clamped by a progress ceiling** (early game can't yield a top
   car even on a lucky win). Progress = **number of rallies completed** — the same

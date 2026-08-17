@@ -1186,10 +1186,6 @@ func test_hq_dev_page_unlocks_cars_and_upgrades() -> void:
 		"fitting an upgrade installs it on the selected car")
 	assert_eq(int(_save.profile["inventory"].get("fx_turbo_small", 0)), 0,
 		"fitting an upgrade does not touch the consumable inventory")
-	# Consumables still land in the shared inventory rather than on the car.
-	dev._add_upgrade(UpgradeLibrary.MYSTERY_BOX_ID, "Mystery Box")
-	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.MYSTERY_BOX_ID, 0)), 1,
-		"adding a consumable puts it in inventory")
 	# NOTE: wiping the save is NOT on this page any more — it is a player setting on its
 	# own Reset progress page, behind a confirm modal (tests/headless/test_settings_menu.gd).
 
@@ -1351,11 +1347,9 @@ func test_hq_start_flies_into_the_garage() -> void:
 # title screen — none of the three is on the garage row. The old "Drive" sub-level that
 # used to hide Career/Online behind an extra press is gone.)
 func test_hq_garage_is_a_left_right_cursor() -> void:
-	# A held box + a second, non-maxed car keeps Mystery Box ENABLED, so the cursor
-	# can actually land on it (ButtonCursor skips disabled stops, same as it would
-	# skip any other unavailable action) — a fresh, box-less profile would otherwise
-	# jump straight over it.
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	# A second car, so the garage has something to page through. The row itself is a
+	# fixed four stops now (Back / Career / Garage / Online) — the Mystery Box button that
+	# used to pad it is gone with the box.
 	_save.grant_car("fx_rwd_coupe")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -3015,74 +3009,6 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	assert_eq(cont.focus_mode, Control.FOCUS_ALL, "the Continue button is focusable")
 	assert_eq(sc.get_viewport().gui_get_focus_owner(), cont,
 		"Continue is focused for keyboard / gamepad")
-
-
-func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
-	# ORDER: local standings -> world standings -> reward. Page 1 always leads to the
-	# global leaderboard; the reward is collected from PAGE 2, after the player has
-	# seen where they placed in the world, and the reveal is the last thing before
-	# the rally resumes.
-	var driven: Dictionary = _save.grant_car("fx_awd")
-	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
-	RallySession._opponent_field = [
-		{"name": "Rival", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
-	]
-	RallySession.report_event_result(50000)  # event 1 -> one upgrade drawn, STANDINGS
-	var won := RallySession.current_event_upgrade()
-	assert_ne(won, "", "event 1 awarded an upgrade to collect")
-
-	var sc: Control = load("res://standings.tscn").instantiate()
-	add_child_autofree(sc)
-	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
-		"page 1 leads to the world board, NOT straight to the reward")
-
-	# Step 1 -> page 2. The reveal must not exist yet: the reward comes after.
-	sc._action_button.pressed.emit()
-	await get_tree().process_frame
-	assert_not_null(sc._global_page, "page 1's button opens the global leaderboard")
-	assert_false(is_instance_valid(sc._reveal),
-		"and the reward reveal has NOT run yet — the world board comes first")
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
-		"page 2's button names what is next, which on a reward stage is the reward")
-
-	# Step 2 -> the reveal.
-	sc._global_page._on_continue()
-	await get_tree().process_frame
-	assert_true(is_instance_valid(sc._reveal), "page 2's button is what collects the reward")
-	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
-		"the rally has not resumed behind the reveal")
-	# A normal slottable part is granted fitted-disabled with a single "Next" — there is no
-	# Apply/Keep choice any more (the player enables it later in the upgrades menu), and the
-	# assertion below on the lone Next action is what pins that. This used to also poke a
-	# `_choice_pending` flag on the reveal, but that state went with the Apply/Keep box
-	# itself (see upgrade_reveal.gd) — so it asserted against a property that no longer
-	# exists, and only stayed green while the draw happened to hand back a consumable.
-	await get_tree().process_frame
-	# There's no separate host-side Continue button any more — the reveal's own
-	# Upgrades/Next row (UpgradeReveal._show_actions) is the only affordance, and
-	# pressing Next resolves `finished`, which advances straight into the next event
-	# with a single press (no redundant second confirmation).
-	assert_true(sc._reveal._next_button.visible, "the reveal shows its own Next action")
-
-	# Step 3 -> the rally resumes. The reveal is now the LAST step, so its Next is
-	# what finally advances — and the upgrade was still granted on the way.
-	if not UpgradeLibrary.is_consumable(won) and UpgradeLibrary.slot_of(won) != "" \
-			and UpgradeLibrary.slot_of(won) != "drivetrain":
-		var car: Dictionary = _save.get_car(RallySession.car_instance_id())
-		assert_true(JSON.stringify(car).contains(won),
-			"the reward is still granted to the fielded car, wherever it sits in the order")
-	sc._reveal._next_button.pressed.emit()
-	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
-		"the reveal's Next resumes the next event — one exit, reached once")
-	RallySession.abandon()
-
-
-# The SAME interstitial, after a Rally Challenge stage. world.gd loads
-# standings.tscn after every stage of both session types, so every RallySession
-# read in standings.gd branches on ChallengeSession.is_active() — before that it
-# rendered a blank board and its Continue was a dead no-op (the run could never
-# get past stage 1). See features/rally-challenge.md.
 func _challenge_after_stage_one() -> Control:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	var longest := ChallengeLibrary.WEEKLY
@@ -3107,82 +3033,6 @@ func test_standings_opens_a_challenge_stage_straight_on_the_world_board() -> voi
 	assert_false(is_instance_valid(sc._root_box), "page 1 is not left behind it")
 	assert_string_contains(_label_texts(sc), "ONLINE LEADERBOARD",
 		"what is shown is the online board, not a one-row local table")
-
-
-func test_standings_non_final_challenge_stage_collects_an_upgrade_reward() -> void:
-	var sc := _challenge_after_stage_one()
-	var won := ChallengeSession.stage_upgrade()
-	assert_ne(won, "", "a non-final challenge stage awarded an upgrade to collect")
-	await get_tree().process_frame
-
-	# A challenge skips page 1, so the ladder is two steps: the world board -> the
-	# reward. (A career rally still gets all three — see the rally test above.)
-	assert_true(sc._global_shown, "it opened straight on the world board")
-	assert_not_null(sc._global_page, "the world board is live")
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
-		"the board names the challenge stage's reward — it is no longer granted silently")
-
-	sc._global_page._on_continue()
-	await get_tree().process_frame
-	assert_true(is_instance_valid(sc._reveal),
-		"the SAME UpgradeReveal card a rally event's reward uses")
-	assert_true(ChallengeSession.is_active(), "the run has not resumed behind the reveal")
-
-	# The reveal's Next is the single exit, and for a challenge it now resolves to
-	# ChallengeSession.continue_to_next_stage() rather than a dead RallySession call.
-	var entered: Array = []
-	ChallengeSession.stage_started.connect(func(idx: int) -> void: entered.append(idx))
-	sc._reveal.finished.emit()
-	await get_tree().process_frame
-	assert_eq(entered.size(), 1, "Continue actually advances the challenge to stage 2")
-	assert_true(ChallengeSession.is_active())
-	assert_eq(ChallengeSession.events_completed(), 1,
-		"and stage 2 is now the one to drive")
-
-
-func test_standings_final_challenge_stage_has_no_collect_reward() -> void:
-	var sc := _challenge_after_stage_one()
-	await get_tree().process_frame
-	# Drive out the rest of the run. The final stage draws no per-stage upgrade, and
-	# ends the run outright (world.gd routes it to HQ, not to another interstitial).
-	while ChallengeSession.is_active():
-		ChallengeSession.continue_to_next_stage()
-		ChallengeSession.report_event_result(50000)
-	assert_eq(ChallengeSession.stage_upgrade(), "",
-		"the final stage draws no per-stage reward to collect")
-	assert_false(ChallengeSession.is_active(), "and the run is over")
-	sc._reward_collected = false
-	assert_false(sc._reward_pending(), "so the interstitial offers no collect step")
-
-
-func test_standings_final_event_has_no_collect_reward() -> void:
-	var driven: Dictionary = _save.grant_car("fx_awd")
-	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
-	RallySession._opponent_field = [
-		{"name": "Rival", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
-	]
-	for i in RallySession.EVENTS_PER_RALLY:
-		RallySession.report_event_result(50000)
-		if i < RallySession.EVENTS_PER_RALLY - 1:
-			RallySession.continue_to_next_event()
-	# Now paused on the FINAL event's standings.
-	var sc: Control = load("res://standings.tscn").instantiate()
-	add_child_autofree(sc)
-	await get_tree().process_frame
-	# The final event draws no upgrade, so there is no reveal step: page 1 -> page 2
-	# -> podium.
-	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
-		"page 1 leads to the world board on the final stage too")
-	sc._on_action()
-	await get_tree().process_frame
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
-		"and page 2 goes straight to the podium — no empty reveal in between")
-	assert_false(is_instance_valid(sc._reveal), "the final stage has no reward to collect")
-	RallySession.abandon()
-
-
-# Each leaderboard section on the interstitial lists only the top few finishers, so
-# both fit on one page. Standings.visible_rows decides what survives that trim.
 func _ranked(names: Array, player: String) -> Array:
 	var rows: Array = []
 	for i in names.size():
@@ -3259,12 +3109,16 @@ func test_podium_reveals_a_special_unlock_and_names_the_car() -> void:
 	assert_string_contains(text, part_name, "the card names the unlocked part")
 	assert_string_contains(text, "V12 TEST CAR", "and the car it was applied to")
 	assert_string_contains(text, "CAN NOW BE WON", "and that it joins the rally rewards")
-	# Inverted face, and the drop shadow cleared — a light card with a hard black shadow
-	# reads as grubby fringing.
-	assert_eq(pod._slot_panel.get_theme_stylebox("panel").bg_color, pod.UNLOCK_CARD_BG,
-		"the unlock card is the inverted face")
-	assert_eq(pod._slot_label.get_theme_color("font_shadow_color"), Color(0, 0, 0, 0),
-		"no drop shadow on the light card")
+	# The HOUSE card, not a bespoke inverted one: this was the only white surface in the
+	# game and read as another app's dialog. Compared against UITheme.reward_card_box
+	# rather than a literal colour, so retuning the house card carries this with it.
+	assert_eq(pod._slot_panel.get_theme_stylebox("panel").bg_color,
+		UITheme.reward_card_box().bg_color,
+		"the unlock card wears the house reward card, like every other reveal")
+	# The house rules set a font_color of their own, so the check is that the ink is not
+	# the black the inverted card used to paint back on over them.
+	assert_ne(pod._slot_label.get_theme_color("font_color"), Color(0, 0, 0, 1),
+		"and takes the house light ink, not the inverted card's black")
 	UpgradeLibrary.reset()
 
 
@@ -3529,6 +3383,34 @@ func test_a_won_car_opens_hq_on_a_forced_present_box() -> void:
 	assert_eq(hq._view, hq.View.GARAGE, "leaving the opened box lands in the garage")
 
 
+# The car-park panel carries the "Open it" button, and it is welded to _markers[_focus]
+# (hq._car_panel_xform). Entering the present beat clears the lineup, which frees every
+# marker — so without a bay of its own the panel had no anchor at all, WorldPanel.place
+# early-returned on the null transform, and the box came up with no visible way to open it
+# on a screen the player is forced through.
+#
+# Asserted as "the panel is anchored, and opening the box does not move it" rather than
+# against authored offsets: every number involved is a look tunable.
+func test_the_present_box_panel_is_anchored_before_it_is_opened() -> void:
+	var won: Dictionary = _save.grant_car("fx_rwd_coupe")
+	RallySession.pending_car_reveal_instance_id = int(won["instance_id"])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._carpark_mode, hq.CarparkMode.PRESENT, "setup: the box is up")
+	var shut: Variant = hq._car_panel_xform()
+	assert_true(shut is Transform3D,
+		"the panel has an anchor while the box is still shut — the Open button rides on it")
+
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	var opened: Variant = hq._car_panel_xform()
+	assert_true(opened is Transform3D, "and still has one once the car is revealed")
+	# The whole point: the Open button and the car detail that replaces it are read at the
+	# same place and the same angle, so the panel does not jump when the lid comes off.
+	assert_eq(opened, shut, "opening the box does not move the panel")
+
+
 # The car is granted by the rally, NOT by opening the box — so a player who quits before
 # opening it still owns what they won. The box is a presentation, not a transaction.
 func test_the_present_box_only_presents_a_car_already_owned() -> void:
@@ -3741,7 +3623,6 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
 	_unlock_engine_swaps()
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	assert_true(hq._eligible.size() >= 1, "swap lineup lists the other owned car(s)")
@@ -3750,7 +3631,6 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 	hq._on_swap_confirmed()
 	assert_eq(String(_save.get_car(int(a["instance_id"])).get("swapped_engine", "")), stock_b,
 		"selected car received the target's engine")
-	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
 
 
 # A damaged car no longer blocks a swap: with a token owned, confirming a swap
@@ -3766,7 +3646,6 @@ func test_engine_swap_works_on_a_damaged_car_and_leaves_hp() -> void:
 	_save.apply_damage(a_id, 1.0)  # lift car below 100% — no longer a blocker
 	var hp_before := float(_save.get_car(a_id)["hp"])
 	_unlock_engine_swaps()
-	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	# The damaged lift car still has a target (no car excluded on health).
@@ -3781,31 +3660,6 @@ func test_engine_swap_works_on_a_damaged_car_and_leaves_hp() -> void:
 		"the damaged car received the partner's engine")
 	assert_almost_eq(float(_save.get_car(a_id)["hp"]), hp_before, 0.001,
 		"the swap left the damaged car's HP unchanged")
-	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
-
-
-# Without a token, a swap is blocked: the button is reachable but the popup's OK is
-# disabled — the player is told, not excluded — and no swap happens.
-func test_engine_swap_blocked_without_a_token() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	# The capability must be UNLOCKED so the missing token is genuinely what blocks the swap.
-	# Without this the confirm popup takes its star-locked branch instead, and the test would
-	# stay green even if the token check were deleted outright.
-	_unlock_engine_swaps()
-	var a: Dictionary = _save.selected_car()
-	var a_id := int(a["instance_id"])
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	assert_eq(_save.engine_swap_tokens_owned(), 0, "no tokens owned")
-	hq._enter_engine_swap()
-	await _await_lineup(hq)
-	hq._selected_instance_id = int(b["instance_id"])
-	hq._carpark_ui._focus_changed()
-	hq._select_swap_target()
-	hq._on_swap_confirmed()
-	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), "",
-		"no swap happened without a token")
 
 
 func test_swap_preview_visible_only_in_swap_mode() -> void:
@@ -3866,171 +3720,6 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 # lock (correctly) masks everything else. `_engine_swap_lock_test` covers the locked state.
 func _unlock_engine_swaps() -> void:
 	_save.complete_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60_000, 1)
-
-
-
-
-
-
-# The Mystery Box button lives on the garage row's TOP level now (see
-# _refresh_garage_row), not the Lift Upgrades page — find it by its label text
-# ("Mystery Box (N)"), matched by its label text. Skips queue_free'd
-# buttons still lingering in the tree from a rebuild (queue_free is deferred, so
-# the OLD button can coexist with the NEW one for the rest of this frame).
-func _find_mystery_box_button(hq: Node3D) -> Button:
-	for child in hq._garage_actions_row.get_children():
-		if child.is_queued_for_deletion():
-			continue
-		if child is Button and String(child.text).to_lower().begins_with("mystery box"):
-			return child
-	return null
-
-
-func test_mystery_box_button_disabled_without_a_box_or_room() -> void:
-	# No box held -> the button is OMITTED entirely (not shown disabled). A box held
-	# but every owned car maxed -> shown, but disabled (nowhere for the gift to
-	# land). A second, non-maxed car -> enabled and reachable via keyboard/gamepad nav
-	# (the garage row's ButtonCursor). Real catalogue needed: RewardSystem's
-	# mystery-box logic iterates the raw UpgradeLibrary.UPGRADES const regardless of
-	# this file's UpgradeFixtures override (same caveat test_reward_system.gd
-	# documents for draw_upgrade).
-	UpgradeFixtures.restore()
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._on_exterior_start()
-	assert_null(_find_mystery_box_button(hq), "no box held -> the button is omitted")
-
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var maxed: Dictionary = _save.selected_car()
-	var all_parts := []
-	for item in UpgradeLibrary.UPGRADES:
-		if not item["consumable"] and not bool(item.get("free", false)):
-			all_parts.append(String(item["id"]))
-	maxed["installed_upgrades"] = all_parts
-	hq._refresh_garage_row()
-	var btn := _find_mystery_box_button(hq)
-	assert_not_null(btn, "a box is held -> the button appears")
-	assert_true(btn.disabled, "no car at all has room -> still disabled")
-	assert_string_contains(btn.text, "(1)", "the button tracks the held count")
-
-	_save.grant_car("fx_rwd_coupe")
-	hq._refresh_garage_row()
-	btn = _find_mystery_box_button(hq)
-	assert_false(btn.disabled, "a second, non-maxed car gives the box somewhere to land")
-
-
-func test_opening_mystery_box_installs_it_on_the_other_car_and_shows_a_reveal() -> void:
-	UpgradeFixtures.restore()  # see comment in the test above
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._on_exterior_start()
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var maxed: Dictionary = _save.selected_car()
-	var all_parts := []
-	for item in UpgradeLibrary.UPGRADES:
-		if not item["consumable"] and not bool(item.get("free", false)):
-			all_parts.append(String(item["id"]))
-	maxed["installed_upgrades"] = all_parts
-	var other: Dictionary = _save.grant_car("fx_rwd_coupe")
-	hq._refresh_garage_row()
-	_find_mystery_box_button(hq).pressed.emit()
-	await get_tree().process_frame
-	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
-	var recipient: Dictionary = _save.get_car(int(other["instance_id"]))
-	assert_false((recipient["installed_upgrades"] as Array).is_empty(),
-		"the gift landed on the other car")
-
-
-# A box can now land on the SELECTED car too, so a one-car garage is openable — it
-# used to be permanently disabled, since the old rule excluded the car the box "came
-# from" and there was no other. Boxes also arrive from the online challenge now, tied
-# to no car at all, so that exclusion no longer describes anything real.
-func test_mystery_box_button_is_enabled_for_a_one_car_garage_with_room() -> void:
-	UpgradeFixtures.restore()  # see comment in the test above
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._on_exterior_start()
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	assert_eq((_save.profile["cars"] as Array).size(), 1, "setup: exactly one car owned")
-	hq._refresh_garage_row()
-
-	var btn := _find_mystery_box_button(hq)
-	assert_not_null(btn, "a box is held -> the button appears")
-	assert_false(btn.disabled, "your only car has empty slots, so the box has somewhere to go")
-
-	btn.pressed.emit()
-	await get_tree().process_frame
-	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
-	var only: Dictionary = _save.selected_car()
-	assert_false((only["installed_upgrades"] as Array).is_empty(),
-		"and the gift landed on the one car in the garage")
-
-
-# Opening is an irreversible save transaction, and the reveal is a ConfirmPopup, which
-# is REFUSED while another modal is on screen. So a second activation behind the first
-# reveal must not spend a box — that spent the box AND its part with nothing shown,
-# leaving the player unable to tell what they got.
-func test_a_second_mystery_box_is_not_spent_while_the_first_reveal_is_up() -> void:
-	UpgradeFixtures.restore()  # see comment in the test above
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._on_exterior_start()
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 2)
-	hq._refresh_garage_row()
-
-	_find_mystery_box_button(hq).pressed.emit()
-	await get_tree().process_frame
-	assert_eq(_save.mystery_boxes_owned(), 1, "the first box is spent and revealed")
-	assert_not_null(ConfirmPopup.any_open(get_tree()), "its reveal is on screen")
-
-	# Fire again with the reveal still up — the second box must survive.
-	hq._on_open_mystery_box()
-	await get_tree().process_frame
-	assert_eq(_save.mystery_boxes_owned(), 1,
-		"the second box is NOT consumed while a reveal it could not show is up")
-
-
-# THE OTHER HALF of the fix, from the real input path: _on_open_mystery_box() is only
-# the API side. The actual bug was a keypress falling through to _unhandled_input
-# while the reveal ConfirmPopup was on screen but NOT holding focus (a rebuild under
-# it released focus) — that let a stray menu_select reach the garage row and open a
-# SECOND box behind the first reveal. Reproduce the precondition (focus released) and
-# drive the real handler, not the direct call.
-func test_a_second_mystery_box_is_not_spent_via_unhandled_input_while_the_reveal_is_up() -> void:
-	UpgradeFixtures.restore()  # see comment on the button-driven variant above
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._on_exterior_start()
-	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 2)
-	hq._refresh_garage_row()
-
-	_find_mystery_box_button(hq).pressed.emit()
-	await get_tree().process_frame
-	assert_eq(_save.mystery_boxes_owned(), 1, "the first box is spent and revealed")
-	assert_not_null(ConfirmPopup.any_open(get_tree()), "its reveal is on screen")
-
-	# The precondition that let the bug through: the popup is up, but nothing is
-	# holding focus (a rebuild under it released it), so a bare menu_select would fall
-	# through to whatever _unhandled_input dispatches to next.
-	get_viewport().gui_release_focus()
-	var press := InputEventAction.new()
-	press.action = "menu_select"
-	press.pressed = true
-	hq._unhandled_input(press)
-	await get_tree().process_frame
-
-	assert_eq(_save.mystery_boxes_owned(), 1,
-		"a menu_select through the real input path does not spend the second box either")
-
-
-# The same hole, generalised: ANY station row (not just the garage's action row) must
-# ignore navigation while a ConfirmPopup is modal over it — this asserts through
-# _garage_focus (the GARAGE view's own state), covering left/right as well as select.
 func test_garage_focus_is_unchanged_by_menu_nav_while_a_modal_is_open() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -4361,7 +4050,6 @@ func _standings_after_stage_one() -> Control:
 func test_standings_continue_shows_the_global_page_before_resuming() -> void:
 	var sc := _standings_after_stage_one()
 	await get_tree().process_frame
-	sc._reward_collected = true  # no reward pending: the plain-Continue path
 	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS, "parked on the standings")
 
 	sc._on_action()
@@ -4376,59 +4064,19 @@ func test_standings_continue_shows_the_global_page_before_resuming() -> void:
 	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
 		"page 2's Continue is what resumes the next stage")
 	RallySession.abandon()
-
-
-# THE ORDER, asserted as a sequence rather than a press count: page 1 (local
-# standings) -> page 2 (world standings) -> the reward reveal -> the rally. The
-# reward is the payoff and goes last; the world board must not be buried behind a
-# reveal card the player has to dismiss first.
+# THE WHOLE LADDER, asserted as a sequence rather than a press count: page 1 (local
+# standings) -> page 2 (world standings) -> the rally. TWO rungs, not three.
 #
-# continue_to_next_event() has exactly ONE call site (Standings._advance) and this
-# counts the phase transitions to prove it is reached exactly once, at the end.
-func test_reward_stage_order_is_local_then_global_then_reward() -> void:
+# There used to be a third rung — a reveal card for the random per-event upgrade — and a
+# sibling test asserting which order the two beats came in. Parts are won at their prize
+# rally or bought with stars now, so nothing is drawn between stages and that rung is
+# gone; this is the only ladder there is.
+#
+# continue_to_next_event() has exactly ONE call site (Standings._advance), and counting the
+# phase transitions is what proves it is reached exactly once, at the end.
+func test_the_standings_ladder_is_local_then_global_then_resume() -> void:
 	var sc := _standings_after_stage_one()
 	await get_tree().process_frame
-	assert_ne(RallySession.current_event_upgrade(), "", "stage 1 awarded an upgrade")
-
-	var resumes := [0]
-	RallySession.phase_changed.connect(func(p: int) -> void:
-		if p == RallySession.Phase.RUNNING:
-			resumes[0] += 1)
-
-	# 1. Page 1 leads to page 2, not to the reward.
-	assert_eq(sc._action_button.text, UITheme.caps("Next >"),
-		"page 1 leads to the world board")
-	sc._action_button.pressed.emit()
-	await get_tree().process_frame
-	assert_not_null(sc._global_page, "which is what it opens")
-	assert_false(is_instance_valid(sc._reveal), "the reward has NOT been revealed yet")
-
-	# 2. Page 2 names the reward, and Back still works here — page 1 is intact
-	# behind it, which it was not when the reveal came first.
-	assert_true(sc._global_page.show_back,
-		"page 2 offers Back on a reward stage too, now that page 1 survives it")
-	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Next >"),
-		"page 2 leads to the reward")
-	sc._global_page._on_continue()
-	await get_tree().process_frame
-	assert_true(is_instance_valid(sc._reveal), "which is what it opens")
-	assert_eq(resumes[0], 0, "and the rally has still not resumed")
-
-	# 3. The reveal is the last step.
-	sc._reveal.finished.emit()
-	await get_tree().process_frame
-	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "the reveal resumes the rally")
-	assert_eq(resumes[0], 1,
-		"continue_to_next_event() is reached exactly ONCE across the whole ladder")
-	RallySession.abandon()
-
-
-# The same ladder on a stage with no reward: page 1 -> page 2 -> resume, with no
-# empty reveal step, and still exactly one resume.
-func test_non_reward_stage_skips_the_reveal_and_resumes_once() -> void:
-	var sc := _standings_after_stage_one()
-	await get_tree().process_frame
-	sc._reward_collected = true  # stand in for a stage that drew nothing
 	var resumes := [0]
 	RallySession.phase_changed.connect(func(p: int) -> void:
 		if p == RallySession.Phase.RUNNING:
@@ -4438,12 +4086,12 @@ func test_non_reward_stage_skips_the_reveal_and_resumes_once() -> void:
 	await get_tree().process_frame
 	assert_not_null(sc._global_page, "page 1 still leads to the world board")
 	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Continue to next stage >"),
-		"and with no reward pending page 2 names the next stage")
+		"and page 2 names the next stage")
 
 	sc._global_page._on_continue()
 	await get_tree().process_frame
-	assert_false(is_instance_valid(sc._reveal), "no empty reveal step is inserted")
-	assert_eq(resumes[0], 1, "and the rally resumes exactly once")
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "page 2 resumes the rally")
+	assert_eq(resumes[0], 1, "exactly once, with no third rung in between")
 	RallySession.abandon()
 
 

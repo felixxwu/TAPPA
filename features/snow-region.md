@@ -90,6 +90,19 @@ computes μ the same way, so the windscreen ghost stays consistent too.
 cannot drift. Worth stating, because a grip change that *did* reach the rating would
 silently re-pitch every field in the game.
 
+### The region override is no longer the only snow lever
+
+Seating `snow_*_grip` scales the ground for every car equally, which is what makes snow
+*variety*. What the player brings now matters too: the **tyre compound is
+surface-specialised** ([drivetrain-and-tires.md](drivetrain-and-tires.md) → *Surface-specialised
+compounds*), and Snow Tires buy a real bonus on snow ground for a penalty on tarmac — so
+fitting winter rubber before an Alps event, and taking it off again for an asphalt stage,
+is a genuine per-rally decision rather than a one-way upgrade. The snow side of the rule is
+keyed off `GameConfig.ground_is_snow()`, which is simply `deep_snow_depth_m > 0.0` — i.e.
+"this region seated a deep-snow block", so there is no second snow flag to keep in sync.
+The AI field tracks it: `LapTimeModel._surface_grip` runs the same
+`GameConfig.tire_surface_mult`, off the rival's own meta.
+
 ## Relief: deliberately gentle
 
 The Alps are authored **flat for their altitude** — `terrain_layer1_amplitude` 14-18, the
@@ -197,7 +210,9 @@ collider physics has.
   scaling it: what is under the ice is irrelevant. Gated on `frozen_water_grip > 0.0`, so
   elsewhere it is one float compare on a hot path. It uses the same cache-first height
   query the collider is positioned against, so the grip boundary and the solid surface
-  agree exactly.
+  agree exactly. The fitted tyre's surface term is still applied on top, and a frozen lake
+  takes the **snow** side of that rule (see below) — a lake is only ever authored by a
+  snowy region, so winter rubber is exactly what should pay off out on the ice.
 - **The water-drag query is not wired** on a frozen stage — dragging a car down on a
   surface it is meant to slide across is the opposite of the feature.
 - **Look** reuses the water shader with ice colours and `scroll_speed = 0`. Ice does not
@@ -278,10 +293,10 @@ Two part unlocks moved north so the corner is worth working toward:
 The grip part belongs to the grip corner. Both source rallies were named after their
 prize and were renamed; their `id`s stay put because they key saved progress.
 
-**Snow Tires at the gateway.** The `tires` slot has since gained a second, weaker part —
+**Snow Tires at the gateway.** The `tires` slot has since gained a second part —
 `snow_tires`, awarded by `sp_woodland_trial`, the ONLY pin that lights the way in here.
-So the player arrives in the frozen corner with grip rubber rather than earning it
-afterwards, and Race Tires still waits at the far end of the chain as the top rung. That
+So the player arrives in the frozen corner with winter rubber rather than earning it
+afterwards, and Race Tires still waits at the far end of the chain. That
 rally used to gate the engine-swap capability, which moved to `front_runners` beside HQ
 to make room; see [engine-swap.md](engine-swap.md).
 

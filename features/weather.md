@@ -445,6 +445,16 @@ defaults to 1.0 so a session-less boot is unaffected.
 | Water / ice (`scripts/lake_field.gd` → `build`) | `weather_lit` on the water + shore colours, and `sparkle_strength` scaled by `weather_sun_mult` (the sparkle is a sun glint) |
 | Roadside signs (`scripts/sign_field.gd` → `_material_for`) | `weather_lit` on `albedo_color` |
 
+**The other way out of this bug class: don't author a colour at all.** Tire marks hit
+exactly the same problem — a constant grey rut stayed as bright at night and on snow as
+on a sunlit road, reading as paint laid over the world — but they are *not* on the
+`weather_lit` list, because they were fixed from the other side. Both mark colours are
+**pure black with the intensity in the alpha**, so a mark darkens whatever ground is
+under it and tracks the environment for free, in every condition and region, with no
+per-weather plumbing to forget. Where a surface can express itself as opacity over the
+world rather than as a lit colour, prefer that — there is nothing left to re-seed. See
+[tire-marks.md](tire-marks.md) → *Colour*.
+
 `ground_color` — the bounce off the surface below — is deliberately **not**
 dimmed in either `apply_car_light` or `apply_foliage_light`: it is dominated by
 the ground's own albedo, not by the sun.

@@ -152,6 +152,21 @@ gate accepted everything.
   **engine swap carries its gearbox** to the new car
   ([engine-swap.md](engine-swap.md)); a car's stock gearbox is just its stock
   engine's.
+- **The ratios now leave the live sim and reach the offline solver too.**
+  `LapTimeModel._geared_top_speed_sq` computes a car's geared top speed as
+  `omega_redline * wheel_radius / (top_ratio * final_drive)` — the same crank →
+  axle chain `Drivetrain` gears through — and `optimum_profile` folds it in as a
+  speed ceiling, so gearing now moves PAR times, rival times and the car
+  performance rating ([car-performance.md](car-performance.md)). It reads
+  `gear_ratios` / `final_drive` off the **ENGINE**, matching the "the transmission
+  lives on the engine" rule above, which is what makes an engine swap correctly
+  move a car's top speed; `wheel_radius` comes off the car. Top gear is taken as
+  the **smallest** ratio rather than the last entry, so a mis-authored list can't
+  hand a car a first-gear top speed. Keep the distinction sharp in the other
+  direction, though: only the top ratio is modelled. The intermediate ratios and
+  `shift_time` are still invisible to the solver — nothing charges a car for the
+  time lost to an upshift, so a close-ratio box gets no credit offline even
+  though it is a real advantage in the live sim.
 - Clutch limited to `clutch_max_torque`; auto-clutch opens when coasting below
   `clutch_engage_speed`.
 - Manual shifting: Q (down) / E (up). Auto mode toggled with T or HUD button.
@@ -189,6 +204,16 @@ gate accepted everything.
   See [drivetrain-and-tires.md](drivetrain-and-tires.md) for why the baseline
   rolling resistance forces `final_drive` this high. The `GameConfig`
   `gear_ratios`/`final_drive` are only the baseline before a car is selected.
+- **A LONG final drive is now a real design lever, not just a feel one.** Since the
+  lap model caps a car at its geared top speed
+  (`LapTimeModel._geared_top_speed_sq`), `final_drive` moves the car's PACE and its
+  performance rating, not only how it pulls. The Beast is the case that made this
+  visible: a 27-litre V12 redlining at ~3.2k through three widely-spaced ratios on a
+  short diff was geared so low it ran out of revs at motorway speed, and the rating
+  dutifully pinned it there. Its diff is now deliberately the longest on the roster —
+  it has torque to spare from idle, so trading multiplication for reach costs it
+  nothing it misses. Read `final_drive` as "how much of this engine's output is
+  spent on acceleration versus top end", and expect the rating to follow.
 
 ## Tests
 

@@ -18,9 +18,6 @@ signal leaderboard_hidden_changed(hidden: bool)
 # returning to the HQ (see _advance).
 signal run_completed()
 
-var _reward_collected := false
-var _reveal: UpgradeReveal = null
-
 # Overlay mode (features/menus.md, event-replay feature): when hosted as an in-world
 # overlay over the replay (Task 7 wires this), the host sets overlay_mode = true
 # BEFORE _ready — transparent background so the 3D replay shows through, and the
@@ -115,11 +112,6 @@ func _stage_total() -> int:
 		else RallySession.stage_count()
 
 
-func _stage_upgrade() -> String:
-	return ChallengeSession.stage_upgrade() if _challenge \
-		else RallySession.current_event_upgrade()
-
-
 func _driven_instance_id() -> int:
 	return ChallengeSession.car_instance_id() if _challenge \
 		else RallySession.car_instance_id()
@@ -127,15 +119,6 @@ func _driven_instance_id() -> int:
 
 func is_final_event() -> bool:
 	return _stages_done() >= _stage_total()
-
-
-# True when this event awarded an upgrade still to be collected — PAGE 2's button
-# then collects it (the reveal) instead of resuming the rally. Always false on the
-# final event, which draws no upgrade.
-func _reward_pending() -> bool:
-	return not _reward_collected \
-		and _stages_done() < _stage_total() \
-		and _stage_upgrade() != ""
 
 
 # Which entries of a ranked leaderboard a section actually shows: the top `top`,
@@ -227,11 +210,9 @@ func _build_ui() -> void:
 	# second leaderboard below the fold on a phone, which is worse than any context
 	# they added.
 
-	# This page ALWAYS leads to the global leaderboard now — the reward (when there
-	# is one) is collected from page 2, after the player has seen where they placed
-	# in the world. The label is unconditional AND deliberately generic: this button
-	# only ever means "move on", and a plain "Next >" reads faster at a glance than
-	# spelling out the destination.
+	# This page ALWAYS leads to the global leaderboard. The label is unconditional
+	# AND deliberately generic: this button only ever means "move on", and a plain
+	# "Next >" reads faster at a glance than spelling out the destination.
 	var button_text := "Next >"
 
 	var scroll := TouchScrollContainer.new()
@@ -343,35 +324,27 @@ func _reveal_standings(rows: Array) -> void:
 			row.visible = true
 
 
-# The button advances. There is no branch here any more: page 1 always leads to
-# the global leaderboard, and the reward is collected one page later.
+# The button advances. There is no branch here: page 1 always leads to the global
+# leaderboard.
 func _on_action() -> void:
 	_advance()
 
 
-# THE SOLE EXIT from this screen, and a strict three-step ladder. Every route off
-# the interstitial funnels through here — page 1's button, page 2's button, and
-# the upgrade reveal's `finished` — so `continue_to_next_event()` has exactly one
-# call site and is reached exactly once per stage, whatever the stage awarded.
+# THE SOLE EXIT from this screen, and a strict two-step ladder. Every route off
+# the interstitial funnels through here — page 1's button and page 2's button — so
+# `continue_to_next_event()` has exactly one call site and is reached exactly once
+# per stage.
 #
-#   1st call (page 1's button)     -> show page 2, the global stage leaderboard.
-#   2nd call (page 2's button)     -> collect the reward, if this stage drew one.
-#   final call (the reveal, or the
-#   2nd call on a stage with no
-#   reward)                        -> resume: next stage, or the podium.
+#   1st call (page 1's button) -> show page 2, the global stage leaderboard.
+#   2nd call (page 2's button) -> resume: next stage, or the podium.
 #
-# ORDER: local standings -> world standings -> reward. The reward is the payoff
-# and it goes last; a reveal card in the middle used to bury the world board
-# behind it. The final stage draws no upgrade (RallySession only awards on
-# non-final events), so _reward_pending() is false there and it goes straight
-# from page 2 to the podium with no empty reveal step.
+# There used to be a third rung between them, revealing the random part the stage
+# drew. Parts are bought with stars now, nothing is drawn, and the step is gone —
+# so page 2's button always resumes.
 func _advance() -> void:
 	if not _global_shown:
 		_global_shown = true
 		_show_global_page()
-		return
-	if _reward_pending():
-		_collect_reward()
 		return
 	if not _challenge:
 		RallySession.continue_to_next_event()
@@ -397,20 +370,12 @@ func _show_global_page() -> void:
 	# for_current_stage() re-ask is what routed the final checkpoint to the career
 	# board (and, for a Daily, meant no challenge time was ever posted at all).
 	var opts := GlobalStandings.for_current_stage(_challenge)
-	# Back is now offered on EVERY stage. Page 2 comes BEFORE the reward, so page 1
-	# is always still intact behind it — the old "no Back after a reward, because
-	# page 1 was torn down for the reveal card" special case is gone with the
-	# reordering, and the screen behaves the same whatever the stage awarded.
+	# Back is offered on EVERY stage: page 1 is always still intact behind page 2,
+	# so the screen behaves the same on every stage.
 	var have_page_one := is_instance_valid(_root_box)
 	opts["show_back"] = have_page_one
 	opts["overlay_mode"] = overlay_mode
-	# Page 2's button is deliberately GENERIC when a reward is pending — "Next >", the same wording
-	# page 1 uses, rather than "Collect reward >". It used to name the reward on the grounds that a
-	# button should say what happens next; naming it spends the surprise the reveal exists to deliver,
-	# and the reveal itself announces what was won a moment later anyway.
-	if _reward_pending():
-		opts["continue_text"] = "Next >"
-	elif is_final_event():
+	if is_final_event():
 		# A challenge has no podium — its final Continue ends the run (see _advance).
 		# Career's final stage goes to the podium, but the button just says "Next >" —
 		# same generic wording as page 1. A challenge keeps its own explicit label
@@ -445,55 +410,6 @@ func _on_global_back() -> void:
 	# noise.
 	if is_instance_valid(_root_box) and is_instance_valid(_action_button):
 		MenuNav.attach(_root_box, {first = _action_button, on_back = _on_back_pressed})
-
-
-# Take over the screen with the reward reveal (same card as the podium). This is
-# now the LAST step of the interstitial, reached from page 2 rather than page 1:
-# the player has read both leaderboards and the reward is the payoff. The reveal's
-# own Upgrades/Next row (UpgradeReveal._show_actions) is the only "I'm done"
-# affordance — pressing Next resolves `finished`, which resumes the rally.
-func _collect_reward() -> void:
-	_reward_collected = true  # so _reward_pending() is false once we continue
-	for c in get_children():
-		c.queue_free()
-	# Page 1 AND page 2 are gone; the reveal card owns the screen. _global_shown
-	# stays true, so when the reveal finishes _advance() falls through to resuming
-	# rather than building the world board a second time.
-	_root_box = null
-	_global_page = null
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.name = "Background"
-	# ...AND_OFFSETS_: plain set_anchors_preset defaults to keep_offsets = true,
-	# which preserves the rect the node already has — and a fresh ColorRect's rect
-	# is 0x0, so the backdrop would never cover anything.
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(UITheme.BLACK, 0.0) if overlay_mode else UITheme.BLACK
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 16.0
-	root.offset_top = 16.0
-	root.offset_right = -16.0
-	root.offset_bottom = -16.0
-	root.add_theme_constant_override("separation", 8)
-	add_child(root)
-
-	_reveal = UpgradeReveal.new()
-	_reveal.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(_reveal)
-	_action_button = null
-
-	# NOT connected straight to RallySession.continue_to_next_event. Every route off
-	# this screen funnels through _advance() so there is exactly ONE call site for
-	# resuming the rally; by the time this fires, page 2 has been seen and the
-	# reward collected, so _advance() falls through to that single call.
-	_reveal.finished.connect(_advance, CONNECT_ONE_SHOT)
-	# Same card for a challenge stage's per-stage reward as for a rally event's —
-	# only the session the item id / fielded car come from differs.
-	_reveal.reveal(_stage_upgrade(), _driven_instance_id())
 
 
 # Back (keyboard/gamepad, via MenuNav on_back): the interstitial is a single page

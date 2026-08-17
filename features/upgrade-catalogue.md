@@ -4,7 +4,7 @@
 the catalogue of upgrade **items** — authored content (like `CarLibrary` /
 `RallyLibrary`), not player state. The save profile holds the player side (each
 `OwnedCar.installed_upgrades` / `disabled_upgrades`, keyed by the stable `id`
-here, plus the consumable `inventory` — engine swap tokens and mystery boxes); this library defines
+here, plus the generic consumable `inventory`); this library defines
 what those ids mean and what each does to a fielded car.
 
 **Upgrades are car-bound.** An upgrade belongs to the car it was fitted to and
@@ -26,27 +26,28 @@ consumables — `SLOTS`' order is the garage row order, so a slot sits beside th
 read alongside: `gearbox` after `turbo`, `tires` after `aero`), `consumable`, an optional `free` flag (always-available,
 never-drawn parts — the ballast; see below), an optional `requires_upgrade_id`
 (per-car prerequisite gating — see below), an optional `unlocked_by_rally`
-(garage-wide event gating — see below), an optional `weight` (reward-pool
+(garage-wide event gating — see below), an optional `weight` (pool
 rarity, default 1.0 — see below), and `effect` (config-field →
 delta/multiplier).
 
 **`tier` is gone.** Upgrades used to carry a `tier` walked by
 `RewardSystem._parts_at_or_below` (also gone); the event gate below replaced it
-— see `reward-system.md`. The draw pool is now a **flat** filter with no tier
-concept at all. (`CarLibrary`'s `reward_tier` is unrelated and still tiers the
-**car** draw.)
+— see `reward-system.md`. (`CarLibrary`'s `reward_tier` is unrelated and still
+tiers the **car** draw.)
 
-**Reward-pool weight (`weight`).** Optional, defaulting to 1.0.
-`UpgradeLibrary.pool_weight(id)` reads it. This is the rarity knob that
+**Pool weight (`weight`).** Optional, defaulting to 1.0.
+`UpgradeLibrary.pool_weight(id)` reads it. It is the rarity knob that
 replaced `tier`: tier gated on rally **difficulty** and had gone vestigial
-(nearly every part sat at tier 1), whereas the event gate below now handles
+(nearly every part sat at tier 1), whereas the event gate below handles
 availability-over-time and `weight` handles rarity within whatever is
-currently available — a more direct lever, and the reward pool already spoke
-in weights (that's how the engine swap token gets its low drop rate).
+currently available — a more direct lever, expressed the way any weighted
+draw already wants it (one number per item, no buckets to keep in step). With
+the random per-event part draw gone there is nothing weighting items today; the
+field stays as the shape a future weighted pool would read.
 
 **Event gate (`unlocked_by_rally`).** Garage-wide availability over *time*: an
-item can be withheld from the reward pool entirely until a particular special
-event has been **won**. `UpgradeLibrary.unlocked_by_rally(id)` reads the
+item can be withheld entirely — undiscovered, unbuyable — until a particular
+special event has been **won**. `UpgradeLibrary.unlocked_by_rally(id)` reads the
 field; `UpgradeLibrary.rally_gate_met(item_id, profile)` returns `true` when
 the field is absent (default: ungated), else whether that rally is recorded
 `completed` in `profile.rallies` — and `completed` already means a **top-3
@@ -55,7 +56,7 @@ on a star total, and stars are a spendable currency now
 ([star-economy.md](star-economy.md)), so a part can't be bought. The special
 itself opens on the count of COMPLETED ORDINARY rallies
 (`RallyLibrary.completions_required`), which is what makes the chain
-"race enough events → win the special → the part enters the pool".
+"race enough events → win the special → the part becomes buyable".
 This gate is about **earning** a part, never about **keeping** one:
 `UpgradeLibrary.apply` walks `installed_upgrades` and never consults it, so a
 part already fitted keeps working even if its gate would no longer be met.
@@ -67,8 +68,8 @@ Gated parts today: `turbo_large` → `sp_dust_trial`, `supercharger` →
 pin into the frozen corner, `sn_showdown` sits at the far end of that chain — see
 [rally-roster.md](rally-roster.md) and [snow-region.md](snow-region.md) for why.
 `front_runners` gates no part: it gates the engine-swap *capability*
-([engine-swap.md](engine-swap.md)). See
-`reward-system.md` for how `RewardSystem` reads this gate into the draw pool.
+([engine-swap.md](engine-swap.md)), and that rally win is the WHOLE gate —
+once it's won, swapping is free and unlimited, with nothing to spend.
 
 **Prerequisite gate (`requires_upgrade_id`).** The **per-car** counterpart to
 the event gate: an item that should unlock through owning ANOTHER item on
@@ -76,8 +77,8 @@ the event gate: an item that should unlock through owning ANOTHER item on
 (the default) means no prerequisite. `UpgradeLibrary.requires_upgrade_id(id)`
 reads the field; `UpgradeLibrary.prerequisite_met(item_id, owned_car)` checks
 it against **that car's** `installed_upgrades` and is one of the checks
-`RewardSystem._eligible_parts` runs to keep a gated item out of the draw pool
-until the driven car has its prerequisite fitted. Deliberately **per-car, not
+`Save.can_buy_part` runs, so a car cannot skip a rung until it has its
+prerequisite fitted. Deliberately **per-car, not
 garage-wide** — upgrades are car-bound, so every car has to climb its own
 ladder; a sibling car owning Small Turbo does not unlock Big Turbo elsewhere.
 The **forced-induction ladder** uses this: **Big Turbo (`turbo_large`)**
@@ -114,12 +115,12 @@ row. It holds three parts plus `Stock`: two **BALLAST** options that ADD weight 
 **Heavy Ballast** (`ballast_large`, `mass_mult` 1.5) and **Light Ballast**
 (`ballast_small`, `mass_mult` 1.2) — and one **Weight Reduction** kit
 (`weight_reduction`, `mass_mult` 0.80) that SHEDS weight. Both ballast parts carry a
-**`free: true`** flag: they are **always selectable on every car** (no earning
-required) and are **never drawn as a reward** (`RewardSystem._eligible_parts`
-skips `free` parts alongside consumables — see `UpgradeLibrary.is_free`). The ballast
+**`free: true`** flag (`UpgradeLibrary.is_free`): they are **always selectable on every
+car**, costing neither stars nor an unlock, so nothing that hands parts out ever needs to
+consider them. The ballast
 lets a player deliberately add mass to drop power-to-weight and qualify for a lower
 rally class (a p/w lever alongside engine detune). Weight Reduction is the slot's one
-**earned** reward-pool option — the "lightweight" performance drop, greyed until won.
+**earned** option — the "lightweight" performance drop, greyed until won.
 The weight slot's option list is **ordered and labelled bespokely** by `UpgradeOptions`
 rather than following the generic part-option shape — see below.
 The **`gearbox` slot** holds one part, the **Sequential Gearbox** (`sequential_gearbox`),
@@ -139,12 +140,22 @@ It has its own `gearbox` tile on the upgrades grid, and fitting it moves the pag
 `PERFORMANCE` line not at all — the rating reads power-to-weight, which a shift time cannot
 touch — the same position nitrous is in.
 The **`tires` slot** holds two parts, **Snow Tires** (`snow_tires`) and **Race Tires**
-(`race_tires`), whose `tire_grip_mult` effect multiplies the car's tyre μ. Snow Tires is
-the early rung — the smaller multiplier, won at `sp_woodland_trial`, the gateway pin into
-the Alps, so the player arrives in the frozen region with grip rubber rather than earning
-it afterwards; Race Tires is the top rung, won at `sn_showdown` deep in the chain. One
-enabled part per slot, so they are alternatives and the choice is trivial once both are
-owned — that is what a ladder rung is. Its **own slot rather than sharing `aero`**: grip from
+(`race_tires`), whose `tire_grip_mult` effect multiplies the car's tyre μ. Race Tires is a
+flat gain everywhere, won at `sn_showdown` deep in the Alps chain; Snow Tires is won at
+`sp_woodland_trial`, the gateway pin into the Alps, so the player arrives in the frozen
+region with winter rubber rather than earning it afterwards. **The slot is a per-rally
+trade-off, not a ladder.** Snow Tires is not simply the smaller multiplier: alongside its
+flat (gravel-neutral) term it carries `tire_snow_grip_mult` and `tire_tarmac_grip_mult`, a
+large bonus on snow ground bought with a tarmac penalty steep enough that on asphalt the
+part is **net worse than the car's own stock rubber** — see
+[drivetrain-and-tires.md](drivetrain-and-tires.md) → *Surface-specialised compounds* for
+the rule and where it is applied. So one enabled part per slot makes them genuine
+alternatives the player re-picks by stage, instead of a choice that goes dead the moment
+both are owned. (It was a strictly-weaker rung once, and that is exactly the problem this
+fixed.) Those two effects are ordinary `EFFECTS` rows (`mult`, `feeds_pw: false`,
+`feeds_grip: true`, meta and cfg sharing the field name); they deliberately do **not** move
+the upgrades page's GRIP row, which reads `tire_compound` alone — a single headline number
+cannot honestly state a figure that changes with the surface. Its **own slot rather than sharing `aero`**: grip from
 rubber and grip from downforce are not alternatives — a car wants both — and one enabled
 part per slot would have made them mutually exclusive. Like the aero kit they are
 deliberately **not** power-to-weight inputs, so they can never move a car's rally
@@ -154,21 +165,24 @@ Current set: three **forced-induction kits** (turbo slot — `turbo_small` ungat
 event gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own
 event gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
 an aero kit, the two tyre compounds (snow and race), the sequential gearbox, the three **weight** parts above, the
-drivetrain conversion kit, the `nitrous` slot's part (see below), and two consumables — the **engine
-swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
-`slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
-damage is one-way now; see [damage.md](damage.md).) The token is spent
-by `Save.swap_engines`, see [engine-swap.md](engine-swap.md); the swap
-**capability** itself is unlocked by winning the engine-swap special
-(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` — `front_runners`, the difficulty-1 pin beside
-HQ — checked via `RallyLibrary.engine_swaps_unlocked`), but tokens drop and accumulate from
-the start regardless (see `reward-system.md`). The mystery box
-is drawn instead of a normal upgrade once a car has nothing left to gain (and,
-once swapping is unlocked, the player is token-rich too — see
-`reward-system.md`), and is also handed out by the online Rally Challenge
-(`ChallengeSession._COMPLETION_REWARD`). Opened from the **HQ garage row**, it
-fits a random upgrade to any owned car with an empty slot — the currently
-selected one included — see [reward-system.md](reward-system.md)
+drivetrain conversion kit, and the `nitrous` slot's part (see below).
+
+**Nothing in the catalogue is a consumable any more.** Every entry sits in a real slot and
+is fitted to a car. The consumables that used to live here have all been retired in turn —
+the repair kit (repair is automatic between events now — `Save.field_repair`; see
+[damage.md](damage.md)), the engine swap token
+(swapping is free and unlimited once `front_runners` is won — see
+[engine-swap.md](engine-swap.md)) and the mystery box (parts are bought with stars whenever
+the player wants one, so a random box onto a part had nothing left to offer).
+
+**The `consumable` capability survives with no current occupants.** The flag is still
+authored on every entry (`false` throughout) and the code paths that respect it are still
+live and still tested: `Save.install_upgrade` refuses to slot a consumable, and
+`UpgradeReveal` routes one to the inventory instead of onto the car. The generic
+`inventory` save key survives with it, along with `Save.add_item` / `consume_item` — it was
+never token-specific, so a future consumable needs no save migration to land in it. Keeping
+the branches costs nothing and is what makes re-introducing one a catalogue edit rather
+than a code change.
 
 ### The `nitrous` slot
 
@@ -181,7 +195,7 @@ collapsed to one entry carrying the top rung's numbers.
 `UpgradeLibrary.HIDDEN_SLOTS` is empty as a result. The `install_nitrous` effect uses the `"write_fields"` op with
 `feeds_pw: false` in the `EFFECTS` table below, so nitrous can never move
 `effective_meta`'s power-to-weight or a car's rally eligibility.
-→ "Mystery box" for the trigger, resolver, and reveal. The concrete part
+The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
 
@@ -192,11 +206,11 @@ mirroring `TuningPanel`) — **one view, no pages**: a heading row, a `PERFORMAN
 the HQ lift mounts it as its Upgrades page, the car-park
 **detune-to-enter prompt** mounts a second instance in its Change-Upgrades popup so a
 too-powerful car can shed power by stripping parts instead of detuning (see
-[menus.md](menus.md) → CARPARK), and the standings/podium **reward reveal**
+[menus.md](menus.md) → CARPARK), and the podium **reward reveal**
 (`scripts/upgrade_reveal.gd`, `_on_upgrades_pressed`/`_build_upgrades_overlay`) mounts a
 third instance behind an **Upgrades** button on its post-spin action row, so a player can
-slot the just-won part immediately instead of waiting for the next stage/HQ visit — see
-[menus.md](menus.md) → "Collect reward on the standings". It owns its `Save` persistence
+slot a just-won part immediately instead of waiting for the next HQ visit.
+It owns its `Save` persistence
 and reports edits via an
 `on_change` callback so the host re-fields the car. (A fourth instance is the start line's
 pre-stage **Upgrades** overlay, `start_line.gd._build_upgrades_overlay`.)
@@ -224,10 +238,10 @@ and its options come back unselectable there). The `tune` tile shows the live de
 percentage and is the ONE tile that opens a slider rather than a list — detune is
 continuous, and quantising it into list rows would throw away the fine control the player
 uses it for.
-There is no mystery-box row on this page any more — a box is a garage-WIDE
-reward, so it lives on the HQ garage action row instead. See
-[reward-system.md](reward-system.md) → "Mystery box" and
-[engine-swap.md](engine-swap.md).
+The `engine` tile is the whole of the swap UI: a swap costs nothing and can be
+repeated as often as the player likes once `front_runners` is won, so there is no balance
+or stock to show — `UpgradeOptions.engine_swap_blocked_reason` returns only `"Locked"` or
+`""`, and `Save.swap_engines` consumes nothing. See [engine-swap.md](engine-swap.md).
 
 When a host passes a **performance ceiling** (`rating_limit >= 0`, in `CarPerformance`
 rating units — every host reads it from `DrivingContext.rating_limit()` /
@@ -254,9 +268,27 @@ something a menu can draw, and the UI never re-derives any of them:
 - `options_for(owned_car, slot)` — the ladder for one slot as
   `{id, label, current, selectable, price, locked_reason}` entries, `Stock` first. `Stock`
   is always selectable (the "off" state — the car's un-upgraded factory config, hence the
-  label rather than `None`).
+  label rather than `None`). Each `label` comes from `_option_label`, which is the part's
+  `menu_label` / `name` for every slot except `weight` — that one reads as a signed mass
+  delta rounded to the nearest 100, see "The `weight` slot" below.
 - `current_label(owned_car, slot)` — what the tile itself reads under its icon
-  (`turbo: Small`, `tune: 80%`).
+  (`turbo: Small`, `tune: 80%`, `weight: +200`). It just reports the current option's
+  label, so the weight slot's delta labelling reaches the tile for free.
+- `build_with(owned_car, slot, option_id)` — a pure COPY of the owned-car dict with that
+  slot switched to that option, and nothing written to the save. It parks the WHOLE slot
+  first and only then switches the pick on, which is what makes one-part-per-slot and the
+  `""` = `Stock` case fall out of the same few lines instead of needing a branch each. The
+  end state is the same one the matching `UpgradesGrid._apply_option` branch would leave
+  behind, minus the persisting — so a hypothetical build and a real one cannot disagree.
+- `rating_with(owned_car, slot, option_id)` — the `CarPerformance.rating` of
+  `CarPerformance.merged_meta` over that hypothetical build: "what would this car rate if I
+  took this option". This is what lets the slot popup quote a figure per row (see
+  [menus.md](menus.md) → "The slot popup"). It is deliberately NOT stamped inside
+  `options_for`: a rating is a simulated benchmark lap, and `options_for` sits on the grid's
+  hot path (every tile asks it for a caption on every rebuild via `current_label` /
+  `has_choice`). `UpgradesGrid._rated_options` stamps it on the way INTO the popup instead,
+  so only a picker the player actually opened pays for it — a handful of sims, memoised by
+  `CarPerformance` from then on.
 
 Keeping this as data rather than as widget-construction code is what lets the tile, the
 popup and the tests all agree about what a slot currently offers; a rule re-implemented in
@@ -289,14 +321,40 @@ standings reveal confirms the won part).
 Drivetrain remains one odd one out (its options are a `drive_mode` override, not a part
 enable, and it uses a single unlock rather than per-option earn-gating — see above).
 
-**The `weight` slot is the other exception.** Its options are ordered **heaviest →
-lightest** with `Stock` (no change, the default) sitting **between** the ballast
-(`mass_mult` > 1) and the lightweight (`mass_mult` < 1), so the list reads
-`+500kg`, `+200kg`, `Stock`, `-200kg` for a ~1000 kg car — the physical ordering, so
-"heavier" and "lighter" are directions on the list rather than facts to be read off the
-labels. Each option is labelled by its mass delta off the car's **base** mass (the current
-effective mass ÷ the currently-active weight multiplier), rounded to the nearest 100 kg and
-signed with a `kg` suffix; `Stock` reads `Stock`. The two ballast options are
+**The `weight` slot is the other exception: its rows are labelled by a signed mass
+delta, not by part name.** `UpgradeOptions._option_label` returns the part's
+`menu_label` / `name` for every slot — except `weight`, where it returns a bare signed
+integer rounded to the nearest hundred (`+200`, `-200`) and nothing else. The parts are authored as "Heavy Ballast" /
+"Light Ballast" / "Weight Reduction", which is three words for a slot that is really one
+number, on a grid tile that has to fit three across a phone. What the player is choosing
+between here is **how much mass to add or shed**, so the row states exactly that; the
+catalogue order (heaviest first, down through the lightweight kit) then reads as a
+physical ordering, so "heavier" and "lighter" are directions on the list rather than
+facts to be decoded from names. `Stock` still reads `Stock` — it is the slot's off state,
+same as everywhere else — and it is the first row, same as everywhere else.
+
+The kilos are **derived, not authored**. These parts carry a mass MULTIPLIER
+(`mass_mult`), so the same ballast is a different number of kilos on a light car than on a
+heavy one, and quoting the multiplier would just make the player do the arithmetic.
+The baseline is `UpgradeOptions._stock_mass` — the car's mass with the weight slot
+**empty** (`build_with(owned_car, SLOT_WEIGHT, "")` then `UpgradeLibrary.effective_meta`,
+so an engine swap's mass is already folded in). Measuring against the empty slot rather
+than the car's *current* mass is what makes the numbers stable: swapping one ballast for
+another reports what the NEW part weighs, instead of the difference between the two, so a
+given part never quotes different kilos depending on what it happened to replace.
+
+That derived figure is then **rounded to the nearest 100**, and floored at a magnitude of
+100. Deriving from a multiplier lands on values like 243 or 187 — precision the player has
+no use for and cannot act on, where a round number reads as a decision; the floor stops a
+real part on a light enough car rounding down to `+0`, which would state that the option
+does nothing. Rounding is presentation only: the mass the physics uses is always the exact
+multiplier, never the displayed figure. A weight
+part with no `mass_mult`, or a car with no mass to measure against, falls back to the
+authored name rather than printing `+0`. Because the tile caption comes from
+`UpgradeOptions.current_label` (which just reads the current option's label), the grid tile
+now reads `weight: +240` too.
+
+The two ballast options are
 **always selectable** (they're `free`); the lightweight (earned) one is greyed until won;
 the active pick carries `UITheme.mark_selected` like every other slot. Selecting a `free`
 ballast the car doesn't own yet **installs it on the spot** then enables it exclusively
@@ -566,12 +624,15 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
 ## Acquisition — bought with stars, not dropped
 
-**Parts are BOUGHT, not won at random.** `RewardSystem.draw_upgrade` is
-**consumables-only** now — the engine swap token and the mystery box, plus
-`NO_REWARD` — because a stage-by-stage part drop undercut both deliberate routes
-to a part (why go and win a turbo, or pay for one, if it might fall out of the
-next stage?). Most events therefore pay no item at all; the rally itself pays
-STARS ([star-economy.md](star-economy.md) → "What the random draw still does").
+**Parts are BOUGHT or WON OUTRIGHT, never dropped at random.** There is no per-event
+upgrade draw at all — a stage-by-stage part drop undercut both deliberate routes to a part
+(why go and win a turbo, or pay for one, if it might fall out of the next stage?), and once
+the consumables were retired the draw could only ever pay nothing anyway. So a part arrives
+by exactly two routes the player chose: **winning the special that advertises it**
+(`unlocked_by_rally` → `RewardSystem.grant_special_unlock`, see
+[prize-rallies.md](prize-rallies.md)) or **buying it with stars**. An ordinary event pays
+stars, not equipment ([star-economy.md](star-economy.md)). The CAR draw is untouched —
+a top-3 finish still grants a car (`RewardSystem.draw_car`), revealed by the present box.
 
 The buy path is `Save.can_buy_part` / `part_price` / `buy_part`, priced at a flat
 `GameConfig.star_cost_per_part` **per car per part** — upgrades are car-bound, so
@@ -580,25 +641,33 @@ effectively bottomless. `can_buy_part` is the single predicate both the button a
 the purchase read, and it requires the part to be **discovered**
 (`rally_gate_met` — its part-unlock rally won, so the shop only ever sells what
 the player has proven they can earn) and honours the **per-car**
-`requires_upgrade_id` ladder, so a purchase cannot skip a rung. Bought parts fit
-**disabled**, like every other award.
+`requires_upgrade_id` ladder, so a purchase cannot skip a rung. `buy_part` itself fits the
+part **parked**, like every other award — but see below: the slot picker enables it
+immediately afterwards, so parked is what the *grant* paths leave behind, not what the
+player sees when they buy one themselves.
 
 The UI is the slot popups themselves, not a separate shop screen
 (`UpgradeOptions.options_for` fills in a `price`, and `UpgradeSlotPopup` hangs a drawn
 `StarRow.price_icon()` on the row): a discovered part not on this car is an ordinary
-selectable option carrying its price, and pressing it buys and fits it — the same question
-the player is already asking in that slot, answered with a price instead of a dead grey
-option.
+selectable option carrying its price, and pressing it buys, fits AND enables it — the same
+question the player is already asking in that slot, answered with a price instead of a dead
+grey option.
 
-This library still supplies the gate helpers the shop and the mystery box read —
-`requires_upgrade_id` / `prerequisite_met`, `unlocked_by_rally` /
-`rally_gate_met`, `is_free` and `pool_weight`. `RewardSystem._eligible_parts` is
-**not** retired: the **mystery box** still opens onto a part and uses it (with
-`pool_weight` for rarity), and `_car_is_maxed` reads it to decide when a box is
-granted instead of a normal draw — see [reward-system.md](reward-system.md). The
-`free` ballast is excluded there for the same reason as ever (always available, so
-never a reward). The **standings reveal** (`scripts/upgrade_reveal.gd`, not the
-podium) is what confirms whatever the draw did hand out, with a single "Next" step.
+**Buying from the picker also FITS the part** (`UpgradesGrid._apply_option` follows a
+successful `Save.buy_part` with `Save.set_upgrade_enabled(instance_id, id, true)`).
+`buy_part` leaving it parked is right for the paths that hand the player something they did
+not ask for — a special event's unlock and its cascaded ladder rungs — because those must
+never silently change how the car drives. Picking an option in the slot popup is the exact opposite: the player opened
+that slot, chose that rung and spent stars on it, so leaving it parked meant the menu took
+the payment and visibly did nothing. The enable is exclusive, so it parks the slot's
+outgoing part for free. `Save.apply_build_plan` already used the same buy-then-enable pair.
+
+This library supplies the gate helpers the shop and the special-event grant read —
+`requires_upgrade_id` / `prerequisite_met`, `unlocked_by_rally` / `rally_gate_met` and
+`is_free`. `RewardSystem._eligible_parts` is gone with the draw it filtered; nothing
+enumerates a pool of parts any more, because both remaining routes name the part directly.
+`UpgradeReveal` (`scripts/upgrade_reveal.gd`) still confirms a granted part with a single
+"Next" step — it just no longer has a random draw to announce.
 
 ## Tests
 
@@ -611,7 +680,11 @@ fixtures per CLAUDE.md.
 `UpgradeOptions.grid_slots()` entry, tile labels tracking the current pick, tile → popup →
 apply, the `tune` tile's slider popup, the `can_close` gate, and focus surviving a
 rebuild), and the option model itself (locked options present-but-unselectable with a
-reason, prices on buyable ones).
+reason, prices on buyable ones). Its weight-label tests
+(`test_weight_options_read_as_a_signed_mass_delta`,
+`test_a_weight_delta_is_measured_against_the_empty_slot`,
+`test_other_slots_keep_their_part_names`) assert the SIGN and the FORMAT plus the
+empty-slot baseline — never a particular number of kilos, which is authored tuning.
 
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, consumables have no slot), lookups, effect application (multiplies/adds on a
@@ -632,21 +705,24 @@ Disabled parts being inert everywhere (config, effective stats, tuning gates) is
 covered there too. Same-slot exclusivity (applying/enabling a part disables the
 incumbent instead of scrapping it), the `enabled=false` disabled fit, per-car
 duplicate-fit rejection, the same part fitting two different cars independently,
-the `set_upgrade_enabled` toggle, consumable/unknown rejection, field-repair
+the `set_upgrade_enabled` toggle, consumable/unknown rejection (against the synthetic
+`fx_consumable` entry — see below), field-repair
 heal+clamp, wreck (parts stay on the car), and the v1→v2 migration stripping the
 old unbound pool are in `test_save_manager.gd` (they need the Save profile). The
 garage upgrades menu having no apply-from-pool rows, the earn-gated option selectors
 (turbo `Stock`/`Small`/`Big` and the single-part `Stock`/`<Kit>` slots — greyed until won,
 picking enables, `Stock` parks), and the option-selector focus-retention regression are in
 `test_menu_flow.gd`. The reward reveal's confirmation (a single "Next" step) and the
-consumable / drivetrain-kit skip are in `test_upgrade_reveal.gd`; the standings
-Collect-reward flow that hosts it is in `test_menu_flow.gd`.
-`test_rally_session.gd` covers per-event won parts binding to the driven car with no
-slottable part won twice per rally (the dedup'd draw). Mystery-box tests — the
-draw trigger, `pick_mystery_box_grant`, `Save.open_mystery_box`'s atomic
-install/fallback, and the garage button's nav/gating — are covered in
-`test_reward_system.gd` / `test_save_manager.gd` / `test_menu_flow.gd`; see
-`features/reward-system.md` → "Mystery box" for the full breakdown.
+consumable / drivetrain-kit skip are in `test_upgrade_reveal.gd`.
+
+**Consumable handling is tested against a synthetic entry, not a shipped one.** No
+catalogue item is a consumable any more, so `tests/headless/upgrade_fixtures.gd` authors
+**`fx_consumable`** — a `slot: ""`, `consumable: true` stand-in — and the tests that
+exercise the surviving branches (`Save.install_upgrade` refusing to slot one,
+`UpgradeReveal` routing one to the inventory) install the fixture roster and use it. That
+replaced re-exporting the real token's id, which was the fixture file's way of pointing at
+a shipped consumable; a synthetic entry is the right shape anyway, since a capability with
+no occupants can only be tested by supplying one.
 
 
 ## Re-sited unlocks and the legacy grant

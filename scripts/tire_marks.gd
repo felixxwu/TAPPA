@@ -5,9 +5,18 @@ extends Node3D
 # mesh (an ArrayMesh rebuilt as segments are appended); each segment carries a
 # vertex colour so one ribbon can show both surfaces. See features/tire-marks.md.
 #
-# Two surfaces, two behaviours — and in both, HOW HARD THE TIRE IS WORKING sets the
-# mark's opacity (per-segment vertex alpha), so a mark deepens through a corner instead
-# of every segment landing at the same flat shade:
+# EVERY MARK IS BLACK; ONLY ITS OPACITY VARIES. Both authored colours are pure black and
+# carry their intensity in their ALPHA (GameConfig.tire_mark_color /
+# tire_mark_tarmac_color), so a mark darkens whatever ground it is laid on rather than
+# painting a fixed grey over it. These materials are unshaded — nothing dims for free —
+# so a constant authored grey stayed just as bright at night and on snow as on a sunlit
+# gravel road; black at partial opacity tracks the environment for free, everywhere, with
+# no per-weather plumbing. The per-surface colours therefore differ ONLY in their alpha
+# ceiling, which is how dark a fully-worked tire can get on that surface.
+#
+# Two surfaces, two behaviours — and in both, HOW HARD THE TIRE IS WORKING scales that
+# ceiling (per-segment vertex alpha), so a mark deepens through a corner instead of every
+# segment landing at the same flat shade:
 #   - GRAVEL: a rut whose opacity tracks the FORCE (newtons) the tire is shoving into
 #     the loose surface — 0 N transparent, tire_mark_gravel_full_force_n solid. Force,
 #     not grip usage, because it is the shear force that actually digs the wedge out:
@@ -19,8 +28,10 @@ extends Node3D
 #
 # Both readings come from the live drivetrain (Drivetrain.wheel_force_n /
 # wheel_grip_usage), NOT from its debug `readouts` dict, which only exists while the
-# force overlay is up. Set tire_mark_alpha_enabled false to go back to flat opaque
-# marks; that changes only how solid they are, never where they appear.
+# force overlay is up. tire_mark_alpha_enabled false drops the fade and puts the ribbons
+# back in the opaque pass; that changes only how solid they are, never where they appear
+# — but with black marks it means SOLID BLACK trails, so it is a measurement tool now
+# rather than an alternative look.
 #
 # Created + wired by world.gd._generate_track once the centerline exists.
 # Marks are capped per wheel (a ring buffer).

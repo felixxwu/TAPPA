@@ -113,7 +113,7 @@ Two surfaces, both in `scripts/hud.gd` ([hud.md](hud.md)):
 |---|---|---|
 | `cut_penalty_enabled` | `true` | Master switch. Off ⇒ cuts are never billed and `cut_penalty_s()` is always `0`. |
 | `cut_jump_threshold_m` | `5.0` | Single-tick progress jump (m) above which a tick counts as a cut. Sits in the dead zone between the fastest honest tick (~1–2 m) and a neck-flip (tens of m). Metres beyond it are billed. |
-| `cut_reference_speed_mps` | `25.0` | Fixed speed (not the car's live speed) that converts stolen metres to seconds. |
+| `cut_reference_speed_mps` | tuned in `config/game_config.tres` | Fixed speed (not the car's live speed) that converts stolen metres to seconds. This is the **penalty magnitude** dial: seconds cost per stolen metre is its reciprocal, so *lowering* it makes cutting more expensive without changing what counts as a cut. |
 
 ## Out of scope
 

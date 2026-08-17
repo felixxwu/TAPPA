@@ -11,7 +11,7 @@ extends Node3D
 #   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
 #     The player's SELECTED car is raised on the lift here. Tap the table to see the
 #     rallies; tap the lift to tune. Its action row is ONE level:
-#     Back / Career / Garage / Mystery Box (N) / Online.
+#     Back / Career / Garage / Online.
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
 #   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
@@ -208,9 +208,10 @@ var _drivetrain_needed: Dictionary = {}
 # Change Upgrades (_show_over_limit_prompt). Implemented via ConfirmPopup.
 # The car-park "Change Upgrades" popup and the currently-open car-park ConfirmPopup live on
 # HqCarpark (scripts/hq_carpark.gd), which owns both and is their only user.
-# Confirm popup shown when a chosen engine-swap partner is picked: swapping costs one
-# engine swap token. Carries the token cost, or the "no tokens" block. Implemented via
-# ConfirmPopup. _pending_swap holds the two instance ids awaiting the OK press.
+# Confirm popup shown when a chosen engine-swap partner is picked. Swapping is free and
+# unlimited once its rally has been won, so the popup only ever carries the go-ahead or
+# the still-locked block. Implemented via ConfirmPopup. _pending_swap holds the two
+# instance ids awaiting the OK press (and is empty exactly when the swap can't happen).
 var _pending_swap: Dictionary = {}
 # The start path the mobile control-scheme gate interrupted, resumed by
 # _on_settings_action once a scheme is saved. Set by _start_preflight, which every
@@ -466,15 +467,15 @@ var _title_focus := 0           # which title button the cursor sits on (starts 
 # the index (_garage_focus, read by tests); the ButtonCursor owns the shared
 # wrap/paint/fire behaviour (scripts/button_cursor.gd).
 #
-# ONE level, one row: Back / Career / Garage / Mystery Box (N) / Online. This used to be
+# ONE level, one row: Back / Career / Garage / Online. This used to be
 # two levels — a "Drive" button that swapped the row for Career / Free Roam / Online —
 # which bought nothing but an extra press and an extra Back for every trip to a stage.
 # Career and Online are flat alongside Garage now, and Free Roam moved to the title
 # screen (it needs no garage state at all). See features/menus.md.
 var _garage_cursor := ButtonCursor.new()
 var _garage_focus := 1          # which garage action the cursor sits on (defaults to Career)
-# Career's index in the row, recomputed on every rebuild (see _refresh_garage_row) —
-# Mystery Box is omitted when none is held, so no index in this row is a constant.
+# Career's index in the row, recomputed on every rebuild (see _refresh_garage_row) rather
+# than hardcoded, so adding or moving a button can't silently desync it.
 var _garage_career_index := 1
 var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
 
@@ -2014,8 +2015,8 @@ func _normalize_menus() -> void:
 	# tree is parked anywhere but its two homes. WorldPanelHost.is_world() is the one answer.
 	#
 	# AND RE-APPLIES THE HOST STYLE (force). This function is the house convention for "content
-	# changed, re-assert the rules" — hq.gd calls it after rebuilding the garage row for a
-	# Mystery Box repaint, which never goes through go_to. WorldPanel.apply_host_style's cheap
+	# changed, re-assert the rules" — hq.gd calls it after rebuilding the garage row, which
+	# never goes through go_to. WorldPanel.apply_host_style's cheap
 	# early-out keys off the tree ROOT, so nodes added by such a rebuild kept their flat
 	# StyleBoxEmpty and never got centred: a bare label over a sunlit car park. Forcing the
 	# re-walk here means every rebuild path already in the convention gets the panel pass too.
@@ -2854,8 +2855,7 @@ func _refresh_garage_focus() -> void:
 
 
 # Rebuild the garage action row's buttons + ButtonCursor: Back / Career / Garage /
-# Mystery Box (N) / Online. Called on entry and whenever the Mystery Box button's
-# count/enabled-state needs a repaint (e.g. after opening one). Frees the row's previous
+# Online. Called on entry and whenever the row needs a repaint. Frees the row's previous
 # children each time (a plain HBoxContainer, not a MenuNav host, so nothing analogous to
 # UpgradesGrid.rebuild()'s "preserve the MenuNav child" carve-out is needed here).
 #
@@ -2876,10 +2876,9 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	var to_table := UITheme.row_button("Career", _table_ui._enter_table)
 	_garage_actions_row.add_child(to_table)
 	buttons.append(to_table); actions.append(_table_ui._enter_table)
-	# Where Career ended up. Mystery Box is omitted entirely when none is held, so no
-	# index here is a constant — asked of the array the cursor actually indexes into
-	# rather than re-derived from the construction order, so adding or moving a button
-	# can't silently desync it.
+	# Where Career ended up — asked of the array the cursor actually indexes into rather
+	# than re-derived from the construction order, so adding or moving a button can't
+	# silently desync it.
 	_garage_career_index = buttons.find(to_table)
 	# Garage: straight into the tuning lift bay for the currently selected car. This used to
 	# open the car park FIRST to pick a car, but the lift's own selector chevrons change the
@@ -2888,22 +2887,6 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	var to_garage := UITheme.row_button("Garage", _enter_lift)
 	_garage_actions_row.add_child(to_garage)
 	buttons.append(to_garage); actions.append(_enter_lift)
-	# Mystery Box: a garage-wide reward action, not per-car — moved here from the
-	# Lift's Upgrades page (see _on_open_mystery_box). Sits next to Garage because it
-	# acts on the collection, not on a drive. OMITTED entirely with none held (not shown
-	# disabled) — same "hide, don't grey out" convention the row used at the Lift before
-	# it moved. Disabled + explains why only when a box IS held but there's nowhere for
-	# the gift to land.
-	var boxes := Save.mystery_boxes_owned()
-	if boxes > 0:
-		var to_box := UITheme.row_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
-		if not RewardSystem.any_car_has_room(Save.profile):
-			to_box.disabled = true
-			to_box.tooltip_text = "Every car in the garage is fully upgraded"
-		else:
-			to_box.tooltip_text = "Open a mystery box — fits a random upgrade to one of your cars"
-		_garage_actions_row.add_child(to_box)
-		buttons.append(to_box); actions.append(_on_open_mystery_box)
 	# Online LAST: the Daily/Weekly/Monthly seeded Rally Challenge entry point (a modal
 	# overlay over the garage, see build_challenge_overlay / _challenge_ui._open_challenge_overlay).
 	var to_online := UITheme.row_button("Online", _challenge_ui._open_challenge_overlay)
@@ -2919,8 +2902,8 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	_refresh_garage_focus()
 	# Freshly-built buttons start life with raw (non-uppercase) text — _normalize_menus
 	# (UITheme.enforce) is what applies the house rules, and it only runs on a view
-	# change/dynamic-text refresh elsewhere; a Mystery Box repaint doesn't go through
-	# go_to, so it has to re-apply the rules itself here.
+	# change/dynamic-text refresh elsewhere; a row repaint doesn't go through go_to,
+	# so it has to re-apply the rules itself here.
 	_normalize_menus()
 
 
@@ -3395,6 +3378,7 @@ const PRESENT_WALL_TIME := 1.1       # seconds for a wall to fall (slow — it h
 var _present_box: Node3D             # the openable box prop, live only in CarparkMode.PRESENT
 var _present_instance_id := -1       # the owned car waiting inside it
 var _present_opened := false         # guards against opening one box twice
+var _present_marker: Marker3D        # the bay the box stands on AND the car is seated on
 
 
 # Open on the present. `instance_id` is a car the player ALREADY OWNS — the box is a
@@ -3407,6 +3391,15 @@ func _enter_present_box(instance_id: int) -> void:
 	_present_opened = false
 	# An EMPTY lot: the point is one box, alone.
 	_carpark_ui._clear_lineup()
+	# ...but the lot still needs its ONE BAY, because the car-park panel is welded to
+	# _markers[_focus] (_car_panel_xform) and _clear_lineup empties that list. With no marker
+	# the panel had no anchor at all, so it never appeared — and since the Open button lives
+	# on it, the box came up with no visible way to open it, on a screen the player is FORCED
+	# through. Seating it HERE rather than at open time also means the panel does not move:
+	# the same marker carries the opened car, so the Open button and the car detail that
+	# replaces it are read at exactly the same position and angle.
+	_present_marker = _add_present_marker()
+	_focus = 0
 	_no_eligible_label.visible = false
 	_car_warning_label.visible = false
 	_car_stats_label.text = ""
@@ -3431,6 +3424,19 @@ func _enter_present_box(instance_id: int) -> void:
 		bounds.y + PRESENT_CLEARANCE_M)
 	_present_box.position = HQEnvironment.carpark_center()
 	add_child(_present_box)
+
+
+# The present's single bay, at the centre of the lot. Registered in `_markers` because that
+# is what both the car-park panel (_car_panel_xform) and the camera framing key off; the
+# ordinary lineup builds the same thing per owned car (hq_carpark.gd::_render_lineup_page).
+func _add_present_marker() -> Marker3D:
+	var marker := Marker3D.new()
+	marker.position = HQEnvironment.carpark_center()
+	# Nose toward +Z (the courtyard / camera), matching every other car-park bay marker.
+	marker.rotation.y = PI
+	add_child(marker)
+	_markers.append(marker)
+	return marker
 
 
 # The bottom button: Open while the box is shut, then the way out. It is never disabled —
@@ -3474,13 +3480,10 @@ func _open_present() -> void:
 	# A new car can make locked rallies enterable, so the map behind us is now stale.
 	_refresh_map_pins()
 
-	# Put the car IN the box first, while the walls still hide it.
-	var marker := Marker3D.new()
-	marker.position = HQEnvironment.carpark_center()
-	# Nose toward +Z (the courtyard / camera), matching every other car-park bay marker.
-	marker.rotation.y = PI
-	add_child(marker)
-	_markers.append(marker)
+	# Put the car IN the box first, while the walls still hide it. It goes on the bay the box
+	# was already standing on, so the panel welded to that marker does not shift when the lid
+	# comes off — a second marker here would rebuild it in place and re-seat the panel.
+	var marker := _present_marker if is_instance_valid(_present_marker) else _add_present_marker()
 	var node := _carpark_ui._obtain_parked_car(car, marker)
 	if node != null:
 		_carpark_ui._seat_car_at_marker(node, marker)
@@ -3629,45 +3632,6 @@ func _enter_engine_swap() -> void:
 	_carpark_ui._focus_changed(true)
 
 
-# Open a held mystery box: resolves + spends it as one atomic save transaction
-# (Save.open_mystery_box), then shows a plain reveal card naming the winning car
-# and item — or, when the player is WRECKED OUT (every owned car wrecked), a whole new
-# car. Deliberately NOT the race-context UpgradeReveal (its drive-mode branch assumes
-# the revealed item belongs to the car the player just drove, which a gift to a
-# DIFFERENT car would misfire) — a simple ConfirmPopup suffices here.
-#
-# A garage-row action (not a per-car Lift row — a mystery box isn't about the car on
-# the lift, it's a garage-wide reward), and it carries no "current car" at all: ANY
-# owned car with an empty slot can receive the gift, the selected one included.
-func _on_open_mystery_box() -> void:
-	# NEVER spend a box we can't show the result of. Opening is an irreversible save
-	# transaction and the reveal below is a ConfirmPopup, which is REFUSED while another
-	# modal is on screen (ConfirmPopup.MODAL_GROUP) — so opening first and revealing
-	# second means a stacked press silently eats a box and its part, leaving the player
-	# with no idea what they got. Check first, mutate second.
-	if ConfirmPopup.any_open(get_tree()) != null:
-		return
-	var result := Save.open_mystery_box()
-	if result.is_empty():
-		return  # no box held, or nowhere for it to land — the box is untouched
-	# Label/value, one per line — scannable at a glance rather than a sentence.
-	var body: String
-	if bool(result.get("car", false)):
-		# The wrecked-out rescue: every car was a write-off, so the box paid a new one.
-		var won := CarLibrary.by_id(String(result["item_id"]))
-		body = "Reward: %s\nFor: your garage\n\nEvery car you owned was wrecked — this one is fresh off the truck." \
-			% String(won.get("name", result["item_id"]))
-	else:
-		var recipient := Save.get_car(int(result["recipient_instance_id"]))
-		var entry := CarLibrary.for_owned(recipient)
-		var recipient_name := EngineSwap.display_name(entry, recipient)
-		var item_name := String(UpgradeLibrary.by_id(String(result["item_id"])).get("name", result["item_id"]))
-		body = "Reward: %s\nFor: %s\n\nInstalled disabled — enable it from that car's upgrades menu." \
-			% [item_name, recipient_name]
-	_refresh_garage_row()
-	ConfirmPopup.open(self, "Mystery Box!", body, [{"label": "Nice", "callback": Callable()}], 0)
-
-
 # Open the COSMETIC WHEEL view: the selected car ALONE in the lot (a one-element
 # lineup, which the paginator centres in the bays), framed by a low side-on camera.
 # left/right cycles wheel styles, previewing each live on the settled car; Start fits
@@ -3753,7 +3717,7 @@ func _revert_wheel_preview() -> void:
 
 
 # Fit the shown wheels to the selected car and return to the lift. Free and ungated:
-# no token, no consumable, no confirm popup. Writing the style into the owned dict
+# no unlock, no cost, no confirm popup. Writing the style into the owned dict
 # changes owned.hash(), which invalidates the car-prop caches so the lift respawns the
 # car wearing its new wheels.
 func _commit_wheels() -> void:
@@ -4190,7 +4154,7 @@ func _select_swap_target() -> void:
 	_show_swap_confirm(current_id, _selected_instance_id)
 
 
-# Perform the swap (Save.swap_engines spends one engine swap token), then respawn
+# Perform the swap (Save.swap_engines), then respawn
 # the lift prop with its new engine and return to the upgrades page.
 func _commit_engine_swap(current_id: int, partner_id: int) -> void:
 	Save.swap_engines(current_id, partner_id)
@@ -4201,43 +4165,34 @@ func _commit_engine_swap(current_id: int, partner_id: int) -> void:
 	_enter_lift()
 
 
-# Confirm popup for a chosen engine-swap partner: swapping needs the CAPABILITY unlocked
-# (the star-gated special) and costs one token. Both are checked here as well as on the
-# swap-row button — this popup stays defensive, since it is also reachable from the car-park
-# swap station, not only the upgrades menu.
+# Confirm popup for a chosen engine-swap partner. ONE gate: the CAPABILITY has to be
+# unlocked (the star-gated special rally). Past that, swapping is free and unlimited, so
+# there is nothing left to spend or count. Checked here as well as on the swap-row button —
+# this popup stays defensive, since it is also reachable from the car-park swap station,
+# not only the upgrades menu.
 func _show_swap_confirm(current_id: int, partner_id: int) -> void:
-	var tokens := Save.engine_swap_tokens_owned()
 	var body: String
 	if not RallyLibrary.engine_swaps_unlocked(Save.profile):
-		# Locked takes priority over the token count: while the capability is locked, a
-		# token message would send the player after the wrong thing. Tokens keep dropping
-		# and banking meanwhile, so name them — they're a teaser, not a dead reward.
 		_pending_swap = {}
-		# Name the rally to go and win — reveal is geometric now, so there is no counter to
-		# quote and a destination is more actionable than a number. Only quotable if the
-		# gating rally actually resolves (it may not under a synthetic test roster).
+		# Name the rally to go and win — a destination is more actionable than "locked".
+		# Only quotable if the gating rally actually resolves (it may not under a synthetic
+		# test roster).
 		var unlock_name := RallyLibrary.engine_swap_unlock_rally_name()
-		body = ("Engine swapping is locked. Win %s" % unlock_name if unlock_name != ""
-			else "Engine swapping is not unlocked yet")
-		body += (" — you have %s banked ready." % UITheme.count_noun(tokens, "token")
-			if tokens > 0 else ".")
-	elif tokens > 0:
-		_pending_swap = {"current": current_id, "partner": partner_id}
-		body = ("Exchange engines between these two cars? " +
-			"This spends 1 engine swap token (you have %d)." % tokens)
+		body = ("Engine swapping is locked. Win %s." % unlock_name if unlock_name != ""
+			else "Engine swapping is not unlocked yet.")
 	else:
-		_pending_swap = {}
-		body = "You have no engine swap tokens. Win one from a rally reward, then swap."
+		_pending_swap = {"current": current_id, "partner": partner_id}
+		body = "Exchange engines between these two cars?"
 	ConfirmPopup.open(self, "Swap engines?", body,
 		[ {"label": "Cancel", "callback": Callable()},
-		  # Disabled whenever the swap CANNOT happen — no token, or the capability itself is
-		  # still star-locked. Without the lock term the button looked live and focusable and
-		  # then silently no-opped, because the locked branch above clears _pending_swap.
+		  # Disabled whenever the swap CANNOT happen — i.e. the capability is still
+		  # star-locked. Without this the button looked live and focusable and then silently
+		  # no-opped, because the locked branch above clears _pending_swap.
 		  {"label": "Swap", "callback": _on_swap_confirmed,
 			"disabled": _pending_swap.is_empty()} ], 1, 0)
 
 
-# OK on the swap-confirm popup: perform the swap (spends the token).
+# OK on the swap-confirm popup: perform the swap.
 func _on_swap_confirmed() -> void:
 	if _pending_swap.is_empty():
 		return
@@ -4366,9 +4321,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# consumes ui_accept before this ever runs — but that relies on the popup HOLDING
 	# focus, and when it doesn't (nothing focusable, focus released by a rebuild under
 	# it), the same keypress fell through to the station rows below and fired a SECOND
-	# action behind the popup. That's how opening a mystery box could spend a second box
-	# whose reveal was then refused for stacking — the spend is not undoable, so the
-	# station must simply not listen while a modal is up. Guarded here, alongside the
+	# action behind the popup. The rule: a station must not act on input while a modal is up,
+	# because the second action's OWN confirm is then refused for stacking — so it runs
+	# invisibly, and save mutations are not undoable. Guarded here, alongside the
 	# challenge overlay, which owns input the same way.
 	if ConfirmPopup.any_open(get_tree()) != null:
 		return

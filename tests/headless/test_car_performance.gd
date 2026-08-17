@@ -175,3 +175,26 @@ func test_merged_meta_carries_both_power_and_grip_terms():
 	var merged := CarPerformance.merged_meta({}, base)
 	assert_true(merged.has("mass"), "merged meta keeps the power/mass terms")
 	assert_true(merged.has("tire_compound"), "merged meta keeps the grip terms")
+
+
+# --- Mass reaches the rating through GRIP, not only through power -------------
+
+func test_wider_tires_rate_higher_at_the_same_mass() -> void:
+	# Load sensitivity is about contact PRESSURE, so rubber is a lever on the rating in
+	# its own right. This also guards the cache: the widths had to join _cache_key when
+	# the model started reading them, or two different cars would share one lap time.
+	assert_gt(CarPerformance.rating(_with({"wheel_width_front": 0.285, "wheel_width_rear": 0.285})),
+		CarPerformance.rating(_with({"wheel_width_front": 0.185, "wheel_width_rear": 0.185})),
+		"the wider-tired car rates higher on an otherwise identical meta")
+
+
+func test_shedding_mass_helps_a_car_that_cannot_use_more_power() -> void:
+	# The case that started this: a car whose straights are TRACTION-limited rather than
+	# power-limited used to see almost nothing from weight reduction, because the only
+	# mass term in the model was the engine one it was not using. Modelled here as a very
+	# low-powered car, so any rating gain has to have come through grip.
+	var slug := _with({"peak_torque": 60.0, "redline": 4000.0})
+	var light := slug.duplicate()
+	light["mass"] = float(slug["mass"]) * 0.8
+	assert_gt(CarPerformance.rating(light), CarPerformance.rating(slug),
+		"a lighter car rates higher even when it cannot put more power down")

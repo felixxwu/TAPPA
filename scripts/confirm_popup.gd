@@ -84,7 +84,7 @@ static func open(host: Node, title: String, body: String, actions: Array,
 	return popup
 
 # RESERVE THE SCREEN, THEN COMMIT. For the "do an irreversible thing and tell the
-# player what happened" shape — open a mystery box, grant a challenge reward — where
+# player what happened" shape — grant a challenge reward, say — where
 # doing it first and presenting second is a silent data loss: `open` REFUSES while
 # another modal is up (see MODAL_GROUP), so the transaction lands and its one and only
 # reveal is dropped. This inverts the order so that state is unrepresentable: the modal

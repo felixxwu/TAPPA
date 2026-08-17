@@ -163,6 +163,18 @@ var peak_torque_rpm := 4500.0
 @export_range(0.1, 2.0) var snow_grass_grip := 0.30
 @export_range(0.1, 2.0) var snow_gravel_grip := 0.55
 @export_range(0.1, 2.0) var snow_tarmac_grip := 0.70
+## SURFACE-DEPENDENT TYRE COMPOUND (features/drivetrain-and-tires.md). Every other
+## tyre effect is a flat multiplier on μ; these two are the SPECIALISED half of the
+## snow compound — a bonus on snow ground and a penalty on tarmac, so the part is a
+## trade-off rather than a strictly-weaker rung of the same ladder.
+##
+## LIVE fields, not authoring knobs: car.gd::_apply_physics_spec re-seeds both to 1.0
+## with the axle μ (pipeline step 1) and UpgradeLibrary.apply multiplies the fitted
+## part's figures in (step 2). 1.0 on a car with no such tyre fitted, which makes the
+## whole mechanism an exact no-op for every other compound. The authored numbers live
+## on the part in UpgradeLibrary.UPGRADES, like every other effect.
+@export var tire_snow_grip_mult := 1.0
+@export var tire_tarmac_grip_mult := 1.0
 ## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two
 ## different jobs: the low grip above makes the car SLIDE, this makes it BOG.
 ## Neither alone reads as deep snow.
@@ -505,12 +517,6 @@ func has_supercharger_physics() -> bool:
 func has_forced_induction() -> bool:
 	return turbo_enabled or has_supercharger_physics()
 
-
-## Softness of the mystery-box self-throttle. The chance of granting a box to a maxed-out
-## car is 1 / (1 + boxes_held / this), so the first box is always certain and each one banked
-## makes the next rarer. 1.0 gives the plain 1/(n+1) curve; larger values make boxes pile up
-## more readily, smaller values choke them off faster. Must stay > 0.
-@export_range(0.1, 10.0) var mystery_box_throttle := 1.0
 
 # --- Nitrous ------------------------------------------------------------------
 # A per-STAGE resource, not a permanent power level: the tank is refilled to full by
@@ -987,11 +993,11 @@ func has_nitrous() -> bool:
 @export_range(0.0, 20.0) var shake_g_threshold := 2.5
 ## Intensity added per g of acceleration above shake_g_threshold. 1.0 means ~1 g of excess
 ## already reaches full amplitude.
-@export_range(0.0, 6.0) var shake_g_gain := 4.0
+@export_range(0.0, 6.0) var shake_g_gain := 2.0
 ## SPEED source: intensity added at chase_fov_speed and above (the same reference speed the FOV
 ## ramp uses, so the two "sense of speed" effects cannot disagree), ramping linearly from 0.
 ## A constant low-level buzz — keep it small.
-@export_range(0.0, 1.0) var shake_speed_gain := 0.5
+@export_range(0.0, 1.0) var shake_speed_gain := 1.0
 ## WHEELSPIN source: intensity added per 1.0 of fore/aft breakaway past peak on the worst DRIVEN
 ## tire (Drivetrain.drive_wheelspin_excess). Only driven wheels count — a locked undriven wheel
 ## already reaches the camera through the g-force term.
@@ -2057,13 +2063,28 @@ func has_nitrous() -> bool:
 @export_group("Tire Marks")
 ## Gravel ruts laid behind the wheels while driving on the road (features/tire-marks.md).
 @export var tire_marks_enabled := true
-## Gravel rut colour — a solid, constant shade noticeably darker than the gravel
-## (gravel.jpg averages ~0.42 grey), so the ruts read as dug-in. Unshaded, so tune
-## against the lit road in-game.
-@export var tire_mark_color := Color(0.24, 0.23, 0.21)
-## Tarmac skidmark colour — a dark grey scuff laid only where a driven wheel spins
-## on the tarmac (the gravel ruts use tire_mark_color instead).
-@export var tire_mark_tarmac_color := Color(0.16, 0.16, 0.16)
+## BOTH MARK COLOURS ARE PURE BLACK, AND THE ALPHA IS THE KNOB. A mark is a black
+## ribbon laid at partial opacity, so what the player sees is the ground DARKENED rather
+## than a fixed grey painted over it. That is the whole point: these materials are
+## unshaded (nothing dims for free — see weather_lit), so a constant authored grey stayed
+## exactly as bright at night and on snow as it was on a sunlit gravel road, and read as
+## a stripe of paint sitting on top of the world instead of a scuff in it. Black at a
+## fraction of opacity tracks whatever is underneath it for free, in every condition,
+## with no per-weather plumbing at all.
+##
+## So the RGB carries no information any more and should stay (0, 0, 0): the alpha below
+## is the per-surface CEILING — how dark a fully-worked tire can ever get on this
+## surface. tire_marks.gd multiplies it by the segment's own strength (gravel by tire
+## FORCE, tarmac by GRIP USAGE — unchanged, and still the two different questions those
+## surfaces ask), so the ceiling sets the top of that range and the strength picks a
+## point in it.
+##
+## Gravel is the shallower of the two because a rut is displaced surface, while a tarmac
+## skid is deposited rubber and goes darker at its worst.
+@export var tire_mark_color := Color(0.0, 0.0, 0.0, 0.5)
+## Tarmac skidmark ceiling — laid only where a driven wheel spins on the tarmac (the
+## gravel ruts use tire_mark_color instead). Black like the above; see its note.
+@export var tire_mark_tarmac_color := Color(0.0, 0.0, 0.0, 0.6)
 ## Width of a wheel's mark ribbon, in metres (roughly a tyre's width).
 @export var tire_mark_width_m := 0.22
 ## Don't lay marks below this car speed (m/s) — keeps the countdown/parked car clean.
@@ -2086,9 +2107,13 @@ func has_nitrous() -> bool:
 ## (so the verge of the gravel still marks), in metres.
 @export var tire_mark_gravel_margin_m := 0.3
 ## Fade each mark's opacity with how hard its tire is working, instead of laying every
-## segment at full strength. OFF renders the ribbons opaque (the pre-fade look) and puts
-## them back in the opaque pass; WHERE marks appear is identical either way, only how
+## segment at its surface's ceiling. WHERE marks appear is identical either way, only how
 ## solid they are changes. See features/tire-marks.md.
+##
+## OFF IS A DEBUG / PERF FALLBACK, NOT A LOOK. It puts the ribbons back in the opaque
+## pass, which discards alpha entirely — and since both mark colours are now pure BLACK
+## (intensity lives in the opacity), that renders solid black trails rather than the flat
+## grey it used to. Reach for it to measure what the transparent pass costs, not to ship.
 @export var tire_mark_alpha_enabled := true
 ## GRAVEL ruts: the tire force (newtons, combined longitudinal + lateral) at which a rut
 ## reaches full opacity. Opacity ramps linearly from nothing at 0 N to solid here, so a
@@ -2814,6 +2839,37 @@ func apply_post_process(mat: ShaderMaterial) -> void:
 func weather_lit(col: Color) -> Color:
 	return Color(col.r * weather_sun_mult, col.g * weather_sun_mult,
 		col.b * weather_sun_mult, col.a)
+
+
+# Whether the ground under this stage is SNOW rather than dirt with snow painted on.
+# Derived from the deep-snow block RallySession.apply_event_config seats off the
+# region, which is 0.0 for every region that authors none — so this is exactly "the
+# stage is in a snowy region" with no second flag to keep in sync. Same shape as the
+# `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.
+func ground_is_snow() -> bool:
+	return deep_snow_depth_m > 0.0
+
+
+# THE ONE PLACE THAT KNOWS THE SURFACE-TYRE RULE, shared by the live physics
+# (Drivetrain.surface_tire_params) and the lap-time model (LapTimeModel._surface_grip)
+# so the AI field can never diverge from the car the player is actually driving.
+#
+# Static, and takes the two multipliers as ARGUMENTS rather than reading its own
+# fields, because the two callers source them differently: physics reads the live
+# config the upgrade pipeline wrote, while the lap model is handed a car_meta for a
+# rival that may not be the player's car at all.
+#
+# The snow bonus is all-or-nothing on the region (snow ground is snow ground, and the
+# packed-snow road is the same white stuff as the verge), while the tarmac penalty is
+# FEATHERED by the contact's tarmac weight — a gravel stage costs the compound
+# nothing, and a mixed stage costs it in proportion to the asphalt it actually crosses.
+# The two are exclusive: on a snow stage the "tarmac" channel is a dusting over
+# asphalt, so charging the tarmac penalty there would cancel the whole point of the part.
+static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
+		tarmac_weight: float, snowy: bool) -> float:
+	if snowy:
+		return snow_mult
+	return lerpf(1.0, tarmac_mult, clampf(tarmac_weight, 0.0, 1.0))
 
 
 func apply_car_light(mat: ShaderMaterial) -> void:

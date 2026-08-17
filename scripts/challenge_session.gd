@@ -40,7 +40,6 @@ var _stage_index := 0          # stages completed so far
 var _stage_times_ms: Array = []
 var _dnf := false
 var _pending_repair: Dictionary = {}
-var _stage_upgrade := ""
 var _last_result: Dictionary = {}
 
 
@@ -70,16 +69,6 @@ func stage_count() -> int:
 # finished) — mirrors RallySession.events_completed().
 func events_completed() -> int:
 	return _stage_index
-
-
-# The per-stage reward drawn by the stage that just finished ("" on the final
-# stage, which draws none, and before any stage completes) — mirrors
-# RallySession.current_event_upgrade(), and is what the standings interstitial
-# reveals. Exposed as a getter because the interstitial does not exist yet when
-# report_event_result runs (the scene is loaded afterwards), so it can only
-# READ the state.
-func stage_upgrade() -> String:
-	return _stage_upgrade
 
 
 func stage_times_ms() -> Array:
@@ -245,7 +234,6 @@ func start(kind_str: String, owned_car: Dictionary, unix_time: int) -> bool:
 	_stage_times_ms = []
 	_dnf = false
 	_pending_repair = {}
-	_stage_upgrade = ""
 	_last_result = {}
 	_active = true
 	_stage_running = true
@@ -277,7 +265,6 @@ func resume(unix_time: int) -> bool:
 	_stage_times_ms = (run.get("stage_times_ms", []) as Array).duplicate()
 	_dnf = bool(run.get("dnf", false))
 	_pending_repair = {}
-	_stage_upgrade = ""
 	_last_result = {}
 	_active = true
 	_stage_running = true
@@ -362,12 +349,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if _car_instance_id >= 0 and hp_lost > 0.0:
 		Save.apply_damage(_car_instance_id, hp_lost)
 	_stage_index += 1
-	_stage_upgrade = ""
 	var is_final := _stage_index >= _stage_count
-	if not is_final:
-		# The draw can legitimately come up empty for a maxed-out car (NO_REWARD) — then
-		# nothing is granted and _stage_upgrade stays "" so no reveal fires.
-		_stage_upgrade = RewardSystem.draw_and_grant_upgrade(_car_instance_id, Save.profile)
 	Save.save()
 	# The same partial pit repair a career rally gets — between stages via
 	# _pending_repair (the run scene shows the popup on boot), and on the FINAL
@@ -507,7 +489,6 @@ func pause_run() -> void:
 	_active = false
 	_stage_running = false
 	_pending_repair = {}
-	_stage_upgrade = ""
 	_persist()
 
 
@@ -540,11 +521,19 @@ func _end_as_dnf() -> void:
 
 # Per-kind completion reward table — TUNABLE, change the numbers here.
 #
-# `boxes` is a count of the mystery-box consumable. The car draw that used to sit here is
-# GONE: cars are bought with stars at the present box now, so a challenge pays STARS
-# instead (todo/star-economy.md, change 5). Stars are credited by placement through the
-# same RallyLibrary.stars_for_placement curve career rallies use, so a star earned in a
-# challenge is worth exactly what one earned in a rally is.
+# `stars` is a flat completion payout, and it REPLACED the mystery-box payout this table
+# used to carry: boxes (and the random draw behind them) are gone, parts and cars are
+# bought with stars now, so the only currency a challenge can pay in is stars. The car
+# draw that used to sit here is long gone for the same reason (todo/star-economy.md,
+# change 5). Ordering is deliberate — Daily < Weekly < Monthly — because a longer period
+# is a scarcer, bigger prize.
+#
+# This flat amount is paid on TOP of the placement stars below, which are credited through
+# the same RallyLibrary.stars_for_placement curve career rallies use, so a star earned in a
+# challenge is worth exactly what one earned in a rally is. The flat part exists because
+# "placed" here is only the top HALF of the board, far more lenient than the podium the
+# star curve pays out to — without it a mid-table finish would bank nothing at all, which
+# is exactly what the boxes used to cover.
 #
 # One attempt per period and the outcome is terminal, so a period cannot be re-farmed —
 # but unlike career stars this income IS renewable over real time, which is deliberate:
@@ -558,9 +547,9 @@ func _end_as_dnf() -> void:
 const CHALLENGE_TOP_FRACTION := 0.5
 
 const _COMPLETION_REWARD := {
-	ChallengeLibrary.DAILY: {"boxes": 2},
-	ChallengeLibrary.WEEKLY: {"boxes": 3},
-	ChallengeLibrary.MONTHLY: {"boxes": 4},
+	ChallengeLibrary.DAILY: {"stars": 2},
+	ChallengeLibrary.WEEKLY: {"stars": 4},
+	ChallengeLibrary.MONTHLY: {"stars": 8},
 }
 
 
@@ -571,7 +560,7 @@ const _COMPLETION_REWARD := {
 # Requires a cloud rank to exist at all — skipped entirely if signed out /
 # no username / the final checkpoint never posted (all read the same way:
 # Cloud.challenge_leaderboard.fetch_final_rank returning not-ok). Grants via
-# the same RewardSystem the per-stage draws use and returns what (if
+# the same Save star ledger a career rally uses, and returns what (if
 # anything) was granted.
 func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	if not bool(result.get("completed", false)):
@@ -591,15 +580,14 @@ func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	var reward: Dictionary = _COMPLETION_REWARD.get(kind_str, {})
 	if reward.is_empty():
 		return {"placed": true, "rank": rank, "total_entries": total}
-	var boxes := int(reward.get("boxes", 0))
-	if boxes > 0:
-		Save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, boxes)
-	# Stars by placement, on the SAME curve as a career rally (1st/2nd/3rd -> 3/2/1). Note
-	# "placed" here is the top HALF of the board, which is far more lenient than the podium
-	# the star curve pays out to — so a mid-table finish legitimately banks 0 stars and walks
-	# away with the boxes above. That is why the boxes are granted unconditionally.
-	var stars := RallyLibrary.stars_for_placement(rank)
+	# The flat completion payout (which replaced the mystery boxes) plus the placement
+	# bonus on the SAME curve as a career rally (1st/2nd/3rd -> 3/2/1). Granted as ONE
+	# credit so the ledger is written once, and reported split so the card can say where
+	# each part came from.
+	var base_stars := int(reward.get("stars", 0))
+	var placement_stars := RallyLibrary.stars_for_placement(rank)
+	var stars := base_stars + placement_stars
 	if stars > 0:
-		Save.award_stars(stars, false)
+		Save.award_stars(stars)
 	return {"placed": true, "rank": rank, "total_entries": total,
-		"item_id": "", "boxes": boxes, "stars": stars}
+		"item_id": "", "stars": stars, "placement_stars": placement_stars}

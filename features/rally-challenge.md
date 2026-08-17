@@ -342,17 +342,11 @@ cost four lines, not eight:
    a bare `COMPLETED` if the board can't be reached. Both placeholders are set
    only AFTER every "we are not going to ask" guard (signed out, no period, no
    board), so a row that will never gain a value never advertises one.
-2. **Win reward** — per-kind text (`_CHALLENGE_REWARD_TEXT`: `2 mystery boxes` /
-   `3 mystery boxes + 1 low-tier car` / `4 mystery boxes + 1 high-tier car`).
-   **This string is stale**: `_COMPLETION_REWARD` pays boxes + placement stars and
-   no car at all any more (see *Completion reward* below), so the weekly/monthly
-   text still advertises a car the run cannot grant — it needs rewording to the
-   boxes-plus-stars payout. These boxes are why `RewardSystem.pick_mystery_box_grant` no longer excludes
-   the current car: a challenge box is tied to no car at all, so the old "never
-   the car it came from" rule stopped describing anything real — see
-   [reward-system.md](reward-system.md) → *Mystery box*. A
-   plain-language mirror of `ChallengeSession._COMPLETION_REWARD`; keep both in
-   step when the table is retuned.
+2. **Win reward** — per-kind text (`hq_challenge.gd::_CHALLENGE_REWARD_TEXT`), a
+   plain-language mirror of `ChallengeSession._COMPLETION_REWARD`, which pays
+   **stars** (see *Completion reward* below). Keep both in step when the table is
+   retuned — the text quotes the amounts, so a retune that touches only the table
+   leaves the screen lying about the payout.
 3. **Eligible cars** — NAMES them (not just a count), mirroring the rally
    pin detail panel's own eligibility read-out exactly:
    `_qualifying_cars_text` (capped at `MAX_QUALIFY_NAMES`, tailing off as
@@ -484,8 +478,8 @@ Two earlier designs were both WRONG and have been removed:
   the close-button gate (`UpgradesGrid.bind_close_button` / its rating gate). Removed; the
   ceiling is enforced by that one shared mechanism.
 - **Excluding the car everywhere else.** A later fix made the garage's car picking, the
-  engine-swap partner list, the career rally lineup and the reward reveal's "Repair
-  now" offer all skip the locked car. That made an owned car unusable across the whole
+  engine-swap partner list, the career rally lineup and the (since-removed) post-stage
+  reward reveal all skip the locked car. That made an owned car unusable across the whole
   game, which was never the intent. All four exclusions are gone.
 
 `DrivingContext.is_car_locked` / `Save.is_challenge_locked` remain as the predicate
@@ -655,22 +649,19 @@ does after a career rally event (both are driven by the same `StageManager` /
   so it holds on the final stage too.
 - **`standings.gd` branches every session read** on `ChallengeSession.is_active()`,
   the same convention `GlobalStandings.for_current_stage()` uses: `_stages_done()`
-  / `_stage_total()` / `_stage_upgrade()` / `_driven_instance_id()` are the four
-  helpers, and `_advance()`'s final step calls `continue_to_next_stage()` instead
-  of `continue_to_next_event()`. The three-step ladder (page 1 local standings →
-  page 2 world board → reward reveal) is otherwise identical.
+  / `_stage_total()` / `_driven_instance_id()` are the helpers, and `_advance()`'s
+  final step calls `continue_to_next_stage()` instead of `continue_to_next_event()`.
+  The ladder is otherwise identical — and it is now strictly **two rungs**, page 1
+  local standings → page 2 world board → resume. The old third rung, the reward
+  reveal, went with the per-stage upgrade draw (`_collect_reward` /
+  `_reward_pending` / `_stage_upgrade` / `_reveal` are all gone from `standings.gd`,
+  and `ChallengeSession._stage_upgrade` / `stage_upgrade()` with them) — see
+  [reward-system.md](reward-system.md).
 - **Local standings are a field of one.** A challenge has no rivals, so
   `ChallengeSession.current_event_standings()` / `current_standings()` feed
   `RallyLibrary.build_standings` an EMPTY field — the exact rendering a rally with
   zero rivals produces — rather than introducing a "no standings" UI state. The
   player's row carries that stage's time and the cumulative time respectively.
-- **The per-stage reward now actually shows.** `standings.gd` reads
-  `ChallengeSession.stage_upgrade()` (a plain accessor — the interstitial
-  doesn't exist yet when `report_event_result` runs, so it can only read the
-  state) and reveals it with the SAME `UpgradeReveal` card / `_collect_reward`
-  flow a career event's reward uses. Before this it was installed on the car
-  silently.
-
 ### Known deferred: field-repair timing
 
 `report_event_result` computes the field repair at stage END, whereas
@@ -683,19 +674,11 @@ Worth revisiting only if a between-stage garage screen is ever added.
 
 ## Completion reward (§6)
 
-Two separate reward paths:
+**There is no per-stage reward.** A stage pays nothing but its time on the board;
+the random per-event upgrade draw was deleted game-wide (see
+[reward-system.md](reward-system.md)), so `report_event_result` only accumulates
+the time and parks the field repair. One path remains:
 
-- **Per-stage** (non-final stages, unchanged from career): `ChallengeSession.
-  report_event_result` calls `RewardSystem.draw_upgrade(Save.profile, null,
-  driven)` — the draw takes no difficulty any more (upgrade `tier` is gone; the
-  pool is flat and gated on won special events, see
-  [reward-system.md](reward-system.md)) — and
-  installs/adds the result exactly like `RallySession` does: consumables straight
-  to inventory, car-bound parts fitted DISABLED for the reveal to enable.
-  (`UpgradeLibrary.HIDDEN_SLOTS` — the "fits ENABLED because it has no garage row"
-  rule — is now EMPTY: nitrous was its only member and has an ordinary row.) The draw
-  can legitimately come back `RewardSystem.NO_REWARD` (`""`) for a maxed-out car,
-  in which case nothing installs and no reveal fires.
 - **Per-challenge** (finishing every stage, no DNF): `ChallengeSession.
   try_grant_completion_reward(result)` awaits `Cloud.challenge_leaderboard.
   fetch_final_rank` and grants iff `rank <= ceil(total_entries / 2)` —
@@ -709,31 +692,33 @@ Two separate reward paths:
   numbers there**; `HqChallenge._CHALLENGE_REWARD_TEXT` is the player-facing summary and
   has to be kept in step):
 
-  | Kind | Mystery boxes |
-  |---|---|
-  | Daily | 2 |
-  | Weekly | 3 |
-  | Monthly | 4 |
+  The table holds a **flat star amount per kind**, ordered Daily < Weekly <
+  Monthly — a longer commitment over a longer period is worth more. (Don't quote
+  the figures; they are authored tunables. It used to hold mystery-box counts, and
+  before that a `car_tier` as well; the box is gone
+  ([reward-system.md](reward-system.md)) and cars are won at the rally that
+  advertises them, so stars are what is left — which is fine, because stars are what
+  the boxes were a detour around.)
 
-  **No car** — the table is boxes-only now, and `car_tier` is gone from it: cars
-  are bought with stars at the HQ present box rather than handed out
-  ([star-economy.md](star-economy.md)). A placing challenge instead pays **stars
-  by placement**, on the SAME `RallyLibrary.stars_for_placement` curve a career
-  rally uses (winning pays most, the rest of the podium next, any other finish still pays), credited via
-  `Save.award_stars`. The placement gate here (top HALF of the board) is far more
-  lenient than the podium, so a mid-table finish banks the smaller
-  `STARS_FOR_FINISH` amount rather than the podium's — it used to bank **0**, back
-  when the curve paid nothing off the podium. The boxes are granted unconditionally
-  regardless, so a player who placed never walks away with nothing.
+  On top of that flat amount, a placing challenge pays **stars by placement**, on
+  the SAME `RallyLibrary.stars_for_placement` curve a career rally uses (winning
+  pays most, the rest of the podium next, any other finish still pays), credited
+  through `Save.award_stars` as well. The placement gate here (top HALF of the
+  board) is far more lenient than a podium, so a mid-table finish still banks the
+  smaller `STARS_FOR_FINISH` amount — it used to bank **0**, back when the curve
+  paid nothing off the podium. The flat amount is granted unconditionally to anyone
+  who makes the cut, so a player who placed never walks away with nothing.
 
   Unlike career stars, this income is **renewable over real time** — deliberately,
   since it is the only star source still flowing once every career rally is won at
   P1 and `complete_rally` has no improvement left to credit.
 
-  Returns `{"placed", "rank", "total_entries", "item_id", "boxes", "stars"}`
-  (`item_id` always `""`, since nothing item-shaped is granted).
-  `world.gd._completion_reward_body` renders whatever actually landed, so a win
-  that banked only boxes is never silent.
+  Returns `{"placed", "rank", "total_entries", "item_id", "stars",
+  "placement_stars"}` (`item_id` always `""`, since nothing item-shaped is
+  granted) — the two star figures kept apart so the card can name the flat
+  completion award and the placement bonus separately rather than quoting one
+  unexplained total. `world.gd._completion_reward_body` renders whatever actually
+  landed, so nothing banked is ever silent.
 
 ### Where the run's end is resolved (`world.gd._on_challenge_run_finished`)
 
@@ -744,14 +729,12 @@ the driving scene**, before the hand-off to HQ.
 
 - **Clean finish** → `await ChallengeSession.try_grant_completion_reward(result)`,
   then, on a grant, a plain `ConfirmPopup` card ("Challenge Complete!", placing +
-  what was won + where it landed) over the world — the same shape `hq.gd`'s
-  mystery box uses for a reward moment that isn't mid-interstitial. A full
-  `UpgradeReveal` page belongs to `standings.gd`, which is not up at this point in
-  the flow. Skipped headless (the grant still runs headless — see below). A
+  what was won) over the world — a plain card is the right shape for a reward
+  moment that isn't mid-interstitial. Skipped headless (the grant still runs headless — see below). A
   failed/unavailable placement fetch just grants nothing and continues to HQ.
 
   **The grant and its reveal cannot diverge, but not via `ConfirmPopup.
-  open_committing`.** That helper (added for the mystery-box shape) acquires the
+  open_committing`.** That helper (added for a since-removed HQ reward popup) acquires the
   modal slot FIRST and skips its `commit` callable entirely when the slot is
   refused — the right contract when "never happened" is a true, harmless
   fallback state. The challenge completion reward does not have that fallback:
@@ -802,8 +785,8 @@ the driving scene**, before the hand-off to HQ.
   placement (and still reaches HQ when the fetch fails), a DNF hands off to HQ
   IMMEDIATELY with `post_dnf` still in flight behind it, and a null board is
   harmless. Also covers the grant/reveal ordering guarantee: a headless finish
-  with a qualifying placement still grants the reward (inventory gains a
-  mystery box) with no popup attempted, and — with `_headless` forced false and
+  with a qualifying placement still grants the reward (the star balance moves) with
+  no popup attempted, and — with `_headless` forced false and
   another `ConfirmPopup` already on screen — the reward card still opens
   (stacked, via `allow_stack`) instead of being refused, and the hand-off to HQ
   waits for it.
@@ -830,6 +813,5 @@ the driving scene**, before the hand-off to HQ.
   over-ceiling-but-detune-reachable car parking eligible and routing Start to
   the "Too powerful" agreement (mirroring the normal-rally car-park test).
   Also the challenge side of the standings interstitial: it renders a stage as a
-  field of one, a non-final stage's reward is collected through the same
-  page 1 → page 2 → `UpgradeReveal` ladder and its Continue actually advances the
-  run to the next stage, and the final stage offers no collect step.
+  field of one, and a non-final stage's Continue actually advances the run to the
+  next stage.

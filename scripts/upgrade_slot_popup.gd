@@ -127,13 +127,30 @@ func _build_list(options: Array) -> void:
 	MenuNav.attach(_center, {"first": first, "on_back": _dismiss})
 
 
+
+
+# "Small (412)" — the option's name followed by the performance rating the car would have
+# if it were taken. Parenthesised so the figure cannot be misread as part of the price a
+# purchase row also carries, which is drawn after this with its own star icon.
+#
+# There is deliberately no "412 -> 455" on each line: Stock is always the first row and
+# always rates the car as it stands, so the before-figure is stated once at the top of the
+# list instead of being repeated on every option. A row with no rating stamped (any caller
+# that has not supplied one) just reads as the bare name.
+func _row_label(opt: Dictionary) -> String:
+	if not opt.has("rating"):
+		return String(opt.get("label", ""))
+	return "%s (%d)" % [opt.get("label", ""), int(opt["rating"])]
+
+
+
 # A pickable option. `price >= 0` means taking it SPENDS stars, so the row quotes them with
 # the drawn gold star every price in the game uses (StarRow.price_icon — Syne Mono has no
 # star glyph, so a text one is tofu on the web export).
 func _option_button(opt: Dictionary) -> Button:
 	var b := Button.new()
 	var price := int(opt.get("price", -1))
-	b.text = String(opt.get("label", ""))
+	b.text = _row_label(opt)
 	if price >= 0:
 		b.text = "%s %d" % [b.text, price]
 		b.icon = StarRow.price_icon()
@@ -159,8 +176,8 @@ func _option_button(opt: Dictionary) -> Button:
 func _locked_row(opt: Dictionary) -> Control:
 	var l := Label.new()
 	var reason := String(opt.get("locked_reason", ""))
-	l.text = String(opt.get("label", "")) if reason == "" \
-		else "%s — %s" % [opt.get("label", ""), reason]
+	l.text = _row_label(opt) if reason == "" \
+		else "%s — %s" % [_row_label(opt), reason]
 	l.modulate = UITheme.MUTED
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return l

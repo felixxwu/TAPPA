@@ -110,10 +110,13 @@ A car authors **one `tire_compound`** (the rubber's intrinsic μ, ~0.85 hard eco
 config.
 
 **The compound is upgradeable.** The `tires` upgrade slot holds two parts — **Snow Tires**
-(`snow_tires`, the early rung, won at the Alps gateway pin) and **Race Tires**
-(`race_tires`, the top rung, won deep in the Alps) — whose `tire_grip_mult` effect
+(`snow_tires`, won at the Alps gateway pin) and **Race Tires**
+(`race_tires`, won deep in the Alps) — whose `tire_grip_mult` effect
 multiplies **both** axle μ figures in pipeline step 2 — i.e. *after* `apply_car` seeds them and *before* the `grip_balance`
 slider shifts them apart, so a player's front/rear balance is scaled, never overwritten.
+Race tyres are that flat term and nothing else; snow tyres carry two further,
+**surface-dependent** figures on top of it (next section), which is why the two are a
+per-rally choice rather than two rungs of one ladder.
 It gets its own slot rather than sharing `aero` because rubber grip and downforce are not
 alternatives: a car wants both, and one-enabled-part-per-slot would have made them
 mutually exclusive. See [upgrade-catalogue.md](upgrade-catalogue.md).
@@ -131,6 +134,19 @@ for free (braking loads the fronts → their μ dips), and front/rear grip **bal
 comes from the widths + `weight_front` rather than a per-axle grip knob. Consequences:
 **adding mass on the same tyres lowers grip; widening the tyres recovers it** — so both
 the lateral-G and the power-to-weight stats are genuinely driven by weight.
+
+**The point-mass solver shares this curve too.** `LapTimeModel._load_factor` calls the
+SAME `GameConfig.tire_load_factor` — not a parallel approximation of it — with a
+point-mass simplification: normal force is `mass · G / 4` (four equally-loaded corners)
+and width is the mean of `wheel_width_front` / `wheel_width_rear`. It is deliberately
+coarser than `Drivetrain.step`, which resolves the factor per wheel per tick against the
+live suspension force and so gets weight transfer for free; a point mass has no axles to
+transfer between. What matters is that the two agree in *direction and shape*, because
+the model is what paces the AI field and what scores a car's performance rating — and
+before this term existed, mass reached that model through `a_engine = P/(v·m)` alone, so
+the solver flatly denied the "adding mass lowers grip, widening the tyres recovers it"
+consequence stated above. See [car-performance.md](car-performance.md) → *Mass is no
+longer only power-to-weight* for why that mattered enough to fix.
 
 The car-select panel shows this as a **lateral-G** figure (`CarLibrary.max_lateral_g`):
 each axle's static per-wheel load (`mass·g·weight_split/2`) run through the SAME
@@ -178,6 +194,73 @@ on a stage transition. `slip_peak` and `slide_ratio` are untouched by weather �
 ships one global grip multiplier rather than per-surface wet curves (see
 [weather.md](weather.md) for the design rationale and the per-surface
 alternative it defers).
+
+## Surface-specialised compounds (the snow-tyre rule)
+
+A tyre compound used to be a single number: one multiplier on μ, the same everywhere. That
+made **Snow Tires** a strictly weaker rung of the same ladder Race Tires topped — the
+choice between them was trivial the moment both were owned, and a part called "Snow Tires"
+behaved identically on a glacier and on dry asphalt. A compound can now also carry a
+**surface-dependent** pair alongside its flat term:
+
+| effect key | what it means |
+|---|---|
+| `tire_grip_mult` | the flat term — what the compound is worth on **gravel**, the neutral surface |
+| `tire_snow_grip_mult` | an extra bonus on **snow ground** |
+| `tire_tarmac_grip_mult` | a penalty on **tarmac** (below 1.0 for winter rubber) |
+
+Snow tyres author all three: a modest flat gain, a large snow bonus, and a tarmac penalty
+big enough that on asphalt they are **net worse than the car's own rubber**. That is the
+trade. Race tyres author only the flat term, so nothing about them changes.
+
+**`GameConfig.tire_surface_mult(snow_mult, tarmac_mult, tarmac_weight, snowy)` is the one
+place that knows the rule**, and it is `static` and takes both multipliers as arguments
+precisely so the two callers can source them differently. The rule:
+
+- The **snow bonus is all-or-nothing on the region** — snow ground is snow ground, and the
+  packed-snow "road" is the same white stuff as the verge, so there is nothing to feather
+  against.
+- The **tarmac penalty is feathered** by how much tarmac the contact is actually on, so a
+  pure gravel stage costs the compound nothing and a mixed stage costs it in proportion to
+  the asphalt it crosses.
+- The two are **mutually exclusive**: on a snow stage the tarmac channel is a dusting over
+  asphalt, so charging the tarmac penalty there would cancel the whole point of the part.
+
+"Snowy" is `GameConfig.ground_is_snow()`, derived from `deep_snow_depth_m > 0.0` — i.e.
+the region seated a deep-snow block ([snow-region.md](snow-region.md)). No new flag to
+keep in sync, the same shape as the `frozen_water_grip > 0.0` gate ice already uses.
+
+**Lifecycle.** `tire_snow_grip_mult` / `tire_tarmac_grip_mult` are live `GameConfig` fields
+defaulting to `1.0`, the identity on both sides. A car spec has no source for them (a car
+brings one compound coefficient, not a per-surface curve), so `car.gd::_apply_physics_spec`
+**re-seeds both to 1.0 at pipeline step 1**, right next to the axle μ seeds — without that
+reset, re-fielding a car would compound the fitted part's figures every time. `UpgradeLibrary.apply`
+then multiplies the fitted compound's figures in at **step 2**, via ordinary `EFFECTS` rows
+(op `mult`, `feeds_pw: false`, `feeds_grip: true`, meta and config sharing the field name so
+no `cfg_fields` override is needed). `feeds_pw` stays false for the same reason the flat
+compound's does — rubber must never move a car's rally eligibility. They deliberately do
+**not** move the upgrades menu's GRIP row, which reads `tire_compound` alone: one headline
+number cannot honestly state a figure that changes with the surface.
+
+**Where it is applied.** `Drivetrain.surface_tire_params` folds it into `mu_mult` in **all
+three** branches, for the same reason weather is folded in unconditionally — this is the
+single per-contact resolver every wheel goes through:
+
+| branch | tarmac weight passed | note |
+|---|---|---|
+| no terrain (flat fixtures) | 0 | so a fixture still gets the compound's behaviour instead of neutral rubber |
+| frozen water / ice | 0, **snowy side** | a frozen lake is only ever authored by a snowy region, and winter rubber is exactly what should pay off when the car slides onto it |
+| normal blend | `s.x * s.y` | road weight × tarmac-within-road = how much tarmac this contact is really on |
+
+`LapTimeModel._surface_grip` applies the *same* function, sourcing the two multipliers from
+`car_meta` (absent → 1.0, an exact no-op) rather than the live config — it solves for a
+**rival's** car as often as the player's. That is what keeps the AI field moving with the
+player instead of diverging. `CarPerformance` is unaffected: its benchmark lap goes through
+`mu_override` and never reaches `_surface_grip`, so a surface-specialised compound cannot
+distort a car's rating. (Contrast the load-sensitivity factor, which is applied to `mu`
+*outside* `_surface_grip` on both branches precisely so that it DOES reach the rating —
+tyre width and mass are properties of the car, whereas which surface it is on is a
+property of the conditions the benchmark freezes.)
 
 ## Helper functions
 

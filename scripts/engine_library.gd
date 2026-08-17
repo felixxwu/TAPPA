@@ -177,7 +177,13 @@ const ENGINES: Array[Dictionary] = [
 		"redline_rpm": 3200.0, "peak_torque": 1890.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,
 		"engine_friction_base": 150.0,  # V12 27L aero monster — far more than the 5.3 despite equal cylinders
 		"low_octave_mix": 0.8, "volume_db": 11.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
-		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 3, "shift_time": 0.30,  # GM TH400 3-speed auto
+		# LONG final drive for its class. The TH400's three widely-spaced ratios are stock, but
+		# the diff is geared for reach rather than launch: 27 litres at 1890 Nm has torque to
+		# spare from idle, so trading multiplication for top end costs it nothing it misses and
+		# stops a 750 hp car running out of revs at motorway speed. Now that the lap model caps
+		# a car at its geared top speed (LapTimeModel._geared_top_speed_sq), this is load-bearing
+		# rather than cosmetic — the short diff was pinning the Beast well below its own pace.
+		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 2.0, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{
 		"id": "honda_066_i3", "name": "0.66 E07A i3", "layout": "i3", "displacement_l": 0.66, "mass": 70.0,

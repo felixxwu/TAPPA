@@ -289,16 +289,12 @@ func test_set_wheels_on_an_unknown_car_is_a_no_op() -> void:
 	pass_test("setting wheels on a car that doesn't exist doesn't crash")
 
 
-# Wheels are a SEPARATE system: fitting them never touches the engine-swap state or
-# spends a swap token.
+# Wheels are a SEPARATE system: fitting them never touches the engine-swap state.
 func test_wheels_are_independent_of_the_engine_swap_system() -> void:
 	var id: int = _save.selected_instance_id()
-	var tokens_before: int = _save.engine_swap_tokens_owned()
 	_save.set_wheels(id, _other_car_id("fx_light_rwd"))
 	var car: Dictionary = _save.get_car(id)
 	assert_false(car.has("swapped_engine"), "fitting wheels doesn't touch the engine")
-	assert_eq(_save.engine_swap_tokens_owned(), tokens_before,
-		"fitting wheels spends no engine-swap token")
 
 
 # --- Cosmetic-only guarantee -----------------------------------------------------

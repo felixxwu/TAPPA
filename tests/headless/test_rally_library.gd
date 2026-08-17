@@ -2036,3 +2036,41 @@ func _fits_induction(opp: Dictionary) -> bool:
 		if effect.has("install_turbo") or effect.has("install_supercharger"):
 			return true
 	return false
+
+
+# --- Shipped content: every stage actually grows trees -------------------------
+
+func test_every_shipped_stage_authors_a_forestiness_that_grows_something() -> void:
+	# The forest gate keeps a cell where a SINGLE-OCTAVE Perlin field exceeds
+	# 1 - forestiness, and that field never approaches its nominal extremes — so a
+	# forestiness that reads like "sparse forest" can silently mean NO TREES AT ALL.
+	# The Alps shipped that way: several stages were authored at 0.15-0.30 and generated
+	# bare. It fails SILENTLY (an empty stage, no error), which is exactly the shape of
+	# bug that needs a shipped-content guard rather than a unit test.
+	#
+	# Nothing here pins an authored value or a coverage figure: the assertion is only
+	# "whatever this stage asks for, at least some ground passes the gate", which must
+	# hold for ANY reasonable authoring and re-derives if the noise or the values change.
+	var cfg: GameConfig = Config.data
+	var bare: Array[String] = []
+	for rally in RallyLibrary.all():
+		for event in rally.get("events", []):
+			var forestiness := RallyLibrary.event_forestiness(event)
+			if forestiness >= 1.0:
+				continue  # unfiltered: the gate is skipped entirely
+			var seed_value := int(event.get("seed", cfg.track_seed))
+			var noise := TreeScatter.make_forest_noise(seed_value, cfg.forest_wavelength_m)
+			var threshold := 1.0 - clampf(forestiness, 0.0, 1.0)
+			# Walk a coarse lattice over a stage-sized area. Enough samples that a stage
+			# keeping even a fraction of a percent of its ground still registers.
+			var kept := 0
+			for ix in 60:
+				for iy in 60:
+					var p := Vector2(float(ix) * 40.0 - 1200.0, float(iy) * 40.0 - 1200.0)
+					if TreeScatter.forest_density(noise, p) > threshold:
+						kept += 1
+			if kept == 0:
+				bare.append("%s (forestiness %.2f)" % [rally.get("id", "?"), forestiness])
+	assert_eq(bare, [] as Array,
+		"every stage's forestiness passes some ground through the forest gate; bare: %s"
+			% ", ".join(bare))

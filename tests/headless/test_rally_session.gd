@@ -94,13 +94,12 @@ func _capture_finish() -> Array:
 # A synthetic two-rung ladder gated on the fixture special, so none of these tests depend on
 # an authored upgrade or on which real rally gates what.
 func _install_unlock_ladder() -> void:
-	# `free: true` keeps these OUT of the ordinary per-event upgrade draw
-	# (RewardSystem._eligible_parts skips free parts) while leaving the special's direct
-	# award untouched. Without it these tests are flaky-by-construction: the moment the
-	# first win opens the gate, fx_top becomes legitimately drawable by the per-event draw
-	# that _report_events triggers, so a second run could receive it from the NORMAL reward
-	# path and an "it wasn't re-awarded" assertion would fail for the wrong reason —
-	# depending on RNG state, which differs between a targeted run and the full suite.
+	# `free: true` is vestigial here now. It used to keep these parts OUT of the ordinary
+	# per-event upgrade draw, which would otherwise have awarded fx_top by the normal path
+	# the moment the gate opened and made an "it wasn't re-awarded" assertion fail for the
+	# wrong reason. That draw is gone, so nothing competes with the special's direct award
+	# any more — the flag is left in place because it is also what makes these fixture rungs
+	# selectable without a purchase, which several assertions below rely on.
 	var upgrades: Array[Dictionary] = [
 		{"id": "fx_base", "name": "Fixture Base", "slot": "fxslot", "consumable": false,
 			"cost": 0, "free": true, "power_mult": 1.05},
@@ -272,19 +271,14 @@ func test_re_winning_a_special_reveals_and_awards_nothing() -> void:
 	UpgradeLibrary.reset()
 
 
-# Engine swapping is gated as a CAPABILITY (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY), not as a
-# catalogue part, so there is no upgrade to award — but the win still hands over ONE swap
-# token, so the station is usable the moment it is announced rather than waiting on a drop.
 # The fixture special is re-ided to the gate const, so this leans on the CONST rather than on
 # the shipped roster.
-func test_winning_the_capability_special_awards_a_swap_token() -> void:
+func test_winning_the_capability_special_announces_the_unlock_with_nothing_to_grant() -> void:
 	var roster: Array[Dictionary] = RallyFixtures.rallies()
 	for r in roster:
 		if bool(r.get("special", false)):
 			r["id"] = RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY
 	RallyLibrary.override_for_test(roster)
-	var token := UpgradeLibrary.ENGINE_SWAP_TOKEN_ID
-	var before := int((_save.profile.get("inventory", {}) as Dictionary).get(token, 0))
 
 	_start_winnable(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
 	var box := _capture_finish()
@@ -295,17 +289,12 @@ func test_winning_the_capability_special_awards_a_swap_token() -> void:
 		"the capability unlock is announced even with no part to name")
 	assert_eq(String(unlock.get("item_id", "")), "",
 		"and it names no catalogue item, because there isn't one")
-	# Asserted on the special's OWN report, not on the inventory total: the ordinary
-	# per-event draw can independently award a swap token
-	# (RewardSystem.ENGINE_SWAP_TOKEN_DROP_CHANCE), so an inventory count conflates the two
-	# and lands on 1 or 2 depending on RNG state — which differs between a targeted run and
-	# the full suite. The inventory is still checked, but only for "it actually arrived".
-	assert_eq(unlock.get("granted", []), [token] as Array,
-		"the unlock grants exactly one swap token, so the station is immediately usable")
-	assert_gte(int((_save.profile.get("inventory", {}) as Dictionary).get(token, 0)), before + 1,
-		"and the token reached the inventory")
-	assert_eq(String(result.get("car_reward", "")), "",
-		"it is still a special, so still no car")
+	# Nothing is HANDED OVER any more. Winning the special unlocks swapping outright and
+	# swaps are free and unlimited from then on, so there is no consumable to bank — the
+	# announcement is the whole reward.
+	assert_eq(unlock.get("granted", []), [] as Array,
+		"the unlock grants no item: the capability itself is the prize")
+	RallyLibrary.reset()
 
 
 # An ordinary rally unlocks nothing and — since the star economy — pays no car either.
@@ -517,11 +506,6 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Fixture Open", "result names the rally for the podium header")
-	# The record holds one entry per non-final event that actually PAID. Most pay nothing
-	# now — the draw is consumables-only since parts became things you win or buy
-	# (features/star-economy.md) — so this is an upper bound, not a count.
-	assert_lte((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
-		"at most one upgrade id per non-final event is recorded")
 	# No car is drawn by a finish any more — the reward is STARS, and the result carries
 	# both what the rally is now RATED and what the ledger actually gained, which the
 	# podium's stars beat shows separately (todo/star-economy.md).
@@ -533,8 +517,8 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 		RallyLibrary.stars_for_placement(_save.best_placement("fx_open")),
 		"the rating matches the recorded best placement")
 	assert_false(r["game_won"], "an ordinary rally is not the endgame")
-	# The result names the owned-car instance the player drove, so the podium's
-	# upgrade reveal can offer to fit each won part straight onto it.
+	# The result names the owned-car instance the player drove, which the podium needs for
+	# the car-reveal and unlock beats.
 	assert_eq(int(r["car_instance_id"]), int(driven["instance_id"]),
 		"the result carries the driven car's instance id for the apply-upgrade choice")
 	# A 2nd-place finish records best placement 2 (drives the world-map stars).
@@ -599,65 +583,15 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 	assert_eq(RallySession.event_index(), 1, "now running event index 1")
 
 
-func test_per_event_upgrades_bind_to_the_driven_car_without_duplicates() -> void:
-	# A draw happens per NON-FINAL event, and anything it DOES pay is fitted to the driven
-	# car disabled, with no slottable part won twice. Most events pay nothing now (the draw
-	# is consumables-only — features/star-economy.md), so this asserts the binding and the
-	# dedup, never a guaranteed count.
-	var finish := _capture_finish()
-	var driven := _start("fx_open")
-	var driven_id := int(driven["instance_id"])
-	RallySession._opponent_field = _field([90000])  # player will be top-3
-	_report_events([10000, 10000, 10000])
-	var r: Dictionary = finish[0]
-	assert_lte((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
-		"at most one upgrade is won per non-final event")
-
-	var slottable_wins: Array = []
-	for item_id in r["upgrades"]:
-		if not UpgradeLibrary.is_consumable(item_id):
-			slottable_wins.append(item_id)
-	var uniq := {}
-	for item_id in slottable_wins:
-		uniq[item_id] = true
-	assert_eq(uniq.size(), slottable_wins.size(), "no slottable upgrade is won twice in one rally")
-
-	var live: Dictionary = _save.get_car(driven_id)
-	var installed: Array = live["installed_upgrades"]
-	for item_id in slottable_wins:
-		assert_true(installed.has(item_id), "the won part is fitted to the driven car")
-		assert_false(UpgradeLibrary.is_enabled(live, item_id), "and lands disabled until collected")
-
-
-func test_final_event_awards_no_upgrade() -> void:
-	_start("fx_open")
-	RallySession._opponent_field = _field([90000])
-	RallySession.report_event_result(10000)  # event 1
-	RallySession.continue_to_next_event()
-	RallySession.report_event_result(10000)  # event 2
-	RallySession.continue_to_next_event()
-	RallySession.report_event_result(10000)  # event 3 (final) -> no draw
-	assert_eq(RallySession.current_event_upgrade(), "",
-		"the final event awards no per-event upgrade")
-
-
-func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
-	# The per-event upgrade is earned by FINISHING event 1; a later wreck (DNF)
-	# keeps it. The final rally still records no car reward on a DNF.
+func test_a_wreck_part_way_through_a_rally_costs_the_result_not_the_car() -> void:
+	# Was "wreck after earning a per-event upgrade keeps it" — there is no per-event
+	# upgrade to earn any more, but the rest of what it asserted is the real contract and
+	# had no other home: a DNF mid-rally forfeits the result and hands the car back.
 	var finish := _capture_finish()
 	var owned := _start("fx_open")
 	var id := int(owned["instance_id"])
 	RallySession._opponent_field = _field([50000])
-	RallySession.report_event_result(20000)  # event 1 finishes -> one draw
-	# The draw may legitimately pay NOTHING (consumables-only, and both are rare), so what
-	# this test guards is that anything won SURVIVES the later wreck — not that one is won.
-	var won := RallySession.current_event_upgrade()
-	var live: Dictionary = _save.get_car(id)
-	if won != "" and UpgradeLibrary.is_consumable(won):
-		assert_eq(int(_save.profile["inventory"].get(won, 0)), 1, "a won consumable lands in inventory")
-	elif won != "":
-		assert_true((live["installed_upgrades"] as Array).has(won), "a won part is fitted to the driven car")
-		assert_false(UpgradeLibrary.is_enabled(live, won), "and lands disabled until collected/Applied")
+	RallySession.report_event_result(20000)  # event 1 finishes
 	RallySession.continue_to_next_event()  # into event 2
 	RallySession.report_wreck()            # DNF during event 2
 	var r: Dictionary = finish[0]
@@ -670,11 +604,6 @@ func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
 	assert_false(_save.get_car(id).is_empty(), "the car is kept")
 	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and comes back with health, not at 0")
 	assert_true(_save.car_needs_repair(id), "but needing a repair")
-	# Anything earned in event 1 is KEPT despite the DNF (skipped when the draw paid nothing,
-	# which is now the common case).
-	var after: Dictionary = _save.get_car(id)
-	if won != "" and not UpgradeLibrary.is_consumable(won):
-		assert_true((after["installed_upgrades"] as Array).has(won), "the earned upgrade survives a later DNF")
 	assert_false(_save.rally_completed("fx_open"), "a DNF leaves the rally incomplete")
 
 
