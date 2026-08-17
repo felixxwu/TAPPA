@@ -15,9 +15,11 @@ Fog and storm (`docs/superpowers/specs/2026-08-02-fog-and-storm-weather-design.m
 are the two later conditions; **fog is deliberately NOT variety-only** — see
 "Rival times" for why that asymmetry is intended rather than a bug.
 **Night** (`todo/night-weather-and-headlights.md`) is the seventh entry and the
-odd one out: it is the only condition that re-lights the world instead of only
-recolouring it — see "Night" below. Five stages author it, one per region, so
-every region's palette can be seen after dark.
+odd one out: it re-lights the world instead of only recolouring it — see "Night"
+below. Five stages author it, one per region, so every region's palette can be
+seen after dark. The headlight cone it introduced is no longer night-only: storm
+switches the lights on as well, at a much lower strength, via the same authored
+`headlights` key — see "Headlights on more than night".
 
 ## The weather table (`WeatherLibrary`) — the single source of truth
 
@@ -46,6 +48,7 @@ omitted key means "this condition does not have that feature":
 | `wind` | lateral **crosswind body force**: `strength` / `gust` / `dir_deg` → GameConfig fields (`WIND_KEYS`). Omitted ⇒ no wind force. Read by the crosswind force in `car.gd` — see [car-physics.md](car-physics.md) |
 | `lightning` | cosmetic **flash**: `flash` / `duration` / `interval_min` / `interval_max` → GameConfig fields (`LIGHTNING_KEYS`). Omitted ⇒ no flashes. Read by `world.gd` → `_start_lightning` |
 | `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
+| `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic, so it is **not** in `physics_fields` |
 
 **`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
 all-or-nothing — an entry with a `look` block must name every one of the five
@@ -158,6 +161,8 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
   genuine sea pins. A river valley gets heavy rain instead: RWD Masters and the
   Drivetrain Conversion trial both carried a storm through an earlier pass and were
   re-authored to rain, since a crosswind inland is just weather with a costume on.
+  A storm also switches the **headlights** on (see "Headlights on more than night"),
+  which is why it is the only daytime condition that carries a `headlights` key.
 - **Snowfall** — authoring guidance: authored ONLY onto `region == "snow"` events (the
   alpine NE), the same placement convention sandstorm follows for the desert, and mixed
   roughly half-and-half with dry stages there. Unlike every other precipitation
@@ -258,6 +263,10 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
   - `storm_lightning_flash` / `_duration_s` / `_interval_min_s` / `_interval_max_s`
     — the cosmetic flash. Subtle and infrequent on purpose: a flash that blanks the
     screen mid-corner is a gameplay event, not an effect.
+  - `storm_headlight_amount` — the headlight cone's strength on a storm stage,
+    named by the entry's `headlights` key. Authored well BELOW night's, and that
+    is the whole point of the field existing — see "Headlights on more than
+    night" below.
 
 - The night block, prefixed **`night_`** — a `look` block plus a road darken, and
   nothing else (it authors no `grip_mult`, no `wind`, no `particles`, no
@@ -295,12 +304,17 @@ says, and "the coastal regions" is no longer a useful way to pick out coastal st
   `night_background_color`. The numbers themselves are inspector tuning and are not
   quoted here; the point to carry forward is *which knob to reach for* when night
   reads too dark or too washed out.
-- The **headlight-cone block**, prefixed `headlight_` plus `night_amount`. These
-  are the odd ones out in this file: they are **not named by the weather table
-  at all** and are not `look` keys — they are pushed to the shaders as global
-  shader parameters once per frame. See "Night" below.
-  - `night_amount` — strength of the cone, 0..1; at exactly 0 every night
-    uniform is a bit-for-bit no-op.
+- The **headlight-cone block**, prefixed `headlight_`. These are the odd ones out
+  in this file: they are **not named by the weather table at all** and are not
+  `look` keys — they are pushed to the shaders as global shader parameters once
+  per frame. See "Night" below. The one exception is the cone's STRENGTH, which
+  IS per-condition and IS named by the table (the `headlights` key): night reads
+  `night_headlight_amount`, storm reads `storm_headlight_amount`.
+  - `night_headlight_amount` / `storm_headlight_amount` — strength of the cone on
+    that condition, 0..1; at exactly 0 the lights are off and every cone uniform
+    is a bit-for-bit no-op. Two fields rather than one because the cone is ADDED
+    to a light term whose brightness differs per condition — see "Headlights on
+    more than night" below.
   - `headlight_color` — the light the cone ADDS to the light term.
   - `headlight_range_m` — how far the cone reaches before attenuating to nothing.
     A genuine difficulty knob: it sets how far ahead the road can be read.
@@ -383,8 +397,9 @@ why its config fields stay out of `config_fields`/`fingerprint`.
 ## Night
 
 The seventh condition, and **purely a look** — deliberately. Its entry authors a
-`look` block and a `road_tint` and nothing else: no `grip_mult` (μ is exactly
-1.0, identical to dry), no `wind`, no `particles`, no `lightning`. It therefore
+`look` block, a `road_tint`, a `sky_panorama` and a `headlights` strength, and
+nothing else: no `grip_mult` (μ is exactly 1.0, identical to dry), no `wind`, no
+`particles`, no `lightning`. It therefore
 names nothing in `physics_fields()`, so it changes no lap time, needs no
 rebalancing and never re-keys the opponent cache. Design rationale and the four
 other settled decisions are in `todo/night-weather-and-headlights.md`.
@@ -399,15 +414,44 @@ any shader runs, the world is already dark.
 shaders from a handful of `global uniform`s — no light node is added, and none
 could be: every material in this renderer is `unshaded`, so a `SpotLight3D`
 would have zero effect. `scripts/headlight_cone.gd` (`class_name HeadlightCone`)
-is the whole driver: `is_night(cfg)` gates on the weather id (NOT on
-`night_amount`, which is the cone's strength), `params(cfg, xform)` turns the
-car pose plus the authored knobs into a name→value dictionary, `push()` is pure
+is the whole driver: `amount(cfg)` is the live condition's cone strength straight
+out of the weather table and `has_headlights(cfg)` is that being above zero — the
+gate is authored DATA, not a weather id, so the "no consumer tests `== WEATHER_x`"
+rule holds here too; `params(cfg, xform)` turns the car pose plus the authored
+knobs into a name→value dictionary, `push()` is pure
 transport onto `RenderingServer.global_shader_parameter_set`, and `reset()`
-zeroes it. `world.gd::_process` pushes once per frame and early-outs off a night
-stage; `world.gd::_exit_tree` calls `reset()` because shader globals persist
-across scene changes and the podium and HQ draw with the same shaders. The
-shader half — why additive, why fragment on terrain and vertex elsewhere — is in
-[rendering.md](rendering.md) → "The fake headlight cone".
+zeroes it. `world.gd::_process` pushes once per frame and early-outs on a
+condition that authors no cone; `world.gd::_exit_tree` calls `reset()` because
+shader globals persist across scene changes and the podium and HQ draw with the
+same shaders. The shader half — why additive, why fragment on terrain and vertex
+elsewhere — is in [rendering.md](rendering.md) → "The fake headlight cone".
+
+### Headlights on more than night
+
+**Storm switches the headlights on too, at a much lower strength — and the low
+strength is the load-bearing part, not an afterthought.** The cone is ADDED to
+the light term (`ALBEDO = surface * (light + hl_color * headlight_lit(...))`),
+and that light term is not the same brightness on the two conditions: night's
+bake is near-black, while a storm's is a *dimmed day* (`storm_sun_energy_mult` is
+a fraction, not near-zero). Running night's full-strength cone on top of a
+storm's bake sums past 1 and clips the lit pool to white — the combined value is
+simply too bright. So the strength, alone among the cone's knobs, is
+**per-condition**: the table's `headlights` key names each condition's own
+GameConfig field, and everything else about the cone (colour, range, angles,
+offset, pitch, lamp separation) stays shared.
+
+Consequences worth knowing:
+
+- **A third condition wanting headlights is pure authoring** — add a strength
+  field and name it from the entry. No change to `HeadlightCone`, `world.gd`, the
+  shaders or the include.
+- **It costs a storm stage the per-frame push it did not pay before**: `_process`
+  now writes the cone uniforms every frame on a storm as well as a night stage.
+  That is nine global uniform writes, no geometry and no draw calls (the
+  fragment-side cone on terrain was already compiled into the shader on every
+  stage) — but a storm stage is no longer bit-for-bit identical to a dry one.
+- **It changes no lap time.** `headlights` is cosmetic, so it stays out of
+  `physics_fields()` and re-keys nothing; storm's rival field is unchanged.
 
 ### Unshaded means nothing dims for free — `weather_lit` is the rule
 
@@ -642,8 +686,15 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   would leave the stage permanently mis-lit) and re-arms its timer, driven with a
   synthetic lightning block so no authored brightness or interval is pinned.
 - `tests/headless/test_headlight_cone.gd` — the night condition and the cone,
-  behaviour only: the gate is the weather id (and a null config is not night);
-  `params` is empty off a night stage; the cone points and its apex offset
+  behaviour only: the gate is the weather table's `headlights` key, driven through
+  a synthetic table so no test depends on WHICH conditions light up — a condition
+  naming a strength field arms the cone and one naming none does not, a condition
+  authored at exactly 0 is off, two lit conditions each push their OWN strength
+  rather than one shared constant, and a null config is not a crash; every
+  `headlights` field the SHIPPED table names (iterated opaquely) is a real
+  `GameConfig` float in 0..1, and none of them reaches `physics_fields`; the two
+  dark conditions (night, storm) do arm the cone, with no assertion about how
+  brightly either burns; `params` is empty on a condition with no cone; the cone points and its apex offset
   rotates with the car; the outer edge is always wider than the inner one and
   the range is never zero however the two are authored; strength clamps to
   0..1; the night entry authors every `LOOK_KEYS` field and touches no physics

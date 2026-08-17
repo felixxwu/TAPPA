@@ -1,5 +1,5 @@
-// Fake headlight cone — the ONE source of truth, included by every shader that
-// can be lit at night (ps1_models, ps1_terrain_snow, ps1_models_lit,
+// Fake headlight cone — the ONE source of truth, included by every shader the
+// headlights can fall on (ps1_models, ps1_terrain_snow, ps1_models_lit,
 // billboard_opaque, tree_canopy). See todo/night-weather-and-headlights.md.
 //
 // WHY THIS EXISTS AT ALL: terrain shading is baked into vertex colours on the CPU
@@ -18,7 +18,7 @@
 // none, and cannot go stale mid-frame.
 //
 // LEAK WARNING: global shader parameters persist across scene changes. The podium
-// and HQ share these shaders, so night_amount MUST be reset to 0 when entering any
+// and HQ share these shaders, so headlight_amount MUST be reset to 0 when entering any
 // non-stage scene — see world.gd/HeadlightCone.reset().
 
 global uniform vec3 hl_pos;        // world-space cone apex, MIDPOINT between the lamps
@@ -29,7 +29,11 @@ global uniform float hl_range;     // metres to full falloff
 global uniform float hl_cos_inner; // cos(inner half-angle) — full brightness within
 global uniform float hl_cos_outer; // cos(outer half-angle) — zero beyond
 global uniform float hl_separation; // metres between the two lamps; 0 = a single cone
-global uniform float night_amount; // 0 = bit-for-bit no-op, 1 = full night
+// Cone strength, authored PER WEATHER CONDITION (WeatherLibrary's "headlights" key):
+// 0 = lights off and a bit-for-bit no-op, 1 = full strength as night runs it. A
+// condition whose world is only half-dark (storm) authors this low, because the cone
+// is ADDED to a light term that is already brighter than night's.
+global uniform float headlight_amount;
 
 // One cone, from one apex.
 float _headlight_cone_at(vec3 world_pos, vec3 apex) {
@@ -64,16 +68,16 @@ float _headlight_cone_at(vec3 world_pos, vec3 apex) {
 // draw — every fragment in every wavefront takes the same side, which is the cheap
 // case for a GPU branch.
 float headlight_lit(vec3 world_pos) {
-	if (night_amount <= 0.0) {
+	if (headlight_amount <= 0.0) {
 		return 0.0;
 	}
 	if (hl_separation <= 0.0) {
-		return _headlight_cone_at(world_pos, hl_pos) * night_amount;
+		return _headlight_cone_at(world_pos, hl_pos) * headlight_amount;
 	}
 	vec3 lamp_offset = hl_right * (hl_separation * 0.5);
 	float left = _headlight_cone_at(world_pos, hl_pos - lamp_offset);
 	float right = _headlight_cone_at(world_pos, hl_pos + lamp_offset);
-	return max(left, right) * night_amount;
+	return max(left, right) * headlight_amount;
 }
 
 // THE CONE MUST BE ADDITIVE, NEVER A MULTIPLY.
@@ -83,6 +87,12 @@ float headlight_lit(vec3 world_pos) {
 // light into COLOR.rgb at chunk generation. By the time any of this runs, the world
 // is ALREADY dark — so multiplying a near-zero light term by a bright cone factor
 // is still near zero. A multiplicative cone cannot re-light a darkened bake.
+//
+// The flip side, and why headlight_amount is per-condition: on a condition that only
+// DIMS the day (storm's sun_energy_mult is a fraction, not near-zero) the same additive
+// cone lands on a much brighter light term, so night's strength there sums past 1 and
+// the lit pool clips to white. The fix is authored, not shader-side — a lower
+// "headlights" value in that condition's table entry.
 //
 // Every shader here already separates surface from light (COLOR.rgb on terrain,
 // v_light in ps1_models_lit, v_tint in billboard_opaque), so the cone is always

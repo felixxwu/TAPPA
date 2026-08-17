@@ -548,9 +548,21 @@ gameplay event, not an effect — and purely cosmetic, so it may use `randf()`.
 
 ### The fake headlight cone (`shaders/headlight_cone.gdshaderinc`)
 
-The night weather condition darkens the whole world and re-lights a wedge in
-front of the player's car. Design doc: `todo/night-weather-and-headlights.md`;
-the weather-table half is in [weather.md](weather.md) → "Night".
+A dark weather condition re-lights a wedge in front of the player's car. Design
+doc: `todo/night-weather-and-headlights.md`; the weather-table half is in
+[weather.md](weather.md) → "Night".
+
+**Which conditions have it is authored, not hardcoded.** The cone is armed by the
+weather table's optional `headlights` key, naming the GameConfig field that holds
+its STRENGTH (0..1); an entry without the key runs with the lights off. Night and
+storm author it today. **The strength is the only per-condition part** — colour,
+range, angles, offset, pitch and lamp separation are shared `headlight_*` fields —
+and it is per-condition for a specific reason spelled out under "additive" below:
+the cone is ADDED to a light term whose brightness differs per condition, so
+night's strength on a storm's dimmed-day bake sums past 1 and clips the lit pool
+to white. Storm therefore authors a much lower value than night. Retuning the
+strengths, or adding the key to a third condition, is pure authoring — no driver,
+shader or test change.
 
 **Why it is not a light node.** Every material here is `unshaded`, so the engine
 runs no lighting pass at all — a `SpotLight3D` would have literally zero effect
@@ -568,11 +580,12 @@ design exists to rule out.
 global uniforms. No geometry, no draw calls, no per-frame CPU work beyond one
 uniform push. The include declares the uniforms (`hl_pos`, `hl_dir`, `hl_right`,
 `hl_color`, `hl_range`, `hl_cos_inner`, `hl_cos_outer`, `hl_separation`,
-`night_amount`) and two functions: `_headlight_cone_at(world_pos, apex)` — a
+`headlight_amount`) and two functions: `_headlight_cone_at(world_pos, apex)` — a
 `smoothstep` between the outer and inner cosines against `dot(dir, to_fragment)`,
 times a linear range attenuation — and `headlight_lit(world_pos)`, which combines
-the lamps and scales by `night_amount`. It is the ONE source of truth — the five
-shaders that can be lit at night all `#include` it rather than restating the maths.
+the lamps and scales by `headlight_amount`. It is the ONE source of truth — the
+five shaders the headlights can fall on all `#include` it rather than restating
+the maths.
 
 **Two lamps, combined with `max()` not a sum.** The pair shares aim, range, angles
 and colour; only the apex differs, offset along `hl_right` by half `hl_separation`.
@@ -609,9 +622,15 @@ from light (`COLOR.rgb` on terrain, `v_light` in `ps1_models_lit`, `v_tint` in
 ALBEDO = surface * (light + hl_color * headlight_lit(world_pos));
 ```
 
-At `night_amount == 0` the function returns exactly `0.0`, making every one of
+At `headlight_amount == 0` the function returns exactly `0.0`, making every one of
 these shaders a **bit-for-bit no-op** — which is what lets the cone ship inside
-shaders that every daytime stage, the podium and the HQ also use.
+shaders that every unlit stage, the podium and the HQ also use.
+
+**The flip side, and why the strength is per-condition:** a condition that only
+*dims* the day rather than blacking it out (storm — its `sun_energy_mult` is a
+fraction, not near-zero) lands the same additive cone on a much brighter light
+term. Night's strength there sums past 1 and clips the pool to white. The fix is
+authored — a lower `headlights` value on that entry — never a shader change.
 
 **Fragment on terrain, vertex everywhere else:**
 
@@ -637,20 +656,22 @@ mid-frame.
 
 **The scene-leak trap:** global shader parameters **persist across scene
 changes**, and the podium and HQ draw trees and ground with these same shaders.
-A night stage that did not clear up after itself would leave those screens in the
-dark. `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
+A stage that lit its headlights and did not clear up after itself would leave a
+stray cone burning on those screens. `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
 unconditionally — every exit path, regardless of destination — which a
 per-destination reset would not cover. Same reasoning as
 `_apply_deep_snow_ground` being called unconditionally each stage boot.
 
 **The driver** is `scripts/headlight_cone.gd` (`class_name HeadlightCone`), all
-statics: `is_night(cfg)` gates on the weather id; `params(cfg, xform)` returns
+statics: `amount(cfg)` is the live condition's strength straight out of the
+table and `has_headlights(cfg)` is that being above zero — the gate is authored
+data, so no consumer tests `== WEATHER_x`; `params(cfg, xform)` returns
 the name→value dictionary (split out from the push so the maths is testable
 without a live `RenderingServer`, and so it can force the outer half-angle
 strictly wider than the inner one however the two are authored); `push()` is
-pure transport; `reset()` zeroes `night_amount`. `world.gd::_process` calls
-`push()` once per frame with `$Car.global_transform` and early-outs off a night
-stage, and `world.gd::_ready` seeds it once so the opening frame is already
+pure transport; `reset()` zeroes `headlight_amount`. `world.gd::_process` calls
+`push()` once per frame with `$Car.global_transform` and early-outs on a
+condition that authors no cone, and `world.gd::_ready` seeds it once so the opening frame is already
 correct rather than dark for a tick.
 
 **Not yet verified on a real GPU.** Headless tests confirm the shaders parse and

@@ -45,6 +45,27 @@ func test_dry_constructs_nothing() -> void:
 	assert_true((dry.get("look", {}) as Dictionary).is_empty(), "dry authors no look block")
 	assert_true((dry.get("road_tint", {}) as Dictionary).is_empty(), "dry tints no road")
 	assert_eq(String(dry.get("particles", "")), "", "dry spawns no particle field")
+	assert_eq(WeatherLibrary.headlight_amount(GameConfig.new(), WeatherLibrary.DEFAULT_ID), 0.0,
+		"and switches no headlights on")
+
+
+func test_headlight_amount_reads_the_config_field_the_entry_names() -> void:
+	# Same contract as grip_mult: the entry NAMES a field, the value lives in the
+	# config. A condition naming none is exactly 0 — lights off — which is what makes
+	# the cone a bit-for-bit no-op in the shaders rather than something to branch on.
+	WeatherLibrary.override_for_test([
+		{"id": "dry"},
+		{"id": "murk", "headlights": "storm_headlight_amount"},
+	] as Array[Dictionary])
+	var cfg := GameConfig.new()
+	cfg.storm_headlight_amount = 0.4
+	assert_almost_eq(WeatherLibrary.headlight_amount(cfg, "murk"), 0.4, 0.001,
+		"the strength comes from the named config field")
+	assert_eq(WeatherLibrary.headlight_amount(cfg, "dry"), 0.0,
+		"a condition naming no field runs with the lights off")
+	cfg.storm_headlight_amount = 3.0
+	assert_eq(WeatherLibrary.headlight_amount(cfg, "murk"), 1.0,
+		"and an over-bright value clamps rather than blowing the light term out")
 
 
 # --- the config-field contract -----------------------------------------------
@@ -73,8 +94,9 @@ func test_config_fields_lists_every_field_an_entry_references() -> void:
 			"fog_density_mult": "fd", "fog_sky_affect": "fs",
 		},
 		"road_tint": {"amount": "rt", "color": "rc"},
+		"headlights": "hl",
 	})
-	for expected in ["g", "c", "w", "bg", "sky", "sun", "fd", "fs", "rt", "rc"]:
+	for expected in ["g", "c", "w", "bg", "sky", "sun", "fd", "fs", "rt", "rc", "hl"]:
 		assert_true(fields.has(expected), "%s is reported as a config field" % expected)
 	assert_false(fields.has("rain"), "the particle KIND is not a config field")
 

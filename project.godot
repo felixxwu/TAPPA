@@ -274,7 +274,7 @@ hl_cos_outer={
 "type": "float",
 "value": 0.89
 }
-night_amount={
+headlight_amount={
 "type": "float",
 "value": 0.0
 }

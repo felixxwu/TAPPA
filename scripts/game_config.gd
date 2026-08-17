@@ -1617,6 +1617,14 @@ func has_nitrous() -> bool:
 @export_range(1.0, 300.0) var storm_lightning_interval_min_s := 18.0
 ## Longest gap between flashes, in seconds. Infrequent on purpose.
 @export_range(1.0, 300.0) var storm_lightning_interval_max_s := 45.0
+## Headlight-cone strength on a storm stage, 0..1 — the same knob night uses
+## (night_headlight_amount), named by the storm entry's `headlights` key. A storm is
+## dark enough that a driver would switch the lights on, but it is NOWHERE NEAR as
+## dark as night: storm_sun_energy_mult leaves a real daytime bake underneath, and the
+## cone is ADDED on top of that light term, so pushing this toward 1.0 blows the lit
+## pool out to white. Keep it well below the night value — the cone should read as
+## headlights visible through the murk, not as a second sun.
+@export_range(0.0, 1.0) var storm_headlight_amount := 0.35
 
 ## SNOWFALL (features/weather.md). Prefixed `snowfall_` rather than `snow_` so it
 ## cannot collide with the snow REGION's `snow_*_grip` block above — the same
@@ -1657,8 +1665,10 @@ func has_nitrous() -> bool:
 #   1. The LOOK block below — the same five environment knobs every other condition
 #      authors. The darkening comes entirely from night_sun_energy_mult, which scales
 #      the sun the terrain bakes into its vertex colours; no shader darkens anything.
-#   2. The CONE fields — pushed to the shaders as global shader parameters, NOT read
-#      out of the weather table.
+#   2. The CONE fields — pushed to the shaders as global shader parameters. Its SHAPE
+#      (colour, range, angles, offset, pitch, separation) is shared by every condition
+#      that switches the lights on and is not in the weather table at all; only its
+#      STRENGTH is per-condition, named by the table's `headlights` key.
 # Night authors no grip multiplier and no wind: it is purely a look, so it changes no
 # lap time. See features/weather.md.
 ## Near-black background / fog / horizon colour on a night stage. Not pure black —
@@ -1697,16 +1707,22 @@ func has_nitrous() -> bool:
 ## the player into the next home stage.
 @export_file("*.jpg", "*.png") var default_sky_panorama := "res://textures/sky_field.png"
 
-# Headlight cone. These do NOT go through the weather table: they are uploaded once
-# per frame as GLOBAL SHADER PARAMETERS (hl_pos / hl_dir / night_amount and friends)
-# and evaluated analytically in the shaders — there is no light node anywhere in this
-# renderer (features/rendering.md).
-## Master switch and strength of the cone, 0..1. At exactly 0 the shaders' `lit` term
-## is exactly 0, making every night uniform a BIT-FOR-BIT NO-OP — which is what lets
-## the cone ship in shaders that every daytime stage, the podium and the HQ also use.
-## The per-frame driver early-outs on 0, and it is reset to 0 unconditionally when
-## entering any non-stage scene (shader globals persist across scene changes).
-@export_range(0.0, 1.0) var night_amount := 1.0
+# Headlight cone. The SHAPE fields below do NOT go through the weather table: they are
+# uploaded once per frame as GLOBAL SHADER PARAMETERS (hl_pos / hl_dir /
+# headlight_amount and friends) and evaluated analytically in the shaders — there is no
+# light node anywhere in this renderer (features/rendering.md). The cone's STRENGTH is
+# the exception: it is per-condition, so each condition that switches the lights on
+# names its own field through the table's `headlights` key (night_headlight_amount
+# below, storm_headlight_amount above).
+## Headlight-cone strength on a NIGHT stage, 0..1 — named by the night entry's
+## `headlights` key. Night is the darkest condition in the table, so this is the top
+## of the range; every other condition that lights up authors a lower value. At
+## exactly 0 the shaders' `lit` term is exactly 0, making every cone uniform a
+## BIT-FOR-BIT NO-OP — which is what lets the cone ship in shaders that every unlit
+## stage, the podium and the HQ also use. The per-frame driver early-outs when no
+## condition authors a cone at all, and the strength is reset to 0 unconditionally
+## when entering any non-stage scene (shader globals persist across scene changes).
+@export_range(0.0, 1.0) var night_headlight_amount := 1.0
 ## Colour the cone ADDS to the light term (ALBEDO = surface * (baked + this * lit)).
 ## Additive, never a multiply: the bake is already near-black, so a multiplicative
 ## cone could not re-light it. Warm-white reads as headlights against the cool dark.

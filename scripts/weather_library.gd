@@ -49,6 +49,15 @@ extends RefCounted
 #                              WIND_KEYS). Omitted => no wind force at all. Read by
 #                              the crosswind force in car.gd; folded into
 #                              physics_fields() because it changes how the car drives.
+#   "headlights"     String  — GameConfig field holding the STRENGTH (0..1) of the fake
+#                              headlight cone this condition switches on. Omitted => the
+#                              car's lights are off and every cone uniform is a
+#                              bit-for-bit no-op. The cone's SHAPE (colour, range,
+#                              angles, offset, pitch, separation) is shared and lives in
+#                              the headlight_* config block, NOT here — only how hard it
+#                              burns is per-condition, because the cone is ADDED to a
+#                              light term whose brightness differs per condition. Read by
+#                              HeadlightCone; cosmetic, so it is not in physics_fields().
 #   "lightning"      Dict    — an occasional cosmetic flash, mapping "flash"/
 #                              "duration"/"interval_min"/"interval_max" to GameConfig
 #                              fields (see LIGHTNING_KEYS). Omitted => no flashes.
@@ -173,6 +182,14 @@ const CONDITIONS: Array[Dictionary] = [
 			"interval_min": "storm_lightning_interval_min_s",
 			"interval_max": "storm_lightning_interval_max_s",
 		},
+		# A storm is dark enough that the car's lights come on — the second condition to
+		# author a cone, and the reason the cone's strength is a table key rather than a
+		# night-only constant. It is authored WELL BELOW night's: the cone is ADDED to
+		# the light term, and a storm's bake is a dimmed DAY rather than night's
+		# near-black, so night's strength on top of it would blow the lit pool out to
+		# white. Everything else about the cone (colour, range, angles, aim, separation)
+		# is shared with night.
+		"headlights": "storm_headlight_amount",
 	},
 	# Snowfall. Authored onto the alpine region's events (features/snow-region.md); the
 	# same placement convention sandstorm follows for the desert.
@@ -214,9 +231,12 @@ const CONDITIONS: Array[Dictionary] = [
 	# nothing in physics_fields(), so it changes no lap time, needs no rebalancing and
 	# never invalidates the opponent cache.
 	#
-	# The cone's own fields (night_amount, headlight_*) are deliberately NOT named here:
-	# they are not part of the weather table's shape — they are driven per-frame as
-	# shader globals, not read out of an entry like a look key.
+	# The cone's SHAPE fields (headlight_*) are deliberately NOT named here: they are
+	# shared by every condition that switches the lights on and are driven per-frame as
+	# shader globals, not read out of an entry like a look key. Its STRENGTH is the one
+	# per-condition part, so that — and only that — is named by "headlights" below.
+	# Night sits at the top of the range because it is the darkest condition in the
+	# table; storm authors the same key far lower.
 	#
 	# Keep night_fog_density_mult LOW: fog is environment-side, so the cone cannot light
 	# it, and thick haze at night reads as a flat grey sheet over a lit pool.
@@ -232,6 +252,7 @@ const CONDITIONS: Array[Dictionary] = [
 		# No "color": a night road is DARKENED (albedo × amount) like rain's, not tinted
 		# toward a new colour the way dust or settled snow is.
 		"road_tint": {"amount": "night_road_darken"},
+		"headlights": "night_headlight_amount",
 		# Names a GameConfig field holding a sky path. OPTIONAL and unique to night so
 		# far: no other condition changes the sky, because rain and dust are things
 		# happening UNDER the region's sky while night replaces it outright. Applied
@@ -293,12 +314,25 @@ static func grip_mult(cfg: GameConfig, id: String) -> float:
 	return float(cfg.get(field))
 
 
+# The headlight-cone STRENGTH for a condition, read out of `cfg` and clamped to 0..1.
+# A condition that authors no "headlights" field returns EXACTLY 0.0 — the car's lights
+# are off — which is what makes every cone uniform a bit-for-bit no-op in the shaders
+# and lets HeadlightCone gate on this one number rather than on a weather id.
+static func headlight_amount(cfg: GameConfig, id: String) -> float:
+	if cfg == null:
+		return 0.0
+	var field := String(by_id(id).get("headlights", ""))
+	if field == "":
+		return 0.0
+	return clampf(float(cfg.get(field)), 0.0, 1.0)
+
+
 # Every GameConfig field name this entry references, in a stable order — the entry's
 # full surface, used for validation and by tests. NOT what keys the opponent cache:
 # see physics_fields() for that, and the rule it states.
 static func config_fields(entry: Dictionary) -> Array:
 	var out: Array = []
-	for key in ["grip_mult", "particle_count", "wind_dir", "particle_speed"]:
+	for key in ["grip_mult", "particle_count", "wind_dir", "particle_speed", "headlights"]:
 		var field := String(entry.get(key, ""))
 		if field != "":
 			out.append(field)

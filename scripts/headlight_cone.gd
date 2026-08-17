@@ -1,10 +1,17 @@
 class_name HeadlightCone
 extends RefCounted
 
-# Drives the fake headlight cone for the night weather type
-# (todo/night-weather-and-headlights.md). Pure transport: it converts the car's
-# pose plus the authored GameConfig knobs into the global shader uniforms that
+# Drives the fake headlight cone for the weather conditions that switch the car's
+# lights on (todo/night-weather-and-headlights.md). Pure transport: it converts the
+# car's pose plus the authored GameConfig knobs into the global shader uniforms that
 # shaders/headlight_cone.gdshaderinc reads, and nothing else.
+#
+# WHICH CONDITIONS light up is NOT decided here — it is the weather table's
+# "headlights" key (WeatherLibrary.headlight_amount), so a condition switching the
+# lights on is pure authoring, exactly like its look block or its road tint. Night
+# authors full strength; storm authors much less, because a storm's world is a dimmed
+# DAY and the cone is ADDED on top of that light term, so night's strength there would
+# blow the lit pool out to white.
 #
 # WHY GLOBALS, not material parameters: the materials that read the cone are built
 # in five different scripts (terrain_manager, billboard_field, foliage, sign_field,
@@ -14,8 +21,8 @@ extends RefCounted
 # a performance one — globals cannot go stale when a chunk appears mid-frame.
 #
 # THE GLOBALS PERSIST ACROSS SCENES. That is the trap this class exists to guard:
-# the podium and the HQ render trees and ground with the same shaders, so a night
-# stage that did not clear up after itself would leave them in the dark. world.gd
+# the podium and the HQ render trees and ground with the same shaders, so a lit
+# stage that did not clear up after itself would leave a stray cone burning there. world.gd
 # calls reset() from _exit_tree(), which covers every exit path regardless of
 # destination.
 
@@ -29,22 +36,34 @@ const G_COLOR := "hl_color"
 const G_RANGE := "hl_range"
 const G_COS_INNER := "hl_cos_inner"
 const G_COS_OUTER := "hl_cos_outer"
-const G_AMOUNT := "night_amount"
+const G_AMOUNT := "headlight_amount"
 
 
-# True when the stage's weather is the night condition. The authored
-# cfg.night_amount is the cone's STRENGTH, not the gate — it sits at 1.0 in
-# game_config.tres — so the weather id is what decides whether the cone exists.
-static func is_night(cfg: GameConfig) -> bool:
-	return cfg != null and cfg.weather == RallyLibrary.WEATHER_NIGHT
+# The cone's strength for the stage's live condition, 0..1, straight out of the weather
+# table. 0 means the lights are off (no condition here authors a cone, or none is
+# seated at all), and is what every other function gates on.
+static func amount(cfg: GameConfig) -> float:
+	if cfg == null:
+		return 0.0
+	return WeatherLibrary.headlight_amount(cfg, cfg.weather)
+
+
+# True when the stage's weather switches the car's headlights on. Deliberately reads
+# the AMOUNT rather than testing a weather id: which conditions light up is authored in
+# the table, so adding a third one needs no change here (and none of the "no consumer
+# tests == WEATHER_x" rule is broken). A condition authored at exactly 0 is off, which
+# is the honest answer — the shaders would render nothing either way.
+static func has_headlights(cfg: GameConfig) -> bool:
+	return amount(cfg) > 0.0
 
 
 # The cone's maths, as a plain name→value dictionary. Split out from push() so it
 # can be tested without a live RenderingServer (headless returns nothing useful for
 # global parameter reads) — push() is then pure transport with no logic to get wrong.
-# Returns an EMPTY dictionary off a night stage.
+# Returns an EMPTY dictionary on a stage whose condition authors no cone.
 static func params(cfg: GameConfig, xform: Transform3D, car_width_m: float = 0.0) -> Dictionary:
-	if not is_night(cfg):
+	var strength := amount(cfg)
+	if strength <= 0.0:
 		return {}
 	var basis := xform.basis
 	var forward := -basis.z.normalized()
@@ -80,7 +99,7 @@ static func params(cfg: GameConfig, xform: Transform3D, car_width_m: float = 0.0
 		G_RANGE: maxf(cfg.headlight_range_m, 0.001),
 		G_COS_INNER: cos(deg_to_rad(inner_deg)),
 		G_COS_OUTER: cos(deg_to_rad(outer_deg)),
-		G_AMOUNT: clampf(cfg.night_amount, 0.0, 1.0),
+		G_AMOUNT: strength,
 	}
 
 
@@ -95,7 +114,7 @@ static func push(cfg: GameConfig, xform: Transform3D, car_width_m: float = 0.0) 
 		RenderingServer.global_shader_parameter_set(name, vals[name])
 
 
-# Zero the cone. night_amount == 0 makes headlight_lit() return exactly 0.0, so
+# Zero the cone. headlight_amount == 0 makes headlight_lit() return exactly 0.0, so
 # every shader that includes the cone is a bit-for-bit no-op again. Safe to call
 # when no cone was ever pushed, and safe to call repeatedly.
 static func reset() -> void:

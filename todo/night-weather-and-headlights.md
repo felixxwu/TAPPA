@@ -14,6 +14,15 @@
 > deliberate — it is the only one running `ps1_terrain_snow`, so it exercises the
 > variant shader's copy of the cone.
 >
+> **Since superseded in two places** (2026-08-17), so read the sketches below as
+> history, not as current code: the shader global once called `night_amount` is now
+> `headlight_amount`, and the cone is no longer night-only — the weather table's
+> optional `headlights` key names each condition's own strength field, with STORM
+> authoring one far below night's (the cone is additive, so night's strength on a
+> storm's dimmed-day bake clips the lit pool to white). The gate is that authored
+> strength, not a weather id: `HeadlightCone.has_headlights` replaced `is_night`.
+> See features/weather.md → "Headlights on more than night".
+>
 > **Not yet verified on a real GPU.** Headless tests confirm the shaders parse
 > and the maths is right, but whether `RenderingServer.global_shader_parameter_set`
 > actually reaches shaders under this project's `gl_compatibility` renderer has NOT

@@ -1,14 +1,19 @@
 extends GutTest
-# The fake headlight cone for the night weather type (scripts/headlight_cone.gd,
+# The fake headlight cone (scripts/headlight_cone.gd,
 # shaders/headlight_cone.gdshaderinc). See todo/night-weather-and-headlights.md and
 # features/weather.md.
 #
 # BEHAVIOUR ONLY. Nothing here pins an authored angle, range, colour or strength —
 # a designer retuning headlight_outer_deg or headlight_range_m in the inspector must
-# not break a single assertion. What IS pinned is the structure that has to hold for
-# any values: the gate is the weather id, the cone points where the car points, the
-# outer edge is always wider than the inner one, and off a night stage the whole
-# thing is an exact no-op.
+# not break a single assertion, and neither must moving the cone onto a further
+# condition or retuning how hard any of them burns. What IS pinned is the structure
+# that has to hold for any values: the gate is the weather table's "headlights" key,
+# the cone points where the car points, the outer edge is always wider than the inner
+# one, and on a condition that authors no cone the whole thing is an exact no-op.
+
+
+func after_each() -> void:
+	WeatherLibrary.reset()
 
 
 func _night_cfg() -> GameConfig:
@@ -17,31 +22,94 @@ func _night_cfg() -> GameConfig:
 	return cfg
 
 
+# A synthetic two-condition table: one that switches the lights on and one that does
+# not, both otherwise featureless. Used instead of the shipped conditions so nothing
+# here depends on WHICH conditions are authored to light up, only on the mechanism.
+func _install_synthetic_table(strength_field: String) -> void:
+	var conditions: Array[Dictionary] = [
+		{"id": "dry"},
+		{"id": "lit", "headlights": strength_field},
+	]
+	WeatherLibrary.override_for_test(conditions)
+
+
 # --- the gate ----------------------------------------------------------------
 
-func test_only_the_night_condition_arms_the_cone() -> void:
-	# The gate is the WEATHER ID, not cfg.night_amount — night_amount is authored at
-	# full strength in game_config.tres and describes how bright the cone is, not
-	# whether there is one. Gating on it would light every dry stage.
+func test_the_cone_is_armed_by_the_weather_tables_headlights_key() -> void:
+	# The gate is authored DATA, not a hardcoded weather id: a condition that names a
+	# strength field lights up and one that does not stays dark, whatever those
+	# conditions are called. This is what let storm join night without touching the
+	# driver — and it is the "no consumer tests == WEATHER_x" rule applied to the cone.
+	_install_synthetic_table("night_headlight_amount")
 	var cfg := GameConfig.new()
-	assert_false(HeadlightCone.is_night(cfg), "a default (dry) config is not night")
-	cfg.weather = RallyLibrary.WEATHER_NIGHT
-	assert_true(HeadlightCone.is_night(cfg), "the night condition is night")
-	cfg.weather = RallyLibrary.WEATHER_RAIN
-	assert_false(HeadlightCone.is_night(cfg), "another condition is not night")
+	cfg.night_headlight_amount = 1.0
+	cfg.weather = "dry"
+	assert_false(HeadlightCone.has_headlights(cfg), "a condition naming no strength is dark")
+	cfg.weather = "lit"
+	assert_true(HeadlightCone.has_headlights(cfg), "a condition naming one lights up")
 
 
-func test_a_null_config_is_not_night() -> void:
+func test_a_condition_authored_at_zero_strength_is_off() -> void:
+	# Strength doubles as the switch, in the table and in the shader alike: 0 makes
+	# headlight_lit() return exactly 0.0, so arming the cone anyway would push uniforms
+	# every frame to draw nothing.
+	_install_synthetic_table("night_headlight_amount")
+	var cfg := GameConfig.new()
+	cfg.weather = "lit"
+	cfg.night_headlight_amount = 0.0
+	assert_false(HeadlightCone.has_headlights(cfg), "zero strength means the lights are off")
+	assert_true(HeadlightCone.params(cfg, Transform3D.IDENTITY).is_empty(),
+		"and no cone parameters are produced")
+
+
+func test_the_pushed_strength_is_the_one_the_condition_authors() -> void:
+	# Two conditions may light up at DIFFERENT strengths (night is authored bright, a
+	# storm's half-dark day much dimmer), so the amount must come from the live
+	# condition's own field rather than one shared constant.
+	var conditions: Array[Dictionary] = [
+		{"id": "bright", "headlights": "night_headlight_amount"},
+		{"id": "dim", "headlights": "storm_headlight_amount"},
+	]
+	WeatherLibrary.override_for_test(conditions)
+	var cfg := GameConfig.new()
+	cfg.night_headlight_amount = 0.9
+	cfg.storm_headlight_amount = 0.2
+	cfg.weather = "bright"
+	assert_almost_eq(HeadlightCone.params(cfg, Transform3D.IDENTITY)[HeadlightCone.G_AMOUNT] as float,
+		0.9, 0.001, "the bright condition pushes its own strength")
+	cfg.weather = "dim"
+	assert_almost_eq(HeadlightCone.params(cfg, Transform3D.IDENTITY)[HeadlightCone.G_AMOUNT] as float,
+		0.2, 0.001, "and the dim one pushes its own, not the other's")
+
+
+func test_a_null_config_has_no_headlights() -> void:
 	# _process runs before Config.data is guaranteed seated on some boot paths.
-	assert_false(HeadlightCone.is_night(null), "no config -> no cone, not a crash")
+	assert_false(HeadlightCone.has_headlights(null), "no config -> no cone, not a crash")
+	assert_eq(HeadlightCone.amount(null), 0.0, "and no strength to push")
 
 
-func test_params_are_empty_off_a_night_stage() -> void:
+func test_params_are_empty_on_a_condition_with_no_cone() -> void:
 	# An empty dictionary is what makes push() fall through to reset(), which is the
-	# mechanism that keeps every non-night stage bit-for-bit unchanged.
+	# mechanism that keeps every unlit stage bit-for-bit unchanged.
 	var cfg := GameConfig.new()
 	assert_true(HeadlightCone.params(cfg, Transform3D.IDENTITY).is_empty(),
 		"a dry stage produces no cone parameters at all")
+
+
+func test_every_authored_headlight_strength_is_a_real_unit_field() -> void:
+	# The shipped table iterated as OPAQUE input — no condition named, no value pinned.
+	# A typo'd field name would make cfg.get() return null and silently disarm the cone
+	# on that condition; a strength outside 0..1 would clip the lit pool to white.
+	var cfg := GameConfig.new()
+	for entry in WeatherLibrary.all():
+		if not entry.has("headlights"):
+			continue
+		var field := String(entry["headlights"])
+		var value = cfg.get(field)
+		assert_true(value is float,
+			"'%s' names a real float field '%s'" % [String(entry.get("id", "")), field])
+		assert_between(float(value), 0.0, 1.0,
+			"'%s' authors a strength in the unit range" % String(entry.get("id", "")))
 
 
 # --- the cone follows the car ------------------------------------------------
@@ -198,13 +266,15 @@ func test_the_range_is_never_zero() -> void:
 
 
 func test_strength_is_clamped_to_unit_range() -> void:
+	# The shader multiplies the cone by this and adds the result to the light term, so
+	# an over-1 value would clip the lit pool to white rather than simply looking bright.
 	var cfg := _night_cfg()
-	cfg.night_amount = 5.0
+	cfg.night_headlight_amount = 5.0
 	assert_eq(HeadlightCone.params(cfg, Transform3D.IDENTITY)[HeadlightCone.G_AMOUNT], 1.0,
 		"over-bright authoring clamps to 1")
-	cfg.night_amount = -1.0
-	assert_eq(HeadlightCone.params(cfg, Transform3D.IDENTITY)[HeadlightCone.G_AMOUNT], 0.0,
-		"negative authoring clamps to 0")
+	cfg.night_headlight_amount = -1.0
+	assert_true(HeadlightCone.params(cfg, Transform3D.IDENTITY).is_empty(),
+		"negative authoring reads as lights-off, not as a negative cone")
 
 
 # --- the weather entry -------------------------------------------------------
@@ -232,6 +302,27 @@ func test_night_is_purely_a_look_and_never_touches_physics() -> void:
 	var cfg := GameConfig.new()
 	assert_eq(WeatherLibrary.grip_mult(cfg, RallyLibrary.WEATHER_NIGHT), 1.0,
 		"grip on a night stage is exactly dry")
+
+
+func test_the_dark_conditions_switch_the_headlights_on() -> void:
+	# The two conditions dark enough for a driver to reach for the lights. Structure
+	# only: that each arms the cone at all, never how brightly — the strengths differ
+	# (each condition's world is dark to a different degree) and are inspector tuning.
+	for id in [RallyLibrary.WEATHER_NIGHT, RallyLibrary.WEATHER_STORM]:
+		var cfg := GameConfig.new()
+		cfg.weather = id
+		assert_true(HeadlightCone.has_headlights(cfg), "'%s' switches the lights on" % id)
+
+
+func test_the_headlight_cone_never_touches_physics() -> void:
+	# The cone is a look, on every condition that has one: it re-lights a wedge and
+	# changes no grip and no force, so it must never reach physics_fields() and re-key
+	# the opponent cache. Nothing about switching the lights on rebalances a stage.
+	for entry in WeatherLibrary.all():
+		if not entry.has("headlights"):
+			continue
+		assert_false(WeatherLibrary.physics_fields(entry).has(String(entry["headlights"])),
+			"'%s' keeps its cone out of the physics fields" % String(entry.get("id", "")))
 
 
 # --- the night sky override ---------------------------------------------------

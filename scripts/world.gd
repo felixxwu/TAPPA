@@ -174,8 +174,8 @@ func _ready() -> void:
 	# still well before the initial terrain build in _generate_track(), so the darker
 	# sun/ambient is what gets baked into the first chunks' vertex colours.
 	_apply_weather_look(cfg)
-	# Seed the headlight cone for the first frame (a no-op reset off a night stage),
-	# so the opening frame is already correct rather than dark for one tick.
+	# Seed the headlight cone for the first frame (a no-op reset on a condition that
+	# authors none), so the opening frame is already correct rather than dark for a tick.
 	HeadlightCone.push(cfg, $Car.global_transform, $Car.half_width() * 2.0)
 	# Terrain LOD tunables — also before the precompute (LOD meshes + skirt are
 	# prebaked in cache_chunk) and the initial build.
@@ -2224,20 +2224,20 @@ func _current_region_look() -> Dictionary:
 # every scene instantiation in the process — exactly the trap that once left the ground
 # at rain_road_darken². Without the else-branch restoring the base shader, one snow
 # stage would leave every later stage's ground floating in mid-air.
-# The headlight cone follows the car every frame on a night stage. This is the only
-# per-frame work the night feature does: three-to-seven global uniform writes, no
-# geometry, no draw calls. Off a night stage push() early-outs into a reset, so the
-# cost on every other stage is one branch.
+# The headlight cone follows the car every frame on a stage whose weather switches the
+# lights on (night, storm). This is the only per-frame work the feature does:
+# three-to-seven global uniform writes, no geometry, no draw calls. Elsewhere push()
+# early-outs into a reset, so the cost on every other stage is one branch.
 func _process(_delta: float) -> void:
-	if not HeadlightCone.is_night(Config.data):
+	if not HeadlightCone.has_headlights(Config.data):
 		return
 	HeadlightCone.push(Config.data, $Car.global_transform, $Car.half_width() * 2.0)
 
 
 # Global shader parameters PERSIST ACROSS SCENE CHANGES, and the podium and HQ draw
-# trees and ground with the same shaders — so a night stage must clear up after
-# itself or it leaves those screens in the dark. _exit_tree covers every exit path
-# regardless of destination, which a per-destination reset would not.
+# trees and ground with the same shaders — so a stage that lit its headlights must
+# clear up after itself or it leaves a stray cone burning there. _exit_tree covers
+# every exit path regardless of destination, which a per-destination reset would not.
 func _exit_tree() -> void:
 	HeadlightCone.reset()
 	# Same reasoning, different mechanism: weather_sun_mult is a runtime value on the
