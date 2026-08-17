@@ -747,10 +747,13 @@ func test_a_hypothetical_build_parks_the_slots_other_parts() -> void:
 # --- The weight slot reads as a number, not a name ----------------------------
 
 func test_weight_options_read_as_a_signed_mass_delta() -> void:
-	# The weight slot is really one number, on a tile that must fit three across a phone,
-	# so its rows state the kilos rather than "Heavy Ballast" / "Weight Reduction". The
-	# figures are DERIVED from each part's mass multiplier against this car, so nothing
-	# here pins an authored value — only the sign and the format.
+	# The weight slot is really one number, so its rows state the kilos rather than the
+	# part's authored name. The POPUP row carries the unit ("-200 kg" — a bare number means
+	# nothing to a player who does not already know this slot deals in mass); the TILE drops
+	# it, because a tile has to fit three across a phone on one line.
+	#
+	# The figures are DERIVED from each part's mass multiplier against this car, so nothing
+	# here pins an authored value — only the sign, the format and the unit.
 	var owned := _car()
 	var g := _grid(owned)
 	var seen := 0
@@ -762,15 +765,20 @@ func test_weight_options_read_as_a_signed_mass_delta() -> void:
 		var label := String(opt.get("label", ""))
 		assert_true(label.begins_with("+") or label.begins_with("-"),
 			"a weight row is a signed number, got '%s'" % label)
-		assert_true(label.substr(1).is_valid_int(),
-			"...and nothing but the number, got '%s'" % label)
+		assert_true(label.ends_with(" kg"), "...with its unit, got '%s'" % label)
+		var tile := String(opt.get("tile_label", ""))
+		assert_eq(tile + " kg", label,
+			"the tile shows the same number WITHOUT the unit, got tile '%s' vs row '%s'"
+				% [tile, label])
+		assert_true(tile.substr(1).is_valid_int(),
+			"...and the tile is nothing but the number, got '%s'" % tile)
 		# Sign follows the part: a multiplier above 1 adds mass, below 1 sheds it.
 		var mult := float((UpgradeLibrary.by_id(id).get("effect", {}) as Dictionary)
 			.get("mass_mult", 1.0))
 		assert_eq(label.begins_with("+"), mult > 1.0,
 			"'%s' has the sign its multiplier implies" % label)
 		seen += 1
-	assert_gt(seen, 1, "setup: the weight slot offered more than one part")
+	assert_gt(seen, 0, "setup: the weight slot offered at least one part")
 
 
 func test_a_weight_delta_is_measured_against_the_empty_slot() -> void:
@@ -897,3 +905,41 @@ func test_every_catalogue_part_is_reachable_from_its_slots_picker() -> void:
 		assert_true(found,
 			"part '%s' is authored in slot '%s' but that slot's picker never offers it, so "
 			% [def.get("id", "?"), slot] + "no car could ever acquire it")
+
+
+# An option the player cannot take says "Locked" — never a price. A greyed row quoting
+# "2 STARS" reads as a price tag on something buyable (it is the same shape the affordable
+# rows carry beside the star icon) when it actually means "you cannot take this". One word
+# for every unavailable option, whatever the reason.
+func test_an_unaffordable_option_reads_as_locked_not_as_a_price() -> void:
+	var owned := _car()
+	_save.profile["stars_earned"] = 0   # afford nothing at all
+	var quoted_a_price := false
+	var saw_locked := false
+	for slot in UpgradeOptions.grid_slots():
+		if slot == UpgradeOptions.SLOT_ENGINE or slot == UpgradeOptions.SLOT_TUNE:
+			continue
+		for opt in UpgradeOptions.options_for(_save.get_car(int(owned["instance_id"])), slot):
+			var reason := String(opt.get("locked_reason", ""))
+			if reason == "":
+				continue
+			saw_locked = true
+			# Derived, not pinned: the reason must not contain the figure the pricing API
+			# would quote for this option.
+			if reason.contains(str(Save.part_price(String(opt.get("id", ""))))):
+				quoted_a_price = true
+	assert_true(saw_locked, "setup: with no stars, something is unavailable")
+	assert_false(quoted_a_price, "an unavailable row must not quote what it would cost")
+
+
+# Ballast (anything that ADDS mass) is gone from the shipped catalogue: entry is
+# categorical, so there is nothing to duck under by getting slower, and an option whose
+# whole effect is "make your car worse" is a row every player scrolls past. The `free` and
+# mass-adding BRANCHES survive, which is why the synthetic fx_ballast fixture remains.
+func test_the_shipped_catalogue_offers_no_mass_adding_part() -> void:
+	UpgradeFixtures.restore()   # the real catalogue, not the synthetic roster
+	for def in UpgradeLibrary.all():
+		var mult := float((def.get("effect", {}) as Dictionary).get("mass_mult", 1.0))
+		assert_lte(mult, 1.0,
+			"'%s' adds mass; ballast was retired from the shipped catalogue" % def.get("id", "?"))
+	UpgradeFixtures.install()

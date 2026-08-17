@@ -19,11 +19,10 @@ reverting a car to its own stock engine.
 through the exchange (no repair coupling). **Engine detune** is a per-car tuning
 slider (0–100%) that directly scales the fitted engine's torque, letting a car
 be deliberately hobbled (e.g. to fit a rally's power-to-weight band) without
-touching its parts. Detune is not the only power-to-weight lever: the weight
-slot's **free ballast** parts (`ballast_large` / `ballast_small` — see
-[upgrade-catalogue.md](upgrade-catalogue.md)) add mass to drop p/w the other way,
-so a car can qualify for a lower class by adding weight as well as by cutting
-power.
+touching its parts. It is now the only DELIBERATE power-to-weight *reduction* lever: the
+weight slot's free ballast parts, which added mass to drop p/w the other way, are retired
+(see [upgrade-catalogue.md](upgrade-catalogue.md) → the `weight` slot). Otherwise the
+player sheds power by stripping parts.
 
 **Capability gate.** Swapping is unavailable until the engine-swap special is won
 (`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "front_runners"`, "Upgrade: Engine Swap" — the
@@ -348,8 +347,8 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   warning label, plain Start — saves overlay space); pressing Start pops a
   **"Too powerful" confirm** whose only route through is **Change Upgrades**
   (the other button is Cancel). It opens the gated `UpgradesGrid` popup where the
-  player sheds power for themselves — the `tune` tile's detune slider, the weight
-  slot's ballast, or stripping parts — and the popup's gated **Done** button
+  player sheds power for themselves — the `tune` tile's detune slider, or stripping
+  parts — and the popup's gated **Done** button
   refuses to close until the build is under the cap. That fix is an **ordinary
   garage edit and permanent** (it persists after the rally); there is **no**
   temporary, auto-reverted per-rally detune here any more. Once under the cap the

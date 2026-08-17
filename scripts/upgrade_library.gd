@@ -181,19 +181,16 @@ const UPGRADES: Array[Dictionary] = [
 		"consumable": false,
 		"effect": {"tire_grip_mult": 1.15},
 	},
-	# The "weight" slot is a p/w lever, not an earn-gated part row. The two BALLAST
-	# options add weight and are `free` (always selectable on every car, never drawn as
-	# a reward — see reward_system) so the player can shed p/w to enter a lower class;
-	# the LIGHTWEIGHT option removes weight and is the one earned reward-pool drop. The
-	# menu lists each weight part by its authored label (UpgradeOptions).
-	{
-		"id": "ballast_large", "name": "Heavy Ballast", "slot": "weight",
-		"consumable": false, "free": true, "effect": {"mass_mult": 1.5},
-	},
-	{
-		"id": "ballast_small", "name": "Light Ballast", "slot": "weight",
-		"consumable": false, "free": true, "effect": {"mass_mult": 1.2},
-	},
+	# The "weight" slot holds ONE part: the lightweight kit. It used to also carry two free
+	# BALLAST options that ADDED mass, so a player could shed power-to-weight to drop into a
+	# lower class. Entry is categorical now, so there is nothing to duck under by getting
+	# slower, and an option whose whole effect is "make your car worse" is a row every
+	# player scrolls past. Removed; a profile still carrying one is cleaned up on load by
+	# Save._prune_unknown_upgrades, which drops any installed id the catalogue no longer has.
+	#
+	# The `free` and `mass_mult > 1.0` BRANCHES survive (Auto still refuses to fit anything
+	# that adds mass, and a free part still installs without a purchase), so the synthetic
+	# fx_ballast in tests/headless/upgrade_fixtures.gd keeps covering them.
 	{
 		"id": "weight_reduction", "name": "Weight Reduction", "slot": "weight",
 		"consumable": false, "effect": {"mass_mult": 0.80},

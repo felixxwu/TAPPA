@@ -72,6 +72,33 @@ little smaller than the visible body and would otherwise be obscured by it. Dism
 the overlay restores the body by re-running the normal per-spec visibility
 (`_apply_model_visibility`). Wheels stay visible either way.
 
+## Adaptive-difficulty readout
+
+`hud.gd` → `_difficulty_label`, built by `_build_difficulty_label`, revealed by the **same
+H toggle** as the rest of the dev readout and sitting just under the seed line.
+
+Shows how far the rival field is currently pitched from "matched to the player"
+([adaptive-difficulty.md](adaptive-difficulty.md)):
+
+| Text | Meaning |
+|------|---------|
+| `AI matched` | 0 steps — the field is drawn at the player's own rating (the no-op state) |
+| `AI +2 (x1.08)` | 2 steps HARDER — the matcher is handed a rating 8% above the player's |
+| `AI -1 (x0.96)` | 1 step EASIER |
+| `AI off` | `ai_adapt_enabled` is false, whatever offset the profile still carries |
+
+It exists because the mechanism is otherwise **invisible by design**: the lever is the
+*machinery* the rivals turn up in, not their driving, so a harder field looks exactly like
+an ordinary field of quicker cars. Without this there is no way to tell "the opponents are
+pitched above me" from "I am slow today" — which is the whole question the offset raises.
+
+The **multiplier**, not just the step count, because a step means nothing without
+`ai_adapt_step_fraction`; the multiplier is what actually reaches
+`AiDifficulty.target_rating`. The text comes from the pure static `Hud.difficulty_text`
+(unit-tested without the HUD scene, like `seed_text` and `boost_text`), and is repainted
+only when it changes — the offset moves only at a stage boundary
+(`Save.record_stage_result`), so the per-frame cost is a string compare.
+
 ## Per-tire grip grid
 
 **Source:** `hud.gd` → `_build_grip_grid` / `_update_grip_grid`, plus the pure

@@ -209,3 +209,12 @@ reaching the draw (including across a re-field).
 
 Per CLAUDE.md these are all relations, never tuned values — retuning any `ai_adapt_*`
 value in the inspector must not break them.
+
+
+## Seeing the current offset (dev builds)
+
+The offset is deliberately invisible in play — it moves the machinery the rivals bring, so
+a harder field is indistinguishable from an ordinary field of quicker cars. For development
+the current state is on the **H-toggled dev readout**, under the seed line: `AI matched`,
+`AI +2 (x1.08)`, `AI -1 (x0.96)`, or `AI off`. See
+[debug-tools.md](debug-tools.md) → "Adaptive-difficulty readout".

@@ -680,3 +680,38 @@ func test_elapsed_label_keeps_updating_as_the_clock_runs() -> void:
 	assert_ne(label.text, first, "the timer still advances on the next reading")
 	hud.show_elapsed(3.0)
 	assert_eq(label.text, UITheme.format_time(3000), "and matches the formatted time")
+
+
+# --- Dev difficulty readout (features/adaptive-difficulty.md) ------------------------
+#
+# The adaptive offset is silent by design — it moves the MACHINERY the rivals turn up in,
+# so a harder field looks exactly like an ordinary field of quicker cars. The dev readout
+# is the only way to tell the two apart. Pure text rule; no tuned value is pinned.
+
+
+func test_a_matched_field_reads_as_matched() -> void:
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.difficulty_text(0, 0.04, true), "AI matched",
+		"zero steps is the no-op state and should say so, not 'x1.00'")
+
+
+func test_the_readout_states_the_direction_and_the_multiplier() -> void:
+	# The step COUNT alone means nothing without the fraction, so the multiplier that
+	# actually reaches the matcher is what has to be on screen.
+	const Hud = preload("res://scripts/hud.gd")
+	var harder: String = Hud.difficulty_text(2, 0.04, true)
+	var easier: String = Hud.difficulty_text(-2, 0.04, true)
+	assert_string_contains(harder, "+2", "a positive offset is signed so its direction is plain")
+	assert_string_contains(easier, "-2", "and so is a negative one")
+	assert_ne(harder, easier, "the two directions must not render the same")
+	# Harder means a field drawn ABOVE the player's rating, easier below.
+	assert_string_contains(harder, "1.08")
+	assert_string_contains(easier, "0.92")
+
+
+func test_the_readout_says_when_adaptation_is_switched_off() -> void:
+	# ai_adapt_enabled off restores the pre-adaptive behaviour exactly, so a stale step
+	# count must not read as if it were still being applied.
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.difficulty_text(3, 0.04, false), "AI off",
+		"a disabled system reports off, whatever offset the profile still carries")

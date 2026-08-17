@@ -22,6 +22,8 @@ var _last_nitrous_pct := -999
 # under the boost label; shows the current world seed (Config.data.track_seed)
 # so a run can be identified/reproduced.
 var _seed_label: Label
+var _difficulty_label: Label
+var _last_difficulty := ""   # last rendered difficulty text, so the label repaints only on change
 var _last_seed := -999999
 # Per-tire grip readout, part of the H debug overlay: how far up its grip curve each tire
 # is — 100% = exactly on the limit, and it keeps climbing past that while the tire slides
@@ -38,7 +40,7 @@ var _last_grip_pct: Array[int] = [-999, -999, -999, -999]
 const _GRIP_CORNERS: Array[String] = ["FL", "FR", "RL", "RR"]
 # Grid geometry: each cell is one column wide, and the whole block sits below the seed
 # label. Kept here rather than inline so the block moves as one.
-const _GRIP_TOP := 88.0
+const _GRIP_TOP := 108.0
 const _GRIP_CELL_W := 76.0
 # The grid's parent, so the H toggle flips one node instead of four labels.
 var _grip_grid: GridContainer
@@ -183,6 +185,7 @@ func _ready() -> void:
 	_rpm_label.visible = false
 	_build_boost_label()
 	_build_seed_label()
+	_build_difficulty_label()
 	_build_grip_grid()
 	# Boost gauge starts hidden — _update_boost_gauge reveals it once a car with forced
 	# induction is fielded (an NA car never shows an always-empty dial). Tinted a FIXED
@@ -258,7 +261,32 @@ static func seed_text(track_seed: int) -> String:
 	return "Seed %d" % track_seed
 
 
-# Build the per-tire grip readout: four labels in a 2x2 GridContainer under the seed
+# Build the adaptive-difficulty readout, just below the seed label.
+func _build_difficulty_label() -> void:
+	_difficulty_label = _make_debug_label("DifficultyLabel", 88.0, 208.0)
+
+
+# Debug adaptive-difficulty readout (features/adaptive-difficulty.md): how far the rival
+# field is currently pitched from "matched to the player", and what that does to the rating
+# the field is drawn against.
+#
+# Answers the question the offset is invisible for otherwise — "are these opponents harder
+# than they should be, or am I just slow today?" — because the mechanism is silent by
+# design: it moves the MACHINERY the rivals turn up in, so a harder field looks exactly like
+# an ordinary field of quicker cars.
+#
+# Pure/static so it is unit-testable without the HUD scene, like seed_text and boost_text.
+static func difficulty_text(steps: int, step_fraction: float, enabled: bool) -> String:
+	if not enabled:
+		return "AI off"
+	if steps == 0:
+		return "AI matched"
+	# The multiplier is what actually reaches the matcher (AiDifficulty.target_rating), so
+	# it is the number to show — the step count alone means nothing without the fraction.
+	return "AI %+d (x%.2f)" % [steps, 1.0 + float(steps) * step_fraction]
+
+
+# Build the per-tire grip readout: four labels in a 2x2 GridContainer under the difficulty
 # label, one per corner of the car in _GRIP_CORNERS order.
 func _build_grip_grid() -> void:
 	var grid := GridContainer.new()
@@ -453,6 +481,7 @@ func _timed_process(_delta: float) -> void:
 		_rpm_label.visible = _debug_readout
 		_boost_label.visible = _debug_readout
 		_seed_label.visible = _debug_readout
+		_difficulty_label.visible = _debug_readout
 		_grip_grid.visible = _debug_readout
 	var engine: EngineSim = car.drivetrain.engine
 	var speed := roundi(car.linear_velocity.length() * 3.6)
@@ -493,6 +522,14 @@ func _timed_process(_delta: float) -> void:
 	if track_seed != _last_seed:
 		_last_seed = track_seed
 		_seed_label.text = seed_text(track_seed)
+	# Repainted only when the text changes, like the seed above. The offset only moves at a
+	# stage BOUNDARY (Save.record_stage_result), so this is a compare-and-skip every frame
+	# rather than a string build.
+	var difficulty := difficulty_text(AiDifficulty.steps_of(Save.profile),
+		Config.data.ai_adapt_step_fraction, Config.data.ai_adapt_enabled)
+	if difficulty != _last_difficulty:
+		_last_difficulty = difficulty
+		_difficulty_label.text = difficulty
 	# Unlike the readouts above, this one does NOT refresh while hidden: its source is the
 	# drivetrain's per-wheel readouts, which the car only publishes while the debug overlay
 	# is up (Drivetrain.publish_readouts), so there is nothing to read when it's off.

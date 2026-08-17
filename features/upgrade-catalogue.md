@@ -110,17 +110,21 @@ tile offers only the three drive modes — no separate on/off. The `drivetrain` 
 is the current pick and the other two modes are listed greyed with their reason (earn-gated
 as a whole, like a part option greys until its kit is fitted) — so the tile reads like every
 other slot rather than vanishing from the grid.
-The **`weight` slot** is a **power-to-weight lever**, not an ordinary earn-gated part
-row. It holds three parts plus `Stock`: two **BALLAST** options that ADD weight —
-**Heavy Ballast** (`ballast_large`, `mass_mult` 1.5) and **Light Ballast**
-(`ballast_small`, `mass_mult` 1.2) — and one **Weight Reduction** kit
-(`weight_reduction`, `mass_mult` 0.80) that SHEDS weight. Both ballast parts carry a
-**`free: true`** flag (`UpgradeLibrary.is_free`): they are **always selectable on every
-car**, costing neither stars nor an unlock, so nothing that hands parts out ever needs to
-consider them. The ballast
-lets a player deliberately add mass to drop power-to-weight and qualify for a lower
-rally class (a p/w lever alongside engine detune). Weight Reduction is the slot's one
-**earned** option — the "lightweight" performance drop, greyed until won.
+The **`weight` slot** holds ONE part plus `Stock`: the **Weight Reduction** kit
+(`weight_reduction`, `mass_mult` 0.80), the slot's one **earned** option — greyed until won.
+
+**Ballast is retired.** The slot used to also carry two `free: true` options that ADDED
+mass (`ballast_large` 1.5x, `ballast_small` 1.2x), so a player could deliberately get
+heavier to shed power-to-weight and drop into a lower rally class. Entry is **categorical**
+now, so there is nothing to duck under by getting slower, and an option whose whole effect
+is "make your car worse" is a row every player scrolls past.
+
+A profile still carrying one needs no migration: `Save._prune_unknown_upgrades` drops any
+installed id the catalogue no longer has, on load. The `free` and `mass_mult > 1.0`
+**branches survive** — `UpgradeLibrary.is_free` still installs without a purchase, and Auto
+still refuses to fit anything that adds mass — so `fx_ballast` remains in
+`tests/headless/upgrade_fixtures.gd` as the synthetic input for them, the same pattern
+`fx_consumable` follows for the retired consumables.
 The weight slot's option list is **ordered and labelled bespokely** by `UpgradeOptions`
 rather than following the generic part-option shape — see below.
 The **`gearbox` slot** holds one part, the **Sequential Gearbox** (`sequential_gearbox`),
@@ -334,6 +338,13 @@ Two details worth keeping:
   conversion is never silently revoked. Done in the tolerant sanitise pass rather than as a
   schema migration, for the same reason the retired-consumable cleanup is — a
   `SCHEMA_VERSION` bump makes older builds refuse the profile outright.
+
+**Unavailable rows say `Locked`, never a price.** `_lock_reason` returns `"Locked"` for
+anything the player cannot take right now — not yet unlocked, prerequisite missing, or
+simply unaffordable — and `_drivetrain_options` matches it. A greyed row quoting
+`2 STARS` reads as a price tag on something buyable, because that is the same figure the
+*affordable* rows carry beside the star icon; one word for every unavailable option keeps
+"the cursor skips this" and "here is what it costs" visually distinct.
 
 - `slot_description(slot)` — one line saying what the slot **does**, in plain language for
   a player who knows nothing about cars ("which wheels get the power", "the rubber you

@@ -168,11 +168,15 @@ static func _part_options(owned_car: Dictionary, slot: String) -> Array[Dictiona
 			continue
 		var pid := String(def.get("id", ""))
 		var label := _option_label(owned_car, slot, def, pid)
+		var tile := _option_tile_label(owned_car, slot, def)
 		if installed.has(pid):
-			out.append({
+			var row := {
 				"id": pid, "label": label, "current": UpgradeLibrary.is_enabled(owned_car, pid),
 				"selectable": true, "price": -1, "locked_reason": "",
-			})
+			}
+			if tile != "":
+				row["tile_label"] = tile
+			out.append(row)
 			continue
 		# Not on this car. A FREE part (ballast) is fitted on the spot; anything else is a
 		# purchase. Either way it is listed even when it cannot be taken yet — greyed with
@@ -184,12 +188,15 @@ static func _part_options(owned_car: Dictionary, slot: String) -> Array[Dictiona
 		# ladder here trades that for legibility inside one screen.
 		var reason := _lock_reason(owned_car, instance_id, pid)
 		var free := UpgradeLibrary.is_free(pid)
-		out.append({
+		var row := {
 			"id": pid, "label": label, "current": false,
 			"selectable": reason == "",
 			"price": -1 if free else Save.part_price(pid),
 			"locked_reason": reason,
-		})
+		}
+		if tile != "":
+			row["tile_label"] = tile
+		out.append(row)
 	return out
 
 
@@ -212,15 +219,25 @@ const SLOT_WEIGHT := "weight"
 # between the two.
 static func _option_label(owned_car: Dictionary, slot: String, def: Dictionary,
 		pid: String) -> String:
-	var named := String(def.get("menu_label", def.get("name", pid)))
+	var bare := _weight_delta_label(owned_car, slot, def)
+	if bare == "":
+		return String(def.get("menu_label", def.get("name", pid)))
+	# UNITS in the popup, none on the tile (_option_tile_label). A bare "+600" is a number
+	# with no meaning to a player who does not already know this slot deals in mass; the
+	# popup has the width for "kg" and the tile — three across a phone — does not.
+	return "%s kg" % bare
+
+
+# The bare signed kilos for a weight-slot part ("+600", "-200"), or "" for any other slot,
+# any part with no mass_mult, and any car with no mass to measure against — all of which
+# fall back to the part's authored name rather than printing "+0".
+static func _weight_delta_label(owned_car: Dictionary, slot: String, def: Dictionary) -> String:
 	if slot != SLOT_WEIGHT:
-		return named
+		return ""
 	var mult := float((def.get("effect", {}) as Dictionary).get("mass_mult", 1.0))
 	var stock := _stock_mass(owned_car)
-	# A weight part with no mass_mult, or a car with no mass to measure against, has no
-	# number to show — fall back to the authored name rather than printing "+0".
 	if stock <= 0.0 or is_equal_approx(mult, 1.0):
-		return named
+		return ""
 	# ROUNDED TO THE NEAREST 100. The exact figure is derived from a multiplier against
 	# this particular car, so it lands on values like 243 or 187 — precision the player has
 	# no use for and cannot act on, where a round number reads as a decision. Floored at a
@@ -231,6 +248,13 @@ static func _option_label(owned_car: Dictionary, slot: String, def: Dictionary,
 	if rounded == 0:
 		rounded = 100 if delta > 0.0 else -100
 	return "%+d" % rounded
+
+
+# What the GRID TILE shows for this option, when it differs from the popup row. "" means
+# "no separate tile label — use the row's". The weight slot is the only user: its tile drops
+# the "kg" the popup carries, because a tile has to fit three across a phone on one line.
+static func _option_tile_label(owned_car: Dictionary, slot: String, def: Dictionary) -> String:
+	return _weight_delta_label(owned_car, slot, def)
 
 
 # The car's mass with the weight slot empty — the baseline the deltas above are quoted
@@ -250,7 +274,12 @@ static func _lock_reason(owned_car: Dictionary, instance_id: int, pid: String) -
 	if UpgradeLibrary.is_free(pid):
 		return ""
 	if not Save.can_buy_part(instance_id, pid):
-		return "%d stars" % Save.part_price(pid)
+		# "Locked", not the price. A greyed row quoting "2 STARS" reads as a price tag on
+		# something you can buy — it is the same shape the AFFORDABLE rows carry beside the
+		# star icon — when what it actually means is "you cannot take this". One word for
+		# every unavailable option, whatever the reason, so a row the cursor skips always
+		# says the same thing.
+		return "Locked"
 	return ""
 
 
@@ -303,9 +332,11 @@ static func _drivetrain_options(owned_car: Dictionary) -> Array[Dictionary]:
 			elif Save.can_buy_drive_mode(instance_id, mode):
 				price = Save.drive_mode_price()
 			else:
-				# Unlocked and unbought, but the stars are not there — quote what it needs,
-				# the same shape a part row uses when it is unaffordable.
-				reason = "%d stars" % Save.drive_mode_price()
+				# Unlocked and unbought, but the stars are not there. "Locked", not the
+				# price — the same single word every unavailable row uses, whatever the
+				# reason (see _lock_reason). A greyed row quoting a figure reads as a price
+				# tag on something buyable.
+				reason = "Locked"
 		out.append({
 			"id": str(mode),
 			"label": _drive_name(mode) + (" (Stock)" if is_stock else ""),
