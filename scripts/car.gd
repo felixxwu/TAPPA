@@ -1924,32 +1924,22 @@ func fit_engine(engine_id: String) -> void:
 #
 # A dict (not config.duplicate()) because the LIVE engine fields (peak_torque, redline,
 # …) are plain non-@export vars: Resource.duplicate() would reset them to their declared
-# defaults, not the fielded values. get()/set() over the property list captures the
-# actual runtime values.
+# defaults, not the fielded values. GameConfig.snapshot_values() walks the script property
+# list, so it captures the actual runtime values — and it is the same pair the start line
+# uses to save/restore the global config around its grid spawn, so there is one
+# implementation of "copy a config's values" rather than two.
 var _live_baseline := {}
 
 
 func _snapshot_live_baseline() -> void:
-	_live_baseline = {}
-	for prop in config.get_property_list():
-		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
-			continue
-		var value: Variant = config.get(prop["name"])
-		if value is Array or value is Dictionary:
-			value = value.duplicate(true)
-		_live_baseline[prop["name"]] = value
+	_live_baseline = config.snapshot_values()
 
 
 # Copy every captured field back into the LIVE config object in place (never reassign
 # `config` — the drivetrain / engine / HUD hold that reference; see the note at the top
-# of this file). Arrays/dicts are duplicated so the live config never shares mutable
-# state with the baseline.
+# of this file, and GameConfig.restore_values()).
 func _restore_live_baseline() -> void:
-	for prop_name in _live_baseline:
-		var value: Variant = _live_baseline[prop_name]
-		if value is Array or value is Dictionary:
-			value = value.duplicate(true)
-		config.set(prop_name, value)
+	config.restore_values(_live_baseline)
 
 
 # The single live re-derive: restore the full pre-upgrade/pre-tune baseline, then re-apply

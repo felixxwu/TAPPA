@@ -2737,6 +2737,48 @@ func has_nitrous() -> bool:
 @export_range(1, 16) var terrain_detail_builds_per_frame := 1
 
 
+# --- Value snapshots (the live config's IDENTITY is load-bearing) -------------
+#
+# The active car — plus its Drivetrain and EngineSim — holds the live GameConfig BY
+# REFERENCE (car.gd `config`, which for the player car IS `Config.data`), while the HUD,
+# engine audio and save layer read `Config.data`. So code that needs to save and restore
+# the config around a mutation must copy VALUES back into the same object; assigning
+# `Config.data = <a duplicate>` silently splits the two, and the car then writes an object
+# nothing else reads any more (the bug that left a turbo fitted in the pre-race Upgrades
+# menu working but gauge-less — see start_line.gd `_spawn_grid`).
+#
+# `duplicate(true)` is not a value-complete snapshot either: the LIVE engine fields
+# (peak_torque, redline_rpm, engine_cylinders, …) are plain non-@export vars, so
+# Resource.duplicate() resets them to their declared defaults instead of preserving the
+# fielded values. Both functions below walk the SCRIPT property list, so every field is
+# captured and restored regardless of whether it is exported.
+
+## Every script variable on this config as a { property_name: value } map. Arrays and
+## dictionaries are deep-copied, so the snapshot never shares mutable state with the live
+## object. Pair with restore_values().
+func snapshot_values() -> Dictionary:
+	var snap := {}
+	for prop in get_property_list():
+		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var value: Variant = get(prop["name"])
+		if value is Array or value is Dictionary:
+			value = value.duplicate(true)
+		snap[prop["name"]] = value
+	return snap
+
+
+## Copy a snapshot_values() map back onto THIS config, in place — never reassign the
+## object the rest of the game is holding (see the note above). Arrays/dicts are
+## duplicated again so the live config doesn't start sharing state with the snapshot.
+func restore_values(snapshot: Dictionary) -> void:
+	for prop_name in snapshot:
+		var value: Variant = snapshot[prop_name]
+		if value is Array or value is Dictionary:
+			value = value.duplicate(true)
+		set(prop_name, value)
+
+
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
 # static weight fraction, so each axle's rate is proportional to the load it carries
 # and the car sits LEVEL at rest (compression = load / rate is then equal front and
