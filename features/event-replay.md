@@ -149,7 +149,9 @@ deterministic, testable `_tick(delta)` (no RNG, no engine-clock reads):
   entry (up to ~1.92 m, i.e. ~0.96 m half-width, which used to sit level with the old
   hardcoded 0.95 m offset). Falls back to a fixed `GameConfig.wheel_cam_fallback_lateral`
   for targets that don't expose `half_width()` (flat test fixtures).
-- **HIGH_WIDE** — a high, pulled-back `(0, 14, 16)` establishing shot.
+- **HIGH_WIDE** — a high, pulled-back `(0, 14, 16)` "helicopter" establishing shot. Framed
+  by the constant-subject-size zoom below, so the car reads as a car rather than the dot it
+  was at the old fixed 75° FOV from ~21 m away.
 - **ROADSIDE** — a "someone filming from the verge" shot. Unlike the others (which track
   the car every frame), the camera **plants a fixed spot** beside the road well up ahead
   (`ROADSIDE_AHEAD` along the travel line, `ROADSIDE_SIDE` off to one side), locks onto the
@@ -168,6 +170,26 @@ deterministic, testable `_tick(delta)` (no RNG, no engine-clock reads):
   — instead the trees and bushes **dither out near the camera** (their near-fade shaders —
   see [trees.md](trees.md)), so the plant can stay close to the road and any close bush/tree
   just turns see-through.
+
+**Constant-subject-size zoom** (`_target_fov` / `_update_fov`). Two of the shots watch the
+car from a distance that changes a lot over the shot — ROADSIDE (the car appears far up the
+road, sweeps right past the plant, then shrinks into the distance) and HIGH_WIDE (parked
+~21 m out and up). At a fixed lens the car's on-screen size swings wildly across both, so
+those two instead **derive their FOV from the current distance to the car** to hold it at
+roughly a constant share of the frame: narrow (zoomed in) while the car is far, widening as
+it arrives, narrowing again as it leaves — a camera operator riding the zoom rocker. The
+rule is the projection identity `2·tan(fov/2) = size / (distance · fraction)` solved for
+FOV, with `size` = `GameConfig.replay_frame_subject_size` (nominal subject size in metres,
+~a car length) and `fraction` = `replay_frame_screen_fraction` (share of **viewport
+height** it should span; higher = tighter framing). The result is clamped to
+`replay_frame_fov_min` … `replay_frame_fov_max` like a real lens's long/wide ends — with
+`ROADSIDE_SIDE = 0.0` the plant sits on the car's own line, so the closest pass is a couple
+of metres and would otherwise demand a fisheye. The three fixed-offset tracking shots
+(ORBIT / FLYBY / WHEEL) never change distance, so they just use the base `replay_fov`.
+Changes ease at `replay_fov_smoothing` (the same `1 - exp(-rate·dt)` idiom as the chase
+camera's FOV), except across a **cut** — `setup`, `_advance_shot`, and each roadside
+`_plant` set `_fov_snap`, so a new shot opens on its own lens instead of visibly ramping in
+from the previous shot's.
 
 **Shot advance.** The four tracking shots rotate on a fixed `SHOT_DWELL := 4.0`-second
 dwell; ROADSIDE ignores the timer and instead cuts on the car-passed event above

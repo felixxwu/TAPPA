@@ -1019,6 +1019,32 @@ func has_nitrous() -> bool:
 ## doesn't expose half_width() (e.g. a flat test fixture) — mirrors the old fixed rig
 ## position so behaviour is unchanged for targets with no known body width.
 @export var wheel_cam_fallback_lateral := 0.95
+## Replay camera base FOV (degrees), used by the shots that sit at a FIXED offset from the
+## car (ORBIT / FLYBY / WHEEL) — their distance never changes, so they need no zoom
+## compensation. See replay_camera.gd (_target_fov).
+@export_range(30.0, 120.0) var replay_fov := 75.0
+## CONSTANT-SUBJECT-SIZE FRAMING — the replay ROADSIDE and HIGH_WIDE shots. Both watch the
+## car from a distance that changes a lot (the planted roadside cam sees it come from far
+## up the road, sweep past and shrink away; the high "helicopter" shot sits well back and
+## up), so instead of a fixed lens they pick their FOV from the current distance to keep the
+## car about the same size on screen — zoomed in when it's far, widening as it arrives.
+##
+## Nominal subject size (m) the framing aims to fit — roughly a car's length. Bigger =
+## every framed shot zooms in more (a bigger subject needs a longer lens to fit the same
+## share of the frame).
+@export_range(0.5, 20.0) var replay_frame_subject_size := 4.2
+## Share of the VIEWPORT HEIGHT that subject should span. Higher = tighter framing (the car
+## fills more of the screen); lower = looser.
+@export_range(0.02, 1.0) var replay_frame_screen_fraction := 0.32
+## Lens limits (degrees) for the framed shots: the long end (how far it may zoom in when the
+## car is distant) and the wide end (how wide it may open as the car sweeps past, where the
+## exact framing stops mattering because the car fills the frame regardless).
+@export_range(5.0, 120.0) var replay_frame_fov_min := 14.0
+@export_range(5.0, 120.0) var replay_frame_fov_max := 75.0
+## Easing rate for replay FOV changes (1 - exp(-rate*dt)); higher tracks the framing more
+## tightly, lower drifts behind it like a hand on a zoom rocker. A CUT (shot change or a
+## roadside re-plant) always snaps, never eases. 0 disables easing entirely (snap always).
+@export_range(0.0, 20.0) var replay_fov_smoothing := 5.0
 
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car

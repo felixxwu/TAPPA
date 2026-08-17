@@ -43,6 +43,11 @@ var _plant_side := 1
 var _has_plant := false
 var _roadside_plants := 0
 
+# Set whenever the framing CUTS (setup, a shot change, a roadside re-plant) so the next
+# frame snaps its FOV instead of easing across the cut — a new camera means a new lens,
+# not a visible zoom ramp from wherever the previous shot happened to be sitting.
+var _fov_snap := true
+
 func setup(target: Node3D, recorder: ReplayRecorder, terrain: TerrainManager = null,
 		water_level := -INF) -> void:
 	_target = target
@@ -53,6 +58,7 @@ func setup(target: Node3D, recorder: ReplayRecorder, terrain: TerrainManager = n
 	_shot_age = 0.0
 	_have_prev = false
 	_travel_dir = Vector3.ZERO
+	_fov_snap = true
 	_reset_roadside()
 
 func current_shot() -> int:
@@ -104,6 +110,7 @@ func _tick(delta: float) -> void:
 	global_position = pos
 	if pos.distance_to(look_target) > 0.01:
 		look_at(look_target, Vector3.UP)
+	_update_fov(pos.distance_to(c), delta)
 
 # Track a smoothed travel direction from the car's movement, so a slide (car facing away
 # from travel) or a stationary frame doesn't throw off where the roadside cam plants.
@@ -166,6 +173,9 @@ func _plant(c: Vector3) -> void:
 	ground = maxf(ground, _water_level)
 	_plant_pos = Vector3(spot.x, ground + ROADSIDE_HEIGHT, spot.z)
 	_has_plant = true
+	# A new plant is a cut: open on the framing FOV for the fresh (far) distance rather
+	# than easing down from the wide lens the previous plant ended on.
+	_fov_snap = true
 
 # Lateral mount distance (m) for the WHEEL shot, kept clear of the car body regardless
 # of which car is fielded. When the target exposes half_width() (Car does), the rig
@@ -180,9 +190,47 @@ func _wheel_cam_lateral() -> float:
 	return cfg.wheel_cam_fallback_lateral
 
 
+# CONSTANT-SUBJECT-SIZE ZOOM. Two shots watch the car from a distance that CHANGES a lot
+# over the shot: ROADSIDE (planted on the verge — the car starts far up the road, sweeps
+# right past, then shrinks into the distance) and HIGH_WIDE (pulled well back and up, so
+# at the plain base FOV the car is a dot). Left at a fixed FOV, the car's on-screen size
+# swings wildly across both. So instead of a fixed lens, these two pick their FOV from the
+# distance to the car so it keeps roughly the same share of the frame: narrow (zoomed in)
+# while the car is far away, widening as it arrives, narrowing again as it leaves — an
+# operator riding the zoom rocker to hold the subject framed. The fixed-offset tracking
+# shots (ORBIT / FLYBY / WHEEL) sit at a constant distance and need no compensation, so
+# they keep the plain base FOV.
+func _target_fov(distance: float) -> float:
+	var cfg: GameConfig = Config.data
+	if _shot != Shot.ROADSIDE and _shot != Shot.HIGH_WIDE:
+		return cfg.replay_fov
+	# A subject `size` metres across spans `fraction` of the viewport height exactly when
+	# 2·tan(fov/2) == size / (distance · fraction) — the projected half-extent over the
+	# half-frustum height at that distance. Solve that for the FOV.
+	var fraction := maxf(cfg.replay_frame_screen_fraction, 0.001)
+	var half_tan := cfg.replay_frame_subject_size / (2.0 * maxf(distance, 0.01) * fraction)
+	var wanted := rad_to_deg(2.0 * atan(half_tan))
+	# Clamped like a real lens: close in, the frame can't widen past the wide end (and the
+	# car is going to fill the screen anyway); far out, it can't zoom past the long end.
+	return clampf(wanted, cfg.replay_frame_fov_min, cfg.replay_frame_fov_max)
+
+
+# Ease the FOV toward the framing target (same 1-exp(-rate·dt) idiom as the chase camera's
+# FOV), snapping instead on the frame after a cut so a new shot opens on its own lens.
+func _update_fov(distance: float, delta: float) -> void:
+	var target := _target_fov(distance)
+	var rate: float = Config.data.replay_fov_smoothing
+	if _fov_snap or rate <= 0.0:
+		_fov_snap = false
+		fov = target
+		return
+	fov = lerpf(fov, target, 1.0 - exp(-rate * delta))
+
+
 func _advance_shot() -> void:
 	_shot_age = 0.0
 	_shot = (_shot + 1) % Shot.size()
+	_fov_snap = true
 	_reset_roadside()
 
 func _reset_roadside() -> void:
