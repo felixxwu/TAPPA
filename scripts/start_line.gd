@@ -554,11 +554,18 @@ func _spawn_grid(terrain: Node) -> void:
 	_grid_car_ids = []
 	var gap := _cfg().start_queue_gap
 	var n := _grid_ahead_count()
-	# Each prop's apply_car() mutates the SHARED global Config.data (gearbox, mass,
-	# grip, …). The player is already fielded, so letting a prop's spec leak into
-	# Config.data would corrupt the player's live drivetrain. Snapshot the player's
-	# config and restore it after the props are built.
-	var player_cfg: GameConfig = Config.data.duplicate(true)
+	# Each prop's apply_car() mutates a GameConfig (gearbox, mass, grip, …), and one that
+	# somehow missed use_isolated_config() would reach the SHARED global Config.data. The
+	# player is already fielded, so snapshot the live config's VALUES here and restore them
+	# after the props are built.
+	#
+	# VALUES restored IN PLACE, never `Config.data = <duplicate>`: the fielded player car
+	# holds this exact object as its `config` (car.gd), so swapping the reference splits the
+	# two — the car (and the pre-race Upgrades menu's refit_upgrades) keeps writing the old
+	# object while the HUD, engine audio and save layer read the new one. That is what used
+	# to leave a turbo bought at this menu working but with no boost gauge until the next
+	# stage rebuilt the world. See GameConfig.snapshot_values().
+	var player_cfg := Config.data.snapshot_values()
 	for i in n:
 		var car_id := String((_leaders[i] as Dictionary).get("car_id", ""))
 		var index := CarLibrary.index_of(car_id)
@@ -569,7 +576,7 @@ func _spawn_grid(terrain: Node) -> void:
 		var car := _spawn_prop(index, pos, String((_leaders[i] as Dictionary).get("engine_id", "")))
 		_grid.append(car)
 		_grid_car_ids.append(car_id)
-	Config.data = player_cfg
+	Config.data.restore_values(player_cfg)
 	# The player is the tail of the grid — it rolls up as the opponents depart.
 	if _player != null:
 		_grid.append(_player)

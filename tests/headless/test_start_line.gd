@@ -53,6 +53,9 @@ class StubTerrain:
 
 
 const TEST_PATH := "user://test_start_line_profile.json"
+# For the few tests that need a REAL fielded player car rather than StubPlayer — the
+# config-identity contract is about the object car.gd holds, which a stub has no notion of.
+const CAR_SCENE := preload("res://car.tscn")
 
 var _player: StubPlayer
 var _stage: StubStage
@@ -95,6 +98,7 @@ func after_each() -> void:
 	Config.reset()
 	CarFixtures.restore()
 	RallyFixtures.restore()
+	UpgradeFixtures.restore()  # only one test installs it; restore() is a plain reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -266,6 +270,60 @@ func test_grid_spawn_does_not_clobber_the_players_config() -> void:
 	assert_eq(sl.queue_count(), 3, "the grid actually spawned props (so the test isn't vacuous)")
 	assert_almost_eq(Config.data.final_drive, 7.77, 0.001,
 		"the player's final_drive survives the grid spawn (props don't leak into the shared config)")
+
+
+# Preserving the config's VALUES is not enough — the fielded player car holds that exact
+# OBJECT as its `config` (car.gd), and the HUD / engine audio / save layer read Config.data.
+# Swapping in a restored duplicate splits the two, so anything the car writes afterwards
+# (notably the pre-race Upgrades menu's refit) lands somewhere nothing else reads.
+func test_grid_spawn_keeps_the_shared_config_object_identity() -> void:
+	var live: GameConfig = Config.data
+	var sl := _make(_leaders())
+	assert_eq(sl.queue_count(), 3, "the grid actually spawned props (so the test isn't vacuous)")
+	assert_same(Config.data, live,
+		"the grid spawn restores the player's config IN PLACE, never reassigning Config.data")
+
+
+# The LIVE engine fields (peak_torque, redline_rpm, …) are plain non-@export vars, so a
+# save/restore built on Resource.duplicate() would silently reset them to their declared
+# defaults — leaving the shared config claiming a different engine than the fielded car.
+func test_grid_spawn_preserves_the_live_engine_fields() -> void:
+	Config.data.peak_torque = 333.0    # sentinels, not tuning: the point is they survive
+	Config.data.redline_rpm = 7777.0
+	var sl := _make(_leaders())
+	assert_eq(sl.queue_count(), 3, "the grid actually spawned props (so the test isn't vacuous)")
+	assert_almost_eq(Config.data.peak_torque, 333.0, 0.001,
+		"the fielded engine's torque survives the grid spawn")
+	assert_almost_eq(Config.data.redline_rpm, 7777.0, 0.001,
+		"…and so does its redline")
+
+
+# The bug this pins: a turbo bought and fitted in the pre-race Upgrades menu drove the car
+# but lit no boost gauge until the next stage. The menu commits by refitting the LIVE car
+# (_on_upgrade_changed -> car.refit_upgrades), which writes the car's own `config`, while the
+# HUD asks Config.data.has_forced_induction() — so the two must still be one object after
+# the grid has been staged around the car.
+func test_a_turbo_fitted_at_the_start_line_reaches_the_config_the_hud_reads() -> void:
+	UpgradeFixtures.install()
+	var owned := {"model_id": "fx_light_rwd", "installed_upgrades": [], "disabled_upgrades": [],
+		"tuning": {}, "instance_id": -1}
+	var car := CAR_SCENE.instantiate()
+	add_child_autofree(car)
+	await get_tree().physics_frame  # _ready(): builds the drivetrain and takes Config.data
+	car.apply_owned(owned)          # fielded like world.gd does it (no isolated config)
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(car, null, _stage, _rally(), 0, _leaders(), _cam_mgr, _hud)
+	assert_eq(sl.queue_count(), 3, "the grid staged around the fielded car")
+	assert_false(Config.data.has_forced_induction(), "setup: the fielded car starts unboosted")
+
+	owned["installed_upgrades"] = ["fx_turbo_small"]
+	car.refit_upgrades(owned)
+
+	assert_true(car.config.has_forced_induction(), "the refit fitted the part to the car's config")
+	assert_true(Config.data.has_forced_induction(),
+		"…and the HUD reads that same config, so the boost gauge appears without a new stage")
 
 
 func test_player_is_staged_behind_the_grid_to_roll_up() -> void:

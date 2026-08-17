@@ -126,6 +126,21 @@ no physics step runs — which is why a spacing test can pass while the live gri
 `StartLine` places both the grid props (`_spawn_prop`) and the staged player (`_stage_player`)
 via `reset_to`.
 
+**The grid spawn restores the shared config's VALUES in place — it must never reassign
+`Config.data`.** Each prop gets `use_isolated_config()` before its `apply_car`, and
+`_spawn_grid` additionally brackets the whole spawn with
+`Config.data.snapshot_values()` / `Config.data.restore_values(...)` as a backstop, so a
+prop's engine/gearbox can't leak into the player's live config. That save/restore copies
+**values into the same object**: the fielded player car holds that exact `GameConfig` as
+its own `config` (see [configuration.md](configuration.md) → *The live config's identity is
+load-bearing*), so swapping in a duplicate splits the car from the HUD, engine audio and
+save layer. It used to do exactly that, which is why a turbo bought in the pre-race
+**Upgrades** menu drove the car but showed **no boost gauge** until the next stage rebuilt
+the world: `car.refit_upgrades()` wrote the car's config while `hud.gd` asked the
+duplicate's `has_forced_induction()`. Pinned by
+`test_start_line.gd::test_grid_spawn_keeps_the_shared_config_object_identity` and
+`::test_a_turbo_fitted_at_the_start_line_reaches_the_config_the_hud_reads`.
+
 Once a car is nearly stopped and holding the handbrake it is **position-locked**
 (`Car._apply_handbrake_lock` freezes the body below `HANDBRAKE_LOCK_SPEED`), so a settling car
 can't creep into the one ahead; the lock releases when the handbrake does. At the fade the

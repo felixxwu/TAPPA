@@ -17,6 +17,34 @@ body.mass = cfg.mass
 fresh `GameConfig.new()` if missing. Values are read-only during play; editing
 the `.tres` requires a scene reload to take effect.
 
+## The live config's identity is load-bearing
+
+`Config.data` is held **by reference**: the active car (and through it `Drivetrain` /
+`EngineSim`) keeps it as `car.config`, while `hud.gd`, `engine_audio.gd`, the tuning lift
+and the save layer read `Config.data`. That shared identity is the wiring — it is how a
+mid-stage refit on the car is seen by the HUD at all. So **code that saves and restores the
+config around a mutation must copy VALUES back into the same object**, never
+`Config.data = <a duplicate>`; reassigning splits the car from everything that reads it
+(the boost-gauge bug in [start-line.md](start-line.md) → *grid spawn*).
+
+`GameConfig.snapshot_values()` / `restore_values()` are that pair:
+
+```gdscript
+var saved := Config.data.snapshot_values()   # { property_name: value }, containers deep-copied
+...                                          # something mutates the live config
+Config.data.restore_values(saved)            # written back IN PLACE
+```
+
+They walk the **script property list**, not just the `@export`ed fields, because the LIVE
+engine fields (`peak_torque`, `redline_rpm`, `engine_cylinders`, `engine_firing_angles`) are
+plain `var`s that `EngineLibrary.apply()` writes at fielding time — `Resource.duplicate()`
+resets those to their declared defaults, so it isn't a value-complete snapshot either.
+Callers: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune()` /
+`refit_upgrades()` re-derive from) and `start_line.gd`'s `_spawn_grid`. Only
+`Config.reset()` / `reload_from_disk()` legitimately install a new object, and both are
+boot/debug paths that re-field the car afterwards. Guarded by
+`tests/headless/test_config_isolation.gd`.
+
 ## Property groups
 
 `game_config.gd` exposes 50+ `@export` properties, grouped:

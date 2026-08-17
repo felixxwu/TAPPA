@@ -70,6 +70,44 @@ func test_prop_apply_does_not_clobber_active_cars_engine() -> void:
 		"prop config carries its own engine's torque")
 
 
+# VALUE SNAPSHOTS (GameConfig.snapshot_values / restore_values) — how code saves and restores
+# the live config around a mutation WITHOUT swapping the object out from under the car that
+# holds it. Two properties matter, and both are the reason `duplicate(true)` + reassignment
+# is not an acceptable substitute (see the note in game_config.gd).
+
+func test_snapshot_captures_the_non_exported_live_engine_fields() -> void:
+	# The LIVE engine fields are plain non-@export vars, so Resource.duplicate() resets them
+	# to their declared defaults. A round-trip through the snapshot must not.
+	var cfg: GameConfig = Config.data
+	cfg.peak_torque = 333.0   # sentinels, not tuning: the point is that they survive
+	cfg.redline_rpm = 7777.0
+	var snap := cfg.snapshot_values()
+	cfg.peak_torque = 1.0
+	cfg.redline_rpm = 2.0
+	cfg.restore_values(snap)
+	assert_almost_eq(cfg.peak_torque, 333.0, 0.001, "a non-exported live field round-trips")
+	assert_almost_eq(cfg.redline_rpm, 7777.0, 0.001, "…and so does the redline beside it")
+	# Sanity check on the premise, so this test can't quietly stop testing anything: the
+	# duplicate() path really does lose them.
+	assert_ne(cfg.duplicate(true).peak_torque, 333.0,
+		"premise: duplicate() resets the non-exported live fields, which is why the dict exists")
+
+
+func test_restore_writes_in_place_and_shares_no_mutable_state() -> void:
+	var cfg: GameConfig = Config.data
+	var snap := cfg.snapshot_values()
+	cfg.restore_values(snap)
+	assert_same(Config.data, cfg,
+		"restoring values must not replace the object the car/HUD/audio hold by reference")
+	# Containers are deep-copied both ways, so a later write to the live config can't
+	# reach back into the snapshot (or vice versa).
+	var before: int = cfg.engine_firing_angles.size()
+	cfg.engine_firing_angles.append(90.0)
+	cfg.restore_values(snap)
+	assert_eq(cfg.engine_firing_angles.size(), before,
+		"the restore undoes a container edit rather than sharing the array with the snapshot")
+
+
 # HOT RELOAD (Config.reload_from_disk) — the tuning loop for world-space menu placement: retune a
 # value on game_config.tres in the inspector, press F8 in the running game, see it.
 #
