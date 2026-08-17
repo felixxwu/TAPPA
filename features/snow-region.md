@@ -194,6 +194,33 @@ actually hits it).
 weight the visual raise uses so the bog appears exactly where the snow is drawn rising.
 `cfg.deep_snow_drag` is `0.0` elsewhere, so the cost off a snow stage is one float compare.
 
+**It is applied PER WHEEL, not as one central force.** Each grounded contact is dragged by
+how buried *that* corner is, and the force is applied *at* that contact — so clipping a
+drift with one side produces a real yaw torque that pulls the nose round, which a central
+force could never express however lopsided the snow was.
+
+The rule itself is `Drivetrain.deep_snow_force` (pure + static; it lives there rather than
+on `car.gd`, which has no `class_name`, so it is testable without a physics scene). Three
+things about it are load-bearing:
+
+- **The velocity damped is the velocity at the CONTACT POINT** (`linear + angular × offset`),
+  not the chassis centre's. That is what makes it genuinely per-tyre: a car already
+  slewing has its rotation damped too, so deep snow both starts a slide and eventually
+  arrests it rather than spinning it forever.
+- **The coefficient is divided by the WHEEL COUNT**, so with all four wheels equally buried
+  the total is identical to the single central force this replaced — `snow_deep_drag`
+  keeps its meaning and needed no re-tuning. Dividing by the number of *live* contacts
+  would be wrong: lifting a wheel would make the remaining ones bog harder.
+- **No new terrain queries.** Each contact already carries the road weight
+  `surface_tire_params` sampled for it (`Drivetrain.WheelContact.road_weight`), so this
+  reads what the tyre solver has already paid for. Airborne wheels have no contact and so
+  cannot bog, which is correct; a contact **on the ice** reports road weight `1.0`, because
+  a frozen lake is something you slide on rather than bog in.
+
+Tested in `tests/headless/test_deep_snow_drag.gd` (the force rule: feather, magnitude
+conservation, left/right yaw symmetry, spin damping) and `test_drivetrain.gd` (that the
+road weight is actually reported, including the no-terrain and ice branches).
+
 ## Frozen lakes
 
 In the Alps the lake is **solid** and driven on, not the soft drag hazard it is elsewhere.

@@ -154,15 +154,59 @@ func test_an_unfixable_restriction_is_named_not_planned_around() -> void:
 	assert_ne(String(plan["blocked"]), "", "a wrong-car restriction is reported, not solved")
 
 
-func test_drivetrain_is_fixed_when_the_kit_is_fitted() -> void:
+# Drivetrain conversion is a GARAGE-WIDE unlock with a per-car star price, so what decides
+# whether Auto can fix a drive-mode restriction is no longer "is the kit on this car" but
+# "can this car afford the conversion". (The fixture catalogue's conversion part is authored
+# ungated, so the capability itself is always available here.)
+func test_drivetrain_is_fixed_when_the_conversion_can_be_afforded() -> void:
 	var restriction := {"drive_mode": CarLibrary.AWD}
-	var without := UpgradeLibrary.auto_build_plan(
-		_car(), _meta(), {"rallies": {}}, 0, restriction)
-	assert_ne(String(without["blocked"]), "", "without the kit the drivetrain is a wrong-car report")
-	var with_kit := UpgradeLibrary.auto_build_plan(
-		_car(["fx_drivetrain"]), _meta(), {"rallies": {}}, 0, restriction)
-	assert_eq(String(with_kit["blocked"]), "", "with the kit fitted the drivetrain is fixable")
-	assert_eq(int(with_kit["drivetrain"]), CarLibrary.AWD, "and the plan switches to the demanded mode")
+	var price := Save.drive_mode_price()
+	# A generous budget: the part search runs FIRST and spends from the same pot, so a
+	# balance of exactly one conversion can legitimately be gone before the drivetrain
+	# branch is reached. What is being tested here is the conversion, not the competition
+	# for stars between it and the parts.
+	var budget := price * 20 + 100
+	var plan := UpgradeLibrary.auto_build_plan(
+		_car(), _meta(), {"rallies": {}}, budget, restriction)
+	assert_eq(String(plan["blocked"]), "", "with stars for the conversion the restriction is fixable")
+	assert_eq(int(plan["drivetrain"]), CarLibrary.AWD, "and the plan switches to the demanded mode")
+	# Priced EXACTLY, by differencing against the same plan for a car that already owns the
+	# layout: everything else about the two builds is identical, so the gap is the
+	# conversion and nothing else.
+	var bought := _car()
+	bought["drivetrain_modes_bought"] = [CarLibrary.AWD]
+	var free_plan := UpgradeLibrary.auto_build_plan(
+		bought, _meta(), {"rallies": {}}, budget, restriction)
+	assert_eq(int(plan["cost"]) - int(free_plan["cost"]), price,
+		"the plan quotes the conversion it will spend, and only that")
+
+
+# Without the stars it must be reported, not silently planned — a plan that converts for
+# free would be a lie the commit then has to pay for.
+func test_an_unaffordable_conversion_is_reported_not_planned() -> void:
+	var plan := UpgradeLibrary.auto_build_plan(
+		_car(), _meta(), {"rallies": {}}, 0, {"drive_mode": CarLibrary.AWD})
+	assert_ne(String(plan["blocked"]), "", "no stars, so the drivetrain problem stands")
+	assert_eq(int(plan["drivetrain"]), -1, "and nothing is planned")
+
+
+# free_only is not a budget check (see the free-restore test below): it must refuse the
+# conversion outright, however many stars the player happens to have.
+func test_free_only_never_buys_a_conversion() -> void:
+	var plan := UpgradeLibrary.auto_build_plan(
+		_car(), _meta(), {"rallies": {}}, 999, {"drive_mode": CarLibrary.AWD}, true)
+	assert_eq(int(plan["drivetrain"]), -1, "a free restore never pays for a layout change")
+
+
+# A car that has ALREADY paid for the layout gets it back for nothing, even with no stars —
+# the price is per car, once, not per switch.
+func test_an_already_bought_conversion_is_free_to_re_apply() -> void:
+	var car := _car()
+	car["drivetrain_modes_bought"] = [CarLibrary.AWD]
+	var plan := UpgradeLibrary.auto_build_plan(
+		car, _meta(), {"rallies": {}}, 0, {"drive_mode": CarLibrary.AWD})
+	assert_eq(String(plan["blocked"]), "", "a bought layout is always available")
+	assert_eq(int(plan["drivetrain"]), CarLibrary.AWD, "and is planned without stars")
 
 
 # --- Free-only restore --------------------------------------------------------
@@ -237,3 +281,54 @@ func test_apply_build_plan_ignores_a_no_op_plan() -> void:
 # back on for them behind a loading screen is an edit they never asked for and cannot
 # watch happen; the car races exactly the build they left it on. apply_build_plan below
 # is still how the Auto button commits a plan the player pressed for.
+
+
+# --- Contract: the plan's quote equals what the commit spends ----------------------
+#
+# `plan["cost"]` is the plan's SELF-REPORTED figure, and every existing assertion in this
+# file reads it back rather than observing the balance. These close that gap. Nothing here
+# names a price: the expected values are read back from the same pricing functions the
+# commit spends through, so retuning any of them moves both sides together.
+
+
+func _stars(n: int) -> void:
+	_save.profile["stars_earned"] = n
+
+
+# The invariant: commit the plan, and the balance must fall by exactly what was quoted.
+# Catches any accounting slip, including the day part_price stops being flat while
+# auto_build_plan still reads the config value directly.
+func test_a_committed_plan_spends_exactly_what_it_quoted() -> void:
+	# A REAL saved car, not the file's synthetic `_car()` dict: the point is to observe the
+	# star balance move, which needs a car apply_build_plan can actually write to.
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	var id := int(owned["instance_id"])
+	var checked := 0
+	for restriction in [{}, {"drive_mode": CarLibrary.AWD}]:
+		_stars(9999)
+		var plan := UpgradeLibrary.auto_build_plan(
+			_save.get_car(id), _meta(), _save.profile, 9999, restriction)
+		if not bool(plan.get("changed", false)):
+			continue
+		var before: int = _save.stars_available()
+		_save.apply_build_plan(id, plan)
+		assert_eq(before - _save.stars_available(), int(plan["cost"]),
+			"the balance must fall by exactly the quoted cost (restriction %s)" % [restriction])
+		checked += 1
+	assert_gt(checked, 0, "setup: at least one plan actually changed something to commit")
+
+
+# The quote must be built FROM the pricing API, not from a parallel copy of it. Reads the
+# prices back through the same functions, so this asserts agreement rather than a number.
+func test_a_plan_quotes_its_cost_through_the_pricing_api() -> void:
+	var car := _car()
+	_stars(9999)
+	var plan := UpgradeLibrary.auto_build_plan(
+		car, _meta(), _save.profile, 9999, {"drive_mode": CarLibrary.AWD})
+	var expected := 0
+	for item_id in (plan["buy"] as Array):
+		expected += _save.part_price(String(item_id))
+	if int(plan.get("drivetrain", -1)) >= 0 and not _save.drive_mode_available(car, int(plan["drivetrain"])):
+		expected += _save.drive_mode_price()
+	assert_eq(int(plan["cost"]), expected,
+		"the plan and the save must agree about what the plan costs")

@@ -627,9 +627,12 @@ func _show_detail() -> void:
 	var adjust := int(elig["adjust"])
 	_hq._detail_adjust.visible = adjust > 0
 	_hq._detail_adjust.text = "%d need a drivetrain conversion to fit" % adjust
-	# No owned car qualifies for this rally yet — the button would only lead to an
-	# empty car park, so disable it rather than let the player tap through to it.
-	_hq._detail_enter_button.disabled = qualify == 0
+	# Gated on the lineup having ANYTHING in it: a car that qualifies, or one the player
+	# could convert to make it qualify. Not on `qualify` alone — a garage whose only route
+	# in is "convert the AWD car" should still let the player walk in and be told that. Not
+	# on owning a car either — if nothing can be made to fit, the car park is an empty room
+	# and the button would be a dead end.
+	_hq._detail_enter_button.disabled = qualify + adjust == 0
 
 	# --- Record: best finish + medal stars.
 	var best := Save.best_placement(_hq._selected_rally_id)

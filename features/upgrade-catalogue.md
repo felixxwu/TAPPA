@@ -290,9 +290,117 @@ something a menu can draw, and the UI never re-derives any of them:
   so only a picker the player actually opened pays for it — a handful of sims, memoised by
   `CarPerformance` from then on.
 
+### Drivetrain conversion: global unlock, per-car bill
+
+The drivetrain slot is the one that lists **drive modes** (RWD / AWD / FWD) rather than
+parts, and it splits its gating in two:
+
+- **The capability is GLOBAL.** `UpgradeLibrary.drivetrain_swap_unlocked(profile)` reads the
+  profile's rally record — won once, available to every car in the garage from then on,
+  like the engine-swap capability.
+- **Each conversion is BOUGHT per car**, at `GameConfig.star_cost_per_drive_mode`. The mode
+  is recorded on the car (`drivetrain_modes_bought`), so it is paid for **once**: switching
+  back to a layout the car has already bought is free thereafter, exactly as toggling a
+  bought part between Stock and fitted is free. **Returning to the car's own authored
+  layout is always free and never recorded** — otherwise a player out of stars could be
+  stranded in a layout they could not leave.
+
+This replaced a **per-car** unlock that was unreachable in practice. The kit was a part in
+the `drivetrain` slot, granted by `_grant_rally_prizes` to the single car *selected* when
+its special was won — but because `options_for` routes `"drivetrain"` to
+`_drivetrain_options` (modes, not parts), the kit never appeared as a purchase row
+anywhere. No other car in the garage could acquire it by stars or by any other means, and
+the slot simply read "Locked" forever with no way to learn why.
+
+The car park does **not** compensate for the price. It used to auto-switch a
+wrong-drivetrain car at the Start button — free, silent, and reverted after the rally —
+which under per-car pricing would have handed the player exactly what the garage charges
+for, and (once `resolve_drive_override` began ignoring unpaid overrides) would have sent
+the car out still ineligible while the game believed it qualified. That switch is removed:
+an ineligible car is parked, marked with its reason, and left for the player to convert
+([menus.md](menus.md) → the car park).
+
+Two details worth keeping:
+
+- The gate is found by its **effect flag** (`drivetrain_swap_part_id` scans for
+  `unlocks_drivetrain_swap`), never by a hard-coded id. `rally_gate_met` treats an *unknown*
+  item as ungated, so an id literal fails **open** — renaming the part, or running against
+  the synthetic test catalogue, would have handed every car free conversion. A catalogue
+  with no conversion part reads as locked, not as ungated.
+- `resolve_drive_override` gates on the mode being **paid for**, not merely stored, so
+  anything writing `drivetrain_override` directly cannot bypass the price. Profiles from
+  before the change are **grandfathered** in `Save._grandfather_drive_mode`: a car already
+  carrying an override has that mode added to its bought list on load, so an earned
+  conversion is never silently revoked. Done in the tolerant sanitise pass rather than as a
+  schema migration, for the same reason the retired-consumable cleanup is — a
+  `SCHEMA_VERSION` bump makes older builds refuse the profile outright.
+
+- `slot_description(slot)` — one line saying what the slot **does**, in plain language for
+  a player who knows nothing about cars ("which wheels get the power", "the rubber you
+  drive on"). Drawn at the top of that slot's picker by `UpgradeSlotPopup`, above the
+  options; `""` for a slot with no entry, and the popup then draws no row at all rather
+  than an empty gap.
+
+  This is **not** a title, and the picker still has none: a heading repeating "TURBO" over
+  a list of turbos is a line of nothing, whereas this is the only thing telling a novice
+  why they would open the slot at all. Two constraints shaped the copy — every label in the
+  game renders UPPERCASE (`UITheme.enforce`), which is tiring over long sentences, and the
+  panel is ~300 px wide — so each entry is at most two short sentences (what it is, then
+  what it does for you) and avoids jargon rather than explaining it. The tests assert that
+  every openable slot HAS one and that it reaches the popup, never the wording, which is
+  authored copy.
+
 Keeping this as data rather than as widget-construction code is what lets the tile, the
 popup and the tests all agree about what a slot currently offers; a rule re-implemented in
 a button builder is a rule that drifts the first time the layout changes.
+
+### One definition of what a pick MEANS
+
+`UpgradeOptions.option_edit(owned_car, slot, option_id)` is the single description of the
+edit a pick stands for, returning a `kind`: `"none"` (the engine slot's host-owned flow and
+the tune slider — not slot edits at all), `"clear_slot"`, `"enable_part"`, `"fit_part"` or
+`"drive_mode"`.
+
+**Both** the hypothetical build (`build_with`, which the picker rates) and the real apply
+(`UpgradesGrid._apply_option`) branch on it. They still *perform* the edit differently —
+the hypothetical mutates a copy, the real one goes through `Save`'s mutators so
+exclusivity, the purchase re-checks and the reward flow are untouched — but the DECISION is
+made once.
+
+They used to be two independent `match slot` ladders held together by a comment asserting
+they agreed, and they did not. The drivetrain arm of one marked the layout paid for while
+the other did not, so the picker quoted every drive-mode row at the *unconverted* car's
+rating. Two further traps came from the same fork: `""` (the universal Stock sentinel) meant
+`int("") == 0 == RWD` on the drivetrain branch, silently converting any non-RWD car; and
+the engine/tune slots had no arm at all, so an engine id or a percentage would have been
+appended to `installed_upgrades` as if it were a part. All three are structural now.
+
+`test_upgrades_grid.gd::test_build_with_agrees_with_a_real_apply_for_every_slot_and_option`
+holds the two paths to it — for every slot and every selectable option, the rated
+hypothetical and the committed car must have the same merged meta.
+
+### Gates fail CLOSED on an unknown id
+
+`rally_gate_met` and `prerequisite_met` both used to answer **yes** for an id absent from
+the catalogue: the lookup returned `{}`, the missing field defaulted to `""`, and `""` means
+"no gate authored". That is how a capability keyed on a hard-coded id was handed to
+everyone the moment the id was absent — which is exactly what happened when the drivetrain
+gate was keyed on the literal `"drivetrain_swap"` and that id was missing from the
+synthetic test catalogue. Both now deny an unknown id up front. The genuine "no gate
+authored" case is unaffected.
+
+### The conversion kit is a marker, not a part
+
+`drivetrain_swap` carries **no slot** (`"slot": ""`). It is a capability marker: what it
+grants is the garage-wide right to convert, read off its rally gate. It sat in slot
+`"drivetrain"` for a long time, which was a lie with teeth — a part claiming a slot whose
+picker lists drive *modes* and could therefore never offer it, so no second car could
+acquire it by stars or by anything else. `""` is the established "not in any slot" value
+(the solver and the pickers both skip it).
+
+`test_upgrades_grid.gd::test_every_catalogue_part_is_reachable_from_its_slots_picker`
+enforces the general rule: every non-consumable part in a garage slot must appear in that
+slot's picker. It is the test that would have caught the original bug directly.
 
 **Locked options are LISTED, GREYED — this reverses the old rule.** The menu used to omit
 every gated part outright, on the reasoning that a row the player cannot act on only raises

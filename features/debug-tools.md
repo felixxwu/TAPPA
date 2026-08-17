@@ -244,6 +244,25 @@ does not see nodes, physics bodies, materials or textures — for a true RAM fig
 The prewarm and the session-resident `_car_cache` are a **deliberate** trade documented in
 `hq.gd`: the cost is paid once, shortly after boot, to hide the first-entry lag spike.
 
+## Standalone dev scenes
+
+Two scenes exist purely as dev rigs. Neither is the project's main scene and nothing in
+the game links to either — **run them directly from the editor** (F6 / Run Current Scene),
+or with `Godot res://<scene>.tscn`. Being editor-only, they sit outside the "every menu is
+keyboard + gamepad navigable" rule in `CLAUDE.md`.
+
+| Scene | Script | What it's for |
+|-------|--------|---------------|
+| `corner_catalog.tscn` | `corner_catalog.gd` | Draws every `CornerLibrary` turn type side by side so the bezier shapes can be eyeballed. Pure 2D. |
+| `exhaust_lab.tscn` | `exhaust_lab.gd` | Positions each car's exhaust pipes by eye — one frozen car, flames forced permanently on, orbit camera. See [exhaust-flames.md](exhaust-flames.md). |
+
+The exhaust lab is the one place **F8** (`reload_config`) is handled outside the HQ, and
+that hot-reload is the whole reason `GameConfig.exhaust_offsets` lives in
+`config/game_config.tres` rather than in `CarLibrary`: a `.tres` can be re-read from disk
+mid-session, a `.gd` cannot. Drag to orbit, wheel to zoom, `[` / `]` (or Left/Right) to
+cycle cars, F8 to re-read the config and re-apply the pipes. The readout prints each pipe
+as a literal `Vector3(x, y, z)` ready to paste back into `exhaust_offsets`.
+
 ## Standalone performance benchmark
 
 **Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run

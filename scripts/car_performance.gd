@@ -74,7 +74,16 @@ static func rating(meta: Dictionary) -> int:
 	# Proportional to average SPEED, not to time. Raw time is inverted and compresses
 	# badly at the fast end, where half a second between two quick cars means far more
 	# than between two slow ones; the reciprocal spreads the roster evenly.
-	return int(round(RATING_SCALE * float(ref) / float(ms)))
+	#
+	# GameConfig.rating_spread then stretches that ratio about the RATING_SCALE anchor, so
+	# the roster can read as far apart as it drives without moving the benchmark track (lap
+	# time is a compressive measure of a car — a hypercar is only ~1.5x a kei van round a
+	# lap). At the default 1.0 this is exactly the raw ratio and pow() is a no-op.
+	var ratio := float(ref) / float(ms)
+	var spread: float = Config.data.rating_spread
+	if not is_equal_approx(spread, 1.0):
+		ratio = pow(ratio, spread)
+	return int(round(RATING_SCALE * ratio))
 
 
 # Raw benchmark time in ms, for tooling and calibration.
@@ -178,9 +187,11 @@ static func _config_key() -> String:
 	# The two tire load-sensitivity tunables are in here for the same reason the traction
 	# factors are: the benchmark reads them (LapTimeModel._load_factor), so retuning either
 	# has to invalidate every cached rating rather than leaving stale numbers on screen.
-	return "%.2f|%.2f|%.2f|%d|%.3f|%.3f|%.3f|%.4f|%.1f" % [
+	# rating_spread is in here too: it changes the NUMBER without changing the lap, so a
+	# retune must invalidate the memoised ratings even though the benchmark is untouched.
+	return "%.2f|%.2f|%.2f|%d|%.3f|%.3f|%.3f|%.4f|%.1f|%.3f" % [
 		cfg.benchmark_straight_m, cfg.benchmark_hairpin_radius_m,
 		cfg.benchmark_sweeper_radius_m, cfg.benchmark_sweeper_count,
 		cfg.traction_factor_rwd, cfg.traction_factor_awd, cfg.traction_factor_fwd,
-		cfg.tire_load_sensitivity, cfg.tire_ref_pressure,
+		cfg.tire_load_sensitivity, cfg.tire_ref_pressure, cfg.rating_spread,
 	]

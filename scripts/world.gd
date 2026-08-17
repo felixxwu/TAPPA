@@ -1076,6 +1076,13 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		func() -> Node: return EngineSmoke.new()) as EngineSmoke
 	_engine_smoke.setup($Car)
 
+	# Backfire flame spat from each exhaust pipe on a rev-limiter bang and while nitrous
+	# is delivering. Its own small additive MultiMesh pool; reads the car's limiter cut
+	# counter and nitrous delivery state live. See features/exhaust-flames.md.
+	_exhaust_flames = _ensure_child("ExhaustFlames",
+		func() -> Node: return ExhaustFlames.new()) as ExhaustFlames
+	_exhaust_flames.setup($Car)
+
 	# Records the car's transform each frame during a stage run, so it can be
 	# played back as a cinematic replay behind the between-event standings
 	# overlay (features/event-replay.md).
@@ -1469,6 +1476,7 @@ var _road_markings: RoadMarkings
 # a car swap).
 var _wheel_particles: WheelParticles
 var _engine_smoke: EngineSmoke
+var _exhaust_flames: ExhaustFlames
 
 # Cinematic replay behind the between-event standings overlay (features/event-replay.md).
 var _replay_recorder: ReplayRecorder

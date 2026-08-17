@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b7xq2nvexh4la"]
+
+[ext_resource type="Script" path="res://scripts/exhaust_lab.gd" id="1"]
+
+[node name="ExhaustLab" type="Node3D"]
+script = ExtResource("1")

@@ -91,6 +91,12 @@ class WheelContact extends RefCounted:
 	# through the ground this tick, in newtons — the same vector the `applied` debug
 	# readout reports. Written in step()'s apply loop; read by wheel_force_n.
 	var force_n: float
+	# The terrain's ROAD WEIGHT under this contact: 1.0 fully on the road, 0.0 fully off
+	# it. Recorded here purely so car.gd's deep-snow drag can be applied PER WHEEL without
+	# a second round of terrain queries — surface_tire_params has already paid for this
+	# sample. 1.0 (i.e. "on the road", no bog) wherever there is no ground sample to take.
+	# See car.gd::_apply_deep_snow_drag and features/snow-region.md.
+	var road_weight: float
 	# Was this contact FILLED this tick? The pool is persistent (one WheelContact per
 	# wheel for the life of the drivetrain), so an airborne wheel would otherwise keep
 	# serving last tick's numbers to the per-wheel accessors below.
@@ -98,6 +104,34 @@ class WheelContact extends RefCounted:
 
 var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
 var _contacts: Array = []           # the in-contact subset this tick (reused)
+
+
+# The ploughing force ONE buried wheel contributes to the chassis, given the chassis
+# motion, that contact's offset from the chassis centre, and how much road weight is under
+# it (1.0 fully on the road, 0.0 fully off it). Applied by car.gd::_apply_deep_snow_drag at
+# the contact offset, which is what turns lopsided burial into a yaw torque.
+#
+# Pure + static, and living here rather than on car.gd (which has no class_name) so the
+# whole rule — the contact-point velocity, the road-weight feather, and the fact that four
+# equally buried wheels sum to exactly the single central force this replaced — is
+# testable without a physics scene or a terrain. See features/snow-region.md.
+static func deep_snow_force(vel: Vector3, ang_vel: Vector3, offset: Vector3,
+		road_weight: float, per_wheel: float) -> Vector3:
+	var off_road := 1.0 - road_weight
+	if off_road <= 0.0:
+		return Vector3.ZERO
+	# Velocity AT THE CONTACT, not at the chassis centre — this is the term that lets deep
+	# snow damp a spin rather than only a translation.
+	var v_at := vel + ang_vel.cross(offset)
+	return -v_at * per_wheel * off_road
+
+
+# The wheel contacts that are ON THE GROUND this tick, as WheelContact objects. Exposed so
+# car.gd can apply per-wheel body forces (the deep-snow drag) against the same contact
+# points and the same terrain samples the tire solver used, instead of re-deriving either.
+# The array is REUSED across ticks — read it immediately, never store it.
+func live_contacts() -> Array:
+	return _contacts
 
 # All wheels (front + rear), cached once in _init so per-tick callers (e.g.
 # WheelParticles) can iterate every wheel without allocating `front_wheels +
@@ -107,7 +141,7 @@ var all_wheels: Array = []
 # Reusable return buffer for surface_tire_params — filled and returned every call
 # so the hot per-contact path allocates no Dictionary. Callers read its fields
 # immediately (before the next call overwrites them), which they all do.
-var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0}
+var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0, road_weight = 1.0}
 
 # Reusable return buffer for front_axle_state() — see there. Same no-allocation contract
 # as _surf_scratch: filled and returned every call, read immediately by the caller.
@@ -190,6 +224,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		c.n_force = n_force
 		c.slip_peak = surf.slip_peak
 		c.slide_ratio = surf.slide_ratio
+		c.road_weight = surf.road_weight
 		c.mu = (
 			cfg.wheel_friction_slip_front if wheel.use_as_steering
 			else cfg.wheel_friction_slip_rear
@@ -691,6 +726,7 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, 0.0, tire_snowy)
 		_surf_scratch.slip_peak = cfg.tire_slip_peak
 		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
+		_surf_scratch.road_weight = 1.0  # no terrain to be off the side of
 		return _surf_scratch
 	# Frozen lake: on a stage whose region freezes its water (features/snow-region.md),
 	# a contact over a submerged cell is on ICE, not on whatever is under the ice. So
@@ -713,6 +749,9 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, 0.0, tire_snowy)
 		_surf_scratch.slip_peak = cfg.tarmac_slip_peak
 		_surf_scratch.slide_ratio = cfg.tarmac_slide_ratio
+		# A frozen lake is something you SLIDE on, not something you bog in — the deep-snow
+		# drag must not fire out on the ice, however far off the road it is.
+		_surf_scratch.road_weight = 1.0
 		return _surf_scratch
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
 	# s.x is the road weight and s.y the tarmac weight WITHIN the road, so their product
@@ -723,6 +762,7 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, s.x * s.y, tire_snowy)
 	_surf_scratch.slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s)
 	_surf_scratch.slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s)
+	_surf_scratch.road_weight = s.x
 	return _surf_scratch
 
 

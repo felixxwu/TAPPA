@@ -2242,13 +2242,14 @@ func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
 	assert_true(hq._detail_open, "a tap with no drag opens the rally detail")
 
 
-func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
+func test_hq_parks_the_enterable_and_the_fixable_but_not_the_hopeless() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# RWD Masters wants RWD cars inside a mid power-to-weight band. Own an XJS and a
-	# 911 alongside the low-power RWD starter, pick that rally and enter: HQ parks
-	# exactly the owned cars the eligibility rule accepts (derived below, not pinned).
+	# Three-way split: a car that can enter is parked; a car that is merely the wrong
+	# DRIVETRAIN is parked too (marked with its reason, so the player can go and convert
+	# it); a car that can never enter — wrong body, country, doors — is left out, because
+	# parking it would offer the player nothing to act on.
 	_save.grant_car("fx_awd")
 	_save.grant_car("fx_rwd_coupe")
 	hq._table_ui._on_rally_pin("fx_rwd_band")
@@ -2257,24 +2258,30 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
 	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
-	# Expected = exactly the owned cars RallyLibrary deems eligible. Derived from the
-	# eligibility rule + owned roster (not a pinned model name), so it stays correct if the
-	# fixture cars or the rally's class are retuned — what it really asserts is that HQ
-	# parks the library's enterable set, no more, no less. Built over the player's OWNED
-	# cars (not bare catalogue specs) so a drivetrain conversion or engine swap counts.
+	# Expected = the cars the RULE says can enter or be made to, derived from the rule
+	# itself over the owned roster rather than pinned model names, so it stays correct if
+	# the fixture cars or the rally's class are retuned.
 	var rally := RallyLibrary.by_id("fx_rwd_band")
 	var expected := {}
+	var fixable := 0
+	var hopeless := 0
 	for car in _save.profile.get("cars", []):
 		var spec := CarLibrary.by_id(String(car.get("model_id", "")))
 		var meta := UpgradeLibrary.effective_meta(car, spec.duplicate())
 		if RallyLibrary.is_eligible(rally, meta):
 			expected[String(spec["name"])] = true
+		elif hq._convertible_for(rally, car, spec):
+			expected[String(spec["name"])] = true
+			fixable += 1
+		else:
+			hopeless += 1
 	await _await_lineup(hq)
 	var parked := {}
 	for car in hq._cars:
 		parked[car.current_car_name()] = true
-	assert_eq(parked, expected, "HQ parks exactly the eligible cars")
-	assert_gt(expected.size(), 0, "at least one owned car qualifies (else the test proves nothing)")
+	assert_eq(parked, expected, "HQ parks the enterable and the fixable, and nothing else")
+	assert_gt(fixable + hopeless, 0,
+		"setup: at least one owned car is not eligible as built (else this proves nothing)")
 	# The banner spells out the rally's restriction. Derive the expected text from the
 	# rally's actual restriction (same helper HQ uses) rather than pinning "RWD CARS",
 	# so it tracks any retune of the rally's restriction. The banner is upper-cased for
@@ -2660,24 +2667,96 @@ func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
 	assert_true(_save.car_needs_repair(id), "and it does need a repair")
 
 
-func test_swap_car_qualifies_for_restricted_rally() -> void:
-	# A car whose STOCK mode fails a RWD-only rally becomes eligible once it carries the
-	# swap kit (it can switch to RWD); without the kit it stays ineligible.
+# The car park no longer auto-switches a wrong-drivetrain car at the Start button. That
+# switch was free, silent and reverted afterwards, which — now that conversion carries a
+# per-car star price — handed the player for nothing exactly what the garage charges for,
+# and (once resolve_drive_override began ignoring unpaid overrides) would have sent the car
+# out still ineligible while the game believed it qualified.
+#
+# A wrong-drivetrain car is simply ineligible now: parked, marked, and left for the player
+# to convert themselves.
+func test_a_wrong_drivetrain_car_is_ineligible_and_says_so() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var rally := {"id": "t_rwd", "name": "T", "restriction": {"drive_mode": CarLibrary.RWD}}
-	var entry := {"id": "t_fwd", "name": "FWD car", "drive_mode": CarLibrary.FWD, "engine": "", "mass": 1200.0, "max_hp": 1000.0}
-	var with_kit := {"instance_id": 1, "model_id": "t_fwd", "hp": 1000.0,
-		"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": -1}
-	var no_kit := {"instance_id": 2, "model_id": "t_fwd", "hp": 1000.0,
-		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
-	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, with_kit, entry,
-			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
-		"kitted car can switch to the required RWD")
-	assert_eq(hq._carpark_ui._qualifying_drivetrain_for(rally, no_kit, entry,
-			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
-		"un-kitted car cannot switch, so no qualifying mode")
+	var entry := {"id": "t_fwd", "name": "FWD car", "drive_mode": CarLibrary.FWD,
+		"engine": "", "mass": 1200.0, "max_hp": 1000.0}
+	var car := {"instance_id": 2, "model_id": "t_fwd", "hp": 1000.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1,
+		"drivetrain_modes_bought": []}
+	assert_false(bool(hq._entry_plan(rally, car)["eligible"]),
+		"the wrong drive mode makes the car ineligible, with nothing proposed to fix it")
+	# And the rally panel counts it as convertible, which is the prompt that tells the
+	# player what they could do about it.
+	assert_ne(RallyLibrary.ineligibility_reason(
+		rally, UpgradeLibrary.effective_meta(car, entry)), "",
+		"and the reason is stated, so the car park has something to show")
+
+
+# Being parked is not being enterable: focusing an ineligible car must kill Start and put
+# the rally's own reason on screen, so the player learns what is wrong from the car itself.
+func test_focusing_an_ineligible_car_blocks_start_and_names_the_reason() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")
+	hq._table_ui._on_rally_pin("fx_rwd_band")
+	hq._enter_car_screen()
+	await _await_lineup(hq)
+	var rally := RallyLibrary.by_id("fx_rwd_band")
+	# Walk the parked lineup and check each car against the eligibility rule directly.
+	var saw_ineligible := false
+	for i in hq._eligible.size():
+		var owned: Dictionary = hq._eligible[i]
+		var entry := CarLibrary.for_owned(owned)
+		var reason := RallyLibrary.ineligibility_reason(
+			rally, UpgradeLibrary.effective_meta(owned, entry))
+		hq._focus = i
+		hq._carpark_ui._focus_changed()
+		if reason == "":
+			assert_false(hq._start_button.disabled, "an eligible car can be started")
+			continue
+		saw_ineligible = true
+		assert_true(hq._start_button.disabled, "an ineligible car cannot be started")
+		assert_true(hq._car_warning_label.visible, "and it is flagged on screen")
+		# Compared case-insensitively: the house style uppercases every label on display.
+		assert_eq(hq._car_warning_label.text.to_upper(), reason.to_upper(),
+			"in the rally's own words, so the car park cannot invent a different story")
+	assert_true(saw_ineligible, "setup: the lineup contains an ineligible car to test")
+
+
+# A car that can NEVER enter — no upgrade changes its body, country or doors — is left out
+# of the lineup entirely. Parking it would be a row the player can do nothing about.
+func test_a_car_that_can_never_qualify_is_not_parked() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var rally := RallyLibrary.by_id("fx_rwd_band")
+	assert_false(rally.is_empty(), "setup: the fixture rally exists")
+	# A restriction no upgrade can satisfy, on a car that fails it.
+	var hopeless := {"instance_id": 99, "model_id": "fx_awd", "hp": 1000.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1,
+		"drivetrain_modes_bought": []}
+	var body_rally := {"id": "t_body", "name": "T", "restriction": {"car_type": "not_a_real_type"}}
+	assert_false(hq._can_ever_enter(body_rally, hopeless),
+		"a body-type mismatch is unfixable, so the car is excluded from the lineup")
+
+
+# ...but a car that is only the wrong DRIVETRAIN is kept, because the player can convert it.
+func test_a_convertible_car_is_kept_in_the_lineup() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var rwd_rally := {"id": "t_rwd", "name": "T", "restriction": {"drive_mode": CarLibrary.RWD}}
+	var awd := {"instance_id": 98, "model_id": "fx_awd", "hp": 1000.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1,
+		"drivetrain_modes_bought": []}
+	assert_false(bool(hq._entry_plan(rwd_rally, awd)["eligible"]),
+		"setup: it cannot enter as built")
+	assert_true(hq._can_ever_enter(rwd_rally, awd),
+		"but a conversion would fix it, so it stays in the lineup to be marked")
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------

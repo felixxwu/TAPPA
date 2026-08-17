@@ -70,6 +70,12 @@ var _misfire_timer := 0.0  # seconds left in the current damage fuel-cut (0 = fi
 # Monotonic count of damage misfire cut ONSETS (not the rev limiter). EngineSmoke
 # reads the delta each frame to puff a burst of smoke per cut. See features/engine-smoke.md.
 var misfire_count := 0
+# Monotonic count of REV-LIMITER cut onsets (not the damage misfire above). The
+# limiter cut is the one that pops unburnt fuel in the exhaust, so it is what both the
+# audio crackle burst and the exhaust flame key off — a damaged engine stumbles without
+# a bang. ExhaustFlames reads the delta each frame, exactly as EngineSmoke reads
+# misfire_count. See features/exhaust-flames.md.
+var limiter_cut_count := 0
 # Own RNG so misfires are reproducible in tests (set _rng.seed) and each car instance
 # stumbles independently. Randomised at runtime in _init.
 var _rng := RandomNumberGenerator.new()
@@ -377,6 +383,8 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 func _update_limiter(cfg: GameConfig) -> bool:
 	var band_omega := cfg.rev_limiter_band * TAU / 60.0
 	if omega >= redline_omega():
+		if not limiting:
+			limiter_cut_count += 1  # ONSET only — one bang per bounce off the limiter
 		limiting = true
 	elif omega <= redline_omega() - band_omega:
 		limiting = false

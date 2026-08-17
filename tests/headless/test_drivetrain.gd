@@ -469,6 +469,50 @@ func test_airborne_wheel_reports_no_live_tire_state() -> void:
 
 
 
+# --- Road weight is carried to the deep-snow drag -----------------------------
+# surface_tire_params already samples the terrain per contact, so it records the road
+# weight for car.gd's per-wheel deep-snow drag to reuse (features/snow-region.md). If this
+# stopped being reported the drag would silently read 1.0 everywhere and never fire.
+
+func test_surface_params_reports_the_terrains_road_weight() -> void:
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var stub := _StubTerrain.new()
+	dt.terrain = stub
+	stub.s = Vector2(1.0, 0.0)
+	assert_almost_eq(float(dt.surface_tire_params(cfg, Vector3.ZERO).road_weight), 1.0, 1e-6,
+		"fully on the road")
+	stub.s = Vector2(0.0, 0.0)
+	assert_almost_eq(float(dt.surface_tire_params(cfg, Vector3.ZERO).road_weight), 0.0, 1e-6,
+		"fully off it — this is what lets the snow bog")
+	stub.s = Vector2(0.4, 0.0)
+	assert_almost_eq(float(dt.surface_tire_params(cfg, Vector3.ZERO).road_weight), 0.4, 1e-6,
+		"and it is the feathered weight, not a rounded predicate")
+
+
+func test_no_terrain_reports_full_road_weight_so_nothing_bogs() -> void:
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	dt.terrain = null
+	assert_almost_eq(float(dt.surface_tire_params(cfg, Vector3.ZERO).road_weight), 1.0, 1e-6,
+		"with no ground to sample the car must not be dragged by imaginary snow")
+
+
+# A frozen lake is something you SLIDE on, not something you bog in — however far off the
+# road it is, the ploughing drag must not fire out on the ice.
+func test_ice_reports_full_road_weight_so_the_snow_drag_stays_off() -> void:
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var stub := _StubTerrainWithHeight.new()
+	dt.terrain = stub
+	cfg.frozen_water_grip = 0.2
+	cfg.track_water_level_m = 0.0
+	stub.height = -5.0          # submerged: this contact is on the ice
+	stub.s = Vector2(0.0, 0.0)  # and well off the road
+	assert_almost_eq(float(dt.surface_tire_params(cfg, Vector3.ZERO).road_weight), 1.0, 1e-6,
+		"ice must not plough, however far off the road the lake is")
+
+
 # --- Frozen lakes: ice OVERRIDES the surface blend -----------------------------
 # On a stage whose region freezes its water (features/snow-region.md), a contact over a
 # submerged cell is on ICE. What lies under the ice is irrelevant to the tyre, so the

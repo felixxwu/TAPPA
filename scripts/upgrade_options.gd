@@ -71,6 +71,36 @@ static func tile_slot_name(slot: String) -> String:
 	return String(_TILE_SLOT_NAMES.get(slot, slot))
 
 
+# One line at the top of a slot's picker saying what the slot actually DOES, written for a
+# player who knows nothing about cars (features/upgrade-catalogue.md).
+#
+# The picker deliberately has no title — the tile the player just pressed already names the
+# slot, and a heading repeating "TURBO" over a list of turbos is a line of nothing. This is
+# the opposite: it is the line that tells someone who has never heard of a limited-slip
+# differential why they might want one. It is what earns the space a bare title would waste.
+#
+# House rules that shaped the copy: every label in the game renders UPPERCASE
+# (UITheme.enforce), which is tiring to read in long sentences, and the panel is only 300px
+# wide. So each entry is two short sentences at most — what it is, then what it does for
+# you — and avoids jargon rather than explaining it.
+const _SLOT_DESCRIPTIONS := {
+	"turbo": "Forces more air into the engine for extra power. Turbos surge once spinning; superchargers pull from low revs.",
+	"gearbox": "How fast the car changes gear. Quicker shifts lose less speed.",
+	"aero": "Wings that press the car onto the road at speed. More grip in fast corners.",
+	"tires": "The rubber you drive on. The biggest single change to grip.",
+	"weight": "How heavy the car is. Lighter turns, stops and accelerates better.",
+	"drivetrain": "Which wheels get the power. Front is stable, rear slides, all-wheel grips best on loose ground.",
+	"nitrous": "A gas bottle for a short burst of power. Refills at every stage start.",
+	SLOT_TUNE: "Turns engine power down on purpose. Use it to get under a rally's power limit.",
+}
+
+
+# The description for `slot`, or "" for a slot with none — the popup then simply draws no
+# description row rather than an empty gap, so an unlisted slot degrades quietly.
+static func slot_description(slot: String) -> String:
+	return String(_SLOT_DESCRIPTIONS.get(slot, ""))
+
+
 # The one-line value the grid tile shows after the slot name — "Small", "Stock", "V8".
 static func current_label(owned_car: Dictionary, slot: String) -> String:
 	if slot == SLOT_TUNE:
@@ -255,19 +285,36 @@ static func _drivetrain_options(owned_car: Dictionary) -> Array[Dictionary]:
 	# tile fell back to reading "Stock" instead of naming the layout the car actually has.
 	var override := int(owned_car.get("drivetrain_override", -1))
 	var current := override if override >= 0 else stock
-	var unlocked := UpgradeLibrary.drivetrain_swap_unlocked(owned_car)
+	# GARAGE-WIDE capability (won once), but each non-stock conversion is BOUGHT per car —
+	# so a row is one of three things: free (the car's stock layout, or a mode it has
+	# already paid for), a purchase quoting its star price, or locked because the special
+	# that unlocks conversion has not been won.
+	var unlocked := UpgradeLibrary.drivetrain_swap_unlocked(Save.profile)
+	var instance_id := int(owned_car.get("instance_id", -1))
 	var out: Array[Dictionary] = []
 	for mode: int in [CarLibrary.RWD, CarLibrary.AWD, CarLibrary.FWD]:
 		var is_stock := mode == stock
+		var owned_mode := Save.drive_mode_available(owned_car, mode)
+		var price := -1
+		var reason := ""
+		if not owned_mode:
+			if not unlocked:
+				reason = "Locked"
+			elif Save.can_buy_drive_mode(instance_id, mode):
+				price = Save.drive_mode_price()
+			else:
+				# Unlocked and unbought, but the stars are not there — quote what it needs,
+				# the same shape a part row uses when it is unaffordable.
+				reason = "%d stars" % Save.drive_mode_price()
 		out.append({
 			"id": str(mode),
 			"label": _drive_name(mode) + (" (Stock)" if is_stock else ""),
 			"tile_label": _drive_name(mode),
 			"current": mode == current,
-			# The car's own layout is always available — reverting is never gated.
-			"selectable": is_stock or unlocked,
-			"price": -1,
-			"locked_reason": "" if (is_stock or unlocked) else "Locked",
+			# The car's own layout is always available — reverting is never gated or charged.
+			"selectable": owned_mode or price >= 0,
+			"price": price,
+			"locked_reason": reason,
 		})
 	return out
 
@@ -294,26 +341,88 @@ static func rating_with(owned_car: Dictionary, slot: String, option_id: String) 
 	return CarPerformance.rating(CarPerformance.merged_meta(hypo, CarLibrary.for_owned(hypo)))
 
 
+# THE ONE DESCRIPTION of what taking `option_id` in `slot` MEANS.
+#
+# Both the hypothetical build (build_with, below) and the real apply
+# (UpgradesGrid._apply_option) read this, so the two cannot disagree about which edit a
+# pick stands for. They still perform it differently — the hypothetical mutates a copy, the
+# real one goes through Save's mutators so exclusivity, purchase re-checks and the reward
+# flow are untouched — but the DECISION is made once.
+#
+# They used to be two independent `match slot` ladders held together by a comment asserting
+# they agreed. They did not: the drivetrain arm of one marked the layout paid for while the
+# other did not, so the picker quoted every drive-mode row at the unconverted car's rating.
+# That class of drift is what this removes.
+#
+# Kinds:
+#   "none"        — nothing this pipeline can model. The engine slot is a host-owned flow
+#                   (it needs a partner car to pick) and tune is a continuous slider; both
+#                   are handled entirely outside the option pipeline. Returning an explicit
+#                   "none" is what stops them falling into the PART branch, where an engine
+#                   id or a percentage would be appended to installed_upgrades as if it
+#                   were a part.
+#   "clear_slot"  — the slot's off state ("Stock").
+#   "enable_part" — the part is already on the car; switch it on.
+#   "fit_part"    — the part is not on the car; acquire it (free, or bought), then enable.
+#   "drive_mode"  — set the car's layout, buying it first if unpaid.
+static func option_edit(owned_car: Dictionary, slot: String, option_id: String) -> Dictionary:
+	if slot == SLOT_ENGINE or slot == SLOT_TUNE:
+		return {"kind": "none"}
+	if slot == "drivetrain":
+		# "" is the universal Stock sentinel in this file, and for a LAYOUT that has to mean
+		# the car's authored mode. int("") is 0, which is a real drive mode (RWD) — so
+		# without this the off-state sentinel would silently convert every non-RWD car to
+		# RWD, and mark it paid for.
+		var mode := (UpgradeLibrary.stock_drive_mode(owned_car) if option_id == ""
+			else int(option_id))
+		return {"kind": "drive_mode", "mode": mode}
+	if option_id == "":
+		return {"kind": "clear_slot"}
+	if (owned_car.get("installed_upgrades", []) as Array).has(option_id):
+		return {"kind": "enable_part", "id": option_id}
+	return {"kind": "fit_part", "id": option_id, "free": UpgradeLibrary.is_free(option_id)}
+
+
 # A COPY of `owned_car` with `slot` switched to `option_id` — the same end state the
-# matching UpgradesGrid._apply_option branch would leave in the save, minus the save.
-# "" is Stock (the slot's off state). Pure: the passed-in dict is never touched.
+# matching UpgradesGrid._apply_option branch would leave in the save, minus the save and
+# minus the payment. "" is Stock (the slot's off state). Pure: the passed-in dict is never
+# touched.
+#
+# Both paths branch on option_edit above, so "same end state" is now structural rather than
+# a claim in a comment. The differential test in test_upgrades_grid.gd holds them to it.
 static func build_with(owned_car: Dictionary, slot: String, option_id: String) -> Dictionary:
 	var hypo := owned_car.duplicate(true)
-	if slot == "drivetrain":
-		hypo["drivetrain_override"] = int(option_id)
-		return hypo
+	var edit := option_edit(owned_car, slot, option_id)
+	match String(edit.get("kind", "none")):
+		"none":
+			# Not modellable as a slot edit (engine swap / detune). The honest hypothetical
+			# is the car exactly as it stands.
+			return hypo
+		"drive_mode":
+			var mode := int(edit["mode"])
+			hypo["drivetrain_override"] = mode
+			# Marked PAID FOR in the hypothetical: resolve_drive_override ignores an unbought
+			# override, so without this the copy would rate as the unconverted car and every
+			# drive-mode row would quote the same figure. The question being asked is "what
+			# would this car rate if converted", so the copy is a converted car.
+			var bought: Array = (hypo.get("drivetrain_modes_bought", []) as Array).duplicate()
+			if not bought.has(mode):
+				bought.append(mode)
+			hypo["drivetrain_modes_bought"] = bought
+			return hypo
 	var installed: Array = (hypo.get("installed_upgrades", []) as Array).duplicate()
 	var disabled: Array = (hypo.get("disabled_upgrades", []) as Array).duplicate()
 	# Park the whole slot first, then switch on the pick. Doing it in that order gives the
-	# one-part-per-slot rule for free and makes "" (Stock) fall out as the no-pick case,
-	# rather than needing a branch of its own.
+	# one-part-per-slot rule for free and makes "clear_slot" (Stock) fall out as the
+	# no-pick case, rather than needing a branch of its own.
 	for def in UpgradeLibrary.all():
 		if String(def.get("slot", "")) == slot and not disabled.has(def.get("id", "")):
 			disabled.append(String(def.get("id", "")))
-	if option_id != "":
-		if not installed.has(option_id):
-			installed.append(option_id)
-		disabled.erase(option_id)
+	var pick := String(edit.get("id", ""))
+	if pick != "":
+		if not installed.has(pick):
+			installed.append(pick)
+		disabled.erase(pick)
 	hypo["installed_upgrades"] = installed
 	hypo["disabled_upgrades"] = disabled
 	return hypo

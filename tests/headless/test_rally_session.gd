@@ -837,20 +837,19 @@ func test_stale_detune_revert_for_an_unfielded_car_is_settled_at_start() -> void
 		"and the later rally end leaves it alone")
 
 
-# --- Temporary drivetrain revert (parallel to detune revert) --------------------------
+# The temporary drivetrain revert is GONE, along with the car-park auto-switch it existed
+# to undo. A wrong-drivetrain car is simply ineligible now — the player converts it in the
+# garage, permanently, for stars — so there is no per-rally override to put back.
+# See features/menus.md (the car park) and features/upgrade-catalogue.md.
 
-func test_drivetrain_revert_restores_prior_mode_on_reset() -> void:
-	UpgradeFixtures.install()  # needs the drivetrain-swap kit (fx_drivetrain)
+func test_a_garage_set_drivetrain_survives_a_rally() -> void:
 	var owned: Dictionary = _save.grant_car(String(CarLibrary.all()[0].get("id", "")))
 	var id := int(owned["instance_id"])
-	_save.install_upgrade(id, "fx_drivetrain", true)
-	_save.set_drivetrain_override(id, CarLibrary.RWD)  # garage-set choice
-	# Simulate the car-park agreement: register the prior, then override for the rally.
-	RallySession.register_drivetrain_revert(id, CarLibrary.RWD)
 	_save.set_drivetrain_override(id, CarLibrary.AWD)
+	(_save.get_car(id)["drivetrain_modes_bought"] as Array).append(CarLibrary.AWD)
 	RallySession._reset_to_idle()
-	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.RWD,
-		"drivetrain restored to the garage-set mode after the rally")
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.AWD,
+		"a layout the player bought and chose is theirs to keep; nothing reverts it")
 
 
 # --- Per-event config application (apply_event_config) ------------------------

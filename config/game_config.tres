@@ -77,10 +77,10 @@ headlight_outer_deg = 26.0
 headlight_offset_m = Vector3(0, 0.6, 1.8)
 headlight_pitch_deg = 7.0
 headlight_separation_frac = 0.62
-snow_grass_grip = 0.3
+snow_grass_grip = 0.45
 snow_gravel_grip = 0.55
 snow_tarmac_grip = 0.7
-snow_deep_drag = 90.0
+snow_deep_drag = 1000.0
 snow_visual_depth_m = 0.35
 ice_grip = 0.12
 ice_color = Color(0.8, 0.86, 0.9, 1)
@@ -225,3 +225,22 @@ map_link_color = Color(1, 1, 1, 1)
 map_link_width_m = 0.011
 map_link_outline_width_m = 0.02
 map_link_outline_color = Color(0.03, 0.02, 0.0, 0.55)
+rating_spread = 3.0
+exhaust_offsets = {
+"acty": [Vector3(-0.3, -0.04, 1.5)],
+"beast": [Vector4(1, -0.28, 1.05, 30.0), Vector4(-1, -0.28, 1.05, -30.0)],
+"charger": [Vector3(0.65, -0.14, 2.71), Vector3(-0.65, -0.14, 2.71)],
+"focus": [Vector3(-0.5, -0.25, 2.05)],
+"mx5": [Vector3(0.41, -0.23, 2.0), Vector3(-0.41, -0.23, 2.0)],
+"porsche911": [Vector3(-0.4, -0.17, 2.2), Vector3(-0.5, -0.17, 2.2)],
+"twingo": [Vector3(-0.45, -0.1, 1.5)],
+"viper": [Vector4(0.9, -0.3, 0.7, 30.0), Vector4(-0.9, -0.3, 0.7, -30.0)],
+"xjs": [Vector3(0.66, -0.2, 2.6), Vector3(-0.66, -0.2, 2.6)]
+}
+exhaust_flame_frames = 4
+exhaust_flame_frame_seconds = 0.05
+exhaust_flame_pop_seconds = 0.03
+exhaust_flame_length_m = 0.4
+exhaust_flame_width_m = 0.16
+exhaust_flame_wobble = 0.2
+exhaust_flame_core_fraction = 0.45

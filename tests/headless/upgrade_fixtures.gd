@@ -94,7 +94,11 @@ static func upgrades() -> Array[Dictionary]:
 			"consumable": false, "free": true, "effect": {"mass_mult": 1.3},
 		},
 		{
-			"id": "fx_drivetrain", "name": "Fixture Drivetrain", "slot": "drivetrain",
+			# A CAPABILITY MARKER, not a fittable part — deliberately in NO slot, mirroring
+			# the shipped drivetrain_swap. What it grants is the garage-wide right to
+			# convert; the drivetrain slot's picker lists drive MODES, bought per car and
+			# per layout, so a part sitting in that slot could never be offered by it.
+			"id": "fx_drivetrain", "name": "Fixture Drivetrain", "slot": "",
 			"consumable": false, "effect": {"unlocks_drivetrain_swap": true},
 		},
 		{

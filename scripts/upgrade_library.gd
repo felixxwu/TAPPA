@@ -203,7 +203,14 @@ const UPGRADES: Array[Dictionary] = [
 		# rewrites the car's drive_mode, which changes which rallies the car is ELIGIBLE
 		# for (RallyLibrary.is_eligible / hq._entry_plan) — so it visibly opens pins on the
 		# map rather than just adding speed.
-		"id": "drivetrain_swap", "name": "Drivetrain Conversion", "slot": "drivetrain",
+		# NO SLOT. This is a CAPABILITY MARKER, not a fittable part: what it grants is the
+		# garage-wide right to convert (drivetrain_swap_unlocked reads its rally gate), and
+		# the drivetrain slot's picker lists drive MODES, which are bought per car and per
+		# layout. It sat in slot "drivetrain" for a long time, which was a lie with teeth —
+		# a part claiming a slot whose picker could never offer it, so no second car could
+		# acquire it by any means. "" is the established "not in any slot" value (the solver
+		# and the pickers both skip it), so the entry now says what it is.
+		"id": "drivetrain_swap", "name": "Drivetrain Conversion", "slot": "",
 		"unlocked_by_rally": "sp_lakeshore_trial",
 		"consumable": false, "effect": {"unlocks_drivetrain_swap": true},
 	},
@@ -312,6 +319,14 @@ static func unlocked_by(rally_id: String) -> Dictionary:
 
 
 static func rally_gate_met(item_id: String, profile: Dictionary) -> bool:
+	# An id that is not in the catalogue FAILS CLOSED. It used to fail open: by_id returned
+	# {}, so unlocked_by_rally returned "", so "no authored gate" and the caller was told
+	# UNLOCKED. Every caller was then one rename away from silently granting a capability to
+	# everyone — which is exactly what happened when the drivetrain gate was keyed on a
+	# hard-coded "drivetrain_swap" literal and that id was absent from the synthetic test
+	# catalogue. A gate asked about something that does not exist must deny.
+	if by_id(item_id).is_empty():
+		return false
 	var rid := unlocked_by_rally(item_id)
 	if rid == "":
 		return true
@@ -340,6 +355,12 @@ static func requires_upgrade_id(id: String) -> String:
 # OwnedCar), so each car has to earn its way up its own turbo ladder.
 # Used by RewardSystem._parts_at_or_below.
 static func prerequisite_met(item_id: String, owned_car: Dictionary) -> bool:
+	# Fails CLOSED on an unknown id, for the same reason rally_gate_met does: requires_
+	# upgrade_id would return "" for a missing entry, which reads as "no prerequisite" and
+	# waves the item through. The two gates are asked together at every call site, so a
+	# permissive answer here undoes a strict answer there.
+	if by_id(item_id).is_empty():
+		return false
 	var req := requires_upgrade_id(item_id)
 	return req == "" or (owned_car.get("installed_upgrades", []) as Array).has(req)
 
@@ -733,7 +754,11 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 	if meta.is_empty():
 		return plan
 	var budget := 0 if free_only else maxi(stars, 0)
-	var price := int(Config.data.star_cost_per_part)
+	# Priced through Save.part_price, NOT off Config directly. part_price exists so rarity
+	# pricing can land later without every caller changing (see its own comment), and the
+	# COMMIT spends through it — so reading the flat config value here would make the plan
+	# quote a cost the commit does not spend the moment prices stop being uniform. The
+	# drivetrain half of this plan already prices through Save.drive_mode_price().
 	var enabled_now := enabled_upgrades(owned_car)
 	var owned: Array = owned_car.get("installed_upgrades", [])
 
@@ -758,7 +783,7 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 				continue  # ballast: never fitted by Auto, in any mode
 			var have := owned.has(item_id)
 			if not have:
-				if free_only or budget < price:
+				if free_only or budget < Save.part_price(item_id):
 					continue
 				if not rally_gate_met(item_id, profile) or not prerequisite_met(item_id, owned_car):
 					continue
@@ -788,7 +813,7 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 		for item_id in combo:
 			# "" is the "leave this slot empty" pick, not a part — it costs nothing.
 			if item_id != "" and not owned.has(item_id):
-				cost += price
+				cost += Save.part_price(item_id)
 		if cost > budget:
 			continue
 		var rating := _combo_rating(owned_car, meta, combo, pw_slots)
@@ -826,7 +851,7 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 			continue
 		if not owned.has(item_id):
 			(plan["buy"] as Array).append(item_id)
-			plan["cost"] = int(plan["cost"]) + price
+			plan["cost"] = int(plan["cost"]) + Save.part_price(item_id)
 		elif not enabled_now.has(item_id):
 			(plan["enable"] as Array).append(item_id)
 	for item_id in enabled_now:
@@ -847,8 +872,20 @@ static func auto_build_plan(owned_car: Dictionary, meta: Dictionary, profile: Di
 			plan["blocked"] = reason
 			var wanted := _drivetrain_fix(owned_car, restriction, full_meta, meta)
 			if wanted >= 0 and RallyLibrary.is_eligible(rally, _with_drive(full_meta, wanted)):
-				plan["drivetrain"] = wanted
-				plan["blocked"] = ""
+				# A conversion the car has not already paid for is a PURCHASE, so it has to
+				# clear the same two gates a part does: free-only never buys, and the
+				# remaining budget has to cover it. Otherwise Auto would hand the player a
+				# free layout change the picker charges them for, and the commit would spend
+				# stars the plan never quoted.
+				var dt_cost := 0
+				if not Save.drive_mode_available(owned_car, wanted):
+					dt_cost = Save.drive_mode_price()
+				if dt_cost > 0 and (free_only or budget - int(plan["cost"]) < dt_cost):
+					pass  # cannot afford it: leave `blocked` naming the real problem
+				else:
+					plan["drivetrain"] = wanted
+					plan["cost"] = int(plan["cost"]) + dt_cost
+					plan["blocked"] = ""
 	# The detune is carried through untouched. It survives as a HANDLING lever the
 	# player sets deliberately; it is no longer something a build plan reaches for,
 	# because there is nothing left to duck under.
@@ -936,6 +973,13 @@ static func _combo_better(rating: int, cost: int, best_rating: int, best_cost: i
 
 # The car as it would be once `plan`'s buys/enables/strips are applied — used to rate
 # the final build before deciding the detune trim.
+#
+# Mirrors UpgradeOptions.build_with, including its drivetrain rule: a planned layout is
+# marked PAID FOR on the probe, because resolve_drive_override ignores an unbought override
+# and the probe would otherwise rate the UNCONVERTED car. Today the sole call site runs
+# before plan["drivetrain"] is ever set, so the branch is unreachable — which is exactly
+# why it is written down rather than left out: moving that call, or adding a second one,
+# would otherwise reintroduce a bug this codebase has already had once.
 static func _car_with_plan(owned_car: Dictionary, plan: Dictionary) -> Dictionary:
 	var probe := owned_car.duplicate(true)
 	var installed: Array = (probe.get("installed_upgrades", []) as Array).duplicate()
@@ -956,16 +1000,23 @@ static func _car_with_plan(owned_car: Dictionary, plan: Dictionary) -> Dictionar
 	tuning["engine_detune"] = 1.0
 	probe["tuning"] = tuning
 	if int(plan["drivetrain"]) >= 0:
-		probe["drivetrain_override"] = int(plan["drivetrain"])
+		var mode := int(plan["drivetrain"])
+		probe["drivetrain_override"] = mode
+		var bought: Array = (probe.get("drivetrain_modes_bought", []) as Array).duplicate()
+		if not bought.has(mode):
+			bought.append(mode)
+		probe["drivetrain_modes_bought"] = bought
 	return probe
 
 
-# The drive mode a restriction demands, when the car can actually deliver it — i.e. the
-# swap kit is fitted. -1 for "no drivetrain problem, or one Auto can't fix". This is the
-# ONLY non-power restriction field Auto is allowed to touch; the rest are car identity.
+# The drive mode a restriction demands, when the car could actually deliver it — i.e. the
+# conversion capability is unlocked garage-wide. -1 for "no drivetrain problem, or one Auto
+# can't fix". This is the ONLY non-power restriction field Auto is allowed to touch; the
+# rest are car identity. Whether the car can AFFORD the conversion is decided by the
+# caller, which owns the budget.
 static func _drivetrain_fix(owned_car: Dictionary, restriction: Dictionary,
 		full_meta: Dictionary, _meta: Dictionary) -> int:
-	if not restriction.has("drive_mode") or not drivetrain_swap_unlocked(owned_car):
+	if not restriction.has("drive_mode") or not drivetrain_swap_unlocked(Save.profile):
 		return -1
 	var want := int(restriction["drive_mode"])
 	return -1 if int(full_meta.get("drive_mode", -1)) == want else want
@@ -985,15 +1036,40 @@ static func aero_tuning_unlocked(owned_car: Dictionary) -> bool:
 	return _has_flag(owned_car, "unlocks_aero_tuning")
 
 
-static func drivetrain_swap_unlocked(owned_car: Dictionary) -> bool:
-	# Unlike the aero gate, the drivetrain kit has NO enable/disable — owning
-	# it IS the unlock, and the selector's stock choice plays the "off" role (disabling
-	# would just re-select the original drive mode). So this checks INSTALLED, not
-	# enabled: a won-but-not-yet-podium-applied kit is usable immediately, not stranded.
-	for item_id in owned_car.get("installed_upgrades", []):
-		if bool(by_id(item_id).get("effect", {}).get("unlocks_drivetrain_swap", false)):
-			return true
-	return false
+# Whether drivetrain conversion is available AT ALL — a GARAGE-WIDE capability, keyed on
+# the profile's rally record, not on any one car.
+#
+# It used to be per-car, checking the kit in that car's `installed_upgrades`. That was a
+# bug in practice: the kit is only ever handed to the single car selected when its special
+# is won, and the drivetrain slot lists drive MODES rather than parts — so no other car
+# could ever acquire it, by stars or otherwise, and the rest of the garage was permanently
+# stuck on its stock layout with no way to see why.
+#
+# The unlock is therefore global (won once, applies to every car, like the engine-swap
+# capability), and what is charged per car is the CONVERSION — see Save.buy_drive_mode.
+static func drivetrain_swap_unlocked(profile: Dictionary) -> bool:
+	# Found BY ITS EFFECT FLAG, never by a hard-coded id. Keying on the literal
+	# "drivetrain_swap" made the gate fail OPEN wherever that id was absent — rally_gate_met
+	# treats an unknown item as ungated — so renaming the part, or running against the
+	# synthetic test catalogue, would silently hand every car free conversion. No part
+	# offering conversion means there is nothing to unlock, so that reads as locked.
+	var pid := drivetrain_swap_part_id()
+	return pid != "" and rally_gate_met(pid, profile)
+
+
+# The catalogue entry that grants drivetrain conversion, by its effect flag, or "" if the
+# catalogue has none. One definition, so the gate and anything that wants to name the part
+# cannot disagree.
+static func drivetrain_swap_part_id() -> String:
+	for def in all():
+		if bool((def.get("effect", {}) as Dictionary).get("unlocks_drivetrain_swap", false)):
+			return String(def.get("id", ""))
+	return ""
+
+
+# The layout a car was BUILT with, which it can always return to for free.
+static func stock_drive_mode(owned_car: Dictionary) -> int:
+	return int(CarLibrary.for_owned(owned_car).get("drive_mode", CarLibrary.RWD))
 
 
 # The drive mode the player chose for this car (0/1/2), or -1 meaning "use the car's
@@ -1001,9 +1077,14 @@ static func drivetrain_swap_unlocked(owned_car: Dictionary) -> bool:
 # fitted AND enabled, so removing/disabling the kit reverts the car to stock. The single
 # resolver used by physics (car.gd), display/eligibility (effective_meta) and the garage.
 static func resolve_drive_override(owned_car: Dictionary) -> int:
-	if not drivetrain_swap_unlocked(owned_car):
+	var mode := int(owned_car.get("drivetrain_override", -1))
+	if mode < 0:
 		return -1
-	return int(owned_car.get("drivetrain_override", -1))
+	# Gated on the mode being PAID FOR (Save.drive_mode_available: the car's own stock
+	# layout, or one it has bought while the capability is unlocked). A stored override the
+	# player has not paid for is inert rather than free, which is what keeps the price from
+	# being bypassed by anything that writes the field directly.
+	return mode if Save.drive_mode_available(owned_car, mode) else -1
 
 
 static func _has_flag(owned_car: Dictionary, flag: String) -> bool:

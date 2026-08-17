@@ -35,6 +35,50 @@ func test_rev_limiter_bounces_within_a_band() -> void:
 	assert_gt(lo, cfg.redline_rpm - cfg.rev_limiter_band - 60.0, "the bounce stays within the limiter band")
 
 
+# limiter_cut_count is what the exhaust flame keys off (features/exhaust-flames.md), so
+# it has to count BANGS, not ticks: one increment per bounce off the limiter, however
+# many substeps the cut stays latched for. Counting per tick would turn a single bounce
+# into a continuous jet.
+func test_limiter_cut_count_counts_onsets_not_ticks() -> void:
+	_engine.gear = 0
+	_engine.omega = _engine.redline_omega() - 5.0
+	assert_eq(_engine.limiter_cut_count, 0, "nothing counted before the first cut")
+	# Step just far enough to latch the cut, then keep stepping while it stays latched.
+	for _i in 5000:
+		if _engine.limiting:
+			break
+		_engine.step(0.001, 1.0, 0.0)
+	assert_true(_engine.limiting, "precondition: full throttle in neutral reaches the limiter")
+	var first := _engine.limiter_cut_count
+	assert_eq(first, 1, "latching the cut counts exactly one bang")
+	for _i in 5:
+		if not _engine.limiting:
+			break
+		# Steps too short to move the revs anywhere near the bottom of the band, so the
+		# cut is still the SAME one — any further increment would be a per-tick count.
+		_engine.step(1.0e-6, 1.0, 0.0)
+	assert_eq(_engine.limiter_cut_count, first, "holding the cut does not count again")
+	# Running on through the bounce must eventually bang again.
+	for _i in 3000:
+		_engine.step(0.001, 1.0, 0.0)
+	assert_gt(_engine.limiter_cut_count, first, "each further bounce counts another bang")
+
+
+# The count is monotonic across a reset, like misfire_count: it is a delta source for
+# the flame pool, and rewinding it would make the next read negative.
+func test_limiter_cut_count_is_not_rewound_by_reset() -> void:
+	_engine.gear = 0
+	_engine.omega = _engine.redline_omega() - 5.0
+	for _i in 5000:
+		if _engine.limiting:
+			break
+		_engine.step(0.001, 1.0, 0.0)
+	var before := _engine.limiter_cut_count
+	assert_gt(before, 0, "precondition: something was counted")
+	_engine.reset()
+	assert_gte(_engine.limiter_cut_count, before, "reset must not rewind the counter")
+
+
 # --- Damage misfire ----------------------------------------------------------
 
 func test_misfire_rate_zero_when_healthy() -> void:

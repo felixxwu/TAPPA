@@ -83,7 +83,6 @@ func _clear_lineup() -> void:
 	_hq._lineup.setup([], max(1, Config.data.carpark_page_size))
 	_hq._eligible = []
 	_hq._detune_needed = {}
-	_hq._drivetrain_needed = {}
 
 
 # Free every cached (and currently active) parked car outright — used when the cache
@@ -115,53 +114,38 @@ func _evict_unowned_cached_cars(keep: Array = []) -> void:
 			_free_cached_car(id)
 
 
-# Park the owned cars ELIGIBLE for the selected rally (the car-select screen). Rally
-# entry is categorical, so the only car that parks needing a change first is one whose
-# drive mode a conversion would fix (_drivetrain_needed).
+# Park the owned cars that can enter this rally OR could be MADE to — and only those.
+#
+# Three-way split, not two:
+#   - eligible as built            -> parked, Start live
+#   - ineligible but FIXABLE       -> parked, marked with the reason, Start dead
+#                                     (_refresh_focus_eligibility); the player goes and
+#                                     converts it themselves
+#   - ineligible and UNFIXABLE     -> not parked at all
+#
+# The middle case is the point. A car that is merely the wrong drivetrain used to be
+# omitted like any other misfit, which answered "why is my car not here?" with silence —
+# the player could not tell a car that needs one upgrade from a car that will never
+# qualify. Parking it with its reason turns that into an actionable prompt.
+#
+# The third case is equally deliberate: a car of the wrong BODY (or country, doors,
+# cylinders...) can never enter, no upgrade changes it, so parking it would be noise in a
+# lineup the player has to page through — a wall of cars with no route in.
+#
+# A wrong-drivetrain car is no longer auto-switched at the Start button either. That switch
+# was free, silent and reverted afterwards, which — now that conversion carries a per-car
+# star price — handed the player for nothing exactly what the garage charges for.
+# Converting is a garage decision, made where the price is shown.
 func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_hq._selected_rally_id)
-	var eligible: Array = []
-	var needs_drivetrain := {}
+	var shown: Array = []
 	for car in Save.profile.get(Save.KEY_CARS, []):
 		# NO challenge-lock exclusion (the rationale is spelled out in _swap_targets): a
 		# car fielded by an active challenge run can still be entered into a career rally.
-		var plan := _hq._entry_plan(rally, car)
-		if not bool(plan["eligible"]):
-			continue
-		eligible.append(car)
-		var id := int(car.get("instance_id", -1))
-		if int(plan["drivetrain"]) >= 0:
-			needs_drivetrain[id] = int(plan["drivetrain"])
-	_build_lineup(eligible)  # clears _drivetrain_needed, then repopulated below
-	_hq._drivetrain_needed = needs_drivetrain
+		if _hq._can_ever_enter(rally, car):
+			shown.append(car)
+	_build_lineup(shown)
 
-
-# The drive mode this car would switch to for `rally` (the rally's required mode), or -1
-# when the rally has no drive_mode rule, the car lacks the swap kit, or it's already in
-# that mode. Judges ONLY the drive_mode dimension — the caller still has to check that
-# the switched car clears the rally's other categorical rules.
-func _switch_target_for(rally: Dictionary, owned: Dictionary, meta: Dictionary) -> int:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("drive_mode"):
-		return -1
-	if not UpgradeLibrary.drivetrain_swap_unlocked(owned):
-		return -1
-	var required := int(r["drive_mode"])
-	if int(meta.get("drive_mode", -1)) == required:
-		return -1
-	return required
-
-
-# The drive mode `owned` must switch to in order to enter `rally`, or -1 when it's
-# already compliant OR the switch wouldn't help (no swap kit / rally has no drive_mode
-# rule / the car still fails another categorical rule after switching).
-func _qualifying_drivetrain_for(rally: Dictionary, owned: Dictionary, _entry: Dictionary, meta: Dictionary) -> int:
-	var target := _switch_target_for(rally, owned, meta)
-	if target < 0:
-		return -1
-	var switched := meta.duplicate()
-	switched["drive_mode"] = target
-	return target if RallyLibrary.is_eligible(rally, switched) else -1
 
 # Park ALL owned cars for the title screen, so the player's whole collection is on
 # show in the car park behind the title overlay (rebuilt on entering EXTERIOR). A
@@ -188,7 +172,6 @@ func _build_lineup(cars: Array, start_global := 0) -> void:
 	# A fresh list drops any per-rally over-limit maps from the previous build; the rally
 	# car-select repopulates them right after (see _build_eligible_lineup).
 	_hq._detune_needed = {}
-	_hq._drivetrain_needed = {}
 	# Hand the WHOLE list to the paginator and seat the cursor; it hands back one page at
 	# a time. `carpark_page_size` bays per page — the list itself is unbounded.
 	_hq._lineup.setup(cars, max(1, Config.data.carpark_page_size), start_global)
@@ -486,6 +469,10 @@ func _focus_changed(snap := false) -> void:
 		# surfaced in the confirm popup, so keep Start enabled and the warning clear.
 		_hq._start_button.disabled = false
 		_hq._car_warning_label.visible = false
+	elif not _refresh_focus_eligibility(owned):
+		# Ineligible for this rally: the reason is on screen and Start is dead, so the
+		# damage line (an instruction about a car you cannot enter anyway) is skipped.
+		pass
 	else:
 		# A wrecked focused car gates Start — permanently.
 		_refresh_focus_damage(owned)
@@ -559,6 +546,28 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 # repair to offer any more. A healthy car clears all of this — an
 # over-powered car looks eligible here; the over-limit prompt only surfaces as a
 # confirm popup on Start (_show_over_limit_prompt).
+# Whether the focused car can enter the selected rally, ALSO writing the verdict to the
+# screen: an ineligible car kills Start and states why, in the rally's own words
+# (RallyLibrary.ineligibility_reason — the same sentence the rest of the game uses, so the
+# car park cannot invent a different explanation).
+#
+# Returns true when the car is fine, leaving the caller to run its normal damage pass.
+# Only meaningful on the car-SELECT screen; the other car-park modes have no rally.
+func _refresh_focus_eligibility(owned: Dictionary) -> bool:
+	var rally := RallyLibrary.by_id(_hq._selected_rally_id)
+	if rally.is_empty():
+		return true
+	var entry := CarLibrary.for_owned(owned)
+	var reason := RallyLibrary.ineligibility_reason(
+		rally, UpgradeLibrary.effective_meta(owned, entry))
+	if reason == "":
+		return true
+	_hq._start_button.disabled = true
+	_hq._car_warning_label.visible = true
+	_hq._car_warning_label.text = reason
+	return false
+
+
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Damage NEVER blocks entry any more. A wreck is not terminal (Save.record_wreck hands
 	# the car back at part health), so a battered car is a car you can still race — badly.

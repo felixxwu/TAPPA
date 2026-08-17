@@ -87,6 +87,71 @@ func _popup_rows(p: UpgradeSlotPopup) -> Array:
 	return out
 
 
+# --- Slot descriptions --------------------------------------------------------
+#
+# Each picker opens with one line saying what the slot DOES, for a player who knows nothing
+# about cars. Nothing here pins the WORDING — that is authored copy a designer rewrites —
+# only that every slot has some, that it reaches the popup, and that it stays out of the
+# keyboard path.
+
+
+# The contract that matters: no slot ships without an explainer. A slot added later with no
+# entry would otherwise open a bare list silently, which is exactly the state this feature
+# exists to remove.
+func test_every_openable_slot_has_a_description() -> void:
+	for slot in UpgradeOptions.grid_slots():
+		if slot == UpgradeOptions.SLOT_ENGINE:
+			continue  # not a picker: the engine tile hands off to the host's car park
+		assert_false(UpgradeOptions.slot_description(slot).strip_edges().is_empty(),
+			"slot '%s' opens a picker, so it needs a line saying what it does" % slot)
+
+
+func test_an_unknown_slot_has_no_description_rather_than_a_placeholder() -> void:
+	assert_eq(UpgradeOptions.slot_description("not_a_slot"), "",
+		"an unlisted slot should degrade to no description row, not to filler text")
+
+
+func test_the_picker_shows_the_slots_description() -> void:
+	var g := _grid(_car())
+	_tile_for(g, "turbo").pressed.emit()
+	var p := _popup(g)
+	assert_not_null(p, "precondition: the picker opened")
+	# UITheme.enforce uppercases every label, so compare on the same footing.
+	var want := UpgradeOptions.slot_description("turbo").to_upper()
+	var found := false
+	for node in p.find_children("*", "Label", true, false):
+		if (node as Label).text.to_upper() == want:
+			found = true
+	assert_true(found, "the slot's explainer should be drawn in its picker")
+
+
+func test_the_detune_slider_also_gets_a_description() -> void:
+	var g := _grid(_car())
+	_tile_for(g, UpgradeOptions.SLOT_TUNE).pressed.emit()
+	var p := _popup(g)
+	assert_not_null(p, "precondition: the slider opened")
+	var want := UpgradeOptions.slot_description(UpgradeOptions.SLOT_TUNE).to_upper()
+	var found := false
+	for node in p.find_children("*", "Label", true, false):
+		if (node as Label).text.to_upper() == want:
+			found = true
+	assert_true(found, "the continuous slot needs explaining just as much as the lists")
+
+
+# A description is reference text, not a control. If it could take focus the gamepad would
+# land on an inert row every time a picker opened.
+func test_the_description_does_not_steal_focus_from_the_options() -> void:
+	var g := _grid(_car())
+	_tile_for(g, "turbo").pressed.emit()
+	var p := _popup(g)
+	var rows := _popup_rows(p)
+	assert_gt(rows.size(), 0, "precondition: the picker has options")
+	var focused := p.get_viewport().gui_get_focus_owner() if p.get_viewport() != null else null
+	if focused != null:
+		assert_true(focused is Button,
+			"focus must land on something pressable, never on the explainer line")
+
+
 # --- The grid itself ----------------------------------------------------------
 
 func test_the_grid_shows_one_tile_per_slot_captioned_slot_and_value() -> void:
@@ -314,27 +379,103 @@ func test_picking_stock_parks_the_slot() -> void:
 		"Stock is the slot's off state and switches the fitted part back off")
 
 
+# The conversion CAPABILITY is garage-wide (the fixture part is authored ungated), but each
+# non-stock layout is BOUGHT per car. These pin the economics, never the price — the balance
+# is set from Save.drive_mode_price() so retuning it cannot break them.
+
+
+# The first non-stock mode this car has not bought, or -1.
+func _unbought_mode(owned: Dictionary) -> int:
+	var stock := int(CarLibrary.for_owned(owned).get("drive_mode", CarLibrary.RWD))
+	for mode in [CarLibrary.RWD, CarLibrary.AWD, CarLibrary.FWD]:
+		if mode != stock and not _save.drive_mode_available(owned, mode):
+			return mode
+	return -1
+
+
+func _press_mode_row(p: UpgradeSlotPopup, mode: int) -> void:
+	for b in _popup_rows(p):
+		if String((b as Button).text).to_upper().begins_with(
+				CarLibrary.drive_text(mode).to_upper()):
+			(b as Button).pressed.emit()
+			return
+
+
 func test_the_drivetrain_tile_writes_a_mode_override() -> void:
 	var owned := _car()
 	var id := int(owned["instance_id"])
-	_save.install_upgrade(id, "fx_drivetrain", true)  # own the swap kit so modes unlock
+	var target := _unbought_mode(_save.get_car(id))
+	assert_gte(target, 0, "setup: the car has a non-stock layout to convert to")
+	_save.profile["stars_earned"] = _save.drive_mode_price()  # afford exactly one conversion
 	var g := _grid(_save.get_car(id))
 	_tile_for(g, "drivetrain").pressed.emit()
-	var p := _popup(g)
-	var stock := int(CarLibrary.for_owned(g._owned).get("drive_mode", CarLibrary.RWD))
-	var target := -1
-	for opt in UpgradeOptions.options_for(g._owned, "drivetrain"):
-		if bool(opt.get("selectable", false)) and int(opt["id"]) != stock:
-			target = int(opt["id"])
-			break
-	assert_gte(target, 0, "setup: a non-stock mode is selectable once the kit is owned")
-	for b in _popup_rows(p):
-		if String((b as Button).text).to_upper().begins_with(
-				CarLibrary.drive_text(target).to_upper()):
-			(b as Button).pressed.emit()
-			break
+	_press_mode_row(_popup(g), target)
 	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), target,
 		"the pick lands as a drivetrain override, not as an installed part")
+
+
+func test_converting_spends_stars_and_records_the_mode() -> void:
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	var target := _unbought_mode(_save.get_car(id))
+	_save.profile["stars_earned"] = _save.drive_mode_price()
+	var before: int = _save.stars_available()
+	var g := _grid(_save.get_car(id))
+	_tile_for(g, "drivetrain").pressed.emit()
+	_press_mode_row(_popup(g), target)
+	assert_eq(_save.stars_available(), before - _save.drive_mode_price(),
+		"a conversion is paid for")
+	assert_true((_save.get_car(id).get("drivetrain_modes_bought", []) as Array).has(target),
+		"and the car records the layout it bought")
+
+
+# Buy ONCE, switch freely thereafter — the same deal a bought part gets (fit it, then toggle
+# between Stock and fitted for nothing). Going back to the car's own layout is always free.
+func test_a_bought_mode_is_free_to_return_to() -> void:
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	var target := _unbought_mode(_save.get_car(id))
+	var stock := int(CarLibrary.for_owned(_save.get_car(id)).get("drive_mode", CarLibrary.RWD))
+	_save.profile["stars_earned"] = _save.drive_mode_price()
+	var g := _grid(_save.get_car(id))
+	_tile_for(g, "drivetrain").pressed.emit()
+	_press_mode_row(_popup(g), target)
+	assert_eq(_save.stars_available(), 0, "precondition: the conversion consumed the balance")
+	# Back to stock, then out to the bought layout again — neither may charge.
+	g = _grid(_save.get_car(id))
+	_tile_for(g, "drivetrain").pressed.emit()
+	_press_mode_row(_popup(g), stock)
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), stock, "reverted to stock")
+	g = _grid(_save.get_car(id))
+	_tile_for(g, "drivetrain").pressed.emit()
+	_press_mode_row(_popup(g), target)
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), target,
+		"and back out again, with no stars to pay it")
+
+
+# Without the stars the row is not pressable at all, so the player can never half-apply a
+# conversion they cannot afford.
+func test_an_unaffordable_conversion_is_not_selectable() -> void:
+	var owned := _car()
+	var id := int(owned["instance_id"])
+	var target := _unbought_mode(_save.get_car(id))
+	_save.profile["stars_earned"] = 0
+	for opt in UpgradeOptions.options_for(_save.get_car(id), "drivetrain"):
+		if int(opt["id"]) == target:
+			assert_false(bool(opt.get("selectable", false)), "no stars, no conversion")
+			assert_ne(String(opt.get("locked_reason", "")), "", "and it says what it needs")
+
+
+# The car's OWN layout is never gated and never charged — otherwise a player with no stars
+# could be stranded in a layout they cannot leave.
+func test_the_stock_layout_is_always_free() -> void:
+	var owned := _car()
+	_save.profile["stars_earned"] = 0
+	var stock := int(CarLibrary.for_owned(owned).get("drive_mode", CarLibrary.RWD))
+	for opt in UpgradeOptions.options_for(owned, "drivetrain"):
+		if int(opt["id"]) == stock:
+			assert_true(bool(opt.get("selectable", false)), "stock is always reachable")
+			assert_lt(int(opt.get("price", -1)), 0, "and never costs anything")
 
 
 # --- The tune tile: a slider, not a list --------------------------------------
@@ -676,3 +817,83 @@ func test_a_weight_delta_is_rounded_to_the_nearest_hundred() -> void:
 		assert_ne(kilos, 0, "a real part never reads as no change at all")
 		seen += 1
 	assert_gt(seen, 0, "setup: the weight slot offered a part")
+
+
+# --- Contract tests: the whole class of bug this file exists to catch ----------------
+#
+# Three invariants, all equality-between-two-code-paths or rule-derived. None names a
+# catalogue id, a star price or a stat, so retuning any of them cannot break these.
+
+
+# THE DIFFERENTIAL TEST. `build_with` (the hypothetical the picker rates) and
+# `_apply_option` (the real edit) must produce the SAME CAR for every slot and every
+# option. They used to be two independent `match slot` ladders held together by a comment
+# claiming they agreed — and they did not: the drivetrain arm of one marked the layout paid
+# for while the other did not, so every drive-mode row quoted the unconverted car's rating.
+#
+# Compared as MERGED METAS rather than raw dicts: that is what makes it value-agnostic and
+# meaningful at once — it asserts the two paths describe the same car, whatever the numbers.
+func test_build_with_agrees_with_a_real_apply_for_every_slot_and_option() -> void:
+	for slot in UpgradeOptions.grid_slots():
+		# The two pseudo-slots are not slot edits at all (the engine tile hands off to a
+		# host flow, tune is a live slider), and option_edit reports them as such.
+		if slot == UpgradeOptions.SLOT_ENGINE or slot == UpgradeOptions.SLOT_TUNE:
+			continue
+		for opt in UpgradeOptions.options_for(_car(), slot):
+			if not bool(opt.get("selectable", false)):
+				continue
+			var option_id := String(opt.get("id", ""))
+			# A fresh car per option, with stars for anything the row might cost, so each
+			# pair is compared from the same starting point.
+			var owned := _car()
+			var id := int(owned["instance_id"])
+			_save.profile["stars_earned"] = 9999
+			var entry: Dictionary = CarLibrary.for_owned(_save.get_car(id))
+			var hypo: Dictionary = UpgradeOptions.build_with(_save.get_car(id), slot, option_id)
+			var g := _grid(_save.get_car(id))
+			g._apply_option(option_id, slot)
+			var real: Dictionary = _save.get_car(id)
+			assert_eq(CarPerformance.merged_meta(hypo, entry),
+				CarPerformance.merged_meta(real, entry),
+				"slot '%s' option '%s': the rated hypothetical and the real edit must agree"
+					% [slot, option_id])
+
+
+# `""` is the universal Stock sentinel. For a LAYOUT that has to mean the car's authored
+# mode — int("") is 0, which is a real drive mode — so this pins that the sentinel never
+# silently converts a car.
+func test_the_stock_sentinel_is_the_off_state_in_every_slot() -> void:
+	var owned := _car()
+	var entry: Dictionary = CarLibrary.for_owned(owned)
+	for slot in UpgradeOptions.grid_slots():
+		if slot == UpgradeOptions.SLOT_ENGINE or slot == UpgradeOptions.SLOT_TUNE:
+			continue
+		var bare: Dictionary = UpgradeOptions.build_with(owned, slot, "")
+		assert_eq(CarPerformance.merged_meta(bare, entry),
+			CarPerformance.merged_meta(owned, entry),
+			"slot '%s': the Stock sentinel on an unmodified car must change nothing" % slot)
+
+
+# Every non-consumable part in the catalogue must be REACHABLE from its own slot's picker.
+# This is the assertion the original drivetrain bug would have failed: the conversion kit
+# sat in the table with slot "drivetrain", and that slot's picker listed drive modes, so no
+# row for the kit existed on any screen and no second car could ever acquire it.
+#
+# Iterates the catalogue as opaque input (explicitly allowed) — it names no id and asserts
+# no value, only that the catalogue and the pickers enumerate the same set.
+func test_every_catalogue_part_is_reachable_from_its_slots_picker() -> void:
+	var owned := _car()
+	var slots := UpgradeOptions.grid_slots()
+	for def in UpgradeLibrary.all():
+		if bool(def.get("consumable", false)):
+			continue
+		var slot := String(def.get("slot", ""))
+		if slot == "" or not slots.has(slot):
+			continue  # hidden slots have no garage row by design (UpgradeLibrary.HIDDEN_SLOTS)
+		var found := false
+		for opt in UpgradeOptions.options_for(owned, slot):
+			if String(opt.get("id", "")) == String(def.get("id", "")):
+				found = true
+		assert_true(found,
+			"part '%s' is authored in slot '%s' but that slot's picker never offers it, so "
+			% [def.get("id", "?"), slot] + "no car could ever acquire it")

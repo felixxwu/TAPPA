@@ -1520,10 +1520,18 @@ throwaway test and still clip in the real game.
   `CanvasLayer` modal joining **`ConfirmPopup.MODAL_GROUP`** — so one modal at a time (see
   "One modal at a time"), and `MenuNav.input_blocked` deafens the grid behind it rather than
   the two competing for arrow keys. It draws a dim backdrop and a centred `UITheme.panel`
-  and then, deliberately, **nothing but the options**: no title, no body text, no
-  Cancel/OK row. The tile the player just pressed is the title, the option labels are the
-  body, and a button row would only add a second way to do what pressing an option or
-  backing out already does.
+  and then, deliberately, **no title and no Cancel/OK row**. The tile the player just
+  pressed is the title, and a button row would only add a second way to do what pressing an
+  option or backing out already does.
+  - **One explainer line at the top**, from `UpgradeOptions.slot_description(slot)`, saying
+    what the slot *does* in plain language ("which wheels get the power"). Not a title —
+    a heading repeating "TURBO" over a list of turbos says nothing, while this is the only
+    thing telling a player who knows nothing about cars why the slot is worth opening. It
+    is dim and word-wrapped (reference text, must not compete with the options), and being
+    a `Label` it is never focusable, so the cursor still opens on the fitted option and the
+    keyboard/gamepad path is unchanged. A slot with no entry draws no row at all. Both
+    entry points take it — the option list and the detune slider. See
+    [upgrade-catalogue.md](upgrade-catalogue.md) → `slot_description`.
   - Selectable options are `FOCUS_ALL` buttons; **locked or unaffordable ones are shown
     GREYED and `FOCUS_NONE`**, captioned with their reason ("Locked", "Needs Big",
     "3 stars"). Showing them is a deliberate reversal of the old "hide what you can't have"
@@ -1534,7 +1542,14 @@ throwaway test and still clip in the real game.
     dead rows, so the cursor only ever stops on something that does something.
   - The current option is marked with `UITheme.mark_selected` and **the cursor opens on
     it**, so the popup starts by answering "what is fitted now" without the player moving.
-  - Purchase options carry the drawn star price (`StarRow.price_icon()`).
+  - Purchase options carry the drawn star price. The digits and the star sit **together at
+    the right edge**, as a full-rect `HBoxContainer` overlay aligned to the end
+    (`_add_price_tag`) — not as `b.text + b.icon`, which is what this was. A `Button` draws
+    all its text as one left-aligned run and its icon at the far right, so a price appended
+    to the text hugged the option's NAME with the whole row's slack between it and the star
+    it belonged to, reading as part of the label rather than as its price. The overlay
+    ignores the mouse so the row still presses as one button, and sets `MENU_ROW_H` by hand
+    because having a child makes it skip `UITheme.enforce`'s single-line-button branch.
   - **Every row quotes the performance rating that option would give the car** —
     `UpgradeSlotPopup._row_label` renders it as `Small (412)`, and both the pickable-button
     and the greyed locked-row paths go through it, so a rung the player cannot take yet
@@ -1930,7 +1945,7 @@ courtyard / menu camera (+Z)** so the camera frames its front with the garage be
 each is a silenced `Car` prop (reusing `Car.apply_owned`). The exterior/title camera is
 shifted by `menu_car_park_offset` (the same lot-centre offset) so it stays centred on
 the row. Parking is shared with the title via `_build_lineup(cars)` — the car-select
-screen passes the eligible cars, the title passes all owned — or, for a fresh player
+screen and the title both pass **all owned cars** — or, for a fresh player
 with an empty garage, the three starter-car previews (`_starter_previews`) so the lot
 is never empty behind the title. Each `Car` prop is a full
 physics scene (chassis + wheels + drivetrain + per-instance mesh duplication), so
@@ -2304,8 +2319,19 @@ tapping the table shows the **map view**; **stars reflect best placement** (1st�
 3rd→1, unplayed→0); the map table **pans and clamps to its edges**, and a drag does
 **not** open the pin under the finger (selection is release + no-drag); tapping a pin
 opens the **rally detail**, and Enter flies to the
-**car park** which **filters to the eligible cars** (an AWD car is excluded from an
-RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
+**car park**, which parks the **whole garage — eligible or not**. A car that cannot enter
+is parked and **marked** rather than hidden: focusing it disables Start and puts the
+rally's own `RallyLibrary.ineligibility_reason` on the warning label
+(`hq_carpark.gd::_refresh_focus_eligibility`), so "why is my car not in the list?" is
+answered on the car itself. **There is no auto-switch:** a wrong-drivetrain car used to be
+counted as eligible and silently converted at the Start button for the duration of the
+rally, then reverted. That is gone — conversion now costs stars per car
+([upgrade-catalogue.md](upgrade-catalogue.md) → "Drivetrain conversion"), so a free silent
+switch handed the player exactly what the garage charges for; the player converts the car
+themselves, where the price is on screen. The rally-detail panel's
+`N need a drivetrain conversion to fit` line counts those cars, and Enter is gated on
+**owning** a car rather than on one qualifying — walking into a lineup with nothing
+eligible is now where you find out why. An open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
 wraps; a **wrecked car is gated in the car park permanently** (Start stays disabled —
 there is no repair); an **over-ceiling Rally Challenge car parks with the

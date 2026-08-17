@@ -198,3 +198,72 @@ func test_shedding_mass_helps_a_car_that_cannot_use_more_power() -> void:
 	light["mass"] = float(slug["mass"]) * 0.8
 	assert_gt(CarPerformance.rating(light), CarPerformance.rating(slug),
 		"a lighter car rates higher even when it cannot put more power down")
+
+
+# --- rating_spread: widening the field without moving the benchmark ------------------
+#
+# The raw rating is proportional to average speed, and lap time is a COMPRESSIVE measure of
+# a car — a hypercar is only ~1.5x a kei van round a lap — so the honest numbers bunch up.
+# rating_spread is an exponent on that ratio, stretching the field about the RATING_SCALE
+# anchor. Everything below is a property of the rule; no rating figure is asserted.
+
+
+func _spread_ratings(spread: float) -> Array:
+	Config.data.rating_spread = spread
+	CarPerformance.reset()
+	# A slow car and a fast one, hand-built so this depends on no catalogue entry.
+	return [CarPerformance.rating(_with({"peak_torque": 120.0, "mass": 1500.0})),
+		CarPerformance.rating(_with({"peak_torque": 600.0, "mass": 900.0}))]
+
+
+func test_a_wider_spread_pushes_the_slow_and_fast_cars_further_apart() -> void:
+	var raw := _spread_ratings(1.0)
+	var wide := _spread_ratings(2.5)
+	assert_gt(raw[1] - raw[0], 0, "precondition: the two cars rate differently at all")
+	assert_gt(wide[1] - wide[0], raw[1] - raw[0],
+		"a larger spread must widen the gap — that is the whole point of the knob")
+
+
+func test_the_spread_preserves_the_ordering() -> void:
+	# Amplifying differences must never reorder the field: a faster car stays faster at
+	# every setting, or the number stops describing the car.
+	for spread in [0.5, 1.0, 2.0, 4.0]:
+		var r := _spread_ratings(spread)
+		assert_gt(r[1], r[0], "the faster car outranks the slower one at spread %.1f" % spread)
+
+
+func test_the_reference_anchor_holds_at_any_spread() -> void:
+	# A car exactly as fast as the reference rates RATING_SCALE however the field is
+	# stretched — the stretch is about that anchor, so it is the one fixed point. Without
+	# this the knob would slide the whole scale rather than widening it.
+	for spread in [0.5, 1.0, 2.0, 4.0]:
+		Config.data.rating_spread = spread
+		CarPerformance.reset()
+		assert_eq(CarPerformance.rating(CarPerformance.REFERENCE_CAR.duplicate()),
+			int(CarPerformance.RATING_SCALE),
+			"the reference car anchors the scale at spread %.1f" % spread)
+
+
+func test_a_spread_of_one_is_the_raw_proportional_rating() -> void:
+	# The default must be a no-op, so "off" is genuinely off rather than a subtly
+	# different curve through pow().
+	Config.data.rating_spread = 1.0
+	CarPerformance.reset()
+	var meta := _with({"peak_torque": 420.0})
+	var ms := CarPerformance.benchmark_ms(meta)
+	var ref := CarPerformance.benchmark_ms(CarPerformance.REFERENCE_CAR.duplicate())
+	assert_eq(CarPerformance.rating(meta),
+		int(round(CarPerformance.RATING_SCALE * float(ref) / float(ms))),
+		"spread 1.0 is exactly the raw speed ratio")
+
+
+# Retuning the spread must invalidate the memoised ratings: it changes the NUMBER without
+# changing the lap, so a cache keyed only on the benchmark geometry would serve stale
+# figures for the rest of the session.
+func test_changing_the_spread_invalidates_the_cached_rating() -> void:
+	Config.data.rating_spread = 1.0
+	var meta := _with({"peak_torque": 600.0, "mass": 900.0})
+	var before := CarPerformance.rating(meta)
+	Config.data.rating_spread = 3.0
+	assert_ne(CarPerformance.rating(meta), before,
+		"the rating must move when the spread does, without an explicit reset()")

@@ -20,8 +20,16 @@ func test_catalogue_is_well_formed() -> void:
 	for item in UpgradeLibrary.UPGRADES:
 		assert_false(ids.has(item["id"]), "item id '%s' is unique" % item["id"])
 		ids[item["id"]] = true
-		if item["consumable"]:
-			assert_eq(String(item["slot"]), "", "consumable %s has no slot" % item["id"])
+		# Three shapes are well-formed: a consumable (no slot), a CAPABILITY MARKER (no slot
+		# either — it grants a garage-wide right rather than fitting anywhere, e.g. the
+		# drivetrain conversion), and an ordinary fittable part, which must name a real slot.
+		# A part naming a slot whose picker cannot offer it is the shape this rules out —
+		# that was the drivetrain kit's old state, and it made the kit unobtainable.
+		var effect: Dictionary = item.get("effect", {})
+		var is_marker := bool(effect.get("unlocks_drivetrain_swap", false))
+		if item["consumable"] or is_marker:
+			assert_eq(String(item["slot"]), "",
+				"%s grants a capability rather than filling a slot, so it names none" % item["id"])
 		else:
 			assert_true(UpgradeLibrary.SLOTS.has(item["slot"]),
 				"%s has a known slot" % item["id"])
@@ -325,47 +333,76 @@ func test_effective_meta_rates_turbo_at_peak_boost() -> void:
 func test_drivetrain_slot_is_valid() -> void:
 	assert_true(UpgradeLibrary.SLOTS.has("drivetrain"), "drivetrain is a known slot")
 	var kit := UpgradeLibrary.by_id("fx_drivetrain")
-	assert_eq(UpgradeLibrary.slot_of("fx_drivetrain"), "drivetrain", "kit occupies the drivetrain slot")
+	# The kit deliberately occupies NO slot: it is a capability marker whose rally gate is
+	# the garage-wide unlock, while the drivetrain slot's picker lists drive MODES, bought
+	# per car and per layout. A marker sitting in that slot was a part the slot could never
+	# offer — so no second car could acquire it, by stars or otherwise.
+	assert_eq(UpgradeLibrary.slot_of("fx_drivetrain"), "",
+		"the conversion kit is a capability marker, not a part in the drivetrain slot")
 	assert_false(bool(kit.get("consumable", false)), "kit is not a consumable")
 	assert_true(bool(kit.get("effect", {}).get("unlocks_drivetrain_swap", false)), "kit carries the unlock flag")
 
 
-func test_drivetrain_swap_unlocked_gate() -> void:
-	var no_kit := {"installed_upgrades": [], "disabled_upgrades": []}
-	var fitted := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": []}
-	# The drivetrain kit has no enable/disable — owning it is the unlock, so a kit sitting
-	# in disabled_upgrades (e.g. won but not podium-applied) is still unlocked.
-	var disabled := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": ["fx_drivetrain"]}
-	assert_false(UpgradeLibrary.drivetrain_swap_unlocked(no_kit), "no kit -> locked")
-	assert_true(UpgradeLibrary.drivetrain_swap_unlocked(fitted), "owned kit -> unlocked")
-	assert_true(UpgradeLibrary.drivetrain_swap_unlocked(disabled), "owned kit unlocks even if disabled")
+# The conversion capability is GARAGE-WIDE, keyed on the profile's rally record, not on any
+# one car's installed_upgrades. It used to be per-car, which was unreachable in practice:
+# the kit only ever reached the single car selected when its special was won, and the
+# drivetrain slot lists drive MODES rather than parts, so no other car could acquire it by
+# any means. What is charged per car now is the CONVERSION, not the capability.
+func test_drivetrain_swap_unlocked_is_a_profile_gate_not_a_per_car_one() -> void:
+	# The fixture catalogue's conversion part is authored ungated, so any profile passes —
+	# what this pins is that the answer does not depend on a CAR at all.
+	assert_true(UpgradeLibrary.drivetrain_swap_unlocked({}),
+		"an ungated conversion part is available garage-wide")
+
+
+# The gate is found by the EFFECT FLAG, never by a hard-coded part id. A gate keyed on a
+# literal id fails OPEN when that id is absent (rally_gate_met treats an unknown item as
+# ungated), so renaming the part would silently hand every car free conversion.
+func test_the_conversion_gate_follows_the_effect_flag() -> void:
+	var pid := UpgradeLibrary.drivetrain_swap_part_id()
+	assert_ne(pid, "", "the fixture catalogue authors a conversion part")
+	assert_true(bool(UpgradeLibrary.by_id(pid).get("effect", {}).get("unlocks_drivetrain_swap", false)),
+		"and it is found by its flag, so the id itself is free to change")
+
+
+# With NO part offering conversion the capability must read as LOCKED, not as ungated —
+# the fail-open direction is the dangerous one.
+func test_a_catalogue_with_no_conversion_part_is_locked() -> void:
+	UpgradeLibrary.override_for_test([])
+	assert_false(UpgradeLibrary.drivetrain_swap_unlocked({}),
+		"nothing offers conversion, so there is nothing to unlock")
+	UpgradeFixtures.install()  # restore the fixture roster for the rest of the file
 
 
 func test_resolve_drive_override() -> void:
-	var locked := {"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": CarLibrary.FWD}
-	assert_eq(UpgradeLibrary.resolve_drive_override(locked), -1, "override ignored without the kit")
-	var stock := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": []}
+	var stock := {"installed_upgrades": [], "disabled_upgrades": []}
 	assert_eq(UpgradeLibrary.resolve_drive_override(stock), -1, "no override set -> -1 (use stock)")
-	var picked := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": CarLibrary.AWD}
-	assert_eq(UpgradeLibrary.resolve_drive_override(picked), CarLibrary.AWD, "unlocked + set -> chosen mode")
 
 
 func test_effective_meta_reports_override_drive_mode() -> void:
 	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
 		"drive_mode": CarLibrary.FWD}
-	var owned := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [],
-		"drivetrain_override": CarLibrary.RWD}
+	# AWD deliberately, not RWD: these synthetic dicts carry no model_id, so
+	# CarLibrary.for_owned returns {} and the car's "stock" layout defaults to RWD — an
+	# override of RWD would then be free-because-stock and prove nothing about paying.
+	var owned := {"installed_upgrades": [], "disabled_upgrades": [],
+		"drivetrain_override": CarLibrary.AWD,
+		"drivetrain_modes_bought": [CarLibrary.AWD]}
 	var out := UpgradeLibrary.effective_meta(owned, meta)
-	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.RWD, "reports the chosen mode when unlocked")
+	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.AWD, "reports the chosen mode when paid for")
 	assert_eq(int(meta["drive_mode"]), CarLibrary.FWD, "source meta is not mutated")
 
 
-func test_effective_meta_keeps_stock_mode_without_kit() -> void:
+# An override the car has not PAID for is inert, so nothing that writes the field directly
+# can bypass the price.
+func test_an_unpaid_override_is_inert() -> void:
 	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
 		"drive_mode": CarLibrary.FWD}
-	var owned := {"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": CarLibrary.RWD}
+	# AWD for the same reason as above — a model-less dict's stock layout is RWD.
+	var owned := {"installed_upgrades": [], "disabled_upgrades": [],
+		"drivetrain_override": CarLibrary.AWD, "drivetrain_modes_bought": []}
 	var out := UpgradeLibrary.effective_meta(owned, meta)
-	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.FWD, "override inert without the kit")
+	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.FWD, "an unbought layout does not apply")
 
 
 # --- Prerequisite gate (requires_upgrade_id) ----------------------------------
@@ -514,3 +551,38 @@ func test_a_car_with_no_surface_compound_leaves_the_multipliers_neutral() -> voi
 		{"tire_compound": 1.0, "mass": 1000.0})
 	assert_almost_eq(float(meta.get("tire_snow_grip_mult", 1.0)), 1.0, 1e-6,
 		"and reads as 1 off the meta, present or absent")
+
+
+# --- Contract: the gates FAIL CLOSED on an unknown id ------------------------------
+#
+# Both gates used to answer "yes" for an id that is not in the catalogue: the lookup
+# returned {}, the missing field defaulted to "", and "" means "no gate authored". That is
+# how a capability keyed on a hard-coded id got handed to everyone the moment the id was
+# absent. A gate asked about something that does not exist must DENY.
+
+
+func test_the_rally_gate_denies_an_unknown_item() -> void:
+	var open_profile := {"rallies": {}}
+	assert_false(UpgradeLibrary.rally_gate_met("no_such_part_exists", open_profile),
+		"an id not in the catalogue must not read as ungated")
+	# The genuine "no gate authored" case still passes — this is a fix to the not-found
+	# path, not a tightening of the rule itself.
+	assert_true(UpgradeLibrary.rally_gate_met("fx_lightweight", open_profile),
+		"a real part with no authored gate is still always available")
+
+
+func test_the_prerequisite_gate_denies_an_unknown_item() -> void:
+	var car := {"installed_upgrades": [], "disabled_upgrades": []}
+	assert_false(UpgradeLibrary.prerequisite_met("no_such_part_exists", car),
+		"an id not in the catalogue must not read as prerequisite-free")
+	assert_true(UpgradeLibrary.prerequisite_met("fx_lightweight", car),
+		"a real part with no prerequisite is still freely available")
+
+
+# The gate is derived from the EFFECT FLAG, so it survives the part being renamed — which
+# is the failure mode the hard-coded id had.
+func test_the_conversion_gate_denies_when_no_part_grants_it() -> void:
+	UpgradeLibrary.override_for_test([])
+	assert_false(UpgradeLibrary.drivetrain_swap_unlocked({"rallies": {}}),
+		"no part offers conversion, so there is nothing to unlock")
+	UpgradeFixtures.install()

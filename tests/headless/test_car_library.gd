@@ -119,8 +119,12 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 
 func test_apply_owned_applies_drivetrain_override() -> void:
 	CarFixtures.install()
-	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["fx_drivetrain"],
-		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})
+	# The layout must be PAID FOR (drivetrain_modes_bought), not merely stored:
+	# resolve_drive_override ignores an unbought override, which is what stops anything
+	# writing the field directly from bypassing the conversion's star price.
+	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": [],
+		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD,
+		"drivetrain_modes_bought": [Drivetrain.DriveMode.AWD]})
 	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.AWD, "override fielded onto the drivetrain")
 
 

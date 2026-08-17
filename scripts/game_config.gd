@@ -265,6 +265,31 @@ var peak_torque_rpm := 4500.0
 @export_range(5.0, 60.0) var benchmark_hairpin_radius_m := 15.0
 @export_range(30.0, 400.0) var benchmark_sweeper_radius_m := 90.0
 @export_range(1, 8) var benchmark_sweeper_count := 3
+## How far apart the performance ratings are SPREAD, without touching the benchmark track.
+##
+## The raw rating is proportional to average speed — `500 x reference_time / this_time` —
+## and lap time is a compressive measure of a car's capability: a hypercar is many times
+## the machine a kei van is, but only ~1.5x faster round a lap. So the honest numbers bunch
+## up, and the roster reads as flatter than it feels to drive.
+##
+## This is the exponent on that ratio: `500 x (reference_time / this_time) ^ spread`. 1.0 is
+## the raw, physically-proportional number. Above 1.0 stretches the field about the 500
+## anchor — a car exactly as fast as the reference still scores 500, a faster car gains more
+## and a slower car loses more.
+##
+## An EXPONENT rather than a linear stretch on purpose: it is multiplicative, so it can
+## never drive a slow car to zero or below the way `500 + (raw - 500) * gain` does, and it
+## keeps "twice the ratio" meaning the same thing everywhere on the scale.
+##
+## It cannot separate cars the benchmark finds genuinely equal — differences are amplified
+## proportionally, so two cars within 1% of each other stay within `spread`% of each other.
+## Widening the WHOLE field is what this does; discriminating between the fast cars is a
+## benchmark-geometry question (benchmark_straight_m, above).
+##
+## Changing this RE-SCORES EVERY CAR, and rating-space values elsewhere — notably
+## opponent_rating_match_spread and any authored rating ceiling — are then measured against
+## a wider field, so revisit those together.
+@export_range(0.5, 4.0) var rating_spread := 1.0
 ## Corner-exit traction ceiling per drive mode, used by LapTimeModel's forward
 ## pass (a = min(factor * grip_long, a_engine)). The real Drivetrain couples the
 ## driveline so AWD spreads drive torque across four contact patches — less slip
@@ -998,15 +1023,15 @@ func has_nitrous() -> bool:
 @export_range(0.0, 20.0) var shake_g_threshold := 2.5
 ## Intensity added per g of acceleration above shake_g_threshold. 1.0 means ~1 g of excess
 ## already reaches full amplitude.
-@export_range(0.0, 6.0) var shake_g_gain := 2.0
+@export_range(0.0, 6.0) var shake_g_gain := 0.0
 ## SPEED source: intensity added at chase_fov_speed and above (the same reference speed the FOV
 ## ramp uses, so the two "sense of speed" effects cannot disagree), ramping linearly from 0.
 ## A constant low-level buzz — keep it small.
-@export_range(0.0, 1.0) var shake_speed_gain := 1.0
+@export_range(0.0, 1.0) var shake_speed_gain := 0.5
 ## WHEELSPIN source: intensity added per 1.0 of fore/aft breakaway past peak on the worst DRIVEN
 ## tire (Drivetrain.drive_wheelspin_excess). Only driven wheels count — a locked undriven wheel
 ## already reaches the camera through the g-force term.
-@export_range(0.0, 2.0) var shake_wheelspin_gain := 0.02
+@export_range(0.0, 2.0) var shake_wheelspin_gain := 0.0
 ## NITROUS source: intensity added for as long as nitrous is DELIVERING, on top of the FOV punch
 ## (chase_fov_nitrous_boost). Flat, like that boost, and for the same reason.
 @export_range(0.0, 1.0) var shake_nitrous_gain := 0.25
@@ -2273,6 +2298,71 @@ func has_nitrous() -> bool:
 @export_range(0.1, 6.0) var engine_smoke_synthetic_interval_max := 1.4
 
 
+@export_group("Exhaust Flames")
+## Master switch for the exhaust backfire flames (features/exhaust-flames.md). Off
+## means the pool does no per-frame work at all.
+@export var exhaust_flames_enabled := true
+## Per-car exhaust pipe placements, as { car_id: [pipe, ...] } — one entry per pipe, so a
+## single-exit car has one and a quad-exit car four.
+##
+## A pipe is either a Vector3 (position only, flame pointing straight back) or a Vector4
+## whose xyz is that same position and whose w is the pipe's YAW in DEGREES. Both forms
+## may be mixed freely in one list, so giving one car an angle never forces the rest to be
+## rewritten.
+##
+## Position is car-LOCAL metres: +Z REARWARD (forward is −Z), +Y up, +X right.
+## Yaw rotates the flame in the HORIZONTAL plane: 0 points straight back, POSITIVE turns
+## it toward the car's RIGHT (+X), negative toward its left. Side exits want a few degrees
+## outward — e.g. Vector4(0.94, -0.22, -0.1, 20.0) for a right-hand sill pipe.
+##
+## This lives here rather than in CarLibrary (next to bonnet_cam_offset, where per-car
+## body data otherwise belongs) for ONE reason: this resource is what the F8 hot-reload
+## re-reads, and a .gd script is not. Dialling a pipe in by eye needs the tweak-reload-
+## look loop that only a resource gives — see the exhaust lab in features/debug-tools.md.
+## Once a car's pipes are dialled in, its entry is settled data and could reasonably
+## move to CarLibrary.
+##
+## A car with no entry here falls back to exhaust_offset_fallback, mirrored across the
+## centreline into two pipes.
+@export var exhaust_offsets: Dictionary = {}
+## Fallback single-pipe position for a car with no exhaust_offsets entry, in car-local
+## metres. Its Z is IGNORED — the fallback pins itself to the rear of the car's actual
+## wheelbase instead, so it lands near the tail on a long car and a short one alike.
+## Mirrored to +X and −X, giving an unlisted car a plausible twin exit.
+@export var exhaust_offset_fallback := Vector3(0.35, 0.28, 0.0)
+## How many generated flame frames to cycle between. More than one is what keeps a
+## sustained flame (nitrous) from sitting static; a handful is plenty, since the swap
+## picks a DIFFERENT frame each time rather than looping in order.
+@export_range(1, 12) var exhaust_flame_frames := 4
+## Seconds each frame shows before swapping to another. Short — this is a flicker.
+@export_range(0.01, 1.0) var exhaust_flame_frame_seconds := 0.05
+## Resolution of each generated frame, in pixels (square). Small suits the look: these
+## are nearest-filtered PS1-era textures, not smooth gradients.
+@export_range(8, 256) var exhaust_flame_texture_px := 64
+## How long one rev-limiter bang stays lit, in seconds. RETRIGGERABLE — each further bang
+## re-arms it, so bouncing off the limiter reads as rapid flicker rather than one long
+## flame. Nitrous ignores this and stays lit for as long as it delivers.
+@export_range(0.01, 1.0) var exhaust_flame_pop_seconds := 0.09
+## Flame size in metres: how far it reaches out of the pipe (length, along the car's
+## rearward +Z) and how wide it is at its widest.
+@export var exhaust_flame_length_m := 0.45
+@export var exhaust_flame_width_m := 0.16
+## How far the flame wanders sideways toward its tip, as a fraction of the texture width.
+## 0 is a perfectly straight flame; the wander is what differs most between frames, so
+## this is the main dial for how lively the flicker reads.
+@export_range(0.0, 0.5) var exhaust_flame_wobble := 0.12
+## Width of the white-hot core near the pipe mouth, as a fraction of the flame's local
+## half-width. 0 removes the core and leaves only the hot->cool gradient.
+@export_range(0.0, 1.0) var exhaust_flame_core_fraction := 0.45
+## Overall tint/brightness multiplier applied to the generated frames. Additive blending
+## means this reads as intensity — lower it if the flames blow out at night.
+@export var exhaust_flame_tint := Color(1.0, 1.0, 1.0, 1.0)
+## Flame colour at the pipe MOUTH (hot) and at the TIP (cooling as it dissipates). Each
+## frame lerps between them along its length. Additive-blended, so these read as light.
+@export var exhaust_flame_color_hot := Color(1.0, 0.86, 0.45, 1.0)
+@export var exhaust_flame_color_cool := Color(1.0, 0.30, 0.06, 1.0)
+
+
 @export_group("Trees")
 ## Billboard tree sprites scattered around each track turn.
 ## Master switch for stage foliage — trees, bushes and the bush hit volume. The
@@ -2616,6 +2706,14 @@ func has_nitrous() -> bool:
 ## late-game star balance becoming dead weight. The first copy is free: it is fitted to the
 ## car that won the part-unlock rally (features/prize-rallies.md).
 @export_range(0, 30) var star_cost_per_part := 2
+## Stars: what converting ONE car to ONE non-stock drive layout costs (RWD/AWD/FWD).
+##
+## The conversion CAPABILITY is global — won once, on the rally gating `drivetrain_swap`,
+## and available to every car from then on. This is the per-car, per-layout bill, and it is
+## paid once: a layout a car has bought is free to switch back to thereafter, exactly as a
+## bought part is free to toggle. Returning to the car's own stock layout is always free and
+## never charged. See features/upgrade-catalogue.md.
+@export_range(0, 30) var star_cost_per_drive_mode := 2
 
 
 @export_group("Performance")
@@ -2937,6 +3035,49 @@ func weather_lit(col: Color) -> Color:
 # `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.
 func ground_is_snow() -> bool:
 	return deep_snow_depth_m > 0.0
+
+
+# Car-local exhaust pipe placements for a car spec (features/exhaust-flames.md) — one
+# entry per exit, so a single-exit car gets one and a quad-exit car four.
+#
+# Each entry is a Vector4: xyz is the pipe POSITION in car-local metres, and w is the
+# pipe's YAW in DEGREES about the vertical axis — which way the flame points in the
+# horizontal plane. 0 is straight back along +Z; POSITIVE turns the flame toward the car's
+# RIGHT (+X), negative toward its left. Side exits (the Viper) need a few degrees outward
+# so the flame leaves the sill rather than running along it.
+#
+# Authored per car in exhaust_offsets, keyed on the car id. THE ONE PLACE THAT RESOLVES
+# A CAR TO ITS PIPES, shared by car.gd (which caches the result into exhaust_locals on
+# every spec apply) and ExhaustFlames (which falls back to it for a bare stub car).
+#
+# A car with no entry — or an entry that is empty, or not an array of Vector3 — falls
+# back to a MIRRORED PAIR derived from exhaust_offset_fallback: its X mirrored to both
+# sides, its Y used as-is, and its Z DISCARDED in favour of the rear of this car's own
+# wheelbase. That last part is the point of the fallback: a fixed Z would sit inside a
+# long car and short of a small one, whereas a wheelbase-derived one lands near the tail
+# of any car, which is all an un-dialled-in car needs.
+func exhaust_locals_for(spec: Dictionary) -> PackedVector4Array:
+	var authored: Variant = exhaust_offsets.get(String(spec.get("id", "")))
+	if authored is Array or authored is PackedVector3Array or authored is PackedVector4Array:
+		var out := PackedVector4Array()
+		for v in authored:
+			# A pipe may be authored either way: a Vector3 is a position pointing straight
+			# back, a Vector4 adds a yaw. Accepting both means adding an angle to one car
+			# never forces every other car's entry to be rewritten.
+			if v is Vector4:
+				out.append(v)
+			elif v is Vector3:
+				out.append(Vector4(v.x, v.y, v.z, 0.0))
+		if not out.is_empty():
+			return out
+	# +Z is rearward and the wheelbase spans ±wheelbase/2 about the car origin, so the
+	# rear axle sits at +wheelbase/2 — close enough to the tail to eyeball from. Straight
+	# back (yaw 0): an un-dialled-in car has no reason to prefer any other angle.
+	var z: float = float(spec.get("wheelbase", 2.5)) * 0.5
+	return PackedVector4Array([
+		Vector4(absf(exhaust_offset_fallback.x), exhaust_offset_fallback.y, z, 0.0),
+		Vector4(-absf(exhaust_offset_fallback.x), exhaust_offset_fallback.y, z, 0.0),
+	])
 
 
 # THE ONE PLACE THAT KNOWS THE SURFACE-TYRE RULE, shared by the live physics

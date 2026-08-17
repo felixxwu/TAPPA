@@ -496,9 +496,8 @@ func _build_challenge_lineup(kind_str: String) -> void:
 	var unix_time := int(Time.get_unix_time_from_system())
 	@warning_ignore("static_called_on_instance")
 	var classified := ChallengeSession.classify_cars(kind_str, Save.profile, unix_time)
-	# clears _detune_needed / _drivetrain_needed
+	# clears _detune_needed
 	_hq._carpark_ui._build_lineup(classified["eligible"])
-	_hq._drivetrain_needed = {}
 
 
 # Commit the focused car park selection: ChallengeSession.start, then the same scene

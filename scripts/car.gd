@@ -90,6 +90,14 @@ var _rear_axle := Vector3.ZERO
 # engine from the nose. Lateral/height come from GameConfig.engine_smoke_offset;
 # recomputed per spec in _apply_physics_spec. See _compute_engine_smoke_local.
 var engine_smoke_local := Vector3.ZERO
+# Car-local exhaust pipe placements (read by ExhaustFlames) — one entry per pipe, so a
+# single-exit car has one and a quad-exit car four. Each is a Vector4: xyz is the pipe
+# position in car-local metres, w is its yaw in DEGREES about the vertical axis (0 =
+# straight back, positive = toward the car's right). Authored per car in
+# GameConfig.exhaust_offsets (keyed on the car id) so the F8 hot-reload can re-read
+# them; a car with no entry gets a wheelbase-derived mirrored pair. Recomputed per spec
+# in _apply_physics_spec. See GameConfig.exhaust_locals_for and features/exhaust-flames.md.
+var exhaust_locals: PackedVector4Array = PackedVector4Array()
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
 # Combined yaw-assist torque applied this tick (steer assist + spin protection),
 # as a signed scalar about the car's up axis (positive = turning the nose left).
@@ -345,6 +353,8 @@ func _ready() -> void:
 	_recompute_axles()
 	# Baseline emit point until a car spec is applied: the raw config offset.
 	engine_smoke_local = cfg.engine_smoke_offset
+	# Likewise for the exhausts: a plausible pair off the config fallback until a spec lands.
+	exhaust_locals = cfg.exhaust_locals_for({})
 
 
 
@@ -382,26 +392,47 @@ func _resolve_terrain() -> Node:
 # Paired with — and deliberately separate from — the snow region's low grip. Low mu
 # makes the car SLIDE; this makes it BOG. Neither alone reads as deep snow.
 #
-# Feathered on the road weight rather than gated on a hard predicate (as the lake
-# query is), so the drag ramps in across the same band the visual snow is drawn
-# rising: the bog appears exactly where the snow appears, physically and visually.
+# PER WHEEL, not one central force. Each grounded contact is dragged by how buried THAT
+# corner is, and the force is applied AT that contact — so a car clipping a drift with its
+# left side only gets a real yaw torque that pulls the nose round, exactly as ploughing one
+# side into deep snow should. A single central force can only ever slow the car in a
+# straight line, however lopsided the snow under it is.
 #
-# cfg.deep_snow_drag is 0.0 on every stage outside a snow region, so the cost there is
-# one float compare — the same "costs nothing when absent" discipline dry weather
-# holds to. The terrain node is already resolved for the drivetrain, so reaching it
-# needs no new plumbing, and this adds ONE query per physics tick against the
-# per-wheel queries the drivetrain already makes.
+# Two details make it behave rather than merely differ:
+#
+#  - The velocity damped is the velocity AT THE CONTACT POINT
+#    (linear + angular x offset), not the chassis centre's. That is what makes the drag
+#    genuinely per-tire: a car already spinning has its rotation damped too, so deep snow
+#    both starts a slew and eventually arrests it, instead of spinning it indefinitely.
+#  - The coefficient is divided by the car's WHEEL COUNT, so with all four wheels equally
+#    buried the total force is identical to the single central force this replaced. The
+#    change is therefore purely about asymmetry — snow_deep_drag keeps its existing
+#    meaning and needs no re-tuning. Dividing by the number of LIVE contacts instead would
+#    be wrong: lifting a wheel would then make the remaining ones bog harder.
+#
+# Feathered on the road weight rather than gated on a hard predicate (as the lake query
+# is), so the drag ramps in across the same band the visual snow is drawn rising: the bog
+# appears exactly where the snow appears, physically and visually. Airborne wheels have no
+# contact and so cannot bog, which is correct.
+#
+# cfg.deep_snow_drag is 0.0 on every stage outside a snow region, so the cost there is one
+# float compare. On a snow stage it costs NO terrain queries at all: each contact already
+# carries the road weight surface_tire_params sampled for it (Drivetrain.WheelContact
+# .road_weight), so this reads what the tire solver already paid for.
 func _apply_deep_snow_drag(cfg: GameConfig) -> void:
-	if cfg.deep_snow_drag <= 0.0:
+	if cfg.deep_snow_drag <= 0.0 or drivetrain == null:
 		return
-	var terrain := drivetrain.terrain if drivetrain != null else null
-	if terrain == null or not terrain.has_method("surface_at"):
+	var wheels: int = drivetrain.all_wheels.size()
+	if wheels <= 0:
 		return
-	var s: Vector2 = terrain.surface_at(global_position.x, global_position.z)
-	var off_road := 1.0 - s.x   # s.x is the road weight: 1.0 on the road, 0.0 off it
-	if off_road <= 0.0:
-		return
-	apply_central_force(-linear_velocity * cfg.deep_snow_drag * off_road)
+	var per_wheel: float = cfg.deep_snow_drag / float(wheels)
+	for c in drivetrain.live_contacts():
+		var offset: Vector3 = c.cp - global_position
+		var f := Drivetrain.deep_snow_force(
+			linear_velocity, angular_velocity, offset, c.road_weight, per_wheel)
+		if f != Vector3.ZERO:
+			apply_force(f, offset)
+
 
 
 # Axle midpoints for the downforce application points, classified the same way
@@ -1586,6 +1617,7 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	cfg.weight_front = front_frac
 	_set_center_of_mass(spec["wheelbase"], front_frac)
 	_compute_engine_smoke_local(spec)
+	exhaust_locals = cfg.exhaust_locals_for(spec)
 
 
 # Resize the procedural chassis box mesh + cabin box to the spec's dimensions and

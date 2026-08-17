@@ -240,7 +240,8 @@ func _on_tile_pressed(slot: String) -> void:
 		if _on_swap.is_valid():
 			_on_swap.call()
 		return
-	UpgradeSlotPopup.open(self, _rated_options(slot), _apply_option.bind(slot))
+	UpgradeSlotPopup.open(self, _rated_options(slot), _apply_option.bind(slot),
+		UpgradeOptions.slot_description(slot))
 
 
 # The slot's options with the performance rating each one WOULD give the car stamped on.
@@ -284,7 +285,8 @@ func _open_tune_popup() -> void:
 	var instance_id := int(_owned.get("instance_id", -1))
 	var current := clampf(float(_owned.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
 	UpgradeSlotPopup.open_slider(self, current * 100.0,
-		_apply_detune.bind(instance_id), _detune_label_text)
+		_apply_detune.bind(instance_id), _detune_label_text,
+		UpgradeOptions.slot_description(UpgradeOptions.SLOT_TUNE))
 
 
 # The detune slider's value label: the car's LIVE power-to-weight at that setting, since
@@ -315,38 +317,57 @@ func _apply_detune(percent: float, instance_id: int) -> void:
 		_on_change.call()
 
 
-# Apply the picked option for `slot`, then re-read + redraw. Every branch goes through the
-# SAME Save entry points the slot rows used to, so the one-enabled-part-per-slot rule, the
-# purchase re-checks and the reward flow are untouched — only the presentation changed.
+# Apply the picked option for `slot`, then re-read + redraw.
+#
+# WHAT the pick means is decided by UpgradeOptions.option_edit — the same function the
+# hypothetical build (UpgradeOptions.build_with) reads, so a rating quoted in the picker and
+# the car this produces cannot disagree about the edit. HOW it is performed still lives
+# here, and still goes through the SAME Save entry points the slot rows used to, so the
+# one-enabled-part-per-slot rule, the purchase re-checks and the reward flow are untouched.
 func _apply_option(id: String, slot: String) -> void:
 	var instance_id := int(_owned.get("instance_id", -1))
-	match slot:
-		UpgradeOptions.SLOT_ENGINE:
-			# The swap is a whole flow the HOST owns (it needs a partner car to pick), so the
-			# tile starts it rather than performing it. Nothing to re-read here — the host's
-			# flow re-enters this component when it finishes.
-			if _on_swap.is_valid():
+	# The SAVED car, not _owned: option_edit asks "is this part already on the car", and the
+	# authority on that is the save. (A synthetic owned-car dict — the component tests and
+	# the reward reveal's preview — yields {} here, which reads as "nothing installed", the
+	# same answer the old code's Save.get_car(...).get(...) gave.)
+	var car := Save.get_car(instance_id)
+	var edit := UpgradeOptions.option_edit(car, slot, id)
+	match String(edit.get("kind", "none")):
+		"none":
+			# Not a slot edit. The engine swap is a whole flow the HOST owns (it needs a
+			# partner car to pick), so the tile starts it rather than performing it; nothing
+			# to re-read here, because the host's flow re-enters this component when it
+			# finishes. The detune has its own live path (_apply_detune).
+			if slot == UpgradeOptions.SLOT_ENGINE and _on_swap.is_valid():
 				_on_swap.call()
 			return
-		"drivetrain":
-			Save.set_drivetrain_override(instance_id, int(id))
-		_:
-			if id == "":
-				_clear_slot(instance_id, slot)   # "Stock" — the slot's off state
-			elif (Save.get_car(instance_id).get("installed_upgrades", []) as Array).has(id):
-				Save.set_upgrade_enabled(instance_id, id, true)
-			elif UpgradeLibrary.is_free(id):
+		"drive_mode":
+			# A layout the car has not paid for is BOUGHT here first, mirroring the part
+			# branch below: buy, then select. Reverting to stock (and re-selecting a mode
+			# already bought) is free and falls straight through.
+			var mode := int(edit["mode"])
+			if not Save.drive_mode_available(car, mode) \
+					and not Save.buy_drive_mode(instance_id, mode):
+				return  # the balance moved under the button; refuse rather than half-apply
+			Save.set_drivetrain_override(instance_id, mode)
+		"clear_slot":
+			_clear_slot(instance_id, slot)
+		"enable_part":
+			Save.set_upgrade_enabled(instance_id, id, true)
+		"fit_part":
+			if bool(edit.get("free", false)):
 				Save.install_upgrade(instance_id, id, true)   # free ballast: fit + enable
 			elif not Save.buy_part(instance_id, id):
 				return   # the balance moved under the button; refuse rather than half-apply
 			else:
 				# ...then switch it on. `buy_part` fits every part PARKED, which is right for
 				# the paths that hand a player something they did not ask for (a reward draw,
-				# a prize-rally part award): those must never silently change how the car drives. This
-				# path is the opposite — the player opened the slot, picked this option and
-				# spent stars on it, so leaving it parked means the menu takes the payment and
-				# visibly does nothing. Enable is exclusive, so it parks the slot's outgoing
-				# part for free. Same buy-then-enable pair Save.apply_build_plan already uses.
+				# a prize-rally part award): those must never silently change how the car
+				# drives. This path is the opposite — the player opened the slot, picked this
+				# option and spent stars on it, so leaving it parked means the menu takes the
+				# payment and visibly does nothing. Enable is exclusive, so it parks the
+				# slot's outgoing part for free. Same buy-then-enable pair
+				# Save.apply_build_plan uses.
 				Save.set_upgrade_enabled(instance_id, id, true)
 	_resync_owned(instance_id)
 	rebuild()

@@ -257,6 +257,7 @@ func _sanitise(p: Dictionary) -> Dictionary:
 				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
 			_prune_unknown_upgrades(car)
 			_revive_orphaned_nitrous(car)
+			_grandfather_drive_mode(car)
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
@@ -287,6 +288,27 @@ func _prune_unknown_upgrades(car: Dictionary) -> void:
 			else:
 				push_warning("Save: dropping unknown upgrade '%s'" % item_id)
 		car[key] = kept
+
+
+# Backfill the paid-for drive-mode list, and GRANDFATHER whatever a car is already
+# converted to.
+#
+# Drivetrain conversion used to be a per-car PART: winning the special fitted the kit to one
+# car, and that car could then switch layout freely. It is now a global unlock with a
+# per-mode star price (features/upgrade-catalogue.md). A car carrying an override from the
+# old rules has therefore already "bought" that mode as far as the player is concerned, and
+# silently reverting it to stock on load — which is what resolve_drive_override would do
+# with an empty list — would take away a conversion they earned.
+#
+# Done in the tolerant sanitise pass rather than as a schema migration, for the same reason
+# the retired-consumable cleanup is: a SCHEMA_VERSION bump makes every older build refuse
+# the profile, which is far too high a price with cloud save moving profiles between builds.
+func _grandfather_drive_mode(car: Dictionary) -> void:
+	if not car.has("drivetrain_modes_bought"):
+		car["drivetrain_modes_bought"] = []
+	var override := int(car.get("drivetrain_override", -1))
+	if override >= 0 and not (car["drivetrain_modes_bought"] as Array).has(override):
+		(car["drivetrain_modes_bought"] as Array).append(override)
 
 
 # Re-enable a nitrous part that the NOS ladder's retirement left parked.
@@ -655,6 +677,10 @@ func grant_car(model_id: String) -> Dictionary:
 		"tuning": {},
 		"wheel_toe": [0.0, 0.0, 0.0, 0.0],
 		"drivetrain_override": -1,
+		# Drive modes this car has PAID for (ints, CarLibrary.RWD/AWD/FWD). Its authored
+		# stock mode is never in here — reverting to stock is always free. See
+		# buy_drive_mode and features/upgrade-catalogue.md.
+		"drivetrain_modes_bought": [],
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
 	profile[KEY_CARS].append(car)
@@ -1260,6 +1286,65 @@ func buy_part(instance_id: int, item_id: String) -> bool:
 	return true
 
 
+# --- Drivetrain conversion ----------------------------------------------------
+#
+# Unlike a part, a drive mode is not something a car HOLDS — it is one of three layouts the
+# car can be set to. So the purchase records the MODE, per car, and switching between modes
+# the car has already paid for is free thereafter (exactly as toggling a bought part between
+# Stock and fitted is free). Reverting to the car's authored stock layout is always free and
+# never recorded.
+#
+# The capability itself is GLOBAL: won once, on the rally that gates `drivetrain_swap`, and
+# available to every car in the garage from then on. What is per-car is the bill.
+
+
+# What converting one car to one non-stock layout costs.
+func drive_mode_price() -> int:
+	return int(Config.data.star_cost_per_drive_mode)
+
+
+# Whether `mode` could be bought for this car right now: the conversion capability is
+# unlocked garage-wide, this car has not already paid for that mode, it is not the car's
+# own stock layout (free), and the stars are there.
+func can_buy_drive_mode(instance_id: int, mode: int) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	if not UpgradeLibrary.drivetrain_swap_unlocked(profile):
+		return false
+	if mode == UpgradeLibrary.stock_drive_mode(car):
+		return false  # stock is free; there is nothing to sell
+	if (car.get("drivetrain_modes_bought", []) as Array).has(mode):
+		return false  # already paid for on this car
+	return stars_available() >= drive_mode_price()
+
+
+# Buy `mode` for this car. Records the mode; does NOT select it — the caller sets the
+# override, exactly as buy_part leaves a bought part parked for the caller to enable.
+func buy_drive_mode(instance_id: int, mode: int) -> bool:
+	if not can_buy_drive_mode(instance_id, mode):
+		return false
+	if not spend_stars(drive_mode_price(), false):
+		return false
+	var car := get_car(instance_id)
+	(car["drivetrain_modes_bought"] as Array).append(mode)
+	save()
+	return true
+
+
+# Whether this car may currently be SET to `mode` without paying: its own stock layout, or
+# one it has already bought. The single rule shared by the picker, the apply path and
+# resolve_drive_override.
+func drive_mode_available(car: Dictionary, mode: int) -> bool:
+	if car.is_empty():
+		return false
+	if mode == UpgradeLibrary.stock_drive_mode(car):
+		return true
+	if not UpgradeLibrary.drivetrain_swap_unlocked(profile):
+		return false
+	return (car.get("drivetrain_modes_bought", []) as Array).has(mode)
+
+
 # --- Auto-Upgrade plans -------------------------------------------------------
 #
 # Commit a plan from UpgradeLibrary.auto_build_plan to a car: buy, switch on, park,
@@ -1281,7 +1366,22 @@ func apply_build_plan(instance_id: int, plan: Dictionary) -> bool:
 	for item_id in plan.get("strip", []):
 		set_upgrade_enabled(instance_id, item_id, false)
 	if int(plan.get("drivetrain", -1)) >= 0:
-		set_drivetrain_override(instance_id, int(plan["drivetrain"]))
+		# Buy the layout first if this car has not already paid for it — the plan quoted the
+		# cost, so committing has to actually spend it rather than handing over a free
+		# conversion the picker charges for.
+		#
+		# Committed BEFORE the part buys would be wrong too (parts are the plan's main
+		# purpose), so instead the failure is REPORTED: the part buys above may have
+		# consumed a balance the plan budgeted for both, and silently skipping the
+		# conversion would return `true` having produced a car that does not satisfy the
+		# restriction the plan cleared. The caller gets false and can re-plan against the
+		# real balance.
+		var want_mode := int(plan["drivetrain"])
+		if not drive_mode_available(get_car(instance_id), want_mode) \
+				and not buy_drive_mode(instance_id, want_mode):
+			set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
+			return false
+		set_drivetrain_override(instance_id, want_mode)
 	set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
 	return true
 

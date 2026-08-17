@@ -18,7 +18,7 @@ the car is simulated around a fixed test track (`BenchmarkTrack`) with
 `LapTimeModel`, and the rating is derived from the resulting **total lap time**.
 
 ```
-rating = round(RATING_SCALE * reference_ms / benchmark_ms)
+rating = round(RATING_SCALE * (reference_ms / benchmark_ms) ^ rating_spread)
 ```
 
 Reciprocal time, so the number is proportional to *average speed*. Raw time
@@ -26,6 +26,37 @@ compresses badly at the fast end — half a second between two quick cars means 
 more than between two slow ones — and the reciprocal spreads the roster evenly.
 `CarPerformance.benchmark_ms(meta)` exposes the raw time for tooling and
 calibration.
+
+### `rating_spread` — widening the field
+
+Lap time is a **compressive** measure of a car. A hypercar is many times the machine a kei
+van is, but only about 1.5× faster round a lap, so the physically honest ratings bunch: the
+shipped roster spanned just 342–526, with the six quickest cars inside 55 points of each
+other. The roster read flatter than it drives.
+
+`GameConfig.rating_spread` is an exponent on the speed ratio, stretching the field about
+the `RATING_SCALE` anchor. `1.0` is the raw proportional number and `pow()` is skipped
+entirely. The shipped value is **3.0**, which takes the roster to roughly 161–583.
+
+An **exponent**, not a linear `500 + (raw - 500) * gain`: it is multiplicative, so it can
+never drive a slow car to zero or negative (a linear gain of 3 puts the slowest shipped car
+at 26), and "twice the ratio" means the same thing everywhere on the scale. The reference
+car rates exactly `RATING_SCALE` at every setting — the stretch has one fixed point, so it
+widens the field rather than sliding it.
+
+**What it cannot do:** differences are amplified *proportionally*, so two cars the
+benchmark finds within 1% of each other stay within `spread`% of each other. It widens the
+whole field, mostly by pulling the slow cars down; it does not pull the fast cars apart.
+Separating cars that are genuinely near-identical on the benchmark is a **geometry**
+question — `benchmark_straight_m` and friends, above — not a scaling one.
+
+It is folded into `_config_key`, so retuning it invalidates every memoised rating: it
+changes the number without changing the lap, and a cache keyed only on the benchmark
+geometry would serve stale figures for the rest of the session.
+
+**Knock-on:** rating-space values elsewhere are now measured against a wider field.
+`opponent_rating_match_spread` (the AI matching window, in rating units) and any authored
+rating ceiling mean proportionally *less* than they did, so revisit them alongside this.
 
 Because the score comes out of the solver, it can never drift out of agreement
 with a hand-written weighting: whatever `LapTimeModel` models, the rating

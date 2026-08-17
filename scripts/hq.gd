@@ -202,7 +202,6 @@ var _eligible: Array = []
 # these cars Start opens the over-limit prompt that routes to the upgrades menu
 # (_show_over_limit_prompt / _on_start_pressed) rather than launching.
 var _detune_needed: Dictionary = {}
-var _drivetrain_needed: Dictionary = {}
 # Confirm popup shown when Start is pressed on an over-powered car: the car looks
 # eligible in the park; this dialog carries the "too powerful" nudge and routes to
 # Change Upgrades (_show_over_limit_prompt). Implemented via ConfirmPopup.
@@ -1567,24 +1566,21 @@ func _stars_for(rally_id: String) -> int:
 
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
 # the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
-# can't drift. Returns {eligible, drivetrain}: `eligible` = whether the car can enter at
-# all; `drivetrain` = the drive mode it must be converted to first (-1 = none).
+# can't drift. Returns {eligible}: whether the car, exactly as the player left it, can
+# enter this rally.
 #
-# Entry is purely CATEGORICAL now (body/country/doors/cylinders/displacement/drive mode),
-# so there is no "too fast" or "too slow" car — only a car of the wrong kind. The one
-# fixable dimension is drive mode, because a drivetrain conversion can change it.
+# Entry is purely CATEGORICAL (body/country/doors/cylinders/displacement/drive mode), so
+# there is no "too fast" or "too slow" car — only a car of the wrong kind. It judges the
+# car AS BUILT and proposes nothing: a wrong-drivetrain car is simply ineligible, and
+# converting it is a garage decision the player makes themselves, where the conversion's
+# star price is on screen (features/upgrade-catalogue.md).
+#
+# This used to hand back a `drivetrain` field naming a mode the car park would silently
+# switch to at the Start button and revert afterwards. That is gone — see
+# hq_carpark.gd::_build_eligible_lineup.
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var entry := CarLibrary.for_owned(car)
-	var meta := UpgradeLibrary.effective_meta(car, entry)
-	if RallyLibrary.is_eligible(rally, meta):
-		return {"eligible": true, "drivetrain": -1}
-	var target := _carpark_ui._switch_target_for(rally, car, meta)
-	if target >= 0:
-		var meta_sw := meta.duplicate()
-		meta_sw["drive_mode"] = target
-		if RallyLibrary.is_eligible(rally, meta_sw):
-			return {"eligible": true, "drivetrain": target}
-	return {"eligible": false, "drivetrain": -1}
+	return {"eligible": RallyLibrary.is_eligible(rally, UpgradeLibrary.effective_meta(car, entry))}
 
 
 # Whether the player owns at least one car that can enter `rally` — drives the pin
@@ -2640,11 +2636,16 @@ func _process(delta: float) -> void:
 # _entry_plan so this agrees exactly with the green/grey map pin (_has_eligible_car)
 # and the car-park lineup — the ONE eligibility decision, never re-derived here.
 # Returns {total, qualify, adjust, names}: `total` counts owned cars whose model still
-# resolves (a removed model is skipped, not counted); `qualify` = can enter at all
-# (matches the pin); `adjust` = qualify, but only after a drivetrain conversion — the
-# sole remaining fixable restriction (`adjust` is a subset of `qualify`). `names` lists
-# the qualifying cars' display names, in roster order, so the panel can name them
-# instead of just counting them.
+# resolves (a removed model is skipped, not counted); `qualify` = can enter as built
+# (matches the pin); `adjust` = cars that CANNOT enter as built but WOULD after a
+# drivetrain conversion. `names` lists the qualifying cars' display names, in roster
+# order, so the panel can name them instead of just counting them.
+#
+# `adjust` used to be a subset of `qualify`, because the car park silently switched such a
+# car at the Start button and counted it as qualifying. That switch is gone — a
+# wrong-drivetrain car is simply ineligible — so `adjust` is now DISJOINT from `qualify`:
+# it counts cars the player could convert themselves, which is exactly the prompt the
+# panel line is for.
 func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	var total := 0
 	var qualify := 0
@@ -2655,14 +2656,38 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 		if entry.is_empty():
 			continue  # a stale / removed model — not a countable car
 		total += 1
-		var plan := _entry_plan(rally, car)
-		if not bool(plan["eligible"]):
-			continue
-		qualify += 1
-		names.append(EngineSwap.display_name(entry, car))
-		if int(plan["drivetrain"]) >= 0:
+		if bool(_entry_plan(rally, car)["eligible"]):
+			qualify += 1
+			names.append(EngineSwap.display_name(entry, car))
+		elif _convertible_for(rally, car, entry):
 			adjust += 1
 	return {"total": total, "qualify": qualify, "adjust": adjust, "names": names}
+
+
+# Whether this car belongs in the rally's car-park lineup at all: it can enter as built, or
+# it could be made to by an upgrade the player can actually buy. A car that can never enter
+# — the wrong body, country, doors, cylinders — is excluded, because parking it offers the
+# player nothing to do about it.
+func _can_ever_enter(rally: Dictionary, car: Dictionary) -> bool:
+	if rally.is_empty():
+		return true
+	if bool(_entry_plan(rally, car)["eligible"]):
+		return true
+	return _convertible_for(rally, car, CarLibrary.for_owned(car))
+
+
+# Whether this car is ineligible ONLY on drive mode — i.e. converting it (which the player
+# does themselves in the garage, for stars) would let it in. Requires the conversion
+# capability to be unlocked at all, so the panel never suggests a fix the player cannot buy.
+func _convertible_for(rally: Dictionary, car: Dictionary, entry: Dictionary) -> bool:
+	var r: Dictionary = rally.get("restriction", {})
+	if not r.has("drive_mode"):
+		return false
+	if not UpgradeLibrary.drivetrain_swap_unlocked(Save.profile):
+		return false
+	var switched := UpgradeLibrary.effective_meta(car, entry).duplicate()
+	switched["drive_mode"] = int(r["drive_mode"])
+	return RallyLibrary.is_eligible(rally, switched)
 
 
 # The qualifying-car read-out: name the cars rather than counting them. Caps the list at
@@ -4077,14 +4102,6 @@ func _on_start_pressed() -> void:
 	# NOTE: nothing auto-applies upgrades here. The car races exactly the build the
 	# player left it on — switching parts on for them behind a loading screen is an edit
 	# they never asked for and cannot see happen.
-	# Apply a qualifying drivetrain switch first (temporary, reverted after the rally),
-	# so the subsequent detune math sees the switched car.
-	var need_dm: int = _drivetrain_needed.get(_selected_instance_id, -1)
-	if need_dm >= 0:
-		var prior_dm := int(Save.get_car(_selected_instance_id).get("drivetrain_override", -1))
-		RallySession.register_drivetrain_revert(_selected_instance_id, prior_dm)
-		Save.set_drivetrain_override(_selected_instance_id, need_dm)
-		_drivetrain_needed.erase(_selected_instance_id)
 	# An over-powered car looks eligible in the park; pressing Start pops a prompt that
 	# routes the player to the upgrades menu to shed power (detune / ballast / strip
 	# parts), rather than launching. _detune_needed marks the over-cap-but-fixable cars.
