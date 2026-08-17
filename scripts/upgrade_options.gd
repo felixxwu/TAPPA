@@ -170,13 +170,16 @@ static func _part_options(owned_car: Dictionary, slot: String) -> Array[Dictiona
 		var label := _option_label(owned_car, slot, def, pid)
 		var tile := _option_tile_label(owned_car, slot, def)
 		if installed.has(pid):
-			var row := {
+			# Named apart from the purchase row below: two `row`s in nested blocks of one
+			# function read as the same variable and Godot warns as much (and this project
+			# treats warnings as errors in the test runner).
+			var fitted_row := {
 				"id": pid, "label": label, "current": UpgradeLibrary.is_enabled(owned_car, pid),
 				"selectable": true, "price": -1, "locked_reason": "",
 			}
 			if tile != "":
-				row["tile_label"] = tile
-			out.append(row)
+				fitted_row["tile_label"] = tile
+			out.append(fitted_row)
 			continue
 		# Not on this car. A FREE part (ballast) is fitted on the spot; anything else is a
 		# purchase. Either way it is listed even when it cannot be taken yet — greyed with

@@ -55,6 +55,16 @@ and a jumping car would go on laying marks and throwing dirt in mid-air. All thr
 accessors return `0.0` for a wheel with no live contact — the value that reads as "no
 effect" at every call site.
 
+## Changing a live drivetrain: `reconfigure(mode)`
+
+`reconfigure` is the ONLY driveline change legal on a car that is already simulating. It sets
+`drive_mode` and refreshes the engine's two config-derived caches — `refresh_fitment()` (the
+nitrous gate) and `refresh_gearing()` (the shift points) — and touches nothing else, so revs,
+gear, boost, wheel spin and the mirrored gearbox mode all survive. `Car.refit_upgrades` (the
+start-line Upgrades menu) uses it; constructing a second `Drivetrain` mid-stage would
+re-derive wheel geometry from the live, drifted scene and reset the whole driveline. See
+[car-physics.md](car-physics.md) → *Rebuild vs reconfigure*.
+
 ## Main entry: `step(delta, throttle, brake, handbrake)`
 
 1. Build a contact context for each in-contact wheel: normal force, contact
@@ -264,7 +274,13 @@ property of the conditions the benchmark freezes.)
 
 ## Helper functions
 
-- `wheel_normal_force(wheel)` — suspension force: spring×compression −
+- `wheel_normal_force(wheel)` — suspension force measured against the wheel's
+  `hardpoints` entry, which `_init` seeds from **`Car.wheel_mount(wheel)`** (the authored
+  mount) and NOT from the live `wheel.position` — the body repaints that with the settled
+  travel each step, so a drivetrain rebuilt on a running car (`refit_upgrades`) would
+  otherwise over-report every wheel's load. See
+  [car-physics.md](car-physics.md) → *The mount a compression is measured from*.
+  Spring×compression −
   damper×velocity.
 - `wheel_forward(wheel)` / `wheel_side(wheel)` — rolling and lateral axes in the
   contact plane (includes caster + steering).

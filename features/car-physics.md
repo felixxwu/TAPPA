@@ -287,6 +287,66 @@ each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalon
 tall roadster/muscle (MX-5, Charger) vs stiff & low supercars (911, Viper,
 XJS). The `config/game_config.tres` values are the baseline/fallback.
 
+### The mount a compression is measured from (`Car.wheel_mount`)
+
+`VehicleBody3D` **repaints `wheel.position` every physics step** with the connection point
+plus the current suspension travel, so a settled wheel reads about one travel *lower* than
+where it is actually mounted. Anything that needs the mount must therefore read
+`Car.wheel_mount(wheel)` — the authored mount, recorded in `_ready()` before physics ever
+runs and re-recorded by `_relocate_wheels()` for each car spec — and never the live
+`wheel.position`.
+
+Two consumers depend on it, and BOTH run on every drivetrain rebuild:
+
+- `Drivetrain._init` seeds `hardpoints` from it; `wheel_normal_force()` measures suspension
+  compression against that hardpoint, and every tyre force scales with the resulting load.
+- `Car._recompute_axles()` averages it into `_front_axle` / `_rear_axle`, the points the
+  per-axle **downforce** is applied at (so a drifted mount would quietly change the car's
+  aero pitch lever as well as its grip).
+
+`exhaust_lab.gd` reads a wheel's live position deliberately and legitimately — it poses
+frozen props whose solver never runs, so nothing repaints them.
+
+`Car.wheel_mount()` **has no silent fallback**: a wheel with no recorded mount `push_error`s
+rather than quietly substituting the drifting live transform, because a plausible-looking
+wrong number is precisely how the original bug behaved. `_ready()` records the mount as the
+FIRST thing it does per wheel, before anything that resolves an axle (`_apply_suspension` →
+`_wheel_is_front`) can read it.
+
+### Rebuild vs reconfigure (`Drivetrain.reconfigure`)
+
+There are two ways to change a car's driveline, and which one is legal depends on whether the
+body has simulated:
+
+| | when | what it does |
+|---|---|---|
+| `Car._rebuild_drivetrain()` | **fielding time only** (`apply_car`, `_apply_engine_swap`) | constructs a fresh `Drivetrain` + `EngineSim`, re-captures wheel geometry, re-resolves terrain, recomputes the axle midpoints |
+| `Drivetrain.reconfigure(mode)` | **any time, including mid-stage** (`Car.refit_upgrades`) | sets the driven axle and refreshes the engine's two config-derived caches (`refresh_fitment`, `refresh_gearing`) — nothing else |
+
+A rebuild re-derives everything from the live scene and the config, so on a running car it
+re-captures drifted wheel geometry AND discards the car's revs, gear, boost, nitrous tank,
+wheel spin and mirrored gearbox mode. That is why the start-line Upgrades menu reconfigures
+instead: the only things an upgrade edit can actually move are the driven axle and those two
+caches. (The `_gearbox_auto_seen = -1` workaround that used to re-push the player's Gearbox
+setting after a refit is gone with the rebuild that made it necessary.)
+
+`_rebuild_drivetrain` carries a debug-build **tripwire**
+(`_assert_wheel_geometry_is_fresh`): it `push_error`s when a rebuild happens on a body that
+has simulated (`_has_simulated`, set in `_integrate_forces`) *and* whose wheel transforms have
+actually drifted from their mounts. It stays silent for every legitimate caller — a
+fielding-time build has not simulated, and `apply_car` relocates the wheels back onto their
+mounts immediately beforehand — so if it ever fires, someone has reintroduced the hazard.
+
+**The bug this fixed:** `Car.refit_upgrades()` (the start-line Upgrades menu) rebuilds the
+drivetrain on a car that has been standing at the line for seconds. `Drivetrain._init` used
+to capture `wheel.position`, i.e. the *drifted* transform, so the rebuilt drivetrain measured
+compression from a mount a whole travel too low and over-reported EVERY wheel's normal force
+by ~60% — the car silently gained about that much grip from any pre-stage upgrade edit,
+whatever the edit was (it was reported as "swap to stock tyres on the start line and the car
+still grips like snow tyres"). The post-fix sweep found `_recompute_axles()` reading the
+live position the same way at the same call site, so the downforce points drifted too; both
+now read `wheel_mount()`. Pinned by `tests/headless/test_live_refit_suspension.gd`.
+
 ### Static rest pose (`settled_ride_height`)
 
 Display / prop cars — the roadside opponent wreck (`world.gd`), the podium finishers
@@ -512,7 +572,11 @@ player put during the countdown (`handbrake_locked` forces the handbrake).
 
 `tests/headless/test_car.gd` (launch, speed, steering, reset),
 `tests/headless/test_car_terrain.gd` (behavior on slopes),
-`tests/headless/test_crosswind.gd` (the storm wind profile + its determinism).
+`tests/headless/test_crosswind.gd` (the storm wind profile + its determinism),
+`tests/headless/test_live_refit_suspension.gd` (a live upgrade refit leaves the tyre loads,
+the authored wheel mounts and the axle midpoints untouched, reconfigures the drivetrain
+instead of rebuilding it, and preserves the running driveline state — see *The mount a
+compression is measured from* and *Rebuild vs reconfigure*).
 
 ## Related config
 

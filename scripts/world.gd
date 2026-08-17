@@ -78,6 +78,7 @@ func _ready() -> void:
 	# the run — session-less entries (free roam, benchmark, dev boot) no-op and
 	# keep whatever the caller wrote. See DrivingContext.apply_stage_config.
 	DrivingContext.apply_stage_config(Config.data)
+	GripLog.tyres("stage config seated", Config.data)   # TEMP, see grip_log.gd
 	var cfg: GameConfig = Config.data
 	# A one-shot notice from the Start gate (today: the free upgrade restore) replaces
 	# the loading tip for this one load — it is about the car the player is sitting in,
@@ -231,6 +232,7 @@ func _ready() -> void:
 			$Car.apply_car(idx if idx >= 0 else 0)
 	else:
 		$Car.apply_car(0)
+	GripLog.tyres("world fielded the car", Config.data)   # TEMP, see grip_log.gd
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
 	# apply the newly-fielded car's per-car bonnet offset now — retarget() only
 	# runs on a later car swap.
@@ -1853,6 +1855,7 @@ func _build_start_line() -> void:
 		# `leaders` stays empty: no rival field (spec §3), so StartLine's existing
 		# empty-leaders path skips the reveal and fades straight to the countdown.
 		rally = {"name": String(info["rally_name"])}
+	GripLog.say("SCREEN: start line (staged pre-stage menu) is up")   # TEMP, see grip_log.gd
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)

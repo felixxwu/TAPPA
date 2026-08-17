@@ -292,6 +292,16 @@ func _ready() -> void:
 	# (Godot's implicit default is 0.1; force 0 so a launched car isn't slowed in
 	# the air). Grounded rotation is governed by the tire model + steer/spin assists.
 	for wheel in find_children("*", "VehicleWheel3D", false):
+		# Remember the authored mount FIRST, before physics repaints the wheel transform
+		# (the body overwrites origin with connection-point + suspension travel), so car
+		# swaps relocate from a clean rest pose and not a drifted one.
+		#
+		# First in the loop, not last: everything below that resolves a wheel's AXLE goes
+		# through wheel_mount() (_apply_suspension -> _wheel_is_front), so the record has to
+		# exist before the first reader. It used to be written last and the axle test fell
+		# back to the live wheel.position — correct only because nothing has simulated yet
+		# during _ready, i.e. right for the wrong reason.
+		_wheel_mounts[wheel] = wheel.position
 		# All contact friction is handled by the Drivetrain tire model; the
 		# built-in solver only does suspension + raycasts.
 		wheel.wheel_friction_slip = 0.0
@@ -302,10 +312,6 @@ func _ready() -> void:
 		# above any real spring+damper force so it never limits the suspension.
 		wheel.suspension_max_force = 1_000_000.0
 		wheel.wheel_radius = cfg.wheel_radius
-		# Remember the authored mount BEFORE physics repaints the wheel transform
-		# (the body overwrites origin with connection-point + suspension travel),
-		# so car swaps relocate from a clean rest pose, not a drifted one.
-		_wheel_mounts[wheel] = wheel.position
 		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
 		if tire != null and tire.mesh != null:
 			tire.mesh = tire.mesh.duplicate()
@@ -444,7 +450,12 @@ func _recompute_axles() -> void:
 	var fronts: Array[Vector3] = []
 	var rears: Array[Vector3] = []
 	for wheel in find_children("*", "VehicleWheel3D", false):
-		(rears if wheel.use_as_traction else fronts).append(wheel.position)
+		# wheel_mount(), never the live wheel.position: the body repaints that with the
+		# settled suspension travel every step, so recomputing these midpoints on a car that
+		# has been standing still (refit_upgrades -> _rebuild_drivetrain) would drop the
+		# downforce application points by ~one travel and quietly change its pitch lever.
+		# Same mechanism as the drivetrain hardpoint bug — see Car.wheel_mount().
+		(rears if wheel.use_as_traction else fronts).append(wheel_mount(wheel))
 	for p in fronts:
 		_front_axle += p / fronts.size()
 	for p in rears:
@@ -512,6 +523,8 @@ func _timed_physics_process(delta: float) -> void:
 	_approach_velocity = linear_velocity
 	var horiz := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
 	_approach_dir = horiz.normalized() if horiz.length_squared() > 0.0001 else Vector3.ZERO
+	_grip_log_sample(cfg, delta)   # TEMP diagnostic, see grip_log.gd
+	_grip_log_burst(cfg, _axis_input("brake_reverse", "accelerate", ai_throttle))
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
 	# player can't shift or change mode mid-countdown. Scripted cars never read them.
@@ -795,6 +808,141 @@ func _apply_aero() -> void:
 			[global_position + global_transform.basis * _front_axle, down * v2 * cfg.downforce_front],
 			[global_position + global_transform.basis * _rear_axle, down * v2 * cfg.downforce_rear],
 		]
+
+
+# TEMPORARY (grip_log.gd): a bounded high-rate trace of the launch. Arms when the driver
+# first floors it from (near) standstill after a handover, then samples every 5 physics ticks
+# for 2 seconds. Delete with the rest of the grip logging.
+var _burst_tick := -1
+
+
+func _grip_log_burst(_cfg: GameConfig, throttle: float) -> void:
+	if not GripLog.enabled():
+		return
+	var kmh := linear_velocity.length() * 3.6
+	# Arms at GO — the tick control is genuinely handed over — so the trace covers the
+	# throttle BUILD-UP too, not just what happens once it is already floored.
+	if _burst_tick < 0:
+		if controls_locked or handbrake_locked:
+			return
+		_burst_tick = 0
+	_burst_tick += 1
+	if _burst_tick > 180 or _burst_tick % 3 != 0:
+		return
+	var parts: PackedStringArray = []
+	var front_sum := 0.0
+	for wheel in drivetrain.all_wheels:
+		var n := drivetrain.wheel_normal_force(wheel)
+		parts.append("%s: N=%.0f slip=%.2f F=%.0f%s" % [
+			wheel.name, n, drivetrain.wheel_long_grip_usage(wheel),
+			drivetrain.wheel_force_n(wheel),
+			"*" if drivetrain.is_wheel_driven(wheel) else ""])
+		if not drivetrain.front_omega.has(wheel):
+			continue
+		front_sum += float(drivetrain.front_omega[wheel])
+	GripLog.burst(_burst_tick, kmh, drivetrain.engine.rpm(), drivetrain.engine.gear,
+		drivetrain.rear_omega,
+		front_sum / maxf(float(drivetrain.front_omega.size()), 1.0), throttle,
+		"steer=%+.2f hb=%s | %s" % [
+			_axis_input("steer_right", "steer_left", ai_steer),
+			"Y" if (ai_handbrake if ai_controlled else Input.is_action_pressed("handbrake")) else "n",
+			" | ".join(parts)])
+
+
+# TEMPORARY diagnostic (grip_log.gd): once a second, while actually moving, print what
+# grip the tyre model is resolving under this car, plus the g-force the body is actually
+# pulling. Delete with the rest of the grip logging.
+var _grip_log_t := 0.0
+var _glog_prev_v := Vector3.ZERO
+var _glog_lat_g := 0.0          # smoothed, so a single solver tick can't dominate
+var _glog_long_g := 0.0
+var _glog_peak_lat := 0.0
+var _glog_peak_long := 0.0
+var _glog_peak_lat_kmh := 0.0
+var _glog_was_locked := true
+
+
+func _grip_log_sample(cfg: GameConfig, delta: float) -> void:
+	if not GripLog.enabled() or ai_controlled or delta <= 0.0:
+		return
+	var kmh := linear_velocity.length() * 3.6
+	# Accelerometer in the BODY frame: gravity is carried by the suspension while grounded,
+	# so the lateral/longitudinal channels read as cornering / braking-and-drive g directly.
+	var accel := (linear_velocity - _glog_prev_v) / delta
+	_glog_prev_v = linear_velocity
+	# A reset / teleport / respawn changes velocity discontinuously, which reads as an
+	# absurd acceleration and would poison both the smoothing and the peaks. No tyre on any
+	# surface generates 10 g, so anything above that is not physics — drop the sample.
+	if accel.length() > 10.0 * 9.81:
+		return
+	var body_basis := global_transform.basis
+	var lat := accel.dot(body_basis.x) / 9.81
+	var lon := accel.dot(-body_basis.z) / 9.81
+	# Light EMA (~0.15 s): the raw per-tick delta is solver noise, the peaks below are what
+	# matter and a single-tick spike would make them meaningless.
+	_glog_lat_g = lerpf(_glog_lat_g, lat, 0.1)
+	_glog_long_g = lerpf(_glog_long_g, lon, 0.1)
+	# Peaks reset at each LAUNCH (controls unlocking), so two launches in one session are
+	# independently comparable instead of sharing one running maximum.
+	if _glog_was_locked and not controls_locked:
+		_glog_peak_lat = 0.0
+		_glog_peak_long = 0.0
+		_glog_peak_lat_kmh = 0.0
+		# The handover state itself: a car already ROLLING when control is handed over needs
+		# far less of its grip budget to stop the wheels spinning than one starting from a
+		# dead stop, so the launch resolves completely differently. Wheel omegas included,
+		# because that is the slip the tyre model actually sees at tick zero.
+		var omegas: PackedStringArray = []
+		for wheel in drivetrain.all_wheels:
+			omegas.append("%.1f" % (drivetrain.front_omega[wheel]
+				if drivetrain.front_omega.has(wheel) else drivetrain.rear_omega))
+		GripLog.say("=== LAUNCH: speed=%.2f km/h rpm=%.0f gear=%d wheel_omega=[%s] === (peaks reset)"
+			% [linear_velocity.length() * 3.6, drivetrain.engine.rpm(), drivetrain.engine.gear,
+				", ".join(omegas)])
+		GripLog.tyres("state at launch", cfg)
+		GripLog.condition("condition at launch", damage.hp, damage.max_hp,
+			damage.misfire_level(cfg), damage.toe_array())
+		GripLog.driveline("driveline at launch", cfg, drivetrain)
+		GripLog.suspension("suspension at launch", self, drivetrain)
+		_burst_tick = -1   # re-arm the launch burst for this launch
+	_glog_was_locked = controls_locked
+	# Peaks only while the driver is actually in control: a staged / countdown / finished car
+	# is being moved by the game, and those samples are not the player's cornering.
+	if kmh > 15.0 and not controls_locked:  # >15 km/h skips the standing-start wheelspin
+		if absf(_glog_lat_g) > _glog_peak_lat:
+			_glog_peak_lat = absf(_glog_lat_g)
+			_glog_peak_lat_kmh = kmh
+		_glog_peak_long = maxf(_glog_peak_long, absf(_glog_long_g))
+	_grip_log_t += delta
+	if _grip_log_t < 1.0:
+		return
+	_grip_log_t = 0.0
+	if kmh < 3.0:
+		return
+	GripLog.live(cfg, drivetrain, kmh, global_position)
+	GripLog.driveline("driveline", cfg, drivetrain)
+	GripLog.suspension("suspension", self, drivetrain)
+	var mu_eff: float = cfg.wheel_friction_slip_front \
+		* float(drivetrain.surface_tire_params(cfg, global_position).get("mu_mult", 1.0))
+	GripLog.gforce("", kmh, _glog_lat_g, _glog_long_g, _glog_peak_lat, _glog_peak_long,
+		_glog_peak_lat_kmh, mu_eff)
+	_grip_log_drive(kmh)
+
+
+# The drive-side companion to the sample above: the driver's own inputs plus the gear, revs
+# and driven-wheel overspeed. TEMPORARY (grip_log.gd).
+func _grip_log_drive(kmh: float) -> void:
+	var engine := drivetrain.engine
+	GripLog.drive(kmh, _axis_input("brake_reverse", "accelerate", ai_throttle),
+		Input.get_action_strength("brake_reverse") if _driver_input_live() else 0.0,
+		ai_handbrake if ai_controlled else Input.is_action_pressed("handbrake"),
+		engine.gear, engine.rpm(), engine.auto,
+		drivetrain.drive_wheelspin_excess(), _glog_long_g,
+		# The staging flags: a hold that never released would cut drive AND raise wheelspin,
+		# which is exactly the shape of the slow launch. Also the scripted-car flag.
+		"locks: controls=%s handbrake_hold=%s finish_stop=%s ai=%s spin_protect_held=%s" % [
+			controls_locked, handbrake_locked, finish_stop, ai_controlled,
+			is_held()])
 
 
 # --- Crosswind (storm) -------------------------------------------------------
@@ -1168,6 +1316,9 @@ func _ground_normal() -> Vector3:
 # arrested forward momentum (a central, torque-free impulse — the solver's off-center
 # spin survives), so the post-restore velocity is what the deceleration damage keys off.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	# From here on VehicleBody3D is repainting the wheel transforms every step, so the live
+	# wheel.position is no longer the authored mount. See _assert_wheel_geometry_is_fresh().
+	_has_simulated = true
 	# The replay ghost is positioned via the physics server (see _step_replay); it must
 	# take no damage and fell no trees — the per-frame reposition would otherwise read
 	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
@@ -1768,8 +1919,13 @@ func _relocate_wheels(spec: Dictionary) -> void:
 		# Relocate from the AUTHORED mount, not the live transform — the body
 		# repaints the wheel's origin with suspension travel each step, so reading
 		# it back would let the mount drift (and corrupt contact) on each swap.
-		var mount: Vector3 = _wheel_mounts.get(wheel, wheel.position)
+		var mount: Vector3 = wheel_mount(wheel)
 		wheel.position = Vector3(signf(mount.x) * half_track, mount.y, signf(mount.z) * half_base)
+		# Re-record it: from here on THIS is the authored mount for this car spec, and it is
+		# what a later drivetrain rebuild must key its suspension geometry off (see
+		# wheel_mount() / Drivetrain._init). Signs and y are preserved, so every other reader
+		# of this dict (relocation, _wheel_is_front, the rest-pose math) is unaffected.
+		_wheel_mounts[wheel] = wheel.position
 		wheel.wheel_radius = radius
 		# Steering wheels are the front axle; staggered cars get fatter rears.
 		var width: float = width_front if wheel.use_as_steering else width_rear
@@ -1801,17 +1957,57 @@ func _relocate_wheels(spec: Dictionary) -> void:
 		wheel.owner = self
 
 
+# The driven-axle layout to run: the player's bought conversion when one is being fielded,
+# else the car's authored stock layout. One resolver so the rebuild and the live reconfigure
+# can never disagree about which mode a given fielding means.
+func _resolved_drive_mode(stock: Drivetrain.DriveMode) -> Drivetrain.DriveMode:
+	if _owned_drive_override >= 0:
+		return _owned_drive_override as Drivetrain.DriveMode
+	return stock
+
+
 # Recreate the drivetrain (fresh hardpoints + shift speeds for the current
 # redline/gearing) on the given driven-axle layout, re-resolve the terrain and
-# recompute the axle midpoints. Shared by apply_car and _apply_engine_swap; _ready
-# builds its own (it interleaves other setup and keeps the config-derived drive_mode).
+# recompute the axle midpoints.
+#
+# FIELDING-TIME ONLY. Both callers (apply_car, _apply_engine_swap) run while the car is being
+# built or re-fielded; `_ready` builds its own (it interleaves other setup and keeps the
+# config-derived drive_mode). To change a LIVE car's driveline use
+# `Drivetrain.reconfigure()` instead (refit_upgrades does) — a rebuild on a running car
+# discards its whole simulation state, and used to re-capture drifted wheel geometry with it.
+# The tripwire below is what stops that regressing quietly.
 func _rebuild_drivetrain(drive_mode: Drivetrain.DriveMode) -> void:
-	var mode: Drivetrain.DriveMode = (_owned_drive_override as Drivetrain.DriveMode) if _owned_drive_override >= 0 else drive_mode
+	var mode := _resolved_drive_mode(drive_mode)
+	_assert_wheel_geometry_is_fresh()
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
 	drivetrain.drive_mode = mode
 	config.drive_mode = mode
 	_recompute_axles()
+
+
+# True once the physics solver has run on this body, i.e. once VehicleBody3D has begun
+# repainting the wheel transforms. Set in _integrate_forces; see the tripwire below.
+var _has_simulated := false
+
+
+# Tripwire for the class of bug that produced the ~60% grip inflation (see Car.wheel_mount):
+# a drivetrain rebuilt on a car that has SIMULATED, without the wheels having been relocated
+# back onto their authored mounts first. It fires only when the live wheel transform has
+# actually drifted from the mount — which is precisely when a naive re-capture would be
+# wrong — so it is silent for every legitimate caller: a fielding-time build has not
+# simulated, and apply_car relocates the wheels (resetting wheel.position to the mount)
+# immediately before rebuilding.
+func _assert_wheel_geometry_is_fresh() -> void:
+	if not _has_simulated or not OS.is_debug_build():
+		return
+	for wheel in _wheel_mounts:
+		if absf((wheel as Node3D).position.y - float(_wheel_mounts[wheel].y)) > 0.005:
+			push_error("car.gd: drivetrain rebuilt on a SIMULATING body whose wheel transforms "
+				+ "have drifted from their authored mounts (%s). Relocate the wheels first, or "
+				+ "use Drivetrain.reconfigure() for a live change — see Car.wheel_mount()."
+				% (wheel as Node3D).name)
+			return
 
 
 # Rebuild the EngineAudio voice for the current engine profile / voicing, when the
@@ -1916,6 +2112,7 @@ func apply_owned(owned: Dictionary) -> String:
 	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),
 		owned.get("wheel_toe", []))
 	_owned_drive_override = -1
+	GripLog.tyres("apply_owned (full field)", config)   # TEMP diagnostic, see grip_log.gd
 	# Clear the per-fielding wheel override so a later BARE apply_car (free-roam /
 	# prop / opponent re-fielding of this same instance) falls back to stock wheels
 	# rather than inheriting this owned car's donor style.
@@ -1992,10 +2189,10 @@ func _rederive_live_config(owned: Dictionary) -> void:
 	# upgrade layer re-writes them, so the engine's caches must be re-derived. refit_upgrades
 	# rebuilds the drivetrain after this anyway; retune does not, so it has to happen here.
 	drivetrain.engine.refresh_fitment()
-	# A rebuilt drivetrain re-seeds engine.auto from the config default, so forget the
-	# mirrored Gearbox setting and let the next live tick push it again — otherwise the
-	# player's choice silently reverts to the default after an upgrade refit.
-	_gearbox_auto_seen = -1
+	# NOTE there used to be a `_gearbox_auto_seen = -1` here, to re-push the player's Gearbox
+	# setting because "a rebuilt drivetrain re-seeds engine.auto from the config default".
+	# Neither live re-derive replaces the engine any more (refit_upgrades reconfigures it in
+	# place), so engine.auto simply survives and there is nothing to re-push.
 
 
 # Re-apply a CHANGED tuning to the already-fielded live config, without reshaping the
@@ -2003,14 +2200,26 @@ func _rederive_live_config(owned: Dictionary) -> void:
 # each physics step, so no engine/drivetrain rebuild is needed.
 func retune(owned: Dictionary) -> void:
 	_rederive_live_config(owned)
+	GripLog.tyres("retune (live)", config)   # TEMP diagnostic, see grip_log.gd
 
 
 # Re-apply a CHANGED upgrade set to the already-fielded live config WITHOUT reshaping the
 # body (no apply_car / wheel relocate / pose reset, which would corrupt a live staged
-# body — see respawn()). Re-derives from the full baseline, then re-syncs mass / suspension
-# / drivetrain / engine audio (a turbo or drivetrain upgrade changes those). Used by the
+# body — see respawn()). Re-derives from the full baseline, then re-syncs mass / suspension /
+# engine audio and RECONFIGURES the existing drivetrain (a drivetrain-swap kit changes the
+# driven axle; a turbo or gearbox part changes the engine's derived caches). Used by the
 # start-line Upgrades menu.
+#
+# It deliberately does NOT rebuild the drivetrain. A rebuild re-derives everything from the
+# live scene, which on a settled car meant re-capturing drifted wheel geometry (the ~60%
+# normal-force bug — see Car.wheel_mount) and throwing away the car's revs, gear, boost,
+# nitrous tank, wheel spin and mirrored gearbox mode. `Drivetrain.reconfigure()` changes the
+# two things an upgrade edit can actually move and leaves the rest of the running car alone.
 func refit_upgrades(owned: Dictionary) -> void:
+	# TEMP diagnostic (grip_log.gd): the silent early-out below is a prime suspect, so say so.
+	GripLog.say("refit_upgrades  enabled=%s  baseline=%s"
+		% [UpgradeLibrary.enabled_upgrades(owned),
+			"MISSING -> NO-OP!" if _live_baseline.is_empty() else "present"])
 	if _live_baseline.is_empty():
 		return  # not fielded from an owned car — no baseline to restore, nothing to do
 	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
@@ -2018,9 +2227,14 @@ func refit_upgrades(owned: Dictionary) -> void:
 	_sync_suspension_to_wheels()
 	mass = config.mass
 	var spec: Dictionary = CarLibrary.all()[_car_index]
-	_rebuild_drivetrain(spec["drive_mode"] as Drivetrain.DriveMode)
+	var mode := _resolved_drive_mode(spec["drive_mode"] as Drivetrain.DriveMode)
+	# The axle midpoints are NOT recomputed: they are derived from the wheel mounts, and
+	# mounts only move when the wheels are relocated, which this path never does.
+	config.drive_mode = mode
+	drivetrain.reconfigure(mode)
 	_reconfigure_engine_audio()
 	_owned_drive_override = -1
+	GripLog.tyres("refit_upgrades (live)", config)   # TEMP diagnostic, see grip_log.gd
 
 
 # Re-field this owned car's engine when it differs from the CarLibrary stock: writes
@@ -2080,7 +2294,7 @@ func _apply_wheel_toe() -> void:
 # after physics repaints the live transform (the repaint moves the wheel along the
 # suspension axis, not in Z, so the sign holds regardless — but the mount is cleaner).
 func _wheel_is_front(wheel: VehicleWheel3D) -> bool:
-	return float(_wheel_mounts.get(wheel, wheel.position).z) < 0.0
+	return float(wheel_mount(wheel).z) < 0.0
 
 
 # Push the resolved per-axle spring rate + travel + derived dampers onto one wheel.
@@ -2098,6 +2312,28 @@ func _apply_suspension(wheel: VehicleWheel3D) -> void:
 	wheel.suspension_stiffness = k
 	wheel.damping_compression = cfg.suspension_damping_compression(k)
 	wheel.damping_relaxation = cfg.suspension_damping_relaxation(k)
+
+
+# The AUTHORED suspension mount for `wheel`, in the body's local space.
+#
+# Load-bearing: VehicleBody3D REPAINTS wheel.position every physics step with the
+# connection point plus the current suspension travel, so a wheel that has settled reads
+# ~one travel LOWER than where it is mounted. Anything that needs the mount — above all the
+# drivetrain's compression math (Drivetrain.wheel_normal_force) — must read it from here.
+# A drivetrain rebuilt mid-stage (car.gd refit_upgrades, from the start-line Upgrades menu)
+# used to re-capture the drifted position instead, which inflated compression and therefore
+# every tyre's normal force by ~60% — the car silently gained grip on any upgrade edit.
+func wheel_mount(wheel: VehicleWheel3D) -> Vector3:
+	if not _wheel_mounts.has(wheel):
+		# No silent fallback to wheel.position: that value drifts with the suspension, so
+		# quietly substituting it is exactly how the ~60% normal-force bug behaved. A wheel
+		# with no recorded mount means _ready() never saw it (a hand-built body), which the
+		# caller needs to know about rather than get a plausible-looking wrong number.
+		push_error("car.gd: no authored mount recorded for %s — wheel_mount() has nothing to "
+			% wheel.name + "return but the drifting live transform. Was this body built "
+			+ "outside car.tscn / before _ready()?")
+		return wheel.position
+	return _wheel_mounts[wheel]
 
 
 # Re-push the live per-axle suspension onto all four wheels (apply_car does this

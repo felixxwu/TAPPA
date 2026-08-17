@@ -168,7 +168,11 @@ func _init(p_car: VehicleBody3D) -> void:
 	engine = EngineSim.new(car.config)
 	drive_mode = car.config.drive_mode as DriveMode
 	for wheel in car.find_children("*", "VehicleWheel3D", false):
-		hardpoints[wheel] = wheel.position
+		# The AUTHORED mount, never the live wheel.position: the body repaints that with the
+		# settled suspension travel each step, so a drivetrain REBUILT on a running car
+		# (refit_upgrades) would otherwise measure compression from a mount ~one travel too
+		# low and over-report every wheel's normal force. See Car.wheel_mount().
+		hardpoints[wheel] = car.wheel_mount(wheel)
 		spin_angle[wheel] = 0.0
 		visuals[wheel] = wheel.get_node_or_null("Visual")
 		_contact_pool[wheel] = WheelContact.new()
@@ -178,6 +182,26 @@ func _init(p_car: VehicleBody3D) -> void:
 		else:
 			front_wheels.append(wheel)
 			front_omega[wheel] = 0.0
+
+
+# Apply a CHANGED configuration to this LIVE drivetrain, without replacing it.
+#
+# This is the only drivetrain change that is legal on a car that is already simulating, and
+# it exists so `Car.refit_upgrades` (the start-line Upgrades menu) never has to construct a
+# second Drivetrain mid-stage. A rebuild re-derives EVERYTHING from the scene and the config,
+# which on a running car means: re-capturing wheel geometry (the ~60% normal-force bug — see
+# Car.wheel_mount), zeroing `rear_omega` / `front_omega` / `spin_angle`, and handing the car a
+# brand-new EngineSim whose revs, gear, boost and nitrous tank all restart from the config.
+# None of that is wanted when the player merely changed a part.
+#
+# What genuinely CAN change under an upgrade edit is the driven axle plus the engine's two
+# config-derived caches, so that is exactly what this refreshes. Wheel geometry is untouched
+# because mounts only move when the wheels are relocated (a re-field), and simulation state
+# is preserved by construction.
+func reconfigure(mode: DriveMode) -> void:
+	drive_mode = mode
+	engine.refresh_fitment()   # the nitrous gate (a tank fitted/removed by this edit)
+	engine.refresh_gearing()   # shift points, for a gearing or redline change
 
 
 # throttle: 0..1 drive request (reverse comes from the engine's gear).

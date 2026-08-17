@@ -332,6 +332,10 @@ func _apply_option(id: String, slot: String) -> void:
 	# same answer the old code's Save.get_car(...).get(...) gave.)
 	var car := Save.get_car(instance_id)
 	var edit := UpgradeOptions.option_edit(car, slot, id)
+	# TEMP diagnostic (grip_log.gd): what the player picked and how it is being applied.
+	GripLog.say("upgrade pick: slot=%s option=%s -> edit=%s (car #%d, on_change=%s)"
+		% [slot, "<STOCK>" if id == "" else id, edit.get("kind", "none"), instance_id,
+			"wired" if _on_change.is_valid() else "NONE (live car will not be refitted!)"])
 	match String(edit.get("kind", "none")):
 		"none":
 			# Not a slot edit. The engine swap is a whole flow the HOST owns (it needs a
@@ -371,6 +375,8 @@ func _apply_option(id: String, slot: String) -> void:
 				Save.set_upgrade_enabled(instance_id, id, true)
 	_resync_owned(instance_id)
 	rebuild()
+	GripLog.say("upgrade pick applied: enabled now = %s"
+		% [UpgradeLibrary.enabled_upgrades(Save.get_car(instance_id))])   # TEMP
 	if _on_change.is_valid():
 		_on_change.call()
 

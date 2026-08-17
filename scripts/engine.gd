@@ -184,6 +184,15 @@ func _compute_shift_speeds() -> void:
 		shift_up_speeds[g - 1] = redline_v * cfg.upshift_redline_fraction
 
 
+# Re-derive the shift points after the GEARING or redline changed under a LIVE engine
+# (Car.refit_upgrades -> Drivetrain.reconfigure). Public counterpart to refresh_fitment():
+# together they are everything _init derives from the config that an upgrade edit can move,
+# which is what lets a live car be reconfigured instead of rebuilt. Simulation state (revs,
+# gear, boost, the nitrous tank) is deliberately untouched.
+func refresh_gearing() -> void:
+	_compute_shift_speeds()
+
+
 # Gear direction changes only happen near standstill. Returns whether the
 # requested direction is selected (drive torque must not flow otherwise).
 func select_reverse(rear_omega: float) -> bool:

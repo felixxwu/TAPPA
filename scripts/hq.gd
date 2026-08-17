@@ -521,6 +521,7 @@ var _lift_upgrades_box: UpgradesGrid  # the UPGRADES page (shared UpgradesGrid c
 
 
 func _ready() -> void:
+	GripLog.say("SCREEN: HQ")   # TEMP, see grip_log.gd
 	_ensure_selection()
 	# Optional cloud save can swap the whole profile out from under a live HQ (a
 	# first sign-in that restores a career, or "Use cloud" on a conflict), so the
@@ -3132,6 +3133,8 @@ func _refresh_lift_ui() -> void:
 	# commitment point (nothing launches from the lift), so no p/w ceiling gate belongs
 	# here — the gate lives at the start line / car park where a car is actually
 	# committed to an event.
+	GripLog.say("MENU: HQ garage UPGRADES page shown (enabled=%s)"
+		% [UpgradeLibrary.enabled_upgrades(_lift_owned)])   # TEMP
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
 		UpgradesGrid.NO_LIMIT)
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item

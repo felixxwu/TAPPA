@@ -142,6 +142,10 @@ var standings_overlay_host := false
 # state so re-entering a rally from the map runs fresh (no retry — the opponent
 # field and persisted HP are unchanged). Kicks the first event.
 func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := false) -> void:
+	GripLog.say("RALLY ENTERED: %s (region=%s) in car #%d, enabled=%s"
+		% [rally.get("id", "?"), rally.get("region", "?"),
+			int(owned_car.get("instance_id", -1)),
+			UpgradeLibrary.enabled_upgrades(owned_car)])   # TEMP, see grip_log.gd
 	_rally = rally
 	# A real rally supersedes any pending free-roam pick (world fields the session car).
 	clear_free_roam_handoff()
@@ -647,6 +651,8 @@ func _enter_event() -> void:
 		_pending_repair = _apply_field_repair()
 	_set_phase(Phase.RUNNING)
 	var event := current_event()
+	GripLog.say("STAGE %d of rally %s starting (event region=%s)"
+		% [_event_index + 1, _rally.get("id", "?"), event.get("region", "<none>")])   # TEMP
 	event_started.emit(_event_index, event)
 	if auto_load_scenes:
 		_load_event_scene(event)
