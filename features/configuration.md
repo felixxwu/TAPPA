@@ -91,6 +91,7 @@ servo measures the grip limit instead of predicting it. See
 | `mobile_controls_debug` | false | Top-left readout of the touch input path (which browser snapshot is feeding the overlay, fingers the browser thinks are down, regions held) — for diagnosing stuck buttons on a real phone |
 | `tilt_sensitivity` | 2.0 | TILT scheme: multiplier on device roll → steer (higher = full lock at a gentler tilt) |
 | `tilt_deadzone` | 0.05 | TILT scheme: device roll (fraction of 1 g) ignored around level |
+| `tilt_invert` | false | TILT scheme: flip the steering direction — the escape hatch if a device reports its roll the other way round (see [mobile-controls.md](mobile-controls.md) › Tilt) |
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
 | `follow_height_ratio` | 1.0 | Chase camera height as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |

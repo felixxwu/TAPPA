@@ -59,10 +59,12 @@ title-screen Settings page has no live controls, so there it just saves.)
 - **Steer buttons** (1/3) press `steer_left`/`steer_right` at full strength.
 - **Simple left/right** (4): one side steers that way; **both sides at once is the
   brake** (and suppresses steering); throttle is automatic otherwise.
-- **Tilt** (5): `tilt_steer(Input.get_gravity(), tilt_sensitivity, tilt_deadzone)`
-  maps the device roll (X gravity, normalised per g, past a deadzone) to analog
-  steer. `tilt_steer` is a pure static so the maths are unit-testable without a
-  sensor.
+- **Tilt** (5): `tilt_steer(TiltInput.gravity(), tilt_sensitivity, tilt_deadzone)`
+  maps the device roll (screen-space X gravity, normalised per g, past a deadzone) to
+  analog steer — roll the phone's right-hand edge down and it steers right, like a
+  wheel. `tilt_steer` is a pure static so the maths are unit-testable without a
+  sensor; getting a reading at all is `TiltInput`'s job — see
+  "Where the tilt reading comes from" below.
 - **Multitouch.** Raw `InputEventScreenTouch`/`Drag` are handled directly (indexed
   by pointer), so steering and a pedal register simultaneously. Mouse events also
   drive the controls (index -1) for desktop testing. **On the web none of that is
@@ -111,6 +113,60 @@ title-screen Settings page has no live controls, so there it just saves.)
 - Held actions are tracked in `_action_held` so they only press/release on
   transitions; `_release_all()` (on scheme switch + `_exit_tree`) clears everything
   so no phantom input lingers.
+
+## Where the tilt reading comes from
+
+**Source:** `scripts/tilt_input.gd` (`class_name TiltInput`), owned by
+`MobileControls._tilt` and installed lazily by `_build()` the first time the TILT
+scheme is selected (so the other five never pay for a 60 Hz sensor stream).
+`TiltInput.gravity()` returns gravity in **screen space, pointing down**, in m/s² —
+x is the screen's horizontal axis, so a phone rolled right-edge-down reads positive.
+
+Reading a phone's tilt fails silently in two different ways, and the TILT scheme hit
+**both** — it did nothing at all on either platform until this was wired up:
+
+- **Native (Android / iOS): Godot's sensors are off by default.** The project
+  settings `input_devices/sensors/enable_gravity` and `…/enable_accelerometer`
+  default to **false**, and with them unset `Input.get_gravity()` returns
+  `Vector3.ZERO` forever. `project.godot` now sets both — deleting those lines kills
+  tilt steering again with no other symptom. Godot already rotates Android sensor
+  values into the current display orientation, so its X is the screen's X.
+  `get_accelerometer()` is used as a fallback for a device with no composite gravity
+  sensor (at rest it reads the same vector, just noisier).
+- **Web: Godot has no sensor support at all.** `get_gravity()` is hardcoded to zero
+  on the web export ([godot-proposals#2526](https://github.com/godotengine/godot-proposals/issues/2526)
+  is still open), so `TiltInput` reads the browser's own `deviceorientation` events
+  through `JavaScriptBridge` (`_TILT_JS`) and publishes them on the same **push +
+  pull, sequence-numbered, type-checked** plumbing as the touch watchdog above, for
+  the same reasons. Three things the JS has to get right:
+  - `deviceorientation` is used rather than `devicemotion` because beta/gamma are
+    angles with a spec'd sign, whereas `accelerationIncludingGravity` is negated on
+    iOS relative to everyone else. Gravity in device axes is
+    `(cos β·sin γ, −sin β, −cos β·cos γ)`.
+  - beta/gamma are reported in the device's **natural (portrait) frame** whatever the
+    screen is doing, so the vector is rotated by `screen.orientation.angle` into
+    screen space — the game is played in landscape, where the steering axis is the
+    device's natural **Y**, not X. (The legacy `window.orientation` fallback uses the
+    opposite sign, hence the negation on that branch.)
+  - **iOS 13+** only delivers the events after `DeviceOrientationEvent.requestPermission()`,
+    and only asks when called from inside a user gesture — so the JS asks on the first
+    `pointerdown`/`touchend` and then unhooks itself.
+
+  Both hosts are https (a secure context is required). In a **cross-origin iframe**
+  (itch.io embeds the game in one) the default permissions policy blocks the sensor
+  unless the embedder sets `allow="accelerometer; gyroscope"` on the iframe — nothing
+  fixable from in here, which is why the debug readout distinguishes "no feed" from
+  "level".
+
+**If a device steers the wrong way**, flip `tilt_invert` (`GameConfig`) — one flag,
+applied in `_poll_tilt`. Which sign a platform reports its roll with is settled by the
+platform (the Screen Orientation API and legacy iOS disagree; Godot's own sensor axes
+are undocumented on the negation), so this is deliberately a config escape hatch
+rather than something to re-derive in code.
+
+With `mobile_controls_debug` on, the readout gains a second line while the TILT scheme
+is active — `tilt=<browser|sensor|none> g=<vector> steer=<value>` — which says in one
+screenshot whether the phone is feeding anything at all and which source won.
 
 ## When it appears
 
@@ -173,8 +229,8 @@ Pressing back cancels the gate to the car park. See [menus.md](menus.md) › Set
 
 `mobile_controls_force` (force the controls on for testing on desktop/in the
 editor), `mobile_controls_debug` (on-device readout of the touch input path — see
-"Stuck-touch recovery" below), `tilt_sensitivity`, `tilt_deadzone` (the TILT scheme).
-See [configuration.md](configuration.md).
+"Stuck-touch recovery" below), `tilt_sensitivity`, `tilt_deadzone`, `tilt_invert`
+(the TILT scheme). See [configuration.md](configuration.md).
 
 ## Stuck-touch recovery (web)
 
@@ -320,7 +376,11 @@ event delivery out of the critical path in one move.
 `tests/headless/test_mobile_controls.gd` — visibility gating, the default scheme
 (gas / brake / analog slider, recentring, multitouch), steer buttons, the auto-gas
 throttle-unless-braking rule, the simple both-sides-brake, the pure `tilt_steer`
-maths, scheme switching releasing old inputs, the **NOS button** (present in every
+maths, the **tilt scheme end-to-end** (a fed reading reaching the analog steer
+actions and springing back to centre, no feed meaning no steer, `tilt_invert`
+flipping it, the pedals still working under it) plus `TiltInput` itself (no reading
+until one arrives, and stale/malformed payloads changing nothing), scheme switching
+releasing old inputs, the **NOS button** (present in every
 scheme when nitrous is fitted / absent when it isn't, holding the throttle with it while
 leaving a separately-held GAS alone, overlapping no other region,
 hit-tested ahead of the simple steering halves, appearing and vanishing with the car,

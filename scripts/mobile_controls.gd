@@ -150,6 +150,12 @@ var _logged_first_snapshot := false
 # so a stuck button on a real phone can be diagnosed from a screenshot.
 var _debug_label: Label = null
 
+# Device tilt for the TILT scheme. Owns both sources — the engine's sensors on
+# native, the browser's `deviceorientation` events on the web (where Godot has no
+# sensor support at all) — so this file only ever asks for a gravity vector.
+# Installed lazily by _build(), the first time the tilt scheme is selected.
+var _tilt := TiltInput.new()
+
 
 func _ready() -> void:
 	_active = Platform.is_touch()
@@ -249,6 +255,10 @@ func _build() -> void:
 	if _is_simple():
 		_panels["simple_left"] = _make_button(_REGION_LABEL["simple_left"])
 		_panels["simple_right"] = _make_button(_REGION_LABEL["simple_right"])
+	if _is_tilt():
+		# Only now do we need a sensor feed, and on the web that means a listener on
+		# a 60 Hz browser event — so the other five schemes never install it.
+		_tilt.install()
 
 	if _has_slider():
 		_slider_track = ColorRect.new()
@@ -314,6 +324,12 @@ func _update_debug_label() -> void:
 	_debug_label.text = "js=%s src=%s pseq=%d tseq=%d live=%d held=%s slider=%s" % [
 		"y" if _js_window != null else "n", src, _pointer_seq, _touch_seq, live,
 		str(_pointers), str(_slider_owner)]
+	if _is_tilt():
+		# Tilt has its own way of being silently dead (sensors off, no browser feed,
+		# a blocked cross-origin iframe), and none of it is visible in the touch line
+		# above — so say where the reading comes from, what it is, and what it steers.
+		_debug_label.text += "\ntilt=%s g=%s steer=%.2f" % [
+			_tilt.source(), str(_tilt.gravity().snapped(Vector3.ONE * 0.01)), _steer]
 
 
 # Compute hit rects (as fractions of the viewport so it scales across screens) for
@@ -424,9 +440,11 @@ func _steer_from_x(x: float) -> float:
 
 # --- Tilt --------------------------------------------------------------------
 
-# Steer [-1, +1] from the device gravity/accelerometer vector. The device's X axis
-# rolls left/right when held in landscape; normalise by g, apply a deadzone, then
-# scale by sensitivity. Pure + static so it's unit-testable without a sensor.
+# Steer [-1, +1] from the device gravity vector, in SCREEN space and pointing down
+# (what TiltInput.gravity() returns): x is the screen's horizontal axis, so rolling
+# the phone's right-hand edge down gives a positive x and steers right. Normalise by
+# g, apply a deadzone, then scale by sensitivity. Pure + static so it's unit-testable
+# without a sensor.
 static func tilt_steer(gravity: Vector3, sensitivity: float, deadzone: float) -> float:
 	var raw := gravity.x / 9.80665  # ~[-1, 1] per g of tilt
 	if absf(raw) <= deadzone:
@@ -436,9 +454,15 @@ static func tilt_steer(gravity: Vector3, sensitivity: float, deadzone: float) ->
 	return clampf(signf(raw) * mag * sensitivity, -1.0, 1.0)
 
 
+# Current tilt steer, honouring the tilt_invert escape hatch. Which way a phone
+# reports its roll is settled by the platform, not by us (screen-orientation sign
+# conventions differ between the Screen Orientation API and legacy iOS, and Godot's
+# own sensor axes are undocumented on the negation), so if a device turns out to
+# steer backwards the fix is one config flag, not a code change.
 func _poll_tilt() -> float:
 	var cfg: GameConfig = Config.data
-	return tilt_steer(Input.get_gravity(), cfg.tilt_sensitivity, cfg.tilt_deadzone)
+	var steer := tilt_steer(_tilt.gravity(), cfg.tilt_sensitivity, cfg.tilt_deadzone)
+	return -steer if cfg.tilt_invert else steer
 
 
 # --- Input -------------------------------------------------------------------
@@ -1058,6 +1082,7 @@ func _timed_process(_delta: float) -> void:
 	# never reach the car's input actions, not even for a single frame.
 	_poll_live_touches()
 	_poll_live_pointers()
+	_tilt.poll()  # no-op unless the tilt scheme installed the web sensor feed
 	if _live_pointers != null:
 		# Positioned snapshot: the whole pressed state is rebuilt from it, so there is
 		# nothing left for the id-only reconcile to correct.

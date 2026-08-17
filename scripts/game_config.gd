@@ -905,6 +905,11 @@ func has_nitrous() -> bool:
 ## Tilt-steering deadzone: device roll (as a fraction of 1 g) ignored around level,
 ## so a phone held roughly flat doesn't drift the steering.
 @export_range(0.0, 0.9) var tilt_deadzone := 0.05
+## Flip the tilt-steering direction. The intended mapping is "roll the phone like a
+## steering wheel" — right-hand edge down steers right — but which sign a device
+## reports its roll with is settled by the platform (see scripts/tilt_input.gd), so
+## this is the one-flag fix if a phone turns out to steer backwards.
+@export var tilt_invert := false
 
 @export_group("Debug")
 @export var debug_wheel_forces := false  # per-wheel arrows (toggle with H): green = suspension, red = friction, blue = aero downforce

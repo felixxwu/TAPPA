@@ -61,6 +61,10 @@ func before_each() -> void:
 	_controls._pointer_seq = -1
 	_controls._seen_pointers.clear()
 	_pseq = 0
+	# And any tilt reading a tilt test fed in: the overlay keeps the last one, and a
+	# leftover would steer the next tilt test before it has injected anything.
+	_controls._tilt = TiltInput.new()
+	Config.data.tilt_invert = false
 
 
 func after_each() -> void:
@@ -252,6 +256,104 @@ func test_tilt_steer_deadzone_and_direction() -> void:
 	# A hard tilt clamps to full lock.
 	assert_almost_eq(MobileControls.tilt_steer(Vector3(20.0, 0, 0.0), 2.0, 0.05), 1.0, 1e-6,
 		"a hard tilt clamps to full lock")
+
+
+# The regression this whole path exists for: the tilt scheme used to read
+# Input.get_gravity() directly, which is ZERO unless the sensors are enabled (native)
+# and is zero ALWAYS on the web — so tilting steered nothing. The scheme must turn a
+# gravity reading into actual analog steer actions.
+func test_tilt_scheme_steers_from_the_sensor_reading() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
+	# Nothing measured yet: a scheme with no sensor feed must sit dead centre rather
+	# than steer on a phantom reading.
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6, "no feed, no steer")
+	assert_almost_eq(Input.get_action_strength("steer_right"), 0.0, 1e-6, "no feed, no steer")
+
+	# Right-hand edge of the screen rolled down -> steer right.
+	_controls._tilt.adopt(1, "5.0:0.0:-8.0")
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_right"), 0.0, "rolling right steers right")
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6, "and not left")
+
+	# Rolled the other way -> steer left, and the right action is released.
+	_controls._tilt.adopt(2, "-5.0:0.0:-8.0")
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "rolling left steers left")
+	assert_almost_eq(Input.get_action_strength("steer_right"), 0.0, 1e-6,
+		"the opposite steer action is released")
+
+	# Back to level -> steering springs back to centre.
+	_controls._tilt.adopt(3, "0.0:0.0:-9.8")
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6, "level = straight")
+	assert_almost_eq(Input.get_action_strength("steer_right"), 0.0, 1e-6, "level = straight")
+
+
+# tilt_invert is the escape hatch for a device whose roll sign is the other way round,
+# so it has to reach the actual steer actions.
+func test_tilt_invert_flips_the_steering() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
+	Config.data.tilt_invert = true
+	_controls._tilt.adopt(1, "5.0:0.0:-8.0")
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "inverted, rolling right steers left")
+	assert_almost_eq(Input.get_action_strength("steer_right"), 0.0, 1e-6, "and not right")
+
+
+# The tilt scheme still drives the pedals — it only replaces the steering half.
+func test_tilt_scheme_keeps_the_pedals() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
+	_controls._pointers[0] = "gas"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"), "GAS still works under tilt steering")
+	assert_false(Input.is_action_pressed("brake_reverse"), "brake not pressed")
+
+
+# --- The tilt feed (TiltInput) -----------------------------------------------
+# The browser snapshot reaches GDScript by a push AND a pull path (the same plumbing
+# as the touch watchdog), so adopt() must be idempotent on the sequence number and
+# must fail by doing NOTHING on a malformed payload — an error raised here would
+# abort the frame that applies every other input action.
+
+# The debug readout is the only way to see WHY tilt is dead on a real phone (sensors
+# off, no browser feed, a blocked cross-origin iframe), and it never runs anywhere
+# else — so a typo in it would only ever show up on the device it exists to diagnose.
+func test_debug_readout_names_the_tilt_source() -> void:
+	Config.data.mobile_controls_debug = true
+	_controls.set_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)  # _build makes the label
+	_controls._tilt.adopt(1, "5.0:0.0:-8.0")
+	_controls._apply_actions()
+	_controls._update_debug_label()
+	assert_string_contains(_controls._debug_label.text, "tilt=browser",
+		"the readout names where the tilt reading came from")
+	Config.data.mobile_controls_debug = false
+	_controls.set_scheme(MobileControls.SCHEME_SLIDER_GAS_BRAKE)  # drops the label again
+
+
+func test_tilt_input_reports_no_reading_until_one_arrives() -> void:
+	var tilt := TiltInput.new()
+	assert_eq(tilt.gravity(), Vector3.ZERO, "no sensor and no browser feed = no reading")
+	assert_eq(tilt.source(), "none", "and it says so, for the on-device readout")
+	tilt.adopt(1, "1.0:2.0:-9.0")
+	assert_eq(tilt.gravity(), Vector3(1.0, 2.0, -9.0), "an adopted reading is what's returned")
+	assert_eq(tilt.source(), "browser", "sourced from the browser feed")
+
+
+func test_tilt_input_ignores_stale_and_malformed_payloads() -> void:
+	var tilt := TiltInput.new()
+	tilt.adopt(5, "1.0:2.0:-9.0")
+	# Older / duplicate sequence numbers are what let the push and pull paths run side
+	# by side: whichever arrives first wins, the other is a no-op.
+	tilt.adopt(4, "9.0:9.0:9.0")
+	tilt.adopt(5, "8.0:8.0:8.0")
+	assert_eq(tilt.gravity(), Vector3(1.0, 2.0, -9.0), "a stale sequence number is discarded")
+	# Junk from the bridge must leave the last good reading alone, not raise.
+	tilt.adopt(6, "not-a-vector")
+	tilt.adopt(7, "")
+	assert_eq(tilt.gravity(), Vector3(1.0, 2.0, -9.0), "a malformed payload changes nothing")
+	tilt.adopt(8, "0.5:0.5:-9.5")
+	assert_eq(tilt.gravity(), Vector3(0.5, 0.5, -9.5), "and a later good one still lands")
 
 
 # --- Scheme switching --------------------------------------------------------
