@@ -133,70 +133,75 @@ A string enum (not a `0..1` float) so `"fog"` / `"snow"` / `"night"` have an
 obvious home later — each new condition brings its own config block, and the
 funnel below does not change.
 
-Roughly **38 of the 90 authored events are wet**, chosen at random with a fixed
-seed and written into the table. They are spread across the roster rather than
-clustered in one region, so weather reads as a property of the individual stage.
-**4 events are sandstorm, 3 fog and 2 storm**, and 9 of the Alps' 18 events are
-snowfall. One string
-field per event, so a condition is never ambiguous — the later conditions were only
-authored onto events that had no `weather` key at all.
+**Weather is now spread near-evenly across the whole roster.** As of 2026-08 there
+are **108 authored events**, and only about 30 of them are dry — every other
+condition sits in the 12-14 range. Weather reads as a property of the individual
+stage rather than of a region or a difficulty band. One string field per event, so a
+condition is never ambiguous.
+
+The numbers below are a SNAPSHOT of authoring, not a contract: a designer moving,
+adding or removing an event changes them, and no test asserts any of it (see "Tests"
+below for why placement deliberately lives here rather than in a test). What IS
+durable is the two region locks and the reasons behind each condition's placement.
+
+| Condition | Events | Where it sits |
+|---|---|---|
+| dry | ~30 | everywhere |
+| night | ~14 | every region |
+| rain / fog / storm | ~13 each | the temperate pins (`home`, `home_coast`, a few `greece`) |
+| sandstorm | ~13 | the desert only (`greece` / `greece_coast`) |
+| snowfall | ~12 | the alpine NE only (`region == "snow"`) |
 
 The 2026-08 geography pass (see [rally-roster.md](rally-roster.md)) re-tagged most of
 the roster, so the guidance below is stated in terms of the TERRAIN A PIN SITS ON, not
 a region name — most rallies now carry `region: "home"` regardless of what their id
 says, and "the coastal regions" is no longer a useful way to pick out coastal stages.
 
-- **Fog** — authoring guidance (a design convention, not an assertable invariant —
-  a designer is free to move a fog event or add a fourth one; see
-  "Tests" below for why this lives here rather than in a test): fog suits the damp
-  forest and foothill pins (`region` `home` / `home_coast`), and is authored
-  DELIBERATELY SPARINGLY — it's the roster's only difficulty lever (see "Rival
-  times"), so keep it a minority of the roster and off any difficulty-1 rally so
-  a new player never meets it first. Shipped today onto one stage each of the
-  Snow Tires special (`sp_woodland_trial`), Pinewood Sprint and Ridgeline Dash — all difficulty 2/3, all in the
-  northern pines or the eastern foothills.
-- **Storm** — authoring guidance, same caveat as fog above: a storm's crosswind reads
-  as belonging to **exposed water**, so it is authored ONLY on a pin actually on the
-  sea. Shipped today on 12 Cylinder Promenade and Island GP — the roster's only two
-  genuine sea pins. A river valley gets heavy rain instead: RWD Masters and the
-  Drivetrain Conversion trial both carried a storm through an earlier pass and were
-  re-authored to rain, since a crosswind inland is just weather with a costume on.
-  A storm also switches the **headlights** on (see "Headlights on more than night"),
-  which is why it is the only daytime condition that carries a `headlights` key.
-- **Snowfall** — authoring guidance: authored ONLY onto `region == "snow"` events (the
-  alpine NE), the same placement convention sandstorm follows for the desert, and mixed
-  roughly half-and-half with dry stages there. Unlike every other precipitation
-  condition it authors **no `grip_mult`**: the snow REGION already owns grip for that
-  whole corner, dry stages included, so weather must not stack a second lever on the
-  same variable. It therefore names nothing in `physics_fields` and never re-keys the
-  opponent cache. See [snow-region.md](snow-region.md).
-- **Sandstorm** — authoring guidance: desert-only, which today means
-  `region == "greece"` (the arid look/palette) and a pin in the SW/S sand — Dust
-  Devils, Ancient Ruins, The Hot Gates and the Greek Showdown. A sandstorm on a green
+**Two of these bullets used to name the specific events that carried each condition,
+and every one of those lists had rotted.** Don't reintroduce them: an event list in a
+doc is stale the first time someone retunes the roster. State the CONVENTION here and
+read the current placement out of `RallyLibrary.RALLIES` (grep `"weather"`).
+
+- **Fog** — suits the damp forest and foothill pins (`home` / `home_coast`) and a
+  couple of the greener Greek ones. It is the roster's only pure difficulty lever
+  (see "Rival times"), so it wants to stay a minority of the roster.
+- **Storm** — the crosswind originally read as belonging to **exposed water**, and
+  storm was authored only on a genuine sea pin. **The current roster does not follow
+  that**: most storms now sit on inland `home` pins, so treat the old "sea only" rule
+  as history rather than as the convention. A storm also switches the **headlights**
+  on (see "Headlights on more than night"), which is why it is the only daytime
+  condition carrying a `headlights` key.
+- **Snowfall** — a REGION LOCK, and the one placement rule that has held: authored
+  only onto `region == "snow"` events (the alpine NE), mixed with dry stages there.
+  Unlike every other precipitation condition it authors **no `grip_mult`**: the snow
+  REGION already owns grip for that whole corner, dry stages included, so weather must
+  not stack a second lever on the same variable. It therefore names nothing in
+  `physics_fields` and never re-keys the opponent cache. See
+  [snow-region.md](snow-region.md).
+- **Sandstorm** — the other REGION LOCK, also intact: desert-only, i.e. the arid
+  `greece` / `greece_coast` palette and a pin in the SW/S sand. A sandstorm on a green
   forest stage would look wrong. Note the `RALLIES` header comment calls this
-  "test-enforced" — **it is not**: no test in `tests/headless/` asserts it today, so
-  treat it as a placement convention like fog and storm, not a logic contract.
-- **Night** — deliberately spread ONE PER REGION, always on a rally's **first**
-  event, so each region's palette can be compared after dark without playing
-  through a whole championship:
+  "test-enforced" — **it is not**: no test in `tests/headless/` asserts it, so it is a
+  placement convention like the rest.
+- **Night** — no terrain or region restriction: night is a time of day, so any pin can
+  run it, and it is authored across every region. It was once deliberately ONE PER
+  REGION on a rally's first event, so each region's palette could be compared after
+  dark without playing a whole championship; the roster has long since outgrown that,
+  and the old five-row table it was documented with is gone. If you want that
+  comparison now, pick one night event per region out of `RALLIES`. Note the snow ones
+  are worth keeping: they are the only night stages running `ps1_terrain_snow`, so
+  they exercise the terrain shader variant's copy of the headlight cone rather than
+  only the base shader's.
 
-  | Region | Rally | Event seed |
-  |---|---|---|
-  | `home` | `hm_timber_trophy` ("Win: Fjord Focal") | 32001 |
-  | `home_coast` | `rwd_masters` ("Win: The Beast") | 3001 |
-  | `greece` | `rising_sun` ("Heavy Hitters") | 4001 |
-  | `greece_coast` | `gc_island_gp` ("Win: Swerve Serpent RT/10") | 54001 |
-  | `snow` | `sn_icefall_climb` ("Icefall Climb") | 87001 |
-
-  Every one of those events was **dry before**, chosen so that opting them into
-  night destroyed no authored weather. The snow pick is deliberate: it is the
-  only one that runs `ps1_terrain_snow`, so it exercises the terrain shader
-  variant's copy of the cone rather than only the base shader's.
-
-  There is no terrain/region restriction — night is a time of day, so any pin can
-  run it. Note it is a **visibility** condition like fog (see "Rival times"), so
-  the same authoring discipline applies: keep it off difficulty-1 rallies. All
-  five picks are difficulty 2 or higher.
+**The visibility conditions are no longer kept off difficulty-1 rallies, and that is
+worth a deliberate decision rather than drift.** Fog, night and storm all slow the
+PLAYER without touching the rival field (see "Rival times" — the lap-time model has no
+eyes, and no wind term either), so each of them silently raises the bar on the stage
+it sits on. The old guidance was to keep all three off the easiest rallies so a new
+player never met one first. Today `shitbox_cup` (difficulty 1) opens on a NIGHT stage
+and carries fog on its second, and two difficulty-1 rallies carry a storm. Either the
+roster wants re-authoring or the guidance wants dropping — but the two should not
+disagree.
 
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
@@ -579,9 +584,10 @@ higher-difficulty rallies pinned on open water.
   rather than a hand-written list of grip fields, so adding a condition or a key can
   never silently slip a lap-time change past review.
 - **Global leaderboards:** `RallyLibrary.stage_key` hashes the whole authored event
-  dict, so the 28 wet events and 7 sandstorm events each got new boards; every
-  other stage kept its own. No `TrackCache.BOARD_EPOCH` bump — this is not a
-  global engine change.
+  dict, so **authoring a condition onto an event gives that event a new board** and
+  leaves every other stage's alone. That is per-event and automatic, not a one-off:
+  each later weather pass re-boarded whatever it re-authored. No
+  `TrackCache.BOARD_EPOCH` bump is needed — this is not a global engine change.
 
 ## Look
 
