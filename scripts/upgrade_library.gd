@@ -29,6 +29,10 @@ extends RefCounted
 # one it is read alongside: `gearbox` follows `turbo` (both are Speed levers) and `tires`
 # follows `aero` (both are Grip). It is also the order _best_part_per_slot reports in.
 const SLOTS := ["turbo", "gearbox", "aero", "tires", "weight", "drivetrain", "nitrous"]
+# The tyre slot by name. Named rather than spelled inline because the rival field mirrors
+# the player's tyre through it (RallyLibrary.player_tire_id), and a typo there would fail
+# silently as "the player has no tyre fitted".
+const TIRE_SLOT := "tires"
 
 # Slots that are HIDDEN from the garage (they get no grid tile) and whose parts
 # are therefore fitted ENABLED whenever they are installed — enforced centrally in

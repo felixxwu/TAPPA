@@ -167,7 +167,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		_event_results = []
 		_fielded_rating = _field_rating(owned_car)
 		_opponent_field = RallyLibrary.generate_opponent_field(
-			rally, [], [], _fielded_rating)
+			rally, [], [], _fielded_rating, owned_car)
 		_log_opponent_field("drawn (no tracks — test path)")
 	else:
 		# results feed the run scene / target-time path.
@@ -179,7 +179,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		# to the PLAYER'S car rating and so is a function of the player, not the rally.
 		_fielded_rating = _field_rating(owned_car)
 		_opponent_field = RallyLibrary.generate_opponent_field(
-			rally, results, rally.get("events", []), _fielded_rating)
+			rally, results, rally.get("events", []), _fielded_rating, owned_car)
 		_log_opponent_field("drawn at rally start")
 	_enter_event()
 
@@ -208,7 +208,8 @@ func refield_opponents() -> bool:
 		return false
 	_fielded_rating = rating
 	_opponent_field = RallyLibrary.generate_opponent_field(
-		_rally, _event_results, _rally.get("events", []), rating)
+		_rally, _event_results, _rally.get("events", []), rating,
+		Save.get_car(_car_instance_id))
 	_log_opponent_field("re-drawn after a start-line build change")
 	opponent_field_changed.emit()
 	return true

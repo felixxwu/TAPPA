@@ -18,7 +18,7 @@ const LOOK_KEYS := [
 	"sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
 	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
-	"grass_particle_color", "grass_particle_square",
+	"grass_particle_color", "grass_particle_square", "rock_density",
 ]
 
 # The home region's billboard tree (also the fallback when a region authors no
@@ -58,8 +58,22 @@ const REGIONS: Array[Dictionary] = [
 	{
 		"id": "home", "name": "Rally Country",
 		"water_level": -12.0,
+		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
+		# authored card (7.5 -> 9.375 m). Done HERE, on the species, rather than by
+		# raising GameConfig.tree_size_m, because that profile is shared: Greece's 30%
+		# of ordinary trees, both Alps conifers and the taiga spire all sit on it, and
+		# all four are tuned relative to its current value. Bumping the profile would
+		# silently scale every one of them. This scales the home forest and nothing else
+		# (home_coast included, since it inherits this whole block — same forest).
+		#
+		# Uniform on both axes on purpose: it changes SIZE only, leaving the billboard
+		# at the 1:1 the square profile card already gave it. tree.png's cutout is
+		# actually 164x256 (w/h 0.64), so it has always been drawn wider than its own
+		# proportions — correcting that is a separate, much more visible change than
+		# the one asked for here, so it is deliberately left alone.
 		"tree_mix": [
-			{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
+			{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0,
+			 "size_scale": Vector2(1.25, 1.25)},   # 9.375 x 9.375 m
 		],
 		"spawn_bush_mesh": true,
 	},
@@ -68,6 +82,39 @@ const REGIONS: Array[Dictionary] = [
 		"id": "home_coast", "name": "The Lakes",
 		"look_from": "home",
 		"water_level": -5.0,
+	},
+	# The taiga — the NW corner. Deliberately the THINNEST region in the catalogue:
+	# `look_from: "home"` takes home's sky, gravel, tarmac, lane paint, terrain tints
+	# and ground cover wholesale, and the ONLY thing overridden is which tree grows
+	# there. That is the entire design. A boreal forest is not a different planet from
+	# a temperate one — same grey overcast, same dirt, same green ground — it is the
+	# same country with a different tree, and every extra override would blur the one
+	# signal that actually separates the two corners.
+	#
+	# Which puts all the weight on the silhouette, hence the size_scale. The spire's
+	# natural w/h is 0.30 (the narrowest cutout in the source pack — see
+	# tools/gen_taiga_tree.py), so x is 0.30 * y to draw it at its own proportions
+	# rather than stretched to the profile's square card. KEEP THAT RELATIONSHIP if you
+	# retune the height: raising y alone stretches the tree into a needle.
+	#
+	# y = 3.0 makes it 22.5 m against the home broadleaf's 7.5 m and the Alps' ~12.9 m —
+	# three times the forest the player just drove through. Overscaled against a real
+	# spruce (40-60 m exists, but not next to a 7.5 m broadleaf), and deliberately: the
+	# corner shares every other look key with home, so the skyline is the ONLY thing
+	# saying "somewhere else" and it has to say it from a moving car.
+	#
+	# spawn_bush_mesh stays inherited (true, from home) on purpose. Real taiga has a
+	# dense low mat of shrub under the canopy, and the bare-trunked spire leaves a lot
+	# of empty ground that wants filling — the opposite of Greece and the Alps, which
+	# both drop ground cover.
+	{
+		"id": "taiga", "name": "The Taiga",
+		"look_from": "home",
+		"water_level": -12.0,
+		"tree_mix": [
+			{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
+			 "size_scale": Vector2(0.90, 3.0)},   # 6.75 x 22.5 m, ratio 0.30
+		],
 	},
 	# Greece. Ships the three swapped textures + sky, plus a Greek tree
 	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
@@ -90,6 +137,10 @@ const REGIONS: Array[Dictionary] = [
 			{"texture": "res://textures/tree.png", "profile": "home", "weight": 0.3},
 		],
 		"spawn_bush_mesh": false,
+		# The stoniest region in the catalogue. It is the one place that authors NO 3D
+		# ground cover (spawn_bush_mesh false above), so the verge here is bare in a way
+		# no other region's is — rocks are what fills it, and the arid look wants them.
+		"rock_density": 2.5,
 		"gravel_texture": "res://textures/gravel-greece.jpg",
 		"tarmac_color": Color(0.52, 0.50, 0.46),
 		"road_marking_color": Color(0.85, 0.70, 0.16),
@@ -130,20 +181,33 @@ const REGIONS: Array[Dictionary] = [
 		# shape its cutout really is — and these conifers are tall and narrow (natural
 		# w/h 0.49 and 0.63), so unscaled they were drawn at up to twice their real
 		# width and read as fat christmas trees. The x values restore each texture's own
-		# ratio; the y values add a little height, because a spruce stand wants to be
-		# taller than the home broadleaf forest. Every other species omits the key and
-		# is therefore untouched.
+		# ratio; the y values add height, because a spruce stand wants to be taller than
+		# the home broadleaf forest. Every other species omits the key and is therefore
+		# untouched.
+		#
+		# Both pairs were then scaled by 1.5 across BOTH axes to grow the forest 50%
+		# (4.1 x 8.6 -> 6.2 x 12.9, and 5.1 x 8.3 -> 7.7 x 12.4). Uniformly on both axes
+		# on purpose: the ratio each x was chosen to restore survives a uniform multiply,
+		# and scaling y alone would stretch these back into the needles the x values
+		# exist to prevent. KEEP THAT RULE when resizing again — the trailing `ratio`
+		# comments are the invariant to check against.
 		"tree_mix": [
 			{"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
-			 "size_scale": Vector2(0.55, 1.15)},   # 4.1 x 8.6 m, ratio 0.48
+			 "size_scale": Vector2(0.825, 1.725)},   # 6.2 x 12.9 m, ratio 0.48
 			{"texture": "res://textures/tree-snow-laden.webp", "profile": "home", "weight": 0.4,
-			 "size_scale": Vector2(0.68, 1.10)},   # 5.1 x 8.3 m, ratio 0.62
+			 "size_scale": Vector2(1.02, 1.65)},     # 7.7 x 12.4 m, ratio 0.62
 		],
 		# No undergrowth, same as Greece: under real snow cover there is nothing
 		# growing through. A snowed version of the ground-cover clump was tried and
 		# dropped — it read as debris scattered on the snow rather than as buried
 		# shrubs, and the clean snow surface is the better look.
 		"spawn_bush_mesh": false,
+		# The sparsest rocks in the catalogue, for the same reason there is no
+		# undergrowth: deep snow BURIES loose stone. What survives reads as the odd
+		# boulder too big to be covered, so the few that remain are still worth having
+		# — 0.0 would say this landscape has no rock in it at all, which is wrong for
+		# the Alps. Kept low rather than absent.
+		"rock_density": 0.3,
 		"tarmac_color": Color(0.46, 0.47, 0.50),
 		"grass_particle_color": Color(0.90, 0.92, 0.95),
 		# ...and grass_particle_square makes it the right SHAPE as well as the right
@@ -328,6 +392,17 @@ static func tree_mix(look: Dictionary) -> Array:
 # defaults true (a region that authors nothing keeps the bushes, like the base scene).
 static func spawns_bush_mesh(look: Dictionary) -> bool:
 	return bool(look.get("spawn_bush_mesh", true))
+
+# How many rocks this region scatters, as a MULTIPLIER on GameConfig.rock_groups_per_turn
+# (see features/rocks.md). 1.0 is the unremarkable middle every region gets by default;
+# stony regions author more, and a region whose ground is buried under snow authors
+# less. Clamped non-negative — 0.0 is a legitimate authoring choice meaning "no rocks
+# here", and negative would otherwise flip the scatter's cell maths.
+#
+# Density is the ONLY thing a region varies about rocks: the models, colours and
+# hitboxes are shared everywhere, so a boulder reads the same wherever you meet it.
+static func rock_density(look: Dictionary) -> float:
+	return maxf(float(look.get("rock_density", 1.0)), 0.0)
 
 # The region's look overrides, filtered through the LOOK_KEYS whitelist. A region may
 # author `"look_from": "<other_region_id>"` to inherit that region's look block (the

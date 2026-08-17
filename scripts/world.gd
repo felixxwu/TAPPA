@@ -3,6 +3,11 @@ extends Node3D
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 
 const BUSH_SEED_OFFSET := 1013
+# Rocks get their own scatter seed so their lattice interleaves with the trees' and the
+# bushes' instead of landing on the same jittered grid points (see TreeScatter._grid_phase).
+# Distinct from BUSH_SEED_OFFSET for the same reason; the value is arbitrary, only its
+# difference matters.
+const ROCK_SEED_OFFSET := 2027
 
 # car.gd has no class_name; preload it to reach its static helpers (compression_budget).
 const CarScript := preload("res://scripts/car.gd")
@@ -882,15 +887,30 @@ func _build_lakes(cfg: GameConfig) -> void:
 # already-generated track `result` + rendered `road_centerline`; owns the two
 # loading steps. Returns {"trees", "road_cells"} — the tree points and road-margin
 # cells the spectator layout reuses.
+# The road-rejection cell set every scatter pass rejects against: the VISIBLE road
+# footprint (track_width) widened by tree_road_margin_m, plus `mesh_radius` for a pass
+# whose prop is wide enough to overhang its own centre point (bushes, rocks). Rasterised
+# from `road_poly`, the ONCE-tessellated centreline — each pass used to re-tessellate the
+# whole curve for itself, which is a stage-length polyline built and thrown away per pass.
+#
+# Deliberately NOT the clearance-inflated result["cells"] (track_width + 2*track_clearance),
+# which would push every prop metres back from the real road edge.
+func _road_cells(cfg: GameConfig, road_poly: PackedVector2Array,
+		mesh_radius := 0.0) -> Dictionary:
+	return TrackGenerator.rasterize_cells(
+		road_poly, cfg.track_width + 2.0 * (cfg.tree_road_margin_m + mesh_radius))
+
+
 func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D) -> Dictionary:
 	if not cfg.vegetation_enabled:
 		# Foliage off (the benchmark's vegetation toggle): skip the scatter and the
 		# fields entirely, but still hand the spectator layout the road-margin cells
 		# it needs to keep crowds off the carriageway.
-		var bare_cells := TrackGenerator.rasterize_cells(
-			road_centerline.tessellate(), cfg.track_width + 2.0 * cfg.tree_road_margin_m)
+		var bare_cells := _road_cells(cfg, road_centerline.tessellate())
 		return {"trees": PackedVector2Array(), "road_cells": bare_cells}
 	await _stage("Scattering trees…")
+	# Tessellated ONCE and shared by every pass below (trees, bushes, rocks).
+	var road_poly := road_centerline.tessellate()
 	# Scatter trees around each turn, then render them as solid low-poly meshes
 	# binned into per-cell MultiMeshes (TreeMeshField) so the engine LOD-/cull-s
 	# far bins. height_at needs the terrain noise cache, which build_initial() has
@@ -898,9 +918,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	# NOT the clearance-inflated result["cells"], which is track_width +
 	# 2*track_clearance wide and would push every tree metres back from the real
 	# road edge. The margin keeps a small, tunable gap between trees and the road.
-	var road_footprint := cfg.track_width + 2.0 * cfg.tree_road_margin_m
-	var road_cells := TrackGenerator.rasterize_cells(
-		road_centerline.tessellate(), road_footprint)
+	var road_cells := _road_cells(cfg, road_poly)
 	# Trees are gated by the per-event forest noise (cfg.track_forestiness): they only
 	# spawn inside the forest patches, breaking up the otherwise-continuous tree line.
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
@@ -924,8 +942,15 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 			load(entry["texture"]), String(entry.get("profile", "home")) == "region",
 			entry.get("size_scale", Vector2.ONE))
 
+	await _build_rocks(cfg, result, road_poly, region_look)
+
 	# The region also defines whether the 3D ground-cover bushes spawn (spawn_bush_mesh —
 	# e.g. Greece's arid map has no lush undergrowth); skip the whole bush pass if off.
+	#
+	# NOTE the rock pass runs ABOVE this early return, not below it. The two regions that
+	# switch bushes off (Greece, the Alps) are exactly the two that author a non-default
+	# rock density, and Greece wants the MOST rocks in the game — folding rocks in below
+	# here would silently give both of them none.
 	if not RegionLibrary.spawns_bush_mesh(region_look):
 		return {"trees": trees, "road_cells": road_cells}
 
@@ -941,9 +966,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	# bush CENTRE far enough out that no part of the scaled mesh spills onto the road,
 	# at any per-instance yaw.
 	var bush_radius := TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m)
-	var bush_footprint := cfg.track_width + 2.0 * (cfg.tree_road_margin_m + bush_radius)
-	var bush_road_cells := TrackGenerator.rasterize_cells(
-		road_centerline.tessellate(), bush_footprint)
+	var bush_road_cells := _road_cells(cfg, road_poly, bush_radius)
 	var bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
 	bushes = _drop_submerged(bushes, cfg)  # keep bushes out of the lakes
@@ -962,6 +985,62 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 		cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH)
 
 	return {"trees": trees, "road_cells": road_cells}
+
+
+# Roadside boulders: low-poly Kenney meshes scattered like the bushes but WITH
+# collision, so hitting one costs the car. Density is the one thing the region varies
+# (RegionLibrary.rock_density — Greece stoniest, the Alps sparsest, everywhere else the
+# middle); the models, colours and hitboxes are shared, so a boulder reads the same
+# wherever you meet it. See features/rocks.md.
+#
+# Rocks are NOT forest-gated (no forestiness argument): stone is not vegetation, and
+# gating it on the tree noise would put boulders only where the trees are.
+func _build_rocks(cfg: GameConfig, result: Dictionary, road_poly: PackedVector2Array,
+		region_look: Dictionary) -> void:
+	var density := RegionLibrary.rock_density(region_look)
+	if not cfg.rocks_enabled or density <= 0.0 or cfg.rock_groups_per_turn <= 0.0:
+		return
+	await _stage("Scattering rocks…")
+	# Widest species' radius sets the road margin for ALL of them — one rejection pass,
+	# and no species can spill onto the carriageway at any per-instance yaw. Same
+	# reasoning as the bush footprint above, which is why it reuses tree_road_margin_m.
+	var widest := 0.0
+	for i in range(Foliage.ROCK_SCENES.size()):
+		widest = maxf(widest, TreeMeshField.xz_radius(
+			Foliage.rock_mesh(i), Foliage.rock_height(i)))
+	var rock_road_cells := _road_cells(cfg, road_poly, widest)
+	# The scatter places GROUP ANCHORS, not rocks: boulders read as outcrops that shed a
+	# few stones together rather than as evenly-spaced individuals, so each anchor is
+	# fanned out into a small cluster below.
+	var anchors := TreeScatter.scatter(result["pieces"], rock_road_cells,
+		cfg.rock_params(density), cfg.track_seed + ROCK_SEED_OFFSET)
+	# cluster() re-rejects the companions against the same road cells: only the ANCHORS
+	# were tested above, and fanning out can push a companion back onto the carriageway.
+	var rocks := TreeScatter.cluster(anchors, cfg.rock_group_min, cfg.rock_group_max,
+		cfg.rock_group_radius_m, cfg.track_seed + ROCK_SEED_OFFSET, rock_road_cells)
+	rocks = _drop_submerged(rocks, cfg)  # keep rocks out of the lakes
+	if rocks.is_empty():
+		return
+	# One field per species, splitting the scattered points evenly between them — the
+	# same shape as the tree mix, but with equal weights, because the three rocks are
+	# variety rather than a designed ratio. Each field is its own binned MultiMesh, so
+	# this is three draw calls per bin rather than one; that is affordable precisely
+	# because rock_groups_per_turn is a fraction of trees_per_turn.
+	var weights: Array = []
+	weights.resize(Foliage.ROCK_SCENES.size())
+	weights.fill(1.0)
+	var groups := TreeScatter.partition_by_weight(rocks, weights,
+		cfg.track_seed + ROCK_SEED_OFFSET)
+	for i in range(Foliage.ROCK_SCENES.size()):
+		# A species can legitimately draw no points — a sparse region, a short stage, or
+		# the road/lake rejection taking the few it had. Skip it rather than adding an
+		# empty field: a bin-less foliage field is what test_smoke's "each foliage field
+		# has at least one bin" invariant exists to catch, and an empty node is pure cost.
+		if groups[i].is_empty():
+			continue
+		var field := Foliage.spawn_rocks(self, groups[i], _floor(), i, true,
+			cfg.tree_render_distance_m, cfg.tree_render_fade_m)
+		field.name = "Rocks%d" % i
 
 
 # Roadside turn-arrow signs along the stage (todo/roadside-signs.md). Few per stage,
@@ -1971,6 +2050,26 @@ func _on_finish_reached() -> void:
 	_event_toe_at_finish = $Car.damage.toe_array()
 
 
+# Hide every overlay that exists to serve the PERSON DRIVING, leaving only the world
+# itself. Called when the run hands over to the cinematic replay: the player is now a
+# viewer, so anything addressed to a driver is noise over the top of a film.
+#
+# All three are that: the HUD reads out the car you are controlling; the touch
+# sticks/pedals control it; and the anime speed lines are a feedback cue that sells the
+# sensation of speed to whoever is holding the controller — screen-centred streaks that
+# belong to the driving camera, not to the chase and trackside shots the replay cuts
+# between. Hiding the speed-line layer also stops it shading a full-screen pass behind
+# the standings overlay for a car nobody is driving.
+#
+# One-way on purpose: this world is torn down after the replay rather than returned to.
+func _hide_driving_ui() -> void:
+	($HUD as CanvasLayer).visible = false
+	for layer_name in ["MobileControls", "SpeedLines"]:
+		var layer := get_node_or_null(NodePath(layer_name)) as CanvasLayer
+		if layer != null:
+			layer.visible = false
+
+
 # Present the standings as an in-world CanvasLayer overlay and start the replay,
 # keeping the run world alive behind it. Headless runs (no display) skip this;
 # RallySession then falls back to its scene-change path.
@@ -1979,12 +2078,7 @@ func _present_standings_overlay(_event_index: int) -> void:
 		return
 	if _replay_recorder.recording:
 		_replay_recorder.stop()
-	($HUD as CanvasLayer).visible = false
-	# Hide the on-screen driving controls — the replay isn't drivable, and the
-	# touch sticks/pedals would just clutter the cinematic on a touch device.
-	var mobile := get_node_or_null("MobileControls") as CanvasLayer
-	if mobile != null:
-		mobile.visible = false
+	_hide_driving_ui()
 	# Camera for the cinematic replay.
 	_replay_camera = ReplayCamera.new()
 	add_child(_replay_camera)

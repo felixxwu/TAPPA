@@ -208,10 +208,19 @@ overlay** so the replay is visible behind the leaderboard:
 
 - `RallySession.standings_ready` (emitted from `report_event_result`) is connected to
   `world._present_standings_overlay`, which — skipped entirely under headless runs
-  (`_headless`, no display) — stops the recorder if still running, hides the HUD,
-  spins up the `ReplayCamera`, resets the knocked-over props (`_reset_props_for_replay`),
+  (`_headless`, no display) — stops the recorder if still running, hides the
+  driving-only UI (`_hide_driving_ui`, see below), spins up the `ReplayCamera`, resets the knocked-over props (`_reset_props_for_replay`),
   puts the car into `begin_replay`, and instantiates `standings.tscn` with
   `overlay_mode = true` onto its own `CanvasLayer` (`_standings_overlay`).
+- **The driving UI is hidden, including the speed lines.** `_hide_driving_ui()` hides
+  the `HUD`, `MobileControls` and `SpeedLines` CanvasLayers together, because all three
+  exist to serve the person DRIVING and the player is now a viewer. The anime speed
+  lines are the non-obvious member: they are a feedback cue that sells the sensation of
+  speed to whoever holds the controller, and they are screen-centred, so they belong to
+  the driving camera rather than to the chase and trackside shots the replay cuts
+  between. Hiding the layer also stops `speed_lines.gd` shading a full-screen pass
+  behind the standings overlay for a car nobody is driving. One-way on purpose — this
+  world is torn down after the replay, never returned to.
 - **Props reset before the replay.** Right before `begin_replay`, `_reset_props_for_replay()`
   sweeps the world's direct children and calls `reset_fallen()` on every foliage field
   (`TreeMeshField` / `BillboardField` — felled trees stood back up) and `reset_knocked()`

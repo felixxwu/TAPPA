@@ -392,3 +392,12 @@ Alps (see [snow-region.md](snow-region.md)):
   what is under the ice is irrelevant to a tyre resting on top of it. Gated on
   `frozen_water_grip > 0.0`, which is `0.0` everywhere else, so the added cost off a
   frozen stage is one float compare.
+
+
+## The rival field runs your tyres
+
+A surface-specialised compound is worth different amounts on different stages, so the
+performance rating — which benchmarks at a frozen grip — cannot price it. Rather than
+inventing a number for it, the opponent field is fitted with **whatever tyre the player
+is running**, so the advantage cancels out instead of going uncharged. See
+[rally-roster.md](rally-roster.md) → "Tyre mirroring".

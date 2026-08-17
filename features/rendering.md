@@ -306,6 +306,11 @@ across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 (`speed_lines_response`) so the streaks fade in/out rather than pop. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
+The overlay is **driving-only**: `world.gd::_hide_driving_ui` switches the `SpeedLines`
+layer off alongside the HUD and the touch controls when a run hands over to the
+cinematic replay, so the streaks never play over a replay the player is only watching.
+See [event-replay.md](event-replay.md).
+
 ## Authored body models (MX-5, Focus, Twingo, Acty, Charger, The Beast)
 
 Cars with `use_model` on their CarLibrary spec render an authored glb body

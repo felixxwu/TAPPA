@@ -3,6 +3,8 @@ extends GutTest
 # leaderboard toggle, audio signal. See scripts/standings.gd and
 # .superpowers/sdd/task-6-brief.md.
 
+const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
+
 func _make_standings(overlay: bool) -> Control:
 	var s: Control = load("res://standings.tscn").instantiate()
 	s.overlay_mode = overlay
@@ -98,3 +100,50 @@ func test_a_career_rally_still_opens_on_the_local_standings() -> void:
 	await get_tree().process_frame
 	assert_false(s._global_shown, "a career rally still opens on page 1")
 	assert_true(is_instance_valid(s._root_box), "page 1's content is built and live")
+
+
+# --- Driving UI handover ----------------------------------------------------------
+# When the run hands over to the cinematic replay, every overlay addressed to the PERSON
+# DRIVING is hidden — the player becomes a viewer. Exercised through _hide_driving_ui
+# rather than _present_standings_overlay, because the latter early-returns under
+# Platform.is_headless() (the whole suite runs --headless), which would make the
+# assertion vacuous.
+#
+# Built on minimal_world so this costs a sub-second scene build, not a full generation.
+var _world: Node = null
+
+
+# Built ONCE here rather than inside the test: instantiating main.tscn compiles every
+# script in the project, and doing that inside a test body attributes all their compile
+# warnings to that test, which GUT counts as failures.
+func before_all() -> void:
+	SceneHelpers.minimal_world()
+	_world = load("res://main.tscn").instantiate()
+	add_child(_world)
+	await wait_frames(2)
+
+
+func after_all() -> void:
+	if _world != null:
+		_world.free()
+		_world = null
+	Config.reset()
+
+
+func test_replay_hides_every_driving_only_overlay() -> void:
+	var world := _world
+	# Guard the premise: if these layers stopped existing (or were renamed), the test
+	# below would pass by finding nothing to hide.
+	var hud := world.get_node_or_null("HUD") as CanvasLayer
+	var speed_lines := world.get_node_or_null("SpeedLines") as CanvasLayer
+	assert_not_null(hud, "the world should own a HUD layer")
+	assert_not_null(speed_lines, "the world should own a SpeedLines layer")
+
+	world._hide_driving_ui()
+
+	assert_false(hud.visible, "the HUD is for the driver, not the replay viewer")
+	assert_false(speed_lines.visible,
+		"the anime speed lines are a driving cue and must not play over the replay")
+	var mobile := world.get_node_or_null("MobileControls") as CanvasLayer
+	if mobile != null:
+		assert_false(mobile.visible, "touch driving controls must not sit over the replay")

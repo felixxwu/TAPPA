@@ -63,7 +63,8 @@ var instance_scale: float = 1.0
 func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 		target_height: float, collision_radius: float, collision_height: float,
 		render_distance: float, render_fade: float, bin_size: float,
-		with_collision: bool = true, bake_terrain_light: bool = false) -> void:
+		with_collision: bool = true, bake_terrain_light: bool = false,
+		ground_offset: float = 0.0) -> void:
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
@@ -77,7 +78,12 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 	world_pos.resize(positions.size())
 	for i in positions.size():
 		var p := positions[i]
-		var pos := Vector3(p.x, terrain.height_at(p.x, p.y), p.y)
+		# `ground_offset` sinks (negative) or lifts (positive) every instance relative to
+		# the terrain — the mesh twin of BillboardField.build's `y_offset`. Applied HERE,
+		# before instance_positions and world_pos are written, so the recorded positions
+		# and the collision boxes both describe where the model actually ends up. A caller
+		# offsetting the field node instead would leave both reporting the un-offset Y.
+		var pos := Vector3(p.x, terrain.height_at(p.x, p.y) + ground_offset, p.y)
 		instance_positions[i] = pos
 		world_pos[i] = pos
 	# Vector2i -> PackedInt32Array of instance indices, one MultiMesh per bin.

@@ -7,7 +7,7 @@ extends GutTest
 
 
 const PARAMS := {
-	"trees_per_turn": 10,
+	"points_per_turn": 10,
 	"spawn_radius_m": 25.0,
 	"jitter": 0.6,
 }
@@ -114,7 +114,7 @@ func test_zero_target_places_nothing() -> void:
 	var t := await _track()
 	var road := _road_cells(t)
 	var off := PARAMS.duplicate()
-	off["trees_per_turn"] = 0
+	off["points_per_turn"] = 0
 	assert_eq(TreeScatter.scatter(t["pieces"], road, off, 7).size(), 0,
 		"a zero target disables foliage")
 

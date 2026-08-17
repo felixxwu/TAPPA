@@ -13,6 +13,43 @@ distribution below). The only truth about where a rally is are its own `region` 
 + waterline) and its `map_pos` (its pin). Anything that wants "the rallies over there"
 must ask those fields, never a slice of the array.
 
+## Tyre mirroring (the rival field runs your rubber)
+
+Every rival is fitted with **whatever tyre the player is running** — the real part,
+tradeoffs included — before its times are solved
+(`RallyLibrary.generate_opponent_field`, via `player_tire_id` / `_with_tires`).
+Stock player, stock field.
+
+This exists because the performance rating **structurally cannot price a
+surface-specialised compound.** `CarPerformance._simulate` laps the benchmark under a
+frozen `mu_override`, which bypasses `LapTimeModel._surface_grip` entirely, so a snow
+tyre's +snow / −tarmac terms are invisible to the rating. `_part_ranking` ranks parts by
+that same rating, so the field's tyre choice was a global constant — the same rubber on
+an Alpine snow stage as in the Greek desert. A player who fitted snow tyres for a snow
+stage was taking grip the rating never charged them for, and the field had no answer.
+
+Mirroring is the fix rather than teaching the rating about surfaces, because the tyre's
+value genuinely **depends on the stage** — there is no single number the benchmark could
+hold. Matching the field cancels the term instead of pricing it, and it stays correct for
+any compound added later with no recalibration.
+
+Per-stage behaviour falls out for free: one fitted tyre, evaluated against each stage's
+own snow/tarmac mix by `LapTimeModel._surface_grip`. A rival on snow tyres eats the
+tarmac penalty on a stage's tarmac fraction exactly as the player does.
+
+Two things this depends on, both easy to break:
+
+- `CarPerformance.merged_meta` must carry `tire_snow_grip_mult` /
+  `tire_tarmac_grip_mult`. It did not, which made the whole mechanism a silent no-op —
+  rivals solved at the 1.0 identity. Carrying them leaves every rating byte-identical
+  (the benchmark's `mu_override` never reads them), asserted in
+  `test_opponent_tires.gd`.
+- The rival row stores the **mirrored** build, not the drawn one, because
+  `RallySession._effective_meta_for` rebuilds the ghost's meta from that list — storing
+  the pre-mirror tyre would have the ghost solve a different car than the one that set
+  the time.
+
+
 ## What a rally is
 
 Each `RALLIES` entry:

@@ -15,7 +15,8 @@ Hard constraints (a candidate position failing any of these is never considered)
   * on usable ground, with a clear disc around it — no pins in the sea;
   * a *_coast region's pin keeps open water within COAST_WATER, so the coastal corners
     still read as coastal;
-  * inside the region's authored footprint, so `home` stays NW, `greece` SW and so on;
+  * inside the region's authored footprint, so `taiga` stays NW, `home` holds the centre,
+    `greece` SW and so on;
   * inside the safe map border;
   * and >= MIN_SPACING from every other pin — enforced as a hard reject at move time, not
     as a cost, so the result can never settle just under the floor.

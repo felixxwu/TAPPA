@@ -12,6 +12,11 @@ Trees are ALWAYS opaque billboard cutouts (`BillboardField`); bushes are ALWAYS
 low-poly 3D meshes (`TreeMeshField`). There is no longer any billboard-vs-mesh
 toggle — the mesh-tree rendering path was removed.
 
+> **Rocks are not covered here.** The roadside boulders also live in `Foliage` and
+> also render through `TreeMeshField`, but they are meshes rather than billboards,
+> they collide, and they are lit live per-vertex instead of taking the ground's baked
+> light. See [rocks.md](rocks.md).
+
 **Centralised spawning (`Foliage`).** Every place that spawns foliage — the stage
 (`world.gd`), the HQ clearing (`hq_environment.gd`), and the podium's decorative
 dressing (`podium.gd`) — goes through `Foliage.spawn_trees()` /
@@ -457,11 +462,11 @@ its profile's base size:
 
 ```gdscript
 {"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
- "size_scale": Vector2(0.55, 1.15)},   # 4.1 x 8.6 m, ratio 0.48
+ "size_scale": Vector2(0.825, 1.725)},   # 6.2 x 12.9 m, ratio 0.48
 ```
 
-- Defaults to `Vector2.ONE`, so every species that omits it — every home and Greece
-  species — is completely unaffected.
+- Defaults to `Vector2.ONE`, so every species that omits it — the Greece species, and
+  the ordinary trees Greece mixes in — is completely unaffected.
 - It scales the BASE size only. Per-instance size jitter (`*_min_scale`) and aspect
   jitter (`*_aspect_jitter`) still apply on top, so a stand still varies; this sets what
   it varies *around*.
@@ -472,3 +477,48 @@ its profile's base size:
 This is the lightweight alternative to a third sizing profile: it gives a region control
 of its trees' shape without touching the two shared profiles (retuning `home` would move
 every tree in the game, and `region` is shared with Greece's olive canopy).
+
+### It is a SIZE lever too, not only a correction
+
+The snow species use `size_scale` to undo a distortion. Home and the taiga use it to set
+size outright, which makes the "art metadata, not balance" framing above only half the
+story — treat it as *whatever this species' size is, relative to its profile*.
+
+Home is the plain case: `Vector2(1.25, 1.25)`, uniform, the forest 25% bigger with its
+drawn proportions unchanged. It is authored here and NOT as a bump to
+`GameConfig.tree_size_m` for the reason that matters whenever you reach for the profile
+instead — **`tree_size_m` is shared**. Greece's 30% of ordinary trees, both Alps conifers
+and the taiga spire all sit on the home profile with their own `size_scale` tuned against
+its current value, so raising it scales four regions at once. Per-species is how you move
+one forest.
+
+The taiga is the loud case:
+
+```gdscript
+{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
+ "size_scale": Vector2(0.90, 3.0)},   # 6.75 x 22.5 m, ratio 0.30
+```
+
+At `y = 3.0` the spire stands **three times** the home broadleaf, and that single number is
+the whole of what separates the taiga region from home — it inherits every other look
+key (see [regions.md](regions.md)). Two things follow that are worth knowing before
+retuning it:
+
+- **The x is derived, not chosen.** It must stay `natural_ratio * y` (here `0.30 * 3.0`)
+  or the tree is stretched. Raise the height without raising the width and you get a
+  needle; raise both by hand and you will drift off the cutout's real proportions. If
+  you change `y`, recompute `x`.
+- **Height comes out of the size lever, not the texture.** The cutout is rendered at 384
+  px rather than the usual 256 purely so a tree drawn this large is not visibly softer
+  than its neighbours — that is a texel-density decision and has no effect on world
+  size. See the header of `tools/gen_taiga_tree.py`.
+- **`size_scale` changes the VISUAL only.** Neither collision nor felling scales with
+  it, and both were checked rather than assumed: the collision shape comes from the
+  global `cfg.tree_collision_radius_m` / `tree_collision_height_m` (`Foliage.spawn_trees`),
+  and `BillboardField.size_factor` — the value `car.gd` feeds to
+  `TreeFall.should_fell_sized` — is the per-instance size JITTER, relative to whatever
+  the species authored, not a height in metres. So a 22.5 m taiga spire has the same
+  trunk to hit and the same fell threshold as a 7.5 m home tree. That is the intended
+  behaviour (you hit the trunk, not the canopy), but it is genuinely surprising, so
+  don't "fix" it by scaling collision off `size_scale` without deciding that felling
+  should change too.

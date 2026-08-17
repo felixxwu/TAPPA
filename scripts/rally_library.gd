@@ -29,11 +29,12 @@ const WEATHER_RAIN := "rain"
 # but asserted by test_rally_library.gd::test_sandstorm_only_authored_on_greece_events.
 const WEATHER_SANDSTORM := "sandstorm"
 # Fog — a VISIBILITY condition, and the only DIFFICULTY lever in the table (rivals
-# have no eyes, so their times are unchanged). Authored onto FEW events, in the two
-# temperate regions ("home" / "home_coast"). See features/weather.md.
+# have no eyes, so their times are unchanged). Authored onto FEW events, in the
+# temperate regions ("home" / "home_coast" / "taiga"). See features/weather.md.
 const WEATHER_FOG := "fog"
 # Storm — heavy rain plus a crosswind and lightning. Authored onto the two COASTAL
-# regions ("home_coast" / "greece_coast"), where an exposed crosswind reads.
+# regions ("home_coast" / "greece_coast"), where an exposed crosswind reads, and onto
+# the exposed northern "taiga" stages for the same reason.
 const WEATHER_STORM := "storm"
 # Snowfall — authored onto region == "snow" events. Unlike every other precipitation
 # condition it carries NO grip multiplier: the snow region already owns grip for its
@@ -184,7 +185,12 @@ static func _pace_band(tier: int) -> Vector2:
 # it. Reading it as the player does:
 #
 #   NE            a high snow MASSIF — the Alps (region "snow"), six rallies
-#   N / centre    dark pine FOREST, the bulk of the map
+#   NW            boreal SPRUCE forest — the Taiga (region "taiga"), five rallies.
+#                 Home's look exactly, save for the trees, which stand three times as tall
+#                 (RegionLibrary "taiga"). Its rallies were home's until the corner was
+#                 split off, so their `id`s still carry older prefixes — read `region`,
+#                 never the id.
+#   centre        dark pine FOREST, the bulk of the map — home proper
 #   E             forest climbing into the mountains' foothills
 #   centre-W      open plain threaded with RIVERS and lakes
 #   SW / S        pale arid DESERT
@@ -475,7 +481,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "american_muscle", "name": "Win: Swerve Surger R/T", "region": "home", "difficulty": 2, "special": false,
+		"id": "american_muscle", "name": "Win: Swerve Surger R/T", "region": "taiga", "difficulty": 2, "special": false,
 		"prize_car": "charger",  # wave 7  — the American Muscle event awards the Charger
 		"map_pos": Vector2(0.380, 0.261),
 		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
@@ -490,7 +496,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		# Big-bore two-doors: eight cylinders or more AND two doors.
-		"id": "gr_marble_quarry", "name": "Slate Quarry", "region": "home", "difficulty": 2, "special": false,
+		"id": "gr_marble_quarry", "name": "Slate Quarry", "region": "taiga", "difficulty": 2, "special": false,
 		"map_pos": Vector2(0.348, 0.157),
 		"restriction": {"cylinders_min": 8, "doors_max": 2},
 		"events": [
@@ -535,7 +541,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Unlocks the Big Turbo. Pinned in the northern forest despite the `dust` in its id —
 		# so no sandstorm here; those are authored ONLY on greece events (test-enforced).
-		"id": "sp_dust_trial", "name": "Upgrade: Big Turbo", "region": "home", "difficulty": 2,
+		"id": "sp_dust_trial", "name": "Upgrade: Big Turbo", "region": "taiga", "difficulty": 2,
 		"special": true,
 		"map_pos": Vector2(0.274, 0.297),
 		"restriction": {},  # open-class
@@ -583,7 +589,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		# Small-engined two-doors — displacement resolved through the fitted engine.
-		"id": "gc_island_hop", "name": "Timberline Loop", "region": "home", "difficulty": 2, "special": false,
+		"id": "gc_island_hop", "name": "Timberline Loop", "region": "taiga", "difficulty": 2, "special": false,
 		"map_pos": Vector2(0.238, 0.190),
 		"restriction": {"engine_max_l": 3.0, "doors_max": 2},
 		"events": [
@@ -609,7 +615,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		# Big-block class: 5.0 L or more, resolved through the fitted engine.
-		"id": "gc_salt_flats", "name": "Fernway Dash", "region": "home", "difficulty": 3, "special": false,
+		"id": "gc_salt_flats", "name": "Fernway Dash", "region": "taiga", "difficulty": 3, "special": false,
 		"map_pos": Vector2(0.132, 0.289),
 		"restriction": {"engine_min_l": 5.0},
 		"events": [
@@ -1007,8 +1013,29 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 # (`wreck_progress` along the track, `wreck_side` = which verge) the run scene reads
 # to stage the wreck. `wreck_event` = -1 for a rival who finishes. At most one rival
 # wrecks per event, so the run scene shows at most one roadside wreck per stage.
+# The tyre the PLAYER has fitted, as an upgrade id ("" = stock, nothing in the slot).
+# Read by generate_opponent_field so the rival field runs the same rubber.
+static func player_tire_id(player_car: Dictionary) -> String:
+	for item_id in UpgradeLibrary.enabled_upgrades(player_car):
+		if UpgradeLibrary.slot_of(String(item_id)) == UpgradeLibrary.TIRE_SLOT:
+			return String(item_id)
+	return ""
+
+
+# `upgrades` with its tyre swapped for `tire_id` ("" strips the slot back to stock).
+# Everything else in the rival's build is left exactly as drawn.
+static func _with_tires(upgrades: Array, tire_id: String) -> Array:
+	var out: Array = []
+	for item_id in upgrades:
+		if UpgradeLibrary.slot_of(String(item_id)) != UpgradeLibrary.TIRE_SLOT:
+			out.append(item_id)
+	if tire_id != "":
+		out.append(tire_id)
+	return out
+
+
 static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array,
-		player_rating := 0) -> Array:
+		player_rating := 0, player_car: Dictionary = {}) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
 	# Every car+engine pairing the rally's CATEGORICAL restriction admits
@@ -1024,6 +1051,11 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	var pace_trim := _residual_pace_trim(combo_pool, player_rating)
 	# One distinct build per rival, same rng, so the grid is stable across re-attempts.
 	var combos := _draw_distinct_combos(rng, combo_pool, count, player_rating)
+	# Drawn once for the whole field: every rival runs the player's tyre (see the block
+	# in the loop). Skipped entirely when no player car was supplied — the test path and
+	# any caller that only wants times keeps the drawn builds untouched.
+	var mirror_tires := not player_car.is_empty()
+	var tire_id := player_tire_id(player_car) if mirror_tires else ""
 	var field: Array = []
 	for i in count:
 		var combo: Dictionary = combos[i]
@@ -1038,6 +1070,30 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		# carries its whole TRANSMISSION (gear_ratios / final_drive / shift_time), so a
 		# swap moves gearing as well as power.
 		var car_meta: Dictionary = combo["meta"]
+		# TYRE MIRRORING. The rival runs whatever rubber the player runs.
+		#
+		# The rating cannot price a surface-dependent compound: CarPerformance benchmarks
+		# every car at a FROZEN grip, so a snow tyre's +snow/-tarmac terms are invisible to
+		# it and _part_ranking (which ranks parts by that same rating) therefore picks the
+		# field's tyres blind to the surface — the same choice on snow as in the desert.
+		# A player who fits snow tyres for a snow stage was taking grip the rating never
+		# charged them for, and the field could not answer it.
+		#
+		# Mirroring is the fix rather than teaching the rating about surfaces: the tyre's
+		# value genuinely DEPENDS on the stage, so there is no single number the benchmark
+		# could hold. Matching the player cancels the term instead of pricing it, and it
+		# stays correct for any future compound without another calibration.
+		#
+		# The WHOLE part is fitted, tradeoffs included — a rival on snow tyres eats the
+		# tarmac penalty on a stage's tarmac fraction exactly as the player does. Per-event
+		# surface variation then falls out of LapTimeModel._surface_grip for free: one
+		# fitted tyre, evaluated against each stage's own snow/tarmac mix.
+		var rival_upgrades: Array = combo.get("upgrades", [])
+		if mirror_tires:
+			rival_upgrades = _with_tires(rival_upgrades, tire_id)
+			car_meta = CarPerformance.merged_meta(
+				{"installed_upgrades": rival_upgrades, "disabled_upgrades": []},
+				combo["car"])
 		# Persistent per-rival skill (drawn ONCE): sets a base pace held across every
 		# event, so fast rivals stay fast and the field forms a ranked ladder.
 		var skill := rng.randf()
@@ -1067,7 +1123,11 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			# anything re-deriving this rival's meta from car_id + engine_id alone (the
 			# ghost's pace solve, most of all) would be looking at a slower car than the one
 			# that set the time.
-			"upgrades": (combo.get("upgrades", []) as Array).duplicate(),
+			# The MIRRORED build, not the drawn one: RallySession._effective_meta_for
+			# rebuilds the rival ghost's meta from this list, so storing the pre-mirror
+			# tyre would have the ghost solve a different car than the one that set the
+			# time — and RivalPace would then clamp to cover the gap.
+			"upgrades": rival_upgrades.duplicate(),
 			"event_times_ms": times,
 			"dnf": false,
 			"combined_ms": 0,

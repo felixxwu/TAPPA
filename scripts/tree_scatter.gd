@@ -37,6 +37,11 @@ const _PHASE_SALT_Z := 0x165667B1
 # Decorrelates the per-species partition hash from the jitter/phase hashes above, so a
 # tree's assigned species is independent of where the jitter nudged it.
 const _SPECIES_SALT := 0x9E3779B9
+# Cluster salts (see `cluster`). Independent of everything above so a point's group
+# size and the ring positions around it don't correlate with its jitter or species.
+const _CLUSTER_COUNT_SALT := 0x85EBCA6B
+const _CLUSTER_ANGLE_SALT := 0xC2B2AE35
+const _CLUSTER_DIST_SALT := 0x27220A95
 
 
 # Centroid of a piece's rasterized cells, in world XZ.
@@ -49,9 +54,13 @@ static func turn_anchor(piece: Dictionary) -> Vector2:
 
 
 # The scatter grid's cell size (m): chosen so that one point per cell over a disc of
-# `spawn_radius_m` yields ~`trees_per_turn` points, matching the old per-turn count.
+# `spawn_radius_m` yields ~`points_per_turn` points, matching the old per-turn count.
+#
+# The key is `points_per_turn`, not `trees_per_turn`: this module is species-agnostic
+# (trees, bushes and rock GROUP ANCHORS all come through here), and naming the count
+# after one caller made every other caller read its quantity out of a tree-shaped box.
 static func grid_cell_size(params: Dictionary) -> float:
-	var per_turn := float(params["trees_per_turn"])
+	var per_turn := float(params["points_per_turn"])
 	var radius: float = params["spawn_radius_m"]
 	if per_turn <= 0.0 or radius <= 0.0:
 		return 0.0
@@ -139,6 +148,54 @@ static func partition_by_weight(positions: PackedVector2Array, weights: Array, s
 				break
 		groups[idx].append(p)
 	return groups
+
+
+# Expand each scattered point into a small CLUSTER of points around it, and return the
+# flattened result. Used by the rocks (features/rocks.md): boulders read as outcrops
+# that shed a few stones together, not as evenly-spaced individuals, so the scatter
+# places GROUP ANCHORS and this fans each one out.
+#
+# Each anchor keeps a point at its own position — so a cluster is the anchor plus
+# `count - 1` companions — and the companions are laid out on a RING around it:
+# evenly-spaced base angles with a per-companion jitter, at a distance in the outer
+# half of `radius`. That is deliberately not a uniform disc sample: uniform sampling
+# happily places two rocks on top of each other, which looks like a bug when the models
+# are metres wide, while a jittered ring keeps them apart while still reading as random.
+#
+# Pure and fully seeded (hash-based, like the rest of this file), so a given seed always
+# produces the same clusters regardless of iteration order.
+#
+# `road_cells` is rejected against internally, exactly as `scatter` does with the same
+# dictionary — fanning out by up to `radius` can push a COMPANION back onto the
+# carriageway that its anchor was cleared of, and for a collidable prop that means an
+# invisible wall mid-corner. Anchors are kept unconditionally: they already passed the
+# caller's rejection, so re-testing them would silently drop points the caller placed.
+# Pass `{}` (the default) for an unrestricted spread.
+static func cluster(anchors: PackedVector2Array, min_count: int, max_count: int,
+		radius: float, seed_value: int, road_cells: Dictionary = {}) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var lo: int = maxi(min_count, 1)
+	var hi: int = maxi(max_count, lo)
+	var span := hi - lo + 1
+	for anchor in anchors:
+		var cell := ScatterMath.cell_of(anchor)
+		var count: int = lo + int(
+			ScatterMath.hash01(cell.x, cell.y, seed_value, _CLUSTER_COUNT_SALT) * float(span))
+		count = mini(count, hi)  # hash01 returns [0,1), but clamp against float edges
+		out.append(anchor)
+		# radius 0 needs no special case: the offset below collapses to zero, which
+		# stacks the group on its anchor — the honest result for a collapsed spread.
+		var wedge := TAU / float(count)
+		for k in range(1, count):
+			var jitter := ScatterMath.hash01(cell.x, cell.y, seed_value,
+				_CLUSTER_ANGLE_SALT + k)
+			var angle := float(k) * wedge + jitter * wedge
+			var reach := 0.5 + 0.5 * ScatterMath.hash01(cell.x, cell.y, seed_value,
+				_CLUSTER_DIST_SALT + k)
+			var p := anchor + Vector2(cos(angle), sin(angle)) * reach * radius
+			if not ScatterMath.on_road(p, road_cells):
+				out.append(p)
+	return out
 
 
 # Scatter foliage. `forestiness` in [0, 1] gates trees by the forest noise: a point is

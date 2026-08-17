@@ -2483,6 +2483,68 @@ func has_nitrous() -> bool:
 @export_range(0.0, 0.9) var region_tree_billboard_aspect_jitter := 0.15
 
 
+@export_group("Rocks")
+# Roadside boulders — low-poly Kenney meshes scattered like the bushes but WITH
+# collision. Density is per-region (RegionLibrary's `rock_density`), so only the
+# shared shape/size/hitbox knobs live here. See features/rocks.md.
+## Master switch for the rock scatter, mirroring vegetation_enabled for trees and
+## bushes. Off removes the meshes AND their hitboxes.
+@export var rocks_enabled := true
+## Base rock GROUP count per track turn, before the region's `rock_density` multiplier.
+## Counts clusters, not rocks — each one fans out into rock_group_min..max boulders
+## (see TreeScatter.cluster), so the rock count is roughly this times the mean group
+## size. Deliberately far below trees_per_turn: rocks carry collision, so a dense field
+## turns the verge into a wall, and they are meant to read as occasional hazards.
+@export_range(0.0, 100.0) var rock_groups_per_turn := 1.0
+## Smallest number of rocks in a group.
+@export_range(1, 12) var rock_group_min := 4
+## Largest number of rocks in a group. Clamped up to rock_group_min if authored below
+## it, so an inverted pair degrades to a fixed group size rather than to no rocks.
+@export_range(1, 12) var rock_group_max := 7
+## Radius (m) a group's rocks fan out to around their anchor. Companions land in the
+## OUTER HALF of this, so it sets how tight a cluster reads — too small and metre-wide
+## boulders interpenetrate, too large and the group stops reading as one outcrop.
+##
+## It has to move WITH the group size. Companions share a ring, so the spacing between
+## them is roughly the ring's circumference over the count: raising rock_group_max
+## without raising this packs more boulders onto the same ring until they intersect.
+@export_range(0.0, 40.0) var rock_group_radius_m := 9.0
+## Radius (m) around each turn anchor that rocks scatter into. Mirrors
+## tree_spawn_radius_m; together with rock_groups_per_turn it sets the scatter grid pitch.
+@export_range(1.0, 100.0) var rock_spawn_radius_m := 25.0
+## Positional jitter of a rock within its scatter cell (0 = a hard lattice, 1 = the
+## full cell). Mirrors tree_jitter.
+@export_range(0.0, 1.0) var rock_jitter := 0.7
+## Height (m) of a rock at species scale 1.0 — THE size knob for the whole scatter.
+## Each species multiplies this by its own entry in Foliage.ROCK_HEIGHT_SCALES,
+## because the three models have very different aspect ratios (see that constant).
+@export_range(0.1, 12.0) var rock_height_m := 2.25
+## How far a rock is sunk INTO the ground, as a fraction of its own height. Rocks are
+## whole boulders resting on the surface as authored, which reads as if they were
+## dropped on the terrain rather than sitting in it; sinking the field buries the base
+## so the silhouette meets the ground instead of balancing on it.
+##
+## A fraction rather than a metre value so it survives resizing — the same reasoning as
+## rock_collision_radius_frac. Applied per species (each field is offset by its own
+## height x this), and the collision body sinks with the mesh, since it is a child of
+## the same field node. 0 sits them flat on the surface.
+@export_range(0.0, 0.8) var rock_sink_frac := 0.32
+## Collision-box half-width as a fraction of the rock's actual scaled horizontal
+## half-extent. Below 1.0 so the box is inscribed in the silhouette rather than
+## boxing its corners — clipping a rock's edge is far less jarring than hitting a
+## wall of air beside it. The box is derived from the mesh, so resizing rocks
+## resizes their hitbox automatically.
+@export_range(0.1, 1.5) var rock_collision_radius_frac := 0.8
+## Body colour of a rock, written into its vertex colours at mesh-merge time.
+## Replaces Kenney's authored orange; a neutral, desaturated stone grey that sits in
+## the same tonal band as the tree billboards rather than competing with them.
+@export var rock_body_color := Color(0.42, 0.41, 0.39)
+## Colour of the rock's TOP cap (Kenney authors it as a separate "grass" material).
+## Replaces their turquoise with a muted lichen green, so the cap reads as weathering
+## rather than as a second object sitting on the stone.
+@export var rock_cap_color := Color(0.36, 0.40, 0.31)
+
+
 @export_group("Roadside Signs")
 # A-frame (wet-floor) roadside turn-arrow signs along the stage (todo/roadside-signs.md).
 # Few per stage (tens), so they are individual nodes, not a MultiMesh. Authored face
@@ -3167,9 +3229,28 @@ func apply_cliffs(tm: TerrainManager) -> void:
 # expects. tree_size_m is rendering-only and passed separately to BillboardField.
 func tree_params() -> Dictionary:
 	return {
-		"trees_per_turn": trees_per_turn,
+		"points_per_turn": trees_per_turn,
 		"spawn_radius_m": tree_spawn_radius_m,
 		"jitter": tree_jitter,
+	}
+
+
+# The same packing for the ROCK scatter. `density` is the region's rock_density
+# multiplier (RegionLibrary), applied to the base count here rather than in world.gd
+# so every caller gets the regional weighting without having to remember it.
+#
+# Rocks get their own params rather than reusing tree_params() because the two have
+# opposite pressures: trees are dense scenery you drive past, rocks are sparse
+# obstacles you drive INTO, so their counts have to move independently — turning the
+# forest up must not turn the hazard field up with it.
+#
+# NOTE the count fed to TreeScatter is a count of GROUP ANCHORS, not of rocks — each
+# one is fanned out by TreeScatter.cluster afterwards.
+func rock_params(density := 1.0) -> Dictionary:
+	return {
+		"points_per_turn": rock_groups_per_turn * maxf(density, 0.0),
+		"spawn_radius_m": rock_spawn_radius_m,
+		"jitter": rock_jitter,
 	}
 
 

@@ -63,3 +63,7 @@ static func minimal_world() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.track_turn_count = 1  # shortest track the search reliably places
 	cfg.trees_per_turn = 0    # no trees AND no bushes (shared scatter params)
+	# Rocks deliberately do NOT share the tree scatter params (see GameConfig.rock_params),
+	# so zeroing trees_per_turn above does not reach them — they need switching off
+	# explicitly, or every cheap-world test pays for a rock scatter it never inspects.
+	cfg.rocks_enabled = false

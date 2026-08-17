@@ -218,3 +218,19 @@ driving math, and a scene-integration boot (1-turn track) checking the world
 gates + that the runner actually drives. `tests/headless/test_benchmark_ui.gd`
 — the Settings page rows (per-toggle, focusable, flip + repaint) and the results
 panel (lines carry the breakdown; nav contract per features/menus.md).
+
+
+## The rating cannot price a surface-specialised tyre
+
+`_simulate` laps the benchmark at a frozen `BENCHMARK_SURFACE_GRIP` via `mu_override`,
+which bypasses `LapTimeModel._surface_grip`. That is deliberate — it is what makes a
+rating comparable across regions and immune to a gravel/tarmac retune — but it means the
+surface-dependent tyre terms (`tire_snow_grip_mult` / `tire_tarmac_grip_mult`) are
+invisible here, and no amount of retuning will make them visible.
+
+That gap is closed elsewhere, by **matching rather than pricing**: the rival field runs
+the player's tyre, so the term cancels instead of needing a number. See
+[rally-roster.md](rally-roster.md) → "Tyre mirroring".
+
+`CarPerformance.merged_meta` does carry those two keys, but only so the RIVAL/ghost path
+can read them — they leave the rating byte-identical.

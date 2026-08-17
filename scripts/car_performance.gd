@@ -108,7 +108,15 @@ static func benchmark_ms(meta: Dictionary) -> int:
 static func merged_meta(owned_car: Dictionary, base_meta: Dictionary) -> Dictionary:
 	var out := UpgradeLibrary.effective_meta(owned_car, base_meta).duplicate()
 	var grip := UpgradeLibrary.grip_meta(owned_car, base_meta)
-	for k in ["tire_compound", "downforce_front", "downforce_rear"]:
+	# The two SURFACE-dependent tyre terms are carried too, even though the rating itself
+	# cannot see them: _simulate laps the benchmark under a frozen `mu_override`, which
+	# bypasses LapTimeModel._surface_grip entirely, so adding them here leaves every
+	# rating byte-identical. They are carried because this meta is ALSO what the rival
+	# field and the ghosts solve their times from (LapTimeModel._surface_grip reads
+	# exactly these keys), and dropping them made a fitted snow compound a silent no-op
+	# there — the tyre moved the player's grip and nobody else's.
+	for k in ["tire_compound", "downforce_front", "downforce_rear",
+			"tire_snow_grip_mult", "tire_tarmac_grip_mult"]:
 		if grip.has(k):
 			out[k] = grip[k]
 	return out

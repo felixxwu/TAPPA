@@ -64,6 +64,7 @@ with them, and working toward the special-event finale.
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
 | [start-line.md](start-line.md) | `StartLine` — the pre-event start-line scene (diegetic briefing panel + atmosphere presence cars) before the countdown |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
+| [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
 | [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
 | [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
 | [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles |

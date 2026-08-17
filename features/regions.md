@@ -6,10 +6,11 @@
 
 A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
 height — applied to whichever rallies are tagged with it. It is **not a corner
-of the map**, even though it started life that way. The game ships five:
+of the map**, even though it started life that way. The game ships six:
 `home` (the original green forest/plain world), `home_coast` (that same look
-with the sea raised), `greece` (arid), `greece_coast` (arid, sea raised) and `snow`
-(the alpine NE massif — see [snow-region.md](snow-region.md)).
+with the sea raised), `greece` (arid), `greece_coast` (arid, sea raised), `snow`
+(the alpine NE massif — see [snow-region.md](snow-region.md)) and `taiga` (the NW
+boreal corner: home's look with one much taller tree).
 
 **A region is no longer look-only.** `snow` also carries HANDLING: per-surface grip
 overrides, a deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS`
@@ -34,6 +35,9 @@ credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
 [rally-roster.md](rally-roster.md).
 
+The map's NW corner is the `taiga` region ("The Taiga") and carries five rallies,
+all re-tagged out of `home` — which is what pulls `home` in to the map's centre.
+
 The map's NE snow massif is now the `snow` region ("The Alps") and carries six
 rallies. See [snow-region.md](snow-region.md).
 
@@ -47,12 +51,20 @@ optional look-override keys (a missing key inherits the scene/`GameConfig`
 baseline), and an optional `look_from` (see below). Ships today:
 
 - `home` — the original world: the green pine forest and open plain that cover
-  the north, centre and east of the map. Authors its **foliage split
+  the centre and east of the map. Authors its **foliage split
   explicitly** (`tree_mix` = 100% `res://textures/tree.png` at the home
   profile, `spawn_bush_mesh` = `true`) so the split is config-driven
   everywhere; every OTHER look field is left at the scene/`GameConfig`
-  baseline, so the home world still looks byte-identical to before regions
-  existed. Its `water_level` is the original baseline (`-12.0`).
+  baseline. Its `water_level` is the original baseline (`-12.0`).
+
+  Its one species carries `size_scale` `Vector2(1.25, 1.25)` — the forest 25%
+  bigger than the profile card, so **9.375 x 9.375 m**. Note this is the reason
+  home is no longer byte-identical to the pre-regions world, which it was for a
+  long time and which several older comments still claim. The scale lives on the
+  species rather than on `GameConfig.tree_size_m` because that profile is shared
+  with Greece's 30% of ordinary trees, both Alps conifers and the taiga spire,
+  all of which are tuned against its current value; raising the profile would
+  scale all four. See [trees.md](trees.md).
 - `home_coast` ("The Lakes") — the same forest look with the water raised: it
   authors `look_from: "home"` (so it inherits home's `tree_mix` /
   `spawn_bush_mesh` / everything else in `LOOK_KEYS`) plus its own, higher
@@ -65,7 +77,10 @@ baseline), and an optional `look_from` (see below). Ships today:
   `spawn_bush_mesh` = `false`. The mix reads as mostly the large low
   Mediterranean canopy with a few ordinary trees mixed in, and the 3D
   ground-cover bushes are dropped entirely (the arid map has no lush
-  undergrowth). It also overrides `tarmac_color` (a quite-a-bit-brighter,
+  undergrowth). Being the one region with no ground cover at all, it is also the
+  **stoniest**: it carries the catalogue's highest `rock_density`, and rocks are
+  what fill a verge that would otherwise read as bare ([rocks.md](rocks.md)).
+  It also overrides `tarmac_color` (a quite-a-bit-brighter,
   sun-bleached asphalt vs. home's darker grey), `road_marking_color` (yellow
   lane paint instead of home's off-white) and `grass_particle_color` (a dry
   olive/tan wheel-dust blade, since home's green particle would read as a
@@ -81,11 +96,35 @@ baseline), and an optional `look_from` (see below). Ships today:
   over asphalt, not a different material), a white `grass_particle_color` (the
   home green would read as grass blades flung off a snowfield),
   `spawn_bush_mesh` = `false` (nothing grows through snow) and a 60/40
-  `tree_mix` of two CC0 photographic conifers. `road_marking_color` is
+  `tree_mix` of two CC0 photographic conifers. It carries the catalogue's
+  **lowest** `rock_density` for the same reason the bushes are gone — deep snow
+  buries loose stone — but deliberately not `0.0`: the boulders too big to cover
+  still belong in the Alps ([rocks.md](rocks.md)). `road_marking_color` is
   deliberately OMITTED rather than set to white — buried lane paint, not fresh
   paint. It is also the ONLY region carrying handling blocks
   (`surface_grip` / `deep_snow` / `frozen_water`); see
   [snow-region.md](snow-region.md).
+- `taiga` ("The Taiga", the NW boreal corner) — the THINNEST entry in the
+  catalogue, and deliberately so. It authors `look_from: "home"`, its own
+  `water_level` (`-12.0`, the same baseline) and **one** look key: `tree_mix`.
+  Sky, gravel, tarmac, lane paint, terrain tints, grass and 3D ground cover are
+  all home's, untouched. The whole region is one swapped tree.
+
+  That tree is `textures/tree-taiga.webp` at 100%, on the `home` sizing profile,
+  with `size_scale` `Vector2(0.90, 3.0)` — **6.75 x 22.5 m**, against the home
+  broadleaf's 7.5 x 7.5 and the Alps' ~12.9 m conifers. The x is not a free
+  choice: the cutout's natural w/h is 0.30, and the profile card is square, so
+  `x = 0.30 * y` is what draws it at its own proportions instead of stretched
+  (the same rule the snow species document). The y is the design — at three
+  times the height of the forest either side of it, the silhouette alone
+  carries the region, which is what lets every other look key stay inherited.
+
+  `spawn_bush_mesh` is inherited (`true`) rather than dropped, unlike Greece and
+  the Alps: a bare-trunked spire leaves a lot of open ground, and real taiga has
+  a low shrub mat under the canopy.
+
+  See [trees.md](trees.md) for the billboard and `tools/gen_taiga_tree.py` for
+  how the cutout is made (same CC0 pack as the Alps, already cached in-repo).
 
 Note on ids: `home` and `greece` were **not renamed** when the map went from
 two swapped regions to four map corners, because `"home"` in particular is a
@@ -97,8 +136,16 @@ call site (and auditing for other hardcoded `"home"` checks).
 `sky_panorama`, `grass_texture`, `gravel_texture`, `tree_mix`,
 `bush_billboard`, `spawn_bush_mesh`, `background_color`, `terrain_tint`,
 `terrain_layers`, `tarmac_color`, `road_marking_color`,
-`grass_particle_color`, `grass_particle_square`. `bush_billboard`/`terrain_tint`/`terrain_layers` are
+`grass_particle_color`, `grass_particle_square`, `rock_density`.
+`bush_billboard`/`terrain_tint`/`terrain_layers` are
 reserved slots — schema support exists, nothing authors them yet.
+
+`rock_density` is the odd one out: every other key changes what a region LOOKS like,
+while this one changes how MUCH of something it has. It multiplies
+`GameConfig.rock_groups_per_turn` and defaults to `1.0`, so a region that authors nothing
+still gets rocks. Greece is stoniest, the Alps sparsest, everything else the middle;
+rock models, colours and hitboxes are shared across all regions, so density is the only
+thing that varies. See [rocks.md](rocks.md).
 
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
 are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
@@ -241,8 +288,10 @@ every re-fit slides pins across terrain zones and the geography under them has t
 re-read afterwards (the 2026-08 pass did exactly that: names, `region` tags and
 per-event terrain were all re-authored to match the pixels, while the save-key `id`s
 stayed put). A region tag says only "this stage wears this look at this waterline",
-and the tags follow the terrain, so the split today is **19 `home`, 8 `greece`,
-6 `snow`, 4 `home_coast`, 1 `greece_coast`** — `greece_coast` is one rally on the SE sea, and
+and the tags follow the terrain, so the split today is **14 `home`, 8 `greece`,
+6 `snow`, 5 `taiga`, 4 `home_coast`, 1 `greece_coast`** — the five `taiga` rallies are
+the NW cluster, re-tagged out of `home` when that corner was split off (their `id`s
+still carry older prefixes, so read `region`, never the id); `greece_coast` is one rally on the SE sea, and
 the coastal looks are worn only by the handful of pins genuinely standing on water
 (the SE bay at a -4 waterline, the central rivers at -7). Nothing may assume a region
 owns a contiguous patch of map, holds a minimum number of rallies, or holds any at
