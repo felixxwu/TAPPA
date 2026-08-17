@@ -95,6 +95,11 @@ servo measures the grip limit instead of predicting it. See
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
 | `follow_height_ratio` | 1.0 | Chase camera height as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |
+| `replay_fov` | 75.0 | Replay camera FOV for the fixed-offset shots (ORBIT / FLYBY / WHEEL) |
+| `replay_frame_subject_size` | 4.2 | Constant-size framing (replay ROADSIDE / HIGH_WIDE): nominal subject size (m) the zoom fits — see [event-replay.md](event-replay.md) |
+| `replay_frame_screen_fraction` | 0.32 | …and the share of viewport height it should span. Higher = tighter framing |
+| `replay_frame_fov_min` / `_max` | 14.0 / 75.0 | Long / wide ends of that framed zoom (degrees) |
+| `replay_fov_smoothing` | 5.0 | Easing rate for replay FOV changes (cuts always snap) |
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |
 

@@ -146,6 +146,128 @@ func test_roadside_hands_back_to_rotation_after_enough_plants() -> void:
 		"roadside rotates back to the other shots after showing enough positions")
 
 
+# Tick with the FOV snap forced, so a single frame lands on the framing target rather than
+# part-way through the easing — the assertions below are about WHICH lens the framing rule
+# picks, not how fast the ease gets there.
+func _drive_to_snapped(z: float) -> void:
+	_cam._fov_snap = true
+	_drive_to(z)
+
+
+# The on-screen height (as a fraction of the viewport) that a subject of the configured
+# nominal size spans at `distance` under a given FOV. Holding this constant as the distance
+# changes is the entire point of the framed shots.
+func _screen_fraction(distance: float, fov_deg: float) -> float:
+	var size: float = Config.data.replay_frame_subject_size
+	return size / (2.0 * distance * tan(deg_to_rad(fov_deg) * 0.5))
+
+
+# True when the FOV is pinned at one end of the configured lens range, where the framing
+# rule is deliberately overridden and the exact subject size no longer holds.
+func _at_lens_limit(fov_deg: float) -> bool:
+	return absf(fov_deg - Config.data.replay_frame_fov_min) < 0.001 \
+		or absf(fov_deg - Config.data.replay_frame_fov_max) < 0.001
+
+
+func test_roadside_zooms_in_when_the_car_is_far_and_out_as_it_arrives() -> void:
+	# The headline behaviour: a planted trackside camera rides the zoom rocker. The car
+	# starts far up the road (long lens), sweeps past (wide), then drives away (long again).
+	_enter_roadside()
+	_drive_to_snapped(0.0)         # plants ROADSIDE_AHEAD up the road; car is far off
+	var fov_far := _cam.fov
+	_drive_to_snapped(-20.0)       # closing on the plant
+	var fov_near := _cam.fov
+	_drive_to_snapped(-55.0)       # past it and driving away again
+	var fov_leaving := _cam.fov
+	assert_gt(fov_near, fov_far, "FOV widens (zooms out) as the car closes on the plant")
+	assert_lt(fov_leaving, fov_near, "FOV narrows again (zooms back in) as the car leaves")
+
+
+func test_framed_zoom_holds_the_car_at_a_constant_screen_size() -> void:
+	# Not merely "it changes in the right direction" — the zoom is DERIVED so the car keeps
+	# the same share of the frame at every distance, which is why the shot reads as one
+	# operator holding framing rather than the car ballooning and shrinking. Checked
+	# straight against the rule across a wide distance sweep; wherever the lens range
+	# deliberately overrides the rule, the FOV must sit exactly on that limit instead.
+	_cam._shot = ReplayCamera.Shot.ROADSIDE
+	var wanted: float = Config.data.replay_frame_screen_fraction
+	var unclamped := 0
+	for distance in [2.0, 5.0, 10.0, 20.0, 35.0, 60.0, 120.0, 400.0]:
+		var f: float = _cam._target_fov(distance)
+		assert_between(f, Config.data.replay_frame_fov_min, Config.data.replay_frame_fov_max,
+			"framed FOV stays inside the lens range at %s m" % distance)
+		if _at_lens_limit(f):
+			continue
+		unclamped += 1
+		assert_almost_eq(_screen_fraction(distance, f), wanted, 0.001,
+			"at %s m the car spans the configured share of the screen" % distance)
+	assert_gt(unclamped, 1, "the sweep exercised the framing rule at more than one distance")
+
+
+func test_high_wide_zooms_in_by_the_same_framing_rule() -> void:
+	# The helicopter shot sits far back and up, so at the plain base FOV the car was a dot.
+	# It now frames by the same constant-size rule as the roadside cam — a tighter lens the
+	# further out it parks.
+	_target.global_position = Vector3.ZERO
+	_cam._shot = ReplayCamera.Shot.HIGH_WIDE
+	_cam._shot_age = 0.0
+	_cam._fov_snap = true
+	_cam._tick(0.016)
+	var dist := _cam.global_position.distance_to(_target.global_position)
+	assert_gt(dist, 1.0, "the high wide shot really is pulled back")
+	assert_almost_eq(_cam.fov, _cam._target_fov(dist), 0.001,
+		"high wide's lens comes from the framing rule at its own distance")
+	if not _at_lens_limit(_cam.fov):
+		assert_almost_eq(_screen_fraction(dist, _cam.fov),
+			Config.data.replay_frame_screen_fraction, 0.001,
+			"high wide frames the car to the configured share of the screen")
+
+
+func test_fixed_offset_shots_use_the_plain_base_fov() -> void:
+	# Only the two varying-distance shots ride the zoom. The fixed-offset tracking shots sit
+	# at a constant distance, so they must be handed the plain base FOV — including right
+	# after a framed shot, so a tight lens can't leak into the next shot.
+	for shot in [ReplayCamera.Shot.ORBIT, ReplayCamera.Shot.FLYBY, ReplayCamera.Shot.WHEEL]:
+		_cam._shot = shot
+		_cam._shot_age = 0.0
+		_cam.fov = 12.0        # as if the previous shot had zoomed right in
+		_cam._fov_snap = true
+		_cam._tick(0.016)
+		assert_almost_eq(_cam.fov, Config.data.replay_fov, 0.001,
+			"shot %s uses the base replay FOV" % shot)
+
+
+func test_fov_snaps_on_a_cut_rather_than_easing_across_it() -> void:
+	# A cut is a new camera with a new lens: the first frame of a shot must land on its own
+	# framing, not ramp in from whatever the previous shot was sitting at. Easing at any sane
+	# rate cannot cover a big gap in one 16 ms frame — only a snap can.
+	_cam._shot = ReplayCamera.Shot.HIGH_WIDE
+	_cam._shot_age = 0.0
+	_cam.fov = 120.0
+	_cam._advance_shot()       # ...which is what a cut does
+	_cam._shot = ReplayCamera.Shot.HIGH_WIDE
+	_cam._tick(0.016)
+	var dist := _cam.global_position.distance_to(_target.global_position)
+	assert_almost_eq(_cam.fov, _cam._target_fov(dist), 0.001,
+		"the shot's first frame is already on its own lens, not easing in from 120 deg")
+
+
+func test_fov_eases_between_frames_within_a_shot() -> void:
+	# Between cuts the zoom is smoothed, so a distance change reads as a rocker being nudged
+	# rather than a snap. One short frame must move the FOV toward the target without
+	# arriving (with easing disabled in config it snaps, which is that setting's contract).
+	_cam._shot = ReplayCamera.Shot.HIGH_WIDE
+	_cam._shot_age = 0.0
+	_cam._fov_snap = false
+	_cam.fov = 110.0
+	_cam._tick(0.016)
+	var dist := _cam.global_position.distance_to(_target.global_position)
+	var target: float = _cam._target_fov(dist)
+	assert_lt(_cam.fov, 110.0, "the FOV moves toward the framing target")
+	if Config.data.replay_fov_smoothing > 0.0:
+		assert_gt(_cam.fov, target, "...but eases rather than snapping mid-shot")
+
+
 func test_roadside_camera_on_a_cliff_seats_at_the_terrain_top() -> void:
 	# The plant lands where the ground is RAISED above the track (a cliff/verge). It must
 	# seat head-height above that higher terrain, not at the car's road height.

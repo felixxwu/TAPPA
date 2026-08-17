@@ -267,6 +267,11 @@ clearance margin — `GameConfig.wheel_cam_lateral_clearance` / `wheel_cam_fallb
 [event-replay.md](event-replay.md)), a high wide establishing shot, and a planted
 **roadside** "filming from the verge" shot. The four tracking shots dwell `SHOT_DWELL := 4.0` s each; ROADSIDE
 instead holds a fixed trackside spot and cuts only after the car passes and drives off.
+The two shots whose distance to the car varies (ROADSIDE, HIGH_WIDE) **zoom to hold the car
+at a constant share of the frame** — FOV solved from the distance
+(`GameConfig.replay_frame_subject_size` / `replay_frame_screen_fraction`, clamped to
+`replay_frame_fov_min`/`_max`, eased at `replay_fov_smoothing` and snapped across cuts);
+the fixed-offset shots just use `replay_fov`.
 See [event-replay.md](event-replay.md) for the full shot list. It goes away with the
 overlay once the standings screen closes (the player's chosen `CameraManager` mode
 resumes on the next event / return to HQ).
