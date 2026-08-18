@@ -786,7 +786,6 @@ func launch() -> void:
 					  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
 				return
 	_launched = true
-	GripLog.say("START pressed — leaving the start-line menu for the stage")   # TEMP
 	if _overlay != null:
 		_overlay.visible = false
 	if _grid_ahead_count() <= 0:
@@ -949,7 +948,6 @@ func _open_tune() -> void:
 	if _tune_layer == null:
 		_build_tune_overlay()
 	var owned := _driven_car()
-	GripLog.say("MENU: start-line TUNE CAR opened")   # TEMP
 	_tune_panel.setup(owned, _on_tune_changed.bind(owned))
 	_tune_panel.refresh()
 	_open_menu(_tune_layer, _tune_panel.first_slider(), _close_tune)
@@ -980,8 +978,6 @@ func _open_upgrades() -> void:
 	if _upgrades_layer == null:
 		_build_upgrades_overlay()
 	var owned := _driven_car()
-	GripLog.say("MENU: start-line UPGRADES opened (car #%d, enabled=%s)"
-		% [int(owned.get("instance_id", -1)), UpgradeLibrary.enabled_upgrades(owned)])   # TEMP
 	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _rating_limit())
 	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
 	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
@@ -995,7 +991,6 @@ func _open_upgrades() -> void:
 # with it. RallySession decides whether a re-draw is allowed (it refuses mid-rally, where
 # it would rewrite standings already raced) and whether anything actually changed.
 func _close_upgrades() -> void:
-	GripLog.say("MENU: start-line UPGRADES closed")   # TEMP
 	_close_menu(_upgrades_layer, _upgrades_button)
 	if RallySession.is_active() and RallySession.refield_opponents():
 		_restage_grid()
@@ -1040,10 +1035,6 @@ func _build_upgrades_overlay() -> void:
 # An upgrade edit. Re-field the live car's upgrade state WITHOUT reshaping the staged
 # body (refit_upgrades, NOT apply_owned).
 func _on_upgrade_changed() -> void:
-	# TEMP diagnostic (grip_log.gd): says whether the live car is reachable at all from here.
-	GripLog.say("start-line upgrade edit -> refit %s"
-		% ["the live car" if (_player != null and _player.has_method("refit_upgrades"))
-			else "SKIPPED (no live car with refit_upgrades!)"])
 	if _player != null and _player.has_method("refit_upgrades"):
 		_player.refit_upgrades(_driven_car())
 

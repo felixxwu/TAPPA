@@ -462,7 +462,7 @@ func _hand_off_to_challenge_scene() -> void:
 		_hq.add_child(loading)
 		await _hq.get_tree().process_frame
 		await _hq.get_tree().process_frame
-		_hq.get_tree().change_scene_to_file("res://main.tscn")
+		Scenes.change_to(_hq.get_tree(), Scenes.MAIN)
 
 
 # Open the car park for the currently-shown challenge kind: park the eligible owned cars

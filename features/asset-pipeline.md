@@ -170,6 +170,18 @@ Every `blender/*/wheel.*` now has `mipmaps/generate = true`; seven of the eight 
 it off while being sampled in 3D, which thrashes the texture cache at distance
 (`blender/mx5/wheel.png` was the one already-correct reference).
 
+**`mipmaps/generate = true` is the house default for every texture in `textures/`** —
+there is no opted-out file left. Seven later additions (`snow-ground.jpg`,
+`snow-road.jpg`, `tree-snow.webp`, `tree-snow-laden.webp`, `tree-taiga.webp`,
+`sky-night.jpg`, `sky-snow.jpg`) had shipped with it `false` while their
+Greece-region counterparts had it `true`; that is fixed, so all seven now match
+`grass-greece.jpg` / `tree-greece.webp` / `sky-greece.jpg` exactly (mode 1,
+`mipmaps/generate = true`, `detect_3d/compress_to = 1`). Ground and foliage without
+mipmaps thrash the texture cache and alias badly at distance on low-end phones; the
+skies are included because the panorama is minified hard at the shipped 480×360
+internal resolution too, and +33% on a 1024×512 JPEG is a rounding error. **When you
+add a texture, check this key before committing** — the editor's default is off.
+
 **Every `blender/*/wheel.*` also now has `detect_3d/compress_to = 0`** (again, mx5
 was the one already-correct file). This matters more for wheels than for any other
 texture family: the cosmetic wheel swap

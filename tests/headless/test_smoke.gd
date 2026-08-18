@@ -9,6 +9,9 @@ static func _rebindable_actions() -> Array[String]:
 		out.append(str(entry["action"]))
 	return out
 
+const SaveTestHelpers = preload("res://tests/headless/save_test_helpers.gd")
+const TEST_PATH := "user://test_smoke_profile.json"
+
 var _scene: Node3D
 
 
@@ -17,6 +20,9 @@ var _scene: Node3D
 # read-only structural check except the two camera tests, which reset the car's
 # position/velocity themselves — so a single shared instance is safe.
 func before_all() -> void:
+	# The challenge tests below grant cars and start runs through the LIVE Save
+	# autoload, so point it at a throwaway profile before anything here can write.
+	SaveTestHelpers.redirect(TEST_PATH)
 	RallyFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
@@ -26,6 +32,7 @@ func before_all() -> void:
 func after_all() -> void:
 	_scene.free()
 	RallyFixtures.restore()
+	SaveTestHelpers.cleanup(TEST_PATH)
 
 
 func test_save_autoload_registered() -> void:
@@ -297,6 +304,24 @@ func test_floor_is_terrain_manager() -> void:
 	assert_not_null(floor_node as Node3D, "Floor is the TerrainManager node")
 	assert_true(floor_node.has_method("height_at"), "manager exposes height_at")
 	assert_gt(floor_node.loaded_coords().size(), 0, "chunks loaded around the car at boot")
+
+
+func test_overworld_scene_loads_with_its_structure() -> void:
+	# The overworld hub (features/terrain.md -> "Open-world mode") is the second hub scene,
+	# so it gets the same structural check main.tscn does. CHEAP mode is mandatory here:
+	# the full path generates a life-size world and would blow the suite's time budget.
+	var prev_mode: int = Overworld.load_mode
+	Overworld.load_mode = Overworld.LoadMode.CHEAP
+	var ow: Node3D = load("res://overworld.tscn").instantiate()
+	add_child_autofree(ow)
+	for node_name in ["Floor", "Car", "WorldEnvironment", "CameraManager", "PauseMenu"]:
+		assert_not_null(ow.get_node_or_null(node_name),
+			"overworld.tscn carries its %s node" % node_name)
+	assert_true(ow.get_node("Floor").has_method("height_at"),
+		"the overworld Floor is a TerrainManager")
+	assert_eq(ow.get_node("Car").scene_file_path, "res://car.tscn",
+		"the overworld instances the shared car scene")
+	Overworld.load_mode = prev_mode
 
 
 func test_shaders_load_with_code() -> void:

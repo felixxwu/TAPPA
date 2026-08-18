@@ -20,6 +20,31 @@
 └── features/              # ← this documentation folder
 ```
 
+## Scene routing (`Scenes`)
+
+`scripts/scenes.gd` (`class_name Scenes`, a static-only `RefCounted`) is the single
+source of truth for scene paths and for **which scene is "the hub"**:
+
+- `Scenes.HQ` / `OVERWORLD` / `MAIN` / `PODIUM` / `STANDINGS` — the canonical paths.
+- `Scenes.hub_path()` — the destination for every "return to the hub" transition.
+  Returns `OVERWORLD` when `Config.data.overworld_enabled` is on (the dev-gated
+  drivable overworld hub), else `HQ`. The flag ships **false**, so the shipped
+  behaviour is unchanged.
+- `Scenes.is_hub_scene(path)` — true for *either* hub. Used where the hub is
+  detected from a live scene path rather than chosen (see
+  [music.md](music.md) → "The hub-scene predicate").
+
+**Why the seam.** `hq.tscn` is both the boot scene and the "back to the hub"
+destination, and that path was hardcoded at seven transition sites. All seven now
+call `hub_path()`: `podium.gd::_go_to_hq`, `pause_menu.gd::quit_to_hq` (two
+branches — challenge pause and no-session), `benchmark_mode.gd::exit_to_hq`, and
+three in `world.gd` — `_on_session_event_completed` (free-roam / no-session
+finish), `_on_session_rally_finished` (abandoned rally) and the challenge-run end
+— the `world.gd` ones through its `_change_scene` / `scene_change_hook` test seam.
+Adding a hub without this seam means finding all seven again; missing one sends
+the player to the wrong hub. Tests should compare captured paths against
+`Scenes.hub_path()`, not a literal.
+
 ## Main scene tree (`main.tscn`)
 
 ```

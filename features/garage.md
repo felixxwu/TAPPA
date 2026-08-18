@@ -8,9 +8,16 @@ concrete floor, tool chests along the back wall, a workbench, a pegboard and a
 tyre stack — while the **bay centres are kept clear** so the game can stage its
 own contents there. The model carries **no team branding**.
 
-It is the **HQ hub's garage** (`hq.gd._build_garage`): the LEFT bay frames the
-world-map table, the RIGHT bay frames the tuning lift with the player's car
-raised on it. It also stands alone for the render harness below.
+It has **two hosts**:
+
+- the **HQ hub's garage** (`hq.gd._build_garage`): the LEFT bay frames the
+  world-map table, the RIGHT bay frames the tuning lift with the player's car
+  raised on it;
+- the **overworld's drive-in garage** (`scripts/overworld_garage.gd`), where the
+  same model is a building standing on the terrain that the player physically
+  drives into — see "Wiring into the overworld" below.
+
+It also stands alone for the render harness below.
 
 ## Where it lives
 
@@ -106,6 +113,29 @@ concrete apron, so the model is added with `build_environment = false` and
 
 `tools/render_hq_garage.gd` (+ `.sh`) is a verification aid: it boots the real
 HQ and captures the garage station to `docs/garage/hq_garage_view.png`.
+
+## Wiring into the overworld
+
+`OverworldGarage` (`scripts/overworld_garage.gd`) instances the same builder with
+`build_environment = false` / `build_ground = false` (the overworld supplies sky,
+sun and terrain) and re-proportions it from `overworld_garage_bay_width_m` /
+`overworld_garage_bay_depth_m`.
+
+Two things the model does **not** provide, and the host therefore adds:
+
+- **Colliders.** `garage.gd` is pure geometry — no `StaticBody3D` anywhere — so
+  the host builds its own wall bodies (back, both sides, the divider between the
+  bays), leaving the front open as the opening the player drives in through.
+  Without them you would drive straight through the building.
+- **A lift pad**, raised with the car.
+
+The bay-centre-clear discipline the interior props already follow is what makes
+this work: the car parks in the middle of a bay with nothing in the way. See
+`features/overworld.md` → "The garage" for the entry rules, the lift and the
+pages, and → "Standing off the road" for *where* the building ends up: it is
+offset perpendicular to the roads meeting the HQ node and yawed to face back at
+them (`OverworldGarage.placement_from_config`), so it is never dropped in the
+middle of the junction with the roads running into its back wall.
 
 ## Notes / future work
 

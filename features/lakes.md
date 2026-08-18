@@ -287,3 +287,23 @@ surface blend in `Drivetrain.surface_tire_params`, and the look reuses this same
 shader with ice colours and `scroll_speed = 0`. The track still routes around water, so a
 frozen lake is an off-road hazard or shortcut and rival times are unaffected. See
 [snow-region.md](snow-region.md).
+
+## The overworld's coastline uses this, unchanged
+
+The Overworld HQ ([overworld.md](overworld.md)) makes the edge of its map a **coast**: the
+terrain tapers down to below the waterline around the whole perimeter, so the world reads as an
+island and the sea is the border — no invisible wall, and nothing to explain to the player.
+
+Nothing here needed changing to support it, which is the point worth recording:
+
+- The waterline is **one plane, 10 km across** (`LakeField.SPAN`), so it already covers a 4 km
+  map with room to spare.
+- The plane is only visible where terrain dips below it, so the shoreline is produced by the
+  taper rather than by any authored outline — the same "no lake geometry, terrain occludes it"
+  property the frozen-lake collider relies on above.
+- `Car.set_water_query` is wired as usual, so driving into the sea is the existing hazard.
+
+The one coupling to keep in mind: the taper is measured as a depth **below the waterline**
+(`TerrainManager.taper_height` reads the same `track_water_level_m` this plane is drawn at), so
+moving the waterline moves the coast. That is why both values are folded into the overworld
+chunk cache's invalidation key — a shore that is dry, or drowned, is the failure mode.

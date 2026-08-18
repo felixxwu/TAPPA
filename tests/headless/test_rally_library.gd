@@ -1478,16 +1478,33 @@ func test_a_rally_inside_the_opening_rallys_circle_is_revealed_from_the_start() 
 		"a pin outside it starts dark")
 
 
-# HQ is no longer a light source, so a profile that names no starter has no opening rally
-# and therefore no light at all. This is the state every pre-opening-rally save is in, and
-# the map must not quietly re-light itself around the middle for them.
+# COMPLETION AND THE STARTER ARE THE ONLY THINGS THAT REVEAL A RALLY. A profile that names no
+# starter has no opening rally, so nothing it has done lights anything, and the map must not
+# quietly re-light itself for them.
+#
+# This test used to read "HQ is no longer a light source ... therefore no light at all", because
+# `map_hq_reveal_radius` shipped at 0.0. It no longer does: the overworld stands the player at the
+# garage to pick their first car, and with HQ unlit the fog veil darkens the screen and the
+# frontier push shoves the car while they choose. So HQ now lights a small circle — deliberately
+# too small to touch any shipped pin, which `test_the_hq_circle_alone_reveals_no_rally` pins
+# against the real roster.
+#
+# HQ is therefore neutralised HERE rather than asserted about, because this test is about the
+# starter/completion rule and the fixture roster puts a pin at the middle: leaving the tunable
+# live would make this fail on a fact it does not care about. Restored immediately, and before any
+# assertion, so a failure cannot leak the override into another test.
 func test_a_profile_with_no_starter_sees_a_wholly_dark_map() -> void:
 	_install_geometric_reveal_roster()
+	var was := Config.data.map_hq_reveal_radius
+	Config.data.map_hq_reveal_radius = 0.0
 	var no_starter := {"rallies": {}}
+	var lit: Array[String] = []
 	for rally in RallyLibrary.all():
-		assert_false(RallyLibrary.rally_revealed(rally, no_starter),
-			"%s is dark when nothing has been completed and no starter is recorded"
-				% rally.get("id", "?"))
+		if RallyLibrary.rally_revealed(rally, no_starter):
+			lit.append(String(rally.get("id", "?")))
+	Config.data.map_hq_reveal_radius = was
+	assert_eq(lit, [] as Array[String],
+		"with no completion and no starter, nothing is revealed by progress alone")
 
 
 func test_completing_a_rally_lights_the_map_around_that_rally() -> void:
@@ -2074,3 +2091,170 @@ func test_every_shipped_stage_authors_a_forestiness_that_grows_something() -> vo
 	assert_eq(bare, [] as Array,
 		"every stage's forestiness passes some ground through the forest gate; bare: %s"
 			% ", ".join(bare))
+
+
+# --- What a SPECIAL must award (shipped-content contract) --------------------
+
+
+# THE STANDING RULE, TURNED FROM A COMMENT INTO A TEST. `special: true` buys a rally four things —
+# the trophy pin, the map's locked teaser for the next special, distinct reveal choreography, and a
+# seat in the all-specials endgame — while paying exactly the stars an ordinary rally pays. So a
+# special that awards nothing is a special by LABEL only, and the roster has drifted into that state
+# twice: three region showdowns were demoted when the NOS ladder collapsed, two were promoted back
+# when they gained part unlocks, and two were demoted again when those parts were re-sited to the
+# Alps and the flag was left behind. Each time it was caught by a human reading the roster.
+#
+# The three things that count are a CAR, a PART, or a CAPABILITY — the third being why this test can
+# exist at all: engine swapping is gated by `ENGINE_SWAP_UNLOCK_RALLY` on the library rather than by
+# a catalogue entry, so before `prize_capability_id` there was no query that could tell a capability
+# special from an empty one.
+#
+# Asserts the RELATIONSHIP only: no count of specials, no named rally, and nothing about which prize
+# any particular one gives. Retune the roster freely; leave a `special: true` on a rally that awards
+# nothing and this fails.
+func test_every_special_awards_a_car_a_part_or_a_capability() -> void:
+	# A SHIPPED-CONTENT contract, so it needs the shipped catalogue: before_each installs the
+	# synthetic car fixtures, under which the real prize cars do not resolve. after_each puts them
+	# back for the next test.
+	CarFixtures.restore()
+	var specials := 0
+	for rally in RallyLibrary.RALLIES:
+		if not RallyLibrary.is_special(rally):
+			continue
+		specials += 1
+		var id := String(rally.get("id", ""))
+		var car := RallyLibrary.prize_car_id(rally)
+		var part := RallyLibrary.prize_part_id(rally)
+		var capability := RallyLibrary.prize_capability_id(rally)
+		assert_true(car != "" or part != "" or capability != "",
+			("special '%s' awards nothing — a special must hand over a car, a part or a"
+				+ " capability, or it should be `special: false`") % id)
+		# ...and the shared predicate agrees, so every caller that asks "does this rally hand
+		# anything over" gets the same answer as this rule does.
+		assert_true(RallyLibrary.has_prize(rally),
+			"has_prize agrees that special '%s' awards something" % id)
+	assert_gt(specials, 0, "the roster has specials (else this test asserts nothing)")
+
+
+# The complement, so the rule above cannot be satisfied by flagging everything special: an ordinary
+# rally is free to award nothing, and the roster does in fact contain such rallies. Without this, a
+# roster where EVERY rally was special would pass the test above and the flag would mean nothing.
+func test_ordinary_rallies_exist_that_award_nothing() -> void:
+	CarFixtures.restore()
+	var plain := 0
+	for rally in RallyLibrary.RALLIES:
+		if not RallyLibrary.is_special(rally) and not RallyLibrary.has_prize(rally):
+			plain += 1
+	assert_gt(plain, 0,
+		"the roster still has ordinary star-payers — `special` distinguishes something")
+
+
+# THE CAPABILITY'S NAMED OWNER MUST RESOLVE. `ENGINE_SWAP_UNLOCK_RALLY` is an id authored on the
+# library rather than a reference the roster carries, so a rally rename cannot break it loudly — and
+# if it stops resolving, `engine_swaps_unlocked` can never become true and engine swapping is
+# unreachable for the rest of the game. An anti-soft-lock check, not a content assertion: it names no
+# rally itself, it only insists the constant points at one.
+func test_the_engine_swap_unlock_rally_resolves() -> void:
+	CarFixtures.restore()
+	var owner := RallyLibrary.by_id(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
+	assert_false(owner.is_empty(),
+		"ENGINE_SWAP_UNLOCK_RALLY ('%s') is a real rally on the roster"
+			% RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
+	assert_eq(RallyLibrary.prize_capability_id(owner), RallyLibrary.CAPABILITY_ENGINE_SWAP,
+		"...and it reads as awarding the engine-swap capability")
+	assert_true(RallyLibrary.has_prize(owner), "...so it counts as a prize rally")
+	# The capability is the ONLY one, and no other rally may claim it — two owners would make
+	# "which rally unlocks swapping" ambiguous for the locked swap row's wording.
+	var owners := 0
+	for rally in RallyLibrary.RALLIES:
+		if RallyLibrary.prize_capability_id(rally) != "":
+			owners += 1
+	assert_eq(owners, 1, "exactly one rally awards the engine-swap capability")
+
+
+# HQ'S OWN CIRCLE MUST NOT REVEAL A RALLY. `map_hq_reveal_radius` ships non-zero so the garage
+# forecourt is lit — the overworld stands the player there to pick their first car, and an unlit
+# car gets the fog veil across the screen and the frontier push shoving it while they choose.
+#
+# But HQ's circle feeds the SAME `lit_sources` that gates entry, so too large a radius hands the
+# player the pins nearest the middle for nothing. That is exactly why this shipped at 0.0 while
+# the HQ table was the only hub, and it is the regression this test exists to prevent: the value
+# is now a compromise between "the garage is lit" and "nothing is unlocked unearned", and the
+# second half has no other guard.
+#
+# Pins the RELATIONSHIP, never the radius: raise the tunable past the nearest pin, or move a pin
+# in under the circle, and this fails. Uses the shipped roster deliberately — it is the shipped
+# pin layout that has to satisfy it (a catalogue-contract test, like the roster invariants above).
+func test_the_hq_circle_alone_reveals_no_rally() -> void:
+	var was := Config.data.map_hq_reveal_radius
+	assert_gt(was, 0.0,
+		"HQ lights something, else the overworld's starter pick happens in the dark")
+
+	# A profile that has completed nothing and has no starter: HQ's circle is the ONLY source.
+	var fresh: Dictionary = {Save.KEY_RALLIES: {}}
+	var sources := RallyLibrary.lit_sources(fresh)
+	assert_eq(sources.size(), 1,
+		"a fresh profile with no starter is lit by HQ and nothing else")
+
+	var revealed: Array[String] = []
+	for rally in RallyLibrary.all():
+		if RallyLibrary.rally_revealed(rally, fresh):
+			revealed.append(String(rally.get("id", "")))
+	assert_eq(revealed, [] as Array[String],
+		"HQ's circle lights the garage but reveals NO rally — anything here is unlocked unearned")
+
+	# And the complement, so the assertion above cannot pass by the circle being degenerate:
+	# a big enough radius DOES reveal something, proving the test can see reveals at all.
+	Config.data.map_hq_reveal_radius = 0.5
+	var wide := 0
+	for rally in RallyLibrary.all():
+		if RallyLibrary.rally_revealed(rally, fresh):
+			wide += 1
+	Config.data.map_hq_reveal_radius = was
+	assert_gt(wide, 0,
+		"a deliberately huge HQ radius does reveal rallies — so the check above is not vacuous")
+
+
+# THE GARAGE STANDS BESIDE THE PLAYER'S FIRST-CAR RALLY, not at the map centre.
+#
+# Pins the RELATIONSHIP only — never a position, a gap, or a named car. What must hold for any
+# roster and any authored spacing: with no starter recorded the answer is the centre fallback (a
+# fresh profile still finds a garage to pick a car at); with one recorded it moves to that car's
+# opening rally; it lands NEAR that rally but not ON it (the two pads must not merge — overlapping
+# pad interiors are held at the average of their levels, which reads as a garage on a slope); and
+# it stays inside the map so a rally near an edge cannot push the garage off it.
+func test_the_garage_stands_beside_the_first_car_rally() -> void:
+	var fresh: Dictionary = {Save.KEY_RALLIES: {}}
+	assert_eq(RallyLibrary.hq_map_pos(fresh), RallyLibrary.HQ_MAP_POS,
+		"with no starter, the garage is at the centre fallback so a first car can be picked")
+
+	# Drive it from whatever the shipped starter pool actually offers — never a named car.
+	var moved := 0
+	for model_id in CarLibrary.STARTER_MODEL_IDS:
+		var opening_id := RallyLibrary.opening_rally_id_for(String(model_id))
+		if opening_id == "":
+			continue   # a starter with no prize rally legitimately keeps the fallback
+		var pin := RallyLibrary.map_pos_of(RallyLibrary.by_id(opening_id))
+		var profile: Dictionary = {Save.KEY_RALLIES: {}, "starter_model_id": model_id}
+		var hq := RallyLibrary.hq_map_pos(profile)
+
+		assert_ne(hq, RallyLibrary.HQ_MAP_POS,
+			"a recorded starter moves the garage off the centre")
+		assert_lt(hq.distance_to(pin), RallyLibrary.HQ_MAP_POS.distance_to(pin),
+			"the garage is nearer its first-car rally than the map centre is")
+		assert_gt(hq.distance_to(pin), 0.0,
+			"but not ON the pin — the garage pad and the rally pad must not merge")
+		assert_true(Rect2(0.0, 0.0, 1.0, 1.0).has_point(hq),
+			"the garage stays on the map, got %s" % hq)
+		moved += 1
+	assert_gt(moved, 0, "the starter pool yields at least one prize rally to stand beside")
+
+
+# DETERMINISM. The position feeds the road network and the garage pad, both of which are folded
+# into the chunk cache's invalidation key — so the same profile must always resolve to the same
+# spot, or a relaunch silently re-bakes the whole map.
+func test_the_garage_position_is_deterministic_for_a_profile() -> void:
+	for model_id in CarLibrary.STARTER_MODEL_IDS:
+		var profile: Dictionary = {Save.KEY_RALLIES: {}, "starter_model_id": model_id}
+		assert_eq(RallyLibrary.hq_map_pos(profile), RallyLibrary.hq_map_pos(profile),
+			"same profile, same garage — the cache key depends on it")

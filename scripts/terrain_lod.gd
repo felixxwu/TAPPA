@@ -152,9 +152,19 @@ static func build_finest(manager: TerrainManager, coord: Vector2i, data: Diction
 		manager._vertex_color_row(coord, zi, lights, colors)
 		manager._surface_uv2_row(coord, zi, uv2s)
 
-	return build_level({
+	var rebuilt := {
 		"vertices": verts, "uvs": uvs, "colors": colors, "uv2s": uv2s,
-	}, 1, skirt_m)
+		"center": center, "stride": 1,
+	}
+	# UV2.y — the baked REGION RANK. `_surface_uv2_row` above refills uv2s from track_surface,
+	# which only ever writes UV2.x, so the rank comes back as 0 and this level would render as
+	# region slot A while the chunk's PREBAKED coarser levels (decimated from the full-res data,
+	# rank intact) render correctly — the same chunk wearing two different regions depending on
+	# camera distance. The rank is a pure function of position, so re-deriving it reproduces the
+	# generated value exactly. This is the identical fix TerrainManager's cache-rehydrate path
+	# already applies for the same reason. No-op without a region source, i.e. every stage.
+	manager._apply_region_blend(rebuilt)
+	return build_level(rebuilt, 1, skirt_m)
 
 
 # Mesh an n×n grid (data["grid_n"]) as one surface, stride 1, with a downward skirt.
@@ -194,7 +204,27 @@ static func build_levels_from(manager: TerrainManager, coord: Vector2i, l_min: i
 # quad (two tris) per cell: clockwise a,b,c / b,d,c — matches TerrainChunkBuilder.data()
 # and DistantTerrain's tile grid. Shared by every grid mesh builder in this file and
 # by DistantTerrain._build_tile so the triangulation is written exactly once.
+# The TRIANGULATION is memoised per `n`, and every caller still gets its OWN array.
+#
+# Why memoise: the buffer is a pure function of the grid size and there are only a couple of
+# distinct sizes in play, yet every streamed chunk rebuilt an identical one — at SAMPLES = 51
+# that is 15,000 GDScript loop iterations per chunk, on the very frame a boundary crossing brings
+# a whole column in. Copying a cached buffer is a memcpy; rebuilding it is an interpreted loop.
+#
+# Why the duplicate() is NOT optional, learned the hard way: `grid_mesh` passes the result into
+# `_add_skirt`, which APPENDS the skirt triangles to it. A freshly built array had a single
+# reference, so that append mutated in place and the caller saw the skirt. Handing out the cached
+# array directly added a second reference, copy-on-write kicked in, and the append landed on a
+# copy the caller never saw — every skirted mesh silently lost its skirt. So this is not a
+# read-only buffer, and an earlier version of this comment claiming otherwise was wrong;
+# test_terrain_lod.gd::test_build_finest_reproduces_the_prebaked_level_zero caught it.
+static var _indices_cache: Dictionary = {}
+
+
 static func build_grid_indices(n: int) -> PackedInt32Array:
+	var cached: Variant = _indices_cache.get(n)
+	if cached != null:
+		return (cached as PackedInt32Array).duplicate()
 	var indices := PackedInt32Array()
 	indices.resize((n - 1) * (n - 1) * 6)
 	var ii := 0
@@ -207,7 +237,10 @@ static func build_grid_indices(n: int) -> PackedInt32Array:
 			indices[ii + 0] = a; indices[ii + 1] = b; indices[ii + 2] = c
 			indices[ii + 3] = b; indices[ii + 4] = d; indices[ii + 5] = c
 			ii += 6
-	return indices
+	# Cache the pristine triangulation and hand the caller its own copy, so a mutating consumer
+	# (see above) can never reach the cached buffer.
+	_indices_cache[n] = indices
+	return indices.duplicate()
 
 
 # Assemble an n×n grid of (verts, uvs, colors, optional uv2s) into a triangulated

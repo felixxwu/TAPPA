@@ -79,7 +79,9 @@ signal lineup_built
 # drawn on a pin can't disagree with what the special ladder counts.
 const MAX_STARS := RallyLibrary.MAX_STARS_PER_RALLY
 # How many qualifying cars the rally-detail card names before it tails off with "+N more".
-const MAX_QUALIFY_NAMES := 1
+# Re-exported from RallyDetail (where the read-out it caps now lives) rather than declared
+# twice: this is the name test_rally_detail.gd reads it by.
+const MAX_QUALIFY_NAMES := RallyDetail.MAX_QUALIFY_NAMES
 const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of truth for the kW/kg -> hp/tonne display conversion
 
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
@@ -115,7 +117,8 @@ func _car_scene_res() -> PackedScene:
 	return _car_scene
 
 var _view: int = View.EXTERIOR
-var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
+# (`_detail_open` — the rally-detail panel is up, a sub-state of TABLE — now forwards to
+# RallyDetail; it is declared with the rest of the panel's handles further down.)
 # New-rally reveal (a second sub-state of TABLE, sibling to _detail_open): the map
 # camera is walking a queue of rallies that just became enterable, flipping each pin
 # from its locked to its unlocked look. While _revealing the table's own input is
@@ -352,7 +355,7 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 # submenu. Null while closed. See features/cloud-save.md.
 # Rally Challenge entry point (Daily/Weekly/Monthly, spec §7): a modal overlay over
 # the garage, opened from the garage row's Challenge button, built as a dark detail-
-# card sibling to the rally-detail panel (build_detail_overlay's MODAL_DIM + header +
+# card sibling to the rally-detail panel (RallyDetail.build's MODAL_DIM + header +
 # HSeparator + detail_heading/detail_wrap_label shape) rather than a flat button
 # list. See hq_overlays.gd's build_challenge_overlay and the _challenge_ui._open_challenge_overlay
 # family below.
@@ -390,7 +393,6 @@ var _challenge_progress_label: Label
 var _challenge_start_button: Button
 var _garage_layer: CanvasLayer
 var _table_layer: CanvasLayer
-var _detail_layer: CanvasLayer
 var _lift_layer: CanvasLayer
 var _car_layer: CanvasLayer
 var _settings_layer: CanvasLayer
@@ -404,26 +406,90 @@ var _settings_action_button: Button  # bottom button: "< Back" (title) or "Start
 var _settings_gate := false
 
 var _map_meter: Label           # star-total meter on the table HUD
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_title: Label
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_region: Label        # region tag under the title (muted)
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_special: Label       # gold "SPECIAL EVENT" chip on the header row
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_restriction: Label   # the eligibility restriction summary
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_qualify: Label       # the qualifying cars, named (GREEN / RED / muted)
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_record: Label        # best-finish text beside the StarRow
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_stars: StarRow       # medal row for the player's best finish
-@warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
-var _detail_enter_button: Button # "Enter Rally" — disabled when no owned car qualifies
-# _detail_dev_win_button (DEV ONLY: win the rally outright; null in a release build) lives on
-# HqOverlays, which builds it and is its only user.
+# THE RALLY-DETAIL PANEL, and everything it owns, now lives in RallyDetail
+# (scripts/rally_detail.gd) so the overworld hub can open the same card. Built in _build_hq,
+# filled by hq_table.gd::_show_detail.
+var _detail_ui: RallyDetail
+# The panel's widget handles + its open flag read at their OLD names, because the readers are
+# spread across hq.gd, hq_table.gd, hq_challenge.gd (which this cut may not edit) and the menu
+# tests — renaming ~40 access sites would have been the churn, not the boundary. These are one
+# line each and forward to the panel; RallyDetail is where the state actually is.
+#
+# `_detail_open` needs a SETTER as well: every screen that leaves the table closes the panel by
+# writing it (see the `_detail_open = false` lines below, hq_table.gd and hq_challenge.gd).
+var _detail_open: bool:
+	get:
+		return _detail_ui != null and _detail_ui.open
+	set(value):
+		if _detail_ui != null:
+			_detail_ui.open = value
+var _detail_layer: CanvasLayer:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.layer
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_title: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.title
+# region tag under the title (muted)
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_region: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.region
+# gold "SPECIAL EVENT" chip on the header row
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_special: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.special
+# the eligibility restriction summary
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_restriction: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.restriction
+# the qualifying cars, named (GREEN / RED / muted)
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_qualify: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.qualify
+# "N need a drivetrain conversion" caution (GOLD, hidden when 0)
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_adjust: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.adjust
+# best-finish text beside the StarRow
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_record: Label:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.record
+# medal row for the player's best finish
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_stars: StarRow:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.stars
+# "Enter Rally" — disabled when no owned car qualifies
+@warning_ignore("unused_private_class_variable")  # read from outside: see the RallyDetail forwarding note
+var _detail_enter_button: Button:
+	get:
+		if _detail_ui == null:
+			return null
+		return _detail_ui.enter_button
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
@@ -521,7 +587,6 @@ var _lift_upgrades_box: UpgradesGrid  # the UPGRADES page (shared UpgradesGrid c
 
 
 func _ready() -> void:
-	GripLog.say("SCREEN: HQ")   # TEMP, see grip_log.gd
 	_ensure_selection()
 	# Optional cloud save can swap the whole profile out from under a live HQ (a
 	# first sign-in that restores a career, or "Use cloud" on a conflict), so the
@@ -547,6 +612,8 @@ func _ready() -> void:
 	# never the decision.
 	if Platform.is_headless():
 		await _await_boot_pull(null)
+		if _maybe_redirect_to_overworld():
+			return
 		_build_hq()
 		return
 	# Godot's boot bar only covers the engine + .pck download + script compile. Building
@@ -567,6 +634,19 @@ func _ready() -> void:
 	# local one and then visibly rebuilt a second later. See _await_boot_pull.
 	await _await_boot_pull(loading)
 	if not is_inside_tree():
+		return
+	# The OVERWORLD hub redirect (dev flag, ships off). It sits HERE — after the cloud pull —
+	# and the placement is load-bearing in four ways; see _maybe_redirect_to_overworld.
+	#
+	# The fourth was found the hard way: it used to run BEFORE _await_boot_pull, so it decided
+	# using whatever stale local profile was on disk. On a machine whose local file had been
+	# clobbered (a test writing a fresh default over it), it saw a profile with no cars and
+	# declined — dropping the player into the map-table HQ even though their real, 10-car cloud
+	# career arrived milliseconds later. The comment above says it outright: let the pull land
+	# BEFORE anything reads the profile. A redirect gated on what the profile OWNS is exactly
+	# such a read.
+	if _maybe_redirect_to_overworld():
+		loading.queue_free()
 		return
 	var boot_t0 := Time.get_ticks_msec()
 	_build_hq()
@@ -652,6 +732,68 @@ func _check_for_update() -> void:
 		], 1)
 
 
+# Hand this boot over to the OVERWORLD hub instead of the map-table HQ, and say whether we
+# did. False (an ordinary HQ boot) whenever the dev flag is off, so with `overworld_enabled`
+# false this is one bool read and nothing else changes.
+#
+# WHERE THIS IS CALLED FROM MATTERS, and the top of _ready is the wrong place — all four of
+# these are real (docs/superpowers/specs/2026-08-17-overworld-hq-design.md → "Where the boot
+# redirect goes"):
+#   0. It must run AFTER _await_boot_pull(): this decision READS THE PROFILE (does it own a car
+#      to field?), and a boot-time cloud pull is what settles the profile. Deciding first means
+#      deciding on whatever stale local file is on disk — which on a machine whose local profile
+#      had been clobbered meant refusing a player with a full cloud career, because the copy on
+#      disk had no cars in it. This was a real bug, not a hypothetical.
+#   1. It must run AFTER _ensure_selection(): the overworld fields the profile's selected car,
+#      and Save.selected_car() is what heals an unset/stale selection into a real one.
+#   2. It must run AFTER _should_autostart_benchmark(): redirecting first breaks the ?bench=1
+#      web profiling boot, which is supposed to reach Benchmark.start() and nothing else.
+#   3. It must not skip _build_hq's consumption of the RallySession one-shots. _build_hq is
+#      the ONLY consumer of `return_to_garage` / `return_to_map` /
+#      `pending_car_reveal_instance_id` / `pending_rally_pick_id`, so a redirect that bypasses
+#      it leaves them set forever: the overworld's garage zone raises `return_to_garage` and
+#      loads hq.tscn, which would bounce straight back to the overworld in an INFINITE LOOP;
+#      the won-car present-box reveal would be silently lost; and a stale `return_to_map`
+#      would later dump the player on the very map table the overworld replaces.
+#
+# So the one-shots are READ here (never cleared here — clearing is _build_hq's job, and
+# consuming them in two places is how one of them goes missing) and any of them means "the
+# player asked for hq.tscn": stay, and let _build_hq route to the garage / the table / the
+# present box / the car picker as it already does. That "decline when return_to_garage is set"
+# rule IS the infinite-loop guard.
+#
+# NOT gated on owning a car. It used to be (see the note at the gate below): a fresh profile had
+# nothing to field and the starter picker existed only in hq.tscn's car park, so redirecting one
+# stranded it. The overworld now runs the starter pick itself, in place, so a fresh profile is a
+# case it handles rather than a reason to refuse. hq.tscn's own pickers are untouched and remain
+# the shipped flow whenever `overworld_enabled` is off.
+func _maybe_redirect_to_overworld() -> bool:
+	if not Config.data.overworld_enabled:
+		return false
+	# NEVER redirect under --headless. The flag is a DEV switch that a developer leaves on for
+	# days at a time (and `SettingsMenu._enter_overworld` flips it on the live config), while the
+	# test suite reads that same authored config — so with it on, every one of the ~40 tests that
+	# instantiates hq.tscn would be diverted to a scene it never asked for and the HQ would never
+	# get built. The suite must be immune to the state of a dev flag.
+	#
+	# This does not hide the redirect from testing: its guards are pure and can be exercised by
+	# calling this directly, and the overworld scene has its own coverage.
+	if Platform.is_headless():
+		return false
+	# NO CAR GATE ANY MORE. This used to refuse a profile with no selected car, because the
+	# overworld had nothing to field and no way to pick one — the starter picker lived only in
+	# hq.tscn's car park. The overworld now picks a car IN PLACE (OverworldPicker), including the
+	# STARTER pick, which it opens on boot when nothing is owned and grants through the same
+	# Save seam. So "owns nothing" is no longer a reason to keep a player out; it is the case the
+	# hub handles first. The shipped HQ keeps its own pickers intact for the flag-off path.
+	if RallySession.return_to_garage or RallySession.return_to_map \
+			or RallySession.pending_car_reveal_instance_id >= 0 \
+			or RallySession.pending_rally_pick_id != "":
+		return false
+	Scenes.change_to(get_tree(), Scenes.OVERWORLD)
+	return true
+
+
 # True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
 # switch (see _ready). Reads window.location.search via JavaScriptBridge; the page's
 # reload-listener preserves the query string across reloads, so the flag persists
@@ -718,7 +860,14 @@ func _build_hq() -> void:
 	_overlays.build_title_overlay()
 	_overlays.build_garage_overlay()
 	_overlays.build_table_overlay()
-	_overlays.build_detail_overlay()
+	# The rally-detail panel is a shared component now (RallyDetail — the overworld hub opens
+	# the same card), so it is CONSTRUCTED here with this host's three callbacks rather than
+	# built inside HqOverlays: "< Map" hides it, "Enter Rally" walks to the car park, and the
+	# dev "win" button is offered only because this host has a cheat to bind (the overworld
+	# passes an empty Callable and gets no button).
+	_detail_ui = RallyDetail.new()
+	_detail_ui.build(self, _table_ui._hide_detail, _enter_car_screen,
+		_dev_complete_selected_rally)
 	_overlays.build_lift_overlay()
 	_overlays.build_car_overlay()
 	_overlays.build_settings_overlay()
@@ -742,8 +891,26 @@ func _build_hq() -> void:
 	# held here until they open it (_car_back).
 	var reveal_id: int = RallySession.pending_car_reveal_instance_id
 	RallySession.pending_car_reveal_instance_id = -1
+	# The overworld's "spawn me back at the rally I just drove" one-shot. THIS hub does not
+	# use it, but it must still die here: a rally that ends while the overworld is disabled
+	# (or under --headless, where hub_path forces this scene) lands on the HQ instead, leaving
+	# the id set for the rest of the process. The player would then open the overworld later
+	# from the settings/dev entry point and spawn at a rally they finished ages ago rather
+	# than at the garage. Consumed alongside the other one-shots, for the same reason.
+	RallySession.overworld_return_rally_id = ""
+	# The OVERWORLD hub asked for a rally: a zone activation names the rally but NOT the car
+	# (the car you drove there isn't necessarily the car you want to race), so boot straight
+	# into that rally's car picker. Same destination the map table's "Enter Rally — choose car"
+	# reaches, sourced from the one-shot instead of a pin tap. Read + cleared here because
+	# _build_hq is the one place the session's one-shots are consumed — see
+	# _maybe_redirect_to_overworld for why a redirect that skips this loops forever.
+	var pick_id: String = RallySession.pending_rally_pick_id
+	RallySession.pending_rally_pick_id = ""
 	if reveal_id >= 0 and not Save.get_car(reveal_id).is_empty():
 		_enter_present_box(reveal_id)
+	elif pick_id != "" and not RallyLibrary.by_id(pick_id).is_empty():
+		_selected_rally_id = pick_id
+		_enter_car_screen()
 	elif want_map:
 		# Via _enter_table, not go_to(View.TABLE): the reveal parade is armed there, and
 		# entering the view directly would show the neighbours already lit with no beat.
@@ -1063,7 +1230,9 @@ func _dash_line(out: Array[Vector3], from: Vector3, to: Vector3) -> void:
 # The mask is deliberately COARSE and bilinear-filtered: the circles' edges come out soft
 # for free, which reads as a frontier rather than a stencil, and a 64x64 image costs
 # nothing to rebuild whenever a rally is completed.
-const FOG_MASK_SIZE := 64
+# Re-exported from MapFog rather than duplicated, so the table and the overworld can never
+# disagree about the mask's resolution (see the build_fog_mask note below).
+const FOG_MASK_SIZE := MapFog.MASK_SIZE
 # How dark the unreached map goes and how soft the frontier's rim is both live in
 # GameConfig (map_fog_unlit_brightness / map_fog_edge_softness) — they are pure LOOK values,
 # which is where this project keeps those so they can be retuned in the inspector.
@@ -1094,38 +1263,25 @@ func _apply_map_fog() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = _fog_shader
 	mat.set_shader_parameter("map_tex", load(RegionLibrary.DEFAULT_MAP_IMAGE))
-	mat.set_shader_parameter("fog_mask", _build_fog_mask())
+	mat.set_shader_parameter("fog_mask", build_fog_mask(Save.profile))
 	mat.set_shader_parameter("unlit_brightness", Config.data.map_fog_unlit_brightness)
 	_map_plane.material_override = mat
 
 
 # Rasterise the lit region into a mask: 1 where explored, 0 in the dark, with a soft rim.
+# Normalised map space, so it is the same mask whatever is sampling it — the map table's plane
+# via UV, or the overworld's terrain via world position / overworld_size_m.
 #
 # Reads RallyLibrary.lit_sources — the SAME derivation that decides which rallies are
 # enterable — so what the player can see lit and what they can actually enter can never
 # disagree. That is the whole reason the predicate was factored out.
-func _build_fog_mask() -> ImageTexture:
-	var sources := RallyLibrary.lit_sources(Save.profile)
-	var softness: float = maxf(Config.data.map_fog_edge_softness, 0.001)
-	var img := Image.create(FOG_MASK_SIZE, FOG_MASK_SIZE, false, Image.FORMAT_R8)
-	var step := 1.0 / float(FOG_MASK_SIZE)
-	for y in FOG_MASK_SIZE:
-		for x in FOG_MASK_SIZE:
-			# Sample at the CENTRE of each cell, so the mask lines up with the map rather
-			# than being shifted half a texel toward the origin.
-			var p := Vector2((float(x) + 0.5) * step, (float(y) + 0.5) * step)
-			var lit := 0.0
-			for src in sources:
-				var centre: Vector2 = src[0]
-				var radius: float = src[1]
-				# 1 inside, falling to 0 across the softness band beyond the rim. Max rather
-				# than sum, so overlapping circles stay fully lit instead of blowing out.
-				var d := p.distance_to(centre)
-				lit = maxf(lit, clampf((radius - d) / softness + 1.0, 0.0, 1.0))
-				if lit >= 1.0:
-					break
-			img.set_pixel(x, y, Color(lit, lit, lit))
-	return ImageTexture.create_from_image(img)
+#
+# MOVED to `scripts/map_fog.gd` (`MapFog.build`). It was only ever here because this is where
+# the map fog was invented — it touches no HQ state, and slice 3 gave it a second consumer (the
+# overworld's terrain shader), which made a hub-UI file the wrong home for it. This wrapper
+# stays so the table's own call site and the tests that reach for it keep resolving.
+static func build_fog_mask(profile: Dictionary) -> ImageTexture:
+	return MapFog.build(profile)
 
 
 # ONE height for every floating readout on the table, whatever marker stands under it.
@@ -1561,8 +1717,11 @@ func _special_unlock_line(rally: Dictionary) -> String:
 
 # Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
 # anything else (or never placed) → 0.
+#
+# The derivation lives on RallyDetail (both hubs' panels need it); this is the name the pins,
+# the table and the menu tests already call it by.
 func _stars_for(rally_id: String) -> int:
-	return RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
+	return RallyDetail.stars_for(rally_id)
 
 
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
@@ -1579,9 +1738,11 @@ func _stars_for(rally_id: String) -> int:
 # This used to hand back a `drivetrain` field naming a mode the car park would silently
 # switch to at the Start button and revert afterwards. That is gone — see
 # hq_carpark.gd::_build_eligible_lineup.
+#
+# The rule itself lives on RallyDetail with the eligibility read-out it feeds, so the overworld's
+# copy of that panel derives it identically. This is the name hq_carpark.gd and the tests use.
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
-	var entry := CarLibrary.for_owned(car)
-	return {"eligible": RallyLibrary.is_eligible(rally, UpgradeLibrary.effective_meta(car, entry))}
+	return RallyDetail.entry_plan(rally, car)
 
 
 # Whether the player owns at least one car that can enter `rally` — drives the pin
@@ -1698,10 +1859,7 @@ func _make_modal_overlay(margin := 24.0) -> Array:
 # WorldPanel — inside one, the canvas is the panel's `_frame`, unrelated to the main viewport
 # width, and a column measured off the wrong one is either clipped or absurdly narrow.
 func _modal_body_width(preferred: float, chrome := 88.0, host: Node = null) -> float:
-	var w := WorldPanel.layout_frame_size(host if host != null else self, Vector2.ZERO).x
-	if w <= 0.0:
-		return preferred
-	return maxf(160.0, minf(preferred, w - chrome))
+	return RallyDetail.body_width(host if host != null else self, preferred, chrome)
 
 
 # Let taps fall THROUGH an overlay to the 3D scene behind it — only buttons keep
@@ -1720,28 +1878,19 @@ func _passthrough_overlay(root: Control) -> void:
 # which forces a role colour + uppercase (a different look). Any further overrides
 # (alignment, colour, autowrap, size flags) are applied by the caller after this returns.
 func label(text: String, size: int) -> Label:
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.add_theme_font_size_override("font_size", size)
-	return lbl
+	return RallyDetail.plain_label(text, size)
 
 
 # A quiet section heading for the rally-detail card. UITheme.enforce flattens every
 # label to one size + uppercase, so a heading reads as a heading only by its dimmer
 # colour and the grouping/spacing around it — not a larger font.
 func detail_heading(text: String) -> Label:
-	var lbl := label(text, 16)
-	lbl.add_theme_color_override("font_color", UITheme.INK_DIM)
-	return lbl
+	return RallyDetail.heading(text)
 
 
 # A sidebar Label that wraps to its column width instead of drawing off the panel edge.
 func detail_wrap_label() -> Label:
-	var lbl := label("", 16)
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl.custom_minimum_size = Vector2(1, 0)  # don't let the longest word dictate column width
-	return lbl
+	return RallyDetail.wrap_label()
 
 
 # A single-row "heading: value" pair — a fixed-width dim heading (detail_heading)
@@ -1956,7 +2105,14 @@ func update_overlays() -> void:
 	# at the map table, whose camera sits under 2 m from the table looking steeply DOWN; a panel there
 	# is read at a punishing angle and has to be tiny to fit the shot. A full-frame page is simply the
 	# better read for this one screen. See features/world-panel.md -> "Adoption rule".
-	_detail_layer.visible = _view == View.TABLE and _detail_open
+	# Null-guarded because `update_overlays` can run BEFORE the detail panel is constructed:
+	# _build_hq builds the overlays in sequence with awaits between them, so a caller that lands
+	# mid-build (a test awaiting a single frame, a station entered early) sees the layers built so
+	# far and not the ones after it. `_detail_open`'s getter already answers false for a missing
+	# panel, so this is the same tolerance on the write side rather than a new concession.
+	var detail_layer := _detail_layer
+	if detail_layer != null:
+		detail_layer.visible = _view == View.TABLE and _detail_open
 	# THE ONLINE CHALLENGE SCREEN IS FLAT TOO, by the same choice as the rally detail: a dense
 	# info page (period, ceiling, eligible cars, leaderboard) that reads better with the whole frame
 	# than welded to a panel in the garage. Migrated, tried, reverted — see features/world-panel.md.
@@ -2552,7 +2708,7 @@ func _launch_free_roam(instance_id: int, model_id: String) -> void:
 	# Let the overlay paint before the synchronous scene change (mirrors _begin_rally_start).
 	await get_tree().process_frame
 	await get_tree().process_frame
-	get_tree().change_scene_to_file("res://main.tscn")
+	Scenes.change_to(get_tree(), Scenes.MAIN)
 
 
 # Config setup for free roam, split out so it's testable without a scene change: clear
@@ -2612,7 +2768,9 @@ func _prepare_free_roam() -> void:
 # _process is an ENGINE CALLBACK: on a RefCounted collaborator Godot would never call it,
 # so the table pan and the reveal animation would silently stop advancing (and several
 # tests drive hq._process(delta) directly). _eligibility_summary / _qualifying_cars_text
-# are shared — hq_challenge.gd calls both. See todo/hq-split.md.
+# are shared — hq_challenge.gd calls both, and test_rally_detail.gd calls them off the
+# controller — so the NAMES stay here; the derivations moved to RallyDetail with the panel
+# that is their main consumer. See todo/hq-split.md.
 
 # Poll the held menu directions each frame and glide the table camera smoothly while
 # any are down (no discrete jumps — hold a direction and the map slides under a fixed
@@ -2648,21 +2806,7 @@ func _process(delta: float) -> void:
 # it counts cars the player could convert themselves, which is exactly the prompt the
 # panel line is for.
 func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
-	var total := 0
-	var qualify := 0
-	var adjust := 0
-	var names: Array[String] = []
-	for car in cars:
-		var entry := CarLibrary.for_owned(car)
-		if entry.is_empty():
-			continue  # a stale / removed model — not a countable car
-		total += 1
-		if bool(_entry_plan(rally, car)["eligible"]):
-			qualify += 1
-			names.append(EngineSwap.display_name(entry, car))
-		elif _convertible_for(rally, car, entry):
-			adjust += 1
-	return {"total": total, "qualify": qualify, "adjust": adjust, "names": names}
+	return RallyDetail.eligibility_summary(rally, cars)
 
 
 # Whether this car belongs in the rally's car-park lineup at all: it can enter as built, or
@@ -2681,26 +2825,14 @@ func _can_ever_enter(rally: Dictionary, car: Dictionary) -> bool:
 # does themselves in the garage, for stars) would let it in. Requires the conversion
 # capability to be unlocked at all, so the panel never suggests a fix the player cannot buy.
 func _convertible_for(rally: Dictionary, car: Dictionary, entry: Dictionary) -> bool:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("drive_mode"):
-		return false
-	if not UpgradeLibrary.drivetrain_swap_unlocked(Save.profile):
-		return false
-	var switched := UpgradeLibrary.effective_meta(car, entry).duplicate()
-	switched["drive_mode"] = int(r["drive_mode"])
-	return RallyLibrary.is_eligible(rally, switched)
+	return RallyDetail.convertible_for(rally, car, entry)
 
 
 # The qualifying-car read-out: name the cars rather than counting them. Caps the list at
 # MAX_QUALIFY_NAMES and tails the rest as "+N more" so a big garage can't blow the panel
 # out. Callers only reach this with a non-empty list (empty is its own RED message).
 func _qualifying_cars_text(names: Array) -> String:
-	if names.size() <= MAX_QUALIFY_NAMES:
-		return ", ".join(names)
-	var shown: Array[String] = []
-	for i in MAX_QUALIFY_NAMES:
-		shown.append(String(names[i]))
-	return "%s, +%d more" % [", ".join(shown), names.size() - MAX_QUALIFY_NAMES]
+	return RallyDetail.qualifying_cars_text(names)
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
@@ -3133,8 +3265,6 @@ func _refresh_lift_ui() -> void:
 	# commitment point (nothing launches from the lift), so no p/w ceiling gate belongs
 	# here — the gate lives at the start line / car park where a car is actually
 	# committed to an event.
-	GripLog.say("MENU: HQ garage UPGRADES page shown (enabled=%s)"
-		% [UpgradeLibrary.enabled_upgrades(_lift_owned)])   # TEMP
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
 		UpgradesGrid.NO_LIMIT)
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
@@ -3897,7 +4027,10 @@ func _log_boot_cost(build_ms: int) -> void:
 	print("hq boot total: %d ms" % build_ms)
 
 
-# One-line car summary shown in the car-select overlay: drive layout,
+# One-line car summary shown in the car-select overlay. DELEGATES to RallyDetail, which owns
+# the logic and the reasoning behind each field — the overworld's in-place car picker needed the
+# same line, and a second copy is how the garage's repair button quietly lost a web-export fix.
+# Same shape as _restriction_text below. Original notes: drive layout,
 # peak horsepower, kerb weight, and condition. Health reads as a percentage (kept
 # distinct so it doesn't read as the horsepower figure now shown alongside it); a
 # wrecked (0 HP) car is flagged so the lineup makes clear why it can't be entered.
@@ -3907,53 +4040,13 @@ func _log_boot_cost(build_ms: int) -> void:
 # addition, never something the earlier fields need to account for. Omitted entirely
 # when the car has none, so the common case stays exactly the line it was.
 func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
-	var max_hp := float(entry.get("max_hp", 0.0))
-	var hp := float(owned.get("hp", 0.0))
-	var hp_text: String
-	if max_hp > 0.0 and hp <= 0.0:
-		hp_text = "WRECKED"
-	else:
-		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
-	var meta := UpgradeLibrary.effective_meta(owned, entry)
-	var stats := "%s | %.0f HP | %.0f kg | %s" % [
-		CarLibrary.drive_text(int(entry.get("drive_mode", -1))),
-		CarLibrary.horsepower(meta),
-		float(meta.get("mass", 0.0)),
-		hp_text,
-	]
-	var nitrous_id := UpgradeLibrary.fitted_nitrous_id(owned)
-	if nitrous_id != "":
-		stats += " | %s" % String(UpgradeLibrary.by_id(nitrous_id).get("name", ""))
-	return stats
+	return RallyDetail.car_stats_text(owned, entry)
 
 
 # Human-readable summary of a rally's restriction (the detail panel + the car banner).
 # Every gate is categorical — what KIND of car may enter, never how fast it is.
 func _restriction_text(restriction: Dictionary) -> String:
-	if restriction.is_empty():
-		return "any car"
-	var parts: Array[String] = []
-	if restriction.has("drive_mode"):
-		parts.append("%s cars" % CarLibrary.drive_text(int(restriction["drive_mode"])))
-	if restriction.has("country"):
-		parts.append("%s cars" % String(restriction["country"]))
-	if restriction.has("car_type"):
-		parts.append("%s body" % String(restriction["car_type"]))
-	if restriction.has("doors_min"):
-		parts.append(">= %d doors" % int(restriction["doors_min"]))
-	if restriction.has("doors_max"):
-		parts.append("<= %d doors" % int(restriction["doors_max"]))
-	# Engine-derived gates (displacement / cylinder count) are judged against the car's
-	# CURRENT engine, so a swap changes them (RallyLibrary.ineligibility_reason).
-	if restriction.has("engine_min_l"):
-		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
-	if restriction.has("engine_max_l"):
-		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	if restriction.has("cylinders_min"):
-		parts.append(">= %d cylinders" % int(restriction["cylinders_min"]))
-	if restriction.has("cylinders_max"):
-		parts.append("<= %d cylinders" % int(restriction["cylinders_max"]))
-	return ", ".join(parts)
+	return RallyDetail.restriction_text(restriction)
 
 
 # --- Camera ------------------------------------------------------------------

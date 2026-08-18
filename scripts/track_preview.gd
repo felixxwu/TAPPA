@@ -9,6 +9,11 @@ extends Control
 const PAD := 16.0
 
 var _points := PackedVector2Array()          # track centerline, world XZ
+# A NETWORK of disjoint polylines, world XZ — the overworld's road graph rather than one
+# stage centreline. Kept separate from `_points` because that is drawn as a SINGLE
+# draw_polyline: feeding 68 unconnected road edges through it would draw a spurious line
+# from the end of each road to the start of the next, i.e. a scribble across the map.
+var _polylines: Array[PackedVector2Array] = []
 var _chunk_corners := PackedVector2Array()   # loaded-chunk min-corners, world XZ
 var _chunk_size := 0.0                        # chunk edge length, world metres
 var _carve_progress := 0.0                    # fraction of the line carved (white)
@@ -26,6 +31,15 @@ func _init() -> void:
 
 func set_points(points: PackedVector2Array) -> void:
 	_points = points
+	queue_redraw()
+
+
+# A road NETWORK: one entry per road, each a world-XZ polyline. Used by the overworld's
+# precompute screen, where the thing being built is a graph of roads between the rally pins
+# rather than a single stage centreline. Every road draws at full brightness — there is no
+# "carve progress" along a network, because the chunks (not the line) are what is progressing.
+func set_polylines(lines: Array[PackedVector2Array]) -> void:
+	_polylines = lines
 	queue_redraw()
 
 
@@ -67,6 +81,11 @@ func _draw() -> void:
 	# Fit to whatever content exists — water alone is enough to paint (it's known
 	# up-front, before the track animates), so it shows first and the road draws over it.
 	var content := _points.duplicate()
+	# The network counts toward the fit too, or a road-only preview (the overworld, which has no
+	# single centreline) would have nothing to fit to and draw nothing at all.
+	for line in _polylines:
+		for p in line:
+			content.append(p)
 	# The explicit water frame (if set) anchors the fit so water reaches the panel
 	# edges; otherwise fall back to the water cells / track for the bounds.
 	if _frame.size.x > 0.0 and _frame.size.y > 0.0:
@@ -98,6 +117,15 @@ func _draw() -> void:
 			var s1 := xf * (c + sz)
 			draw_rect(Rect2(s0 + Vector2.ONE, (s1 - s0) - Vector2.ONE * 2.0),
 				chunk_col, true)
+	# The road NETWORK, each road its own polyline so unconnected roads stay unconnected.
+	# Drawn under the stage centreline (which is empty whenever a network is in use).
+	for line in _polylines:
+		if line.size() < 2:
+			continue
+		var road := PackedVector2Array()
+		for p in line:
+			road.append(xf * p)
+		draw_polyline(road, UITheme.INK, 2.0, true)
 	# Track line: grey (uncarved) full length, then the carved prefix white on top.
 	if _points.size() >= 2:
 		var line := PackedVector2Array()

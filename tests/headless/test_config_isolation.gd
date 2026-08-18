@@ -134,3 +134,68 @@ func test_reload_from_disk_swaps_in_a_fresh_config() -> void:
 func test_the_config_hot_reload_action_exists() -> void:
 	assert_true(InputMap.has_action("reload_config"),
 		"F8 hot-reload needs its input action in project.godot")
+
+
+# --- Cross-FILE config hygiene ------------------------------------------------------------
+#
+# Config.data is a single global that outlives the script that mutated it, so a file which
+# swaps in a different baseline and never puts the authored one back silently re-tunes every
+# LATER file that reads the ambient config. That is an order-dependent failure — green under
+# `--fast <one file>`, red in a full run — and it is exactly how test_rest_pose.gd (which has
+# no setup hook at all and reads whatever Config.data currently is) ended up settling a car
+# against the frozen physics baseline instead of the shipped one.
+#
+# The convention: any file that installs a non-authored baseline (SceneTestHelpers
+# .use_test_config / .minimal_world) hands it back with Config.reset() in its teardown —
+# sim_test.gd, test_drivetrain.gd, test_drive_mode.gd and test_car_terrain.gd all do.
+#
+# These two tests pin the CONTRACT that makes the convention work, with no authored value in
+# sight: the swap really does change the global, and reset() really does restore the authored
+# baseline field-for-field (whatever a designer has retuned it to).
+
+
+# Every @export'd field of the live config, as a name -> value dictionary.
+func _fields(cfg: GameConfig) -> Dictionary:
+	var out := {}
+	for p in cfg.get_property_list():
+		if int(p["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE and p["name"] != "script":
+			out[p["name"]] = cfg.get(p["name"])
+	return out
+
+
+func test_the_frozen_test_baseline_really_differs_from_the_authored_one() -> void:
+	# Without this the restore test below could pass vacuously (if the two baselines were the
+	# same object or the same values, leaking one would be harmless and nothing is proven).
+	Config.reset()
+	var authored := _fields(Config.data)
+	SceneTestHelpers.use_test_config()
+	assert_ne(Config.data, null, "the frozen test baseline installs")
+	var differing := 0
+	for name in authored:
+		if Config.data.get(name) != authored[name]:
+			differing += 1
+	Config.reset()
+	assert_gt(differing, 0,
+		"the frozen physics baseline tunes the car DIFFERENTLY from the shipped config — "
+		+ "which is why a file that installs it must restore the authored one in teardown")
+
+
+func test_reset_restores_the_authored_baseline_after_a_swap() -> void:
+	# The teardown contract every physics file relies on: whatever a script left in the
+	# global, Config.reset() must put the authored baseline back exactly. Compared against a
+	# freshly loaded duplicate of the authored resource, so no value is pinned here.
+	SceneTestHelpers.use_test_config()
+	Config.data.suspension_travel_front = 0.123   # the kind of reshape apply_car leaves behind
+	Config.reset()
+	var authored := load("res://config/game_config.tres") as GameConfig
+	assert_not_null(authored, "the authored config loads")
+	var restored := _fields(Config.data)
+	var mismatched: Array[String] = []
+	for name in _fields(authored):
+		if restored.has(name) and restored[name] != authored.get(name):
+			mismatched.append(name)
+	assert_eq(mismatched, [] as Array[String],
+		"reset() restores every authored field — a leftover here is a cross-file config leak")
+	assert_ne(Config.data, authored,
+		"...into a private DUPLICATE, so a test mutating Config.data cannot poison the cached "
+		+ "resource that every later reset() re-duplicates from")

@@ -41,6 +41,24 @@ static var _settled_xform := Transform3D()
 static var _has_settled := false
 
 
+# RESTORE THE GLOBAL CONFIG WHEN THIS FILE FINISHES.
+#
+# setup_settled_car() calls SceneTestHelpers.use_test_config(), which REPLACES the global
+# `Config.data` with the frozen physics baseline (tests/fixtures/test_config.tres) and never
+# puts it back. That baseline authors ~37 properties against the shipped config's ~239, so
+# every field it does not author falls back to the GameConfig script default (com_height,
+# wheel_roll_influence, wheel_friction_slip_rear, tire_load_sensitivity, …). Leaving it
+# installed silently re-tunes the car for every LATER script that reads the ambient
+# Config.data instead of installing its own baseline (test_rest_pose.gd is exactly that —
+# it has no setup hook at all), which is an order-dependent failure: green in
+# `--fast`, red in a full run. test_car_terrain.gd already ends with the same
+# `Config.reset()` for the same reason ("so later files see the full baseline").
+#
+# A SUBCLASS THAT DEFINES ITS OWN after_all() SHADOWS THIS — call Config.reset() there too.
+func after_all() -> void:
+	Config.reset()
+
+
 func _wait_physics(frames: int) -> void:
 	for i in frames:
 		await get_tree().physics_frame

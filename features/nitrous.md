@@ -25,7 +25,7 @@ Three properties define it, and every design decision below falls out of them:
    reset-to-refill exploit to defend against.
 2. **It is invisible to the performance model.** It never reaches
    `UpgradeLibrary.effective_meta`, so fitting it cannot move a car's
-   power-to-weight, its rally eligibility, its `qualifying_detune` or the rival
+   power-to-weight, its rally eligibility or the rival
    pace floor. Winning the last rung of the ladder can never lock you out of a
    rally you could previously enter.
 3. **It has an ordinary garage row.** It did not: the slot was hidden and the part

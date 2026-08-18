@@ -25,6 +25,16 @@ var _save
 # both phases against one world is the same code path a second event takes.
 func before_all() -> void:
 	SceneHelpers.minimal_world()
+	# MUST be off before ANY start_rally below. RallySession.start_rally -> _enter_event
+	# ends in `if auto_load_scenes: get_tree().change_scene_to_file("res://main.tscn")`,
+	# and the default is TRUE — so leaving it alone here does not just "not load a scene
+	# for this test", it swaps the RUNNER's scene for a full main.tscn that is never freed
+	# and stays parked under /root, in the shared World3D, for the whole rest of the run.
+	# That is an order-dependent poisoning of every later 3D file: its terrain/car
+	# colliders sit in the same physics space, so a settling car lands on them
+	# (test_live_refit_suspension) and a camera pick ray hits them first
+	# (test_menu_flow's HQ car-park tap) — green in --fast, red in a full run.
+	RallySession.auto_load_scenes = false
 	CarFixtures.install()
 	RallyFixtures.install()
 	_save = SaveTestHelpers.redirect(TEST_SAVE)
@@ -37,6 +47,11 @@ func after_all() -> void:
 		remove_child(_world)
 		_world.free()
 		_world = null
+	# This file starts real rallies and never finishes them; leaving one active would
+	# make every later file's Save/HQ state read as "mid-rally".
+	if RallySession.is_active():
+		RallySession.abandon()
+	RallySession.auto_load_scenes = true
 	SaveTestHelpers.cleanup(TEST_SAVE)
 	RallyFixtures.restore()
 	CarFixtures.restore()

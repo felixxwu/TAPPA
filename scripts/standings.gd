@@ -433,4 +433,4 @@ func _on_rally_finished(result: Dictionary) -> void:
 	# teardown from firing a stray scene change into the next test).
 	if result.get("abandoned", false):
 		return
-	get_tree().change_scene_to_file("res://podium.tscn")
+	Scenes.change_to(get_tree(), Scenes.PODIUM)

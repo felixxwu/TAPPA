@@ -78,7 +78,6 @@ func _ready() -> void:
 	# the run — session-less entries (free roam, benchmark, dev boot) no-op and
 	# keep whatever the caller wrote. See DrivingContext.apply_stage_config.
 	DrivingContext.apply_stage_config(Config.data)
-	GripLog.tyres("stage config seated", Config.data)   # TEMP, see grip_log.gd
 	var cfg: GameConfig = Config.data
 	# A one-shot notice from the Start gate (today: the free upgrade restore) replaces
 	# the loading tip for this one load — it is about the car the player is sitting in,
@@ -232,7 +231,6 @@ func _ready() -> void:
 			$Car.apply_car(idx if idx >= 0 else 0)
 	else:
 		$Car.apply_car(0)
-	GripLog.tyres("world fielded the car", Config.data)   # TEMP, see grip_log.gd
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
 	# apply the newly-fielded car's per-car bonnet offset now — retarget() only
 	# runs on a later car swap.
@@ -1855,7 +1853,6 @@ func _build_start_line() -> void:
 		# `leaders` stays empty: no rival field (spec §3), so StartLine's existing
 		# empty-leaders path skips the reveal and fades straight to the countdown.
 		rally = {"name": String(info["rally_name"])}
-	GripLog.say("SCREEN: start line (staged pre-stage menu) is up")   # TEMP, see grip_log.gd
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)
@@ -1996,7 +1993,7 @@ func _change_scene(path: String) -> void:
 	if scene_change_hook.is_valid():
 		scene_change_hook.call(path)
 		return
-	get_tree().change_scene_to_file(path)
+	Scenes.change_to(get_tree(), path)
 
 
 func _on_session_event_completed(elapsed_seconds: float) -> void:
@@ -2005,7 +2002,7 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# finish panel's Next doing nothing), so Next returns to HQ instead — the same
 	# destination as the pause menu's Quit with no session.
 	if not RallySession.is_active() and not ChallengeSession.is_active():
-		_change_scene("res://hq.tscn")
+		_change_scene(Scenes.hub_path())
 		return
 	# HP lost + persisted wheel-toe are snapshotted at the FINISH CROSSING (see
 	# _on_finish_reached), NOT here: this handler fires on the NEXT button, by which time
@@ -2164,9 +2161,9 @@ func _on_session_car_wrecked() -> void:
 func _on_session_rally_finished(result: Dictionary) -> void:
 	if result.get("abandoned", false):
 		RallySession.return_to_garage = true
-		_change_scene("res://hq.tscn")
+		_change_scene(Scenes.hub_path())
 	else:
-		_change_scene("res://podium.tscn")
+		_change_scene(Scenes.PODIUM)
 
 
 # A challenge run has no podium (no rival field to place against, no per-rally
@@ -2246,7 +2243,7 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 			if popup != null:
 				await popup.finished
 	RallySession.return_to_garage = true
-	_change_scene("res://hq.tscn")
+	_change_scene(Scenes.hub_path())
 
 
 # Body text for the completion-reward card: what was won and where it landed.

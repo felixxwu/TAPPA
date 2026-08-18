@@ -191,7 +191,9 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 # map something worth exploring toward.
 #
 # The retired API was `car_price` / `purchase_car` / `stars_available_in`'s pricing role,
-# plus the present box on the HQ map and `GameConfig.star_cost_per_car`. The soft-lock
+# plus the present box on the HQ map and a `GameConfig.star_cost_per_car` price (stars are
+# now spent per item instead — `star_cost_per_repair` / `star_cost_per_part` /
+# `star_cost_per_drive_mode`). The soft-lock
 # rescue that once rode along with it (a price-0 car when stranded, then an unlock-draw
 # fallback) is gone too: entry requirements are purely categorical, so no build can be
 # too slow to enter anything, and reachability is a CONTENT invariant proven over the map

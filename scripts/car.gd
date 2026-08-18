@@ -515,6 +515,22 @@ func _physics_process(delta: float) -> void:
 
 
 func _timed_physics_process(delta: float) -> void:
+	# THE DISPLAY-DROOP INVARIANT, enforced in the one place that knows this body is live.
+	#
+	# A frozen body needs its wheel Visuals dropped by hand (it cannot sink onto its suspension);
+	# a live one must NOT have that offset, or the wheels render up to a full `wheel_rest_length`
+	# below where the solver has them.
+	#
+	# GATED ON `freeze`, and that gate is the whole subtlety: `_physics_process` runs on a FROZEN
+	# body too — `freeze` stops the simulation, not the script callback. An earlier version of this
+	# check assumed reaching here proved the body was live, and it wiped the droop off every frozen
+	# display prop in the game (test_rest_pose caught it immediately).
+	#
+	# Enforced here rather than at the call sites because the call sites are the problem: the same
+	# forgotten clear produced the garage lift dropping a car with its tyres through the road, and
+	# the car picker showing cached props with misplaced wheels. Two instances, two files, one rule.
+	if _display_droop_applied and not freeze:
+		clear_wheel_visual_droop()
 	var cfg: GameConfig = config
 	# Capture the pre-solve travel speed for _integrate_forces' damage keying — this
 	# runs before the physics solver, so it still holds the true approach speed even
@@ -523,8 +539,6 @@ func _timed_physics_process(delta: float) -> void:
 	_approach_velocity = linear_velocity
 	var horiz := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
 	_approach_dir = horiz.normalized() if horiz.length_squared() > 0.0001 else Vector3.ZERO
-	_grip_log_sample(cfg, delta)   # TEMP diagnostic, see grip_log.gd
-	_grip_log_burst(cfg, _axis_input("brake_reverse", "accelerate", ai_throttle))
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
 	# player can't shift or change mode mid-countdown. Scripted cars never read them.
@@ -808,141 +822,6 @@ func _apply_aero() -> void:
 			[global_position + global_transform.basis * _front_axle, down * v2 * cfg.downforce_front],
 			[global_position + global_transform.basis * _rear_axle, down * v2 * cfg.downforce_rear],
 		]
-
-
-# TEMPORARY (grip_log.gd): a bounded high-rate trace of the launch. Arms when the driver
-# first floors it from (near) standstill after a handover, then samples every 5 physics ticks
-# for 2 seconds. Delete with the rest of the grip logging.
-var _burst_tick := -1
-
-
-func _grip_log_burst(_cfg: GameConfig, throttle: float) -> void:
-	if not GripLog.enabled():
-		return
-	var kmh := linear_velocity.length() * 3.6
-	# Arms at GO — the tick control is genuinely handed over — so the trace covers the
-	# throttle BUILD-UP too, not just what happens once it is already floored.
-	if _burst_tick < 0:
-		if controls_locked or handbrake_locked:
-			return
-		_burst_tick = 0
-	_burst_tick += 1
-	if _burst_tick > 180 or _burst_tick % 3 != 0:
-		return
-	var parts: PackedStringArray = []
-	var front_sum := 0.0
-	for wheel in drivetrain.all_wheels:
-		var n := drivetrain.wheel_normal_force(wheel)
-		parts.append("%s: N=%.0f slip=%.2f F=%.0f%s" % [
-			wheel.name, n, drivetrain.wheel_long_grip_usage(wheel),
-			drivetrain.wheel_force_n(wheel),
-			"*" if drivetrain.is_wheel_driven(wheel) else ""])
-		if not drivetrain.front_omega.has(wheel):
-			continue
-		front_sum += float(drivetrain.front_omega[wheel])
-	GripLog.burst(_burst_tick, kmh, drivetrain.engine.rpm(), drivetrain.engine.gear,
-		drivetrain.rear_omega,
-		front_sum / maxf(float(drivetrain.front_omega.size()), 1.0), throttle,
-		"steer=%+.2f hb=%s | %s" % [
-			_axis_input("steer_right", "steer_left", ai_steer),
-			"Y" if (ai_handbrake if ai_controlled else Input.is_action_pressed("handbrake")) else "n",
-			" | ".join(parts)])
-
-
-# TEMPORARY diagnostic (grip_log.gd): once a second, while actually moving, print what
-# grip the tyre model is resolving under this car, plus the g-force the body is actually
-# pulling. Delete with the rest of the grip logging.
-var _grip_log_t := 0.0
-var _glog_prev_v := Vector3.ZERO
-var _glog_lat_g := 0.0          # smoothed, so a single solver tick can't dominate
-var _glog_long_g := 0.0
-var _glog_peak_lat := 0.0
-var _glog_peak_long := 0.0
-var _glog_peak_lat_kmh := 0.0
-var _glog_was_locked := true
-
-
-func _grip_log_sample(cfg: GameConfig, delta: float) -> void:
-	if not GripLog.enabled() or ai_controlled or delta <= 0.0:
-		return
-	var kmh := linear_velocity.length() * 3.6
-	# Accelerometer in the BODY frame: gravity is carried by the suspension while grounded,
-	# so the lateral/longitudinal channels read as cornering / braking-and-drive g directly.
-	var accel := (linear_velocity - _glog_prev_v) / delta
-	_glog_prev_v = linear_velocity
-	# A reset / teleport / respawn changes velocity discontinuously, which reads as an
-	# absurd acceleration and would poison both the smoothing and the peaks. No tyre on any
-	# surface generates 10 g, so anything above that is not physics — drop the sample.
-	if accel.length() > 10.0 * 9.81:
-		return
-	var body_basis := global_transform.basis
-	var lat := accel.dot(body_basis.x) / 9.81
-	var lon := accel.dot(-body_basis.z) / 9.81
-	# Light EMA (~0.15 s): the raw per-tick delta is solver noise, the peaks below are what
-	# matter and a single-tick spike would make them meaningless.
-	_glog_lat_g = lerpf(_glog_lat_g, lat, 0.1)
-	_glog_long_g = lerpf(_glog_long_g, lon, 0.1)
-	# Peaks reset at each LAUNCH (controls unlocking), so two launches in one session are
-	# independently comparable instead of sharing one running maximum.
-	if _glog_was_locked and not controls_locked:
-		_glog_peak_lat = 0.0
-		_glog_peak_long = 0.0
-		_glog_peak_lat_kmh = 0.0
-		# The handover state itself: a car already ROLLING when control is handed over needs
-		# far less of its grip budget to stop the wheels spinning than one starting from a
-		# dead stop, so the launch resolves completely differently. Wheel omegas included,
-		# because that is the slip the tyre model actually sees at tick zero.
-		var omegas: PackedStringArray = []
-		for wheel in drivetrain.all_wheels:
-			omegas.append("%.1f" % (drivetrain.front_omega[wheel]
-				if drivetrain.front_omega.has(wheel) else drivetrain.rear_omega))
-		GripLog.say("=== LAUNCH: speed=%.2f km/h rpm=%.0f gear=%d wheel_omega=[%s] === (peaks reset)"
-			% [linear_velocity.length() * 3.6, drivetrain.engine.rpm(), drivetrain.engine.gear,
-				", ".join(omegas)])
-		GripLog.tyres("state at launch", cfg)
-		GripLog.condition("condition at launch", damage.hp, damage.max_hp,
-			damage.misfire_level(cfg), damage.toe_array())
-		GripLog.driveline("driveline at launch", cfg, drivetrain)
-		GripLog.suspension("suspension at launch", self, drivetrain)
-		_burst_tick = -1   # re-arm the launch burst for this launch
-	_glog_was_locked = controls_locked
-	# Peaks only while the driver is actually in control: a staged / countdown / finished car
-	# is being moved by the game, and those samples are not the player's cornering.
-	if kmh > 15.0 and not controls_locked:  # >15 km/h skips the standing-start wheelspin
-		if absf(_glog_lat_g) > _glog_peak_lat:
-			_glog_peak_lat = absf(_glog_lat_g)
-			_glog_peak_lat_kmh = kmh
-		_glog_peak_long = maxf(_glog_peak_long, absf(_glog_long_g))
-	_grip_log_t += delta
-	if _grip_log_t < 1.0:
-		return
-	_grip_log_t = 0.0
-	if kmh < 3.0:
-		return
-	GripLog.live(cfg, drivetrain, kmh, global_position)
-	GripLog.driveline("driveline", cfg, drivetrain)
-	GripLog.suspension("suspension", self, drivetrain)
-	var mu_eff: float = cfg.wheel_friction_slip_front \
-		* float(drivetrain.surface_tire_params(cfg, global_position).get("mu_mult", 1.0))
-	GripLog.gforce("", kmh, _glog_lat_g, _glog_long_g, _glog_peak_lat, _glog_peak_long,
-		_glog_peak_lat_kmh, mu_eff)
-	_grip_log_drive(kmh)
-
-
-# The drive-side companion to the sample above: the driver's own inputs plus the gear, revs
-# and driven-wheel overspeed. TEMPORARY (grip_log.gd).
-func _grip_log_drive(kmh: float) -> void:
-	var engine := drivetrain.engine
-	GripLog.drive(kmh, _axis_input("brake_reverse", "accelerate", ai_throttle),
-		Input.get_action_strength("brake_reverse") if _driver_input_live() else 0.0,
-		ai_handbrake if ai_controlled else Input.is_action_pressed("handbrake"),
-		engine.gear, engine.rpm(), engine.auto,
-		drivetrain.drive_wheelspin_excess(), _glog_long_g,
-		# The staging flags: a hold that never released would cut drive AND raise wheelspin,
-		# which is exactly the shape of the slow launch. Also the scripted-car flag.
-		"locks: controls=%s handbrake_hold=%s finish_stop=%s ai=%s spin_protect_held=%s" % [
-			controls_locked, handbrake_locked, finish_stop, ai_controlled,
-			is_held()])
 
 
 # --- Crosswind (storm) -------------------------------------------------------
@@ -2112,7 +1991,6 @@ func apply_owned(owned: Dictionary) -> String:
 	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),
 		owned.get("wheel_toe", []))
 	_owned_drive_override = -1
-	GripLog.tyres("apply_owned (full field)", config)   # TEMP diagnostic, see grip_log.gd
 	# Clear the per-fielding wheel override so a later BARE apply_car (free-roam /
 	# prop / opponent re-fielding of this same instance) falls back to stock wheels
 	# rather than inheriting this owned car's donor style.
@@ -2200,7 +2078,6 @@ func _rederive_live_config(owned: Dictionary) -> void:
 # each physics step, so no engine/drivetrain rebuild is needed.
 func retune(owned: Dictionary) -> void:
 	_rederive_live_config(owned)
-	GripLog.tyres("retune (live)", config)   # TEMP diagnostic, see grip_log.gd
 
 
 # Re-apply a CHANGED upgrade set to the already-fielded live config WITHOUT reshaping the
@@ -2216,10 +2093,6 @@ func retune(owned: Dictionary) -> void:
 # nitrous tank, wheel spin and mirrored gearbox mode. `Drivetrain.reconfigure()` changes the
 # two things an upgrade edit can actually move and leaves the rest of the running car alone.
 func refit_upgrades(owned: Dictionary) -> void:
-	# TEMP diagnostic (grip_log.gd): the silent early-out below is a prime suspect, so say so.
-	GripLog.say("refit_upgrades  enabled=%s  baseline=%s"
-		% [UpgradeLibrary.enabled_upgrades(owned),
-			"MISSING -> NO-OP!" if _live_baseline.is_empty() else "present"])
 	if _live_baseline.is_empty():
 		return  # not fielded from an owned car — no baseline to restore, nothing to do
 	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
@@ -2234,7 +2107,6 @@ func refit_upgrades(owned: Dictionary) -> void:
 	drivetrain.reconfigure(mode)
 	_reconfigure_engine_audio()
 	_owned_drive_override = -1
-	GripLog.tyres("refit_upgrades (live)", config)   # TEMP diagnostic, see grip_log.gd
 
 
 # Re-field this owned car's engine when it differs from the CarLibrary stock: writes
@@ -2409,6 +2281,25 @@ static func compression_budget(cfg: GameConfig) -> float:
 # and pinned by test_rest_pose.gd, so a Godot upgrade that shifts the render fails loudly.
 const WHEEL_DROOP_COEFF := 0.25
 
+# TRUE while a DISPLAY droop offset is sitting on the wheel Visual nodes.
+#
+# The two settle functions below translate each wheel's `Visual` child DOWN, and nothing on the
+# live path ever translates it back — `drivetrain._update_visuals` only spins and steers that node.
+# The correct offset therefore depends on a mode: a FROZEN body cannot sink onto its suspension so
+# its wheels must be dropped visually, while a LIVE body sinks for real and the offset would be
+# counted twice, putting the wheels through the floor.
+#
+# Nothing used to enforce that, and it produced the same bug twice: the garage lift handed a
+# settled car back to physics with its wheels rendered below where the solver had them, and the
+# overworld's car picker showed cached props with wheels in the wrong place while cycling. Both
+# were fixed by remembering to call `clear_wheel_visual_droop` — which is exactly the kind of rule
+# that gets forgotten by the third caller.
+#
+# So the invariant is enforced HERE instead, in the one place that knows the body is live: the
+# physics tick clears the offset the first time it runs unfrozen. Callers may still clear it
+# explicitly (and the two above do, before handing the body over), but nobody has to.
+var _display_droop_applied := false
+
 func settle_wheel_visuals() -> void:
 	var g: float = _default_gravity
 	for wheel in _wheel_mounts:  # cached wheel nodes; avoids a find_children Array alloc
@@ -2419,6 +2310,7 @@ func settle_wheel_visuals() -> void:
 			wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0
 		)
 		visual.position.y = -droop
+	_display_droop_applied = true
 
 
 # How far above the wheel mount to start the down-ray, and slack added to its length.
@@ -2466,6 +2358,30 @@ func settle_wheels_to_ground(ground_at: Callable) -> void:
 			# No ground (miss): analytic rest droop, matching settle_wheel_visuals().
 			droop = maxf(wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0)
 		visual.position.y = -droop
+	_display_droop_applied = true
+
+
+# THE INVERSE of settle_wheels_to_ground / settle_wheel_visuals: put every wheel Visual back at
+# its local origin, which is where a LIVE car's must sit.
+#
+# Both settle functions translate the Visual DOWN by a droop, and nothing in the live path ever
+# translates it back — `drivetrain._update_visuals` only spins and steers it — so the offset is
+# permanent until something clears it. That is harmless for a prop (it stays frozen forever), but
+# a car that is settled while frozen and then handed BACK to the player renders its wheels sunk by
+# up to `wheel_rest_length` below where the solver actually has them: the tyre visibly cuts
+# through the ground even though the physics is fine.
+#
+# You do NOT have to call this. `_timed_physics_process` clears the offset the first time it runs
+# on an unfrozen body (see `_display_droop_applied`), which is what makes the rule hold for callers
+# who have never heard of it. Calling it explicitly is still right when you want the wheels correct
+# on the SAME frame you hand the body over, rather than one physics tick later — the garage lift and
+# the overworld car picker both do.
+func clear_wheel_visual_droop() -> void:
+	_display_droop_applied = false
+	for wheel in _wheel_mounts:
+		var visual: Node3D = wheel.get_node_or_null("Visual")
+		if visual != null:
+			visual.position.y = 0.0
 
 
 # Give every MeshInstance3D in the authored body model the lit PS1 material

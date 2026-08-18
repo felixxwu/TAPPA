@@ -444,22 +444,46 @@ const RALLIES: Array[Dictionary] = [
 	# by label — it would still claim the trophy marker, the map's locked teaser and a place
 	# in the all-specials endgame while paying exactly what an ordinary rally pays.
 	#
-	# TWO OF THE THREE ARE SPECIALS AGAIN, by that same rule read forwards: the sequential
-	# gearbox and the race tyres each needed a part-unlock event, and a long, hard, already
-	# OPEN-CLASS rally at a pin the solver has already placed is exactly the shape a special
-	# takes. Promoting them beat authoring two new pins, which would have re-fitted the whole
-	# map (tools/fit_map_pins.py) and moved every other rally's neighbourhood with it. Their
-	# `id` / `difficulty` / `restriction` / `events` are untouched — ids key saved progress,
-	# and the other three decide the opponent field. `gc_showdown` stays ordinary: it is the longest of the three and gates no
-	# part, so it remains the pure star-payer the endgame finishes on.
+	# THEY WERE PROMOTED BACK, AND THEN DEMOTED AGAIN — and the round trip is the useful part of
+	# this note, so it is recorded rather than tidied away.
+	#
+	# The promotion: the sequential gearbox and the race tyres each needed a part-unlock event,
+	# and a long, hard, already OPEN-CLASS rally at a pin the solver had already placed was
+	# exactly the shape a special takes. Promoting them beat authoring two new pins, which would
+	# have re-fitted the whole map (tools/fit_map_pins.py) and moved every other rally's
+	# neighbourhood with it.
+	#
+	# THE DEMOTION (now): both parts MOVED AWAY in the 4 -> 5 migration — Race Tires
+	# gr_showdown -> sn_showdown, Sequential Gearbox hc_showdown -> sp_summit_trial, to give the
+	# Alps corner something worth working toward (Save.MOVED_PART_UNLOCKS records the move and is
+	# HISTORICAL: it must never be edited). The `special: true` flags were left behind, so for a
+	# while the roster held two specials that awarded nothing at all — precisely what the rule at
+	# the top of this note forbids. They pay stars like any other rally, so they are ordinary
+	# rallies now: `special: false`, no trophy, no teaser, and no seat in the all-specials
+	# endgame. Their `id` / `difficulty` / `restriction` / `events` are untouched — ids key saved
+	# progress, and the other three decide the opponent field.
+	#
+	# WHAT A SPECIAL MUST AWARD, then, is one of exactly three things: a CAR, a PART, or a
+	# CAPABILITY (engine swapping — see ENGINE_SWAP_UNLOCK_RALLY, which is gated here rather than
+	# through UpgradeLibrary because a capability is not a part). That is no longer only a
+	# convention in this comment: `test_rally_library.gd` asserts it against the shipped roster,
+	# so the flag cannot be left behind a third time.
+	#
+	# `gc_showdown` stays ordinary for the same reason it always was: it gates nothing, so it
+	# remains the pure star-payer the endgame finishes on.
 	{
 		# Gates no part any more: the Sequential Gearbox moved to sp_summit_trial in the
 		# Alps, to give that corner something worth working toward. The `id` stays put
-		# because it keys saved progress, so the name is what changed. It remains a
-		# special — a long, open-class star-payer — which is what it always was besides
-		# the part it happened to carry.
+		# because it keys saved progress, so the name is what changed.
+		#
+		# NO LONGER A SPECIAL, and this comment used to argue the opposite ("it remains a
+		# special — a long, open-class star-payer"). That reading is what the rule at the top
+		# of the showdown block rejects: being long and open-class is not something a special
+		# BUYS, and a special that awards nothing still claims the trophy pin, the map's locked
+		# teaser and a seat in the all-specials endgame while paying exactly what this rally
+		# pays. It is a hard difficulty-4 ordinary rally, which is what it now says it is.
 		"id": "hc_showdown", "name": "The Northern Trial", "region": "home", "difficulty": 4,
-		"special": true,
+		"special": false,
 		"map_pos": Vector2(0.529, 0.205),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
@@ -554,9 +578,11 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# Gates no part any more: the Race Tires moved to sn_showdown in the Alps, the
 		# grip part to the grip corner. Same as hc_showdown above — the `id` keys saved
-		# progress and stays; only the name changed.
+		# progress and stays; only the name changed — and demoted to ORDINARY for the same
+		# reason: a special has to award a car, a part or a capability, and this awards none
+		# of the three.
 		"id": "gr_showdown", "name": "The Greek Showdown", "region": "greece", "difficulty": 4,
-		"special": true,
+		"special": false,
 		"map_pos": Vector2(0.455, 0.854),
 		"restriction": {},  # open-class: a special must never gate on a part it unlocks
 		"events": [
@@ -780,6 +806,13 @@ static func override_for_test(rallies: Array[Dictionary]) -> void:
 
 static func reset() -> void:
 	_seam.reset()
+
+
+# Monotonic counter bumped whenever the roster is swapped (see Registry.Seam.version).
+# Memoise against this rather than hashing all() — an O(1) validity check on paths that
+# run per wheel per physics tick.
+static func roster_version() -> int:
+	return _seam.version
 
 
 static func index_of(id: String) -> int:
@@ -1752,10 +1785,38 @@ static func prize_part_id(rally: Dictionary) -> String:
 	return String(UpgradeLibrary.unlocked_by(String(rally.get("id", ""))).get("id", ""))
 
 
+# --- Capability prizes -------------------------------------------------------
+#
+# A CAPABILITY is the third kind of thing a rally can award, alongside a car and a part: a garage
+# MECHANIC rather than an object. Engine swapping is the only one today.
+#
+# It is gated differently on purpose — `ENGINE_SWAP_UNLOCK_RALLY` names the rally here, where parts
+# are gated the other way round (UpgradeLibrary.unlocked_by_rally names the rally on the PART) —
+# because a capability has no catalogue entry to hang the gate on. That asymmetry is deliberate and
+# is NOT being collapsed; what it cost was a blind spot, because every "what does this rally award"
+# query only ever asked about cars and parts. So a capability special looked prize-less to the map
+# markers, the "prize rally" wording and the standing rule that a special must award SOMETHING.
+# This is the one query that closes it.
+#
+# Returns a STABLE CAPABILITY ID, not an icon slot: the art mapping belongs to the view layer
+# (OverworldMarker.capability_slot_of), and reaching UpgradeOptions from here would make this file
+# and that one mutually dependent — the same cycle overworld_roads.gd documents avoiding with
+# TerrainManager.
+const CAPABILITY_ENGINE_SWAP := "engine_swap"
+
+
+## The capability this rally awards, or "" for the overwhelming majority that award none.
+static func prize_capability_id(rally: Dictionary) -> String:
+	return CAPABILITY_ENGINE_SWAP if String(rally.get("id", "")) == ENGINE_SWAP_UNLOCK_RALLY else ""
+
+
 # Does this rally hand over anything beyond stars? Drives the map marker choice (a car
-# model / a trophy / an ordinary flag) and the "prize rally" wording.
+# model / a part icon / a capability icon / a trophy / an ordinary flag) and the "prize rally"
+# wording — and it is the predicate the shipped-roster contract test holds every `special: true`
+# rally to, so a special can never again be a special by label alone.
 static func has_prize(rally: Dictionary) -> bool:
-	return prize_car_id(rally) != "" or prize_part_id(rally) != ""
+	return prize_car_id(rally) != "" or prize_part_id(rally) != "" \
+		or prize_capability_id(rally) != ""
 
 
 # --- The opening rally -------------------------------------------------------
@@ -1807,6 +1868,58 @@ static func opening_rally_id_for(model_id: String) -> String:
 # used, for the same reason: the middle of the table reads as "here", not as content.)
 const HQ_MAP_POS := Vector2(0.5, 0.5)
 
+## Metres between the garage pad and the rally pad it stands beside, edge to edge. The two pads
+## must not merge: OverworldPads flattens a circle per pin, and overlapping interiors are held at
+## the AVERAGE of their two levels, so neither sits at its own — visible as a garage on a slope.
+## Also keeps the garage clear of the zone's dwell circle so parking at one is never parking at
+## both. Metres rather than map units because the pads are authored in metres.
+const HQ_BESIDE_RALLY_GAP_M := 18.0
+
+
+## WHERE THE GARAGE STANDS, for `profile`. Not a constant any more.
+##
+## The player's garage is planted beside the rally that gave them their FIRST CAR — the one their
+## career started in. `HQ_MAP_POS` remains the answer before a starter is chosen (and the fallback
+## whenever the starter cannot be resolved), so a fresh profile still finds a garage in the middle
+## to pick a car at.
+##
+## WHY THIS IS PROFILE-DERIVED AND NOT LIVE. The position feeds the road network
+## (`OverworldRoads` builds an `__hq__` node from it), the garage PAD, the reach set the precompute
+## bakes, the default spawn and the garage building itself — and the first two are folded into the
+## chunk cache's invalidation key. So it is resolved ONCE at hub build and is stable for that
+## session: moving it mid-session would mean re-carving terrain under a driving car. In practice it
+## changes exactly once, between the starter pick and the next hub visit, and the re-bake rides the
+## loading screen the player is already watching on the way back from their opening rally.
+##
+## Offset DIRECTION is deterministic (toward the map centre, or +X for a rally already at it), so
+## the same profile always rebuilds the same world — the cache key depends on it.
+## `size_m` defaults to the LIVE overworld size rather than a literal, so every caller agrees on
+## where the garage is without having to pass it — the offset is authored in metres and only
+## becomes map units by dividing by the world's edge length.
+static func hq_map_pos(profile: Dictionary, size_m: float = -1.0) -> Vector2:
+	var world_m := size_m
+	if world_m <= 0.0:
+		world_m = Config.data.overworld_size_m if Config.data != null else 1000.0
+	var starter := String(profile.get("starter_model_id", ""))
+	if starter == "":
+		return HQ_MAP_POS
+	var opening_id := opening_rally_id_for(starter)
+	if opening_id == "":
+		return HQ_MAP_POS
+	var rally := by_id(opening_id)
+	if rally.is_empty():
+		return HQ_MAP_POS
+	var pin := map_pos_of(rally)
+	# Edge-to-edge gap plus both radii, converted to map units by the live world size.
+	var cfg: GameConfig = Config.data
+	var gap_m: float = HQ_BESIDE_RALLY_GAP_M 		+ (cfg.overworld_pad_zone_radius_m if cfg != null else 12.0) 		+ (cfg.overworld_pad_garage_radius_m if cfg != null else 21.0)
+	var step := gap_m / maxf(world_m, 1.0)
+	var toward := HQ_MAP_POS - pin
+	var dir := toward.normalized() if not toward.is_zero_approx() else Vector2.RIGHT
+	# Clamped so a rally near an edge cannot push the garage off the map.
+	return Vector2(clampf(pin.x + dir.x * step, 0.0, 1.0),
+		clampf(pin.y + dir.y * step, 0.0, 1.0))
+
 
 # How far a completed rally lights the map around itself, in normalised map units. A
 # rally may author its own `reveal_radius` so a headline event opens a wider frontier
@@ -1824,20 +1937,25 @@ static func reveal_radius_of(rally: Dictionary) -> float:
 # reveal predicate and by the HQ table's fog mask, so what the player can ENTER and what
 # the player can SEE can never disagree.
 static func lit_sources(profile: Dictionary) -> Array:
-	# HQ LIGHTS NOTHING. It used to seed the map with a circle of its own, which made the
-	# handful of pins nearest the middle open on a fresh profile for no reason the player
-	# had earned. Now that they begin INSIDE a rally (todo/opening-rally.md) there is a
-	# natural starting point that they drove to, so the middle is ordinary fogged ground
-	# and every pin — the ones beside HQ included — is unlocked the same way as any other:
-	# by being inside the circle of something completed.
+	# HQ LIGHTS A SMALL CIRCLE, and this used to say it lit nothing.
 	#
-	# GameConfig.map_hq_reveal_radius still exists and still works — it just ships at 0.0.
-	# Above 0 it puts HQ's circle back (the map tests use it to light a whole synthetic
-	# roster without completing anything).
+	# It lit nothing because seeding the map with HQ's own circle opened the handful of pins
+	# nearest the middle on a fresh profile for no reason the player had earned, and because the
+	# player began INSIDE a rally, so the middle was ordinary fogged ground.
+	#
+	# The OVERWORLD changed the second premise: the player now stands at the garage and picks
+	# their first car there, before any rally. With HQ unlit the fog veil darkens the screen and
+	# the frontier push shoves the car while they are choosing. So `map_hq_reveal_radius` ships
+	# small and non-zero — deliberately too small to touch any shipped pin, which is what keeps
+	# the FIRST premise intact. `test_the_hq_circle_alone_reveals_no_rally` pins that against the
+	# real roster: raise the radius past the nearest pin and it fails.
+	#
+	# The circle follows the GARAGE, which is no longer the map centre — it stands beside the
+	# player's first-car rally (see `hq_map_pos`).
 	var out: Array = []
 	var hq_radius: float = Config.data.map_hq_reveal_radius
 	if hq_radius > 0.0:
-		out.append([HQ_MAP_POS, hq_radius])
+		out.append([hq_map_pos(profile), hq_radius])
 	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	# ONE pass over the roster. The opening rally is picked out HERE rather than through
 	# opening_rally_id_for + by_id, which would each walk `all()` again — and this function
@@ -1873,7 +1991,7 @@ static func lit_sources(profile: Dictionary) -> Array:
 	# even reachable from there) — lighting the middle for it would put HQ's circle back by
 	# the back door, which is the thing this whole change removed.
 	if out.is_empty() and starter != "":
-		out.append([HQ_MAP_POS, Config.data.map_reveal_radius])
+		out.append([hq_map_pos(profile), Config.data.map_reveal_radius])
 	return out
 
 

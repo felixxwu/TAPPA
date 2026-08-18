@@ -7,7 +7,10 @@ back-reference to the `HqController` and reaches into it for state + button
 callbacks), the Rally Challenge screen in `scripts/hq_challenge.gd` (`class_name
 HqChallenge`), the map table in `scripts/hq_table.gd` (`class_name HqTable`), the car park in
 `scripts/hq_carpark.gd` (`class_name HqCarpark`) — all three the same shape as `HqOverlays`,
-described below — `podium.tscn` + `scripts/podium.gd`, plus the
+described below — the shared **rally-detail panel** in `scripts/rally_detail.gd` (`class_name
+RallyDetail`, hosted by either hub rather than holding a back-reference), the hub-scene
+routing seam in `scripts/scenes.gd` (`class_name Scenes` — `hub_path()` / `is_hub_scene()`),
+`podium.tscn` + `scripts/podium.gd`, plus the
 session-aware fielding
 in `scripts/world.gd`. See the full design in [../todo/menus.md](../todo/menus.md).
 
@@ -41,7 +44,7 @@ choice — apply it to every new row without asking.
 Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car | Start`),
 `hq_overlays.gd::build_title_overlay` (`Exit Game | Free Roam | Settings | Start`),
 `hq.gd::_refresh_garage_row` (`< Back | Career | Garage | Online` — a fixed four),
-`build_detail_overlay` (`< Map | Enter Rally >`), `build_challenge_overlay`
+`rally_detail.gd::RallyDetail.build` (`< Map | Enter Rally >`), `build_challenge_overlay`
 (`< Back | Start`).
 
 **Two traps when reordering an existing row:**
@@ -146,7 +149,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `_build_ui()` rebuild (e.g. the overlay's show/hide toggle), so the
   cursor never drops when the button text/target changes — the **podium** Next, and
   the tuning-lift **Tune** (sliders — left/right nudges the focused one) and
-  **Upgrades** (install parts / engine swap) pages. On the standings interstitial specifically,
+  **Upgrades** (install parts / engine swap) pages, and — **the one nav that is attached to a
+  shared component from OUTSIDE it** — the overworld hub's **rally-detail card**
+  (`Overworld._build_rally_detail`; [overworld.md](overworld.md) → "Arriving opens the card").
+  `RallyDetail` ships every button `FOCUS_NONE` because the HQ drives that card from
+  `hq_table.gd`'s own input handler and has no cursor; the overworld instead calls
+  `MenuNav.attach(page, {on_back, first = enter_button, grab = false})`, and `_enable` flips the
+  buttons to `FOCUS_ALL` **for that instance only** — so one component serves a
+  bespoke-input host and a `MenuNav` host without either knowing about the other. `grab: false`
+  is required there: the card is built while hidden, and a Control inside a hidden `CanvasLayer`
+  still reports `is_visible_in_tree()`, so the build-time grab would steal the cursor from
+  whatever is on screen — MenuNav's `visibility_changed` re-grab seats it when the card opens.
+
+  Its sibling the overworld **car picker** deliberately does **NOT** use `MenuNav` — see the
+  second regime below. On the standings interstitial specifically,
   the `MenuNav` `on_back` callback (`_on_back_pressed`) is a deliberate **no-op**: it
   is a single page mid-rally with nowhere to go back TO, and consuming the press stops
   it falling through to whatever is behind (pause / the replay host).
@@ -368,6 +384,17 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   slides); the **tuning hub** is a **two-row** manual cursor, so it binds all four
   directions (`enum LiftRow { SELECTOR, ACTIONS }`, `_lift_row` says which row holds the
   cursor):
+
+  **The overworld's car picker is the newest member of this regime** (`OverworldPicker`;
+  [overworld.md](overworld.md) → "Picking a car in place"). It is a **carousel**, not a widget list:
+  one car shown at a time in a bar along the bottom, cycled with left/right. That is why it cannot
+  use `MenuNav` — a focus cursor would take `ui_left`/`ui_right` to hop between the two chevrons and
+  the **car would stop changing**, which is two competing selection models on one screen (the trap
+  the map cursor fell into). So every button in the bar stays `FOCUS_NONE` (pointer/touch
+  affordances, chevrons additionally `menu_nav_skip`ped), nothing consumes input in the GUI phase,
+  and the picker's own `_unhandled_input` maps left/right → change car, accept → confirm,
+  back → cancel. In STARTER mode the back branch is simply absent, so the press falls through and
+  **Esc still reaches the pause menu** rather than sealing the player in.
 
   ```
   SELECTOR row:  [ < ]  CAR NAME  [ > ]                 _lift_selector_cursor / _lift_selector_focus
@@ -860,25 +887,27 @@ to the `Area3D` pickers behind the HUD. A `ScrollContainer` defaults to
 pan). Plain `_make_overlay` stays as-is for those; **never** wrap a passthrough overlay in
 `_make_modal_overlay`.
 
-Pages on this shape: the rally detail card (`build_detail_overlay` — its `< Map` stays
-`FOCUS_NONE` because the panel has no MenuNav; `hq._unhandled_input` drives it from the
-TABLE view), the challenge entry screen (`build_challenge_overlay`), Settings
+Pages on this shape: the rally detail card (`rally_detail.gd::RallyDetail.build` — its
+`< Map` stays `FOCUS_NONE` because the panel has no MenuNav; in `hq.tscn` the
+`hq_table.gd::handle_input` branch drives it from the TABLE view), the challenge entry screen (`build_challenge_overlay`), Settings
 (`build_settings_overlay`), the Android
 app notice (`hq._show_android_app_notice`), and the car-park Change-Upgrades popup
 (`hq_carpark.gd::_show_upgrades_popup`, whose Done is additionally p/w-gated).
 
 **Widths, not just heights.** A centred modal column asking for a fixed pixel width can
 also exceed the frame: a narrow/portrait phone aspect can leave well under 445 logical units wide.
-`hq.gd::_modal_body_width(preferred, chrome)` clamps an authored desktop width to what the
-current canvas can actually show (`viewport width - chrome`, floored at 160); the upgrades
-popup and the account menu both go through it.
+`RallyDetail.body_width(host, preferred, chrome)` clamps an authored desktop width to what the
+current canvas can actually show (`viewport width - chrome`, floored at 160);
+`hq.gd::_modal_body_width` is the HQ-hosted wrapper over it, and the upgrades popup and the
+account menu both go through that.
 
 ## HQ (`hq.gd`)
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
 track generation). A first-time player (no `starter_picked`) is **not** auto-granted
 a car: pressing **Start** on the title routes them into the car park's
-**starter picker** (`_enter_starter_pick`, `_carpark_starter_mode`) showing the three
+**starter picker** (`_enter_starter_pick`, which puts the car park in `CarparkMode.STARTER`)
+showing the three
 authored-body cars (Miot Roadster, Fjord Focal, Rondel Twist) as preview cars from `CarLibrary`; choosing one
 (`_confirm_starter`) grants it as a normal first car, records
 `starter_picked` / `starter_model_id` / the selection, and enters the garage. Back
@@ -926,10 +955,14 @@ white bay dividers (one bay per `carpark_page_size`, `menu_car_spacing` wide) ge
 procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
 its own marked bay.
 
-**EXTERIOR (boot/title).** A side-by-side row of **Start / Settings / Free Roam** and —
-on non-web builds only — **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`;
-skipped on web, where the tab owns the process lifecycle), sitting at the bottom (in
-that left-to-right order) over an establishing shot of the
+**EXTERIOR (boot/title).** A side-by-side row of — left to right —
+**Exit Game | Free Roam | Settings | Start**, per the button-order rule above: leaving is
+leftmost, proceeding is rightmost. **Exit Game** (`_on_exterior_exit` →
+`get_tree().quit()`) is built on non-web builds ONLY, where the tab owns the process
+lifecycle, which is why Start's cursor index is computed rather than hardcoded. **There is
+no Account button** — that slot holds Free Roam, and the account page is reached as a
+Settings page instead (one route, not two; see the note in
+`hq_overlays.gd::build_title_overlay`). The row sits at the bottom over an establishing shot of the
 outdoor car park, with a block skyline **behind the garage** and trees framing the
 lot. The player's **whole owned collection** is parked in the car park here
 (`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
@@ -948,13 +981,100 @@ from a hit, not a cold build.
 
 **The map table is likewise split out** into **`HqTable`** (`scripts/hq_table.gd`), held as
 `_table_ui`: entering the table, the new-rally reveal sequence, pin focus / panning / target
-selection, and the rally detail panel — 25 functions.
+selection, and opening the rally detail panel — 25 functions. (The panel ITSELF has since
+moved out again, to `RallyDetail` — see "The rally-detail panel" below.)
 
 Three things stayed on `HqController` and are worth knowing about, because they sat *inside*
 the moved region: **`_process`** (an engine callback — Godot would never fire it on a
 `RefCounted`, so the table pan and reveal animation would silently stop advancing), and
 **`_eligibility_summary` / `_qualifying_cars_text`**, which `hq_challenge.gd` also calls. They
-now live directly below the table code under a banner saying so.
+now live directly below the table code under a banner saying so — as *names*: the derivations
+themselves moved to `RallyDetail` with the panel that is their main consumer, and
+`HqController` keeps one-line wrappers so every existing caller (and every test that calls
+them off the controller) is unchanged.
+
+### The rally-detail panel (`scripts/rally_detail.gd`)
+
+The card that names a rally, says which of your cars may enter it, shows your best finish and
+offers `Enter Rally — choose car` is **`RallyDetail`**, and it is the one component in the HQ
+set that is NOT an `HqController` collaborator: it takes a **host `Node`**, not a back-reference,
+so either hub can show it. It used to be split in half — built by
+`hq_overlays.gd::build_detail_overlay`, filled by `hq_table.gd::_show_detail`, with its nine
+widget handles and its open flag living on the HQ node — which made it reachable only from
+inside `hq.tscn`.
+
+- **`build(host, on_back, on_enter, on_dev_win)`** — parents the panel under `host` via
+  `MenuPage.open_modal` and wires the three footer controls. `on_dev_win` may be an empty
+  `Callable`, in which case the dev "win this rally" button is not built at all (it is still
+  additionally gated on `SettingsMenu.dev_tools_enabled()`).
+- **`fill(rally, profile, rally_id := "")`** — rewrites the card for one rally against one
+  profile's garage and sets `open`. The host owns making the layer visible, because only it
+  knows whether its own view is on screen (`hq.gd::update_overlays`).
+- **State** — `layer`, `page`, `open`, and the nine widget handles (`title`, `region`,
+  `special`, `restriction`, `qualify`, `adjust`, `record`, `stars`, `enter_button`, plus
+  `dev_win_button`) all live on the panel. `hq.gd` keeps one-line forwarding properties at the
+  old `_detail_*` names, because the readers are spread across `hq.gd`, `hq_table.gd`,
+  `hq_challenge.gd` and the menu tests; `_detail_open` has a setter too, since every screen
+  that leaves the table closes the panel by writing it.
+- **Shared vocabulary moved with it, as statics** — the widget builders (`plain_label`,
+  `heading`, `wrap_label`), the modal width rule (`body_width`) and the text/eligibility
+  derivations (`restriction_text`, `entry_plan`, `convertible_for`, `eligibility_summary`,
+  `qualifying_cars_text`, `stars_for`). `HqController`'s `label()` / `detail_heading()` /
+  `detail_wrap_label()` / `_modal_body_width` / `_restriction_text` / `_entry_plan` /
+  `_convertible_for` / `_eligibility_summary` / `_qualifying_cars_text` / `_stars_for` are now
+  wrappers over them, so `hq_challenge.gd`, `hq_carpark.gd` and the tests keep calling the
+  names they always did. `MAX_QUALIFY_NAMES` is declared on `RallyDetail` and re-exported by
+  `HqController` for the same reason — one value, both names.
+- **The dependency runs ONE way.** `hq.gd` knows about `RallyDetail`; `RallyDetail` knows
+  nothing about `HqController`, so the two classes cannot cycle and the overworld can host the
+  panel without dragging the HQ in.
+
+### Two hubs, and where the boot redirect sits
+
+`hq.tscn` is both `run/main_scene` and the "back to the hub" destination. Behind
+`GameConfig.overworld_enabled` (**ships false**) there is a **second hub**: a life-size
+drivable version of the same map (`overworld.tscn`, see
+[overworld.md](overworld.md) and the design spec under `docs/superpowers/specs/`). Every
+"return to the hub" transition routes through **`Scenes.hub_path()`** so a single missed site
+cannot send the player to the wrong hub, and `Scenes.is_hub_scene()` answers the same question
+for the music director, which picks hub-vs-rally music from the live scene path.
+
+`hq.gd::_ready` carries the redirect, and **its placement is load-bearing** — it sits **after**
+`_ensure_selection()` and **after** the `_should_autostart_benchmark()` check, in
+`_maybe_redirect_to_overworld()`:
+
+1. **After `_ensure_selection()`**, because the overworld fields the profile's *selected* car
+   and `Save.selected_car()` is what heals a stale selection.
+2. **After the benchmark check**, or the `?bench=1` web profiling boot stops reaching
+   `Benchmark.start()`.
+3. **It must not bypass `_build_hq`**, which is the ONLY consumer of the `RallySession`
+   one-shots. So the redirect *reads* them and declines whenever one is set — it never clears
+   them; clearing stays `_build_hq`'s job, because consuming a one-shot in two places is how
+   one of them goes missing:
+
+| One-shot | Effect on the redirect |
+|---|---|
+| `return_to_garage` | Stay in `hq.tscn`; `_build_hq` boots at `GARAGE`. **This is the infinite-loop guard** — it is exactly how the overworld's garage zone works, and a redirect here would bounce straight back. |
+| `return_to_map` | Stay; the new-rally reveal parade runs on the table as today. |
+| `pending_car_reveal_instance_id` | Stay; the won-car present box opens as today. |
+| `pending_rally_pick_id` *(new)* | Stay; `_build_hq` seats it as `_selected_rally_id` and calls `_enter_car_screen()`, so a zone activation in the overworld lands on that rally's car picker. The zone names the rally, never the car. |
+
+The redirect is **additionally gated on `Save.profile.starter_picked`**. A fresh profile has it
+false and **zero owned cars**, and the starter picker plus the opening-rally drop is reachable
+only from the title's Start (`_on_exterior_start` → `_enter_starter_pick` / `_confirm_starter`)
+— so redirecting a fresh save leaves the overworld with no car to field and no route to pick
+one, i.e. the game cannot be started at all. A fresh profile therefore always gets the normal
+HQ flow, and the handoff happens on the next boot.
+
+One zone restores the whole hub: the garage zone raises `return_to_garage` and loads
+`hq.tscn`, whose garage row already reaches everything (`< Back` → the title row, `Career` →
+the map table, `Online` → the challenge overlay, Settings → account and reset).
+
+**The exploration fog is shared too.** `HqController.build_fog_mask(profile)` is a static that
+rasterises the 64×64 R8 lit mask from `RallyLibrary.lit_sources` in **normalised map space** —
+the map table multiplies it into the map plane (`_apply_map_fog` + `FOG_SHADER`), and the
+overworld's fog boundary feeds the same texture to its terrain shader. See
+[map-exploration.md](map-exploration.md).
 
 **The Rally Challenge screen is likewise split out** into **`HqChallenge`**
 (`scripts/hq_challenge.gd`), held by `hq.gd` as `_challenge_ui` and built alongside `_overlays`
@@ -1734,7 +1854,7 @@ treat these as a CPU floor, not the device cost):
 |---|---|---|
 | `_refresh_map_pins()` — real rebuild | **~20 ms** | frees all 32 pins and rebuilds them |
 | ↳ 32 × `_make_pin` | ~8.4 ms | flag/trophy meshes + one readout `SubViewport` each |
-| ↳ `_apply_map_fog` / `_build_fog_mask` | ~0.8 ms | 64² `Image` loop — cheap, not the problem |
+| ↳ `_apply_map_fog` / `build_fog_mask` | ~0.8 ms | 64² `Image` loop — cheap, not the problem |
 | ↳ `_build_reveal_links` | ~0.9 ms | |
 | ↳ 32 × `_has_eligible_car` | ~0.0 ms | |
 | ↳ `nearest_locked_special_id` | ~0.2 ms | hoisted out of the pin loop |
@@ -1805,52 +1925,35 @@ opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
 `MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
 default `STOP`) would swallow every touch and the 3D pins would never get a pick.
-**THE PRESENT BOX — the one non-rally target on the map.** Cars are no longer won by
-finishing a rally; they are **bought with stars** at a procedural gift box standing on
-the map (`scripts/present_box.gd` — `class_name PresentBox`, `build()` for the map prop
-and `build_openable(scale)` for the openable reveal copy). `hq._make_present_pin` builds
-it at `hq.PRESENT_MAP_POS` — **(0.52, 0.50), deliberately not dead centre**, because
-`front_runners` is pinned nearby (0.465, 0.615) and every hit radius must stay under half the
-closest pin spacing (`_add_pin_hit`), so a box at the exact centre would leave the
-nearest-to-centre cursor ambiguous between the two. Its readout is an
-**accent (inverted) box** — the box is not a rally and must not read as one more pin, see
-[ui-design-system.md](ui-design-system.md) rule 4 — reading **"BUY NEW CAR"** over a cost
-line, **"COST: N STARS"** or **"COST: FREE"** (`hq._present_cost_line`; the price comes from
-`RewardSystem.car_price`, normally `GameConfig.star_cost_per_car`, dropping to 0 **only**
-when the player is *stranded* — `RewardSystem.is_stranded` — AND cannot afford one).
+**THE PRESENT BOX — the prize-car reveal, not a shop.** Cars are **not bought**: a car is
+won at the rally that advertises it, and the box is how it is handed over. The prop is still
+`scripts/present_box.gd` (`class_name PresentBox` — `build()` for a plain box,
+`build_openable(width, depth, body_h)` for the openable reveal copy), but there is **no box
+on the map any more and no price anywhere**. `RewardSystem.car_price` / `purchase_car` /
+`is_stranded` and `GameConfig.star_cost_per_car` are all **deleted**; stars are spent
+per-item instead — `GameConfig.star_cost_per_repair` / `star_cost_per_part` /
+`star_cost_per_drive_mode`, see [star-economy.md](star-economy.md). `hq._make_present_pin`,
+`hq.PRESENT_MAP_POS`, `hq._present_cost_line`, `hq._on_present_input` and
+`hq_table.activate_present_box` are gone with it, and `hq_table._build_table_targets` now
+returns only `{node, kind: "pin", pos}` entries — one per unlocked rally pin — so the map has
+no non-rally target at all.
 
-**The pin only exists once the player can afford a car**, and disappears again when the
-balance drops below the price (`_refresh_map_pins` guards on
-`Save.stars_available() >= RewardSystem.car_price(...)`; the free rescue price of 0 always
-qualifies, so a stranded player always sees it). Note this is the **opposite** of the
-locked-special rule ("locking hides availability, never information"): a special is a
-destination worth signposting long before you can reach it, whereas the box is a **button**,
-and a button you cannot press is clutter and a standing tease. There is consequently no
-"can't afford it" wording anywhere — that state has no pin.
-
-The box is kept **OUT of `hq._pins`** on purpose —
-everything walking that array (`_unlocked_pins`, `_node_with_rally_id`, the reveal
-parade) assumes a `rally_id` meta and the box has no rally.
-- **Keyboard + gamepad reach it with no extra wiring.** `hq_table._build_table_targets`
-  returns `{node, kind, pos}` entries of kind `"pin"` **or** `"present"`, and
-  `_activate_table_focus` dispatches on that kind; because the map cursor is simply
-  "whichever target sits nearest the view centre" (`_select_target_under_center`), a new
-  kind of target becomes reachable by pan/glide, drag and stick alike just by appearing in
-  that list. `_focus_hardest_incomplete` skips non-`"pin"` kinds so the box never steals
-  the opening cursor.
-- **One entry point for both input paths.** `hq_table.activate_present_box()` is called by
-  BOTH the tap handler (`hq._on_present_input`, which honours the same release-and-not-
-  dragged rule as a rally pin so panning can't spend stars) and the keyboard/gamepad
-  `_activate_table_focus`, so the pointer and the cursor can never diverge. It goes
-  **straight to `hq._enter_present_box()`** — there is deliberately **NO confirm dialog in
-  front of the box**: the box screen IS the confirmation, and its bottom button is the till.
+Instead the box is **forced on arrival at the HQ**: the finish flow sets
+`RallySession.pending_car_reveal_instance_id` to a car the player has ALREADY been granted,
+and `hq._build_hq` consumes that one-shot **before every other destination** (it outranks
+both `return_to_map` and `return_to_garage`, because it is the payoff for the rally just
+driven) and calls `hq._enter_present_box(instance_id)`. Because the car is already owned the
+box is a **presentation, not a transaction** — backing out or quitting cannot cost the player
+the car, and `_car_back` holds them on the screen until they open it.
 - **The box screen** (`CarparkMode.PRESENT`, `hq._enter_present_box`): the car park emptied
-  of cars with one oversized openable box in the middle, and **nothing bought yet**. It
+  of cars with one oversized openable box in the middle. It
   reuses the ordinary car-park chrome rather than a modal — `_start_button` is the bottom
-  button and doubles as the **price tag** (`_refresh_present_button`: "Open (4 stars)",
-  or "Open (free)" for the rescue, and **disabled** rather than silently no-opping when the
-  balance is short), `_car_stats_label` carries the shortfall or the reason it is free, and
-  the prev/next **arrows are hidden** (`_set_carpark_arrows_visible`) because there is
+  button and reads **"Open it"** while the box is shut and **"Back to garage"** once it is
+  open (`_refresh_present_button`), and it is **never disabled**: the player is forced
+  through this beat, so a dead button here would be a dead end rather than a pause. The
+  **"< Back" button is hidden until the box is open** — there is nowhere to go back TO, the
+  player arrived straight from a rally they won. The prev/next
+  **arrows are hidden** (`_set_carpark_arrows_visible`) because there is
   nothing to cycle — though the centre label they share a row with is where the revealed
   car's name lands. `_car_hint_label` — hidden and empty in every ordinary lineup — is
   SHOWN here, and only here, for "Open it to see what is inside": the box is the one target
@@ -1870,19 +1973,20 @@ parade) assumes a `rally_id` meta and the box has no rally.
   when the lid comes off. See [world-panel.md](world-panel.md) → "The car-park host swap" for
   the general rule; any future car-park mode that clears the lineup loses its panel the same
   way.
-- **Opening it** (`hq._open_present`, on the bottom button): buys the car, then **puts it in
-  the box BEFORE a single wall moves** — the car is spawned at the box centre while the
-  walls still hide it, so the reveal is the box genuinely opening *on* the car rather than a
-  car fading in afterwards. This is exactly why the purchase happens on the button press and
-  not on entry: you cannot put a car in the box until you know which car it is. It seats the
+- **Opening it** (`hq._open_present`, on the bottom button): makes the revealed car the
+  SELECTED car (`Save.set_selected_car`, so the "Back to garage" exit lands on it), then
+  **puts it in the box BEFORE a single wall moves** — the car is spawned at the box centre
+  while the walls still hide it, so the reveal is the box genuinely opening *on* the car
+  rather than a car fading in afterwards. It seats the
   car on the `_present_marker` created on entry (above), which already carries
   `rotation.y = PI` so the nose faces the courtyard/camera, matching every other bay marker
   (`hq_carpark._render_lineup_page`) — without that the car presents its back. Then
-  `hq._refresh_map_pins()` (the balance dropped, so the box may now be gone entirely; and a
-  new car can make previously un-enterable rallies raceable, so pin state changes too), and
+  `hq._refresh_map_pins()` (a new car can make previously un-enterable rallies raceable, so
+  the map behind the beat is now stale), and
   the car's name goes into `_car_name_label` **under the car** — **no result card, no
-  modal**. A draw that comes back empty costs nothing: `purchase_car` resolves the car before
-  debiting, and the failure surfaces on `_car_warning_label`.
+  modal**. If the profile no longer holds the car at all (`Save.get_car` comes back empty),
+  `_open_present` leaves for the garage rather than stranding the player in a forced screen
+  with nothing in it.
 - **Once open, the bottom button becomes the way OUT** — `_refresh_present_button` relabels it
   **"Back to garage"** and leaves it ENABLED (`_leave_present_to_garage`). It is never left
   disabled: a dead action row is a dead end, and the player has somewhere to go next — the
@@ -1913,11 +2017,12 @@ parade) assumes a `rally_id` meta and the box has no rally.
   `_cleanup_present_reveal` is shared by the generic car-park Back and restores the arrows
   and hint, so backing out mid-reveal can't leave a giant box parked in the lot.
 
-Tapping a pin opens the **rally detail** sub-panel — a **single-column card** built
-in `build_detail_overlay` (`hq_overlays.gd`) / populated in `_show_detail`. Header:
+Tapping a pin opens the **rally detail** sub-panel — a **single-column card** built and
+populated by `RallyDetail` (`scripts/rally_detail.gd`: `build()` / `fill()`, reached from
+`hq_table.gd::_show_detail`), shared with the overworld hub. Header:
 rally name **with the stage count appended** (`"Pinewood Sprint - 3 stages"`, singular
 "stage" for a one-stage rally), region tag, and a gold **SPECIAL EVENT** chip
-(`hq._detail_special`) on special rallies. There is deliberately **no per-stage breakdown** — the old left-hand STAGES
+(`RallyDetail.special`, forwarded as `hq._detail_special`) on special rallies. There is deliberately **no per-stage breakdown** — the old left-hand STAGES
 column (one row per event with its gravel/tarmac surface mix) was removed to free the
 full panel width on small screens; the stage count on the title is the whole story.
 **Body (full width):** the eligible-cars **restriction** (the
@@ -1980,9 +2085,13 @@ its name + stats (drive / **horsepower (HP)** / **weight (kg)** / **Health %**) 
 `_car_stats_text` — the single stat-list formatter shared by the car-select and LIFT
 overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
 only surfaces where it matters, in the upgrades-menu detune readout. There is
-no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
-**permanently too damaged to enter**: Start is disabled and the warning reads as final
-("wrecked beyond repair") rather than as an instruction, because nothing revives it.
+no floating 3D label above the car. **Damage never blocks entry** (`_refresh_focus_damage`):
+a wreck is not terminal — `Save.record_wreck` hands the car back at a fraction of health
+rather than writing it off (see [damage.md](damage.md)) — so Start stays ENABLED and the
+warning is an **instruction**, not a verdict, pointing at the repair the player can go and
+buy ("Damaged — the engine is down on power. Repair it at the lift."). It is gated on
+`Save.car_handles_badly`, not `car_needs_repair`, so a car at 98% health doesn't get told it
+handles badly.
 
 Rally entry is **purely categorical** — body type, country, doors, cylinders,
 displacement, drive mode. There is no performance band: a car is never too fast or too
@@ -2302,16 +2411,16 @@ refinements.
 
 ## Tests
 
-The **present box** map target is covered in `tests/headless/test_menu_flow.gd`: it appears
-in `hq_table._build_table_targets` with a `label_panel` and no `rally_id`, it is never in
-`hq._pins`, `_activate_table_focus` reaches it **with no pointer and opens no confirm** (it
-lands in `CarparkMode.PRESENT` with the box built), the bottom button prices itself and
-disables when broke, opening it buys exactly one car and names it under the car with no
-modal, and a second press cannot buy again. `test_the_present_box_panel_is_anchored_before_it_is_opened`
+The **present-box car reveal** is covered in `tests/headless/test_menu_flow.gd`:
+`test_a_won_car_opens_hq_on_a_forced_present_box` boots the HQ with
+`RallySession.pending_car_reveal_instance_id` set and asserts it lands in
+`CarparkMode.PRESENT`, that Back cannot leave an unopened box, and that the bottom button
+opens it; `test_the_present_box_only_presents_a_car_already_owned` asserts a reveal id naming
+a car the profile does not hold never enters the mode at all — the box is a presentation, so
+there is no purchase to test. `test_the_present_box_panel_is_anchored_before_it_is_opened`
 covers the anchor trap: the world panel already has a `Transform3D` anchor while the box is
 still shut, and that anchor is unchanged after opening — a relationship check, not authored
-offsets, so retuning the placement can't break it. The purchase LOGIC itself is in
-`tests/headless/test_reward_system.gd` (`purchase_car` / `car_price` / `is_stranded`).
+offsets, so retuning the placement can't break it.
 
 `tests/headless/test_menu_flow.gd` — HQ boots to the **exterior title** (one 3D map
 pin per rally, a locked special pin non-pickable); **Start flies into the garage**;

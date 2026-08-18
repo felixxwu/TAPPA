@@ -449,9 +449,13 @@ so the player lands back where they started.
 **Design decision — a new `CarparkMode` value, not a reuse of `RALLY`:** the
 rally branch's `_on_start_pressed` code path is intertwined with
 `_selected_rally_id`, `RallyLibrary.by_id`, and drivetrain-switch bookkeeping
-(`_drivetrain_needed`/`RallySession.register_drivetrain_revert`) that a
+(`RallySession.register_detune_revert` and friends) that a
 challenge has no equivalent for (no authored rally, no drivetrain
-restriction rule, no drivetrain-switch flow) — parameterizing that single
+restriction rule). The drivetrain half of that bookkeeping is gone entirely —
+`_drivetrain_needed` / `RallySession.register_drivetrain_revert` and the
+switch-at-Start-then-revert flow they drove are deleted, because conversion now
+carries a per-car star price and is a garage decision (see
+`hq_carpark.gd::_build_eligible_lineup`) — parameterizing that single
 `match` arm to serve both would have meant branching on "is this a
 challenge?" *inside* the RALLY case anyway. A dedicated `CHALLENGE` value
 keeps each mode's intent a single, git-blameable `match` arm, matching how

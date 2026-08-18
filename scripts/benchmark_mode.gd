@@ -129,7 +129,7 @@ func start() -> void:
 		Engine.max_fps = _saved_max_fps
 		if not Platform.is_headless():
 			DisplayServer.window_set_vsync_mode(_saved_vsync)
-	get_tree().change_scene_to_file("res://main.tscn")
+	Scenes.change_to(get_tree(), Scenes.MAIN)
 
 
 # Called by BenchmarkRunner when the car crosses the finish.
@@ -145,7 +145,7 @@ func exit_to_hq() -> void:
 	Engine.max_fps = _saved_max_fps
 	if not Platform.is_headless():
 		DisplayServer.window_set_vsync_mode(_saved_vsync)
-	get_tree().change_scene_to_file("res://hq.tscn")
+	Scenes.change_to(get_tree(), Scenes.hub_path())
 
 
 # --- Config overrides (pure, testable) -----------------------------------------

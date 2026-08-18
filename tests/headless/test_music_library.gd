@@ -92,8 +92,13 @@ func test_context_songs_resolve_to_real_catalogue_entries() -> void:
 			"rally song '%s' is a real catalogue entry" % id)
 
 
-func test_is_hq_scene_only_true_for_the_hq_scene() -> void:
+func test_is_hq_scene_only_true_for_the_hub_scenes() -> void:
+	# The predicate delegates to Scenes.is_hub_scene, which accepts EITHER hub: the
+	# overworld hub must not fall through to the rally pool and play a rally song as
+	# its hub theme (see scripts/scenes.gd).
 	assert_true(MusicLibrary.is_hq_scene(MusicLibrary.HQ_SCENE), "the HQ scene is the HQ")
+	assert_true(MusicLibrary.is_hq_scene(Scenes.OVERWORLD),
+		"the overworld is the other hub, so it counts as HQ for music")
 	for other in ["res://main.tscn", "res://standings.tscn", "res://podium.tscn", ""]:
 		assert_false(MusicLibrary.is_hq_scene(other), "non-HQ scene '%s' is not the HQ" % other)
 

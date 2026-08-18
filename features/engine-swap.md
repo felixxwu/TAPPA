@@ -44,13 +44,15 @@ earned. See [save-persistence.md](save-persistence.md).
 
 Two consumers:
 
-- `UpgradeOptions._engine_options` / `UpgradeOptions.engine_swap_blocked_reason` — the
-  `engine` tile's options are always LISTED, and every engine other than the fitted one
-  carries a `locked_reason` of `"Locked"` while the capability is unwon, and `""` (i.e.
-  freely pickable) once it is won. Those are the only two states — the tile is
-  permanently accessible after the unlock. This is the grid-wide rule (see [upgrade-catalogue.md](upgrade-catalogue.md) → "Locked
-  options are LISTED, GREYED"): a tile hides its contents behind a press, so an omitted
-  option is an option the player can never learn exists.
+- `UpgradeOptions.engine_swap_blocked_reason(owned_car)` — returns `"Locked"` while the
+  capability is unwon and `""` once it is won, and those are the only two states: the tile is
+  permanently accessible after the unlock. Note the `engine` tile does **not** list a
+  catalogue of engines — `UpgradeOptions.options_for` returns an EMPTY array for
+  `SLOT_ENGINE` (as it does for `SLOT_TUNE`) and the tile hands off to the car picker
+  instead, because a swap TRADES engines with another car you own rather than fitting one
+  off a shelf. (`UpgradeOptions._engine_options`, which used to build that catalogue list, is
+  gone.) The garage-wide gate is read straight off
+  `RallyLibrary.engine_swaps_unlocked(Save.profile)`.
 - `hq._show_swap_confirm` — the car-park station's confirm popup, which is
   reachable independently of the garage grid, so it re-checks rather
   than trusting the caller, and is where the locked explanation still lives. It is
@@ -400,7 +402,8 @@ drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
 covers `TuningLibrary.apply`'s `engine_detune` torque scaling. `test_upgrades_grid.gd` covers the
 `engine` and `tune` tiles (their options, the locked-vs-allowed gate and the slider
-popup); `test_menu_flow.gd` covers car-park swap mode, the confirm flow, and
-the car-park detune-to-enter prompt (over-cap car parks looking eligible; Start
-pops the "Too powerful" confirm; Change Upgrades opens the gated upgrades popup).
-`test_rally_library.gd` covers `RallyLibrary.qualifying_detune` itself.
+popup); `test_menu_flow.gd` covers car-park swap mode and the confirm flow.
+There is no detune-to-enter gate left to test: career entry is purely categorical
+(`RallyLibrary.ineligibility_reason`) and `RallyLibrary.qualifying_detune` is deleted, so the
+surviving "Too powerful" prompt (`hq_carpark._show_over_limit_prompt`) belongs to a Rally
+Challenge's rating ceiling — see [rally-challenge.md](rally-challenge.md).

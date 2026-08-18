@@ -126,11 +126,11 @@ func quit_to_hq() -> void:
 	elif ChallengeSession.is_active():
 		ChallengeSession.pause_run()
 		RallySession.return_to_garage = true
-		get_tree().change_scene_to_file("res://hq.tscn")
+		Scenes.change_to(get_tree(), Scenes.hub_path())
 	elif RallySession.is_active():
 		RallySession.abandon()
 	else:
-		get_tree().change_scene_to_file("res://hq.tscn")
+		Scenes.change_to(get_tree(), Scenes.hub_path())
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -14,7 +14,6 @@ var _title_free_roam_button: Button  # EXTERIOR title Free Roam (session-less dr
 var _title_settings_button: Button  # EXTERIOR title Settings
 var _title_exit_button: Button  # EXTERIOR title Exit Game (last in the row)
 var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
-var _detail_dev_win_button: Button # DEV ONLY: win the rally outright; null in a release build
 
 func _init(hq: HqController) -> void:
 	_hq = hq
@@ -188,131 +187,11 @@ func build_table_overlay() -> void:
 	_hq._passthrough_overlay(root)  # let taps / drags reach the 3D map pins behind the HUD
 
 
-func build_detail_overlay() -> void:
-	# Scrolled body + pinned actions row (_hq._make_modal_overlay — read its header for
-	# why): the eligibility column is three autowrapped labels whose height depends on the
-	# rally's restriction text and the player's garage, and on a narrow phone frame they
-	# wrap to several lines each. Before this they could push "< Map" off the bottom of the
-	# canvas, and menu_back is Esc / gamepad B only — no way back by touch.
-	var made := _hq._make_modal_overlay()
-	_hq._detail_layer = made[0]
-	var root: VBoxContainer = made[1]
-	var footer: HBoxContainer = made[2]
-	# NO full-rect backing here: MenuPage's body box IS the panel, and it hugs its contents
-	# so the map stays visible around it. A full-screen ColorRect behind it would paint over
-	# the whole map table and undo that.
-
-	# A WIDTH FLOOR, for the same reason the challenge screen has one: this page is re-filled
-	# per rally (build_detail_overlay runs once, _show_rally_detail rewrites it), and rally
-	# names, restriction strings and star counts all differ in length — so a box that only
-	# hugs its contents is a different width for every pin you open. Floored so it reads as
-	# one panel you keep opening rather than a new one each time. Kept the SAME number as the
-	# challenge screen below: the two open from the same map and read as one panel shape, so a
-	# few px of difference between them looks like a bug rather than a choice.
-	var page := made[3] as MenuPage
-	page.set_body_width(_hq._modal_body_width(480.0))  # clamped to the current logical canvas
-
-	# Everything below is uppercased + locked to one font size by UITheme.enforce
-	# (via _normalize_menus on each view change), so hierarchy comes from layout,
-	# colour and separators — not font size. Stars are a polygon StarRow, since
-	# Syne Mono has no ★ glyph.
-
-	# --- Header: title + region on the left, a gold SPECIAL EVENT chip on the right.
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 12)
-	root.add_child(header)
-	var titles := VBoxContainer.new()
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(titles)
-	# AUTOWRAP both: set_body_width is only a FLOOR, so a non-wrapping label that wants more
-	# still widens the box past it. A long rally name ("Archipelago Trial - 3 stages") is
-	# exactly that, which would leave the width floored but still varying per pin. Everything
-	# else in this page already wraps (detail_wrap_label).
-	_hq._detail_title = _hq.label("", 30)
-	_hq._detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hq._detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_child(_hq._detail_title)
-	_hq._detail_region = _hq.label("", 16)
-	_hq._detail_region.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hq._detail_region.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hq._detail_region.add_theme_color_override("font_color", UITheme.MUTED)
-	titles.add_child(_hq._detail_region)
-	_hq._detail_special = _hq.label("SPECIAL EVENT", 16)
-	_hq._detail_special.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_hq._detail_special.add_theme_color_override("font_color", UITheme.GOLD)
-	header.add_child(_hq._detail_special)
-
-	root.add_child(HSeparator.new())
-
-	# --- One full-width status column. The old per-stage breakdown (surface mix per
-	# event) was more detail than the player needs here and cost half the panel; the
-	# stage COUNT now rides on the header title instead ("Coastal Sprint - 3 stages"),
-	# which frees the whole width for the eligibility read-out on small screens.
-	var right := VBoxContainer.new()
-	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right.add_theme_constant_override("separation", 4)
-	root.add_child(right)
-	right.add_child(_hq.detail_heading("Eligibility"))
-	# All sidebar text wraps within the column so a long restriction / caution can't
-	# draw past the panel edge (Labels don't clip by default).
-	_hq._detail_restriction = _hq.detail_wrap_label()
-	right.add_child(_hq._detail_restriction)
-	_hq._detail_qualify = _hq.detail_wrap_label()
-	right.add_child(_hq._detail_qualify)
-	_hq._detail_adjust = _hq.detail_wrap_label()
-	_hq._detail_adjust.add_theme_color_override("font_color", UITheme.GOLD)
-	right.add_child(_hq._detail_adjust)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 12)
-	right.add_child(gap)
-	right.add_child(_hq.detail_heading("Your record"))
-	var record_row := HBoxContainer.new()
-	record_row.add_theme_constant_override("separation", 10)
-	right.add_child(record_row)
-	_hq._detail_record = _hq.label("", 16)
-	record_row.add_child(_hq._detail_record)
-	_hq._detail_stars = StarRow.new()
-	_hq._detail_stars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	record_row.add_child(_hq._detail_stars)
-
-	# The actions row is the pinned footer, so both controls are always on screen.
-	# "< Map" stays FOCUS_NONE deliberately: this panel has no MenuNav and no button
-	# cursor — hq._unhandled_input drives it directly from the TABLE view (menu_select
-	# enters, menu_back hides it), so making one of the two buttons focusable would
-	# create a half-built focus graph with nothing to seed or move the cursor. Pinning is
-	# what makes it reachable by touch; keyboard/gamepad already have menu_back.
-	var actions := footer
-	var back := Button.new()
-	back.text = "< Map"
-	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(_hq._table_ui._hide_detail)
-	actions.add_child(back)
-	var enter := Button.new()
-	enter.text = "Enter Rally — choose car >"
-	enter.focus_mode = Control.FOCUS_NONE
-	enter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	enter.pressed.connect(_hq._enter_car_screen)
-	actions.add_child(enter)
-	_hq._detail_enter_button = enter
-
-	# DEV ONLY: win this rally outright without driving it. Built only in a debug build
-	# (SettingsMenu.dev_tools_enabled — the same gate the dev settings pages use), so a
-	# release export never has the node at all, rather than having a hidden one.
-	#
-	# Per-rally rather than the mass "3-star all" cheat in Settings, because reveal is
-	# geometric: completing ONE rally lights the circle around that pin and opens its
-	# neighbours, so this walks the exploration graph a step at a time. The mass cheat
-	# lights the whole map at once and can't show the progression at all.
-	# FOCUS_NONE like its neighbours — this panel has no MenuNav (hq._unhandled_input drives
-	# it), so a focusable button would build a half-wired focus graph. The keyboard/gamepad
-	# route is the dev_complete_rally action instead; see hq._unhandled_input.
-	if SettingsMenu.dev_tools_enabled():
-		var dev := Button.new()
-		dev.text = "DEV: win"
-		dev.focus_mode = Control.FOCUS_NONE
-		dev.pressed.connect(_hq._dev_complete_selected_rally)
-		actions.add_child(dev)
-		_detail_dev_win_button = dev
+# The RALLY-DETAIL PANEL is no longer built here. It moved to RallyDetail
+# (scripts/rally_detail.gd) whole — build half, fill half and state — so the overworld hub can
+# open the same card; hq.gd::_build_hq constructs it and wires its three callbacks. See
+# todo/hq-split.md for the extraction discipline and docs/superpowers/specs/
+# 2026-08-17-overworld-hq-design.md → "The detail-panel extraction" for why.
 
 
 func build_lift_overlay() -> void:
@@ -681,7 +560,7 @@ func build_settings_overlay() -> void:
 # first open (_hq._challenge_ui._open_challenge_overlay). See spec §7 and features/rally-challenge.md.
 # A flat widget list -> native focus + MenuNav, not the diegetic ButtonCursor idiom
 # the 3D stations use, since this whole screen is a plain menu page.
-# A dark detail-card SIBLING to the rally-detail panel (build_detail_overlay, above):
+# A dark detail-card SIBLING to the rally-detail panel (RallyDetail.build):
 # same MODAL_DIM backing, two-line header (kind + ceiling) with a non-mouse-interactive
 # tab row for the kind, HSeparator, then a status column of one-row-per-section
 # (_hq.challenge_info_row) so the two panels read as the same design system.
@@ -726,7 +605,7 @@ func build_challenge_overlay() -> void:
 	page.set_body_fixed_height(210.0)
 
 	# --- Header: title ("Daily Challenge") + ceiling subtitle underneath, mirroring
-	# _detail_title/_detail_region's two-line shape.
+	# RallyDetail's title/region two-line shape.
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
 	root.add_child(header)

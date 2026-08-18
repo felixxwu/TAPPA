@@ -101,6 +101,49 @@ over itself in a spin. Writing depth makes those crossings fight in the buffer, 
 blending them twice darkens every overlap into a blob so the marks stop reading as
 separate lines. `engine_smoke.gd` makes the same call for stacked puffs.
 
+## Ungated mode (the overworld)
+
+`setup(centerline, …)` accepts a **null** centerline, which switches the node into
+*ungated* mode (`_ungated`). The overworld hub has no single `Curve2D` — it has a road
+NETWORK (`overworld.gd::_road_polylines`) — so there is no corridor to test against.
+In ungated mode:
+
+- the car-offset cache and both windowed nearest-point searches are skipped entirely
+  (`_pts` stays empty, `_baked_length` 0);
+- whether a wheel may mark is decided by `TerrainManager.surface_at()` alone: its road
+  weight (`.x`) must exceed `UNGATED_ROAD_WEIGHT_MIN`, since the hub's roads are carved
+  into the terrain's surface weights. Open ground reads as grass and breaks the ribbon,
+  the same outcome the stage's half-width gate produces;
+- the last-resort across-direction (see *Width and direction* below) falls back to the CAR's
+  right axis rather than a curve tangent.
+
+Everything else — the gravel/tarmac split, the force/grip-driven strength and colour,
+the ring buffers, upload coalescing, the material and the shader warm-up — is shared.
+Supplying a centerline restores the stage's corridor gate; nothing else differs.
+
+## Width and direction
+
+A segment point is the tyre's contact CENTRE, spread half the mark's width either side of it
+along a unit XZ direction. Two rules, both in `tire_marks.gd`:
+
+- **The direction is perpendicular to TRAVEL, never to the tyre's heading** (`_across_dir`).
+  It used to come from the road normal (stage) / the car's right axis (overworld), i.e. from the
+  heading — which is only perpendicular to travel while the car tracks straight. In a slide or a
+  spin the travel direction rotates away from the heading, and once travel lines up with the
+  spread direction the pair's two verts advance ALONG the ribbon rather than across it:
+  consecutive pairs go collinear and every quad collapses into a sliver. The mark went narrow
+  exactly when the car was doing the thing that should mark most. Sources in order: this wheel's
+  own travel since its last point, then the car's `linear_velocity`, then (only if the car is
+  somehow at rest, which the speed gate already excludes) the old heading-derived normal
+  `_across_normal` / `_normal_at`.
+- **The width is the TYRE's width** (`_tire_width_of`): `GameConfig.wheel_width_front` /
+  `wheel_width_rear`, which `car.gd` writes from the fielded car's `CarLibrary` spec — the same
+  numbers that size the tyre cylinders and feed load sensitivity. Steering wheels count as the
+  front axle, exactly as `car.gd::_relocate_wheels` decides it, so a staggered car leaves wider
+  rear marks than front ones. `tire_mark_width_m` is now only the FALLBACK for a spec that
+  authors no width (and for the flat test fixtures, whose stub wheels have no
+  `use_as_steering`).
+
 ## Per-tick logic
 
 Each `_physics_process` (skipped when `tire_marks_enabled` is off, the centerline
@@ -132,7 +175,8 @@ is missing, or the car is gone):
   that is what keeps a normally-driven tarmac road clean, and it is gated on the raw
   strength so the fade toggle never moves where marks appear. Otherwise, once the wheel
   has moved ≥ `tire_mark_segment_step_m` since its last point,
-  append a ribbon segment — a left/right pair across the road normal at the wheel's
+  append a ribbon segment — a left/right pair spread around the wheel's contact centre
+  perpendicular to its TRAVEL (see *Width and direction*), at the wheel's
   **contact patch** (`y = hub.y − wheel_radius + tire_mark_ground_offset_m`, NOT
   `terrain.height_at` — near the road the terrain mesh is flattened to the baked road
   height the car rides on, so the raw noise height would sink the ribbon under the
@@ -184,7 +228,8 @@ the fade is enabled.
 ## Configuration
 
 All in `GameConfig` (the "Tire Marks" group): `tire_marks_enabled`,
-`tire_mark_color`, `tire_mark_tarmac_color`, `tire_mark_width_m`,
+`tire_mark_color`, `tire_mark_tarmac_color`, `tire_mark_width_m` (fallback only — the
+width normally comes from the tyre, see *Width and direction*),
 `tire_mark_min_speed_mps`, `tire_mark_segment_step_m`, `tire_mark_max_segments`,
 `tire_mark_ground_offset_m`, `tire_mark_gravel_margin_m`.
 

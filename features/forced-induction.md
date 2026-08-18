@@ -163,10 +163,10 @@ carries a `menu_label` (the turbo tile's option popup shows "Small" / "Big" /
 "Supercharger" rather than the full name) and a `turbo_parasitic_friction`
 term (the always-on backpressure N·m). `UpgradeLibrary.UPGRADES` no longer
 authors a `tier` field at all — that field is gone from the table entirely;
-see "Gating" below for what replaced it. Rarity within what's unlocked is an
-optional authored `weight` (`UpgradeLibrary.pool_weight`, default `1.0`), read
-by `RewardSystem.draw_upgrade`'s weighted pool — not shown here since none of
-these three currently author a non-default weight.
+see "Gating" below for what replaced it. There is no random pool weighting
+either: `RewardSystem.draw_upgrade` and the per-event upgrade draw it fed are
+**deleted** (see [reward-system.md](reward-system.md)), so nothing enumerates a
+pool of parts — every route to a part names it directly.
 
 (The exact `install_turbo`/`install_supercharger` numeric fields on each entry
 are authored balance placeholders — see [configuration.md](configuration.md)'s
@@ -176,30 +176,36 @@ exactly the kind of tunable value that drifts.)
 
 ### Gating
 
-Each of the three carries up to two independent gates, both of which must
-pass for `RewardSystem` to offer the part in a car's reward draw
-(`RewardSystem._eligible_parts`):
+Each of the three carries up to two independent gates, both of which must pass
+before the part can be TAKEN. There is no reward draw to be admitted to any
+more (`RewardSystem.draw_upgrade` / `_eligible_parts` are deleted); the gates
+are read by the **garage's star shop** — `UpgradeOptions._lock_reason`, called
+from `_part_options` for every row in a slot's option list:
 
 - **Prerequisite (per-car).** `turbo_large` requires `turbo_small` already
   fitted to THAT car; `supercharger` requires `turbo_large`. This is the old
   "tier" ladder's real job — `UpgradeLibrary.requires_upgrade_id` /
   `prerequisite_met` — and is unchanged by the tier removal.
 - **Event gate (garage-wide).** `UpgradeLibrary.unlocked_by_rally(id)` /
-  `rally_gate_met(item_id, profile)`: an item can be absent from the reward
-  pool entirely until a particular special event has been WON (top-3 finish).
+  `rally_gate_met(item_id, profile)`: an item cannot be bought until a
+  particular special event has been WON (top-3 finish).
   In the shipped table, `turbo_large` ("Big Turbo") is gated on
   `sp_dust_trial` and `supercharger` on `sp_archipelago_trial` — see
   `todo/star-gated-special-events.md` (the spec's filename only; the special's
   OWN gate is geometric now, like any other rally — `RallyLibrary.rally_revealed`
   — not a completion count or a star total, see
-  [star-economy.md](star-economy.md)). This gates EARNING only:
+  [star-economy.md](star-economy.md)). This gates ACQUIRING only:
   `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the
   gate, so a part already fitted keeps working even if the gate that unlocked
   it were somehow revisited.
 
-Both gates are evaluated together, so `turbo_large` isn't offered to a car
+Both gates are evaluated together, so `turbo_large` cannot be taken by a car
 until it already carries `turbo_small` AND the `sp_dust_trial` special has
-been won — whichever comes later in a given playthrough.
+been won — whichever comes later in a given playthrough. A gated part is still
+**LISTED** on its slot's tile, greyed with `locked_reason` ("Locked" for the
+event gate, "Needs <part>" for an unmet prerequisite) rather than hidden, so
+the slot shows its whole ladder — see [upgrade-catalogue.md](upgrade-catalogue.md)
+→ "Locked options are LISTED, GREYED".
 
 `UpgradeLibrary.apply()` handles **both** induction effect keys through ONE
 `"install_induction"` op, with everything that differs between them living in the
@@ -256,9 +262,11 @@ just the engine's stock `turbo_boost_gain`) before feeding it to
 `LapTimeModel.optimum_ms`. Without this the floor would fall back to the
 engine's unboosted `peak_torque`, so a turbo car's rival would run
 artificially slow — out of step with the player's boosted stats and the car's
-real on-track physics. `RallyLibrary._best_eligible_car` boosts the same way,
-so the "fastest possible car" bound rivals are clamped against reflects the
-same forced induction.
+real on-track physics. There is no longer a separate "fastest possible car"
+bound to keep in step with it: `RallyLibrary._best_eligible_car` is gone, and
+every rival's time is now derived from THEIR OWN drawn car's boosted
+`optimum_ms` times a pace-band factor, with the grid matched to the player's
+`CarPerformance.rating` rather than clamped against a single reference car.
 
 ## Supercharger (belt drive)
 

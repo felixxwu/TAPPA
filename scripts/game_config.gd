@@ -1473,7 +1473,20 @@ func has_nitrous() -> bool:
 ## synthetic roster without having to complete anything. Any value above 0 puts the circle
 ## back — and would also want an HQ landmark on the table again: `scripts/map_house.gd`
 ## builds one and is kept for exactly that, currently unreferenced.
-@export_range(0.0, 1.0, 0.005) var map_hq_reveal_radius := 0.0
+## Radius of the circle HQ itself lights, in normalised map units. 0 = HQ lights nothing.
+##
+## SHIPS SMALL AND NON-ZERO, which is a change from the 0.0 this had while the HQ table was the
+## only hub. It went to 0 because the player used to begin INSIDE their opening rally, so the
+## middle of the map was ordinary fogged ground and lighting it opened the nearest pins for
+## nothing. The OVERWORLD changed that premise: the player now starts standing at the garage and
+## picks their first car there, so the middle is "somewhere they already are" — the same
+## justification RallyLibrary.lit_sources gives for lighting the opening rally. Left at 0 the
+## fog veil darkens the screen and the frontier push shoves the car while the player is choosing.
+##
+## It is kept DELIBERATELY SMALL: big enough to cover the garage pad
+## (overworld_pad_garage_radius_m) and no bigger, so no rally pin falls inside it and nothing is
+## unlocked unearned. test_rally_library.gd pins that relationship — raise this and it fails.
+@export_range(0.0, 1.0, 0.005) var map_hq_reveal_radius := 0.03
 ## Tuning lift: centre position + overall footprint (posts span this width; also
 ## the pickable click volume).
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
@@ -2157,7 +2170,11 @@ func has_nitrous() -> bool:
 ## Tarmac skidmark ceiling — laid only where a driven wheel spins on the tarmac (the
 ## gravel ruts use tire_mark_color instead). Black like the above; see its note.
 @export var tire_mark_tarmac_color := Color(0.0, 0.0, 0.0, 0.6)
-## Width of a wheel's mark ribbon, in metres (roughly a tyre's width).
+## FALLBACK width of a wheel's mark ribbon, in metres. A mark is normally exactly as wide as
+## the tyre that laid it — `wheel_width_front` / `wheel_width_rear` above, which car.gd writes
+## from the fielded car's spec, so a staggered car leaves wider rear marks than front ones. This
+## value is used only where that width is unavailable (a spec authoring none, or a flat test
+## fixture). See tire_marks.gd -> _tire_width_of.
 @export var tire_mark_width_m := 0.22
 ## Don't lay marks below this car speed (m/s) — keeps the countdown/parked car clean.
 @export var tire_mark_min_speed_mps := 2.0
@@ -2988,6 +3005,17 @@ func ground_subdiv_for(web: bool, touch: bool) -> int:
 	return ground_subdiv_web_touch if (web and touch) else ground_subdiv
 
 
+# Whether the on-disk overworld terrain cache may be used for the current target:
+# the authored overworld_cache_enabled AND not web. On web, user:// is IndexedDB
+# backed, shares its quota with profile.json, and there is no quota detection — a
+# ~83 MB terrain cache there risks taking the player's save down with it, so the
+# cache is off on EVERY browser (desktop included), hence `touch` is accepted for
+# signature parity with the other per-target accessors but never consulted.
+# Pure so the overworld resolves it once at entry and tests can pin either branch.
+func overworld_cache_active_for(web: bool, _touch: bool) -> bool:
+	return overworld_cache_enabled and not web
+
+
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car
 # gets the base rate on both axles (unchanged), a nose-heavy car a stiffer front.
 func axle_stiffness(front: bool) -> float:
@@ -3052,6 +3080,17 @@ func terrain_layers() -> Array[Vector2]:
 		Vector2(terrain_layer1_wavelength, terrain_layer1_amplitude),
 		Vector2(terrain_layer2_wavelength, terrain_layer2_amplitude),
 		Vector2(terrain_layer3_wavelength, terrain_layer3_amplitude),
+	]
+
+
+# The OVERWORLD's height layers, same (wavelength, amplitude) shape as terrain_layers() so a
+# consumer can swap one for the other. Every hub height path must use this one; see the
+# "Overworld terrain NOISE" block for why the hub does not share the stage values.
+func overworld_terrain_layers() -> Array[Vector2]:
+	return [
+		Vector2(overworld_terrain_layer1_wavelength, overworld_terrain_layer1_amplitude),
+		Vector2(overworld_terrain_layer2_wavelength, overworld_terrain_layer2_amplitude),
+		Vector2(overworld_terrain_layer3_wavelength, overworld_terrain_layer3_amplitude),
 	]
 
 
@@ -3480,3 +3519,302 @@ func spectator_params() -> Dictionary:
 ## solve has failed to find a real SHAPE and is falling back to disguised uniform
 ## scaling, so it warns instead of shipping silently.
 @export_range(1, 5000) var rival_ghost_max_time_residual_ms := 250
+
+
+@export_group("Overworld")
+# The drivable overworld map — a single open landmass the player drives across to reach
+# rallies, dealerships and the workshop, standing in for the HQ's menu tables. See
+# docs/superpowers/specs/2026-08-17-overworld-hq-design.md and features/overworld.md.
+# The terrain is generated once per invalidation key and cached under user://overworld/,
+# then streamed in chunks around the car; zones are dwell-activated hotspots on it.
+## Master gate. Off (the default) = the shipped hq.tscn hub is the only hub and none of
+## the overworld's generation, cache or streaming cost is ever paid. Read at BOOT, before
+## any settings UI exists, which is why it lives here and not only on the dev page.
+@export var overworld_enabled := false
+## Width AND depth (metres) of the square map. Map positions are normalised 0..1, so this
+## is the only thing that converts them to world metres — changing it rescales every zone
+## placement, and it is part of the terrain cache's invalidation key, so a change forces a
+## full regeneration. It is also the main cost lever: generation time and cache size scale
+## with the SQUARE of it (~83 MB at 4 km, ~47 MB at 3 km).
+@export_range(500.0, 16000.0) var overworld_size_m := 4000.0
+## Persist generated overworld chunks to user://overworld/ so the (slow) first-entry
+## generation is paid once instead of every entry. Off = regenerate every session, which
+## is the dev escape hatch while the invalidation key is churning — correctness is
+## unaffected, only load time. See overworld_cache_active_for() for the platform side.
+@export var overworld_cache_enabled := true
+## Radius, in chunks (Chebyshev), of the ring of loaded chunks kept around the car — a
+## radius of 10 is a 21x21 window. Larger = more of the map visible with fewer stream-in
+## pops, but more memory and more build work per boundary crossing.
+## PROVISIONAL: the design calls for this to be measured on a real device (the overworld's
+## streaming budget is genuinely new and has no precedent in the corridor-shaped rally
+## terrain), and the number retuned from that measurement. Treat it as a starting point.
+@export_range(1, 32) var overworld_load_radius := 10
+## Chunk builds allowed per rendered frame while the load ring catches up. A crossing
+## queues a whole row of chunks at once, so building them all in one frame hitches;
+## draining a couple per frame keeps them ahead of the car without a visible stall.
+## Same provisional caveat as the load radius — size it from a measured build cost.
+@export_range(1, 16) var overworld_chunk_build_budget := 2
+## Radius (metres) of a zone's trigger area — how close the car must be parked to a
+## rally / dealership / workshop hotspot for it to be a candidate for activation.
+@export_range(2.0, 200.0) var overworld_zone_radius_m := 25.0
+## How long (seconds) the car must sit stopped inside a zone before it activates. ANY
+## movement resets the accumulator to zero, so this is a deliberate "park here" gesture
+## rather than something a fast drive-through can trip.
+@export_range(0.0, 15.0) var overworld_zone_dwell_s := 3.0
+## Speed (km/h) below which the car counts as stopped for the dwell timer above. Not
+## zero: idle creep and suspension settle never quite reach a true standstill.
+@export_range(0.0, 30.0) var overworld_zone_stop_kmh := 2.0
+## Height (metres) of the transparent light tube that stands on a zone — the landmark that
+## replaced the old ground ring. Tall enough to be spotted well before the marker itself
+## comes in at `overworld_marker_draw_distance_m`; it fades out towards the top, so this is
+## the height at which it has fully vanished, not a hard edge.
+@export_range(0.0, 400.0) var overworld_zone_tube_height_m := 60.0
+## Alpha of the tube AT ITS BASE while idle. The vertical fade to nothing is baked into the
+## mesh; this is the overall strength dial. Low enough to see the terrain and the car through
+## it, high enough to read against a bright sky.
+@export_range(0.0, 1.0, 0.01) var overworld_zone_tube_alpha := 0.28
+## Alpha the tube's lit portion (and its sweeping fill line) reaches at a completed dwell.
+## The jump from `overworld_zone_tube_alpha` to this IS the "it fired" punctuation, so keep
+## the gap wide.
+@export_range(0.0, 1.0, 0.01) var overworld_zone_tube_ready_alpha := 0.85
+## How far in (metres) from the map bounds the coastline taper begins. Inside this band
+## the ground falls away to the perimeter depth, so the map ends in water rather than at a
+## visible wall. Part of the cache invalidation key — changing it regenerates the terrain.
+@export_range(0.0, 2000.0) var overworld_edge_taper_m := 300.0
+## How far BELOW the waterline the very perimeter of the map sits (metres). Deep enough
+## that the taper reads as sea floor and no undrowned ground survives at the bounds.
+## Also part of the cache invalidation key.
+@export_range(0.0, 500.0) var overworld_edge_depth_m := 40.0
+# --- Overworld terrain NOISE ------------------------------------------------------------
+#
+# The hub gets its OWN height noise, separate from the stages' terrain_layer* fields, because
+# the two worlds want opposite things from the same generator. A stage is a narrow corridor
+# a few hundred metres wide where big relief reads as drama; the hub is a 1 km square the
+# player crosses constantly, where the same relief becomes a wall between two rally zones.
+# The stage values (300 m / 30 m on layer 1) put only three or four features across the whole
+# hub and fought the flat pads hard enough to leave undrivable lips off them — see
+# tools/analyse_road_grades.gd.
+#
+# Same generator, same meaning as the stage fields: PERLIN, FRACTAL_NONE, one noise per layer
+# at `frequency = 1 / wavelength`, summed as `noise(x, z) * amplitude`. Amplitude is the peak
+# CONTRIBUTION in metres, so the layer sum bounds the total relief.
+#
+# ALL of these are in the chunk cache's invalidation key (OverworldCache.invalidation_key), so
+# retuning any one of them discards the precomputed map and rebuilds it on the next launch.
+# Anything that sets up hub terrain must read these — overworld.gd, the cache key, AND
+# tools/analyse_road_grades.gd — or it measures a world the player never drives.
+
+## Broad relief: the hills the roads wind between. Keep the wavelength a decent fraction of
+## overworld_size_m or the map reads as one slope; keep the amplitude modest or the pads
+## cannot feather back into it at a drivable grade.
+@export_range(1.0, 1000.0) var overworld_terrain_layer1_wavelength := 220.0
+@export_range(0.0, 100.0) var overworld_terrain_layer1_amplitude := 12.0
+## Mid detail: undulation along a road rather than hills to cross.
+@export_range(1.0, 200.0) var overworld_terrain_layer2_wavelength := 60.0
+@export_range(0.0, 10.0) var overworld_terrain_layer2_amplitude := 3.0
+## Fine texture: stops the ground reading as smooth shading at close range. Small enough not
+## to shake the car — the wheels average anything under a metre or so.
+@export_range(1.0, 200.0) var overworld_terrain_layer3_wavelength := 18.0
+@export_range(0.0, 10.0) var overworld_terrain_layer3_amplitude := 0.8
+## Seed for the hub's height noise only. Deliberately SEPARATE from track_seed, which still
+## places the hub's roads and scatter: reshaping the ground should not relocate every road and
+## tree, and re-rolling the road layout should not force a full terrain rebake.
+@export var overworld_terrain_seed := 2
+
+## THE FRONTIER WALL — the translucent curtain standing on the edge of the revealed region, so the
+## boundary is visible before the veil and the push-back explain it (features/overworld.md ->
+## "The frontier wall"). A WARNING, never a collider: the soft push is still the only thing that
+## moves the car.
+@export var overworld_fog_wall_enabled := true
+## How tall the curtain stands, metres. Tall enough to read across a valley, short enough not to
+## wall the sky off. Baked into the mesh, so a retune shows on the next rebuild (a rally completing,
+## or re-entering the hub) rather than instantly.
+## Seconds the showroom camera takes to fly back to the driving view when the car picker closes.
+## 0 disables the transition and cuts, which is also what a visuals-off picker does — so the
+## hand-back contract is identical either way and only the visible case gained a move.
+##
+## Kept SHORT: it plays after the player has committed (confirm) or backed out (cancel), so it is
+## time between an input and control returning. The car is parked, so there is nothing to miss.
+@export_range(0.0, 3.0, 0.05) var overworld_picker_fly_seconds := 0.45
+@export_range(0.0, 200.0) var overworld_fog_wall_height_m := 22.0
+## Its overall opacity at the base (the fade to nothing with height is the light tube's own curve).
+@export_range(0.0, 1.0, 0.01) var overworld_fog_wall_alpha := 0.40
+## Its tint. BLACK, so the edge of the world reads as the world running out rather than as a hazard
+## stripe: it darkens what is behind it, which is the same thing crossing it does to the whole screen
+## (`Overworld.FOG_VEIL_ALPHA`). It was red, which said "danger" about ground that is merely unknown.
+@export var overworld_fog_wall_color := Color(0.0, 0.0, 0.0)
+
+## THE DIEGETIC CAR PICKER's camera (features/overworld.md -> "Picking a car in place"), in the
+## CAR's own space: x = to its right, y = up from the ground it stands on, z = ahead of its nose.
+## A three-quarter view in front of the car the player parked — the car never moves to suit it.
+@export var overworld_picker_camera_offset := Vector3(2.6, 1.5, 5.2)
+## How far BELOW the car's middle that camera aims, metres. Pitches the shot DOWN, which pushes the
+## car UP the frame and clear of the bottom-anchored menu bar. Moving the aim rather than raising the
+## camera keeps the car the same distance and the same size on screen.
+@export_range(0.0, 6.0, 0.05) var overworld_picker_camera_aim_drop_m := 0.9
+## Field of view for that camera. Tighter than the chase camera's on purpose: this is a portrait
+## of one car, not a driving view.
+@export_range(20.0, 110.0) var overworld_picker_camera_fov := 45.0
+
+## Turntable rate (degrees/second) of the GHOST CARS parked at dealership zones. It no longer
+## turns the floating ICONS: those (and the star layer above them) FACE THE PLAYER, because a
+## rally's kind and your star count are information and should not have to be waited for
+## (features/overworld.md -> "Markers"). A parked prize car carries no such information, so it
+## keeps turning like a showroom turntable.
+@export_range(0.0, 360.0) var overworld_marker_spin_deg_s := 30.0
+## How high (metres) a zone's icon floats above the zone's ground position — high enough
+## to clear foliage and be spotted over a rise.
+@export_range(0.0, 40.0) var overworld_marker_height_m := 6.0
+## Beyond this distance (metres) from the car, a zone's marker is not built at all. With
+## 38 rallies plus the service zones on one map, drawing every marker everywhere is the
+## whole budget; this keeps only the ones the player can plausibly be heading for.
+@export_range(50.0, 4000.0) var overworld_marker_draw_distance_m := 600.0
+## Cap on how many ghost cars (the showroom cars posed at dealership zones) may be alive
+## at once. Each is a real car mesh, so this is a hard rendering budget, not a hint.
+@export_range(0, 12) var overworld_ghost_car_max := 3
+
+# --- The drive-in garage (scripts/overworld_garage.gd) --------------------------------------
+# The garage is a BUILDING on the overworld that the player drives into; the car is then seated
+# on a lift and the tune / upgrade pages open in place. See features/overworld.md → "The garage".
+## Clear width of one service bay, in metres. Two bays wide; wide enough to drive into without
+## clipping a pillar.
+@export_range(3.0, 14.0, 0.1) var overworld_garage_bay_width_m := 7.5
+## Front-to-back depth of the garage. Deep enough that a car is fully under the roof.
+@export_range(6.0, 24.0, 0.1) var overworld_garage_bay_depth_m := 12.0
+## Fastest the car may be moving, in km/h, for driving into the bay to seat it on the lift.
+## Arrive faster and nothing happens until you have stopped — the back wall is solid, so this
+## can only delay the entry, never block it.
+@export_range(0.0, 40.0, 0.5) var overworld_garage_enter_max_kmh := 12.0
+## How high the lift raises the car above the bay floor, in metres.
+@export_range(0.0, 3.0, 0.05) var overworld_garage_lift_height_m := 1.2
+## How long the lift takes to travel, in seconds (each way).
+@export_range(0.05, 6.0, 0.05) var overworld_garage_lift_time_s := 1.2
+## How far (metres) the garage stands OFF TO THE SIDE of the road, measured from the HQ pin to
+## the door plane. The building is offset perpendicular to the roads that meet the HQ node and
+## yawed to face back at them, so every approach road runs past its opening instead of into its
+## back wall (see features/overworld.md → "Standing off the road"). The value is a WISH: the
+## placement clamps it so the whole footprint stays inside `overworld_pad_garage_radius_m`, the
+## level circle the building has to stand on, so raising this past what the pad can hold does
+## nothing until the pad grows too.
+@export_range(0.0, 40.0, 0.5) var overworld_garage_road_offset_m := 8.0
+
+# --- Flat pads under the zones and the garage (scripts/overworld_pads.gd) -------------------
+# A level circle of ground is baked into the terrain under every rally zone and under the
+# garage, so a zone's light tube / marker / ghost car and the garage BUILDING sit on flat
+# ground rather than straddling a slope. Baked at generation time and part of the chunk
+# cache's invalidation key, so retuning any of these forces a one-time terrain re-warm.
+# See features/terrain.md → "Flat pads".
+
+## Radius (metres) of the level circle under a RALLY ZONE. Wants to cover the trigger radius
+## (`overworld_zone_radius_m`) plus the tube base, the marker's shadow and a parked ghost car.
+@export_range(0.0, 80.0, 0.5) var overworld_pad_zone_radius_m := 12.0
+## Radius (metres) of the level circle under the GARAGE — larger, because the building has a
+## real footprint (`overworld_garage_bay_width_m` × `overworld_garage_bay_depth_m`) that must
+## be level across ALL of it plus the approach the player drives in across. A circle
+## circumscribing that rectangle is only ~7.1 m; this is deliberately well beyond it. It must
+## also leave room for `overworld_garage_road_offset_m` — the building stands OFF the road, and
+## its placement clamps that wish so the back corners stay on the pad, so too small a radius here
+## silently cancels the offset and parks the garage back on the junction.
+@export_range(0.0, 120.0, 0.5) var overworld_pad_garage_radius_m := 21.0
+## Width (metres) of the feather band outside a pad, over which the flatten ramps away to the
+## surrounding terrain. This is a DRIVABILITY dial as much as a look one: the steepest grade
+## the feather can produce is about 1.5 × (height difference across the pad) ÷ this width, so
+## narrowing it on a steep site can build a lip the car cannot climb — at the very place the
+## player was driving to.
+@export_range(0.5, 120.0, 0.5) var overworld_pad_feather_m := 14.0
+## The steepest grade (rise ÷ run) a feather ramp may reach. A pad whose surroundings are rough
+## enough that `overworld_pad_feather_m` would exceed this WIDENS its own band until the ramp is
+## back under the cap, so the road leaving a pad is always drivable. Keep it under the grade a
+## FWD car can climb on the loosest surface (~0.22 on snow).
+@export_range(0.02, 1.0, 0.01) var overworld_pad_max_grade := 0.15
+## Hard ceiling (metres) on a band widened by `overworld_pad_max_grade`. A pad on a cliff edge
+## accepts a steeper lip rather than flattening half the neighbourhood.
+@export_range(1.0, 200.0, 1.0) var overworld_pad_max_feather_m := 60.0
+
+# --- The overworld map and minimap (scripts/overworld_map.gd) -------------------------------
+# The minimap is an always-on corner panel; the full map is the M / gamepad-Back overlay. Both
+# are drawn SCHEMATICALLY from the road network, the revealed pins and the fog mask — see the
+# header of overworld_map.gd for why the photographic `textures/map_world.jpg` must not be used.
+
+## Edge length (screen pixels) of the always-on minimap panel in the top-left corner. Square,
+## so this is both its width and its height.
+@export_range(80.0, 480.0) var overworld_minimap_size_px := 176.0
+## How much world the minimap shows, in METRES across the panel. Small enough that the road
+## you are on is legible; large enough to show the next junction.
+@export_range(50.0, 4000.0) var overworld_minimap_zoom_m := 400.0
+## Whether the minimap ROTATES so the car's facing is up (true), or stays north-up (false).
+## Heading-up is directly actionable — "the road bends left" reads as left — which is why it
+## ships on; a north indicator is drawn either way, so the panel can still be correlated with
+## the (always north-up) full map.
+@export var overworld_minimap_rotate_with_heading := true
+## Overall opacity of the minimap panel. Below 1 so the driving view is never fully occluded.
+@export_range(0.1, 1.0, 0.01) var overworld_minimap_alpha := 0.82
+## Line width (screen pixels) for roads, the coastline and the selection ring on both maps.
+@export_range(0.5, 8.0, 0.5) var overworld_map_line_width_px := 2.0
+## Width (screen pixels) of the SAT-NAV route line — the road path to the destination the player
+## picked on the full map, drawn on the minimap they follow while driving. Wider than a road, or
+## it reads as just another road; a dark casing is drawn under it at ~2x this.
+@export_range(1.0, 16.0, 0.5) var overworld_map_route_width_px := 4.0
+## Speed (screen pixels per second) of the full map's synthetic CURSOR — the pointer the analog
+## stick and the arrow keys glide, since a controller has none. Fast enough to cross the map without
+## boredom; slow enough that magnetism can catch a pin on the way past.
+@export_range(80.0, 3000.0, 10.0) var overworld_map_cursor_px_s := 520.0
+## Pick radius (screen pixels) around a full-map pin for mouse hover and click / touch tap.
+## Generous on purpose — it is also the finger target on a phone.
+@export_range(6.0, 96.0, 1.0) var overworld_map_pick_px := 28.0
+## Radius (screen pixels) of the player arrow — the unit it is scaled in.
+@export_range(1.0, 20.0, 0.5) var overworld_map_pin_px := 5.0
+## Half-extent (SCREEN pixels) of a destination pin's ICON on the MINIMAP. Pins are icons, not
+## dots — a pennant for a rally, a car, a trophy, a house for the garage, and the part's own
+## `UpgradeIcons` texture for a part unlock — so this is the half-width of that glyph's box.
+##
+## It is deliberately in screen pixels and does NOT scale with the map's zoom: one painter serves
+## both presentations, so a world-space size would make minimap pins vanish.
+@export_range(3.0, 24.0, 0.5) var overworld_map_icon_px := 7.0
+## The same, on the FULL-SCREEN map, where there is room and pin NAMES are drawn beside the icons.
+## Larger than the minimap's on purpose.
+@export_range(4.0, 40.0, 0.5) var overworld_map_icon_full_px := 11.0
+## How dark unexplored map goes, 0..1. The mask itself is the SHARED `MapFog` one, so the map
+## and the ground agree about where the frontier is; this is only how strongly it is painted.
+@export_range(0.0, 1.0, 0.01) var overworld_map_fog_alpha := 0.86
+## Screen margin (pixels) around the minimap panel and inside the full-screen map.
+@export_range(0.0, 120.0) var overworld_map_margin_px := 24.0
+
+## Foliage density in the overworld, as a MULTIPLIER on the stage scatter counts
+## (`trees_per_turn` / the rock groups). Well below 1 on purpose.
+##
+## The stage counts are authored to decorate a ROAD CORRIDOR you drive past at speed: at the
+## shipped values the scatter lattice is ~6.3 m, i.e. one tree per ~39 m², which is genuine
+## forest. Applied to open country the player has to NAVIGATE, that is wall-to-wall woodland
+## with no clearings and no sight lines — the first play report was "spawned me in the middle
+## of the forest and I have no idea where the roads are".
+##
+## It is also the cheapest lever on the overworld's frame cost: every streamed chunk builds a
+## billboard field and a mesh field with colliders, so halving the instance count halves the
+## per-chunk spawn spike. Raise it for denser woods, lower it if chunks hitch.
+@export_range(0.0, 1.0, 0.05) var overworld_foliage_density := 0.35
+
+## How long a REGION CROSSING takes to cross-fade its colours, in seconds. 0 snaps.
+##
+## The ground tint, the tarmac colour and the fog/background colour are lerped over this; the
+## ground TEXTURES and the sky panorama still swap instantly, because blending those needs a
+## second sampler plus a per-vertex region weight. The tint carries most of a region's character,
+## so fading it carries most of the transition.
+@export_range(0.0, 8.0, 0.1) var overworld_region_fade_s := 1.5
+
+## Whether the overworld GROUND blends between regions SPATIALLY, at the fixed boundary between
+## two regions, instead of the whole world restyling the moment the car crosses the line. Only
+## the sky cross-fades over time (`overworld_region_fade_s` above); the ground is meant to arrive
+## ahead of you and leave the ground behind you alone.
+##
+## Part of the terrain cache's invalidation key: turning it on or off changes the per-vertex data
+## baked into every stored chunk (the region rank in UV2.y), so flipping it forces a ONE-TIME
+## re-warm of the overworld chunk cache the next time the map is entered.
+@export var overworld_region_blend_enabled := true
+
+## How wide the visible region cross-fade is, as a FRACTION of the span between the two blended
+## regions. Small = a crisp line on the ground; 1.0 = a gradient smeared across the whole span.
+##
+## Purely a shader remap of the baked rank, so changing it is free — it does NOT invalidate the
+## chunk cache and needs no re-bake.
+@export_range(0.02, 1.0, 0.01) var overworld_region_blend_width := 0.35

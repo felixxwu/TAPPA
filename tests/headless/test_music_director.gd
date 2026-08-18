@@ -222,6 +222,17 @@ func test_scene_uses_the_locked_hq_song_across_frames() -> void:
 	assert_eq(md.requested_song, MusicLibrary.HQ_SONGS[0], "still the same HQ song, no re-roll")
 
 
+func test_overworld_hub_scene_resolves_to_the_hq_song() -> void:
+	# The overworld is the second hub, so it must queue the locked-in HQ song rather
+	# than falling through to the rally pool (which would play a stage song in the hub).
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._current_hq_song = MusicLibrary.HQ_SONGS[0]
+	md.update_for_scene(Scenes.OVERWORLD)
+	assert_eq(md.requested_song, md._current_hq_song, "the overworld hub queues the HQ song")
+	assert_true(MusicLibrary.HQ_SONGS.has(md.requested_song),
+		"the queued song comes from the HQ pool, not the rally pool")
+
+
 func test_catch_up_after_a_stall_still_fires_aligned() -> void:
 	var md := _make()
 	md.seed_grid(0.0, "a")

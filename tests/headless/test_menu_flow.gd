@@ -1879,8 +1879,12 @@ func test_free_roam_finish_next_returns_to_hq() -> void:
 	# The finish emits stage_completed (proceed_to_results); world must have it
 	# connected even with no session — that connection is what routes Next to HQ.
 	scene._stage_manager.stage_completed.emit(12.0)
-	assert_eq(String(requested[0]), "res://hq.tscn",
-		"the free-roam finish panel's Next returns to HQ")
+	# Scenes.hub_path(), not the literal: which scene IS the hub is now a flag
+	# (GameConfig.overworld_enabled), and asserting the literal makes this test fail the moment a
+	# developer flips it. The behaviour under test is "Next routes to the hub", not "the hub is
+	# hq.tscn" — that second fact belongs to Scenes and is tested there.
+	assert_eq(String(requested[0]), Scenes.hub_path(),
+		"the free-roam finish panel's Next returns to the hub")
 	RallySession.free_roam_instance_id = -1
 
 
@@ -2006,20 +2010,24 @@ func test_hq_map_fogs_a_special_the_player_has_not_explored_out_to() -> void:
 	# This depends on the roster's STRUCTURE (some special is unreached from a fresh
 	# profile), never on any specific rally's identity or stats.
 	RallyLibrary.reset()
+	# EARN a lit frontier. Nothing is revealed on a fresh profile any more (see
+	# _light_the_first_rally), so without this there is no open pin to contrast the dark special
+	# against and the test would be asserting the fog against nothing.
+	var lit_id := _light_the_first_rally()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# The special the map reaches LAST is certainly still dark on a fresh profile.
+	# The special the map reaches LAST is certainly still dark, even with that frontier lit.
 	var dark_pin := _pin_for(hq, _top_special_id())
 	assert_not_null(dark_pin, "an unreached special is still on the map")
 	assert_true(bool(dark_pin.get_meta("locked")), "and reads as locked")
 	assert_eq(dark_pin.find_children("*", "Area3D", true, false).size(), 0,
 		"with nothing pickable on it — look, don't touch")
-	# The one rally beside the garage is there too, and IS enterable — so the lock above is
-	# the fog working, not the table failing to build.
-	var open_pin := _pin_for(hq, _first_reachable_rally_id())
-	assert_not_null(open_pin, "the rally beside HQ is on the map")
-	assert_false(bool(open_pin.get_meta("locked")), "and open from the start")
+	# The rally the player has completed is lit by its own circle — so the lock above is the fog
+	# working, not the table failing to build every pin locked.
+	var open_pin := _pin_for(hq, lit_id)
+	assert_not_null(open_pin, "the completed rally is on the map")
+	assert_false(bool(open_pin.get_meta("locked")), "and is lit by its own completion")
 
 
 func test_hq_unavailable_ordinary_rally_fades_its_floating_readout() -> void:
@@ -2032,14 +2040,14 @@ func test_hq_unavailable_ordinary_rally_fades_its_floating_readout() -> void:
 	# Needs the REAL reveal radius: before_each lights the whole map, which would leave no
 	# unavailable ordinary pin to look at and quietly turn this into a no-op.
 	_dark_map_radius()
-	# _first_reachable_rally_id() derives reachability from the OPENING-RALLY seeding
-	# mechanism (RallyLibrary.reveal_depths -> a rally whose prize_car is a starter model),
-	# which RallyFixtures' roster does not model at all (none of its rallies award a
-	# starter car) — so reveal_depths() over the fixtures returns nothing reachable, and
-	# there is no "first reachable rally" to find. Fall back to the shipped roster's shape
-	# here; this depends on the roster's STRUCTURE (an opening rally exists and is
-	# reachable), never on any specific rally's identity or stats.
+	# Falls back to the SHIPPED roster: the opening-rally seeding this leans on (a rally whose
+	# prize_car is a starter model) is something RallyFixtures' roster does not model at all, so
+	# over the fixtures there is no opening rally to complete. This depends on the roster's
+	# STRUCTURE (an opening rally exists), never on any rally's identity or stats.
 	RallyLibrary.reset()
+	# Same reason as the fog test above: without a completed rally the whole map is dark, so
+	# there would be no AVAILABLE pin to contrast the faded one against.
+	_light_the_first_rally()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2048,7 +2056,12 @@ func test_hq_unavailable_ordinary_rally_fades_its_floating_readout() -> void:
 		# Nothing on the lit map is out of the garage's reach right now — the case this test
 		# describes simply is not present, so there is nothing to assert about it.
 		return
-	var shakedown := _pin_for(hq, _first_reachable_rally_id())
+	var shakedown := _available_pin(hq)
+	if shakedown == null:
+		# The contrast half is missing: the fixture garage holds no car that can enter anything
+		# currently lit. Say so rather than asserting half a comparison.
+		pending("no available pin in this fixture lineup — nothing to contrast the fade against")
+		return
 	assert_true(hidden.has_meta("label_panel"),
 		"an unavailable rally still carries a panel for the focus cursor to paint")
 	assert_lt(_pin_label_sprite(hidden).modulate.a, 1.0,
@@ -2075,18 +2088,36 @@ func _top_special_id() -> String:
 	return best
 
 
-# The rally the map reaches FIRST — the single event beside the garage that a brand-new
-# player can drive. Derived, never named, so re-siting pins moves the test with the map.
-func _first_reachable_rally_id() -> String:
+# Some pin the map currently renders as AVAILABLE — revealed AND with a car in the garage that can
+# enter it. Read from the same two predicates the map itself uses (the `locked` meta, set from
+# RallyLibrary.rally_revealed, and _has_eligible_car), so it cannot drift from what the pin shows.
+#
+# NOT derived from RallyLibrary.reveal_depths(). A rally's reveal DEPTH is which wave of progress
+# would reach it — depth 1 means "its prize is a starter car", not "it is lit right now". These
+# tests used to conflate the two, and it broke the moment HQ's circle stopped touching any pin.
+func _available_pin(hq: Node3D) -> Node3D:
+	for pin in hq._pins:
+		var rally := RallyLibrary.by_id(String(pin.get_meta("rally_id")))
+		if not bool(pin.get_meta("locked")) and hq._has_eligible_car(rally):
+			return pin
+	return null
+
+
+# Complete the deepest-seeded opening rally so the map has a LIT FRONTIER, and return its id.
+#
+# On a fresh profile with the real radii NOTHING is revealed: `map_hq_reveal_radius` ships
+# deliberately too small to touch any shipped pin (see the comment on RallyLibrary.lit_sources,
+# pinned by test_the_hq_circle_alone_reveals_no_rally). Progress is therefore the ONLY thing that
+# lights the map, so a test that needs an open pin has to earn one. Completing a rally lights a
+# circle centred on that rally, so the rally itself is revealed.
+func _light_the_first_rally() -> String:
 	var depth := RallyLibrary.reveal_depths()
-	var best := ""
-	var best_wave := 1 << 30
 	for rally in RallyLibrary.all():
-		var rid := String(rally["id"])
-		if int(depth.get(rid, 1 << 30)) < best_wave:
-			best_wave = int(depth.get(rid, 1 << 30))
-			best = rid
-	return best
+		if int(depth.get(String(rally["id"]), 1 << 30)) == 1:
+			var rid := String(rally["id"])
+			_save.complete_rally(rid, 60000, 1)
+			return rid
+	return ""
 
 
 # Some ORDINARY rally pin that is currently locked, or null if none is.

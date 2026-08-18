@@ -145,14 +145,14 @@ Cost: building and maintaining a custom template in CI, and **a stripped module 
 runtime, not at build time**. **Success criterion:** a full playthrough of a career stage
 plus HQ, garage, podium and standings on the custom build.
 
-### Small, holding for a reason
+### Small, holding — RESOLVED, none left
 
-- **Expose `lazy_finest_lod` / `detail_builds_per_frame` as `GameConfig` fields** — plain
-  properties on `TerrainManager` today, so not tunable without a code edit.
-- **`emulate_mouse_from_touch = false` project-wide.** The safe local fix landed
-  (`mobile_controls.gd` filters `DEVICE_ID_EMULATION`). The project-wide flip would be
-  cleaner but **the menus and HQ table-pan depend on touch-generated mouse events** —
-  needs a decision and a full menu pass.
+Both entries that sat here have landed: `lazy_finest_lod` / `detail_builds_per_frame` are
+config-driven (`GameConfig.terrain_lazy_finest_lod`, `terrain_detail_builds_per_frame`,
+plus `cfg.overworld_chunk_build_budget` for the overworld), and
+`emulate_mouse_from_touch` has no entry in `project.godot` at all — the project runs the
+engine default with `mobile_controls.gd` filtering `DEVICE_ID_EMULATION`, so there is
+nothing to flip.
 
 ## Verification still outstanding
 

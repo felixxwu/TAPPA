@@ -368,6 +368,12 @@ func _build_dev_page() -> void:
 	# settings, where there is no rally to complete.
 	if RallySession.is_active():
 		_dev_page.add_child(_make_action_button("Complete rally (win now)", _complete_rally))
+	# The Overworld HQ (features/overworld.md) ships behind `GameConfig.overworld_enabled`,
+	# authored false. Reaching it by hand-editing game_config.tres and restarting is a poor
+	# loop, so the dev page carries the switch — this is the same reasoning that puts the
+	# other "skip ahead" affordances here. Hidden mid-rally, where there is no hub to enter.
+	if not RallySession.is_active():
+		_dev_page.add_child(_make_action_button("Enter the Overworld HQ", _enter_overworld))
 	_dev_page.add_child(_make_sub("Unlock a car:"))
 	for car in CarLibrary.all():
 		var car_id := String(car["id"])
@@ -859,6 +865,28 @@ func _grant_car(model_id: String, display_name: String) -> void:
 func _add_star() -> void:
 	Save.award_stars(1)
 	_dev_status.text = "Added 1 star (%d to spend)." % Save.stars_available()
+
+
+# Flip on the Overworld HQ and drive straight into it. The flag is flipped on the LIVE
+# config only (not written back to game_config.tres), so this is a one-session switch — quit
+# and relaunch and you are back in the shipped map-table HQ, which is what you want from a
+# dev affordance guarding an unfinished feature.
+#
+# A starter-less profile is NO LONGER refused. It used to be, because a fresh save owns no car
+# and the starter picker lived only in the car park — so the overworld had nothing to field. The
+# overworld now runs the starter pick in place (OverworldPicker), so an empty profile is the
+# first thing it handles. Only the headless refusal below remains, and that is not a car gate.
+func _enter_overworld() -> void:
+	# Inert under --headless. This flips a LIVE config flag that `Scenes.hub_path()` and
+	# `hq.gd::_maybe_redirect_to_overworld` both read, and nothing restores it — so a test that
+	# walks the dev page's buttons would leak the overworld into every later test in the run,
+	# which is exactly what happened: `test_wheel_customization` began redirecting to the
+	# overworld mid-build because an earlier test had pressed this. A dev jump has no meaning
+	# with no renderer, so refusing here costs nothing and removes the whole failure mode.
+	if Platform.is_headless():
+		return
+	Config.data.overworld_enabled = true
+	Scenes.change_to(get_tree(), Scenes.OVERWORLD)
 
 
 # Fit a slottable part straight onto the selected car — upgrades are car-bound, so

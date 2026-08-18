@@ -1,0 +1,149 @@
+[gd_scene format=3]
+
+[ext_resource type="Shader" uid="uid://ddlrcp8opyqg" path="res://shaders/ps1_models.gdshader" id="1_models"]
+[ext_resource type="Shader" uid="uid://cnmlit3nvwmc1" path="res://shaders/ps1_post_process.gdshader" id="2_post"]
+[ext_resource type="Script" uid="uid://bp1qxl2gv47a8" path="res://scripts/terrain_layer.gd" id="3_5vw27"]
+[ext_resource type="Texture2D" uid="uid://buvotoc4e4cy7" path="res://textures/grass.jpg" id="3_grass"]
+[ext_resource type="PackedScene" path="res://car.tscn" id="4_car"]
+[ext_resource type="Script" uid="uid://c7clu6sapbm38" path="res://scripts/chase_camera.gd" id="5_cam"]
+[ext_resource type="Script" uid="uid://dbdwx7yc650em" path="res://scripts/terrain_manager.gd" id="6_terrain"]
+[ext_resource type="Script" path="res://scripts/overworld.gd" id="7_overworld"]
+[ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
+[ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
+[ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
+[ext_resource type="Texture2D" uid="uid://bcx6lhspkcwhl" path="res://textures/sky_field.png" id="12_sky"]
+[ext_resource type="Script" uid="uid://detelg2t5mcwj" path="res://scripts/pause_menu.gd" id="13_pause"]
+[ext_resource type="Script" path="res://scripts/post_process_view.gd" id="14_ppview"]
+[ext_resource type="Shader" path="res://shaders/overworld_sky.gdshader" id="15_skyshader"]
+[ext_resource type="Shader" uid="uid://is4tnog0yjlb" path="res://shaders/speed_lines.gdshader" id="16_lines"]
+[ext_resource type="Script" uid="uid://ccn420jim2dya" path="res://scripts/speed_lines.gd" id="17_lines_s"]
+
+[sub_resource type="ShaderMaterial" id="mat_lines"]
+shader = ExtResource("16_lines")
+shader_parameter/intensity = 0.0
+shader_parameter/line_color = Color(0, 0, 0, 1)
+shader_parameter/density = 28.0
+shader_parameter/inner_radius = 0.55
+shader_parameter/outer_radius = 0.9
+
+[sub_resource type="ShaderMaterial" id="sky_mat"]
+shader = ExtResource("15_skyshader")
+shader_parameter/panorama_a = ExtResource("12_sky")
+shader_parameter/panorama_b = ExtResource("12_sky")
+shader_parameter/sky_blend = 0.0
+shader_parameter/sky_energy = 1.0
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+fog_enabled = true
+fog_light_color = Color(0.482, 0.498, 0.403, 1)
+fog_density = 0.005
+fog_sky_affect = 0.15
+
+[sub_resource type="Resource" id="Resource_layer0"]
+script = ExtResource("3_5vw27")
+
+[sub_resource type="Resource" id="Resource_layer1"]
+script = ExtResource("3_5vw27")
+wavelength_m = 15.0
+amplitude_m = 0.4
+
+[sub_resource type="Resource" id="Resource_layer2"]
+script = ExtResource("3_5vw27")
+wavelength_m = 3.0
+amplitude_m = 0.1
+
+[sub_resource type="ShaderMaterial" id="mat_floor"]
+render_priority = 0
+shader = ExtResource("1_models")
+shader_parameter/albedo_texture = ExtResource("3_grass")
+shader_parameter/road_texture = ExtResource("11_gravel")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+shader_parameter/blend_road = true
+shader_parameter/road_uv_scale = 1.0
+shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_post"]
+shader = ExtResource("2_post")
+shader_parameter/virtual_resolution = Vector2(480, 360)
+
+[node name="Overworld" type="Node3D"]
+script = ExtResource("7_overworld")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Floor" type="Node3D" parent="."]
+script = ExtResource("6_terrain")
+layers = Array[ExtResource("3_5vw27")]([SubResource("Resource_layer0"), SubResource("Resource_layer1"), SubResource("Resource_layer2")])
+chunk_material = SubResource("mat_floor")
+defer_initial_build = true
+
+[node name="Car" parent="." instance=ExtResource("4_car")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+
+[node name="BonnetCamera" type="Camera3D" parent="Car"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, -0.6)
+
+[node name="ChaseCamera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, 8)
+fov = 100.0
+script = ExtResource("5_cam")
+target = NodePath("../Car")
+
+[node name="CameraManager" type="Node" parent="." node_paths=PackedStringArray("chase_camera", "bonnet_camera")]
+script = ExtResource("10_cammgr")
+chase_camera = NodePath("../ChaseCamera")
+bonnet_camera = NodePath("../Car/BonnetCamera")
+
+[node name="PostProcess" type="SubViewportContainer" parent="."]
+texture_filter = 1
+material = SubResource("mat_post")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+stretch = true
+script = ExtResource("14_ppview")
+
+[node name="View" type="SubViewport" parent="PostProcess"]
+handle_input_locally = false
+
+[node name="ViewCamera" type="Camera3D" parent="PostProcess/View"]
+
+[node name="SpeedLines" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("17_lines_s")
+car = NodePath("../Car")
+
+[node name="ColorRect" type="ColorRect" parent="SpeedLines"]
+material = SubResource("mat_lines")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="FogVeil" type="CanvasLayer" parent="."]
+layer = 4
+
+[node name="Tint" type="ColorRect" parent="FogVeil"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0.02, 0.02, 0.04, 0)
+
+[node name="MobileControls" type="CanvasLayer" parent="."]
+layer = 3
+script = ExtResource("9_mobile")
+
+[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("camera_manager", "mobile_controls")]
+process_mode = 3
+layer = 5
+script = ExtResource("13_pause")
+camera_manager = NodePath("../CameraManager")
+mobile_controls = NodePath("../MobileControls")

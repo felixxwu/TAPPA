@@ -16,6 +16,13 @@ extends RefCounted
 # left untouched for now (they work, and rewriting them all is a separate,
 # larger change). New tests are encouraged to use these.
 #
+# SAFETY NET: forgetting the redirect entirely used to write the developer's REAL
+# profile (it once wiped a career and left fixture cars behind). The whole run is
+# now sandboxed up front by tests/headless/save_sandbox_pre_hook.gd, so
+# DEFAULT_PROFILE_PATH is remapped to a throwaway file for the duration — including
+# the restore in cleanup() below. That is a backstop, not a licence: a test that
+# mutates the profile should still redirect so it gets its OWN isolated file.
+#
 # Usage:
 #   const SaveTestHelpers = preload("res://tests/headless/save_test_helpers.gd")
 #   const TEST_PATH := "user://test_my_thing.json"

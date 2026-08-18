@@ -7,8 +7,8 @@
 > drives that bus. Still genuinely **not implemented**: the one-shot **SFX** side —
 > impact/crash, countdown beep, UI clicks, podium/reward stingers, and an
 > `Audio`/`AudioManager` with `play_sfx` / `play_sfx_3d`. The remaining spec below
-> is about that SFX layer; treat its "bus layout" bullets as needing only the SFX
-> bus now (Master + Music already exist). The procedural engine sound
+> is about that SFX layer only — the bus graph is already built (see below). The
+> procedural engine sound
 > (`engine-audio.md`) stays as-is. Follow the config-first convention (`CLAUDE.md`)
 > and add tests in the same piece of work.
 
@@ -23,12 +23,12 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
 
 - The **damage model is collision-driven** (`features/damage.md` reads contact
   impulses) but **silent** — a crash that destroys a car gives no audio cue.
-- The **countdown** (`todo/stage-start-and-end.md` § 3, big `3·2·1·GO`) has no
-  beep.
+- The **countdown** (`stage_manager.gd`, big `3·2·1·GO` via `hud.gd::show_countdown`)
+  has no beep.
 - The diegetic menus (`todo/menus.md`) and the **podium / reward reveal** have no
   UI or sting audio, so "presence & atmosphere" is half-delivered.
-- There is **no bus structure**, so the Settings overlay (`scripts/settings_menu.gd`) has
-  nothing to attach volume sliders to.
+- Only **Music** and **Engine** buses exist, so there is nowhere to route SFX and no
+  SFX slider for the Settings overlay (`scripts/settings_menu.gd`) to attach to.
 
 ## Current state (measured from the code)
 
@@ -46,21 +46,13 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
   code fits the codebase.
 - **`main.tscn` has no audio nodes** beyond the engine player on the `Car`.
 
-## Bus layout (the foundation Settings needs)
+## Bus layout — mostly DONE
 
-Add a `default_bus_layout.tres` (or build it in code at boot) with:
-
-```
-Master
-├─ Engine   (the existing procedural engine player routes here)
-├─ SFX       (impacts, countdown, UI, stingers)
-└─ Music     (optional beds; deferred content, bus exists now)
-```
-
-- Re-point `engine_audio.gd`'s player to the **Engine** bus (one line:
-  `bus = "Engine"`), so engine volume is independently mixable.
-- Settings sliders (`scripts/settings_menu.gd`) set `AudioServer.set_bus_volume_db` per
-  bus (Master / SFX / Music / Engine), persisted to `settings.cfg`.
+`music_director.gd` already creates the bus graph at boot — a **Music** bus (which the
+Settings music slider drives) and an **Engine** bus (which `engine_audio.gd` routes to and
+which the loading screen mutes wholesale) — and applies `master_volume` to Master. So the
+only thing left here is **adding an `SFX` bus** for the one-shots below, plus its Settings
+slider persisted to `settings.cfg` via `AudioServer.set_bus_volume_db`.
 
 ## An `Audio` autoload (one-shot SFX)
 
@@ -81,7 +73,7 @@ func play_music(id: String) -> void / stop_music()      # optional; Music bus
 - **Headless-safe:** like `engine_audio.gd:32` (`if _playback == null: return`),
   guard every play call so tests with no audio device are no-ops.
 - Clip ids → file paths live in config (a `Dictionary` knob, mirroring
-  `sign_textures` in `todo/roadside-signs.md`), empty = silent fallback so the
+  `sign_textures` in `features/signs.md`), empty = silent fallback so the
   game runs before audio assets are authored.
 
 ## Sound set (the moments to cover)
@@ -90,13 +82,13 @@ func play_music(id: String) -> void / stop_music()      # optional; Music bus
 |---|---|---|---|
 | `impact_soft` / `impact_hard` | contact impulse over threshold; hard above a bigger one | SFX (3D) | `features/damage.md` § 2 |
 | `wreck` | HP→0 wreck | SFX | `features/damage.md` § 4 |
-| `countdown_beep` / `countdown_go` | each `3·2·1` tick / `GO` | SFX | `todo/stage-start-and-end.md` § 3 |
+| `countdown_beep` / `countdown_go` | each `3·2·1` tick / `GO` | SFX | `features/stage.md` (`stage_manager.gd`) |
 | `ui_move` / `ui_select` / `ui_back` | menu navigation | SFX | `todo/menus.md` nav |
 | `reward_reveal` | lootbox/reward reveal settles | SFX | `todo/menus.md` rig 5 |
 | `podium` | podium result shown | SFX | `todo/menus.md` Podium |
 | `music_menu` / `music_run` | HQ / run beds (optional) | Music | deferred |
 
-The **damage model** and **stage** specs call `Audio.play_sfx*` at their existing
+The **damage model** and **stage** code call `Audio.play_sfx*` at their existing
 trigger points — those hooks already exist in this spec set, audio just rides
 them. Impact intensity (`impact_soft` vs `impact_hard`) keys off the same impulse
 the damage model already computes, so no new physics read.
@@ -105,8 +97,8 @@ the damage model already computes, so no new physics read.
 
 - `features/damage.md` § 2: when an impact passes the threshold, also
   `Audio.play_sfx_3d("impact_*", contact_point)`; on wreck, `play_sfx("wreck")`.
-- `todo/stage-start-and-end.md` § 3: in `show_countdown`, fire `countdown_beep`
-  per integer tick and `countdown_go` at `GO`.
+- `features/stage.md`: in `hud.gd::show_countdown` / `stage_manager.gd`'s countdown, fire
+  `countdown_beep` per integer tick and `countdown_go` at `GO` (`GO_FLASH_SECONDS`).
 - `todo/menus.md`: navigation actions and the reward reveal call `play_sfx`.
 
 ## New `GameConfig` tunables
@@ -127,7 +119,8 @@ the player profile holds chosen volumes.
 - **Settings** (`scripts/settings_menu.gd`) — owns the volume sliders that drive the bus
   layout this spec defines. Build the bus layout here; Settings reads/writes it.
 - **Damage model** (`features/damage.md`) — the impact/wreck triggers.
-- **Stage start/end** (`todo/stage-start-and-end.md`) — the countdown triggers.
+- **Stage start/end** (`features/stage.md`, `scripts/stage_manager.gd`) — the countdown
+  triggers.
 - **Menus** (`todo/menus.md`) — UI / reward / podium triggers.
 - **Engine audio** (`features/engine-audio.md`) — re-bussed to `Engine`;
   otherwise unchanged.
@@ -158,4 +151,4 @@ Headless GUT tests (`tests/headless/`):
   audio pass, not covered here; the road is uniform today.
 - **Spoken pace notes / co-driver calls** — a rally staple, but big content;
   explicitly out of scope for now (the roadside signs cover turn warning
-  visually, `todo/roadside-signs.md`).
+  visually — see `features/signs.md`).

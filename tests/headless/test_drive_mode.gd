@@ -21,6 +21,13 @@ func after_each() -> void:
 	Input.action_release("accelerate")
 
 
+# use_test_config() REPLACES the global Config.data with the frozen physics baseline and
+# never puts it back, so a later script that reads the ambient config (rather than
+# installing its own) would silently run on the test car. Hand the authored baseline back.
+func after_all() -> void:
+	Config.reset()
+
+
 func _wait_physics(frames: int):
 	for i in frames:
 		await get_tree().physics_frame

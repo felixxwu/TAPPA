@@ -9,6 +9,8 @@ extends GutTest
 # now decide what the player can BUY.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+const SaveTestHelpers = preload("res://tests/headless/save_test_helpers.gd")
+const TEST_PATH := "user://test_reward_system_profile.json"
 
 # NOTE: no UpgradeFixtures here. These tests stay on the shipped table because the gate
 # tests assert CATALOGUE CONTRACTS (a real rally-gated part exists and is withheld) rather
@@ -24,13 +26,17 @@ func before_each() -> void:
 	# tests fail the moment a designer nudges a pin — the fixture roster keeps an
 	# open-class rally lit from the start, which is all the pricing checks need.
 	RallyFixtures.install()
-	# Some tests below assign Save.profile (grants mutate through Save).
-	# Stash the real one so nothing leaks into the next test — or the next FILE.
+	# Some tests below assign Save.profile and grant cars through Save, which SAVES —
+	# so point the autoload at a throwaway file first: without it those grants wrote
+	# fixture cars straight into the developer's real profile.json.
+	SaveTestHelpers.redirect(TEST_PATH)
+	# Stash the (now sandboxed) profile so nothing leaks into the next test — or the next FILE.
 	_profile_backup = (get_node("/root/Save").profile as Dictionary).duplicate(true)
 
 
 func after_each() -> void:
 	get_node("/root/Save").profile = _profile_backup
+	SaveTestHelpers.cleanup(TEST_PATH)
 	CarFixtures.restore()
 	RallyFixtures.restore()
 

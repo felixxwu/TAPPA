@@ -87,11 +87,17 @@ Each `RALLIES` entry:
   It has no relationship to region: a region may hold any number of specials, including
   none (see [regions.md](regions.md)).
 
-  **Ten ship today**: `sp_dust_trial` (Big Turbo), `sp_lakeshore_trial` (Drivetrain
+  **A special must award a CAR, a PART or a CAPABILITY — and that is now a TEST**, not just a
+  rule in a comment: `test_rally_library.gd` walks the shipped roster and fails on any
+  `special: true` rally that hands over none of the three (plus a complement test, so the rule
+  cannot be satisfied by flagging everything special). It asserts the relationship only — no
+  count, no named rally, no particular prize — so retuning the roster is free.
+
+  **Eight ship today**: `sp_dust_trial` (Big Turbo), `sp_lakeshore_trial` (Drivetrain
   Conversion), `sp_archipelago_trial` (Supercharger), `the_showdown` (NOS),
   `sp_woodland_trial` (Snow Tires), `sn_showdown` (Race Tires), `sp_summit_trial`
-  (Sequential Gearbox), plus `hc_showdown` and `gr_showdown` — and `front_runners`, the
-  one that gates a **capability** rather than a part (`ENGINE_SWAP_UNLOCK_RALLY`, below).
+  (Sequential Gearbox) — and `front_runners`, the one that gates a **capability** rather than a
+  part (`ENGINE_SWAP_UNLOCK_RALLY`, below).
 
   Three of them are **region showdowns that have been a special twice**. `hc_showdown`,
   `gr_showdown` and `gc_showdown` each existed to gate one rung of the four-rung NOS
@@ -109,16 +115,29 @@ Each `RALLIES` entry:
   specials all along, and it reads the gate/prerequisite chain straight out of
   `UpgradeLibrary` rather than duplicating it. Their
   `id` / `difficulty` / `restriction` / `events` were left untouched: ids key saved
-  progress, and the other three decide the opponent field. **`gc_showdown` stays
-  ordinary** — the longest of the three,
-  gating no part, so it remains the pure star-payer.
+  progress, and the other three decide the opponent field.
+
+  **...and then demoted AGAIN, which is where they stand now.** Both parts moved away in the
+  4 → 5 migration (Race Tires `gr_showdown` → `sn_showdown`, Sequential Gearbox `hc_showdown` →
+  `sp_summit_trial`, to give the Alps corner real pull; `Save.MOVED_PART_UNLOCKS` records the move
+  and is **historical — never edit it**). The `special: true` flags were left behind, so the roster
+  carried two specials that awarded nothing: a trophy pin, a teaser and an endgame seat for the
+  price of an ordinary rally. Both are `special: false` now, and their per-rally comments — which
+  used to argue that being long and open-class was enough — say so. **The all-specials endgame
+  therefore requires 8, not 10**; nothing keys off a count (`all_specials_completed` and
+  `nearest_locked_special_id` both iterate the roster), so the win/credits beat is unchanged in
+  shape: finish every special, and `gc_showdown` remains the pure star-payer beside them.
+  **`gc_showdown` stays ordinary** — the longest of the three, gating no part.
 
   Every special keeps `"restriction": {}` (open-class) so it can never lock itself out — **a
   special must never gate on a part it unlocks.** They award stars like any other rally.
   `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` names `front_runners` as the special whose
   completion flips `engine_swaps_unlocked` — a *capability* gate on engine swapping,
-  separate from the swap-token currency (which keeps dropping unconditionally), honoured by
-  `RewardSystem._box_gate_open`, the garage swap row and the car-park confirm popup. On the
+  honoured by `UpgradeOptions.engine_swap_blocked_reason` (the garage's `engine` tile) and
+  `hq._show_swap_confirm` (the car-park swap station's confirm popup), both of which read
+  `RallyLibrary.engine_swaps_unlocked(Save.profile)` directly. The swap-token currency and the
+  mystery box that `RewardSystem._box_gate_open` used to gate are both deleted — see
+  [reward-system.md](reward-system.md). On the
   map a special stands a **trophy** rather than a flag (`RallyTrophy`, see
   [menus.md](menus.md)). Completing every special
   (`RallyLibrary.all_specials_completed` — whichever one is last, not a designated finale)
@@ -167,6 +186,16 @@ Each `RALLIES` entry:
   > it gates quietly changes who can enter without anyone editing the rally. Each new
   > field needs BOTH an `ineligibility_reason` branch and an `hq.gd._restriction_text`
   > entry, or it is silently absent from the rally's description.
+  >
+  > **AND AN UNKNOWN KEY IS SILENTLY VACUOUS.** `ineligibility_reason` tests only the keys it
+  > knows (`drive_mode`, `country`, `car_type`, `doors_min/max`, `engine_min_l/max_l`,
+  > `cylinders_min/max`); a restriction naming anything else — a mistyped key, or a field
+  > authored before its branch exists — matches **every car**, so the rally reads as
+  > restricted and admits the whole garage. There is no author-time validation to catch it, and
+  > `./report_eligibility.sh` shows it only as a suspiciously high count. Nothing on the reading
+  > side can fix this (the picker, the pins and the car park all defer to this one predicate by
+  > design), so treat "my restriction admits everyone" as a spelling check first. Noted from a
+  > real case: a test built `{"body": …}` and every car qualified.
 
   `./report_eligibility.sh` (`tools/report_eligibility.gd`) reports, for every rally,
   which cars can enter stock and at max potential, using the real `is_eligible`
@@ -196,9 +225,10 @@ Each `RALLIES` entry:
   forestiness?, surface_mix?, straightness?, cliffiness?, weather?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; specials'
   events are longer, and length varies by which kind of special it is: the purpose-built
-  `sp_*` part-unlock trials run shorter than the ex-showdown specials
-  (`the_showdown`/`hc_showdown`/`gr_showdown` — see the `special` field above for the
-  showdown-to-special history). `forestiness` (0–1, default 1.0 via
+  `sp_*` part-unlock trials run shorter than the region showdowns
+  (`the_showdown` is the one still flagged special; `hc_showdown` / `gr_showdown` are ordinary
+  again but keep their showdown-length events — see the `special` field above for the full
+  demote/promote/demote history). `forestiness` (0–1, default 1.0 via
   `event_forestiness`) sets how wooded the stage is — trees only spawn where the
   forest noise clears `1 - forestiness`, so each event can read as dense forest or
   open clearings (bushes ignore it). See [trees.md](trees.md). `straightness` (0–1,
@@ -507,10 +537,13 @@ generator also uses it per-rival.
   stock cars only, so eligible counts are a lower bound and the soft-lock rate an upper
   bound. Report signal, not a gate — always exits 0. Design:
   `docs/superpowers/specs/2026-08-05-career-sim-design.md`.
-- `derive_target_ms(track_result, car_meta, event)` — per-event PAR time: physics
-  floor of the **best eligible car** (see `LapTimeModel` below) × `GameConfig.driver_factor`
-  (default 1.08, the driver-imperfection multiplier that turns the physics floor into a
-  beatable human PAR). An `event.target_ms_override` wins when present.
+- **There is no derived PAR any more.** `RallyLibrary.derive_target_ms`, its
+  `_best_eligible_car` reference car and a `GameConfig.driver_factor` driver-imperfection
+  multiplier are all **deleted**. The "time to beat" is now a real, beatable rival time:
+  `RallySession.current_event_target_ms()` returns the fastest non-DNF rival's time for the
+  current event (`current_event_p1()`, one shared snapshot feeding the HUD readout, the
+  in-stage "vs P1" popup and the rival ghost), or `-1` when no classified rival has a time.
+  An `event.target_ms_override` still rescales `derive_turn_splits` below.
 - `derive_turn_splits(track_result, car_meta, event)` — per-turn cumulative split
   table derived from that car's `LapTimeModel.optimum_profile`; used for the
   in-run "vs P1" pace popup (see [stage.md](stage.md)) — and, for the leading rival,
@@ -755,10 +788,11 @@ so beaten rallies stay farmable).
 ## Tests
 
 `tests/headless/test_rally_library.gd` — roster validity (unique ids, 3 events
-each, the **starter floor**), eligibility (open-class + drive_mode +
-country + power-to-weight **band** filters — floor + ceiling + ceiling-only + floor-only,
-the floor judged at a supplied `floor_meta` (max potential), and `qualifying_detune`'s
-duck-under-the-cap / already-eligible / unfixable cases), the **geometric reveal** gate
+each, the **starter floor**), eligibility — which is purely CATEGORICAL now
+(open-class + drive_mode + country + car_type + doors + engine displacement/cylinders):
+the power-to-weight **band**, the max-potential `floor_meta` argument and
+`qualifying_detune` are all deleted, so there are no duck-under-the-cap cases left to
+cover — the **geometric reveal** gate
 on a synthetic roster (`test_a_rally_inside_the_opening_rallys_circle_is_revealed_from_the_start`,
 `test_a_profile_with_no_starter_sees_a_wholly_dark_map`,
 `test_completing_a_rally_lights_the_map_around_that_rally`,

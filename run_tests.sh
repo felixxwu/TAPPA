@@ -189,7 +189,11 @@ FAIL=0
 # fails to parse/load logs one of these but still exits 0. Scanned in run_pass;
 # keep new known-fatal output strings in THIS pattern (one place) so the runner
 # and anyone reading it agree on what counts as a hidden failure.
-TEST_ERROR_PATTERN='SCRIPT ERROR|Parse Error|Failed to load script'
+# "PROFILE SANDBOX VIOLATION" is printed by tests/headless/save_sandbox_post_hook.gd
+# when the run modified the REAL player profile (user://profile.json) instead of a
+# throwaway one — a data-loss bug that has already cost one developer their career
+# save, so it fails the run outright.
+TEST_ERROR_PATTERN='SCRIPT ERROR|Parse Error|Failed to load script|PROFILE SANDBOX VIOLATION'
 
 # Retry budget for engine SIGSEGV crashes (not test failures — see below).
 TEST_CRASH_RETRIES="${TEST_CRASH_RETRIES:-2}"
@@ -259,7 +263,19 @@ fi
 # delta is unchanged, so the sim is bit-for-bit identical to a real-time run — it
 # just stops costing ~1/60 s of wall-clock per awaited frame. Must equal the
 # physics tick rate so exactly one physics tick fires per frame.
-GUT_BASE=(--headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit)
+#
+# The pre/post-run hooks install the run's SAFETY DEFAULTS (GUT allows one of each, so
+# the pre hook hosts both):
+#   * the player profile is sandboxed to a throwaway file, so a test that forgets to
+#     redirect cannot write user://profile.json — that once wiped a real career, and the
+#     post hook verifies the real file was left untouched;
+#   * real scene changes are suppressed (Scenes.block_real_changes), so an escaped
+#     transition cannot park a live scene under /root and corrupt the physics space for
+#     every file that runs afterwards.
+# See tests/headless/save_sandbox_pre_hook.gd for the full rationale on both.
+GUT_BASE=(--headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit
+  -gpre_run_script=res://tests/headless/save_sandbox_pre_hook.gd
+  -gpost_run_script=res://tests/headless/save_sandbox_post_hook.gd)
 
 # Run one GUT pass; pass a non-empty selection to restrict to matching scripts.
 # Returns the run's exit status (timeout-kill codes flagged distinctly).

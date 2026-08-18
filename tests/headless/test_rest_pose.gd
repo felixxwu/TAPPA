@@ -128,6 +128,17 @@ func _tune(car: Variant, stiffness: float, travel: float, radius: float) -> void
 	car._sync_suspension_to_wheels()
 
 
+# The wheel Visual's LOCAL y — the display-droop offset itself, as opposed to `_first_visual_y`'s
+# world-space height. The droop invariant is about the offset, so it must be read locally: a
+# world-space read moves with the car and cannot tell a cleared offset from a raised body.
+func _first_visual_local_y(car: Variant) -> float:
+	for w in car.find_children("*", "VehicleWheel3D", false):
+		var visual: Node3D = w.get_node_or_null("Visual")
+		if visual != null:
+			return visual.position.y
+	return NAN
+
+
 func _first_visual_y(car: Variant) -> float:
 	for w in car.find_children("*", "VehicleWheel3D", false):
 		var visual: Node3D = w.get_node_or_null("Visual")
@@ -316,3 +327,38 @@ func test_compression_budget_reduced_by_short_rear_travel() -> void:
 	short_rear.suspension_travel_rear = 0.3
 	assert_true(CarScript.compression_budget(short_rear) < CarScript.compression_budget(even),
 		"a shorter rear axle shrinks the usable budget")
+
+
+# THE DISPLAY-DROOP INVARIANT IS SELF-HEALING. This is the test that would have caught both
+# instances of the bug it exists for: the garage lift handing a settled car back to the player with
+# its tyres rendered through the road, and the car picker showing cached props with misplaced wheels.
+#
+# The rule: a FROZEN body keeps the droop its wheel Visuals were given (it cannot sink onto its
+# suspension, so the offset is what puts the wheels on the ground); an UNFROZEN one must not, or the
+# offset is counted twice. `Car` now enforces that itself on its first live physics tick, so no
+# caller has to remember `clear_wheel_visual_droop` — the rule two callers already forgot.
+#
+# Pins no value: the droop derives from suspension stiffness and gravity, so the assertions are
+# "non-zero while frozen" and "exactly zero once live".
+func test_a_settled_car_sheds_its_display_droop_when_it_goes_live() -> void:
+	var car: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(car)
+	car.use_isolated_config()
+	car.apply_car(0)
+	car.controls_locked = true
+	car.freeze = true
+	car.settle_wheel_visuals()
+	assert_lt(_first_visual_local_y(car), 0.0,
+		"a frozen prop's wheels are dropped onto the ground — else this proves nothing")
+
+	# FROZEN bodies still receive _physics_process (freeze stops the simulation, not the callback),
+	# so ticking while frozen must NOT clear it. This half is the regression guard for the mistake
+	# made while implementing the invariant — it wiped every frozen display prop in the game.
+	car._timed_physics_process(1.0 / 60.0)
+	assert_lt(_first_visual_local_y(car), 0.0, "ticking while FROZEN leaves the display droop alone")
+
+	# Handed back to physics: the very next tick sheds it, with nobody calling the inverse.
+	car.freeze = false
+	car._timed_physics_process(1.0 / 60.0)
+	assert_eq(_first_visual_local_y(car), 0.0,
+		"the first LIVE tick clears the droop — the wheels cannot render below the solver")

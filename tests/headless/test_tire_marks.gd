@@ -8,6 +8,9 @@ extends GutTest
 class StubWheel:
 	extends Node3D
 	var _contact := true
+	# VehicleWheel3D's own flag: the front axle steers, which is how the mark width picks
+	# between wheel_width_front and wheel_width_rear (car.gd::_relocate_wheels does the same).
+	var use_as_steering := true
 	func is_in_contact() -> bool:
 		return _contact
 
@@ -497,3 +500,167 @@ func test_a_laid_mark_is_black_whatever_the_surface() -> void:
 		assert_almost_eq(col.g, 0.0, 0.001, "a laid mark has no green")
 		assert_almost_eq(col.b, 0.0, 0.001, "a laid mark has no blue")
 		assert_gt(col.a, 0.0, "...and is visible through its alpha alone")
+
+
+# --- Ungated mode (the overworld) ---------------------------------------------
+#
+# setup() with a NULL centerline drops the corridor test entirely and lets the terrain's
+# surface answer decide, because the overworld has a road network rather than one curve.
+# See features/tire-marks.md -> "Ungated mode".
+
+
+# Stub terrain whose ROAD weight is settable too, so a test can put a wheel on open
+# ground (road weight 0) as well as on a carved road.
+class StubSurface:
+	extends Node
+	var road := 1.0
+	var tarmac := 0.0
+	func surface_at(_x: float, _z: float) -> Vector2:
+		return Vector2(road, tarmac)
+
+
+func _make_ungated(terrain: Node) -> TireMarks:
+	if terrain != null:
+		add_child_autofree(terrain)
+	var tm := TireMarks.new()
+	add_child_autofree(tm)
+	tm.setup(null, _car, terrain, 3.0)
+	return tm
+
+
+func test_ungated_lays_marks_far_from_any_centerline() -> void:
+	# Wheels 200 m off the (absent) corridor: with no centerline there is nothing to be
+	# off, so the marks still lay. The same drive would be rejected in gated mode.
+	var tm := _make_ungated(null)
+	for s in 6:
+		_drive(tm, s, [-200.0, 200.0, -200.0, 200.0])
+	for i in 4:
+		assert_gt(tm.segment_count(i), 1, "wheel %d marks with no centerline to gate on" % i)
+
+
+func test_ungated_grass_does_not_mark() -> void:
+	# The terrain's ROAD weight is the ungated gate: open ground lays nothing.
+	var surface := StubSurface.new()
+	surface.road = 0.0
+	var tm := _make_ungated(surface)
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	for i in 4:
+		assert_eq(tm.segment_count(i), 0, "wheel %d lays nothing off a carved road" % i)
+
+
+func test_ungated_carved_road_marks() -> void:
+	# ...and the same drive on a carved road does mark, so the gate is the weight and
+	# not simply "ungated never marks".
+	var surface := StubSurface.new()
+	surface.road = 1.0
+	var tm := _make_ungated(surface)
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	for i in 4:
+		assert_gt(tm.segment_count(i), 1, "wheel %d marks on a carved road" % i)
+
+
+func test_gated_mode_still_rejects_off_road_wheels() -> void:
+	# The ungated path is purely additive: supplying a centerline keeps the corridor gate.
+	var tm := _make()
+	for s in 6:
+		_drive(tm, s, [-200.0, 200.0, -200.0, 200.0])
+	for i in 4:
+		assert_eq(tm.segment_count(i), 0, "wheel %d is still gated when a centerline exists" % i)
+
+
+# --- Mark width and spread direction ------------------------------------------
+#
+# A segment point is the contact CENTRE spread half a width either side of it, PERPENDICULAR
+# TO TRAVEL. Spreading perpendicular to the tyre's HEADING instead is the sideways bug: once
+# travel lined up with the spread direction the pairs went collinear and the quads collapsed
+# into a sliver. Nothing here pins a tunable — widths are set BY the test and the assertions
+# compare against whatever GameConfig currently holds.
+
+
+# The width of the ribbon's newest pair, in metres: the last quad's l1..r1 span. The quad
+# layout is [l0, l1, r0, r0, l1, r1] (see TireMarks._append_quad).
+func _newest_span(tm: TireMarks, wheel: int) -> float:
+	var v := tm.ribbon_verts(wheel)
+	if v.size() < 6:
+		return 0.0
+	return (v[v.size() - 5] - v[v.size() - 1]).length()
+
+
+# Drive the car (wheels co-located with it) `steps` metres along `dir`, with the velocity
+# pointing the same way, and tick each step. Ungated so no corridor can reject a heading.
+func _drive_along(tm: TireMarks, dir: Vector2, steps := 6) -> void:
+	var d := dir.normalized()
+	for s in steps:
+		var p := d * float(s)
+		_car.position = Vector3(p.x, 0.0, p.y)
+		_car.linear_velocity = Vector3(d.x, 0.0, d.y) * 10.0
+		for w in _wheels:
+			w.position = Vector3.ZERO
+		tm._physics_process(0.0)
+
+
+func test_mark_width_survives_every_travel_direction() -> void:
+	# THE BUG: the car's heading never changes here, only where it is GOING. With the spread
+	# taken from the heading, the direction closest to the old across-axis collapsed the quads.
+	var want: float = Config.data.wheel_width_front
+	for dir in [Vector2(0, 1), Vector2(1, 0), Vector2(1, 1), Vector2(-1, 0.3), Vector2(0.2, -1)]:
+		var tm := _make_ungated(null)
+		_drive_along(tm, dir)
+		assert_almost_eq(_newest_span(tm, 0), want, 0.001,
+			"a mark travelling %s is still a full tyre wide" % dir)
+
+
+func test_mark_width_follows_the_tyre_width() -> void:
+	# ANY reasonable pair of widths: the wider tyre must lay the wider mark, and the mark must
+	# be the tyre's own width rather than a constant.
+	for width in [0.12, 0.4]:
+		Config.data.wheel_width_front = width
+		Config.data.wheel_width_rear = width
+		var tm := _make_ungated(null)
+		_drive_along(tm, Vector2(0, 1))
+		assert_almost_eq(_newest_span(tm, 0), width, 0.001,
+			"a %.2f m tyre lays a %.2f m mark" % [width, width])
+
+
+func test_rear_axle_uses_the_rear_tyre_width() -> void:
+	# A staggered car: the non-steering wheels are the rear axle and must read wheel_width_rear.
+	Config.data.wheel_width_front = 0.18
+	Config.data.wheel_width_rear = 0.32
+	_wheels[0].use_as_steering = true
+	_wheels[1].use_as_steering = false
+	var tm := _make_ungated(null)
+	_drive_along(tm, Vector2(0, 1))
+	assert_almost_eq(_newest_span(tm, 0), Config.data.wheel_width_front, 0.001,
+		"the steering wheel marks at the FRONT width")
+	assert_almost_eq(_newest_span(tm, 1), Config.data.wheel_width_rear, 0.001,
+		"the non-steering wheel marks at the REAR width")
+	assert_gt(_newest_span(tm, 1), _newest_span(tm, 0),
+		"...so a staggered car leaves wider rear marks")
+
+
+func test_tire_mark_width_is_only_a_fallback() -> void:
+	# With no tyre width available (a spec authoring none) the GameConfig fallback applies.
+	Config.data.wheel_width_front = 0.0
+	Config.data.wheel_width_rear = 0.0
+	var tm := _make_ungated(null)
+	_drive_along(tm, Vector2(0, 1))
+	assert_almost_eq(_newest_span(tm, 0), Config.data.tire_mark_width_m, 0.001,
+		"tire_mark_width_m stands in when the tyre width is unknown")
+
+
+func test_gated_marks_also_spread_across_travel() -> void:
+	# The stage path gets the same fix: a car sliding sideways ACROSS a straight road still lays
+	# full-width marks. The road runs along +Z, so this drive is pure lateral travel inside the
+	# corridor gate.
+	var tm := _make()
+	var want: float = Config.data.wheel_width_front
+	for s in 6:
+		_car.position = Vector3(-1.5 + 0.5 * float(s), 0.0, 10.0)
+		_car.linear_velocity = Vector3(10.0, 0.0, 0.0)
+		for w in _wheels:
+			w.position = Vector3.ZERO
+		tm._physics_process(0.0)
+	assert_almost_eq(_newest_span(tm, 0), want, 0.001,
+		"a sideways slide on a stage road lays a full-width mark")

@@ -147,6 +147,18 @@ still gets rocks. Greece is stoniest, the Alps sparsest, everything else the mid
 rock models, colours and hitboxes are shared across all regions, so density is the only
 thing that varies. See [rocks.md](rocks.md).
 
+**Where the look is applied depends on the world.** On a STAGE there is exactly one region, so
+`world.gd::_apply_region_look` pushes it wholesale (see "How a look is applied" below). In the
+**overworld** the player drives across all of them at once, so `Overworld._apply_region_look`
+splits the look three ways: the sky cross-fades over TIME, the ground blends SPATIALLY at the
+fixed boundary from a rank baked into the terrain, and the foliage/rock keys are read per chunk
+as it is scattered. Two of the keys here therefore reach the ground shader twice over: every
+region's `terrain_tint` and `tarmac_color` are uploaded together as a rank→look LUT
+(`Overworld.region_look_lut`, `_push_region_lut`) so distant ground of ANY region paints in its
+own colours, while `grass_texture` still cross-fades between only the two regions nearest the car
+(a texture sampler cannot live in a uniform array). See
+[overworld.md](overworld.md) → "Region blending" for the full split.
+
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
 are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
 `water_level`; see the handling note at the top and [snow-region.md](snow-region.md).

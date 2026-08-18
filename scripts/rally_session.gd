@@ -90,6 +90,35 @@ var return_to_map := false
 # is, rather than a slot-machine reel on the results screen. See hq.gd::_enter_present_box.
 var pending_car_reveal_instance_id := -1
 
+# The rally the player asked to enter from the OVERWORLD hub, waiting for hq.tscn to open
+# its car picker ("" when nothing is pending). One-shot, same lifecycle as the flags above:
+# read and cleared by hq.gd on its next _ready.
+#
+# The overworld's zone activation is only the CHOICE OF RALLY — the car is still picked in
+# the car park, because the car you drove to a zone is not necessarily the car you want to
+# race (docs/superpowers/specs/2026-08-17-overworld-hq-design.md, D3). So the zone sets this
+# and loads hq.tscn, which boots straight into the picker for that rally instead of the
+# table. Start still funnels through the untouched start_rally() below.
+#
+# Cleared by start_rally as well as by hq.gd, so a rally that actually STARTS can never
+# leave a pick dangling to re-open the picker on the next boot.
+var pending_rally_pick_id := ""
+
+# The rally the player has just COME OUT OF, waiting for the overworld to spawn them at it
+# ("" when they did not arrive from a rally). One-shot, same lifecycle as the flags above:
+# read and cleared by overworld.gd on its next _ready.
+#
+# The spawn rule this serves: start at the GARAGE, unless you are returning from a rally, in
+# which case start at that rally's zone. Set from _reset_to_idle, so it covers every way a
+# rally can end — finish, wreck and abandon alike. Coming out of a rally you quit is still
+# coming out of that rally, and being put back where you were beats being teleported home.
+#
+# Deliberately SESSION-scoped rather than saved to the profile: that is what makes "on game
+# start, spawn at the HQ" fall out for free. A fresh process has no session state, so a cold
+# boot — including one that follows a crash mid-rally — reads "" and goes to the garage,
+# without needing a saved flag that could survive a launch it was never meant to.
+var overworld_return_rally_id := ""
+
 # Free-roam handoff: the car the player picked for a session-LESS free-roam drive.
 #   free_roam_instance_id — an OWNED instance (Test Drive of the tuned car on the lift,
 #     or an owned car picked in Free Roam). world.gd fields it with upgrades + saved HP.
@@ -142,13 +171,14 @@ var standings_overlay_host := false
 # state so re-entering a rally from the map runs fresh (no retry — the opponent
 # field and persisted HP are unchanged). Kicks the first event.
 func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := false) -> void:
-	GripLog.say("RALLY ENTERED: %s (region=%s) in car #%d, enabled=%s"
-		% [rally.get("id", "?"), rally.get("region", "?"),
-			int(owned_car.get("instance_id", -1)),
-			UpgradeLibrary.enabled_upgrades(owned_car)])   # TEMP, see grip_log.gd
 	_rally = rally
 	# A real rally supersedes any pending free-roam pick (world fields the session car).
 	clear_free_roam_handoff()
+	# The overworld pick has been HONOURED — the rally it named is the one now starting — so
+	# retire it here rather than leaving a one-shot alive that would re-open the car picker on
+	# the next boot into hq.tscn. (hq.gd clears it when it consumes it too; this is the
+	# backstop for every other route into a rally, none of which reads the flag.)
+	pending_rally_pick_id = ""
 	_car_instance_id = int(owned_car.get("instance_id", -1))
 	_car_model_id = String(owned_car.get("model_id", ""))
 	# Keep only the fielded car's pending detune revert. An agreement whose start
@@ -651,8 +681,6 @@ func _enter_event() -> void:
 		_pending_repair = _apply_field_repair()
 	_set_phase(Phase.RUNNING)
 	var event := current_event()
-	GripLog.say("STAGE %d of rally %s starting (event region=%s)"
-		% [_event_index + 1, _rally.get("id", "?"), event.get("region", "<none>")])   # TEMP
 	event_started.emit(_event_index, event)
 	if auto_load_scenes:
 		_load_event_scene(event)
@@ -917,6 +945,10 @@ func _reset_to_idle() -> void:
 	for id in _detune_revert:
 		Save.set_engine_detune(int(id), float(_detune_revert[id]))
 	_detune_revert = {}
+	# Remember which rally we are leaving BEFORE _rally is cleared below — this is the only
+	# moment both "a rally just ended" and "which one" are still true. The overworld reads it
+	# to spawn the player back at that rally instead of at the garage.
+	overworld_return_rally_id = rally_id()
 	_rally = {}
 	_car_instance_id = -1
 	_car_model_id = ""
@@ -976,7 +1008,7 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 # pulls them via DrivingContext.apply_stage_config from whichever session is active,
 # so scene entry has no ordering dependency on a producer remembering to seat them.
 func _load_event_scene(_event: Dictionary) -> void:
-	get_tree().change_scene_to_file("res://main.tscn")
+	Scenes.change_to(get_tree(), Scenes.MAIN)
 
 
 # Write an event's track parameters into `cfg`. Extracted from _load_event_scene
@@ -1050,4 +1082,4 @@ func canonical_event_config(event: Dictionary) -> GameConfig:
 func _load_standings_scene() -> void:
 	if standings_overlay_host:
 		return
-	get_tree().change_scene_to_file("res://standings.tscn")
+	Scenes.change_to(get_tree(), Scenes.STANDINGS)

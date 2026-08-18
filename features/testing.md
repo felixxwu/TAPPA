@@ -59,7 +59,7 @@ does so because it asserts on the generated content. So there is no
 |---|---|---|
 | Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly` 52.7 s, `test_smoke`'s two generation tests 10.8 s, `test_lakes_integration` 6.1 s, `test_track_gen_frame_consistency` 3.6 s) | ~78 s | **No** — see "The irreducible sweeps" below |
 | `test_menu_flow.gd` | 55.7 s / 229 tests (~0.24 s each) | **No** — cost is test COUNT, not per-test waste; `hq_tree_count = 8` already trims each build, and a shared-`before_all` attempt leaked state (title-layer visibility, car-park focus indices) and was reverted |
-| `before_all` builds + loading 173 scripts | ~110 s (the gap between the 295.7 s per-test sum and wall-clock) | Largely no — ~1 s of `minimal_world()` per file, already minimal |
+| `before_all` builds + loading the ~200 test scripts in `tests/headless/` | ~110 s (the gap between the 295.7 s per-test sum and wall-clock) | Largely no — ~1 s of `minimal_world()` per file, already minimal |
 
 **The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
 generates every authored rally event live (~0.7 s each). It is the regression guard
@@ -133,6 +133,23 @@ levers, in order of payoff:
   `sim_test.gd` → `setup_settled_car`, described in the next bullet;
   `test_car_terrain.gd` does NOT use it, it takes the cheap
   `minimal_world()` + `before_each` route instead.
+- **Hand the authored config back in teardown.** `Config.data` is a single global
+  that outlives the script that mutated it, so a file which installs a different
+  baseline (`use_test_config()`, `minimal_world()`) and never restores it silently
+  re-tunes every LATER file that reads the *ambient* config. That is an
+  order-dependent failure — green under `--fast <one file>`, red in a full run.
+  The frozen physics baseline is the worst offender because it authors ~37
+  properties against the shipped config's ~239, so everything it does not author
+  falls back to the `GameConfig` script default (`com_height`,
+  `wheel_roll_influence`, `wheel_friction_slip_rear`, `tire_load_sensitivity`, …)
+  — enough to move where Godot's `VehicleWheel3D` solver actually settles a car
+  and how the load splits front/rear. So **any file that installs a non-authored
+  baseline calls `Config.reset()` in its teardown**: `sim_test.gd` (`after_all` —
+  a subclass that defines its own `after_all` shadows it and must reset too),
+  `test_drivetrain.gd`, `test_drive_mode.gd`, `test_car_terrain.gd`. The contract
+  is pinned by `test_config_isolation.gd` → `test_reset_restores_the_authored_baseline_after_a_swap`
+  (and its non-vacuity partner), which compares field-for-field against a freshly
+  loaded duplicate rather than pinning any value.
 - **Settle once, not per test.** `tests/headless/sim_test.gd` is the base for
   physics-scene tests. It settles the baseline car **once**, caches the resting
   `Transform3D`, and on later setups restores that pose and stabilises in
@@ -260,6 +277,29 @@ their entire job is asserting every real entry is well-formed — and instead
 call `CarLibrary.reset()` / `EngineLibrary.reset()` in `before_each` to guard
 against a leaked override from an earlier file.
 
+### Never let a `change_scene_to_file` escape
+
+Under the headless runner a real scene change is **not** scoped to the test that
+triggered it: the scene is instantiated into `/root`, nothing ever frees it, and it
+shares the one `World3D` / physics space with every later test. A leaked `main.tscn`
+makes a settling car land on its terrain instead of the fixture ground (crooked
+attitude, asymmetric wheel loads, never at rest) and makes camera pick rays hit it
+first (`hq.gd` → `_car_index_at`) — silent, order-dependent failures that are green
+under `--fast <file>` and red in a full run.
+
+So before driving anything that can change scene, switch the seam off or capture it:
+
+- `RallySession.auto_load_scenes = false` — `start_rally()` → `_enter_event()` ends in
+  `change_scene_to_file("res://main.tscn")`, and the seam **defaults to `true`**.
+- `ChallengeSession.auto_load_scenes = false` — same for
+  `continue_to_next_stage()` and `hq_challenge.gd` → `_hand_off_to_challenge_scene`.
+- `world.gd` → `scene_change_hook` — capture the requested path instead of loading it.
+
+Restore the seam (and `RallySession.abandon()` any session you started) in
+`after_all`. `tests/headless/test_world_isolation.gd` is the backstop: it fails if any
+game scene is parked under `/root`, and it is named `world_*` so it sorts late enough
+to see almost every polluter.
+
 `tests/headless/rally_fixtures.gd` (`class_name RallyFixtures`) and
 `tests/headless/upgrade_fixtures.gd` (`class_name UpgradeFixtures`) are the
 same pattern for the rally and upgrade catalogues:
@@ -309,6 +349,35 @@ them (adoption is deferred), but new tests should reach for them:
   `test_start_line.gd`, `test_pause_menu.gd`, `test_menu_flow.gd`,
   `test_camera_manager.gd`, `test_rally_session.gd`, `test_menu_nav.gd`,
   `test_input_remap.gd`) currently spell out inline.
+
+#### The profile sandbox (why a forgotten redirect is no longer fatal)
+
+A headless run once **overwrote the developer's real `user://profile.json`** with a
+blank default carrying synthetic fixture cars (`fx_light_rwd`): `test_smoke.gd` and
+`test_reward_system.gd` granted cars through the live `Save` autoload while it was
+still pointed at the real path, and `Save.save()` duly wrote it. Only the next
+launch's cloud pull restored the career.
+
+Per-test redirects are therefore backed by a **run-scoped sandbox**:
+
+- `run_tests.sh` passes GUT `-gpre_run_script=tests/headless/save_sandbox_pre_hook.gd`,
+  which sets `Save.test_sandbox_path` to a throwaway `user://` file.
+- While that field is non-empty, `SaveManager.profile_path`'s setter remaps any
+  assignment of `DEFAULT_PROFILE_PATH` onto it (`scripts/save_manager.gd` →
+  `test_sandbox_path`). So an unredirected test — or one that "restores" the real
+  path in teardown, which every save-redirect file does — cannot reach the player's
+  profile. The field is empty in every real build, making the setter the identity
+  function there.
+- `-gpost_run_script=tests/headless/save_sandbox_post_hook.gd` compares the real
+  file's mtime before/after the run and prints `PROFILE SANDBOX VIOLATION`, which is
+  in `run_tests.sh`'s `TEST_ERROR_PATTERN` and fails the run.
+- `test_save_sandbox.gd` covers the seam itself (remap, explicit-redirect wins, no
+  sandbox = no remap) and that a live run is sandboxed.
+
+Explicit `SaveTestHelpers.redirect` is still expected of any test that mutates the
+profile — the sandbox is a backstop, and per-file isolation is what keeps tests from
+reading each other's leftovers.
+
 - `NodeQuery` (`tests/headless/node_query.gd`) — read-only tree queries for
   menu/UI tests: `first_of_type`/`all_of_type` (by class name),
   `button_with_text`, and `all_label_text`.
@@ -329,6 +398,31 @@ without pixels.
 ./run_tests.sh --fast menu_flow rally_flag   # multiple names -> one selection pass each
 ./run_tests.sh --fast "menu_flow rally_flag" # same, as one whitespace-separated string
 ```
+
+### Analysis scripts (not tests)
+
+Some questions are measurements, not assertions — "how steep is the ground the car actually drives
+on?" has no pass/fail, and a test that pinned a number would just be a tunable in disguise. Those
+live in `tools/` and run standalone:
+
+```bash
+$GODOT --headless --path . -s tools/analyse_road_grades.gd            # every overworld road's grade
+$GODOT --headless --path . -s tools/analyse_road_grades.gd ++nopads   # ...with the flat pads off
+$GODOT --headless --path . -s tools/analyse_road_grades.gd ++probe=-25,-17   # dump one spot's pipeline
+```
+
+Two traps worth knowing before writing another one:
+
+- **`_initialize`, never `_init`.** `-s` compiles the script before the SceneTree exists, so the
+  autoloads (`Config`, `PerfLog`, …) that `scripts/*.gd` reference at class scope are missing and
+  the compile fails. Await a frame in `_initialize`, and `load()` the classes you need rather than
+  naming their types — naming `TerrainManager` at class scope drags the same problem back in.
+- **Always `quit()`.** A SceneTree that finishes its work and does not quit idles forever, and the
+  run has to be killed by hand. Put the `quit()` outside the body that can fail.
+
+`analyse_road_grades.gd` in particular measures the **grid** pipeline (`compute_chunk_data`), not
+`height_at`: the road carve exists only in the grid pass, so sampling the scalar generator measures
+the raw ground along the road's path rather than the road. See its header.
 
 Performance benchmarking is **separate** from the test suite — it's an on-demand
 investigation tool, not a pass/fail gate. See `run_benchmark.sh` /

@@ -194,6 +194,31 @@ follows the road up the hill and cannot jitter module to module.
 no scene, terrain or world in play (`test_barrier_field.gd`), and the render harness
 can lay a run on its own flat stage by passing nothing.
 
+### The frame — pin two axes, derive the third
+
+Both placement paths must produce a basis with **`+Y` world up**, because a module's geometry
+occupies `+Y` only: `local_aabb().position.y` is `0` and it rises from there. `BarrierField.
+_module_transform` gets this right by construction (it derives its middle axis from the pair it
+pinned), and the overworld's roadblocks originally did **not**: they picked `+X` (the road-facing
+axis) and `+Z` (the run axis) independently, which for a run laid *across* a road yields a
+right-handed basis whose Y column points **down**. Determinant `+1`, so nothing looked wrong — and
+every barrier in the hub stood upside down, 0.81 m below the road surface. The player reported it
+as "all concrete barriers are sunk into the ground", and it was not a terrain-height bug at all.
+
+If you write a third placement path: pin the two axes that carry meaning and take the third from a
+cross product, then assert `basis.y ≈ Vector3.UP` in its test.
+
+`build_modules(style, xforms, params)` is the **other** entry point: it takes module
+centre poses the caller already worked out (obeying the local frame above) and skips
+the roadside layout entirely, sharing everything below the transforms — prototype
+reuse, batching, culling and collision. Its one client is the overworld's
+**roadblocks** (`OverworldBlocks`, [overworld.md](overworld.md) → "Roadblocks"), a
+short jersey-rail run laid **across** a carriageway to signal a road the player
+cannot take yet — the opposite orientation to a roadside run, which is why it computes
+its own poses rather than going through `BarrierLayout`. `module_aabb(style, params)`
+exposes the prototype's silhouette so such a caller spaces and aligns its run against
+the real model instead of a guessed size.
+
 **Rendering: one MultiMesh per part, per run.** A run's modules are identical, so
 each part of the prototype (beam, post, bolt, …) becomes one `MultiMeshInstance3D`
 holding one instance per module. The prototype `BarrierSection` is built off-tree,

@@ -67,6 +67,36 @@ func build(layout: Array, params: Dictionary, ground_at := Callable()) -> void:
 		_build_group(int(key.y), groups[key], pitch, params)
 
 
+# Build a run from module poses the CALLER already worked out, bypassing the
+# roadside layout entirely. `xforms` are full module centre poses in this node's
+# space, obeying BarrierSection's local frame (+Z along the run, +X the face the
+# driver sees); `style` is one BarrierSection.Style for the whole run.
+#
+# Why this exists: `build` above lays a run ALONGSIDE a road from a BarrierLayout
+# plan, which is the only shape a stage corner ever needs. The overworld's
+# ROADBLOCKS (OverworldBlocks, features/overworld.md) are the other shape — a
+# short run laid ACROSS the carriageway, facing the approaching driver — and they
+# want exactly the batching, prototype reuse and collision this file already has,
+# not a second copy of it. Everything below the transforms is shared.
+func build_modules(style: int, xforms: Array[Transform3D], params: Dictionary) -> void:
+	if xforms.is_empty():
+		return
+	var pitch: float = maxf(float(params.get("section_length_m", 2.0)), 0.1)
+	_prototype(style, pitch, params)
+	for x in xforms:
+		module_transforms.append(x)
+		barrier_count += 1
+	_build_group(style, xforms, pitch, params)
+
+
+# The prototype module's local AABB for `style` — the built model's silhouette in
+# metres. Public so a caller computing its own module poses (build_modules) can
+# space and align a run against the real model rather than a guessed size.
+func module_aabb(style: int, params: Dictionary) -> AABB:
+	var pitch: float = maxf(float(params.get("section_length_m", 2.0)), 0.1)
+	return _prototype(style, pitch, params)["aabb"] as AABB
+
+
 # Where one module sits in the world: at its road edge, `road_gap` clear of the
 # visible road edge (measured to the model's nearest face, which differs per style
 # — the jersey rail's foot reaches further toward the road than the armco beam), Z

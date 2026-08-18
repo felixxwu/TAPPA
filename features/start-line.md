@@ -75,16 +75,20 @@ Phases (`StartLine.Seq`), driven in `_process`:
    **selected** camera (chase OR bonnet, via the `CameraManager`), the **driving UI returns**,
    and `StageManager.begin_countdown()` starts the countdown; then it **fades back in**.
 
-**Eligibility gate** — Pressing **Start** computes the car's effective stats and calls
-`RallyLibrary.ineligibility_reason(_rally, meta, floor_meta)` — where `floor_meta` is the
-car's `UpgradeLibrary.max_potential_meta`, so the `pw_min` floor is judged at the car's max
-potential (matching the car park); if non-empty, launch is blocked with a `ConfirmPopup`
-(mirroring the HQ car park). Over the rally's **power-to-weight ceiling** with a detune that
-can admit it (`RallyLibrary.qualifying_detune` in `(0,1)`) → **"Too powerful"** popup
-offering **"Change Upgrades"** / **"Cancel"** (the gated Upgrades overlay won't close until
-the build is under the cap; a permanent garage edit — close → re-press Start). Any other
-reason (including a car **under the band floor** even at max potential — the hard floor
-replaced the old soft "underpowered" warning) → the reason with the same buttons.
+**Eligibility gate** — Pressing **Start** computes the car's effective stats
+(`UpgradeLibrary.effective_meta`) and calls `RallyLibrary.ineligibility_reason(_rally, meta)`;
+if non-empty, launch is blocked with a **"Can't start"** `ConfirmPopup` carrying the returned
+reason and offering **"Change Upgrades"** / **"Cancel"** (a permanent garage edit — close →
+re-press Start). The gate is **purely CATEGORICAL** — body type, country, doors, cylinders,
+displacement, drive mode. There is no power-to-weight band any more: the old `pw_min` /
+`pw_max` walls, the max-potential `floor_meta` argument and `RallyLibrary.qualifying_detune`
+(with its **"Too powerful"** popup and detune-to-qualify flow) are all **deleted**, and how
+fast a car is now shapes the OPPONENT FIELD instead of blocking entry. A mid-rally upgrade can
+therefore only break eligibility by changing the KIND of car — an engine swap or a drivetrain
+conversion — which is exactly why the popup routes to the upgrades menu. (A numeric ceiling
+survives in ONE place, and it is not a career rally: a Rally **Challenge** has a rating
+ceiling, and `hq_carpark._show_over_limit_prompt` is the surviving "Too powerful" modal — see
+[rally-challenge.md](rally-challenge.md).)
 
 **No opponents to reveal** — dev/test harnesses (and any event that somehow fields no rivals)
 pass an empty `leaders` list: no cars line up, the player is already on the line, and **Start
@@ -141,9 +145,16 @@ duplicate's `has_forced_induction()`. Pinned by
 `test_start_line.gd::test_grid_spawn_keeps_the_shared_config_object_identity` and
 `::test_a_turbo_fitted_at_the_start_line_reaches_the_config_the_hud_reads`.
 
-Once a car is nearly stopped and holding the handbrake it is **position-locked**
-(`Car._apply_handbrake_lock` freezes the body below `HANDBRAKE_LOCK_SPEED`), so a settling car
-can't creep into the one ahead; the lock releases when the handbrake does. At the fade the
+Once a car is nearly stopped and holding the handbrake (or on the low-speed parking brake) it
+is held in place by a **damped anchored spring** rather than a hard freeze —
+`Car._apply_parking_hold`, engaged while `speed < GameConfig.handbrake_lock_speed` and the car is
+grounded. It anchors the horizontal position AND the heading on the first held tick and corrects
+DISPLACEMENT back to that anchor (clamped to μ·m·g so it acts like static friction, and letting
+the anchor be dragged when a grade beats stiction), so a settling car can't creep into the one
+ahead and can't be shoved sideways during the countdown, while the chassis is still free to roll
+and pitch. The hold drops the moment the brake does. The older hard freeze
+(`_apply_handbrake_lock` / a `HANDBRAKE_LOCK_SPEED` constant) is gone; `handbrake_lock_speed` is
+now a tunable in `GameConfig`. At the fade the
 player is **released** — AI override and axis locks cleared, gearbox-auto restored, snapped
 onto the line — so the run drives normally; the `StageManager` keeps it locked through the
 countdown.

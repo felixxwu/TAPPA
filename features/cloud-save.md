@@ -258,6 +258,28 @@ Failures back off exponentially (2 s → 60 s, jittered). The retry queue is a
 single "dirty" bit, not a list of operations — the payload is always the whole
 current profile, so a retry can never apply stale data.
 
+### `RestClient` is PROCESS_MODE_ALWAYS (a paused game still talks to the cloud)
+
+`HTTPRequest` drives its transfer from an internal process callback, so it obeys
+`process_mode` / `get_tree().paused`. `Cloud` is an autoload — a child of the root
+with `PROCESS_MODE_INHERIT`, which at the root means *pausable* — so any request
+started while the tree was paused simply stopped progressing:
+`await _http.request_completed` never fired and the awaiting caller hung forever.
+
+That is reachable from every pause screen, because `pause_menu.gd` sets
+`get_tree().paused = true` and its embedded `SettingsMenu` can start real cloud
+calls (the reset page's `_wipe_progress` → `Cloud.publish_local_wipe`, the account
+page's sign-in/out). The symptom was `CloudBusy`'s full-screen cover going up and
+never coming down — "Wipe all progress" from the Overworld HQ, or from a mid-rally
+pause, looked *stuck*. The shipped menu HQ (`hq.tscn`) never paused the tree, which
+is why the same button worked there.
+
+`RestClient._ready` therefore sets `process_mode = PROCESS_MODE_ALWAYS`; its
+`HTTPRequest` child inherits it. Fixed at the one place that owns the socket, so
+every cloud caller is covered rather than each pause screen unpausing by hand.
+Covered by `test_cloud_auth.gd` →
+`test_rest_client_keeps_running_while_the_tree_is_paused`.
+
 ### Web: gzip must be left to the browser
 
 `RestClient` sets `accept_gzip = false` on the web build. The browser already

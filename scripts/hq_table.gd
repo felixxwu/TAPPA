@@ -1,16 +1,15 @@
 class_name HqTable
 extends RefCounted
 # The HQ map table, extracted from hq.gd to shrink it (todo/hq-split.md): entering the table,
-# the new-rally reveal sequence, pin focus / panning / target selection, and the rally detail
-# panel.
+# the new-rally reveal sequence, pin focus / panning / target selection, and opening the rally
+# detail panel (the panel ITSELF is RallyDetail now — see scripts/rally_detail.gd).
 #
 # Holds a back-reference to the HqController and reaches into it for state, node parenting and
 # widget helpers — the same shape as HqOverlays / HqChallenge / HQEnvironment.
 #
 # The reveal parade's own bookkeeping lives HERE (below) because nothing else touches it. The
-# rest of the table/detail STATE stays on HqController, as does `_process` (an engine callback
-# Godot would never fire on a RefCounted) and the shared `_eligibility_summary` /
-# `_qualifying_cars_text` helpers hq_challenge.gd also uses.
+# rest of the table STATE stays on HqController, as does `_process` (an engine callback Godot
+# would never fire on a RefCounted); the detail panel's own state went to RallyDetail with it.
 
 var _hq: HqController
 
@@ -594,55 +593,13 @@ func _on_rally_pin(rally_id: String) -> void:
 
 
 # Show the detail panel for the selected rally (a sub-state of the TABLE view).
+#
+# The panel itself is RallyDetail (scripts/rally_detail.gd), shared with the overworld hub — so
+# all this station does is hand it the rally, the profile whose garage decides eligibility, and
+# the id the record read-out is looked up under, then re-run the view's own layer visibility.
 func _show_detail() -> void:
 	var rally := RallyLibrary.by_id(_hq._selected_rally_id)
-	# The stage COUNT is all the per-stage detail the panel shows now — it rides on the
-	# title ("Coastal Sprint - 3 stages") instead of a whole left-hand column.
-	var stage_count: int = (rally.get("events", []) as Array).size()
-	_hq._detail_title.text = "%s - %d %s" % [
-		String(rally.get("name", "?")), stage_count,
-		"stage" if stage_count == 1 else "stages"]
-	var region := String(rally.get("region", ""))
-	_hq._detail_region.text = region  # UITheme.enforce uppercases it
-	_hq._detail_region.visible = region != ""
-	# Difficulty is a hidden tier (it drives reward value, not anything the player
-	# sees) — the eligible-car requirement is the visible gate. The gold chip marks a
-	# star-gated special event.
-	_hq._detail_special.visible = RallyLibrary.is_special(rally)
-
-	# --- Eligibility: restriction + how many of the player's cars can enter.
-	_hq._detail_restriction.text = _hq._restriction_text(rally.get("restriction", {}))
-	var elig := _hq._eligibility_summary(rally, Save.profile.get(Save.KEY_CARS, []))
-	var total := int(elig["total"])
-	var qualify := int(elig["qualify"])
-	if total == 0:
-		_hq._detail_qualify.text = "No cars owned yet"
-		_hq._detail_qualify.add_theme_color_override("font_color", UITheme.INK_DIM)
-	elif qualify == 0:
-		_hq._detail_qualify.text = "No cars qualify"
-		_hq._detail_qualify.add_theme_color_override("font_color", UITheme.RED)
-	else:
-		_hq._detail_qualify.text = _hq._qualifying_cars_text(elig["names"])
-		_hq._detail_qualify.add_theme_color_override("font_color", UITheme.GREEN)
-	var adjust := int(elig["adjust"])
-	_hq._detail_adjust.visible = adjust > 0
-	_hq._detail_adjust.text = "%d need a drivetrain conversion to fit" % adjust
-	# Gated on the lineup having ANYTHING in it: a car that qualifies, or one the player
-	# could convert to make it qualify. Not on `qualify` alone — a garage whose only route
-	# in is "convert the AWD car" should still let the player walk in and be told that. Not
-	# on owning a car either — if nothing can be made to fit, the car park is an empty room
-	# and the button would be a dead end.
-	_hq._detail_enter_button.disabled = qualify + adjust == 0
-
-	# --- Record: best finish + medal stars.
-	var best := Save.best_placement(_hq._selected_rally_id)
-	_hq._detail_record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
-	# The star row always shows, unrun or not — an empty row of three reads as
-	# "no medals yet" and keeps the record line's layout stable between rallies.
-	_hq._detail_stars.visible = true
-	_hq._detail_stars.setup(_hq._stars_for(_hq._selected_rally_id), _hq.MAX_STARS)
-
-	_hq._detail_open = true
+	_hq._detail_ui.fill(rally, Save.profile, _hq._selected_rally_id)
 	_hq._view = _hq.View.TABLE
 	_hq.update_overlays()
 

@@ -180,7 +180,9 @@ Surfaces that used to quote a count now name a destination instead:
   distance readout would be noise. The dark map around it already says "not yet".
 - The **engine-swap locked hint** (`hq`'s car-park confirm popup) names the rally via
   `RallyLibrary.engine_swap_unlock_rally_name()`. In the upgrades grid the same lock reads
-  as a greyed engine option on the `engine` tile (`UpgradeOptions._engine_options`).
+  as a `"Locked"` reason on the `engine` tile (`UpgradeOptions.engine_swap_blocked_reason`; the
+tile lists no engine catalogue — `options_for` returns an empty array for `SLOT_ENGINE` and hands
+off to the car picker, since a swap trades engines with another owned car).
 
 ## Testing
 

@@ -6,11 +6,16 @@ extends GutTest
 # catalogue) and assert the COUNTING behaviour, not any tuned restriction value.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+const SaveTestHelpers = preload("res://tests/headless/save_test_helpers.gd")
+const TEST_PATH := "user://test_rally_detail_profile.json"
 
 var _hq: Node3D
 
 
 func before_all() -> void:
+	# The tests below poke Save.profile["cars"]/["rallies"] and hq.tscn itself can save
+	# from its own lifecycle, so keep every write off the real profile.
+	SaveTestHelpers.redirect(TEST_PATH)
 	CarFixtures.install()
 	UpgradeFixtures.install()
 
@@ -18,6 +23,7 @@ func before_all() -> void:
 func after_all() -> void:
 	CarFixtures.restore()
 	UpgradeFixtures.restore()
+	SaveTestHelpers.cleanup(TEST_PATH)
 
 
 func before_each() -> void:

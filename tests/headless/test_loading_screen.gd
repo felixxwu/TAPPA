@@ -12,6 +12,14 @@ const MAIN_SCENE := preload("res://main.tscn")
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 
+# minimal_world() below trims the LIVE Config singleton and documents that restoring it
+# is the next file's problem. Restore it here instead: this file sorts ahead of several
+# that read ambient config without seating their own baseline, and a stripped world
+# (no trees, no rocks, one turn) is a silent wrong answer there rather than a failure.
+func after_all() -> void:
+	Config.reset()
+
+
 func test_set_step_updates_label() -> void:
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)

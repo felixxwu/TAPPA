@@ -83,6 +83,27 @@ static func cars() -> Array[Dictionary]:
 	return _deep_copy(list)
 
 
+# The synthetic roster's OWN starter set — the fixture answer to
+# `CarLibrary.STARTER_MODEL_IDS`, which lists SHIPPED ids (`mx5`, `focus`, …) that no fixture
+# roster resolves. A test exercising a starter pick injects this (e.g.
+# `OverworldPicker.setup({"starter_ids": CarFixtures.starter_ids()})`) instead of depending on
+# which cars the real catalogue happens to ship, which is exactly the coupling the fixtures exist
+# to remove.
+#
+# DERIVED from `cars()` rather than hand-listed, so it can never name a fixture that was renamed
+# or removed — the failure mode this helper exists to prevent in the first place. The first two are
+# taken, which is two DIFFERENT drivetrains as the roster is ordered (RWD then FWD), matching the
+# shipped set's spirit of spanning classes; two rather than one so a starter test can assert that
+# BROWSING works, which a pool of one cannot.
+static func starter_ids() -> Array[String]:
+	var out: Array[String] = []
+	for car in cars():
+		out.append(String(car["id"]))
+		if out.size() == 2:
+			break
+	return out
+
+
 static func install() -> void:
 	EngineLibrary.override_for_test(engines())
 	CarLibrary.override_for_test(cars())

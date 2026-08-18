@@ -31,8 +31,8 @@ Two numbers matter: **total wall-clock** and **per-test cost**. Get both from a
 **single** run — the suite takes ~11 minutes, so never spend two. GUT's exit output
 has no timings, so ask for the JUnit XML (there is no `-gtimes` flag), and time it
 yourself. This mirrors `run_tests.sh`'s own `GUT_BASE` invocation plus the XML flag,
-writing the XML to `user://` so it never lands in the checkout (`test_results.xml`
-is **not** in `.gitignore`):
+writing the XML to `user://` so it never lands in the checkout (`.gitignore` now
+also covers a stray `test_results.xml`, but `user://` is still the right place):
 
 ```bash
 GODOT="${GODOT:-/usr/local/bin/godot}"        # macOS: see CLAUDE.md for the path
@@ -41,6 +41,8 @@ echo "warmup=$(( $(date +%s) - W0 ))s"
 S0=$(date +%s)
 "$GODOT" --headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd \
   -gdir=res://tests/headless -ginclude_subdirs -gexit \
+  -gpre_run_script=res://tests/headless/save_sandbox_pre_hook.gd \
+  -gpost_run_script=res://tests/headless/save_sandbox_post_hook.gd \
   -gjunit_xml_file=user://test_results.xml > /tmp/suite.txt 2>&1
 echo "suite=$(( $(date +%s) - S0 ))s"; tail -6 /tmp/suite.txt   # GUT's Totals block
 ```
@@ -51,7 +53,8 @@ they're the baseline for the §4 no-silent-loss check.
 
 **A truncated run looks like a fast run — always validate before believing a
 number.** Invoking Godot directly skips the check `run_tests.sh` does for you: its
-`TEST_ERROR_PATTERN` (`SCRIPT ERROR|Parse Error|Failed to load script`) exists
+`TEST_ERROR_PATTERN` (`SCRIPT ERROR|Parse Error|Failed to load script|PROFILE
+SANDBOX VIOLATION`) exists
 because **GUT's exit status is 0 even when a script error kills the run**. In this
 skill's own development a run came back at 279 s versus a 655 s baseline — not a 2.3×
 win, but a run that died two-thirds of the way through on a script error, with no
@@ -66,13 +69,19 @@ grep -A4 '^Totals' /tmp/suite.txt                 # must exist, with the expecte
 No `Totals` block, a short script count, or a non-zero error count means **you have
 no measurement** — diagnose that first and discard the timing.
 
-The XML lands in Godot's user data dir — on Linux
-`~/.local/share/godot/app_userdata/TAPPA/test_results.xml`. Rank by `time`:
+The XML lands in Godot's user data dir, under the project name from
+`project.godot` (`config/name="TAPPA"`) — on Linux
+`~/.local/share/godot/app_userdata/TAPPA/test_results.xml`, on macOS
+`~/Library/Application Support/Godot/app_userdata/TAPPA/test_results.xml`.
+Rank by `time`:
 
 ```bash
 python3 - <<'EOF'
 import xml.etree.ElementTree as ET, collections, os
-p = os.path.expanduser("~/.local/share/godot/app_userdata/TAPPA/test_results.xml")
+p = next(q for q in (
+    os.path.expanduser("~/.local/share/godot/app_userdata/TAPPA/test_results.xml"),
+    os.path.expanduser("~/Library/Application Support/Godot/app_userdata/TAPPA/test_results.xml"),
+) if os.path.exists(q))
 root, per_file = ET.parse(p).getroot(), collections.Counter()
 cases = []
 for ts in root.iter("testsuite"):
@@ -459,8 +468,8 @@ pad the report to look like a win.
 - **Counting the warmup as suite time.** The `--import` class-cache warmup is a
   fixed ~15 s that isn't test cost and isn't yours to optimise; report it
   separately.
-- **Leaving `test_results.xml` in the checkout.** It isn't gitignored — write it
-  to `user://`.
+- **Leaving `test_results.xml` in the checkout.** It's gitignored now, but it's
+  still a build artifact nobody wants in the tree — write it to `user://`.
 - **Believing a timing without validating the run finished.** GUT exits 0 on a script
   error; a run that died early reads as a huge speedup. Check `Totals`, the script
   count, and the error grep every single time (§0).

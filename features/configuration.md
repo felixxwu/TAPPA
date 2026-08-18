@@ -148,7 +148,6 @@ See [stage.md](stage.md).
 |----------|---------|---------|
 | `gravel_grip` | 1.0 | Surface grip multiplier for gravel in `LapTimeModel` (`scripts/lap_time_model.gd`); blended with `tarmac_grip` by the event's tarmac fraction to get the effective µ |
 | `tarmac_grip` | 1.3 | Surface grip multiplier for tarmac (higher → faster tarmac-heavy events) |
-| `driver_factor` | 1.08 | Driver-imperfection multiplier applied to the physics floor from `LapTimeModel`; turns the theoretical optimum into a beatable human PAR |
 | `traction_factor_rwd` | 1.0 | Corner-exit traction ceiling for RWD cars in `LapTimeModel`'s forward pass (`a = min(factor × grip_long, a_engine)`). **1.0 is an exact no-op** |
 | `traction_factor_awd` | 1.0 | Same, for AWD. Raising the AWD factor relative to the others is how AWD earns its traction advantage in generated times |
 | `traction_factor_fwd` | 1.0 | Same, for FWD |

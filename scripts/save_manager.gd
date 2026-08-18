@@ -79,9 +79,26 @@ const SAVE_DEBOUNCE_SEC := 1.0
 # save / migration as pure dict transforms with no engine-class coupling).
 var profile: Dictionary = {}
 
+# TEST-RUN SANDBOX. Empty in every real build — the ONLY writer is the headless
+# suite's GUT pre-run hook (tests/headless/save_sandbox_pre_hook.gd). While it holds
+# a path, profile_path's setter below remaps any attempt to use
+# DEFAULT_PROFILE_PATH onto it, so a test that forgets to redirect (or "restores"
+# the real path in its teardown) can never write the player's own profile.json.
+#
+# This exists because a headless run DID overwrite a developer's real profile with a
+# blank default carrying fixture cars. Per-test redirects were the only defence and
+# any one file forgetting was enough to lose a career.
+var test_sandbox_path := ""
+
 # Where the active profile is read from / written to. Tests override this before
 # calling load_or_new().
-var profile_path: String = DEFAULT_PROFILE_PATH
+var profile_path: String = DEFAULT_PROFILE_PATH:
+	set(value):
+		# Assigning the backing variable inside its own setter does NOT re-enter it.
+		if value == DEFAULT_PROFILE_PATH and not test_sandbox_path.is_empty():
+			profile_path = test_sandbox_path
+		else:
+			profile_path = value
 
 # True when a degraded environment (blocked storage / read-only fs) forces an
 # in-memory-only profile — the UI surfaces a "progress won't be saved" notice.
@@ -376,6 +393,25 @@ func save() -> void:
 func save_now() -> void:
 	if save_disabled:
 		return
+	# HEADLESS BACKSTOP. A test run must never write the developer's real profile — that once
+	# wiped a real career, which is why the run-scoped sandbox (save_sandbox_pre_hook.gd) exists.
+	# The sandbox remaps DEFAULT_PROFILE_PATH, but a test that legitimately CLEARS
+	# `test_sandbox_path` (test_save_sandbox.gd has to, to prove the setter is the identity
+	# without one) reopens the window, and anything writing inside it lands on the real file.
+	#
+	# The post-run guard catches that, but only at the END of the run and only by mtime — it says
+	# a write happened, never who. So refuse the write here and name the caller: a stack trace
+	# points straight at the offender instead of costing a bisect across ~195 test files.
+	#
+	# Refusing rather than redirecting is deliberate. A silent redirect would let the offending
+	# test keep passing while the seam it depends on quietly stopped meaning anything.
+	if Platform.is_headless() and profile_path == DEFAULT_PROFILE_PATH:
+		var msg := ("PROFILE SANDBOX VIOLATION (refused): a headless run tried to write the real "
+			+ "profile at %s. Redirect it (tests/headless/save_test_helpers.gd) or restore "
+			+ "Save.test_sandbox_path. Stack:\n%s")
+		push_error(msg % [DEFAULT_PROFILE_PATH, _caller_trace()])
+		refused_real_writes += 1
+		return
 	_debounce.stop()
 	var tmp := profile_path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
@@ -390,6 +426,22 @@ func save_now() -> void:
 		if FileAccess.file_exists(profile_path):
 			dir.rename(profile_path, profile_path + ".bak")
 		dir.rename(tmp, profile_path)
+
+
+## How many times the refusal above fired this process. Read by the post-run hook to tell an
+## ACTUAL test violation apart from an mtime change caused by something outside the run — see
+## that hook for why the distinction matters. Static so it survives whatever frees the autoload.
+static var refused_real_writes := 0
+
+
+# A readable GDScript stack for the refusal above. Debug-only in the engine, which is exactly
+# where a test run lives; returns a placeholder in a release build so the message still reads.
+func _caller_trace() -> String:
+	var lines := PackedStringArray()
+	for frame in get_stack():
+		lines.append("    %s:%s in %s" % [frame.get("source", "?"), frame.get("line", 0),
+			frame.get("function", "?")])
+	return "\n".join(lines) if not lines.is_empty() else "    (no stack available)"
 
 
 # Overwrite the current profile with a fresh one (after a ConfirmModal in the

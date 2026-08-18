@@ -65,6 +65,16 @@ var wheel_toe: Dictionary = _zero_toe()
 # Field the model for a run: bind it to an OwnedCar (or -1 for free-roam), set the
 # HP pool, and load the car's persisted wheel misalignment. Called by car.gd when a
 # car is configured (apply_car / apply_owned) and by the fielding layer.
+## Whether this car can take damage at all. True everywhere it matters (every stage, every
+## rally, free roam); false only in the OVERWORLD hub, where driving between rallies is
+## navigation rather than competition and clipping a tree on the way to an event should not
+## cost the player HP they then have to pay stars to repair.
+##
+## Gates both entry points — `register_deceleration` (impacts) and `apply_loss` (anything that
+## drains HP directly) — so nothing can route around it, and `wrecked` can never fire.
+var enabled := true
+
+
 func field(p_max_hp: float, p_hp: float, p_instance_id := -1, p_toe: Array = []) -> void:
 	max_hp = maxf(1.0, p_max_hp)
 	hp = clampf(p_hp, 0.0, max_hp)
@@ -162,7 +172,7 @@ static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
 # self-limits, while a real multi-bounce tumble racks up several capped hits. Returns
 # the HP lost.
 func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg: GameConfig) -> float:
-	if dt <= 0.0:
+	if not enabled or dt <= 0.0:
 		return 0.0
 	var floor_mps := cfg.impact_threshold_g * GRAVITY_MPS2 * dt
 	if dv_mps <= floor_mps:
@@ -179,8 +189,10 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 	return loss
 
 
-# Drain HP by `amount`, wrecking the car if it hits 0.
+# Drain HP by `amount`, wrecking the car if it hits 0. A no-op while `enabled` is false.
 func apply_loss(amount: float) -> void:
+	if not enabled:
+		return
 	hp = maxf(0.0, hp - amount)
 	if hp <= 0.0:
 		_wreck()

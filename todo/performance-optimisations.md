@@ -1,379 +1,41 @@
 # Performance Optimisation Spec — mobile / low-end devices
 
-> ## ⚠️ 2026-07-28 — the track-generation number below is FRAME-CAP CONTAMINATED
+> **Status: mostly landed; this file is the remainder.**
+> **`todo/mobile-web-performance.md` supersedes this document for prioritisation** —
+> it holds the current measurements and the live queue. Everything below is what is
+> still open here.
 >
-> **The stage totals are only partly trustworthy. Read this before prioritising
-> from the table.**
->
-> `world.gd::_ready` applies `Engine.max_fps = fps_cap` (**30 on web-touch**)
-> *before* `await _generate_track(...)` runs, and generation yields hundreds of
-> frames — `track_generator.gd::_search` alone yields every 2 DFS steps. Godot's
-> frame limiter sleeps for the *remainder* of the frame budget, so idle at a yield
-> is `max(0, 33 ms − work already done that frame)`: near-zero where the work
-> between yields is heavy, near a full 33 ms where it is cheap.
->
-> | site | work between yields | real idle |
-> |---|---|---|
-> | carve — `progress_stride = cand_total / 40` | ~87 ms | ~0 |
-> | precompute, **full-res** chunks | heavy | ~0 |
-> | precompute, **coarse** chunks (`cache_chunk` early-return) | cheap | ~33 ms each, ~0.5 s |
-> | corridor pre-warm (2 frames × 15 waypoints) | only the first few compile shaders | ~0.5–1.0 s |
-> | **track-gen DFS `_search`** — 2 steps per yield | cheap | **the largest block** |
->
-> So the **carve and precompute stage totals below are roughly sound**, and the
-> contamination is concentrated in the **track-generation stage** — which only runs
-> on free roam and the benchmark, since career stages hit `TrackCache`. Career mode
-> does lose ~1–2 s to the pre-warm and coarse-chunk yields, which the stage table
-> attributes to the wrong stages (see the sign-label note below).
->
-> **Also unverified:** whether `Engine.max_fps` paces `await process_frame` on the
-> web export at all (the web main loop is `requestAnimationFrame`-driven with
-> `thread_support = false`). If it does not, this entire caveat is void. Item 1.1
-> of the new spec makes that a five-minute step-0 check.
->
-> Separately, **"Placing signs 6379 ms" is a mislabelled bucket.** `_end_load_timing`
-> closes the last `_stage()` label, so the sign stage absorbs `_spawn_spectators`,
-> `_build_arches`, `_spawn_opponent_wreck`, `_build_persistent_managers` and the
-> 30-frame `_prewarm_corridor` shader warm-up. A stage has only 16–22 signs; sign
-> placement is **not** a load-time problem and should not be optimised.
->
-> Both are tracked as items 1.1 and 1.2 in **`todo/mobile-web-performance.md`**,
-> which supersedes this document for prioritisation. Re-capture the table after
-> they land. The "done" sections below (the carve/cliff distance-field rewrite)
-> remain accurate history.
->
-> Also stale in this document: `_use_budgeted_generation()`, `is_streaming_chunks()`,
-> `MAX_BUILD_ROWS_PER_FRAME`, `DistantTerrain.ROWS_PER_FRAME` and
-> `force_main_thread_budget` are described here but **exist nowhere in `scripts/`**.
-> The shipped web export has `variant/thread_support = false` and there is no
-> frame-budgeted generation queue.
-
-> **2026-07-27 web-vs-native load measurement (NEW — supersedes the stale native
-> table below).** First actual capture of `load stage:` on a web export. Both runs
-> on the same Mac at v0.628; native = `Godot --path . res://main.tscn` (free roam),
-> web = the same machine's Chrome on the `?bench=1` boot, served from `build/web`.
->
-> | stage | native (ms) | web (ms) | ratio |
-> |---|---|---|---|
-> | Generating track (live DFS) | 4527 | **29217** | **6.5×** |
-> | Placing signs | 692 | **6379** | **9.2×** |
-> | Scattering bushes | 1117 | 2594 | 2.3× |
-> | Filling lakes | 14 | 1121 | 80× (small abs) |
-> | Carving road into terrain | 3011 | 3474 | **1.15×** |
-> | Precomputing chunks | 2359 | 2826 | **1.20×** |
-> | Scattering trees | 780 | 849 | 1.09× |
-> | Building terrain | 12 | 185 | — |
-> | **total** | **12512** | **46645** | **3.7×** |
->
-> **This redirects the optimisation effort.** Carve and chunk precompute — the two
-> stages all the work below targets — are only ~1.2× slower under wasm; they are
-> NOT the web problem. The blowups are in stages nobody has profiled: the **DFS
-> track search**, **sign placement**, **lake filling**, and bush scatter. Whatever
-> those do (allocation churn / dict or string hashing / `Curve2D` sampling) is what
-> wasm punishes. Profile those before doing more work on carve/precompute for web.
->
-> **Caveats — do not over-read individual ratios.** The two runs used different
-> paths (plain free roam vs the benchmark boot, which applies its own overrides), so
-> they generated different tracks: 279 chunks / 35.1 MB cached native vs 314 / 40.3 MB
-> web. The **track-gen ratio is the least trustworthy** — a live DFS with backtracking
-> varies hugely by seed, so part of 4.5 s → 29.2 s may be seed luck rather than wasm.
-> The ~3.7× total and the ~1.2× carve/precompute figures are the solid results. Also
-> note the DFS only runs on free-roam/benchmark: a real rally stage hits `TrackCache`
-> and skips it, so a shipped stage load is nearer ~17 s than ~47 s on this machine.
->
-> **Also measured:** the corridor cache is **35–40 MB / ~280–315 chunks**, not the
-> 71 MB quoted below — the coarse-chunk prune landed after that number was taken.
->
-> **Web export size (2026-07-27):** `variant/extensions_support` flipped true → false
-> (no `.gdextension` in the project). build/web 65.6 → 55.4 MB; `index.js` 5.55 → 0.32 MB;
-> wasm pair 42.6 → 37.7 MB. Boot + gameplay verified in Chrome. See `build_web.sh`.
-> Whether it also speeds up execution is **not yet measured** — the table above is the
-> post-flip build, with no pre-flip web run to compare against.
-
-> **2026-07 load-time breakdown (measured).** `world.gd` now logs per-stage load
-> timing (`_stage` / `_end_load_timing`, gated off under headless) — grep the
-> console for `load stage:` / `load total:`. A desktop free-roam boot of
-> `main.tscn` (315-chunk corridor, 71 MB cached) measured ~20.8 s total, split:
->
-> | stage | ms (before) | ms (now) |
-> |---|---|---|
-> | Carving road into terrain (`bake_track`, unified pass) | 11029 | **~4450** |
-> | Precomputing chunks (`cache_chunk` × corridor, incl. LOD prebake) | 4289 | ~4230 |
-> | Generating track (DFS search) | 2539 | 2528 |
-> | Scattering bushes | 1219 | 1214 |
-> | Placing signs | 813 | 801 |
-> | Scattering trees | 806 | 820 |
-> | Building terrain / lakes / rest | <160 | <160 |
-> | **total** | **20845** | **~14000** |
->
-> **Carve pass DONE (2026-07, single-threaded).** The carve was 53% of load and
-> split flatten 1807 ms / cliffs 8388 ms. Optimised in `terrain_manager.gd`:
-> - **Flatten** was later **unified into the cliff distance field** (one nearest-point
->   pass per band vertex feeds road height/blend, colour, tarmac AND cliff offset). The
->   height is taken at the vertex's exact perpendicular foot, so the road is laterally
->   flat with no sampling-step knob. This replaced an interim stamp-based flatten whose
->   `ROAD_SAMPLE_STEP_M`, when coarsened 0.25 m → 1 m for speed, rolled the car (±7° vs
->   ±5.7°); the unified pass is both correct and ~as fast (carve ~870 ms). The cell
->   sweep (colour + tarmac) is driven off the `road_blend` keys so only band-adjacent
->   cells are searched.
-> - **Cliffs** rewritten as a **distance field**: each band vertex finds its nearest
->   track point via a segment spatial-hash ring search (`CLIFF_GRID_M` = 24 m tuned
->   fastest) and sets its own offset — no more per-sample disc stamp. The road-wrap
->   hairpin test (`CLIFF_BEARING_BUCKETS`, `_bucket_span_deg`, `cliff_pinch_angle_deg`)
->   is gone, replaced by a morphological **open** (`_open_thin_offsets`, radius
->   `cliff_open_radius_m`) that knocks down thin tall walls — a game-feel change
->   (removes narrow scenery cliffs too). Search sped up with three exact heuristics:
->   camber arc-length LUT, neighbour-seeded search + per-cell distance cull, and
->   allocation-free `while`-loop shell iteration (nearest-search 2431→~1990 ms; the
->   `range()`-alloc removal was the biggest single win). Cliffs 8388→~2800 ms.
->
-> Carve 11029→~4600 ms, total load ~20.8→~14.1 s. All web-safe (no threads). NOT
-> bit-identical: the cliff-mechanism change shifts results (invisible, tests updated).
-> (The flatten step was left at 0.25 m — see the flatten note above.)
->
-> **Chunk precompute (~3.1 s) — profiled and partially trimmed.** `compute_chunk_data`
-> per-phase (315 chunks): **halo/noise ~966 ms** (per-vertex multi-layer `get_noise_2d`
-> for the lit normal), **vert ~774 ms** (`_light_from_neighbours` + road-blend lerp),
-> **col ~603 ms** and **uv2 ~630→455 ms** (4× `Vector2i`-keyed dict lookups per vertex);
-> plus `TerrainLod.build_all` **~666 ms** and loop overhead. Note `_build_noises` per
-> chunk is only **4 ms** — cheap, not worth caching.
->
-> **Done:** `_surface_uv2_row` no longer allocates a 4-element Array + 4 `Vector2i`
-> per vertex (`for cell in [...]` → explicit `.get()`s, matching `_vertex_color_row`);
-> uv2 ~630→455 ms (~175 ms, ~820k allocations removed). Precompute ~4.2→~3.1 s.
->
-> **Still open (need design calls):** the stage is now balanced across four ~500 ms-1 s
-> phases with no silver bullet. Biggest remaining levers: (a) **flat-array the track
-> fields** (`track_weights`/`track_surface`/`road_*`/`cliff_offsets`) so the ~4×/vertex
-> `Vector2i` dict hashing in vert+col+uv2 becomes array indexing — sizable win, but a
-> refactor touching the carve output + every consumer + seam keying; (b) **defer
-> distant-chunk LOD prebake** (~666 ms) off the load path (build lazily on first
-> render); (c) fewer noise layers (quality tunable, not free).
->
-> **2026-07 update: terrain generation is now precomputed at load, not
-> streamed.** The bounded-corridor precompute (see `features/terrain.md` →
-> Performance) superseded the chunk-crossing streaming/budgeting work
-> described throughout this doc — `TerrainChunkBuilder` is no longer resumable
-> (`is_streaming_chunks`, `MAX_BUILD_ROWS_PER_FRAME`, `force_main_thread_budget`
-> and the whole budgeted-web queue were removed), `DistantTerrain` is a static
-> backdrop built once (no `ROWS_PER_FRAME` deferred rebuild), and
-> `_reconcile` is a cache lookup (`MAX_INTEGRATIONS_PER_FRAME` no longer
-> applies — there's no per-crossing build to throttle). The narrative below
-> (items 7 and the chunk-crossing follow-up) is kept for historical trace of
-> the single-threaded-web decision; the mechanism it describes has since been
-> replaced.
->
-> Status: **PARTIALLY DONE.** The unblocked, decision-free, low-risk items are
-> implemented: **item 4** (frame cap — `GameConfig.target_fps` (desktop, 60) /
-> `target_fps_mobile` (native mobile, 60) / `target_fps_web` (web, 30), selected via
-> `target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())`, applied in
-> `world._ready`, skipped under `--headless`. NOTE: web is capped at 30 for
-> thermal/battery headroom; the single-threaded web build services audio on the main
-> loop (no audio thread), so a low frame rate drains the audio buffers between frames —
-> viable only because the buffers are sized to bridge it (`engine_audio.gd`
-> `BUFFER_SECONDS`=0.2 + `audio/driver/output_latency.web`=150 in `project.godot`).
-> The native APK has an audio thread and runs fine at 60. See features/rendering.md and
-> features/engine-audio.md), **item 1** (mipmaps on
-> tree/bush `.import` + `lod_bias` uniform in `billboard_opaque.gdshader` driven by
-> `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
-> hoisted out of the firing-phase loop in `_voice`; scratch `slice()` allocation
-> dropped in `engine_audio.gd`; **6.3** shipped `engine_harmonics`=3; generator
-> `BUFFER_SECONDS` raised 0.1→0.15 for underrun headroom on slow web frames),
-> **item 11** (guard `downforce_readouts` behind `debug_wheel_forces`), and
-> **item 10** (HUD label string-change caching). Docs: `features/rendering.md`,
+> Landed and removed from this spec: **item 1** (texture mipmaps everywhere +
+> `GameConfig.texture_lod_bias`), **item 4** (three-way frame cap — `target_fps` 60
+> desktop / `target_fps_mobile` 60 / `target_fps_web` 30), **item 6.1–6.4** (engine-audio
+> DSP: hoisted per-harmonic `pow`, no per-frame scratch allocation, `engine_harmonics=3`,
+> and the load-indexed **voice wavetable**, 3.4×–8.1× on the voice and constant in
+> cylinder count), **item 7** (web export **DECIDED single-threaded**,
+> `variant/thread_support=false`), **item 8** (physics hot-path allocation churn),
+> **items 10/11** (HUD label string caching, `downforce_readouts` guarded behind the
+> debug overlay), the **carve/cliff distance-field rewrite** (carve 11.0 s → ~4.6 s),
+> the chunk-precompute trims, and the terrain **prebaked finest LOD**
+> (`GameConfig.terrain_lazy_finest_lod = false`; frame p99 11.03 → 4.52 ms,
+> `spikes>28ms` 1 → 0, for +25.6 MB VRAM). The measurement history for all of it lives
+> in git and in `features/terrain.md` / `features/rendering.md` /
 > `features/engine-audio.md`.
 >
-> **Chunk-crossing smoothness follow-up (item 7 remainder): ADDRESSED.** Two
-> per-crossing main-thread spikes were found and cut: (a) the per-vertex terrain
-> **light bake** re-sampled the noise 4× per vertex — `compute_chunk_data` now
-> samples a 1-cell pure-height **halo** once and reads neighbours from it
-> (bit-identical; ~52% off the lit chunk build, the shipped path since
-> `terrain_light_amount`=1.0); (b) **`DistantTerrain`** rebuilt its ~2,600-vertex
-> light-baked backdrop synchronously *on the crossing frame*, stacking on the
-> detail-ring stream — it now **defers** the rebuild to a frame when
-> `TerrainManager.is_streaming_chunks()` is false. The perf benchmark
-> (`perf_benchmark.gd`) now sets `light_amount=1.0` so it measures the real lit
-> cost. Docs: `features/terrain.md`, `features/engine-audio.md`. **Still open:**
-> (c) **detail-chunk generation is now time-sliced across frames** —
-> `TerrainChunkBuilder` (`scripts/terrain_chunk_builder.gd`) is a resumable builder;
-> the budgeted pump advances it `MAX_BUILD_ROWS_PER_FRAME` (16) grid rows per frame
-> and spawns the chunk on completion, instead of building a whole chunk (which alone
-> overruns a phone frame) in one tick. `compute_chunk_data` runs the same builder to
-> completion, so the threaded/sync paths stay byte-identical (guarded by
-> `test_incremental_build_matches_full_build`). (d) **The `DistantTerrain` backdrop
-> rebuild is now both deferred AND sliced** — it starts only on a non-streaming
-> frame and then fills `ROWS_PER_FRAME` (8) rows per frame, swapping the new mesh in
-> on completion (`distant_terrain.gd` `_begin_rebuild`/`_step_rebuild`/`_finish_rebuild`;
-> the synchronous `rebuild_around` runs them to completion for the initial build).
-> So no per-crossing terrain work — detail chunks or backdrop — does a whole mesh
-> build in one tick anymore. **Real-device check still wanted** to confirm the
-> crossing is smooth end-to-end and to tune the row budgets (`MAX_BUILD_ROWS_PER_FRAME`,
-> `DistantTerrain.ROWS_PER_FRAME`).
+> **The foliage work (items 2 + 3) is the biggest remaining win**, and its
+> billboard-vs-mesh question is now answered: the pipeline is a **split** — trees are
+> opaque billboard cutouts (`BillboardField`, silhouette baked into geometry via
+> `tree_silhouette.gd`), bushes are opaque low-poly meshes binned into per-cell
+> MultiMeshes with `visibility_range_end` fade (`TreeMeshField`). Both are opaque, so
+> early-Z/HSR stays on. What is still open is the **per-frame view-cone cull +
+> `max_visible_billboards` cap** and the **collision-box cull**.
 >
-> **Item 7 (web-export threading): DECIDED — ship single-threaded.** Chose
-> maximum device reach over threaded chunk-streaming smoothness, consistent with
-> the inherently-low-end principle. `export_presets.cfg` now sets
-> `variant/thread_support=false` (engine thread pools dropped); the build needs no
-> `SharedArrayBuffer` / cross-origin isolation, so itch.io's SAB toggle is no
-> longer required and `serve_web.sh` serves plain HTTP (no cert / COOP-COEP).
-> Terrain gen already routed web through the frame-budgeted main-thread queue
-> (`_use_budgeted_generation()` keys on `OS.has_feature("web")`, not the thread
-> flag), so no terrain code changed. Docs: `features/terrain.md`, `build_web.sh` /
-> `serve_web.sh` comments. **Remaining (not a code blocker):** confirm on a real
-> mid/low-end phone — the two biggest per-crossing main-thread spikes (light-bake
-> re-sampling and the synchronous `DistantTerrain` rebuild) are now cut/deferred
-> (see the chunk-crossing follow-up note above), and BOTH detail-chunk generation
-> (`TerrainChunkBuilder`) and the `DistantTerrain` backdrop rebuild are now time-sliced
-> row-by-row across frames — no per-crossing terrain work does a whole mesh build in
-> one tick. Remaining: a real-device pass to confirm smoothness and tune the row
-> budgets.
->
-> **2026-07-29 — benchmark run: small residual per-crossing spike, cause not fully
-> pinned.** Ran `./run_benchmark.sh --headless` (20 s sampled, 2898 frames, seed
-> `Benchmark.TRACK_SEED`). Overall stats were clean (`frame ms avg 6.90 p99 7.14
-> max 9.03`, `spikes>28ms 0` — headless has no GPU/vsync cost, so absolute numbers
-> don't match windowed play). But the per-second `[perf]`/`[perf-scripts]` log
-> (`scripts/perf_log.gd`) shows a recurring irregular ~8ms `process` bump (vs a
-> ~0.5ms steady-state baseline) at 6 of the 20 logged seconds, each one lining up
-> with `terrain_manager`'s own instrumented cost rising from its ~0.004ms baseline
-> to ~0.2–0.8ms (`scripts/terrain_manager.gd` `_process`/`PerfLog.track`) — i.e.
-> the bump correlates with a chunk-ring crossing (`_reconcile` → `_spawn_chunk` →
-> `TerrainChunk.apply_data`, which assigns a new `MeshInstance3D.mesh` and a fresh
-> `HeightMapShape3D` per crossing chunk). The correlation is real, but the
-> *magnitude* isn't explained: terrain_manager's own wrapped time only accounts for
-> ~0.2–0.8ms of the ~8ms bump, so most of the cost is happening outside the
-> GDScript timer — plausibly RenderingServer mesh upload / PhysicsServer shape
-> build being deferred to the engine's own server-sync step for that frame rather
-> than executing synchronously inside `apply_data`. Not confirmed; would need
-> finer instrumentation (wrapping `_spawn_chunk`/`apply_data` alone, or a
-> RenderingServer/PhysicsServer-side timer) to pin the exact source before this is
-> actionable. No code change made — reporting only.
->
-> **2026-07-29 (later) — RESOLVED: the entry above was measuring two lies.** The
-> "clean overall stats vs mysterious 8ms bump" contradiction was an instrumentation
-> artefact, not a real puzzle:
->
-> 1. **`frame_ms` was Godot's *smoothed* delta.** `BenchmarkRunner._process` used
->    `delta * 1000.0`, and `application/run/delta_smoothing` (on by default) snaps
->    delta to divisors of the estimated refresh rate. Measured side by side on this
->    stage: smoothed reported `p99 8.33 / max 25 ms` while true
->    `Time.get_ticks_usec()` intervals over the same frames were `p99 16.6 / max
->    40 ms`. This is why `spikes>28ms` had *always* read 0 — the counter was
->    thresholding a value that smoothing had already flattened.
->    **Fixed:** `BenchmarkRunner._frame_interval_ms()` now uses the monotonic wall
->    clock. The same run now honestly reports `p95 13.6 / p99 16.8 / max 36.9 ms`,
->    `spikes>28ms 6`, and a 1% low of ~60 fps instead of a fictional 120.
-> 2. **`Performance.TIME_PROCESS` is a per-second MAXIMUM, not a per-frame value.**
->    Verified directly: 21 distinct values over 2876 sampled frames in a 20 s run
->    (i.e. one refresh per second), each the worst frame of its second. So the
->    "recurring irregular ~8ms process bump against a ~0.5ms baseline" was never a
->    per-frame spike series at all — it is a once-per-second worst-case sampler, and
->    a "2.5ms" second just means no frame that second exceeded 2.5ms. Every
->    per-frame correlation drawn from this monitor (including the earlier conclusion
->    that spikes do *not* line up with chunk crossings) was invalid.
->
-> With honest per-frame numbers, the actual cost structure is unambiguous:
->
-> - **Physics-tick frames are the periodic spike.** Grouping true frame intervals by
->   whether a physics tick ran that frame: `ticks=0 → n=1676, mean 4.10 ms`;
->   `ticks=1 → n=1200, mean 10.94 ms, p95 15.5, max 40.5`. Not one of the 30 slowest
->   frames had `ticks=0`. At 60 Hz physics under a ~144 fps render loop a tick lands
->   every 2nd–3rd frame with a jittering pattern (`physics_jitter_fix`), which is
->   exactly the "periodic, irregular cadence" that kicked off this investigation.
->   **This is inherent to a fixed-tick engine, not a bug** — the question is only
->   whether ~6.8 ms of physics step is too much (`car` is the dominant script).
-> - **Chunk-ring crossings are the *worst* spikes, and it IS `_reconcile`.** The
->   top spikes (29–40 ms) all carry `integrations_this_frame = 7` and
->   `terrain_manager` per-frame cost of 17–29 ms — because `_reconcile` spawns the
->   entire new ring row (7 chunks) in a single frame. Across the worst 1% of frames,
->   `terrain_manager` accounts for ~22% of total time. The earlier "only 0.2–0.8 ms
->   of the 8 ms bump" figure was per-frame cost *averaged over a whole second* by
->   `PerfLog.end_capture`, which divides by the frame count — 0.9 ms/frame × 144
->   frames ≈ 130 ms of real work concentrated in one or two frames. There is no
->   unexplained magnitude and no hidden server-sync cost; drop that hypothesis.
->
-> **Open (not done, needs a decision):** spread `_reconcile`'s row spawn across
-> frames instead of doing all 7 `_spawn_chunk` calls at once. Note a per-frame
-> budget pump for exactly this (`MAX_BUILD_ROWS_PER_FRAME`,
-> `_use_budgeted_generation`) previously existed here and was deliberately removed
-> (see the threaded-generation note earlier in this file), and `_reconcile`'s
-> current contract is "prefer a HOLE over a mid-drive build hitch" — so
-> re-introducing budgeting is a behaviour change with hole-risk, not a free win.
-> **Superseded — see the RESOLVED entry below.** Batching `_spawn_chunk` was NOT the
-> fix (it is not the spike), and widening the `leash_m` precompute buffer was also
-> ruled out (the cache was already warm on every spiking frame).
->
-> **2026-07-30 — RESOLVED AND FIXED.** Component-level measurement retired both
-> earlier hypotheses and found the real cost. `_spawn_chunk` was never the spike
-> (**35.6 ms across a whole 20 s run**, 0.30 ms/chunk, ~2 ms for a 7-chunk row), and
-> `_reconcile`'s suspected overhead was a non-issue (the O(n²) `wanted.has()` scan =
-> 0.032 ms/crossing, the 49 `set_collision_enabled` broadphase toggles = 0.038 ms;
-> whole `_reconcile` ≈ 1.95 ms/crossing). The real cost was `_drain_detail_queue` →
-> `TerrainLod.build_finest` at **430 ms/run** — ~6.2 ms per call, 67% of it the 8
-> `track_weights`/`track_surface` dictionary lookups per vertex in
-> `_vertex_color_row`/`_surface_uv2_row` over 51×51 vertices — already budgeted at
-> `detail_builds_per_frame = 1`, so no further batching could help.
->
-> **Fix shipped:** `GameConfig.terrain_lazy_finest_lod` now defaults to **false** —
-> `cache_chunk` prebakes the finest LOD for the whole corridor at load, so there is no
-> runtime rebuild and the detail queue stays empty. Enabled on **every target
-> including web** (deliberately not platform-gated); the flag remains as the
-> single-line escape hatch if a low-VRAM device ever fails. Windowed A/B, same seed:
-> frame p99 **11.03 → 4.52 ms**, 1% low **90.6 → 234.6 fps**, `spikes>28ms` **1 → 0**,
-> for **+25.6 MB VRAM** and **−1.6 MB RAM** (`l0_light` becomes dead weight and is
-> dropped). Tests: `test_terrain_memory.gd` →
-> `test_prebaked_finest_level_needs_no_detail_queue`,
-> `test_prebake_does_not_retain_the_lazy_rebuild_light` (both directions of the flag,
-> no pinned VRAM/timing values). Docs: `features/terrain.md` → "Lazy finest LOD level".
->
-> **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
-> - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):
->   gated on the **billboard-vs-opaque-low-poly-mesh decision** (and the `.glb`
->   foliage models if mesh) — the spec says decide before building the field
->   class. The biggest GPU/physics wins, but need that call first.
->
-> **Deferred (optional / advisory):** item 8 (physics-tick alloc refactor — a
-> safe follow-up, guarded by existing tests), and items 5/9/12 (the spec's own
-> recommendation is "measure first / probably skip").
->
-> This document is the implementation
-> brief. It references the code as it exists on this branch so the work can be
-> picked up later. Follow the project's config-first convention
-> (`CLAUDE.md`): every new tunable goes in `GameConfig`
-> (`scripts/game_config.gd` + `config/game_config.tres`), never hardcoded in
-> scripts/scenes. Update the relevant `features/*.md` doc and add/adjust tests
-> in the same piece of work.
->
-> **Design principle: the game is _inherently_ low-end.** There is no separate
-> "low quality" profile or toggle — the aggressive values below are simply the
-> defaults, the only mode the game ships. Every device gets the same lean
-> pipeline. The `GameConfig` knobs exist for tuning the single shipped value (and
-> for dev/debug), NOT to switch between a "high" and "low" path. Do not add a
-> quality-tier switch.
+> **Design principle: the game is _inherently_ low-end.** There is no "low quality"
+> profile or toggle — the aggressive values are simply the defaults, the only mode the
+> game ships. `GameConfig` knobs exist for tuning that single shipped value (and for
+> dev/debug), NOT to switch between a "high" and "low" path. Do not add a quality-tier
+> switch. Follow the config-first convention: every new tunable goes in `GameConfig`
+> (`scripts/game_config.gd` + `config/game_config.tres`), never hardcoded; update the
+> relevant `features/*.md` doc and add tests in the same piece of work.
 
-## ⚠️ Open action items (asset / prerequisite work)
-
-- [x] **Opaque vegetation (no per-fragment `discard`)** — **DONE.** The
-      vegetation pipeline landed as an *opaque* split rather than low-poly tree
-      meshes: **trees render as opaque billboard cutouts** (`BillboardField`,
-      `scripts/billboard_field.gd`) whose silhouette is baked into geometry (a
-      traced "+"-cross `ArrayMesh` via `scripts/tree_silhouette.gd`) and drawn
-      with `shaders/billboard_opaque.gdshader` — `unshaded, cull_disabled,
-      depth_draw_opaque`, **no `discard`**, so early-Z / HSR stays on and overdraw
-      collapses to coverage (the mobile-web GPU win). **Bushes** are the only
-      vegetation that uses a 3D mesh — a low-poly ground-cover patch
-      (`models/vegetation/groundcover_opaque.glb`) rendered through
-      `TreeMeshField` (`scripts/tree_mesh_field.gd`). See `features/trees.md`.
-      This unblocked the "opaque, no-`discard` vegetation" direction under item 2
-      and the vegetation auto-LOD in
-      the since-completed distant-terrain/sky work, now documented in
-      [`features/terrain.md`](../features/terrain.md) and
-      [`features/rendering.md`](../features/rendering.md).
-- [x] **Web-export threading model** (item 7): **DECIDED — single-threaded**
-      (`thread_support=false`) for maximum device reach. Terrain gen already uses
-      the frame-budgeted main-thread queue on web, so no code change beyond the
-      preset + script/doc updates. Remaining: a real on-device smoothness check
-      across chunk boundaries (tune `MAX_BUILD_ROWS_PER_FRAME` if needed). Owner: Felix.
 
 ## Context / current state (measured from the code)
 
@@ -396,62 +58,14 @@
   doc claimed `RADIUS=1`/3×3 and said the `features/*.md` "5×5"/49-chunk figure
   was wrong — that claim was itself stale; `RADIUS=3`/7×7/49 is correct.)
 
-Items 1–5 below are the **GPU / fill / render-side** work; items 6–12 (in the
-**CPU & platform** section further down) are the pure-CPU and platform costs the
-PS1 look can't touch. Of the GPU items, **(2) and (3) — foliage draw + collision
-— are the biggest wins; (1) and (4) are cheap and safe; (5) is mostly an advisory
-"probably don't".** Of the CPU items, **(6) audio and (7) the threaded-export
-decision move the needle most.** See the consolidated implementation order at the
+Items 2, 3 and 5 below are the **GPU / fill / render-side** work; items 6–12 (in the
+**CPU & platform** section further down) are the pure-CPU and platform costs the PS1
+look can't touch. Of the GPU items, **(2) and (3) — foliage draw + collision — are the
+biggest wins; (5) is mostly an advisory "probably don't".** Item numbering is kept from
+the original spec, so the gaps are the sections that have landed. See the order at the
 end.
 
 ---
-
-## 1. Mipmaps + aggressive LOD on textures
-
-### Why
-Tile-based mobile GPUs are bandwidth- and texture-cache-bound. A minified
-texture (ground tiling into the distance, far billboards) without mipmaps
-thrashes the cache and aliases — costing fill rate and bandwidth, the exact
-mobile bottleneck. The retro shimmer is partly intentional, but on a low-end
-phone the bandwidth cost outweighs the aesthetic.
-
-### Current state
-- `textures/grass.jpg.import` / `textures/gravel.jpg.import`:
-  `mipmaps/generate=true`, `compress/mode=2` (VRAM compressed). **Good already.**
-- `textures/tree.png.import`: `mipmaps/generate=false`, `compress/mode=0`
-  (lossless/uncompressed). **This is the one to fix** — it's the most-instanced
-  texture (~6,000 billboards) and the most minified at distance.
-- `textures/tree-greece.webp.import`: verify (expected same as tree — mipmaps off).
-
-### Plan
-1. Set `mipmaps/generate=true` in `textures/tree.png.import` and
-   `textures/tree-greece.webp.import`. Re-import (delete `.godot/imported/` entries or
-   let the editor regenerate).
-2. "Aggressive LOD": bias sampling toward lower mip levels so distant
-   foliage/ground resolves to a cheaper mip sooner. Two options:
-   - **Per-texture import:** there is no direct LOD-bias field in the import
-     dock for GL Compatibility; prefer the shader route.
-   - **Shader (preferred, controllable):** in `shaders/billboard_opaque.gdshader`
-     `fragment()`, replace `texture(albedo, UV)` with `texture(albedo, UV, lod_bias)`
-     where `lod_bias` is a `uniform float` (default ~0.5–1.0). Same idea for the
-     ground in `shaders/ps1_models.gdshader` if ground bandwidth shows up in the
-     profiler (`P` overlay, render-gpu line). Expose `texture_lod_bias` in
-     `GameConfig` as the single shipped value (default biased toward cheaper
-     mips), tunable for dev.
-3. Keep `filter_nearest` (PS1 look) — mipmapping is independent of the
-   magnification filter; with nearest + mipmaps you still get crisp up-close
-   texels but cheaper minified sampling.
-
-### Files
-`textures/tree.png.import`, `textures/tree-greece.webp.import`,
-`shaders/billboard_opaque.gdshader`, `shaders/ps1_models.gdshader`,
-`scripts/game_config.gd` (+ `config/game_config.tres`), `features/rendering.md`.
-
-### Risk / notes
-Mipmaps add ~33% texture memory per asset — negligible here (handful of small
-textures). Watch that mip-bias doesn't blur the tree silhouette so much the
-alpha-scissor cutout (`alpha_scissor = 0.5`) eats the edges; clamp bias modestly.
-
 ---
 
 ## 2. Spatial + view-cone culling of trees/bushes; max visible instance count
@@ -544,54 +158,6 @@ Pop-in when turning fast if the cone margin is too tight — pad it and lean on 
 `fade_band` dither. Throttling the cull too aggressively shows lag between camera
 and visible set; tune cadence.
 
-### Alternative direction: opaque low-poly meshes instead of cutout billboards
-
-> **✅ DONE (as a split pipeline).** The two foliage kinds render differently now
-> (see `features/trees.md`, `scripts/foliage.gd`): **trees are opaque billboard
-> cutouts** (`scripts/billboard_field.gd`, `BillboardField`, `textures/tree.png`),
-> and **bushes are opaque low-poly meshes** (`scripts/tree_mesh_field.gd`,
-> `TreeMeshField`, using `models/vegetation/groundcover_opaque.glb`; the earlier
-> `models/low_poly_tree.glb` asset was removed). The bush meshes are **spatially
-> binned into per-cell MultiMeshes** (`tree_bin_size_m`), each with
-> `visibility_range_end`/fade for the far cull and the importer-generated mesh LODs
-> for distance decimation — no per-frame CPU. Both paths are opaque with no
-> `discard`, so early-Z / HSR stays on (item 2's direction).
-> **Still open:** (a) the per-frame **view-cone cull + `max_visible_billboards` cap**
-> (items 2/3) if profiling shows the binned bush fields or the tree billboards still
-> over-submit; (b) **collision-box culling** (item 3) — the tree fields still add all
-> hitboxes up front.
-
-On the target hardware the foliage is **fill-bound**, and alpha-cutout
-billboards are the worst case for it: `discard` disables early-Z/HSR, and even a
-lone billboard wastes ~half its shaded fragments on the transparent part of the
-quad. Opaque low-poly meshes flip that — early-Z works, solids occlude each
-other (bounded overdraw), no per-fragment discard tax, no alpha channel needed —
-at the cost of more (cheap, abundant) vertices. Net: very likely faster here,
-and the chunky faceted look suits the PS1/PS2 aesthetic.
-
-Plan once the models exist:
-1. Author the tree/bush meshes in `blender/`, export `.glb` (mirror `mx5.glb` /
-   `mx5.glb.import`). Keep them genuinely low-poly (~tens of tris each) and small
-   in screen coverage so they don't reintroduce overdraw.
-2. Give them an **opaque** material on `shaders/ps1_models.gdshader` (already the
-   project's unshaded mesh shader) — no `discard`, no alpha — so they go through
-   the same quantize/dither/fog pipeline as everything else.
-3. `BillboardField` becomes a generic instanced-mesh field (or add a sibling
-   `FoliageField`): same `MultiMesh` + spatial/view-cone cull + visible cap +
-   collision-box logic from items 2/3, but with `mm.mesh` set to the authored
-   `.glb` mesh instead of a `QuadMesh`, and the billboard shader dropped. The
-   per-instance transform path is unchanged.
-4. Drop the camera-facing billboard yaw (real geometry doesn't need it) and the
-   `alpha_scissor` / `bayer4x4` discard; keep the distance fade (it can move to a
-   cheap per-instance `visible_instance_count` cut now that culling is CPU-side).
-5. Update `features/trees.md` and `features/rendering.md`; re-point the
-   `world.gd` build calls (`scripts/world.gd:81-95`) at the mesh field.
-
-This supersedes the billboard-specific parts of item 1 (tree/bush mipmaps) and
-item 2 (the fragment-discard discussion) **if** adopted — keep the spatial cull,
-visible cap, and collision culling regardless. Decide billboard-vs-mesh before
-implementing item 2 so the field class is built the right way once.
-
 ---
 
 ## 3. Spatially cull tree collision boxes
@@ -636,28 +202,6 @@ The car must never fall through / drive past a tree whose box was culled — kee
 the active radius comfortably larger than the car + braking distance at top
 speed within one cull tick. Reconcile on bin crossing (cheap, like terrain) so
 there's no per-frame churn.
-
----
-
-## 4. Frame cap — DONE (three-way: desktop 60, native mobile 60, web 30)
-
-### What shipped
-`GameConfig.target_fps` (desktop), `target_fps_mobile` (native mobile) and
-`target_fps_web` (web) exist (`scripts/game_config.gd`), selected by
-`target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())` and applied once in
-`scripts/world.gd._ready()` — `Engine.max_fps = fps_cap` when `> 0`, skipped under
-`--headless` so it can't throttle the frame-awaiting test runner. Physics stays
-decoupled at the project physics tick.
-
-### Why the caps ended up where they are
-The original plan capped mobile/web at 30 for thermal headroom. A flat 30 cap
-**starved audio on the single-threaded web build** (audio is serviced by the main
-loop, no audio thread, so a low frame rate opens gaps) — so the caps were split:
-**native mobile runs 60** (it has an audio thread and stays cool enough), while
-**web keeps the 30 cap** for thermal/battery headroom, made viable by sizing the
-audio buffers to bridge it (`engine_audio.gd` `BUFFER_SECONDS` +
-`audio/driver/output_latency.web`). Desktop is 60. See `features/rendering.md` and
-`features/engine-audio.md`. All three are knobs in `game_config.tres`.
 
 ---
 
@@ -727,12 +271,13 @@ chunk's ring distance exceeds it. Default OFF (collision on all loaded chunks).
 
 # CPU & platform (non-GPU)
 
-Items 1–5 are about the GPU / fill / render-side cost. The items below are
+Items 2/3/5 are about the GPU / fill / render-side cost. The items below are
 **pure CPU and platform** costs that run every frame regardless of the graphics
 style — i.e. the PS1 look does nothing for them, which is the crux of the
 original "looks retro ⇒ runs on old phones" theory: the aesthetic only addresses
 the GPU side, and several of the real old-phone bottlenecks are here.
-**Items 6 and 7 are the two that genuinely move the needle for old phones.**
+**Item 6 (audio) is the one that genuinely moves the needle for old phones; item 7,
+the threaded-export decision, has since been decided — single-threaded.**
 
 ## 6. Engine audio: per-sample DSP in GDScript on the main thread
 
@@ -750,146 +295,18 @@ slow frames underrun the 0.1 s buffer → audible crackle (with a 30 fps cap
 that's only ~3 frames of headroom).
 
 ### Plan
-1. ✅ **DONE. Precompute the harmonic weights.** `_voice()` builds the
-   `[harmonics]` weight table once per call and reuses it across firing phases.
-2. ✅ **DONE. Avoid the per-frame allocation.** `engine_audio.gd` sizes the scratch
-   to exactly `n` and pushes it directly — no per-frame `slice()`.
-3. ✅ **DONE. Lower the shipped cost.** `config/game_config.tres` now sets
-   `engine_harmonics = 3` (was the code default 4) — note still reads well; trims
-   the inner loop ~25%. Also raised the generator `BUFFER_SECONDS` 0.1→0.15 so a
-   slow web frame is less likely to underrun the buffer (the frame-coupling in the
-   "Why" above). Single shipped values, per the inherently-low-end principle.
-4. ✅ **DONE. Voice wavetable — the structural win.** The firing-pulse voice is a
-   periodic function of crank phase parameterised only by load, so `_voice()`'s
-   `firing_phases × harmonics` `sin`/`exp` sum is now baked over one crank cycle
-   into a small bank of load-indexed tables **once at init** (`_build_voice_bank`),
-   and the per-sample path reads it back with bilinear phase/load interpolation
-   (`_read_voice`). Pitch tracks rpm for free (the crank phase still advances at
-   the rpm rate; the table is sampled at that phase). Measured **3.4× (i4) → 8.1×
-   (v12)** faster on the voice, cost now *constant* in cylinder count, worst-case
-   approximation error ~`8e-5` (inaudible). Guarded by
-   `test_wavetable_matches_direct_voice` plus the existing behavioural tests.
-   **Measured dead-ends (do not retry in GDScript):** a `sin` lookup table and a
-   harmonic-recurrence rewrite both benchmarked *slower* than direct `sin` — a
-   GDScript builtin `sin` is a cheap dispatch into compiled engine math, so
-   swapping one `sin` for several interpreted ops loses. The wavetable wins only
-   because it replaces the *whole* harmonic sum (~16 transcendentals) with ~5
-   array ops, not one `sin`.
-5. **Optionally decouple from the render frame.** Consider filling the
-   `AudioStreamGenerator` from a thread / on an audio cadence rather than
-   `_process`, so a slow render frame can't underrun audio. **Note:** the shipped
-   web build is single-threaded (item 7), so a true audio thread isn't available
-   there — on web the levers are steps 1–3 plus keeping main-thread frames short
-   (the chunk-crossing terrain work above). Heavier change; do only if 1–3 don't
-   clear it on a real device.
+### Plan — remaining step
+
+5. **Optionally decouple the fill from the render frame.** Steps 1–4 have shipped
+   (see the header). What is left is filling the `AudioStreamGenerator` from a thread
+   / on an audio cadence rather than `_process`, so a slow render frame can't underrun
+   the buffer. **Note:** the shipped web build is single-threaded, so a true audio
+   thread isn't available there — on web the levers are the shipped steps plus keeping
+   main-thread frames short. Heavier change; do only if a real device still crackles.
 
 ### Files
 `scripts/engine_audio_synth.gd`, `scripts/engine_audio.gd`,
 `scripts/game_config.gd` + `config/game_config.tres`, `features/engine-audio.md`.
-
-### Tests
-`engine_audio_synth.gd` is pure/headless (`RefCounted`, `fill()` only) — add a
-test asserting the precomputed-weight path produces the same samples as the
-current per-sample `pow` (within float epsilon) for a few rpm/throttle/harmonic
-cases, so the optimisation is provably behaviour-preserving.
-
-### Risk
-Low. The weight precompute is algebraically identical; keep an epsilon-compare
-test. Threading the fill (step 4) is the only risky part — gate it separately.
-
-## 7. Threaded web export vs. old-device compatibility — ✅ DECIDED: single-threaded
-
-> **Resolved:** shipped single-threaded for maximum device reach.
-> `export_presets.cfg` now has `variant/thread_support=false` and the engine
-> thread pools removed; `build_web.sh` / `serve_web.sh` updated (no SAB toggle, no
-> COOP/COEP, plain-HTTP serve); `features/terrain.md` documents the deliberate
-> single-threaded web config. **No terrain code changed** — `terrain_manager.gd`
-> already routes web through the frame-budgeted main-thread queue
-> (`_use_budgeted_generation()` keys on `OS.has_feature("web")`, so it was in
-> force regardless of the thread flag; the worker pool was never actually used on
-> web). The only open follow-up is a real on-device smoothness check across chunk
-> boundaries (tune `MAX_BUILDS_PER_FRAME` if it micro-hitches). The original
-> analysis is kept below for trace.
-
-### Why
-`export_presets.cfg:30` (originally) set `variant/thread_support=true` with
-`threads/emscripten_pool_size=8` / `godot_pool_size=4`, and `serve_web.sh` sent
-the COOP/COEP headers. Threaded WASM requires `SharedArrayBuffer`, which:
-- needs the **host** to send cross-origin-isolation headers (itch.io etc. must
-  have "SharedArrayBuffer support" toggled on — see `build_web.sh:8-9`), and
-- **isn't available on older / low-memory mobile browsers**, and the thread
-  pools cost extra memory cheap phones may not have.
-
-So the threaded build can **fail to start or OOM on exactly the old hardware the
-project targets** — directly at odds with "runs on any device, even old phones."
-Meanwhile the terrain generation relies on `WorkerThreadPool`
-(`terrain_manager.gd:436`) to keep chunk loading off the main thread, so a
-non-threaded export would **hitch on chunk loads** unless tuned.
-
-### Plan / decision
-Make this an explicit, tested choice rather than an accident of the preset:
-1. **Decide the priority:** maximum device reach (single-threaded export) vs.
-   smoother chunk loading (threaded export). For the stated goal, lean toward a
-   **single-threaded export as the shipped web build**, accepting that terrain
-   gen must then be smooth on the main thread.
-2. **Make terrain gen survive single-threaded.** `terrain_manager.gd` already
-   has `use_threaded_generation` and a synchronous path. When threads are
-   unavailable, fall back to synchronous generation but **spread the work**: keep
-   `MAX_INTEGRATIONS_PER_FRAME = 1` (`:14`) and consider time-slicing
-   `compute_chunk_data` (it's the heavy CPU half) across frames so a boundary
-   crossing doesn't stall. Detect thread availability at runtime
-   (`OS.get_processor_count()` / whether `WorkerThreadPool` ran) rather than
-   hardcoding.
-3. **If keeping threads**, document the host header requirement and provide the
-   single-threaded build as a fallback for devices/hosts that can't do SAB.
-4. Confirm the chosen export actually boots on a low-end test device before
-   shipping.
-
-### Files
-`export_presets.cfg`, `scripts/terrain_manager.gd`, `build_web.sh` /
-`serve_web.sh` (docs), `features/terrain.md`, `features/architecture.md`.
-
-### Risk
-Single-threaded terrain gen reintroduces the startup/boundary hitch the threads
-were added to hide; the fog masks far pop-in but not a frame stall. Time-slicing
-`compute_chunk_data` is the mitigation and needs care (partial-chunk state).
-
-## 8. Physics hot-path allocation churn — ✅ DONE
-
-> **Resolved.** The `contacts`/`WheelContact` pooling described below was already
-> in place (pooled `WheelContact` per wheel, refilled each tick). The remaining
-> per-physics-tick allocations were then killed: (a) `drivetrain.surface_tire_params()`
-> now fills and returns a reused `_surf_scratch` dict instead of allocating one per
-> contact per tick; (b) `car._resolve_drive_inputs()` fills and returns a reused
-> `_inputs_scratch` dict instead of a fresh `{drive,brake_input,handbrake,declutch}`
-> each tick; (c) `WheelParticles._emit_from_wheels()` iterates a cached
-> `Drivetrain.all_wheels` (built once in `_init`) instead of allocating
-> `front_wheels + rear_wheels` every tick. Behaviour-preserving (each scratch is
-> read immediately by its sole/immediate caller); guarded green by the existing
-> drivetrain/car/wheel-particle/smoke tests.
-
-### Why
-`scripts/drivetrain.gd step()` rebuilds a `contacts` array of ~10-key
-dictionaries **every physics tick**, plus a `front_reaction_each` dict inside the
-`SPIN_SUBSTEPS = 8` loop. Allocating dictionaries/arrays 60×/s on the main thread
-adds GC pressure on low-end devices. The substepping itself is fine — it's the
-per-tick allocation that's the smell.
-
-### Plan
-Preallocate the per-wheel contact structures once (max 4 wheels) and refill them
-in place each tick; replace the per-contact `Dictionary` with fixed fields /
-parallel typed arrays (`PackedFloat32Array` etc.), and hoist `front_reaction_each`
-out of the substep loop (reuse one dict, or index by wheel slot). Behaviour
-unchanged; only the allocations go away.
-
-### Files
-`scripts/drivetrain.gd`. Covered by the existing drivetrain/physics tests
-(`tests/headless/`); they must stay green unchanged (this is a pure refactor).
-
-### Risk
-Low, but it touches the tire model — rely on the existing physics tests as the
-guard (per `CLAUDE.md`, a previously-green physics test failing means the
-refactor changed behaviour).
 
 ## 9. Post-process back-buffer copy (awareness)
 
@@ -900,23 +317,6 @@ full-screen bandwidth round-trip per frame. **Cheap at 480×360**, so this is
 overlay's render-gpu line, the alternative is rendering the scene to a
 `SubViewport` and doing the dither as a single blit instead of a back-buffer
 copy. Low priority; the current cost is small.
-
-## 10. HUD per-frame string allocation (minor) — ✅ DONE
-
-`scripts/hud.gd`'s `_timed_process` (around `:236`) now caches
-`_last_speed`/`_last_gear`/`_last_rpm`/`_last_boost_pct` and only re-formats /
-re-assigns a label's `.text` when the underlying value actually changes, instead
-of rebuilding every label string unconditionally each frame. No further action
-needed here.
-
-## 11. `downforce_readouts` allocated when debug is off (minor) — ✅ DONE
-
-`car.gd` used to build the nested `downforce_readouts` array every physics tick
-even with the wheel-force overlay off. It is now guarded on the overlay's own
-visibility (`car.gd` → `_apply_aero`, `if _debug_overlay.visible:`), so the
-shipped game doesn't allocate it. The overlay (`wheel_force_debug.gd`) is the
-sole consumer and already early-outs when hidden.
-
 ## 12. Scaled HeightMapShape3D collision (minor / awareness)
 
 `scripts/terrain_chunk.gd:22` scales the `CollisionShape3D` node as the
@@ -935,34 +335,16 @@ points at terrain contacts after items 3 and 8. Low priority.
   `car.gd` `_any_wheel_airborne`), not `find_children`'d per frame.
 - Terrain generation is threaded with a per-frame integration cap
   (`MAX_INTEGRATIONS_PER_FRAME = 1`) and a synchronous fallback already exists.
-- The web export's threading headers are correctly configured (`serve_web.sh`,
-  `export_presets.cfg`) — the open question in item 7 is *whether to use threads
-  at all* on the oldest devices, not whether they're set up right.
+- The web export's threading configuration is settled (`serve_web.sh`,
+  `export_presets.cfg`): the build ships **single-threaded**, so it needs no
+  `SharedArrayBuffer` / cross-origin isolation.
 
 ---
 
-## Suggested implementation order
+## Suggested order for what's left
 
-1. **Item 4** (frame cap) — one line, immediate thermal win, zero risk.
-2. **Item 1** (mipmaps + LOD bias) — cheap, safe bandwidth win.
-3. **Item 6** (engine-audio CPU) — biggest pure-CPU win; mostly the `pow`
-   precompute, behaviour-preserving with a test.
-4. **Item 7** (threaded-export decision) — gates whether the game boots at all on
-   the oldest devices; decide early, it shapes the terrain-gen work.
-5. **Item 2** (foliage CPU cull + visible cap) — biggest GPU win.
-6. **Item 3** (collision box cull) — biggest physics win; shares item 2's bins.
-7. **Item 8** (physics-tick allocations) — refactor, guarded by existing tests.
-8. **Items 10–11** (minor allocations) — fold into the above cleanups.
-9. **Items 5, 9, 12** — only after the `P` overlay shows residual cost in their
-   area; most likely skipped.
-
-## Cross-cutting: inherently low-end, no quality tiers
-There is no quality-profile switch. Items 1–4 each add a `GameConfig` knob, but
-each knob holds **one shipped value** — the lean one — that every device runs.
-Set the aggressive defaults directly in `config/game_config.tres`
-(`trees_per_turn`↓, `tree_render_distance_m`↓, `max_visible_billboards` capped,
-`texture_lod_bias`↑, `target_fps=30`). The knobs exist for tuning that single
-value and for dev/debug, not for branching between a "high" and "low" path. If a
-future device proves too weak, lower the shipped defaults further — do not add a
-tier system. This matches the config-first architecture
-(`features/configuration.md`).
+1. **Item 2** (foliage view-cone cull + visible cap) — the biggest GPU win.
+2. **Item 3** (collision-box cull) — the biggest physics win; shares item 2's bins.
+3. **Item 6 step 5** (decouple the audio fill) — only if a real device still crackles.
+4. **Items 5, 9, 12** — only if the `P` overlay shows residual cost in their area;
+   most likely skipped.

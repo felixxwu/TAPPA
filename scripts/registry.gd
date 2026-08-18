@@ -48,6 +48,14 @@ static func names(entries: Array) -> Array:
 class Seam extends RefCounted:
 	var _default: Array[Dictionary]
 	var _override: Array[Dictionary] = []
+	# Bumped on every roster swap. Consumers that derive an expensive structure from
+	# all() (Voronoi sites, pin layouts) memoise against this instead of hashing the
+	# roster: hashing is O(entries) and allocates, so a consumer that checked its memo
+	# by re-hashing paid the full cost on every call and the memo bought nothing — the
+	# exact defect this replaced on OverworldRegion's per-wheel contact path. Monotonic
+	# rather than a dirty flag, so several independent consumers can each compare
+	# against their own last-seen value without coordinating a clear.
+	var version: int = 0
 
 	func _init(default_entries: Array[Dictionary]) -> void:
 		_default = default_entries
@@ -57,6 +65,8 @@ class Seam extends RefCounted:
 
 	func override_for_test(entries: Array[Dictionary]) -> void:
 		_override = entries
+		version += 1
 
 	func reset() -> void:
 		_override = []
+		version += 1

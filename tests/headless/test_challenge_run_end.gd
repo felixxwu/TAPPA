@@ -150,7 +150,10 @@ func test_a_clean_finish_resolves_the_completion_reward_before_handing_off() -> 
 	# fetched field, so nothing about the grant itself is asserted here.
 	assert_true(_urls().contains("runQuery"),
 		"a clean finish queries the challenge board for the player's placement")
-	assert_eq(_scenes, ["res://hq.tscn"], "and then hands off to HQ")
+	# Scenes.hub_path() rather than the literal: which scene is the hub is a flag now
+	# (GameConfig.overworld_enabled), and what this test cares about is that the run hands off to
+	# THE HUB, whichever that is. Asserting the literal broke the moment the flag was flipped.
+	assert_eq(_scenes, [Scenes.hub_path()], "and then hands off to the hub")
 
 
 func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() -> void:
@@ -173,7 +176,7 @@ func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() ->
 	# Stars, not boxes: the challenge completion payout replaced the mystery-box grant.
 	assert_gt(_save.stars_available(), 0,
 		"the placement-gated reward was still granted with nothing on screen to show it")
-	assert_eq(_scenes, ["res://hq.tscn"], "and the hand-off to HQ still happens")
+	assert_eq(_scenes, [Scenes.hub_path()], "and the hand-off to HQ still happens")
 
 
 # --- The reward reveal must never be silently dropped ---------------------------
@@ -223,7 +226,7 @@ func test_the_completion_reward_reveal_stacks_over_an_existing_modal_instead_of_
 		await get_tree().process_frame
 
 	assert_null(ConfirmPopup.any_open(get_tree()), "both modals are gone")
-	assert_eq(_scenes, ["res://hq.tscn"], "and the run now hands off to HQ")
+	assert_eq(_scenes, [Scenes.hub_path()], "and the run now hands off to HQ")
 
 
 func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> void:
@@ -235,7 +238,7 @@ func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> voi
 		"period_key": ChallengeSession.period_key(),
 		"car_instance_id": ChallengeSession.car_instance_id(),
 	})
-	assert_eq(_scenes, ["res://hq.tscn"],
+	assert_eq(_scenes, [Scenes.hub_path()],
 		"a failed placement fetch never strands the player in the run scene")
 
 
@@ -252,7 +255,7 @@ func test_a_dnf_posts_the_board_flip_without_delaying_the_hand_off() -> void:
 	})
 	# NOT awaited by the handler: the scene hand-off must already have happened by
 	# the time control returns, with the post still in flight.
-	assert_eq(_scenes, ["res://hq.tscn"], "the DNF returns to HQ immediately")
+	assert_eq(_scenes, [Scenes.hub_path()], "the DNF returns to HQ immediately")
 
 	# ...and the post resolves in the background against the autoload board.
 	for i in 6:
@@ -264,4 +267,4 @@ func test_a_dnf_posts_the_board_flip_without_delaying_the_hand_off() -> void:
 func test_a_dnf_is_harmless_with_no_cloud_board_wired_up() -> void:
 	Cloud.challenge_leaderboard = null
 	_scene._on_challenge_run_finished({"completed": false, "dnf": true, "kind": "weekly"})
-	assert_eq(_scenes, ["res://hq.tscn"], "still returns to HQ with no board available")
+	assert_eq(_scenes, [Scenes.hub_path()], "still returns to HQ with no board available")

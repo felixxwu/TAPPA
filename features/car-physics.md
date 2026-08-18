@@ -401,6 +401,15 @@ raises** (re-settled each frame from the raise tween). Roadside wrecks pass
 no ground collider). **`Car.compression_budget(cfg)`** (static) returns how far a wheel can
 droop below the rest plane — used by the wreck site gate.
 
+**Undoing a settle: `car.clear_wheel_visual_droop()`.** Both settle functions translate the wheel
+`Visual` **down**, and nothing on the live path ever translates it back (`_update_visuals` only
+spins and steers), so the offset is permanent until something clears it. That is fine for a prop,
+which stays frozen forever — but a car that is settled while frozen and then handed **back to the
+player** renders its wheels sunk by up to a full `wheel_rest_length` below where the solver
+actually has them, i.e. a tyre visibly cutting through the ground with the physics perfectly
+healthy. Call this whenever a settled prop becomes a driven car again. Exactly one place does that
+transition today: the overworld garage lift (`features/overworld.md` → "The lift").
+
 ## Weight distribution (centre of mass)
 
 Each `CarLibrary` entry carries a real `weight_front` — the car's published static
@@ -494,7 +503,7 @@ the handbrake's brake torque — so the engine **winds down with the braking whe
 free-revving on the handbrake's open clutch.
 
 Regardless of source, a car that is fully braked (handbrake **or** the low-speed
-parking brake) and below `HANDBRAKE_LOCK_SPEED` (0.5 m/s) gets a **static-friction
+parking brake) and below `GameConfig.handbrake_lock_speed` gets a **static-friction
 hold** — `_apply_parking_hold` anchors it to the spot it stopped on and ties it there
 with a **damped spring** (`parking_hold_stiffness` / `parking_hold_damping`, both in
 acceleration terms so they are mass-independent), clamped to `parking_hold_grip · m · g`.

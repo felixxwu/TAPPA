@@ -117,7 +117,8 @@ Point at it instead of deleting anything in this sweep.
 ### 6. Config drift (`GameConfig`)
 
 - `config/game_config.tres` is authored data for the `GameConfig` resource
-  (`scripts/game_config.gd`, ~2270 lines). Check the `.tres` for properties that
+  (`scripts/game_config.gd`, one of the largest scripts in the repo — several
+  thousand `@export`s' worth). Check the `.tres` for properties that
   no longer exist as `@export`s in the script (orphaned authored values) and
   `@export`s with no counterpart being exercised.
 - Reminder to surface: tuning values belong in the `.tres`, not script/scene
@@ -126,8 +127,14 @@ Point at it instead of deleting anything in this sweep.
 
 ### 7. Oversized scripts / refactor candidates
 
-- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~3630),
-  `game_config.gd`, `car.gd`, `world.gd` (each >1000). Flag scripts that have
+- `wc -l scripts/*.gd | sort -rn | head`. **Measure, don't trust this list** —
+  it moves every month. As of 2026-08 the giants, descending, are `hq.gd`
+  (~4700), `game_config.gd` (~3800), `terrain_manager.gd` (~2900),
+  `overworld.gd` (~2700), `world.gd` (~2560), `car.gd` (~2510),
+  `rally_library.gd` (~2220), then a tail of >1000-line scripts
+  (`overworld_map.gd`, `save_manager.gd`, `settings_menu.gd`,
+  `mobile_controls.gd`, `start_line.gd`, `upgrade_library.gd`,
+  `rally_session.gd`, `overworld_picker.gd`). Flag scripts that have
   grown a lot since the last sweep or that mix several responsibilities — these
   are refactor candidates. Don't refactor here; note it and suggest a split.
 - Also worth flagging: a single function that's very long, deeply nested
@@ -169,8 +176,9 @@ green in tests and broken in the editor.
   (binary per `CLAUDE.md`; `$GODOT` overrides). Surface every parse error and
   script warning it prints — these are the ones nobody sees until they open the
   editor.
-- Enumerate the root scenes explicitly (`main.tscn`, `hq.tscn`, `garage.tscn`,
-  `podium.tscn`, `standings.tscn`, `corner_catalog.tscn`, `car.tscn`) and check
+- Enumerate the root scenes explicitly (`ls *.tscn` — currently `main.tscn`,
+  `hq.tscn`, `overworld.tscn`, `garage.tscn`, `podium.tscn`, `standings.tscn`,
+  `corner_catalog.tscn`, `exhaust_lab.tscn`, `car.tscn`) and check
   each `ext_resource` path in them still exists on disk. A dangling
   `ext_resource` is the classic post-refactor rot.
 - Check `.uid` files whose sibling script is gone, and scripts with no `.uid`.
@@ -180,9 +188,9 @@ green in tests and broken in the editor.
 `project.godot` is hand-authored data that nothing type-checks, so it drifts
 silently when scripts move or features are removed.
 
-- **Autoloads** — the `[autoload]` block registers ~9 singletons (`Config`,
-  `Save`, `InputRemap`, `RallySession`, `Benchmark`, `DisplayStretch`,
-  `WebFullscreen`, `PerfLog`, `Music`). Check each `res://scripts/*.gd` path
+- **Autoloads** — the `[autoload]` block registers ~11 singletons (`Config`,
+  `Save`, `Cloud`, `InputRemap`, `RallySession`, `ChallengeSession`, `Benchmark`,
+  `DisplayStretch`, `WebFullscreen`, `PerfLog`, `Music`). Check each `res://scripts/*.gd` path
   still exists, and flag any autoload nothing references (grep the singleton
   name across `scripts/`) — a resident singleton with no callers is dead weight
   loaded on every boot, including on the weakest phone.
@@ -213,17 +221,35 @@ sweep.
 
 ### 14. Generated data caches
 
-`data/track_cache.json` and `data/opponent_cache.json` are committed generated
-artifacts, baked by `cache_tracks.sh` / `cache_opponents.sh` / `cache_all.sh`.
+`data/` holds exactly two committed generated artifacts:
+
+- **`data/track_cache.json`** — the track-turn lockfile, baked by
+  `./cache_tracks.sh` (which `./cache_all.sh` now just wraps). Read by
+  `scripts/track_cache.gd`.
+- **`data/eligibility.json`** — the rally × car eligibility matrix, baked by
+  `./export_eligibility.sh` (`tools/export_eligibility.gd`) for
+  `tools/fit_map_pins.py`. Regenerate after any change to a restriction band,
+  car or engine.
+
 If generation code changed after the bake, the game ships content that no longer
 matches the generator — invisible in tests.
 
-- Compare mtimes / last-commit dates: is either cache older than the scripts
-  that produce it (track generation in `world.gd` and friends, opponent
-  generation)? If so, flag it and suggest re-running `./cache_all.sh` — don't
-  regenerate unasked, since it rewrites committed content.
+- Compare mtimes / last-commit dates: is either cache older than the code that
+  produces it (track generation in `world.gd` / `track_generator.gd`;
+  `RallyLibrary.is_eligible` / `ineligibility_reason` and the car/engine tables
+  for the matrix)? If so, flag it and suggest re-running `./cache_all.sh` /
+  `./export_eligibility.sh` — don't regenerate unasked, since it rewrites
+  committed content.
 - Check the cache schema still matches what the loader reads (a renamed field
-  makes entries silently default).
+  makes entries silently default). `track_cache.gd` also carries a
+  `constants_fingerprint()` guard — note if it's stale.
+- **There is no opponent-field cache, and adding one back is wrong.** The old
+  `data/opponent_cache.json` / `cache_opponents.sh` are gone: the rival grid is
+  drawn matched to the PLAYER's car rating, so a field is a function of the
+  player as well as the rally and cannot be keyed on rally properties alone
+  (`rally_library.gd` → `generate_opponent_field`'s `player_rating`,
+  `rally_session.gd` → `_generate_event_tracks` path). If a sweep "finds" the
+  cache missing, that's the design, not drift.
 
 ### 15. Build, export presets and CI health
 
@@ -232,13 +258,13 @@ Nothing else in this sweep looks at how the game actually ships.
 - **CI** — `.github/workflows/deploy.yml`. Check the last few runs
   (`gh run list -L 5`) and surface failures. Per the `google-play-publishing`
   auto-memory a first Play publish is still pending; note anything blocking it.
-- **Presets vs scripts** — `export_presets.cfg` defines `Web`, `Android`, and
-  `Android Play (AAB)`. Confirm every preset name referenced by `build_web.sh`,
+- **Presets vs scripts** — `export_presets.cfg` defines `Web`, `Android`,
+  `Android Play (AAB)` and `Windows Desktop`. Confirm every preset name referenced by `build_web.sh`,
   `build_android.sh`, `build_android_play.sh`, `build_windows.sh` and the
   workflow still exists and is spelled identically; a renamed preset fails only
   at release time.
-- **Presets consistent with each other** — the three presets share an
-  `exclude_filter`; if a new asset directory got excluded in one and not the
+- **Presets consistent with each other** — all four presets share a
+  byte-identical `exclude_filter`; if a new asset directory got excluded in one and not the
   others, that's drift. Also flag `variant/thread_support` flipping to `true`
   on Web (see §17) and Android `architectures/arm64-v8a` being turned off.
 - **Secrets never committed** — `.gitignore` guards `*.keystore`, `*.jks`,
@@ -372,8 +398,11 @@ helpers that grew a second responsibility, hand-rolled loops that a built-in or
 an existing utility already covers, dead abstractions, needless indirection.
 
 - **Fan out — don't read the tree serially.** `scripts/` alone has multi-
-  thousand-line files (`hq.gd` ~3630, `game_config.gd` ~2290, `world.gd` ~2230,
-  `car.gd` ~2220, `terrain_manager.gd` ~1630).
+  thousand-line files — run `wc -l scripts/*.gd | sort -rn | head -12` to get
+  the current shape rather than trusting a list; as of 2026-08 that is `hq.gd`
+  (~4700), `game_config.gd` (~3800), `terrain_manager.gd` (~2900),
+  `overworld.gd` (~2700), `world.gd` (~2560), `car.gd` (~2510) and
+  `rally_library.gd` (~2220).
   Spawn several `Explore` / `general-purpose` subagents, each owning a slice
   (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
   the menu scripts, the terrain files), each returning candidate simplifications
@@ -453,9 +482,10 @@ What to look for, cheapest first:
   default, a duration and the frame count that covers it). Either derive it or
   note the relationship in the `@export` comment and guard the *relationship*
   (not the values — see the tuning-value rule in `CLAUDE.md`).
-- **A test with its own copy of a production list/constant.** e.g.
-  `tests/headless/test_smoke.gd`'s local `ACTIONS` array alongside
-  `InputRemap.ACTIONS`, or a duplicated `DESIGN_HEIGHT`. A test asserting a
+- **A test with its own copy of a production list/constant.** e.g. a local
+  `ACTIONS` array alongside `InputRemap.ACTIONS`, or a duplicated
+  `DESIGN_HEIGHT`. (`tests/headless/test_smoke.gd` is the *good* example here —
+  it iterates `InputRemap.ACTIONS` directly.) A test asserting a
   hand-copied list can't catch the production list changing. Recommend
   referencing the real symbol (iterating the production table as opaque input is
   the encouraged pattern; hand-copying it is the smell).

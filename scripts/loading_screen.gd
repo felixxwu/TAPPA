@@ -105,6 +105,15 @@ func update_track_preview(points: PackedVector2Array) -> void:
 		_preview.set_points(points)
 
 
+# The ROAD NETWORK variant of the above, for the overworld's precompute screen: one polyline
+# per road instead of a single stage centreline. Pair it with set_chunk_size() +
+# update_loaded_chunks() and the screen becomes a live map of the precompute — the roads that
+# are being carved, and the chunks filling in behind them.
+func update_road_network(lines: Array[PackedVector2Array]) -> void:
+	if _preview != null:
+		_preview.set_polylines(lines)
+
+
 # World-XZ bounding box of `points` (position = min corner, size = span).
 # Returns an empty Rect2 for no points; callers guard on size for the < 2 case.
 static func bounds_of(points: PackedVector2Array) -> Rect2:

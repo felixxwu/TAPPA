@@ -24,6 +24,26 @@ var _busy := false
 
 
 func _ready() -> void:
+	# THE NETWORK MUST NOT STOP WHEN THE GAME PAUSES.
+	#
+	# HTTPRequest drives its transfer from an internal process callback, so it obeys
+	# `process_mode` / `get_tree().paused` like any other node. `Cloud` is an autoload,
+	# i.e. a child of the root with PROCESS_MODE_INHERIT — which for the root means
+	# PAUSABLE — so every request started while the tree was paused simply never
+	# progressed: `await _http.request_completed` never fired and the awaiting caller
+	# hung forever.
+	#
+	# That is reachable from anywhere the pause menu is: pause_menu.gd sets
+	# get_tree().paused = true, and its embedded SettingsMenu can start a real cloud
+	# call (the reset page's "Wipe all progress" -> Cloud.publish_local_wipe, the
+	# account page's sign-in/out). The symptom was CloudBusy's full-screen cover going
+	# up and never coming down — the wipe looked "stuck" — for a signed-in player
+	# wiping from the Overworld HQ or from a mid-rally pause.
+	#
+	# Set on the RestClient (the one owner of HTTPRequest in the project), so its
+	# _http child inherits it and every cloud caller is fixed at the single point
+	# where the socket actually lives.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_http = HTTPRequest.new()
 	_http.timeout = TIMEOUT_SEC
 	# Redirects: Google's endpoints do not use them, but following a couple is

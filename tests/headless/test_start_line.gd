@@ -68,6 +68,13 @@ var _save: Node
 
 func before_each() -> void:
 	Config.reset()
+	# This file drives real start_rally() calls, whose _enter_event() ends in
+	# `if auto_load_scenes: change_scene_to_file("res://main.tscn")` — and the seam
+	# defaults to TRUE. Under the headless runner that scene is added to /root and
+	# never freed, poisoning the shared physics space for every later file (see
+	# features/testing.md → "Never let a change_scene_to_file escape", and
+	# test_world_isolation.gd, which fails when one escapes).
+	RallySession.auto_load_scenes = false
 	CarFixtures.install()
 	RallyFixtures.install()
 	_save = get_node("/root/Save")
@@ -95,6 +102,8 @@ func after_each() -> void:
 		RallySession.abandon()
 	if ChallengeSession.is_active():
 		ChallengeSession.abandon()
+	RallySession.auto_load_scenes = true
+	ChallengeSession.auto_load_scenes = true
 	Config.reset()
 	CarFixtures.restore()
 	RallyFixtures.restore()

@@ -36,6 +36,43 @@ var rest = null
 # Overridable so tests can redirect the credential file (mirrors Save.profile_path).
 var auth_path := AUTH_PATH
 
+## RUN-SCOPED SANDBOX, armed once by the GUT pre-run hook — the same defence Save got, for the
+## same reason and after the same near-miss. While this is non-empty, any instance still sitting
+## on the DEFAULT `AUTH_PATH` is remapped onto it, so a test that never redirects is harmless
+## BY DEFAULT rather than by remembering.
+##
+## Why this is not paranoia: `_write_credentials` writes this file and `sign_out()` DELETES it —
+## and `refresh()` calls `sign_out()` itself on a non-network rejection. Five test files build an
+## AuthService (or mutate the live `Cloud.auth`) without redirecting, and the suite was already
+## visibly working around it: two leaderboard tests hand-roll sign-out as three field assignments
+## rather than call `sign_out()`, and test_cloud_boot_gate.gd says why in prose — "Deliberately
+## NOT Cloud.sign_out(): that reaches AuthService and deletes user://auth.json". Workarounds
+## scattered across call sites is the signal that the default was wrong.
+##
+## An EXPLICIT redirect still wins: only the default path is remapped, exactly as Save behaves.
+static var test_sandbox_path := ""
+
+
+## The path actually used. Every read, write and delete below goes through this — a direct
+## `auth_path` use would bypass the sandbox, which is the bug this exists to prevent.
+func _path() -> String:
+	if test_sandbox_path != "" and auth_path == AUTH_PATH:
+		return test_sandbox_path
+	return auth_path
+
+
+## Refuse to touch the developer's REAL credential file from a headless run, and name the caller.
+## The sandbox above makes that unreachable in practice; this is the backstop for the case where
+## a test legitimately clears the sandbox (as the Save seam test must) and something writes inside
+## that window. Returns true when the operation must be abandoned.
+func _refuse_real_file(op: String) -> bool:
+	if not Platform.is_headless() or _path() != AUTH_PATH:
+		return false
+	push_error(("AUTH SANDBOX VIOLATION (refused): a headless run tried to %s the real "
+		+ "credential file at %s. Redirect AuthService.auth_path or restore "
+		+ "AuthService.test_sandbox_path.") % [op, AUTH_PATH])
+	return true
+
 
 func is_signed_in() -> bool:
 	return uid != "" and refresh_token != ""
@@ -147,11 +184,15 @@ func restore() -> bool:
 func sign_out() -> void:
 	var was_signed_in := is_signed_in()
 	_clear_state()
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(auth_path))
-	if FileAccess.file_exists(auth_path):
-		# globalize_path does not resolve user:// on every platform (notably web),
-		# so fall back to the engine-relative removal.
-		DirAccess.remove_absolute(auth_path)
+	# In-memory state is cleared either way — signing out must WORK under test. Only the on-disk
+	# deletion is refused, so a headless run can exercise sign-out without destroying the
+	# developer's real session.
+	if not _refuse_real_file("delete"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_path()))
+		if FileAccess.file_exists(_path()):
+			# globalize_path does not resolve user:// on every platform (notably web),
+			# so fall back to the engine-relative removal.
+			DirAccess.remove_absolute(_path())
 	if was_signed_in:
 		signed_out.emit()
 
@@ -201,7 +242,9 @@ func _write_credentials() -> void:
 	# Same atomic .tmp -> rename dance as save_manager.save_now(), so a crash
 	# mid-write cannot leave a truncated credential file that fails to parse and
 	# silently signs the player out.
-	var tmp := auth_path + ".tmp"
+	if _refuse_real_file("write"):
+		return
+	var tmp := _path() + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		push_warning("AuthService: cannot write %s — the session will not survive a restart" % tmp)
@@ -212,15 +255,15 @@ func _write_credentials() -> void:
 		"email": email,
 	}, "\t"))
 	f.close()
-	var dir := DirAccess.open(auth_path.get_base_dir())
+	var dir := DirAccess.open(_path().get_base_dir())
 	if dir != null:
-		dir.rename(tmp, auth_path)
+		dir.rename(tmp, _path())
 
 
 func _read_credentials() -> Dictionary:
-	if not FileAccess.file_exists(auth_path):
+	if not FileAccess.file_exists(_path()):
 		return {}
-	var f := FileAccess.open(auth_path, FileAccess.READ)
+	var f := FileAccess.open(_path(), FileAccess.READ)
 	if f == null:
 		return {}
 	var text := f.get_as_text()

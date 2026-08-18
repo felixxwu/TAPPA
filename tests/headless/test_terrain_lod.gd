@@ -168,6 +168,45 @@ func test_build_finest_reproduces_the_prebaked_level_zero() -> void:
 	assert_eq(bad, 0, "every lazily-rebuilt vertex matches the prebaked one")
 
 
+# A duck-typed region field: the rank rises with world X, so a chunk's four corners disagree
+# and a lost rank shows up as a whole grid of zeroes rather than as a rounding difference.
+class RampRegion extends RefCounted:
+	func region_rank_at(x: float, _z: float) -> float:
+		return clampf(x / 500.0 + 0.5, 0.0, 1.0)
+
+
+# The REGION RANK (UV2.y) must survive the lazy level-0 rebuild. It is not derived from the
+# heights or the light — build_finest refills UV2 from track_surface, which writes UV2.x only —
+# so without an explicit re-derivation the finest level came back rank-0 (region slot A) while
+# the chunk's prebaked coarser levels carried the real rank: the same chunk wearing two
+# different regions depending on how far away the camera was.
+func test_the_lazily_rebuilt_finest_level_keeps_the_region_rank() -> void:
+	var m := _make_manager()
+	m.light_amount = 1.0
+	m.set_region_source(RampRegion.new())
+	var coord := Vector2i(2, -1)
+	var data: Dictionary = m.compute_chunk_data(coord)
+	var prebaked := TerrainLod.build_level(data, 1, 3.0)
+	var kept := {
+		"center": data["center"],
+		"heights": data["heights"],
+		"l0_light": TerrainLod.encode_lights(data["lights"]),
+	}
+	var lazy := TerrainLod.build_finest(m, coord, kept, 3.0)
+	assert_not_null(lazy, "the finest level rebuilds from what the cache keeps")
+	var want: PackedVector2Array = prebaked.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2]
+	var got: PackedVector2Array = lazy.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2]
+	assert_eq(got.size(), want.size(), "same vertex count")
+	var spread := 0.0
+	var bad := 0
+	for i in want.size():
+		spread = maxf(spread, absf(want[i].y - want[0].y))
+		if absf(got[i].y - want[i].y) > 1e-5:
+			bad += 1
+	assert_gt(spread, 0.0, "the fixture really does vary the rank across the chunk")
+	assert_eq(bad, 0, "every lazily-rebuilt vertex carries the same region rank as the prebake")
+
+
 # A coarse chunk has no full-res heights, so there is nothing to rebuild level 0 from —
 # say so loudly rather than meshing garbage.
 func test_build_finest_without_heights_is_loud() -> void:

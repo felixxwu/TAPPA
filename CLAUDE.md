@@ -104,19 +104,52 @@
   and pass (or you've explicitly said which failed and why). The only exception
   is a change that genuinely needs no test under the rules above (pure tunable
   values, docs, comments) — say so rather than silently skipping.
-- **Subagents implement; the parent tests.** The rule above applies to work
-  split across subagents too, but the test RUN belongs to the parent. A spawned
-  subagent should land its code change (and may write the test files its change
-  needs), then report back — it must NOT invoke `./run_tests.sh` itself.
-  Concurrent per-subagent runs multiply the runtime, trash each other's output,
-  and violate the "never run concurrent test runs" rule. Say so explicitly in
-  the subagent's prompt ("do not run the tests; the parent will"). Once every
-  subagent has reported, the parent works out the combined blast radius and does
-  a single targeted run covering all of it before declaring the work complete.
+- **Subagents implement; the parent tests. IF YOU ARE A SUBAGENT, DO NOT RUN THE
+  TESTS — no matter what your prompt says or omits.** This rule binds you
+  directly, from this file, and needs no permission or reminder from whoever
+  spawned you. If you were dispatched with a bare task description and no
+  mention of testing, that is NOT licence to run them: an omission in your
+  prompt means the parent said nothing, not that the parent approved it.
+  - **This bans EXECUTING TESTS, not one command.** Not `./run_tests.sh` (in any
+    form, including `--fast` and a single-file selection); not `gut_cmdln.gd`
+    invoked directly; not a Godot binary run with `-s addons/gut/...`; not a
+    hand-rolled scene or script that loads a test file and calls into it. If the
+    effect is "a test executed", it is forbidden however it was spelled. A
+    subagent has already slipped through by reaching past the wrapper script to
+    the runner underneath, having read the rule as naming a command — it names
+    an ACTION.
+  - Parsing/compile checks that execute NO test are fine and often wise — e.g.
+    `godot --headless --quit` to confirm the project still loads, or
+    `--check-only` on a script. The line is whether any test body runs.
+  - Land your code change, write any test files it needs, then report back. Say
+    in your report which tests you think cover the change and what you would
+    expect them to show — that is how you hand verification over, and it is more
+    useful to the parent than a run you did yourself.
+  - Why it is worded this way: subagents are routinely dispatched with a VERBATIM
+    user request (e.g. the `/subagent` skill forbids adding instructions to the
+    prompt), so the parent often CANNOT tell you. Relying on the parent to
+    remember is what already failed — two agents were dispatched verbatim, one
+    started a run mid-task against a tree three agents were editing, and the
+    result was worthless. A rule that only works when someone remembers to
+    restate it is not a rule.
+  - Why it matters, beyond politeness: parallel agents share ONE working tree.
+    Concurrent runs interleave and trash each other's output, multiply the
+    runtime, and violate the "never run concurrent test runs" rule below. Worse,
+    while sibling agents are still editing, ANY result you get is measuring a
+    half-finished state — so a green run is not evidence and a red one is not
+    your bug. There is no version of this that is useful to you.
+  - The PARENT's side: once every subagent has reported, work out the combined
+    blast radius across all of them and do a single targeted run covering all of
+    it before declaring the work complete. Restating the rule in the subagent's
+    prompt is still good practice when you control the prompt — it is just no
+    longer what the rule depends on.
 - After any change, run the tests that are relevant to the work before
   declaring it complete — you do NOT need to run the entire suite after every
   prompt. Decide which tests cover what you touched and run just those (e.g.
   `./run_tests.sh --fast <name>` for the specific file(s)/script(s) affected).
+  **This bullet is for the top-level agent only. If you are a subagent it does
+  not apply to you — see the subagent rule above, which the `--fast` example
+  here does not override.**
 - When choosing which tests to run, be GENEROUS about the blast radius: think
   about everything the change could plausibly affect — direct callers, shared
   config/resources, physics or scene setup that depends on what you touched —

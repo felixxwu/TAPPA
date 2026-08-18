@@ -212,3 +212,25 @@ func test_credentials_are_not_stored_in_the_uploaded_profile() -> void:
 	var blob := JSON.stringify(Save.profile)
 	assert_false(blob.contains("refresh-token"),
 		"the refresh token must live in auth.json, never in the synced profile")
+
+
+# --- RestClient pause immunity ------------------------------------------------
+
+# A cloud call started while the tree is PAUSED must still complete. HTTPRequest
+# drives its transfer from an internal process callback, so a pausable RestClient
+# silently stalls mid-request and the awaiting caller hangs forever — which is how
+# "Wipe all progress" from the pause menu (the Overworld HQ, or a mid-rally pause)
+# left CloudBusy's full-screen cover up for good. Asserted via can_process(), the
+# engine's own answer to "would this node tick right now".
+func test_rest_client_keeps_running_while_the_tree_is_paused() -> void:
+	var rest := RestClient.new()
+	add_child_autofree(rest)
+	await get_tree().process_frame  # let _ready build the HTTPRequest child
+	var was_paused := get_tree().paused
+	get_tree().paused = true
+	var http := rest.get_child(0) as HTTPRequest
+	var rest_ticks := rest.can_process()
+	var http_ticks := http != null and http.can_process()
+	get_tree().paused = was_paused
+	assert_true(rest_ticks, "RestClient must keep processing while the tree is paused")
+	assert_true(http_ticks, "its HTTPRequest must keep processing while the tree is paused")

@@ -36,8 +36,10 @@ is only ever one song (~4 × 180 KB) at a time (`todo/mobile-web-performance.md`
 - `MusicLibrary.by_id(id)` is the **loading** accessor: on first request for an id
   it `load()`s that song's segments and caches the resolved entry
   (`{id, bpm, segments}`) in a static dict, so replaying a song never re-loads.
-  `MusicDirector._bpm` and `_launch` both go through it, so a song is loaded the
-  first time it's scheduled and stays resident thereafter.
+  `MusicDirector._bpm_for(id)` and `_launch` both go through it, so a song is loaded
+  the first time it's scheduled and stays resident thereafter. (`_bpm_for` checks the
+  `_bpm_override` test hook first — a `{id: bpm}` dict that bypasses `MusicLibrary`
+  entirely — and otherwise reads `bpm` off the loaded entry, defaulting to 0.0.)
 - `MusicLibrary.entry_of(id)` returns the **raw authored entry** (paths) and loads
   nothing; `segment_count` is built on it. Anything that only needs shape or
   existence must use these — calling `by_id` for a mere existence check defeats
@@ -51,8 +53,7 @@ is only ever one song (~4 × 180 KB) at a time (`todo/mobile-web-performance.md`
 Which track plays is decided by the **live scene state**, not by transition hooks
 (which are fragile). Every frame `MusicDirector._process` reads
 `get_tree().current_scene.scene_file_path` and resolves it via
-`MusicDirector._song_for_scene`: the **HQ scene** (`res://hq.tscn`, tested by
-`MusicLibrary.is_hq_scene`) wants the **current HQ song** — one entry of
+`MusicDirector._song_for_scene`: a **hub scene** wants the **current HQ song** — one entry of
 `MusicLibrary.HQ_SONGS` (`echo_chamber`, `skillz`); **every other scene**
 (loading/start line/driving `main.tscn`, `standings.tscn`, `podium.tscn`, …) wants
 the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS` (`skillz`,
@@ -62,6 +63,16 @@ handoff** — so leaving the HQ doesn't cut to the rally song immediately; the
 current HQ loop finishes and the rally song comes in beat-aligned (and vice-versa
 on return). The `MusicDirector` autoload persists across scene changes, so
 playback is continuous throughout.
+
+**The hub-scene predicate.** The hub test is `MusicLibrary.is_hq_scene`, which now
+delegates to `Scenes.is_hub_scene` (`scripts/scenes.gd`) rather than comparing
+against a single literal. It is true for `Scenes.HQ` (`hq.tscn`) **and** for
+`Scenes.OVERWORLD` (`overworld.tscn`, the dev-gated second hub) — because the
+selection is by live scene path, a path-equality test against `hq.tscn` alone
+would have made the overworld a "rally" context and played a rally song as its
+hub theme. `MusicLibrary.HQ_SCENE` remains as an alias of `Scenes.HQ` so there is
+one source of truth for the path. See
+[architecture.md](architecture.md) → "Scene routing (`Scenes`)".
 
 ### Random HQ song and rally song (per visit / per event)
 

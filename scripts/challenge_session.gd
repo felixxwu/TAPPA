@@ -437,7 +437,7 @@ func continue_to_next_stage() -> void:
 	_stage_running = true
 	stage_started.emit(_stage_index)
 	if auto_load_scenes:
-		get_tree().change_scene_to_file("res://main.tscn")
+		Scenes.change_to(get_tree(), Scenes.MAIN)
 
 
 # One-shot, cleared on read — mirrors RallySession.take_pending_repair().

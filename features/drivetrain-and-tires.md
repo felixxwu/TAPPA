@@ -306,12 +306,14 @@ gates it. The chosen mode is stored per car as `OwnedCar.drivetrain_override`
 (`-1` = stock) and resolved by `UpgradeLibrary.resolve_drive_override`, which
 `car.gd.apply_owned` threads through the drivetrain rebuild (member `_owned_drive_override`,
 honoured by `_rebuild_drivetrain`) and `UpgradeLibrary.effective_meta` reports for the
-stats panel + rally eligibility. A car with the kit counts as eligible for a
-`drive_mode`-restricted rally if it can switch to comply (and it can stack with an
-engine detune — see the lineup logic in `hq_carpark.gd`: `_switch_target_for` /
-`_qualifying_drivetrain_for` / `_build_eligible_lineup`); entering auto-applies the
-switch and `RallySession` reverts it afterward (`register_drivetrain_revert`), mirroring
-the engine-detune round-trip. The roster ships two stock **FWD** cars — the **Focus**
+stats panel + rally eligibility. **Entering no longer auto-switches it.** A car in the wrong `drive_mode` for a
+restricted rally is simply ineligible: `hq_carpark._build_eligible_lineup` judges the car AS
+BUILT, and `RallySession.register_drivetrain_revert` / the switch-at-Start-then-revert flow
+(and the `_switch_target_for` / `_qualifying_drivetrain_for` helpers that fed it) are
+**deleted**. That switch was free, silent and reverted afterwards, which — now that a
+conversion carries a per-car star price — handed the player for nothing exactly what the
+garage charges for. Converting is a garage decision, made where the price is shown.
+(`RallySession.register_detune_revert` still exists for the engine-detune round-trip.) The roster ships two stock **FWD** cars — the **Focus**
 (`id: "focus"`) and the **Renault Twingo** (`id: "twingo"`), both home entrants of the
 Front Runners rally (see `features/rally-roster.md`); the MX-5/Viper/XJS are RWD; the
 Acty is AWD.

@@ -29,12 +29,25 @@ func before_all() -> void:
 	_pause = _scene.get_node("PauseMenu")
 	_mgr = _scene.get_node("CameraManager")
 	_mobile = _scene.get_node("MobileControls")
+	# Capture world.gd's scene changes instead of performing them. REQUIRED here, not
+	# belt-and-braces: quit_to_hq() with a rally active calls RallySession.abandon(),
+	# which emits rally_finished — and that emission is NOT covered by
+	# auto_load_scenes (the seam only guards start_rally/advance). world.gd's handler
+	# then really did change_scene_to_file(Scenes.hub_path()), parking a live HQ under
+	# /root for every later file, which is what test_world_isolation catches.
+	# after_each's abandon() fires the same path, so this must be seated file-wide.
+	_scene.scene_change_hook = func(_path: String) -> void: pass
 
 
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
 	RallyFixtures.restore()
+	# minimal_world() trims the LIVE Config singleton (track_turn_count, trees_per_turn,
+	# rocks_enabled) and leaves restoring it to whoever runs next. Put it back here so a
+	# later file that reads ambient config doesn't silently inherit a stripped world —
+	# test_rocks.gd sorts after this one and restores only its own three fields.
+	Config.reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
