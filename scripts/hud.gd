@@ -1,6 +1,6 @@
 extends CanvasLayer
 # Docs: features/hud.md, features/stage.md — update in the same change as this file.
-# Tests: tests/headless/test_countdown_hold.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_hud.gd, tests/headless/test_hud_gauge.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
+# Tests: tests/headless/test_hud.gd, tests/headless/test_hud_gauge.gd, tests/headless/test_start_line.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'hud' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # On-screen readout of the car's airspeed — the chassis velocity magnitude,
 # not wheel rotation, so wheelspin and lockup don't affect the number.
 
@@ -173,22 +173,52 @@ var _last_rpm := -1
 # reading yet / gauge hidden. _hp_pulse_t advances the low-HP warning oscillation.
 var _last_hp := -1.0
 var _hp_pulse_t := 0.0
-# The speed / gear / rpm readout is a dev diagnostic, hidden by default and
+# The debug readout (membership: DEBUG_READOUT_NODES below — do not re-list it here,
+# a second copy is a second thing to rot) is a dev diagnostic, hidden by default and
 # toggled with H (`toggle_debug_arrows`) — the same gate as the debug force
 # arrows, and like them only in a debug build (release/web ignore the key).
 var _debug_readout := false
+# SINGLE SOURCE OF TRUTH for which HUD elements belong to the H-key debug readout.
+# Both the startup "hidden" pass in _ready and the H toggle in _timed_process derive
+# from this list, and tests/headless/test_hud.gd binds to it directly (it iterates
+# DEBUG_READOUT_NODES rather than naming labels), so moving an element in or out of
+# the debug overlay is a ONE-LINE edit here — nothing else needs to change.
+# Removing a name from this list makes that element permanently visible; that is a
+# behaviour change the bound tests will report by name.
+#
+# EDITING THIS LIST IS A THREE-PART CHANGE — the list, the named test, AND the docs:
+#   features/hud.md          -> Elements table + the "Membership is data" section
+#   features/debug-tools.md  -> the "speed / gear / rpm readout" description
+# The docs are the part that gets missed, because this file's header breadcrumb is
+# ~180 lines above here and nobody editing a constant scrolls back to it. Both docs
+# NAME their members in prose, so prose is what rots when the data changes.
+const DEBUG_READOUT_NODES: Array[StringName] = [
+	&"SpeedLabel", &"GearLabel", &"RPMLabel", &"BoostLabel", &"SeedLabel",
+	&"DifficultyLabel", &"GripGrid",
+]
+
+
+# The debug-readout elements themselves, resolved from DEBUG_READOUT_NODES. Only valid
+# once _ready has built the code-built members (boost / seed / difficulty / grip grid).
+func debug_readout_elements() -> Array[CanvasItem]:
+	var out: Array[CanvasItem] = []
+	for n in DEBUG_READOUT_NODES:
+		var node := get_node_or_null(NodePath(String(n)))
+		if node is CanvasItem:
+			out.append(node)
+	return out
 
 
 func _ready() -> void:
 	visible = Config.data.hud_enabled
-	# Speed / gear / rpm are a dev readout — hidden until H reveals them.
-	_speed_label.visible = false
-	_gear_label.visible = false
-	_rpm_label.visible = false
 	_build_boost_label()
 	_build_seed_label()
 	_build_difficulty_label()
 	_build_grip_grid()
+	# Every member of the debug readout starts hidden until H reveals it. Driven by
+	# DEBUG_READOUT_NODES so this pass and the H toggle can never disagree.
+	for element in debug_readout_elements():
+		element.visible = false
 	# Boost gauge starts hidden — _update_boost_gauge reveals it once a car with forced
 	# induction is fielded (an NA car never shows an always-empty dial). Tinted a FIXED
 	# blue: unlike health there's no "danger" end to grade toward, and a distinct hue
@@ -473,18 +503,15 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(_delta: float) -> void:
-	# Toggle the speed / gear / rpm readout with H, gated to debug builds like the
+	# Toggle the debug readout (DEBUG_READOUT_NODES) with H, gated to debug builds like the
 	# force arrows. Text below still refreshes while hidden, so it's correct the
 	# instant it's shown.
 	if OS.is_debug_build() and Input.is_action_just_pressed("toggle_debug_arrows"):
 		_debug_readout = not _debug_readout
-		_speed_label.visible = _debug_readout
-		_gear_label.visible = _debug_readout
-		_rpm_label.visible = _debug_readout
-		_boost_label.visible = _debug_readout
-		_seed_label.visible = _debug_readout
-		_difficulty_label.visible = _debug_readout
-		_grip_grid.visible = _debug_readout
+		# Membership comes from DEBUG_READOUT_NODES (the single source of truth above),
+		# not from a hand-maintained list of assignments.
+		for element in debug_readout_elements():
+			element.visible = _debug_readout
 	var engine: EngineSim = car.drivetrain.engine
 	var speed := roundi(car.linear_velocity.length() * 3.6)
 	if speed != _last_speed:

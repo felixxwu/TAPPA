@@ -349,6 +349,34 @@ applied **silently** — the summary is discarded rather than stashed for
 `take_pending_repair()`, so it never fights with the podium flow's own
 UI for the player's attention.
 
+## HP is NOT a damage oracle — ask `RallySession.took_damage_this_rally()`
+
+**Never derive "did the player take damage this rally" from the car's HP.** It is
+wrong in *both* directions:
+
+- **A crashed car can read pristine.** The between-event repair above runs at every
+  stage boundary, and `_resolve_results()` runs one more on its **first lines**,
+  before a single line of reward logic. By the time anything at resolve time reads
+  `hp`, this rally's damage has already been partly healed.
+- **A clean run can read damaged.** Cars routinely *start* a rally below `max_hp`,
+  because repairing at HQ costs stars (see [star-economy.md](star-economy.md) →
+  *Repairs*). `hp < max_hp` at the finish may be damage the player brought with
+  them; `hp >= max_hp` is simply unreachable for such a car however flawlessly they
+  drove.
+
+So `RallySession` **latches the fact instead**, in `_took_damage_this_rally`:
+
+- set the moment any event reports `hp_lost > 0` (`report_event_result`), and in
+  `report_wreck` (a wreck never routes through `report_event_result`);
+- latched off whether damage *happened*, not whether it could be persisted — an
+  unbound car with no save slot still took the hit;
+- cleared only in `start_rally`, so it survives every repair to resolve time and is
+  still readable during the finish beat;
+- read via **`RallySession.took_damage_this_rally()`**, and carried on the
+  `rally_finished` result as **`took_damage`**.
+
+That flag is the clean-run signal any reward should use.
+
 ## In-run HUD (see [hud.md](hud.md))
 
 `hud.gd` reads `car.damage` each frame: a colour-graded **health gauge** (`HPGauge`,

@@ -600,8 +600,13 @@ generator also uses it per-rival.
   `car_name` that entrant drove (empty when unknown) so the leaderboards can show it.
 - `placement(field, player_combined_ms)` / `is_top3(...)` — the player's 1-based
   placement among the non-DNF field on combined time.
-- `completed_count(profile)` — count of every completed rally in the profile
-  (includes specials); the single progression metric feeding reward tier. The retired
+- `podium_count(profile)` — count of every rally the profile has PODIUMED (top-3;
+  includes specials); the single progression metric feeding reward tier. **Not a count
+  of rallies finished** — the `completed` flag it sums is only written in
+  `rally_session.gd`'s podium-gated block (`podium_or_opening`), so a 5th place counts
+  for nothing, and no finished-in-any-position counter exists in the save schema at all
+  (add persistence if you need one). `completed_count(profile)` remains as a deprecated
+  wrapper. The retired
   `_completed_count` (a non-special-only count the old `reveal_after` gate compared
   against) is **deleted** along with that gate — reveal no longer counts completions at
   all, see `rally_revealed` below.

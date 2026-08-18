@@ -7,6 +7,11 @@ extends CanvasLayer
 # shader's `intensity` from the car's airspeed: nothing below speed_lines_start_kmh,
 # ramping to full by speed_lines_full_kmh, and eased over time so the streaks fade
 # in/out rather than pop. All tunables live in GameConfig under "Speed Lines".
+#
+# Whether the effect draws at all is a PLAYER SETTING owned by
+# scripts/speed_lines_setting.gd (the apply-owner; see features/rendering.md ->
+# "Player settings own their key"). Toggle it through set_effect_enabled() —
+# never by poking `visible` or Config.data.
 
 # Below this eased intensity the streaks are invisible, so the overlay rect is
 # hidden outright rather than asking the GPU to shade a transparent full screen.
@@ -21,14 +26,23 @@ var _mat: ShaderMaterial
 var _intensity := 0.0
 # Last value written to the shader, so an unchanged intensity costs nothing.
 var _last_pushed := -1.0
+# Whether the effect is switched on (SpeedLinesSetting). Separate from the wiring
+# above so the OFF state is never terminal: the material is always bound, and this
+# flag only gates drawing/processing.
+var _enabled := true
+# A set_effect_enabled() call that arrived before _ready wins over the saved
+# setting (the caller explicitly asked for a state); without one, _ready resolves.
+var _enabled_chosen := false
+var _wired := false
 
 
+# Wiring (bind the material, push the static look) happens UNCONDITIONALLY, then
+# the on/off state is applied through set_effect_enabled(). Keeping those two apart
+# is what makes the disabled state recoverable: an overlay that starts switched off
+# is still fully wired, so switching it on mid-run just works.
 func _ready() -> void:
+	add_to_group(SpeedLinesSetting.GROUP)  # so SpeedLinesSetting.apply() can reach us
 	var cfg: GameConfig = Config.data
-	visible = cfg.speed_lines_enabled
-	if not cfg.speed_lines_enabled:
-		set_process(false)
-		return
 	_mat = _rect.material as ShaderMaterial
 	# Static look pushed once from config (mirrors world.gd's post-process wiring).
 	_mat.set_shader_parameter("line_color", cfg.speed_lines_color)
@@ -37,6 +51,38 @@ func _ready() -> void:
 	_mat.set_shader_parameter("outer_radius", cfg.speed_lines_outer_radius)
 	_mat.set_shader_parameter("flicker_speed", cfg.speed_lines_flicker_speed)
 	_apply_intensity(0.0)  # starts hidden: stationary car, no streaks to shade
+	_wired = true
+	if not _enabled_chosen:
+		_enabled = SpeedLinesSetting.resolve()
+	_apply_enabled()
+
+
+## Switch the effect on or off. Idempotent, correct in BOTH directions, and safe at
+## any time — before _ready (the state is remembered and applied once wired) or
+## mid-run (turning it on resumes processing and the streaks ramp back in from
+## zero; turning it off hides the layer and stops the per-frame work immediately).
+## This is the only supported way to toggle the effect; SpeedLinesSetting.apply()
+## calls it on every live overlay.
+func set_effect_enabled(on: bool) -> void:
+	_enabled = on
+	_enabled_chosen = true
+	if _wired:
+		_apply_enabled()
+
+
+## Whether the effect is currently switched on.
+func is_effect_enabled() -> bool:
+	return _enabled
+
+
+func _apply_enabled() -> void:
+	visible = _enabled
+	set_process(_enabled)
+	if not _enabled:
+		# Rest at zero so a later re-enable ramps in from nothing rather than
+		# snapping back to whatever intensity was showing when it was switched off.
+		_intensity = 0.0
+		_apply_intensity(0.0)
 
 
 func _process(delta: float) -> void:
@@ -95,8 +141,8 @@ func _apply_intensity(value: float) -> void:
 # argument is meaningless for a full-screen overlay (the contract passes a world
 # point for the 3D effects) and is ignored.
 func warm_up(_pos: Vector3) -> void:
-	if _mat == null:
-		return  # speed lines disabled in config: no material, nothing to compile
+	if _mat == null or not _enabled:
+		return  # effect switched off: nothing will ever draw, so nothing to compile
 	_rect.visible = true
 
 

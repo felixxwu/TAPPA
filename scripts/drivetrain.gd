@@ -1,7 +1,7 @@
 class_name Drivetrain
 extends RefCounted
 # Docs: features/drivetrain-and-tires.md — update in the same change as this file.
-# Tests: tests/headless/test_drive_mode.gd, tests/headless/test_drivetrain.gd, tests/headless/test_grip_servo_steering.gd, tests/headless/test_opponent_tires.gd — extend in the same change.
+# Tests: tests/headless/test_drive_mode.gd, tests/headless/test_drivetrain.gd, tests/headless/test_opponent_tires.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Drivetrain' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Custom drivetrain + tire model. Godot's wheel friction is disabled
 # (wheel_friction_slip = 0); VehicleBody3D only provides suspension and the
 # wheel raycasts. This object owns the wheel spin states, integrates torques,
@@ -144,6 +144,9 @@ var all_wheels: Array = []
 # so the hot per-contact path allocates no Dictionary. Callers read its fields
 # immediately (before the next call overwrites them), which they all do.
 var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0, road_weight = 1.0}
+# Scratch stage-context for GameConfig.tire_surface_mult_for, reused like _surf_scratch so
+# the per-wheel path allocates nothing. Refilled at the top of every _surface_at call.
+var _tire_ctx := {}
 
 # Reusable return buffer for front_axle_state() — see there. Same no-allocation contract
 # as _surf_scratch: filled and returned every call, read immediately by the caller.
@@ -743,13 +746,16 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 	# The fitted tyre's SURFACE-DEPENDENT term (features/drivetrain-and-tires.md). Folded
 	# in here for the same reason weather is: this is the single per-contact resolver
 	# every wheel goes through, so a flat fixture with no terrain still gets the snow
-	# compound's behaviour instead of silently falling back to neutral rubber. The two
-	# multipliers are 1.0 on every car that has no such compound fitted, so the added
-	# steady-state cost off the snow stages is one lerp on an already-hot path.
+	# compound's behaviour instead of silently falling back to neutral rubber. Every
+	# axis in GameConfig.TIRE_SURFACE_AXES is 1.0 on a car with no such compound fitted,
+	# so the added steady-state cost off the snow stages is one lerp per axis on an
+	# already-hot path. This site names no axis, so a new one needs no edit here.
 	var tire_snowy := cfg.ground_is_snow()
+	# One scratch context, refilled per contact — the resolver takes a Dictionary so a new
+	# tyre axis needs no edit here, and reusing this one keeps the hot path allocation-free.
+	GameConfig.fill_tire_context(_tire_ctx, 0.0, tire_snowy, cfg.weather)
 	if terrain == null or not terrain.has_method("surface_at"):
-		_surf_scratch.mu_mult = _weather_mu * GameConfig.tire_surface_mult(
-			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, 0.0, tire_snowy)
+		_surf_scratch.mu_mult = _weather_mu * GameConfig.tire_surface_mult_for(cfg, _tire_ctx)
 		_surf_scratch.slip_peak = cfg.tire_slip_peak
 		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
 		_surf_scratch.road_weight = 1.0  # no terrain to be off the side of
@@ -771,8 +777,8 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 		# Ice takes the SNOW side of the tyre rule, not the tarmac side: a frozen lake is
 		# only ever authored by a snowy region, and winter rubber is exactly what the
 		# player should be rewarded for having fitted when they slide out onto it.
-		_surf_scratch.mu_mult = cfg.frozen_water_grip * _weather_mu * GameConfig.tire_surface_mult(
-			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, 0.0, tire_snowy)
+		_surf_scratch.mu_mult = cfg.frozen_water_grip * _weather_mu \
+			* GameConfig.tire_surface_mult_for(cfg, _tire_ctx)
 		_surf_scratch.slip_peak = cfg.tarmac_slip_peak
 		_surf_scratch.slide_ratio = cfg.tarmac_slide_ratio
 		# A frozen lake is something you SLIDE on, not something you bog in — the deep-snow
@@ -784,8 +790,8 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 	# is how much tarmac this contact is actually on — the same quantity _surface_blend
 	# arrives at, expressed for the tyre rule.
 	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s) \
-		* _weather_mu * GameConfig.tire_surface_mult(
-			cfg.tire_snow_grip_mult, cfg.tire_tarmac_grip_mult, s.x * s.y, tire_snowy)
+		* _weather_mu * GameConfig.tire_surface_mult_for(
+			cfg, GameConfig.fill_tire_context(_tire_ctx, s.x * s.y, tire_snowy, cfg.weather))
 	_surf_scratch.slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s)
 	_surf_scratch.slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s)
 	_surf_scratch.road_weight = s.x

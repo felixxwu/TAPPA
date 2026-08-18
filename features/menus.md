@@ -1285,6 +1285,40 @@ and each button drills into **its own sub-page**:
   works but has no occupants, since `UpgradeLibrary` ships no consumable entries today.
   A status line reports the last action.
 
+### Adding a setting — every persisted setting owns its key in its own module
+
+**A persisted setting is NOT owned by the settings UI.** Each one gets a small
+`*_setting.gd`-style module (`class_name`, `extends RefCounted`) that owns three
+things and nothing else:
+
+1. its **`SETTING_KEY`** (the `Save.get_setting` / `Save.set_setting` key),
+2. its **default** when the player hasn't chosen (usually read from the authored
+   `GameConfig` baseline) and a **`resolve()`** that returns saved-or-default,
+3. the **re-apply** — the code that makes a live scene reflect the new value.
+
+`scripts/fps_setting.gd` (`FpsSetting`) is the **exemplar** — read it first when
+adding a setting; `scripts/speed_lines_setting.gd` (`SpeedLinesSetting`, the speed
+blur overlay) is the same shape with a live re-apply, `CameraManager` and
+`MobileControls` are the signal-shaped variants. `SettingsMenu` then only *calls*
+the module.
+
+Two rules this exists to enforce:
+
+- **Never put a setting's key or read-back as a `static` on `SettingsMenu`.** That
+  inverts the dependency — a rendering/physics node would have to depend on the
+  settings UI in order to know how to behave.
+- **Never write the player's runtime choice into `Config.data`.** `GameConfig` is
+  the designer-authored baseline that the setting's *own fallback default* reads;
+  writing a player toggle back into it makes the "default" drift with player input
+  and leak across scenes (it is a shared autoloaded resource). The choice goes in
+  the save profile, via the module.
+
+The node the setting drives should expose one **idempotent public apply method**
+that is correct in both directions at any time (e.g.
+`speed_lines.gd::set_effect_enabled(on: bool)`), and must stay fully wired while
+switched off — a disabled state that skips its own setup can never be switched
+back on without a scene reload.
+
 Navigation lives inside the component: `show_list()` / `show_camera()` /
 `show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes
 height, so the long schemes page scrolls while the short list/camera pages don't),

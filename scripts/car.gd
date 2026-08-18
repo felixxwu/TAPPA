@@ -1,6 +1,6 @@
 extends VehicleBody3D
 # Docs: features/car-physics.md, features/lakes.md, features/stage.md — update in the same change as this file.
-# Tests: tests/headless/test_car.gd, tests/headless/test_car_types.gd, tests/headless/test_countdown_hold.gd, tests/headless/test_crosswind.gd, tests/headless/test_drivetrain.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_hud.gd, tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
+# Tests: tests/headless/test_car.gd, tests/headless/test_car_types.gd, tests/headless/test_hud.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'car' tests/headless/` and read the assertions that pin what you are about to change (11 test files touch this script).
 
 const CAR_SCENE := preload("res://car.tscn")
 
@@ -1615,8 +1615,10 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# curve — so its neutral 1.0 is re-seeded HERE, with the axle μ, rather than being
 	# left to accumulate. UpgradeLibrary.apply multiplies the fitted tyre's figures in
 	# straight after; without this reset a re-field would compound them every time.
-	cfg.tire_snow_grip_mult = 1.0
-	cfg.tire_tarmac_grip_mult = 1.0
+	# Driven off GameConfig.TIRE_SURFACE_AXES, so a new axis is re-seeded here the moment
+	# it is registered — this site names no axis and needs no edit.
+	for axis in GameConfig.TIRE_SURFACE_AXES:
+		cfg.set(axis["field"], 1.0)
 	cfg.wheel_width_front = spec["wheel_width_front"]
 	cfg.wheel_width_rear = spec["wheel_width_rear"]
 	# Per-car aero downforce (N per (m/s)² at each axle). SET (not added) so a spec of

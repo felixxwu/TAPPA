@@ -28,6 +28,18 @@ with them, and working toward the special-event finale.
   update the doc and extend the tests **in the same change** as the code; that
   pair of lines is the reminder at the point of use. When you add a script or
   re-home one, give it the breadcrumb and keep it accurate.
+  **The `# Tests:` line names at most three PRIMARY test files, not every test that
+  touches the script** — it ends with the `grep` that finds the rest. A longer list
+  stops being a pointer and becomes a haystack the reader skips, which is exactly
+  how a change ships against an assertion nobody read. Both halves are enforced by
+  `tests/headless/test_script_breadcrumbs.gd`: named docs and tests must exist, and
+  the test list must stay within the cap.
+- **Before you change behaviour, find the assertion that pins it.** The breadcrumb
+  tells you where to look; the thing to look FOR is an existing test that encodes
+  the behaviour you are about to change. Two failure shapes, both observed: the test
+  goes red and you hand back a broken suite, or — worse — it keeps passing for an
+  incidental reason and quietly becomes order-dependent. Renegotiating such an
+  assertion (updating it, and saying so) is part of the change, not follow-up work.
 
 ## Feature index
 
@@ -63,6 +75,7 @@ with them, and working toward the special-event finale.
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
+| [sfx.md](sfx.md) | **One-shot sound effects — `Audio` autoload (`scripts/audio.gd`), `Audio.play_beep(...)`, the SFX bus. Read this before playing ANY sound; never hand-roll an `AudioStreamGenerator` at a call site.** |
 | [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (stateless rpm-linear belt drive, rpm-scaled drag) — engine property, stock or via the shared-slot `turbo_small` / `turbo_large` / `supercharger` upgrade ladder |
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
@@ -109,6 +122,7 @@ with them, and working toward the special-event finale.
 | Tire forces | `scripts/drivetrain.gd` |
 | Engine/gearbox | `scripts/engine.gd`, `scripts/engine_library.gd` (`EngineLibrary` — engine catalog) |
 | Engine sound | `scripts/engine_audio.gd`, `scripts/engine_audio_synth.gd` |
+| Sound effects (any "play a sound when X" task) | `scripts/audio.gd` (`Audio` autoload — `play_beep`), see `features/sfx.md` |
 | Terrain | `scripts/terrain_manager.gd`, `scripts/terrain_chunk.gd`, `scripts/terrain_layer.gd` |
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Exhaust flames | `scripts/exhaust_flames.gd`, `scripts/exhaust_lab.gd`, `exhaust_lab.tscn` |

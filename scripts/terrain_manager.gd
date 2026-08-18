@@ -2,7 +2,7 @@
 extends Node3D
 class_name TerrainManager
 # Docs: features/terrain.md — update in the same change as this file.
-# Tests: tests/headless/test_terrain.gd, tests/headless/test_terrain_cliffs.gd, tests/headless/test_terrain_lod.gd, tests/headless/test_terrain_memory.gd, tests/headless/test_terrain_noise.gd — extend in the same change.
+# Tests: tests/headless/test_terrain.gd, tests/headless/test_terrain_lod.gd, tests/headless/test_terrain_noise.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TerrainManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 
 # Owns the procedural terrain: noise state, height sampling, and the lifecycle
 # of the TerrainChunk children loaded around the car. The terrain is precomputed

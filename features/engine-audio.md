@@ -3,6 +3,17 @@
 Procedurally synthesized engine sound — no audio samples. Driven by live engine
 RPM/throttle/shift state.
 
+> **Project-wide audio invariant: any node that calls `play()` must guard on
+> `Platform.is_headless()` first and skip playback.** Under the headless dummy driver a
+> *playing* playback object is freed beneath the still-running mix thread at teardown —
+> an intermittent SIGSEGV in `AudioStreamPlaybackResampled::mix`. Build the stream, then
+> `if Platform.is_headless(): return` before `play()`, and fetch
+> `get_stream_playback()` **after** `play()` (it returns `null` on a stopped player).
+> This applies to every audio node in the project, not just this one — see
+> `features/testing.md` → "Invariant: never `play()` audio headless". For one-shot
+> sound effects don't write this yourself: call `Audio.play_beep(...)`
+> (`features/sfx.md`), which owns the guard, the ordering and the SFX bus.
+
 ## Components
 
 - **`scripts/engine_audio.gd`** (extends `AudioStreamPlayer`) — the bridge node.

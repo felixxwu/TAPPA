@@ -1387,12 +1387,12 @@ func test_build_standings_handles_a_wrecked_player() -> void:
 
 # --- Progress / stars & the special ladder -----------------------------------------------------
 
-func test_completed_count_tracks_profile() -> void:
+func test_podium_count_tracks_profile() -> void:
 	var profile := {"rallies": {
 		"shakedown": {"completed": true},
 		"coastal_sprint": {"completed": false},
 	}}
-	assert_eq(RallyLibrary.completed_count(profile), 1, "only completed rallies count")
+	assert_eq(RallyLibrary.podium_count(profile), 1, "only podiumed rallies count")
 
 
 func test_every_finish_scores_and_the_podium_scores_more() -> void:

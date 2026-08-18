@@ -109,9 +109,38 @@ func test_every_region_is_reachable_from_at_least_one_rally() -> void:
 		claimed[String(rally.get("region", ""))] = true
 	for region in RegionLibrary.all():
 		var rid := String(region.get("id", ""))
-		assert_true(claimed.has(rid),
-			("region '%s' is in REGIONS but no rally in RallyLibrary.RALLIES tags it, " +
-			"so nothing can ever reach it — give a rally \"region\": \"%s\"") % [rid, rid])
+		assert_true(claimed.has(rid), _unreachable_region_fix(rid))
+
+
+# The failure message hands back the PATCH, not a complaint. Rounds 007/008 of the
+# readiness loop failed here twice in opposite directions: one probe read "give a rally
+# a region tag" as licence to RETAG an existing rally (green suite, a mid-map fog/night
+# rally silently restyled into an arid canyon), the next was told not to retag and so
+# tagged nothing at all. Both happened because authoring a new rally looked like an
+# unscoped research task. So: spell out that retagging is not the fix, and paste the
+# whole minimal row with the region id already filled in.
+func _unreachable_region_fix(rid: String) -> String:
+	return ("region '%s' is in REGIONS but no rally in RallyLibrary.RALLIES tags it, so " +
+		"nothing can ever reach it: it renders nowhere and appears on no map pin.\n" +
+		"THE FIX IS TO ADD A NEW RALLY, not to retag an existing one — retagging turns " +
+		"this test green while silently restyling a rally whose map_pos and authored " +
+		"weather belong to its OLD region.\n" +
+		"Paste this into RallyLibrary.RALLIES (scripts/rally_library.gd) and edit the " +
+		"marked fields:\n" +
+		"\t{\n" +
+		"\t\t\"id\": \"%s_trial\", \"name\": \"<Rally Name>\",  # EDIT the name\n" +
+		"\t\t\"region\": \"%s\", \"difficulty\": 2, \"special\": false, \"restriction\": {},\n" +
+		"\t\t# EDIT map_pos: a 0..1 pin inside YOUR corner of textures/map_world.jpg, >0.03 from\n" +
+		"\t\t# every other pin, within Config.data.map_reveal_radius of an existing pin.\n" +
+		"\t\t\"map_pos\": Vector2(0.5, 0.5),\n" +
+		"\t\t# 3 stages; water_level should match the region's waterline, and the stages must\n" +
+		"\t\t# not all share one weather.\n" +
+		"\t\t\"events\": [\n" +
+		"\t\t\t{\"seed\": 90001, \"turn_count\": 20, \"forestiness\": 0.5, \"surface_mix\": 0.4, \"straightness\": 0.85, \"cliffiness\": 0.4, \"water_level\": -12.0, \"terrain_layer1_amplitude\": 28.0},\n" +
+		"\t\t\t{\"seed\": 90002, \"turn_count\": 20, \"forestiness\": 0.5, \"surface_mix\": 0.4, \"straightness\": 0.85, \"cliffiness\": 0.4, \"water_level\": -12.0, \"terrain_layer1_amplitude\": 28.0, \"weather\": \"rain\"},\n" +
+		"\t\t\t{\"seed\": 90003, \"turn_count\": 21, \"forestiness\": 0.5, \"surface_mix\": 0.4, \"straightness\": 0.85, \"cliffiness\": 0.4, \"water_level\": -12.0, \"terrain_layer1_amplitude\": 28.0},\n" +
+		"\t\t],\n" +
+		"\t},") % [rid, rid, rid]
 
 
 # Every `res://` path authored ANYWHERE in a REGIONS entry must point at a real file.

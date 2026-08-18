@@ -1,7 +1,7 @@
 class_name HqTable
 extends RefCounted
 # Docs: features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_settings_menu.gd — extend in the same change.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'HqTable' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # The HQ map table, extracted from hq.gd to shrink it (todo/hq-split.md): entering the table,
 # the new-rally reveal sequence, pin focus / panning / target selection, and opening the rally
 # detail panel (the panel ITSELF is RallyDetail now — see scripts/rally_detail.gd).

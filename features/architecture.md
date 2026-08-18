@@ -106,6 +106,14 @@ Declared in `project.godot` `[autoload]`:
   orchestrator — idle until a rally starts, then survives the per-event scene
   reloads while it sequences events, placement and rewards. See
   [rally-session.md](rally-session.md).
+- **`Music`** → `scripts/music_director.gd`. The interactive music loop; also
+  creates the **Music** and **Engine** mix buses at boot. See [music.md](music.md).
+- **`Audio`** → `scripts/audio.gd` (`class_name AudioManager`). One-shot sound
+  effects, and the **SFX** bus. **Any "play a sound when X happens" work goes
+  through `Audio.play_beep(...)` — never a hand-rolled `AudioStreamGenerator` at
+  the call site.** It owns the headless guard, the
+  `play()`→`get_stream_playback()` ordering and the reused player. See
+  [sfx.md](sfx.md).
 
 ## Data flow
 

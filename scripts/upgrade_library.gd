@@ -1,7 +1,7 @@
 class_name UpgradeLibrary
 extends RefCounted
 # Docs: features/engine-swap.md, features/forced-induction.md, features/upgrade-catalogue.md — update in the same change as this file.
-# Tests: tests/headless/test_auto_build.gd, tests/headless/test_car_stat_bounds.gd, tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd, tests/headless/test_upgrades_grid.gd — extend in the same change.
+# Tests: tests/headless/test_engine.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'UpgradeLibrary' tests/headless/` and read the assertions that pin what you are about to change (10 test files touch this script).
 # The catalogue of upgrade ITEMS — authored content (like CarLibrary /
 # RallyLibrary), not player state. The save profile holds the player side
 # (inventory counts + each OwnedCar's installed_upgrades, keyed by the stable
@@ -172,6 +172,13 @@ const UPGRADES: Array[Dictionary] = [
 		# ground back for a penalty on tarmac. Net on asphalt it is WORSE than the car's
 		# own rubber — that is the trade, and it is what makes the slot a real decision
 		# per rally rather than a permanent upgrade. See features/drivetrain-and-tires.md.
+		# ADDING A PART IS A THREE-PART CHANGE — the row, the docs, the tests. This note is
+		# here rather than only in the file header ~170 lines up, because that is where an
+		# agent editing a table entry actually is. Docs: features/upgrade-catalogue.md AND
+		# features/drivetrain-and-tires.md (which also narrates what the tyre slot holds —
+		# two docs describe this slot and only one is usually updated). Sibling tyre parts
+		# are rally-gated via unlocked_by_rally; leaving a new one ungated is a choice, so
+		# say why in a comment if you make it.
 		"id": "snow_tires", "name": "Snow Tires", "menu_label": "Snow",
 		"slot": "tires", "unlocked_by_rally": "sp_woodland_trial",
 		"consumable": false,

@@ -1,7 +1,7 @@
 class_name RallyLibrary
 extends RefCounted
 # Docs: features/map-exploration.md, features/regions.md — update in the same change as this file.
-# Tests: tests/headless/rally_fixtures.gd, tests/headless/test_headlight_cone.gd, tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_rally_eligibility_reason.gd, tests/headless/test_rally_library.gd, tests/headless/test_region_library.gd — extend in the same change.
+# Tests: tests/headless/rally_fixtures.gd, tests/headless/test_menu_nav.gd, tests/headless/test_rally_library.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RallyLibrary' tests/headless/` and read the assertions that pin what you are about to change (7 test files touch this script).
 # The finite, curated list of rallies — authored CONTENT (like CarLibrary), not
 # player state. A rally is a fixed set of 3 seeded TrackGenerator tracks plus a
 # car restriction and a difficulty tier; player completion lives in the save
@@ -224,6 +224,10 @@ static func _pace_band(tier: int) -> Vector2:
 #
 # The table below is grouped by AUTHORING ORDER, not by geography — array order carries no
 # meaning and a rally's own `region` + `map_pos` are the only truth about where it is.
+#
+# ADDING A REGION? It is inert until a rally here tags it, and the fix is a NEW row here,
+# never re-pointing an existing rally's `region` (that restyles a stage authored for its
+# old corner). A copy-pasteable minimal row lives in the note above RegionLibrary.REGIONS.
 const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Win: Miot Roadster", "region": "home", "difficulty": 1, "special": false,
@@ -1690,15 +1694,25 @@ static func _rally_seed(rally: Dictionary) -> int:
 
 # --- Progress / stars / anti-soft-lock ------------------------------------
 
-# Count of completed rallies in a save profile — the single progression metric
-# (caps the car reward tier).
-static func completed_count(profile: Dictionary) -> int:
+# Count of rallies this profile has PODIUMED (top-3), the single progression metric
+# (caps the car reward tier). NOT a count of rallies finished: the persisted `completed`
+# flag is written only inside the podium-gated block in rally_session.gd
+# (`podium_or_opening`), so a 5th-place finish leaves no trace here. There is NO
+# "finished in any position" counter anywhere in the save schema — a feature that needs
+# one must ADD persistence for it, not reuse this. Do not label UI off this as
+# "rallies completed"; it means "podium finishes".
+static func podium_count(profile: Dictionary) -> int:
 	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	var n := 0
 	for rally_id in rallies:
 		if rallies[rally_id].get("completed", false):
 			n += 1
 	return n
+
+
+# DEPRECATED — use podium_count(). Counts PODIUM (top-3) finishes, not rallies finished.
+static func completed_count(profile: Dictionary) -> int:
+	return podium_count(profile)
 
 
 # --- Star scoring ------------------------------------------------------------

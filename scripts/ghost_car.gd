@@ -1,7 +1,7 @@
 extends Node3D
 class_name GhostCar
 # Docs: features/rival-ghost.md — update in the same change as this file.
-# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_ghost_car_display.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_rival_pace.gd — extend in the same change.
+# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_ghost_car_display.gd, tests/headless/test_rival_pace.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'GhostCar' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 
 # The rival ghost's in-world presentation (features/rival-ghost.md): P1's actual car,
 # translucent and intangible, driving the stage in exactly the time the standings credit

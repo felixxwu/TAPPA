@@ -12,13 +12,16 @@ const ShaderRes := preload("res://shaders/speed_lines.gdshader")
 
 
 func before_all() -> void:
-	# The overlay disables itself wholesale when the feature is off; these tests are
-	# about the visibility GATE inside the enabled path, so switch it on explicitly
-	# rather than depending on the authored default.
-	Config.data.speed_lines_enabled = true
+	# Most of these are about the visibility GATE inside the enabled path, so switch
+	# the effect on explicitly rather than depending on the authored default. Drive
+	# the SAVED key (the apply-owner's), not Config.data: the saved value wins over
+	# the authored one, so setting only the latter would be order-dependent once
+	# anything else has written the key.
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, true)
 
 
 func after_all() -> void:
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, SpeedLinesSetting.default_enabled())
 	Config.reset()
 
 
@@ -114,15 +117,107 @@ func test_warm_up_stays_visually_transparent() -> void:
 
 
 func test_warm_up_is_inert_when_the_feature_is_off() -> void:
-	# Disabled in config, _ready returns before the material is wired, so warming
-	# must no-op on the null material rather than erroring — and must not revive an
-	# overlay the player switched off. The guarantee is the LAYER staying hidden:
-	# the disabled path never runs _apply_intensity, so the inner rect keeps its
-	# default visible=true and says nothing either way.
-	Config.data.speed_lines_enabled = false
+	# Warming must not revive an overlay the player switched off: nothing will ever
+	# draw, so there is no program to compile and the layer must stay hidden.
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, false)
 	var o := _make_overlay()
 	o.warm_up(Vector3.ZERO)
 	assert_false(o.visible, "a disabled overlay stays switched off through the warm-up")
+	assert_false(o._rect.visible, "and its rect is never shown for the warm frame")
 	o.clear_warm_up()
 	assert_false(o.visible, "and stays off after the clear")
-	Config.data.speed_lines_enabled = true
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, true)
+
+
+# --- The on/off seam (SpeedLinesSetting / set_effect_enabled) -----------------
+# The disabled state used to be terminal: _ready returned before binding the
+# material and turned _process off, so an overlay that started switched off could
+# never be switched back on. These pin that it is recoverable in both directions.
+
+func test_starts_from_the_saved_setting() -> void:
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, false)
+	var off := _make_overlay()
+	assert_false(off.is_effect_enabled(), "constructed disabled when the setting says off")
+	assert_false(off.visible, "and the layer is hidden")
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, true)
+	var on := _make_overlay()
+	assert_true(on.is_effect_enabled(), "constructed enabled when the setting says on")
+	assert_true(on.visible, "and the layer is shown")
+
+
+func test_can_be_enabled_after_being_constructed_disabled() -> void:
+	# The exact bug: an overlay that came up disabled must be fully wired, so turning
+	# the effect on mid-run actually starts drawing again.
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, false)
+	var o := _make_overlay()
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, true)
+	o.set_effect_enabled(true)
+	assert_true(o.is_effect_enabled(), "the effect reports itself on")
+	assert_true(o.visible, "the layer is shown again")
+	assert_true(o.is_processing(), "and per-frame easing has resumed")
+	assert_not_null(o._mat, "the material was bound even while disabled")
+	# And it really can draw: the shader gate still works after the revival.
+	o._apply_intensity(LinesScript.VISIBLE_EPSILON * 4.0)
+	assert_true(o._rect.visible, "the rect can be shown after being switched back on")
+
+
+func test_disabling_mid_run_stops_drawing() -> void:
+	var o := _make_overlay()
+	o._apply_intensity(LinesScript.VISIBLE_EPSILON * 4.0)
+	o.set_effect_enabled(false)
+	assert_false(o.visible, "the layer is hidden as soon as the effect is switched off")
+	assert_false(o.is_processing(), "and the per-frame work stops")
+	assert_false(o._rect.visible, "the streaks stop rendering rather than freezing on screen")
+
+
+func test_toggling_is_idempotent() -> void:
+	var o := _make_overlay()
+	o.set_effect_enabled(false)
+	o.set_effect_enabled(false)
+	assert_false(o.is_effect_enabled(), "off twice is still off")
+	assert_false(o.visible, "with no visible side effect from the repeat")
+	o.set_effect_enabled(true)
+	o.set_effect_enabled(true)
+	assert_true(o.is_effect_enabled(), "on twice is still on")
+	assert_true(o.visible, "and the layer is shown")
+	assert_true(o.is_processing(), "and processing runs exactly as after a single call")
+
+
+func test_a_pre_ready_choice_wins_over_the_saved_setting() -> void:
+	# A caller may configure the overlay before it enters the tree; that explicit
+	# choice must survive _ready rather than being overwritten by the saved value.
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, true)
+	var layer := CanvasLayer.new()
+	var rect := ColorRect.new()
+	rect.name = "ColorRect"
+	var mat := ShaderMaterial.new()
+	mat.shader = ShaderRes
+	rect.material = mat
+	layer.add_child(rect)
+	layer.set_script(LinesScript)
+	layer.set_effect_enabled(false)
+	add_child_autofree(layer)
+	assert_false(layer.is_effect_enabled(), "the pre-ready choice survived _ready")
+	assert_false(layer.visible, "and was applied once the node was wired")
+
+
+func test_apply_persists_and_reaches_live_overlays() -> void:
+	# SpeedLinesSetting is the apply-owner: one call both saves the choice and
+	# re-applies it to every overlay in the tree.
+	var o := _make_overlay()
+	SpeedLinesSetting.apply(get_tree(), false)
+	assert_false(SpeedLinesSetting.resolve(), "the choice is persisted")
+	assert_false(o.is_effect_enabled(), "and pushed to the live overlay")
+	SpeedLinesSetting.apply(get_tree(), true)
+	assert_true(SpeedLinesSetting.resolve(), "and back on again")
+	assert_true(o.is_effect_enabled(), "with the live overlay following")
+
+
+func test_apply_never_writes_the_authored_default() -> void:
+	# The player's runtime choice must not drift the authored GameConfig baseline
+	# that its own fallback default reads.
+	var authored := Config.data.speed_lines_enabled
+	SpeedLinesSetting.apply(get_tree(), not authored)
+	assert_eq(Config.data.speed_lines_enabled, authored,
+		"the authored default is untouched by a player toggle")
+	Save.set_setting(SpeedLinesSetting.SETTING_KEY, true)

@@ -216,7 +216,18 @@ The podium's stars beat needs that delta rather than the raw placement rating, s
 turning a 2nd into a 1st is worth exactly 1 even though the two placements rate 2 and
 3 stars. `award_stars` / `spend_stars` / `stars_available` are the non-rally ledger
 API. `rally_completed(id)` /
-`completed_rally_count()` / `best_placement(id)` query progress.
+`podium_rally_count()` / `best_placement(id)` query progress.
+
+**`podium_rally_count()` counts PODIUMS, not finishes.** The per-rally `completed`
+flag it sums is written only inside the podium-gated block in `rally_session.gd`
+(`podium_or_opening`), so a 5th-place finish increments nothing and
+`rally_completed(id)` means "podiumed this rally". There is **no
+finished-in-any-position counter in the save schema at all** — a feature that needs
+one must add persistence for it rather than reuse this, and no UI should read
+"rallies completed" off it. `completed_rally_count()` /
+`RallyLibrary.completed_count()` survive as deprecated one-line wrappers over
+`podium_rally_count()` / `RallyLibrary.podium_count()`; the persisted `completed`
+KEY is unchanged (renaming it would need a save migration).
 
 ## Durability & integrity
 

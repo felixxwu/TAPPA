@@ -169,7 +169,7 @@ func test_draw_car_difficulty_caps_below_progress_ceiling() -> void:
 		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
 	])
 	var completed: Array = []
-	for n in 8:  # ids need not be real — completed_count only counts them
+	for n in 8:  # ids need not be real — podium_count only counts them
 		completed.append("done_%d" % n)
 	var starter := _lowest_tier_model()
 	var profile := _profile(completed, [String(starter["id"])])

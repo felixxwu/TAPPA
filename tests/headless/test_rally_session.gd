@@ -64,10 +64,18 @@ func _total_items() -> int:
 	return n
 
 
-# Start a rally skipping track generation; return the owned car dict.
-# Caller may overwrite RallySession._opponent_field for determinism.
-func _start(rally_id: String, model := "fx_light_rwd") -> Dictionary:
-	var owned: Dictionary = _save.grant_car(model)
+# GRANT a fresh car of `model_id` to the throwaway profile, then start `rally_id` with it,
+# skipping track generation. Returns the owned-car dict that was granted.
+#
+# THE way to start a rally in this file — do not hand-roll grant-then-start_rally, or the
+# next reader learns the long form from you.
+#
+# Named for what it DOES (it grants a car; the old name `_start` hid that) and both
+# parameters are ids, not dicts: this used to shadow RallySession.start_rally(rally: Dictionary,
+# owned: Dictionary, ...) positionally while meaning something different in slot 2, and callers
+# passed an owned-car Dictionary where a model-id String was wanted.
+func _grant_and_start(rally_id: String, model_id: String = "fx_light_rwd") -> Dictionary:
+	var owned: Dictionary = _save.grant_car(model_id)
 	RallySession.start_rally(RallyLibrary.by_id(rally_id), owned, true)
 	return owned
 
@@ -82,11 +90,22 @@ func _report_events(times: Array) -> void:
 
 
 # Capture the next rally_finished result (one-shot, so nothing leaks across tests).
-func _capture_finish() -> Array:
-	var box: Array = [null]
+#
+# Returns a TYPED one-slot box — `Array[Dictionary]`, empty until the rally resolves and
+# holding exactly the finish result afterwards. Typed so `:=` infers at every call site.
+# Read it with _finish_result(); that is the ONE unboxing idiom in this file (there used to
+# be three, one of which — `var r := box[0]` — could not type-infer at all).
+func _capture_finish() -> Array[Dictionary]:
+	var box: Array[Dictionary] = []
 	RallySession.rally_finished.connect(
-		func(r: Dictionary) -> void: box[0] = r, CONNECT_ONE_SHOT)
+		func(r: Dictionary) -> void: box.append(r), CONNECT_ONE_SHOT)
 	return box
+
+
+# Unbox a _capture_finish() handle: the finish result, or {} if the rally has not resolved.
+# Use `assert_false(r.is_empty(), ...)` to assert that it did.
+func _finish_result(box: Array[Dictionary]) -> Dictionary:
+	return box[0] if not box.is_empty() else {}
 
 
 # --- Special-event unlock reveal (todo/special-unlock-reveal.md) --------------
@@ -114,7 +133,7 @@ func _install_unlock_ladder() -> void:
 # P1 and the top-3 gate is satisfied. These tests are about the unlock, not about pace, and
 # the generated field is fast enough that plausible times would not reliably win.
 func _start_winnable(rally_id: String) -> Dictionary:
-	var owned := _start(rally_id)
+	var owned := _grant_and_start(rally_id)
 	RallySession._opponent_field = [
 		{"name": "Backmarker", "car_id": "fx_light_rwd", "engine_id": "",
 			"car_name": "Backmarker", "event_times_ms": [90000, 90000, 90000],
@@ -131,8 +150,8 @@ func test_a_first_special_win_unlocks_an_upgrade_and_pays_no_car() -> void:
 	var owned := _start_winnable("fx_showdown")
 	var box := _capture_finish()
 	_report_events([30000, 30000, 30000])
-	var result: Dictionary = box[0]
-	assert_not_null(result, "the rally resolved")
+	var result := _finish_result(box)
+	assert_false(result.is_empty(), "the rally resolved")
 	assert_true(bool(result["completed"]), "precondition: the fixture times place top-3")
 
 	var unlock: Dictionary = result.get("special_unlock", {})
@@ -189,7 +208,7 @@ func test_a_first_car_unlock_win_hands_over_the_car() -> void:
 	_start_winnable("fx_prize")
 	var box := _capture_finish()
 	_report_events([30000, 30000, 30000])
-	var result: Dictionary = box[0]
+	var result := _finish_result(box)
 	assert_true(bool(result["completed"]), "precondition: the fixture times place top-3")
 
 	# Reported through the podium's existing CAR_REVEAL pair, so the reveal beat is the
@@ -213,9 +232,9 @@ func test_re_winning_a_car_unlock_rally_pays_no_second_car() -> void:
 	_start_winnable("fx_prize")
 	var box := _capture_finish()
 	_report_events([30000, 30000, 30000])
-	assert_eq(String((box[0] as Dictionary).get("car_reward", "")), "",
+	assert_eq(String(_finish_result(box).get("car_reward", "")), "",
 		"a re-win reports no car")
-	# Counts copies of the PRIZE MODEL, not the garage total: _start grants a fresh car to
+	# Counts copies of the PRIZE MODEL, not the garage total: _grant_and_start grants a fresh car to
 	# drive on every run, so the total legitimately grows and would hide the duplicate.
 	assert_eq(_owned_count_of(prize_id), 1, "and mints no duplicate")
 
@@ -230,7 +249,7 @@ func test_an_ordinary_rally_hands_over_no_car() -> void:
 	# finish adds shows up as a change.
 	var owned_before: int = (_save.profile["cars"] as Array).size()
 	_report_events([30000, 30000, 30000])
-	assert_eq(String((box[0] as Dictionary).get("car_reward", "")), "",
+	assert_eq(String(_finish_result(box).get("car_reward", "")), "",
 		"an ordinary win reports no car")
 	assert_eq((_save.profile["cars"] as Array).size(), owned_before,
 		"and the garage is unchanged (the driven car was granted before the count)")
@@ -262,7 +281,7 @@ func test_re_winning_a_special_reveals_and_awards_nothing() -> void:
 	var owned := _start_winnable("fx_showdown")
 	var box := _capture_finish()
 	_report_events([30000, 30000, 30000])
-	var result: Dictionary = box[0]
+	var result := _finish_result(box)
 	assert_true((result.get("special_unlock", {}) as Dictionary).is_empty(),
 		"a re-win reports no unlock")
 	var car: Dictionary = _save.get_car(int(owned["instance_id"]))
@@ -283,7 +302,7 @@ func test_winning_the_capability_special_announces_the_unlock_with_nothing_to_gr
 	_start_winnable(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
 	var box := _capture_finish()
 	_report_events([30000, 30000, 30000])
-	var result: Dictionary = box[0]
+	var result := _finish_result(box)
 	var unlock: Dictionary = result.get("special_unlock", {})
 	assert_eq(String(unlock.get("capability", "")), "engine_swap",
 		"the capability unlock is announced even with no part to name")
@@ -304,7 +323,7 @@ func test_an_ordinary_win_reports_no_unlock_and_pays_stars_not_a_car() -> void:
 	_start_winnable("fx_open")
 	var box := _capture_finish()
 	_report_events([30000, 30000, 30000])
-	var result: Dictionary = box[0]
+	var result := _finish_result(box)
 	assert_true((result.get("special_unlock", {}) as Dictionary).is_empty(),
 		"an ordinary rally unlocks nothing")
 	assert_eq(String(result.get("car_reward", "")), "",
@@ -317,7 +336,7 @@ func test_an_ordinary_win_reports_no_unlock_and_pays_stars_not_a_car() -> void:
 # event, tracking the event index as the rally advances. -1 when idle.
 func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:
 	assert_eq(RallySession.current_event_target_ms(), -1, "idle: no time to beat")
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = [
 		{"name": "A", "event_times_ms": [50000, 82000, 82000], "dnf": false, "combined_ms": 214000},
 		{"name": "B", "event_times_ms": [45000, 90000, 90000], "dnf": false, "combined_ms": 225000},
@@ -336,7 +355,7 @@ func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:
 # first, each with the car they drove — and skips any who DNF'd this event.
 func test_current_event_leaders_lists_top_three_with_cars() -> void:
 	assert_true(RallySession.current_event_leaders().is_empty(), "idle: no leaders")
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "fx_awd", "car_name": "Fixture AWD", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
 		{"name": "B", "car_id": "fx_rwd_coupe", "car_name": "Fixture Coupe", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
@@ -358,7 +377,7 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 # Between-event pit repairs: the fielded car is patched up entering every event
 # AFTER the first (never the first), and the summary is exposed once for the popup.
 func test_pit_repair_fires_at_each_event_after_the_first() -> void:
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	RallySession._opponent_field = _field([200000, 210000, 220000])
 	var id: int = owned["instance_id"]
 	# The first event gets no pit repair — the car starts the rally fresh.
@@ -380,7 +399,7 @@ func test_pit_repair_fires_at_each_event_after_the_first() -> void:
 # between-event transitions get — but silently, with nothing left for the podium's
 # repair popup to pick up.
 func test_final_event_damage_is_repaired_on_resolve_silently() -> void:
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	RallySession._opponent_field = _field([200000, 210000, 220000])
 	var id: int = owned["instance_id"]
 	var box := _capture_finish()
@@ -395,11 +414,63 @@ func test_final_event_damage_is_repaired_on_resolve_silently() -> void:
 	var max_hp := float(CarLibrary.by_id(_save.get_car(id)["model_id"]).get("max_hp", hp_after_damage))
 	assert_lt(hp_after_damage, max_hp, "the final hit actually damaged the car")
 	RallySession.continue_to_next_event()             # -> _resolve_results: silent final repair
-	assert_not_null(box[0], "the rally finished")
+	assert_false(_finish_result(box).is_empty(), "the rally finished")
 	var hp_after_finish := float(_save.get_car(id)["hp"])
 	assert_gt(hp_after_finish, hp_after_damage, "the final-event damage was partially repaired on finish")
 	assert_lt(hp_after_finish, max_hp, "the repair is partial, not a full heal, matching every other stage-to-stage repair")
 	assert_false(RallySession.take_pending_repair().get("repaired", false), "the final-event repair does not surface a repair popup")
+
+
+# --- The clean-run damage signal ---------------------------------------------
+#
+# HP cannot answer "did the player take damage this rally": field repairs run at every
+# event boundary AND on the first lines of _resolve_results, and a car can enter a rally
+# already damaged because HQ repairs cost stars. RallySession latches the fact instead.
+
+func test_a_rally_with_no_damage_reports_a_clean_run() -> void:
+	_grant_and_start("fx_open")
+	RallySession._opponent_field = _field([200000, 210000, 220000])
+	var box := _capture_finish()
+	assert_false(RallySession.took_damage_this_rally(), "a fresh rally starts on a clean sheet")
+	_report_events([60000, 60000, 60000])
+	assert_false(_finish_result(box).get("took_damage", true),
+		"a rally driven without a scratch reports took_damage false")
+
+
+func test_damage_in_any_event_survives_the_repairs_to_resolve_time() -> void:
+	# The whole point of the flag: the hit lands in the FIRST event, is partly repaired
+	# entering every later event and again on resolve — and is still reported at the finish.
+	_grant_and_start("fx_open")
+	RallySession._opponent_field = _field([200000, 210000, 220000])
+	var box := _capture_finish()
+	RallySession.report_event_result(60000, 300.0)
+	assert_true(RallySession.took_damage_this_rally(), "the hit is latched immediately")
+	RallySession.continue_to_next_event()
+	_report_events([60000, 60000])
+	assert_true(_finish_result(box).get("took_damage", false),
+		"the damage is still reported at the finish, after every repair has run")
+
+
+func test_a_new_rally_clears_the_damage_flag_from_the_previous_one() -> void:
+	_grant_and_start("fx_open")
+	RallySession._opponent_field = _field([200000, 210000, 220000])
+	RallySession.report_event_result(60000, 300.0)
+	RallySession.continue_to_next_event()
+	_report_events([60000, 60000])
+	assert_true(RallySession.took_damage_this_rally(), "setup: the finished rally was damaging")
+	# A car that arrives already damaged is NOT carrying the previous rally's verdict.
+	_grant_and_start("fx_open")
+	assert_false(RallySession.took_damage_this_rally(),
+		"starting a rally resets the clean-run sheet")
+
+
+func test_a_wreck_is_reported_as_damage() -> void:
+	_grant_and_start("fx_open")
+	RallySession._opponent_field = _field([50000])
+	var box := _capture_finish()
+	RallySession.report_wreck()
+	assert_true(_finish_result(box).get("took_damage", false),
+		"a wreck never routes through report_event_result, but is still damage")
 
 
 # current_event_wreck surfaces the rival who crashed out of the CURRENT event (with the
@@ -407,7 +478,7 @@ func test_final_event_damage_is_repaired_on_resolve_silently() -> void:
 # wrecked in. Built from a synthetic field so it leans on the delegation, not on a roll.
 func test_current_event_wreck_tracks_the_crashed_rival_per_event() -> void:
 	assert_true(RallySession.current_event_wreck().is_empty(), "idle: no wreck")
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "carA", "car_name": "Car A", "event_times_ms": [50000, 82000, 82000],
 			"dnf": false, "combined_ms": 214000, "wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0},
@@ -429,7 +500,7 @@ func test_current_event_wreck_tracks_the_crashed_rival_per_event() -> void:
 # The leaderboard carries the car each entrant drove — the rivals' and the
 # player's fielded car.
 func test_standings_carry_the_player_and_rival_cars() -> void:
-	_start("fx_open", "fx_light_rwd")
+	_grant_and_start("fx_open", "fx_light_rwd")
 	RallySession._opponent_field = [
 		{"name": "Quick", "car_name": "Fixture Coupe", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 	]
@@ -450,7 +521,7 @@ func test_standings_carry_the_garage_name_for_a_swapped_engine() -> void:
 	# prefixed) into the standings, not the bare catalogue name — matching what HQ
 	# calls the same car one screen earlier. fx_light_rwd's stock engine is "fx_i4"
 	# (layout i4); swap it directly to "fx_v8" (layout v8) on the fielded instance.
-	var owned := _start("fx_open", "fx_light_rwd")
+	var owned := _grant_and_start("fx_open", "fx_light_rwd")
 	var car: Dictionary = _save.get_car(int(owned["instance_id"]))
 	car["swapped_engine"] = "fx_v8"
 	RallySession._opponent_field = [
@@ -472,7 +543,7 @@ func test_idle_when_no_rally() -> void:
 
 func test_happy_path_accumulates_and_places() -> void:
 	var finish := _capture_finish()
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = _field([50000, 60000, 70000, 80000, 90000])
 	RallySession.report_event_result(20000)
 	RallySession.continue_to_next_event()
@@ -482,8 +553,8 @@ func test_happy_path_accumulates_and_places() -> void:
 	RallySession.report_event_result(20000)  # 3rd event -> pauses on the event-only standings
 	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS, "the final event pauses on its event standings")
 	RallySession.continue_to_next_event()    # -> resolve
-	var r: Dictionary = finish[0]
-	assert_not_null(r, "rally_finished emitted")
+	var r := _finish_result(finish)
+	assert_false(r.is_empty(), "rally_finished emitted")
 	assert_eq(r["combined_ms"], 60000, "combined = sum of event times")
 	# Field has one opponent (50000) faster than 60000 -> placed 2nd.
 	assert_eq(r["placed"], 2, "placement counts faster non-DNF opponents")
@@ -495,7 +566,7 @@ func test_happy_path_accumulates_and_places() -> void:
 
 func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	var finish := _capture_finish()
-	var driven := _start("fx_open")  # the entry rally (a low p/w cap), difficulty 1
+	var driven := _grant_and_start("fx_open")  # the entry rally (a low p/w cap), difficulty 1
 	# Player combined 60000; one opponent faster (50000) -> placed 2nd, top-3 win.
 	RallySession._opponent_field = _field([50000, 70000, 80000])
 	# Snapshot ownership BEFORE the finish: a top-3 win grants the reward car, so the
@@ -504,7 +575,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	for c in _save.profile.get("cars", []):
 		owned_before[String(c.get("model_id", ""))] = true
 	_report_events([20000, 20000, 20000])
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_eq(r["rally_name"], "Fixture Open", "result names the rally for the podium header")
 	# No car is drawn by a finish any more — the reward is STARS, and the result carries
 	# both what the rally is now RATED and what the ledger actually gained, which the
@@ -538,12 +609,12 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 # single event has run) — so the settings dev button can hand the player the car.
 func test_dev_complete_rally_wins_immediately_from_mid_rally() -> void:
 	var finish := _capture_finish()
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = _field([50000, 60000, 70000])
 	# No event has been reported yet; complete the whole rally in one shot.
 	RallySession.dev_complete_rally()
-	var r: Dictionary = finish[0]
-	assert_not_null(r, "rally_finished emitted straight to the podium")
+	var r := _finish_result(finish)
+	assert_false(r.is_empty(), "rally_finished emitted straight to the podium")
 	assert_eq(r["combined_ms"], 0, "every event is credited a perfect 0 ms time")
 	assert_eq(r["placed"], 1, "a 0 ms combined out-runs the whole field -> P1")
 	assert_true(r["completed"], "a P1 finish completes the rally (top-3)")
@@ -561,7 +632,7 @@ func test_dev_complete_rally_is_a_noop_when_idle() -> void:
 
 
 func test_between_event_standings_pause_and_leaderboard() -> void:
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	# Two rivals: one quick (40k/event), one slow (80k/event). Player runs 50k/event.
 	RallySession._opponent_field = [
 		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
@@ -588,13 +659,13 @@ func test_a_wreck_part_way_through_a_rally_costs_the_result_not_the_car() -> voi
 	# upgrade to earn any more, but the rest of what it asserted is the real contract and
 	# had no other home: a DNF mid-rally forfeits the result and hands the car back.
 	var finish := _capture_finish()
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	var id := int(owned["instance_id"])
 	RallySession._opponent_field = _field([50000])
 	RallySession.report_event_result(20000)  # event 1 finishes
 	RallySession.continue_to_next_event()  # into event 2
 	RallySession.report_wreck()            # DNF during event 2
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_true(r["dnf"], "a wreck is a DNF")
 	assert_false(r["completed"], "DNF never completes the rally")
 	assert_eq(r["placed"], -1, "DNF does not place")
@@ -614,14 +685,14 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 	# is matched to a different rating on purpose (see features/adaptive-difficulty.md, and
 	# test_refielding_keeps_the_difficulty_offset for the property that replaces it).
 	Config.data.ai_adapt_enabled = false
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	var id := int(owned["instance_id"])
 	var field1: Array = RallySession.opponent_field().duplicate(true)
 	# A slow, non-top-3 finish (slower than every opponent).
 	var finish := _capture_finish()
 	RallySession._opponent_field = _field([10000, 20000, 30000, 40000, 50000])
 	_report_events([1_000_000, 1_000_000, 1_000_000])
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_false(r["completed"], "a non-top-3 finish does not complete the rally")
 	assert_eq(r["placed"], 6, "slower than all 5 opponents -> placed 6th")
 	assert_false(_save.rally_completed("fx_open"), "an incomplete rally stays incomplete (no retry)")
@@ -672,7 +743,7 @@ func test_win_beat_fires_once_every_special_is_done() -> void:
 	_complete_other_specials(last)
 	var won: Array = [false]
 	RallySession.game_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
-	_start(last)
+	_grant_and_start(last)
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	var cars_before: int = _save.profile["cars"].size()
 	_report_events([10000, 10000, 10000])
@@ -697,11 +768,11 @@ func test_a_special_with_others_outstanding_completes_without_win_beat() -> void
 	var won: Array = [false]
 	RallySession.game_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
 	var result_box := _capture_finish()
-	_start(first)
+	_grant_and_start(first)
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	_report_events([10000, 10000, 10000])
 	assert_false(won[0], "a special with others outstanding does not fire the win beat")
-	var result: Dictionary = result_box[0]
+	var result := _finish_result(result_box)
 	assert_false(result["game_won"],
 		"a special with others outstanding must not flag the endgame/credits podium")
 	assert_true(_save.rally_completed(first), "the special still records completion")
@@ -713,17 +784,18 @@ func test_a_special_with_others_outstanding_completes_without_win_beat() -> void
 # rally is a legitimate way to earn — while the CAR remains a one-time prize, or an easy rally
 # would refill the garage indefinitely and make the rallies' restriction bands meaningless.
 func test_a_rewin_pays_stars_again_but_never_another_car() -> void:
-	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.complete_rally("fx_open", 999999, 1)  # already won outright
-	var completed_before: int = _save.completed_rally_count()
+	_grant_and_start("fx_open")
+	# Snapshot AFTER _grant_and_start, which grants the car being driven — so anything the
+	# finish itself adds shows up as a change.
+	var podiums_before: int = _save.podium_rally_count()
 	var cars_before: int = _save.profile["cars"].size()
 	var stars_before: int = _save.stars_available()
 	var box := _capture_finish()
-	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = _field([90000])  # top-3 re-win
 	_report_events([10000, 10000, 10000])
-	var gained := int((box[0] as Dictionary).get("stars_gained", -1))
-	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")
+	var gained := int(_finish_result(box).get("stars_gained", -1))
+	assert_eq(_save.podium_rally_count(), podiums_before, "a re-win records no new podium")
 	assert_eq(_save.profile["cars"].size(), cars_before, "no car is granted for a re-win")
 	assert_eq(gained, RallyLibrary.stars_for_placement(1), "the podium re-win pays its stars")
 	assert_eq(_save.stars_available(), stars_before + gained, "and the balance moved by that much")
@@ -734,7 +806,7 @@ func test_a_rewin_pays_stars_again_but_never_another_car() -> void:
 func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 	# Idle: no car.
 	assert_true(RallySession.current_event_p1_car().is_empty(), "idle: no P1 car")
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	# Inject a field with known car_ids and event times for event 0.
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "fx_light_rwd",      "event_times_ms": [55000, 0, 0], "dnf": false, "combined_ms": 1},
@@ -751,7 +823,7 @@ func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 # cumulative total), sinks a rival who DNF'd THAT event, and carries the player.
 func test_current_event_standings_ranks_by_the_just_completed_event() -> void:
 	assert_true(RallySession.current_event_standings().is_empty(), "idle: no event standings")
-	_start("fx_open", "fx_light_rwd")
+	_grant_and_start("fx_open", "fx_light_rwd")
 	RallySession._opponent_field = [
 		# Cumulatively "Quick" leads, but for event 1 alone "Slow" is fastest and
 		# "Quick" is slowest — so the event-only ranking differs from the combined one.
@@ -923,7 +995,7 @@ func test_apply_event_config_falls_back_to_baseline_with_no_region_context() -> 
 		"no region tag and no event override -> GameConfig baseline")
 
 func test_current_event_seats_the_rallys_region_tag() -> void:
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var event := RallySession.current_event()
 	assert_eq(String(event.get("region", "")), "home",
 		"current_event() carries the owning rally's region so water resolution can use it")
@@ -937,7 +1009,7 @@ func test_current_event_seats_the_rallys_region_tag() -> void:
 # compared to each other, so nothing tunable is pinned and a per-event field added
 # later is covered automatically.
 func test_an_active_events_resolved_config_equals_its_canonical_config() -> void:
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var event := RallySession.current_event()
 	assert_false(event.is_empty(), "setup: an active rally exposes its current event")
 
@@ -1004,11 +1076,11 @@ func _report_losing_run() -> void:
 
 func test_the_opening_rally_completes_even_on_a_dnf() -> void:
 	_install_opening_rally()
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var finish := _capture_finish()
 	RallySession._opponent_field = _field([50000])
 	RallySession.report_wreck()
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_true(r["dnf"], "setup: the run ended in a wreck")
 	# The carve-out: everywhere else a DNF leaves the rally incomplete
 	# (test_a_wreck_is_a_dnf_that_keeps_the_car).
@@ -1022,10 +1094,10 @@ func test_the_opening_rally_completes_even_on_a_dnf() -> void:
 
 func test_the_opening_rally_completes_on_a_losing_finish() -> void:
 	_install_opening_rally()
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var finish := _capture_finish()
 	_report_losing_run()
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_gt(int(r["placed"]), 3, "setup: the player finished outside the podium")
 	assert_true(r["completed"], "the opening rally completes on a non-podium finish")
 	# Finishing always pays, podium or not — so the player's first drive banks something even
@@ -1041,7 +1113,7 @@ func test_the_opening_rally_completes_on_a_losing_finish() -> void:
 func test_finishing_the_opening_rally_routes_to_the_map_and_pre_seeds_its_own_reveal() -> void:
 	_install_opening_rally()
 	RallySession.return_to_map = false
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	_report_losing_run()
 	assert_true(RallySession.return_to_map, "HQ is told to open on the map, not the garage")
 	# Seen ALREADY, so the arrival parade announces the NEIGHBOURS rather than replaying
@@ -1054,7 +1126,7 @@ func test_finishing_the_opening_rally_routes_to_the_map_and_pre_seeds_its_own_re
 # time at all, and a negative would beat every real one for good.
 func test_a_dnf_in_the_opening_rally_records_no_best_time() -> void:
 	_install_opening_rally()
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession.report_wreck()
 	var rec: Dictionary = _save.profile["rallies"]["fx_open"]
 	assert_eq(int(rec.get("best_combined_ms", 0)), 0, "no time is recorded for a DNF")
@@ -1066,16 +1138,16 @@ func test_a_dnf_in_the_opening_rally_records_no_best_time() -> void:
 # become a permanent "this one always counts" the player could re-enter at will.
 func test_a_retry_of_a_completed_opening_rally_is_scored_normally() -> void:
 	_install_opening_rally()
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	_report_losing_run()
 	assert_true(_save.rally_completed("fx_open"), "setup: the first attempt completed it")
 	RallySession.abandon()
 
 	RallySession.return_to_map = false
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var finish := _capture_finish()
 	_report_losing_run()
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_false(r["completed"], "a losing retry does not count as a completion")
 	assert_false(RallySession.return_to_map, "and does not re-route to the map")
 
@@ -1086,10 +1158,10 @@ func test_another_starters_prize_rally_is_still_podium_gated() -> void:
 	_install_opening_rally("fx_light_rwd")
 	# The player picked something else, so fx_open is not THEIR opening rally.
 	_save.profile["starter_model_id"] = "fx_heavy_fwd"
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var finish := _capture_finish()
 	_report_losing_run()
-	var r: Dictionary = finish[0]
+	var r := _finish_result(finish)
 	assert_false(r["completed"], "someone else's prize rally still needs a podium")
 	assert_false(_save.rally_completed("fx_open"), "and records no completion")
 
@@ -1099,10 +1171,10 @@ func test_another_starters_prize_rally_is_still_podium_gated() -> void:
 func test_a_profile_with_no_starter_has_no_opening_carve_out() -> void:
 	_install_opening_rally()
 	_save.profile.erase("starter_model_id")
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var finish := _capture_finish()
 	_report_losing_run()
-	assert_false((finish[0] as Dictionary)["completed"],
+	assert_false(_finish_result(finish)["completed"],
 		"no starter recorded means no opening rally, so the podium rule stands")
 
 
@@ -1120,7 +1192,7 @@ func _change_build(instance_id: int) -> void:
 
 
 func test_refielding_redraws_the_grid_when_the_build_changes() -> void:
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	_change_build(int(owned["instance_id"]))
 	assert_true(RallySession.refield_opponents(), "a changed build re-draws the field")
 	# Deliberately NOT asserting the grid membership changed. The fixture roster yields
@@ -1131,7 +1203,7 @@ func test_refielding_redraws_the_grid_when_the_build_changes() -> void:
 
 
 func test_refielding_is_a_no_op_when_the_build_is_unchanged() -> void:
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var before := RallySession.opponent_field().duplicate(true)
 	assert_false(RallySession.refield_opponents(), "nothing changed, so nothing is re-drawn")
 	assert_eq(str(RallySession.opponent_field()), str(before), "the grid is untouched")
@@ -1140,7 +1212,7 @@ func test_refielding_is_a_no_op_when_the_build_is_unchanged() -> void:
 func test_refielding_is_refused_once_a_stage_has_been_raced() -> void:
 	# The guard that protects the standings: a rally's results accumulate across its
 	# events, so re-drawing mid-rally would rewrite times the rivals have already set.
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	RallySession.report_event_result(60000)
 	var before := RallySession.opponent_field().duplicate(true)
 	_change_build(int(owned["instance_id"]))
@@ -1154,7 +1226,7 @@ func test_refielding_announces_itself_so_the_ghost_can_rebuild() -> void:
 	# stage BUILDS, which is before the start-line overlay the player edits upgrades on.
 	# Without this signal the ghost keeps chasing the leader of the field the player
 	# turned up with, not the one they are about to race.
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	var fired := [0]
 	RallySession.opponent_field_changed.connect(func(): fired[0] += 1)
 	_change_build(int(owned["instance_id"]))
@@ -1165,7 +1237,7 @@ func test_refielding_announces_itself_so_the_ghost_can_rebuild() -> void:
 func test_a_refused_refield_announces_nothing() -> void:
 	# A no-op must stay silent, or the run scene would tear down and rebuild the ghost
 	# every time the player opened the upgrades page and closed it again unchanged.
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	var fired := [0]
 	RallySession.opponent_field_changed.connect(func(): fired[0] += 1)
 	assert_false(RallySession.refield_opponents(), "nothing changed")
@@ -1179,7 +1251,7 @@ func test_a_refused_refield_announces_nothing() -> void:
 # The rule itself is tested in test_ai_difficulty.gd.
 
 func test_a_stage_result_moves_the_difficulty_offset() -> void:
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	# One rival, and the player comfortably beats it.
 	RallySession._opponent_field = [{
 		"name": "Rival", "car_id": "fx_light_rwd", "engine_id": "fx_i4",
@@ -1201,7 +1273,7 @@ func test_a_stage_result_moves_the_difficulty_offset() -> void:
 
 
 func test_losing_a_stage_pushes_the_other_way() -> void:
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = [{
 		"name": "Rival", "car_id": "fx_light_rwd", "engine_id": "fx_i4",
 		"car_name": "Fixture", "event_times_ms": [60000, 60000, 60000],
@@ -1218,7 +1290,7 @@ func test_losing_a_stage_pushes_the_other_way() -> void:
 func test_a_stage_with_no_rivals_is_not_counted_as_a_win() -> void:
 	# With nobody to beat there is no evidence the player is quick, and treating an empty
 	# field as a win would ratchet difficulty up on no information at all.
-	_start("fx_open")
+	_grant_and_start("fx_open")
 	RallySession._opponent_field = []
 	for _i in Config.data.ai_adapt_stages_per_step:
 		RallySession._event_index = 0
@@ -1231,7 +1303,7 @@ func test_a_stage_with_no_rivals_is_not_counted_as_a_win() -> void:
 func test_the_field_is_drawn_against_the_offset_rating() -> void:
 	# The wiring that matters: if the offset did not reach the draw, the whole system would
 	# compute a number nothing ever read.
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	var matched := RallySession._fielded_rating
 	assert_gt(matched, 0, "setup: the field was matched to a real rating")
 	_save.profile[AiDifficulty.KEY_STEPS] = Config.data.ai_adapt_max_hard_steps
@@ -1242,7 +1314,7 @@ func test_the_field_is_drawn_against_the_offset_rating() -> void:
 
 func test_refielding_keeps_the_difficulty_offset() -> void:
 	# A re-draw after a start-line upgrade edit must not silently reset the difficulty.
-	var owned := _start("fx_open")
+	var owned := _grant_and_start("fx_open")
 	_save.profile[AiDifficulty.KEY_STEPS] = Config.data.ai_adapt_max_hard_steps
 	_change_build(int(owned["instance_id"]))
 	assert_true(RallySession.refield_opponents(), "the field was re-drawn")

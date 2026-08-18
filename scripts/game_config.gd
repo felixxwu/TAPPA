@@ -1,10 +1,23 @@
 class_name GameConfig
 extends Resource
 # Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/signs.md, features/tuning.md, features/world-panel.md — update in the same change as this file.
-# Tests: tests/headless/test_car_performance.gd, tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd, tests/headless/test_drivetrain.gd, tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_lap_time_model.gd, tests/headless/test_menu_flow.gd, tests/headless/test_sign_field.gd, tests/headless/test_sign_layout.gd, tests/headless/test_tuning_library.gd, tests/headless/test_tuning_panel.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd, tests/headless/test_world_panel.gd — extend in the same change.
+# Tests: tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd, tests/headless/test_car_performance.gd — extend in the same change. (Nearly every headless test reads this file; those three are the ones that cover it AS config. For a specific knob, the owning area's doc above names its own tests.)
 # Central tuning knobs for the whole game. Edit config/game_config.tres
 # (Inspector or text), not the per-node values in main.tscn — runtime
 # config overrides those defaults at startup.
+#
+# THE LITERALS IN THIS FILE ARE FALLBACK DEFAULTS, NOT THE TUNING SURFACE. To change a
+# gameplay value, author it in config/game_config.tres; editing the literal here is only
+# correct when the .tres does not author that property, and you cannot tell which from
+# this file — a .tres stores ONLY non-default values, so a property absent from it is
+# live at the literal below and a property present in it silently wins over the literal.
+#   To check before you edit:  grep '<property_name>' config/game_config.tres
+#   Hit   -> edit the .tres; your change here would be dead on arrival.
+#   Miss  -> the literal is live, but add it to the .tres so the value is authored where
+#            every other tuned value lives.
+# Some properties are overwritten a THIRD way, per-car or per-engine, from the authored
+# tables in CarLibrary / EngineLibrary / UpgradeLibrary; those carry a FALLBACK ONLY note
+# on their own line. Read it before assuming an edit here reaches the game.
 
 # Engine character. These are the LIVE engine fields: EngineLibrary.apply()
 # (scripts/engine_library.gd) writes them from the fielded car's referenced
@@ -31,7 +44,16 @@ var peak_torque_rpm := 4500.0
 # axle, ~150 N·m at μ 0.7) or the wheels can't lock against grippy ground.
 @export var brake_torque := 1500.0  # N·m per axle from the foot brake (S)
 @export var handbrake_torque := 5000.0  # N·m on the rear axle (Space)
-@export var engine_friction_base := 20.0  # N·m always-on crank friction at 0 rpm (FMEP constant term). FALLBACK ONLY: EngineLibrary.apply overwrites this per-engine (scaled ~cylinder count); this default just covers the baseline car before any engine is fielded.
+## FALLBACK ONLY — CHANGING THIS NUMBER DOES NOTHING ONCE A CAR IS FIELDED.
+## EngineLibrary.apply overwrites engine_friction_base per-engine from the authored
+## ENGINES table (scaled ~cylinder count), so this default only covers the baseline car
+## before any engine is seated. To make engine braking stronger across the board, move
+## engine_friction_slope below (which nothing overwrites) or retune the ENGINES table.
+@export var engine_friction_base := 20.0  # N·m always-on crank friction at 0 rpm (FMEP constant term)
+## The other half of the FMEP model, and the one that IS globally live. Engine braking on
+## a lift-off is friction = engine_friction_base + engine_friction_slope * rpm/1000, so at
+## a typical 4000 rpm the slope contributes 4x its value against a base of 20-60 N·m —
+## a change worth feeling is a multiple, not a few percent.
 @export var engine_friction_slope := 1.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
 @export var axle_inertia := 2.645  # kg·m² rear axle spin inertia; fronts use half each
 @export var drag_coefficient := 3.527  # quadratic aero drag on the chassis
@@ -176,22 +198,33 @@ var peak_torque_rpm := 4500.0
 ## whole mechanism an exact no-op for every other compound. The authored numbers live
 ## on the part in UpgradeLibrary.UPGRADES, like every other effect.
 ##
-## THIS IS A CLOSED PAIR — do not just add a third one. `tire_surface_mult` below takes
-## exactly a snow and a tarmac multiplier, and the four sites that call it live in
-## drivetrain.gd (`_surface_at`) and lap_time_model.gd. A new surface axis (gravel, wet,
-## …) means changing that function AND every call site AND car.gd::_apply_physics_spec's
-## reset AND car_performance.gd::merged_meta's carry list. An extra @export here on its
-## own compiles, applies, and does absolutely nothing — the part reads as fitted and no
-## gameplay test fails. Guarded by tests/headless/test_upgrade_library.gd ->
-## test_every_grip_feeding_effect_field_is_read_by_the_physics.
-## THE CHECKLIST ABOVE IS NOT ONLY PRODUCTION CODE. `tire_surface_mult` is also called
-## DIRECTLY by tests — tests/headless/test_drivetrain.gd calls it ~6 times with the
-## current arity, so changing its signature breaks that whole file at compile time.
-## Grep the ENTIRE repo (scripts/ AND tests/) for `tire_surface_mult` and update every
-## caller. And update THIS comment too — if you widen the pair, "closed pair" and
-## "exactly a snow and a tarmac multiplier" become lies the next reader will trust.
+## TO ADD AN AXIS (wet, gravel, ice, …): add an @export here AND a row in
+## TIRE_SURFACE_AXES right below AND its arm in _channel_weight. Those three edits sit
+## within twenty lines of each other, and they are the whole job for any axis keyed on
+## something fill_tire_context already carries — the contact's tarmac weight, whether the
+## region is snowy, or the stage weather. No consumer file changes for those.
+## An axis keyed on anything ELSE also needs that value added to fill_tire_context and to
+## its two fill sites; read the honest limit written on that function before you start.
+## An @export with no row applies as a permanent 1.0 (the part reads as fitted and does
+## nothing); tests/headless/test_tire_surface_axes.gd fails on exactly that.
 @export var tire_snow_grip_mult := 1.0
 @export var tire_tarmac_grip_mult := 1.0
+## THE REGISTRY of surface-dependent tyre axes — the one place that knows which
+## per-surface multipliers exist. Every consumer derives from this table rather than
+## naming the fields: tire_surface_mult_for() below (the live physics via
+## Drivetrain._surface_at and the AI field via LapTimeModel._surface_grip),
+## car.gd::_apply_physics_spec's neutral re-seed, and
+## car_performance.gd::merged_meta's carry list. That is why adding an axis touches
+## no file but this one.
+##   field   — the GameConfig property holding the live multiplier
+##   channel — which surface channel feathers it; the blend rule lives in
+##             _channel_weight, next to this table
+## Guarded BOTH WAYS by tests/headless/test_tire_surface_axes.gd: a row naming a
+## property that does not exist, and an export with no row, both fail there.
+const TIRE_SURFACE_AXES: Array[Dictionary] = [
+	{"field": "tire_snow_grip_mult", "channel": "snow"},
+	{"field": "tire_tarmac_grip_mult", "channel": "tarmac"},
+]
 ## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two
 ## different jobs: the low grip above makes the car SLIDE, this makes it BOG.
 ## Neither alone reads as deep snow.
@@ -705,6 +738,25 @@ func has_nitrous() -> bool:
 ## After a stall, how long (s) frames must flow normally again before music
 ## resumes from a clean start.
 @export var music_resume_stable_sec := 0.4
+
+@export_group("SFX")
+## Master switch for one-shot sound effects (the `Audio` autoload / scripts/audio.gd).
+## false = every Audio.play_* call is a silent no-op; the game runs unchanged.
+@export var sfx_enabled := true
+## Pitch (Hz) of the standard cue beep — what Audio.play_beep() uses when the caller
+## doesn't pass a frequency. Call sites should override this only when a cue is
+## deliberately a DIFFERENT pitch (e.g. a higher "GO" over the countdown ticks).
+@export var sfx_beep_frequency_hz := 880.0
+## Length (s) of the standard cue beep. Keep it short — this is a blip, not a tone.
+@export var sfx_beep_duration_sec := 0.12
+## Level (dB) of the standard cue beep, before any per-call offset. 0 = full scale.
+@export var sfx_beep_volume_db := -6.0
+## Exponential amplitude decay rate (per second) of the beep's tail. Higher = a
+## tighter, more percussive blip; 0 = a flat tone that stops abruptly.
+@export var sfx_beep_decay := 12.0
+## Synthesis/mix rate (Hz) for procedural SFX. Matches engine_audio.gd's MIX_RATE;
+## higher costs more CPU in the GDScript render loop for no audible gain on a blip.
+@export var sfx_mix_rate := 22050.0
 
 @export_group("Stage")
 ## Countdown length, in seconds, before the car's controls unlock at the start
@@ -3202,22 +3254,102 @@ func exhaust_locals_for(spec: Dictionary) -> PackedVector4Array:
 # (Drivetrain.surface_tire_params) and the lap-time model (LapTimeModel._surface_grip)
 # so the AI field can never diverge from the car the player is actually driving.
 #
-# Static, and takes the two multipliers as ARGUMENTS rather than reading its own
-# fields, because the two callers source them differently: physics reads the live
-# config the upgrade pipeline wrote, while the lap model is handed a car_meta for a
-# rival that may not be the player's car at all.
+# Static, and takes its `source` as an ARGUMENT rather than reading its own fields,
+# because the two callers source them differently: physics passes the live config the
+# upgrade pipeline wrote, while the lap model passes a car_meta for a rival that may not
+# be the player's car at all. Both work — see _tire_axis_value.
+#
+# Which axes exist, and how each blends, is TIRE_SURFACE_AXES plus _channel_weight —
+# not this function. Widening the set of axes must never need an edit here.
+#
+# `ctx` is the STAGE CONTEXT, built by fill_tire_context below. It is a Dictionary rather
+# than a parameter list on purpose: a new axis keyed on any condition the context already
+# carries needs no signature change and therefore no caller edit. See the note on
+# fill_tire_context for the one case that is NOT free.
+static func tire_surface_mult_for(source, ctx: Dictionary) -> float:
+	var out := 1.0
+	for axis in TIRE_SURFACE_AXES:
+		var w := _channel_weight(String(axis["channel"]), ctx)
+		if is_nan(w) or w <= 0.0:
+			continue
+		out *= lerpf(1.0, _tire_axis_value(source, String(axis["field"])), w)
+	return out
+
+
+# THE STAGE CONTEXT every channel rule reads from. Fills `ctx` IN PLACE and returns it, so
+# the per-wheel physics path can own one scratch Dictionary and allocate nothing per tick.
+#
+# It deliberately carries everything BOTH callers already have in hand at the call site —
+# the contact's tarmac weight, whether the region is snowy, and the stage weather — even
+# though no axis reads weather today. That is the point: adding a wet-weather axis is then
+# three edits in THIS FILE and nothing else.
+#
+# HONEST LIMIT, because the previous version of this comment over-promised and cost a
+# round: an axis keyed on something NOT in this dictionary (altitude, time of day, tyre
+# temperature) needs that value added here and at both fill sites too. Still no change to
+# the resolver or to any consumer's logic — but it is five edits across three files, not
+# three edits in one. Do not read "adding an axis is one file" as unconditional.
+static func fill_tire_context(ctx: Dictionary, tarmac_weight: float, snowy: bool,
+		weather: String) -> Dictionary:
+	ctx["tarmac"] = tarmac_weight
+	ctx["snowy"] = snowy
+	ctx["weather"] = weather
+	return ctx
+
+
+# How much of each channel this contact is on, read off the stage context. One arm per
+# registered channel; the exclusivity between them lives here, in one place.
 #
 # The snow bonus is all-or-nothing on the region (snow ground is snow ground, and the
 # packed-snow road is the same white stuff as the verge), while the tarmac penalty is
-# FEATHERED by the contact's tarmac weight — a gravel stage costs the compound
-# nothing, and a mixed stage costs it in proportion to the asphalt it actually crosses.
-# The two are exclusive: on a snow stage the "tarmac" channel is a dusting over
-# asphalt, so charging the tarmac penalty there would cancel the whole point of the part.
+# FEATHERED by the contact's tarmac weight — a gravel stage costs the compound nothing,
+# and a mixed stage costs it in proportion to the asphalt it actually crosses. They are
+# EXCLUSIVE: on a snow stage the "tarmac" channel is a dusting over asphalt, so charging
+# the tarmac penalty there would cancel the whole point of a winter compound.
+#
+# Returns NAN — not 0.0 — for a channel with no arm. A zero is indistinguishable from
+# "this contact simply isn't on that channel right now", which is why the guard test could
+# not tell an unregistered channel from an inactive one. NAN says "no rule exists", and
+# tests/headless/test_tire_surface_axes.gd asserts on exactly that.
+static func _channel_weight(channel: String, ctx: Dictionary) -> float:
+	match channel:
+		"snow":
+			return 1.0 if bool(ctx.get("snowy", false)) else 0.0
+		"tarmac":
+			return 0.0 if bool(ctx.get("snowy", false)) else clampf(float(ctx.get("tarmac", 0.0)), 0.0, 1.0)
+	# A channel with no blend rule contributes nothing on every stage, which is the silent
+	# no-op this registry exists to make impossible. Say so where it happens, not only in
+	# the guard test.
+	push_error("GameConfig.TIRE_SURFACE_AXES uses channel '%s', which _channel_weight has no rule for." % channel)
+	return NAN
+
+
+# One axis's live multiplier. `source` is either a GameConfig (the player's car, after
+# the upgrade pipeline has written it) or a car_meta Dictionary (a rival's, which may not
+# be the player's car at all); absent reads as the 1.0 identity, which is what makes the
+# whole mechanism an exact no-op for a car with no such compound fitted.
+static func _tire_axis_value(source, field: String) -> float:
+	if source is Dictionary:
+		return float(source.get(field, 1.0))
+	if source == null:
+		return 1.0
+	var v: Variant = source.get(field)
+	if v == null:
+		push_error("GameConfig.TIRE_SURFACE_AXES names '%s', which is not a GameConfig property." % field)
+		return 1.0
+	return float(v)
+
+
+# Two-axis compatibility shim over tire_surface_mult_for, kept because tests call this
+# arity directly. Production code goes through tire_surface_mult_for so that widening
+# TIRE_SURFACE_AXES needs no signature change anywhere — this shim deliberately sees
+# only the snow/tarmac pair it names.
 static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 		tarmac_weight: float, snowy: bool) -> float:
-	if snowy:
-		return snow_mult
-	return lerpf(1.0, tarmac_mult, clampf(tarmac_weight, 0.0, 1.0))
+	return tire_surface_mult_for({
+		"tire_snow_grip_mult": snow_mult,
+		"tire_tarmac_grip_mult": tarmac_mult,
+	}, fill_tire_context({}, tarmac_weight, snowy, RallyLibrary.WEATHER_DRY))
 
 
 func apply_car_light(mat: ShaderMaterial) -> void:

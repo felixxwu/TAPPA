@@ -103,7 +103,7 @@ is a genuine per-rally decision rather than a one-way upgrade. The snow side of 
 keyed off `GameConfig.ground_is_snow()`, which is simply `deep_snow_depth_m > 0.0` — i.e.
 "this region seated a deep-snow block", so there is no second snow flag to keep in sync.
 The AI field tracks it: `LapTimeModel._surface_grip` runs the same
-`GameConfig.tire_surface_mult`, off the rival's own meta.
+`GameConfig.tire_surface_mult_for`, off the rival's own meta.
 
 ## Relief: deliberately gentle
 

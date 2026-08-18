@@ -1,7 +1,7 @@
 class_name StageManager
 extends Node
-# Docs: features/stage.md — update in the same change as this file.
-# Tests: tests/headless/test_countdown_hold.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
+# Docs: features/stage.md, features/sfx.md, todo/audio.md — update in the same change as this file. (Audio cues in this file go through the `Audio` autoload — never a hand-rolled AudioStreamGenerator; see the AUDIO HOOK note at the GO transition.)
+# Tests: tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Owns the per-stage start/end flow on top of the always-live world:
 #   0. STAGING   — (optional) the car is locked while the pre-event start-line
 #      scene (briefing + presence cars, scripts/start_line.gd) holds, until the
@@ -253,8 +253,12 @@ func _tick_countdown(delta: float) -> void:
 	if _hud_can["show_countdown"]:
 		_hud.show_countdown(0.0)  # "GO"
 	_go_flash_left = GO_FLASH_SECONDS
-	# Audio hook (todo/audio.md): a countdown beep per tick + a GO sting would
-	# fire here once the Audio autoload exists; thin and silent until then.
+	# AUDIO HOOK — the countdown beep / GO sting belongs here (and per integer tick
+	# in the countdown branch above). DO NOT hand-roll an AudioStreamGenerator,
+	# AudioStreamPlayer or PCM loop in this file: call the `Audio` autoload —
+	# `Audio.play_beep()` for a tick, `Audio.play_beep(<higher hz>)` for GO. It owns
+	# the SFX bus, the headless guard and the play()/get_stream_playback() order.
+	# See scripts/audio.gd + features/sfx.md; the planned cue set is in todo/audio.md.
 	stage_started.emit()
 
 

@@ -1,6 +1,6 @@
 extends Node
 # Docs: features/lakes.md, features/rally-session.md — update in the same change as this file.
-# Tests: tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd, tests/headless/test_rally_library.gd, tests/headless/test_rally_session.gd — extend in the same change.
+# Tests: tests/headless/test_lake_field.gd, tests/headless/test_rally_library.gd, tests/headless/test_rally_session.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'rally_session' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Autoload "RallySession": the rally-level session orchestrator. One coordinator
 # that turns "the player picked rally R with owned car C" into the full loop —
 # field the car, run 3 events, accumulate times, place against the fixed opponent
@@ -61,6 +61,19 @@ var _event_results: Array = []         # this rally's generated track results, k
                                        # can be re-drawn without regenerating terrain (refield_opponents)
 var _fielded_rating := 0               # the player rating _opponent_field was matched to
 var _dnf := false
+# THE damage signal for the rally. Set the moment any event reports hp_lost > 0 (see
+# report_event_result) and cleared only when a rally STARTS, so it survives to resolve time
+# and is readable by took_damage_this_rally() / the `took_damage` field on the finish result.
+#
+# HP IS NOT A DAMAGE ORACLE and must never be used as one. Two independent reasons:
+#   1. _resolve_results calls _apply_field_repair() on its FIRST lines, before any reward
+#      logic runs — so a car that crashed all rally can read healthy by the time anything
+#      asks. Between-event repairs (_enter_event) do the same mid-rally.
+#   2. Cars routinely START a rally below max HP, because repairing at HQ costs stars. So
+#      `hp < max_hp` at resolve can be damage the player brought WITH them, not damage they
+#      took here — and `hp >= max_hp` is unreachable for such a car however cleanly it drove.
+# Anything asking "was this a clean run" must read this flag, not HP.
+var _took_damage_this_rally := false
 var _pending_repair: Dictionary = {}   # between-event pit-repair summary, shown once by the run scene (take_pending_repair)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 # Car-park detune-to-enter agreements are TEMPORARY, for this rally only:
@@ -195,6 +208,10 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 	_event_index = 0
 	_event_times_ms = []
 	_dnf = false
+	# A fresh rally is a clean sheet: whatever the car's HP is on arrival, no damage has been
+	# taken IN THIS RALLY yet. Reset HERE (rally start) rather than in _reset_to_idle, so the
+	# flag is still readable by anything inspecting the finish that just resolved.
+	_took_damage_this_rally = false
 	_pending_repair = {}
 	if skip_track_gen:
 		# TEST-ONLY path: no real track results are available; generate_opponent_field
@@ -354,7 +371,20 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	# HP persists at each event boundary. Only a fielded (bound) car has an instance
 	# to write back to. The damage + the upgrade write below share a single Save.save()
 	# at the end so a damaged non-final event doesn't serialise/write the file twice.
-	var damaged := _car_instance_id >= 0 and hp_lost > 0.0
+	# TWO SEPARATE FACTS, deliberately not folded into one boolean: whether the car was
+	# hurt, and whether we have a save slot to record it against. Anything asking "did the
+	# player take damage this rally" wants took_damage — an unbound car (no instance) still
+	# took the hit, it just cannot be persisted, and reading the combined flag as "was
+	# damaged" hands that car a clean-run record it did not earn.
+	var took_damage := hp_lost > 0.0
+	var can_persist := _car_instance_id >= 0
+	var damaged := took_damage and can_persist
+	# PERSIST the fact, not just the HP. This is the one moment the game knows damage
+	# happened; HP is repaired repeatedly afterwards (see _took_damage_this_rally), so if it
+	# is not recorded here it cannot be recovered at resolve time. Latched off took_damage
+	# (not `damaged`) on purpose: an unbound car still took the hit, it just has no save slot.
+	if took_damage:
+		_took_damage_this_rally = true
 	if damaged:
 		Save.apply_damage(_car_instance_id, hp_lost)
 	_event_index += 1
@@ -480,6 +510,9 @@ func report_wreck() -> void:
 	if _phase != Phase.RUNNING:
 		return
 	_dnf = true
+	# A wreck is the most damage there is, and it never routes through report_event_result —
+	# so latch the flag here too, or a wrecked rally would resolve reading "clean".
+	_took_damage_this_rally = true
 	# The bound damage model already removes the instance; calling again is a
 	# harmless no-op, but we own the destruction so report_wreck is correct even
 	# when driven directly (tests / an unbound caller).
@@ -528,6 +561,15 @@ func phase() -> int:
 
 func event_index() -> int:
 	return _event_index
+
+
+# Did the fielded car take ANY damage during the rally currently being run (or, read during
+# the finish beat, the one that just resolved)? THE clean-run question — ask this, never HP.
+#
+# See _took_damage_this_rally for why HP cannot answer it: field repairs run before resolve,
+# and cars start rallies already damaged because HQ repairs cost stars.
+func took_damage_this_rally() -> bool:
+	return _took_damage_this_rally
 
 
 # How many stages THIS rally runs — its own authored `events` list. Falls back to
@@ -730,6 +772,12 @@ func _resolve_results() -> void:
 	# the result is discarded rather than stashed in _pending_repair, so it never
 	# surfaces the between-event repair popup during the podium/results flow, which
 	# has its own reveal UI. See features/damage.md.
+	#
+	# NOTE FOR ANYONE WRITING A REWARD BELOW: this repair runs FIRST, before a single line
+	# of reward logic — so by the time anything downstream reads the car's HP, the damage
+	# this rally did has already been partly healed. HP IS NOT A DAMAGE SIGNAL here (and it
+	# is not one at rally start either: HQ repairs cost stars, so cars routinely enter a
+	# rally already damaged). Ask took_damage_this_rally() / the result's `took_damage`.
 	if _car_instance_id >= 0:
 		_apply_field_repair()
 	_set_phase(Phase.RESULTS)
@@ -760,11 +808,28 @@ func _resolve_results() -> void:
 	# Save.complete_rally: every other caller must keep the podium rule, and a flag on the
 	# shared function is an invitation to misuse it.
 	var opening_first := _is_opening_first_attempt()
-	var record_completion := top3 or opening_first
+	# NAME CARRIES THE GATE ON PURPOSE. This is NOT "the player finished" — it is
+	# "the player finished on the podium, or it is the opening rally's first attempt".
+	var podium_or_opening := top3 or opening_first
+	# "The player crossed the line at all" — a DNF is the only thing that is not a finish.
+	# This is the gate for the ANY-FINISH reward seam below.
+	var finished := not _dnf
 
 	# Upgrades are awarded per NON-FINAL event (in report_event_result), not at
 	# resolve. The podium reveals only the car reward below.
 	_set_phase(Phase.PODIUM)
+
+	# TWO REWARD SEAMS, deliberately separate — pick the one whose GATE your reward wants:
+	#   _award_podium_rewards      — pays only on a podium (or the opening rally's first
+	#                                attempt). Stars, the prize car, special unlocks.
+	#   _award_any_finish_rewards  — pays on ANY finish, podium or not. This is where a
+	#                                clean-run bonus, a stage-record bonus, or anything else
+	#                                that should not be podium-gated goes.
+	# They used to be one ~60-line `if podium_or_opening:` block, which meant every reward
+	# dropped anywhere near the reward logic silently inherited the podium gate.
+	var rewards := _award_podium_rewards(combined, placed, opening_first) if podium_or_opening else {}
+	var any_finish := _award_any_finish_rewards(combined, placed) if finished else {}
+
 	# The car a CAR-UNLOCK rally hands over, captured for the podium's CAR_REVEAL stage
 	# (the slot-machine reel + showroom turntable). "" for every other rally and for a
 	# re-win, which is what keeps the stage out of the podium's list.
@@ -772,117 +837,26 @@ func _resolve_results() -> void:
 	# This is the SAME pair the retired random draw fed, deliberately reused: the reveal
 	# beat is identical — a car you did not have is being delivered — so a second parallel
 	# result field would have meant two ways to say one thing and two podium code paths.
-	var car_reward := ""
-	var car_reward_is_new := false
-	var game_won_now := false
-	var special_unlock := {}
+	var car_reward := String(rewards.get("car_reward", ""))
+	var car_reward_is_new := bool(rewards.get("car_reward_is_new", false))
+	var game_won_now := bool(rewards.get("game_won", false))
+	var special_unlock: Dictionary = rewards.get("special_unlock", {})
 	# Stars this finish added to the ledger, and what the rally is now RATED. The two
 	# differ on a re-win: rating is what best_placed is worth, gained is the improvement
 	# (0 when the placement did not beat the previous best). The podium's stars beat shows
 	# the rating as gold stars and the gained figure as text — see todo/star-economy.md.
-	var stars_gained := 0
-	var star_rating := 0
-
-	if record_completion:
-		var rally_id := String(_rally.get("id", ""))
-		# Captured BEFORE complete_rally, which is what sets `completed` — afterwards the
-		# profile can no longer tell a first win from a re-win, and the unlock reveal must
-		# fire exactly once (todo/special-unlock-reveal.md).
-		var was_completed: bool = bool((Save.profile.get(Save.KEY_RALLIES, {}) as Dictionary)
-			.get(rally_id, {}).get("completed", false))
-		# complete_rally records the FIRST completion (idempotent) and returns the STARS it
-		# credited for THIS finish — every finish pays, so a replay pays again.
-		stars_gained = Save.complete_rally(rally_id, combined, placed)
-		star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
-		# A PART-UNLOCK rally's first win discovers the part garage-wide and hands one copy
-		# to the car that just earned it — cascading any prerequisite rungs that car is
-		# missing, so the award is usable (RewardSystem.grant_special_unlock).
-		#
-		# Keyed on the rally having a PART PRIZE (RallyLibrary.prize_part_id, derived from
-		# the upgrade's own unlocked_by_rally gate) rather than on `special`: what a rally
-		# awards is now its own property, and an ordinary rally may carry a part prize just
-		# as a special may carry none. `special` is a MARKER, not a reward tier.
-		#
-		# Discovery itself needs no new save state: UpgradeLibrary.rally_gate_met already
-		# reads "is the gating rally completed", and complete_rally above has just recorded
-		# exactly that. One fact, one place.
-		if not was_completed:
-			var unlocked := UpgradeLibrary.unlocked_by(rally_id)
-			if not unlocked.is_empty():
-				var item_id := String(unlocked.get("id", ""))
-				special_unlock = {
-					"item_id": item_id,
-					"granted": RewardSystem.grant_special_unlock(_car_instance_id, item_id),
-				}
-			elif rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
-				# A special may gate a CAPABILITY rather than a catalogue part, authored the
-				# other way round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) so it is not in
-				# UpgradeLibrary's index. It still gets announced — and it is the LOWEST rung,
-				# so without this branch the very first unlock a player earns would pass in
-				# silence. The map pin has always handled this case
-				# (hq.gd::_special_unlock_line); this mirrors it.
-				#
-				# Winning the rally IS the whole unlock now — swapping costs no consumable,
-				# so there is nothing to hand over alongside the announcement and `granted`
-				# is empty.
-				special_unlock = {
-					"item_id": "",
-					"capability": "engine_swap",
-					"granted": [],
-				}
-		# The endgame is completing EVERY special event on the star ladder — no designated
-		# final region (todo/star-gated-special-events.md). complete_rally() above has
-		# already recorded THIS special, so the last one to be won sees itself counted here
-		# and fires the credits; ordering matters and is why the check sits after it.
-		var is_final_special := RallyLibrary.is_special(_rally) \
-			and RallyLibrary.all_specials_completed(Save.profile)
-		if is_final_special:
-			# Every special is now done: fire the win/credits beat.
-			game_won_now = true
-			game_won.emit()
-		# A CAR-UNLOCK rally's first win hands over the car the whole field was driving.
-		# This is the ONLY way a car is earned: nothing is drawn at random and nothing is
-		# bought, so what the player owns is exactly what they went out and won.
-		#
-		# FIRST win only (`was_completed`), like the part award — re-running a prize rally
-		# pays stars again but cannot mint duplicate cars. The old model drew a random car
-		# on every top-3 INCLUDING re-wins, which both farmed cars off one easy rally and
-		# filled the garage with something for every class by about the fifth rally, after
-		# which no `restriction` band ever excluded the player from anything again.
-		# Simulation confirmed it — `revealed` and `eligible` were identical from rally 5 on.
-		var prize_car_id := RallyLibrary.prize_car_id(_rally)
-		if prize_car_id != "" and not was_completed:
-			# Guard the duplicate anyway: a re-authored roster could point two rallies at
-			# one car, and a garage holding the same model twice is a content bug the
-			# player would carry for good. test_no_two_rallies_award_the_same_car covers
-			# the roster; this covers the runtime.
-			if not Save.owns_model(prize_car_id):
-				var won_car := Save.grant_car(prize_car_id)
-				# Hand the new car to HQ to reveal in the present box. The car is already
-				# GRANTED here — the box is a presentation of something the player owns,
-				# not the transaction itself, so quitting before opening it cannot cost
-				# them the car.
-				pending_car_reveal_instance_id = int(won_car.get("instance_id", -1))
-				car_reward = prize_car_id
-				# Always NEW: the duplicate guard above means a car only ever arrives here
-				# the first time the player wins it.
-				car_reward_is_new = true
-				car_rewarded.emit(prize_car_id)
-		if opening_first:
-			# Arrive on the MAP, not the garage — the reveal is the point of this run.
-			return_to_map = true
-			# Mark the opening rally itself as already SEEN, so the arrival parade
-			# announces its NEIGHBOURS rather than replaying the rally the player has
-			# this second finished driving. Without this it would be first in the queue,
-			# and the map's opening beat would be news the player already has.
-			Save.mark_rally_revealed(rally_id, false)
-		Save.save()
+	var stars_gained := int(rewards.get("stars_gained", 0))
+	var star_rating := int(rewards.get("star_rating", 0))
 
 	var result := {
 		"placed": placed,
-		"completed": record_completion,
+		"completed": podium_or_opening,
 		"combined_ms": combined,
 		"dnf": _dnf,
+		# Did the car take ANY damage during this rally (the clean-run signal, latched at the
+		# moment damage happened — NOT derived from HP, which field repairs and a car that
+		# arrived already damaged both make unreadable). See _took_damage_this_rally.
+		"took_damage": _took_damage_this_rally,
 		"rally_id": String(_rally.get("id", "")),
 		"rally_name": String(_rally.get("name", "")),
 		# The owned-car instance the player just drove — the podium's upgrade reveal
@@ -907,9 +881,147 @@ func _resolve_results() -> void:
 		"car_reward_is_new": car_reward_is_new,
 		"game_won": game_won_now,
 	}
+	# Anything the any-finish seam paid out is reported alongside the podium fields. Empty
+	# today, so this merges nothing and the result is byte-for-byte what it always was.
+	result.merge(any_finish, true)
 	_last_result = result
 	_reset_to_idle()
 	rally_finished.emit(result)
+
+
+# Rewards that pay ONLY on a podium finish — or on the opening rally's first attempt, the
+# one carve-out (see _resolve_results). Stars, the prize car, and special/part unlocks.
+#
+# DO NOT put an any-finish reward in here: everything in this method is podium-gated by the
+# fact that the caller only calls it on a podium. _award_any_finish_rewards is the other seam.
+#
+# Returns the reward fields the finish result carries: car_reward, car_reward_is_new,
+# game_won, special_unlock, stars_gained, star_rating. Behaviour is exactly the old inline
+# `if podium_or_opening:` block — extracting it changed nothing but where it lives.
+func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> Dictionary:
+	var car_reward := ""
+	var car_reward_is_new := false
+	var game_won_now := false
+	var special_unlock := {}
+	var stars_gained := 0
+	var star_rating := 0
+	var rally_id := String(_rally.get("id", ""))
+	# Captured BEFORE complete_rally, which is what sets `completed` — afterwards the
+	# profile can no longer tell a first win from a re-win, and the unlock reveal must
+	# fire exactly once (todo/special-unlock-reveal.md).
+	var was_completed: bool = bool((Save.profile.get(Save.KEY_RALLIES, {}) as Dictionary)
+		.get(rally_id, {}).get("completed", false))
+	# complete_rally records the FIRST completion (idempotent) and returns the STARS it
+	# credited for THIS finish — every finish pays, so a replay pays again.
+	stars_gained = Save.complete_rally(rally_id, combined, placed)
+	star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
+	# A PART-UNLOCK rally's first win discovers the part garage-wide and hands one copy
+	# to the car that just earned it — cascading any prerequisite rungs that car is
+	# missing, so the award is usable (RewardSystem.grant_special_unlock).
+	#
+	# Keyed on the rally having a PART PRIZE (RallyLibrary.prize_part_id, derived from
+	# the upgrade's own unlocked_by_rally gate) rather than on `special`: what a rally
+	# awards is now its own property, and an ordinary rally may carry a part prize just
+	# as a special may carry none. `special` is a MARKER, not a reward tier.
+	#
+	# Discovery itself needs no new save state: UpgradeLibrary.rally_gate_met already
+	# reads "is the gating rally completed", and complete_rally above has just recorded
+	# exactly that. One fact, one place.
+	if not was_completed:
+		var unlocked := UpgradeLibrary.unlocked_by(rally_id)
+		if not unlocked.is_empty():
+			var item_id := String(unlocked.get("id", ""))
+			special_unlock = {
+				"item_id": item_id,
+				"granted": RewardSystem.grant_special_unlock(_car_instance_id, item_id),
+			}
+		elif rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+			# A special may gate a CAPABILITY rather than a catalogue part, authored the
+			# other way round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) so it is not in
+			# UpgradeLibrary's index. It still gets announced — and it is the LOWEST rung,
+			# so without this branch the very first unlock a player earns would pass in
+			# silence. The map pin has always handled this case
+			# (hq.gd::_special_unlock_line); this mirrors it.
+			#
+			# Winning the rally IS the whole unlock now — swapping costs no consumable,
+			# so there is nothing to hand over alongside the announcement and `granted`
+			# is empty.
+			special_unlock = {
+				"item_id": "",
+				"capability": "engine_swap",
+				"granted": [],
+			}
+	# The endgame is completing EVERY special event on the star ladder — no designated
+	# final region (todo/star-gated-special-events.md). complete_rally() above has
+	# already recorded THIS special, so the last one to be won sees itself counted here
+	# and fires the credits; ordering matters and is why the check sits after it.
+	var is_final_special := RallyLibrary.is_special(_rally) \
+		and RallyLibrary.all_specials_completed(Save.profile)
+	if is_final_special:
+		# Every special is now done: fire the win/credits beat.
+		game_won_now = true
+		game_won.emit()
+	# A CAR-UNLOCK rally's first win hands over the car the whole field was driving.
+	# This is the ONLY way a car is earned: nothing is drawn at random and nothing is
+	# bought, so what the player owns is exactly what they went out and won.
+	#
+	# FIRST win only (`was_completed`), like the part award — re-running a prize rally
+	# pays stars again but cannot mint duplicate cars. The old model drew a random car
+	# on every top-3 INCLUDING re-wins, which both farmed cars off one easy rally and
+	# filled the garage with something for every class by about the fifth rally, after
+	# which no `restriction` band ever excluded the player from anything again.
+	# Simulation confirmed it — `revealed` and `eligible` were identical from rally 5 on.
+	var prize_car_id := RallyLibrary.prize_car_id(_rally)
+	if prize_car_id != "" and not was_completed:
+		# Guard the duplicate anyway: a re-authored roster could point two rallies at
+		# one car, and a garage holding the same model twice is a content bug the
+		# player would carry for good. test_no_two_rallies_award_the_same_car covers
+		# the roster; this covers the runtime.
+		if not Save.owns_model(prize_car_id):
+			var won_car := Save.grant_car(prize_car_id)
+			# Hand the new car to HQ to reveal in the present box. The car is already
+			# GRANTED here — the box is a presentation of something the player owns,
+			# not the transaction itself, so quitting before opening it cannot cost
+			# them the car.
+			pending_car_reveal_instance_id = int(won_car.get("instance_id", -1))
+			car_reward = prize_car_id
+			# Always NEW: the duplicate guard above means a car only ever arrives here
+			# the first time the player wins it.
+			car_reward_is_new = true
+			car_rewarded.emit(prize_car_id)
+	if opening_first:
+		# Arrive on the MAP, not the garage — the reveal is the point of this run.
+		return_to_map = true
+		# Mark the opening rally itself as already SEEN, so the arrival parade
+		# announces its NEIGHBOURS rather than replaying the rally the player has
+		# this second finished driving. Without this it would be first in the queue,
+		# and the map's opening beat would be news the player already has.
+		Save.mark_rally_revealed(rally_id, false)
+	Save.save()
+	return {
+		"car_reward": car_reward,
+		"car_reward_is_new": car_reward_is_new,
+		"game_won": game_won_now,
+		"special_unlock": special_unlock,
+		"stars_gained": stars_gained,
+		"star_rating": star_rating,
+	}
+
+
+# Rewards that pay on ANY finish — podium or not. The counterpart seam to
+# _award_podium_rewards, called by _resolve_results AFTER the podium gate has closed, for
+# every non-DNF result.
+#
+# THIS IS THE PLACE for a reward that must not be podium-gated: a clean-run bonus (ask
+# took_damage_this_rally() / _took_damage_this_rally — never HP, see that field's note), a
+# stage-record bonus, a finisher's participation payout. Return the fields it wants merged
+# into the finish result; the caller merges them over the podium fields.
+#
+# EMPTY TODAY, on purpose. There are no any-finish rewards yet — the seam exists so the next
+# one has an obvious home with the right gate, instead of being dropped into the podium block
+# and silently inheriting a gate it did not want.
+func _award_any_finish_rewards(_combined: int, _placed: int) -> Dictionary:
+	return {}
 
 
 # Is the rally being resolved this player's OPENING rally, on its first attempt?

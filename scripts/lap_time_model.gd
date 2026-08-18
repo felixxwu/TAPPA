@@ -1,7 +1,7 @@
 extends RefCounted
 class_name LapTimeModel
 # Docs: features/car-performance.md, features/rival-ghost.md — update in the same change as this file.
-# Tests: tests/headless/test_car_performance.gd, tests/headless/test_ghost_car.gd, tests/headless/test_ghost_car_display.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_lap_time_model.gd, tests/headless/test_rival_pace.gd — extend in the same change.
+# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_lap_time_model.gd, tests/headless/test_rival_pace.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'LapTimeModel' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 
 # Quasi-steady-state (QSS) lap-time model. Treats the car as a point mass that
 # follows the centerline exactly, subject to its real forces (power, weight, drag,
@@ -388,14 +388,12 @@ static func _surface_grip(car_meta: Dictionary, event: Dictionary, skill_grip_mu
 	var cfg: GameConfig = Config.data
 	var mu := base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
 	# The fitted tyre's SURFACE-DEPENDENT term, through the same rule the live physics
-	# uses (GameConfig.tire_surface_mult) so a snow compound moves the AI field exactly
+	# uses (GameConfig.tire_surface_mult_for) so a snow compound moves the AI field exactly
 	# as it moves the player. Read off car_meta, not the live config, because this solves
 	# for a RIVAL's car as often as the player's; absent (every car without such a
 	# compound) reads as the 1.0 identity, which makes this an exact no-op there.
-	mu *= GameConfig.tire_surface_mult(
-		float(car_meta.get("tire_snow_grip_mult", 1.0)),
-		float(car_meta.get("tire_tarmac_grip_mult", 1.0)),
-		tarmac, cfg.ground_is_snow())
+	mu *= GameConfig.tire_surface_mult_for(car_meta, GameConfig.fill_tire_context(
+		{}, tarmac, cfg.ground_is_snow(), RallyLibrary.event_weather(event)))
 	# Unconditional: WeatherLibrary resolves dry (and any unknown string) to exactly
 	# 1.0, so there is no per-condition branch here and a new condition needs no edit.
 	# skill_grip_mult is the ghost's driver-skill term (1.0 = no-op); it multiplies the

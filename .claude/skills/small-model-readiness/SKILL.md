@@ -53,15 +53,21 @@ each step to see what's next. (One exception: a **structural round** — declare
 per §2.6 when an overdue layer-1 fix needs the whole round — skips steps 3–7 and
 spends the round on that fix; steps 1–2 and 9–12 still apply in full.)
 
-1.  Verify preconditions; re-measure size (§2.0)
+1.  Verify preconditions; resolve test mode, asking if unset (§0.5, §2.0);
+    re-measure size
 2.  **Open `rounds/NNN.md` NOW; append to it at every step below** (§2.0)
 3.  Retire / replenish / sample ~5 tasks (§2.1)
 4.  Create + seed + verify one worktree per task, then dispatch probes (§2.2)
-5.  Run each probe's `expected_tests` — you, serially, in its worktree (§2.3)
+5.  Run each probe's `expected_tests` — you, serially, in its worktree (§2.3;
+    skipped under test mode `none`)
 6.  Grade each diff, 4 axes (§2.4)
 7.  Taxonomise every failure into a cause (§2.5)
 8.  Fix top 1–3 causes in the main checkout, layer coverage per fix (§2.6)
-9.  Closing full suite — unconditional, red is yours to fix (§2.7)
+8a. **Durability pass — make each fix survive the NEXT file** (§2.6a). Not
+    optional and not foldable into step 8: a fix applied to today's files decays
+    the moment someone adds one.
+9.  Closing suite per test mode — full under `fast+full`, `--fast` blast-radius
+    under `fast`, skipped under `none`; any red is yours to fix (§2.7)
 10. Mechanical post-checks (§2.8) + Totals conservation (§2.9)
 11. Tear down every probe worktree (§2.10)
 12. Finish the report; update bank/backlog/baseline; print CONTINUE/STOP (§2.11)
@@ -71,12 +77,15 @@ spends the round on that fix; steps 1–2 and 9–12 still apply in full.)
 - **Sole occupancy.** No other agent is working in this checkout. This is what
   makes "any red test is ours — fix it" safe. If the user says others are
   working, stop and say so.
-- **The tree is green on entry.** At loop start you establish that with one full
-  run (step 0). On every later round the previous round's closing run is the
-  baseline — do NOT re-run the suite at the start of a round, or you run it twice
-  back-to-back for the same answer.
-- **Exactly one full-suite run per round**, at the end. Per-attempt checks are
-  targeted `--fast` selections.
+- **The tree is green on entry — as deep as the test mode proves.** Under
+  `fast+full` (§0.5) that is the previous round's closing full run, established
+  at loop start by the P4 baseline; do NOT re-run the suite at the start of a
+  round — that runs it twice back-to-back for the same answer. Under `fast` the
+  invariant is only `--fast`-deep; under `none` it is unverified and the reports
+  must say so.
+- **At most one full-suite run per round**, at the end, and only under
+  `fast+full`. Per-attempt checks are targeted `--fast` selections. Which runs
+  happen at all is the user's test-mode choice (§0.5), never yours.
 
 ## 0. Preconditions — verify, never self-install
 
@@ -98,7 +107,8 @@ grep -q 'small-model-readiness' CLAUDE.md && echo 'P2 ok' || echo 'P2 MISSING'
 If any reports missing, **stop and tell the user which one** — do not fix it and
 do not proceed.
 
-**P4 — the green baseline (first run only).** One full `./run_tests.sh`; record
+**P4 — the green baseline (first run only; skipped under test mode `none`,
+see §0.5).** One full `./run_tests.sh`; record
 the pass/fail set and wall-clock in `evals/small-model/baseline.md`. If it is not
 green, stop and report — never probe against a red tree. The suite has been over
 the ~5 min budget at every measurement so far; `features/testing.md` carries the
@@ -109,6 +119,32 @@ against an absolute.
 **Scaffolding (first run only)** — these are the loop's own files, yours to
 create without asking: `evals/small-model/{tasks.md,solved.md,baseline.md,rounds/}`
 and `todo/small-model-readiness.md`. Then author the seed bank per §1.
+
+## 0.5 Test mode — ask once, then honour it
+
+Testing during rounds is **optional and user-chosen**. On the first round (or
+whenever `evals/small-model/test-mode.md` is missing), ask the user — one
+question, three options — and persist the answer to that file so `/loop`-driven
+rounds do not re-ask:
+
+- **`fast+full`** — per-attempt `--fast` runs (§2.3) AND the closing full suite
+  every round (§2.7). The full behaviour this skill was written for.
+- **`fast`** — per-attempt and blast-radius `--fast` runs only; **no closing
+  full suite**. Cheaper per round. Honest costs, stated in every report: the
+  green-tree invariant is only `--fast`-deep, order-dependent cross-file leakage
+  goes undetected (this repo's characteristic failure), Totals conservation
+  (§2.9) cannot run, and the runtime baseline goes stale.
+- **`none`** — no test execution at all. The correctness axis (§2.4) is graded
+  by inspection of the diff alone and must be reported as such; red tests can
+  accumulate silently across rounds. The mechanical post-checks (§2.8) still
+  run — they are greps and a project-load, not tests — and P4's one-off baseline
+  is skipped.
+
+The user can change mode at any time by editing or deleting `test-mode.md` (the
+next round re-asks). Every round report states the mode it ran under. When a
+round under `fast` or `none` makes a wide or cross-cutting change, say in the
+report that a full run is OWED and recommend the user schedule one — do not
+silently upgrade the mode yourself.
 
 ## 1. The task bank
 
@@ -170,7 +206,9 @@ echo "scripts: $(find scripts -name '*.gd' | wc -l) files, $(find scripts -name 
 find scripts tests -name '*.gd' -exec wc -l {} + | sort -rn | sed -n '2,11p'
 ```
 
-The tree is green on entry by the invariant. **Do not run the suite here.**
+The tree is green on entry as deep as the test mode proves (see Assumptions).
+**Do not run the suite here** in any mode. Resolve the test mode now: read
+`evals/small-model/test-mode.md`, or ask the user per §0.5 if it is missing.
 
 ### 2.1 Sample
 
@@ -243,6 +281,9 @@ untrustworthy and the main tree needs inspecting before the round continues.
 
 ### 2.3 Run
 
+**Test mode `none`: skip this step** — record "not run (mode: none)" per attempt
+and grade correctness by inspection. Otherwise:
+
 You, serially, holding the lock. Never concurrently — `run_tests.sh`'s watchdog
 has historically fallen back to `pkill -f gut_cmdln.gd`, which kills every Godot
 test process on the machine including the user's.
@@ -271,7 +312,8 @@ results; **it does not run anything**. Four axes, 0–3:
 
 - **navigation** — did it find the right code?
 - **correctness** — does the change work; do `expected_tests` pass *relative to
-  baseline*?
+  baseline*? (Under test mode `none` this is graded from the diff alone — say so
+  in the score's note; a 3 by inspection is weaker evidence than a 3 by run.)
 - **convention** — `features/` updated and indexed, config values in the right
   place, and the probe's **newly written tests** checked against
   `test_conventions`?
@@ -356,6 +398,43 @@ cost with it — in a test-forbidden round, that means applying the §2.4
 repo-wide grep discipline to your own change, or deferring the fix to a
 structural round rather than shipping it unverified.
 
+**Make the correct path CHEAP; do not merely forbid the cheap wrong one.** These
+agents complete what is cheap and stop at their own model of "done" — which is a
+better predictor of what they skip than how prominently anything is stated. So a fix
+that BANS a shortcut without supplying an equally cheap correct route does not remove
+the failure, it relocates it. Round 007 told probes to prefer adding a rally over
+retagging one; round 008's probe obeyed, found authoring a rally meant discovering a
+schema in another file, and tagged nothing at all — its own report said it knew. If
+you take away the one-token path, ship a paste-and-edit template in its place, and
+make the guard's failure message hand back the patch rather than a complaint.
+
+**Prefer deleting an obligation over describing it.** Before writing another note,
+ask whether the obligation should exist. Round 006 added per-element named tests so a
+membership change would fail a test named after the thing changed; that worked once,
+then made the constant's own "this is a one-line edit" promise false and got skipped.
+The fix was to DELETE those tests — they pinned a product choice, which this project's
+own rules forbid — leaving the membership-driven test that needs no edit ever. A
+three-part change became two.
+
+**Notes at the edit site have a ceiling, and you will hit it.** §2.6a's ranking is not
+decoration: by round 008 the `REGIONS` table carried a ~30-line comment block that
+probes demonstrably READ and still did not fully obey, while the one intervention with
+a clean before/after — a machine-checkable doc guard — worked the first round it
+existed. When a note has failed twice, the next fix must be an executable check or a
+deleted obligation, never a third note. Count the comment lines you are adding and
+delete what your addition makes redundant.
+
+**Probes cannot run tests, so a test-based ratchet is invisible to them mid-task —
+and that is fine.** Twice in round 008 the completeness gate existed and fired, and
+the probe shipped anyway because it could not see red. Do not read that as the guard
+failing: the guard protects the REPO, which is the actual goal, and a real user's
+model would run the suite. But it does mean this loop measures "can a small model get
+it right BLIND", which is strictly harder than reality, so **the scores understate
+readiness** — say so when reporting them, and never fix a cause by making the probe
+smarter about tests it is not allowed to run. If an agent knows it left work undone
+and hands back anyway (round 008's T003 wrote the gap into its own report), no note
+can fix that; only a stopping condition it cannot self-certify past.
+
 **Structural rounds.** A real layer-1 restructuring competes for the round with
 probing, grading, and reporting — that schedule pressure is exactly what makes
 the cheap option attractive. When the mechanical three-round trigger above has
@@ -379,6 +458,8 @@ Rules of thumb the fix step must apply, learned the expensive way (round 003):
   same round.** A convention without a guard is the half-fix pattern in a new
   coat (round 003 added `# Docs:`/`# Tests:` breadcrumbs to 82 scripts with
   nothing checking that new scripts get one or that the pointers stay live).
+  §2.6a is where you prove this per fix — and note that the guard must cover the
+  files that do not exist yet, not merely validate the ones you just edited.
 - **A name that lies about its metric is a priority refactor, not a backlog
   item.** Rename it and leave a one-line deprecated wrapper for compatibility —
   the shim makes the rename cheap, and documentation of a lying name only
@@ -388,11 +469,79 @@ Rules of thumb the fix step must apply, learned the expensive way (round 003):
   small model will not triage; cap it at the 2–3 primary ones.
 
 State in the round report, per fix, which layers it covers and why the ones it
-skips are skipped.
+skips are skipped — and, per §2.6a, what carries it forward to files that do not
+exist yet.
+
+### 2.6a Durability — will this fix still be true in fifty files' time?
+
+**The question this step exists to force:** *what happens to my fix when someone
+adds a new file, a new menu, a new catalogue row, a new setting tomorrow?* A fix
+that improves the 82 files that exist today and says nothing about the 83rd has
+bought a decaying asset. The codebase drifts back, the next round re-discovers the
+same cause, and the round after that "fixes" it again with a longer comment.
+
+This is the sweep-versus-ratchet distinction, and it is the single most common way
+this loop wastes a round:
+
+- A **sweep** changes the files that exist now. Breadcrumbs added to 82 scripts.
+  A stale value corrected in four docs. A note planted at six call sites.
+- A **ratchet** makes the property true of files that do not exist yet. It has
+  teeth: something FAILS when the property is violated, and the failure names the
+  fix.
+
+**A sweep without a ratchet is half a fix, and must be reported as one.** Round 003
+swept `# Docs:`/`# Tests:` breadcrumbs into 82 scripts with nothing requiring the
+83rd to have one; round 005 had to come back and cap the lists AND guard them. That
+round-trip is the cost of skipping this step.
+
+For **every** fix in §2.6, write down in the round report which of these carries it
+forward — and if the answer is "nothing", say so explicitly rather than letting it
+pass as done:
+
+1. **An enforcement test** — the strongest, and the default. It runs in CI, it
+   fails loudly, and the failure message can name the fix. Prefer a test that
+   derives its subject list from the filesystem or a registry (`every script in
+   scripts/`, `every row in REGIONS`) over one that hardcodes today's list — a
+   hardcoded list is itself a sweep and rots identically.
+2. **A structural impossibility** — the failure mode cannot be written. A registry
+   that must be extended for the feature to work at all beats any test, because
+   there is nothing to remember. This is layer 1 of §2.6 and the best answer when
+   it is available.
+3. **A copyable sibling** — a one-concern template file, or a canonical example the
+   convention points at. Small models clone neighbours; make the nearest neighbour
+   correct. Note that a sibling only propagates a pattern if the NEW file is
+   plausibly created by copying it.
+4. **A point-of-use note** — the weakest, and acceptable only where nothing above
+   can apply (e.g. a fact about a value a test may not assert). Never let a note be
+   the sole durability mechanism for a convention about FILES; a new file does not
+   contain the note.
+5. **`CLAUDE.md`** — project-wide rules a person will read. Real, but remember the
+   loop's own evidence: a small model under context pressure does not reliably read
+   it, which is why `CLAUDE.md` is a supplement to a test and not a substitute.
+
+**The baseline-allowlist ratchet.** When a property should hold for all future files
+but does not hold for all current ones, do not give up on the ratchet and do not
+"fix everything first". Freeze the current violators in an explicit exemption list
+inside the enforcement test, and assert two things: anything NOT on the list must
+comply (so every new file complies by default), and anything ON the list that has
+since started complying must be REMOVED from it (so the list can only shrink and
+cannot silently absorb new violations). This converts an unfinishable sweep into a
+ratchet that tightens on its own.
+
+**Ask it of the convention, not just the code.** If the fix introduced a rule
+("breadcrumbs name at most 3 tests", "reward amounts are GameConfig knobs"), the
+rule itself needs a home where the next author meets it — the enforcement test's
+failure message is usually the best one, because it is delivered exactly when it is
+needed and cannot be skipped.
 
 ### 2.7 Verify
 
-The round's **one** full-suite run. It is **unconditional** — the next round
+**Mode-dependent.** Under `none`: skip, and record that the round closed
+unverified. Under `fast`: run `--fast` across the round's blast radius instead
+of the full suite, and state in the report what a full run would additionally
+have covered. Under `fast+full`:
+
+The round's **one** full-suite run. It is **unconditional** under this mode — the next round
 inherits this run as its green baseline and does not re-establish it, so a round
 that skips it leaves the invariant unproven and the loop blind.
 
@@ -434,7 +583,8 @@ deliberately changed it.
 
 ### 2.9 Conserve
 
-Any round touching test files records GUT's `Totals` (Tests **and** Asserts)
+Requires a full-suite run, so `fast+full` mode only — under other modes record
+the delta as UNVERIFIED. Any round touching test files records GUT's `Totals` (Tests **and** Asserts)
 before and after, and justifies any delta. A test moved into a file that misses
 `-gdir`/`test_*.gd` discovery, or that loses its `extends SimTest`/`before_all`,
 silently stops running and **reports as a pass** — step 2.7 cannot detect it.
@@ -455,7 +605,10 @@ changed by construction.
 end with: re-measured counts, sampled tasks, per-attempt
 scores, retirements, the cause taxonomy, causes fixed, what changed,
 `git status --porcelain -uall` (**not** `git diff --stat` — it omits the new
-files the fix step creates), and every private symbol renamed. Update
+files the fix step creates), every private symbol renamed, and **a durability line
+per fix** (§2.6a): sweep or ratchet, and if a sweep, what makes the next file
+comply. A fix whose durability line reads "nothing" is carried into the backlog as
+unfinished, not filed under Fixed. Update
 `todo/small-model-readiness.md`, `solved.md`, and reconcile rubrics.
 
 **Rubric reconciliation is round-blocking.** The fix step renames and splits the

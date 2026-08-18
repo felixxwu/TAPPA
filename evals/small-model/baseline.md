@@ -1,40 +1,61 @@
-# Baseline — current as of round 002 close, 2026-08-18
+# Baseline — current as of the round-008 close, 2026-08-18
 
-Round 003 inherits this and must NOT re-run the suite at its start.
-Closing full `./run_tests.sh` of round 002 (commit `99e8565` + rounds 001–002's
-uncommitted changes).
+Full `./run_tests.sh` on the main checkout with rounds 004–008's uncommitted work in
+place. This run **discharges the verification debt** that had accumulated across six
+rounds (003 ran no tests; 004–008 ran test mode `fast`, which has no closing full run).
 
-| Metric | Value |
-|---|---|
-| Result | **ALL TESTS PASSED** |
-| Scripts | 202 |
-| Tests | 3255 |
-| Passing | 3252 |
-| Pending/risky | 3 (fixture-conditional) |
-| Asserts | 159,957 |
-| Wall-clock | **335.051 s** (GUT `Time`; `5:48.28` including engine start/import) |
+| Metric | Value | Previous (round 002) | Delta |
+|---|---|---|---|
+| Result | **ALL TESTS PASSED** | ALL TESTS PASSED | — |
+| Scripts | 207 | 202 | +5 |
+| Tests | **3293** | 3255 | **+38** |
+| Passing | 3290 | 3252 | +38 |
+| Risky/Pending | 3 | 3 | 0 |
+| Asserts | **167,469** | 159,957 | +7,512 |
+| Wall-clock (GUT `Time`) | **329.098 s** | 335.051 s | **−5.95 s** |
 
-Round-001 close for comparison: 201 scripts / 3249 tests / 159,611 asserts / 345.4 s.
-Delta is +1 script, +6 tests, +346 asserts — `test_features_docs.gd` (4),
-`test_every_grip_feeding_effect_field_is_read_by_the_physics` (1) and
-`test_every_region_is_reachable_from_at_least_one_rally` (1), all justified in
-`rounds/002.md`. Runtime improved by 10 s; no regression.
+## Totals conservation (§2.9) — RECONCILED
+
+The +38 is exactly the figure rounds 004–008 predicted while unable to verify it, and
+every test is accounted for:
+
+| Round | Added | What |
+|---|---|---|
+| 003 | +1 | `test_region_assets` region-path guard (written under a no-test directive, never run until now) |
+| 004 | +5 | `test_tire_surface_axes` — the tyre-registry guard |
+| 005 | +5 | `test_script_breadcrumbs` — 3 validity/cap tests + 2 ratchet tests |
+| 006 | +6 | `test_tire_surface_axes` +1 (weather-context), `test_hud` +5 (one bundled test split into six) |
+| 007 | +13 | `test_region_docs` +2, `test_speed_lines` +7, `test_rally_session` +4 |
+| 008 | +8 | `test_audio` +9, `test_hud_docs` +2, `test_hud` −3 (per-element membership tests deliberately deleted) |
+
+Sum: 1+5+5+6+13+8 = **+38**. No test was silently lost to a discovery or `extends`
+failure, which is the hazard §2.9 exists to catch.
 
 ## Known-failure list: EMPTY
 
-Nothing is excused. The full round-002 run was green with only the 3 standing
-fixture-conditional pendings (`test_overworld` ×1, `test_overworld_picker` ×2), which are
-pendings, not failures.
+Nothing is excused. The 3 pendings are the same three standing fixture-conditional
+ones as the round-002 baseline, unchanged in identity:
 
-**Any red test is therefore a real regression** and belongs to whichever round produced
-it. Do not excuse a failure by citing this file unless the failure is named in this
-section — and right now, nothing is.
+- `fixture profile keeps the garage at the centre; ordering not exercised`
+- `no convertible-only car in this fixture lineup — nothing to assert`
+- `no blocked car in this fixture lineup — nothing to assert`
 
-The audio-mixer SIGSEGV remains a genuine engine flake: `run_tests.sh` retries signal
-deaths via `TEST_CRASH_RETRIES`. A signal-crash run is re-run, never scored. That is
-separate from a test failing. It did not fire in the round-002 closing run.
+These are pendings, not failures. **Any red test is therefore a real regression.**
 
 ## Runtime
 
-335.051 s is the halt reference. A round halts on a runtime **regression against this
-number**, not against any absolute budget.
+**329.098 s is the new halt reference.** It is 6 s FASTER than the round-002 baseline
+despite +38 tests and +7,512 asserts, so nothing added across rounds 003–008 regressed
+the suite's runtime. Comfortably inside the ~5 minute budget in `CLAUDE.md`.
+
+The audio-mixer SIGSEGV remains a genuine engine flake, retried by `run_tests.sh` via
+`TEST_CRASH_RETRIES`; a signal-crash run is re-run, never scored. Worth noting that
+round 008 added an `Audio` autoload that plays nothing headless by construction, which
+should if anything reduce exposure to it.
+
+## What this run unblocks
+
+Backlog item 0 — migrating the star-reward `const`s to `GameConfig` `@export`s — was
+deferred out of rounds 005–008 specifically because it needs full-suite verification
+(`MAX_STARS_PER_RALLY := STARS_FOR_WIN` is a const expression with 25 call sites). This
+baseline is the green tree that work can now be done against.

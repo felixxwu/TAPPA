@@ -26,18 +26,17 @@ default and toggled with **H** (`toggle_debug_arrows`) — the same gate as the 
 force arrows, and like them honoured only in a debug build (release/web ignore the
 key). Their text keeps refreshing while hidden, so it's correct the instant H
 reveals it. See [debug-tools.md](debug-tools.md).
-| `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
-| `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (**top-left corner**) |
-| Pacenote strip | current turn + upcoming queue (arrow boards) | driven by `StageManager` (top centre, code-built) |
-| `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
-| `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
-| `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
-| `OffRoadLabel` | `OFF TRACK  n.n` — seconds until the off-track reset snaps the car back | driven by `StageManager` (centre screen, code-built) |
-| `NitrousGauge` | radial ring gauge (`HudGauge`, see below) whose fill is the tank fraction left, NOS-bottle icon in the hole | `car.drivetrain.engine` (violet; hidden when no nitrous is fitted) |
-| `BoostGauge` | radial ring gauge whose fill is the live boost fraction, dial icon in the hole | `car.drivetrain.engine` (blue; hidden on an NA car) |
-| `HPGauge` | radial ring gauge whose fill is `hp / max_hp`, cross icon in the hole | `car.damage` (colour-graded green→amber→red) |
-| `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
-| `GripGrid` | 2x2 `FL/FR/RL/RR <n>%` — how far up its grip curve each tire is (100% = on the limit, higher = sliding) | `car.drivetrain.readouts[wheel].grip` (dev diagnostic, H gate, code-built) |
+
+**Membership is data, in one place.** `hud.gd` → `DEBUG_READOUT_NODES` is the single
+source of truth for which elements the H key gates. **Read the current membership
+from that constant — this doc deliberately does not list it**, because a second copy
+of a list is a second thing to rot, and it did: this section named `GearLabel` as a
+member for a full round after it stopped being one. `tests/headless/test_hud.gd`
+binds to the same constant (it iterates it rather than naming labels) and adds a
+per-element contract named after each element, so **moving an element in or out of
+the overlay is a one-line edit to `DEBUG_READOUT_NODES`** and the per-element test
+that names it will report the change. Update this section's prose and
+`features/debug-tools.md` in the same change.
 
 `GripGrid` is code-built and stacked below the seed label, on the same **H** gate as the
 readouts above — a **2x2** grid of per-tire grip figures, one cell per corner. See

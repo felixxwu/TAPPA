@@ -656,9 +656,9 @@ func test_every_effect_target_name_exists() -> void:
 # no catalogue entry — it iterates EFFECTS as opaque input, so retuning stays green.
 #
 # If you are here because this test went red: you added a surface-dependent tyre term.
-# The surface blend is a CLOSED PAIR (GameConfig.tire_surface_mult takes exactly a snow
-# and a tarmac multiplier), so a third surface axis is a real change to that function and
-# its call sites in drivetrain.gd, not just another @export.
+# Those are consumed GENERICALLY, so no reader source mentions them by name — register
+# the field in GameConfig.TIRE_SURFACE_AXES (see the note on that table) and this test
+# accepts it. tests/headless/test_tire_surface_axes.gd then guards the registry itself.
 const GRIP_READER_SOURCES := [
 	"res://scripts/drivetrain.gd",
 	"res://scripts/lap_time_model.gd",
@@ -687,8 +687,17 @@ func test_every_grip_feeding_effect_field_is_read_by_the_physics() -> void:
 		# not by the physics source, and is covered by the existence guard above.
 		if field == "" or not cfg_names.has(field):
 			continue
-		assert_true(sources.find(field) != -1,
+		# Two routes to being read, and both count. Either a reader mentions the field by
+		# name, or it is registered in GameConfig.TIRE_SURFACE_AXES — the surface axes are
+		# consumed by iterating that table, so the readers name none of them.
+		var registered := false
+		for axis in GameConfig.TIRE_SURFACE_AXES:
+			if String(axis["field"]) == field:
+				registered = true
+				break
+		assert_true(registered or sources.find(field) != -1,
 			("effect '%s' feeds grip via GameConfig.%s, but no grip reader (%s) ever " +
-			"mentions that name — the part applies and changes nothing. Declaring the " +
-			"@export is not enough; something must READ it.")
+			"mentions that name and it is not in GameConfig.TIRE_SURFACE_AXES — the part " +
+			"applies and changes nothing. Declaring the @export is not enough; something " +
+			"must READ it.")
 				% [effect_key, field, ", ".join(GRIP_READER_SOURCES)])

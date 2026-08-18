@@ -112,38 +112,83 @@ func test_gear_and_rpm_labels_track_engine() -> void:
 	assert_eq((_scene.get_node("HUD/GearLabel") as Label).text, "N", "neutral shows N")
 
 
-func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
-	# The speed / gear / rpm readout is a dev diagnostic: hidden on startup, shown
-	# and hidden again by the H toggle (same gate as the debug force arrows).
-	var speed := _scene.get_node("HUD/SpeedLabel") as Label
-	var gear := _scene.get_node("HUD/GearLabel") as Label
-	var rpm := _scene.get_node("HUD/RPMLabel") as Label
-	var boost := _scene.get_node("HUD/BoostLabel") as Label
-	var seed_label := _scene.get_node("HUD/SeedLabel") as Label
-	await get_tree().process_frame
-	assert_false(speed.visible, "speed hidden on startup")
-	assert_false(gear.visible, "gear hidden on startup")
-	assert_false(rpm.visible, "rpm hidden on startup")
-	assert_false(boost.visible, "boost hidden on startup")
-	assert_false(seed_label.visible, "seed hidden on startup")
+# --- H-key debug readout (features/hud.md, features/debug-tools.md) -------------
+#
+# MEMBERSHIP IS DATA: hud.gd's `DEBUG_READOUT_NODES` is the single source of truth for
+# which HUD elements are part of the H-gated dev overlay, and the generic tests below
+# iterate it rather than naming labels. Moving an element in or out of the overlay is a
+# one-line edit to that constant.
+#
+# The per-element tests that follow exist so a change to ONE element's visibility fails
+# with a test name that says which element — a generic "every member" failure alone
+# doesn't tell you that.
+
+func _press_h() -> void:
 	Input.action_press("toggle_debug_arrows")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	Input.action_release("toggle_debug_arrows")
-	assert_true(speed.visible, "H shows the speed readout")
-	assert_true(gear.visible, "H shows the gear readout")
-	assert_true(rpm.visible, "H shows the rpm readout")
-	assert_true(boost.visible, "H shows the boost readout")
+
+
+func _debug_elements() -> Array:
+	var hud = _scene.get_node("HUD")
+	var out := []
+	for n in hud.DEBUG_READOUT_NODES:
+		var node: CanvasItem = hud.get_node_or_null(NodePath(String(n)))
+		assert_not_null(node, "DEBUG_READOUT_NODES names a real HUD node: %s" % n)
+		if node != null:
+			out.append(node)
+	return out
+
+
+func test_every_debug_readout_member_is_hidden_on_startup() -> void:
+	await get_tree().process_frame
+	var elements := _debug_elements()
+	assert_gt(elements.size(), 0, "the debug readout has members")
+	for element in elements:
+		assert_false(element.visible,
+			"%s is part of the H debug readout, so it is hidden on startup" % element.name)
+
+
+func test_h_toggles_every_debug_readout_member_on_and_off() -> void:
+	await get_tree().process_frame
+	var elements := _debug_elements()
+	await _press_h()
+	for element in elements:
+		assert_true(element.visible, "H reveals %s" % element.name)
+	await _press_h()
+	for element in elements:
+		assert_false(element.visible, "H again hides %s" % element.name)
+
+
+# --- Why there is no per-element membership test here --------------------------
+# There used to be one named test per gated label (gear, speed, rpm), each asserting
+# "this element IS in DEBUG_READOUT_NODES". They were deleted in round 008, deliberately:
+#
+#   * They pinned a PRODUCT CHOICE, not a contract. Which labels sit behind the dev
+#     toggle is a decision a designer may reverse at any time — CLAUDE.md's "never test
+#     a value someone may reasonably change" applies to membership just as much as to a
+#     tunable number.
+#   * They made the constant's own promise false. The comment above DEBUG_READOUT_NODES
+#     says moving an element in or out is a ONE-LINE edit; with a hand-named test per
+#     element it was a one-line edit plus a rewrite inside a 550-line test file, and two
+#     separate eval probes duly did the first and skipped the second.
+#
+# The real contract — every member is hidden at startup, and H toggles every member,
+# whatever the membership happens to be — is covered by the two membership-driven tests
+# above, which iterate DEBUG_READOUT_NODES and need no edit when it changes.
+#
+# What the docs say about membership is guarded separately, by test_hud_docs.gd.
+
+
+func test_seed_readout_shows_the_current_track_seed_when_revealed() -> void:
+	var seed_label := _scene.get_node("HUD/SeedLabel") as Label
+	await get_tree().process_frame
+	await _press_h()
 	assert_true(seed_label.visible, "H shows the seed readout")
 	assert_eq(seed_label.text, "Seed %d" % Config.data.track_seed,
 		"seed readout shows the current track seed")
-	Input.action_press("toggle_debug_arrows")
-	await get_tree().process_frame
-	await get_tree().process_frame
-	Input.action_release("toggle_debug_arrows")
-	assert_false(speed.visible, "H again hides the readout")
-	assert_false(boost.visible, "H again hides the boost readout")
-	assert_false(seed_label.visible, "H again hides the seed readout")
+	await _press_h()
 
 
 func test_boost_text_formatting() -> void:

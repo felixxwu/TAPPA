@@ -80,6 +80,23 @@ Sources:
   table used to pay mystery boxes; with the box retired, the reward became the currency
   the boxes were always a detour around. See [rally-challenge.md](rally-challenge.md).
 
+### Adding a NEW star payout at the end of a career rally
+
+`RallySession._resolve_results()` has **two named reward seams**, and which one you put a
+new payout in decides its gate — see [reward-system.md](reward-system.md) → *Where a NEW
+end-of-rally reward goes*:
+
+- `_award_podium_rewards(...)` — pays only on a podium (or the opening rally's first
+  attempt). This is where the existing `Save.complete_rally` placement payout lives.
+- `_award_any_finish_rewards(...)` — pays on **any** non-DNF finish. Empty today. A bonus
+  that should not be podium-gated (e.g. one keyed on finishing without damage) belongs
+  here, and pays via `Save.award_stars`.
+
+A bonus keyed on the run being **clean** must ask `RallySession.took_damage_this_rally()`
+(or the finish result's `took_damage`), never the car's HP — HQ repairs cost stars, so cars
+enter rallies already damaged, and field repairs run before resolve. See
+[damage.md](damage.md) → *HP is NOT a damage oracle*.
+
 ## Gating is GEOMETRIC, not stars and not completions
 
 Special events gate exactly like every ordinary rally: `RallyLibrary.rally_revealed`

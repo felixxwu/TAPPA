@@ -1,6 +1,6 @@
 extends Node
 # Docs: features/engine-swap.md, features/save-persistence.md — update in the same change as this file.
-# Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_save_sandbox.gd, tests/headless/test_save_web_lifecycle.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
+# Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /
 # tuning), the shared item inventory, and rally completion — JSON at
@@ -1487,7 +1487,7 @@ func mark_rally_revealed(rally_id: String, save_now := true) -> void:
 # playing it. See hq.gd `_seed_reveals_if_needed`.
 func needs_reveal_seeding() -> bool:
 	# "Career progress" is read straight off the profile rather than through
-	# RallyLibrary.completed_count, so the backfill decision doesn't depend on the
+	# RallyLibrary.podium_count, so the backfill decision doesn't depend on the
 	# shipped roster still containing the rallies this save finished.
 	var progressed := false
 	for rec in profile[KEY_RALLIES].values():
@@ -1603,9 +1603,21 @@ func best_placement(rally_id: String) -> int:
 	return int(profile[KEY_RALLIES].get(rally_id, {}).get("best_placed", 0))
 
 
-# Number of rallies top-3'd — the progression metric driving the CAR reward-tier ceiling.
-# (Map REVEAL keys off nothing of the sort any more: a rally opens when the player has lit
-# the map out to it, see RallyLibrary.rally_revealed.)
+# Number of rallies PODIUMED (top-3) — the progression metric driving the CAR reward-tier
+# ceiling. (Map REVEAL keys off nothing of the sort any more: a rally opens when the player
+# has lit the map out to it, see RallyLibrary.rally_revealed.)
+#
+# WHAT THIS IS NOT: it is not "rallies the player has finished". The persisted per-rally
+# `completed` flag it counts is written only inside the podium-gated block in
+# rally_session.gd (`var podium_or_opening := top3 or opening_first`), so finishing 5th
+# increments nothing. NO counter of finishes-in-any-position exists anywhere in the save
+# schema — if you need one, add persistence for it rather than reusing this, and never
+# label UI "RALLIES COMPLETED: N" off this value.
 # Delegates to RallyLibrary so the metric has one definition.
+func podium_rally_count() -> int:
+	return RallyLibrary.podium_count(profile)
+
+
+# DEPRECATED — use podium_rally_count(). Counts PODIUM (top-3) finishes, not finishes.
 func completed_rally_count() -> int:
-	return RallyLibrary.completed_count(profile)
+	return podium_rally_count()

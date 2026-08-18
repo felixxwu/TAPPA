@@ -8,11 +8,20 @@
 
 **Adding a region takes TWO edits.** An entry in `RegionLibrary.REGIONS` is inert on
 its own — the only thing that ever selects a region is a rally's `region` tag in
-`RallyLibrary.RALLIES`. Add the region AND tag at least one rally with its id, or you
+`RallyLibrary.RALLIES`. Add the region AND **a new rally** tagged with its id, or you
 have shipped a region that renders nowhere while every region test still passes.
 `tests/headless/test_region_assets.gd` →
-`test_every_region_is_reachable_from_at_least_one_rally` guards this. Do both edits in
-the same change — "ready for a rally to reference later" is a shipped half-feature.
+`test_every_region_is_reachable_from_at_least_one_rally` guards this, and its failure
+message prints the exact minimal `RALLIES` row to paste (the same template lives in the
+comment above `RegionLibrary.REGIONS`). Do **not** satisfy it by re-pointing an existing
+rally's `region`: that goes green while silently restyling a stage whose `map_pos` and
+authored weather were written for its old corner. Do both edits in the same change —
+"ready for a rally to reference later" is a shipped half-feature.
+
+**A region that is a variant of another inherits, it does not clone.** Author
+`look_from` plus only the keys that differ — see
+[`look_from` — one-level look inheritance](#look_from--one-level-look-inheritance)
+below; `taiga` and `greece_coast` are the worked examples.
 
 **Never invent an asset filename.** Every `res://` path a region authors (sky, grass,
 gravel, trees) must be a file that already exists in the repo — list `textures/` and
@@ -222,7 +231,9 @@ an inherited default, for no benefit.
 
 ### `look_from` — one-level look inheritance
 
-A region may author `"look_from": "<other_region_id>"` to inherit that
+This is the **authoring idiom for "region X, but different"** — reach for it
+before copying a look block. A region may author
+`"look_from": "<other_region_id>"` to inherit that
 region's `LOOK_KEYS` block wholesale, instead of repeating it. `look_of`
 resolves the parent's whitelisted keys first, then overlays the region's own
 on top — so the region's own keys win over anything it also inherited.
@@ -231,13 +242,17 @@ one) is not followed, so chains and cycles are structurally impossible.
 
 `home_coast` inherits `home`'s block; `greece_coast` inherits `greece`'s —
 each then adds only its own higher `water_level` (handled outside `look_of`,
-per above).
+per above). `taiga` is the other pattern: `look_from: "home"` plus a single
+overridden `tree_mix`, i.e. "home with taller trees" in two authored keys
+instead of a duplicated block.
 
 `look_from` is itself deliberately **NOT** a `LOOK_KEYS` entry — if it were,
 it would leak into the dict `world.gd` consumes as a real override field
 (there being no `look_from` handling on the world-gd side, it would just sit
 there inert at best, or collide with a real key at worst). It is read
-directly off the region dict as plumbing, never through the whitelist.
+directly off the region dict, never through the whitelist — an exclusion from
+`LOOK_KEYS` is a note about the resolution order, not a hint that authors
+should avoid the field.
 
 `tree_mix` and `spawn_bush_mesh` need no special handling in this scheme —
 both take the *already-resolved* look dict as their argument (see below), so

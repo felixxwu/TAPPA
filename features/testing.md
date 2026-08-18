@@ -456,6 +456,38 @@ retried, so the retry can never mask a real failure. Budget is
 `TEST_CRASH_RETRIES` (default 2; a crash that persists past it still fails the
 run). If you see a `retrying (n/2)` warning, that's this flake being absorbed.
 
+## Invariant: never `play()` audio headless
+
+**Any node that calls `play()` on an `AudioStreamPlayer` / `-2D` / `-3D` MUST first
+guard on `Platform.is_headless()` and skip playback entirely.** This is a project-wide
+rule, not a quirk of one file.
+
+Why: Godot's headless `AudioDriverDummy` still runs a background mix thread. A
+*playing* playback object (notably `AudioStreamGeneratorPlayback` and
+`AudioStreamPlaybackPolyphonic`, both `AudioStreamPlaybackResampled`) is freed
+underneath that thread at engine teardown (`-gexit`) — a use-after-free that SIGSEGVs
+in `AudioStreamPlaybackResampled::mix`. It is **intermittent** (historically ~1 in 3
+full runs before the existing guards landed), so the cost lands on whoever runs the
+suite next, not on the author. A *stopped* player is never mixed, so simply not
+calling `play()` is the whole fix; the bus graph and `AudioServer` calls are safe.
+
+The shape to copy — build the stream, then return before `play()`:
+
+```gdscript
+if Platform.is_headless():
+    return
+play()
+_playback = get_stream_playback() as AudioStreamGeneratorPlayback  # play() FIRST
+```
+
+Leaving the playback reference `null` makes every downstream path no-op through the
+`if _playback == null: return` guard it already has, so the logic still runs and only
+the mixing is skipped. Shipping builds are never headless.
+
+Live examples: `scripts/audio.gd` (`_ready`), `scripts/engine_audio.gd` (`_ready`),
+`scripts/music_director.gd` (`_ready`). For sound effects you should not be writing
+this at all — call `Audio.play_beep(...)` and inherit the guard (`features/sfx.md`).
+
 ## Trap: assert on what the feature reported, not on the whole inventory
 
 There is no longer a random per-event upgrade draw, so driving a rally no longer

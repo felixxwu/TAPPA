@@ -131,7 +131,7 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 	_save.complete_rally("alpine", 5000)
 	_save.complete_rally("alpine", 6000)  # slower: should not replace
 	_save.complete_rally("alpine", 4000)  # faster: should replace
-	assert_eq(_save.completed_rally_count(), 1, "completing the same rally twice counts once")
+	assert_eq(_save.podium_rally_count(), 1, "completing the same rally twice counts once")
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
 
 

@@ -1,7 +1,7 @@
 class_name TuningPanel
 extends VBoxContainer
 # Docs: features/tuning.md — update in the same change as this file.
-# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_menu_flow.gd, tests/headless/test_tuning_library.gd, tests/headless/test_tuning_panel.gd — extend in the same change.
+# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_menu_flow.gd, tests/headless/test_tuning_panel.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningPanel' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Reusable per-car TUNING slider panel — the three handling axes (grip balance,
 # brake bias, aero balance). Owns its sliders and Save persistence; reports edits
 # via on_change so the host can re-field the car. Used by the HQ lift (hq.gd) and

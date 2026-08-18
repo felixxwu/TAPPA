@@ -1,7 +1,7 @@
 class_name HqOverlays
 extends RefCounted
 # Docs: features/menus.md, features/world-panel.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_settings_menu.gd, tests/headless/test_world_panel.gd — extend in the same change.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'HqOverlays' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Overlay/menu-layer builders for the HQ, extracted from hq.gd to shrink it. Each
 # method builds one 2D CanvasLayer overlay and wires its buttons back to the HQ
 # controller. Holds a back-reference to the HqController and reaches into it for

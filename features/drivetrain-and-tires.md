@@ -2,7 +2,7 @@
 
 **Source:** `scripts/drivetrain.gd` (`class_name Drivetrain extends RefCounted`).
 
-**Tests:** `tests/headless/test_drivetrain.gd`, `tests/headless/test_drive_mode.gd`, `tests/headless/test_grip_servo_steering.gd`, `tests/headless/test_opponent_tires.gd`
+**Tests:** `tests/headless/test_drivetrain.gd`, `tests/headless/test_drive_mode.gd`, `tests/headless/test_grip_servo_steering.gd`, `tests/headless/test_opponent_tires.gd`, `tests/headless/test_tire_surface_axes.gd`
 
 Godot's built-in `VehicleWheel3D` friction is **disabled** (friction slip set to
 0). All contact forces and wheel-spin integration are computed here, giving a
@@ -225,9 +225,12 @@ Snow tyres author all three: a modest flat gain, a large snow bonus, and a tarma
 big enough that on asphalt they are **net worse than the car's own rubber**. That is the
 trade. Race tyres author only the flat term, so nothing about them changes.
 
-**`GameConfig.tire_surface_mult(snow_mult, tarmac_mult, tarmac_weight, snowy)` is the one
-place that knows the rule**, and it is `static` and takes both multipliers as arguments
-precisely so the two callers can source them differently. The rule:
+**`GameConfig.TIRE_SURFACE_AXES` is the registry of which surface axes exist**, and
+**`GameConfig.tire_surface_mult_for(source, tarmac_weight, snowy)` is the one place that
+knows the rule**. The resolver is `static` and takes its `source` as an argument precisely
+so the two callers can supply it differently — the physics passes the live `GameConfig`,
+the lap-time model passes a rival's `car_meta` Dictionary, and both resolve identically.
+Neither caller names an axis. The rule:
 
 - The **snow bonus is all-or-nothing on the region** — snow ground is snow ground, and the
   packed-snow "road" is the same white stuff as the verge, so there is nothing to feather
@@ -238,14 +241,39 @@ precisely so the two callers can source them differently. The rule:
 - The two are **mutually exclusive**: on a snow stage the tarmac channel is a dusting over
   asphalt, so charging the tarmac penalty there would cancel the whole point of the part.
 
+Both rules live in `GameConfig._channel_weight`, keyed by the axis's `channel`.
+
+**Adding an axis** (wet, gravel, ice, …) is three edits, all in `game_config.gd` and all
+within twenty lines of each other: the `@export` for the live multiplier, its row in
+`TIRE_SURFACE_AXES`, and its arm in `_channel_weight`. No consumer file changes — every
+consumer iterates the registry. It used to be a six-site edit across five files whose
+first step (the `@export`) compiled, applied, and did nothing; that shape is guarded from
+both directions by `tests/headless/test_tire_surface_axes.gd` (a row naming no property,
+and a `tire_*_grip_mult` property with no row).
+
+**What "three edits" is conditional on — read this before starting.** An axis's arm reads
+the stage context built by `GameConfig.fill_tire_context`, which carries the contact's
+tarmac weight, whether the region is snowy, and the stage weather. An axis keyed on any of
+those three is genuinely three edits in one file. An axis keyed on anything else — altitude,
+tyre temperature, time of day — also needs that value added to `fill_tire_context` and to
+its two fill sites in `drivetrain.gd` and `lap_time_model.gd`. Still no change to the
+resolver and no consumer *logic* change, but five edits across three files rather than
+three in one.
+
+This paragraph exists because the previous version of it said "Nothing else changes" and
+named **wet** as its first example — while the context at the time carried only surface
+information, so a weather axis was the one case the mechanism could not serve. A probe
+followed that promise and hit a wall the documentation said was not there. Weather is now
+carried in the context precisely so the headline example is true.
+
 "Snowy" is `GameConfig.ground_is_snow()`, derived from `deep_snow_depth_m > 0.0` — i.e.
 the region seated a deep-snow block ([snow-region.md](snow-region.md)). No new flag to
 keep in sync, the same shape as the `frozen_water_grip > 0.0` gate ice already uses.
 
-**Lifecycle.** `tire_snow_grip_mult` / `tire_tarmac_grip_mult` are live `GameConfig` fields
-defaulting to `1.0`, the identity on both sides. A car spec has no source for them (a car
-brings one compound coefficient, not a per-surface curve), so `car.gd::_apply_physics_spec`
-**re-seeds both to 1.0 at pipeline step 1**, right next to the axle μ seeds — without that
+**Lifecycle.** The axis fields are live `GameConfig` fields defaulting to `1.0`, the
+identity on every surface. A car spec has no source for them (a car brings one compound
+coefficient, not a per-surface curve), so `car.gd::_apply_physics_spec`
+**re-seeds every registered axis to 1.0 at pipeline step 1**, right next to the axle μ seeds — without that
 reset, re-fielding a car would compound the fitted part's figures every time. `UpgradeLibrary.apply`
 then multiplies the fitted compound's figures in at **step 2**, via ordinary `EFFECTS` rows
 (op `mult`, `feeds_pw: false`, `feeds_grip: true`, meta and config sharing the field name so

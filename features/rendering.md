@@ -308,6 +308,24 @@ across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 (`speed_lines_response`) so the streaks fade in/out rather than pop. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
+**Whether the effect draws at all is a player setting**, owned by
+`scripts/speed_lines_setting.gd` (`SpeedLinesSetting`) — the key (`"speed_lines"`),
+the fallback default (the authored `GameConfig.speed_lines_enabled`), `resolve()`,
+and an `apply(tree, on)` that persists the choice AND pushes it to every live
+overlay (they join `SpeedLinesSetting.GROUP` in `_ready`). This follows the
+per-setting apply-owner pattern documented in
+[menus.md](menus.md) → "Adding a setting"; `scripts/fps_setting.gd` is the
+exemplar. `Config.data.speed_lines_enabled` is the **authored baseline only** — a
+player toggle must never write it, or the default drifts with player input.
+
+`speed_lines.gd` wires itself **unconditionally** (material bound, static look
+pushed) and gates only drawing/processing through the idempotent
+`set_effect_enabled(on: bool)` (plus `is_effect_enabled()`), which is safe before
+or after `_ready` and correct in both directions. That split is deliberate: the
+old `_ready` returned early when the effect was off, leaving `_mat` null and
+`_process` disabled, so a disabled overlay could never be switched back on without
+a scene reload.
+
 The overlay is **driving-only**: `world.gd::_hide_driving_ui` switches the `SpeedLines`
 layer off alongside the HUD and the touch controls when a run hands over to the
 cinematic replay, so the streaks never play over a replay the player is only watching.

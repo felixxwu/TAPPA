@@ -16,6 +16,33 @@ autoload).
 podium). The draw functions return an id; the **caller** delivers it via
 `Save.grant_car` / `Save.install_upgrade` and then `Save.save()`.
 
+## Where a NEW end-of-rally reward goes — two named seams
+
+`RallySession._resolve_results()` (`scripts/rally_session.gd`) does not have one
+reward block any more. It has **two**, and adding a reward means picking the one
+whose *gate* you want:
+
+| Seam | Gate | What lives there today |
+|---|---|---|
+| `_award_podium_rewards(combined, placed, opening_first)` | top-3 finish, **or** the opening rally's first attempt | stars (`Save.complete_rally`), the prize car, special/part unlocks, the game-won beat |
+| `_award_any_finish_rewards(combined, placed)` | **any** non-DNF finish | *nothing yet — this is the empty seam* |
+
+Both return a `Dictionary` of fields merged into the `rally_finished` result;
+`_award_any_finish_rewards` is called **after** the podium gate has closed, and its
+fields are merged over the podium ones.
+
+This split exists because everything used to sit inside a single ~60-line
+`if podium_or_opening:` block, so any reward added anywhere near the reward logic
+silently inherited the **podium gate** — including rewards that were never meant to
+be podium-only. A reward that should pay for *any* finish (a clean-run bonus, a
+stage-record bonus, a finisher's payout) goes in `_award_any_finish_rewards`, not in
+the podium method.
+
+If your reward needs to know whether the run was clean, ask
+`RallySession.took_damage_this_rally()` (or the result's `took_damage` field) —
+**never** the car's HP, which field repairs and already-damaged entries make
+meaningless; see [damage.md](damage.md) → *HP is NOT a damage oracle*.
+
 ## There is no per-event random upgrade draw any more
 
 `RewardSystem.draw_upgrade` / `draw_and_grant_upgrade` / `_eligible_parts` are
@@ -92,11 +119,11 @@ lingering in the file forever. See
 survives, and cars still resolve at one **target tier**:
 
 ```
-target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
+target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(podium_count) )
 ```
 
 - `f(difficulty)` defaults to identity (reward tier = rally difficulty).
-- `tier_ceiling(completed_count)` is **monotonic** (placeholder: `1 +
+- `tier_ceiling(podium_count)` is **monotonic** (placeholder: `1 +
   completed/2`, capped at `MAX_TIER = 4`) so an early lucky win can't yield a
   top-tier car. The curve values are a `GameConfig` tunable in the balance
   pass (deferred).
@@ -106,7 +133,7 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 
 With no rally paying a car, nothing feeds `f(rally.difficulty)` a real difficulty
 any more — nothing calls it with a real one — so in practice the clamp reduces to
-`tier_ceiling(completed_count)`: **progress**, not rally difficulty, decides how
+`tier_ceiling(podium_count)`: **progress**, not rally difficulty, decides how
 good a car can be. What a hard rally pays instead is more stars
 (`stars_for_placement` is the same everywhere, but a harder rally is harder to
 podium — and off the podium it pays the smaller finishing amount).
@@ -159,10 +186,10 @@ Two steps inside the draw:
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
    is at or below the **progress-clamped draw ceiling**:
-   `clamp(_difficulty_to_tier(rally_difficulty), 1, tier_ceiling(completed_count))`.
+   `clamp(_difficulty_to_tier(rally_difficulty), 1, tier_ceiling(podium_count))`.
    This is the only place `target_tier`'s clamp shape survives. So a
    higher-difficulty input pays a better car, but only up to the tier the player's
-   **progress** (rallies completed) has earned. This replaces the old
+   **progress** (rallies PODIUMED — top-3, see RallyLibrary.podium_count) has earned. This replaces the old
    `max(garage_tier, difficulty)` ceiling, which let one difficulty-2 win open the
    whole roster (all cars were tier ≤ 2). `rally_difficulty` defaults to 0 (→ tier
    1 floor) for callers that don't supply it.
@@ -279,7 +306,7 @@ plus the two gates:
 
 - tier-ceiling monotonic + clamped; `target_tier` never exceeds the ceiling;
 - car draws never exceed the **progress ceiling**
-  (`tier_ceiling(completed_count)`) even off a top-difficulty input, and a low
+  (`tier_ceiling(podium_count)`) even off a top-difficulty input, and a low
   input caps the draw at its own tier even when the progress ceiling is high;
 - car draws prefer un-owned before falling back to a duplicate, never repeat the
   previous grant while an alternative exists, and an exhausted tier steps up;

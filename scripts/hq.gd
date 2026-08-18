@@ -1,7 +1,7 @@
 class_name HqController
 extends Node3D
 # Docs: features/engine-swap.md, features/menus.md, features/tuning.md, features/world-panel.md — update in the same change as this file.
-# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_engine_swap.gd, tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_save_manager.gd, tests/headless/test_settings_menu.gd, tests/headless/test_tuning_library.gd, tests/headless/test_tuning_panel.gd, tests/headless/test_upgrade_library.gd, tests/headless/test_world_panel.gd — extend in the same change.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'HqController' tests/headless/` and read the assertions that pin what you are about to change (12 test files touch this script).
 # HQ — the meta-game hub (todo/menus.md location 1), now a DIEGETIC 3D space the
 # camera flies through (todo/diegetic-hq.md) instead of flat overlay screens. One
 # world; the camera moves between "stations":

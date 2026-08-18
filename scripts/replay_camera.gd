@@ -1,7 +1,7 @@
 class_name ReplayCamera
 extends Camera3D
 # Docs: features/event-replay.md — update in the same change as this file.
-# Tests: tests/headless/test_replay_camera.gd, tests/headless/test_replay_playback.gd, tests/headless/test_replay_recorder.gd, tests/headless/test_replay_standings.gd — extend in the same change.
+# Tests: tests/headless/test_replay_camera.gd, tests/headless/test_replay_playback.gd, tests/headless/test_replay_recorder.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'ReplayCamera' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 
 enum Shot { ORBIT, FLYBY, WHEEL, HIGH_WIDE, ROADSIDE }
 

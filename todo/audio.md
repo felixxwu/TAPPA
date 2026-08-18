@@ -1,5 +1,24 @@
 # Audio (SFX, beeps, UI, music) — implementation spec
 
+> Status: **PARTIALLY DONE — music shipped; the SFX SEAM has now shipped; the CUES
+> are still unwired.** Landed since this spec was written: the **`Audio` autoload**
+> (`scripts/audio.gd`, `class_name AudioManager`, registered as `Audio` in
+> `project.godot`), the **SFX bus** (`Audio._ensure_bus()`, sending to Master), a
+> procedural **`Audio.play_beep(frequency_hz, duration_sec, volume_db)`** primitive
+> with the headless guard / `play()`-then-`get_stream_playback()` ordering / build-once
+> player encapsulated in it, the `@export_group("SFX")` tunables in `GameConfig`, docs
+> in **`features/sfx.md`**, and tests in `tests/headless/test_audio.gd`.
+>
+> **Still open:** every actual CALL SITE (countdown beep + GO sting, impact/wreck,
+> UI move/select/back, reward reveal, podium) — each is now a one-line
+> `Audio.play_beep(...)` at the trigger; `stage_manager.gd` carries an AUDIO HOOK
+> comment marking the countdown one. Also open: the authored **clip** library
+> (`play_sfx(id)` + `sfx_clips`), `play_sfx_3d`, the one-shot player **pool**, and the
+> **SFX volume slider** in Settings. Nothing here needs a new facility — extend
+> `scripts/audio.gd`.
+>
+> Original status note follows.
+>
 > Status: **PARTIALLY DONE — the music half shipped; SFX still open.** The
 > **music** system landed (a `Music` autoload / `music_director.gd`,
 > `music_library.gd`, `music_schedule.gd`, `music/*.ogg` beds, and a runtime-created
@@ -46,7 +65,14 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
   code fits the codebase.
 - **`main.tscn` has no audio nodes** beyond the engine player on the `Car`.
 
-## Bus layout — mostly DONE
+## Bus layout — DONE
+
+The **SFX** bus now exists too, created by `Audio._ensure_bus()` at boot (sending to
+Master), alongside the Music and Engine buses. What remains here is only the **Settings
+SFX slider** persisted to the profile via `AudioServer.set_bus_volume_db` — the bus it
+would drive is in place. Original note follows.
+
+### Original note
 
 `music_director.gd` already creates the bus graph at boot — a **Music** bus (which the
 Settings music slider drives) and an **Engine** bus (which `engine_audio.gd` routes to and
@@ -54,7 +80,23 @@ which the loading screen mutes wholesale) — and applies `master_volume` to Mas
 only thing left here is **adding an `SFX` bus** for the one-shots below, plus its Settings
 slider persisted to `settings.cfg` via `AudioServer.set_bus_volume_db`.
 
-## An `Audio` autoload (one-shot SFX)
+## An `Audio` autoload (one-shot SFX) — SHIPPED (procedural half)
+
+**What exists now** (`scripts/audio.gd`, docs `features/sfx.md`):
+
+```gdscript
+const BUS := &"SFX"
+func play_beep(frequency_hz := 0.0, duration_sec := 0.0, volume_db := 0.0) -> bool
+func beep_spec(frequency_hz := 0.0, duration_sec := 0.0, volume_db := 0.0) -> Dictionary
+func is_available() -> bool
+static func render_beep(frames, frequency_hz, mix_rate, amplitude, decay) -> PackedVector2Array
+```
+
+A procedural beep rather than a clip library, because this project ships no audio
+samples yet. The sections below describe the CLIP half, which is still to do — build
+it on this same node and bus.
+
+### Original spec (clip library — still open)
 
 `scripts/audio.gd`, `class_name AudioManager extends Node`, registered as an
 autoload alongside `Config` (and `Save`, `RallySession`). A tiny one-shot player
@@ -103,6 +145,10 @@ the damage model already computes, so no new physics read.
 
 ## New `GameConfig` tunables
 
+**Already added** (`@export_group("SFX")`, authored in `config/game_config.tres`):
+`sfx_enabled`, `sfx_beep_frequency_hz`, `sfx_beep_duration_sec`, `sfx_beep_volume_db`,
+`sfx_beep_decay`, `sfx_mix_rate`. Still to add, with the clip library:
+
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `sfx_clips` | Dictionary | `{}` | Map clip id → `res://audio/*.ogg`. Empty = silent fallback. |
@@ -129,6 +175,11 @@ the player profile holds chosen volumes.
   until clips land.
 
 ## Testing
+
+`tests/headless/test_audio.gd` already covers: the `Audio` autoload is registered, the
+**SFX bus** exists and sends to Master, `play_beep` is a safe repeatable no-op headless
+(and never creates playback), the `sfx_enabled` gate silences it, and the pure
+`render_beep` DSP decays / stays finite / rejects degenerate input. Remaining:
 
 Headless GUT tests (`tests/headless/`):
 - **Bus layout:** the `Engine` / `SFX` / `Music` buses exist after boot and the

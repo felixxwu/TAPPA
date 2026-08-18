@@ -33,10 +33,10 @@ const MAX_TIER := 4
 
 # --- Tier model & clamp ------------------------------------------------------
 
-# Monotonic mapping from rallies-completed to the highest tier that can drop, so
+# Monotonic mapping from PODIUM (top-3) finishes to the highest tier that can drop, so
 # an early lucky win can't yield a top-tier reward. Placeholder curve.
-static func tier_ceiling(completed_count: int) -> int:
-	return clampi(1 + completed_count / 2, 1, MAX_TIER)
+static func tier_ceiling(podium_count: int) -> int:
+	return clampi(1 + podium_count / 2, 1, MAX_TIER)
 
 
 # f(difficulty) — default identity (reward tier = rally difficulty), an optional
@@ -47,7 +47,7 @@ static func _difficulty_to_tier(rally_difficulty: int) -> int:
 
 # The clamped tier the CAR draw resolves at (draw_car's one caller). Exposed for tests.
 static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
-	var ceiling := tier_ceiling(RallyLibrary.completed_count(profile))
+	var ceiling := tier_ceiling(RallyLibrary.podium_count(profile))
 	return clampi(_difficulty_to_tier(rally_difficulty), 1, ceiling)
 
 
@@ -144,7 +144,7 @@ static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: Random
 	# clamp. (Upgrades don't use a tier at all any more — see the note on MAX_TIER —
 	# so this is now the car ladder's own clamp.) Cars deliberately don't key
 	# off the garage's highest owned tier, which let one d2 win open the whole roster.
-	var earned := tier_ceiling(RallyLibrary.completed_count(profile))
+	var earned := tier_ceiling(RallyLibrary.podium_count(profile))
 	var ceiling := target_tier(rally_difficulty, profile)
 	var pool := _cars_at_or_below_tier(ceiling)
 	# EXHAUSTED-TIER STEP-UP. The tier is min(difficulty, earned), so a difficulty-1

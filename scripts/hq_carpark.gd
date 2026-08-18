@@ -1,7 +1,7 @@
 class_name HqCarpark
 extends RefCounted
 # Docs: features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_settings_menu.gd — extend in the same change.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'HqCarpark' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # The car park: the eligible-lineup build, the parked-car prop cache, focus
 # cycling, the swap/damage readouts and the carpark modals. Split out of hq.gd
 # (see todo/hq-split.md) — the FUNCTIONS moved here, along with the state NOTHING ELSE reads

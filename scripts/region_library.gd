@@ -1,7 +1,7 @@
 class_name RegionLibrary
 extends RefCounted
 # Docs: features/regions.md — update in the same change as this file.
-# Tests: tests/headless/test_headlight_cone.gd, tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_rally_library.gd, tests/headless/test_region_library.gd — extend in the same change.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_region_library.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RegionLibrary' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region is one
 # CORNER of the single world map: it groups rallies by their `region` tag and carries
 # optional look overrides for the driven world (grass/gravel/sky/fog/tints/layers) — a
@@ -14,7 +14,8 @@ extends RefCounted
 const DEFAULT_MAP_IMAGE := "res://textures/map_world.jpg"
 
 # Whitelisted look-override keys (used by look_of + world.gd). Deliberately NOT here:
-# `map_image` (there is one world map now), `look_from` (plumbing — see look_of) and
+# `map_image` (there is one world map now), `look_from` (the inherit-another-region's-look
+# idiom, resolved by look_of before this filter — see the note above REGIONS) and
 # `water_level` (needed by track generation, before the look is applied).
 const LOOK_KEYS := [
 	"sky_panorama", "grass_texture", "gravel_texture",
@@ -39,23 +40,7 @@ const DEFAULT_TREE_MIX: Array = [
 # The four authored corners of the world map. ORDER CARRIES NO MEANING — regions do not
 # unlock in sequence and there is no "final" region (credits fire once every special event
 # is won, see RallyLibrary.all_specials_completed), so do NOT re-introduce any ordering
-# dependency here.
-#
-# Regions no longer gate rallies AT ALL: the old one-showdown-per-region invariant is
-# retired, and specials are gated on the global ordinary-completion count
-# (RallyLibrary.rally_revealed, geometric map exploration),
-# so a corner may hold any number of them, including none. A region's only job is its LOOK
-# and its waterline.
-#
-# ADDING A REGION IS TWO EDITS, NOT ONE. An entry here is inert on its own: the ONLY
-# thing that ever selects a region is a rally's `region` tag in RallyLibrary.RALLIES
-# (scripts/rally_library.gd), which is what puts it on a stage and on the map. Add the
-# entry here AND tag at least one rally with its id, or you have shipped dead data that
-# renders nowhere and that every region test still passes.
-# Guarded by tests/headless/test_region_assets.gd ->
-# test_every_region_is_reachable_from_at_least_one_rally.
-# "Ready to be referenced by a rally later" is NOT a finished region — do BOTH edits in
-# the SAME change, or you have shipped the half that does nothing.
+# dependency. Regions gate nothing: a region's only job is its LOOK and its waterline.
 #
 # NEVER INVENT AN ASSET FILENAME. Every res:// path authored here must be a file that
 # already exists — the -greece/-snow naming convention makes made-up names look right,
@@ -63,11 +48,43 @@ const DEFAULT_TREE_MIX: Array = [
 # untextured world with every test green. List textures/ and pick real files. Guarded by
 # tests/headless/test_region_assets.gd -> test_every_authored_region_resource_path_resolves.
 #
-# Ids are load-bearing: "home" in particular is hardcoded in
-# world.gd._current_region_look() as the default/challenge/fallback region, so never
-# rename it. The coastal corners carry no look block of their own — they resolve their
-# parent's via `look_from` — but each corner authors its OWN `water_level`, which is
-# the whole point of the split (see water_level_of).
+# A REGION THAT IS A VARIANT OF ANOTHER MUST NOT CLONE ITS LOOK BLOCK. Author
+# `"look_from": "<other_region_id>"` and then only the keys that DIFFER — that is this
+# table's authoring idiom, not internal plumbing. Worked examples below: `taiga` is home
+# with its own trees, `greece_coast` is greece with its own waterline. `water_level` is
+# never inherited — every corner authors its own (see water_level_of). Ids are
+# load-bearing: "home" is hardcoded in world.gd._current_region_look(), so never rename it.
+#
+# ADDING A ROW HERE IS A FOUR-PART CHANGE, and part 2 is the one that ships half-done: a
+# REGIONS entry is INERT alone — a rally's `region` tag is the only thing that ever
+# selects a region, so an untagged one renders nowhere.
+#   1. the row below (never invent a filename — `ls textures/`, see above);
+#   2. reachability: ADD A NEW RALLY to RallyLibrary.RALLIES (scripts/rally_library.gd) —
+#      paste the template below and edit the # EDIT fields. Do NOT satisfy this by
+#      retagging an existing rally: that goes green while silently restyling a rally whose
+#      map_pos and authored weather belong to its OLD region (a probe moved a mid-map
+#      fog/night rally into an arid canyon that way). Guarded by test_region_assets.gd ->
+#      test_every_region_is_reachable_from_at_least_one_rally.
+#
+#      {
+#          "id": "<region_id>_trial", "name": "<Rally Name>",     # EDIT both
+#          "region": "<region_id>",                               # EDIT: your new region's id
+#          "difficulty": 2, "special": false, "restriction": {},  # {} = open to every car
+#          "map_pos": Vector2(0.5, 0.5),  # EDIT: 0..1 pin on textures/map_world.jpg. Put it in
+#              # YOUR corner (see the geography map above RALLIES), >0.03 from every other pin,
+#              # and within Config.data.map_reveal_radius of an existing pin, else the rally is
+#              # stranded (test_every_shipped_rally_is_reachable_by_exploring_from_hq).
+#          "events": [  # 3 stages. `water_level` should match the region's own waterline, and
+#              # the stages must NOT all share one weather (test_every_multi_stage_rally_mixes_weather).
+#              {"seed": 90001, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
+#              {"seed": 90002, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
+#              {"seed": 90003, "turn_count": 21, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
+#          ],
+#      },
+#      Those are every field a rally needs; `prize_car`, `reveal_radius` and per-event
+#      `weather` are optional (and "sandstorm" is desert-only, test-enforced).
+#   3. features/regions.md — the prose region list (test_region_docs.gd fails on this);
+#   4. features/terrain.md if the row changes how terrain is built.
 const REGIONS: Array[Dictionary] = [
 	# The existing world. It authors its foliage split explicitly so the split is
 	# config-driven everywhere (100% home tree.png, 3D ground-cover bushes on); every
