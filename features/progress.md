@@ -7,6 +7,8 @@ back onto the road if it stays off it too long. Both behaviours run off the road
 now retains by handing it to this manager instead of discarding it after
 `Floor.set_track`.
 
+**Tests:** `tests/headless/test_track_progress.gd`
+
 They use **two different thresholds**, and mixing them up is the easiest mistake
 to make here:
 

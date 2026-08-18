@@ -5,6 +5,8 @@ and you hit something. Built from 2 m modules stitched end to end, procedurally
 like [finish-arch.md](finish-arch.md) / [signs.md](signs.md), in the PS1
 flat-shaded look. Three rules decide what a corner gets:
 
+**Tests:** `tests/headless/test_barrier_field.gd`, `tests/headless/test_barrier_layout.gd`, `tests/headless/test_barrier_section.gd`
+
 - **Only where the land falls away.** A barrier guards a DROP. Where the corner is
   cut into a bank the hillside already stops the car, so nothing is built.
 - **The barrier matches the road surface:** steel armco guardrail on gravel,

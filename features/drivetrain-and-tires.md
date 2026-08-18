@@ -2,6 +2,8 @@
 
 **Source:** `scripts/drivetrain.gd` (`class_name Drivetrain extends RefCounted`).
 
+**Tests:** `tests/headless/test_drivetrain.gd`, `tests/headless/test_drive_mode.gd`, `tests/headless/test_grip_servo_steering.gd`, `tests/headless/test_opponent_tires.gd`
+
 Godot's built-in `VehicleWheel3D` friction is **disabled** (friction slip set to
 0). All contact forces and wheel-spin integration are computed here, giving a
 custom combined-slip tire model and explicit RWD/AWD/FWD behavior.

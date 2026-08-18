@@ -8,6 +8,8 @@ ordered cycle list `[CHASE, BONNET]` and makes exactly one camera `current` at a
 time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
 cycle.
 
+**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`
+
 ## Persistence & the settings page
 
 The chosen mode is **persisted** in the save profile under

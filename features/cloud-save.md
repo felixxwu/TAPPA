@@ -5,6 +5,8 @@ continue it on another device. Signing in is never required: a player who
 ignores it sees no change at all, and every failure mode here degrades to "you
 keep playing locally".
 
+**Tests:** `tests/headless/test_cloud_auth.gd`, `tests/headless/test_cloud_sync.gd`, `tests/headless/test_cloud_boot_gate.gd`, `tests/headless/test_account_menu.gd`, `tests/headless/test_save_manager.gd`
+
 `user://profile.json` remains the **source of truth for the running session**
 (see [save-persistence.md](save-persistence.md)). The cloud holds a copy.
 

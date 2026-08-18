@@ -8,6 +8,9 @@ flat layer and a panel), the two stations' wiring in `scripts/hq.gd`
 `scripts/hq_overlays.gd` (`build_car_overlay` → `_car_root`, `build_lift_overlay` →
 `_lift_root`), the `Node3D` clause in `scripts/menu_nav.gd` (`is_on_screen`), and the
 `world_space_menus` / `world_panel_*` fields in `scripts/game_config.gd`.
+
+**Tests:** `tests/headless/test_world_panel.gd`, `tests/headless/test_menu_flow.gd`
+
 Tests: `tests/headless/test_world_panel.gd` (the panel and its input pump), plus the hosting /
 hot-reload tests in `tests/headless/test_menu_flow.gd`
 (`test_hq_carpark_world_space_menu_hosts_backs_and_reframes`,

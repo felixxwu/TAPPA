@@ -6,6 +6,8 @@ player state. It holds `const RALLIES: Array[Dictionary]` plus the pure function
 the rest of the game runs over it. Player completion lives in the save profile
 (`Save`, `features/save-persistence.md`), keyed by the stable rally `id` here.
 
+**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_opponent_tires.gd`, `tests/headless/test_ai_difficulty.gd`, `tests/headless/test_catalogue_seam.gd`, `tests/headless/test_sim_career.gd`
+
 **`RALLIES` is not grouped by geography.** The array is in AUTHORING ORDER and its order
 carries no meaning at all — it is not a progression order, and adjacent entries need not
 share a region or a corner of the map (they frequently don't; see the `region`

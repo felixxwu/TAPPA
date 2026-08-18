@@ -6,6 +6,8 @@ Flame drawn at each of the car's exhaust pipes — a visual companion to the
 [exhaust crackle](engine-audio.md) pop, plus a continuous flame while nitrous is
 delivering.
 
+**Tests:** `tests/headless/test_exhaust_flames.gd`
+
 **It is not a particle system.** Each pipe gets a fixed piece of geometry that is simply
 shown or hidden, with its **texture swapped** between a handful of generated flame frames
 so a sustained flame flickers instead of sitting static. A backfire is one shape that

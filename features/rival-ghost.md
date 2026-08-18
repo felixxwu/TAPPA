@@ -8,6 +8,8 @@
 `_setup_rival_ghost`). Design:
 `docs/superpowers/specs/2026-08-06-rival-ghost-design.md`.
 
+**Tests:** `tests/headless/test_ghost_car.gd`, `tests/headless/test_ghost_car_display.gd`, `tests/headless/test_ghost_wiring.gd`, `tests/headless/test_rival_pace.gd`
+
 While the player drives a stage, the rally leader (P1) is shown on track as a
 translucent ghost car, crossing the finish **exactly when the standings say they did**.
 

@@ -11,6 +11,8 @@
 All three are gated on `OS.is_debug_build()`, so release exports ignore them. A config value that
 starts a feature on still works in any build — the keys are dev affordances, not player features.
 
+**Tests:** `tests/headless/test_debug_arrows.gd`, `tests/headless/test_hud.gd`, `tests/headless/test_perf_overlay.gd`, `tests/headless/test_perf_log.gd`, `tests/headless/test_benchmark_mode.gd`
+
 ## Wheel force visualization
 
 **Source:** `scripts/wheel_force_debug.gd` (`class_name WheelForceDebug extends

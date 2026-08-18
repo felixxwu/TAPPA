@@ -15,6 +15,8 @@ that is the whole design and not just a palette choice.
 The grass off the road footprint never marks. Created + wired by
 `world.gd._generate_track` (reused across event regenerations).
 
+**Tests:** `tests/headless/test_tire_marks.gd`, `tests/headless/test_drivetrain.gd`
+
 ## Opacity: how hard the tire is working
 
 Every segment carries its own **vertex alpha**, so a mark deepens through a corner

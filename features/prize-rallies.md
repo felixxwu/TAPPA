@@ -6,6 +6,8 @@
 `rally_session.gd::_resolve` (`car_reward` / `special_unlock`); `Save.owns_model` /
 `Save.grant_car`.
 
+**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_rally_session.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_reward_system.gd`
+
 A **prize rally** hands over a car or a part on top of its stars. This is the whole
 incentive structure of map exploration: the dark map is dotted with things you can SEE and
 go and win, instead of a currency you save up to spend on a random draw.

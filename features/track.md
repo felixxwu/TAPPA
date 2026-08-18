@@ -4,6 +4,8 @@
 `scripts/corner_catalog.gd` (`class_name CornerCatalog`), `corner_catalog.tscn`,
 `scripts/track_generator.gd` (`class_name TrackGenerator`).
 
+**Tests:** `tests/headless/test_corner_library.gd`, `tests/headless/test_track_generator.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`, `tests/headless/test_track_cache.gd`
+
 Defines the **shape vocabulary** for rally corners and chains them into a
 generated stage that is painted onto the terrain at startup.
 

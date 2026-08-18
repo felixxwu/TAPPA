@@ -90,3 +90,25 @@ func test_every_rally_region_resolves_to_a_look() -> void:
 		assert_ne(RegionLibrary.index_of(rid), -1,
 			"rally %s names region '%s', which is not in the catalogue"
 				% [rally.get("id", "?"), rid])
+
+
+# The REVERSE direction of the test above, and the one that actually bites when someone
+# ADDS a region. A region is only ever reached through a rally's `region` tag — nothing
+# else selects one — so an entry added to REGIONS that no rally names is dead data: it
+# never renders, it never appears on the map, and every region test above still passes
+# because they all iterate REGIONS rather than what the game can reach. That is a silent
+# half-finished feature, which is why it is asserted here rather than left to review.
+# (Found by the small-model-readiness loop, round 002: a probe added a complete, valid
+# region and stopped, because nothing told it the rally tag was the other half.)
+#
+# This pins no authored value: it does not care WHICH regions exist, how many, or which
+# rallies claim them — only that the two authored tables agree. Retuning either passes.
+func test_every_region_is_reachable_from_at_least_one_rally() -> void:
+	var claimed := {}
+	for rally in RallyLibrary.all():
+		claimed[String(rally.get("region", ""))] = true
+	for region in RegionLibrary.all():
+		var rid := String(region.get("id", ""))
+		assert_true(claimed.has(rid),
+			("region '%s' is in REGIONS but no rally in RallyLibrary.RALLIES tags it, " +
+			"so nothing can ever reach it — give a rally \"region\": \"%s\"") % [rid, rid])

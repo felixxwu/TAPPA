@@ -7,6 +7,8 @@ upgrades and tuning), the uninstalled-item inventory, and rally completion. It
 persists as JSON at `user://profile.json` so progress survives a restart on both
 desktop and the web build.
 
+**Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_save_web_lifecycle.gd`, `tests/headless/test_save_sandbox.gd`, `tests/headless/test_cloud_sync.gd`
+
 It is deliberately **separate from `Config`**: `Config` holds the authored
 car/world tuning baseline (a duplicate of `game_config.tres`); the profile is
 per-player mutable progress. `Save` stores tuning *numbers* but never touches

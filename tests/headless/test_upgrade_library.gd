@@ -586,3 +586,109 @@ func test_the_conversion_gate_denies_when_no_part_grants_it() -> void:
 	assert_false(UpgradeLibrary.drivetrain_swap_unlocked({"rallies": {}}),
 		"no part offers conversion, so there is nothing to unlock")
 	UpgradeFixtures.install()
+
+
+# Every name an EFFECTS entry writes to must actually exist. Nothing enforces this
+# at runtime: an effect naming a property nobody declares applies silently and does
+# nothing, so the part reads as fitted, the UI shows it, and no gameplay test fails —
+# the upgrade is simply inert.
+#
+# The two namespaces are deliberately different and BOTH are checked:
+#   `field`      — the CAR META spelling (e.g. `tire_compound`, `mass`), a key on the
+#                  car dict. May also be a GameConfig property; both are legitimate.
+#   `cfg_fields` / `clears` / `enable` — the LIVE CONFIG spelling, so these must be
+#                  GameConfig properties.
+#
+# This is a structural contract, not a tunable: it asserts names EXIST, never what
+# they are set to, so retuning any authored value leaves it green. It iterates the
+# whole CARS table as opaque input rather than naming any entry.
+#
+# Found by the small-model-readiness loop, round 001: a probe added a gravel-tyre part
+# whose effect wrote `tire_gravel_grip_mult`, which nothing declares. Every test its
+# change touched passed.
+func test_every_effect_target_name_exists() -> void:
+	var cfg := GameConfig.new()
+	var cfg_names := {}
+	for prop in cfg.get_property_list():
+		cfg_names[prop["name"]] = true
+	var meta_names := {}
+	for car in CarLibrary.CARS:
+		for key in car:
+			meta_names[str(key)] = true
+
+	for effect_key in UpgradeLibrary.EFFECTS:
+		var effect: Dictionary = UpgradeLibrary.EFFECTS[effect_key]
+
+		var field := str(effect.get("field", ""))
+		if field != "":  # structural ops (install_induction, write_fields) name no field
+			assert_true(cfg_names.has(field) or meta_names.has(field),
+				"effect '%s' writes '%s', which is neither a GameConfig property nor a car-meta key — the part would apply silently and do nothing" % [effect_key, field])
+
+		for cf in effect.get("cfg_fields", []):
+			assert_true(cfg_names.has(str(cf)),
+				"effect '%s' lists cfg_field GameConfig.%s, which does not exist" % [effect_key, cf])
+
+		for cleared in effect.get("clears", {}):
+			assert_true(cfg_names.has(str(cleared)),
+				"effect '%s' clears GameConfig.%s, which does not exist" % [effect_key, cleared])
+
+		var enable := str(effect.get("enable", ""))
+		if enable != "":
+			assert_true(cfg_names.has(enable),
+				"effect '%s' enables GameConfig.%s, which does not exist" % [effect_key, enable])
+
+
+# ROUND 002's companion to the guard above, and the reason the guard above was not
+# enough. Round 001 made "the effect writes a name nobody declares" go red. A round-002
+# probe, asked for the same gravel tyre, dutifully DECLARED `tire_gravel_grip_mult` as a
+# GameConfig @export — the guard above went green — and the part was still completely
+# inert, because the physics never reads that name. Existence is not consumption.
+#
+# So this asserts the other half: every grip-feeding effect field must actually be READ
+# somewhere in the code that turns grip into lap time. The three readers are the driven
+# car's per-contact resolver (drivetrain.gd), the rival/ghost solver (lap_time_model.gd)
+# and the meta bridge between them (car_performance.gd) — miss all three and the part
+# changes nothing for anyone.
+#
+# It is a source-text check because that is the only thing that can distinguish "read"
+# from "declared"; there is no runtime signal for a property nobody looks at. Crude, but
+# it fails loudly and names the fix, which is the whole point. It pins no value and names
+# no catalogue entry — it iterates EFFECTS as opaque input, so retuning stays green.
+#
+# If you are here because this test went red: you added a surface-dependent tyre term.
+# The surface blend is a CLOSED PAIR (GameConfig.tire_surface_mult takes exactly a snow
+# and a tarmac multiplier), so a third surface axis is a real change to that function and
+# its call sites in drivetrain.gd, not just another @export.
+const GRIP_READER_SOURCES := [
+	"res://scripts/drivetrain.gd",
+	"res://scripts/lap_time_model.gd",
+	"res://scripts/car_performance.gd",
+]
+
+func test_every_grip_feeding_effect_field_is_read_by_the_physics() -> void:
+	var cfg := GameConfig.new()
+	var cfg_names := {}
+	for prop in cfg.get_property_list():
+		cfg_names[prop["name"]] = true
+
+	var sources := ""
+	for path in GRIP_READER_SOURCES:
+		var f := FileAccess.open(path, FileAccess.READ)
+		assert_not_null(f, "grip reader source missing: %s" % path)
+		if f != null:
+			sources += f.get_as_text()
+
+	for effect_key in UpgradeLibrary.EFFECTS:
+		var effect: Dictionary = UpgradeLibrary.EFFECTS[effect_key]
+		if not bool(effect.get("feeds_grip", false)):
+			continue
+		var field := str(effect.get("field", ""))
+		# Only config-side fields: a pure car-meta key is consumed by the meta merge,
+		# not by the physics source, and is covered by the existence guard above.
+		if field == "" or not cfg_names.has(field):
+			continue
+		assert_true(sources.find(field) != -1,
+			("effect '%s' feeds grip via GameConfig.%s, but no grip reader (%s) ever " +
+			"mentions that name — the part applies and changes nothing. Declaring the " +
+			"@export is not enough; something must READ it.")
+				% [effect_key, field, ", ".join(GRIP_READER_SOURCES)])

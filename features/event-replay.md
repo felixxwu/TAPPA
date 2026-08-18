@@ -6,6 +6,8 @@
 (`_present_standings_overlay` / `_on_leaderboard_hidden_changed`), `scripts/standings.gd`
 (`overlay_mode`), `scripts/rally_session.gd` (`standings_overlay_host`).
 
+**Tests:** `tests/headless/test_replay_recorder.gd`, `tests/headless/test_replay_playback.gd`, `tests/headless/test_replay_camera.gd`, `tests/headless/test_replay_standings.gd`
+
 After each event, instead of cutting straight to a flat standings screen, the run world
 stays alive and the just-driven lap plays back as a short cinematic behind a
 transparent standings overlay — the car re-drives its own recorded run while a

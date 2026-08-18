@@ -19,6 +19,11 @@ It itemises everything it did in a round report afterwards.
 
 **One round per invocation.** End by printing `CONTINUE` or `STOP` and the
 reason. `/loop /small-model-readiness` drives the rounds; do not loop internally.
+**The round ends at §2.11 and nowhere else.** If you delegate fix-step work to
+subagents, their completion is a waypoint, not a resting point — §2.7–§2.11
+(closing suite, post-checks, teardown, report) are still yours. A round that
+stops when its delegated work returns leaves worktrees on disk and the green-tree
+invariant unproven (this happened in round 002 and needed a manual nudge).
 
 **Two rules that are not negotiable, because breaking either makes the whole
 round worthless:**
@@ -27,9 +32,37 @@ round worthless:**
    bans subagents from executing tests by any spelling, and both probes and
    graders are subagents. Probes must be told explicitly not to run tests or
    launch Godot.
-2. **Probe worktrees must be seeded from the working tree, not `origin/main`.**
-   The loop never commits, so a default-seeded probe measures an unrefactored
-   codebase and every round re-discovers causes the last round already fixed.
+2. **Probe worktrees are created and seeded BY YOU, before dispatch.** The loop
+   never commits, so any worktree branched from a ref lacks the loop's
+   accumulated work — you must transplant the working tree in yourself (§2.2)
+   and verify it landed. A probe against an unseeded tree measures an
+   unrefactored codebase, and every round re-discovers causes the last round
+   already fixed.
+
+**Snippet discipline:** every ```bash block below is tagged. `VERIFIED <round>`
+means it was executed against this repo in that round and behaved. If you edit a
+snippet or add one, re-run it against the repo before the round continues, or
+tag it `SKETCH` — both of this skill's shipped footguns (the rubric-leaking
+transplant, the red-hiding `tail`) were unexecuted code that read as tested.
+
+## The round at a glance
+
+The complete round, in order. Every step is mandatory; the round ends at step 12
+and nowhere else. Details live in the matching § below — come back here after
+each step to see what's next.
+
+1.  Verify preconditions; re-measure size (§2.0)
+2.  **Open `rounds/NNN.md` NOW; append to it at every step below** (§2.0)
+3.  Retire / replenish / sample ~5 tasks (§2.1)
+4.  Create + seed + verify one worktree per task, then dispatch probes (§2.2)
+5.  Run each probe's `expected_tests` — you, serially, in its worktree (§2.3)
+6.  Grade each diff, 4 axes (§2.4)
+7.  Taxonomise every failure into a cause (§2.5)
+8.  Fix top 1–3 causes in the main checkout, layer coverage per fix (§2.6)
+9.  Closing full suite — unconditional, red is yours to fix (§2.7)
+10. Mechanical post-checks (§2.8) + Totals conservation (§2.9)
+11. Tear down every probe worktree (§2.10)
+12. Finish the report; update bank/backlog/baseline; print CONTINUE/STOP (§2.11)
 
 ## Assumptions
 
@@ -51,8 +84,11 @@ rulebook and settings, and a loop that rewrites those on its own initiative is
 exactly what the user declined.
 
 ```bash
+# VERIFIED round 001 (precondition checks)
 cd /Users/felixwu/git/rallygodot
-python3 -c "import json;print(json.load(open('.claude/settings.json')).get('worktree'))"  # expect baseRef: head
+python3 -c "import json;print(json.load(open('.claude/settings.json')).get('worktree'))"  # baseRef: head — vestigial
+# (probes no longer use isolation:"worktree"; the parent runs `git worktree add`
+# itself in §2.2, so this setting is harmless but no longer load-bearing)
 grep -q 'claude/worktrees' .gitignore && echo 'P3 ok' || echo 'P3 MISSING'
 grep -q 'small-model-readiness' CLAUDE.md && echo 'P2 ok' || echo 'P2 MISSING'
 ```
@@ -112,11 +148,21 @@ physics/tuning, save/progress, HUD.
 
 ### 2.0 Guard
 
+**First action of the round: create `evals/small-model/rounds/NNN.md` and append
+to it after every step** — sampled tasks, dispatched probes, test results,
+scores, fixes, check outputs — as they happen, not reconstructed at the end. The
+report doubles as the round's resumable state: if the round is interrupted at
+any point (a stall, a crash, a context reset), whoever resumes reads this file
+and continues from the last recorded step instead of guessing from worktree
+debris. Round 002 stalled mid-fix and was recoverable only by external
+reconstruction; this file is the fix.
+
 Verify P1–P3 (the checks in §0). P4 applies on the first run only; on later
 rounds confirm `evals/small-model/baseline.md` exists and carries the previous
 round's closing result. Re-measure and record the size picture:
 
 ```bash
+# VERIFIED rounds 001-002 (size picture)
 cd /Users/felixwu/git/rallygodot
 echo "scripts: $(find scripts -name '*.gd' | wc -l) files, $(find scripts -name '*.gd' -exec cat {} + | wc -l) lines"
 find scripts tests -name '*.gd' -exec wc -l {} + | sort -rn | sed -n '2,11p'
@@ -132,44 +178,51 @@ round's refactor changed.
 
 ### 2.2 Probe
 
-One `Agent` per task, in parallel, `model: "haiku"`, `isolation: "worktree"`.
+**The parent creates and seeds each worktree BEFORE dispatch. Do NOT use
+`isolation: "worktree"`** — the harness creates that worktree *at* dispatch,
+atomically with the agent starting, so there is no window to seed it, and a
+fresh worktree branched from HEAD lacks every uncommitted change this loop has
+made (the loop never commits). Round 001 got away with `isolation` only because
+the tree happened to be fully committed; no later round will be.
 
-**Seeding is the step most likely to silently invalidate the round.**
-`worktree.baseRef: "head"` branches from the local **HEAD commit** — and this
-loop never commits, so *none* of its accumulated refactoring is in a fresh
-worktree by default. You must transplant the working tree yourself, tracked
-changes **and untracked new files** (the fix step's extracted modules are
-untracked by construction, and `git diff` does not see them):
+Per sampled task:
 
 ```bash
+# VERIFIED round 002 (seed + transplant); rubric exclusion verified post-002
 cd /Users/felixwu/git/rallygodot
 SCRATCH="$(mktemp -d)"                       # NOT /tmp/fixed-name, NOT $CLAUDE_JOB_DIR
-                                             # (that is set only in background jobs)
 git diff HEAD > "$SCRATCH/loop.patch"
+git status --porcelain -uall > "$SCRATCH/main_before.txt"   # for the post-probe check
 
-# per probe worktree WT:
-git -C "$WT" apply "$SCRATCH/loop.patch"     # tracked changes
+WT=".claude/worktrees/probe-<task-id>"
+git worktree add --detach "$WT" HEAD
+git -C "$WT" apply "$SCRATCH/loop.patch"     # tracked uncommitted changes
 # untracked files (new modules + their .gd.uid sidecars). macOS ships openrsync,
-# which has no --from0, so pipe through tar; -z/--null survives the ~30 repo
-# paths that contain spaces.
+# which has no --from0, so pipe through tar; --null survives the ~30 repo paths
+# that contain spaces.
 git ls-files --others --exclude-standard -z \
+  | grep -zv -e '^evals/small-model/' -e '^todo/small-model-readiness' \
   | tar --null -T - -cf - | (cd "$WT" && tar xf -)
-cp -R .godot "$WT"/.godot                    # warm class cache — see below
+# The exclusions SEAL THE MEASUREMENT: tasks.md carries every hidden rubric and
+# rounds/*.md describe the traps — transplanting them hands the probe the answer
+# key (found leaking in round 002).
+cp -R .godot "$WT"/.godot                    # warm class cache — a cold worktree
+                                             # pays a full --import rebuild
+                                             # (WARMUP_TIMEOUT default 300 s)
 ```
 
-**Copy `.godot/` into each worktree.** It is gitignored, so a fresh worktree is
-cold and pays a full `--import` class-cache rebuild (`WARMUP_TIMEOUT` defaults to
-300 s) — five of those per round would dominate the round's wall-clock. Copying
-the main checkout's warm cache removes that. The residual risk is a stale cache
-masking an import error; §2.8's project-load check catches it.
+**Verify the seed landed before dispatching** — diff a file you know this loop
+changed against the worktree copy, and abort the round if it is absent. A probe
+against an unrefactored tree measures nothing and wastes the round.
 
-**Then verify it landed before dispatching** — diff a file you know this loop
-changed, and abort the round if it is absent. A probe against an unrefactored
-tree measures nothing and wastes the round.
-
-The prompt is the bare task text and nothing else, plus the test/Godot ban:
+Then dispatch one plain `Agent` per task, in parallel, `model: "haiku"` — **no
+`isolation` option**. The prompt is the bare task text, the worktree boundary,
+and the test/Godot ban:
 
 ```
+Work exclusively inside <absolute path to $WT>. That directory is a complete
+copy of the project; do not read or write anything outside it.
+
 <the user-phrased task text, verbatim>
 
 Do not run tests. Do not launch Godot. Do not run ./run_tests.sh, gut_cmdln.gd,
@@ -179,6 +232,12 @@ or any Godot binary. Make the change and report what you did and why.
 No rubric, no hints, no mention of the eval, no pointers to files. **The point is
 to find out what the codebase tells them unaided** — helping them corrupts the
 measurement.
+
+**The boundary is prompt-enforced, so verify it afterwards:** when all probes
+have reported, re-run `git status --porcelain -uall` in the main checkout and
+compare against `$SCRATCH/main_before.txt`. If the main tree changed while
+probes ran, a probe wandered out of its worktree — its measurement is
+untrustworthy and the main tree needs inspecting before the round continues.
 
 ### 2.3 Run
 
@@ -191,9 +250,17 @@ worktree**, not the main checkout — the whole point is to test the probe's
 change:
 
 ```bash
+# VERIFIED rounds 001-002 — but READ THE RESULT per the note below
 pgrep -f run_tests.sh && echo "ALREADY RUNNING — wait for it" || \
   (cd "$WT" && ./run_tests.sh --fast <names_from_expected_tests>)
 ```
+
+**Reading multi-name results:** `--fast <a> <b> <c>` runs each name as a
+SEPARATE GUT run, so the output holds one summary per name and a `tail` keeps
+only the last — a red in an earlier selection scrolls away. Check every
+`ALL TESTS PASSED`/`TESTS FAILED` line, or run one name per invocation. And
+never trust a piped exit code: grep's status wins the pipe (both found in
+rounds 001–002).
 
 ### 2.4 Grade
 
@@ -208,8 +275,13 @@ results; **it does not run anything**. Four axes, 0–3:
   `test_conventions`?
 - **completion** — finished, versus stalled or context-exhausted?
 
-Known-baseline failures (`test_reward_system`'s stuck-player-grant test) and
-audio-mixer SIGSEGVs never count against a probe.
+Excused failures come from `evals/small-model/baseline.md`'s known-failure list
+and **nowhere else** — do not excuse a red test from memory or from a note in a
+doc. As of round 001 that list is **EMPTY** (the once-flaky
+`test_reward_system` passes), so any red test is a real regression.
+
+Audio-mixer SIGSEGVs are different: they are signal deaths, retried by
+`run_tests.sh` via `TEST_CRASH_RETRIES`, and never scored.
 
 ### 2.5 Taxonomise
 
@@ -226,6 +298,30 @@ Every failure gets a *cause*, not a description. Starter set, extensible:
 
 Top 1–3 causes by frequency × cost, **in the main checkout**. Read §3 before
 touching anything — the objective is small-model legibility, not line count.
+
+**For every fix, walk the failure back to its earliest catchable moment and ask
+at each layer: does my fix fire HERE?**
+
+1. **Authoring time** — could the mistake have been impossible to write, or
+   flagged where it was written (a point-of-use comment, a structure that
+   won't hold a dangling name)?
+2. **Runtime** — does the broken state announce itself when it executes
+   (`push_error` / debug assert on a name that resolves to nothing), so a
+   person in the editor sees it without ever running tests?
+3. **Test time** — does a guard test go red in CI?
+
+A test alone is **detection, not prevention** — it protects the suite, not the
+next author, and small models are exactly the authors least likely to run it.
+When the observed cause is a *silent* failure, a fix that only adds a test has
+half-fixed it: add the runtime loudness too when it costs a few lines (round
+001 shipped the guard test for silent no-op upgrade effects and stopped there;
+the ~5-line `push_error` in the apply path was the better half and had to be
+retro-added). Escalate to layer-1 restructuring only when a cause REPEATS
+across rounds despite layers 2–3 — that repetition is the evidence the design
+demands, not a licence you have in round one.
+
+State in the round report, per fix, which layers it covers and why the ones it
+skips are skipped.
 
 ### 2.7 Verify
 
@@ -250,6 +346,7 @@ do not weaken the test. Halt only if you genuinely cannot fix it.
 A test run cannot catch the three most likely silent failures of a refactor here:
 
 ```bash
+# VERIFIED round 001 close (all four checks)
 cd /Users/felixwu/git/rallygodot
 # authored config values — tests CANNOT cover this (CLAUDE.md bans asserting tunables,
 # and .tres stores only non-defaults, so a renamed @export silently reverts the value)
@@ -286,7 +383,9 @@ changed by construction.
 
 ### 2.11 Record
 
-`evals/small-model/rounds/NNN.md`: re-measured counts, sampled tasks, per-attempt
+**Finish** `evals/small-model/rounds/NNN.md` — you have been appending since
+§2.0, so this step is completing and tidying, not writing from memory. It must
+end with: re-measured counts, sampled tasks, per-attempt
 scores, retirements, the cause taxonomy, causes fixed, what changed,
 `git status --porcelain -uall` (**not** `git diff --stat` — it omits the new
 files the fix step creates), and every private symbol renamed. Update

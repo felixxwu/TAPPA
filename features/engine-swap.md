@@ -11,6 +11,8 @@ the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 and the car-park swap-mode UI in
 `scripts/hq.gd`.
 
+**Tests:** `tests/headless/test_engine_swap.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_upgrade_library.gd`
+
 **Engine swap** lets the player move any owned car's engine into any other
 owned car. Swapping is **free and unlimited** once unlocked — nothing is spent,
 so a player can trade engines around the garage as often as they like, including

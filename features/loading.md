@@ -6,6 +6,8 @@ finishes. Start here before optimising load time.
 Related: `terrain.md` (chunk cache, carve), `track.md` (the DFS search),
 `rendering.md` (shader pre-warm), `testing.md` (why tests avoid full generation).
 
+**Tests:** `tests/headless/test_loading_screen.gd`, `tests/headless/test_loading_tips.gd`, `tests/headless/test_stage_manager.gd`
+
 ## The pipeline
 
 `world.gd::_ready` puts a `LoadingScreen` up, then `await _generate_track(cfg, loading)`

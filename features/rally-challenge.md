@@ -5,6 +5,8 @@ player during a period (day/week/month), where time accumulates across the
 stages and damage carries over between them. Full design:
 `docs/superpowers/specs/2026-07-31-rally-challenge-design.md`.
 
+**Tests:** `tests/headless/test_challenge_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_challenge_run_end.gd`, `tests/headless/test_challenge_leaderboard.gd`
+
 ## Pieces
 
 - **`ChallengeLibrary`** (`scripts/challenge_library.gd`, `class_name`, static,

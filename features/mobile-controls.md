@@ -3,6 +3,8 @@
 **Source:** `scripts/mobile_controls.gd` (`class_name MobileControls`, extends
 `CanvasLayer`). Node `MobileControls` (layer 3, above the HUD) in `main.tscn`.
 
+**Tests:** `tests/headless/test_mobile_controls.gd`, `tests/headless/test_web_fullscreen.gd`
+
 On-screen touch controls for phones, with **six selectable schemes** chosen on the
 title screen's Settings page (see [menus.md](menus.md)) and persisted per-player.
 

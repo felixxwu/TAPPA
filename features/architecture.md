@@ -1,5 +1,7 @@
 # Architecture & Project Layout
 
+**Tests:** `tests/headless/test_smoke.gd`, `tests/headless/test_world_isolation.gd`, `tests/headless/test_stale_guard.gd`
+
 ## Directory layout
 
 ```

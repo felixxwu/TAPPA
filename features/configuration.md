@@ -7,6 +7,8 @@ without touching code or scenes.
 - **Script / class:** `scripts/game_config.gd` (`class_name GameConfig extends Resource`)
 - **Autoload accessor:** `scripts/config.gd` (`Config` singleton) → `Config.data`
 
+**Tests:** `tests/headless/test_config_applied.gd`, `tests/headless/test_config_isolation.gd`
+
 ```gdscript
 # Reading config anywhere:
 var cfg := Config.data

@@ -5,6 +5,8 @@
 (`@tool extends StaticBody3D`, `class_name TerrainChunk`),
 `scripts/terrain_layer.gd` (`@tool class_name TerrainLayer`).
 
+**Tests:** `tests/headless/test_terrain.gd`, `tests/headless/test_terrain_noise.gd`, `tests/headless/test_terrain_cliffs.gd`, `tests/headless/test_terrain_lod.gd`, `tests/headless/test_terrain_memory.gd`
+
 Procedurally generated rolling terrain from stacked Perlin noise. The terrain is
 **infinite in theory**: `height_at(x, z)` is a pure function of absolute world
 coordinates, so any point in the world has a defined height. Only the car's

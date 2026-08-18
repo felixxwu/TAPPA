@@ -17,6 +17,12 @@ with them, and working toward the special-event finale.
 - Every gameplay/look value lives in `config/game_config.tres` (a `GameConfig`
   resource). Scripts/scenes only hold fallback defaults. See
   [configuration.md](configuration.md).
+- **Every area doc opens with a `**Source:**` line and a `**Tests:**` line.** The
+  first says which scripts own the behaviour; the second names the
+  `tests/headless/test_*.gd` files that cover it, so you can tell what your change
+  will break without searching for it. Keep both current when you change an area,
+  and give any new doc both plus an entry in the index table below — all three are
+  enforced by `tests/headless/test_features_docs.gd`.
 
 ## Feature index
 

@@ -5,6 +5,8 @@
 `scripts/world.gd._generate_track`. Tunables in the `Roadside Signs` group of
 `scripts/game_config.gd`.
 
+**Tests:** `tests/headless/test_sign_layout.gd`, `tests/headless/test_sign_field.gd`
+
 Free-standing **A-frame ("wet-floor") boards** along the stage that read the road
 to a driver — **turn arrows** only. The start and finish are marked by the
 inflatable arches ([finish-arch.md](finish-arch.md)), not signs, and the stage is no

@@ -4,6 +4,15 @@
 `RallyLibrary.RALLIES` (`scripts/rally_library.gd`), `world.gd._apply_region_look`
 (and `_current_region_look`), and `hq.gd` (`_refresh_map_pins`, `_make_pin`).
 
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_rally_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_flow.gd`
+
+**Adding a region takes TWO edits.** An entry in `RegionLibrary.REGIONS` is inert on
+its own — the only thing that ever selects a region is a rally's `region` tag in
+`RallyLibrary.RALLIES`. Add the region AND tag at least one rally with its id, or you
+have shipped a region that renders nowhere while every region test still passes.
+`tests/headless/test_region_assets.gd` →
+`test_every_region_is_reachable_from_at_least_one_rally` guards this.
+
 A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
 height — applied to whichever rallies are tagged with it. It is **not a corner
 of the map**, even though it started life that way. The game ships six:

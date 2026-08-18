@@ -8,6 +8,8 @@ to enter it, or drives into the garage to work on the car.
 The shipped map-table HQ (`hq.tscn`) is **not replaced or modified**. This is a second hub a
 developer opts into.
 
+**Tests:** `tests/headless/test_overworld.gd`, `tests/headless/test_overworld_garage.gd`, `tests/headless/test_overworld_route.gd`, `tests/headless/test_overworld_blocks.gd`, `tests/headless/test_overworld_fog_wall.gd`
+
 Design doc: `docs/superpowers/specs/2026-08-17-overworld-hq-design.md` (read it for the
 decisions D1–D10 and the slice ordering; this file describes what actually exists).
 

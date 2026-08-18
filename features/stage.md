@@ -6,6 +6,8 @@ control lock (`scripts/car.gd`) and the HUD stage widgets
 (`scripts/hud.gd`, see [hud.md](hud.md)); reads the [`TrackProgress`](progress.md)
 manager for the finish condition.
 
+**Tests:** `tests/headless/test_stage_manager.gd`, `tests/headless/test_start_line.gd`, `tests/headless/test_countdown_hold.gd`, `tests/headless/test_ghost_wiring.gd`, `tests/headless/test_hud.gd`
+
 Turns the always-live track into a timed stage: a countdown holds the car, then
 a run timer ticks until the finish line, then the car is locked (skidding to a stop
 in the runoff past the finish) and a finish panel shows the time with a NEXT button

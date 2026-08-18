@@ -3,6 +3,8 @@
 Defined in `project.godot` `[input]`. Handled mainly by `scripts/car.gd`; the
 HUD buttons mirror the gearbox/drive-mode toggles.
 
+**Tests:** `tests/headless/test_input_remap.gd`, `tests/headless/test_mobile_controls.gd`, `tests/headless/test_menu_nav.gd`
+
 | Action | Key | Alt | Controller | Effect |
 |--------|-----|-----|------------|--------|
 | `accelerate` | W | ↑ | Right Trigger (RT/R2) | Throttle forward (reverse throttle in R gear) |

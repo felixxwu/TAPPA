@@ -4,6 +4,8 @@
 the shared tree/bush meshes + materials), `scripts/tree_scatter.gd`
 (`class_name TreeScatter`), `scripts/billboard_field.gd`
 (`class_name BillboardField`, trees), `scripts/tree_mesh_field.gd`
+
+**Tests:** `tests/headless/test_tree_scatter.gd`, `tests/headless/test_billboard_field.gd`
 (`class_name TreeMeshField`, bushes), `textures/tree.png` (home tree cutout),
 `models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
 `scripts/world.gd._generate_track()`.

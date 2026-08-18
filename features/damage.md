@@ -3,6 +3,8 @@
 **Source:** `scripts/damage_model.gd` (`DamageModel`, a `RefCounted` helper owned
 by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model*.
 
+**Tests:** `tests/headless/test_damage_model.gd`, `tests/headless/test_spectator_damage.gd`, `tests/headless/test_freeroam_wreck.gd`
+
 Each fielded car has a depleting **HP pool**. Impacts drain it during a run and the car's
 handling and power degrade as HP falls. At 0 HP the car is **wrecked**: the run ends as a
 **DNF**, and the car is handed back to the garage at

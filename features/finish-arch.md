@@ -4,6 +4,8 @@
 for **both** gates), placed by `scripts/world.gd._place_arch` (which reads the live
 event off `RallySession`). Iterated visually with `tools/render_model.gd`.
 
+**Tests:** `tests/headless/test_finish_arch.gd`
+
 The fat inflatable **rally gates** that bookend a stage — Dakar-style orange
 portals that span the road, with a `FINISH` / `START` wordmark across the top beam,
 info boards down each leg, and guy ropes anchored to ground stakes on both sides.

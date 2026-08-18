@@ -4,6 +4,8 @@ Roadside boulders: low-poly meshes scattered along the stage verges as **collida
 obstacles, at a density the region chooses. Companion to [trees.md](trees.md) (the
 billboard scenery) and [regions.md](regions.md) (what a region varies).
 
+**Tests:** `tests/headless/test_rocks.gd`
+
 ## The shape of it
 
 | Concern | Where |

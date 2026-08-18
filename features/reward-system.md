@@ -9,6 +9,8 @@ static functions over the authored libraries + the save profile, with no state
 beyond an injected RNG (mirrors `RallyLibrary` / `UpgradeLibrary`, not an
 autoload).
 
+**Tests:** `tests/headless/test_reward_system.gd`
+
 **Scope:** it answers *what* to grant. It does **not** own *when* a reward fires
 (the flow controller, `features/rally-session.md`) or *how* it's revealed (the
 podium). The draw functions return an id; the **caller** delivers it via

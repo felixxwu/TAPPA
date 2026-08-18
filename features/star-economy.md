@@ -5,6 +5,8 @@ Stars are the game's single currency. You **earn** them by placing well in ralli
 rows. Cars are **not** bought — they are won at the rally that advertises them (see
 [prize-rallies.md](prize-rallies.md)). Design: `todo/star-economy.md`.
 
+**Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_rally_library.gd`
+
 Before this, stars were a *score*: a number derived from the roster that gated the
 special-event ladder, and cars were handed out free for every top-3 finish. Both halves
 changed at once, and they had to: a guaranteed car per win made the rallies'

@@ -6,6 +6,8 @@ an exact bar boundary. Ported from the `wufo3` project's double-buffered Tone.js
 loop scheduler, adapted to Godot's audio model. Design spec:
 `docs/superpowers/specs/2026-07-16-interactive-music-loop-scheduler-design.md`.
 
+**Tests:** `tests/headless/test_music_library.gd`, `tests/headless/test_music_schedule.gd`, `tests/headless/test_music_director.gd`
+
 ## File structure contract
 
 A song is split into **4 segments** played in order. Each segment file is authored

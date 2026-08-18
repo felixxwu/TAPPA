@@ -6,6 +6,8 @@
 Settings page in `scripts/settings_menu.gd` and the run-scene wiring in
 `scripts/world.gd`.
 
+**Tests:** `tests/headless/test_benchmark_report.gd`, `tests/headless/test_benchmark_mode.gd`, `tests/headless/test_benchmark_ui.gd`
+
 A one-button performance benchmark launched from **Settings → Benchmark**
 (reachable from both the HQ title screen and the in-run pause menu, since both
 host the shared `SettingsMenu`). It generates a fixed **long stage** (seed

@@ -18,6 +18,8 @@ on the car for good (not on swap, and not when the car is wrecked). Tuning
 (`features/tuning.md`, the lift) is free, reversible per-car config nudges. This
 is the upgrades half.
 
+**Tests:** `tests/headless/test_upgrade_library.gd`, `tests/headless/test_auto_build.gd`, `tests/headless/test_upgrades_grid.gd`, `tests/headless/test_car_stat_bounds.gd`
+
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`

@@ -7,6 +7,8 @@ player, or a player who never picks a display name still plays the whole game
 untouched. Design: `docs/superpowers/specs/2026-07-31-global-leaderboards-design.md`
 — read the deviations below before trusting that file; the code won.
 
+**Tests:** `tests/headless/test_cloud_leaderboard.gd`, `tests/headless/test_challenge_leaderboard.gd`
+
 ## Layout
 
 | File | Responsibility |

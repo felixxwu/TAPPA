@@ -5,6 +5,8 @@ customisation system alongside [tuning.md](tuning.md) (free, reversible handling
 sliders) and [upgrade-catalogue.md](upgrade-catalogue.md) (won, committed parts) —
 and it sits with tuning in spirit: **free, ungated and reversible**.
 
+**Tests:** `tests/headless/test_wheel_customization.gd`, `tests/headless/test_wheel_texture_imports.gd`
+
 ## The rules
 
 - **Cosmetic only.** The swap carries the wheel **texture** and nothing else.

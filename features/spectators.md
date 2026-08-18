@@ -10,6 +10,8 @@ Placement/steering share the low-level scatter helpers: `ScatterMath`
 (`scripts/spatial_grid.gd`, point/index binning + 3x3 proximity). `build_point_grid`
 is a thin wrapper over `SpatialGrid.of_points`.
 
+**Tests:** `tests/headless/test_spectator_scatter.gd`, `tests/headless/test_spectator_steering.gd`, `tests/headless/test_spectator_damage.gd`, `tests/headless/test_smoke.gd`
+
 ## Files
 
 | File | Role |

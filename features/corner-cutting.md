@@ -5,6 +5,8 @@ A time penalty for cutting across the inside of a corner, layered on top of
 progress is never nullified, so a cut can't strand the run; it just costs
 seconds at the finish.
 
+**Tests:** `tests/headless/test_track_progress.gd`, `tests/headless/test_stage_manager.gd`
+
 ## The signature — a sudden jump in progress
 
 Each tick `TrackProgress._physics_process` finds the car's nearest point on the

@@ -2,6 +2,8 @@
 
 **Source:** `scripts/car.gd` (extends `VehicleBody3D`), scene `car.tscn`.
 
+**Tests:** `tests/headless/test_car.gd`, `tests/headless/test_car_types.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_drivetrain.gd`, `tests/headless/test_countdown_hold.gd`
+
 The car is a Godot `VehicleBody3D`, but its tire friction is custom — see
 [drivetrain-and-tires.md](drivetrain-and-tires.md). `car.gd` owns input
 handling, chassis-level forces (drag, downforce, steering, yaw assist), and the

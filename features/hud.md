@@ -3,6 +3,8 @@
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
 `main.tscn`, with `car` wired to the `Car`.
 
+**Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`
+
 On-screen readout plus two interactive mode buttons.
 
 ## Elements

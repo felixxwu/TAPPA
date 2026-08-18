@@ -5,6 +5,8 @@ one has — raise a single dismissible prompt over the title shot with a link to
 store they came from. Nothing else about the game changes: it is one GET, off the
 boot critical path, and every failure mode is a silent no-op.
 
+**Tests:** `tests/headless/test_update_check.gd`
+
 | Piece | Where |
 |---|---|
 | The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |

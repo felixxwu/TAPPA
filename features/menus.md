@@ -14,6 +14,8 @@ routing seam in `scripts/scenes.gd` (`class_name Scenes` — `hub_path()` / `is_
 session-aware fielding
 in `scripts/world.gd`. See the full design in [../todo/menus.md](../todo/menus.md).
 
+**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_flow.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_pause_menu.gd`, `tests/headless/test_settings_menu.gd`
+
 This is the **diegetic 3D build** of the menu shell: HQ is one continuous 3D space
 the camera flies through (an exterior title shot, a garage interior, the map table,
 and the outdoor car park) rather than flat overlay screens. It still closes the

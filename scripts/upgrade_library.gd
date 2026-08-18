@@ -431,6 +431,15 @@ static func fitted_nitrous_id(owned_car: Dictionary) -> String:
 #               supercharger_boost_gain can't stack both multipliers under a fitted turbo.
 #               Values are written as authored (typed), not coerced from a bare `false`.
 #   gain_key  — the sub-dict key effective_meta reads to rate the car at peak boost.
+#
+#   Every name here must EXIST somewhere, and nothing enforces that at runtime:
+#   an effect naming something nobody declares applies silently and does nothing —
+#   the part reads as fitted and no gameplay test fails. Note the two namespaces:
+#   `field` is the CAR META spelling (a key on the car dict, e.g. `tire_compound`),
+#   while `cfg_fields`, `clears` and `enable` are LIVE CONFIG spellings and must be
+#   `@export`s on GameConfig (scripts/game_config.gd). If you add an effect here,
+#   add its target in the same change. `test_upgrade_library.gd` →
+#   `test_every_effect_target_name_exists` is the guard.
 const EFFECTS := {
 	"install_turbo": {
 		"field": "", "op": "install_induction", "feeds_pw": true,
@@ -506,6 +515,17 @@ static func _cfg_fields(desc: Dictionary) -> Array:
 # inert. Pure: mutates the passed-in live `cfg` only, never the authored .tres.
 # Unknown ids and flag-only effects (`unlocks_*`) are skipped here — flags gate
 # the tuning sliders, not config. Driven by the EFFECTS table above.
+# Loud write for the apply path. `Object.set()` on a name the config does not
+# declare is a SILENT no-op — the part reads as fitted and does nothing, and no
+# gameplay test fails (see the EFFECTS header; found by the small-model-readiness
+# loop, round 001). This turns that into an error the editor shows immediately.
+static func _cfg_set(cfg: GameConfig, field: String, value: Variant) -> void:
+	if not (field in cfg):
+		push_error("UpgradeLibrary: effect writes GameConfig.%s, which does not exist — write ignored" % field)
+		return
+	cfg.set(field, value)
+
+
 static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
@@ -517,28 +537,28 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 					# Turn this part on, turn its slot rival off, then stamp the authored
 					# fields. Order matters only in that `clears` runs BEFORE the splat, so
 					# a part is free to author the very field it nominally clears.
-					cfg.set(String(desc["enable"]), true)
+					_cfg_set(cfg, String(desc["enable"]), true)
 					for ckey in (desc["clears"] as Dictionary):
-						cfg.set(ckey, (desc["clears"] as Dictionary)[ckey])
+						_cfg_set(cfg, ckey, (desc["clears"] as Dictionary)[ckey])
 					for tkey in (val as Dictionary):
-						cfg.set(tkey, (val as Dictionary)[tkey])
+						_cfg_set(cfg, tkey, (val as Dictionary)[tkey])
 				"write_fields":
 					# Straight splat of the authored fields onto the config — no enable
 					# flag, no slot rival to clear (has_nitrous() reads the values
 					# themselves, so a zero gain/tank IS "not fitted").
 					for tkey in (val as Dictionary):
-						cfg.set(tkey, (val as Dictionary)[tkey])
+						_cfg_set(cfg, tkey, (val as Dictionary)[tkey])
 				"mult":
 					for f in _cfg_fields(desc):
-						cfg.set(f, float(cfg.get(f)) * float(val))
+						_cfg_set(cfg, f, float(cfg.get(f)) * float(val))
 				"add":
 					for f in _cfg_fields(desc):
-						cfg.set(f, float(cfg.get(f)) + float(val))
+						_cfg_set(cfg, f, float(cfg.get(f)) + float(val))
 				"set":
 					# Replaces the baseline outright: the authored figure IS the value, so
 					# what the car brought to the slot does not enter into it.
 					for f in _cfg_fields(desc):
-						cfg.set(f, float(val))
+						_cfg_set(cfg, f, float(val))
 				_:
 					pass  # "flag" (gates tuning sliders) + unknown ids: no cfg effect
 

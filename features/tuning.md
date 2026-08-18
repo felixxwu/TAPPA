@@ -8,6 +8,8 @@ lift (`scripts/hq.gd`) and the pre-event start line (`scripts/start_line.gd`).
 Player state lives on each `OwnedCar` (`Save`,
 [save-persistence.md](save-persistence.md)).
 
+**Tests:** `tests/headless/test_tuning_library.gd`, `tests/headless/test_tuning_panel.gd`, `tests/headless/test_drivetrain.gd`, `tests/headless/test_menu_flow.gd`
+
 **Tuning** is the **free, reversible** half of *Tuning & upgrades* — handling
 nudges the player makes at the garage **tuning lift**, as distinct from consumable
 **upgrades** ([upgrade-catalogue.md](upgrade-catalogue.md)). A third, purely

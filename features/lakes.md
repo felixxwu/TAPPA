@@ -5,6 +5,8 @@
 `shaders/water.gdshader`, plus water-avoidance in `scripts/track_generator.gd`
 and wiring in `scripts/world.gd` / `scripts/rally_session.gd` / `scripts/car.gd`.
 
+**Tests:** `tests/headless/test_lake_field.gd`, `tests/headless/test_lakes_integration.gd`
+
 Lakes are water pooled in the natural terrain basins beside the road, up to an
 **authored per-event water level**. The road is guaranteed never to run into water
 because the track-layout DFS treats below-water cells as obstacles and routes

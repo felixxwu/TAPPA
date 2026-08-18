@@ -3,6 +3,8 @@
 The map's NE corner, filled in after being reserved from the start. It is the one
 region that does more than look different: it is the first to influence **handling**.
 
+**Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`, `tests/headless/test_lake_field.gd`
+
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
 - **Handling seat:** `RallySession.apply_event_config`
 - **Grip:** `Drivetrain.surface_tire_params`, `LapTimeModel._surface_grip`

@@ -4,6 +4,8 @@
 `tools/build_ui_theme.gd` (generator), `fonts/` (Syne Mono), and the
 project default-theme wiring in `project.godot` (`[gui] theme/custom`).
 
+**Tests:** `tests/headless/test_ui_theme.gd`, `tests/headless/test_ui_theme_fmt.gd`
+
 One place that defines how every menu, panel and button looks, so the UI reads as
 one polished, consistent whole instead of a pile of one-off `Color(...)` literals
 and ad-hoc font sizes. The look is lifted from the previous **web build** of this

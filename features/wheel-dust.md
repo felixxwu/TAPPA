@@ -8,6 +8,8 @@ own colour, dimensions and roll picked at emit time: grey-brown clods on gravel,
 slim green blades on grass, nothing on tarmac (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
 across event regenerations), exactly like `TireMarks`.
 
+**Tests:** `tests/headless/test_wheel_particles.gd`, `tests/headless/test_cpu_particle_pool.gd`
+
 ## Why a hand-rolled CPU pool + MultiMesh
 
 The project renders with `gl_compatibility` (desktop + mobile), which has no

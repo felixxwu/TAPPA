@@ -6,6 +6,8 @@
 plus `GameConfig.map_reveal_radius` and the
 `map_pos` / `reveal_radius` fields authored on every `RallyLibrary.RALLIES` entry.
 
+**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_rally_eligibility_reason.gd`, `tests/headless/rally_fixtures.gd`
+
 The world map is **dark except where the player has driven**. Every rally the player
 completes lights a circle around its own pin; a rally becomes enterable when it falls
 inside any lit circle. The player pushes the frontier outward and **chooses which

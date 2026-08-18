@@ -11,6 +11,8 @@ not win, and tightens when they keep taking P1.
 - **Config:** `GameConfig.ai_adapt_*`
 - **Design:** `docs/superpowers/specs/2026-08-16-adaptive-difficulty-design.md`
 
+**Tests:** `tests/headless/test_ai_difficulty.gd`, `tests/headless/test_rally_session.gd`
+
 ## The lever is machinery, not driving
 
 The opponent field is already drawn matched to the player's `CarPerformance` rating

@@ -5,6 +5,8 @@ and wired by `scripts/world.gd` (`_build_start_line`) for staged session runs. H
 [`StageManager`](stage.md) in its `STAGING` phase and launches it after a cinematic
 reveal. Uses the scripted-control hook on [`car.gd`](car-physics.md) for the grid cars.
 
+**Tests:** `tests/headless/test_start_line.gd`, `tests/headless/test_rally_session.gd`, `tests/headless/test_stage_manager.gd`
+
 The diegetic sequence between picking a car in HQ and the `3·2·1·GO` countdown
 (`todo/menus.md` location 2). It runs **inside the live run scene** (`main.tscn`) once
 the world is built and a session is active — a [`RallySession`](rally-session.md) event

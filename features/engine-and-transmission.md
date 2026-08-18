@@ -3,6 +3,8 @@
 **Source:** `scripts/engine.gd` (`class_name EngineSim extends RefCounted`).
 Owned by `Drivetrain`; stepped each physics substep.
 
+**Tests:** `tests/headless/test_engine.gd`, `tests/headless/test_engine_logic.gd`
+
 Models a flywheel + gearbox + clutch: a torque curve over RPM, sequential gear
 selection, automatic upshift/downshift, and a bouncing rev limiter.
 
@@ -87,9 +89,10 @@ than a 0.66 L kei triple. A single global term couldn't serve both ends — enou
 friction to give the big engines authority stalled the tiny ones (the kei Acty
 couldn't pull away). The GameConfig `engine_friction_base` (**20**) is now only a
 **fallback** for the baseline car before an engine is fielded (or a synthetic engine
-dict that omits the field). The rpm-dependent `engine_friction_slope` (**4**) stays
-global. As a feel anchor, a 3.0 L flat-6 (`engine_friction_base = 30`) gives ≈48 N·m
-of drag at its 4000-rpm peak.
+dict that omits the field). The rpm-dependent `engine_friction_slope` (**1.0**,
+the script default — it is not overridden in `config/game_config.tres`) stays
+global. As a feel anchor, a 3.0 L flat-6 (`engine_friction_base = 30`) gives ≈34 N·m
+of drag at its 4000-rpm peak (30 + 1.0 × 4).
 
 `peak_torque`, `peak_torque_rpm`, `redline_rpm`, `cylinders`, and
 `firing_angles` all come from the fielded car's referenced **engine** in

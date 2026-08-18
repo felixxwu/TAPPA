@@ -5,6 +5,8 @@ which of those bytes are deliberately *not* shipped, and the import settings tha
 decide the size. Companion to [rendering.md](rendering.md) (how it looks) — this
 file is about what it costs.
 
+**Tests:** `tests/headless/test_wheel_texture_imports.gd`, `tests/headless/test_region_assets.gd`
+
 ## Where the size goes
 
 The Web export writes `build/web/index.pck`. To see what is actually in it, parse

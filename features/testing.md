@@ -5,6 +5,8 @@
 `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot` (override with
 `$GODOT`).
 
+**Tests:** `tests/headless/test_smoke.gd`
+
 > Per CLAUDE.md: run `./run_tests.sh` in the **background**, wait for the
 > completion notification, and never start a second run while one is active. All
 > tests must pass before declaring work complete.

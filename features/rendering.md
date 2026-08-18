@@ -3,6 +3,8 @@
 The game targets a PlayStation-1 aesthetic: low internal resolution, unshaded
 flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 
+**Tests:** `tests/headless/test_display_stretch.gd`, `tests/headless/test_render_smoke.gd`
+
 ## Display / renderer (`project.godot`)
 
 - Logical frame height: `display/window/size/viewport_height` (`project.godot`) — the

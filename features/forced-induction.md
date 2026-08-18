@@ -8,6 +8,8 @@
 upgrades, `effective_meta`), `scripts/engine_audio_synth.gd` /
 `scripts/engine_audio.gd` (whistle / BOV / anti-lag / whine audio).
 
+**Tests:** `tests/headless/test_turbo.gd`, `tests/headless/test_engine.gd`, `tests/headless/test_engine_audio.gd`, `tests/headless/test_engine_library.gd`, `tests/headless/test_upgrade_library.gd`
+
 Turbo and supercharger are both properties of the **engine**, not the car —
 same pattern as the torque curve and gearbox (see
 [engine-and-transmission.md](engine-and-transmission.md)). Either can arrive

@@ -45,6 +45,14 @@ const DEFAULT_TREE_MIX: Array = [
 # so a corner may hold any number of them, including none. A region's only job is its LOOK
 # and its waterline.
 #
+# ADDING A REGION IS TWO EDITS, NOT ONE. An entry here is inert on its own: the ONLY
+# thing that ever selects a region is a rally's `region` tag in RallyLibrary.RALLIES
+# (scripts/rally_library.gd), which is what puts it on a stage and on the map. Add the
+# entry here AND tag at least one rally with its id, or you have shipped dead data that
+# renders nowhere and that every region test still passes.
+# Guarded by tests/headless/test_region_assets.gd ->
+# test_every_region_is_reachable_from_at_least_one_rally.
+#
 # Ids are load-bearing: "home" in particular is hardcoded in
 # world.gd._current_region_look() as the default/challenge/fallback region, so never
 # rename it. The coastal corners carry no look block of their own — they resolve their

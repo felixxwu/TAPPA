@@ -10,6 +10,8 @@
 `tests/headless/test_lap_time_model.gd`. Design:
 `docs/superpowers/specs/2026-08-15-car-performance-rating-design.md`.
 
+**Tests:** `tests/headless/test_car_performance.gd`, `tests/headless/test_lap_time_model.gd`
+
 ## What the rating is
 
 One number saying how fast a given build is — higher is faster, the way Forza's

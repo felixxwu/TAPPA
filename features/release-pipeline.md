@@ -5,6 +5,8 @@ One workflow — `.github/workflows/deploy.yml`, named **Release** — runs on e
 push to `main` (plus `workflow_dispatch`), and it is the only thing that ships:
 there is no manual upload step in the normal loop.
 
+**Tests:** `tests/headless/test_track_cache.gd`, `tests/headless/test_update_check.gd`, `tests/headless/test_overworld_cache.gd`, `tests/headless/test_lineup_cache.gd`
+
 ## Jobs
 
 | Job | Name in the Actions tab | Ships to |

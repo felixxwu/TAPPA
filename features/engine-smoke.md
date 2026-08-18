@@ -2,6 +2,8 @@
 
 **Source:** `scripts/engine_smoke.gd` (`EngineSmoke`, `extends CpuParticlePool`).
 
+**Tests:** `tests/headless/test_engine_smoke.gd`
+
 Grey smoke that puffs from the bonnet each time a **damaged engine misfires** — a
 visual companion to the [damage misfire](damage.md) fuel cut. Since the misfire only
 fires below `damage_misfire_health_threshold`, a healthy car emits no smoke for free

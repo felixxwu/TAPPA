@@ -7,6 +7,8 @@ authoring, config, the funnel into the live config, tyre grip, rival-time scalin
 cache keying, the overcast/dust look and the loading-screen tell. This file is the
 hub; each half is documented in depth in its own feature file, linked below.
 
+**Tests:** `tests/headless/test_weather_library.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_loading_screen.gd`, `tests/headless/test_track_cache.gd`
+
 Rain and sandstorm are each a **variety** lever, not a **difficulty** one — see
 "Rival times". Sandstorm is authored only onto `region == "greece"` events — the arid
 desert pins in the map's SW/S, which is where the look belongs; rain has no such

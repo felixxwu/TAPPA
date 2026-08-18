@@ -4,6 +4,8 @@
 `project.godot` alongside `Config`/`Save`; no `class_name`, reached by the global
 `RallySession`).
 
+**Tests:** `tests/headless/test_rally_session.gd`, `tests/headless/test_rally_library.gd`
+
 The rally-level coordinator: it turns "the player picked rally R with owned car C"
 into the full loop — field the car, run 3 events, accumulate times, place against
 the fixed opponent field, grant rewards, finish. It sits **one level above** the

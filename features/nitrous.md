@@ -8,6 +8,8 @@ on the count of completed ordinary rallies now, not on a star total, see
 deliberately a reward that makes hard events easier rather than a stat that
 reshapes the car.
 
+**Tests:** `tests/headless/test_nitrous.gd`
+
 **It is ONE part.** It was a four-rung ladder (NOS stage 1-4), each rung replacing
 the last and each gated on its own showdown special. That is collapsed to a single
 part carrying the top rung's numbers: the intermediate steps were changes the player

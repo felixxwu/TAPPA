@@ -173,6 +173,15 @@ var peak_torque_rpm := 4500.0
 ## part's figures in (step 2). 1.0 on a car with no such tyre fitted, which makes the
 ## whole mechanism an exact no-op for every other compound. The authored numbers live
 ## on the part in UpgradeLibrary.UPGRADES, like every other effect.
+##
+## THIS IS A CLOSED PAIR — do not just add a third one. `tire_surface_mult` below takes
+## exactly a snow and a tarmac multiplier, and the four sites that call it live in
+## drivetrain.gd (`_surface_at`) and lap_time_model.gd. A new surface axis (gravel, wet,
+## …) means changing that function AND every call site AND car.gd::_apply_physics_spec's
+## reset AND car_performance.gd::merged_meta's carry list. An extra @export here on its
+## own compiles, applies, and does absolutely nothing — the part reads as fitted and no
+## gameplay test fails. Guarded by tests/headless/test_upgrade_library.gd ->
+## test_every_grip_feeding_effect_field_is_read_by_the_physics.
 @export var tire_snow_grip_mult := 1.0
 @export var tire_tarmac_grip_mult := 1.0
 ## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two

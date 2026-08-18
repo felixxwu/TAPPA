@@ -25,6 +25,8 @@ RPM/throttle/shift state.
 - **`scripts/engine_audio_synth.gd`** (`class_name EngineAudioSynth`) — pure DSP,
   no nodes.
 
+**Tests:** `tests/headless/test_engine_audio.gd`, `tests/headless/test_start_line.gd`, `tests/headless/test_world_engine_mute.gd`, `tests/headless/test_car_preview_audio.gd`
+
 ## Synthesis model (`EngineAudioSynth`)
 
 One master crank phase (0..1 over a 720° four-stroke cycle) plus a firing pulse

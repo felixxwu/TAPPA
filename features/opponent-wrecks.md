@@ -6,6 +6,8 @@ verge with a small crowd of onlookers gathered around it and lazy engine smoke
 rising from it. Purely presentational on top of the existing opponent DNF — a
 crashed rival was always a DNF; now you also drive past the evidence.
 
+**Tests:** `tests/headless/test_freeroam_wreck.gd`, `tests/headless/test_wreck_screen.gd`, `tests/headless/test_wreck_site_gate.gd`
+
 ## The wreck decision (rare, capped) — `RallyLibrary`
 
 Wrecks are decided when the opponent field is generated
