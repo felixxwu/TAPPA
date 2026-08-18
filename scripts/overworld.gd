@@ -2202,11 +2202,11 @@ func _field_car(car: Node3D) -> void:
 		car.call("apply_owned", owned)
 	# NO DAMAGE IN THE HUB. Driving between rallies is navigation, not competition — clipping a
 	# tree on the way to an event should not cost HP the player then pays stars to repair, and a
-	# long drive home should not be able to WRECK the car outright.
+	# long drive home should not be able to gut the car's health.
 	#
 	# Set AFTER fielding: apply_owned/apply_car rebuild the model (`damage.field(...)`), so an
 	# earlier assignment would be overwritten. Gated at DamageModel.enabled rather than by
-	# suppressing impacts here, so both entry points are covered and `wrecked` can never fire.
+	# suppressing impacts here, so both entry points are covered and no HP can be lost.
 	var model = car.get("damage")
 	if model != null:
 		model.enabled = false

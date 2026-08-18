@@ -65,18 +65,20 @@ static func _board_entry_doc(parent_doc: String, collection_id: String, uid: Str
 
 # --- Shared Firestore calls ----------------------------------------------------
 
-# The top `limit` entries (offset `offset`) ordered ascending by `order_field`,
-# in `collection_id` under `parent_doc`. Only the automatic single-field index
-# on the ordered field is needed, so there is no composite index to deploy.
-# `row_builder` is the board's own `_row_from_document` (row shape differs per
-# board, so it stays there, not here).
+# The top `limit` entries (offset `offset`) ordered by `order_field`, in
+# `collection_id` under `parent_doc`. `direction` defaults to ascending; either
+# direction needs only the automatic single-field index on the ordered field, so
+# there is no composite index to deploy either way. `row_builder` is the board's
+# own `_row_from_document` (row shape differs per board, so it stays there, not
+# here).
 func _board_run_query(parent_doc: String, collection_id: String, order_field: String,
-		token: String, limit: int, offset: int, row_builder: Callable) -> Dictionary:
+		token: String, limit: int, offset: int, row_builder: Callable,
+		direction := "ASCENDING") -> Dictionary:
 	var query := {
 		"from": [{"collectionId": collection_id}],
 		"orderBy": [{
 			"field": {"fieldPath": order_field},
-			"direction": "ASCENDING",
+			"direction": direction,
 		}],
 		"limit": limit,
 	}

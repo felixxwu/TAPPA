@@ -15,7 +15,7 @@ extends Node
 # fresh load of main.tscn with that event's seed written into Config.data first.
 #
 # This module is the testable BRAIN: it is driven by report_event_result /
-# report_wreck (called by the run scene's StageManager / damage model) and emits
+# stage results (reported by the run scene's StageManager) and emits
 # signals the menus layer (todo/menus.md) renders (presence, standings, reward
 # reveal, podium). The run-scene fielding + signal wiring lands with menus, where
 # there is finally an entry point (the map's start_rally) to exercise it.
@@ -77,7 +77,7 @@ var _took_damage_this_rally := false
 var _pending_repair: Dictionary = {}   # between-event pit-repair summary, shown once by the run scene (take_pending_repair)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 # Car-park detune-to-enter agreements are TEMPORARY, for this rally only:
-# instance_id -> the engine_detune to restore once the rally ENDS (finish, wreck
+# instance_id -> the engine_detune to restore once the rally ENDS (finish
 # or abandon — all funnel through _reset_to_idle, which never runs mid-rally, so
 # the tune can't creep back up between events). Registered by hq's detune confirm
 # (register_detune_revert); a garage-lift detune never touches this.
@@ -125,7 +125,7 @@ var pending_rally_pick_id := ""
 #
 # The spawn rule this serves: start at the GARAGE, unless you are returning from a rally, in
 # which case start at that rally's zone. Set from _reset_to_idle, so it covers every way a
-# rally can end — finish, wreck and abandon alike. Coming out of a rally you quit is still
+# rally can end — finish and abandon alike. Coming out of a rally you quit is still
 # coming out of that rally, and being put back where you were beats being teleported home.
 #
 # Deliberately SESSION-scoped rather than saved to the profile: that is what makes "on game
@@ -499,27 +499,38 @@ func current_event_leaders(n: int = 3) -> Array:
 	return rows.slice(0, n)
 
 
+# EVERY classified rival's time (ms) for the current event, ascending — the whole field,
+# not the podium slice current_event_leaders() returns. Feeds the in-run live standings
+# readout (features/hud.md), which needs the full field to say what position the player
+# is running in and who is directly ahead of them.
+#
+# Same classification rule as current_event_leaders: a negative time is a rival DNF and
+# is not classified, so it can't be a position the player is chasing.
+func current_event_field_times_ms() -> Array:
+	if _event_index < 0:
+		return []
+	var out: Array = []
+	for opp in _opponent_field:
+		var times: Array = opp.get("event_times_ms", [])
+		if _event_index < times.size():
+			var t := int(times[_event_index])
+			if t >= 0:
+				out.append(t)
+	out.sort()
+	return out
+
+
 # How many events the player has completed so far (for the interstitial header).
 func events_completed() -> int:
 	return _event_times_ms.size()
 
 
-# The fielded car was wrecked (HP→0, from the damage model). Immediate DNF: skip
-# the remaining events and resolve. Upgrades already revealed this rally are kept.
-func report_wreck() -> void:
-	if _phase != Phase.RUNNING:
-		return
-	_dnf = true
-	# A wreck is the most damage there is, and it never routes through report_event_result —
-	# so latch the flag here too, or a wrecked rally would resolve reading "clean".
-	_took_damage_this_rally = true
-	# The bound damage model already removes the instance; calling again is a
-	# harmless no-op, but we own the destruction so report_wreck is correct even
-	# when driven directly (tests / an unbound caller).
-	if _car_instance_id >= 0:
-		Save.record_wreck(_car_instance_id)
-		Save.save()
-	_resolve_results()
+# There is NO wreck path any more. Damage can never end a rally: HP bottoms out at 0 and
+# the car drives on, weakened (features/damage.md). `_dnf` therefore stays false for the
+# PLAYER through a normal rally — it survives because the standings/result contract still
+# carries a dnf flag and RIVALS still DNF (RallyLibrary.build_standings). What used to sit
+# here — report_wreck(), which set _dnf, latched _took_damage_this_rally and called
+# Save.record_wreck — is gone along with the WreckScreen that drove it.
 
 
 # DEV: instantly finish the whole rally. Every event (already-run or not) is
@@ -1053,7 +1064,7 @@ func register_detune_revert(instance_id: int, prior_frac: float) -> void:
 
 
 func _reset_to_idle() -> void:
-	# The rally is over (finish, wreck or abandon): put back the engine tune the
+	# The rally is over (finish or abandon): put back the engine tune the
 	# car-park detune agreement temporarily overrode. Only here — never at an
 	# event boundary — so the tune can't go back up mid-rally.
 	for id in _detune_revert:

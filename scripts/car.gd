@@ -38,11 +38,6 @@ const SPIN_ASSIST_DAMPING := 0.35
 # ever touches a few obstacles at once; a small cap keeps contact monitoring cheap.
 const MAX_CONTACTS_REPORTED := 8
 
-# Re-emitted from the car's DamageModel when working HP hits 0 (a run DNF). A
-# fielded car has already been removed from the save by then; the rally/menu layer
-# (features/rally-session.md) listens here. See features/damage.md.
-signal wrecked()
-
 var _start_transform: Transform3D
 # The GameConfig this car's physics reads/writes. DEFAULTS to the global Config.data
 # (so the single active/player car stays wired to the HUD, tuning lift, audio synth
@@ -354,7 +349,6 @@ func _ready() -> void:
 	# fills in the per-car max HP; this keeps the baseline car sane on its own.
 	damage = DamageModel.new()
 	damage.field(damage.max_hp, damage.max_hp)
-	damage.wrecked.connect(_on_wrecked)
 	_debug_overlay = WheelForceDebug.new(self)
 	_debug_overlay.visible = cfg.debug_wheel_forces
 	add_child(_debug_overlay)
@@ -586,10 +580,13 @@ func _timed_physics_process(delta: float) -> void:
 	# BEFORE the grip arbitration scaled it — so holding brake AND steering at a standstill
 	# still anchors the car. See _resolve_drive_inputs and _apply_parking_hold.
 	_apply_parking_hold(handbrake or bool(inputs["pinned"]), speed, delta)
-	# Damage misfire: feed the engine its misfire intensity so it cuts fuel in
-	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
-	# cuts; ramps to 1 at 0 HP). See features/damage.md.
+	# The two engine-damage effects, both fed from the SAME health ramp so they arrive
+	# together once HP falls below the health threshold (a healthy car gets 0 misfire and
+	# full revs). A damaged engine cuts fuel in stumbling bursts AND will no longer pull to
+	# the top of the rev range; neither ever stops the car — they bottom out at a tunable
+	# worst case. See features/damage.md.
 	engine.misfire_level = damage.misfire_level(cfg)
+	engine.rev_limit_scale = damage.rev_limit_fraction(cfg)
 	# The H-key debug-arrow toggle is handled HERE, before the step, rather than in the
 	# overlay: the overlay is a child (runs after this parent), so flipping visibility
 	# there would lag the drivetrain's readout gate by a frame and the arrows would draw
@@ -1202,7 +1199,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	_has_simulated = true
 	# The replay ghost is positioned via the physics server (see _step_replay); it must
 	# take no damage and fell no trees — the per-frame reposition would otherwise read
-	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
+	# as a huge deceleration and gut its HP for standing still.
 	# A kinematically posed car (the rival ghost) is moved the same way and needs the same
 	# immunity — otherwise chasing it would rack up damage on a car that isn't driving.
 	if replay_playback or kinematic_pose:
@@ -1268,17 +1265,6 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		var dv := (_approach_velocity - state.linear_velocity).length()
 		var contact_point := state.get_contact_local_position(0) if contacts > 0 else global_position
 		damage.register_deceleration(dv, state.step, contact_point, cfg)
-
-
-# DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an
-# UNBOUND model, no OwnedCar) there is no DNF flow yet, so heal to full and drop
-# back at the spawn so play continues; a fielded car leaves the consequences to
-# its listener (features/rally-session.md).
-func _on_wrecked() -> void:
-	wrecked.emit()
-	if damage.instance_id < 0:
-		damage.hp = damage.max_hp
-		_reset()
 
 
 # True when at least one wheel is not touching the ground — the trigger for the
@@ -1988,8 +1974,8 @@ func apply_owned(owned: Dictionary) -> String:
 	# config-derived fitment caches are stale — re-derive them now the config is final.
 	# (Rally staging would reset the engine anyway; free roam never does.)
 	drivetrain.engine.refresh_fitment()
-	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
-	# removes it from the save.
+	# Step 4: working HP starts at the saved value; bind to the instance so the run's
+	# damage is persisted back to that car at each event boundary.
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
 	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),

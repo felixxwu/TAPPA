@@ -476,7 +476,7 @@ func _focus_changed(snap := false) -> void:
 		# damage line (an instruction about a car you cannot enter anyway) is skipped.
 		pass
 	else:
-		# A wrecked focused car gates Start — permanently.
+		# A damaged focused car gets the repair instruction (Start stays live).
 		_refresh_focus_damage(owned)
 	_hq._normalize_menus()  # keep house rules on the just-updated car name / stats
 	# A car-flank world panel is welded to the FOCUSED car, so it has to follow the
@@ -544,8 +544,8 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 	return "[center]%s:  %.0f → %.0f hp/tonne %s[/center]" % [car_name, before, after, arrow]
 
 
-# A wrecked focused car can't be entered — ever: disable Start and say so. There is no
-# repair to offer any more. A healthy car clears all of this — an
+# Damage never blocks entry (features/damage.md): this only writes the repair INSTRUCTION for
+# a car that handles badly, and always leaves Start live. A healthy car clears all of this — an
 # over-powered car looks eligible here; the over-limit prompt only surfaces as a
 # confirm popup on Start (_show_over_limit_prompt).
 # Whether the focused car can enter the selected rally, ALSO writing the verdict to the
@@ -571,8 +571,8 @@ func _refresh_focus_eligibility(owned: Dictionary) -> bool:
 
 
 func _refresh_focus_damage(owned: Dictionary) -> void:
-	# Damage NEVER blocks entry any more. A wreck is not terminal (Save.record_wreck hands
-	# the car back at part health), so a battered car is a car you can still race — badly.
+	# Damage NEVER blocks entry. Damage cannot wreck a car at all (features/damage.md) — even
+	# at 0 HP it is a car you can still race, just a slow, stumbling, rev-capped one.
 	# The warning is an INSTRUCTION now, not a verdict: it points at the repair the player
 	# can go and buy (features/star-economy.md) rather than telling them the car is dead.
 	_hq._start_button.disabled = false

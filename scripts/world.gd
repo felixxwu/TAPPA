@@ -220,6 +220,13 @@ func _ready() -> void:
 		_field_car(ChallengeSession.car_instance_id())
 	elif RallySession.is_active():
 		_field_car(RallySession.car_instance_id())
+	elif LobbySession.is_active():
+		# The round's loaner: everyone drives the same car, nobody owns it. A bare
+		# catalogue model, so stock parts / full HP / no tuning come for free and
+		# nothing is written back to the profile — which is what lets a player with
+		# an empty garage race the first time they open the mode.
+		var lobby_idx := CarLibrary.index_of(LobbyRound.car_id_for(LobbySession.round_key()))
+		$Car.apply_car(lobby_idx if lobby_idx >= 0 else 0)
 	elif RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "":
 		# Free roam (session-less): field the car the player picked in the car park.
 		# An OWNED instance runs with its baseline + upgrades + saved HP; a bare catalogue
@@ -256,8 +263,7 @@ func _ready() -> void:
 	# Next returns to HQ instead (_on_session_event_completed's no-session branch).
 	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
 		_stage_manager.stage_completed.connect(_on_session_event_completed)
-	# A session run additionally wires the wreck back to the orchestrator, and
-	# routes the rally's finish to the podium.
+	# A session run additionally routes the rally's finish to the podium.
 	# A rally event and a challenge stage take the SAME path here (they're mutually
 	# exclusive — only one session is ever active): wire the signals, stage the
 	# start line, then drain that session's pending pit repair. The only thing that
@@ -1590,10 +1596,6 @@ var _distant_terrain: DistantTerrain
 # session runs and freed with the scene on the next event reload.
 var _start_line: StartLine
 
-# The mid-event wreck menu (orbit camera + Return to HQ); built when the fielded
-# car is wrecked, freed with the scene when the rally resolves to the podium.
-var _wreck_screen: WreckScreen
-
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
@@ -1632,6 +1634,11 @@ func _setup_stage_splits(track_result: Dictionary, staged: bool, _cfg: GameConfi
 	if meta.is_empty():
 		return
 	_p1_snapshot = p1
+	# The field the live standings readout ranks the player against (features/hud.md). Wired
+	# here rather than at GO with the pace table: the field is known as soon as the event is
+	# set up, and this path also re-runs when the grid is re-drawn under us
+	# (_on_opponent_field_changed), so the readout can't be left ranking a stale field.
+	_stage_manager.setup_live_standings(RallySession.current_event_field_times_ms())
 	var splits := RallyLibrary.derive_turn_splits(track_result, meta, RallySession.current_event())
 	for sp in splits:
 		_split_boundaries.append(float(sp["end_offset_m"]))
@@ -1955,8 +1962,6 @@ func _field_car(instance_id: int) -> void:
 func _wire_session_signals() -> void:
 	# stage_completed is already connected in _ready() (every mode wires it before
 	# this session-only pass runs), so it's intentionally not re-connected here.
-	if not ($Car as Node).wrecked.is_connected(_on_session_car_wrecked):
-		($Car as Node).wrecked.connect(_on_session_car_wrecked)
 	if RallySession.is_active():
 		if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
 			RallySession.rally_finished.connect(_on_session_rally_finished)
@@ -2134,27 +2139,6 @@ func _on_leaderboard_hidden_changed(hidden: bool) -> void:
 	var ea := $Car.get_node_or_null("EngineAudio") as AudioStreamPlayer
 	if ea != null:
 		ea.process_mode = Node.PROCESS_MODE_INHERIT if hidden else Node.PROCESS_MODE_DISABLED
-
-
-func _on_session_car_wrecked() -> void:
-	# Don't cut straight to the podium — that's too sudden. Let the crash play out,
-	# then show the wreck menu (orbit camera + Return to HQ); reporting the wreck
-	# (the DNF) is deferred until the player chooses to leave. Headless runs (no
-	# display, e.g. tests) skip the cinematic and report immediately.
-	# A challenge run has no rival field / podium, but a wreck ends it the same
-	# way — no-retry DNF (spec §3) — so it routes to ChallengeSession instead of
-	# RallySession whenever a challenge is the active session.
-	var report_wreck: Callable = ChallengeSession.report_wreck if ChallengeSession.is_active() \
-		else RallySession.report_wreck
-	if _headless or _wreck_screen != null:
-		report_wreck.call()
-		return
-	_wreck_screen = WreckScreen.new()
-	_wreck_screen.name = "WreckScreen"
-	add_child(_wreck_screen)
-	_wreck_screen.return_requested.connect(report_wreck)
-	_wreck_screen.setup($Car, $ChaseCamera as Camera3D, $HUD as CanvasLayer,
-		$MobileControls as CanvasLayer)
 
 
 # Rally over (or DNF): show the podium. Loads under the (placeholder) transition.

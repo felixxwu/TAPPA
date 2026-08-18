@@ -130,7 +130,7 @@ func test_misfire_count_advances_only_on_cuts() -> void:
 
 
 func test_damaged_engine_cuts_fuel_intermittently() -> void:
-	_engine.misfire_level = 1.0  # wrecked: worst-case misfire rate
+	_engine.misfire_level = 1.0  # worst-case misfire rate
 	_engine._rng.seed = 1
 	var cuts := _count_misfires(3000)
 	assert_gt(cuts, 0, "a heavily damaged engine cuts fuel during the run")
@@ -175,6 +175,64 @@ func test_shift_up_speeds_are_increasing_and_reachable() -> void:
 		var redline_v := _engine.redline_omega() / gr * cfg.wheel_radius
 		assert_lt(v, redline_v,
 			"gear %d upshifts before its rev limiter, so the speed is reachable" % g)
+
+
+# --- Damage rev cap (features/damage.md) -------------------------------------
+# car.gd feeds DamageModel.rev_limit_fraction into rev_limit_scale each tick; the
+# limiter, the crank clamp and the auto box's shift points all read redline_omega(),
+# so lowering the scale has to move them together. The FRACTION itself is tunable —
+# these drive the scale explicitly and assert the relationships.
+
+func test_lowering_the_rev_limit_scale_lowers_the_redline() -> void:
+	var full := _engine.redline_omega()
+	_engine.rev_limit_scale = 0.6
+	var capped := _engine.redline_omega()
+	assert_lt(capped, full, "a lowered rev cap lowers the redline the engine may reach")
+	_engine.rev_limit_scale = 1.0
+	assert_almost_eq(_engine.redline_omega(), full, 1e-6, "restoring the scale restores the redline")
+
+
+func test_rev_limit_scale_is_clamped_to_a_usable_band() -> void:
+	# Whatever is fed in, the engine keeps a usable rev range: never above the config's
+	# own redline, and never squashed onto the idle clamp (where it could not pull away).
+	var full := _engine.redline_omega()
+	_engine.rev_limit_scale = 5.0
+	assert_almost_eq(_engine.redline_omega(), full, 1e-6, "the cap can never RAISE the redline")
+	_engine.rev_limit_scale = 0.0  # clamps to the minimum scale
+	assert_gte(_engine.redline_omega(), _engine.idle_omega() * EngineSim.MIN_REDLINE_IDLE_RATIO - 1e-6,
+		"the capped redline is floored comfortably above idle")
+	assert_gt(_engine.redline_omega(), _engine.idle_omega(),
+		"so a maximally damaged engine still has revs to use")
+
+
+func test_lowering_the_rev_limit_scale_pulls_the_shift_points_down() -> void:
+	# The upshift airspeeds are derived from the redline, so the setter must recompute
+	# them — otherwise the auto box would hold a gear the engine can no longer pull to
+	# and just sit bouncing off the lowered limiter.
+	var full_redline := _engine.redline_omega()
+	var before: Array[float] = _engine.shift_up_speeds.duplicate()
+	_engine.rev_limit_scale = 0.6
+	assert_lt(_engine.redline_omega(), full_redline, "precondition: the cap really lowered the redline")
+	var after: Array[float] = _engine.shift_up_speeds
+	assert_eq(after.size(), before.size(), "still one upshift speed per gear")
+	var moved := false
+	for i in before.size():
+		if is_inf(before[i]):
+			assert_true(is_inf(after[i]), "the top gear's slot stays infinite")
+			continue
+		assert_lt(after[i], before[i], "gear %d upshifts earlier under a lowered rev cap" % (i + 1))
+		moved = true
+	assert_true(moved, "at least one real shift point moved")
+
+
+func test_auto_box_still_upshifts_under_a_lowered_rev_cap() -> void:
+	# The behaviour that matters: with the cap down the box must still change up, at the
+	# NEW (lower) speed — a damaged car runs out of each gear earlier, it does not get stuck.
+	_engine.auto = true
+	_engine.rev_limit_scale = 0.6
+	_engine.gear = 1
+	_engine.update_auto(1.0, _engine.shift_up_speeds[0] + 1.0)
+	assert_eq(_engine.gear, 2, "the box upshifts at the lowered shift point")
 
 
 func test_wheelspin_revs_do_not_upshift() -> void:

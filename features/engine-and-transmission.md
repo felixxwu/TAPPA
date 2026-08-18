@@ -18,12 +18,16 @@ selection, automatic upshift/downshift, and a bouncing rev limiter.
 | `shift_timer` | seconds of clutch-open throttle cut during a shift |
 | `throttle` | last drive request (0..1), used by audio synth |
 | `limiting` | rev-limiter fuel-cut latch |
+| `rev_limit_scale` | fraction of the config redline this engine may rev to (damage rev cap; 1.0 = healthy) |
 | `shift_up_speeds` | precomputed upshift airspeed per gear |
 
 ## Key functions
 
 - `_init()` — omega = idle, `auto` from config, compute shift speeds.
-- `idle_omega()` / `redline_omega()` / `rpm()` — unit conversions.
+- `idle_omega()` / `rpm()` — unit conversions.
+- `redline_omega()` — **the** redline every consumer reads (see *Damage rev cap*
+  below): `config.redline_rpm × rev_limit_scale`, floored at
+  `idle_omega() × MIN_REDLINE_IDLE_RATIO`.
 - `ratio()` — total engine→axle ratio (gear × final drive); 0 in neutral.
 - `request_shift(direction)` — sequential ±1 shift if not already shifting.
 - `update_auto(throttle_in, airspeed)` — auto up/downshift driven by **ground
@@ -36,11 +40,35 @@ selection, automatic upshift/downshift, and a bouncing rev limiter.
   drivetrain passes `handbrake`) forces the clutch fully open, like neutral, so
   the engine revs freely against the throttle while the handbrake locks the
   driven axle — and delivers no wheel torque.
-- `_update_limiter(cfg)` — latch fuel cut ON at redline, OFF below
-  redline − `rev_limiter_band` (the "bounce").
+- `_update_limiter(cfg)` — latch fuel cut ON at `redline_omega()`, OFF below
+  it − `rev_limiter_band` (the "bounce").
 - `_torque_fraction(at_rpm)` — torque curve (below).
 - `_compute_shift_speeds()` — upshift airspeed per gear =
-  redline × `upshift_redline_fraction`.
+  `redline_omega()` × `upshift_redline_fraction`.
+
+## Damage rev cap
+
+A damaged engine is **rev-capped as well as misfiring** — that is the lasting
+cost of a crash (see [damage.md](damage.md)): each gear runs out early and the
+car is slower everywhere, for the rest of the rally.
+
+- `rev_limit_scale` (0.05..1.0) is written **every physics tick by `car.gd`**
+  from `DamageModel.rev_limit_fraction(cfg)`. It is a setter, not a plain field:
+  on an actual change it calls `_compute_shift_speeds()`, so the automatic
+  gearbox's upshift airspeeds follow the redline **down**. Without that the box
+  would hold a gear the engine can no longer pull to and just sit bouncing off
+  the lowered limiter.
+- `redline_omega()` is the single scaled redline, and **every** consumer reads it
+  rather than `config.redline_rpm`: the rev limiter (`_update_limiter`), the
+  clutch-engagement gate (`absf(input_omega) < redline_omega() * 1.05`), the
+  crank clamp (`omega = clampf(omega, idle_omega(), redline_omega() * 1.02)`),
+  and `_compute_shift_speeds()`. Lower the cap and they all move together.
+- `MIN_REDLINE_IDLE_RATIO` (1.5) floors the capped redline at that multiple of
+  idle, so even a maximally damaged engine keeps a usable rev range instead of
+  sitting on its idle clamp — it can still rev, pull away and change gear.
+- The torque **curve** is untouched: `_torque_fraction` still keys off
+  `config.redline_rpm`, so the engine's real curve is unchanged — the limiter
+  just stops you earlier.
 
 ## Torque curve
 
@@ -229,5 +257,6 @@ loads and `apply()` writes the expected fields), `tests/headless/test_engine_log
 `idle_rpm`, `rev_limiter_band`, `engine_friction_base`,
 `engine_friction_slope`, `gear_ratios`, `reverse_ratio`, `final_drive`,
 `clutch_max_torque`, `clutch_engage_speed`, `auto_gearbox`,
-`upshift_redline_fraction`. Engine catalog: `scripts/engine_library.gd`
+`upshift_redline_fraction`, `damage_rev_limit_min_fraction` (the damage rev cap's
+floor). Engine catalog: `scripts/engine_library.gd`
 (`EngineLibrary`).

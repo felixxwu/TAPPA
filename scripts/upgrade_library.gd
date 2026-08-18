@@ -11,7 +11,7 @@ extends RefCounted
 # Distinguish from TUNING: tuning (features/tuning.md, the lift) is free, reversible
 # per-car config nudges. Upgrades are items that change a car's baseline: applying
 # one consumes it from the unlocked pool and fits it to that car FOR GOOD (it never
-# returns to the pool — not on swap, and not when the car is wrecked), but a fitted
+# returns to the pool — not on swap, and not however badly the car is damaged), but a fitted
 # part can be toggled on/off in the upgrades menu (OwnedCar.disabled_upgrades). Only
 # ENABLED parts contribute effects; a car keeps at most one enabled per slot
 # (Save.install_upgrade / set_upgrade_enabled).

@@ -120,6 +120,13 @@ Overworld.bounds_for(size_m)          # the world Rect2, centred on the origin
 
 Instance accessors: `size_m()`, `bounds()`, `car_map_pos()`.
 
+**`overworld_size_m` is the one dial for how far apart everything is.** Rallies carry normalised
+`map_pos` values (the same ones the map table uses) and nothing anywhere authors a metre
+distance between two of them — every world position is `map_pos × size_m` — so shrinking the
+edge length shortens every drive between rallies, and between a rally and the garage, in
+proportion and without moving a single pin. The roads, pads, fog circles and minimap all derive
+from the same number, so they follow for free.
+
 ## The two borders — do not conflate them
 
 | Border | What it is | Where | Changes over time? |
@@ -219,8 +226,8 @@ visual as a violation.)
 - **NO DISTANCE CULL** — and the absence is load-bearing. The arcs used to carry the shared
   `MeshUtil.apply_visibility_range`, which measures camera→node **origin**; an arc is anchored at its
   **centroid**, and a lone lit circle's arc is a closed loop whose centroid is the circle's *centre*.
-  At the shipped numbers that is `map_reveal_radius × overworld_size_m` = 0.16 × 1000 = **160 m** from
-  every point of the rim, against a `tree_render_distance_m` of **120 m** — so the ring drew while the
+  That is `map_reveal_radius × overworld_size_m` from every point of the rim — at the 1 km map this
+  was found on, 0.16 × 1000 = **160 m**, against a `tree_render_distance_m` of **120 m** — so the ring drew while the
   player sat in the middle of their lit region and **vanished as they drove up to it**. Exactly
   inverted, and the cause of "the border disappears when you get close". A distance cull was never
   right here anyway: the wall's whole job is to read *before* the veil and the push-back explain it.
@@ -285,7 +292,7 @@ visual as a violation.)
   because it is long enough to need one. Wall-clock, the reads/generates/deferred split and MB
   are printed, never asserted (all derive from tunables).
 - **PROGRESSIVE: it only bakes what the player can currently reach.** It used to bake the whole
-  enumeration — ~900 coords at the shipped 1 km once the load-radius margin is counted — before
+  enumeration — ~900 coords at a 1 km map once the load-radius margin is counted — before
   the player could drive around their own garage, i.e. a long first-launch wait for ground that
   progression will not open for hours. Now each launch bakes the **reach set** and defers the
   rest to the launch that first brings them within it, which is a loading screen the player is
@@ -651,6 +658,39 @@ Two rules keep it from being a trap:
 - **The arm latch.** Once you leave, the garage will not re-take the car until it has been seen
   OUTSIDE the bay again — the same arm-on-exit latch `OverworldZone` uses. So "reverse back out"
   is a clean exit rather than an instant re-entry, and `Drive Out` never fights the player.
+
+### The stop tube
+
+The bay is a hole in a wall, and from the driver's seat "in far enough" and "in the right bay"
+are both invisible — the only feedback the first build gave was the lift either firing or not.
+So the lift bay carries the **same signal a rally zone carries**: a transparent light column you
+drive into (`OverworldGarage._build_stop_tube`), on the **same shared unit mesh**
+(`OverworldZone.unit_tube_mesh()`, the public door onto `_shared_tube_mesh`) with the same
+material recipe — unshaded, alpha-blended, double-sided, shadowless, no depth write. One mesh in
+the game, and the player needs no new vocabulary: the column is the spot, park in it.
+
+It stands at `stop_tube_local_pos()` — the **lift pose itself** (`_pad_local`), so the point the
+player is asked to park in and the point the car is actually seated on are the same point by
+construction rather than by two numbers that agree today. Note this means it marks the LIFT bay,
+which is bay 0; `inside_bay` still admits either bay, so the tube is the thing that says *which*.
+
+Two ways it differs from a zone tube, both because it stands **indoors**:
+
+- It is short — `overworld_garage_tube_height_m` (~4 m against a zone's 60) — so it stays under
+  the roof instead of reaching for the sky.
+- It has **no dwell to show**: the garage takes the car the instant it is slow enough, so there
+  is no filling column, no band and no progress. Just two states — WAITING (`GREEN`,
+  `overworld_garage_tube_alpha`) and READY (`GOLD`, `overworld_garage_tube_ready_alpha`), the
+  jump between them being the "you are in the right place" punctuation.
+
+READY is `inside_bay && at-or-below overworld_garage_enter_max_kmh`, computed in `update_with`
+**whether or not visuals were built** — it is state, not decoration, which is what lets
+`stop_tube_ready()` be asserted headless. It is a real frame or more whenever the car rolls in
+above the speed gate and then stops, which is exactly the case the speed gate creates.
+
+The column **retires once the lift has the car** (`_show_tube(false)` on any non-`OUTSIDE`
+state): leaving it lit would draw a "park here" marker straight through the car already parked
+there. `stop_tube_node()` is null with `visuals: false`, mirroring `OverworldZone.tube_node()`.
 
 ### The lift
 
@@ -1248,7 +1288,7 @@ The hub does NOT share the stages' `terrain_layer*` / `track_seed` height noise.
 `GameConfig.overworld_terrain_*` and read via `GameConfig.overworld_terrain_layers()`.
 
 Why separate: a stage is a narrow corridor a few hundred metres wide where big relief reads as
-drama; the hub is a 1 km square the player crosses constantly, where the same relief becomes a
+drama; the hub is a sub-kilometre square the player crosses constantly, where the same relief becomes a
 wall between two rally zones. The stage values put only three or four features across the whole
 hub, and the amplitude fought the flat pads hard enough to leave undrivable lips coming off them
 (measured with `tools/analyse_road_grades.gd`; see `features/testing.md`).

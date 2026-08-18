@@ -141,8 +141,8 @@ func _has_smoke(car: Node) -> bool:
 # The lift prop must not go stale when the selected car's health changes underneath it.
 # This used to be driven by REPAIRING a wreck (the prop kept smoking after the heal);
 # repair kits are gone, so the same invariant is exercised in the direction that still
-# exists — wrecking a healthy car must respawn a prop that smokes.
-func test_wrecking_the_selected_car_respawns_a_smoking_prop() -> void:
+# exists — damaging a healthy car must respawn a prop that smokes.
+func test_damaging_the_selected_car_respawns_a_smoking_prop() -> void:
 	var id := int(_save.profile["cars"][0]["instance_id"])
 	_save.set_selected_car(id)
 
@@ -152,14 +152,14 @@ func test_wrecking_the_selected_car_respawns_a_smoking_prop() -> void:
 	hq._ensure_lift_car()
 	assert_false(_has_smoke(hq._lift_car), "precondition: a healthy selected car does not smoke")
 
-	_save.record_wreck(id)
+	_save.apply_damage(id, 999999.0)  # bottomed out at 0 HP — as damaged as a car gets
 	hq._ensure_lift_car()
 	assert_true(is_instance_valid(hq._lift_car), "the prop still holds a car after the change")
-	assert_true(_has_smoke(hq._lift_car), "the now-wrecked car smokes — the prop was rebuilt")
+	assert_true(_has_smoke(hq._lift_car), "the now-damaged car smokes — the prop was rebuilt")
 
 
 # Same staleness invariant at the car-park entry point.
-func test_wrecking_a_parked_car_respawns_a_smoking_prop() -> void:
+func test_damaging_a_parked_car_respawns_a_smoking_prop() -> void:
 	var id := int(_save.profile["cars"][0]["instance_id"])
 
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -170,14 +170,14 @@ func test_wrecking_a_parked_car_respawns_a_smoking_prop() -> void:
 	hq._focus = 0
 	assert_false(_has_smoke(hq._cars[0]), "precondition: the healthy parked car does not smoke")
 
-	_save.record_wreck(id)
+	_save.apply_damage(id, 999999.0)
 	await _build_and_wait(hq, _owned_cars_live())
-	assert_true(_has_smoke(hq._cars[0]), "the now-wrecked parked car smokes")
+	assert_true(_has_smoke(hq._cars[0]), "the now-damaged parked car smokes")
 
 
 # The lift prop is a cache of the selected car's owned data, keyed on instance id AND a
 # deep hash of the owned dict (hq.gd._ensure_lift_car). An in-place data change to the
-# selected car (wreck, upgrade toggle, engine swap, ...) flips that hash, so the prop
+# selected car (damage, upgrade toggle, engine swap, ...) flips that hash, so the prop
 # auto-respawns on the next _ensure_lift_car — no mutator has to remember to force it.
 # This is the invariant that keeps every lift mutator safe; the two smoke tests above
 # are one visible consequence of it.

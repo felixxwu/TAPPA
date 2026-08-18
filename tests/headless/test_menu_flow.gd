@@ -2670,30 +2670,30 @@ func test_hq_free_roam_lists_whole_catalogue_and_paginates() -> void:
 	assert_eq(hq._view, hq.View.EXTERIOR, "Back from Free Roam returns to the title screen")
 
 
-func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
-	# A wrecked (0 HP) car still appears in the eligible lineup, but it can never be
-	# entered again — there is no repair to offer, so the warning is final.
+func test_hq_carpark_lets_a_zero_hp_car_be_selected_and_fielded() -> void:
+	# A car damaged to 0 HP is still an ordinary car: it appears in the eligible lineup,
+	# can be focused, and can be entered. Nothing gates on the bottomed-out state.
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
-	_save.apply_damage(id, 999999.0)  # wreck it (kept at 0 HP, not deleted)
+	_save.apply_damage(id, 999999.0)  # floored at 0 HP, kept and owned
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._table_ui._on_rally_pin("fx_open")  # open-class: starter + the granted car both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
-	# Focus the wrecked XJS in the lineup.
+	# Focus the 0-HP car in the lineup.
 	var idx := -1
 	for i in hq._eligible.size():
 		if int(hq._eligible[i]["instance_id"]) == id:
 			idx = i
-	assert_gt(idx, -1, "the wrecked car is still parked in the lineup")
+	assert_gt(idx, -1, "the 0-HP car is still parked in the lineup")
 	hq._focus = idx
 	hq._carpark_ui._focus_changed()
-	# Damage WARNS but never bars: a wreck is recoverable now (features/damage.md), so a
+	# Damage WARNS but never bars: damage only ever weakens (features/damage.md), so a
 	# battered car is one you can still race — badly — and the label points at the repair
 	# rather than declaring the car dead.
-	assert_false(hq._start_button.disabled, "a damaged car can still be entered")
+	assert_false(hq._start_button.disabled, "a 0-HP car can still be entered")
 	assert_true(hq._car_warning_label.visible, "but it is flagged as damaged")
 	assert_true(_save.car_needs_repair(id), "and it does need a repair")
 

@@ -209,7 +209,6 @@ const BREADCRUMB_BASELINE := [
 	"weather_library.gd",
 	"web_fullscreen.gd",
 	"wheel_style.gd",
-	"wreck_screen.gd",
 	"wrench_icon.gd",
 ]
 

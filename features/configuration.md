@@ -139,9 +139,8 @@ servo measures the grip limit instead of predicting it. See
 | `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
 | `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
 | `hud_elapsed_enabled` | true | Show the top-right run timer |
-| `hud_stage_delta_enabled` | true | Show the in-run "vs P1" pace popup (needs a session P1) |
-| `stage_delta_interval_turns` | 5 | Turns between pace popups (every Nth turn) |
-| `stage_delta_show_seconds` | 3.0 | How long the pace popup stays before fading |
+| `hud_position_enabled` | true | Show the permanent in-run standings readout — live position + gap to the place above (needs a session P1 and a classified field) |
+| `hud_popup_show_seconds` | 3.0 | How long a transient in-run HUD tag (the corner-cut flash) stays before fading |
 
 See [stage.md](stage.md).
 
@@ -166,8 +165,10 @@ See [stage.md](stage.md).
 | `impact_threshold_g` | 2.0 | Deceleration (g) a physics tick must exceed before it costs HP — keeps braking/clean landings free; the single sensitivity knob for the unified deceleration-damage model |
 | `impact_ref_speed_kmh` | 60.0 | Reference shed-velocity (km/h) at which a hit costs `impact_ref_hp_loss` |
 | `impact_ref_hp_loss` | 200.0 | HP a reference hit costs (square-law in shed velocity); a full arrest sheds ≈ the approach speed |
-| `impact_max_loss` | 450 | Cap on one tick's HP loss, as a flat HP amount (no single spike wrecks); absolute so max_hp matters — a fragile car wrecks in fewer hits; a stopped car self-limits, a tumble racks up several |
-| `damage_misfire_health_threshold` | 0.5 | Health fraction at/above which the engine is fully healthy; misfire ramps in below it |
+| `impact_max_loss` | 450 | Cap on one tick's HP loss, as a flat HP amount, so no single spike empties the bar; absolute so max_hp matters — a fragile car reaches 0 HP in fewer hits (it still drives, just slowly); a stopped car self-limits, a tumble racks up several |
+| `damage_misfire_health_threshold` | 0.5 | Health fraction at/above which the engine is fully healthy; below it BOTH damage effects (misfire and rev cap) ramp in together |
+| `damage_misfire_level_max` | 0.8 | Worst misfire intensity at 0 HP — below 1.0 so a 0 HP engine still fires often enough to drive |
+| `damage_rev_limit_min_fraction` | 0.6 | Fraction of the redline still usable at 0 HP (see [engine-and-transmission.md](engine-and-transmission.md) § Damage rev cap) |
 | `damage_misfire_rate_max` | 9.0 | Engine fuel-cuts/sec at 0 HP under full load (stumbling power loss) |
 | `damage_misfire_load_bias` | 0.35 | How much the misfire fires independent of load (0..1) |
 | `damage_misfire_duration_min` | 0.04 | Shortest single fuel-cut (s) |

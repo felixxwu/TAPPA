@@ -1,36 +1,34 @@
 class_name DamageModel
 extends RefCounted
 # Docs: features/damage.md — update in the same change as this file.
-# Tests: tests/headless/test_damage_model.gd, tests/headless/test_freeroam_wreck.gd, tests/headless/test_spectator_damage.gd — extend in the same change.
+# Tests: tests/headless/test_damage_model.gd, tests/headless/test_spectator_damage.gd — extend in the same change.
 # Per-car HP / attrition state and the maths that degrade a damaged car, owned by
 # car.gd the way Drivetrain is (a plain RefCounted helper, no scene coupling). It
 # holds the run's WORKING HP, converts contact impulses into HP loss, exposes the
-# damage fraction (which drives the engine misfire) and the per-wheel toe the car
-# reads each tick, and wrecks the car at 0 HP. See features/damage.md.
+# damage fraction (which drives the engine misfire and the rev cap) and the per-wheel
+# toe the car reads each tick. See features/damage.md.
+#
+# DAMAGE NEVER TAKES THE CAR OUT. HP bottoms out at 0 and the car keeps driving — a
+# fully damaged engine is stumbling and rev-capped, not dead. There is no wreck, no
+# DNF-by-damage and no 0-HP event of any kind; the punishment for crashing is a slow,
+# gutless car for the rest of the rally plus a repair bill.
 #
 # HP only ever goes DOWN in-run (no passive regen); the free between-event field
 # repair (Save) is the
 # only way it climbs back, and that lives between runs, not here.
 #
-# Binding: when a car is FIELDED from the meta-game (a future rally/Start-line
-# layer, features/rally-session.md) it carries an OwnedCar instance_id, and a
-# wreck ends the RUN and hands the car back at part health via Save.record_wreck.
-# In free-roam / dev play the model is UNBOUND (instance_id < 0): it
-# still depletes and degrades and emits `wrecked`, but never touches the save —
-# the car self-heals and respawns so play continues (car.gd handles that).
+# Binding: when a car is FIELDED from the meta-game (the rally/Start-line layer,
+# features/rally-session.md) it carries an OwnedCar instance_id so the run's HP is
+# persisted back at each event boundary. In free-roam / dev play the model is UNBOUND
+# (instance_id < 0): it still depletes and degrades, but never touches the save.
 #
-# There is no anti-soft-lock floor because none is needed: a wreck costs the RESULT
-# (a DNF — no podium, no prize, no progress) plus a repair bill, never the car. The car
-# comes back at GameConfig.wreck_recovery_hp_fraction and can be repaired with stars
-# (features/star-economy.md), so no sequence of crashes can strand a player.
+# There is no anti-soft-lock machinery because nothing can strand a player: a car at
+# 0 HP is still a drivable car, and HP climbs back via the free between-event field
+# repair and the paid repair at the lift (features/star-economy.md).
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
 signal damaged(hp_loss: float, contact_point: Vector3)
-# HP reached 0: the run is a DNF. A fielded car has already
-# had Save.record_wreck called; listeners (the rally flow) react to the signal.
-signal wrecked()
-
 # Scene group every damage-dealing obstacle (tree/bush/sign collision body) joins,
 # so the car can tell a real obstacle contact from the ground/road in
 # _integrate_forces. BillboardField tags its collision body with this.
@@ -73,7 +71,7 @@ var wheel_toe: Dictionary = _zero_toe()
 ## cost the player HP they then have to pay stars to repair.
 ##
 ## Gates both entry points — `register_deceleration` (impacts) and `apply_loss` (anything that
-## drains HP directly) — so nothing can route around it, and `wrecked` can never fire.
+## drains HP directly) — so nothing can route around it.
 var enabled := true
 
 
@@ -137,19 +135,40 @@ func damage_fraction() -> float:
 	return clampf(1.0 - hp / max_hp, 0.0, 1.0)
 
 
-# Engine misfire intensity ∈ [0,1], fed to EngineSim.misfire_level each tick by
-# car.gd. 0 (fully healthy) while health (hp/max_hp) is at/above
-# damage_misfire_health_threshold, then ramps linearly to 1 at 0 HP — so the engine
-# only starts stumbling once the car is damaged past the threshold.
-func misfire_level(cfg: GameConfig) -> float:
+# How far past the "damage starts costing power" threshold the car is, ∈ [0,1]:
+# 0 while health (hp/max_hp) is at/above damage_misfire_health_threshold, ramping
+# linearly to 1 at 0 HP. The SINGLE ramp behind every engine-weakening effect
+# (misfire and rev cap), so they all begin at the same moment and reach their worst
+# together. Pure — no config side effects.
+func damage_ramp(cfg: GameConfig) -> float:
 	if max_hp <= 0.0:
 		return 0.0
 	var threshold := cfg.damage_misfire_health_threshold
 	if threshold <= 0.0:
-		# Degenerate threshold: only a dead-flat 0 HP car misfires (avoid div-by-zero).
+		# Degenerate threshold: only a dead-flat 0 HP car is weakened (avoid div-by-zero).
 		return 1.0 if hp <= 0.0 else 0.0
 	var health := hp / max_hp
 	return clampf((threshold - health) / threshold, 0.0, 1.0)
+
+
+# Engine misfire intensity, fed to EngineSim.misfire_level each tick by car.gd. Follows
+# damage_ramp but tops out at damage_misfire_level_max rather than 1.0: damage weakens
+# the engine TO A POINT and no further, so even a 0 HP car still makes progress under
+# power instead of becoming an undrivable brick. That cap is the whole reason a car can
+# sit at 0 HP indefinitely without the run ending.
+func misfire_level(cfg: GameConfig) -> float:
+	return damage_ramp(cfg) * clampf(cfg.damage_misfire_level_max, 0.0, 1.0)
+
+
+# Fraction of the engine's redline still usable, ∈ (0,1]. 1.0 (full revs) until health
+# drops past damage_misfire_health_threshold, then falls linearly with the same ramp to
+# damage_rev_limit_min_fraction at 0 HP — a damaged engine won't pull to the top end, so
+# each gear runs out early and the car is slower everywhere, in a way the player HEARS
+# (it bounces off a lower limiter) as well as feels. Never returns 0: the floor is a
+# tunable minimum, so the car always revs enough to drive.
+func rev_limit_fraction(cfg: GameConfig) -> float:
+	var floor_frac := clampf(cfg.damage_rev_limit_min_fraction, 0.05, 1.0)
+	return lerpf(1.0, floor_frac, damage_ramp(cfg))
 
 
 # HP a shed velocity (m/s) costs: a pure square-law (kinetic-energy) climb reaching
@@ -170,7 +189,7 @@ static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
 # (impact_threshold_g · g · dt) costs HP, so ordinary braking (~1-1.5 g) is free;
 # above it the same square law as before scales the loss (for a full solid arrest
 # dv ≈ approach speed, so the existing tuning carries over). Capped per hit so no one
-# crash wrecks the car. NO cooldown: a pinned car sheds ~0 velocity/tick so grinding
+# crash can gut it in one go. NO cooldown: a pinned car sheds ~0 velocity/tick so grinding
 # self-limits, while a real multi-bounce tumble racks up several capped hits. Returns
 # the HP lost.
 func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg: GameConfig) -> float:
@@ -182,8 +201,8 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 	var loss := hp_loss_for_speed(dv_mps, cfg)
 	if loss <= 0.0:
 		return 0.0
-	# Cap a single hit (flat HP amount) so no one crash can wreck the car; because
-	# it's absolute, a car's max_hp determines how many capped hits it survives.
+	# Cap a single hit (flat HP amount) so no one crash can strip the car's whole HP pool;
+	# because it's absolute, a car's max_hp determines how many capped hits it takes.
 	loss = minf(loss, cfg.impact_max_loss)
 	nudge_wheels(loss, cfg)
 	apply_loss(loss)
@@ -191,20 +210,13 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 	return loss
 
 
-# Drain HP by `amount`, wrecking the car if it hits 0. A no-op while `enabled` is false.
+# Drain HP by `amount`, bottoming out at 0. A no-op while `enabled` is false.
+#
+# 0 HP is a STATE, not an event: nothing is signalled, no run ends, and the car keeps
+# driving under a maxed-out misfire and the lowest rev cap. Damage weakens; it never
+# removes. (This used to call _wreck() → Save.record_wreck() → a DNF and a "CAR WRECKED"
+# screen. All of it is gone — see features/damage.md.)
 func apply_loss(amount: float) -> void:
 	if not enabled:
 		return
 	hp = maxf(0.0, hp - amount)
-	if hp <= 0.0:
-		_wreck()
-
-
-# 0 HP: a fielded car is destroyed via Save (upgrades returned, then removed);
-# either way `wrecked` fires for the run/menu layer.
-# `Save` is the autoload, reached by global name like Config is in Drivetrain; an
-# unbound model (instance_id < 0, free-roam/dev) never touches it.
-func _wreck() -> void:
-	if instance_id >= 0:
-		Save.record_wreck(instance_id)
-	wrecked.emit()

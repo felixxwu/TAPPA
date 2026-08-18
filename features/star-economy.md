@@ -143,8 +143,10 @@ currency needs if the balance is not to become dead weight:
 
 A flat `GameConfig.star_cost_per_repair` returns a car to full health with straight
 wheels. Deliberately **cheap**: repair is a ritual and a small tax, not an economic wall.
-The real cost of wrecking is the lost rally result (a DNF, no podium, no progress), and
-pricing the repair steeply would punish the same mistake twice. Flat rather than per-HP so
+Damage never writes a car off or ends a run, so the real cost of crashing is paid on the
+road: a misfiring, rev-capped engine and bent wheels for the rest of the rally (see
+[damage.md](damage.md)) — a slower result, on top of this bill. Pricing the repair steeply
+would punish the same mistake a third time. Flat rather than per-HP so
 the player never has to arithmetic their way to "is it worth fixing".
 
 `car_needs_repair` covers **both** lost HP and bent wheel toe — a car at full health with

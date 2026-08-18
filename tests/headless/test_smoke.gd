@@ -78,7 +78,7 @@ func test_entering_a_rally_event_generates_its_track() -> void:
 
 
 # Teardown for the challenge tests below. pause_run() is the non-terminal way out —
-# only a wreck DNFs a challenge (todo/challenge-career-reuse-drift.md item 12) — so it
+# nothing DNFs a challenge any more (todo/challenge-career-reuse-drift.md item 12) — so it
 # records no period outcome and a sibling test can start the same Daily afterwards. It
 # DOES leave the run persisted, so drop that too rather than leaking it into other files.
 func _leave_challenge_run() -> void:
@@ -104,7 +104,7 @@ func test_entering_a_challenge_stage_generates_its_track() -> void:
 	ChallengeSession.auto_load_scenes = false
 	# A period with a recorded outcome is spent (one attempt per period) and start()
 	# refuses it. Leaving a run no longer records one (item 12), but Save.profile is a
-	# live autoload shared with earlier test scripts that DO finish/wreck the same
+	# live autoload shared with earlier test scripts that DO finish the same
 	# Daily, so clear the map to guarantee this test gets a fresh period.
 	Save.profile["challenge_results"] = {}
 	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned, t), "setup: run starts")
@@ -137,7 +137,7 @@ func test_a_challenge_stage_stages_the_start_line_like_a_rally_event() -> void:
 	ChallengeSession.auto_load_scenes = false
 	# A period with a recorded outcome is spent (one attempt per period) and start()
 	# refuses it. Leaving a run no longer records one (item 12), but Save.profile is a
-	# live autoload shared with earlier test scripts that DO finish/wreck the same
+	# live autoload shared with earlier test scripts that DO finish the same
 	# Daily, so clear the map to guarantee this test gets a fresh period.
 	Save.profile["challenge_results"] = {}
 	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned,

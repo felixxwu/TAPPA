@@ -356,8 +356,8 @@ Display / prop cars — the roadside opponent wreck (`world.gd`), the podium fin
 and frozen at once**, instead of being dropped as live physics bodies and frozen a beat
 later. That old drop-and-settle was a recurring bug source: it depended on a ground
 collider being present under the car (the wreck sank through the streamed-in-only-near-
-the-player terrain), on the car not rolling on a slope, and on not re-wrecking on the
-landing impact — plus the freeze timing.
+the-player terrain), on the car not rolling on a slope, and on the landing impact not
+knocking HP off it — plus the freeze timing.
 
 Placing a prop takes **two** offsets — the body and the wheels move independently:
 

@@ -29,9 +29,14 @@ const RallySessionScript = preload("res://scripts/rally_session.gd")
 # instead of testing RallySession.is_active() alone: doing that silently excludes
 # challenges, which is how the F-to-finish dev cheat ended up dead in challenge mode.
 static func session_active() -> bool:
-	return ChallengeSession.is_active() or RallySession.is_active()
+	return ChallengeSession.is_active() or RallySession.is_active() \
+		or LobbySession.is_active()
 
 
+# A lobby round deliberately has NO owned instance: the car is a bare catalogue
+# loaner, so driven_car() returns {} and the start-line repair/refit affordances are
+# correctly unavailable. You cannot repair a car you do not own. The asymmetry with
+# session_active() above is the point, not an oversight.
 static func active_car_instance_id() -> int:
 	if ChallengeSession.is_active():
 		return ChallengeSession.car_instance_id()

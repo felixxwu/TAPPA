@@ -517,7 +517,7 @@ var _title_start_button: Button  # EXTERIOR title Start — first cursor stop
 # with the title screen by update_overlays.
 var _version_layer: CanvasLayer
 var _no_eligible_label: Label
-# Car-park damage UI: the "wrecked beyond repair" note on a wrecked focused car.
+# Car-park damage UI: the "repair it at the lift" note on a badly-handling focused car.
 var _car_warning_label: Label
 
 # Title screen cursor: a single left/right cursor over Start / Settings / Free Roam /
@@ -4035,7 +4035,7 @@ func _log_boot_cost(build_ms: int) -> void:
 # Same shape as _restriction_text below. Original notes: drive layout,
 # peak horsepower, kerb weight, and condition. Health reads as a percentage (kept
 # distinct so it doesn't read as the horsepower figure now shown alongside it); a
-# wrecked (0 HP) car is flagged so the lineup makes clear why it can't be entered.
+# spent (0 HP) car is flagged so the lineup makes clear how badly it will drive.
 # The power-to-weight ratio lives only in the upgrades-menu detune readout. A fitted
 # nitrous bottle is named LAST, after health — it's invisible to effective_meta (never
 # moves HP/kg/power-to-weight, see features/nitrous.md) so it can only ever be a trailing

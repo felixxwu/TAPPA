@@ -216,6 +216,28 @@
 - Keep commits scoped to your own files. Never `git commit -a` / `git add -A`
   when unrelated modified files are present — stage the specific paths you
   changed.
+- **Talk to the other agents — don't just avoid them.** Use `ListAgents` to see
+  who else is live in this checkout, and `SendMessage` to coordinate with them
+  directly. Silence is how work gets clobbered; a one-line message is cheaper
+  than a lost edit or a merge untangle.
+  - Before you start editing files that another agent is plausibly in the middle
+    of (shared physics/config, `config/game_config.tres`, `car.gd`, core scene
+    setup, a `features/` file, a `todo/` spec), message them first and say which
+    paths you're taking. If they're already in there, agree who owns the file
+    rather than both writing it.
+  - Announce as you go, not just at the end: when you claim a file, when you
+    finish with it, and when you land something others might be building on.
+    "I've just changed the drivetrain torque path in `drivetrain.gd`" saves the
+    next agent a confusing debug session.
+  - Before running tests, message anyone who might also be about to run them —
+    concurrent `./run_tests.sh` runs interleave and make every result
+    untrustworthy. Agree on one runner.
+  - When you hit a failure you suspect isn't yours, ask the agent whose area it
+    touches before theorising — they usually know in one line. Reply promptly if
+    you're the one asked; a blocked sibling is a stalled task.
+  - Parents: tell your subagents which paths are theirs and which are off
+    limits, and pass on what siblings are doing. Subagents: report back what you
+    touched, in full, so the parent can keep everyone else straight.
 
 ## Environment
 

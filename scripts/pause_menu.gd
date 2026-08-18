@@ -7,7 +7,7 @@ extends CanvasLayer
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
 # controls). Quit to HQ abandons the current rally (no retry penalty, damage persisted,
 # no reward — RallySession.abandon) after a confirm and returns to HQ; a CHALLENGE run is
-# only PAUSED (ChallengeSession.pause_run) — only a wreck DNFs a challenge. The whole layer
+# only PAUSED (ChallengeSession.pause_run) — nothing DNFs a challenge. The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu too.
@@ -114,7 +114,7 @@ func confirm_quit_to_hq() -> void:
 # Leave the run for HQ: unfreeze, then leave the active rally/challenge.
 # RallySession.abandon really abandons (no retry penalty, damage persisted, no
 # reward) and emits rally_finished, which world.gd routes back to HQ (the garage
-# view). A CHALLENGE is only PAUSED (item 12) — only a wreck DNFs a challenge, so
+# view). A CHALLENGE is only PAUSED (item 12) — nothing DNFs a challenge run at all, so
 # quitting must not spend the period. pause_run() deliberately emits no
 # run_finished (world.gd's handler would post a DNF to the board on it), so this
 # owns the transition itself, matching the garage-view landing of the other paths.

@@ -31,9 +31,11 @@ per-car paint, camera fly-throughs *between* far stations) is tracked in the
 ```
 exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pin) ─▶ rally detail ─Enter─▶ car park (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0) ─start line: briefing + presence ─launch─▶ countdown ─▶ RUN
    main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn (EVERY event pauses here) ─Continue─▶ next event
-                                          └─ car.wrecked ─▶ WreckScreen (crash → orbit + menu) ─Return to HQ─▶ report_wreck (DNF)
    final event's standings.tscn ─Continue─▶ continue_to_next_event resolves ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
-   (DNF / abandon) ─rally_finished─▶ podium.tscn or HQ
+   (abandon) ─rally_finished─▶ podium.tscn or HQ
+
+   there is NO branch out of the RUN for damage: HP bottoms out at 0 and the car keeps
+   driving, so every rally the player enters reaches its standings screen.
 ```
 
 ## Button order — leaving is left, proceeding is right
@@ -89,7 +91,7 @@ space:
 > Two rules that follow from it:
 >
 > - **A screen may only become a panel if its camera pose is authored and static.** The
->   start-line pre-stage orbit, the wreck-screen orbit and the **pause** menu stay
+>   start-line pre-stage orbit and the **pause** menu stay
 >   screen-space **permanently, by design** — a hard-welded panel under an orbiting camera
 >   can be viewed edge-on with no recovery. This is a design rule, not unfinished work.
 > - **Shared components stay host-neutral.** `SettingsMenu` backs both the HQ settings
@@ -307,10 +309,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   **Cancel**. **Change Upgrades** opens the gated upgrades menu (the player sheds power
   via the detune slider / ballast / stripping parts — a **permanent** garage edit, no
   auto-revert) and, once the build is under the cap and the menu closes, the player
-  re-presses Start to launch. The
-  **`wreck screen`** is still a *press-anything-to-continue* screen (a tap anywhere,
-  or `menu_select` = Enter / gamepad A, proceeds), not a multi-item navigable menu, so
-  it doesn't use `MenuNav`.
+  re-presses Start to launch. (The **wreck screen** used to be listed here as the one
+  *press-anything-to-continue* screen that skipped `MenuNav`; it is gone — damage can no
+  longer end a run, so there is nothing to press through. See
+  [damage.md](damage.md).)
 - **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
   3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
@@ -531,19 +533,23 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 #### A third pattern: the single-action screen
 
 A screen whose menu offers exactly **one** action needs neither framework, because there is
-nothing to move a cursor between. `scripts/wreck_screen.gd` is the one instance: its Return
-to HQ button stays `FOCUS_NONE`, and its own `_unhandled_input` fires the action on
-`menu_select` (plus a screen touch / left click, matching the start line). `MenuNav.attach`
-would add a focus ring and arrow-key handling that have nowhere to go.
+nothing to move a cursor between: the button stays `FOCUS_NONE` and the screen's own
+`_unhandled_input` fires the action on `menu_select` (plus a screen touch / left click,
+matching the start line). `MenuNav.attach` would add a focus ring and arrow-key handling
+that have nowhere to go.
 
-Two things this pattern must still do, and the reason it is written down rather than left as
-a one-off: it has to **gate on the phase** — `wreck_screen.gd` only accepts the input once
-`_seq == Seq.ORBIT`, so a press during the crash animation can't skip it — and it needs a
-test that drives the **input action**, not the button's `pressed` signal. Those are separate
-code paths, so `pressed.emit()` alone leaves the keyboard/gamepad route unexercised (see
-`test_menu_select_returns_to_hq_without_a_pointer` and
-`test_menu_select_is_ignored_before_the_menu_appears` in
-`tests/headless/test_wreck_screen.gd`).
+**There is no live instance today.** The canonical one was `scripts/wreck_screen.gd`, whose
+single *Return to HQ* button ended a wrecked run — and that whole flow was deleted when
+damage stopped being able to end a run at all (see [damage.md](damage.md)). The pattern is
+kept written down because it is the right shape the next time a one-action screen appears,
+and because of the two obligations it carries, which are easy to miss:
+
+- **Gate on the phase.** The wreck screen only accepted the input once its orbit had begun,
+  so a press during the crash animation couldn't skip past the screen entirely. Any
+  press-anything screen with a lead-in needs the same guard.
+- **Test the input ACTION, not the button's `pressed` signal.** Those are separate code
+  paths, so `pressed.emit()` alone leaves the keyboard/gamepad route unexercised — exactly
+  the kind of pointer-only menu the project's nav rule forbids.
 
 Reach for this only at one action. At two, use `MenuNav.attach`.
 
@@ -1452,7 +1458,8 @@ car** (`Save.set_selected_car`) and respawns the prop + refreshes the whole page
 order, which is stable). That is deliberately **not** `profile["cars"]` order:
 `Save.set_selected_car` promotes the selected car to the FRONT of that array, so cycling by
 list position would renumber the list on every press and ping-pong between two cars instead
-of touring the collection. A wrecked car is cyclable too (it can sit on the lift). With only
+of touring the collection. A car at 0 HP is cyclable like any other (it can sit on the
+lift — and it is exactly the car you would bring here to repair). With only
 **one** car owned there is nothing to cycle to, so `_refresh_lift_car_label` sets both
 chevrons `visible = false` **and** `disabled = true` — hidden so the row reads as a plain
 nameplate, disabled because `ButtonCursor` skips disabled stops but knows nothing of
@@ -2122,8 +2129,8 @@ its name + stats (drive / **horsepower (HP)** / **weight (kg)** / **Health %**) 
 overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
 only surfaces where it matters, in the upgrades-menu detune readout. There is
 no floating 3D label above the car. **Damage never blocks entry** (`_refresh_focus_damage`):
-a wreck is not terminal — `Save.record_wreck` hands the car back at a fraction of health
-rather than writing it off (see [damage.md](damage.md)) — so Start stays ENABLED and the
+there is no health at which a car stops being raceable — even at 0 HP it drives, just
+slowly (see [damage.md](damage.md)) — so Start stays ENABLED at every health level and the
 warning is an **instruction**, not a verdict, pointing at the repair the player can go and
 buy ("Damaged — the engine is down on power. Repair it at the lift."). It is gated on
 `Save.car_handles_badly`, not `car_needs_repair`, so a car at 98% health doesn't get told it
@@ -2214,12 +2221,11 @@ When a `RallySession` is active, `world._ready` fields the player's OwnedCar via
 `Car.apply_owned` (CarLibrary baseline → installed upgrades → bound damage from
 the saved HP) instead of the default `apply_car(0)`, and wires this event's
 `StageManager.stage_completed` → `report_event_result(elapsed_ms, hp_lost)`. The
-car's `wrecked` builds a **`WreckScreen`** (`scripts/wreck_screen.gd`): the crash
-plays out, then a slow orbit camera + a **"CAR WRECKED"** menu offers **Return to
-HQ**, which calls `report_wreck` (the DNF). `rally_finished` loads the podium. With
-no session (a plain dev boot of `main.tscn`) the default car is fielded and none of
-this runs — `main.tscn` is still independently runnable. (Headless runs skip the
-wreck cinematic and report immediately.)
+`rally_finished` loads the podium. There is **no second exit** from the run: `world.gd`
+has no `_wreck_screen` and nothing listens for a car reaching 0 HP, because nothing is
+signalled when it does — a flattened car simply keeps driving to the finish under its
+capped misfire and rev cap. With no session (a plain dev boot of `main.tscn`) the default
+car is fielded and none of this runs — `main.tscn` is still independently runnable.
 
 ## Pause menu (`pause_menu.gd`)
 
@@ -2478,8 +2484,8 @@ themselves, where the price is on screen. The rally-detail panel's
 **owning** a car rather than on one qualifying — walking into a lineup with nothing
 eligible is now where you find out why. An open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
-wraps; a **wrecked car is gated in the car park permanently** (Start stays disabled —
-there is no repair); an **over-ceiling Rally Challenge car parks with the
+wraps; **no health level gates a car in the car park** (Start stays enabled at 0 HP —
+damage only slows the car, and the lift will repair it); an **over-ceiling Rally Challenge car parks with the
 over-limit prompt** (looks eligible; Start pops the on-brand modal offering
 Cancel / Change Upgrades — Change Upgrades opens the gated shared `UpgradesGrid` to
 shed performance permanently, then the

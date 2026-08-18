@@ -1,6 +1,6 @@
 extends GutTest
 # The Save autoload (player profile / persistence). Exercises the round-trip,
-# default profile, migration, integrity fallbacks, and wreck semantics described
+# default profile, migration, integrity fallbacks, and damage semantics described
 # in todo/save-persistence.md. Runs against a throwaway user:// file so a real
 # profile is never touched.
 
@@ -237,25 +237,25 @@ func test_a_profile_predating_the_ledger_backfills_to_zero() -> void:
 	assert_eq(int(migrated["stars_spent"]), 0, "stars_spent backfills to 0")
 
 
-func test_a_wreck_hands_the_car_back_damaged_with_its_upgrades() -> void:
+func test_damage_past_zero_keeps_the_car_its_upgrades_and_its_bent_wheels() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
 	# Upgrades are CAR-BOUND — install_upgrade fits the won part straight to the car
 	# (no shared inventory pool for slottable parts).
-	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_small"), "upgrade installed")
+	assert_true(_save.install_upgrade(id, "fx_turbo_small"), "upgrade installed")
+	_save.set_wheel_toe(id, [0.05, -0.03, 0.0, 0.0])
 
-	_save.record_wreck(car["instance_id"])
-	# A wreck is a bad RESULT, not a lost asset: the car comes back damaged and repairable.
-	# Never pins the recovery FRACTION (GameConfig.wreck_recovery_hp_fraction is tunable) —
-	# only that the car survives, is worth repairing, and is not written off.
+	_save.apply_damage(id, 999999.0)  # far past zero
+	# 0 HP is a STATE, not an event: nothing is removed, reset, or handed back at part
+	# health. The car sits at exactly 0 and stays fully owned.
 	assert_eq(_save.profile["cars"].size(), 1, "the car is kept")
-	var hp: float = float(_save.get_car(car["instance_id"])["hp"])
-	var max_hp: float = float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
-	assert_gt(hp, 0.0, "it comes back with health, not written off")
-	assert_lt(hp, max_hp, "but damaged — there is a repair bill to pay")
-	assert_true(_save.car_needs_repair(car["instance_id"]), "and it reads as needing repair")
+	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP clamps at exactly zero, never negative")
+	assert_true(_save.car_needs_repair(id), "and it reads as needing repair")
 	# Its upgrades ride along with the car (bound to it; never moved or returned).
-	assert_true(_save.get_car(car["instance_id"])["installed_upgrades"].has("fx_turbo_small"),
-		"the upgrade is still installed on the wrecked car")
+	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
+		"the upgrade is still installed on the 0-HP car")
+	assert_eq(_save.get_car(id)["wheel_toe"], [0.05, -0.03, 0.0, 0.0],
+		"and its stored wheel_toe is untouched — no hidden restore")
 
 
 func test_install_disables_same_slot_incumbent() -> void:
@@ -426,16 +426,15 @@ func test_field_repair_skips_a_pristine_car() -> void:
 	assert_false(summary.get("repaired", false), "nothing to repair on a spotless car")
 
 
-func test_field_repair_works_on_a_car_that_has_wrecked() -> void:
-	# A wrecked car is an ordinary damaged car now, so the free between-event pit repair
-	# treats it like any other — it used to refuse one outright as unrecoverable.
+func test_field_repair_works_on_a_zero_hp_car() -> void:
+	# A 0-HP car is an ordinary damaged car, so the free between-event pit repair
+	# treats it like any other — nothing gates on the bottomed-out state.
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id: int = car["instance_id"]
-	_save.record_wreck(id)
-	var before: float = float(_save.get_car(id)["hp"])
+	_save.apply_damage(id, 999999.0)
 	var summary: Dictionary = _save.field_repair(id, 0.2, 0.5)
-	assert_true(summary.get("repaired", false), "a wrecked car can still be pit-repaired")
-	assert_gt(float(_save.get_car(id)["hp"]), before, "and it gains health")
+	assert_true(summary.get("repaired", false), "a 0-HP car can still be pit-repaired")
+	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and it gains health off the floor")
 
 
 func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
@@ -462,32 +461,32 @@ func test_sanitise_drops_parts_retired_from_the_catalogue() -> void:
 	assert_eq(car["disabled_upgrades"], [], "the retired part is dropped from the toggles too")
 
 
-# --- Wrecking is not terminal (features/damage.md) ---------------------------
-# A wreck ends the RUN as a DNF and hands the car back damaged. The whole scaffolding
-# that terminal wrecking needed — an all-cars-wrecked check, a free rescue box, a
-# wrecked-car exclusion in the stranded test — is gone with it.
+# --- Damage never wrecks (features/damage.md) --------------------------------
+# Damage only ever weakens: HP floors at 0 and stays there. There is no write-off,
+# no wreck record, no terminal state — so the whole scaffolding terminal wrecking
+# needed (an all-cars-wrecked check, a free rescue box) is gone with it.
 
-func test_a_wrecked_car_can_be_repaired_back_into_service() -> void:
+func test_a_zero_hp_car_can_be_repaired_back_into_service() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
-	_save.apply_damage(id, 999999.0)  # lethal damage -> a wreck
-	assert_true(_save.car_needs_repair(id), "the car comes back needing repair")
+	_save.apply_damage(id, 999999.0)
+	assert_true(_save.car_needs_repair(id), "the car reads as needing repair")
 	_save.award_stars(20)
 	assert_true(_save.repair_car(id), "and stars put it right")
 	assert_false(_save.car_needs_repair(id), "back in service")
 
 
-func test_the_starter_wrecks_and_recovers_like_any_car() -> void:
-	# The starter is not invulnerable and not special-cased: lethal damage wrecks it, and
-	# it comes back exactly as any other car does.
+func test_the_starter_bottoms_out_and_recovers_like_any_car() -> void:
+	# The starter is not invulnerable and not special-cased: heavy damage floors it, and
+	# it stays owned exactly as any other car does.
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	var id := int(car["instance_id"])
 	_save.apply_damage(id, 999999.0)
 	assert_eq(_save.profile["cars"].size(), 1, "still owned")
-	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and still raceable, just damaged")
+	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "sitting on the floor, not written off")
 
 
-func test_wrecking_every_car_leaves_the_player_able_to_drive() -> void:
+func test_flooring_every_car_leaves_the_player_able_to_drive() -> void:
 	# THE reason terminal wrecking went: no sequence of crashes can strand a player, so
 	# nothing needs to rescue them. This is also what makes the map's reachability
 	# guarantee sound — a car an authored route depends on can never be lost.
@@ -495,19 +494,16 @@ func test_wrecking_every_car_leaves_the_player_able_to_drive() -> void:
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.apply_damage(int(a["instance_id"]), 999999.0)
 	_save.apply_damage(int(b["instance_id"]), 999999.0)
-	for car in _save.profile["cars"]:
-		assert_gt(float((car as Dictionary)["hp"]), 0.0,
-			"every car survives its wreck with health left")
+	assert_eq(_save.profile["cars"].size(), 2, "both cars are still owned and fieldable")
 
 
-func test_apply_damage_past_zero_wrecks_rather_than_going_negative() -> void:
+func test_apply_damage_clamps_at_zero_rather_than_going_negative() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
 	_save.apply_damage(id, 999999.0)
-	# Damage that would take HP below zero routes through record_wreck instead: the car is
-	# kept, and comes back with health rather than sitting at (or below) 0.
+	_save.apply_damage(id, 999999.0)  # and again — 0 is a stable floor, not a trigger
 	assert_eq(_save.profile["cars"].size(), 1, "the car is kept in the garage")
-	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and never lands on a negative or zero HP")
+	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP rests at exactly 0, never negative")
 
 
 func test_consume_item_respects_counts() -> void:

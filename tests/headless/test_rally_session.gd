@@ -1,6 +1,6 @@
 extends GutTest
 # RallySession: the rally-level orchestrator (features/rally-session.md). Driven
-# directly via report_event_result / report_wreck with a precomputed target list
+# directly via report_event_result with a precomputed target list
 # and a fixed opponent field — no real driving or scene loads. Runs against a
 # throwaway Save profile so a real profile is never touched.
 
@@ -464,15 +464,6 @@ func test_a_new_rally_clears_the_damage_flag_from_the_previous_one() -> void:
 		"starting a rally resets the clean-run sheet")
 
 
-func test_a_wreck_is_reported_as_damage() -> void:
-	_grant_and_start("fx_open")
-	RallySession._opponent_field = _field([50000])
-	var box := _capture_finish()
-	RallySession.report_wreck()
-	assert_true(_finish_result(box).get("took_damage", false),
-		"a wreck never routes through report_event_result, but is still damage")
-
-
 # current_event_wreck surfaces the rival who crashed out of the CURRENT event (with the
 # actual car they drove), tracking the event index, and is empty for an event nobody
 # wrecked in. Built from a synthetic field so it leans on the delegation, not on a roll.
@@ -654,28 +645,30 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 	assert_eq(RallySession.event_index(), 1, "now running event index 1")
 
 
-func test_a_wreck_part_way_through_a_rally_costs_the_result_not_the_car() -> void:
-	# Was "wreck after earning a per-event upgrade keeps it" — there is no per-event
-	# upgrade to earn any more, but the rest of what it asserted is the real contract and
-	# had no other home: a DNF mid-rally forfeits the result and hands the car back.
+# Damage can never end a rally: HP bottoms out at 0 and the car drives on, weakened
+# (features/damage.md). A run driven to completion on a car that is already at — and stays
+# at — 0 HP therefore resolves like any other: no DNF for the player, a real placement and
+# a real combined time.
+func test_a_rally_driven_out_on_a_zero_hp_car_resolves_normally() -> void:
 	var finish := _capture_finish()
 	var owned := _grant_and_start("fx_open")
 	var id := int(owned["instance_id"])
+	_save.apply_damage(id, 999999.0)  # on the floor before the first stage
 	RallySession._opponent_field = _field([50000])
-	RallySession.report_event_result(20000)  # event 1 finishes
-	RallySession.continue_to_next_event()  # into event 2
-	RallySession.report_wreck()            # DNF during event 2
+	var stages := RallySession.stage_count()
+	var times: Array = []
+	for _i in stages:
+		times.append(20000)
+	_report_events(times)
 	var r := _finish_result(finish)
-	assert_true(r["dnf"], "a wreck is a DNF")
-	assert_false(r["completed"], "DNF never completes the rally")
-	assert_eq(r["placed"], -1, "DNF does not place")
-	assert_eq(r["combined_ms"], -1, "DNF has no combined time")
-	# A wreck costs the RESULT, not the car: it is handed back damaged and repairable
-	# (features/damage.md), never written off.
+	assert_false(r.is_empty(), "the rally resolved")
+	assert_false(r["dnf"], "a 0-HP car never DNFs the player")
+	assert_gt(int(r["placed"]), 0, "it places like any finish")
+	assert_gt(int(r["combined_ms"]), 0, "and carries a real combined time")
+	# And the car is still there — nothing wrote it off for being on the floor. (Its HP is
+	# NOT asserted at 0: _resolve_results runs the silent final field repair first.)
 	assert_false(_save.get_car(id).is_empty(), "the car is kept")
-	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and comes back with health, not at 0")
-	assert_true(_save.car_needs_repair(id), "but needing a repair")
-	assert_false(_save.rally_completed("fx_open"), "a DNF leaves the rally incomplete")
+	assert_gte(float(_save.get_car(id)["hp"]), 0.0, "with sane health")
 
 
 func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
@@ -1074,24 +1067,6 @@ func _report_losing_run() -> void:
 	_report_events([1_000_000, 1_000_000, 1_000_000])
 
 
-func test_the_opening_rally_completes_even_on_a_dnf() -> void:
-	_install_opening_rally()
-	_grant_and_start("fx_open")
-	var finish := _capture_finish()
-	RallySession._opponent_field = _field([50000])
-	RallySession.report_wreck()
-	var r := _finish_result(finish)
-	assert_true(r["dnf"], "setup: the run ended in a wreck")
-	# The carve-out: everywhere else a DNF leaves the rally incomplete
-	# (test_a_wreck_is_a_dnf_that_keeps_the_car).
-	assert_true(r["completed"], "the opening rally completes despite the DNF")
-	assert_true(_save.rally_completed("fx_open"), "and the completion is recorded")
-	# Placement decides the stars, and a DNF places nowhere — so the completion is a
-	# free pass onto the map, not free currency.
-	assert_eq(int(r["stars_gained"]), 0, "a DNF pays no stars")
-	assert_eq(int(_save.profile.get("stars_earned", 0)), 0, "and credits none to the ledger")
-
-
 func test_the_opening_rally_completes_on_a_losing_finish() -> void:
 	_install_opening_rally()
 	_grant_and_start("fx_open")
@@ -1101,7 +1076,7 @@ func test_the_opening_rally_completes_on_a_losing_finish() -> void:
 	assert_gt(int(r["placed"]), 3, "setup: the player finished outside the podium")
 	assert_true(r["completed"], "the opening rally completes on a non-podium finish")
 	# Finishing always pays, podium or not — so the player's first drive banks something even
-	# when the field beats them. Only a DNF pays nothing (see the DNF test below).
+	# when the field beats them.
 	assert_eq(int(r["stars_gained"]), RallyLibrary.stars_for_placement(int(r["placed"])),
 		"a losing FINISH still pays what finishing is worth")
 	assert_gt(int(r["stars_gained"]), 0, "which is more than nothing")
@@ -1120,17 +1095,6 @@ func test_finishing_the_opening_rally_routes_to_the_map_and_pre_seeds_its_own_re
 	# the rally the player has just this second driven.
 	assert_true(_save.rally_revealed_seen("fx_open"),
 		"the opening rally is pre-acknowledged")
-
-
-# A DNF cannot install itself as the best time. complete_rally is reached here without a
-# time at all, and a negative would beat every real one for good.
-func test_a_dnf_in_the_opening_rally_records_no_best_time() -> void:
-	_install_opening_rally()
-	_grant_and_start("fx_open")
-	RallySession.report_wreck()
-	var rec: Dictionary = _save.profile["rallies"]["fx_open"]
-	assert_eq(int(rec.get("best_combined_ms", 0)), 0, "no time is recorded for a DNF")
-	assert_eq(int(rec.get("best_placed", 0)), 0, "and no placement")
 
 
 # The carve-out is FIRST-ATTEMPT ONLY. Once the opening rally is completed it is an

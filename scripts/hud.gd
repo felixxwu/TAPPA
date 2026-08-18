@@ -67,11 +67,25 @@ var _last_elapsed_cs := -1
 # via MenuNav.attach (features/menus.md).
 signal finish_next_pressed
 var _next_button: Button
-# In-run "vs P1" pace popup: a small top-centre readout the StageManager pulses every
-# few turns, showing the player's time delta to the leading rival (− green = ahead,
-# + red = behind). Built in code (not the scene) and auto-hides after a moment.
-var _stage_delta_label: Label
-var _stage_delta_left := 0.0
+# Permanent in-run standings readout (features/hud.md): the player's LIVE position in
+# the rival field ("P3/12") with the gap to the position that matters below it — the
+# time to find on the rival directly ahead, or the cushion over P2 while leading. Built
+# in code (not the scene), driven every frame by the StageManager off LiveStandings, and
+# shown for the whole run rather than pulsed. It replaced the old "X.XX ahead of P1"
+# popup, which only spoke every fifth turn and only ever compared against the leader.
+var _pos_label: Label
+var _gap_label: Label
+# Last displayed values, so the per-frame drive only re-formats a string when the shown
+# value actually moves (-1 / -999999 = nothing shown yet).
+var _last_position := -1
+var _last_field := -1
+var _last_gap_cs := -999999
+# Position-change animation (features/hud.md): a gained place slides the position label
+# UP into place and flashes GREEN; a lost place slides DOWN and flashes RED. `_pos_anim_left`
+# counts the remaining seconds, `_pos_anim_gain` says which way. Deliberately small and
+# short — a nudge in peripheral vision, not something that pulls the eye off the road.
+var _pos_anim_left := 0.0
+var _pos_anim_gain := true
 # Live corner-cut billing flash (features/track.md): a small top-right tag the
 # StageManager pulses each time TrackProgress bills a cut incident, showing the
 # running event total so consecutive incidents read as one growing tag.
@@ -160,6 +174,15 @@ const _POPUP_GAP := 8.0
 const _POPUP_TOP := _PACE_TOP + _PACE_ICON + _POPUP_GAP
 const _POPUP_HEIGHT := 24.0
 
+# The standings readout sits top-left directly under the run timer (ElapsedLabel ends at
+# y=32 in main.tscn), with the gap line under the position line. _POS_SLIDE is how far the
+# position label travels during a gain/lose animation, _POS_ANIM_SECONDS how long that takes.
+const _POS_TOP := 36.0
+const _POS_HEIGHT := 26.0
+const _GAP_HEIGHT := 18.0
+const _POS_SLIDE := 9.0
+const _POS_ANIM_SECONDS := 0.65
+
 # The off-track warning hangs this far BELOW the viewport centre (it anchors at 0.5,
 # unlike the top-anchored popups above), clearing the centred 3·2·1·GO countdown.
 const _OFF_ROAD_TOP := 70.0
@@ -237,7 +260,7 @@ func _ready() -> void:
 	# stage-complete banner green (success) — matching the house palette. See features/ui-design-system.md.
 	_elapsed_label.add_theme_color_override("font_color", UITheme.INK)
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
-	_build_stage_delta_label()
+	_build_position_readout()
 	_build_cut_flash_label()
 	_build_off_road_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
@@ -250,9 +273,6 @@ func _ready() -> void:
 	MenuNav.attach(_stage_complete_panel, {"first": _next_button})
 
 
-# Build the top-centre pace-popup label in code (it has no scene node). Anchored to
-# the top centre, sitting just below the run timer, and
-# hidden until the StageManager pulses it via show_stage_delta().
 # Build a debug readout label in code (no scene node), stacked top-left below the
 # rpm/gear labels at font size 14. Hidden until H reveals it. `top` sets the row;
 # `right` its width.
@@ -428,11 +448,41 @@ func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
 	return lbl
 
 
-func _build_stage_delta_label() -> void:
-	_stage_delta_label = _make_popup_label("StageDeltaLabel", 0.5,
-		Control.GROW_DIRECTION_BOTH,
-		Vector4(-80.0, 80.0, _POPUP_TOP, _POPUP_TOP + _POPUP_HEIGHT),
-		HORIZONTAL_ALIGNMENT_CENTER)
+# Build the two standings labels in code (they have no scene nodes): top-LEFT, stacked
+# directly under the run timer, because position and elapsed time are one thought and the
+# eye should find them in one place. Not `_make_popup_label` — these are a live state
+# readout with no fade timer, the same way the off-road warning mirrors a live clock.
+#
+# They start hidden: a plain dev boot of main.tscn has no rival field, so nothing ever
+# calls show_position() and the corner stays empty.
+func _build_position_readout() -> void:
+	_pos_label = Label.new()
+	_pos_label.name = "PositionLabel"
+	_pos_label.offset_left = 8.0
+	_pos_label.offset_right = 128.0
+	_pos_label.add_theme_font_size_override("font_size", 22)
+	_pos_label.add_theme_color_override("font_color", UITheme.INK)
+	_pos_label.visible = false
+	add_child(_pos_label)
+	_seat_position_label(0.0)
+	_gap_label = Label.new()
+	_gap_label.name = "PositionGapLabel"
+	_gap_label.offset_left = 8.0
+	_gap_label.offset_right = 148.0
+	_gap_label.offset_top = _POS_TOP + _POS_HEIGHT
+	_gap_label.offset_bottom = _POS_TOP + _POS_HEIGHT + _GAP_HEIGHT
+	_gap_label.add_theme_font_size_override("font_size", 14)
+	_gap_label.add_theme_color_override("font_color", UITheme.INK_DIM)
+	_gap_label.visible = false
+	add_child(_gap_label)
+
+
+# Place the position label `dy` pixels off its resting row — the whole of the
+# gain/lose animation's movement. The gap line below never moves: sliding both would
+# read as the panel jumping rather than the position turning over.
+func _seat_position_label(dy: float) -> void:
+	_pos_label.offset_top = _POS_TOP + dy
+	_pos_label.offset_bottom = _POS_TOP + _POS_HEIGHT + dy
 
 
 # Off-track warning + reset countdown (features/progress.md). Centre screen, just
@@ -475,8 +525,8 @@ func hide_off_road() -> void:
 	_last_off_road_tenths = -1
 
 
-# Corner-cut flash, sharing the top-centre pace-popup spot with StageDeltaLabel
-# (it takes precedence while showing — see show_cut_flash / show_stage_delta).
+# Corner-cut flash: a small top-centre tag, on its own row under the pacenote strip
+# (nothing shares the spot now that the "vs P1" pace popup is gone).
 func _build_cut_flash_label() -> void:
 	_cut_flash_label = _make_popup_label("CutFlashLabel", 0.5,
 		Control.GROW_DIRECTION_BOTH,
@@ -566,7 +616,7 @@ func _timed_process(_delta: float) -> void:
 		_update_grip_grid()
 	_update_damage(_delta)
 	# Hide each transient popup once its on-screen time elapses.
-	_stage_delta_left = _tick_fade(_stage_delta_left, _delta, _stage_delta_label)
+	_tick_position_anim(_delta)
 	_cut_flash_left = _tick_fade(_cut_flash_left, _delta, _cut_flash_label)
 	_tick_pacenotes(_delta)
 
@@ -689,23 +739,90 @@ func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
 		_stage_complete_label.text = "FINISH\n%s" % UITheme.format_time(roundi(seconds * 1000.0))
 
 
-# Top-centre pace popup, pulsed by the StageManager every few turns: the player's
-# time delta (ms) to the leading (P1) rival at this point. Negative = ahead (green,
-# shown as "X.XX ahead of P1"), positive = behind (red, "X.XX behind P1"). Gated by
-# hud_stage_delta_enabled; auto-hides after stage_delta_show_seconds.
-func show_stage_delta(delta_ms: int) -> void:
-	if not Config.data.hud_stage_delta_enabled:
+# --- Live standings readout (features/hud.md) ---------------------------------
+
+# The position line. Pure so the format is testable without the HUD scene.
+static func position_text(position: int, field: int) -> String:
+	return "P%d/%d" % [maxi(1, position), maxi(1, field)]
+
+
+# The gap line: the time to find on the position above, or — while leading — the cushion
+# held over P2. Worded rather than signed ("to" / "over"): a bare ± in the corner of the
+# screen at speed reads as ambiguous, and this line has to answer "which way" instantly.
+# Pure, for the same reason as position_text.
+static func gap_text(gap_ms: int, leading: bool, position: int) -> String:
+	var secs := absf(gap_ms / 1000.0)
+	if leading:
+		return "%.2f over P2" % secs
+	return "%.2f to P%d" % [secs, maxi(1, position - 1)]
+
+
+# Drive the permanent standings readout, called every frame while the stage runs
+# (StageManager off LiveStandings.standing). Gated by hud_position_enabled.
+#
+# Both label writes are change-gated on the DISPLAYED value — position, field, and the
+# gap rounded to the shown centisecond — because this runs per frame and the underlying
+# projection moves continuously; formatting unconditionally would build two Strings a
+# frame to discover they are identical.
+#
+# A position that MOVED starts the gain/lose animation, but only once a position has
+# actually been shown: the first frame of a stage is the readout appearing, not the
+# player overtaking someone.
+func show_position(position: int, field: int, gap_ms: int, leading: bool) -> void:
+	if not Config.data.hud_position_enabled:
 		return
-	# The CUT flash shares this spot and takes precedence: suppress the pace
-	# readout while a cut flash is still on screen.
-	if _cut_flash_left > 0.0:
+	var moved := position != _last_position
+	if moved or field != _last_field:
+		if moved and _last_position > 0:
+			_pos_anim_left = _POS_ANIM_SECONDS
+			_pos_anim_gain = position < _last_position
+		_last_position = position
+		_last_field = field
+		_pos_label.text = position_text(position, field)
+	_pos_label.visible = true
+	# One classified car means the player is alone out there — a gap to nobody.
+	if field <= 1:
+		_gap_label.visible = false
 		return
-	var ahead := delta_ms < 0
-	var secs := absf(delta_ms / 1000.0)
-	_stage_delta_label.text = "%.2f %s P1" % [secs, "ahead of" if ahead else "behind"]
-	_stage_delta_label.add_theme_color_override("font_color", UITheme.GREEN if ahead else UITheme.RED)
-	_stage_delta_label.visible = true
-	_stage_delta_left = Config.data.stage_delta_show_seconds
+	var gap_cs := roundi(absf(gap_ms / 10.0))
+	# `moved` is in the gate as well as the gap itself: the gap line NAMES the position
+	# above ("to P4"), so it has to be rebuilt when the position turns over even if the
+	# number of seconds happens to round the same.
+	if gap_cs != _last_gap_cs or moved:
+		_last_gap_cs = gap_cs
+		_gap_label.text = gap_text(gap_cs * 10, leading, position)
+		_gap_label.add_theme_color_override("font_color",
+			UITheme.GREEN if leading else UITheme.INK_DIM)
+	_gap_label.visible = true
+
+
+# Take the readout down (the stage ended, or a car swap re-armed the flow) and forget the
+# shown values, so the next stage's first position is an appearance and not an overtake.
+func hide_position() -> void:
+	_pos_label.visible = false
+	_gap_label.visible = false
+	_last_position = -1
+	_last_field = -1
+	_last_gap_cs = -999999
+	_pos_anim_left = 0.0
+	_seat_position_label(0.0)
+
+
+# The gain/lose animation, one frame at a time: the position label slides into its resting
+# row — up from below on a gained place, down from above on a lost one — while its colour
+# fades from GREEN / RED back to INK. Eased so most of the movement and nearly all of the
+# colour happen in the first instants, which is what makes it read as a flick rather than
+# a drift. Costs nothing once the timer lapses.
+func _tick_position_anim(delta: float) -> void:
+	if _pos_anim_left <= 0.0:
+		return
+	_pos_anim_left = maxf(0.0, _pos_anim_left - delta)
+	# 1 at the start of the animation, 0 at its end, ease-out (fast then settling).
+	var u := _pos_anim_left / _POS_ANIM_SECONDS
+	var eased := u * u
+	_seat_position_label((_POS_SLIDE if _pos_anim_gain else -_POS_SLIDE) * eased)
+	var accent: Color = UITheme.GREEN if _pos_anim_gain else UITheme.RED
+	_pos_label.add_theme_color_override("font_color", UITheme.INK.lerp(accent, eased))
 
 
 # Live corner-cut flash, pulsed by StageManager each time TrackProgress bills
@@ -716,10 +833,7 @@ func show_cut_flash(_incident_s: float, total_s: float) -> void:
 		return
 	_cut_flash_label.text = "CUT +%.1fs" % total_s
 	_cut_flash_label.visible = true
-	_cut_flash_left = Config.data.stage_delta_show_seconds
-	# The CUT flash takes precedence over the pace popup they share a spot with.
-	_stage_delta_label.visible = false
-	_stage_delta_left = 0.0
+	_cut_flash_left = Config.data.hud_popup_show_seconds
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------

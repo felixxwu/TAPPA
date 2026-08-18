@@ -586,8 +586,8 @@ func test_the_bar_shows_the_shared_car_summary() -> void:
 			"the bar's stats line comes from the shared helper for car %d" % i)
 
 
-# An OWNED car reports its condition; a WRECKED one is flagged rather than reading as 0%, so the bar
-# makes clear why it cannot be entered.
+# An OWNED car reports its condition; a 0-HP one is flagged rather than reading as 0%, so the bar
+# makes clear how badly it is hurt (it can still be entered — damage only weakens).
 func test_an_owned_car_reports_its_condition_and_a_wrecked_one_is_flagged() -> void:
 	var owned := _grant_cars(1)[0]
 	var entry := CarLibrary.for_owned(owned)

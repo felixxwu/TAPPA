@@ -28,7 +28,7 @@ re-implementing them.
 | `_event_index` | 0..2 |
 | `_event_times_ms` | accumulated event times, one per completed event |
 | `_opponent_field` | fixed per rally seed (`RallyLibrary.generate_opponent_field`) |
-| `_dnf` | set on a wreck |
+| `_dnf` | kept for the standings/result contract — **the player can no longer set it**, since damage can never end a run (see [damage.md](damage.md)); RIVALS still DNF and every result/standings row still carries a `dnf` flag |
 
 ## API
 
@@ -41,9 +41,16 @@ re-implementing them.
 | `current_event_standings()` | the leaderboard for the **JUST-COMPLETED event alone**: each racer's time for that one event, fastest first (a rival who DNF'd that event sinks to the bottom). The row's `combined_ms` field carries the single-event time, not a cumulative sum. Empty before any event completes. Read by the standings scene's STAGE n RESULT section, AND by `GlobalStandings.for_current_stage()` — the player's row here already carries the corrected car name/id (next row), so the local and [global](global-leaderboards.md) boards can never disagree about what the player was driving. |
 | `_player_car_name()` (private) | the player's own row's `car_name` in both boards above — `EngineSwap.display_name(CarLibrary.by_id(_car_model_id), Save.get_car(_car_instance_id))`, i.e. the car's catalogue name **prefixed with its current engine swap** if it isn't running its stock engine (see [engine-swap.md](engine-swap.md)'s `display_name`). Previously read the bare model name with no swap prefix; corrected as part of the global-leaderboards work since the same string now also gets posted to the world leaderboard. `""` when no car is fielded or the model id resolves to nothing (e.g. headless tests). |
 | `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_id, car_name, time_ms}`); DNF-this-event omitted. Drives the [start-line](start-line.md) reveal: the top three line up on the grid in their **actual cars** (spawned from `car_id`), each shown by name with its time to beat. |
-| `report_wreck()` | DNF: wreck the instance (`Save.record_wreck` — hands the car back at `GameConfig.wreck_recovery_hp_fraction` of max HP, battered but drivable, **never** destroyed; see [damage.md](damage.md)), skip remaining events, resolve. A DNF earns **no stars** (the star credit only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 | `dev_complete_rally()` | **DEV shortcut** (settings dev page, surfaced only while active): credit every event a perfect **0 ms** time, force `_event_index = stage_count()`, and `_resolve_results()` straight to the podium. A 0 ms combined out-runs the field → **P1** (top-3), so the finish records completion and credits its stars. No-op when `IDLE`. The settings host unfreezes the tree before calling it (the page is reached from the paused in-run overlay). |
+
+**There is no wreck path, and the PLAYER can no longer DNF a rally through damage.**
+`report_wreck()` is gone, as is the wreck menu it was called from — damage bottoms the
+car out at 0 HP and leaves it driving (stumbling and rev-capped; see
+[damage.md](damage.md)), so every started rally is either driven to its resolve or
+`abandon()`ed. What survives is the *contract*: RIVALS still DNF events, and both the
+result dict and every standings row still carry a `dnf` flag, so the UI's DNF rendering
+stays exactly as it was.
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
 event)`, `standings_ready(i)`, `opponent_field_changed()`,
@@ -150,8 +157,8 @@ fractions they use.
 
 **Final-event repair.** The between-event repair above only ever fires going INTO
 an event, so damage from the LAST event of a rally previously got no repair at all —
-`_resolve_results()` (reached from `continue_to_next_event()` after the final event,
-`report_wreck()`, or `dev_complete_rally()`) now also calls `_apply_field_repair()`
+`_resolve_results()` (reached from `continue_to_next_event()` after the final event, or
+from `dev_complete_rally()`) now also calls `_apply_field_repair()`
 for the just-raced car, with the same `field_repair_hp_fraction`/
 `field_repair_toe_fraction` fractions. Unlike the between-event case, this repair is
 applied silently — its summary is discarded rather than stashed for
@@ -238,9 +245,9 @@ whereas skipping the stage would make a zero-star result look like a bug.
 The **run-scene fielding + signal wiring** is in place ([menus.md](menus.md)):
 `world.gd` configures the car from the fielded OwnedCar via the
 upgrade/tuning/damage pipeline and routes `StageManager.stage_completed` to
-`report_event_result`; a car `wrecked` builds the **`WreckScreen`** whose *Return to
-HQ* button calls `report_wreck` (headless skips the cinematic and reports at once).
-The placeholder HQ calls
+`report_event_result`. There is no crash-out branch to wire: the car has no `wrecked`
+signal any more and `world.gd` no longer builds a wreck screen — a battered car just
+keeps driving the event. The placeholder HQ calls
 `start_rally`, so the loop runs end-to-end. The **diegetic presentation** around
 it (standings / podium staging, `standings_ready` etc.) is the
 deferred full menus build — RallySession already emits the signals it hooks.
@@ -280,7 +287,7 @@ the lap-time sims run over already-cached tracks.
 
 ## Tests
 
-`tests/headless/test_rally_session.gd` — happy path + placement, wreck DNF, the
+`tests/headless/test_rally_session.gd` — happy path + placement, the
 first-win part-prize unlock, no-retry re-entry (state reset, field
 fixed), the `game_won` beat, farming re-win, the between-event pit repair (fires
 entering every event after the first, never the first, summary consumed once),

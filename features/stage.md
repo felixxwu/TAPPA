@@ -6,7 +6,8 @@ control lock (`scripts/car.gd`) and the HUD stage widgets
 (`scripts/hud.gd`, see [hud.md](hud.md)); reads the [`TrackProgress`](progress.md)
 manager for the finish condition.
 
-**Tests:** `tests/headless/test_stage_manager.gd`, `tests/headless/test_start_line.gd`, `tests/headless/test_countdown_hold.gd`, `tests/headless/test_ghost_wiring.gd`, `tests/headless/test_hud.gd`
+**Tests:** `tests/headless/test_stage_manager.gd`, `tests/headless/test_start_line.gd`, `tests/headless/test_countdown_hold.gd`, `tests/headless/test_ghost_wiring.gd`, `tests/headless/test_hud.gd`,
+`tests/headless/test_live_standings.gd`
 
 Turns the always-live track into a timed stage: a countdown holds the car, then
 a run timer ticks until the finish line, then the car is locked (skidding to a stop
@@ -69,23 +70,29 @@ the stage ends exactly as the car crosses the finish arch ([finish-arch.md](fini
 which `world.gd` places at the **finish offset** (the end of the timed track, before
 the runoff); `TrackProgress` reaches 100% at that offset ([progress.md](progress.md)).
 
-## In-stage "vs P1" pace popup
+## In-stage live standings readout
 
-During RUNNING the manager can pulse a small top-centre HUD popup **every few turns**
-telling the player how their elapsed time compares to the **leading (P1) rival** at
-that point — `−` (green) when ahead, `+` (red) when behind (see [hud.md](hud.md) →
-`show_stage_delta`). It reuses the **turn-based time estimate** the rest of the rally
-runs on rather than inventing a new one:
+During RUNNING the manager drives a **permanent** top-left HUD readout of the player's
+live position in the rival field (`P3/12`) and the gap to the position above — or the
+cushion over P2 while leading (see [hud.md](hud.md) → "Live standings readout"). It
+replaced an every-few-turns "vs P1" pace popup, which only spoke in pulses and answered
+a question ("how far off the leader?") that isn't the one a driver mid-stage is asking.
+It reuses the **turn-based time estimate** the rest of the rally runs on rather than
+inventing a new one:
 
 - **Boundaries** come from `RallyLibrary.derive_turn_splits(track_result, car_meta,
   event)` — for each placed turn, the arc length reached — since it is the only thing
   that knows where each placed piece ends.
 - **Times** come from the shared `RivalPace` object the rival ghost is posed from
   ([rival-ghost.md](rival-ghost.md)), NOT from `derive_turn_splits`' own cumulative
-  times. One pace model serves both, so the delta on the HUD and the ghost car in the
-  windscreen cannot disagree about the same rival.
+  times. One pace model serves both, so the standings on the HUD and the ghost car in
+  the windscreen cannot disagree about the same rival.
 - The wiring is therefore **two-phase** in `world.gd`: `_setup_stage_splits()` snapshots
-  P1 and captures the turn boundaries during generation, then `_solve_rival_pace()` at
+  P1 and captures the turn boundaries during generation — and, in the same place, wires
+  the field the player is racing with
+  `_stage_manager.setup_live_standings(RallySession.current_event_field_times_ms())`
+  (every classified rival's time for the current event, ascending) — then
+  `_solve_rival_pace()` at
   `stage_started` solves the pace and `_wire_stage_splits()` calls
   `StageManager.setup_splits(turn_progress, turn_time_frac, p1_total_ms)`. It must wait
   for GO because the span is measured from `TrackProgress.origin_offset()`, which
@@ -96,14 +103,23 @@ runs on rather than inventing a new one:
   lead-in early and the last boundary stops landing on the total.
 - P1 is resolved from `RallySession.current_event_p1()` — one snapshot carrying the time,
   the car id, the engine id and the effective meta together. Only wired for a session run
-  that has a classified P1 rival; a plain dev boot shows no popup.
-- Each RUNNING frame, `_maybe_show_split()` advances past every turn boundary the
-  player has now crossed (progress is monotonic) and, when the count reaches a whole
-  `stage_delta_interval_turns`, fires the popup for the latest crossed turn. The rival's
-  estimated time **at that turn** is `p1_total_ms × turn_time_frac[turn]` — its total
-  event time distributed across the stage by the same par-time profile — and the delta
-  shown is `player_elapsed − that`. A re-arm (`setup()`, e.g. a car swap / new event)
-  clears the splits so they don't leak between stages.
+  that has a classified P1 rival; a plain dev boot shows no readout.
+- The two wirings are **deliberately separate methods**, because they answer different
+  questions and become available at different times: `setup_splits(turn_progress,
+  turn_time_frac, p1_total_ms)` can only be built once the rival pace is solved at GO,
+  while `setup_live_standings(field_times_ms)` is known as soon as the event is set up.
+  `setup_splits` no longer fires anything itself — it just wires the leader pace table.
+- Each RUNNING frame, `_update_live_standings()` projects the player's finishing time
+  from their live gap to the leader (`LiveStandings.project_total_ms`, which reads the
+  pace table — the projection *carries the current gap forward* rather than
+  extrapolating the player's average pace; see [hud.md](hud.md) for why), slots that
+  projection into the field with `LiveStandings.standing`, and hands the HUD the
+  position and the gap that matters via `show_position`. It is **polled** rather than
+  pulsed at turn boundaries because it is a live-state readout like the run timer, and
+  the HUD change-gates its own string building. It needs BOTH wirings and silently does
+  nothing without them — that's the dev-boot case. The readout is hidden on a re-arm
+  (`setup()`, e.g. a car swap / new event, which also clears the splits so they don't
+  leak between stages) and at the finish.
 
 ## Control lock (`Car.controls_locked`)
 
@@ -155,9 +171,8 @@ regeneration (entering a new event) the prior manager is freed so only one ticks
 | `stage_countdown_seconds` | `3.0` | Countdown length before controls unlock. |
 | `stage_complete_percent` | `100.0` | Track-progress % (0..100) that ends the stage. 100 so it coincides with the finish arch at the finish offset (the timed-track end, before the runoff); `TrackProgress` reaches 100% there. |
 | `hud_elapsed_enabled` | `true` | Show the top-right run timer (mirrors `hud_enabled`). |
-| `hud_stage_delta_enabled` | `true` | Show the in-run "vs P1" pace popup (mirrors `hud_enabled`; needs a session P1). |
-| `stage_delta_interval_turns` | `5` | Turns between pace popups (every Nth turn). |
-| `stage_delta_show_seconds` | `3.0` | How long the pace popup stays before fading. |
+| `hud_position_enabled` | `true` | Show the permanent in-run standings readout (position + gap; needs a session P1 and a classified field). |
+| `hud_popup_show_seconds` | `3.0` | How long a transient in-run tag (the corner-cut flash) stays before fading. |
 
 See [configuration.md](configuration.md). No quality-tier branching — single
 shipped values, tunable for dev/debug.
@@ -166,14 +181,18 @@ shipped values, tunable for dev/debug.
 
 - `tests/headless/test_stage_manager.gd` — the state machine driven against stub
   car/HUD/progress (lock-at-start, countdown→run, timer accrual, GO flash,
-  completion freeze/relock/signal, configured percent), the **pace-popup splits**
-  (fires every N turns, ahead reads negative / behind positive, configurable
-  interval, no popup without wired splits), plus a `main.tscn` integration check
-  that the car boots locked.
+  completion freeze/relock/signal, configured percent), the **live standings**
+  wiring (`setup_splits` + `setup_live_standings` drive `show_position` every
+  RUNNING frame, nothing shown when either wiring is missing, hidden on re-arm and
+  at the finish), plus a `main.tscn` integration check that the car boots locked.
+- `tests/headless/test_live_standings.gd` — the pure maths behind the readout:
+  `time_frac_at` interpolation and its no-table `-1.0`, the gap-carry
+  `project_total_ms`, and `standing`'s position/field/gap/leading contract.
 - `tests/headless/test_rally_library.gd` — includes `derive_turn_splits` (monotonic
   offsets + cumulative times, final split equals the derived target, empty without
   pieces).
-- `tests/headless/test_hud.gd` — the countdown/elapsed/complete widget formatting
-  and the `hud_elapsed_enabled` gate.
+- `tests/headless/test_hud.gd` — the countdown/elapsed/complete widget formatting,
+  the `hud_elapsed_enabled` gate, and the pure `position_text` / `gap_text`
+  standings formatters plus the `show_position` / `hide_position` label behaviour.
 - `tests/headless/test_smoke.gd` — structural check that the scene wires a
   `StageManager` and the three HUD widgets.

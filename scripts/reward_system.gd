@@ -167,8 +167,8 @@ static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: Random
 
 
 # The highest reward_tier among the cars in the garage, or 0 for an empty one.
-# Used by the wreck safety net to size its replacement against what the player had
-# actually worked up to, rather than always paying out at the bottom of the ladder.
+# Sizes a reward against what the player has actually worked up to, rather than always
+# paying out at the bottom of the ladder.
 static func highest_owned_tier(profile: Dictionary) -> int:
 	var best := 0
 	for car in profile.get(Save.KEY_CARS, []):

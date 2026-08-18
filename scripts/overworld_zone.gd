@@ -357,6 +357,14 @@ func _tube_material(color: Color) -> StandardMaterial3D:
 	return mat
 
 
+# The shared unit tube, for the OTHER things in this hub that draw a light column — today the
+# garage's stop tube (`OverworldGarage._build_stop_tube`). Public so nothing outside this file
+# has to build a second copy of the same geometry: one mesh, one upload, one place to change
+# the shape. The caller supplies its own material and its own node scale.
+static func unit_tube_mesh() -> ArrayMesh:
+	return _shared_tube_mesh()
+
+
 # One unit tube for the whole game: radius 1 in XZ, height 1 in +Y from the origin, open at
 # both ends, with the sky-fade baked into its vertex colours (white, alpha 1 at the base ->
 # alpha 0 at the top, shaped by TUBE_FADE_POW).

@@ -62,6 +62,8 @@ const PAD_MARGIN_M := 0.5
 # The gap between the two bays (and to each side wall) that garage.gd builds. Restated here for
 # the same reason `_total_w` is: the footprint maths must work with no model built.
 const BAY_GAP_M := 0.5
+# How far the stop tube's base floats above the bay floor, so it never z-fights the lift pad.
+const TUBE_LIFT_M := 0.04
 
 var _visuals := true
 var _ground_at := Callable()
@@ -88,6 +90,12 @@ var _bay_w := 0.0
 var _bay_d := 0.0
 var _total_w := 0.0
 var _pad_local := Vector3.ZERO   # the lift pose, in this node's local space
+# The STOP TUBE: the translucent light column standing on the lift bay that says "park here".
+# `_tube_ready` is state, not decoration — it is computed in `update_with` whether or not
+# visuals were built, which is what lets a headless test assert on it.
+var _tube_root: Node3D = null
+var _tube_mat: StandardMaterial3D = null
+var _tube_ready := false
 
 # The owned-car dictionary the pages are bound to. Re-read from Save on every change.
 var _owned: Dictionary = {}
@@ -154,6 +162,7 @@ func setup(opts: Dictionary) -> void:
 	_build_walls()
 	if _visuals:
 		_build_model()
+		_build_stop_tube()
 	_build_ui()
 	_armed = true
 
@@ -172,19 +181,25 @@ func update(delta: float) -> void:
 # whether driving in (or back out) changes anything.
 func update_with(delta: float, car_pos: Vector3, speed_kmh: float) -> void:
 	_advance_lift(delta)
-	if _state == State.OUTSIDE:
-		var inside := inside_bay(car_pos)
-		if not inside:
-			_armed = true
-			return
-		# Entering AT SPEED does not seat the car: you are still moving, and snapping a
-		# 90 km/h car onto a lift reads as a crash. The back wall is solid, so a fast entry
-		# simply stops — and the moment it has stopped, this fires. There is no way to end up
-		# inside and stuck.
-		if _armed and speed_kmh <= maxf(Config.data.overworld_garage_enter_max_kmh, 0.0):
-			enter()
+	if _state != State.OUTSIDE:
+		# Parked (or animating): the column has done its job and the car is standing in it.
+		_set_tube_ready(false)
+		_show_tube(false)
+		# Already parked: the car is frozen and locked, so nothing it does can change the state.
 		return
-	# Already parked: the car is frozen and locked, so nothing it does can change the state.
+	var inside := inside_bay(car_pos)
+	var slow := speed_kmh <= maxf(Config.data.overworld_garage_enter_max_kmh, 0.0)
+	_set_tube_ready(inside and slow)
+	_show_tube(true)
+	if not inside:
+		_armed = true
+		return
+	# Entering AT SPEED does not seat the car: you are still moving, and snapping a
+	# 90 km/h car onto a lift reads as a crash. The back wall is solid, so a fast entry
+	# simply stops — and the moment it has stopped, this fires. There is no way to end up
+	# inside and stuck.
+	if _armed and slow:
+		enter()
 
 
 # --- WHERE THE BUILDING STANDS -------------------------------------------------------------
@@ -329,6 +344,100 @@ func inside_bay(world_pos: Vector3) -> bool:
 	if absf(local.x) > _total_w * 0.5 - 0.5:
 		return false
 	return local.z <= -ENTRY_INSET_M and local.z >= -_bay_d
+
+
+# --- The stop tube ------------------------------------------------------------------------
+#
+# The bay is a hole in a wall: from the driver's seat, "in far enough" and "in the right bay"
+# are both invisible, and the only feedback the old build gave was the lift firing (or not).
+# So the lift bay carries the same signal a rally zone carries — a transparent light column you
+# drive into, on the SAME shared unit mesh (`OverworldZone.unit_tube_mesh`), so the player
+# reads it with no new vocabulary: the column is the spot, park in it.
+#
+# It differs from a zone tube in two ways, both because it stands INDOORS: it is short enough
+# to stay under the roof (`overworld_garage_tube_height_m`, ~4 m against a zone's 60), and it
+# has no dwell to show — the garage takes the car the instant it is slow enough — so instead of
+# a filling column it has just two states, WAITING (green, base alpha) and READY (gold, ready
+# alpha). READY is a real frame or more whenever the car rolls in above the speed gate and then
+# stops, and it is what tells the player "this is the spot" rather than "this bay is wrong".
+
+
+# The stop tube's root, or null when built with `visuals: false`. Mirrors
+# `OverworldZone.tube_node()` so a test reaches both the same way.
+func stop_tube_node() -> Node3D:
+	return _tube_root
+
+
+# The radius the stop tube is drawn at, metres — i.e. the spot the player sees they must be in.
+func stop_tube_radius() -> float:
+	return maxf(Config.data.overworld_garage_tube_radius_m, 0.0)
+
+
+# Where the tube stands, in this node's local space: the lift pose itself, so the thing the
+# player parks in and the thing the car is seated on are the same point by construction.
+func stop_tube_local_pos() -> Vector3:
+	return _pad_local + Vector3(0.0, TUBE_LIFT_M, 0.0)
+
+
+# Is the car currently in the spot the tube marks and slow enough to be taken? Computed every
+# frame regardless of visuals, so it is assertable headless.
+func stop_tube_ready() -> bool:
+	return _tube_ready
+
+
+func _build_stop_tube() -> void:
+	var radius := stop_tube_radius()
+	var height := maxf(Config.data.overworld_garage_tube_height_m, 0.0)
+	if radius <= 0.0 or height <= 0.0:
+		return
+	_tube_root = Node3D.new()
+	_tube_root.name = "StopTube"
+	_tube_root.position = stop_tube_local_pos()
+	_tube_root.scale = Vector3(radius, height, radius)
+	add_child(_tube_root)
+
+	# Same material recipe as a zone tube: unshaded (it is its own light source), alpha-blended,
+	# double-sided so it reads from inside as well as out, and NOT writing depth so the car
+	# parked in it stays visible through it. The vertical fade rides the mesh's vertex colours.
+	_tube_mat = StandardMaterial3D.new()
+	_tube_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_tube_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_tube_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	_tube_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_tube_mat.vertex_color_use_as_albedo = true
+	_add_tube_mesh()
+	_push_tube_colour()
+
+
+func _add_tube_mesh() -> void:
+	var mi := MeshInstance3D.new()
+	mi.name = "TubeBody"
+	mi.mesh = OverworldZone.unit_tube_mesh()
+	mi.material_override = _tube_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_tube_root.add_child(mi)
+
+
+func _set_tube_ready(ready: bool) -> void:
+	if ready == _tube_ready:
+		return
+	_tube_ready = ready
+	_push_tube_colour()
+
+
+func _push_tube_colour() -> void:
+	if _tube_mat == null:
+		return
+	var cfg := Config.data
+	var col: Color = UITheme.GOLD if _tube_ready else UITheme.GREEN
+	col.a = clampf(cfg.overworld_garage_tube_ready_alpha if _tube_ready
+		else cfg.overworld_garage_tube_alpha, 0.0, 1.0)
+	_tube_mat.albedo_color = col
+
+
+func _show_tube(shown: bool) -> void:
+	if _tube_root != null:
+		_tube_root.visible = shown
 
 
 # --- Entering, and the lift ---------------------------------------------------------------

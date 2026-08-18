@@ -3,8 +3,9 @@
 A rally career game built in Godot — "Gran Turismo, but with rally stages."
 You build and tune a garage of cars, enter seeded rallies on a world map, and
 chase a clean combined time across three events per rally, all while every car
-you field (bar your immortal starter) is a real, depreciating asset that can be
-damaged and ultimately wrecked. See [`gameplay.md`](gameplay.md) for the full
+you field is a real asset that damage never destroys but always slows: crash it and
+it stumbles and runs out of revs for the rest of the rally, then costs stars to
+repair. See [`gameplay.md`](gameplay.md) for the full
 design vision — it's the north star the implementation ladders up to.
 
 ## Engine version

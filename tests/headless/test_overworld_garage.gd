@@ -505,3 +505,58 @@ func test_the_car_is_seated_at_ride_height_above_the_deck() -> void:
 	_settle_lift()
 	assert_almost_eq(_car.global_position.y, on_the_deck + 0.42, 0.0001,
 		"the body origin rides its settled ride height above the deck")
+
+
+# --- The stop tube ------------------------------------------------------------------------
+#
+# The light column standing on the lift bay that says "park here". Its READY state is logic,
+# not decoration — computed every frame whether or not visuals were built — so all of this
+# runs headless. Nothing here pins the tube's authored radius, height or alpha.
+
+
+# The tube marks the LIFT, not the middle of the building: the point the player is asked to
+# park in and the point the car is actually seated on must be the same point, or the signal is
+# a lie. Compared against the lift pose the garage seats the car at, not against a number.
+func test_the_stop_tube_stands_on_the_lift_the_car_is_seated_on() -> void:
+	_drive_in()
+	var seated := _garage.to_local(_car.global_position)
+	var tube := _garage.stop_tube_local_pos()
+	assert_almost_eq(tube.x, seated.x, 0.01, "the tube is in the bay the lift is in")
+	assert_almost_eq(tube.z, seated.z, 0.01, "the tube is at the lift's depth into the bay")
+
+
+# The two states, and the transition that carries the meaning: outside the bay it waits, in
+# the bay and slow enough to be taken it reads READY.
+func test_the_stop_tube_reads_ready_only_in_the_spot_that_takes_the_car() -> void:
+	_garage.update_with(0.1, _outside_point(), 0.0)
+	assert_false(_garage.stop_tube_ready(), "parked outside the bay, the tube is still waiting")
+	var fast := Config.data.overworld_garage_enter_max_kmh + 30.0
+	_garage.update_with(0.1, _inside_point(), fast)
+	assert_false(_garage.stop_tube_ready(),
+		"sliding through the bay too fast to be taken is not the ready state")
+	assert_false(_garage.is_inside(), "...and the garage has indeed not taken the car")
+	_garage.update_with(0.1, _inside_point(), 0.0)
+	assert_true(_garage.stop_tube_ready(), "stopped in the spot, the tube says so")
+
+
+# Once the car is on the lift the column has done its job — leaving it lit would draw a
+# "park here" marker through the car already parked there.
+func test_the_stop_tube_retires_once_the_car_is_on_the_lift() -> void:
+	_drive_in()
+	assert_true(_garage.is_inside(), "the car is on the lift")
+	assert_false(_garage.stop_tube_ready(), "the tube stops signalling once the lift has the car")
+
+
+# Visuals off builds no column at all — the same discipline as the rest of the building — but
+# the state above still runs, which is what makes those tests scene-free.
+func test_the_stop_tube_is_visuals_only() -> void:
+	assert_null(_garage.stop_tube_node(), "no tube node is built with visuals off")
+	var g := OverworldGarage.new()
+	add_child_autofree(g)
+	g.setup({"world_pos": Vector3.ZERO, "visuals": true})
+	var tube := g.stop_tube_node()
+	assert_not_null(tube, "the column is built with visuals on")
+	if tube != null:
+		assert_almost_eq(tube.scale.x, g.stop_tube_radius(), 0.001,
+			"the column is drawn at the radius it advertises, so what you see is where to park")
+		assert_gt(tube.get_child_count(), 0, "the column has its mesh")

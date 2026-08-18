@@ -907,8 +907,8 @@ func _summary_text() -> String:
 		# the flow is meant to reassure them. Read the result's own `completed` flag rather
 		# than assuming what a DNF means.
 		#
-		# "car wrecked" is also gone: a wreck hands the car back repairable
-		# (Save.record_wreck), so writing it off in the copy is stale.
+		# "car wrecked" is also gone: damage can never wreck a car at all now
+		# (features/damage.md), so writing one off in the copy is stale.
 		if _result.get("completed", false):
 			return "%sDNF — but the rally counts.\nYou are on the map." % prefix
 		return "%sDNF — the rally stays incomplete." % prefix

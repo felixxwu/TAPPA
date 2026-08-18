@@ -769,16 +769,14 @@ func has_nitrous() -> bool:
 @export_range(0.0, 100.0) var stage_complete_percent := 100.0
 ## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
 @export var hud_elapsed_enabled := true
-## Show the in-run "vs P1" pace popup that appears every few turns (mirrors
-## hud_enabled). It compares the player's elapsed time to the leading rival's
-## estimated time at that point (− green = ahead, + red = behind). Only inside an
-## active rally session, which is where a P1 rival time exists.
-@export var hud_stage_delta_enabled := true
-## How many turns between in-run pace popups (the "vs P1" delta): 5 = every fifth
-## turn the player drives through. Read by StageManager. Minimum 1.
-@export_range(1, 50) var stage_delta_interval_turns := 5
-## How long (seconds) the in-run pace popup stays on screen before it fades out.
-@export var stage_delta_show_seconds := 3.0
+## Show the permanent in-run standings readout under the run timer: the player's live
+## position in the rival field ("P3/12") and the gap to the position above (or the
+## cushion over P2 while leading). Only inside an active rally session, which is where
+## an opponent field exists. Replaced the old every-few-turns "vs P1" pace popup.
+@export var hud_position_enabled := true
+## How long (seconds) a transient in-run HUD tag (the corner-cut flash) stays on screen
+## before it fades out.
+@export var hud_popup_show_seconds := 3.0
 @export_group("Start Line")
 ## The pre-event start-line sequence (todo/menus.md location 2): on track load the
 ## "time to beat" is shown while an orbit camera circles the car queued between a
@@ -873,21 +871,31 @@ func has_nitrous() -> bool:
 ## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
 @export_range(0.0, 2000.0) var impact_ref_hp_loss := 300.0
 ## Cap on the HP a SINGLE tick's deceleration can cost, as an absolute HP amount — so no
-## one crash wrecks the car outright (it survives a couple). Being a flat amount (not a
-## fraction of max HP), a car's max_hp genuinely matters: a fragile car is wrecked by
+## one crash strips the whole pool (it survives a good few). Being a flat amount (not a
+## fraction of max HP), a car's max_hp genuinely matters: a fragile car is gutted by
 ## fewer capped hits than a tough one. A pinned car sheds ~0 velocity/tick so grinding
 ## self-limits; a real multi-bounce tumble racks up several capped hits, so a long fall
-## down a drop can still wreck.
+## down a drop can still empty it.
 @export_range(0.0, 2000.0) var impact_max_loss := 450.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
 ## power in stumbling bursts instead of a smooth derate — fully simulated (crank
 ## torque drops to friction) and audible (the synth ducks + crackles on the cut).
 ## The cut rate scales with the damage fraction and the engine's load. See
 ## features/damage.md.
-## Health fraction (hp/max_hp) at/above which the engine is FULLY healthy — no
-## misfire. Below it the misfire ramps in, reaching full intensity at 0 HP. So a
-## lightly-damaged car runs clean; the stumble only sets in once it's properly hurt.
+## Health fraction (hp/max_hp) at/above which the engine is FULLY healthy — no misfire,
+## full revs. Below it BOTH engine-damage effects ramp in together (DamageModel.damage_ramp),
+## reaching their worst at 0 HP. So a lightly-damaged car runs clean; the stumble and the
+## lowered rev ceiling only set in once it's properly hurt.
 @export_range(0.0, 1.0) var damage_misfire_health_threshold := 0.5
+## Worst misfire intensity, at 0 HP — the "certain point" past which damage stops weakening
+## the engine. Below 1.0 on purpose: damage must never take the car out of the run, so even a
+## 0 HP engine keeps firing often enough to drive to the finish, just badly.
+@export_range(0.0, 1.0) var damage_misfire_level_max := 0.8
+## Fraction of the engine's redline still usable at 0 HP — a damaged engine won't pull to the
+## top end, so every gear runs out early and the car is slower everywhere (and audibly bounces
+## off a lower limiter). Ramps down from 1.0 at damage_misfire_health_threshold. Also floored
+## well above zero so the car always revs enough to drive. See features/damage.md.
+@export_range(0.05, 1.0) var damage_rev_limit_min_fraction := 0.6
 ## Cuts per second at 0 HP under full load — the worst-case misfire frequency.
 @export_range(0.0, 30.0) var damage_misfire_rate_max := 9.0
 ## How much the misfire fires INDEPENDENT of load (0..1): the cut rate is
@@ -909,15 +917,6 @@ func has_nitrous() -> bool:
 ## Per-wheel clamp on accumulated toe (radians) — a wheel can't bend past this no
 ## matter how many hits it takes, so a heavily-crashed car stays (barely) drivable.
 @export_range(0.0, 0.5) var damage_wheel_toe_max := 0.14
-## Fraction of max HP a car comes back with after a WRECK (features/damage.md). A wreck
-## ends the run as a DNF and the car returns to the garage at this much health — it is not
-## written off, and there is no unrecoverable state.
-##
-## Low on purpose. The punishment for wrecking is the LOST RALLY RESULT — a DNF, no podium,
-## no prize, no progress on the map — and a big repair bill on top. Making it terminal
-## instead meant a single mistake could end a career, which is what forced the whole
-## scaffolding of soft-lock rescues that used to sit around it.
-@export_range(0.0, 1.0) var wreck_recovery_hp_fraction := 0.25
 ## Between-event pit repairs (Save.field_repair): at the START of every rally event
 ## after the first, the engineers patch the fielded car up a bit. This is the
 ## fraction of the HP LOST so far that gets restored — 0.2 means a car at 50%
@@ -954,11 +953,6 @@ func has_nitrous() -> bool:
 @export var hud_hp_enabled := true
 ## HP fraction below which the gauge flashes a low-HP warning.
 @export_range(0.0, 1.0) var hud_low_hp_warn_frac := 0.25
-## When the fielded car is wrecked mid-event the crash plays out, then an orbit
-## camera + "car wrecked" menu appears (scripts/wreck_screen.gd, reusing the
-## start-line orbit knobs). This caps how long (s) we wait for the wreck to settle
-## before showing the menu, in case the car never fully comes to rest.
-@export_range(0.0, 10.0) var wreck_settle_max_seconds := 4.0
 
 @export_group("Recovery")
 # Automatic stuck-car recovery (features/progress.md): with big cliffs/drops a car can
@@ -3846,6 +3840,19 @@ func spectator_params() -> Dictionary:
 ## level circle the building has to stand on, so raising this past what the pad can hold does
 ## nothing until the pad grows too.
 @export_range(0.0, 40.0, 0.5) var overworld_garage_road_offset_m := 8.0
+
+## The STOP TUBE inside the garage — the translucent light column standing on the lift bay that
+## says "park here". Radius in metres; the column reads as the spot you have to be in, the same
+## way a rally zone's tube reads as its trigger radius (features/overworld.md → "The stop tube").
+## Zero hides it entirely.
+@export_range(0.0, 6.0, 0.1) var overworld_garage_tube_radius_m := 1.7
+## How tall the stop tube stands, in metres. It lives INSIDE a building, so unlike a zone tube
+## this wants to stay under the roof rather than reach for the sky.
+@export_range(0.0, 12.0, 0.1) var overworld_garage_tube_height_m := 4.2
+## Base opacity of the stop tube, and the opacity it jumps to once the car is in the bay and
+## slow enough to be taken. The jump IS the "you are in the right place" punctuation.
+@export_range(0.0, 1.0, 0.01) var overworld_garage_tube_alpha := 0.3
+@export_range(0.0, 1.0, 0.01) var overworld_garage_tube_ready_alpha := 0.85
 
 # --- Flat pads under the zones and the garage (scripts/overworld_pads.gd) -------------------
 # A level circle of ground is baked into the terrain under every rally zone and under the

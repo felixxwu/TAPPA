@@ -199,13 +199,13 @@ func test_synthetic_damaged_puffs_on_the_timer() -> void:
 
 
 func test_synthetic_worse_damage_puffs_sooner() -> void:
-	# Same elapsed time: a wreck (severity 1) has puffed, a lightly-damaged car
+	# Same elapsed time: a fully damaged car (severity 1) has puffed, a lightly-damaged car
 	# (severity just above the threshold) has a longer interval and has not.
 	var dt: float = Config.data.engine_smoke_synthetic_interval_min + 0.01
 	_damage.level = 1.0
-	var wrecked := _make_synthetic()
-	wrecked._physics_process(dt)
-	assert_gt(wrecked.live_count(), 0, "a wrecked car puffs within the short interval")
+	var severe := _make_synthetic()
+	severe._physics_process(dt)
+	assert_gt(severe.live_count(), 0, "a fully damaged car puffs within the short interval")
 
 	_damage.level = 0.1
 	var light := _make_synthetic()

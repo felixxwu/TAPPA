@@ -28,8 +28,9 @@ stages and damage carries over between them. Full design:
   `resumable_run(profile, unix_time)` / `has_stale_run` / `discard_stale_run`
   (pure, testable with a synthetic profile), `eligible_cars(kind, profile,
   unix_time)` (§2 below). Per-stage flow: `report_event_result(elapsed_ms,
-  hp_lost)`, `take_pending_repair()`, `report_wreck()`, `abandon()` (both end
-  the run as a DNF — no-retry, matching the rest of the game).
+  hp_lost)`, `take_pending_repair()`, `pause_run()` (leave the run where it is,
+  resumable — `abandon()` survives only as a deprecated alias for it). Nothing
+  DNFs a run any more; `report_wreck()` is gone.
   `profile["challenge_run"]` persists `{period_key, kind, car_instance_id,
   stage_index, stage_times_ms, dnf}` after every stage so quitting mid-week
   resumes at the next stage with damage intact.
@@ -466,8 +467,8 @@ every other special car-park job (`GARAGE`, `FREEROAM`, `SWAP`, `STARTER`,
 
 Quitting mid-run (`pause_menu.gd.quit_to_hq`) checks
 `ChallengeSession.is_active()` before `RallySession.is_active()` and calls
-`ChallengeSession.abandon()` — the same explicit-quit-is-DNF outcome §3
-describes, distinct from a wreck only in cause.
+`ChallengeSession.abandon()` — which is now just an alias for `pause_run()`, so
+quitting to HQ leaves the run parked at its current stage rather than ending it.
 
 ## Car lock (§2) — the RUN is locked to a car, the CAR is not reserved
 
@@ -530,8 +531,17 @@ stored there would make the game try to RESUME a finished run. The map is pruned
 the live periods on every write, so it holds at most three records rather than growing
 one entry per day forever.
 
-**Only a WRECK produces a DNF.** `_end_as_dnf` is reachable solely through
-`report_wreck()`. Everything else that leaves a run pauses it — see below.
+**NOTHING DNFs a challenge run any more.** Damage can never wreck the car (see
+[damage.md](damage.md)), so `report_wreck()` and `_end_as_dnf` are both gone and there
+is no live path that ends a run as a DNF: a run either completes every stage or is
+left with `pause_run()` / `abandon()` (see below), which record no outcome at all.
+The `dnf` shape SURVIVES either side of that, and is not dead code: `_dnf` is still
+read back from a persisted `challenge_run`, still written into the persisted run dict
+and the finished-run result, still feeds `RallyLibrary.build_standings`, and the entry
+screen still renders a stored `DNF` outcome in red. The cloud half likewise stands —
+`ChallengeLeaderboard.post_dnf`, the `isDnfFlip()` rules branch, and
+`world.gd._on_challenge_run_finished`'s `result["dnf"]` arm are all still there for
+legacy/persisted runs, they simply never fire from a run started today.
 
 ## Leaving a run (pause, not abandon)
 
@@ -730,8 +740,8 @@ the time and parks the field repair. One path remains:
 
 This handler is the challenge's counterpart to `RallySession._resolve_results` —
 the one place a finished run is turned into a reward. It fires from
-`ChallengeSession._finish_locally` / `_end_as_dnf` while the player is **still in
-the driving scene**, before the hand-off to HQ.
+`ChallengeSession._finish_locally` — the only remaining path, now that `_end_as_dnf` is
+gone — while the player is **still in the driving scene**, before the hand-off to HQ.
 
 - **Clean finish** → `await ChallengeSession.try_grant_completion_reward(result)`,
   then, on a grant, a plain `ConfirmPopup` card ("Challenge Complete!", placing +
@@ -778,8 +788,9 @@ the driving scene**, before the hand-off to HQ.
   `CarFixtures`, never the real catalogue), the displayed-ceiling boundary rule
   (`classify_car` with a self-authored fractional ceiling: a car whose displayed
   rating equals the displayed ceiling is `READY`; one over it is `EXCLUDED`)
-  and `displayed_ceiling == roundi(current_ceiling)`, stage accumulation/final-stage termination, DNF via
-  wreck/abandon, the completion-reward DNF short-circuit, plus the full
+  and `displayed_ceiling == roundi(current_ceiling)`, stage accumulation/final-stage termination, `pause_run()`
+  leaving a resumable run rather than ending it, the completion-reward DNF
+  short-circuit (driven from a persisted `dnf`, since no live path sets one), plus the full
   multi-stage drive-through (`report_event_result` + `continue_to_next_stage()`
   for every stage of the longest kind, reaching `events_completed() ==
   stage_count()` and `is_active() == false` — the regression test for "a

@@ -66,10 +66,10 @@ with them, and working toward the special-event finale.
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars — the only gate is the rally that unlocks the capability; neither a token nor car health blocks a swap — engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
 | [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (the car pick/pricing with its tier clamp, the prize-rally part unlock). There is no random per-event upgrade draw any more |
-| [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, wreck/DNF, no-retry) |
+| [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, rival DNFs, no-retry) |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeSession` autoload (resume persistence, per-stage flow, placement reward), the HQ entry-point screen |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
-| [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, wreck at 0 HP |
+| [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, capped misfire + rev cap at 0 HP (never a wreck) |
 | [opponent-wrecks.md](opponent-wrecks.md) | Rival crash-outs — the rare/capped wreck decision (`RallyLibrary`) + the roadside staging (frozen car + crowd + smoke) in `world.gd` |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
@@ -77,6 +77,7 @@ with them, and working toward the special-event finale.
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [sfx.md](sfx.md) | **One-shot sound effects — `Audio` autoload (`scripts/audio.gd`), `Audio.play_beep(...)`, the SFX bus. Read this before playing ANY sound; never hand-roll an `AudioStreamGenerator` at a call site.** |
 | [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
+| [multiplayer-lobby.md](multiplayer-lobby.md) | Round-based drop-in multiplayer — the wall-clock round derivation, the seeded stage + loaner car, the Firestore progress collection, and the extrapolated field |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (stateless rpm-linear belt drive, rpm-scaled drag) — engine property, stock or via the shared-slot `turbo_small` / `turbo_large` / `supercharger` upgrade ladder |
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
@@ -98,7 +99,7 @@ with them, and working toward the special-event finale.
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
 | [camera.md](camera.md) | Chase camera follow behavior |
-| [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
+| [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the permanent live standings readout (`LiveStandings`) |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding (vertical slice; full diegetic UI deferred) |
 | [overworld.md](overworld.md) | The Overworld HQ — a life-size drivable world map as a SECOND hub (`overworld.tscn` / `Overworld`), behind `GameConfig.overworld_enabled` (ships off). Coordinate mapping, the coastline vs the fog frontier, the on-disk chunk cache + first-launch precompute, per-position region look, streamed foliage, the zone seam, the wayfinding stack (compass, camera-up minimap, full map, and the `OverworldRoute` sat-nav that plans a road path to a picked destination), and the cheap test path |
 | [world-panel.md](world-panel.md) | `WorldPanel` — menus hosted in the 3D world, welded off-square to an anchor (4 HQ screens; shipped ON) |
@@ -159,7 +160,6 @@ with them, and working toward the special-event finale.
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
 | Opponent wrecks | `scripts/rally_library.gd` (`generate_opponent_field` / `event_wreck`), `scripts/world.gd` (`_spawn_opponent_wreck`) |
-| Wreck menu | `scripts/wreck_screen.gd` (`WreckScreen` — crash → orbit camera + Return to HQ) |
 | Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + key-binding + mobile-control picker) |
 | Key rebinding | `scripts/input_remap.gd` (`InputRemap` autoload — keyboard/controller rebind over the InputMap) |
 | Pause menu | `scripts/pause_menu.gd` (`PauseMenu` — top-right freeze button → Resume / Settings) |

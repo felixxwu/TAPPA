@@ -61,7 +61,8 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `selected_instance_id` — the owned car the player has **selected** (the one raised
   on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
   `Save.selected_car()`, which self-heals to the first owned car when the stored id
-  is unset (`-1`) or no longer owned (e.g. after a wreck). Selecting a car also
+  is unset (`-1`) or no longer owned (damage never removes a car — this covers a
+  hand-edited or migrated profile). Selecting a car also
   **promotes it to the front of `cars`** (`set_selected_car` moves the matching
   entry to index 0, shifting the rest down) — so the car park shows the
   most-recently-selected car first, and that order persists across relaunches
@@ -173,9 +174,9 @@ model the catalogue no longer carries, so callers keep using `is_empty()` as the
 `Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s),
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id)`, `get_car(instance_id)`,
-`apply_damage(instance_id, amount)`, `record_wreck(instance_id)` (hands the car back
-at `GameConfig.wreck_recovery_hp_fraction` of max HP — battered, still drivable, never
-written off; see [damage.md](damage.md)),
+`apply_damage(instance_id, amount)` (subtracts the lost HP, **clamped at 0** —
+there is no write-off and no wreck record, so the worst a car can persist is a 0-HP
+one that still drives and can still be repaired; see [damage.md](damage.md)),
 `car_needs_repair(instance_id)` / `repair_price(instance_id)` / `repair_car(instance_id)`
 (the star-priced repair sink — "is this car less than pristine", which is ANY lost health
 or bent alignment), `car_handles_badly(instance_id)` (the narrower question the car park's
@@ -199,8 +200,8 @@ unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap
 `install_upgrade` (consumes the part from the unlocked pool and fits it to the
 car **for good** — applied parts accumulate on the car; at most one is ENABLED
 per slot, so applying one disables a same-slot incumbent rather than scrapping
-it, a duplicate of a part already on the car is rejected, and a wrecked car
-keeps its parts fitted; see `features/upgrade-catalogue.md`),
+it, a duplicate of a part already on the car is rejected, and damage never costs a
+car its parts — a 0-HP car keeps everything fitted; see `features/upgrade-catalogue.md`),
 `set_upgrade_enabled(instance_id, item_id, enabled)` (the upgrades-menu toggle —
 free and reversible; enabling a part switches off its same-slot siblings),
 `apply_build_plan(instance_id, plan)` (writes an `UpgradeLibrary.auto_build_plan`
@@ -325,8 +326,8 @@ itself is the star delta onto `stars_earned` (see the ledger above).
 ## Tests
 
 `tests/headless/test_save_manager.gd` — round-trip, default profile, instance-id
-uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
-the starter wrecking like any car, the repair sink (price / spend / restore) and the
+uniqueness, HP seeding, idempotent rally completion, `apply_damage` clamping at 0 HP
+(the car stays owned, keeps its parts, and is still repairable), the repair sink (price / spend / restore) and the
 narrower `car_handles_badly` warning predicate, inventory counts,
 migration refuse/backfill, corrupt-JSON
 and `.bak` fallback, unknown-model + retired-part pruning, the legacy-NOS revival

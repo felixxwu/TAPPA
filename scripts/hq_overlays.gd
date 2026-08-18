@@ -482,7 +482,8 @@ func build_car_overlay() -> void:
 	_hq._swap_preview_label.visible = false
 	root.add_child(WorldPanel.text_backing(_hq._swap_preview_label))
 
-	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
+	# Shown when the focused car handles badly (why + how to fix it). Advisory only — damage
+	# never blocks entry (features/damage.md).
 	# An over-powered car does NOT warn here — the over-limit prompt pops as a confirm
 	# dialog on Start instead (_show_over_limit_prompt), keeping the overlay compact.
 	_hq._car_warning_label = _hq.label("", 14)
@@ -502,7 +503,6 @@ func build_car_overlay() -> void:
 	actions.add_child(back)
 	# Kept on the controller so the present-box reveal can hide it — that beat is forced.
 	_hq._car_back_button = back
-	# (No Repair button here either — a wrecked car can never be brought back.)
 	_hq._start_button = Button.new()
 	_hq._start_button.text = "Start Rally"
 	_hq._start_button.focus_mode = Control.FOCUS_NONE

@@ -9,8 +9,16 @@ living docs. One follow-up remains.
 
 `challenge_session.gd` keeps `abandon()` as a **DEPRECATED alias for `pause_run()`**,
 solely so existing `if is_active(): abandon()` test teardowns keep compiling. The
-terminal DNF path is now reachable only through `report_wreck()`, which is what makes
-the "only a wreck DNFs a challenge" rule unmissable — so the alias is pure legacy.
+terminal DNF path has since been **removed outright**: `report_wreck()` and
+`_end_as_dnf()` are both gone from `challenge_session.gd` and **nothing DNFs a challenge
+run any more** (damage can no longer wreck a car at all). `pause_run()` / `abandon()`
+— pause, resumable — are now the only non-completion exits, and the `_dnf` var survives
+only to be read back off a persisted run for standings.
+
+That strengthens the case for the alias's retirement rather than weakening it: with no
+"only a wreck DNFs" rule left to make unmissable, `abandon()` no longer even hints at a
+distinct behaviour — it is a second name for the one exit path, kept purely so old test
+teardowns compile.
 
 Migrate these five test files to `pause_run()`, then delete `abandon()`:
 

@@ -31,14 +31,15 @@ func test_the_ghost_ignores_live_player_input() -> void:
 	assert_false(_car._driver_input_live(),
 			"a kinematically posed car is dead to live driver input")
 
-func test_the_ghost_takes_no_damage_and_never_wrecks() -> void:
+func test_the_ghost_takes_no_damage() -> void:
 	# Teleporting a body along a path each frame reads as an enormous deceleration, which
-	# drains HP and fires the wreck flow (the same trap the replay ghost hit).
+	# would otherwise drain the ghost's HP (the same trap the replay ghost hit) and leave
+	# a scripted car misfiring and rev-capped for no reason. It must take ZERO HP loss.
 	await setup_settled_car()
-	var wrecked := [false]
-	if _car.damage != null and _car.damage.has_signal("wrecked"):
-		_car.damage.wrecked.connect(func() -> void: wrecked[0] = true)
 	var hp0: float = _car.damage.hp if _car.damage != null else 1.0
+	var losses := [0.0]
+	if _car.damage != null:
+		_car.damage.damaged.connect(func(loss: float, _pt: Vector3) -> void: losses[0] += loss)
 	_car.kinematic_pose = true
 	_car.custom_integrator = true
 	# Yank the car a long way each tick, which is exactly what posing does.
@@ -48,7 +49,7 @@ func test_the_ghost_takes_no_damage_and_never_wrecks() -> void:
 	if _car.damage != null:
 		assert_almost_eq(_car.damage.hp, hp0, 0.001,
 				"a kinematically posed car takes zero damage")
-	assert_false(wrecked[0], "and never wrecks")
+		assert_eq(losses[0], 0.0, "and registers no impact at all")
 
 func test_the_ghost_does_not_run_the_drive_sim() -> void:
 	# _physics_process must early-return, or the drivetrain/engine/watchdog stack runs on

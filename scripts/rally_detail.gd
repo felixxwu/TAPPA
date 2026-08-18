@@ -304,7 +304,7 @@ static func body_width(host: Node, preferred: float, chrome := 88.0) -> float:
 # One-line car summary shown in the car-select overlay: drive layout,
 # peak horsepower, kerb weight, and condition. Health reads as a percentage (kept
 # distinct so it doesn't read as the horsepower figure now shown alongside it); a
-# wrecked (0 HP) car is flagged so the lineup makes clear why it can't be entered.
+# spent (0 HP) car is flagged so the lineup makes clear how badly it will drive.
 # The power-to-weight ratio lives only in the upgrades-menu detune readout. A fitted
 # nitrous bottle is named LAST, after health — it's invisible to effective_meta (never
 # moves HP/kg/power-to-weight, see features/nitrous.md) so it can only ever be a trailing

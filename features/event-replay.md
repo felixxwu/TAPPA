@@ -113,9 +113,12 @@ whatever state they read each frame — most of which is now fed recorded values
 **Damage is disabled during replay.** `car.gd._integrate_forces` early-returns when
 `replay_playback` is set. Otherwise the per-frame reposition along the path reads as a
 huge deceleration every tick (the stale `_approach_velocity` vs the near-zero body
-velocity), drains HP, and "wrecks" the ghost — firing the wreck screen and even a
-spurious `RallySession.report_wreck()` DNF. The ghost
-must take no damage and fell no trees, so the whole handler is skipped in replay.
+velocity) and drains HP. Nothing crashes out of the run over it any more — there is no
+wreck screen and no `report_wreck` to fire (see [damage.md](damage.md)) — but the harm
+is still real: the replayed car would bottom out at 0 HP and pick up the stumbling
+misfire, the damage-scaled rev cap and the bent wheels that come with it, all from a
+crash the player never had. The ghost must take no damage and fell
+no trees, so the whole handler is skipped in replay.
 
 ### `drivetrain.replay_omega`
 

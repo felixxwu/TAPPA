@@ -648,7 +648,37 @@ func test_engine_misfire_level_tracks_damage() -> void:
 	assert_almost_eq(_car.drivetrain.engine.misfire_level, 0.0, 0.001, "full HP -> no misfire")
 	_car.damage.hp = 0.0
 	await _wait_physics(2)
-	assert_gt(_car.drivetrain.engine.misfire_level, 0.0, "a wrecked engine misfires")
+	assert_gt(_car.drivetrain.engine.misfire_level, 0.0, "a badly damaged engine misfires")
+
+
+func test_engine_rev_cap_tracks_damage() -> void:
+	# The second per-tick feed alongside the misfire: car.gd hands the engine
+	# DamageModel.rev_limit_fraction as rev_limit_scale, so a damaged engine is
+	# rev-capped as well as stumbling. The ramp itself lives in test_damage_model.gd.
+	_car.damage.field(1000.0, 1000.0)
+	await _wait_physics(2)
+	var healthy_redline: float = _car.drivetrain.engine.redline_omega()
+	assert_almost_eq(_car.drivetrain.engine.rev_limit_scale, 1.0, 0.001, "full HP -> full revs")
+	_car.damage.hp = 0.0
+	await _wait_physics(2)
+	assert_lt(_car.drivetrain.engine.rev_limit_scale, 1.0, "a damaged car is rev-capped")
+	assert_gt(_car.drivetrain.engine.rev_limit_scale, 0.0, "but never to a standstill")
+	assert_lt(_car.drivetrain.engine.redline_omega(), healthy_redline,
+		"and the capped scale actually lowers the redline the engine may reach")
+
+
+func test_a_zero_hp_car_still_accelerates_from_rest() -> void:
+	# The whole point of the change: damage WEAKENS, it never immobilises. A car with an
+	# empty HP pool (maxed misfire, lowest rev cap) must still pull away under throttle.
+	_car.damage.field(1000.0, 0.0)
+	await _wait_physics(2)
+	var start_pos := _car.global_position
+	var forward := -_car.global_transform.basis.z
+	Input.action_press("accelerate")
+	await _wait_physics(120)
+	Input.action_release("accelerate")
+	assert_gt((_car.global_position - start_pos).dot(forward), 1.0,
+		"a 0 HP car still drives forward under power")
 
 
 # Regression: a head-on collision must cost HP. Godot only reports a contact in

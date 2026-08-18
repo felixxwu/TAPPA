@@ -25,11 +25,10 @@ var auto_load_scenes := true
 
 var _active := false
 # A stage is currently being DRIVEN. RallySession's Phase.RUNNING gate, carried
-# over (todo/challenge-career-reuse-drift.md item 8): the standings interstitial
-# keeps the run world and $Car alive with begin_replay running, so a `wrecked`
-# emission in that window would otherwise DNF a run that is already finished with
-# the stage. Set by start/resume/continue_to_next_stage, cleared the moment a
-# result or a wreck is reported.
+# over (todo/challenge-career-reuse-drift.md item 8): the standings interstitial keeps the
+# run world and $Car alive with begin_replay running, so nothing from that replay may be
+# taken as an event on a stage the player already finished. Set by
+# start/resume/continue_to_next_stage, cleared the moment a result is reported.
 var _stage_running := false
 var _period_key := ""
 var _kind := ""
@@ -302,8 +301,9 @@ static func period_outcome(profile: Dictionary, period_key_str: String) -> Dicti
 
 
 # True when `kind_str`'s CURRENT period has already been finished — completed or
-# DNF'd. Both are terminal: a challenge is one attempt per period, and a wreck ends
-# the run with no retry (§3), so neither can be started again until the period rolls.
+# DNF'd (a DNF is only reachable on a run persisted by an older build — nothing DNFs a
+# challenge now). Both are terminal: a challenge is one attempt per period, so neither can
+# be started again until the period rolls.
 static func is_period_finished(kind_str: String, profile: Dictionary, unix_time: int) -> bool:
 	var period := ChallengeLibrary.current_period(kind_str, unix_time)
 	if period.is_empty():
@@ -460,20 +460,9 @@ func _finish_locally() -> void:
 	run_finished.emit(_last_result)
 
 
-# A wreck ends the whole run immediately — no-retry, matching the rest of the
-# game (§3). Whatever stage_times_ms were already posted stand.
-func report_wreck() -> void:
-	# Same gate RallySession.report_wreck applies (_phase == RUNNING, item 8): the
-	# standings interstitial keeps $Car alive replaying the run, and a `wrecked`
-	# emission from that replay must not DNF a stage the player already finished.
-	if not _stage_running:
-		return
-	_end_as_dnf()
-
-
-# Leave the run WITHOUT ending it (item 12). ONLY a wreck DNFs a challenge —
-# everything else that needs the run to stop being active (the pause menu's
-# "Quit to HQ", starting a dev benchmark) pauses it instead. Clears _active /
+# Leave the run WITHOUT ending it (item 12). NOTHING DNFs a challenge run any more —
+# damage can never wreck the car (features/damage.md), so every path that needs the run to
+# stop being active (the pause menu's "Quit to HQ", starting a dev benchmark) pauses it. Clears _active /
 # _stage_running so nothing keeps driving the run, leaves challenge_run PERSISTED
 # at its current stage_index / stage_times_ms / car_instance_id, and records NO
 # outcome — so the entry screen's Resume path picks it straight back up and the
@@ -493,28 +482,11 @@ func pause_run() -> void:
 
 
 # DEPRECATED alias for pause_run(). Every remaining caller wants "stop being the
-# active session", never "DNF" — the terminal path is now reachable ONLY through
-# report_wreck(), which is what makes the "only a wreck DNFs a challenge" rule
-# unmissable. Kept solely so existing `if is_active(): abandon()` test teardowns
-# keep compiling; new code should call pause_run().
+# active session", never "DNF" — and since the wreck path was removed there IS no
+# terminal DNF path left to reach. Kept solely so existing `if is_active(): abandon()`
+# test teardowns keep compiling; new code should call pause_run().
 func abandon() -> void:
 	pause_run()
-
-
-func _end_as_dnf() -> void:
-	if not _active:
-		return
-	_stage_running = false
-	_dnf = true
-	_last_result = {
-		"period_key": _period_key, "kind": _kind, "car_instance_id": _car_instance_id,
-		"stage_times_ms": _stage_times_ms.duplicate(), "cumulative_ms": cumulative_ms(),
-		"dnf": true, "completed": false,
-	}
-	_active = false
-	_record_outcome(int(Time.get_unix_time_from_system()))
-	_clear_persisted()
-	run_finished.emit(_last_result)
 
 
 # --- Completion reward (placement-gated, §6) -----------------------------------

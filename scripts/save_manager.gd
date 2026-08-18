@@ -579,7 +579,7 @@ func _default_profile() -> Dictionary:
 		# Terminal outcomes per challenge period, keyed by period_key:
 		# {kind, dnf: bool, cumulative_ms: int}. A period present here is FINISHED —
 		# completed or DNF'd — and cannot be started again for the rest of that
-		# period (a challenge is one attempt; a wreck ends the run with no retry).
+		# period (a challenge is one attempt; abandoning ends the run with no retry).
 		# Separate from challenge_run rather than folded into it because
 		# ChallengeSession.resumable_run keys on challenge_run being non-empty, so a
 		# terminal record stored there would make the game try to RESUME a finished
@@ -710,8 +710,8 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 # from minting a duplicate (rally_session), and deliberately model-keyed rather than
 # instance-keyed: two of the same car is the thing worth preventing, not two instance ids.
 #
-# WRECK STATE IS IGNORED on purpose — a wrecked car is still a car the player owns, and
-# under the current damage model it can be repaired back into service.
+# HEALTH IS IGNORED on purpose — a battered car is still a car the player owns, and under
+# the current damage model any car can be repaired back to full.
 func owns_model(model_id: String) -> bool:
 	for car in profile.get(KEY_CARS, []):
 		if String((car as Dictionary).get("model_id", "")) == model_id:
@@ -757,17 +757,14 @@ func get_car(instance_id: int) -> Dictionary:
 	return {}
 
 
-# Apply impact damage. Reaching 0 wrecks the car — which ends the RUN and hands the car
-# back at a fraction of health (record_wreck), rather than writing it off.
+# Apply impact damage. HP bottoms out at 0 and STAYS there — a car at 0 HP is still an
+# ownable, drivable car, just a badly weakened one (features/damage.md). There is no
+# write-off, no wreck record and no state a repair can't undo.
 func apply_damage(instance_id: int, amount: float) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return
-	var hp := float(car["hp"]) - amount
-	if hp <= 0.0:
-		record_wreck(instance_id)
-		return
-	car["hp"] = hp
+	car["hp"] = maxf(0.0, float(car["hp"]) - amount)
 	save()
 
 
@@ -779,31 +776,6 @@ func set_wheel_toe(instance_id: int, toe: Array) -> void:
 	if car.is_empty():
 		return
 	car["wheel_toe"] = toe.duplicate()
-	save()
-
-
-# Record a WRECK against an owned car: it comes back at GameConfig.wreck_recovery_hp_fraction
-# of full health rather than being written off.
-#
-# Wrecking used to be TERMINAL — 0 HP, unrepairable, the car a permanent hulk. That single
-# rule needed a whole scaffolding around it to stay survivable (an every-car-wrecked check, a free
-# free replacement car when the garage was wrecked out, a soft-lock check that had to skip wrecks, a
-# price-0 car rescue), and it could still end a career on one mistake. Making a wreck a bad RESULT
-# instead of a lost ASSET deletes all of that: the punishment is the DNF plus the repair
-# bill (features/star-economy.md), and the player can always drive again.
-#
-# It is also what makes the map's reachability guarantee sound: a player can never lose the
-# car an authored route depended on, so the closure computed over the roster
-# (features/map-exploration.md) is genuinely reachable in practice.
-func record_wreck(instance_id: int) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	var entry := CarLibrary.for_owned(car)
-	var max_hp := float(entry.get("max_hp", 1000.0))
-	car["hp"] = max_hp * clampf(Config.data.wreck_recovery_hp_fraction, 0.0, 1.0)
-	# Bent wheels stay bent — the repair bill is the point, and a wreck should feel like
-	# something to fix rather than a free reset.
 	save()
 
 
@@ -944,7 +916,7 @@ func set_drivetrain_override(instance_id: int, mode: int) -> void:
 
 # The selected OwnedCar, or {} if the player owns nothing. Falls back to (and
 # records) the first owned car when the stored id is unset or no longer owned —
-# so the selection self-heals after a wreck removes the selected instance.
+# so the selection self-heals if the stored instance is no longer in the garage.
 func selected_car() -> Dictionary:
 	var cars: Array = profile.get(KEY_CARS, [])
 	if cars.is_empty():
@@ -1089,10 +1061,9 @@ func _disable(car: Dictionary, item_id: String) -> void:
 	car["disabled_upgrades"] = disabled
 
 
-# NO FULL REPAIR EXISTS. There is deliberately no counterpart to field_repair that
-# restores a car to full or revives a wrecked one — the repair kit that used to do it
-# is gone, so HP is one-way apart from the free between-event patch-up below, and a
-# wrecked car is lost for good. See features/damage.md.
+# In-run HP is one-way: nothing here restores it mid-run. It climbs back only between
+# runs — the free between-event patch-up below, and the paid repair at the lift
+# (features/star-economy.md). See features/damage.md.
 
 
 # A partial, between-event pit repair (RallySession._enter_event): restore

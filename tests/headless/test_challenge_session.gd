@@ -154,7 +154,8 @@ func test_resume_fails_after_the_run_ended() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
 	ChallengeSession.start(ChallengeLibrary.DAILY, car, t)
-	ChallengeSession.report_wreck()  # the ONE terminal path — nothing left to resume
+	while ChallengeSession.is_active():  # play it out — completion is the only terminal path
+		ChallengeSession.report_event_result(60_000, 0.0)
 	assert_false(ChallengeSession.resume(t), "an ended run leaves nothing stored to resume")
 
 
@@ -639,58 +640,9 @@ func test_stage_standings_are_the_players_own_row_alone() -> void:
 	assert_eq(int(overall[0]["combined_ms"]), 90000, "the overall row sums the stages")
 
 
-# --- report_wreck -------------------------------------------------
-
-func test_report_wreck_ends_the_run_as_dnf_and_keeps_times_already_appended() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	var car := _grant()
-	ChallengeSession.start(ChallengeLibrary.WEEKLY, car, t)  # stage_count 4
-	ChallengeSession.report_event_result(50000)  # stage 1 of 4, non-final
-	# Back out on a live stage before crashing. report_wreck now carries
-	# RallySession's Phase.RUNNING gate (item 8), so a wreck is only honoured while
-	# a stage is actually being driven — not while the interstitial is up.
-	ChallengeSession.continue_to_next_stage()
-
-	var finished: Array = []
-	ChallengeSession.run_finished.connect(
-		func(result: Dictionary) -> void: finished.append(result), CONNECT_ONE_SHOT)
-
-	ChallengeSession.report_wreck()
-
-	assert_true(ChallengeSession.dnf())
-	assert_false(ChallengeSession.is_active())
-	assert_eq(finished.size(), 1)
-	assert_true(bool(finished[0]["dnf"]))
-	assert_false(bool(finished[0]["completed"]))
-	assert_eq(finished[0]["stage_times_ms"], [50000],
-		"the stage time already banked before the wreck stands")
-
-
-# Item 8: RallySession.report_wreck early-outs unless _phase == RUNNING; the
-# challenge equivalent guarded only _active. The standings interstitial keeps the
-# run world and $Car alive with begin_replay running, so a `wrecked` emission in
-# that window would have DNF'd a stage the player had already finished.
-func test_a_wreck_reported_during_the_standings_window_is_ignored() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	var car := _grant()
-	ChallengeSession.start(_longest_kind(), car, t)
-	assert_gt(ChallengeSession.stage_count(), 1, "setup: a multi-stage kind")
-
-	ChallengeSession.report_event_result(50_000)  # stage over; the interstitial is up
-	ChallengeSession.report_wreck()               # the replaying car "crashes"
-
-	assert_false(ChallengeSession.dnf(),
-		"a wreck from the replay window does not DNF a stage that already finished")
-	assert_true(ChallengeSession.is_active(), "and the run carries on to the next stage")
-
-	# Back on a live stage, a wreck means what it always meant.
-	ChallengeSession.continue_to_next_stage()
-	ChallengeSession.report_wreck()
-	assert_true(ChallengeSession.dnf(), "a wreck while actually driving still ends the run")
-	assert_false(ChallengeSession.is_active())
-
-
-# The same gate on the result path: a second result for a stage already reported
+# --- The Phase.RUNNING gate on results -----------------------------------------
+#
+# A second result for a stage already reported
 # (the interstitial is up; nothing is being driven) must not bank a phantom time.
 func test_a_second_result_for_the_same_stage_is_ignored() -> void:
 	var t := int(Time.get_unix_time_from_system())
@@ -708,10 +660,11 @@ func test_a_second_result_for_the_same_stage_is_ignored() -> void:
 
 # --- pause_run: leaving the run is NOT a DNF (item 12) ------------------------
 #
-# The rule, from the user: ONLY a wreck DNFs a challenge. Everything else that
-# leaves the run — the pause menu's "Quit to HQ", starting a dev benchmark —
-# pauses it. Leaving used to route to _end_as_dnf, which records a terminal
-# per-period outcome, so stepping out to the garage permanently burned the period.
+# The rule, from the user: nothing DNFs a challenge run any more — damage only ever
+# weakens the car (features/damage.md). Everything that leaves the run — the pause
+# menu's "Quit to HQ", starting a dev benchmark — pauses it, resumably. Leaving used
+# to route to _end_as_dnf, which recorded a terminal per-period outcome, so stepping
+# out to the garage permanently burned the period.
 func test_pause_run_leaves_the_run_resumable_with_no_outcome_recorded() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
@@ -744,27 +697,6 @@ func test_pause_run_leaves_the_run_resumable_with_no_outcome_recorded() -> void:
 	assert_eq(ChallengeSession.events_completed(), 1,
 		"landing on the stage the run was paused on")
 	assert_eq(ChallengeSession.stage_times_ms(), banked)
-
-
-# The other half of the split: the terminal path is untouched.
-func test_a_wreck_is_still_terminal_after_the_pause_split() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t)
-
-	var finished: Array = []
-	ChallengeSession.run_finished.connect(
-		func(result: Dictionary) -> void: finished.append(result), CONNECT_ONE_SHOT)
-
-	ChallengeSession.report_wreck()
-
-	assert_true(ChallengeSession.dnf())
-	assert_false(ChallengeSession.is_active())
-	assert_eq(finished.size(), 1, "a wreck ends the run")
-	assert_true(bool(finished[0]["dnf"]))
-	assert_true(ChallengeSession.resumable_run(_save.profile, t).is_empty(),
-		"a wrecked run is not left resumable")
-	assert_false(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t),
-		"and the period is spent — no retry")
 
 
 func test_pause_run_is_a_no_op_when_not_active() -> void:
@@ -909,7 +841,7 @@ func test_session_active_is_true_during_a_challenge_run() -> void:
 
 # --- One attempt per period ------------------------------------------------------
 
-# A finished run is TERMINAL for its period. _finish_locally/_end_as_dnf clear
+# A finished run is TERMINAL for its period. _finish_locally clears
 # challenge_run, so without a separate outcome record the entry screen would read
 # "Not started" again and the player could re-run the period and post a second time.
 func test_a_completed_period_cannot_be_started_again() -> void:
@@ -926,20 +858,6 @@ func test_a_completed_period_cannot_be_started_again() -> void:
 	assert_false(bool(outcome.get("dnf", true)), "it is recorded as a completion, not a DNF")
 	assert_false(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t),
 		"starting the same period again is refused")
-
-
-# A wreck is equally terminal — the design is explicitly no-retry.
-func test_a_dnfd_period_cannot_be_retried() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	ChallengeSession.report_wreck()
-	assert_false(ChallengeSession.is_active(), "setup: the wreck ended the run")
-
-	var outcome := ChallengeSession.period_outcome(_save.profile,
-		String(ChallengeLibrary.current_period(ChallengeLibrary.DAILY, t)["key"]))
-	assert_true(bool(outcome.get("dnf", false)), "the period is recorded as a DNF")
-	assert_false(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t),
-		"a DNF'd period is not retryable")
 
 
 # A DIFFERENT kind's period is untouched by another kind's outcome — they are
@@ -963,7 +881,8 @@ func test_recording_an_outcome_prunes_periods_that_have_rolled_over() -> void:
 		"daily:1999-01-01:e1": {"kind": ChallengeLibrary.DAILY, "dnf": false, "cumulative_ms": 1},
 	}
 	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	ChallengeSession.report_wreck()
+	while ChallengeSession.is_active():
+		ChallengeSession.report_event_result(60_000, 0.0)
 
 	var results: Dictionary = _save.profile["challenge_results"]
 	assert_false(results.has("daily:1999-01-01:e1"),

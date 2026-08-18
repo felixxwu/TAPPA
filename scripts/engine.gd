@@ -20,6 +20,10 @@ var gear := 1  # -1 = reverse, 0 = neutral, 1..N forward
 var auto := false  # automatic gearbox (picks the gear from the airspeed)
 var shift_timer := 0.0  # seconds of clutch-open throttle cut left in a shift
 var throttle := 0.0  # last drive request seen by step(), for the audio synth
+# Smallest usable rev range under a damage rev cap: the capped redline never falls below this
+# multiple of idle, so a 0 HP car can still rev, pull away and change gear.
+const MIN_REDLINE_IDLE_RATIO := 1.5
+
 var limiting := false  # rev-limiter fuel cut latched on (see _update_limiter)
 # Combined fuel-cut state (rev limiter OR a damage misfire) for the audio synth:
 # while true, combustion has stopped this substep — the note ducks and crackles.
@@ -69,6 +73,21 @@ var _prev_shifting := false  # for the blow-off shift edge (driver lifts to chan
 # damage and under load. Replaces the old smooth power derate. See features/damage.md.
 var misfire_level := 0.0
 var _misfire_timer := 0.0  # seconds left in the current damage fuel-cut (0 = firing)
+# Fraction of the config's redline this engine may actually rev to, set each tick by car.gd
+# from DamageModel.rev_limit_fraction (1.0 = healthy). A damaged engine is rev-CAPPED as well
+# as misfiring: the limiter, the crank clamp and the auto box's shift points all move down with
+# it, so each gear runs out early and the car is slower everywhere. Setter-driven because the
+# shift points are precomputed — see redline_omega() / _compute_shift_speeds.
+var rev_limit_scale := 1.0:
+	set(value):
+		var v := clampf(value, 0.05, 1.0)
+		if is_equal_approx(v, rev_limit_scale):
+			return
+		rev_limit_scale = v
+		# The upshift airspeeds are derived from the redline, so they must follow it down —
+		# otherwise the box would hold a gear the engine can no longer pull to and just sit
+		# bouncing off the lowered limiter.
+		_compute_shift_speeds()
 # Monotonic count of damage misfire cut ONSETS (not the rev limiter). EngineSmoke
 # reads the delta each frame to puff a burst of smoke per cut. See features/engine-smoke.md.
 var misfire_count := 0
@@ -114,8 +133,14 @@ func idle_omega() -> float:
 	return config.idle_rpm * TAU / 60.0
 
 
+# The redline this engine is CURRENTLY limited to (rad/s) — the config's redline scaled by
+# damage (rev_limit_scale). Every consumer (limiter, clutch engagement, crank clamp, shift
+# points) reads this rather than config.redline_rpm, so lowering the cap moves them together.
+# Floored comfortably above idle so a maximally damaged engine still has a usable rev range
+# instead of sitting on its idle clamp.
 func redline_omega() -> float:
-	return config.redline_rpm * TAU / 60.0
+	var capped := config.redline_rpm * rev_limit_scale * TAU / 60.0
+	return maxf(capped, idle_omega() * MIN_REDLINE_IDLE_RATIO)
 
 
 func rpm() -> float:

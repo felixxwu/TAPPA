@@ -102,8 +102,9 @@ Two surfaces, both in `scripts/hud.gd` ([hud.md](hud.md)):
 - **Live flash** — `show_cut_flash(incident_s, total_s)`, pulsed on every
   `cut_billed` while running. Shows the running event total (`CUT +total_s`),
   not the incident delta, so back-to-back incidents read as one growing tag
-  instead of flickering resets. Fades the same way the pace-popup does
-  (`stage_delta_show_seconds`, ticked in `_process`). No-ops when
+  instead of flickering resets. Fades out after `hud_popup_show_seconds`
+  (ticked in `_process`) — it is now the only transient in-run tag, which is
+  what that knob times. No-ops when
   `cut_penalty_enabled` is off.
 - **Finish-panel breakdown** — `show_stage_complete(seconds, penalty_s)`.
   When `penalty_s > 0.0` the panel reads `FINISH / <time> / +X.Xs cut / =

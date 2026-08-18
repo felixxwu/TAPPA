@@ -82,7 +82,8 @@ any time** from the upgrades grid's slot popups (see
 go and get the part they want, a box that opens onto an arbitrary one has nothing
 left to offer: it is strictly worse than the stars it displaced. It also had a
 second job once — a free car when every car was a write-off — and that job
-disappeared when wrecking stopped being terminal (see [damage.md](damage.md)).
+disappeared when damage stopped being able to wreck a car at all: HP bottoms out
+at 0 and the car keeps driving, just slowly (see [damage.md](damage.md)).
 
 ### The Engine Swap Token is gone; swapping is FREE and UNLIMITED
 
@@ -179,8 +180,8 @@ on a first win, so what the player owns is exactly what they went out and won
 That leaves `draw_car` with **no live caller** — it survives as the definition of
 the tier ladder (and is exercised directly by its tests), because the clamp shape
 below is the thing the car ladder is authored against. The mystery box's wreck
-safety net was its last caller; both the box and the terminal wrecks it rescued
-are gone.
+safety net was its last caller; the box is gone, and so is the thing it rescued —
+damage can no longer wreck a car at all.
 
 Two steps inside the draw:
 

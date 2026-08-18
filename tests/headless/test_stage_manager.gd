@@ -38,9 +38,13 @@ class StubHud:
 	func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
 		complete_time = seconds
 		complete_penalty = penalty_s
-	var stage_deltas: Array = []
-	func show_stage_delta(delta_ms: int) -> void:
-		stage_deltas.append(delta_ms)
+	# Every show_position() call, as [position, field, gap_ms, leading].
+	var positions: Array = []
+	var hide_position_calls := 0
+	func show_position(position: int, field: int, gap_ms: int, leading: bool) -> void:
+		positions.append([position, field, gap_ms, leading])
+	func hide_position() -> void:
+		hide_position_calls += 1
 	var flash_args := []
 	func show_cut_flash(incident_s: float, total_s: float) -> void:
 		flash_args = [incident_s, total_s]
@@ -292,11 +296,12 @@ func test_completion_uses_configured_percent() -> void:
 	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "crossing the configured percent completes")
 
 
-# --- In-stage "vs P1" pace popup (every N turns) -----------------------------
+# --- Live standings readout (features/hud.md) --------------------------------
 
-# Twelve turns at evenly-spaced progress / time fractions, so the default interval
-# of 5 fires at turn 5 (index 4) and turn 10 (index 9). p1 total = 120 s, so the
-# rival's estimate at turn t is 120 s × t/12 = t × 10 s.
+# A leader whose pace is dead even: 12 turns at evenly-spaced progress AND time
+# fractions, total 120 s. So at progress p the leader has used 120 s × p, and a player
+# whose elapsed matches that is exactly level. Synthetic throughout — nothing here
+# depends on an authored car, rally or tunable.
 func _wire_even_splits(sm: StageManager) -> void:
 	var prog: Array[float] = []
 	var tfrac: Array[float] = []
@@ -306,52 +311,79 @@ func _wire_even_splits(sm: StageManager) -> void:
 	sm.setup_splits(prog, tfrac, 120000)
 
 
-func test_no_popup_without_splits() -> void:
+func test_no_readout_without_the_pace_table_or_the_field() -> void:
 	var sm := _make()
 	_to_running(sm)
+	_progress.pct = 0.5
+	sm._process(30.0)
+	assert_eq(_hud.positions.size(), 0, "a plain dev boot (nothing wired) drives no readout")
+	# The field alone isn't enough: without the leader's pace table there is no projection.
+	sm.setup_live_standings([100000, 130000])
+	sm._process(1.0)
+	assert_eq(_hud.positions.size(), 0, "a field without a pace table still shows nothing")
+
+
+func test_a_player_up_on_the_leader_runs_first_with_a_cushion() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_wire_even_splits(sm)
+	# The leader (120 s) plus one slower rival (130 s). 55 s used where the leader had
+	# used 60: 5 s up -> projected 115 s -> P1 of 3, holding 5 s over the leader (who is
+	# now the car in second). Deliberately not "dead level": that ties, and a tie reads as
+	# P1 with a 0.00 cushion, which pins nothing about where the gap is measured from.
+	sm.setup_live_standings([120000, 130000])
+	_progress.pct = 0.5
+	sm._process(55.0)
+	assert_eq(_hud.positions.size(), 1, "the readout is driven every running frame")
+	var shown: Array = _hud.positions[0]
+	assert_eq(int(shown[0]), 1, "5 s up on the leader reads as P1")
+	assert_eq(int(shown[1]), 3, "the field counts both rivals and the player")
+	assert_true(bool(shown[3]), "leading is flagged")
+	assert_eq(int(shown[2]), 5000, "the cushion is over the next car back, not the slowest")
+
+
+func test_time_lost_drops_the_player_down_the_field() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_wire_even_splits(sm)
+	sm.setup_live_standings([120000, 130000])
+	# 75 s used where the leader had used 60: 15 s down -> projected 135 s, behind both.
+	_progress.pct = 0.5
+	sm._process(75.0)
+	var shown: Array = _hud.positions[0]
+	assert_eq(int(shown[0]), 3, "15 s down on the leader is last of three here")
+	assert_false(bool(shown[3]), "and not leading")
+	assert_eq(int(shown[2]), 5000, "the gap quoted is to the car directly ahead (130 s)")
+
+
+func test_the_readout_is_taken_down_at_the_finish() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_wire_even_splits(sm)
+	sm.setup_live_standings([120000, 130000])
+	# setup() hides the readout on arm, so count from HERE to test the finish edge itself.
+	var hidden_before := _hud.hide_position_calls
 	_progress.pct = 1.0
-	sm._process(30.0)
-	assert_eq(_hud.stage_deltas.size(), 0, "a plain run (no splits wired) shows no popup")
+	sm._process(100.0)
+	assert_true(_hud.hide_position_calls > hidden_before,
+		"a live position off a frozen clock would just sit there being wrong")
 
 
-func test_popup_fires_every_five_turns_with_ahead_delta() -> void:
+func test_re_arming_clears_the_previous_events_field() -> void:
 	var sm := _make()
 	_to_running(sm)
 	_wire_even_splits(sm)
-	# Past turn 5 (frac 5/12) but short of turn 10: one popup, player 30 s vs P1 50 s.
+	sm.setup_live_standings([120000, 130000])
+	# A car swap / next event re-arms the manager; the old field and pace table must go
+	# with it, or the next stage would rank the player against the wrong race.
+	var hidden_before := _hud.hide_position_calls
+	sm.setup(_car, _hud, _progress)
+	assert_true(_hud.hide_position_calls > hidden_before, "re-arming takes the readout down")
+	_hud.positions.clear()
+	_to_running(sm)
 	_progress.pct = 0.5
-	sm._process(30.0)
-	assert_eq(_hud.stage_deltas.size(), 1, "crossing turn 5 fires one popup")
-	assert_eq(int(_hud.stage_deltas[0]), -20000, "ahead by 20 s reads negative (30 s − 50 s)")
-	# Past turn 10 (frac 10/12): a second popup, player 60 s vs P1 100 s.
-	_progress.pct = 0.9
-	sm._process(30.0)
-	assert_eq(_hud.stage_deltas.size(), 2, "crossing turn 10 fires the second popup")
-	assert_eq(int(_hud.stage_deltas[1]), -40000, "still ahead (60 s − 100 s)")
-
-
-func test_popup_behind_reads_positive() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_wire_even_splits(sm)
-	# Reach turn 5 (P1 estimate 50 s) having taken 70 s: 20 s behind -> positive.
-	_progress.pct = 0.5
-	sm._process(70.0)
-	assert_eq(_hud.stage_deltas.size(), 1, "one popup at turn 5")
-	assert_eq(int(_hud.stage_deltas[0]), 20000, "behind by 20 s reads positive (70 s − 50 s)")
-
-
-func test_popup_interval_is_configurable() -> void:
-	Config.data.stage_delta_interval_turns = 3
-	var sm := _make()
-	_to_running(sm)
-	_wire_even_splits(sm)
-	# Interval 3 over 12 turns -> turns 3, 6, 9, 12. Advance one interval per frame
-	# (as real progress does) so each boundary fires its own popup.
-	for boundary in [3, 6, 9, 12]:
-		_progress.pct = float(boundary) / 12.0
-		sm._process(1.0)
-	assert_eq(_hud.stage_deltas.size(), 4, "interval 3 fires at turns 3/6/9/12")
+	sm._process(60.0)
+	assert_eq(_hud.positions.size(), 0, "and leaves nothing wired for the new stage")
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------

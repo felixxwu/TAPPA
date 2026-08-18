@@ -9,7 +9,7 @@
 > player encapsulated in it, the `@export_group("SFX")` tunables in `GameConfig`, docs
 > in **`features/sfx.md`**, and tests in `tests/headless/test_audio.gd`.
 >
-> **Still open:** every actual CALL SITE (countdown beep + GO sting, impact/wreck,
+> **Still open:** every actual CALL SITE (countdown beep + GO sting, impact,
 > UI move/select/back, reward reveal, podium) — each is now a one-line
 > `Audio.play_beep(...)` at the trigger; `stage_manager.gd` carries an AUDIO HOOK
 > comment marking the countdown one. Also open: the authored **clip** library
@@ -123,7 +123,7 @@ func play_music(id: String) -> void / stop_music()      # optional; Music bus
 | id | Trigger | Bus | Source spec |
 |---|---|---|---|
 | `impact_soft` / `impact_hard` | contact impulse over threshold; hard above a bigger one | SFX (3D) | `features/damage.md` § 2 |
-| `wreck` | HP→0 wreck | SFX | `features/damage.md` § 4 |
+| ~~`wreck`~~ | **No trigger exists.** Damage can no longer wreck a car — HP bottoms out at 0 with nothing signalled — so there is no event to hook. Drop the clip. | — | — |
 | `countdown_beep` / `countdown_go` | each `3·2·1` tick / `GO` | SFX | `features/stage.md` (`stage_manager.gd`) |
 | `ui_move` / `ui_select` / `ui_back` | menu navigation | SFX | `todo/menus.md` nav |
 | `reward_reveal` | lootbox/reward reveal settles | SFX | `todo/menus.md` rig 5 |
@@ -138,7 +138,8 @@ the damage model already computes, so no new physics read.
 ## Hooking in (touch points, all thin)
 
 - `features/damage.md` § 2: when an impact passes the threshold, also
-  `Audio.play_sfx_3d("impact_*", contact_point)`; on wreck, `play_sfx("wreck")`.
+  `Audio.play_sfx_3d("impact_*", contact_point)`. There is no wreck hook: nothing fires
+  at 0 HP, so impacts are the only damage trigger.
 - `features/stage.md`: in `hud.gd::show_countdown` / `stage_manager.gd`'s countdown, fire
   `countdown_beep` per integer tick and `countdown_go` at `GO` (`GO_FLASH_SECONDS`).
 - `todo/menus.md`: navigation actions and the reward reveal call `play_sfx`.
@@ -164,7 +165,8 @@ the player profile holds chosen volumes.
 
 - **Settings** (`scripts/settings_menu.gd`) — owns the volume sliders that drive the bus
   layout this spec defines. Build the bus layout here; Settings reads/writes it.
-- **Damage model** (`features/damage.md`) — the impact/wreck triggers.
+- **Damage model** (`features/damage.md`) — the impact triggers (impacts only; there
+  is no wreck event).
 - **Stage start/end** (`features/stage.md`, `scripts/stage_manager.gd`) — the countdown
   triggers.
 - **Menus** (`todo/menus.md`) — UI / reward / podium triggers.

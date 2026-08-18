@@ -148,7 +148,6 @@ Specific design-system touches:
 - **Podium** (`podium.gd`) — the reward card is a black panel with a green accent
   border; the player's leaderboard row is gold.
 - **Standings** (`standings.gd`) — black background; the player's row is gold.
-- **Wreck screen** (`wreck_screen.gd`) — red heading on a dim black backdrop.
 - **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
 
 ## A passive readout in a row of buttons (`UITheme.readout_box`)

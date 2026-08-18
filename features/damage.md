@@ -3,44 +3,57 @@
 **Source:** `scripts/damage_model.gd` (`DamageModel`, a `RefCounted` helper owned
 by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model*.
 
-**Tests:** `tests/headless/test_damage_model.gd`, `tests/headless/test_spectator_damage.gd`, `tests/headless/test_freeroam_wreck.gd`
+**Tests:** `tests/headless/test_damage_model.gd`, `tests/headless/test_spectator_damage.gd`, `tests/headless/test_engine_logic.gd`
 
 Each fielded car has a depleting **HP pool**. Impacts drain it during a run and the car's
-handling and power degrade as HP falls. At 0 HP the car is **wrecked**: the run ends as a
-**DNF**, and the car is handed back to the garage at
-`GameConfig.wreck_recovery_hp_fraction` of full health (`Save.record_wreck`) with its
-installed upgrades intact and its wheels still bent.
+handling and power degrade as HP falls. **Damage can never take the car out.** HP bottoms
+out at 0 and the car keeps driving: at 0 HP the engine is stumbling and rev-capped, not
+dead. There is no wreck, no DNF-by-damage and no 0-HP event of any kind.
 
-**A wreck costs the RESULT, not the car.** The punishment is the lost rally — no podium, no
-prize, no progress on the map — plus a repair bill. HP climbs back two ways: the free
-**between-event pit repair** applied at the start of every rally event after the first (see
-below), and a **paid repair** at the tuning lift that restores full health and straightens
-the wheels for a flat star price (`Save.repair_car`, see
-[star-economy.md](star-economy.md)).
+**Crashing costs you SPEED, not the run and not the car.** The punishment is a slow,
+gutless car for the rest of the rally — a misfiring, rev-limited engine and bent wheels —
+plus a repair bill. HP climbs back two ways: the free **between-event pit repair** applied
+at the start of every rally event after the first (see below), and a **paid repair** at the
+tuning lift that restores full health and straightens the wheels for a flat star price
+(`Save.repair_car`, see [star-economy.md](star-economy.md)).
 
-### Wrecking used to be terminal
+### Wrecking is gone entirely, and it took a lot of machinery with it
 
-It isn't any more, and that change deleted a whole layer of machinery. Previously 0 HP
-meant a permanent hulk with no way back, which needed constant scaffolding to stay
-survivable: `all_cars_wrecked`, a free rescue that granted a whole new car when every
-owned car was a write-off, `car_is_wrecked` exclusions in the stranded check, a price-0
-car rescue, and a car park that refused to let a wrecked car start. All of it is **gone**
-— along with `Save.wreck_car` (now `record_wreck`), `car_is_wrecked`, `all_cars_wrecked`
-and `ensure_wreck_safety_net`. Nothing in the game hands out a rescue car, because
-nothing needs rescuing: `record_wreck` gives the car straight back at
-`wreck_recovery_hp_fraction` of max HP.
+0 HP used to be an **event**: `DamageModel` had a `wrecked` signal, `apply_loss` called
+`_wreck()`, `car.gd` re-emitted it, `world.gd` built a **"CAR WRECKED"** orbit-camera menu
+(`scripts/wreck_screen.gd`), and *Return to HQ* called `RallySession.report_wreck()` for a
+DNF. All of that is **deleted** — the signal, `_wreck()`, `car.gd`'s `wrecked` signal and
+`_on_wrecked()` handler, `world.gd`'s `_wreck_screen` / `_on_session_car_wrecked()`,
+`Save.record_wreck()`, `RallySession.report_wreck()`, `ChallengeSession.report_wreck()` /
+`_end_as_dnf()`, and the `wreck_screen.gd` file and its `WreckScreen` class. The config
+knobs that only served it (`wreck_recovery_hp_fraction`, `wreck_settle_max_seconds`) went
+too. `apply_loss()` is now one line: `hp = maxf(0.0, hp - amount)`.
 
-Two reasons the change was worth making:
+An earlier round had already deleted the layer *beneath* that. When 0 HP meant a permanent
+hulk with no way back, it needed constant scaffolding to stay survivable: `all_cars_wrecked`,
+a free rescue that granted a whole new car when every owned car was a write-off,
+`car_is_wrecked` exclusions in the stranded check, a price-0 car rescue, and a car park that
+refused to let a wrecked car start. All of it is gone — along with `Save.wreck_car`,
+`car_is_wrecked`, `all_cars_wrecked` and `ensure_wreck_safety_net`. Nothing hands out a
+rescue car, because nothing needs rescuing.
 
-1. **One mistake could end a career.** Every rescue above existed to paper over that, and
-   each one was a place the logic could be wrong.
+Three reasons the change was worth making:
+
+1. **One mistake could end a career**, and then merely a rally. Every rescue above existed
+   to paper over that, and each one was a place the logic could be wrong. Now there is no
+   failure state to rescue from, so there is no rescue code at all.
 2. **It makes the map's reachability guarantee sound.** Cars are won at specific rallies
    now ([prize-rallies.md](prize-rallies.md)) and the roster is authored so exploring from
    HQ reaches everything ([map-exploration.md](map-exploration.md)). That closure is only a
    real guarantee if the player cannot LOSE the car an authored route depends on.
+3. **A terminal state is a worse punishment than a slow car.** Being sent to a menu ends
+   the drive; limping the last two stages on a wounded engine is a consequence the player
+   keeps *playing through*, and it is legible from the driver's seat (the engine sputters,
+   the limiter arrives early) rather than announced by a screen.
 
 A damaged car still races — badly. The car park warns ("Damaged — the engine is down on
-power. Repair it at the lift.") but never blocks entry.
+power. Repair it at the lift.") but never blocks entry, and there is no health at which it
+blocks entry.
 
 **The warning is not "is this car pristine".** It fires from `Save.car_handles_badly`,
 which reads health against `GameConfig.damage_misfire_health_threshold` — the SAME number
@@ -133,13 +146,15 @@ hp_loss = impact_ref_hp_loss · v² / impact_ref_speed_kmh²
 
 Two things shape survivability:
 - **Per-hit cap** — each tick's loss is clamped to a flat `impact_max_loss` HP amount
-  (`450` in `game_config.tres`), so no one spike wrecks the car. Being absolute rather
-  than a fraction of max HP, a car's `max_hp` genuinely matters — a fragile car is
-  wrecked by fewer capped hits than a tough one.
+  (`450` in `game_config.tres`), so no one spike can strip the whole pool. Being absolute
+  rather than a fraction of max HP, a car's `max_hp` genuinely matters — a fragile car is
+  flattened to 0 by fewer capped hits than a tough one, and so reaches the worst misfire
+  and the lowest rev cap sooner.
 - **No cooldown.** A pinned/stopped car sheds ~0 velocity/tick, so grinding against a
   wall self-limits with no timer; a genuine multi-bounce **tumble** down a tall drop
   is several real `dv` spikes and racks up several capped hits — so a long fall can
-  wreck you. This is intentional: drops are dangerous.
+  empty the pool outright. This is intentional: drops are dangerous. What they cost is
+  the rest of the rally's pace, not the rally.
 
 A **reset/teleport** zeroes the velocity discontinuously, which would read as a huge
 false `dv`; `car.gd.reset_to` sets `_suppress_impact_frames` so the next couple of
@@ -238,12 +253,31 @@ needed.
 
 ## Effects
 
-- **Engine misfire** (read each physics tick in `car.gd`) — instead of a smooth
+Both engine effects hang off **one shared ramp**, `DamageModel.damage_ramp(cfg)`: it is
+`0` while health (`hp/max_hp`) is at/above `damage_misfire_health_threshold`, and ramps
+linearly to `1` at 0 HP. Deriving both from the same function is deliberate — the stumble
+and the lowered rev ceiling begin at the *same* moment and reach their worst *together*,
+so "the car is hurt" is one readable state with two symptoms rather than two independently
+tuned curves the player has to disentangle. A single knob
+(`damage_misfire_health_threshold`) therefore moves the whole idea of "when damage starts
+costing you", and a lightly-scuffed car runs completely clean.
+
+Each physics tick `car.gd` feeds both derived values into the engine:
+
+```gdscript
+engine.misfire_level  = damage.misfire_level(cfg)       # ramp × damage_misfire_level_max
+engine.rev_limit_scale = damage.rev_limit_fraction(cfg) # lerp 1 → damage_rev_limit_min_fraction
+```
+
+- **Engine misfire** (`DamageModel.misfire_level`) — instead of a smooth
   power derate, a damaged engine **intermittently cuts fuel**. The engine stays
-  **fully healthy** while health (`hp/max_hp`) is at/above
-  `damage_misfire_health_threshold`; below it, `damage.misfire_level(cfg)` ramps
-  linearly from 0 at the threshold to 1 at 0 HP. `car.gd` feeds that as
-  `engine.misfire_level = m`; inside `EngineSim.step()` a stochastic cut fires with
+  **fully healthy** while health is at/above `damage_misfire_health_threshold`; below it
+  the level is `damage_ramp(cfg) × damage_misfire_level_max` — note the **cap**: it tops
+  out at `damage_misfire_level_max` (0.8), *below* 1.0, on purpose. That cap is the whole
+  reason a car can sit at 0 HP indefinitely: even a flattened engine keeps firing often
+  enough to pull away, change gear and reach the finish, just badly. Damage weakens the
+  engine **to a point and no further**.
+  Inside `EngineSim.step()` a stochastic cut fires with
   probability `rate·h` per substep, where
   `rate = damage_misfire_rate_max · m · (damage_misfire_load_bias + (1-bias)·load)`
   and `load` blends throttle and rpm — so the stumble worsens with damage and under
@@ -257,47 +291,96 @@ needed.
   `EngineSim.misfire_rate()` is unit-testable, and a seeded per-engine RNG makes the
   cuts reproducible). This **replaces** the old `power_scale` / `damage_power_loss_max`.
   Each cut also puffs a burst of bonnet smoke — see [engine-smoke.md](engine-smoke.md).
+- **Rev cap** (`DamageModel.rev_limit_fraction` → `EngineSim.rev_limit_scale`) — a damaged
+  engine also **won't pull to the top end**. The fraction lerps from `1.0` (full revs) down
+  to `damage_rev_limit_min_fraction` (0.6) across the same `damage_ramp`, and never reaches
+  0. Every gear then runs out early, so the car is slower *everywhere*, in a way the player
+  **hears** (it bounces off a lower limiter) as well as feels — a much clearer read than
+  "power is down a bit" and a strictly-better cue than the old flat derate. It is a cap on
+  the *limiter*, not on the engine: the torque **curve** in `EngineSim` still keys off
+  `config.redline_rpm`, so the engine makes exactly the torque it always did in the rev
+  range it is still allowed to use — you are just cut off earlier.
+
+  The cap propagates through **one** accessor, `EngineSim.redline_omega()`:
+
+  ```gdscript
+  redline_omega() = maxf(config.redline_rpm * rev_limit_scale * TAU/60,
+                         idle_omega() * MIN_REDLINE_IDLE_RATIO)
+  ```
+
+  Every consumer reads *that* rather than `config.redline_rpm`, so they all move down
+  together: the **rev limiter** (`_update_limiter`, and so the `limiting` / `fuel_cut`
+  state the audio and exhaust flames key off), the **clutch engagement** gate on the
+  gearbox input's over-rev, the **crank clamp** (`omega` is clamped between `idle_omega()`
+  and just above the capped redline), and the automatic gearbox's **upshift airspeeds**.
+  The shift points are precomputed, not read per-tick, which is why `rev_limit_scale` is a
+  **setter** (clamped to `[0.05, 1.0]`) that calls `_compute_shift_speeds()` whenever the
+  value actually moves — otherwise the auto box would hold a gear the engine can no longer
+  pull to and just sit bouncing off the lowered limiter. See
+  [engine-and-transmission.md](engine-and-transmission.md).
+
+  `MIN_REDLINE_IDLE_RATIO` (1.5) floors the capped redline at 1.5× idle. That floor is the
+  second half of the never-strand guarantee: even with the fraction tuned to its minimum,
+  the engine keeps a usable rev range above idle instead of sitting on its own idle clamp
+  with nowhere to go.
 - **Wheel misalignment** — the car's pull/crab is NOT a damage-fraction effect: it
   comes from the accumulated per-wheel `wheel_toe` applied to the physical wheels
   (see *Wheel misalignment* above). It persists between events and is eased back only
   by the between-event field repair, independent of HP.
 
-## Wreck at 0 HP
+## 0 HP is a STATE, not an event
 
-`apply_loss()` clamps HP at 0 and calls `_wreck()`:
-- A **fielded** car (`instance_id >= 0`) calls `Save.record_wreck(instance_id)`,
-  which hands it back at `GameConfig.wreck_recovery_hp_fraction` of max HP —
-  **battered, not written off**. It stays in the garage, its installed upgrades stay
-  fitted (parts are consumed on fit, so they're never returned), and it can be raced
-  again immediately or repaired at the lift. The car park's warning is an
-  INSTRUCTION ("repair it"), not a verdict.
-- `wrecked` is emitted either way; `car.gd` re-emits it as the car-level `wrecked`
-  signal for the rally/menu layer (sibling to `StageManager.stage_completed`).
-- In **free-roam** (unbound) there is no DNF flow, so `car.gd` heals the car
-  to full and respawns it at the start so play continues.
+`apply_loss()` is the whole of it:
 
-Every car — including the starter — is a normal, wreckable car (no invulnerable
-car exists). **There is no anti-soft-lock machinery, because a wreck can no longer
-soft-lock anything**: since every wrecked car comes back drivable, a garage of
-write-offs is not a state the game has. `Save.wreck_car`, `car_is_wrecked`,
-`all_cars_wrecked` and `ensure_wreck_safety_net` were all retired with it, along
-with the free rescue car that existed to dig the player out — see
-[reward-system.md](reward-system.md).
+```gdscript
+func apply_loss(amount: float) -> void:
+	if not enabled:
+		return
+	hp = maxf(0.0, hp - amount)
+```
 
-The cost of a wreck is the **lost result**: a DNF, no podium, no prize, no progress
-on the map, plus a repair bill. That is punishment enough without ending a career on
-one mistake.
+Nothing is signalled. There is no `wrecked` signal on `DamageModel`, none on `car.gd`,
+nothing listening in `world.gd`, and no code path anywhere that reacts to the moment HP
+touches zero. A car at 0 HP is simply a car whose `damage_ramp` has saturated: worst
+misfire (capped at `damage_misfire_level_max`), lowest rev cap
+(`damage_rev_limit_min_fraction`, floored by `MIN_REDLINE_IDLE_RATIO`), whatever wheel toe
+it has accumulated — and it drives. It stays in the garage with its upgrades fitted (parts
+are consumed on fit, so they were never returned in the first place), it can be raced again
+immediately, and the free between-event repair lifts it back off the floor without the
+player spending anything.
 
-### Mid-event wreck menu (`scripts/wreck_screen.gd`)
+That "state, not event" framing is what let the whole wreck layer be deleted rather than
+merely made survivable. An event needs a handler, and every handler needed a policy: what
+does a fielded car do, what does an unbound free-roam car do, what does the menu show, what
+does the session report. A state needs none of that — the existing per-tick read of
+`misfire_level` / `rev_limit_fraction` already covers 0 HP, because 0 HP is just the end of
+a ramp it was already sampling.
 
-In a real session run, the car's `wrecked` signal does NOT cut straight to the
-podium. `world.gd` builds a **`WreckScreen`**: the crash is allowed to play out
-(controls locked so the car can't be driven away), then — once it settles, or
-`wreck_settle_max_seconds` elapses — an **orbit camera** circles the wreck (reusing
-the start-line `start_orbit_*` knobs) under a flat **"CAR WRECKED"** menu with a
-**Return to HQ** button. Pressing it emits `return_requested`, which `world.gd`
-routes to `RallySession.report_wreck()` (the DNF → podium → HQ). Headless runs skip
-the cinematic and report immediately. See [menus.md](menus.md) for the loop.
+**Fielded vs. free-roam is no longer a distinction here.** A bound car (`instance_id >= 0`)
+persists its HP back at each event boundary via `Save.apply_damage`, which now also clamps
+at 0 (`hp = maxf(0.0, hp - amount)`) — no write-off, no wreck record, nothing a repair
+can't undo. An unbound car simply never touches the save. Neither branch does anything
+*else* at 0 HP; the old free-roam special case, where `car.gd._on_wrecked` healed the car
+to full and teleported it back to the spawn, is gone with the signal that drove it. Free
+roam now behaves like everywhere else: you keep driving the car you damaged.
+
+Every car — including the starter — takes damage the same way, and none of them can be
+lost. **There is no anti-soft-lock machinery, because nothing can strand a player**: a car
+at 0 HP is still a drivable car, and HP climbs back via the free between-event field repair
+and the paid repair at the lift. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
+`ensure_wreck_safety_net` and the free rescue car that existed to dig the player out are
+all retired — see [reward-system.md](reward-system.md).
+
+### Nothing DNFs the player any more
+
+`RallySession.report_wreck()` and `ChallengeSession.report_wreck()` / `_end_as_dnf()` are
+gone, so **the player cannot DNF a rally or a challenge through damage** — see
+[rally-session.md](rally-session.md) and [rally-challenge.md](rally-challenge.md). The
+`_dnf` flag survives in both: **rivals** still DNF an event, the standings/result contract
+still carries a `dnf` field, and a persisted challenge run still reads one back. Only the
+player's own route to it was removed. The `"WRECKED"` labels the UI shows (rally detail,
+the overworld picker) key off `hp == 0` or a rival's `dnf` flag and still render correctly
+for both.
 
 ## Between-event pit repairs (`Save.field_repair`)
 
@@ -319,8 +402,10 @@ toe_fraction)` for `_event_index >= 1` **before the per-event scene reload**, so
 freshly-loaded run scene fields the already-repaired car. `field_repair` returns a
 summary (`{repaired, hp_before, hp_after, max_hp, hp_gained}`) stashed on the session
 and read once via `take_pending_repair()`. It reports `repaired: false` — and writes
-nothing — for a pristine car (full HP, straight wheels) or a wrecked one (0 HP can't
-be fielded mid-rally). The summary drives a **`RepairReveal`** popup (`scripts/
+nothing — for a pristine car (full HP, straight wheels), the only case where there is
+nothing to do. A car at **0 HP** is repaired like any other, and in fact gains the most:
+`lost` is the full pool, so it comes back off the floor and out of the worst of the
+misfire/rev cap without the player spending a star. The summary drives a **`RepairReveal`** popup (`scripts/
 repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health **+N HP**,
 Continue) that `world.gd._show_repair_popup()` shows once the
 loading overlay is gone (staged runs keep it up until the start-line queue is laid
@@ -366,8 +451,9 @@ wrong in *both* directions:
 
 So `RallySession` **latches the fact instead**, in `_took_damage_this_rally`:
 
-- set the moment any event reports `hp_lost > 0` (`report_event_result`), and in
-  `report_wreck` (a wreck never routes through `report_event_result`);
+- set the moment any event reports `hp_lost > 0` (`report_event_result`) — now the ONLY
+  place it is latched, since `report_wreck` (the one path that bypassed
+  `report_event_result`) no longer exists;
 - latched off whether damage *happened*, not whether it could be persisted — an
   unbound car with no save slot still took the hit;
 - cleared only in `start_rally`, so it survives every repair to resolve time and is
@@ -388,7 +474,8 @@ riding on the fill's alpha; and a red **impact flash** (`ImpactFlash`) sized to 
 HP-losing hit. Because the icon is drawn separately from the fill, the pulse never
 tints it. The gauge is hidden when `hud_hp_enabled` is off. Because there is no
 longer a number to round, the old "reserve `0` for a genuine wreck" rounding rule is
-gone with it — a nearly-dead car simply shows a nearly-empty ring. A **boost gauge**
+gone with it — and there is no wreck to reserve it for anyway: an empty ring is a
+legitimate, drivable, permanent reading. A **boost gauge**
 sits to its left and a **nitrous gauge** to its right, built the same way — see
 [hud.md](hud.md).
 
@@ -396,15 +483,20 @@ sits to its left and a **nitrous gauge** to its right, built the same way — se
 
 `impact_threshold_g` (the braking-proof deceleration gate — the single sensitivity
 knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
-`impact_max_loss`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
+`impact_max_loss`, `damage_misfire_health_threshold` (where BOTH engine effects start —
+the shared `damage_ramp`), `damage_misfire_level_max` (worst misfire intensity at 0 HP —
+the "certain point" past which damage stops weakening the engine),
+`damage_rev_limit_min_fraction` (fraction of redline still usable at 0 HP),
+`damage_misfire_rate_max`,
 `damage_misfire_load_bias`, `damage_misfire_duration_min`, `damage_misfire_duration_max`,
 `damage_wheel_toe_gain`, `damage_wheel_toe_max`, the between-event pit repair
 (`field_repair_hp_fraction`, `field_repair_toe_fraction`), soft contacts
 (`bush_drag_strength`, `bush_drag_torque`, `bush_min_speed_kmh`, `bush_hit_radius_frac`,
-`spectator_drag_strength`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
-`wreck_settle_max_seconds` (cap on the wreck-menu settle wait; the orbit reuses the
-`start_orbit_*` knobs). Per-car `max_hp` is CarLibrary metadata, **not** a
-`GameConfig` field. The between-event pit repair is the only heal there is, tuned by
+`spectator_drag_strength`), `hud_hp_enabled`, `hud_low_hp_warn_frac`.
+`wreck_recovery_hp_fraction` and `wreck_settle_max_seconds` were **removed** with the
+wreck flow. `config/game_config.tres` overrides neither of the two new knobs, so their
+`game_config.gd` defaults (0.8 and 0.6) are what ships. Per-car `max_hp` is CarLibrary
+metadata, **not** a `GameConfig` field. The between-event pit repair is the only heal there is, tuned by
 the two `field_repair_*` fractions.
 Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
 values are not).
@@ -413,26 +505,35 @@ values are not).
 
 `tests/headless/test_damage_model.gd` (the square-law `hp_loss_for_speed`, **unified
 deceleration damage** — below-threshold braking costs nothing, above-threshold costs
-HP & emits, a full arrest matches the capped square law, the per-hit cap can't wreck,
-a stopped car self-limits without a cooldown, repeated spikes accumulate & wreck, a
-soft-drag-magnitude deceleration deals a small chip — the
+HP & emits, a full arrest matches the capped square law, the per-hit cap can't empty the
+pool in one go, a stopped car self-limits without a cooldown, repeated spikes accumulate
+down to 0 HP, a soft-drag-magnitude deceleration deals a small chip — the
 **damage fraction** tracking HP, **wheel toe** (a hit bends every wheel within the
 clamp, a zero-strength hit is a no-op, toe stays clamped over many hits, `field`
-loads persisted toe, repair straightens), bound/unbound wreck **keeping the car at 0
-HP with its upgrades**, persistence round-trip, **misfire level** — 0 above the
-health threshold, ramping to 1 at 0 HP), `test_engine_logic.gd` (**misfire**:
+loads persisted toe, repair straightens), **HP floors at 0 without signalling anything**
+for a bound and an unbound model alike (the car keeps its upgrades and its save row),
+persistence round-trip, the shared **`damage_ramp`** — 0 above the health threshold,
+ramping to 1 at 0 HP — and the two effects derived from it: **`misfire_level`** capped at
+`damage_misfire_level_max` (strictly < 1 at 0 HP, which is what keeps the car drivable)
+and **`rev_limit_fraction`** falling from 1.0 to `damage_rev_limit_min_fraction` and never
+to 0), `test_engine_logic.gd` (**misfire**:
 the pure `misfire_rate` is 0 when healthy / positive & load-rising under damage, a
-healthy engine never cuts over many steps, a wrecked one cuts intermittently, and a
-forced cut kills crank torque), `test_save_manager.gd` (`wheel_toe`
+healthy engine never cuts over many steps, a damaged one cuts intermittently, and a
+forced cut kills crank torque; **rev cap**: `rev_limit_scale` scales `redline_omega()`,
+the `MIN_REDLINE_IDLE_RATIO` floor holds at the lowest scale, and setting it recomputes
+the auto box's upshift speeds), `test_save_manager.gd` (`wheel_toe`
 round-trips through save/reload, a full-fraction field repair straightens the wheels,
 old saves backfill straight, **`field_repair`** restores the given fraction of lost HP, bends
-each wheel the given fraction back toward straight, skips a pristine car, and leaves
-a wrecked car wrecked), `test_rally_session.gd` (the **between-event pit repair**
+each wheel the given fraction back toward straight, and skips a pristine car;
+**`apply_damage` clamps at 0** rather than writing the car off), `test_rally_session.gd` (the **between-event pit repair**
 fires entering every event after the first, never the first, and its summary is
 consumed once), `test_car.gd` (bent front wheels **veer the car through the
 physics alone**, `engine.misfire_level` tracks the damage fraction), `test_bush_field.gd` (side-based `drag_torque` sign +
 scaling, enter/leave one-shot **soft drag**, min-speed gate), `test_spectator_damage.gd` (a
 knockdown applies **soft drag** to the car), `test_car.gd` (contact monitor
 wiring, plus a **head-on collision costs HP** regression that drives the car into
-an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge), `test_wreck_screen.gd` (crash → orbit/menu →
-`return_requested`).
+an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge).
+
+There is no wreck-screen test because there is no wreck screen; `test_wreck_site_gate.gd`
+is about the **roadside opponent wreck** prop ([opponent-wrecks.md](opponent-wrecks.md)),
+an unrelated feature that is untouched by any of the above.

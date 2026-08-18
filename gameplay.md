@@ -11,9 +11,11 @@
 **Gran Turismo, but with rally stages.** You build and tune a garage of cars,
 enter seeded rallies around a world map, and chase a clean combined time across
 three events — but every car you field (except the starter) is a real,
-depreciating asset that can be damaged and ultimately destroyed. The pull is the
-collection-and-tuning loop of GT crossed with the **high-stakes attrition of a
-roguelike**: do you risk your best car to win, or play it safe?
+depreciating asset that wears down as you race it. The pull is the
+collection-and-tuning loop of GT crossed with the **attrition of a roguelike**: do you
+push a hurt car for the win, or back off and protect the stage times you have left?
+Crashing never takes the car or the run away — it takes your **speed**, for the rest of
+the rally, plus the stars to put it right.
 
 ## Core loop
 
@@ -33,23 +35,24 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Topic | Decision |
 |---|---|
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
-| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits have been **removed entirely**, and repair happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`) — a partial restore. Wrecking is **not** terminal either: `Save.record_wreck` returns the car at a fraction of max HP. See `features/damage.md`. |
+| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits have been **removed entirely**, and repair happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`) — a partial restore. A car sitting at 0 HP benefits from it most. See `features/damage.md`. |
 | Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
-| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: the rally is a DNF and the run ends — but the car is **not lost**. `Save.record_wreck` hands it back at a fraction of max HP (bent wheels stay bent), so a wreck is a bad RESULT, not a lost ASSET: the punishment is the DNF plus the repair bill, and the player can always drive again. Because no car can ever be destroyed, **no anti-soft-lock floor is needed** — and the map's reachability guarantee holds, since a route can't be stranded by losing the car it depended on. See `features/damage.md`. |
+| Damage floor | **SUPERSEDED — there is no wreck.** Originally HP→0 wrecked the car and DNF'd the rally. As implemented, damage can never end a run: HP bottoms out at **0** and the car **keeps driving**, under a misfire capped at `damage_misfire_level_max` and a rev cap that falls to `damage_rev_limit_min_fraction` of redline. So a crash costs **pace, not the result and not the asset** — you limp the remaining stages on a stumbling, rev-limited engine and pay stars to fix it. Because nothing can be destroyed and nothing can strand you, **no anti-soft-lock floor is needed**, and the map's reachability guarantee holds trivially. See `features/damage.md`. |
 | Rally complete | **Finish top 3** in a rally (combined time). |
 | Special unlock | **Star total** (3 per rally won, 2 for 2nd, 1 for 3rd). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
-| Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable (a wrecked car is always re-winnable) so 100% stays reachable. Farmed rewards stay under the **same progress-tier ceiling**. |
-| Upgrades on a wreck | **Stay with the car.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment) and never refunded; a wreck keeps the car (at 0 HP) with its parts still fitted — but it never races again, so those parts are lost with it. |
+| Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable so 100% stays reachable — belt-and-braces now that no car can be lost in the first place. Farmed rewards stay under the **same progress-tier ceiling**. |
+| Upgrades and damage | **Nothing is ever lost.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment) and never refunded, but damage cannot take the car away from them: a car at 0 HP keeps its parts, keeps its garage slot and races again the moment you point it at a start line. |
 
 ---
 
 ## Cars & the garage
 
 - **Starters:** the player picks **1 of 3** starter cars at the beginning. Each is
-  low-performance and, crucially, **damage-immune** (effectively infinite HP) —
-  the permanent safety net so the player can never be left with nothing drivable.
+  low-performance and, historically, **damage-immune** — the permanent safety net so the
+  player could never be left with nothing drivable. Damage no longer removes any car, so
+  that safety net is redundant and the starter is just a dependable first car.
   The **two unchosen starters can be obtained later** as reward cars. *(Which 3
   cars are starters is a content decision: the current `CarLibrary` is six
   performance cars, so designate the lowest-power existing car(s) and/or add a
@@ -84,26 +87,32 @@ roguelike**: do you risk your best car to win, or play it safe?
   - **Wheel alignment** → a steering pull (the car drifts to one side). The sim
     has no alignment-offset knob today; add one (a constant toe/steer bias fed
     into the steering in `car.gd`).
-  - **Engine power** → reduced output. No single power multiplier exists today
-    (power comes from the `engine_type` preset / `ENGINE_PRESETS`); add a
-    **damage power-multiplier** applied to engine torque.
-- **Wreck at 0 HP.** When a car's HP hits **0 it is wrecked**: the current rally
-  is an immediate **DNF**. The exit isn't abrupt — the crash is allowed to play
-  out, then an **orbit camera + "car wrecked" menu** (the same slow orbit as the
-  start line) tells the player and offers to **return to HQ**. The wrecked car goes
-  back to the garage **at a fraction of max HP** (`Save.record_wreck`) with its
-  installed upgrades **still fitted** — damaged and worth fixing, but immediately
-  enterable again. Nothing removes a car from the garage.
+  - **Engine power** → reduced output. Originally sketched as a flat "damage
+    power-multiplier" on torque. As implemented it is two effects off one shared ramp
+    (`DamageModel.damage_ramp`), both of which are *audible* rather than just numerically
+    slower: an intermittent **misfire** that cuts fuel in stumbling bursts (capped, so the
+    engine never dies), and a **rev cap** that walks the usable redline down so every gear
+    runs out early. Neither starts until health drops past
+    `damage_misfire_health_threshold` — a scuffed car runs clean.
+- **0 HP is a floor, not a fail state.** HP bottoms out at **0** and the car keeps
+  driving. There is no wreck, no DNF-by-damage, no "car wrecked" menu and no moment the
+  game takes the wheel off you — a maximally damaged engine is *stumbling and rev-capped,
+  not dead*. Concretely, at 0 HP the misfire tops out at `damage_misfire_level_max` (well
+  under a total cut) and the usable redline bottoms out at
+  `damage_rev_limit_min_fraction`, so every gear runs out early and the car is slower
+  everywhere — you hear it bouncing off a lower limiter. The intent is that a big crash is
+  **felt for the rest of the rally** rather than announced by a screen: you keep playing,
+  just wounded. Nothing removes a car from the garage, and nothing ends a run.
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
 - **Getting stuck auto-recovers for free.** If a car ends up trapped — pinned,
   flipped, or dropped into a pit it can't climb out of — it's snapped back onto the
   road at its last good spot after a few seconds, with no penalty (you've already lost
   the time). See `features/progress.md`.
-- **Starter is immune** (effectively infinite HP — never wrecked). This was
-  conceived as the anti-soft-lock floor; since a wreck no longer costs the car,
-  it now just keeps the first car a dependable fallback rather than a safety net.
-- **In-run feedback.** Because wrecking ends the run, the run shows a **live
+- **Starter immunity** was conceived as the anti-soft-lock floor. Since damage costs
+  neither the car nor the run, there is nothing left to be safe from; the first car is
+  simply a dependable fallback.
+- **In-run feedback.** Because damage is a running tax on your pace, the run shows a **live
   health gauge** in the in-car HUD (labelled *Health* + a **percentage**, not a raw
   HP number — "HP" reads as horsepower) with a **low-health warning** and an impact
   cue, so the player can make the "back off or push?" call in the moment.
@@ -115,8 +124,9 @@ roguelike**: do you risk your best car to win, or play it safe?
   buttons are hidden; repair instead happens **automatically between events**
   (`Save.field_repair`, called from `RallySession._enter_event`) — a partial
   restore (see `field_repair_hp_fraction` / `field_repair_toe_fraction` in
-  `config/game_config.tres`). A wreck is its own restore path: `Save.record_wreck`
-  hands the car back at a fraction of max HP rather than writing it off.
+  `config/game_config.tres`). That between-event repair is also what lifts a car off the
+  0 HP floor for free, so a bad stage never compounds indefinitely; `Save.apply_damage`
+  simply clamps at 0 and never writes a car off.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
   power degrade with HP lost are tuning numbers; defer exact values to a damage
   todo + playtesting. Reuses the existing collision on signs/trees as impact
@@ -163,9 +173,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   attempt), but any damage taken persists and the opponent field is unchanged.
   Re-attempting therefore routes through HQ — auto-repair happens between events,
   or swap cars first.
-- **Player DNF:** the only fail-out is **wrecking the car** (HP → 0). There is no
-  time-cut DNF — a slow run just places badly; only running out of HP ends the
-  rally early.
+- **Player DNF: there is none.** No time-cut DNF (a slow run just places badly) and no
+  damage DNF either — running out of HP makes the car slow, not retired. Every rally the
+  player starts, they finish. **Rivals still DNF** (above), and the standings still carry
+  a DNF flag for them.
 
 <!-- Implementation: `features/reward-system.md` (draw policy). -->
 
@@ -180,8 +191,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
   again grants its car reward again** — completion itself is recorded once (it's
   the star metric), but the **reward repeats** on every top-3 finish.
-  So the car supply is **infinite**: a wrecked car can always be re-won by
-  re-racing, and the player can grind any rally for replacements. **The
+  So the car supply is **infinite**: any car can be re-won by re-racing, and the player
+  can grind any rally for spares (never a *necessity* now that cars can't be lost, but it
+  keeps the collection loop open). **The
   progress-tier ceiling still clamps farmed rewards** (you farm at your current
   power band, not above it), so grinding builds *breadth*, not a difficulty skip.
   Parts are no longer drawn at random at all: they are **bought with stars** at
@@ -200,8 +212,8 @@ roguelike**: do you risk your best car to win, or play it safe?
   still-incomplete rally** and the player is **never** left with zero enterable
   rallies. **Crucially, because rewards are farmable** (re-winning a rally
   re-grants its car), the car supply is *renewable*: even if your only car
-  eligible for a narrow-restriction rally is **wrecked**, you can always re-win a
-  replacement by re-racing. This closes the one remaining hole — that finite car
+  eligible for a narrow-restriction rally is **beaten up**, you can always re-win a
+  fresh one by re-racing. This closed the one remaining hole — that finite car
   rewards + permanent car destruction could otherwise make 100% completion (the
   a special) permanently unreachable.
 
@@ -345,14 +357,14 @@ These underpin everything above and likely each become their own todo:
 - **Target-time model:** auto-derived from the seeded track, Felix-calibrated in
   a dedicated fine-tuning session once the formula exists.
 - **Opponent count:** 10–15 per rally, thinned by DNFs.
-- **Player DNF:** only by wrecking (HP → 0); no time-cut fail-out.
+- **Player DNF:** none at all — no time-cut and no damage fail-out; only rivals DNF.
 - **Starter cars:** the two unchosen starters are obtainable later as rewards.
 - **Rally completion:** finish top-3 (combined time). **Specials:** all rallies
   completed. Rally-completion count is the single progress metric (also caps
   reward tier) — no separate points system.
 - **Reward supply:** **infinite / farmable** — re-winning a completed rally
   re-grants its car reward (clamped by the progress-tier ceiling); completion is
-  recorded once. Makes the car supply renewable so wrecking can never permanently
+  recorded once. Makes the car supply renewable so nothing can permanently
   brick 100% completion. *(`features/reward-system.md`.)*
 - **Tuning:** the **minimal three-knob** set (grip balance, brake bias, aero
   balance) as single-axis sliders; brake-bias is the one new code knob.

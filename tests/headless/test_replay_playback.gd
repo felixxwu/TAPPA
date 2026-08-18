@@ -48,23 +48,23 @@ func test_replay_loops_at_end() -> void:
 	assert_lt(_car._replay_t, rec.duration() + 0.5, "cursor wrapped, did not run away")
 	_car.end_replay()
 
-func test_replay_ghost_takes_no_damage_and_never_wrecks() -> void:
+func test_replay_ghost_takes_no_damage() -> void:
 	# Regression: the frozen ghost is teleported along the path each frame, which
-	# _integrate_forces would otherwise read as a huge deceleration and chip HP until
-	# the car "wrecks" mid-replay (firing the wreck screen / a spurious DNF). The
-	# replay guard must make the ghost take zero damage.
+	# _integrate_forces would otherwise read as a huge deceleration and chip HP away
+	# for the whole replay, leaving the ghost misfiring and rev-capped. The replay
+	# guard must make the ghost take zero damage — no HP loss, no impact registered.
 	await setup_settled_car()
 	var rec: ReplayRecorder = await _recorded_run()
 	_car.begin_replay(rec)
 	# A large stale pre-replay approach velocity is exactly what _integrate_forces
 	# reads as a per-frame deceleration once the body is frozen at zero velocity.
 	_car._approach_velocity = Vector3(60.0, 0.0, 0.0)
-	var wrecked_fired := [false]
-	_car.wrecked.connect(func() -> void: wrecked_fired[0] = true)
+	var losses := [0.0]
+	_car.damage.damaged.connect(func(loss: float, _pt: Vector3) -> void: losses[0] += loss)
 	var hp0: float = _car.damage.hp
 	await _wait_physics(120)
 	assert_eq(_car.damage.hp, hp0, "the frozen replay ghost must take zero damage")
-	assert_false(wrecked_fired[0], "the ghost must never wreck during replay")
+	assert_eq(losses[0], 0.0, "and registers no impact during the replay")
 	_car.end_replay()
 
 func test_replay_sets_and_restores_process_priority() -> void:

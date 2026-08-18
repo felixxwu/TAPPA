@@ -33,7 +33,7 @@ func before_each() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.hud_enabled = true
 	cfg.hud_elapsed_enabled = true
-	cfg.hud_stage_delta_enabled = true
+	cfg.hud_position_enabled = true
 	cfg.hud_pacenotes_enabled = true
 	cfg.hud_hp_enabled = true
 	var car: VehicleBody3D = _scene.get_node("Car")
@@ -405,57 +405,140 @@ func test_stage_complete_panel_shows_final_time() -> void:
 	assert_string_contains(label.text, "1:07.43", "panel shows the final time")
 
 
-# --- "vs P1" pace popup (todo/stage-start-and-end.md) ------------------------
+# --- Live standings readout (features/hud.md) --------------------------------
 
-func test_stage_delta_popup_ahead_is_green_and_labelled() -> void:
+# The readout keeps its own "last shown" state so a per-frame drive doesn't rebuild
+# strings; hide_position() clears it, which is also what makes each test start from a
+# stage that has just been armed rather than mid-run.
+func _standings_labels() -> Array:
 	var hud := _scene.get_node("HUD")
-	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
-	assert_not_null(label, "HUD builds the pace-popup label")
-	assert_false(label.visible, "popup hidden until pulsed")
-	Config.data.hud_stage_delta_enabled = true
-	hud.show_stage_delta(-1340)  # 1.34 s ahead
-	assert_true(label.visible, "popup shown when pulsed")
-	assert_string_contains(label.text, "1.34", "ahead reads the gap magnitude")
-	assert_string_contains(label.text, "ahead of P1", "ahead spells out the relation")
-	assert_eq(label.get_theme_color("font_color"), UITheme.GREEN, "ahead is green")
+	hud.hide_position()
+	return [hud, _scene.get_node("HUD/PositionLabel") as Label,
+		_scene.get_node("HUD/PositionGapLabel") as Label]
 
 
-func test_stage_delta_popup_behind_is_red_and_labelled() -> void:
-	var hud := _scene.get_node("HUD")
-	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
-	Config.data.hud_stage_delta_enabled = true
-	hud.show_stage_delta(2100)  # 2.1 s behind
-	assert_true(label.visible, "popup shown when pulsed")
-	assert_string_contains(label.text, "2.10", "behind reads the gap magnitude")
-	assert_string_contains(label.text, "behind P1", "behind spells out the relation")
-	assert_eq(label.get_theme_color("font_color"), UITheme.RED, "behind is red")
+func test_standings_readout_is_hidden_until_the_stage_drives_it() -> void:
+	var parts := _standings_labels()
+	assert_not_null(parts[1], "HUD builds the position label")
+	assert_not_null(parts[2], "HUD builds the gap label")
+	assert_false((parts[1] as Label).visible, "no position shown before the stage drives it")
+	assert_false((parts[2] as Label).visible, "no gap shown either")
 
 
-func test_stage_delta_popup_respects_config() -> void:
-	var hud := _scene.get_node("HUD")
-	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
-	label.visible = false
-	Config.data.hud_stage_delta_enabled = false
-	hud.show_stage_delta(-500)
-	assert_false(label.visible, "popup suppressed when hud_stage_delta_enabled is off")
-	Config.data.hud_stage_delta_enabled = true
+func test_chasing_reads_the_position_and_the_time_to_find() -> void:
+	var parts := _standings_labels()
+	parts[0].show_position(3, 12, 1420, false)
+	var pos := parts[1] as Label
+	var gap := parts[2] as Label
+	assert_true(pos.visible, "the readout shows once driven")
+	assert_string_contains(pos.text, "P3", "the position is named")
+	assert_string_contains(pos.text, "12", "the field size is named")
+	assert_true(gap.visible, "the gap line shows alongside it")
+	assert_string_contains(gap.text, "1.42", "the gap reads to the centisecond")
+	assert_string_contains(gap.text, "P2", "and names the position being chased")
 
 
-func test_cut_flash_takes_precedence_over_stage_delta() -> void:
-	var hud := _scene.get_node("HUD")
-	var delta_label := _scene.get_node("HUD/StageDeltaLabel") as Label
-	var cut_label := _scene.get_node("HUD/CutFlashLabel") as Label
-	Config.data.hud_stage_delta_enabled = true
-	Config.data.cut_penalty_enabled = true
-	# A live cut flash hides any showing pace popup...
-	hud.show_stage_delta(-1340)
-	assert_true(delta_label.visible, "pace popup shown before the cut")
-	hud.show_cut_flash(1.0, 2.0)
-	assert_true(cut_label.visible, "cut flash shown")
-	assert_false(delta_label.visible, "cut flash hides the pace popup")
-	# ...and a pace pulse while the cut flash is up is suppressed.
-	hud.show_stage_delta(-1340)
-	assert_false(delta_label.visible, "pace popup suppressed while cut flash is on screen")
+func test_leading_words_the_gap_as_a_cushion_and_reads_positive() -> void:
+	var parts := _standings_labels()
+	parts[0].show_position(1, 12, 900, true)
+	var gap := parts[2] as Label
+	assert_string_contains(gap.text, "0.90", "the cushion reads to the centisecond")
+	assert_string_contains(gap.text, "over", "leading is worded as holding a gap, not chasing one")
+	assert_eq(gap.get_theme_color("font_color"), UITheme.GREEN, "leading tints the gap green")
+
+
+func test_the_gap_line_is_worded_not_signed() -> void:
+	const Hud = preload("res://scripts/hud.gd")
+	# Pure helpers, so the wording is pinned without the scene. A bare ± in the corner of
+	# the screen at speed doesn't say WHICH WAY; these do.
+	assert_string_contains(Hud.gap_text(1500, false, 4), "to P3", "chasing points at the place above")
+	assert_string_contains(Hud.gap_text(1500, true, 1), "over P2", "leading points at the place below")
+	assert_eq(Hud.position_text(3, 12), "P3/12", "the position line is place-of-field")
+
+
+func test_a_field_of_one_quotes_no_gap() -> void:
+	var parts := _standings_labels()
+	parts[0].show_position(1, 1, 0, true)
+	assert_true((parts[1] as Label).visible, "the position still shows")
+	assert_false((parts[2] as Label).visible, "but there is nobody to be a gap to")
+
+
+func test_standings_readout_respects_config() -> void:
+	var parts := _standings_labels()
+	Config.data.hud_position_enabled = false
+	parts[0].show_position(3, 12, 1420, false)
+	assert_false((parts[1] as Label).visible,
+		"readout suppressed when hud_position_enabled is off")
+	Config.data.hud_position_enabled = true
+
+
+func test_gaining_a_position_slides_up_and_flashes_green() -> void:
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var pos := parts[1] as Label
+	hud.show_position(3, 12, 1420, false)
+	var resting := pos.offset_top
+	hud.show_position(2, 12, 800, false)      # overtook someone
+	hud._tick_position_anim(0.05)
+	assert_true(pos.offset_top > resting, "a gained place slides the label up into its row")
+	var col := pos.get_theme_color("font_color")
+	assert_true(col.g > col.r, "and flashes green (the design system's positive colour)")
+
+
+func test_losing_a_position_slides_down_and_flashes_red() -> void:
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var pos := parts[1] as Label
+	hud.show_position(3, 12, 1420, false)
+	var resting := pos.offset_top
+	hud.show_position(4, 12, 300, false)      # passed by someone
+	hud._tick_position_anim(0.05)
+	assert_true(pos.offset_top < resting, "a lost place slides the label down into its row")
+	var col := pos.get_theme_color("font_color")
+	assert_true(col.r > col.g, "and flashes red")
+
+
+func test_the_position_animation_settles_back_to_rest() -> void:
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var pos := parts[1] as Label
+	hud.show_position(3, 12, 1420, false)
+	var resting := pos.offset_top
+	hud.show_position(2, 12, 800, false)
+	hud._tick_position_anim(0.05)
+	hud._tick_position_anim(5.0)   # well past the animation's length
+	assert_almost_eq(pos.offset_top, resting, 0.001, "the label returns to its row")
+	assert_eq(pos.get_theme_color("font_color"), UITheme.INK,
+		"and to plain ink — the flash is a nudge, not a permanent tint")
+
+
+func test_the_first_position_of_a_stage_is_not_an_overtake() -> void:
+	# Arming a fresh stage and showing a position must not play the gain/lose animation:
+	# the readout is appearing, nobody was passed.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var pos := parts[1] as Label
+	var resting := pos.offset_top
+	hud.show_position(5, 12, 1000, false)
+	hud._tick_position_anim(0.05)
+	assert_almost_eq(pos.offset_top, resting, 0.001, "no slide on the first position shown")
+	assert_eq(pos.get_theme_color("font_color"), UITheme.INK, "and no flash")
+
+
+func test_hiding_the_readout_forgets_the_shown_position() -> void:
+	# Otherwise the next stage's first position would read as an overtake relative to the
+	# last stage's finishing place.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var pos := parts[1] as Label
+	hud.show_position(2, 12, 800, false)
+	hud.hide_position()
+	assert_false(pos.visible, "hidden on request")
+	var resting := pos.offset_top
+	hud.show_position(9, 12, 800, false)
+	hud._tick_position_anim(0.05)
+	assert_almost_eq(pos.offset_top, resting, 0.001,
+		"the first position after a hide is an appearance, not a drop of seven places")
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------
