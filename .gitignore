@@ -60,3 +60,7 @@ test_results.xml
 
 # Downloaded source art for tools/gen_snow_trees.py (CC0, re-fetched on demand).
 tools/.cache/
+
+# Throwaway probe worktrees created by the small-model-readiness loop.
+# Never merged; removed after each round. See .claude/skills/small-model-readiness/.
+.claude/worktrees/

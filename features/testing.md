@@ -49,7 +49,12 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 
 ### Keeping the suite fast
 
-**Measured floor (2026-08-13): 406 s wall-clock, 2683 tests, warmup 6 s.** The
+**Measured floor (2026-08-18): 359 s wall-clock, 3248 tests, warmup 7 s** (all
+green: 3245 passing, 3 fixture-conditional `pending()`, 159 597 asserts). That is
+*faster* than the 2026-08-13 floor of 406 s / 2683 tests despite 565 more tests, so
+the per-test cost has fallen — re-measure before assuming a slow run is a
+regression. It is still ~20 % over the ~5 min budget, and the gap is structural,
+not waste: see the table and "The irreducible sweeps". The
 `minimal_world()` lever below is **fully applied** — of the 24 files that
 instantiate `main.tscn`, only `test_smoke.gd` still pays full generation, and it
 does so because it asserts on the generated content. So there is no
@@ -57,9 +62,10 @@ does so because it asserts on the generated content. So there is no
 
 | Cost | Measured | Reducible? |
 |---|---|---|
-| Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly` 52.7 s, `test_smoke`'s two generation tests 10.8 s, `test_lakes_integration` 6.1 s, `test_track_gen_frame_consistency` 3.6 s) | ~78 s | **No** — see "The irreducible sweeps" below |
-| `test_menu_flow.gd` | 55.7 s / 229 tests (~0.24 s each) | **No** — cost is test COUNT, not per-test waste; `hq_tree_count = 8` already trims each build, and a shared-`before_all` attempt leaked state (title-layer visibility, car-park focus indices) and was reverted |
-| `before_all` builds + loading the ~200 test scripts in `tests/headless/` | ~110 s (the gap between the 295.7 s per-test sum and wall-clock) | Largely no — ~1 s of `minimal_world()` per file, already minimal |
+| Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly` 67.8 s, `test_smoke`'s two generation tests 9.3 s, `test_lakes_integration` 6.2 s, `test_track_gen_frame_consistency` 3.6 s) | ~87 s | **No** — see "The irreducible sweeps" below |
+| `test_menu_flow.gd` | 53.3 s (~0.2 s per test) | **No** — cost is test COUNT, not per-test waste; `hq_tree_count = 8` already trims each build, and a shared-`before_all` attempt leaked state (title-layer visibility, car-park focus indices) and was reverted |
+| The flat tail — ~195 further files at roughly 0.2–0.3 s per test (largest: `test_terrain_memory` 19.4 s / 21 tests, `test_start_line` 13.5 s / 49, `test_car_types` 12.7 s, `test_sim_career` 12.0 s, `test_retune` 11.0 s) | ~185 s | **No cheap lever found** (2026-08-18 sweep) — each is genuine CPU (terrain chunk rebuilds, career sweeps, per-car physics), with no single outlier inside any file and no §2a "cheap call would do" seam. `test_start_line` only *mentions* `main.tscn` in a comment; it never instantiates one |
+| `before_all` builds + loading the ~200 test scripts in `tests/headless/` | ~33 s (the gap between the 325.5 s per-test sum and wall-clock) | No — down from ~110 s; `minimal_world()` per file is already minimal |
 
 **The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
 generates every authored rally event live (~0.7 s each). It is the regression guard

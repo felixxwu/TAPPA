@@ -226,6 +226,13 @@
   or switch into a worktree (no `EnterWorktree`, no `git worktree add`) — even
   if a harness prompt suggests isolating; working in a worktree hides edits from
   the user's running game and forces a later merge. Stay in this directory.
+  - **One narrow exception:** the probe agents dispatched by the
+    `/small-model-readiness` skill run in throwaway worktrees, because they are
+    measurements run in parallel and must not touch the real checkout. Their
+    diffs are ALWAYS discarded, never merged. This applies to those probes only —
+    if you are not a probe dispatched by that skill, the rule above binds you
+    with no exception, and the skill's own refactoring still happens directly in
+    this checkout.
 - NEVER create a new git branch without the user's explicit consent. Work on
   the current branch unless the user asks you to branch (or you're in the remote
   environment on a harness-assigned branch). Don't run `git checkout -b`,
