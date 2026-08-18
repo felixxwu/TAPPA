@@ -249,7 +249,8 @@ func _report(stats: Dictionary, scripts: Dictionary) -> void:
 		return
 	var device := BenchmarkReport.probe_device()
 	var label := BenchmarkReport.make_label(
-		String(device.get("build_version", "")), stats.get("disabled", []))
+		String(device.get("build_version", "")), stats.get("disabled", []),
+		Benchmark.render_height)
 	if Benchmark.two_pass:
 		label += "-warm" if int(stats.get("pass", 0)) == 1 else "-cold"
 	var stamp := Time.get_datetime_string_from_system(true)

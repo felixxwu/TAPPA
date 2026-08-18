@@ -44,6 +44,10 @@ var progress: TrackProgress = null  # origin_offset / sample_at / finish_offset
 # exactly why the wheel-settle callback's arity bug reached the game.
 var terrain: Node = null            # anything with height_at(x, z), or null
 var elapsed_source := Callable()    # () -> float, normally StageManager.elapsed
+# External-offset drive mode: () -> Dictionary {offset_m: float, speed_mps: float}, used
+# by the multiplayer lobby to pose the ghost from a network-extrapolated arc-length offset
+# instead of a RivalPace. Empty (default) means career mode: pace drives pose_at as before.
+var offset_source := Callable()
 var road_half_width := 3.0
 var player: Node3D = null           # for the cull distance only
 
@@ -122,6 +126,9 @@ func _lateral_grip() -> float:
 	var tarmac := RallyLibrary.event_tarmac_fraction(_event)
 	var mu := base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
 	mu *= WeatherLibrary.grip_mult(cfg, RallyLibrary.event_weather(_event))
+	# Neutral (no adjustment) with no pace: external-offset mode has no solved_k to read, and
+	# the multiplier's whole job is to agree with the pace profile it would otherwise be
+	# drawn from.
 	if pace != null:
 		mu *= pow(maxf(pace.solved_k(), 0.001), cfg.rival_ghost_grip_exponent)
 	return maxf(mu, 0.01) * Platform.gravity()
@@ -314,23 +321,50 @@ func stop() -> void:
 
 
 func _process(delta: float) -> void:
-	if not running or pace == null or pace.is_degenerate() or progress == null:
+	if not running or progress == null:
+		return
+	if offset_source.is_valid():
+		# External-offset mode (features/multiplayer-lobby.md): no RivalPace required. The
+		# source hands us a raw arc-length offset (a network extrapolation, up to ~3 s old
+		# and corrected on every update) plus a speed; clamp it into the same arc-length
+		# window pace mode uses so it cannot park the ghost past the finish or before the
+		# origin, then let pose_at_offset's existing smoothing absorb the correction jumps.
+		var reading: Dictionary = offset_source.call()
+		var offset := clampf(float(reading.get("offset_m", 0.0)),
+				progress.origin_offset(), progress.finish_offset())
+		var speed := float(reading.get("speed_mps", 0.0))
+		pose_at_offset(offset, speed, 0.0, delta)
+		return
+	if pace == null or pace.is_degenerate():
 		return
 	if not elapsed_source.is_valid():
 		return
 	pose_at(float(elapsed_source.call()), delta)
 
 
-# Pose the ghost for a given stage-elapsed time. Split out from _process so the whole
-# kinematic chain is testable without a running stage.
+# Pose the ghost for a given stage-elapsed time (career/pace mode). Split out from
+# _process so the whole kinematic chain is testable without a running stage. Thin wrapper
+# over pose_at_offset: computes the rendered offset/speed/accel from the pace profile and
+# hands them to the shared world-posing chain below.
 func pose_at(elapsed_s: float, delta := 0.0) -> void:
-	if car == null or pace == null or progress == null:
+	if pace == null or progress == null:
 		return
 	var rendered := rendered_offset_at(elapsed_s)
+	var speed := pace.speed_at(elapsed_s)
+	var accel := _longitudinal_accel(elapsed_s)
+	pose_at_offset(rendered, speed, accel, delta)
+
+
+# The shared world-posing chain: given an arc-length offset, a speed (m/s) and a
+# longitudinal acceleration (m/s^2, magnitude only matters), place and orient the display
+# car. Needs no RivalPace — pose_at (career) and _process's external-offset branch
+# (multiplayer lobby, features/multiplayer-lobby.md) both funnel into this.
+func pose_at_offset(rendered: float, speed: float, accel: float, delta := 0.0) -> void:
+	if car == null or progress == null:
+		return
 	var here: Vector2 = progress.sample_at(rendered)
 	var forward := _heading_at(rendered)
 	var kappa_raw := _signed_curvature_at(rendered)
-	var speed := pace.speed_at(elapsed_s)
 	# Low-pass the curvature itself. Even with long probes the reading steps as probe points
 	# cross chord vertices, and both cosmetics key off it — including its SIGN, which decides
 	# which side of the road the ghost sits on.
@@ -357,7 +391,7 @@ func pose_at(elapsed_s: float, delta := 0.0) -> void:
 	# spends part of the circle longitudinally, the lateral share drops, and so does slip.
 	var grip_a := _lateral_grip()
 	var a_lat := speed * speed * absf(kappa)
-	var a_long := absf(_longitudinal_accel(elapsed_s))
+	var a_long := absf(accel)
 	var lateral_budget_a := sqrt(maxf(grip_a * grip_a - a_long * a_long, 0.0))
 	var utilisation := 0.0 if lateral_budget_a <= 0.01 else clampf(a_lat / lateral_budget_a, 0.0, 1.0)
 	var max_slip := deg_to_rad(cfg.rival_ghost_max_slip_deg)

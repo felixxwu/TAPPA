@@ -83,3 +83,15 @@ func test_capture_zero_frames_is_empty() -> void:
 	PerfLog.begin_capture()
 	PerfLog.track(&"car", 1000)
 	assert_eq(PerfLog.end_capture(0), {}, "no sampled frames -> empty breakdown")
+
+
+func test_label_carries_the_sweep_render_height() -> void:
+	# A resolution-sweep run is distinguishable in the results filename.
+	var label := BenchmarkReport.make_label("0.5", [], 720)
+	assert_string_contains(label, "h720", "the sweep height appears as h<height>")
+
+
+func test_label_omits_the_default_render_height() -> void:
+	# 0 = authored default: no height part, so baseline labels are unchanged.
+	var label := BenchmarkReport.make_label("0.5", [])
+	assert_false(label.contains("h0"), "no h part at the default height: %s" % label)

@@ -105,6 +105,11 @@ static func apply_stage_config(cfg: GameConfig) -> void:
 		var event := RallySession.current_event()
 		if not event.is_empty():
 			RallySessionScript.apply_event_config(cfg, event)
+	elif LobbySession.is_active():
+		# The lobby's stage is derived, not stored: same round key, same dict, on
+		# every client — that agreement is the whole mode (features/multiplayer-lobby.md).
+		RallySessionScript.apply_event_config(cfg,
+			LobbyRound.stage_for(LobbySession.round_key()))
 
 
 # Whether `instance_id` is the car an active challenge run is COMMITTED to.

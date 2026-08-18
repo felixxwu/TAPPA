@@ -713,3 +713,73 @@ func build_challenge_overlay() -> void:
 	# _view-switched layers update_overlays drives, so it must start hidden by hand.
 	_hq._challenge_shown = false
 	_hq._challenge_layer.visible = false
+
+
+# The Multiplayer entry screen: title, a loaner-car preview for the current round, an
+# (optional) sign-in status line, then Race / Spectate / Back. A modal over the
+# garage, built and wired the same way build_challenge_overlay is — see
+# hq_multiplayer.gd for the behaviour these widgets drive.
+func build_multiplayer_overlay() -> void:
+	var made := _hq._make_modal_overlay()
+	_hq._multiplayer_layer = made[0]
+	var root: VBoxContainer = made[1]
+	var footer: HBoxContainer = made[2]
+	var nav_root: Control = made[3]  # the MenuPage itself — for MenuNav.attach / UITheme.enforce
+
+	var page := nav_root as MenuPage
+	page.set_body_width(_hq._modal_body_width(380.0))
+
+	_hq._multiplayer_title_label = _hq.label("Multiplayer", 30)
+	_hq._multiplayer_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(_hq._multiplayer_title_label)
+
+	_hq._multiplayer_subtitle_label = _hq.label("", 16)
+	_hq._multiplayer_subtitle_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._multiplayer_subtitle_label.add_theme_color_override("font_color", UITheme.MUTED)
+	root.add_child(_hq._multiplayer_subtitle_label)
+
+	root.add_child(HSeparator.new())
+
+	# Hidden by _refresh_multiplayer_overlay whenever the player is signed in — an
+	# invisible player must never be told they're visible, but a signed-in one doesn't
+	# need this line cluttering the screen.
+	_hq._multiplayer_signin_label = _hq.label("", 14)
+	_hq._multiplayer_signin_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._multiplayer_signin_label.add_theme_color_override("font_color", UITheme.GOLD)
+	root.add_child(_hq._multiplayer_signin_label)
+
+	# Race / Spectate live in the scrolled body (not the footer) so Back can stay
+	# alone in the pinned footer, the same "actions row is the proceeding action"
+	# shape the garage row and the challenge screen's Start button use.
+	_hq._multiplayer_race_button = Button.new()
+	_hq._multiplayer_race_button.text = "Race"
+	_hq._multiplayer_race_button.focus_mode = Control.FOCUS_ALL
+	_hq._multiplayer_race_button.pressed.connect(_hq._multiplayer_ui._on_multiplayer_race_pressed)
+	root.add_child(_hq._multiplayer_race_button)
+
+	_hq._multiplayer_spectate_button = Button.new()
+	_hq._multiplayer_spectate_button.text = "Spectate"
+	_hq._multiplayer_spectate_button.focus_mode = Control.FOCUS_ALL
+	_hq._multiplayer_spectate_button.pressed.connect(_hq._multiplayer_ui._on_multiplayer_spectate_pressed)
+	root.add_child(_hq._multiplayer_spectate_button)
+
+	var back := Button.new()
+	back.text = "< Back"
+	back.focus_mode = Control.FOCUS_ALL
+	back.pressed.connect(_hq._multiplayer_ui._close_multiplayer_overlay)
+	footer.add_child(back)
+	_hq._multiplayer_back_button = back
+
+	# Flat widget list: Race, Spectate, Back in that order (top to bottom), keyboard +
+	# gamepad navigable via MenuNav — same framework the challenge screen uses. on_back
+	# routes ui_cancel/menu_back to the same close path the Back button uses.
+	MenuNav.attach(nav_root, {
+		first = _hq._multiplayer_race_button,
+		on_back = _hq._multiplayer_ui._close_multiplayer_overlay,
+	})
+
+	# Hidden until _open_multiplayer_overlay shows it — built eagerly in _ready like
+	# the other modal entry screens, but a MODAL over the garage rather than a
+	# _view-switched layer, so it must start hidden by hand.
+	_hq._multiplayer_shown = false
+	_hq._multiplayer_layer.visible = false

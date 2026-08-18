@@ -501,6 +501,33 @@ car. Styled after `finish_arch.gd`'s banners so the game keeps one 3D-text look.
 testing stays on: a name showing through a hillside reads as UI, not as part of the world.
 Config: `rival_ghost_nametag_enabled`, `_height_m`, `_size_m`.
 
+## External-offset posing (no `RivalPace`) — for the multiplayer lobby
+
+`GhostCar` can also be posed from a **network-extrapolated arc-length offset** rather
+than a `RivalPace`, for the round leader in a multiplayer lobby
+([multiplayer-lobby.md](multiplayer-lobby.md)). The world-posing chain that used to be
+the tail of `pose_at` is factored out into `pose_at_offset(rendered, speed, accel, delta
+:= 0.0)`, which takes an already-computed arc-length offset, speed (m/s) and longitudinal
+acceleration (m/s^2) and does everything from `progress.sample_at(rendered)` onward —
+lateral line offset, slip cosmetics, terrain-normal basis, wheel spin, visibility fade.
+`pose_at(elapsed_s, delta)` is now a thin wrapper that computes `rendered` /
+`speed` / `accel` from `pace` and calls `pose_at_offset` — same maths, same order, same
+smoothing as before; the career path is unchanged.
+
+`_process` picks the mode: if `offset_source` (`() -> Dictionary {offset_m, speed_mps}`)
+is a valid `Callable`, it calls it, clamps `offset_m` into
+`[progress.origin_offset(), progress.finish_offset()]`, and poses with `accel = 0.0`
+(cosmetic only, and a network ghost has no pace to difference an acceleration off of).
+Otherwise it falls back to the original `pace`-driven branch, unchanged. `setup()`'s
+`p_pace` argument is legal as `null` in this mode — the one live `pace.` dereference
+outside `pose_at`'s pace-only path, `_lateral_grip()`'s `pow(pace.solved_k(), ...)`
+cosmetic, is guarded `if pace != null` and defaults to no adjustment.
+
+The existing positional/rotational low-pass and `_has_pose` snap-on-first-pose are what
+keep this from teleporting: a network offset arrives as a few-seconds-old extrapolation
+that gets corrected on every update, and `pose_at_offset` going through the same
+smoothing chain as the career ghost absorbs those corrections instead of visibly jumping.
+
 ## Not built yet
 
 - **Ghost engine audio.** A silent ghost is not a bug; a wrong-sounding one is.

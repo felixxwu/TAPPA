@@ -3,12 +3,15 @@
 **Source:** `scripts/multiplayer/round_clock.gd`,
 `scripts/multiplayer/lobby_round.gd`,
 `scripts/multiplayer/lobby_standings.gd`, `scripts/cloud/lobby_board.gd`,
-`scripts/multiplayer/lobby_session.gd`
+`scripts/multiplayer/lobby_session.gd`, `scripts/multiplayer/lobby_field.gd`,
+`scripts/hq_multiplayer.gd` (world wiring: `world.gd` → `_setup_lobby_field`)
 
 **Tests:** `tests/headless/test_round_clock.gd`,
 `tests/headless/test_lobby_round.gd`,
 `tests/headless/test_lobby_standings.gd`, `tests/headless/test_lobby_clock_offset.gd`,
-`tests/headless/test_lobby_board.gd`
+`tests/headless/test_lobby_board.gd`, `tests/headless/test_lobby_session.gd`,
+`tests/headless/test_lobby_field.gd`, `tests/headless/test_lobby_loaner_car.gd`,
+`tests/headless/test_hq_multiplayer.gd`
 
 A drop-in, round-based multiplayer mode. One global lobby; every player races the
 same seeded stage in the same loaner car, round after round. Joining at any moment
@@ -148,6 +151,39 @@ The lobby branch copies the free-roam one — `CarLibrary.index_of(id)` ->
 read, no instance id, nothing written back, so a lobby round cannot corrupt or inflate
 a career profile and a player with an empty garage can race immediately.
 
+## Entry point: the HQ Multiplayer overlay
+
+`HqMultiplayer` (`scripts/hq_multiplayer.gd`) is the drop-in lobby's entry screen — a
+modal overlay over the garage, opened from the garage row's **Multiplayer** button
+(last in the row, after Online). It mirrors `HqChallenge` / the Rally Challenge entry
+screen's shape exactly: `hq_overlays.gd`'s `build_multiplayer_overlay` builds it via
+`_make_modal_overlay`, `_multiplayer_shown` gates both the layer's visibility and the
+garage's stand-down in `update_overlays` (alongside `_challenge_shown`), and
+`handle_input` reports the event spoken-for to `hq.gd`'s `_unhandled_input` the same
+way the challenge modal does.
+
+Content: a title, a subtitle previewing the current round's loaner car (`CarLibrary.by_id(LobbyRound.car_id_for(RoundClock.round_key(RoundClock.round_index(now))))`'s
+name — one round stale by the time the player is actually in, which is fine, it's a
+preview not a promise), and three buttons: **Race**, **Spectate**, **Back**. Race calls
+`await LobbySession.enter()`, Spectate calls `await LobbySession.enter(true)`; both then
+hand off to the driving scene the same way `HqChallenge._hand_off_to_challenge_scene`
+does — a `LoadingScreen`, two frames, `Scenes.change_to(tree, Scenes.MAIN)` — gated on
+`HqMultiplayer.auto_load_scenes` (mirrors `ChallengeSession.auto_load_scenes`) so a test
+can drive the handlers end to end without swapping the running scene. Back closes the
+overlay.
+
+**Keyboard + gamepad nav:** a flat widget list (Race, Spectate, Back, top to bottom),
+wired with `MenuNav.attach(nav_root, {first = race_button, on_back = _close_multiplayer_overlay})`
+— the same framework the challenge screen uses, so `menu_up`/`menu_down` walk the three
+buttons and `ui_cancel`/`menu_back` close it via `on_back`.
+
+**Signed-out wording is deliberate:** when `Cloud.auth.is_signed_in()` is false, the
+screen shows "Sign in to appear on other players' screens — you can still race, but
+nobody will see you." Race/Spectate both still work signed out (only the writes to the
+shared board are skipped — see `LobbySession._claim_round`'s signed-out guard above), so
+this line is purely informational and must never leave a signed-out player believing
+they ARE visible to others.
+
 `DrivingContext.session_active()` counts a lobby round, so it gets stage config and dev
 cheats rather than being mistaken for free roam. `active_car_instance_id()` still
 returns `-1` and `driven_car()` still returns `{}` — deliberately. You cannot repair a
@@ -197,3 +233,37 @@ drops a RACING row silent past the threshold (a quit, a crash, a dead network) w
 exempting finishers, whose silence is completion. `all_finished(live)` is then the
 early-end condition — deliberately false for an empty field, so an empty lobby does
 not advance itself round after round for no one.
+
+## The visible round (Phase B)
+
+`LobbyField` (scripts/multiplayer/lobby_field.gd) is the run-scene glue, built by
+`world.gd._setup_lobby_field()` per lobby run. It supplies `LobbySession`'s
+sample/identity/span callables (and severs them in `_exit_tree`, so a scene reload
+can never leave the autoload calling into freed nodes), renders the round **leader**
+as a `GhostCar`, and drives the HUD position readout.
+
+**The ghost** is the best-placed racer who isn't you — the one car worth chasing —
+posed through `GhostCar`'s external seam (`offset_source` / `pose_at_offset`, see
+features/rival-ghost.md) from the leader's extrapolated offset. No `RivalPace`
+involved; the ghost's existing smoothing chain absorbs each 3-second correction.
+
+**The readout** reuses `Hud.show_position` unchanged. The player's own row is
+merged in from the LIVE local sample rather than the up-to-a-tick-stale database
+copy, so the place number doesn't lag overtakes the player can see. The gap reaches
+the HUD in real milliseconds via `LobbyStandings.gap_ms` — never metres. The lobby
+never calls `StageManager.setup_splits`/`setup_live_standings`, so these labels have
+exactly one writer per mode.
+
+**Round lifecycle in the scene:** the stage finish routes to
+`LobbyField.note_finished` (the racer settles as `finished` and keeps posting), and
+`LobbySession.round_changed` reloads the scene onto the new round's track, hiding
+the position readout first so the next round's first update isn't animated as a
+phantom overtake.
+
+**Spectating** holds the `StageManager` in STAGING (the same hold a start line
+uses — controls locked, no countdown) and points the chase camera at the leader
+ghost via `CameraManager.retarget`. A spectator becomes a racer at the next round.
+
+A late joiner's `finish_ms` is their own stage-elapsed time, shorter than a
+from-the-gun racer's — `joined_late()` exists so the standings can mark the entry
+provisional rather than pretending otherwise.

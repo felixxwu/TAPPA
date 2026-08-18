@@ -5,7 +5,9 @@ overlay/menu-layer builders in `scripts/hq_overlays.gd` (`class_name HqOverlays`
 the `build_*_overlay()` methods, split out of `hq.gd` to shrink it; each holds a
 back-reference to the `HqController` and reaches into it for state + button
 callbacks), the Rally Challenge screen in `scripts/hq_challenge.gd` (`class_name
-HqChallenge`), the map table in `scripts/hq_table.gd` (`class_name HqTable`), the car park in
+HqChallenge`), the Multiplayer entry screen in `scripts/hq_multiplayer.gd` (`class_name
+HqMultiplayer` — see [multiplayer-lobby.md](multiplayer-lobby.md) → "Entry point"), the
+map table in `scripts/hq_table.gd` (`class_name HqTable`), the car park in
 `scripts/hq_carpark.gd` (`class_name HqCarpark`) — all three the same shape as `HqOverlays`,
 described below — the shared **rally-detail panel** in `scripts/rally_detail.gd` (`class_name
 RallyDetail`, hosted by either hub rather than holding a back-reference), the hub-scene
@@ -47,7 +49,8 @@ choice — apply it to every new row without asking.
 
 Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car | Start`),
 `hq_overlays.gd::build_title_overlay` (`Exit Game | Free Roam | Settings | Start`),
-`hq.gd::_refresh_garage_row` (`< Back | Career | Garage | Online` — a fixed four),
+`hq.gd::_refresh_garage_row` (`< Back | Career | Garage | Online | Multiplayer` — a
+fixed five),
 `rally_detail.gd::RallyDetail.build` (`< Map | Enter Rally >`), `build_challenge_overlay`
 (`< Back | Start`).
 
@@ -428,10 +431,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `_activate_garage_focus`) over a **single** side-by-side row (`_refresh_garage_row`),
   seated on **Career** (`_garage_career_index`) on entry, with `menu_back` leaving for
   the exterior exactly as the row's own Back button does. The row is
-  **Back / Career / Garage / Online** — a **fixed four stops**, with no conditional
-  members, so the row's length and focus chain are **static**: left/right walks the same
-  four every time, on every save. (Still ask `_garage_career_index` / the cursor's
-  `buttons` array rather than hardcoding an index — that survives a reorder.)
+  **Back / Career / Garage / Online / Multiplayer** — a **fixed five stops**, with no
+  conditional members, so the row's length and focus chain are **static**: left/right
+  walks the same five every time, on every save. (Still ask `_garage_career_index` / the
+  cursor's `buttons` array rather than hardcoding an index — that survives a reorder.)
   `_station_xform(View.GARAGE)` has one
   framing, the wide shell view. **No header caption** on this view: it used to carry
   "GARAGE — tap the map table to choose a rally, or the lift to tune your car", which named
@@ -462,6 +465,9 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   the way to every stage, so it was flattened — Career and Online sit alongside Garage,
   **Free Roam moved to the title screen** (it needs no owned car, session or lift), and
   the drive-level camera pose (`_drive_cam_xform`, `hq_drive_cam_*`) went with it.
+  **Multiplayer** joined the row afterwards, last (see the Entry point section of
+  [multiplayer-lobby.md](multiplayer-lobby.md)), as a modal overlay over the garage the
+  same way Online is — not a sixth View, just a fifth garage-row stop.
   **Garage** (`_enter_lift`) drops **straight into the tuning lift bay** for the currently
   selected car. It used to open the car park FIRST (a `CarparkMode.GARAGE` mode, parking the
   whole owned collection, whose Select committed the focused car and then entered the bay);
@@ -1076,7 +1082,8 @@ HQ flow, and the handoff happens on the next boot.
 
 One zone restores the whole hub: the garage zone raises `return_to_garage` and loads
 `hq.tscn`, whose garage row already reaches everything (`< Back` → the title row, `Career` →
-the map table, `Online` → the challenge overlay, Settings → account and reset).
+the map table, `Online` → the challenge overlay, `Multiplayer` → the lobby entry screen,
+Settings → account and reset).
 
 **The exploration fog is shared too.** `HqController.build_fog_mask(profile)` is a static that
 rasterises the 64×64 R8 lit mask from `RallyLibrary.lit_sources` in **normalised map space** —
@@ -1389,7 +1396,8 @@ garage the car rests **lowered on the ground** at its calculated settled ride he
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view) for the currently-selected car. A HUD hint + Back (to the exterior) +
 convenience buttons sit on top: the garage station row is **Back / Career / Garage /
-Online** — four fixed stops, so the left/right focus chain never changes length.
+Online / Multiplayer** — five fixed stops, so the left/right focus chain never changes
+length.
 **Garage** (`_enter_lift`) drops straight into the **tuning bay**
 for the selected car — the car is changed there, on the lift (see below). **Free
 Roam** (`_enter_free_roam`) — reached from the **title screen**, not here — opens the car

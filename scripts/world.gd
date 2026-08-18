@@ -269,6 +269,15 @@ func _ready() -> void:
 	# start line, then drain that session's pending pit repair. The only thing that
 	# differs between the two is WHICH orchestrator the repair summary comes from,
 	# so this is one block with one branch rather than two near-identical ones.
+	# A multiplayer lobby run: hand the run-scene pieces to a LobbyField (which wires
+	# the LobbySession's sample/span callables, the leader ghost, and the HUD position
+	# readout — see features/multiplayer-lobby.md), route the finish into it, and
+	# reload this scene when the shared round advances. Spectators keep the stage
+	# built but never start the countdown — the camera chases the leader ghost once
+	# one exists.
+	if LobbySession.is_active():
+		_setup_lobby_field()
+
 	if RallySession.is_active() or ChallengeSession.is_active():
 		_wire_session_signals()
 		# Pre-event start-line scene: briefing + presence cars before the countdown
@@ -551,7 +560,8 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# it onto dry ground if the start would be underwater — identical logic to the
 	# target derivation, so the shapes stay in sync.
 	var event := ChallengeSession.current_stage_params() if ChallengeSession.is_active() \
-		else RallySession.current_event()
+		else (LobbyRound.stage_for(LobbySession.round_key()) if LobbySession.is_active() \
+		else RallySession.current_event())
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
 	# The dry-start search may relocate the generation origin onto dry ground. Derive
@@ -1186,7 +1196,13 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	if not Benchmark.active:
 		# Staged runs hold the car in the start-line sequence until the player launches;
 		# otherwise the countdown arms immediately, as before.
-		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
+		# A lobby SPECTATOR is held exactly the way a staged run is held — in
+		# STAGING, controls locked — except no StartLine will ever launch them; the
+		# camera watches the leader ghost instead (see _setup_lobby_field).
+		var lobby_spectating: bool = LobbySession.is_active() \
+			and LobbySession.state() == LobbySession.STATE_SPECTATING
+		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress,
+			staged or lobby_spectating)
 		# Route the finish panel's NEXT button to advance the stage into the results flow
 		# (both nodes persist across regenerations, so guard the connection).
 		var hud_node := $HUD
@@ -1554,6 +1570,9 @@ var _road_centerline: Curve2D
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).
 var _stage_manager: StageManager
+# The multiplayer lobby's run-scene glue (leader ghost, HUD readout, sample feed).
+# Built by _setup_lobby_field() only when LobbySession.is_active().
+var _lobby_field: LobbyField
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
@@ -1713,6 +1732,37 @@ func _wire_stage_splits(target_ms: int) -> void:
 		turn_progress.append(clampf(profile_off / span, 0.0, 1.0))
 		turn_time_frac.append(clampf(_rival_pace.time_at_offset(profile_off) / total_s, 0.0, 1.0))
 	_stage_manager.setup_splits(turn_progress, turn_time_frac, target_ms)
+
+
+# Build the lobby's run-scene glue and route the round lifecycle into this scene:
+# the finish marks the local racer settled, and the shared round advancing reloads
+# the scene onto the new round's track (the field's _exit_tree severs its callables
+# on the way out, so the reload cannot leave the autoload calling into freed nodes).
+func _setup_lobby_field() -> void:
+	_lobby_field = LobbyField.new()
+	_lobby_field.name = "LobbyField"
+	add_child(_lobby_field)
+	_lobby_field.setup(LobbySession, _track_progress, _floor(), $HUD, $Car,
+		load(WRECK_CAR_SCENE), LobbyRound.stage_for(LobbySession.round_key()))
+	if LobbySession.state() == LobbySession.STATE_SPECTATING:
+		_lobby_field.spectate_camera = $CameraManager
+	if not LobbySession.round_changed.is_connected(_on_lobby_round_changed):
+		LobbySession.round_changed.connect(_on_lobby_round_changed)
+
+
+# The shared round moved on (everyone finished, or the ceiling fired). Whatever this
+# client was doing — racing, finished, spectating — the next round starts on a fresh
+# track, so the scene reloads. The HUD readout is hidden first so the new round's
+# first update is not animated as a phantom overtake (features/hud.md).
+func _on_lobby_round_changed(_index: int) -> void:
+	if LobbySession.round_changed.is_connected(_on_lobby_round_changed):
+		LobbySession.round_changed.disconnect(_on_lobby_round_changed)
+	if not LobbySession.is_active():
+		return
+	var hud := $HUD
+	if hud != null and hud.has_method("hide_position"):
+		hud.hide_position()
+	_change_scene(Scenes.MAIN)
 
 
 # Build the ghost node + its car. Construction only: it is hidden and clockless until
@@ -2004,6 +2054,13 @@ func _change_scene(path: String) -> void:
 
 
 func _on_session_event_completed(elapsed_seconds: float) -> void:
+	# A lobby finish is not a scene exit: the racer settles into the field as
+	# "finished" (which is what lets the round end early once everyone has), and the
+	# world stays up until LobbySession.round_changed reloads it for the next round.
+	if LobbySession.is_active():
+		if _lobby_field != null:
+			_lobby_field.note_finished(elapsed_seconds)
+		return
 	# No active session — free roam (or a plain dev boot) reached the finish. There is
 	# no session to report to (report_event_result would silently no-op, leaving the
 	# finish panel's Next doing nothing), so Next returns to HQ instead — the same

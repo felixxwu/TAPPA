@@ -222,12 +222,6 @@ menu_down={
 
 [input_devices]
 
-; Godot leaves the mobile sensors OFF by default (both default to false), and with
-; them off Input.get_gravity() returns Vector3.ZERO forever — which is exactly what
-; made the TILT control scheme do nothing on Android/iOS. Needed by
-; scripts/tilt_input.gd; removing either line silently kills tilt steering again.
-; (The web export has no sensor support in Godot at all, so it reads the browser's
-; own deviceorientation events instead — see scripts/tilt_input.gd.)
 sensors/enable_accelerometer=true
 sensors/enable_gravity=true
 

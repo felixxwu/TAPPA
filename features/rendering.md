@@ -72,7 +72,10 @@ is derived from `DESIGN_HEIGHT / stretch` and not the raw window width, the
 stretch stays constant on any
 device aspect, and wider screens still reveal more world width — just fatter.
 The width math is the pure static `DisplayStretch.logical_size()`, unit-tested in
-`tests/headless/test_display_stretch.gd`.
+`tests/headless/test_display_stretch.gd`. Its `design_height` parameter defaults to
+`DESIGN_HEIGHT`; the benchmark resolution sweep passes an override
+(`Benchmark.render_height`, see [benchmark.md](benchmark.md) → "Resolution sweep")
+so a dev run can render at other resolutions — normal play always uses the default.
 
 ## Shaders (`shaders/`)
 

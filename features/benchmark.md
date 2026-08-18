@@ -158,6 +158,18 @@ back (below). Two pieces make it a loop with no taps:
   toggle sweep from the workstation (write `build/bench-config.json` + `POST
   /reload`) with **no shippable config change**. Empty / missing = full baseline.
 
+- **Resolution sweep.** The same `/bench-config` file also takes
+  `{"render_height": 720}`: while the benchmark is active, `DisplayStretch`
+  lays the frame out at that logical height instead of `DESIGN_HEIGHT`
+  (`scripts/display_stretch.gd` → `logical_size`'s `design_height` parameter;
+  the knob lives on the autoload as `Benchmark.render_height`, applied by
+  `hq.gd` → `_apply_bench_sweep_config`). Sweeping several heights up to the
+  device's native landscape height measures how frame cost scales with render
+  resolution. The run label gains an `h<height>` part
+  (`BenchmarkReport.make_label`) so the results files are distinguishable;
+  each report's `device.render_size` records the resolution actually used.
+  0 / absent = authored default.
+
 `?bench=1` gates the whole thing, so it can never ship on by default.
 
 ## Feedback loop (report POST-back)

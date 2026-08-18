@@ -23,6 +23,14 @@ class StubCar:
 	func is_throttling() -> bool: return throttling
 
 
+# Stands in for the display car in the external-offset tests below: pose_at_offset only
+# needs `drivetrain` (read by _drive_wheels) and tolerates the rest being absent via
+# has_method guards, so this is cheaper than building a real car.tscn instance.
+class StubDisplayCar:
+	extends Node3D
+	var drivetrain: Variant = null
+
+
 var _stub: StubCar
 
 
@@ -126,6 +134,75 @@ func test_the_optimum_slip_follows_the_surface_mix() -> void:
 	var half := GhostCar._optimum_slip_rad(Config.data, {"surface_mix": 0.5})
 	assert_almost_eq(half, asin(0.20), 0.001,
 			"a half-and-half surface blends the two peaks before taking the angle")
+
+# --- External-offset posing: no RivalPace (features/multiplayer-lobby.md) ---------
+
+func test_pose_at_offset_places_the_car_without_a_pace() -> void:
+	var tp := _progress_on_straight()
+	tp.mark_start()
+	var g := GhostCar.new()
+	add_child_autofree(g)
+	g.setup(null, tp, null, {}, null, {})
+	g.car = StubDisplayCar.new()
+	add_child_autofree(g.car)
+	var offset := tp.origin_offset() + 50.0
+	g.pose_at_offset(offset, 20.0, 0.0, 0.0)
+	var expected: Vector2 = tp.sample_at(offset)
+	assert_almost_eq(g.car.global_position.x, expected.x, 1.5,
+			"external-offset posing lands the car at the sampled track x for that offset")
+	assert_almost_eq(g.car.global_position.z, expected.y, 1.5,
+			"external-offset posing lands the car at the sampled track z for that offset")
+
+func test_pose_at_offset_moves_forward_as_the_offset_increases() -> void:
+	var tp := _progress_on_straight()
+	tp.mark_start()
+	var g := GhostCar.new()
+	add_child_autofree(g)
+	g.setup(null, tp, null, {}, null, {})
+	g.car = StubDisplayCar.new()
+	add_child_autofree(g.car)
+	var origin := tp.origin_offset()
+	g.pose_at_offset(origin + 20.0, 20.0, 0.0, 0.0)
+	var first_z: float = g.car.global_position.z
+	g.pose_at_offset(origin + 60.0, 20.0, 0.0, 0.05)
+	var second_z: float = g.car.global_position.z
+	assert_gt(second_z, first_z,
+			"a later, larger offset moves the ghost further down the straight")
+
+func test_process_drives_the_external_offset_path_with_no_pace() -> void:
+	var tp := _progress_on_straight()
+	tp.mark_start()
+	var g := GhostCar.new()
+	add_child_autofree(g)
+	g.setup(null, tp, null, {}, null, {})
+	g.car = StubDisplayCar.new()
+	add_child_autofree(g.car)
+	g.running = true
+	var origin := tp.origin_offset()
+	g.offset_source = func() -> Dictionary:
+		return {"offset_m": origin + 30.0, "speed_mps": 15.0}
+	g._process(0.05)
+	assert_true(g._has_pose, "the external-offset path poses the car with pace == null")
+	var expected: Vector2 = tp.sample_at(origin + 30.0)
+	assert_almost_eq(g.car.global_position.x, expected.x, 1.5,
+			"the _process-driven external path lands at the sampled offset")
+
+func test_process_clamps_the_external_offset_to_the_stage_bounds() -> void:
+	var tp := _progress_on_straight()
+	tp.mark_start()
+	var g := GhostCar.new()
+	add_child_autofree(g)
+	g.setup(null, tp, null, {}, null, {})
+	g.car = StubDisplayCar.new()
+	add_child_autofree(g.car)
+	g.running = true
+	g.offset_source = func() -> Dictionary:
+		return {"offset_m": tp.finish_offset() + 500.0, "speed_mps": 15.0}
+	g._process(0.05)
+	var expected: Vector2 = tp.sample_at(tp.finish_offset())
+	assert_almost_eq(g.car.global_position.x, expected.x, 1.5,
+			"an out-of-range external offset is clamped to the finish before posing")
+
 
 func test_the_optimum_slip_angle_ignores_weather() -> void:
 	# Deliberate: rain lowers mu, and the pace profile already answers that by cornering

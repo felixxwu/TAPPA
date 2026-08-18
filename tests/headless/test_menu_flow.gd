@@ -1503,7 +1503,15 @@ func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	hq._on_exterior_start()
 	assert_false(hq._challenge_layer.visible, "the challenge overlay starts hidden")
 
-	hq._garage_focus = hq._garage_cursor.buttons.size() - 1  # Online, last in the row
+	# Find Online by TEXT, not by position — the row has grown before (Multiplayer
+	# was appended after it) and a positional pick silently opens the wrong screen.
+	var online_idx := -1
+	for i: int in range(hq._garage_cursor.buttons.size()):
+		if String((hq._garage_cursor.buttons[i] as Button).text).to_lower() == "online":
+			online_idx = i
+			break
+	assert_true(online_idx >= 0, "the garage row still carries an Online button")
+	hq._garage_focus = online_idx
 	hq._activate_garage_focus()
 	assert_true(hq._challenge_layer.visible, "Online on the garage row opens the entry screen")
 	assert_false(hq._garage_layer.visible, "the garage hides behind the modal challenge overlay")

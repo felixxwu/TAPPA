@@ -67,6 +67,12 @@ var options: Dictionary = {}
 var two_pass := false
 var pass_index := 0
 
+# Dev resolution-sweep knob (via the ?bench sweep config): when > 0, DisplayStretch
+# lays the benchmark frame out at THIS logical height instead of DESIGN_HEIGHT, so
+# a remote sweep can measure fill/GPU cost at several render resolutions up to the
+# device's native height with no shippable config change. 0 = authored default.
+var render_height := 0
+
 # The last completed run's summary (BenchmarkStats.summarise output), kept so
 # the results survive the scene while the player reads them / runs again.
 var results: Dictionary = {}

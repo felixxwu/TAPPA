@@ -39,7 +39,9 @@ static func to_json(report: Dictionary) -> String:
 # A short, filesystem-safe run label the collector uses in the filename and
 # Claude uses to tell runs apart: the build version plus which toggles were off
 # (so "baseline" vs "trees-off" runs are distinguishable at a glance). Pure.
-static func make_label(build_version: String, disabled_toggles: Array) -> String:
+# `render_height` > 0 appends an "h<height>" part so resolution-sweep runs are
+# distinguishable in the results filenames (0 = authored default, no part).
+static func make_label(build_version: String, disabled_toggles: Array, render_height: int = 0) -> String:
 	var parts: PackedStringArray = []
 	if build_version != "":
 		parts.append(build_version)
@@ -48,6 +50,8 @@ static func make_label(build_version: String, disabled_toggles: Array) -> String
 	else:
 		for name in disabled_toggles:
 			parts.append("no-" + String(name))
+	if render_height > 0:
+		parts.append("h%d" % render_height)
 	return _sanitize("_".join(parts))
 
 

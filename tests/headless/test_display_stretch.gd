@@ -72,3 +72,32 @@ func test_non_benchmark_never_swaps() -> void:
 	assert_eq(DisplayStretch.benchmark_window_size(Vector2i(400, 900), false), Vector2i(400, 900),
 		"outside a benchmark the real window size is used")
 
+
+
+# --- Benchmark resolution sweep (features/benchmark.md → "Resolution sweep") ----
+
+func test_design_height_override_sets_logical_height() -> void:
+	# The sweep passes an explicit design height; the logical frame renders at it.
+	var logical := DisplayStretch.logical_size(Vector2i(1995, 1078), 1.0, 720.0)
+	assert_eq(logical.y, 720, "override height becomes the logical height")
+
+
+func test_design_height_override_keeps_the_aspect() -> void:
+	# Width still follows the window aspect (and the stretch) at any height —
+	# the realised stretch is unchanged by the override.
+	var logical := DisplayStretch.logical_size(Vector2i(1995, 1078), 1.1, 900.0)
+	var x_scale := float(1995) / float(logical.x)
+	var y_scale := float(1078) / float(logical.y)
+	assert_almost_eq(x_scale / y_scale, 1.1, 0.02, "stretch holds under a height override")
+
+
+func test_design_height_default_matches_design_height() -> void:
+	# Omitting the override is exactly the pre-sweep behaviour (normal play path).
+	var with_default := DisplayStretch.logical_size(Vector2i(1280, 960), 1.1)
+	var explicit := DisplayStretch.logical_size(Vector2i(1280, 960), 1.1, DESIGN_HEIGHT)
+	assert_eq(with_default, explicit, "default parameter is DESIGN_HEIGHT")
+
+
+func test_degenerate_height_override_is_safe() -> void:
+	var logical := DisplayStretch.logical_size(Vector2i(1280, 960), 1.0, 0.0)
+	assert_gt(logical.y, 0, "zero override height is clamped, not rendered at 0")

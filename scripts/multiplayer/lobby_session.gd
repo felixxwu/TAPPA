@@ -50,6 +50,16 @@ var rest
 var auth
 var board
 
+# () -> Dictionary {progress_m, speed_mms, state, finish_ms}: the live sample to
+# post, supplied by the run scene's LobbyField once a stage is actually being
+# driven. Invalid = nothing to post yet (HQ, loading) — the tick just reads.
+var sample_source := Callable()
+# () -> Dictionary {name, car_id}: who to post as. Kept injectable for tests.
+var identity_source := Callable()
+# () -> Dictionary {origin_m, finish_m}: the live track extents, supplied by the
+# run scene. Invalid = the Phase A placeholder span.
+var span_source := Callable()
+
 var _round_index: int = 0
 var _round_started_at_ms: int = 0
 var _joined_late: bool = false
@@ -258,6 +268,13 @@ func _on_tick() -> void:
 	poll_round()
 	if _state == STATE_IDLE:
 		return
+	# Post BEFORE reading, so the read that follows can include our own fresh row —
+	# one write and one read per tick, exactly the budget the design promises.
+	if can_post() and sample_source.is_valid() and identity_source.is_valid():
+		var posted: Dictionary = await board.post(round_key(),
+			sample_source.call(), identity_source.call())
+		if not posted["ok"] and String(posted["state"]) == LobbyBoard.POST_NETWORK:
+			note_read_failed()
 	var res: Dictionary = await board.fetch(round_key())
 	_learn_clock(res)
 	if not res["ok"]:
@@ -269,12 +286,16 @@ func _on_tick() -> void:
 	await check_round_over(res["rows"])
 
 
-# Phase A has no world to ask where the stage starts/ends, so the field is ranked
-# over a fixed placeholder span. Phase B replaces these with the live
-# TrackProgress.origin_offset() / finish_offset() once the run scene exposes them.
+# The live track extents when a run scene has supplied them (LobbyField wires
+# span_source from TrackProgress), else the Phase A placeholder span — ranking
+# still works during loading, it just cannot clamp at a real finish line.
 func _origin_m() -> float:
+	if span_source.is_valid():
+		return float((span_source.call() as Dictionary).get("origin_m", 0.0))
 	return 0.0
 
 
 func _finish_m() -> float:
+	if span_source.is_valid():
+		return float((span_source.call() as Dictionary).get("finish_m", 100000.0))
 	return 100000.0

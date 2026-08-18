@@ -45,6 +45,11 @@ static func base_design_height() -> float:
 
 
 var _last_window_size := Vector2i.ZERO
+# Benchmark state as last applied (active, render_height): the benchmark flips
+# these without a window resize, so _process re-applies when they change — this
+# is what makes the portrait->landscape swap and the resolution-sweep height take
+# effect at Benchmark.start() rather than waiting for the next resize.
+var _last_bench_state := [false, 0]
 
 
 func _ready() -> void:
@@ -73,8 +78,10 @@ func _notification(what: int) -> void:
 # on some platforms/configurations).
 func _process(_delta: float) -> void:
 	var size := get_window().size
-	if size != _last_window_size:
+	var bench_state := [Benchmark.active, Benchmark.render_height]
+	if size != _last_window_size or bench_state != _last_bench_state:
 		_last_window_size = size
+		_last_bench_state = bench_state
 		_apply()
 
 
@@ -89,7 +96,13 @@ func _apply() -> void:
 	# ~1/4 the resolution and the benchmark under-measures GPU/fill cost. Visually
 	# squished into the portrait window, but the auto-driven run has no viewer.
 	var effective := benchmark_window_size(size, Benchmark.active)
-	window.content_scale_size = logical_size(effective, Config.data.horizontal_stretch)
+	# Resolution sweep: while a benchmark is active, an explicit render_height from
+	# the sweep config replaces DESIGN_HEIGHT so runs can measure fill/GPU cost at
+	# several resolutions (features/benchmark.md -> "Resolution sweep").
+	var height := DESIGN_HEIGHT
+	if Benchmark.active and Benchmark.render_height > 0:
+		height = float(Benchmark.render_height)
+	window.content_scale_size = logical_size(effective, Config.data.horizontal_stretch, height)
 
 
 # The window size to lay the frame out against. Normally the real window; during
@@ -105,9 +118,12 @@ static func benchmark_window_size(size: Vector2i, benchmark_active: bool) -> Vec
 # Height stays DESIGN_HEIGHT (vertical untouched); width is shrunk by `stretch` so
 # the window has to scale it back out by that factor — a pure horizontal widening.
 # Pure + static so it's unit-testable without a real Window.
-static func logical_size(window_size: Vector2i, stretch: float) -> Vector2i:
+# `design_height` defaults to the authored height; the benchmark resolution sweep
+# passes an override so a run can render at a different (e.g. native) resolution.
+static func logical_size(window_size: Vector2i, stretch: float, design_height: float = DESIGN_HEIGHT) -> Vector2i:
 	var factor := maxf(stretch, 0.01)
+	var h := maxf(design_height, 1.0)
 	if window_size.y <= 0:
-		return Vector2i(int(DESIGN_HEIGHT), int(DESIGN_HEIGHT))
-	var width := int(round(DESIGN_HEIGHT * float(window_size.x) / float(window_size.y) / factor))
-	return Vector2i(maxi(width, 1), int(DESIGN_HEIGHT))
+		return Vector2i(int(h), int(h))
+	var width := int(round(h * float(window_size.x) / float(window_size.y) / factor))
+	return Vector2i(maxi(width, 1), int(h))

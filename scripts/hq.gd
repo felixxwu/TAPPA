@@ -336,6 +336,9 @@ var _overlays: HqOverlays
 # The Rally Challenge screen (scripts/hq_challenge.gd). Functions live there; the
 # `_challenge_*` state below stays here — see todo/hq-split.md for why.
 var _challenge_ui: HqChallenge
+# The Multiplayer entry screen (scripts/hq_multiplayer.gd). Functions live there; the
+# widget state below stays here, same split as HqChallenge.
+var _multiplayer_ui: HqMultiplayer
 # The map table (scripts/hq_table.gd). Functions there; state stays here.
 var _table_ui: HqTable
 # The car park (scripts/hq_carpark.gd). Functions there; the lineup / prop-cache
@@ -364,6 +367,25 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 var _challenge_layer: CanvasLayer
 @warning_ignore("unused_private_class_variable")  # shared with the hq_*.gd helpers
 var _challenge_kind: String = ChallengeLibrary.DAILY
+
+# Multiplayer entry screen (features/multiplayer-lobby.md "Entry point"): a modal
+# overlay over the garage, opened from the garage row's Multiplayer button, built
+# the same way the Rally Challenge entry screen is. See hq_overlays.gd's
+# build_multiplayer_overlay and the _multiplayer_ui._open_multiplayer_overlay family.
+var _multiplayer_shown := false
+var _multiplayer_layer: CanvasLayer
+@warning_ignore("unused_private_class_variable")  # shared with hq_multiplayer.gd
+var _multiplayer_title_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with hq_multiplayer.gd
+var _multiplayer_subtitle_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with hq_multiplayer.gd
+var _multiplayer_signin_label: Label
+@warning_ignore("unused_private_class_variable")  # shared with hq_multiplayer.gd
+var _multiplayer_race_button: Button
+@warning_ignore("unused_private_class_variable")  # shared with hq_multiplayer.gd
+var _multiplayer_spectate_button: Button
+@warning_ignore("unused_private_class_variable")  # shared with hq_multiplayer.gd
+var _multiplayer_back_button: Button
 # The refresh generation and the per-period board caches that go with it now live on
 # HqChallenge (scripts/hq_challenge.gd), which is their only user.
 # The Daily/Weekly/Monthly tab row: real FOCUS_ALL buttons (so keyboard/gamepad focus
@@ -829,6 +851,9 @@ func _apply_bench_sweep_config() -> void:
 	# Two-pass spike-diagnosis mode (cold vs warm shader cache), driven from the
 	# sweep config so it's controllable remotely (features/benchmark.md).
 	Benchmark.two_pass = bool(data.get("two_pass", false))
+	# Resolution sweep: an explicit logical render height for this run (0/absent =
+	# authored default). DisplayStretch applies it while Benchmark.active.
+	Benchmark.render_height = int(data.get("render_height", 0))
 
 
 # Push the dither grid + colour grade onto the PostProcess container's material, so
@@ -857,6 +882,7 @@ func _build_hq() -> void:
 	_pins_root = _env.pins_root
 	_overlays = HqOverlays.new(self)
 	_challenge_ui = HqChallenge.new(self)
+	_multiplayer_ui = HqMultiplayer.new(self)
 	_table_ui = HqTable.new(self)
 	_carpark_ui = HqCarpark.new(self)
 	_overlays.build_title_overlay()
@@ -874,6 +900,7 @@ func _build_hq() -> void:
 	_overlays.build_car_overlay()
 	_overlays.build_settings_overlay()
 	_overlays.build_challenge_overlay()
+	_overlays.build_multiplayer_overlay()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
@@ -2124,6 +2151,9 @@ func update_overlays() -> void:
 	# _unhandled_input needs one authoritative answer to "is the challenge up?" so the garage below
 	# cannot react to the same keypress.
 	_challenge_layer.visible = _challenge_shown
+	# The Multiplayer entry screen is flat too, same choice and same reason as the
+	# Online challenge screen just above.
+	_multiplayer_layer.visible = _multiplayer_shown
 	# The title stands down while the ANDROID BOOT NOTICE is over it, for the same reason the
 	# garage does under the challenge modal below: the modal owns the screen, and two live
 	# MenuNavs would fight over one keypress. Driven from the notice's own existence rather
@@ -2141,7 +2171,7 @@ func update_overlays() -> void:
 	# stopped working the moment that function also had to call update_overlays (this function then
 	# re-showed the garage a line later). It is a visibility RULE, so it belongs here with the rest.
 	_sync_panel("garage", _garage_layer, _garage_root,
-			_view == View.GARAGE and not _challenge_shown,
+			_view == View.GARAGE and not _challenge_shown and not _multiplayer_shown,
 		_garage_panel_xform, _garage_panel_spec)
 	_sync_panel("lift", _lift_layer, _lift_root, _view == View.LIFT,
 		_lift_panel_xform, _lift_panel_spec)
@@ -3052,6 +3082,11 @@ func _refresh_garage_row(seat_on_career := false) -> void:
 	var to_online := UITheme.row_button("Online", _challenge_ui._open_challenge_overlay)
 	_garage_actions_row.add_child(to_online)
 	buttons.append(to_online); actions.append(_challenge_ui._open_challenge_overlay)
+	# Multiplayer LAST: the drop-in lobby's entry screen (a modal overlay over the
+	# garage, see build_multiplayer_overlay / _multiplayer_ui._open_multiplayer_overlay).
+	var to_multiplayer := UITheme.row_button("Multiplayer", _multiplayer_ui._open_multiplayer_overlay)
+	_garage_actions_row.add_child(to_multiplayer)
+	buttons.append(to_multiplayer); actions.append(_multiplayer_ui._open_multiplayer_overlay)
 	_garage_cursor.setup(buttons, actions)
 	# Seat BEFORE the settle so the row is painted once, with the right cursor. Doing this
 	# in the caller instead meant this function painted a stale focus that was immediately
@@ -4449,6 +4484,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# handler that must really mark the viewport handled (the reveal parade's press swallow)
 	# does that itself.
 	if _challenge_ui.handle_input(event):
+		return
+	if _multiplayer_ui.handle_input(event):
 		return
 	var _consumed := false
 	match _view:
