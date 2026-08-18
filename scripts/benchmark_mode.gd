@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/benchmark.md — update in the same change as this file.
+# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
 # Autoload "Benchmark": the in-game performance benchmark mode
 # (features/benchmark.md). Launched from Settings → Benchmark, it loads a fresh
 # run scene with a LONG seeded stage, has BenchmarkRunner auto-drive the car the

@@ -1,5 +1,7 @@
 class_name StageManager
 extends Node
+# Docs: features/stage.md — update in the same change as this file.
+# Tests: tests/headless/test_countdown_hold.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
 # Owns the per-stage start/end flow on top of the always-live world:
 #   0. STAGING   — (optional) the car is locked while the pre-event start-line
 #      scene (briefing + presence cars, scripts/start_line.gd) holds, until the

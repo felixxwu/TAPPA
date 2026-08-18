@@ -1,4 +1,6 @@
 class_name SpatialGrid
+# Docs: features/spectators.md — update in the same change as this file.
+# Tests: tests/headless/test_smoke.gd, tests/headless/test_spectator_damage.gd, tests/headless/test_spectator_scatter.gd, tests/headless/test_spectator_steering.gd — extend in the same change.
 # A uniform 2D bin grid over the world-XZ plane (x -> world x, y -> world z): bin points
 # into square cells keyed by Vector2i, then answer proximity / neighbourhood queries by
 # touching only the 3x3 cells around a point instead of every point. Shared by the

@@ -1,5 +1,7 @@
 class_name BenchmarkRunner
 extends Node
+# Docs: features/benchmark.md — update in the same change as this file.
+# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
 # Drives the benchmark run (features/benchmark.md): auto-pilots the fielded car
 # down the whole generated stage at a steady moderate speed, records per-frame
 # timing/render samples the entire way, and shows the results breakdown

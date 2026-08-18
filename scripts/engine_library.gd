@@ -1,5 +1,7 @@
 class_name EngineLibrary
 extends RefCounted
+# Docs: features/forced-induction.md — update in the same change as this file.
+# Tests: tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # The catalog of real engines. Each car (CarLibrary) references ONE engine by its
 # stable string `id`; car.gd apply_car() resolves it and calls apply(), which is the
 # ONLY writer of GameConfig's engine_* fields when a car is fielded.

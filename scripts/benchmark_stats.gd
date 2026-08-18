@@ -1,5 +1,7 @@
 class_name BenchmarkStats
 extends RefCounted
+# Docs: features/benchmark.md — update in the same change as this file.
+# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
 # Pure math for the benchmark results breakdown (features/benchmark.md): turns
 # the per-frame sample streams BenchmarkRunner records into the summary the
 # results screen shows. No scene access — everything here is testable headless.

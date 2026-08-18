@@ -1,5 +1,7 @@
 class_name UpgradeSlotPopup
 extends CanvasLayer
+# Docs: features/engine-swap.md — update in the same change as this file.
+# Tests: tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # The picker that opens over the upgrades grid when a tile is pressed: pick what this ONE
 # slot runs. Same modal shape as ConfirmPopup (dim mouse-consuming backdrop + centred house
 # panel on layer 101, MODAL_GROUP so only one is ever up and everything behind it goes

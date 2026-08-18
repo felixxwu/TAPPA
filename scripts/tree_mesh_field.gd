@@ -1,5 +1,7 @@
 class_name TreeMeshField
 extends Node3D
+# Docs: features/trees.md — update in the same change as this file.
+# Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
 # Renders scattered foliage positions as solid low-poly 3D meshes (the opaque-mesh
 # direction from todo/performance-optimisations.md item 2), replacing the old
 # alpha-cutout billboards. Used for BOTH trees (with collision) and the

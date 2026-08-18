@@ -11,7 +11,14 @@ its own — the only thing that ever selects a region is a rally's `region` tag 
 `RallyLibrary.RALLIES`. Add the region AND tag at least one rally with its id, or you
 have shipped a region that renders nowhere while every region test still passes.
 `tests/headless/test_region_assets.gd` →
-`test_every_region_is_reachable_from_at_least_one_rally` guards this.
+`test_every_region_is_reachable_from_at_least_one_rally` guards this. Do both edits in
+the same change — "ready for a rally to reference later" is a shipped half-feature.
+
+**Never invent an asset filename.** Every `res://` path a region authors (sky, grass,
+gravel, trees) must be a file that already exists in the repo — list `textures/` and
+pick from it; the `-greece`/`-snow` naming convention makes fabricated names look
+plausible, and a dangling path ships as an untextured world. Guarded by
+`test_region_assets.gd` → `test_every_authored_region_resource_path_resolves`.
 
 A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
 height — applied to whichever rallies are tagged with it. It is **not a corner

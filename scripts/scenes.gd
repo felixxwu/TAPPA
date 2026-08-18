@@ -1,5 +1,7 @@
 class_name Scenes
 extends RefCounted
+# Docs: features/menus.md — update in the same change as this file.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_settings_menu.gd — extend in the same change.
 # The canonical scene paths, and the ONE place that decides which scene is "the hub".
 #
 # WHY THIS SEAM EXISTS. `hq.tscn` is both the project's main scene and the

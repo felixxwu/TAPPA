@@ -11,7 +11,12 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T001 — "Add a gravel-spec tyre upgrade to the catalogue."
 - status: live
-- clean_solves: 0  (round 001 non-clean, round 002 non-clean — reset)
+- clean_solves: 0  (rounds 001–003 non-clean)
+- RUBRIC NOTE round 003: the closed-pair expansion is now a LEGITIMATE full answer if
+  done completely — round 003's probe expanded every production site correctly but
+  broke test_drivetrain.gd's 6 direct tire_surface_mult calls at compile time and left
+  the "CLOSED PAIR" note stale. The note now names both; also check unlocked_by_rally
+  parity with sibling tyres.
 - RUBRIC NOTE round 002: the surface-grip blend is a CLOSED PAIR
   (`GameConfig.tire_surface_mult` takes exactly a snow and a tarmac multiplier).
   Declaring a third `@export` is NOT enough — a gravel axis must also be read by
@@ -35,7 +40,12 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T002 — "Make the pause menu remember which row was selected when you reopen it."
 - status: live
-- clean_solves: 0
+- clean_solves: 0  (round 003 non-clean)
+- RUBRIC NOTE round 003: probe's capture-at-close in resume() with a hard-coded
+  4-button identity check was sound but shipped no doc/test work;
+  test_pause_menu.gd::test_pause_menu_is_keyboard_navigable pins "open() focuses
+  Resume" and must be renegotiated, not left passing incidentally. pause_menu.gd now
+  carries a # Docs/# Tests breadcrumb (Fix A).
 - areas: menus, ui
 - expected_files: `scripts/pause_menu.gd` (`open()` currently always focus-grabs
   `_resume_button`; the `_settings_button` return-focus precedent is right there)
@@ -50,7 +60,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T003 — "Add a new region with its own skybox and scatter set."
 - status: live
-- clean_solves: 0  (round 002 non-clean)
+- clean_solves: 0  (rounds 002–003 non-clean)
+- RUBRIC NOTE round 003: probe read-and-IGNORED the TWO-edits note and invented 3
+  nonexistent texture paths by analogy (-canyon). Now guarded by
+  test_every_authored_region_resource_path_resolves; notes strengthened. Check asset
+  paths exist FIRST when grading.
 - RUBRIC NOTE round 002: a region entry is INERT until a rally tags it. The attempt must
   also add `"region": "<id>"` to at least one entry in `RallyLibrary.RALLIES`, or the
   region can never be reached. Also: `res://textures/sky_field.png` is already
@@ -91,7 +105,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T005 — "Track how many rallies the player has finished and show it on the profile."
 - status: live
-- clean_solves: 0
+- clean_solves: 0  (round 003 non-clean)
+- RUBRIC NOTE round 003: Save.completed_rally_count() counts TOP-3 finishes, not
+  finishes — a correct attempt must either surface it honestly or use a true
+  finish count. Probe's hq_overlays.gd title-label approach was otherwise sound
+  (nav 3 / corr 3); failed on docs+tests+mislabel.
 - RUBRIC CORRECTED round 001: this needs NO migration. `Save.completed_rally_count()`
   already exists (`save_manager.gd:1608`). Do not penalise reuse of it.
 - areas: save, progress
@@ -126,7 +144,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T007 — "Add a setting to turn off the speed blur effect."
 - status: live
-- clean_solves: 0
+- clean_solves: 0  (round 003 non-clean)
+- RUBRIC NOTE round 003: probe persisted + boot-applied correctly but OFF→ON mid-run
+  is dead (speed_lines.gd _ready early-return with _mat unset — disabled treated as
+  terminal), source of truth landed as a static on SettingsMenu instead of an
+  apply-module (fps_setting/camera_manager shape), no docs/tests/nav test.
 - areas: menus, settings, rendering
 - expected_files: `scripts/settings_menu.gd` (1432 lines), the rendering site,
   and the persisted setting

@@ -1,5 +1,7 @@
 class_name Foliage
 extends RefCounted
+# Docs: features/trees.md — update in the same change as this file.
+# Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
 # Centralised foliage spawning. ONE place owns how trees + bushes are represented
 # and builds the shared mesh/material, so they look identical everywhere they
 # appear — the stage (world.gd), the HQ clearing (hq_environment.gd), and any

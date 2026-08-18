@@ -1,5 +1,7 @@
 class_name TrackProgress
 extends Node
+# Docs: features/progress.md, features/rival-ghost.md — update in the same change as this file.
+# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_ghost_car_display.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_rival_pace.gd, tests/headless/test_track_progress.gd — extend in the same change.
 # Tracks how far along the generated road the car has driven, and snaps it back
 # onto the road when it has been off it too long. Both behaviours run off the road
 # centerline (a Curve2D in the XZ plane, from TrackGenerator), but off two DIFFERENT

@@ -1,5 +1,7 @@
 class_name UpdateCheck
 extends RefCounted
+# Docs: features/update-check.md — update in the same change as this file.
+# Tests: tests/headless/test_update_check.gd — extend in the same change.
 # "A newer build is out" check, for the NATIVE builds only.
 #
 # WHY ONLY NATIVE. The web build is served from a build-unique, cache-busted path

@@ -1,4 +1,6 @@
 extends CanvasLayer
+# Docs: features/rendering.md — update in the same change as this file.
+# Tests: tests/headless/test_speed_lines.gd, tests/headless/test_render_smoke.gd — extend in the same change.
 # Anime "edge speed lines" overlay (see features/rendering.md). The look lives in
 # shaders/speed_lines.gdshader, applied to a full-screen ColorRect on this layer
 # (above the PS1 post-process, below the HUD). This script just drives the

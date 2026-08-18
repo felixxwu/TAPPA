@@ -1,5 +1,7 @@
 class_name BenchmarkResults
 extends CanvasLayer
+# Docs: features/benchmark.md — update in the same change as this file.
+# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
 # End-of-benchmark stats breakdown (features/benchmark.md): a full-screen panel
 # shown by BenchmarkRunner when the car crosses the finish, laying out the run's
 # summary (BenchmarkStats.summarise output) as aligned monospace read-out lines,

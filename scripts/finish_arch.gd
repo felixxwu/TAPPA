@@ -1,5 +1,7 @@
 class_name FinishArch
 extends Node3D
+# Docs: features/finish-arch.md — update in the same change as this file.
+# Tests: tests/headless/test_finish_arch.gd — extend in the same change.
 # Procedural inflatable rally gate — the fat orange "portal" seen at a stage's
 # start/finish (Dakar-style), modelled on the reference photo: two inflatable legs
 # joined by a top beam with rounded inner/outer corners, info banners down each

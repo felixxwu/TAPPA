@@ -1,5 +1,7 @@
 class_name UpgradesGrid
 extends VBoxContainer
+# Docs: features/engine-swap.md — update in the same change as this file.
+# Tests: tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # THE per-car upgrades view — one screen, no sub-pages. A heading carrying the player's
 # star BALANCE, a single PERFORMANCE line, and a 3x3 grid of icon TILES, one per slot:
 # the seven catalogue slots plus the two pseudo-slots (engine swap, engine detune), which

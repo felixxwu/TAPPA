@@ -1,4 +1,6 @@
 extends VehicleBody3D
+# Docs: features/car-physics.md, features/lakes.md, features/stage.md — update in the same change as this file.
+# Tests: tests/headless/test_car.gd, tests/headless/test_car_types.gd, tests/headless/test_countdown_hold.gd, tests/headless/test_crosswind.gd, tests/headless/test_drivetrain.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_hud.gd, tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
 
 const CAR_SCENE := preload("res://car.tscn")
 

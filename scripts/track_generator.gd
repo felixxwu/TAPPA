@@ -1,5 +1,7 @@
 class_name TrackGenerator
 extends RefCounted
+# Docs: features/lakes.md, features/track.md — update in the same change as this file.
+# Tests: tests/headless/test_corner_library.gd, tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd, tests/headless/test_track_cache.gd, tests/headless/test_track_gen_params.gd, tests/headless/test_track_gen_water.gd, tests/headless/test_track_generator.gd — extend in the same change.
 # Pure-2D rally track search. Chains CornerLibrary corners with connecting
 # straights (corner -> straight -> corner) from a start frame, hard-avoiding
 # cell overlaps via DFS backtracking (see generate()). Works in a 2D plane that

@@ -1,5 +1,7 @@
 class_name ReplayCamera
 extends Camera3D
+# Docs: features/event-replay.md — update in the same change as this file.
+# Tests: tests/headless/test_replay_camera.gd, tests/headless/test_replay_playback.gd, tests/headless/test_replay_recorder.gd, tests/headless/test_replay_standings.gd — extend in the same change.
 
 enum Shot { ORBIT, FLYBY, WHEEL, HIGH_WIDE, ROADSIDE }
 

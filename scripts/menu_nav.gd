@@ -1,5 +1,7 @@
 class_name MenuNav
 extends Node
+# Docs: features/world-panel.md — update in the same change as this file.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_world_panel.gd — extend in the same change.
 # THE FLAT-MENU NAVIGATION FRAMEWORK. Attach one of these to a flat overlay / panel
 # menu and it handles ALL of the keyboard + gamepad interoperability so the menu
 # author doesn't have to remember (and can't forget) the per-widget wiring. See

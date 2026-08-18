@@ -1,4 +1,6 @@
 extends CanvasLayer
+# Docs: features/hud.md, features/stage.md — update in the same change as this file.
+# Tests: tests/headless/test_countdown_hold.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_hud.gd, tests/headless/test_hud_gauge.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
 # On-screen readout of the car's airspeed — the chassis velocity magnitude,
 # not wheel rotation, so wheelspin and lockup don't affect the number.
 

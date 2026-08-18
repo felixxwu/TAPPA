@@ -1,5 +1,7 @@
 class_name LakeField
 extends Node3D
+# Docs: features/lakes.md — update in the same change as this file.
+# Tests: tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd — extend in the same change.
 # Renders lakes as ONE large flat water plane at the water level (features/lakes.md).
 # Wherever terrain sits below the level the plane shows through; higher terrain
 # occludes it via the depth test — so there's no per-lake geometry and no

@@ -1,5 +1,7 @@
 extends RefCounted
 class_name RivalPace
+# Docs: features/rival-ghost.md — update in the same change as this file.
+# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_ghost_car_display.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_rival_pace.gd — extend in the same change.
 
 # The rival ghost's pace model (features/rival-ghost.md).
 #

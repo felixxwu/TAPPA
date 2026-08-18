@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/lakes.md, features/rally-session.md — update in the same change as this file.
+# Tests: tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd, tests/headless/test_rally_library.gd, tests/headless/test_rally_session.gd — extend in the same change.
 # Autoload "RallySession": the rally-level session orchestrator. One coordinator
 # that turns "the player picked rally R with owned car C" into the full loop —
 # field the car, run 3 events, accumulate times, place against the fixed opponent

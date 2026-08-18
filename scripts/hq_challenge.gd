@@ -1,5 +1,7 @@
 class_name HqChallenge
 extends RefCounted
+# Docs: features/menus.md — update in the same change as this file.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_settings_menu.gd — extend in the same change.
 # The Rally Challenge screen, extracted from hq.gd to shrink it (todo/hq-split.md). Builds and
 # refreshes the Daily/Weekly/Monthly overlay, fetches its leaderboard placing and cutoff, and
 # runs the entry path into a challenge stage.

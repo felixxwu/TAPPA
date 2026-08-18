@@ -1,5 +1,7 @@
 class_name EngineAudioSynth
 extends RefCounted
+# Docs: features/forced-induction.md — update in the same change as this file.
+# Tests: tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # Pure DSP: turns engine state into PCM. One master crank phase advances per
 # revolution; each firing phase emits a decaying multi-harmonic pulse. Owns no
 # nodes — fully headless-testable. fill() is the only entry point.

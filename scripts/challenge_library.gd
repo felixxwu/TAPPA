@@ -1,5 +1,7 @@
 class_name ChallengeLibrary
 extends RefCounted
+# Docs: features/rally-challenge.md — update in the same change as this file.
+# Tests: tests/headless/test_challenge_leaderboard.gd, tests/headless/test_challenge_library.gd, tests/headless/test_challenge_run_end.gd, tests/headless/test_challenge_session.gd — extend in the same change.
 # Daily/Weekly/Monthly Rally Challenge — period definition, seed derivation, and
 # the procedural per-stage TrackGenParams + rating-ceiling roll. A pure static
 # module (like RallyLibrary/UpgradeLibrary), no autoload/state: every client

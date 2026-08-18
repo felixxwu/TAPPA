@@ -112,3 +112,40 @@ func test_every_region_is_reachable_from_at_least_one_rally() -> void:
 		assert_true(claimed.has(rid),
 			("region '%s' is in REGIONS but no rally in RallyLibrary.RALLIES tags it, " +
 			"so nothing can ever reach it — give a rally \"region\": \"%s\"") % [rid, rid])
+
+
+# Every `res://` path authored ANYWHERE in a REGIONS entry must point at a real file.
+# Tree textures are traced more strongly by test_snow_region.gd, but a region's
+# sky_panorama / grass_texture / gravel_texture (and any path field added later — this
+# walks the whole dict) had NO guard at all: a dangling path here loads as null at
+# runtime and ships as an untextured world, with every test green. (Found by the
+# small-model-readiness loop, round 003: a probe invented three plausible-looking
+# texture filenames by analogy with the -greece/-snow naming convention — none existed.
+# Never invent an asset filename: list textures/ and use what is actually there.)
+#
+# This pins no authored value: it does not care which file a region picked, only that
+# the file it names exists. Retuning any look passes.
+func test_every_authored_region_resource_path_resolves() -> void:
+	var checked := 0
+	for region in RegionLibrary.all():
+		checked += _assert_paths_resolve(region, String(region.get("id", "?")))
+	assert_gt(checked, 0, "the path walk found no res:// strings at all — walker broken?")
+
+
+func _assert_paths_resolve(value: Variant, where: String) -> int:
+	var checked := 0
+	match typeof(value):
+		TYPE_STRING:
+			var s := String(value)
+			if s.begins_with("res://"):
+				checked += 1
+				assert_true(ResourceLoader.exists(s) or FileAccess.file_exists(s),
+					"region '%s' names '%s', which does not exist — never invent an " % [where, s] +
+					"asset filename; list textures/ and use a real file")
+		TYPE_DICTIONARY:
+			for k in value:
+				checked += _assert_paths_resolve(value[k], where)
+		TYPE_ARRAY:
+			for item in value:
+				checked += _assert_paths_resolve(item, where)
+	return checked

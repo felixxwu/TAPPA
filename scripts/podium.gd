@@ -1,4 +1,6 @@
 extends Node3D
+# Docs: features/menus.md — update in the same change as this file.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd, tests/headless/test_pause_menu.gd, tests/headless/test_settings_menu.gd — extend in the same change.
 # Podium — the end-of-rally reward sequence (todo/menus.md location 3, the 3D
 # reward-reveal rigs). A staged flow the player steps through with a single
 # "Next" button, reading the finish summary from RallySession.last_result():

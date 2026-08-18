@@ -1,5 +1,7 @@
 class_name RewardSystem
 extends RefCounted
+# Docs: features/reward-system.md — update in the same change as this file.
+# Tests: tests/headless/test_reward_system.gd — extend in the same change.
 # The reward DRAW POLICY: what CAR the player is granted for a top-3 rally finish, and
 # what PART a special event's unlock hands over. Pure functions over the authored
 # libraries + the save profile — no state beyond an injected RNG, mirroring

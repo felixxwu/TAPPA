@@ -1,5 +1,7 @@
 class_name EngineSim
 extends RefCounted
+# Docs: features/engine-and-transmission.md — update in the same change as this file.
+# Tests: tests/headless/test_engine.gd, tests/headless/test_engine_logic.gd — extend in the same change.
 # Engine flywheel + gearbox + clutch, owned by Drivetrain and stepped inside
 # its spin substeps. The crank torque comes from a curve over RPM; the clutch
 # couples the flywheel to the rear axle through the selected ratio. There is

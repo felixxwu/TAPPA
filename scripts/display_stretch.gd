@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/rendering.md — update in the same change as this file.
+# Tests: tests/headless/test_display_stretch.gd, tests/headless/test_render_smoke.gd — extend in the same change.
 # Autoload "DisplayStretch": applies a purely stylistic horizontal stretch to the
 # ENTIRE rendered frame — the 3D world AND every CanvasLayer of UI on top of it,
 # in every scene. The look is a slight anamorphic widening: everything appears

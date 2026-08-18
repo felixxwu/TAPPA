@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/engine-swap.md, features/save-persistence.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_save_sandbox.gd, tests/headless/test_save_web_lifecycle.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /
 # tuning), the shared item inventory, and rally completion — JSON at

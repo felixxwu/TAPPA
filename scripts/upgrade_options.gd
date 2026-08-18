@@ -1,5 +1,7 @@
 extends RefCounted
 class_name UpgradeOptions
+# Docs: features/engine-swap.md — update in the same change as this file.
+# Tests: tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 
 # What a single upgrade SLOT offers a given car, as pure data — no UI.
 #

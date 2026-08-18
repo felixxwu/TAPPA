@@ -23,6 +23,11 @@ with them, and working toward the special-event finale.
   will break without searching for it. Keep both current when you change an area,
   and give any new doc both plus an entry in the index table below — all three are
   enforced by `tests/headless/test_features_docs.gd`.
+- **The scripts point back.** Source scripts carry a `# Docs:` / `# Tests:`
+  breadcrumb in their header naming the area doc(s) and covering test file(s) —
+  update the doc and extend the tests **in the same change** as the code; that
+  pair of lines is the reminder at the point of use. When you add a script or
+  re-home one, give it the breadcrumb and keep it accurate.
 
 ## Feature index
 

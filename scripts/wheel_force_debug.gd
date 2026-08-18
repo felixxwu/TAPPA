@@ -1,5 +1,7 @@
 class_name WheelForceDebug
 extends MeshInstance3D
+# Docs: features/debug-tools.md — update in the same change as this file.
+# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_debug_arrows.gd, tests/headless/test_hud.gd, tests/headless/test_perf_log.gd, tests/headless/test_perf_overlay.gd — extend in the same change.
 # Debug overlay drawing per-wheel force arrows, rebuilt every physics tick.
 # Green = suspension force, red = tire friction force applied by the
 # Drivetrain tire model. Blue = aero downforce applied at the axle midpoints.

@@ -1,5 +1,7 @@
 class_name RegionLibrary
 extends RefCounted
+# Docs: features/regions.md — update in the same change as this file.
+# Tests: tests/headless/test_headlight_cone.gd, tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_rally_library.gd, tests/headless/test_region_library.gd — extend in the same change.
 # Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region is one
 # CORNER of the single world map: it groups rallies by their `region` tag and carries
 # optional look overrides for the driven world (grass/gravel/sky/fog/tints/layers) — a
@@ -52,6 +54,14 @@ const DEFAULT_TREE_MIX: Array = [
 # renders nowhere and that every region test still passes.
 # Guarded by tests/headless/test_region_assets.gd ->
 # test_every_region_is_reachable_from_at_least_one_rally.
+# "Ready to be referenced by a rally later" is NOT a finished region — do BOTH edits in
+# the SAME change, or you have shipped the half that does nothing.
+#
+# NEVER INVENT AN ASSET FILENAME. Every res:// path authored here must be a file that
+# already exists — the -greece/-snow naming convention makes made-up names look right,
+# but a dangling sky_panorama/grass_texture/gravel_texture loads as null and ships as an
+# untextured world with every test green. List textures/ and pick real files. Guarded by
+# tests/headless/test_region_assets.gd -> test_every_authored_region_resource_path_resolves.
 #
 # Ids are load-bearing: "home" in particular is hardcoded in
 # world.gd._current_region_look() as the default/challenge/fallback region, so never

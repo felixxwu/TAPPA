@@ -1,5 +1,7 @@
 extends RefCounted
 class_name AiDifficulty
+# Docs: features/adaptive-difficulty.md — update in the same change as this file.
+# Tests: tests/headless/test_ai_difficulty.gd, tests/headless/test_rally_session.gd — extend in the same change.
 
 # How hard the rival field is pitched, relative to the player.
 #

@@ -1,5 +1,7 @@
 class_name GameConfig
 extends Resource
+# Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/signs.md, features/tuning.md, features/world-panel.md — update in the same change as this file.
+# Tests: tests/headless/test_car_performance.gd, tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd, tests/headless/test_drivetrain.gd, tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_lap_time_model.gd, tests/headless/test_menu_flow.gd, tests/headless/test_sign_field.gd, tests/headless/test_sign_layout.gd, tests/headless/test_tuning_library.gd, tests/headless/test_tuning_panel.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd, tests/headless/test_world_panel.gd — extend in the same change.
 # Central tuning knobs for the whole game. Edit config/game_config.tres
 # (Inspector or text), not the per-node values in main.tscn — runtime
 # config overrides those defaults at startup.
@@ -182,6 +184,12 @@ var peak_torque_rpm := 4500.0
 ## own compiles, applies, and does absolutely nothing — the part reads as fitted and no
 ## gameplay test fails. Guarded by tests/headless/test_upgrade_library.gd ->
 ## test_every_grip_feeding_effect_field_is_read_by_the_physics.
+## THE CHECKLIST ABOVE IS NOT ONLY PRODUCTION CODE. `tire_surface_mult` is also called
+## DIRECTLY by tests — tests/headless/test_drivetrain.gd calls it ~6 times with the
+## current arity, so changing its signature breaks that whole file at compile time.
+## Grep the ENTIRE repo (scripts/ AND tests/) for `tire_surface_mult` and update every
+## caller. And update THIS comment too — if you widen the pair, "closed pair" and
+## "exactly a snow and a tarmac multiplier" become lies the next reader will trust.
 @export var tire_snow_grip_mult := 1.0
 @export var tire_tarmac_grip_mult := 1.0
 ## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two

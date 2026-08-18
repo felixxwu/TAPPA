@@ -1,5 +1,7 @@
 class_name CornerLibrary
 extends RefCounted
+# Docs: features/track.md — update in the same change as this file.
+# Tests: tests/headless/test_corner_library.gd, tests/headless/test_track_cache.gd, tests/headless/test_track_gen_params.gd, tests/headless/test_track_gen_water.gd, tests/headless/test_track_generator.gd — extend in the same change.
 # The rally pacenote turn-type shapes. Each corner is a 2D bezier (Curve2D),
 # hand-authored as control points in meters, entry at the origin heading +Y,
 # right-hand turns. The number gradient 1-6 goes from sharpest/tightest (1, ~85

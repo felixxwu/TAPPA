@@ -1,5 +1,7 @@
 class_name EngineSwap
 extends RefCounted
+# Docs: features/engine-swap.md — update in the same change as this file.
+# Tests: tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # Pure engine-swap logic: resolve which engine a car is currently running, format
 # the swapped-in name, and the mass + weight-distribution math for treating the
 # engine as an independent point mass. No scene / save coupling — Save owns the

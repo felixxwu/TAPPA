@@ -1,5 +1,7 @@
 extends RefCounted
 class_name BenchmarkTrack
+# Docs: features/car-performance.md — update in the same change as this file.
+# Tests: tests/headless/test_car_performance.gd, tests/headless/test_lap_time_model.gd — extend in the same change.
 
 # The fixed test track behind CarPerformance's rating — a Forza-style benchmark lap.
 # See docs/superpowers/specs/2026-08-15-car-performance-rating-design.md.

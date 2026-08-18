@@ -1,5 +1,7 @@
 class_name RallyLibrary
 extends RefCounted
+# Docs: features/map-exploration.md, features/regions.md — update in the same change as this file.
+# Tests: tests/headless/rally_fixtures.gd, tests/headless/test_headlight_cone.gd, tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_rally_eligibility_reason.gd, tests/headless/test_rally_library.gd, tests/headless/test_region_library.gd — extend in the same change.
 # The finite, curated list of rallies — authored CONTENT (like CarLibrary), not
 # player state. A rally is a fixed set of 3 seeded TrackGenerator tracks plus a
 # car restriction and a difficulty tier; player completion lives in the save

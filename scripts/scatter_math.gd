@@ -1,4 +1,6 @@
 class_name ScatterMath
+# Docs: features/spectators.md — update in the same change as this file.
+# Tests: tests/headless/test_smoke.gd, tests/headless/test_spectator_damage.gd, tests/headless/test_spectator_scatter.gd, tests/headless/test_spectator_steering.gd — extend in the same change.
 # Shared seeded-hash + road-cell helpers for the scatter / field code (TreeScatter,
 # SpectatorScatter, SpectatorGroup, ...). Everything here works in the world-XZ plane
 # (x -> world x, y -> world z) on the same 0.5 m rasterisation grid the track uses.

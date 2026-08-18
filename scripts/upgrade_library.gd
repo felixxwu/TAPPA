@@ -1,5 +1,7 @@
 class_name UpgradeLibrary
 extends RefCounted
+# Docs: features/engine-swap.md, features/forced-induction.md, features/upgrade-catalogue.md — update in the same change as this file.
+# Tests: tests/headless/test_auto_build.gd, tests/headless/test_car_stat_bounds.gd, tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd, tests/headless/test_upgrades_grid.gd — extend in the same change.
 # The catalogue of upgrade ITEMS — authored content (like CarLibrary /
 # RallyLibrary), not player state. The save profile holds the player side
 # (inventory counts + each OwnedCar's installed_upgrades, keyed by the stable

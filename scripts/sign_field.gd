@@ -1,5 +1,7 @@
 class_name SignField
 extends Node3D
+# Docs: features/signs.md — update in the same change as this file.
+# Tests: tests/headless/test_sign_field.gd, tests/headless/test_sign_layout.gd — extend in the same change.
 # Builds the physical roadside signs from a SignLayout plan (todo/roadside-signs.md
 # §3/§4). Each sign is a free-standing A-frame ("wet-floor" board): two thin panels
 # joined at a top ridge and splayed apart at the bottom, oriented so the large

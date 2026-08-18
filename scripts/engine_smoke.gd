@@ -1,5 +1,7 @@
 class_name EngineSmoke
 extends CpuParticlePool
+# Docs: features/engine-smoke.md — update in the same change as this file.
+# Tests: tests/headless/test_engine_smoke.gd — extend in the same change.
 # Grey smoke that puffs from the bonnet each time a DAMAGED engine misfires (a fuel
 # cut — see features/damage.md). A hand-rolled CPU pool drawn through ONE MultiMesh of
 # billboarded quads (the shared ring-buffer machinery lives in CpuParticlePool). Its own

@@ -1,5 +1,7 @@
 class_name DamageModel
 extends RefCounted
+# Docs: features/damage.md — update in the same change as this file.
+# Tests: tests/headless/test_damage_model.gd, tests/headless/test_freeroam_wreck.gd, tests/headless/test_spectator_damage.gd — extend in the same change.
 # Per-car HP / attrition state and the maths that degrade a damaged car, owned by
 # car.gd the way Drivetrain is (a plain RefCounted helper, no scene coupling). It
 # holds the run's WORKING HP, converts contact impulses into HP loss, exposes the

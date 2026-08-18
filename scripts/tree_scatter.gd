@@ -1,4 +1,6 @@
 class_name TreeScatter
+# Docs: features/trees.md — update in the same change as this file.
+# Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
 # Scatters billboard-foliage positions around each track turn. Pure + headless +
 # seeded (mirrors TrackGenerator). Works in the world-XZ plane (x -> world x,
 # y -> world z).

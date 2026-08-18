@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/configuration.md — update in the same change as this file.
+# Tests: tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd — extend in the same change.
 # Autoload "Config": loads the central GameConfig once at startup.
 
 const CONFIG_PATH := "res://config/game_config.tres"

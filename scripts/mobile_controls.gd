@@ -1,5 +1,7 @@
 class_name MobileControls
 extends CanvasLayer
+# Docs: features/mobile-controls.md — update in the same change as this file.
+# Tests: tests/headless/test_mobile_controls.gd, tests/headless/test_web_fullscreen.gd — extend in the same change.
 # On-screen touch controls for phones, with SIX selectable schemes (chosen on the
 # title screen's Settings page, persisted in the save profile under
 # SETTING_KEY). All drive the SAME input actions as the keyboard

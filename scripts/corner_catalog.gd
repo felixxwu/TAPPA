@@ -1,5 +1,7 @@
 class_name CornerCatalog
 extends Node2D
+# Docs: features/track.md — update in the same change as this file.
+# Tests: tests/headless/test_corner_library.gd, tests/headless/test_track_cache.gd, tests/headless/test_track_gen_params.gd, tests/headless/test_track_gen_water.gd, tests/headless/test_track_generator.gd — extend in the same change.
 # Standalone debug viewer: draws every CornerLibrary turn type side by side so
 # the bezier shapes can be eyeballed. Centerline + control-point markers +
 # tangent handles + an entry dot + a name label per corner. Pure 2D, no game

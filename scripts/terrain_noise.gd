@@ -1,5 +1,7 @@
 class_name TerrainNoise
 extends RefCounted
+# Docs: features/lakes.md — update in the same change as this file.
+# Tests: tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd — extend in the same change.
 # Pure, headless Perlin height sampler. Mirrors TerrainManager._make_noise /
 # _build_noises / _sample_height EXACTLY (per-layer seed offset seed+i,
 # frequency = 1/wavelength) so it reproduces the terrain the player sees, without

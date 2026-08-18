@@ -1,5 +1,7 @@
 class_name TireMarks
 extends Node3D
+# Docs: features/tire-marks.md — update in the same change as this file.
+# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_tire_marks.gd — extend in the same change.
 # Lays tyre marks behind the car's wheels while it drives ON the road. The
 # gl_compatibility renderer has no Decals, so each wheel gets a persistent ribbon
 # mesh (an ArrayMesh rebuilt as segments are appended); each segment carries a

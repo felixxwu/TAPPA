@@ -1,5 +1,7 @@
 class_name BillboardField
 extends Node3D
+# Docs: features/trees.md — update in the same change as this file.
+# Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
 # Renders scattered positions as cylindrical billboards, using a caller-supplied
 # silhouette mesh + texture. Each instance is lifted onto the terrain via
 # TerrainManager.height_at; the mesh pivot is its bottom edge so sprites sit on

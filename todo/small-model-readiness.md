@@ -9,41 +9,60 @@ Design: `docs/superpowers/specs/2026-08-18-small-model-readiness-loop-design.md`
 
 ## Open
 
-1. **`features/` updates are still not universal** (round 001, 5/5 probes;
-   round 002, improved — 4/5 probes DID update their area doc). Round 002 fixed
-   the *indexing* half (`test_features_docs.gd` fails an unindexed doc) but not
-   the "remember to touch the doc at all" half. Downgraded, not closed: watch
-   round 003 before spending a structural fix.
-2. **No point-of-use signal that reward AMOUNTS are `GameConfig` tunables**
+1. **`features/`+test updates are still not universal — REGRESSED round 003**
+   (round 002: 4/5 updated docs; round 003: 1/5 updated docs, 0/5 wrote a test).
+   Round 003's Fix A puts a `# Docs:` / `# Tests:` breadcrumb in the header of
+   every doc-covered script (82 files) — validate in round 004 before closing.
+2. **`Save.completed_rally_count()` counts TOP-3 finishes but its name says
+   "finished"** (round 003, T005 — NEW). The probe shipped a "Rallies Completed"
+   UI label over a top-3 metric. Candidate: rename (test-reaching API change) or
+   at minimum a loud doc comment at the definition + features/save-persistence.md.
+3. **Disabled-state treated as terminal** (round 003, T007 — NEW).
+   `speed_lines.gd::_ready` early-returns with `_mat` unset when disabled, so
+   any later enable is dead. Candidate: a note at the early-return + the
+   boot-apply-owner pattern below.
+4. **No point-of-use signal that reward AMOUNTS are `GameConfig` tunables**
    (round 002, T008). The probe hardcoded a bare `1` at
    `rally_session.gd::_resolve_results`; there is no sibling star-amount
    `@export` in `game_config.gd` to pattern-match and no comment at the site.
    Candidate: add the `@export` + a one-line note where stars are awarded.
-3. **`features/reward-system.md` disclaims ownership without redirecting**
+5. **`features/reward-system.md` disclaims ownership without redirecting**
    (round 002, T008). Both the doc and `reward_system.gd`'s header say they do
    not own *when* a reward fires, and neither says who does. A reader looking for
    "where do I add a star bonus" is left with no destination.
-4. **End-of-rally HP is not a damage signal** (round 002, T008). Pit repairs
+6. **End-of-rally HP is not a damage signal** (round 002, T008). Pit repairs
    restore HP between events, so `hp >= max_hp` at resolve reads a
    crashed-then-repaired car as pristine. Nothing near the damage seam says so.
    Candidate: a note in `features/damage.md` and at the seam.
-5. **One fact duplicated across two docs with no pointer** (round 002, T003 —
+7. **One fact duplicated across two docs with no pointer** (round 002, T003 —
    NEW cause). The rock-density ranking lives in both `features/regions.md` and
    `features/rocks.md`; correcting one leaves the other stale. Candidate: make
    one canonical and have the other link to it. Worth a sweep for other
    duplicated single-sources-of-truth across `features/`.
-6. **Tunable knobs carry no sense of scale** (round 002, T006). A model that
+8. **Tunable knobs carry no sense of scale** (round 002, T006). A model that
    cannot drive the car has no way to know what change to a value is
    *perceptible*, so it picks a safe-looking bump that does nothing. Candidate:
    a typical-range hint on the feel-critical `@export`s.
-7. **Menu nav tests are skipped** (round 001, T002 and T007). Same shape as (1):
+9. **Menu nav tests are skipped** (round 001, T002 and T007). Same shape as (1):
    the rule is documented, and unreached.
-8. **Settings that persist are not re-applied at boot** (round 001, T007). Every
+10. **Settings that persist are not re-applied at boot (CONFIRMED round 003, T007)** (round 001, T007). Every
    existing setting has a module that reads it back (`camera_manager`,
    `fps_setting`, `music_director`); nothing at the point of use says a new one
    must. Candidate: a note where `Save.set_setting` is defined.
 
 ## Fixed
+
+- **Point-of-use checklists stopped at production code** (round 003, T001) — the
+  closed-pair note now also names test_drivetrain.gd's direct callers and
+  instructs updating the note itself when the pair widens.
+- **Region asset paths could dangle silently** (round 003, T003) — new guard
+  `test_region_assets.gd` → `test_every_authored_region_resource_path_resolves`
+  walks every res:// string in REGIONS; "never invent a filename" notes at the
+  table and in features/regions.md.
+- **Docs/tests convention unreachable from the script being edited** (rounds
+  001–003, dominant) — 82 scripts now carry `# Docs:` / `# Tests:` header
+  breadcrumbs (Fix A, round 003); convention stated in features/README.md.
+
 
 - **Which tests cover an area was undiscoverable** (round 002, 4/5 probes; two
   shipped a red test without noticing). Every `features/*.md` area doc now has a

@@ -1,5 +1,7 @@
 class_name WheelParticles
 extends CpuParticlePool
+# Docs: features/wheel-dust.md — update in the same change as this file.
+# Tests: tests/headless/test_cpu_particle_pool.gd, tests/headless/test_wheel_particles.gd — extend in the same change.
 # Cheap debris flung backwards from the driven wheels whenever they break traction
 # fore/aft — a burnout, a wheelspin launch, or a spinning slide. A hand-rolled CPU
 # pool drawn through ONE MultiMesh of billboarded quads (the shared ring-buffer

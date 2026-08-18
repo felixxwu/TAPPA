@@ -49,7 +49,9 @@ transplant, the red-hiding `tail`) were unexecuted code that read as tested.
 
 The complete round, in order. Every step is mandatory; the round ends at step 12
 and nowhere else. Details live in the matching § below — come back here after
-each step to see what's next.
+each step to see what's next. (One exception: a **structural round** — declared
+per §2.6 when an overdue layer-1 fix needs the whole round — skips steps 3–7 and
+spends the round on that fix; steps 1–2 and 9–12 still apply in full.)
 
 1.  Verify preconditions; re-measure size (§2.0)
 2.  **Open `rounds/NNN.md` NOW; append to it at every step below** (§2.0)
@@ -275,6 +277,15 @@ results; **it does not run anything**. Four axes, 0–3:
   `test_conventions`?
 - **completion** — finished, versus stalled or context-exhausted?
 
+**Static-grading mode (when the user has forbidden test runs):** grading still
+works, and worked well in round 003 — but only if the grader is told to VERIFY,
+not trust. Instruct it to: confirm every edit the probe *claims* by reading the
+diff; grep the whole repo (tests included) for every symbol whose signature or
+arity changed (this caught a compile-breaking test-caller miss without executing
+anything); and check that every authored resource path exists on disk. The round
+report must state that the green-tree invariant is unproven and name the tests
+that were written but never run.
+
 Excused failures come from `evals/small-model/baseline.md`'s known-failure list
 and **nowhere else** — do not excuse a red test from memory or from a note in a
 doc. As of round 001 that list is **EMPTY** (the once-flaky
@@ -319,6 +330,62 @@ the ~5-line `push_error` in the apply path was the better half and had to be
 retro-added). Escalate to layer-1 restructuring only when a cause REPEATS
 across rounds despite layers 2–3 — that repetition is the evidence the design
 demands, not a licence you have in round one.
+
+**The escalation trigger is mechanical, not a judgement call: if the same AREA
+has produced a failure in three rounds, layer-1 restructuring of that area is
+mandatory that round, and comments/tests no longer count as a fix for it.** The
+grip area proved this: three rounds, three differently-shaped failures
+(undeclared field → declared-but-unread field → correct expansion that broke
+test callers), each "fixed" with a longer note — when the actual defect was a
+design that forces a 6-site edit. When a point-of-use checklist grows past ~3
+sites, **the checklist itself is the defect — collapse the sites** (e.g. a dict
+keyed by domain name beats N parallel parameters).
+
+**Take the correct option, not the cheap one.** "Correct" means the failure mode
+can no longer be written; "cheap" means it is warned about. When you catch
+yourself documenting around a design defect, the document is the cheap option
+and the restructuring is the correct one — take the correct one; the loop
+exists to spend that effort. Do not let the frequency × cost ranking launder
+this choice: a comment sweep scores as low-cost because its RISK is low, but
+for this loop's purpose the accounting is closer to the reverse — every comment
+adds context load for a small model and rots, while a good seam removes the
+need for the context at all. This is strictness about correctness, not about
+size: a large fix that moves lines without cutting dependencies is the `hq.gd`
+mistake (§3) and is still wrong. And a correct fix carries its verification
+cost with it — in a test-forbidden round, that means applying the §2.4
+repo-wide grep discipline to your own change, or deferring the fix to a
+structural round rather than shipping it unverified.
+
+**Structural rounds.** A real layer-1 restructuring competes for the round with
+probing, grading, and reporting — that schedule pressure is exactly what makes
+the cheap option attractive. When the mechanical three-round trigger above has
+fired (or a fix you know is correct clearly won't fit alongside a probe cycle),
+declare the round a **structural round** in its report: skip §2.1–§2.5
+(no sampling, no probes, no graders), spend the whole round on that one fix
+with full §2.7–§2.11 closing discipline, and let the NEXT round's probes be the
+measurement of it — bias its sampling toward the restructured area. This is an
+escape valve for overdue structural work, not a way to dodge probing: never run
+two structural rounds back-to-back.
+
+Rules of thumb the fix step must apply, learned the expensive way (round 003):
+
+- **Checklists must be derivable, not enumerable.** Probes execute lists
+  *exactly and only as written* — they stop where the list stops, and stale
+  enumerations rot. A point-of-use note should give the search command ("grep
+  the ENTIRE repo, scripts/ AND tests/, for `<symbol>`"), not the site list —
+  and must say "update this note too" if the note states a fact the change can
+  invalidate.
+- **Every convention you introduce ships with its own enforcement test, in the
+  same round.** A convention without a guard is the half-fix pattern in a new
+  coat (round 003 added `# Docs:`/`# Tests:` breadcrumbs to 82 scripts with
+  nothing checking that new scripts get one or that the pointers stay live).
+- **A name that lies about its metric is a priority refactor, not a backlog
+  item.** Rename it and leave a one-line deprecated wrapper for compatibility —
+  the shim makes the rename cheap, and documentation of a lying name only
+  preserves the lie (round 003: `completed_rally_count()` counts top-3 finishes;
+  a probe shipped "Rallies Completed" to the UI).
+- **Keep in-code pointers short.** A breadcrumb naming 16 test files is noise a
+  small model will not triage; cap it at the 2–3 primary ones.
 
 State in the round report, per fix, which layers it covers and why the ones it
 skips are skipped.
@@ -420,7 +487,17 @@ Not code beauty. Not smaller files as an end in themselves. This:
   pretending to be five things.
 - **Findable by name.** Small models search for the words in the request — name
   things in domain language ("tyre grip", "start line", "region"), avoid
-  indirection chains.
+  indirection chains. **Audit this per failed task in §2.5:** take the request's
+  own nouns and grep for them; if the user's vocabulary doesn't hit the owning
+  file (round 003: "profile" matched nothing, the code says "overlay"/"save"),
+  that mismatch is itself a fixable cause — rename, or plant the word where it
+  belongs.
+- **The best structure for a small model is a copyable sibling.** Where a
+  pattern exists only as folklore spread across files (round 003: every
+  persisted setting has a boot-time apply-owner, but the pattern lives in three
+  unrelated scripts), consider restructuring it into one-concern template files
+  in a shared folder — cloning a 30-line neighbour is the task small models are
+  best at.
 - **Explicit over clever.** Typed params over duck-typed `Object` seams
   (`terrain_manager.gd` has four `*_source: Object` injection points a split can
   break with no compile error). A little straight-through repetition beats an

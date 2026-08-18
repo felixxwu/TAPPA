@@ -1,5 +1,7 @@
 class_name StartLine
 extends Node3D
+# Docs: features/start-line.md — update in the same change as this file.
+# Tests: tests/headless/test_rally_session.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
 # The pre-event start-line sequence (todo/menus.md location 2) — the cinematic
 # moment between picking a car in HQ and the 3·2·1·GO countdown. It runs inside the
 # live run scene (main.tscn) once the world is built and a session is active — a

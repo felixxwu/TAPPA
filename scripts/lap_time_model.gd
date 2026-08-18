@@ -1,5 +1,7 @@
 extends RefCounted
 class_name LapTimeModel
+# Docs: features/car-performance.md, features/rival-ghost.md — update in the same change as this file.
+# Tests: tests/headless/test_car_performance.gd, tests/headless/test_ghost_car.gd, tests/headless/test_ghost_car_display.gd, tests/headless/test_ghost_wiring.gd, tests/headless/test_lap_time_model.gd, tests/headless/test_rival_pace.gd — extend in the same change.
 
 # Quasi-steady-state (QSS) lap-time model. Treats the car as a point mass that
 # follows the centerline exactly, subject to its real forces (power, weight, drag,

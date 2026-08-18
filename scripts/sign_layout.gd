@@ -1,5 +1,7 @@
 class_name SignLayout
 extends RefCounted
+# Docs: features/signs.md — update in the same change as this file.
+# Tests: tests/headless/test_sign_field.gd, tests/headless/test_sign_layout.gd — extend in the same change.
 # Pure, scene-free planner for roadside signs (todo/roadside-signs.md §2). Given a
 # generated track (centerline Curve2D + pieces, from TrackGenerator.generate) and
 # the sign config, it returns one placement dict per physical sign. Mirrors

@@ -1,5 +1,7 @@
 class_name TrackGenParams
 extends RefCounted
+# Docs: features/lakes.md — update in the same change as this file.
+# Tests: tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd — extend in the same change.
 # The single shape contract for TrackGenerator.generate(). Holds EVERY determinant
 # of the generated track shape — including water — so no shape can be produced
 # without deciding a water level, and so the real run + target-time derivation +

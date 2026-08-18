@@ -1,5 +1,7 @@
 class_name WorldPanel
 extends Node3D
+# Docs: features/world-panel.md — update in the same change as this file.
+# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_world_panel.gd — extend in the same change.
 # A MENU THAT EXISTS IN THE 3D WORLD. Hosts an ordinary menu Control tree in an
 # off-screen SubViewport and shows it on a NON-billboarded Sprite3D, so the panel is
 # an object in the scene — welded at a fixed angle to whatever it is parented to,

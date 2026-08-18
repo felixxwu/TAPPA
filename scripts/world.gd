@@ -1,4 +1,6 @@
 extends Node3D
+# Docs: features/benchmark.md, features/lakes.md, features/start-line.md — update in the same change as this file.
+# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd, tests/headless/test_lake_field.gd, tests/headless/test_lakes_integration.gd, tests/headless/test_rally_session.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
 # Applies the central GameConfig to scene-owned resources at startup.
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 

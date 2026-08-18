@@ -1,5 +1,7 @@
 class_name UITheme
 extends RefCounted
+# Docs: features/ui-design-system.md — update in the same change as this file.
+# Tests: tests/headless/test_ui_theme.gd, tests/headless/test_ui_theme_fmt.gd — extend in the same change.
 # THE DESIGN SYSTEM — one place that defines how every menu, panel and button in
 # the game looks, so the UI reads as one polished, consistent whole instead of a
 # pile of one-off `Color(...)` literals and ad-hoc font sizes.

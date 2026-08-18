@@ -1,5 +1,7 @@
 class_name ExhaustFlames
 extends Node3D
+# Docs: features/exhaust-flames.md — update in the same change as this file.
+# Tests: tests/headless/test_exhaust_flames.gd — extend in the same change.
 # Backfire flame drawn at each of the car's exhaust pipes — a visual companion to the
 # exhaust crackle pop, plus a continuous flame while nitrous is delivering.
 #

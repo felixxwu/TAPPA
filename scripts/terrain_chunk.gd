@@ -1,6 +1,8 @@
 @tool
 extends StaticBody3D
 class_name TerrainChunk
+# Docs: features/terrain.md — update in the same change as this file.
+# Tests: tests/headless/test_terrain.gd, tests/headless/test_terrain_cliffs.gd, tests/headless/test_terrain_lod.gd, tests/headless/test_terrain_memory.gd, tests/headless/test_terrain_noise.gd — extend in the same change.
 
 # One tile of the chunked terrain, built at runtime by TerrainManager. Centred
 # on its chunk so the centred mesh + HeightMapShape3D span exactly the tile.

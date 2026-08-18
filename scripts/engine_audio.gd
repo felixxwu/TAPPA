@@ -1,4 +1,6 @@
 extends AudioStreamPlayer
+# Docs: features/engine-audio.md, features/forced-induction.md — update in the same change as this file.
+# Tests: tests/headless/test_car_preview_audio.gd, tests/headless/test_engine.gd, tests/headless/test_engine_audio.gd, tests/headless/test_engine_library.gd, tests/headless/test_start_line.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd, tests/headless/test_world_engine_mute.gd — extend in the same change.
 # Bridges the simulated engine to audio: reads EngineSim state each frame and
 # pushes synthesized PCM into an AudioStreamGenerator. The DSP lives in
 # EngineAudioSynth; this node only owns the generator and the per-frame pull.

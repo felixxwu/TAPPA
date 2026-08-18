@@ -1,5 +1,7 @@
 class_name Standings
 extends Control
+# Docs: features/event-replay.md — update in the same change as this file.
+# Tests: tests/headless/test_replay_camera.gd, tests/headless/test_replay_playback.gd, tests/headless/test_replay_recorder.gd, tests/headless/test_replay_standings.gd — extend in the same change.
 # Between-event standings interstitial (features/menus.md, features/rally-session.md).
 # Shown after each event, as ONE page carrying both leaderboards stacked:
 #   1. STAGE n RESULT — that one stage's finishing times, ranked (current_event_standings)

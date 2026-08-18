@@ -1,5 +1,7 @@
 extends RefCounted
 class_name CarPerformance
+# Docs: features/car-performance.md — update in the same change as this file.
+# Tests: tests/headless/test_car_performance.gd, tests/headless/test_lap_time_model.gd — extend in the same change.
 
 # A car's performance RATING — one number saying how fast a given build is, the way
 # Forza's PI does. Higher is faster.

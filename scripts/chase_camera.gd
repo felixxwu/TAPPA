@@ -1,4 +1,6 @@
 extends Camera3D
+# Docs: features/camera.md — update in the same change as this file.
+# Tests: tests/headless/test_camera_manager.gd, tests/headless/test_chase_camera_aim.gd, tests/headless/test_chase_camera_fov.gd, tests/headless/test_chase_camera_ground.gd, tests/headless/test_chase_camera_shake.gd — extend in the same change.
 
 @export var target: Node3D
 
