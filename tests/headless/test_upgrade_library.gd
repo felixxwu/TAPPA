@@ -736,8 +736,18 @@ func test_no_feature_doc_states_a_slot_member_count() -> void:
 				continue
 			for w in number_words:
 				# "holds two parts", "the two tyre compounds", "three tyre compounds", ...
+				# WIDENED round 042: the patterns above are word-ORDER shaped, so the same
+				# defect written the other way round walked straight through them. Round 040's
+				# probe wrote "and the tyre slot three — `Stock` / `Snow` / `Race` / `Gravel`"
+				# and this guard passed it; round 042's wrote "three tyre compounds" and it
+				# failed. Both are a count in prose. "slot <n>" and a bare "<n> compounds" are
+				# now caught too. If you find a fourth phrasing, widen this again rather than
+				# concluding the guard covers the concept — it covers PHRASINGS.
 				if line.contains(" " + w + " part") or line.contains(" " + w + " tyre") \
-						or line.contains(" " + w + " tire"):
+						or line.contains(" " + w + " tire") \
+						or line.contains(" " + w + " compound") \
+						or line.contains("slot " + w + " ") or line.contains("slot " + w + "\u2014") \
+						or line.contains("slot " + w + " \u2014"):
 					offenders.append("%s:%d — %s" % [doc.get_file(), line_no, String(raw).strip_edges()])
 					break
 	assert_eq(offenders, [] as Array[String],
@@ -746,3 +756,122 @@ func test_no_feature_doc_states_a_slot_member_count() -> void:
 		+ "Rewrite the sentence WITHOUT the number — name the parts or say 'the parts in the "
 		+ "slot' — rather than updating the number.\nOffending lines:\n%s")
 		% "\n".join(offenders))
+
+
+# --- Guard: every tyre-slot part is named in features/drivetrain-and-tires.md -------------
+#
+# WHY (round 017). `features/drivetrain-and-tires.md` ENUMERATES the tyre slot's contents by id:
+# "the `tires` upgrade slot holds the tyre compounds — **Snow Tires** (`snow_tires`, …) and
+# **Race Tires** (…)". A third compound makes that sentence quietly incomplete, and round 009
+# recorded exactly that: a probe added a tyre part and the doc "still said the tyre slot holds
+# two parts and went unupdated".
+#
+# This replaces a NOTE that has now failed four separate interventions. The in-code checklist at
+# the table asks for both docs; round 017 measured it by moving that checklist to the exact
+# insertion point where a new part is appended, and the probe read it (it obeyed the checklist's
+# ungated-justification clause almost verbatim) and STILL updated neither doc. Splitting the doc
+# (round 012), making it necessary to read (013), and writing falsifiable statements (015) had all
+# failed on the same axis. Per SKILL.md §2.6, a note that has failed is not answered by another
+# note — so this is the executable version.
+#
+# It reads the AUTHORED table out of the source file rather than `UpgradeLibrary.UPGRADES`,
+# because this file's before_each installs UpgradeFixtures; the doc must describe what SHIPS.
+# Both current tyre ids are documented, so there are no exemptions and none should be added:
+# document the part instead.
+#
+# Deliberately scoped to the tyre slot. The catalogue's other parts are documented by display
+# NAME rather than id (`features/upgrade-catalogue.md` covers the aero kit as "Aero Kit" and
+# never writes `aero_kit`), so a repo-wide id-in-doc check would flag correct prose. Narrow and
+# true beats broad and noisy.
+func test_every_tyre_slot_part_is_documented_in_the_tyre_doc() -> void:
+	var src := FileAccess.get_file_as_string("res://scripts/upgrade_library.gd")
+	assert_ne(src, "", "could not read upgrade_library.gd")
+	# BOTH docs, not one (widened round 041). The tyre slot is enumerated BY ID in each, and each
+	# has been the forgotten one in a different round: drivetrain-and-tires.md in rounds 009/017,
+	# upgrade-catalogue.md in round 041, where a probe updated the first doc's axis TABLE, never
+	# added the part to its compound list, and left the second doc untouched entirely. Checking
+	# only one of them let "the docs are guarded" read as more coverage than it was.
+	var tyre_docs := [
+		"res://features/drivetrain-and-tires.md",
+		"res://features/upgrade-catalogue.md",
+	]
+	var doc_text := {}
+	for path in tyre_docs:
+		var text := FileAccess.get_file_as_string(path)
+		assert_ne(text, "", "could not read %s" % path)
+		doc_text[path] = text
+
+	var id_re := RegEx.new()
+	id_re.compile('"id":\\s*"([a-z0-9_]+)"')
+
+	# Walk the table: remember the most recent id seen, and claim it when a `"slot": "tires"`
+	# turns up. The authored style always writes `"id"` at or before `"slot"` within an entry.
+	var tyre_ids: Array[String] = []
+	var last_id := ""
+	for line in src.split("\n"):
+		var m := id_re.search(line)
+		if m != null:
+			last_id = m.get_string(1)
+		if line.contains('"slot": "%s"' % UpgradeLibrary.TIRE_SLOT) and last_id != "":
+			if not tyre_ids.has(last_id):
+				tyre_ids.append(last_id)
+
+	# If this drops to nothing the parse broke and the test would pass vacuously — say so instead.
+	assert_gte(tyre_ids.size(), 2,
+		"parsed %d tyre-slot parts out of upgrade_library.gd, expected at least 2 — the table's "
+		% tyre_ids.size()
+		+ "authored shape changed and THIS GUARD needs updating, it is not a catalogue failure")
+
+	var undocumented: Array[String] = []
+	for path in tyre_docs:
+		for id in tyre_ids:
+			if not String(doc_text[path]).contains(id):
+				undocumented.append("%s missing from %s" % [id, String(path).get_file()])
+
+	assert_eq(undocumented, ([] as Array[String]),
+		"tyre-slot parts missing from the docs that enumerate the slot BY ID: %s. "
+		% str(undocumented)
+		+ "The tyre slot is described by TWO docs — features/drivetrain-and-tires.md and "
+		+ "features/upgrade-catalogue.md — and BOTH name its compounds by id, so a new compound "
+		+ "leaves whichever one you skipped silently incomplete. Adding the axis to a table in "
+		+ "one of them is not the same as adding the part to its compound list. Add the part to "
+		+ "both; do not add an exemption here.")
+
+
+# An authored effect key with no `EFFECTS` row is a SILENTLY DEAD PART: UpgradeLibrary.apply()
+# looks the key up, gets {}, reads op "" , matches no arm, and never writes the value. The part
+# reads as fitted and does nothing. This is a DIFFERENT failure from the one `_cfg_set` guards —
+# that catches a write to a field GameConfig does not declare, and it cannot fire here because the
+# value never reaches it. It is also invisible to
+# test_every_grip_feeding_effect_field_is_read_by_the_physics, which iterates EFFECTS and so cannot
+# see a key that is absent from it.
+#
+# Found by the small-model-readiness loop, round 041: a wet-weather tyre shipped with the @export,
+# the TIRE_SURFACE_AXES row and the _channel_weight arm ALL correct, and no rain grip whatsoever,
+# with five test files green. Registering the field on GameConfig is not the same as registering the
+# EFFECT, and getting three edits right makes the fourth easy to believe done.
+#
+# This asserts a structural contract (every authored key is registered), not any authored value, so
+# retuning or re-authoring the catalogue cannot break it — a NEW effect key with no row breaks it,
+# which is the point.
+func test_every_authored_effect_key_is_registered_in_the_effects_table() -> void:
+	var offenders: Array[String] = []
+	var checked := 0
+	for item in UpgradeLibrary.UPGRADES:
+		var effect: Dictionary = (item as Dictionary).get("effect", {})
+		for key in effect:
+			checked += 1
+			if not UpgradeLibrary.EFFECTS.has(key):
+				offenders.append("%s authors '%s'" % [str((item as Dictionary).get("id", "?")), str(key)])
+
+	# A vacuous pass would be worse than a failure here, so prove we actually read something.
+	assert_gt(checked, 0,
+		"walked UpgradeLibrary.UPGRADES and found no authored effect keys at all — the table's shape "
+		+ "changed and THIS GUARD needs updating, it is not a catalogue failure")
+
+	assert_eq(offenders, ([] as Array[String]),
+		"these parts author an effect key with no row in UpgradeLibrary.EFFECTS: %s. " % str(offenders)
+		+ "apply() looks the key up, gets an empty desc, matches no op arm, and NEVER WRITES THE "
+		+ "VALUE — the part reads as fitted and does nothing at all. Adding the field to GameConfig "
+		+ "(an @export, and for a tyre axis a TIRE_SURFACE_AXES row) does not register the EFFECT. "
+		+ "Add the EFFECTS row; do not add an exemption here.")

@@ -1,5 +1,7 @@
 class_name FirestoreBoard
 extends Node
+# Docs: features/global-leaderboards.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_leaderboard.gd — extend in the same change.
 # Shared Firestore plumbing for the two world leaderboards (Leaderboard —
 # stage_times/{stage_key}/times/{uid} — and ChallengeLeaderboard —
 # challenge_runs/{period_key}/entries/{uid}). Extracted because both boards

@@ -36,7 +36,7 @@ A **podium finish** (top 3) claims the prize — the same `completed` bar that l
 hands over the reward together. There is no separate "win outright" tier.
 
 **First win only.** Both halves check `was_completed` (captured *before*
-`Save.complete_rally`, which is what sets it):
+`Save.record_podium_rally`, which is what sets it):
 
 - **Car** — `Save.grant_car`, guarded by `Save.owns_model` so a re-authored roster pointing
   two rallies at one car cannot mint a duplicate. Reported as `car_reward` /
@@ -59,7 +59,7 @@ excluded the player from anything again (simulation confirmed `revealed` and `el
 were identical from rally 5 on).
 
 **Part discovery needs no new save state.** `UpgradeLibrary.rally_gate_met` already reads
-"is the gating rally completed", and `complete_rally` has just recorded exactly that. One
+"is the gating rally completed", and `record_podium_rally` has just recorded exactly that. One
 fact, one place — the same reasoning as the fog storing nothing.
 
 ## The prize tops the band

@@ -99,8 +99,8 @@ RallyLibrary.placement(field, combined)`. A **top-3, non-DNF** finish records
 completion + best placement — as does the player's **opening rally on its first
 attempt**, whatever the result, DNF included (the one place `completed` diverges
 from "podiumed"; placement still decides the stars, and the carve-out lives at
-the call site rather than as a flag on `complete_rally`. See
-[../todo/opening-rally.md](../todo/opening-rally.md)) (`Save.complete_rally(id, combined, placed)` —
+the call site rather than as a flag on `record_podium_rally`. See
+[../todo/opening-rally.md](../todo/opening-rally.md)) (`Save.record_podium_rally(id, combined, placed)` —
 idempotent for the `completed` flag, and its RETURN VALUE is the number of stars
 it credited to the persisted ledger, see [star-economy.md](star-economy.md)).
 That credit is what **this** finish placed — every finish pays, so a rally can be

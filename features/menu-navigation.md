@@ -332,7 +332,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   under it.
   **On entry (`_enter_table`) the map doesn't open dead-centre: it steers straight to the
   toughest event still to beat.** `_focus_hardest_incomplete()` picks the highest-difficulty
-  (hidden authored tier) rally pin the player hasn't completed (`Save.rally_completed`),
+  (hidden authored tier) rally pin the player hasn't completed (`Save.rally_podiumed`),
   ties breaking toward the first in rally order, and pans the camera onto it so selection
   sticks there. Only when every pin is done (or there are none) does it fall back to
   `_focus_nearest_target()` — which seats the cursor on the nearest pin **and pans onto

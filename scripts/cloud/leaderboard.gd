@@ -1,5 +1,7 @@
 class_name Leaderboard
 extends FirestoreBoard
+# Docs: features/global-leaderboards.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_leaderboard.gd — extend in the same change.
 # Global per-stage leaderboards: one Firestore document per player per stage, at
 #   stage_times/{stage_key}/times/{uid}
 #

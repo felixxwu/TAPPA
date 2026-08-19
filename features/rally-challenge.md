@@ -21,7 +21,7 @@ stages and damage carries over between them. Full design:
 - **`ChallengeSession`** (`scripts/challenge_session.gd`, autoload) — the
   per-run state machine, parallel to `RallySession` rather than a reuse of it
   (no rival field, no special-event unlock, no
-  `Save.complete_rally` — so no career star credit; its own star payout is
+  `Save.record_podium_rally` — so no career star credit; its own star payout is
   placement-based, see *Completion reward* below). Read surface: `is_active()`, `car_instance_id()`,
   `kind()`, `stage_count()`, `events_completed()`, `current_stage_params()`.
   Lifecycle: `start(kind, owned_car, unix_time)`, `resume(unix_time)`,
@@ -727,7 +727,7 @@ the time and parks the field repair. One path remains:
 
   Unlike career stars, this income is **renewable over real time** — deliberately,
   since it is the only star source still flowing once every career rally is won at
-  P1 and `complete_rally` has no improvement left to credit.
+  P1 and `record_podium_rally` has no improvement left to credit.
 
   Returns `{"placed", "rank", "total_entries", "item_id", "stars",
   "placement_stars"}` (`item_id` always `""`, since nothing item-shaped is

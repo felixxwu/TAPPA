@@ -43,7 +43,7 @@ func test_dev_three_star_all_rallies_completes_everything_and_finishes_the_game(
 	_save.dev_three_star_all_rallies()
 	for rally in RallyLibrary.all():
 		var rid := String(rally["id"])
-		assert_true(_save.rally_completed(rid), "rally %s marked completed" % rid)
+		assert_true(_save.rally_podiumed(rid), "rally %s marked completed" % rid)
 		assert_eq(_save.best_placement(rid), 1, "rally %s is 3-starred (1st place)" % rid)
 	assert_true(RallyLibrary.all_specials_completed(_save.profile),
 		"every special completed after 3-starring all rallies")
@@ -59,7 +59,7 @@ func test_default_profile_is_empty_and_valid() -> void:
 func test_round_trip_survives_save_and_reload() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.add_item("fx_consumable", 2)
-	_save.complete_rally("alpine", 123456)
+	_save.record_podium_rally("alpine", 123456)
 	_save.set_tuning(car["instance_id"], {"brake_bias": 0.55})
 	_save.save_now()
 	assert_true(_save.has_save(), "file written to disk")
@@ -70,7 +70,7 @@ func test_round_trip_survives_save_and_reload() -> void:
 	assert_eq(_save.profile["cars"].size(), 1, "owned car reloaded")
 	assert_eq(_save.profile["cars"][0]["model_id"], "fx_light_rwd", "model id reloaded")
 	assert_eq(int(_save.profile["inventory"]["fx_consumable"]), 2, "inventory reloaded")
-	assert_true(_save.rally_completed("alpine"), "rally completion reloaded")
+	assert_true(_save.rally_podiumed("alpine"), "rally completion reloaded")
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 123456, "best time reloaded")
 	assert_almost_eq(float(_save.profile["cars"][0]["tuning"]["brake_bias"]), 0.55, 0.001, "tuning reloaded")
 
@@ -128,9 +128,9 @@ func test_grant_car_seeds_hp_from_library_max() -> void:
 
 
 func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
-	_save.complete_rally("alpine", 5000)
-	_save.complete_rally("alpine", 6000)  # slower: should not replace
-	_save.complete_rally("alpine", 4000)  # faster: should replace
+	_save.record_podium_rally("alpine", 5000)
+	_save.record_podium_rally("alpine", 6000)  # slower: should not replace
+	_save.record_podium_rally("alpine", 4000)  # faster: should replace
 	assert_eq(_save.podium_rally_count(), 1, "completing the same rally twice counts once")
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
 
@@ -147,7 +147,7 @@ func test_a_fresh_profile_has_an_empty_star_ledger() -> void:
 
 
 func test_completing_a_rally_credits_the_placement_and_returns_it() -> void:
-	var gained: int = _save.complete_rally("alpine", 60_000, 1)
+	var gained: int = _save.record_podium_rally("alpine", 60_000, 1)
 	assert_eq(gained, RallyLibrary.stars_for_placement(1),
 		"a first win credits what that placement is worth")
 	assert_eq(_save.stars_available(), gained, "the balance reflects the credit")
@@ -157,8 +157,8 @@ func test_a_rally_can_be_rewon_for_stars() -> void:
 	# Rallies are a RENEWABLE star source: replaying one pays for the finish again, every time.
 	# (It used to credit only the improvement on the rally's best placement, so a replay at an
 	# equal or worse placement paid nothing.)
-	var first: int = _save.complete_rally("alpine", 60_000, 1)
-	var again: int = _save.complete_rally("alpine", 61_000, 1)
+	var first: int = _save.record_podium_rally("alpine", 60_000, 1)
+	var again: int = _save.record_podium_rally("alpine", 61_000, 1)
 	assert_gt(first, 0, "the original win pays")
 	assert_eq(again, first, "re-winning at the same placement pays the same again")
 	assert_eq(_save.stars_available(), first + again, "and both credits are in the balance")
@@ -167,9 +167,9 @@ func test_a_rally_can_be_rewon_for_stars() -> void:
 func test_a_worse_replay_still_pays_for_what_it_placed() -> void:
 	# The payout follows THIS run's placement, not the record — so a scrappier replay still
 	# earns, just less if it dropped off the podium.
-	_save.complete_rally("alpine", 60_000, 1)
+	_save.record_podium_rally("alpine", 60_000, 1)
 	var before: int = _save.stars_available()
-	var off_podium: int = _save.complete_rally("alpine", 90_000, RallyLibrary.PODIUM_PLACES + 1)
+	var off_podium: int = _save.record_podium_rally("alpine", 90_000, RallyLibrary.PODIUM_PLACES + 1)
 	assert_eq(off_podium, RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1),
 		"a non-podium replay pays what finishing is worth")
 	assert_eq(_save.stars_available(), before + off_podium, "the balance moved by that much")
@@ -180,9 +180,9 @@ func test_a_worse_replay_still_pays_for_what_it_placed() -> void:
 func test_a_dnf_replay_pays_nothing() -> void:
 	# The one case that must stay at zero: the opening rally can complete on a DNF, and a
 	# ledger that paid for that would pay for quitting.
-	_save.complete_rally("alpine", 60_000, 1)
+	_save.record_podium_rally("alpine", 60_000, 1)
 	var before: int = _save.stars_available()
-	var dnf: int = _save.complete_rally("alpine", 0, 0)
+	var dnf: int = _save.record_podium_rally("alpine", 0, 0)
 	assert_eq(dnf, 0, "a run that did not place credits nothing")
 	assert_eq(_save.stars_available(), before, "the balance did not move")
 
@@ -215,7 +215,7 @@ func test_earned_never_decreases_and_balance_never_goes_negative() -> void:
 
 
 func test_the_star_ledger_survives_a_save_and_reload() -> void:
-	_save.complete_rally("alpine", 60_000, 1)
+	_save.record_podium_rally("alpine", 60_000, 1)
 	_save.award_stars(3)
 	_save.spend_stars(2)
 	var earned := int(_save.profile["stars_earned"])
@@ -911,9 +911,9 @@ func test_marking_a_rally_revealed_survives_a_save_and_load() -> void:
 func test_marking_a_rally_revealed_keeps_its_other_state() -> void:
 	# The flag lives in the SAME per-rally record as `completed`, so writing one must
 	# not clobber the other in either order.
-	_save.complete_rally("some_rally", 60_000, 1)
+	_save.record_podium_rally("some_rally", 60_000, 1)
 	_save.mark_rally_revealed("some_rally")
-	assert_true(_save.rally_completed("some_rally"), "the completion is still there")
+	assert_true(_save.rally_podiumed("some_rally"), "the completion is still there")
 	assert_eq(_save.best_placement("some_rally"), 1, "the best placement is still there")
 	assert_true(_save.rally_revealed_seen("some_rally"))
 
@@ -923,7 +923,7 @@ func test_a_progressed_profile_with_no_reveal_flags_wants_seeding() -> void:
 	# flags at all, and treating that as "nothing revealed yet" would parade every open
 	# rally at a player who has been looking at them for weeks.
 	assert_false(_save.needs_reveal_seeding(), "a brand-new career has nothing to backfill")
-	_save.complete_rally("some_rally", 60_000, 1)
+	_save.record_podium_rally("some_rally", 60_000, 1)
 	assert_true(_save.needs_reveal_seeding(),
 		"career progress with not one reveal flag is a pre-feature save")
 	_save.mark_rally_revealed("some_rally")
@@ -947,7 +947,7 @@ func test_load_or_new_seeds_an_existing_career_with_no_reveal_flags() -> void:
 			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.9, 0.0),
 			"restriction": {}, "events": []},
 	])
-	_save.complete_rally("sm_open", 60_000, 1)  # career progress, but no reveal flags at all
+	_save.record_podium_rally("sm_open", 60_000, 1)  # career progress, but no reveal flags at all
 	assert_true(_save.needs_reveal_seeding())
 	_save.save_now()
 
@@ -1347,3 +1347,161 @@ func test_every_persisted_key_written_is_declared_in_the_default_profile() -> vo
 		+ "from every fresh and every migrated profile until something happens to write it. "
 		+ "A `.get(key, 0)` reader hides this completely and no test will catch it. "
 		+ "See the `stars_earned` / `cloud_revision` comments for the shape to copy.")
+
+
+# --- Guard: a "finished" metric may not be derived from the podium-gated record ---------
+#
+# WHY (round 015). A probe asked to "track how many rallies the player has finished" added
+# `RallyLibrary.finished_count()` counting rallies with `best_placed > 0`, and put
+# "Rallies finished: N" on the profile screen. Every test passed and the number is WRONG:
+# `Save.record_podium_rally` has exactly one caller (`rally_session.gd`, inside
+# `_award_podium_rewards`, gated on `podium_or_opening`), so a 5th-place finish writes
+# nothing into the rally's record. The gate is on the WRITE, which makes every field of the
+# record podium-gated — so `best_placed > 0` is the podium count wearing a better name.
+#
+# Round 003 had already planted the warning, but its reasoning named only the `completed`
+# flag, so `best_placed` read as an untainted sibling to escape through. The note has now
+# failed twice on this route; this is the executable check that replaces a third one.
+#
+# Derived from the source tree, so a file or function added tomorrow is covered without
+# touching this test. It does NOT forbid the sanctioned fix: a real finish counter is a NEW
+# persisted key (declared in `_default_profile()`), and reading that key touches none of
+# the gated fields below.
+const GATED_RECORD_FIELDS := ["completed", "best_placed", "best_combined_ms"]
+
+
+func _gd_scripts_under(dir_path: String, out: Array[String]) -> void:
+	var d := DirAccess.open(dir_path)
+	if d == null:
+		return
+	for f in d.get_files():
+		if f.ends_with(".gd"):
+			out.append(dir_path.path_join(f))
+	for sub in d.get_directories():
+		_gd_scripts_under(dir_path.path_join(sub), out)
+
+
+func test_no_finish_named_symbol_derives_from_the_podium_gated_rally_record() -> void:
+	var files: Array[String] = []
+	_gd_scripts_under("res://scripts", files)
+	assert_gt(files.size(), 50, "sanity: expected to find the scripts/ tree")
+
+	var gated := RegEx.new()
+	gated.compile('\\.get\\("(?:%s)"' % "|".join(GATED_RECORD_FIELDS))
+	var func_re := RegEx.new()
+	func_re.compile("^(?:static\\s+)?func\\s+([A-Za-z0-9_]+)")
+
+	var offenders: Array[String] = []
+	for path in files:
+		var src := FileAccess.get_file_as_string(path)
+		assert_ne(src, "", "could not read %s" % path)
+		var current := ""
+		var line_no := 0
+		for line in src.split("\n"):
+			line_no += 1
+			var m := func_re.search(line)
+			if m != null:
+				current = m.get_string(1)
+			if current.to_lower().contains("finish") and gated.search(line) != null:
+				offenders.append("%s:%d in %s() — %s"
+					% [path, line_no, current, line.strip_edges()])
+
+	assert_eq(offenders, ([] as Array[String]),
+		"these 'finish'-named symbols read a PODIUM-GATED field of a rally's save record: %s. "
+		% str(offenders)
+		+ "That number is not a finish count. Save.record_podium_rally is called from exactly one "
+		+ "site (rally_session.gd, inside _award_podium_rewards, gated on `podium_or_opening`), "
+		+ "so a 5th-place finish writes NOTHING into the record — `completed`, `best_placed` and "
+		+ "`best_combined_ms` are all equally podium-gated and there is no untainted sibling "
+		+ "field to escape through. To count finishes in any position, ADD a persisted counter: "
+		+ "declare it in Save._default_profile() (so _migrate's key backfill seeds existing "
+		+ "saves), increment it on the any-finish path, and read that key instead. "
+		+ "See Save.rally_podiumed() and RallyLibrary.podium_count() for what the record CAN "
+		+ "honestly tell you.")
+
+
+# --- Guard: the runtime tripwire for an undeclared persisted key -------------------------
+#
+# The RUNTIME half of `test_every_persisted_key_written_is_declared_in_the_default_profile`
+# above (round 015). That static check catches the mistake in CI, but two independent probes
+# of this codebase made it anyway, because neither ran the suite — and the failure is silent
+# (`profile.get(key, 0)` reads 0 whether or not the key was ever declared). `save()` now
+# announces it via push_error, so it surfaces in the editor with no test run at all.
+#
+# These exercise the PURE detector rather than the push_error wrapper, deliberately: asserting
+# on an emitted engine error is brittle, and the interesting logic is entirely in "which keys
+# count as unknown".
+func test_a_code_written_undeclared_profile_key_is_detected() -> void:
+	_save.profile = _save._default_profile()
+	_save._note_known_profile_keys()
+	assert_eq(_save._undeclared_profile_keys(), ([] as Array[String]),
+		"a freshly defaulted profile declares everything it holds")
+
+	_save.profile["totally_made_up_counter"] = 3
+	assert_eq(_save._undeclared_profile_keys(), (["totally_made_up_counter"] as Array[String]),
+		"a key written by code and absent from _default_profile() must be reported — that is "
+		+ "the defect the tripwire exists for")
+
+
+func test_a_retired_key_already_on_disk_is_not_reported() -> void:
+	# A real player's profile can carry a top-level key that has since been retired: load
+	# backfills missing keys but never prunes extra ones. Shouting about those would be a
+	# false alarm, which is why "known" is declared-keys UNION keys-as-loaded.
+	_save.profile = _save._default_profile()
+	_save.profile["some_retired_key_from_an_old_build"] = "x"
+	_save._note_known_profile_keys()  # as if this profile had just been loaded from disk
+	assert_eq(_save._undeclared_profile_keys(), ([] as Array[String]),
+		"a key that was already in the loaded profile is not a code-written key")
+
+	_save.profile["written_after_load"] = 1
+	assert_eq(_save._undeclared_profile_keys(), (["written_after_load"] as Array[String]),
+		"but a key appearing AFTER the snapshot still is")
+
+
+# --- Guard: the podium-gated recorder must not write a "finish"-named profile key ---------
+#
+# The SECOND route into the same wrong number (round 016). The guard above catches a "finish"
+# metric DERIVED from a gated record field. This catches one INCREMENTED inside the gated
+# recorder: `record_podium_rally()` has exactly one caller, gated on `podium_or_opening`, so a
+# counter bumped in there counts podiums no matter what the key is called.
+#
+# A probe did exactly this — declared `rallies_finished` correctly in `_default_profile()`,
+# incremented it inside the recorder, and shipped "Rallies Finished: N" to the profile screen.
+# Round 014's undeclared-key ratchet passed (the key WAS declared) and the read-side guard
+# passed (no finish-named function read a gated field), so all 107 tests in this file were
+# green while the player saw the podium count.
+#
+# Derived from the source, so it covers keys that do not exist yet.
+func test_the_podium_gated_recorder_writes_no_finish_named_profile_key() -> void:
+	var src := FileAccess.get_file_as_string("res://scripts/save_manager.gd")
+	assert_ne(src, "", "could not read save_manager.gd")
+
+	var lines := src.split("\n")
+	var start := -1
+	for i in lines.size():
+		if lines[i].begins_with("func record_podium_rally("):
+			start = i
+			break
+	assert_gt(start, -1,
+		"could not find func record_podium_rally() — if it was renamed, update this guard "
+		+ "(and keep the gate warning in its docstring)")
+
+	# The function body runs to the next top-level func.
+	var writes := RegEx.new()
+	writes.compile('profile\\["([a-z_]+)"\\]\\s*=')
+	var offenders: Array[String] = []
+	for i in range(start + 1, lines.size()):
+		var line := lines[i]
+		if line.begins_with("func ") or line.begins_with("static func "):
+			break
+		var m := writes.search(line)
+		if m != null and m.get_string(1).contains("finish"):
+			offenders.append("line %d: %s" % [i + 1, line.strip_edges()])
+
+	assert_eq(offenders, ([] as Array[String]),
+		"record_podium_rally() writes these 'finish'-named profile keys: %s. " % str(offenders)
+		+ "That function has exactly ONE caller — rally_session.gd, inside "
+		+ "_award_podium_rewards, which runs only `if podium_or_opening` — so anything written "
+		+ "there is PODIUM-GATED and a finish counter bumped in it counts podiums. Move the "
+		+ "increment to the any-finish gate (`var finished := not _dnf` in "
+		+ "rally_session.gd::_resolve_results, beside _award_any_finish_bonus_stars) instead.")

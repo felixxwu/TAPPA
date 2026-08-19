@@ -425,6 +425,9 @@ func _on_challenge_tab_activated() -> void:
 		_on_challenge_start_pressed()
 
 
+# The entry overlay's Start. SPENDS NOTHING: it resumes a run whose attempt is already spent,
+# or opens the car park so a car can be picked. The attempt is spent later, in
+# _begin_challenge_start — put any confirmation there, not here.
 func _on_challenge_start_pressed() -> void:
 	var unix_time := int(Time.get_unix_time_from_system())
 	@warning_ignore("static_called_on_instance")
@@ -504,6 +507,16 @@ func _build_challenge_lineup(kind_str: String) -> void:
 
 # Commit the focused car park selection: ChallengeSession.start, then the same scene
 # hand-off Resume uses. Mirrors _begin_rally_start's shape for _hq.CarparkMode.CHALLENGE.
+#
+# THIS IS THE POINT THAT SPENDS THE ATTEMPT. `ChallengeSession.start` below is terminal for
+# the period — one attempt per period, completed or DNF'd, no retry (challenge_session.gd
+# :218/:305/:510). So anything that must happen BEFORE the player is committed — a
+# confirmation, a warning, a last check — belongs HERE, at this call, and nowhere earlier.
+# `_on_challenge_start_pressed` (the entry overlay's Start) spends nothing: it either resumes
+# an attempt already spent or just opens the car park, so gating it protects the player from
+# nothing and asks them twice on the way in. An attempt at a start confirmation put a prompt
+# on both and reddened test_menu_flow's "Start opens the challenge car park, not a direct
+# commit".
 func _begin_challenge_start() -> void:
 	var owned := Save.get_car(_hq._selected_instance_id)
 	if owned.is_empty():

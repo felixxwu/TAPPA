@@ -1,5 +1,7 @@
 class_name AuthService
 extends RefCounted
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_auth.gd — extend in the same change.
 # Firebase Authentication over the Identity Toolkit REST API.
 #
 # Owns the signed-in identity (uid / tokens / email) and nothing else — it knows

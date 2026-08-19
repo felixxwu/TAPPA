@@ -424,7 +424,7 @@ func _focus_hardest_incomplete() -> bool:
 		if bool((t["node"] as Node3D).get_meta("locked", false)):
 			continue  # can't be entered — the same test _activate_table_focus applies
 		var rally_id := String((t["node"] as Node3D).get_meta("rally_id"))
-		if Save.rally_completed(rally_id):
+		if Save.rally_podiumed(rally_id):
 			continue
 		var rally := RallyLibrary.by_id(rally_id)
 		var diff := int(rally.get("difficulty", 0)) if not rally.is_empty() else 0

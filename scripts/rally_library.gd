@@ -1722,12 +1722,22 @@ static func _rally_seed(rally: Dictionary) -> int:
 # --- Progress / stars / anti-soft-lock ------------------------------------
 
 # Count of rallies this profile has PODIUMED (top-3), the single progression metric
-# (caps the car reward tier). NOT a count of rallies finished: the persisted `completed`
-# flag is written only inside the podium-gated block in rally_session.gd
-# (`podium_or_opening`), so a 5th-place finish leaves no trace here. There is NO
-# "finished in any position" counter anywhere in the save schema — a feature that needs
-# one must ADD persistence for it, not reuse this. Do not label UI off this as
-# "rallies completed"; it means "podium finishes".
+# (caps the car reward tier). NOT a count of rallies finished.
+#
+# THE GATE IS ON THE WRITE, NOT ON ANY ONE FIELD. `Save.record_podium_rally` has exactly one
+# caller (`rally_session.gd`, inside `_award_podium_rewards`, which runs only
+# `if podium_or_opening`), so a 5th-place finish writes NOTHING into the rally's record —
+# which makes EVERY field of that record podium-gated: `completed`, `best_placed` and
+# `best_combined_ms` alike. **There is no untainted sibling field to escape through.**
+# Counting `best_placed > 0` instead of `completed` yields the same podium number under a
+# more honest-sounding name, and that is the trap: it reads like "finished in any
+# position" and is not.
+#
+# There is NO "finished in any position" counter anywhere in the save schema. A feature
+# that needs one must ADD persistence for it (declared in `_default_profile()` so
+# `_migrate`'s key backfill seeds existing saves) — not derive one from this record.
+# Do not label UI off this as "rallies finished" or "rallies completed"; it means
+# "podium finishes".
 static func podium_count(profile: Dictionary) -> int:
 	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
 	var n := 0
@@ -1779,7 +1789,7 @@ const MAX_STARS_PER_RALLY := STARS_FOR_WIN
 # stay at zero, since the opening rally can complete on a DNF (todo/opening-rally.md) and a
 # ledger that paid for that would pay for quitting.
 #
-# THE one definition — Save.complete_rally's credit, the Rally Challenge award and the
+# THE one definition — Save.record_podium_rally's credit, the Rally Challenge award and the
 # HQ's per-pin star row all go through it, so what a star is worth can never disagree
 # between the surfaces that pay it and the ones that show it.
 #

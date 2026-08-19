@@ -1,5 +1,7 @@
 class_name GoogleSignIn
 extends Node
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_auth.gd — extend in the same change.
 # Obtains a Google ID token, which AuthService then exchanges for a Firebase
 # session. Two implementations behind one `await sign_in()`:
 #

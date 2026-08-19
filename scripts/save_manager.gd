@@ -81,6 +81,65 @@ const SAVE_DEBOUNCE_SEC := 1.0
 # save / migration as pure dict transforms with no engine-class coupling).
 var profile: Dictionary = {}
 
+# --- Undeclared-persisted-key tripwire (runtime half of the _default_profile() rule) ------
+#
+# Every top-level profile key must be declared in _default_profile(), because _migrate()
+# backfills existing profiles from that dict ALONE — an undeclared key is therefore absent
+# from every fresh and every migrated profile until something happens to write it, and a
+# `.get(key, 0)` reader hides that completely.
+#
+# `test_every_persisted_key_written_is_declared_in_the_default_profile` catches this in CI,
+# but a small model (or anyone) adding a counter does not run the suite; this makes the same
+# mistake announce itself the first time the new code path saves, in the editor, with no test
+# run. Two independent probes of this codebase made exactly this mistake, so the static check
+# alone has been shown not to be enough.
+#
+# WHY "known" is declared-keys UNION keys-as-loaded, rather than declared keys alone: an old
+# profile on disk can legitimately carry a top-level key that has since been retired (load
+# backfills missing keys but never prunes extra ones), and shouting about those would be a
+# false alarm on a real player's save. Anything appearing in `profile` that was neither
+# declared NOR present in the file is, by elimination, a key CODE wrote this session.
+var _known_profile_keys: Dictionary = {}
+var _reported_undeclared_keys: Dictionary = {}
+
+
+# Snapshot what counts as an already-known key. Call after every `profile = ...` assignment.
+func _note_known_profile_keys() -> void:
+	_known_profile_keys = {}
+	for k in profile:
+		_known_profile_keys[k] = true
+	for k in _default_profile():
+		_known_profile_keys[k] = true
+
+
+# The top-level keys code has written this session that _default_profile() does not declare.
+# Pure and side-effect free, so a test can exercise the detection without provoking an error.
+func _undeclared_profile_keys() -> Array[String]:
+	var out: Array[String] = []
+	if _known_profile_keys.is_empty():
+		return out  # no snapshot yet (profile not adopted); nothing to compare against
+	for k in profile:
+		if not _known_profile_keys.has(k):
+			out.append(String(k))
+	return out
+
+
+# Announce a top-level key that code wrote without declaring it in _default_profile().
+# Once per key per session — save() runs on a debounce and this must not become a spam loop.
+func _warn_undeclared_profile_keys() -> void:
+	for k in _undeclared_profile_keys():
+		if _reported_undeclared_keys.has(k):
+			continue
+		_reported_undeclared_keys[k] = true
+		push_error(("Save: profile key '%s' is written but not declared in " % k)
+			+ "_default_profile(). _migrate() backfills existing profiles from that dict "
+			+ "alone, so this key is missing from every fresh and every migrated profile "
+			+ "until this write happens — and a `.get(key, default)` reader hides it. "
+			+ "Add it to _default_profile() with its default value (see the `stars_earned` "
+			+ "/ `cloud_revision` entries for the shape); no SCHEMA_VERSION bump is needed, "
+			+ "the key backfill handles it.")
+
+
 # TEST-RUN SANDBOX. Empty in every real build — the ONLY writer is the headless
 # suite's GUT pre-run hook (tests/headless/save_sandbox_pre_hook.gd). While it holds
 # a path, profile_path's setter below remaps any attempt to use
@@ -226,6 +285,7 @@ func load_or_new() -> void:
 		loaded = _read_file(profile_path + ".bak")
 	if loaded.is_empty():
 		profile = _default_profile()
+		_note_known_profile_keys()
 		return
 	var migrated := _migrate(loaded)
 	if migrated.is_empty():
@@ -234,9 +294,11 @@ func load_or_new() -> void:
 		push_warning("Save: profile at %s is unreadable/newer than v%d — starting fresh, file kept"
 			% [profile_path, SCHEMA_VERSION])
 		profile = _default_profile()
+		_note_known_profile_keys()
 		save_disabled = true
 		return
 	profile = _sanitise(migrated)
+	_note_known_profile_keys()
 	# Backfill the new-rally reveal's `revealed` flags on a profile that predates the
 	# feature (see _seed_reveals_if_needed). Runs HERE — the moment a profile becomes
 	# live — rather than being left to whoever happens to reach the map/HQ, so a future
@@ -383,6 +445,7 @@ func save() -> void:
 	# cloud copy is most valuable, so it must not also switch off cloud sync.
 	profile["updated_utc"] = Time.get_datetime_string_from_system(true)
 	profile["unsynced"] = true
+	_warn_undeclared_profile_keys()
 	profile_changed.emit()
 	if save_disabled:
 		return
@@ -450,6 +513,7 @@ func _caller_trace() -> String:
 # menus). Writes immediately so "New game" is durable at once.
 func reset_new_game() -> void:
 	profile = _default_profile()
+	_note_known_profile_keys()
 	save_disabled = false
 	save_now()
 
@@ -488,6 +552,7 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	# reverse) would be a downgrade, not a restore.
 	var device_settings: Variant = profile.get("settings", {})
 	profile = _sanitise(migrated)
+	_note_known_profile_keys()
 	profile["settings"] = device_settings
 	# A restored career lands with no reveal flags on it, so without this the next map
 	# open would parade the whole roster at somebody who has already played it (see
@@ -534,9 +599,10 @@ func _default_profile() -> Dictionary:
 		"settings": {},
 		# --- Star ledger (see todo/star-economy.md) ---
 		# Stars are a PERSISTED LEDGER, not a derived total. `stars_earned` only ever
-		# grows — complete_rally credits the DELTA against a rally's previous best, so
-		# re-winning at an equal or worse placement pays nothing — and `stars_spent`
-		# grows as cars are bought. The spendable figure is stars_available().
+		# grows — record_podium_rally credits what THIS finish's placement is worth, so a rally
+		# can be re-driven for stars (the old "delta over the previous best" anti-grind
+		# rule was deliberately removed) — and `stars_spent` grows as cars are bought.
+		# The spendable figure is stars_available().
 		#
 		# Persisted rather than derived (the old RallyLibrary.total_stars summed
 		# best_placed over RALLIES) for two reasons: challenge stars are unrecoverable
@@ -1122,7 +1188,23 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 #
 # `best_placed` is still tracked (it drives the map's star rating) — it just no longer gates
 # what gets paid.
-func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
+# NAMED FOR ITS GATE, AND THE NAME IS THE WARNING. Was `complete_rally()` until round 016,
+# which is a name that lied: this function has exactly ONE caller — `rally_session.gd`, inside
+# `_award_podium_rewards`, which runs only `if podium_or_opening` — so it does not run when the
+# player merely FINISHES. It runs on a podium, or on the opening rally's first attempt.
+#
+# THEREFORE: ANYTHING YOU INCREMENT OR WRITE IN HERE IS PODIUM-GATED, including a brand-new
+# profile key of your own. A "rallies finished" counter incremented in this function counts
+# PODIUMS and will read as a wrong number to the player, however honestly you named the key.
+# For a reward or a counter that should fire on ANY finish, the seam is
+# `rally_session.gd::_award_any_finish_bonus_stars` (stars) or the `var finished := not _dnf`
+# gate beside it (everything else) — a different file, deliberately, because the gate lives at
+# the call site.
+#
+# Written HERE, at the site where the mistake is made, rather than only on the reading side
+# (`podium_count`, `rally_podiumed`): round 016 measured a probe that never opened either of
+# those and incremented a new key in this function instead.
+func record_podium_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 	var rallies: Dictionary = profile[KEY_RALLIES]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
 	rec["completed"] = true
@@ -1153,7 +1235,7 @@ func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> int:
 
 
 # --- Star ledger -------------------------------------------------------------
-# See todo/star-economy.md. Career stars arrive through complete_rally (which pays every
+# See todo/star-economy.md. Career stars arrive through record_podium_rally (which pays every
 # finish); everything else — currently the Rally Challenge — credits via award_stars.
 
 # Stars the player can still spend. Clamped at 0 defensively: the ledger cannot go
@@ -1164,7 +1246,7 @@ func stars_available() -> int:
 
 
 # Credit stars from a NON-rally source (the Rally Challenge). Rally finishes must go through
-# complete_rally instead — it is the one place that records the finish AND pays for it, so
+# record_podium_rally instead — it is the one place that records the finish AND pays for it, so
 # calling this for a rally as well would double-credit it.
 func award_stars(count: int, do_save := true) -> void:
 	if count <= 0:
@@ -1422,7 +1504,19 @@ func record_stage_result(won: bool) -> void:
 	save()
 
 
-func rally_completed(rally_id: String) -> bool:
+# Did this rally's record get written at all — i.e. did the player PODIUM it (or was it
+# the opening rally's first attempt)? NOT "did the player finish it".
+#
+# THE GATE IS ON THE WRITE, NOT ON ANY ONE FIELD. `Save.record_podium_rally` has exactly one
+# caller (`rally_session.gd`, inside `_award_podium_rewards`, which runs only
+# `if podium_or_opening`), so a 5th-place finish writes NOTHING into the rally's record.
+# That makes EVERY field of the record podium-gated — `completed`, `best_placed` and
+# `best_combined_ms` alike. Deriving a "rallies finished" count from `best_placed > 0`
+# instead of from `completed` therefore gets you the SAME podium number under a different
+# name; there is no untainted sibling field to escape through.
+#
+# Was named `rally_completed()` until round 015, which is the lie this comment replaces.
+func rally_podiumed(rally_id: String) -> bool:
 	return profile[KEY_RALLIES].get(rally_id, {}).get("completed", false)
 
 
@@ -1490,7 +1584,7 @@ func _seed_reveals_if_needed() -> void:
 		return
 	for rally in RallyLibrary.all():
 		var rid := String(rally["id"])
-		if rally_completed(rid) or RallyLibrary.rally_revealed(rally, profile):
+		if rally_podiumed(rid) or RallyLibrary.rally_revealed(rally, profile):
 			mark_rally_revealed(rid, false)
 	save()
 
@@ -1519,19 +1613,19 @@ const DEV_WIN_TIME_MS := 300_000
 #
 # `persist` is false when a caller is looping (one disk write at the end instead of N).
 func dev_three_star_rally(rally_id: String, persist := true) -> int:
-	# Goes through complete_rally rather than writing the record by hand, so the cheat pays
+	# Goes through record_podium_rally rather than writing the record by hand, so the cheat pays
 	# STARS — and, via _grant_rally_prizes below, the CAR or PART — exactly as a real 1st
 	# place would — including the delta rule, which credits only
 	# the improvement over this rally's previous best and so cannot be farmed by pressing the
 	# button twice. Hand-writing the record left the ledger untouched, which made every
 	# dev-completed career star-broke and useless for testing anything the balance gates.
 	#
-	# Reusing the real path is also what stops the two drifting: whatever complete_rally
+	# Reusing the real path is also what stops the two drifting: whatever record_podium_rally
 	# starts recording next lands here for free.
-	# Captured BEFORE complete_rally, which is what sets `completed` — afterwards there is no
+	# Captured BEFORE record_podium_rally, which is what sets `completed` — afterwards there is no
 	# way to tell a first win from a re-win, and the prizes are first-win-only.
-	var first_win := not rally_completed(rally_id)
-	var gained := complete_rally(rally_id, DEV_WIN_TIME_MS, 1)
+	var first_win := not rally_podiumed(rally_id)
+	var gained := record_podium_rally(rally_id, DEV_WIN_TIME_MS, 1)
 	if first_win:
 		_grant_rally_prizes(rally_id)
 	if persist:
@@ -1570,6 +1664,14 @@ func _grant_rally_prizes(rally_id: String) -> void:
 
 # Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
 # Drives the world-map star rating via RallyLibrary.stars_for_placement (1st = the most).
+#
+# 0 DOES NOT MEAN "NEVER FINISHED", and a consumer that reads it that way is wrong. This field
+# is only ever written by record_podium_rally, whose single caller is podium-gated (see its
+# comment), so a player who FINISHED 5th has 0 here just as one who never entered does. `> 0`
+# therefore means PODIUMED, not completed — label any UI off it accordingly, and if you need
+# "did they finish", there is no such counter in the save schema (add persistence for one).
+# Written down because a map readout guarded itself with `if placement > 0:  # only show if the
+# rally has been completed` — correct code, wrong reason, which is how the next edit goes wrong.
 func best_placement(rally_id: String) -> int:
 	return int(profile[KEY_RALLIES].get(rally_id, {}).get("best_placed", 0))
 
@@ -1578,12 +1680,17 @@ func best_placement(rally_id: String) -> int:
 # ceiling. (Map REVEAL keys off nothing of the sort any more: a rally opens when the player
 # has lit the map out to it, see RallyLibrary.rally_revealed.)
 #
-# WHAT THIS IS NOT: it is not "rallies the player has finished". The persisted per-rally
-# `completed` flag it counts is written only inside the podium-gated block in
-# rally_session.gd (`var podium_or_opening := top3 or opening_first`), so finishing 5th
-# increments nothing. NO counter of finishes-in-any-position exists anywhere in the save
-# schema — if you need one, add persistence for it rather than reusing this, and never
-# label UI "RALLIES COMPLETED: N" off this value.
+# WHAT THIS IS NOT: it is not "rallies the player has finished". The gate is on the
+# WRITE, not on any one field — `record_podium_rally` is called from exactly one site
+# (rally_session.gd, inside `_award_podium_rewards`, gated on
+# `var podium_or_opening := top3 or opening_first`), so finishing 5th writes nothing into
+# the record and EVERY field of it is podium-gated: `completed`, `best_placed` and
+# `best_combined_ms` alike. Counting `best_placed > 0` is the same podium number wearing a
+# better name — there is no untainted sibling field to escape through.
+#
+# NO counter of finishes-in-any-position exists anywhere in the save schema — if you need
+# one, add persistence for it (declared in `_default_profile()`) rather than deriving it
+# from this record, and never label UI "RALLIES FINISHED: N" off this value.
 # Delegates to RallyLibrary so the metric has one definition.
 func podium_rally_count() -> int:
 	return RallyLibrary.podium_count(profile)

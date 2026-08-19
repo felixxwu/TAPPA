@@ -36,7 +36,7 @@ Missing keys read 0, so adding them needed no `SCHEMA_VERSION` bump. See
 
 `RallyLibrary.stars_for_placement(placed)` is THE definition of what a placement is
 worth. Every surface that pays stars and every surface that *shows* them goes through it —
-`Save.complete_rally`, the Rally Challenge payout, `hq._stars_for`'s per-pin star row and
+`Save.record_podium_rally`, the Rally Challenge payout, `hq._stars_for`'s per-pin star row and
 the podium's stars beat — so a paid star and a drawn star can never disagree.
 
 **Three tiers:** **1st** pays `STARS_FOR_WIN` (3), the **rest of the podium**
@@ -55,7 +55,7 @@ apart, widening the podium cannot silently change what a win pays. `MAX_STARS_PE
 
 Sources:
 
-- **Career rallies — RE-WINNABLE.** `Save.complete_rally(rally_id, combined_ms, placed)`
+- **Career rallies — RE-WINNABLE.** `Save.record_podium_rally(rally_id, combined_ms, placed)`
   credits what **this** finish placed, every time, and returns it. Replaying a rally is a
   legitimate way to earn stars. It used to credit only the improvement over that rally's
   previous best (so a replay at an equal or worse placement paid nothing) as an anti-grind
@@ -87,7 +87,7 @@ new payout in decides its gate — see [reward-system.md](reward-system.md) → 
 end-of-rally reward goes*:
 
 - `_award_podium_rewards(...)` — pays only on a podium (or the opening rally's first
-  attempt). This is where the existing `Save.complete_rally` placement payout lives.
+  attempt). This is where the existing `Save.record_podium_rally` placement payout lives.
 - `_award_any_finish_bonus_stars(combined, placed) -> int` — pays on **any** non-DNF
   finish. Returns `0` today. A bonus that should not be podium-gated (e.g. one keyed on
   finishing without damage) belongs here: return the star count and nothing else. The
@@ -273,7 +273,7 @@ the player the car, and no balance is ever consulted. See
 ## Tests
 
 `tests/headless/test_save_manager.gd` — the ledger (an empty fresh ledger,
-`award_stars` for non-rally sources, the `complete_rally` delta, a refused overdraft,
+`award_stars` for non-rally sources, the `record_podium_rally` delta, a refused overdraft,
 and the whole thing surviving a save/reload).
 `tests/headless/test_reward_system.gd` — the two gates that decide what may be BOUGHT
 (the per-car prerequisite rung, and a part refused until its event is won).

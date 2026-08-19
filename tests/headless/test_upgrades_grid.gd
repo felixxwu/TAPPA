@@ -520,7 +520,7 @@ func test_the_engine_tile_starts_the_hosts_swap_flow() -> void:
 	# imply you can simply fit any engine — a thing the game does not let you do.
 	# Unlock the capability the way the game does: complete the special that gates
 	# swapping. That is the WHOLE gate now — swaps are free and unlimited afterwards.
-	_save.complete_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60000, 1)
+	_save.record_podium_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60000, 1)
 	var fired := [0]
 	var g := _grid(_car(), UpgradesGrid.NO_LIMIT, Callable(), func(): fired[0] += 1)
 	var tile := _tile_for(g, UpgradeOptions.SLOT_ENGINE)
@@ -642,7 +642,7 @@ func test_unlocking_a_part_brings_its_tile_back_to_life() -> void:
 		"setup: the slot's only part is still gated")
 	assert_true(_tile_for(g, "turbo").disabled, "so its tile starts dead")
 
-	_save.complete_rally(UpgradeFixtures.FX_GATE_RALLY, 60000, 1)
+	_save.record_podium_rally(UpgradeFixtures.FX_GATE_RALLY, 60000, 1)
 	g.rebuild()
 
 	assert_true(UpgradeOptions.has_choice(g._owned, "turbo"), "the part is now reachable")

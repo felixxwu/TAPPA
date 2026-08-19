@@ -1,5 +1,7 @@
 class_name FirestoreCodec
 extends RefCounted
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_leaderboard.gd, tests/headless/test_challenge_leaderboard.gd — extend in the same change.
 # Firestore REST value encoding, shared by every caller that touches the
 # Firestore API (CloudSync's user document, Leaderboard's stage_times entries).
 #

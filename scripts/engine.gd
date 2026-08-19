@@ -133,9 +133,27 @@ func _init(p_config: GameConfig) -> void:
 	_compute_shift_speeds()
 
 
-# Is the driver OFF the throttle — i.e. coasting / lifting off / on engine braking?
-# THE one place that question is answered, so lift-off behaviour can be written without
-# reaching for `not combusting`, which also covers gearchanges and fuel cuts (see step()).
+# Is the driver OFF the throttle? THE one place that question is answered, so lift-off
+# behaviour can be written without reaching for `not combusting`, which also covers
+# gearchanges and fuel cuts (see step()).
+#
+# THIS IS TRUE WHILE BRAKING. It is throttle position and nothing else — the driver's foot
+# being on the BRAKE does not make it false, because this engine has no brake input at all
+# (grep: `brake` appears once in this whole file, for the handbrake declutch). So it is NOT
+# "coasting" in the everyday sense of rolling with both pedals up, and this comment used to
+# say "coasting", which is the reading that caused the bug below.
+#
+# CONSEQUENCE, and check it before you gate anything on this: a multiplier or extra drag
+# gated on `is_lifting_off` applies during EVERY BRAKE APPLICATION too, and engine drag on
+# the driven axle changes wheel lock-up. An attempt at "stronger engine braking on lift-off"
+# scaled the FMEP friction here and reddened
+# `tests/headless/test_drivetrain.gd -> test_brake_lockup` ("rear axle locked"), having
+# correctly avoided every other state it was warned about — fuel cut, mid-shift, declutch,
+# rev-limiter bounce and the turbo/supercharger drags.
+#
+# If your feature must NOT change braking, this predicate is not the gate you want: there is
+# no `is_coasting()` seam, and adding one means plumbing the brake input through from car.gd
+# rather than assuming this already means it.
 static func is_lifting_off(throttle_value: float) -> bool:
 	return throttle_value <= THROTTLE_DEADBAND
 

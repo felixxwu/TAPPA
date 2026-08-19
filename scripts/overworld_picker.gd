@@ -980,10 +980,10 @@ func _refresh() -> void:
 		else CarLibrary.by_id(String(owned.get("model_id", "")))
 	# The position readout is what tells the player there is more than one car to see at all — the
 	# car park carries the same "(1 OF 2)" for the same reason.
-	var name_text := String(spec.get("name", ""))
+	var label_text := String(spec.get("name", ""))
 	if _cars.size() > 1:
-		name_text += "   (%d OF %d)" % [_index + 1, _cars.size()]
-	_name_label.text = name_text
+		label_text += "   (%d OF %d)" % [_index + 1, _cars.size()]
+	_name_label.text = label_text
 	# The SHARED helper, not a local copy — hq.gd's own `_car_stats_text` now delegates to this
 	# same static, so the bar and the car park can never disagree about how a car reads.
 	_stats_label.text = RallyDetail.car_stats_text(owned, spec)

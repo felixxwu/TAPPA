@@ -1,5 +1,7 @@
 class_name CloudBusy
 extends RefCounted
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_sync.gd — extend in the same change.
 # The ONE way the game says "a cloud call is in flight".
 #
 # WHY THIS EXISTS. Every screen that awaited Cloud invented its own waiting UI,

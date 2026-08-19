@@ -891,11 +891,11 @@ func _focus_page(page: Control) -> void:
 # The deferred half of _focus_page. Re-resolves the page rather than trusting the one captured a
 # frame ago, because a rebuild (UpgradesGrid.rebuild replaces every tile) can free it in between.
 func _focus_pending() -> void:
-	var page := _pending_focus
+	var pending := _pending_focus
 	_pending_focus = null
-	if page == null or not is_instance_valid(page) or not page.is_inside_tree():
+	if pending == null or not is_instance_valid(pending) or not pending.is_inside_tree():
 		return
-	UITheme.focus_grab_first(page)
+	UITheme.focus_grab_first(pending)
 
 
 func _show_ui(shown: bool) -> void:

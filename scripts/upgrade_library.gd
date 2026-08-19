@@ -172,13 +172,6 @@ const UPGRADES: Array[Dictionary] = [
 		# ground back for a penalty on tarmac. Net on asphalt it is WORSE than the car's
 		# own rubber — that is the trade, and it is what makes the slot a real decision
 		# per rally rather than a permanent upgrade. See features/drivetrain-and-tires.md.
-		# ADDING A PART IS A THREE-PART CHANGE — the row, the docs, the tests. This note is
-		# here rather than only in the file header ~170 lines up, because that is where an
-		# agent editing a table entry actually is. Docs: features/upgrade-catalogue.md AND
-		# features/drivetrain-and-tires.md (which also narrates what the tyre slot holds —
-		# two docs describe this slot and only one is usually updated). Sibling tyre parts
-		# are rally-gated via unlocked_by_rally; leaving a new one ungated is a choice, so
-		# say why in a comment if you make it.
 		"id": "snow_tires", "name": "Snow Tires", "menu_label": "Snow",
 		"slot": "tires", "unlocked_by_rally": "sp_woodland_trial",
 		"consumable": false,
@@ -194,6 +187,56 @@ const UPGRADES: Array[Dictionary] = [
 		"consumable": false,
 		"effect": {"tire_grip_mult": 1.15},
 	},
+		# ADDING A ROW HERE IS A THREE-PART CHANGE, and part 2 is the one that ships
+		# half-done: TWO docs describe the tyre slot and only one is usually updated.
+		#   1. the row — copy a sibling above and edit it.
+		#      THE PROPERTY THIS SLOT MUST KEEP, AND IT IS SYMMETRIC — check BOTH directions:
+		#        (a) your new part must WIN on at least one surface, or it is a
+		#            strictly-weaker rung nobody will ever fit; and
+		#        (b) it must not TAKE the last surface from any existing part. If adding
+		#            yours leaves a sibling winning nowhere, you have not removed a dead
+		#            part, you have moved it — which is the same defect wearing a different
+		#            name.
+		#      Eliminating dead parts entirely is the whole reason this slot was restructured
+		#      (see the Snow Tires note above), so the test is "EVERY row in this slot wins
+		#      somewhere", not just yours. An attempt satisfied (a) and broke (b) — it raised
+		#      its flat term until it beat race_tires on gravel AND tarmac, leaving race_tires
+		#      winning nothing at all.
+		#      CHECK IT, do not assume it: work out each row's effective multiplier per surface
+		#      (flat term x that surface's term, 1.0 where none is authored) and compare ALL of
+		#      them, siblings included. A flat gain big enough to beat the flat-everywhere part
+		#      on your surface will also beat it elsewhere unless your penalties pay that gain
+		#      back, so price them against every surface, not just the one you care about.
+		#      (Re-read the rows for figures; they are authored and get retuned.)
+		#      GATING IS THE HARD PATH — PREFER UNGATED. Omit `unlocked_by_rally` and say in a
+		#      comment why the part needs no event. That is a complete, correct answer and it is
+		#      the one to take unless you were asked for a reward.
+		#      IF YOU DO GATE IT, YOU MUST AUTHOR A NEW SPECIAL — you cannot point at an
+		#      existing one, and you cannot invent an id. BOTH of those have shipped here:
+		#        - An INVENTED id (`h_coast_qualifier`, `sp_coastal_challenge`) names no rally, so
+		#          `rally_gate_met` returns false forever and the part is PERMANENTLY UNWINNABLE
+		#          with nothing complaining at runtime.
+		#        - REUSING a real special (`sp_lakeshore_trial`) collides, because every special
+		#          already has exactly one prize and ADVERTISES IT IN ITS OWN NAME ("Upgrade:
+		#          Drivetrain Conversion"). `unlocked_by` returns the FIRST match, so the second
+		#          part is silently dropped from the map's teaser line.
+		#      So a gated part means a new `RALLIES` row in rally_library.gd, named for its prize
+		#      and reachable from HQ — a much larger change than the row you came here to add.
+		#      Guarded by tests/headless/test_rally_library.gd, which fails with "must be a real
+		#      rally", "gates only one part", or "prize is the part its own gate names". That is a
+		#      test you may not be running, so if you gate at all, verify by hand.
+		#   2. BOTH docs, not one:
+		#        features/upgrade-catalogue.md    — the catalogue's part list.
+		#        features/drivetrain-and-tires.md — enumerates this slot's compounds BY ID, so a
+		#          new one leaves that sentence silently incomplete. Guarded by
+		#          test_upgrade_library.gd -> test_every_tyre_slot_part_is_documented_in_the_tyre_doc.
+		#      NAME the part; never write a COUNT. "three tyre compounds" / "the tyre slot three"
+		#      goes stale on the very next catalogue edit, so a count is rejected outright by
+		#      test_no_feature_doc_states_a_slot_member_count — updating a number you found in the
+		#      prose is the WRONG fix, deleting it is the right one.
+		#   3. tests — the catalogue guards derive their subject list from this table, so a new
+		#      row needs NO new test. Do not pin the new part's stats or assert it exists by id;
+		#      CLAUDE.md forbids both.
 	# The "weight" slot holds ONE part: the lightweight kit. It used to also carry two free
 	# BALLAST options that ADDED mass, so a player could shed power-to-weight to drop into a
 	# lower class. Entry is categorical now, so there is nothing to duck under by getting
@@ -304,7 +347,7 @@ static func pool_weight(id: String) -> float:
 # means ungated. Keyed on the RALLY, not on a raw star total, so reaching the star
 # threshold isn't enough — the event has to actually be driven.
 #
-# Note `completed` in the profile already means a TOP-3 finish (Save.complete_rally is
+# Note `completed` in the profile already means a TOP-3 finish (Save.record_podium_rally is
 # "Record a top-3 rally finish"), so this genuinely reads "was the event won".
 #
 # This gate is about EARNING a part, never about keeping one: a part already in
@@ -541,6 +584,21 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 		for key in effect:
 			var val: Variant = effect[key]
 			var desc: Dictionary = EFFECTS.get(key, {})
+			# AN EFFECT KEY WITH NO `EFFECTS` ROW IS A SILENTLY DEAD PART. `desc` is then {},
+			# `op` is "", the match below selects no arm, and the authored value is never
+			# written anywhere — the part reads as fitted, the config is untouched, and the
+			# feature simply does not happen. This is NOT the same failure `_cfg_set` guards:
+			# that one catches a write to a field GameConfig does not declare, and it never
+			# fires here because the value never reaches it. If you author a new effect key
+			# on a part, YOU MUST ALSO ADD ITS `EFFECTS` ROW — registering the field on
+			# GameConfig (an @export, and for a tyre axis a TIRE_SURFACE_AXES row) is not
+			# enough on its own. Found by the small-model-readiness loop, round 041, where a
+			# wet-weather tyre shipped with the @export, the registry row and the blend arm
+			# all correct and no rain grip at all. Guarded by test_upgrade_library.gd ->
+			# test_every_authored_effect_key_is_registered_in_the_effects_table.
+			if not EFFECTS.has(key):
+				push_error("UpgradeLibrary: '%s' authors effect '%s', which has no EFFECTS row — the value is IGNORED and the part does nothing" % [item_id, key])
+				continue
 			match desc.get("op", ""):
 				"install_induction":
 					# Turn this part on, turn its slot rival off, then stamp the authored

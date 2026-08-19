@@ -3469,7 +3469,7 @@ func _enter_car_screen() -> void:
 	_start_button.text = "Start Rally"
 	_carpark_ui._build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
-	var done := Save.rally_completed(_selected_rally_id)
+	var done := Save.rally_podiumed(_selected_rally_id)
 	_rally_banner.text = "%s%s — needs %s" % [
 		rally.get("name", "?"), "  (done)" if done else "",
 		_restriction_text(rally.get("restriction", {}))]
@@ -4282,6 +4282,20 @@ func _challenge_restriction() -> Dictionary:
 #   2. select the fielded car, so the tuning lift shows what the player last drove.
 #
 # Returns false when the caller must abort (the gate took over).
+#
+# `resume` MAY BE CALLED MUCH LATER — after the player has been to the settings screen and
+# saved a scheme — so it must still work then. Anything it needs must SURVIVE that gap:
+#
+#   * BIND the state into the callable, the way the free-roam path does
+#     (`_start_preflight(_launch_free_roam.bind(instance_id, model_id), instance_id)`), or
+#   * leave it in a member that nothing clears in between.
+#
+# What does NOT work is parking the state in a member and clearing it before calling this.
+# An attempt at a challenge-start confirmation did exactly that — set `_pending_challenge_start`,
+# cleared it, then passed its own handler as `resume` — and the handler's opening
+# `if _pending_challenge_start.is_empty(): return` swallowed the resume. On a touch device a
+# first-time player confirmed, was sent to the picker, saved a scheme, and nothing happened.
+# Headless tests never see it: the gate is behind `Platform.is_touch()`.
 func _start_preflight(resume: Callable, select_instance_id: int = -1) -> bool:
 	if Platform.is_touch() and Save.get_setting(MobileControls.SETTING_KEY, null) == null:
 		_pending_start = resume

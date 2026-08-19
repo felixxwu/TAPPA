@@ -24,7 +24,7 @@ whose *gate* you want:
 
 | Seam | Gate | What lives there today |
 |---|---|---|
-| `_award_podium_rewards(combined, placed, opening_first)` | top-3 finish, **or** the opening rally's first attempt | stars (`Save.complete_rally`), the prize car, special/part unlocks, the game-won beat |
+| `_award_podium_rewards(combined, placed, opening_first)` | top-3 finish, **or** the opening rally's first attempt | stars (`Save.record_podium_rally`), the prize car, special/part unlocks, the game-won beat |
 | `_award_any_finish_bonus_stars(combined, placed)` | **any** non-DNF finish | *nothing yet — returns `0`; this is the empty seam* |
 
 `_award_podium_rewards` returns a `Dictionary` of fields for the `rally_finished`
@@ -165,7 +165,7 @@ event. `UpgradeLibrary.unlocked_by_rally(id)` reads the authored gate;
 `UpgradeLibrary.rally_gate_met(item_id, profile)` (`scripts/upgrade_library.gd`
 → `rally_gate_met`) returns `true` when the field is absent, else whether that
 rally is recorded `completed` in `profile.rallies`. `completed` already means a
-**top-3 finish** (`Save.complete_rally`), so the gate genuinely reads "was the
+**top-3 finish** (`Save.record_podium_rally`), so the gate genuinely reads "was the
 event won". It is keyed on a **rally id**, never on a star balance — the special
 itself opens geometrically off the map (see [rally-roster.md](rally-roster.md)),
 and the spendable star balance ([star-economy.md](star-economy.md)) gates
@@ -269,7 +269,7 @@ to the car that earned it**. The podium announces it as its own stage
 `podium.gd::_show_special_unlock`.
 
 - **First completion only.** `rally_session.gd` captures whether the rally was
-  already completed **before** `Save.complete_rally` runs — afterwards the profile
+  already completed **before** `Save.record_podium_rally` runs — afterwards the profile
   cannot tell a first win from a re-win. A re-win reveals nothing and re-awards
   nothing.
 - **Top-3 only**, because `completed` is only recorded inside the resolve's

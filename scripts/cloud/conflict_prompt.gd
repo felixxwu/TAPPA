@@ -1,5 +1,7 @@
 class_name ConflictPrompt
 extends RefCounted
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_cloud_boot_gate.gd — extend in the same change.
 # The ONE place the "your progress differs" sync conflict is put to the player.
 #
 # WHY THIS EXISTS. The prompt used to live only in account_menu.gd, which meant

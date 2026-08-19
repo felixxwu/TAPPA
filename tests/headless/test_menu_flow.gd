@@ -533,7 +533,7 @@ func test_hq_table_entry_reuses_unchanged_pins() -> void:
 
 	# ...and a change the pins DO read rebuilds them. Completing a rally moves both its star
 	# row and the fog the map is shaded with.
-	Save.complete_rally("a", 100000, 1)
+	Save.record_podium_rally("a", 100000, 1)
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	var rebuilt := _pin_ids(hq)
@@ -675,15 +675,15 @@ func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
 		"entry focuses the highest-difficulty incomplete rally")
 
 	# Complete the hardest → entry now skips it and lands on the next-hardest ("mid").
-	_save.complete_rally("hard", 60000, 1)
+	_save.record_podium_rally("hard", 60000, 1)
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_eq(String(hq._table_ui._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "mid",
 		"a completed event is skipped; focus falls to the next-hardest incomplete one")
 
 	# Everything done → fall back to the centre-nearest target (still a valid pin).
-	_save.complete_rally("mid", 60000, 1)
-	_save.complete_rally("easy", 60000, 1)
+	_save.record_podium_rally("mid", 60000, 1)
+	_save.record_podium_rally("easy", 60000, 1)
 	hq._table_ui._enter_table()
 	await get_tree().process_frame
 	assert_gt(hq._table_focus_index, -1, "with all events done, entry still seats a target")
@@ -2154,7 +2154,7 @@ func _light_the_first_rally() -> String:
 	for rally in RallyLibrary.all():
 		if int(depth.get(String(rally["id"]), 1 << 30)) == 1:
 			var rid := String(rally["id"])
-			_save.complete_rally(rid, 60000, 1)
+			_save.record_podium_rally(rid, 60000, 1)
 			return rid
 	return ""
 
@@ -2182,8 +2182,8 @@ func test_hq_pins_stars_reflect_best_placement() -> void:
 	# unplayed rally rates nothing.
 	var podium_stars := RallyLibrary.stars_for_placement(1)
 	var finish_stars := RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1)
-	_save.complete_rally("fx_open", 60000, 1)
-	_save.complete_rally("fx_fwd_band", 90000, RallyLibrary.PODIUM_PLACES + 1)
+	_save.record_podium_rally("fx_open", 60000, 1)
+	_save.record_podium_rally("fx_fwd_band", 90000, RallyLibrary.PODIUM_PLACES + 1)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -3868,7 +3868,7 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 # exercise the token/partner rules, so they open the capability gate first — otherwise the
 # lock (correctly) masks everything else. `_engine_swap_lock_test` covers the locked state.
 func _unlock_engine_swaps() -> void:
-	_save.complete_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60_000, 1)
+	_save.record_podium_rally(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY, 60_000, 1)
 func test_garage_focus_is_unchanged_by_menu_nav_while_a_modal_is_open() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -5345,7 +5345,7 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 	# Only a rally that is genuinely still LOCKED at seed time — rv_special, gated on the
 	# ordinary-completion count — survives the pass to become a real future reveal.
 	_install_reveal_roster()
-	_save.complete_rally("rv_open", 60_000, 2)  # 1 completion: still short of rv_special
+	_save.record_podium_rally("rv_open", 60_000, 2)  # 1 completion: still short of rv_special
 	assert_true(_save.needs_reveal_seeding())
 	_save.save_now()
 	_save.load_or_new()  # the profile becoming live is what must trigger the backfill
@@ -5359,7 +5359,7 @@ func test_an_existing_career_is_seeded_instead_of_paraded() -> void:
 
 	# ...and a rally that was still LOCKED at seed time still gets a real reveal once it
 	# actually unlocks — seeding backfilling the open roster does not swallow that.
-	_save.complete_rally("rv_hot", 45_000, 1)  # 2nd completion -> opens the special
+	_save.record_podium_rally("rv_hot", 45_000, 1)  # 2nd completion -> opens the special
 	assert_true(hq._table_ui._pending_reveals().has("rv_special"),
 		"seeding never swallows a rally that was still locked at seed time")
 

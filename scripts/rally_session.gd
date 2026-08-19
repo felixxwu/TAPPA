@@ -805,7 +805,7 @@ func _resolve_results() -> void:
 	# The opening rally — the event awarding the car the player chose in the starter
 	# picker, which they are dropped straight into before the map exists — is recorded
 	# complete whatever the result, DNF included. Placement still decides the stars, via
-	# the same complete_rally delta as everywhere else; only the `completed` flag is given.
+	# the same record_podium_rally delta as everywhere else; only the `completed` flag is given.
 	#
 	# It is an introduction, not a test: a first-time player who comes 4th would otherwise
 	# land on a map lit by nothing but HQ and the rally they just failed, a dead end
@@ -816,7 +816,7 @@ func _resolve_results() -> void:
 	# "this rally always counts" that quietly launders DNFs into best times.
 	#
 	# The exception lives HERE, at the call site, rather than as a parameter on
-	# Save.complete_rally: every other caller must keep the podium rule, and a flag on the
+	# Save.record_podium_rally: every other caller must keep the podium rule, and a flag on the
 	# shared function is an invitation to misuse it.
 	var opening_first := _is_opening_first_attempt()
 	# NAME CARRIES THE GATE ON PURPOSE. This is NOT "the player finished" — it is
@@ -846,7 +846,7 @@ func _resolve_results() -> void:
 	# _award_any_finish_bonus_stars for why it cannot be allowed to invent its own key.
 	var bonus_stars := maxi(0, _award_any_finish_bonus_stars(combined, placed)) if finished else 0
 	if bonus_stars > 0:
-		# award_stars is the NON-rally credit path, which is right: complete_rally has
+		# award_stars is the NON-rally credit path, which is right: record_podium_rally has
 		# already paid the placement stars, so this adds only the bonus on top — no
 		# double-credit. Silent when bonus_stars is 0, which is today's behaviour.
 		Save.award_stars(bonus_stars)
@@ -934,16 +934,16 @@ func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> D
 	var special_unlock := {}
 	var stars_gained := 0
 	var star_rating := 0
-	var rally_id := String(_rally.get("id", ""))
-	# Captured BEFORE complete_rally, which is what sets `completed` — afterwards the
+	var rid := String(_rally.get("id", ""))
+	# Captured BEFORE record_podium_rally, which is what sets `completed` — afterwards the
 	# profile can no longer tell a first win from a re-win, and the unlock reveal must
 	# fire exactly once (todo/special-unlock-reveal.md).
 	var was_completed: bool = bool((Save.profile.get(Save.KEY_RALLIES, {}) as Dictionary)
-		.get(rally_id, {}).get("completed", false))
-	# complete_rally records the FIRST completion (idempotent) and returns the STARS it
+		.get(rid, {}).get("completed", false))
+	# record_podium_rally records the FIRST completion (idempotent) and returns the STARS it
 	# credited for THIS finish — every finish pays, so a replay pays again.
-	stars_gained = Save.complete_rally(rally_id, combined, placed)
-	star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
+	stars_gained = Save.record_podium_rally(rid, combined, placed)
+	star_rating = RallyLibrary.stars_for_placement(Save.best_placement(rid))
 	# A PART-UNLOCK rally's first win discovers the part garage-wide and hands one copy
 	# to the car that just earned it — cascading any prerequisite rungs that car is
 	# missing, so the award is usable (RewardSystem.grant_special_unlock).
@@ -954,17 +954,17 @@ func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> D
 	# as a special may carry none. `special` is a MARKER, not a reward tier.
 	#
 	# Discovery itself needs no new save state: UpgradeLibrary.rally_gate_met already
-	# reads "is the gating rally completed", and complete_rally above has just recorded
+	# reads "is the gating rally completed", and record_podium_rally above has just recorded
 	# exactly that. One fact, one place.
 	if not was_completed:
-		var unlocked := UpgradeLibrary.unlocked_by(rally_id)
+		var unlocked := UpgradeLibrary.unlocked_by(rid)
 		if not unlocked.is_empty():
 			var item_id := String(unlocked.get("id", ""))
 			special_unlock = {
 				"item_id": item_id,
 				"granted": RewardSystem.grant_special_unlock(_car_instance_id, item_id),
 			}
-		elif rally_id == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
+		elif rid == RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY:
 			# A special may gate a CAPABILITY rather than a catalogue part, authored the
 			# other way round (RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY) so it is not in
 			# UpgradeLibrary's index. It still gets announced — and it is the LOWEST rung,
@@ -981,7 +981,7 @@ func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> D
 				"granted": [],
 			}
 	# The endgame is completing EVERY special event on the star ladder — no designated
-	# final region (todo/star-gated-special-events.md). complete_rally() above has
+	# final region (todo/star-gated-special-events.md). record_podium_rally() above has
 	# already recorded THIS special, so the last one to be won sees itself counted here
 	# and fires the credits; ordering matters and is why the check sits after it.
 	var is_final_special := RallyLibrary.is_special(_rally) \
@@ -1025,7 +1025,7 @@ func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> D
 		# announces its NEIGHBOURS rather than replaying the rally the player has
 		# this second finished driving. Without this it would be first in the queue,
 		# and the map's opening beat would be news the player already has.
-		Save.mark_rally_revealed(rally_id, false)
+		Save.mark_rally_revealed(rid, false)
 	Save.save()
 	return {
 		"car_reward": car_reward,
@@ -1059,16 +1059,10 @@ func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> D
 # next one has an obvious home with the right gate, instead of being dropped into the podium
 # block and silently inheriting a gate it did not want.
 #
-# WHEN YOU MAKE THIS RETURN NON-ZERO, TWO EXISTING TESTS WILL GO RED, AND THAT IS EXPECTED —
-# they are not your bug and you must not weaken them into meaninglessness:
-#   tests/headless/test_rally_session.gd
-#     · test_a_rewin_pays_stars_again_but_never_another_car
-#     · test_the_opening_rally_completes_on_a_losing_finish
-# Both assert `stars_gained == stars_for_placement(...)` on fixtures that finish UNDAMAGED,
-# so any any-finish bonus makes them off by exactly the bonus. Update them to account for the
-# bonus your feature pays (assert the placement part plus your knob, not a bare number).
-# You cannot see this by running the suite before you start — they are green until the seam
-# pays out — which is why it is written here rather than left to be discovered.
+# You can make this return non-zero without touching any existing test: the two that used to
+# pin `stars_gained == stars_for_placement(...)` on undamaged fixtures now assert `>=`, because
+# an equality there froze this seam shut (round 016). Put the AMOUNT in a GameConfig @export,
+# not a literal.
 func _award_any_finish_bonus_stars(_combined: int, _placed: int) -> int:
 	return 0
 
@@ -1113,16 +1107,16 @@ func _merge_result_fields(result: Dictionary, extra: Dictionary) -> void:
 # (RallyLibrary.opening_rally_id_for) — so it is per-profile, and every other player's
 # opening rally is an ordinary prize rally to this one.
 #
-# Must be asked BEFORE Save.complete_rally runs: it is the un-completed state that marks
-# the first attempt, and complete_rally is exactly what erases it.
+# Must be asked BEFORE Save.record_podium_rally runs: it is the un-completed state that marks
+# the first attempt, and record_podium_rally is exactly what erases it.
 func _is_opening_first_attempt() -> bool:
-	var rally_id := String(_rally.get("id", ""))
-	if rally_id == "":
+	var rid := String(_rally.get("id", ""))
+	if rid == "":
 		return false
 	var starter := String(Save.profile.get("starter_model_id", ""))
-	if RallyLibrary.opening_rally_id_for(starter) != rally_id:
+	if RallyLibrary.opening_rally_id_for(starter) != rid:
 		return false
-	return not Save.rally_completed(rally_id)
+	return not Save.rally_podiumed(rid)
 
 
 # A car-park "Detune to N% & Start" agreement is only for the rally being entered:

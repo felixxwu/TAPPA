@@ -430,8 +430,9 @@ gate (the gate governs earning, never keeping), and an unlocked-but-unfitted par
 selectable as a purchase, priced.
 
 The turbo slot's menu labels run `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
-`turbo_large` / `supercharger`, shown by their `menu_label`), and the tyre slot two —
-`Stock` / `Snow` / `Race` (`snow_tires` / `race_tires`, likewise by `menu_label`); the
+`turbo_large` / `supercharger`, shown by their `menu_label`), and the tyre slot reads
+`Stock` alongside a label per compound — `Snow` / `Race` (`snow_tires` / `race_tires`,
+likewise by `menu_label`); the
 single-part slots read `Stock` /
 `<Kit>` (e.g. the aero tile's `Stock` / `Aero Kit`, using the part's full `name`). Under the
 hood it's the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled`):

@@ -256,7 +256,7 @@ func test_an_ordinary_rally_hands_over_no_car() -> void:
 
 
 # The gate itself must still be recorded. Dropping the car draw for specials must not take
-# Save.complete_rally with it — that is what opens the upgrade for the whole garage.
+# Save.record_podium_rally with it — that is what opens the upgrade for the whole garage.
 func test_a_special_win_still_records_completion() -> void:
 	_install_unlock_ladder()
 	_start_winnable("fx_showdown")
@@ -271,7 +271,7 @@ func test_a_special_win_still_records_completion() -> void:
 
 # Re-winning a special announces nothing and re-awards nothing — the reveal is a
 # first-completion beat, and the profile can't distinguish afterwards, so this guards the
-# capture-before-complete_rally ordering.
+# capture-before-record_podium_rally ordering.
 func test_re_winning_a_special_reveals_and_awards_nothing() -> void:
 	_install_unlock_ladder()
 	_start_winnable("fx_showdown")
@@ -551,7 +551,7 @@ func test_happy_path_accumulates_and_places() -> void:
 	assert_eq(r["placed"], 2, "placement counts faster non-DNF opponents")
 	assert_true(r["completed"], "a top-3 finish completes the rally")
 	assert_false(r["dnf"], "not a DNF")
-	assert_true(_save.rally_completed("fx_open"), "completion recorded in the save")
+	assert_true(_save.rally_podiumed("fx_open"), "completion recorded in the save")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
 
 
@@ -610,7 +610,7 @@ func test_dev_complete_rally_wins_immediately_from_mid_rally() -> void:
 	assert_eq(r["placed"], 1, "a 0 ms combined out-runs the whole field -> P1")
 	assert_true(r["completed"], "a P1 finish completes the rally (top-3)")
 	assert_false(r["dnf"], "not a DNF")
-	assert_true(_save.rally_completed("fx_open"), "completion recorded in the save")
+	assert_true(_save.rally_podiumed("fx_open"), "completion recorded in the save")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
 
 
@@ -688,7 +688,7 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 	var r := _finish_result(finish)
 	assert_false(r["completed"], "a non-top-3 finish does not complete the rally")
 	assert_eq(r["placed"], 6, "slower than all 5 opponents -> placed 6th")
-	assert_false(_save.rally_completed("fx_open"), "an incomplete rally stays incomplete (no retry)")
+	assert_false(_save.rally_podiumed("fx_open"), "an incomplete rally stays incomplete (no retry)")
 	assert_false(_save.get_car(id).is_empty(), "the car survives a non-DNF finish")
 
 	# Re-enter from the map: state resets, the opponent field is unchanged (fixed
@@ -706,7 +706,7 @@ func _complete_other_specials(keep_id: String) -> void:
 	for rally in RallyLibrary.all():
 		var rid := String(rally.get("id", ""))
 		if RallyLibrary.is_special(rally) and rid != keep_id:
-			_save.complete_rally(rid, 1000)
+			_save.record_podium_rally(rid, 1000)
 
 
 # The id of the special the map reaches FIRST — the one a player meets soonest, and so the
@@ -742,7 +742,7 @@ func test_win_beat_fires_once_every_special_is_done() -> void:
 	_report_events([10000, 10000, 10000])
 	assert_true(won[0], "completing the final outstanding special fires the win beat")
 	assert_eq(_save.profile["cars"].size(), cars_before, "the final special grants no car reward")
-	assert_true(_save.rally_completed(last), "the special records completion")
+	assert_true(_save.rally_podiumed(last), "the special records completion")
 
 
 func test_a_special_with_others_outstanding_completes_without_win_beat() -> void:
@@ -768,7 +768,7 @@ func test_a_special_with_others_outstanding_completes_without_win_beat() -> void
 	var result := _finish_result(result_box)
 	assert_false(result["game_won"],
 		"a special with others outstanding must not flag the endgame/credits podium")
-	assert_true(_save.rally_completed(first), "the special still records completion")
+	assert_true(_save.rally_podiumed(first), "the special still records completion")
 
 
 # A re-win pays STARS again but still no CAR. The two halves used to move together (the car
@@ -777,7 +777,7 @@ func test_a_special_with_others_outstanding_completes_without_win_beat() -> void
 # rally is a legitimate way to earn — while the CAR remains a one-time prize, or an easy rally
 # would refill the garage indefinitely and make the rallies' restriction bands meaningless.
 func test_a_rewin_pays_stars_again_but_never_another_car() -> void:
-	_save.complete_rally("fx_open", 999999, 1)  # already won outright
+	_save.record_podium_rally("fx_open", 999999, 1)  # already won outright
 	_grant_and_start("fx_open")
 	# Snapshot AFTER _grant_and_start, which grants the car being driven — so anything the
 	# finish itself adds shows up as a change.
@@ -790,7 +790,13 @@ func test_a_rewin_pays_stars_again_but_never_another_car() -> void:
 	var gained := int(_finish_result(box).get("stars_gained", -1))
 	assert_eq(_save.podium_rally_count(), podiums_before, "a re-win records no new podium")
 	assert_eq(_save.profile["cars"].size(), cars_before, "no car is granted for a re-win")
-	assert_eq(gained, RallyLibrary.stars_for_placement(1), "the podium re-win pays its stars")
+	# AT LEAST the placement payout, not exactly it. The equality here used to freeze a product
+	# choice: `stars_gained` is the placement stars PLUS whatever the any-finish bonus seam pays
+	# (rally_session.gd::_award_any_finish_bonus_stars), so an equality made any such bonus —
+	# a sanctioned feature — impossible to add without reddening this test. What this test is
+	# actually about is that a re-win pays again, grants no car and records no new podium; the
+	# exact figure is incidental to all three. See CLAUDE.md on not pinning product choices.
+	assert_gte(gained, RallyLibrary.stars_for_placement(1), "the podium re-win pays its stars")
 	assert_eq(_save.stars_available(), stars_before + gained, "and the balance moved by that much")
 
 
@@ -1077,7 +1083,11 @@ func test_the_opening_rally_completes_on_a_losing_finish() -> void:
 	assert_true(r["completed"], "the opening rally completes on a non-podium finish")
 	# Finishing always pays, podium or not — so the player's first drive banks something even
 	# when the field beats them.
-	assert_eq(int(r["stars_gained"]), RallyLibrary.stars_for_placement(int(r["placed"])),
+	# AT LEAST what finishing is worth — see the note in
+	# test_a_rewin_pays_stars_again_but_never_another_car. An any-finish bonus is allowed to add
+	# to this; what must never happen is a losing finish paying less than its placement, or
+	# nothing at all (asserted next).
+	assert_gte(int(r["stars_gained"]), RallyLibrary.stars_for_placement(int(r["placed"])),
 		"a losing FINISH still pays what finishing is worth")
 	assert_gt(int(r["stars_gained"]), 0, "which is more than nothing")
 
@@ -1104,7 +1114,7 @@ func test_a_retry_of_a_completed_opening_rally_is_scored_normally() -> void:
 	_install_opening_rally()
 	_grant_and_start("fx_open")
 	_report_losing_run()
-	assert_true(_save.rally_completed("fx_open"), "setup: the first attempt completed it")
+	assert_true(_save.rally_podiumed("fx_open"), "setup: the first attempt completed it")
 	RallySession.abandon()
 
 	RallySession.return_to_map = false
@@ -1127,7 +1137,7 @@ func test_another_starters_prize_rally_is_still_podium_gated() -> void:
 	_report_losing_run()
 	var r := _finish_result(finish)
 	assert_false(r["completed"], "someone else's prize rally still needs a podium")
-	assert_false(_save.rally_completed("fx_open"), "and records no completion")
+	assert_false(_save.rally_podiumed("fx_open"), "and records no completion")
 
 
 # A profile with no starter recorded (every save made before the picker existed) must not

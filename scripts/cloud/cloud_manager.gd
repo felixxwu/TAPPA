@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_boot_gate.gd — extend in the same change.
 # Autoload "Cloud": the facade the rest of the game talks to for optional cloud
 # save. Wires the four units in scripts/cloud/ together and owns their lifetime.
 #

@@ -1,5 +1,14 @@
 # Track Progress & Off-Track Reset
 
+> **"Progress" here means DISTANCE ALONG ONE STAGE, not career progress.** This file owns
+> `TrackProgress` — how far the car has driven down the generated road, and the off-track
+> auto-reset. It owns **nothing** about the player's career.
+> Looking for how many rallies the player has finished or podiumed, stars, unlocks, or
+> anything persisted between sessions? That is
+> [save-persistence.md](save-persistence.md) (the profile and its API) and
+> [star-economy.md](star-economy.md) (the star ledger). There is no career "progress"
+> module; the profile IS the career state.
+
 `TrackProgress` (`scripts/track_progress.gd`, `class_name TrackProgress extends
 Node`) tracks how far along the generated road the car has driven and snaps it
 back onto the road if it stays off it too long. Both behaviours run off the road

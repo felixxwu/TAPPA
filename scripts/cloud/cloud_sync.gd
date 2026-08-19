@@ -1,5 +1,7 @@
 class_name CloudSync
 extends Node
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_sync.gd — extend in the same change.
 # Synchronises the local profile with a single Firestore document per user.
 #
 # The local file stays the SOURCE OF TRUTH for the running session — this class

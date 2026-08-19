@@ -55,6 +55,37 @@ var peak_torque_rpm := 4500.0
 ## a typical 4000 rpm the slope contributes 4x its value against a base of 20-60 N·m —
 ## a change worth feeling is a multiple, not a few percent.
 @export var engine_friction_slope := 1.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
+## ADDING OR RETUNING AN ENGINE-BRAKING KNOB IS A THREE-PART CHANGE. Part 3 is the one every
+## attempt so far has skipped, so it carries its own paste-able skeleton below.
+##   1. the knob — an `@export` here (never a literal in engine.gd/car.gd). Read
+##      `is_lifting_off()`'s comment in engine.gd FIRST: it is true while BRAKING, so gating
+##      drag on it also changes wheel lock-up.
+##   2. the docs — `features/engine-and-transmission.md` (the FMEP model and its "Related
+##      config" list) AND `features/car-physics.md` (which narrates what slows the car).
+##      Two docs describe this and only one is usually updated.
+##   3. A BEHAVIOURAL TEST in `tests/headless/test_car.gd`. Legal and easy: assert the
+##      DIRECTION, never the chosen number — pinning the value is banned (CLAUDE.md), which
+##      is why "no test is possible here" is wrong rather than merely lazy. Paste this and
+##      edit the two marked lines:
+##
+##        func test_stronger_engine_braking_slows_a_coasting_car_more() -> void:
+##            var decel_at := func(gain: float) -> float:
+##                Config.data.engine_friction_lift_off_gain = gain   # EDIT: your knob's name
+##                var car := _spawn_car()                            # EDIT: this file's helper
+##                _settle(car)
+##                car.throttle_input = 0.0
+##                var v0: float = car.linear_velocity.length()
+##                for _i in 60:
+##                    _step(car)
+##                return v0 - car.linear_velocity.length()
+##            var weak := float(decel_at.call(1.0))
+##            var strong := float(decel_at.call(2.0))
+##            assert_gt(strong, weak,
+##                "raising the lift-off gain must slow a coasting car more")
+##            Config.reset()   # a non-authored baseline must not leak into the next test
+##
+##      Then run it: `./run_tests.sh --fast test_car test_drivetrain` — test_drivetrain is
+##      what catches the braking side effect part 1 warns about.
 @export var axle_inertia := 2.645  # kg·m² rear axle spin inertia; fronts use half each
 @export var drag_coefficient := 3.527  # quadratic aero drag on the chassis
 ## Fraction of the chassis WIDTH cut off each of the four vertical corners of the
@@ -225,6 +256,14 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 	{"field": "tire_snow_grip_mult", "channel": "snow"},
 	{"field": "tire_tarmac_grip_mult", "channel": "tarmac"},
 ]
+## REGISTERING AN AXIS HERE DOES NOT REGISTER THE EFFECT. The three edits in this file (the
+## @export, the row above, the _channel_weight arm) make the axis exist and blend. They do NOT
+## let an upgrade author it: a part's `effect` key is looked up in UpgradeLibrary.EFFECTS, and a
+## key with no row there is dropped silently — the part reads as fitted and does nothing. So a new
+## tyre axis is FOUR edits, three here and one in upgrade_library.gd. Round 041 of the
+## small-model-readiness loop shipped a wet-weather tyre with all three of these correct and no
+## rain grip at all, five test files green. Guarded by test_upgrade_library.gd ->
+## test_every_authored_effect_key_is_registered_in_the_effects_table.
 ## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two
 ## different jobs: the low grip above makes the car SLIDE, this makes it BOG.
 ## Neither alone reads as deep snow.

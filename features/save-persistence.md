@@ -208,27 +208,32 @@ free and reversible; enabling a part switches off its same-slot siblings),
 plan to a car in one go — buys + enables, enables, strips, an optional drivetrain
 override, then the plan's absolute detune; a no-op returning `false` for a plan whose
 `changed` is false or a car that isn't in the save),
-`complete_rally(rally_id, combined_ms,
+`record_podium_rally(rally_id, combined_ms,
 placed)` (idempotent; keeps the best time **and** best placement; grants no car — cars
-are bought, see [star-economy.md](star-economy.md)). It **returns the star delta it
-credited**: only the IMPROVEMENT over that rally's previous best, so a re-win at an
-equal or worse placement pays nothing and the renewable-win loop can't be farmed.
-The podium's stars beat needs that delta rather than the raw placement rating, since
-turning a 2nd into a 1st is worth exactly 1 even though the two placements rate 2 and
-3 stars. `award_stars` / `spend_stars` / `stars_available` are the non-rally ledger
-API. `rally_completed(id)` /
+are bought, see [star-economy.md](star-economy.md)). It **returns the stars it credited
+for THIS finish** — every finish pays what its placement is worth, so a rally can be
+re-driven for stars. (It used to credit only the improvement over the rally's previous
+best, an anti-grind guard that was deliberately removed; the consequence is that star
+income is farmable by replaying an easy rally, and repair/part prices are what hold the
+economy up.) `award_stars` / `spend_stars` / `stars_available` are the non-rally ledger
+API. `rally_podiumed(id)` /
 `podium_rally_count()` / `best_placement(id)` query progress.
 
-**`podium_rally_count()` counts PODIUMS, not finishes.** The per-rally `completed`
-flag it sums is written only inside the podium-gated block in `rally_session.gd`
-(`podium_or_opening`), so a 5th-place finish increments nothing and
-`rally_completed(id)` means "podiumed this rally". There is **no
-finished-in-any-position counter in the save schema at all** — a feature that needs
-one must add persistence for it rather than reuse this, and no UI should read
-"rallies completed" off it. `completed_rally_count()` /
-`RallyLibrary.completed_count()` survive as deprecated one-line wrappers over
-`podium_rally_count()` / `RallyLibrary.podium_count()`; the persisted `completed`
-KEY is unchanged (renaming it would need a save migration).
+**`podium_rally_count()` counts PODIUMS, not finishes — and so does every other field of
+a rally's record.** The gate is on the WRITE, not on any one field: `record_podium_rally` has
+exactly one caller (`rally_session.gd`, inside `_award_podium_rewards`, gated on
+`podium_or_opening`), so a 5th-place finish writes **nothing** into the rally's record.
+`completed`, `best_placed` and `best_combined_ms` are therefore all podium-gated, and
+**there is no untainted sibling field to escape through** — counting `best_placed > 0`
+returns the same podium number under a more honest-sounding name. There is **no
+finished-in-any-position counter in the save schema at all**; a feature that needs one
+must add persistence for it — declared in `_default_profile()` so `_migrate`'s key
+backfill seeds existing saves — rather than deriving it from this record, and no UI
+should read "rallies finished" off it. The per-rally predicate is named
+`rally_podiumed(id)` (it was `rally_completed(id)` until round 015, a name that lied);
+`completed_rally_count()` / `RallyLibrary.completed_count()` survive as deprecated
+one-line wrappers over `podium_rally_count()` / `RallyLibrary.podium_count()`; the
+persisted `completed` KEY is unchanged (renaming it would need a save migration).
 
 ## Durability & integrity
 
@@ -318,7 +323,7 @@ The special-event gate and the per-rally reveal gate are the one predicate, deri
 LIVE from the profile's completion records and every rally's authored `map_pos` by
 `RallyLibrary` (`rally_revealed()` over `lit_sources()`, see `map-exploration.md`),
 rather than being precomputed and stored on the save — `save_manager.gd` recomputes no
-unlock state on `complete_rally`; the only thing it writes beyond the rally record
+unlock state on `record_podium_rally`; the only thing it writes beyond the rally record
 itself is the star delta onto `stars_earned` (see the ledger above).
 `item_id`s come from the upgrade catalogue
 (`upgrade-catalogue.md`); `Save` only consumes them as opaque strings.

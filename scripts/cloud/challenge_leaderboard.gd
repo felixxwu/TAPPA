@@ -1,5 +1,7 @@
 class_name ChallengeLeaderboard
 extends FirestoreBoard
+# Docs: features/rally-challenge.md — update in the same change as this file.
+# Tests: tests/headless/test_challenge_leaderboard.gd — extend in the same change.
 # The Daily/Weekly/Monthly Rally Challenge world leaderboard: one Firestore
 # document per player per period, at
 #   challenge_runs/{period_key}/entries/{uid}

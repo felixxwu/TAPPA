@@ -1,6 +1,6 @@
 class_name StageManager
 extends Node
-# Docs: features/stage.md, features/sfx.md, todo/audio.md — update in the same change as this file. (Audio cues in this file go through the `Audio` autoload — never a hand-rolled AudioStreamGenerator; see the AUDIO HOOK note at the GO transition.)
+# Docs: features/stage.md, features/sfx.md, todo/audio.md — update in the same change as this file. (Audio cues in this file go through the `Audio` autoload — never a hand-rolled AudioStreamGenerator; see the AUDIO RULES block at the GO transition.)
 # Tests: tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Owns the per-stage start/end flow on top of the always-live world:
 #   0. STAGING   — (optional) the car is locked while the pre-event start-line
@@ -120,14 +120,14 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 			_car.controls_locked = true
 			_car.handbrake_locked = false
 		_phase = Phase.STAGING
-		_countdown_left = _cfg().stage_countdown_seconds
+		_arm_countdown()
 	else:
 		# Countdown: hold only the handbrake so the player can rev up and launch on GO.
 		if _car != null:
 			_car.controls_locked = false
 			_car.handbrake_locked = true
 		_phase = Phase.COUNTDOWN
-		_countdown_left = _cfg().stage_countdown_seconds
+		_arm_countdown()
 		_mark_progress_start()  # car is on the line now -> progress reads 0% from here
 		if _hud_can["show_countdown"]:
 			_hud.show_countdown(_countdown_left)
@@ -148,7 +148,7 @@ func begin_countdown() -> void:
 		_car.controls_locked = false
 		_car.handbrake_locked = true
 	_phase = Phase.COUNTDOWN
-	_countdown_left = _cfg().stage_countdown_seconds
+	_arm_countdown()
 	# The start-line sequence has just snapped the car onto the line; anchor 0% here.
 	_mark_progress_start()
 	if _hud_can["show_countdown"]:
@@ -261,6 +261,16 @@ func _timed_process(delta: float) -> void:
 			pass
 
 
+# THE ONE PLACE A COUNTDOWN IS ARMED. Three call sites reach here (STAGING setup, direct
+# COUNTDOWN setup, and begin_countdown), which is why this exists rather than three copies of
+# the assignment: **any per-countdown state belongs in here.** An attempt at the countdown beep
+# added a "last displayed count" tracker and reset it at two of the three sites, so re-arming
+# through the third within the first second silently swallowed the first cue. Put it here and
+# that cannot happen.
+func _arm_countdown() -> void:
+	_countdown_left = _cfg().stage_countdown_seconds
+
+
 func _tick_countdown(delta: float) -> void:
 	_countdown_left -= delta
 	if _countdown_left > 0.0:
@@ -275,12 +285,36 @@ func _tick_countdown(delta: float) -> void:
 	if _hud_can["show_countdown"]:
 		_hud.show_countdown(0.0)  # "GO"
 	_go_flash_left = GO_FLASH_SECONDS
-	# AUDIO HOOK — the countdown beep / GO sting belongs here (and per integer tick
-	# in the countdown branch above). DO NOT hand-roll an AudioStreamGenerator,
-	# AudioStreamPlayer or PCM loop in this file: call the `Audio` autoload —
-	# `Audio.play_beep()` for a tick, `Audio.play_beep(<higher hz>)` for GO. It owns
-	# the SFX bus, the headless guard and the play()/get_stream_playback() order.
-	# See scripts/audio.gd + features/sfx.md; the planned cue set is in todo/audio.md.
+	# AUDIO RULES FOR THIS FILE — these hold whether or not any cue is wired yet, so do
+	# NOT delete this block when you add one. It is not a TODO marker; a probe read it,
+	# implemented the countdown beep at this exact spot, and removed it, which took the
+	# prohibition below and the doc pointers with it while three cues were still unwired.
+	#
+	#   1. NEVER hand-roll an AudioStreamGenerator, AudioStreamPlayer or PCM loop in this
+	#      file. Call the `Audio` autoload: `Audio.play_beep()` for a tick,
+	#      `Audio.play_beep(<higher hz>)` for GO. "HIGHER" IS CHECKABLE, SO CHECK IT: the tick
+	#      uses GameConfig.sfx_beep_frequency_hz, which is 880.0 today, so a GO pitch must be
+	#      ABOVE that number — an attempt passed 800.0 and commented it as "higher", which makes
+	#      GO sound lower than the counts it is meant to punctuate. Re-read the export rather than
+	#      trusting this figure; it is an authored value. It owns the SFX bus, the headless guard
+	#      and the play()/get_stream_playback() order. An attempt that hand-rolled DSP here
+	#      took the whole stage-manager suite down.
+	#   2. KEY A PER-COUNT CUE OFF THE DISPLAYED INTEGER, not off crossing a float
+	#      threshold. `_countdown_left` is seconds remaining and the HUD shows
+	#      `ceil`-style counts, so "3" is already on screen before any threshold is
+	#      crossed. Detecting crossings gives you a **silent first count** and, at zero,
+	#      a tick and the GO cue **in the same frame**. Track the last displayed value and
+	#      fire when it CHANGES — an attempt using crossings shipped exactly those two bugs
+	#      and no test caught either.
+	#   3. WIRING A CUE MEANS UPDATING THESE, in the same change:
+	#        features/sfx.md      — has a "## Not yet wired" section listing this cue.
+	#                               Wiring it makes that section FALSE; move the cue out of it.
+	#        todo/audio.md        — tick the cue in the planned set.
+	#      Both are named here because nothing else at this call site names them, and two
+	#      separate probes wired a cue and left both stale.
+	#   4. Cues still unwired as of this comment: impact/wreck, UI clicks, the podium
+	#      sting. Rules 1-3 apply to each of them, which is why this block outlives any one
+	#      of them being finished.
 	stage_started.emit()
 
 

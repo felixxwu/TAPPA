@@ -2,7 +2,7 @@ extends Node
 # Autoload "ChallengeSession" — the Daily/Weekly/Monthly Rally Challenge's own
 # small state machine, parallel to RallySession rather than a reuse of it (a
 # challenge has no rival field, no special/star unlock, no
-# Save.complete_rally bookkeeping). See
+# Save.record_podium_rally bookkeeping). See
 # docs/superpowers/specs/2026-07-31-rally-challenge-design.md §3-4-6 and
 # features/rally-challenge.md.
 #

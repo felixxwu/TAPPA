@@ -84,7 +84,7 @@ with them, and working toward the special-event finale.
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
-| [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
+| [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset. **Per-stage distance, NOT career progress** — career state lives in [save-persistence.md](save-persistence.md) / [star-economy.md](star-economy.md) |
 | [corner-cutting.md](corner-cutting.md) | Corner-cutting time penalty — arc-gained-vs-driven cut detection in `TrackProgress`, snapshot at the finish, live HUD flash + finish-panel breakdown |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
 | [start-line.md](start-line.md) | `StartLine` — the pre-event start-line scene (diegetic briefing panel + atmosphere presence cars) before the countdown |

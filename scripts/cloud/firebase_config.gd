@@ -1,5 +1,7 @@
 class_name FirebaseConfig
 extends RefCounted
+# Docs: features/cloud-save.md — update in the same change as this file.
+# Tests: tests/headless/test_cloud_auth.gd — extend in the same change.
 # Build configuration for the Firebase project backing optional cloud save.
 #
 # This is deliberately NOT in config/game_config.tres: the config-first rule in
@@ -89,6 +91,14 @@ static func google_configured() -> bool:
 
 # Short platform tag stored on the cloud document so the conflict prompt can say
 # "from android" rather than showing the player a raw uid.
+#
+# THE EXACT VALUES, because this string is shown to the PLAYER and every one of them is
+# lowercase and terse: "web", or `OS.get_name().to_lower()` — i.e. "macos", "windows",
+# "linux", "android", "ios". There is no title-case or friendly form anywhere: it is NOT
+# "iPhone", "Desktop" or "Mac". Anything documenting or formatting this value must use the
+# real spelling, and a UI that wants a prettier label has to map it deliberately rather than
+# assume one. (Written down because an attempt at a new device readout documented the screen
+# as showing "from iPhone", a value this function cannot return.)
 static func device_tag() -> String:
 	if Platform.is_web():
 		return "web"

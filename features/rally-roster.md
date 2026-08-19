@@ -613,7 +613,7 @@ generator also uses it per-rival.
 - `stars_for_placement(placed)` — the per-rally scoring curve: 1st pays
   `STARS_FOR_WIN`, the rest of the podium (2nd–`PODIUM_PLACES`) pays
   `STARS_FOR_PODIUM`, any other finish pays `STARS_FOR_FINISH`, not finishing pays 0.
-  Flat below the win — no 2nd/3rd gradient. THE one definition: `Save.complete_rally`'s credit, the Rally Challenge
+  Flat below the win — no 2nd/3rd gradient. THE one definition: `Save.record_podium_rally`'s credit, the Rally Challenge
   payout and `hq._stars_for` all delegate to it, so the medals drawn on a pin cannot
   disagree with what the ledger was paid. `MAX_STARS_PER_RALLY` (the star rows'
   denominator) is a SEPARATE constant from `PODIUM_PLACES` — see
@@ -788,7 +788,7 @@ forestiness, surface_mix)` into `Config.data` (`track_seed` / `track_turn_count`
 `track_straightness` / `track_width` / `track_forestiness` /
 `track_tarmac_fraction`) — the same `Config.data` mutation pattern `apply_car`
 uses — then `world._generate_track(cfg)` builds that exact track. After event 3, the combined time is compared against the opponent
-field → placement → `Save.complete_rally(id, combined_ms)` if top-3 (which is
+field → placement → `Save.record_podium_rally(id, combined_ms)` if top-3 (which is
 idempotent for the progress flag; the *car reward* fires on every top-3 finish,
 so beaten rallies stay farmable).
 
