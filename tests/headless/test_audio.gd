@@ -26,7 +26,38 @@ func test_sfx_bus_exists_and_sends_to_master() -> void:
 	var idx := AudioServer.get_bus_index(AudioManager.BUS)
 	assert_true(idx > 0, "an SFX bus exists and is not bus 0 (Master)")
 	if idx > 0:
-		assert_eq(str(AudioServer.get_bus_send(idx)), "Master", "SFX sends to Master")
+		assert_eq(str(AudioServer.get_bus_send(idx)), str(AudioBuses.MASTER), "SFX sends to Master")
+
+
+func test_audio_buses_resolve_to_real_buses() -> void:
+	# Guards the silent failure the AudioBuses class exists to prevent: a bus-name typo or a
+	# stale rename makes AudioServer.get_bus_index() return -1 and the sound just stops
+	# routing, with no error anywhere. The contract worth pinning is that the code which
+	# CREATES each bus and the code which LOOKS IT UP agree on the name — so this drives the
+	# real creation paths rather than assuming the buses are already there.
+	#
+	# Why Music/Engine need driving: MusicDirector creates them only when NOT headless
+	# (see music_director.gd — headless leaves _player/_playback null to dodge an audio-thread
+	# SIGSEGV at teardown), so under the suite they genuinely do not exist yet. The ensure
+	# functions touch only the bus GRAPH, which is safe headless; playback is the unsafe part
+	# and is not reached here. Master is bus 0, always present; SFX is created headless-safe by
+	# the Audio autoload already.
+	var music := get_node_or_null("/root/Music")
+	assert_not_null(music, "the Music autoload exists to own the Music/Engine buses")
+	if music == null:
+		return
+
+	# Restore the bus graph afterwards so a bus this test adds can't leak into later files.
+	var before := AudioServer.bus_count
+	music._ensure_music_bus()
+	music._ensure_engine_bus()
+
+	for bus_name in [AudioBuses.MASTER, AudioBuses.MUSIC, AudioBuses.ENGINE, AudioBuses.SFX]:
+		assert_true(AudioServer.get_bus_index(bus_name) >= 0,
+			"bus %s resolves to a real AudioServer bus index" % bus_name)
+
+	while AudioServer.bus_count > before:
+		AudioServer.remove_bus(AudioServer.bus_count - 1)
 
 
 func test_headless_never_creates_playback() -> void:

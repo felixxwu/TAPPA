@@ -23,7 +23,7 @@
   up / down / left / right / enter / back on keyboard AND controller (not just
   mouse / touch). When you ADD a new menu or CHANGE an existing one, wire its
   navigation in the SAME piece of work and add/update a nav test — see
-  `features/menus.md` → "Menu navigation" for the how (the `MenuNav.attach`
+  `features/menu-navigation.md` for the how (the `MenuNav.attach`
   framework for flat widget lists vs. the `hq.gd._unhandled_input` pattern for
   the diegetic 3D HQ). Don't ship a menu reachable only by pointer.
 - `gameplay.md` is the high-level gameplay design / vision doc ("Gran Turismo,

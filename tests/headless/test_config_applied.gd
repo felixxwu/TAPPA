@@ -215,3 +215,131 @@ func test_track_config_defaults_present() -> void:
 func test_track_transition_cells_default() -> void:
 	var cfg := GameConfig.new()
 	assert_gt(cfg.track_transition_cells, 0, "edge transition spans at least one cell")
+
+
+# --- Wiring of the promoted tuning clusters --------------------------------------------------
+#
+# Four clusters of tuning constants moved out of scripts and into GameConfig (rival pace /
+# field, the overworld fog frontier, the HQ present box, the loading frame caps). The consts
+# survive as FALLBACK DEFAULTS only, so what needs guarding is the WIRING: the code must read
+# the config field, not the literal. Every test below sets a SYNTHETIC value and asserts the
+# behaviour follows it — never the authored number, which is a designer's to retune.
+#
+# Config.data is restored field-by-field rather than with Config.reset(), because the two
+# scene-backed tests above compare the built scene against the live Config.data and
+# minimal_world() deliberately zeroed part of it.
+
+const _PROMOTED_FIELDS := [
+	"rival_wreck_chance", "rival_swap_pw_spread",
+	"rival_pace_fast_base", "rival_pace_slow_base",
+	"rival_pace_fast_step", "rival_pace_slow_step",
+	"rival_pace_event_noise", "rival_pace_min_floor", "rival_ghost_solvable_pace",
+	"overworld_fog_push_accel", "overworld_fog_hard_margin_m",
+	"overworld_fog_veil_alpha", "overworld_fog_veil_fade",
+	"hq_present_clearance_m", "hq_present_lid_rise",
+	"hq_present_open_time", "hq_present_wall_time",
+	"loading_max_fps", "loading_touch_max_fps",
+]
+
+
+# Set `fields` (a name -> value dictionary) on the live config and return the previous values,
+# so a test can put them back exactly as they were.
+func _override(fields: Dictionary) -> Dictionary:
+	var previous := {}
+	for name in fields:
+		previous[name] = Config.data.get(name)
+		Config.data.set(name, fields[name])
+	return previous
+
+
+func _restore(previous: Dictionary) -> void:
+	for name in previous:
+		Config.data.set(name, previous[name])
+
+
+func test_promoted_tuning_fields_are_exports_the_tres_can_author() -> void:
+	# Both halves of "authored in the .tres": the field must exist as a declared property on a
+	# bare GameConfig (so a typo'd name in the resource would be dropped on load), and it must
+	# also be present on the LOADED resource. No value is asserted — only that the seam exists.
+	var fresh := GameConfig.new()
+	var authored := load("res://config/game_config.tres") as GameConfig
+	assert_not_null(authored, "game_config.tres still loads as a GameConfig")
+	for name in _PROMOTED_FIELDS:
+		assert_true(name in fresh, "%s is a declared GameConfig export" % name)
+		assert_true(name in authored, "%s survives the .tres round trip" % name)
+
+
+func test_loading_cap_reads_the_config_fields() -> void:
+	var previous := _override({"loading_max_fps": 123, "loading_touch_max_fps": 45})
+	assert_eq(WorldRuntime.loading_cap(false), 123, "the non-touch cap comes from loading_max_fps")
+	assert_eq(WorldRuntime.loading_cap(true), 45, "the touch cap comes from loading_touch_max_fps")
+	_restore(previous)
+
+
+func test_swap_weight_reads_the_configured_spread() -> void:
+	# exp(-|delta| / spread): at delta == spread the weight is exp(-1), whatever the spread is.
+	var previous := _override({"rival_swap_pw_spread": 10.0})
+	assert_almost_eq(RallyLibrary.swap_weight(10.0), exp(-1.0), 0.0001,
+		"a delta of one configured spread weighs exp(-1)")
+	var narrow := RallyLibrary.swap_weight(40.0)
+	_override({"rival_swap_pw_spread": 100.0})
+	assert_gt(RallyLibrary.swap_weight(40.0), narrow,
+		"widening the spread makes the SAME swap more likely to be drawn")
+	_restore(previous)
+
+
+func test_pace_band_reads_the_configured_ends_and_steps() -> void:
+	var previous := _override({
+		"rival_pace_fast_base": 1.5, "rival_pace_slow_base": 3.0,
+		"rival_pace_fast_step": 0.1, "rival_pace_slow_step": 0.5,
+	})
+	var tier1: Vector2 = RallyLibrary._pace_band(1)
+	assert_almost_eq(tier1.x, 1.5, 0.0001, "tier 1's fast end is the configured fast base")
+	assert_almost_eq(tier1.y, 3.0, 0.0001, "tier 1's slow end is the configured slow base")
+	# Each tier above 1 walks each end in by its own configured step.
+	var tier3: Vector2 = RallyLibrary._pace_band(3)
+	assert_almost_eq(tier3.x, 1.5 - 2.0 * 0.1, 0.0001, "the fast end walks in by the fast step")
+	assert_almost_eq(tier3.y, 3.0 - 2.0 * 0.5, 0.0001, "the slow end walks in by the slow step")
+	_restore(previous)
+
+
+func test_wreck_chance_of_zero_and_one_are_honoured() -> void:
+	# The wreck pass is a per-event roll of the configured chance, so the two extremes are
+	# decidable without pinning the authored value: 0 can never wreck anyone, 1 always wrecks
+	# exactly one rival per event (the cap is structural, not tunable).
+	var rally := {"id": "wiring", "difficulty": 1}
+	var events: Array = [{}, {}]
+	# A synthetic straight track, so this leans on no authored rally or stage.
+	var curve := Curve2D.new()
+	for i in 6:
+		curve.add_point(Vector2(0.0, float(i) * 100.0))
+	var track := {
+		"centerline": curve,
+		"pieces": [{"entry_pos": Vector2(0, 0)}, {"entry_pos": Vector2(0, 250)}],
+	}
+	var results: Array = [track, track]
+	var previous := _override({"rival_wreck_chance": 0.0})
+	var calm: Array = RallyLibrary.generate_opponent_field(rally, results, events, 0)
+	for rival in calm:
+		assert_lt(int(rival["wreck_event"]), 0, "nobody wrecks at a chance of 0")
+	_override({"rival_wreck_chance": 1.0})
+	var carnage: Array = RallyLibrary.generate_opponent_field(rally, results, events, 0)
+	var wrecked := 0
+	for rival in carnage:
+		if int(rival["wreck_event"]) >= 0:
+			wrecked += 1
+	assert_eq(wrecked, events.size(),
+		"at a chance of 1 exactly one rival wrecks per event")
+	_restore(previous)
+
+
+func test_reach_margin_grows_with_the_configured_fog_hard_margin() -> void:
+	# The precompute's safety margin is "everywhere the fog push permits, plus the streaming
+	# ring". The first term is the config field, so a bigger hard margin must bake more ground.
+	var previous := _override({"overworld_fog_hard_margin_m": 100.0})
+	var near := Overworld.reach_margin_map(1000.0, 4)
+	_override({"overworld_fog_hard_margin_m": 600.0})
+	var far := Overworld.reach_margin_map(1000.0, 4)
+	assert_almost_eq(far - near, 0.5, 0.0001,
+		"the margin carries the hard margin through in normalised map units (500 m / 1000 m)")
+	_restore(previous)

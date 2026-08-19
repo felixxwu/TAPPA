@@ -26,8 +26,15 @@
       "beast"
     ],
     "front_runners": [
+      "mx5",
       "focus",
-      "twingo"
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
     ],
     "gc_fishermens_run": [
       "mx5",
@@ -193,6 +200,34 @@
       "twingo",
       "acty"
     ],
+    "sn_glacier_run": [
+      "focus",
+      "twingo"
+    ],
+    "sn_icefall_climb": [
+      "porsche911",
+      "xjs"
+    ],
+    "sn_powder_pass": [
+      "mx5",
+      "acty"
+    ],
+    "sn_showdown": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "sn_summit_dash": [
+      "focus",
+      "charger",
+      "viper"
+    ],
     "sp_archipelago_trial": [
       "mx5",
       "focus",
@@ -216,6 +251,17 @@
       "beast"
     ],
     "sp_lakeshore_trial": [
+      "mx5",
+      "focus",
+      "twingo",
+      "acty",
+      "charger",
+      "porsche911",
+      "viper",
+      "xjs",
+      "beast"
+    ],
+    "sp_summit_trial": [
       "mx5",
       "focus",
       "twingo",
@@ -288,12 +334,19 @@
     "rwd_masters": "beast",
     "shakedown": "mx5",
     "shitbox_cup": "",
+    "sn_glacier_run": "",
+    "sn_icefall_climb": "",
+    "sn_powder_pass": "",
+    "sn_showdown": "",
+    "sn_summit_dash": "",
     "sp_archipelago_trial": "",
     "sp_dust_trial": "",
     "sp_lakeshore_trial": "",
+    "sp_summit_trial": "",
     "sp_woodland_trial": "",
     "the_showdown": ""
   },
+  "source_hash": "3e451071ad533193f07221de3affd3abeb3e278e382234d6ef92892e20defb11",
   "starters": [
     "mx5",
     "focus",

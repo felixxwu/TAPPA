@@ -571,6 +571,36 @@ var _cv_R: int
 # Out-params of _nearest_seg (avoids a per-call Array allocation in the hot path).
 var _cv_best_t: float
 var _cv_best_dsq: float
+# Band radii + cliff parameters for one bake, so bake_track's per-block and cliff-emit steps can
+# live in their own functions instead of nesting five deep inside it. Same lifetime rule as the
+# rest of the _cv_* scratch: written at the top of a bake, never read outside one.
+var _cv_f_inner: float        # road half-width — full flatten weight at/inside this
+var _cv_f_outer: float        # outer edge of the flatten transition band
+var _cv_f_outer_sq: float
+var _cv_outer_sq: float       # search band (whichever of flatten/cliff reaches furthest), squared
+var _cv_cliffs: bool
+var _cv_eff_max: float
+var _cv_c_inner: float
+var _cv_c_rise: float
+var _cv_c_outer: float
+var _cv_camber_step: float
+var _cv_camber_lut: PackedFloat32Array
+var _cv_lut_n: int
+# Vertex-grid geometry: origin in GLOBAL vertex indices, and the flat field's width/height.
+var _cv_vx0: int
+var _cv_vz0: int
+var _cv_vw: int
+var _cv_vh: int
+var _cv_Gc: int               # terrain vertices per spatial-hash cell edge
+# The flat cliff-offset field (only allocated when cliffs are active) and the bbox, in local
+# vertex indices, of the part of it that was actually written. A MEMBER rather than a parameter
+# on purpose: PackedFloat32Array is a copy-on-write value type, so passing it into the per-block
+# function would copy the whole field on the first write of every block.
+var _cv_off: PackedFloat32Array
+var _cv_tvx0: int
+var _cv_tvx1: int
+var _cv_tvz0: int
+var _cv_tvz1: int
 
 
 func _connect_layer_signals() -> void:
@@ -837,6 +867,82 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	return data
 
 
+# --- The shared preamble of the five _apply_* chunk modifiers -------------------------------
+#
+# Every one of them starts by unpacking the same arrays out of the chunk dict, early-outing on a
+# size mismatch, and (three of them) re-deriving the chunk's world rect from `center` and CHUNK_M.
+# `_chunk_view` is that preamble, ONCE. Each modifier still owns its own SOURCE guard (a null
+# `pad_source`, `height_quantum <= 0.0`, …) at the call site — those are about whether the pass is
+# configured at all, not about whether the chunk is usable.
+#
+# WHICH ARRAYS/GUARDS a modifier wants is passed in as a `needs` bitmask, because the five are NOT
+# identical and flattening the differences would silently change which chunks get skipped:
+#
+#   * _apply_edge_taper and _apply_height_quantum have NO stride guard — a coarse (stride > 1)
+#     chunk still gets tapered and still gets quantised, and must keep doing so. Only the three
+#     passes with the "full-res grids only" LOD note pass VIEW_FULL_RES.
+#   * _apply_region_blend sizes itself against `uv2s`, not `heights` — it never reads a height, so
+#     it must run on a chunk whose `heights` are absent/short as long as uv2s and vertices agree.
+#     Hence VIEW_UV2S without VIEW_HEIGHTS makes uv2s the primary array.
+#   * only _apply_road_carve additionally requires `colors` and `uv2s` to match `heights`.
+#
+# ALLOCATION: the result lands in reused `_cvw_*` scratch fields and the function returns a plain
+# bool, so a per-chunk pass allocates nothing the old inline preambles did not (the Rect2/Vector3
+# are value types). This matters: on web these modifiers run per chunk through the frame-budgeted
+# main-thread build queue, and the project targets old phones — a Dictionary per chunk here would
+# be chunk-rate garbage. The packed arrays are handed out by reference-count exactly as a local
+# `var` did, so the caller's first write still triggers the same single copy-on-write; at most one
+# chunk's arrays stay pinned in the scratch until the next call overwrites them.
+const VIEW_HEIGHTS := 1
+const VIEW_COLORS := 2
+const VIEW_UV2S := 4
+const VIEW_FULL_RES := 8
+
+var _cvw_heights: PackedFloat32Array
+var _cvw_verts: PackedVector3Array
+var _cvw_colors: PackedColorArray
+var _cvw_uv2s: PackedVector2Array
+var _cvw_center: Vector3
+var _cvw_half: float
+var _cvw_rect: Rect2
+
+
+# Unpack one chunk dict into the _cvw_* scratch. Returns false — and leaves the scratch in an
+# unspecified state — when the chunk should be SKIPPED by the requested pass.
+func _chunk_view(data: Dictionary, needs: int) -> bool:
+	_cvw_verts = data.get("vertices", PackedVector3Array())
+	# The "primary" array whose length every other array is checked against: `heights` when the
+	# pass reads heights, otherwise `uv2s` (the region blend).
+	var n := 0
+	if (needs & VIEW_HEIGHTS) != 0:
+		_cvw_heights = data.get("heights", PackedFloat32Array())
+		if _cvw_heights.is_empty() or _cvw_verts.size() != _cvw_heights.size():
+			return false
+		n = _cvw_heights.size()
+	if (needs & VIEW_UV2S) != 0:
+		_cvw_uv2s = data.get("uv2s", PackedVector2Array())
+		if n > 0:
+			if _cvw_uv2s.size() != n:
+				return false
+		else:
+			if _cvw_uv2s.is_empty() or _cvw_verts.size() != _cvw_uv2s.size():
+				return false
+			n = _cvw_uv2s.size()
+	if (needs & VIEW_COLORS) != 0:
+		# Only ever requested together with VIEW_HEIGHTS (the road carve), so `n` is set.
+		_cvw_colors = data.get("colors", PackedColorArray())
+		if _cvw_colors.size() != n:
+			return false
+	if (needs & VIEW_FULL_RES) != 0 and int(data.get("stride", 1)) != 1:
+		return false
+	# vertices carry CHUNK-LOCAL x/z; `center` puts them back into the world space the builder
+	# sampled at — the conversion the carve, the taper, the pad pass and the region blend all do.
+	_cvw_center = data.get("center", Vector3.ZERO)
+	_cvw_half = CHUNK_M / 2.0
+	_cvw_rect = Rect2(_cvw_center.x - _cvw_half, _cvw_center.z - _cvw_half, CHUNK_M, CHUNK_M)
+	return true
+
+
 # Fold the coastline taper into a freshly generated chunk's grid, in lockstep across BOTH
 # height representations the dict carries:
 #
@@ -860,13 +966,12 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 func _apply_edge_taper(data: Dictionary) -> void:
 	if edge_taper_m <= 0.0 or not has_bounds():
 		return
-	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
-	var verts: PackedVector3Array = data.get("vertices", PackedVector3Array())
-	if heights.is_empty() or verts.size() != heights.size():
+	# No stride guard: a coarse chunk is tapered too (see _chunk_view's `needs` note).
+	if not _chunk_view(data, VIEW_HEIGHTS):
 		return
-	# vertices carry CHUNK-LOCAL x/z; `center` puts them back into world space, which is the
-	# same (wx, wz) the builder sampled at.
-	var center: Vector3 = data.get("center", Vector3.ZERO)
+	var heights := _cvw_heights
+	var verts := _cvw_verts
+	var center := _cvw_center
 	for i in heights.size():
 		var v := verts[i]
 		var h := taper_height(heights[i], center.x + v.x, center.z + v.z)
@@ -916,18 +1021,13 @@ func _apply_pad_flatten(data: Dictionary) -> void:
 		return
 	if not pad_source.has_method("pads_in_rect"):
 		return
-	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
-	var verts: PackedVector3Array = data.get("vertices", PackedVector3Array())
-	if heights.is_empty() or verts.size() != heights.size():
+	# VIEW_FULL_RES: coarse grids are skipped — unreachable in a bounded world (see the LOD note).
+	if not _chunk_view(data, VIEW_HEIGHTS | VIEW_FULL_RES):
 		return
-	if int(data.get("stride", 1)) != 1:
-		return  # coarse grid — unreachable in a bounded world (see the LOD note above)
-	# vertices carry CHUNK-LOCAL x/z; `center` puts them back into world space — the same
-	# conversion the carve, the taper and the region blend all do.
-	var center: Vector3 = data.get("center", Vector3.ZERO)
-	var half: float = CHUNK_M / 2.0
-	var rect := Rect2(center.x - half, center.z - half, CHUNK_M, CHUNK_M)
-	var near: Array = pad_source.call("pads_in_rect", rect)
+	var heights := _cvw_heights
+	var verts := _cvw_verts
+	var center := _cvw_center
+	var near: Array = pad_source.call("pads_in_rect", _cvw_rect)
 	if near.is_empty():
 		return
 	for i in heights.size():
@@ -950,10 +1050,11 @@ func _apply_pad_flatten(data: Dictionary) -> void:
 func _apply_height_quantum(data: Dictionary) -> void:
 	if height_quantum <= 0.0:
 		return
-	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
-	var verts: PackedVector3Array = data.get("vertices", PackedVector3Array())
-	if heights.is_empty() or verts.size() != heights.size():
+	# No stride guard: a coarse chunk is quantised too (see _chunk_view's `needs` note).
+	if not _chunk_view(data, VIEW_HEIGHTS):
 		return
+	var heights := _cvw_heights
+	var verts := _cvw_verts
 	var inv := 1.0 / height_quantum
 	for i in heights.size():
 		var h: float = roundf(heights[i] * inv) / inv
@@ -1001,16 +1102,14 @@ func _apply_region_blend(data: Dictionary) -> void:
 		return
 	if not region_source.has_method("region_rank_at"):
 		return
-	var uv2s: PackedVector2Array = data.get("uv2s", PackedVector2Array())
-	var verts: PackedVector3Array = data.get("vertices", PackedVector3Array())
-	if uv2s.is_empty() or verts.size() != uv2s.size():
+	# VIEW_UV2S WITHOUT VIEW_HEIGHTS: this pass never reads a height, so it sizes itself against
+	# `uv2s` and must not be gated on `heights` being present (see _chunk_view's `needs` note).
+	if not _chunk_view(data, VIEW_UV2S | VIEW_FULL_RES):
 		return
-	if int(data.get("stride", 1)) != 1:
-		return
-	# vertices carry CHUNK-LOCAL x/z; `center` puts them back into world space — the same
-	# conversion the carve and the taper do.
-	var center: Vector3 = data.get("center", Vector3.ZERO)
-	var half: float = CHUNK_M / 2.0
+	var uv2s := _cvw_uv2s
+	var verts := _cvw_verts
+	var center := _cvw_center
+	var half := _cvw_half
 	var r00: float = region_source.call("region_rank_at", center.x - half, center.z - half)
 	var r10: float = region_source.call("region_rank_at", center.x + half, center.z - half)
 	var r01: float = region_source.call("region_rank_at", center.x - half, center.z + half)
@@ -1074,21 +1173,16 @@ func _apply_road_carve(data: Dictionary, carve_heights: bool) -> void:
 		return
 	if not road_source.has_method("road_at") or not road_source.has_method("segments_in_rect"):
 		return
-	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
-	var verts: PackedVector3Array = data.get("vertices", PackedVector3Array())
-	var colors: PackedColorArray = data.get("colors", PackedColorArray())
-	var uv2s: PackedVector2Array = data.get("uv2s", PackedVector2Array())
-	if heights.is_empty() or verts.size() != heights.size():
+	# The only pass that also needs `colors` and `uv2s` to match `heights`. VIEW_FULL_RES: coarse
+	# grids are skipped — unreachable in a bounded world (see the LOD note above).
+	if not _chunk_view(data, VIEW_HEIGHTS | VIEW_COLORS | VIEW_UV2S | VIEW_FULL_RES):
 		return
-	if colors.size() != heights.size() or uv2s.size() != heights.size():
-		return
-	if int(data.get("stride", 1)) != 1:
-		return  # coarse grid — unreachable in a bounded world (see the LOD note above)
-	# vertices carry CHUNK-LOCAL x/z; `center` puts them back into the world space the builder
-	# sampled at, the same conversion _apply_edge_taper does.
-	var center: Vector3 = data.get("center", Vector3.ZERO)
-	var half: float = CHUNK_M / 2.0
-	var rect := Rect2(center.x - half, center.z - half, CHUNK_M, CHUNK_M)
+	var heights := _cvw_heights
+	var verts := _cvw_verts
+	var colors := _cvw_colors
+	var uv2s := _cvw_uv2s
+	var center := _cvw_center
+	var rect := _cvw_rect
 	# One grid query buys the whole chunk: a road-free chunk (the vast majority of ~1,600) pays
 	# exactly this and nothing else. The query already inflates by influence_m().
 	#
@@ -2018,16 +2112,17 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	# Cliff (if active): starts at the transition edge, rises over cliff_run to full ±1,
 	# fades over cliff_fade back to natural grade. The search band covers whichever reaches
 	# furthest so a single sweep feeds both.
-	var f_inner := width / 2.0
-	var f_outer := f_inner + transition_m
+	_cv_f_inner = width / 2.0
+	_cv_f_outer = _cv_f_inner + transition_m
 	var cliffs := _cliffs_active()
-	var eff_max := (cliff_max_height_m * clampf(cliff_amount, 0.0, 1.0)) if cliffs else 0.0
-	var c_inner := f_outer
-	var c_rise := c_inner + cliff_run_m
-	var c_outer := c_rise + cliff_fade_m
-	var outer := maxf(f_outer, c_outer) if cliffs else f_outer
-	var f_outer_sq := f_outer * f_outer
-	var outer_sq := outer * outer
+	_cv_cliffs = cliffs
+	_cv_eff_max = (cliff_max_height_m * clampf(cliff_amount, 0.0, 1.0)) if cliffs else 0.0
+	_cv_c_inner = _cv_f_outer
+	_cv_c_rise = _cv_c_inner + cliff_run_m
+	_cv_c_outer = _cv_c_rise + cliff_fade_m
+	var outer := maxf(_cv_f_outer, _cv_c_outer) if cliffs else _cv_f_outer
+	_cv_f_outer_sq = _cv_f_outer * _cv_f_outer
+	_cv_outer_sq = outer * outer
 
 	# --- Segments: endpoint, delta, 1/len², arc length at start, unit tangent, total length
 	# (the last for the gravel/tarmac split). Stored in the _cv_* scratch for _nearest_seg. ---
@@ -2059,21 +2154,22 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 
 	# --- Camber LUT (cliffs only). Camber is a smooth 1-D function of arc length
 	# (wavelength ≫ a metre), so sample it once every camber_step and lerp per vertex. ---
-	var camber_step := 0.5
-	var camber_lut := PackedFloat32Array()
-	var lut_n := 0
+	_cv_camber_step = 0.5
+	_cv_camber_lut = PackedFloat32Array()
+	_cv_lut_n = 0
 	if cliffs:
 		var camber_noise := _make_camber_noise()
-		lut_n = int(ceil(total_m / camber_step)) + 2
-		camber_lut.resize(lut_n)
-		for k in lut_n:
-			camber_lut[k] = _camber(camber_noise, float(k) * camber_step)
+		_cv_lut_n = int(ceil(total_m / _cv_camber_step)) + 2
+		_cv_camber_lut.resize(_cv_lut_n)
+		for k in _cv_lut_n:
+			_cv_camber_lut[k] = _camber(camber_noise, float(k) * _cv_camber_step)
 
 	# --- Segment spatial hash: grid of CLIFF_GRID_M cells -> the segments crossing them.
 	# A query only checks segments in the (2R+1)² block of cells around it. G is a whole
 	# number of terrain cells so each grid cell holds an exact Gc×Gc block of vertices. ---
 	var G := CLIFF_GRID_M
 	var Gc := int(G / CELL_M)
+	_cv_Gc = Gc
 	var R := int(ceil(outer / G))
 	var min_gx := 0x7fffffff
 	var min_gz := 0x7fffffff
@@ -2119,6 +2215,10 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	var vz0 := _cv_gz0 * Gc
 	var vw := gw * Gc
 	var vh := gh * Gc
+	_cv_vx0 = vx0
+	_cv_vz0 = vz0
+	_cv_vw = vw
+	_cv_vh = vh
 	var cand := PackedByteArray()
 	cand.resize(gw * gh)
 	for oc in occupied:
@@ -2138,16 +2238,19 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	var progress_stride := maxi(1, cand_total / 40)
 
 	# --- Cliff offset field (flat, only allocated when cliffs are active) + its band bbox. ---
-	var off := PackedFloat32Array()
+	_cv_off = PackedFloat32Array()
 	if cliffs:
-		off.resize(vw * vh)
-	var tvx0 := 0x7fffffff
-	var tvx1 := -0x7fffffff
-	var tvz0 := 0x7fffffff
-	var tvz1 := -0x7fffffff
+		_cv_off.resize(vw * vh)
+	_cv_tvx0 = 0x7fffffff
+	_cv_tvx1 = -0x7fffffff
+	_cv_tvz0 = 0x7fffffff
+	_cv_tvz1 = -0x7fffffff
 
 	# --- Vertex sweep: per candidate vertex, find the nearest centerline point ONCE, then
-	# emit the flatten fields (road band) and the cliff offset (cliff band) from it. ---
+	# emit the flatten fields (road band) and the cliff offset (cliff band) from it. The
+	# per-vertex work lives in _bake_vertex_block, one spatial-hash cell at a time; only the
+	# candidate test, the progress report and the frame yield stay here (the yield is why: an
+	# `await` inside the extracted function would turn it into a coroutine per block). ---
 	var cand_seen := 0
 	for cgz in gh:
 		for cgx in gw:
@@ -2159,39 +2262,7 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 					on_progress.call(float(cand_seen) / maxf(float(cand_total), 1.0))
 				if should_yield:
 					await get_tree().process_frame
-			# Seed each grid cell's search from -1; adjacent vertices reuse the winner.
-			var seed_seg := -1
-			for lz in Gc:
-				var vz := cgz * Gc + lz
-				var qz := float(vz0 + vz) * CELL_M
-				for lx in Gc:
-					var vx := cgx * Gc + lx
-					var qx := float(vx0 + vx) * CELL_M
-					var seg := _nearest_seg(qx, qz, seed_seg)
-					if seg < 0 or _cv_best_dsq > outer_sq:
-						continue
-					seed_seg = seg
-					var t := _cv_best_t
-					var footx := _cv_ax[seg] + _cv_dx[seg] * t
-					var footz := _cv_ay[seg] + _cv_dy[seg] * t
-					var d := sqrt(_cv_best_dsq)
-					# Flatten: pull road-band vertices to the noise height at their exact foot.
-					if _cv_best_dsq < f_outer_sq:
-						var gv := Vector2i(vx0 + vx, vz0 + vz)
-						road_heights[gv] = _noise_height_at(footx, footz)
-						road_blend[gv] = smooth_ramp(d, f_inner, f_outer)
-					# Cliff offset: side · camber(arc) · profile(d) · eff_max.
-					if cliffs:
-						var s := _cv_arc[seg] + t * _cv_len[seg]
-						var sc := s / camber_step
-						var k0 := clampi(int(sc), 0, lut_n - 2)
-						var camber := lerpf(camber_lut[k0], camber_lut[k0 + 1], sc - float(k0))
-						var cross := _cv_tx[seg] * (qz - footz) - _cv_ty[seg] * (qx - footx)
-						var val := signf(cross) * camber * _cliff_profile(d, c_inner, c_rise, c_outer) * eff_max
-						if val != 0.0:
-							off[vz * vw + vx] = val
-							tvx0 = mini(tvx0, vx); tvx1 = maxi(tvx1, vx)
-							tvz0 = mini(tvz0, vz); tvz1 = maxi(tvz1, vz)
+			_bake_vertex_block(cgx, cgz)
 
 	# --- Cell sweep: colour blend + tarmac weight per CELL (cells sit half a cell off the
 	# vertex grid and drive the texture fade, keyed by global cell coord). Only cells that
@@ -2212,44 +2283,24 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 			var qx := (float(cell.x) + 0.5) * CELL_M
 			var qz := (float(cell.y) + 0.5) * CELL_M
 			var seg := _nearest_seg(qx, qz, -1)
-			if seg < 0 or _cv_best_dsq >= f_outer_sq:
+			if seg < 0 or _cv_best_dsq >= _cv_f_outer_sq:
 				continue
 			var t := _cv_best_t
 			var d := sqrt(_cv_best_dsq)
 			var s := _cv_arc[seg] + t * _cv_len[seg]
-			track_weights[cell] = smooth_ramp(d, f_inner, f_outer)
+			track_weights[cell] = smooth_ramp(d, _cv_f_inner, _cv_f_outer)
 			track_surface[cell] = TrackSurface.tarmac_weight(
 				s, total_m, tarmac_fraction, tarmac_first, surface_feather_m)
 
 	# --- Cliffs: knock down thin tall walls (morphological open over the band ribbon), then
 	# emit the sparse offset dict in the shared GLOBAL vertex-index space. ---
-	if cliffs and tvx1 >= tvx0:
-		var r := int(round(cliff_open_radius_m / CELL_M))
-		var ex0 := maxi(0, tvx0 - r)
-		var ex1 := mini(vw - 1, tvx1 + r)
-		var ez0 := maxi(0, tvz0 - r)
-		var ez1 := mini(vh - 1, tvz1 + r)
-		var sw := ex1 - ex0 + 1
-		var sh := ez1 - ez0 + 1
-		if r > 0:
-			var sub := PackedFloat32Array()
-			sub.resize(sw * sh)
-			for z in sh:
-				for x in sw:
-					sub[z * sw + x] = off[(ez0 + z) * vw + (ex0 + x)]
-			_open_thin_offsets(sub, sw, sh, cliff_open_radius_m)
-			for z in sh:
-				for x in sw:
-					off[(ez0 + z) * vw + (ex0 + x)] = sub[z * sw + x]
-		for z in range(ez0, ez1 + 1):
-			var world_z := vz0 + z
-			for x in range(ex0, ex1 + 1):
-				var val := off[z * vw + x]
-				if absf(val) > 0.0001:
-					cliff_offsets[Vector2i(vx0 + x, world_z)] = val
+	if cliffs and _cv_tvx1 >= _cv_tvx0:
+		_emit_cliff_offsets()
 
 	# Release the scratch (large packed arrays + the grid) — it's only valid during a bake.
 	_cv_grid = []
+	_cv_off = PackedFloat32Array()
+	_cv_camber_lut = PackedFloat32Array()
 
 	# These five Vector2i->float Dictionaries are the least-measured memory line in
 	# todo/mobile-web-performance.md (2.7): a Godot HashMap entry costs ~60-90 bytes vs
@@ -2258,6 +2309,85 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	print("track bake fields: road_heights=%d road_blend=%d track_weights=%d track_surface=%d cliff_offsets=%d"
 		% [road_heights.size(), road_blend.size(), track_weights.size(),
 			track_surface.size(), cliff_offsets.size()])
+
+
+# One spatial-hash cell's worth of bake_track's vertex sweep: the Gc×Gc block of terrain vertices
+# at hash cell (cgx, cgz). Lifted out of bake_track, which used to hold this body five and six
+# indent levels deep. Reads the band radii and the vertex-grid geometry from the _cv_* bake
+# scratch and writes road_heights / road_blend plus (cliffs only) _cv_off and its bbox — so it is
+# only meaningful while a bake is in flight, exactly like _nearest_seg.
+#
+# Allocation-free per vertex: `_cv_off` is a member rather than a parameter precisely so the
+# copy-on-write field is not duplicated per block, and _nearest_seg reports through out-params.
+func _bake_vertex_block(cgx: int, cgz: int) -> void:
+	var Gc := _cv_Gc
+	var vw := _cv_vw
+	# Seed each grid cell's search from -1; adjacent vertices reuse the winner.
+	var seed_seg := -1
+	for lz in Gc:
+		var vz := cgz * Gc + lz
+		var qz := float(_cv_vz0 + vz) * CELL_M
+		for lx in Gc:
+			var vx := cgx * Gc + lx
+			var qx := float(_cv_vx0 + vx) * CELL_M
+			var seg := _nearest_seg(qx, qz, seed_seg)
+			if seg < 0 or _cv_best_dsq > _cv_outer_sq:
+				continue
+			seed_seg = seg
+			var t := _cv_best_t
+			var footx := _cv_ax[seg] + _cv_dx[seg] * t
+			var footz := _cv_ay[seg] + _cv_dy[seg] * t
+			var d := sqrt(_cv_best_dsq)
+			# Flatten: pull road-band vertices to the noise height at their exact foot.
+			if _cv_best_dsq < _cv_f_outer_sq:
+				var gv := Vector2i(_cv_vx0 + vx, _cv_vz0 + vz)
+				road_heights[gv] = _noise_height_at(footx, footz)
+				road_blend[gv] = smooth_ramp(d, _cv_f_inner, _cv_f_outer)
+			if not _cv_cliffs:
+				continue
+			# Cliff offset: side · camber(arc) · profile(d) · eff_max.
+			var s := _cv_arc[seg] + t * _cv_len[seg]
+			var sc := s / _cv_camber_step
+			var k0 := clampi(int(sc), 0, _cv_lut_n - 2)
+			var camber := lerpf(_cv_camber_lut[k0], _cv_camber_lut[k0 + 1], sc - float(k0))
+			var cross := _cv_tx[seg] * (qz - footz) - _cv_ty[seg] * (qx - footx)
+			var val := signf(cross) * camber * _cliff_profile(d, _cv_c_inner, _cv_c_rise, _cv_c_outer) * _cv_eff_max
+			if val == 0.0:
+				continue
+			_cv_off[vz * vw + vx] = val
+			_cv_tvx0 = mini(_cv_tvx0, vx); _cv_tvx1 = maxi(_cv_tvx1, vx)
+			_cv_tvz0 = mini(_cv_tvz0, vz); _cv_tvz1 = maxi(_cv_tvz1, vz)
+
+
+# bake_track's cliff post-pass, lifted out of it: knock down thin tall walls (a morphological
+# open over the band ribbon that _bake_vertex_block wrote into _cv_off), then emit the surviving
+# values as the sparse cliff_offsets dict in the shared GLOBAL vertex-index space. Only called
+# when cliffs are active AND the bbox is non-empty, so `_cv_off` is allocated and written here.
+func _emit_cliff_offsets() -> void:
+	var vw := _cv_vw
+	var r := int(round(cliff_open_radius_m / CELL_M))
+	var ex0 := maxi(0, _cv_tvx0 - r)
+	var ex1 := mini(vw - 1, _cv_tvx1 + r)
+	var ez0 := maxi(0, _cv_tvz0 - r)
+	var ez1 := mini(_cv_vh - 1, _cv_tvz1 + r)
+	var sw := ex1 - ex0 + 1
+	var sh := ez1 - ez0 + 1
+	if r > 0:
+		var sub := PackedFloat32Array()
+		sub.resize(sw * sh)
+		for z in sh:
+			for x in sw:
+				sub[z * sw + x] = _cv_off[(ez0 + z) * vw + (ex0 + x)]
+		_open_thin_offsets(sub, sw, sh, cliff_open_radius_m)
+		for z in sh:
+			for x in sw:
+				_cv_off[(ez0 + z) * vw + (ex0 + x)] = sub[z * sw + x]
+	for z in range(ez0, ez1 + 1):
+		var world_z := _cv_vz0 + z
+		for x in range(ex0, ex1 + 1):
+			var val := _cv_off[z * vw + x]
+			if absf(val) > 0.0001:
+				cliff_offsets[Vector2i(_cv_vx0 + x, world_z)] = val
 
 
 # Nearest centerline segment to world point (qx, qz), via the _cv_* spatial hash: an

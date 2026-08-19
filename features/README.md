@@ -82,6 +82,7 @@ with them, and working toward the special-event finale.
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
+| [terrain-chunk-modifiers.md](terrain-chunk-modifiers.md) | The five `compute_chunk_data` chunk-modifier passes, their shared `TerrainManager._chunk_view` preamble, and how `bake_track` splits its per-vertex work into `_bake_vertex_block`/`_emit_cliff_offsets` |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset. **Per-stage distance, NOT career progress** — career state lives in [save-persistence.md](save-persistence.md) / [star-economy.md](star-economy.md) |
@@ -106,6 +107,7 @@ with them, and working toward the special-event finale.
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, `MenuPage.open_modal`, and `MenuNav.input_blocked` |
 | [overworld.md](overworld.md) | The Overworld HQ — a life-size drivable world map as a SECOND hub (`overworld.tscn` / `Overworld`), behind `GameConfig.overworld_enabled` (ships off). Coordinate mapping, the coastline vs the fog frontier, the on-disk chunk cache + first-launch precompute, per-position region look, streamed foliage, the zone seam, the wayfinding stack (compass, camera-up minimap, full map, and the `OverworldRoute` sat-nav that plans a road path to a picked destination), and the cheap test path |
+| [overworld-frame-loop.md](overworld-frame-loop.md) | The `WorldRuntime` static leaf helpers shared by `world.gd` and `overworld.gd`, and `Overworld._process_stages` as the single definition of the per-frame sequence (do not split it back into a timed/untimed pair) |
 | [world-panel.md](world-panel.md) | `WorldPanel` — menus hosted in the 3D world, welded off-square to an anchor (4 HQ screens; shipped ON) |
 | [ui-design-system.md](ui-design-system.md) | `UITheme` + global theme — palette, pixel font, panel/button styling shared by every screen |
 | [garage.md](garage.md) | Procedural rally-team service-park garage model + the multi-angle render harness |
@@ -134,6 +136,7 @@ with them, and working toward the special-event finale.
 | Track generation | `scripts/track_generator.gd` |
 | Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
 | Eligibility report (rally x car authoring check) | `tools/report_eligibility.gd`/`.tscn`, `report_eligibility.sh` — see [rally-roster.md](rally-roster.md) |
+| Eligibility matrix for pin fitting (rally x car, `source_hash`-guarded) | `tools/export_eligibility.gd`, `export_eligibility.sh`, `data/eligibility.json`, consumed by `tools/fit_map_pins.py` — see [map-exploration.md](map-exploration.md) → *Eligibility is fed in from a committed matrix* |
 | Career simulation (progression pacing / soft-lock check) | `tools/sim_career.gd`/`.tscn`, `sim_career.sh`, `tests/headless/test_sim_career.gd` — see [rally-roster.md](rally-roster.md) |
 | Benchmark fidelity calibration (C1 — does the rating rank cars like real stages?) | `tools/calibrate_benchmark.gd`/`.tscn`, `calibrate_benchmark.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
 | Pace-floor calibration (C2 — what `PACE_MIN_FLOOR` can and cannot be derived from) | `tools/calibrate_pace_floor.gd`/`.tscn`, `calibrate_pace_floor.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |

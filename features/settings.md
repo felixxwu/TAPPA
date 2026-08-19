@@ -4,7 +4,7 @@
 page used by BOTH the title screen and the pause menu), the per-setting apply-owner modules
 (`scripts/fps_setting.gd`, `scripts/camera_manager.gd`, `scripts/music_director.gd` and
 siblings — one module per persisted setting), and `Save.get_setting` / `Save.set_setting`
-in `scripts/save.gd`.
+in `scripts/save_manager.gd`.
 
 **Tests:** `tests/headless/test_settings_menu.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_camera_manager.gd`
 

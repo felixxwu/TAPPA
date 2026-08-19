@@ -29,7 +29,8 @@ extends Node3D
 # Created and wired by world.gd (session runs only). A plain dev boot of main.tscn
 # never builds a StartLine and the StageManager goes straight to the countdown.
 
-const CAR_SCENE := preload("res://car.tscn")
+## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
+## below since preload() cannot take that reference (needs a literal string).
 
 # How many cars line up ahead of the player (the real top-N rivals). Fewer if the
 # field can't field this many (dev/test harnesses pass an empty leaders list).
@@ -605,7 +606,7 @@ func _ground(pos: Vector3, terrain: Node) -> Vector3:
 # reads scripted throttle/steer instead of player Input, axis-locked to a straight line
 # so it can't veer (start heading is world −Z, so lock lateral world-X + yaw world-Y).
 func _spawn_prop(model_index: int, pos: Vector3, engine_id := "") -> Node3D:
-	var car := CAR_SCENE.instantiate()
+	var car := Scenes.car_scene().instantiate()
 	add_child(car)
 	if car.has_method("apply_car"):
 		# Isolate this prop's config so its reshape can't clobber the player car's

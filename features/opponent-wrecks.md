@@ -20,7 +20,10 @@ from the rally seed so a re-attempt sees the same wrecks in the same places.
 - So on average **one rival wrecks about every two events**, and **at most one per
   event** — the invariant the run scene relies on to show at most one roadside
   wreck per stage. (These are the two guarantees the tests pin;
-  `OPPONENT_WRECK_CHANCE` itself is a tunable.)
+  `OPPONENT_WRECK_CHANCE` itself is a tunable.) **It now lives in GameConfig as
+  `rival_wreck_chance`** (authored in `config/game_config.tres`); the const survives in
+  `rally_library.gd` as the fallback default only — see
+  [configuration.md](configuration.md) → *Rival Field & Pace*.
 - A wrecked rival has `event_times_ms[wreck_event..] = -1` and **DNFs the rally**
   (`combined_ms = -1`, doesn't rank) — a wreck *is* a DNF, exactly as before. It
   also carries the seeded roadside placement the run scene reads:

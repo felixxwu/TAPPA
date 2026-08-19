@@ -17,6 +17,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `nitrous` | Left Shift | — | X / Square (West) | Held: spray nitrous while on throttle (see [nitrous.md](nitrous.md)) |
 | `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
+| `toggle_map` | M | — | Back | Open/close the full map (`scripts/overworld_map.gd`); deliberately NOT rebindable — kept out of `InputRemap.ACTIONS` because that list is the driving controls and this action isn't one |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
@@ -48,8 +49,13 @@ North button (Y/Triangle) that used to reset now cycle the camera instead.
 
 ## Rebinding (settings → Key bindings)
 
-Every action in the table above (the driving controls + the toggles, **not** the
-keyboard-only debug overlays or the `ui_*`/`menu_*` navigation) can be **rebound** on
+Only the driving/menu actions listed in `scripts/input_remap.gd`'s `ACTIONS` can be
+**rebound**: `accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `shift_up`,
+`shift_down`, `handbrake`, `nitrous`, `cycle_camera` and `pause`. Everything else in the
+table above is **not** rebindable — the keyboard-only debug overlays
+(`toggle_debug_arrows`, `toggle_perf_overlay`), the dev-only actions (`skip_to_finish`,
+`reload_config`, `toggle_world_menus`, `dev_complete_rally`), `toggle_map` (see above),
+and the `ui_*`/`menu_*` navigation actions are all excluded — on
 the **Key bindings** page of the shared settings menu (`scripts/settings_menu.gd`) —
 reachable from the title-screen Settings and the in-run pause menu alike. Each action
 gets a row with a **keyboard** button and a **controller** button showing its current

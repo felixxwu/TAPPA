@@ -30,7 +30,7 @@ enum Stage { PODIUM, LEADERBOARD, STARS, SPECIAL_UNLOCK, CAR_REVEAL }
 # so the camera can frame each cleanly without the other in shot).
 const PODIUM_CENTER := Vector3.ZERO
 const SHOWROOM_CENTER := Vector3(40.0, 0.0, 0.0)
-const CAR_SCENE_PATH := "res://car.tscn"
+const CAR_SCENE_PATH := Scenes.CAR
 # The special-unlock card is inverted, like a special's map-pin readout — a documented
 # exception to design-system house rule 4 (see UITheme / features/ui-design-system.md).
 

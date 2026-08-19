@@ -11,7 +11,7 @@ table and pins, the parked-car lineup, the tuning lift (TUNE sliders + UPGRADES
 install/repair), the `RallySession.start_rally` handoff, the start-line sequence, the
 podium reward reveal, the standings overlay and the between-event interstitial all in.
 The `menu_*` input actions exist in `project.godot` and every menu is keyboard +
-gamepad navigable (see `features/menus.md` → "Menu navigation").
+gamepad navigable (see `features/menu-navigation.md`).
 
 ## What is still open
 

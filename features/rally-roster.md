@@ -262,7 +262,7 @@ Each `RALLIES` entry:
   condition, only that the stages disagree.
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). `(0,0)` is the map image's top-left, `(1,1)` its bottom-right
-  (`hq.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
+  (`hq_map_table.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
   **NO LONGER pure UI data — `map_pos` IS the progression graph.** Reveal is geometric:
   a rally opens when the player has lit the map out to its pin, so a pin's position
   decides what it opens and what opens it (see
@@ -560,7 +560,11 @@ generator also uses it per-rival.
   pace_slow, skill)` held across all 3 events — so a fast rival stays fast and the
   field spreads into a ranked ladder instead of everyone's per-event draws
   averaging to mid-pack. Each event adds a small ±`PACE_EVENT_NOISE` (±5%) jitter
-  around that base. `PACE_MIN_FLOOR` is now only a **sanity guard** (0.5×, far below
+  around that base. (Every dial in this paragraph is a GameConfig field — `rival_pace_*` /
+  `rival_ghost_solvable_pace`, authored in `config/game_config.tres`; the `RallyLibrary`
+  consts named here are fallback defaults only. See
+  [configuration.md](configuration.md) → *Rival Field & Pace*.)
+  `PACE_MIN_FLOOR` is now only a **sanity guard** (0.5×, far below
   anything the band can draw): its old value of 1.1× and its old rationale ("rivals
   never beat their car's physics optimum") both went with adaptive difficulty — the
   optimum is a point-mass centreline *reference*, not a limit. The real bound is

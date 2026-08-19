@@ -161,9 +161,9 @@ Two halves:
 
 - **Soft turn-back — implemented.** `Overworld._update_fog_boundary` darkens `FogVeil/Tint`
   and pushes the car back toward the last pose it held inside the frontier; only a car that
-  has driven `FOG_HARD_MARGIN_M` beyond it is teleported, and then only onto ground it has
-  actually stood on. Soft rather than a collider because the lit region is a union of circles
-  and a scalloped invisible wall reads as a bug.
+  has driven `overworld_fog_hard_margin_m` beyond it is teleported, and then only onto ground it has
+  actually stood on ([configuration.md](configuration.md) → *Overworld Fog Frontier*). Soft rather
+  than a collider because the lit region is a union of circles and a scalloped wall reads as a bug.
 - **Unlit ground — implemented.** `Overworld._push_fog_uniforms` pushes the mask as the global
   shader parameters `ow_fog_mask` / `ow_fog_size_m` / `ow_fog_unlit` / `ow_fog_amount`, declared
   in `shaders/overworld_fog.gdshaderinc` and included by **both** ground shaders
@@ -329,7 +329,7 @@ visual as a violation.)
   `OverworldCache.snap_heights` before writing, so a cache round trip is exact rather than
   approximate and the stored grid, the collision heightfield and the bilinear query are the
   same numbers.
-- **Resident cache eviction.** `Overworld._process` calls `TerrainManager.evict_to_cap()` every
+- **Resident cache eviction.** `Overworld._process_stages` calls `TerrainManager.evict_to_cap()` every
   `EVICT_INTERVAL` frames; the cap is **derived** from the load ring (there is no authored
   field — the design left it "TBD by measurement"). `evict_to_cap` independently guarantees it
   never frees a chunk whose node is live nor anything inside the built window.
@@ -800,7 +800,7 @@ not describe.
 ### Markers
 
 A marker floats above each zone at `overworld_marker_height_m`. The icon is the life-size version
-of the trichotomy `hq.gd::_make_pin` already draws:
+of the trichotomy `hq_map_table.gd::_make_pin` already draws:
 
 | Rally kind | Marker | Source |
 |---|---|---|
@@ -884,7 +884,7 @@ Two details that are easy to get wrong:
   _ghost_yaw(zone)`), because one cached body is shared by every zone unlocking that model.
 
 Cost is managed, because there are 38 rallies and a car prop is expensive enough that the HQ
-caches its own (`hq._prize_car_props`): markers are pooled and granted only to zones that are
+caches its own (`hq_map_table._prize_car_props`): markers are pooled and granted only to zones that are
 revealed **and** within `overworld_marker_draw_distance_m`; ghost bodies are cached per model and
 capped at `overworld_ghost_car_max`, nearest first; and rotation is one shared yaw written onto
 the live markers rather than a `_process` per marker.
@@ -1192,7 +1192,7 @@ the whole suite gets the cheap path for free; a test only touches `load_mode` to
 run *into* full generation. `Overworld.cheap_size_m` sets the cheap world's edge length.
 Every `await` in the build collapses to a no-op under headless (`_yield_frame`), exactly as
 `world.gd`'s does, and `applied_fps_caps` records the cap intent without writing
-`Engine.max_fps`. `world_ready` is emitted when the build finishes.
+`Engine.max_fps`. `world_ready` is emitted when the build finishes. Shared `WorldRuntime` leaves and `_process_stages`: [overworld-frame-loop.md](overworld-frame-loop.md).
 
 Because the coordinate functions are static, the map↔world round trip needs no scene at all.
 

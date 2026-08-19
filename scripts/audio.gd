@@ -38,7 +38,7 @@ extends Node
 # Dedicated mix bus for one-shots, created at boot (mirrors the Music / Engine buses
 # in music_director.gd). A named bus is the house convention: never route SFX to
 # Master, or there is no single lever for an SFX volume slider.
-const BUS := &"SFX"
+const BUS := AudioBuses.SFX
 
 # Fallbacks used only when GameConfig is unavailable (e.g. an off-tree unit test).
 # The real values are authored in config/game_config.tres — tune them THERE.
@@ -66,7 +66,7 @@ func _ready() -> void:
 	# header. Shipping builds are never headless.
 	if Platform.is_headless():
 		return
-	_mix_rate = _cfg_float("sfx_mix_rate", DEFAULT_MIX_RATE)
+	_mix_rate = Config.get_float("sfx_mix_rate", DEFAULT_MIX_RATE)
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = _mix_rate
 	gen.buffer_length = BUFFER_SECONDS
@@ -116,19 +116,19 @@ func play_beep(frequency_hz := 0.0, duration_sec := 0.0, volume_db := 0.0) -> bo
 # where no real playback exists — audio behaviour that can only be checked with a sound
 # card is audio behaviour nobody checks.
 func beep_spec(frequency_hz := 0.0, duration_sec := 0.0, volume_db := 0.0) -> Dictionary:
-	if not _cfg_bool("sfx_enabled", true):
+	if not Config.get_bool("sfx_enabled", true):
 		return {}
-	var freq := frequency_hz if frequency_hz > 0.0 else _cfg_float(
+	var freq := frequency_hz if frequency_hz > 0.0 else Config.get_float(
 		"sfx_beep_frequency_hz", DEFAULT_FREQUENCY_HZ)
-	var dur := duration_sec if duration_sec > 0.0 else _cfg_float(
+	var dur := duration_sec if duration_sec > 0.0 else Config.get_float(
 		"sfx_beep_duration_sec", DEFAULT_DURATION_SEC)
 	if freq <= 0.0 or dur <= 0.0:
 		return {}
 	return {
 		"frequency_hz": freq,
 		"duration_sec": dur,
-		"volume_db": _cfg_float("sfx_beep_volume_db", DEFAULT_VOLUME_DB) + volume_db,
-		"decay": _cfg_float("sfx_beep_decay", DEFAULT_DECAY),
+		"volume_db": Config.get_float("sfx_beep_volume_db", DEFAULT_VOLUME_DB) + volume_db,
+		"decay": Config.get_float("sfx_beep_decay", DEFAULT_DECAY),
 	}
 
 
@@ -160,24 +160,4 @@ func _ensure_bus() -> void:
 	var idx := AudioServer.bus_count
 	AudioServer.add_bus(idx)
 	AudioServer.set_bus_name(idx, BUS)
-	AudioServer.set_bus_send(idx, "Master")
-
-
-func _cfg() -> GameConfig:
-	return Config.data if Config != null else null
-
-
-func _cfg_float(field: String, fallback: float) -> float:
-	var cfg := _cfg()
-	if cfg == null:
-		return fallback
-	var v = cfg.get(field)
-	return float(v) if v != null else fallback
-
-
-func _cfg_bool(field: String, fallback: bool) -> bool:
-	var cfg := _cfg()
-	if cfg == null:
-		return fallback
-	var v = cfg.get(field)
-	return bool(v) if v != null else fallback
+	AudioServer.set_bus_send(idx, AudioBuses.MASTER)

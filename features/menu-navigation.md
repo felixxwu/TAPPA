@@ -412,10 +412,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   a progress quote — "2 MORE RALLIES → THE FOOTHILLS TRIAL" — which was the part that earned
   it: a live number that existed nowhere else in the hub. Exploration replaced the tally
   with a *position* on the map, leaving no number to quote; and because a part-unlock
-  special is titled after its own reward, `hq._special_unlock_line` returns `""` for exactly
+  special is titled after its own reward, `hq_map_table._special_unlock_line` returns `""` for exactly
   those, so the line ended up a bare rally name ("UPGRADE: SUPERCHARGER") standing over the
   garage with nothing saying what it was or why it was there. The **map table still teases
-  the same special** (`hq._build_special_teaser_label`, see the TABLE section) — on the map
+  the same special** (`hq_map_table._build_special_teaser_label`, see the TABLE section) — on the map
   the name sits on the ground the player has to light to reach it, which is the context the
   garage line could not carry.
 

@@ -44,10 +44,26 @@ const RETURN_SPAWN_MARGIN_M := 6.0
 var _spawn_face_target := Vector2.INF
 var _spawn_gap_m := 0.0
 
+# THE FOG-FRONTIER FEEL VALUES LIVE IN GameConfig — these consts are FALLBACK DEFAULTS ONLY.
+# Authored in config/game_config.tres (group "Overworld Fog Frontier") and read through
+# `Config.get_float(...)`; retune them THERE, not here. The consts stay because they document the
+# shipped value beside the rationale and because outside callers name them (tests, and the
+# `reach_margin_map` derivation below).
+#   FOG_PUSH_ACCEL     -> overworld_fog_push_accel
+#   FOG_HARD_MARGIN_M  -> overworld_fog_hard_margin_m
+#   FOG_VEIL_ALPHA     -> overworld_fog_veil_alpha
+#   FOG_VEIL_FADE      -> overworld_fog_veil_fade
 const FOG_PUSH_ACCEL := 6.0          # m/s^2 of inward nudge while beyond the frontier
 const FOG_HARD_MARGIN_M := 120.0     # beyond this, snap back to the last lit pose
 const FOG_VEIL_ALPHA := 0.55         # how dark the screen goes at the hard margin
 const FOG_VEIL_FADE := 2.5           # veil alpha units per second
+
+# The four above, resolved from the config ONCE at boot. `_update_fog_boundary` runs every
+# physics frame, so it reads these rather than doing four dictionary lookups per frame.
+var _fog_push_accel := FOG_PUSH_ACCEL
+var _fog_hard_margin_m := FOG_HARD_MARGIN_M
+var _fog_veil_alpha_max := FOG_VEIL_ALPHA
+var _fog_veil_fade := FOG_VEIL_FADE
 
 # The GLOBAL shader uniforms the terrain shader must declare for the fog frontier to darken
 # the ground (spec slice 3: "fed to the terrain shader as a global uniform"). Pushed only if
@@ -67,7 +83,7 @@ const ZONES_SCRIPT := "res://scripts/overworld_zones.gd"
 # than preloaded: the scene already instances one Car of its own, and a preload here would
 # pull the whole body in again during script parse, including headless test runs that build
 # no zones at all.
-const CAR_SCENE_PATH := "res://car.tscn"
+const CAR_SCENE_PATH := Scenes.CAR
 
 # The reserved zone id for the garage. Not a rally id, and `_on_zone_activated` routes it to
 # the garage BUILDING rather than to a rally pick, and it is what the map labels that destination
@@ -88,18 +104,17 @@ const SPIKE_MS := 33.0
 # At the shipped 1 km the map is ~400 (plus the load-radius margin), so it stays resident.
 const RESIDENT_MAP_CHUNK_LIMIT := 800
 
-# Frame caps for the load window and after it — same reasoning (and same values) as
-# world.gd's: a low cap paces every awaited frame the precompute performs.
-const LOADING_MAX_FPS := 0
-const LOADING_TOUCH_MAX_FPS := 60
+# Frame caps for the load window (WorldRuntime.LOADING_MAX_FPS / LOADING_TOUCH_MAX_FPS,
+# via WorldRuntime.loading_cap) are shared with world.gd — a low cap paces every awaited
+# frame the precompute performs. See scripts/world_runtime.gd.
 
 # Chunks generated per awaited frame during the first-launch precompute. world.gd's corridor
 # precompute uses 8; the overworld's pass is far longer, so it reports a count as it goes.
 const PRECOMPUTE_BATCH := 8
 
-# Terrain shader parameter the deep-snow ground raise uses; kept in step with world.gd.
-const TERRAIN_BASE_SHADER := preload("res://shaders/ps1_models.gdshader")
-const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
+# The two terrain shaders the deep-snow ground raise swaps between now live on WorldRuntime
+# (WorldRuntime.TERRAIN_BASE_SHADER / TERRAIN_SNOW_SHADER), shared with world.gd so the two
+# hosts cannot drift.
 
 # --- The cheap test path ------------------------------------------------------------------
 #
@@ -201,6 +216,11 @@ var _map_locked_controls := false
 # Whether to print frame-spike attribution. Resolved once in _ready — debug builds only, and
 # OVERWORLD_SPIKE_LOG=0 mutes it.
 var _spike_log := false
+# Stage boundary timestamps for that attribution, in the order the stages run:
+# [region, fog, foliage, evict, zones, end]. PREALLOCATED once here, never resized, and only
+# WRITTEN when _spike_log is true — so the shipping per-frame path costs one already-cached
+# bool test per stage boundary and allocates nothing. See _process_stages / _log_frame_spike.
+var _spike_us := PackedInt64Array([0, 0, 0, 0, 0, 0])
 
 # Region the look is currently dressed for, so a crossing re-applies it exactly once.
 var _look_region := ""
@@ -396,6 +416,11 @@ func _ready() -> void:
 	var cfg: GameConfig = Config.data
 	_size_m = cheap_size_m if _cheap else cfg.overworld_size_m
 	_bounds = bounds_for(_size_m)
+	# Fog-frontier feel, cached here because _update_fog_boundary is a per-frame path.
+	_fog_push_accel = Config.get_float("overworld_fog_push_accel", FOG_PUSH_ACCEL)
+	_fog_hard_margin_m = Config.get_float("overworld_fog_hard_margin_m", FOG_HARD_MARGIN_M)
+	_fog_veil_alpha_max = Config.get_float("overworld_fog_veil_alpha", FOG_VEIL_ALPHA)
+	_fog_veil_fade = Config.get_float("overworld_fog_veil_fade", FOG_VEIL_FADE)
 
 	# WHERE THE GARAGE STANDS, resolved ONCE per hub build and threaded from here. It is beside the
 	# player's first-car rally (RallyLibrary.hq_map_pos), so it is profile-derived rather than a
@@ -431,7 +456,7 @@ func _ready() -> void:
 	cfg.terrain_lod_bands_m = cfg.terrain_lod_bands_for(web, touch)
 
 	var fps_cap := FpsSetting.resolve()
-	_apply_fps_cap(LOADING_TOUCH_MAX_FPS if touch else LOADING_MAX_FPS)
+	_apply_fps_cap(WorldRuntime.loading_cap(touch))
 
 	# Environment: fog + background, then the region look on top (which owns the sky panorama
 	# and the background/fog colour).
@@ -490,7 +515,7 @@ func _ready() -> void:
 	# invalidation key, so retuning either rebakes the map rather than serving stale ground.
 	if tm.noise_seed != cfg.overworld_terrain_seed:
 		tm.noise_seed = cfg.overworld_terrain_seed
-	if not _layers_match(tm.layers, cfg.overworld_terrain_layers()):
+	if not WorldRuntime.layers_match(tm.layers, cfg.overworld_terrain_layers()):
 		var layers: Array[TerrainLayer] = []
 		for params in cfg.overworld_terrain_layers():
 			var layer := TerrainLayer.new()
@@ -600,18 +625,17 @@ func _resolve_cheap() -> bool:
 
 
 # Apply a frame cap and record the intent. The Engine write is suppressed under --headless
-# (nothing to pace, and it would throttle the frame-awaiting test runner).
+# (nothing to pace, and it would throttle the frame-awaiting test runner). Shared with
+# world.gd — see WorldRuntime.apply_fps_cap.
 func _apply_fps_cap(cap: int) -> void:
-	applied_fps_caps.append(cap)
-	if not _headless:
-		Engine.max_fps = cap
+	WorldRuntime.apply_fps_cap(applied_fps_caps, cap, _headless)
 
 
 # Yield a frame, collapsing to a no-op under headless so the whole build runs synchronously
 # inside add_child() — the same contract world.gd's _yield_frame gives the test suite.
+# Shared implementation: WorldRuntime.yield_frame.
 func _yield_frame() -> void:
-	if not _headless:
-		await get_tree().process_frame
+	await WorldRuntime.yield_frame(get_tree(), _headless)
 
 
 func _build_world(cfg: GameConfig, loading: LoadingScreen) -> void:
@@ -933,8 +957,11 @@ func _reach_sources(tm: TerrainManager) -> Array:
 ## How far outside the lit region the precompute must still bake, in NORMALISED map units. See
 ## `_reach_sources`' header for the derivation; exposed so a test can assert the safety property
 ## (everywhere the fog push permits is baked) without hardcoding the bound.
+## STATIC, so it reads the config directly rather than the cached `_fog_hard_margin_m` — it is a
+## precompute-time derivation, not a per-frame one.
 static func reach_margin_map(size_m: float, load_radius: int) -> float:
-	return (FOG_HARD_MARGIN_M + float(maxi(load_radius, 0) + 2) * TerrainManager.CHUNK_M) \
+	var hard_margin := Config.get_float("overworld_fog_hard_margin_m", FOG_HARD_MARGIN_M)
+	return (hard_margin + float(maxi(load_radius, 0) + 2) * TerrainManager.CHUNK_M) \
 		/ maxf(size_m, 1.0)
 
 
@@ -1411,17 +1438,11 @@ func _look_texture(look: Dictionary, key: String, fallback: Texture2D) -> Textur
 
 # Deep snow draws the ground ABOVE the collision surface off-road. Called unconditionally,
 # and that is load-bearing: without the else-branch a snow stage would leave every later
-# world's ground floating in mid-air (the shader lives on a shared sub-resource).
+# world's ground floating in mid-air (the shader lives on a shared sub-resource). The swap
+# itself is shared with world.gd — see WorldRuntime.apply_deep_snow; this host only supplies
+# its material (reached through the cached _floor() accessor).
 func _apply_deep_snow_ground(cfg: GameConfig) -> void:
-	var floor_mat := _floor().chunk_material as ShaderMaterial
-	if floor_mat == null:
-		return
-	if cfg.deep_snow_depth_m > 0.0:
-		if floor_mat.shader != TERRAIN_SNOW_SHADER:
-			floor_mat.shader = TERRAIN_SNOW_SHADER
-		floor_mat.set_shader_parameter("snow_depth", cfg.deep_snow_depth_m)
-	elif floor_mat.shader != TERRAIN_BASE_SHADER:
-		floor_mat.shader = TERRAIN_BASE_SHADER
+	WorldRuntime.apply_deep_snow(_floor().chunk_material as ShaderMaterial, cfg)
 
 
 # ==========================================================================================
@@ -1606,20 +1627,20 @@ func _update_fog_boundary(delta: float) -> void:
 	var car := $Car as RigidBody3D
 	var lit := position_revealed(car_map_pos())
 	if lit:
-		_veil_alpha = maxf(0.0, _veil_alpha - FOG_VEIL_FADE * delta)
+		_veil_alpha = maxf(0.0, _veil_alpha - _fog_veil_fade * delta)
 		_last_lit_pose = car.global_transform
 		_has_lit_pose = true
 	else:
-		_veil_alpha = minf(FOG_VEIL_ALPHA, _veil_alpha + FOG_VEIL_FADE * delta)
+		_veil_alpha = minf(_fog_veil_alpha_max, _veil_alpha + _fog_veil_fade * delta)
 		if _has_lit_pose:
 			var back := _last_lit_pose.origin - car.global_position
 			var dist := Vector2(back.x, back.z).length()
-			if dist > FOG_HARD_MARGIN_M:
+			if dist > _fog_hard_margin_m:
 				car.call("reset_to", _last_lit_pose)
-				_veil_alpha = FOG_VEIL_ALPHA
+				_veil_alpha = _fog_veil_alpha_max
 			elif dist > 0.5:
 				var dir := Vector3(back.x, 0.0, back.z).normalized()
-				car.apply_central_force(dir * car.mass * FOG_PUSH_ACCEL)
+				car.apply_central_force(dir * car.mass * _fog_push_accel)
 	if _fog_veil != null:
 		var col := _fog_veil.color
 		col.a = _veil_alpha
@@ -2401,62 +2422,60 @@ func _process(delta: float) -> void:
 	if not _ready_done:
 		return
 	var cfg: GameConfig = Config.data
+	_process_stages(cfg, delta)
+	# Frame-spike attribution, debug-only: returns immediately (one bool test) when _spike_log
+	# is false, and _process_stages recorded nothing for it to read in that case.
+	_log_frame_spike(delta)
+	_track_pause_menu()
+
+
+# THE per-frame work — the ONE definition of the stage sequence. There used to be two copies of
+# it (a timed one inlined in _process and an untimed one here) with a comment asking whoever
+# added a stage to remember to add it to both; a stage added to one silently did not run on the
+# other path. Now the timing is a side-channel written INTO this single sequence.
+#
+# WHY THE TIMING LOOKS LIKE THIS: this runs every frame on hardware as old as we support, so
+# the diagnostic must cost as close to nothing as possible when it is off. The `if _spike_log`
+# guards are one test of an already-cached bool per stage boundary (six per frame, perfectly
+# predicted — the branch is constant for the whole run), and they write into a PREALLOCATED
+# PackedInt64Array. A prettier abstraction — an array of Callables, a `_stage_us(name, callable)`
+# wrapper, a dict of timings — would construct a Callable and/or a container EVERY frame, which
+# is exactly the per-frame allocation this hot path must not have. So: slightly less elegant,
+# allocation-free, and impossible to add a stage to "only one path".
+func _process_stages(cfg: GameConfig, delta: float) -> void:
+	if _spike_log:
+		_spike_us[0] = Time.get_ticks_usec()
 	# Region look follows the car; the GROUND blends spatially at the boundary, the sky colours
 	# fade over time and only the sky panorama snaps (see _apply_region_look). Checked
 	# every REGION_INTERVAL frames, not every frame: the lookup re-hashes the rally roster to
 	# invalidate its Voronoi sites, and a region is hundreds of metres across, so a third of a
 	# second of latency on the crossing is invisible.
-	# The six Time.get_ticks_usec() reads below feed _log_frame_spike, a DEBUG-ONLY diagnostic
-	# that returns immediately when _spike_log is false. Gathering them unconditionally cost six
-	# clock reads every frame (~360/s) on the shipping path to feed a function that discards
-	# them, so the timed version is now chosen once per frame rather than paid for always.
-	if not _spike_log:
-		_process_stages(cfg, delta)
-		_track_pause_menu()
-		return
-	var t_region := Time.get_ticks_usec()
 	_region_countdown -= 1
 	if _region_countdown <= 0:
 		_region_countdown = REGION_INTERVAL
 		_apply_region_look(car_map_pos())
-	var t_fog := Time.get_ticks_usec()
+	if _spike_log:
+		_spike_us[1] = Time.get_ticks_usec()
 	_update_fog_boundary(delta)
-	var t_foliage := Time.get_ticks_usec()
+	if _spike_log:
+		_spike_us[2] = Time.get_ticks_usec()
 	if _scatter != null:
 		_stream_foliage(cfg, maxi(1, cfg.overworld_chunk_build_budget))
+	if _spike_log:
+		_spike_us[3] = Time.get_ticks_usec()
 	# Evict cached chunk data beyond the resident window, so a long drive across 16 km² cannot
 	# grow the terrain cache without bound. Every EVICT_INTERVAL frames rather than every
 	# frame: the sweep sums every cached chunk's byte size, and the cache cannot cross the cap
 	# in a handful of frames when the build budget is a couple of chunks.
-	var t_evict := Time.get_ticks_usec()
 	_evict_countdown -= 1
 	if _evict_countdown <= 0:
 		_evict_countdown = EVICT_INTERVAL
 		_floor().evict_to_cap()
-	var t_zones := Time.get_ticks_usec()
+	if _spike_log:
+		_spike_us[4] = Time.get_ticks_usec()
 	_update_zones(delta)
-	var t_end := Time.get_ticks_usec()
-	_log_frame_spike(delta, t_region, t_fog, t_foliage, t_evict, t_zones, t_end)
-	_track_pause_menu()
-
-
-# The per-frame work, untimed. EXACTLY the same sequence and the same conditions as the timed
-# path in _process — if you add a stage to one, add it to the other. Kept as a straight copy
-# rather than a Callable-per-stage loop because this runs every frame and the ordering comments
-# belong next to the calls they explain.
-func _process_stages(cfg: GameConfig, delta: float) -> void:
-	_region_countdown -= 1
-	if _region_countdown <= 0:
-		_region_countdown = REGION_INTERVAL
-		_apply_region_look(car_map_pos())
-	_update_fog_boundary(delta)
-	if _scatter != null:
-		_stream_foliage(cfg, maxi(1, cfg.overworld_chunk_build_budget))
-	_evict_countdown -= 1
-	if _evict_countdown <= 0:
-		_evict_countdown = EVICT_INTERVAL
-		_floor().evict_to_cap()
-	_update_zones(delta)
+	if _spike_log:
+		_spike_us[5] = Time.get_ticks_usec()
 
 
 # Frame-spike attribution. `PerfLog` prints once a SECOND, which averages a 40 ms hitch away to
@@ -2465,13 +2484,23 @@ func _process_stages(cfg: GameConfig, delta: float) -> void:
 #
 # Debug builds only, and it prints nothing on a healthy frame, so it costs one clock read per
 # stage. Mute with OVERWORLD_SPIKE_LOG=0. TEMPORARY: delete once the streaming budgets are tuned.
-func _log_frame_spike(delta: float, t_region: int, t_fog: int, t_foliage: int, t_evict: int,
-		t_zones: int, t_end: int) -> void:
+#
+# Reads the stage boundaries out of _spike_us, which _process_stages fills (only when
+# _spike_log is on) as it walks the single stage sequence. It used to take the six timestamps
+# as positional arguments, which is what forced _process to carry its own inlined copy of that
+# sequence.
+func _log_frame_spike(delta: float) -> void:
 	if not _spike_log:
 		return
 	var frame_ms := delta * 1000.0
 	if frame_ms < SPIKE_MS:
 		return
+	var t_region := _spike_us[0]
+	var t_fog := _spike_us[1]
+	var t_foliage := _spike_us[2]
+	var t_evict := _spike_us[3]
+	var t_zones := _spike_us[4]
+	var t_end := _spike_us[5]
 	# Stage costs, in the order they ran. The terrain's own three stages come from
 	# TerrainManager.stage_timing (armed below in _ready alongside _spike_log): they used to fall
 	# into `other`, which meant the one tool built to attribute spikes was blind to the most
@@ -2701,14 +2730,14 @@ func _warm_effect_shaders() -> void:
 
 
 # A point ~2 m in front of the active camera — where a warm-up instance is guaranteed to sit
-# inside the frustum (so it actually draws and compiles). Falls back to the car. Mirrors
-# world.gd::_warm_up_point.
+# inside the frustum (so it actually draws and compiles). The camera part is shared with
+# world.gd (WorldRuntime.warm_up_point); the FALLBACK stays here because the two hosts
+# diverge — this scene looks its car up by name and tolerates its absence, world.gd has an
+# authored $Car.
 func _warm_up_point() -> Vector3:
-	var cam := get_viewport().get_camera_3d()
-	if cam != null:
-		return cam.global_position - cam.global_transform.basis.z * 2.0
 	var car := get_node_or_null("Car") as Node3D
-	return car.global_position if car != null else Vector3.ZERO
+	var fallback := car.global_position if car != null else Vector3.ZERO
+	return WorldRuntime.warm_up_point(get_viewport().get_camera_3d(), fallback)
 
 
 # ==========================================================================================
@@ -2721,11 +2750,3 @@ func _floor() -> TerrainManager:
 	return _floor_tm
 
 
-func _layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:
-	if layers.size() != params.size():
-		return false
-	for i in layers.size():
-		if layers[i] == null or layers[i].wavelength_m != params[i].x \
-				or layers[i].amplitude_m != params[i].y:
-			return false
-	return true

@@ -306,7 +306,7 @@ in silence. The announcement carries `granted: []` — there is no item and, sin
 the swap token was retired, no consumable either; the capability itself is the
 whole reward, which is exactly why it needs no top-up to be usable the moment it
 is announced. The map pin has always had this branch
-(`hq.gd::_special_unlock_line`); the podium mirrors it.
+(`hq_map_table.gd::_special_unlock_line`); the podium mirrors it.
 
 The ladder order is authored, not derived — engine swaps first, then the
 forced-induction and drivetrain parts, then the nitrous rungs. Two invariants are

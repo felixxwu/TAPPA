@@ -24,6 +24,43 @@ extends Node
 
 const OUT_PATH := "res://data/eligibility.json"
 
+# Fingerprint over exactly what the ELIGIBILITY matrix depends on, mirroring
+# TrackCache's source_hash pattern (scripts/track_cache.gd) so a drift between
+# rally_library.gd's restriction bands / the car+engine catalogues and the
+# committed data/eligibility.json fails loudly instead of silently. Deliberately
+# NOT a hash of everything the exporter reads:
+#   - Rally restriction dicts (RallyLibrary.is_eligible's whole input) — any
+#     edit here changes who can enter, which is exactly what this guards.
+#   - Per-car CATEGORICAL fields ineligibility_reason actually branches on
+#     (drive_mode, country, car_type, doors, and the fitted engine id) — not
+#     mass/torque/grip/etc, which are tunables that must NOT churn this hash
+#     (see CLAUDE.md: never let a retune invalidate a matrix that doesn't
+#     depend on it).
+#   - Per-engine fields ineligibility_reason resolves through the engine
+#     (displacement_l, cylinder count) — again not torque/redline/tunables.
+#   - The full car and rally id sets, so adding/removing an entry (like the
+#     six snow rallies that went missing) is caught even if no band changed.
+# power_to_weight is intentionally excluded: it's a pace metric the fitter
+# uses for pin placement, not an eligibility input, and it DOES depend on
+# tunables (mass, torque) that must stay free to retune without invalidating
+# this guard.
+static func compute_source_hash() -> String:
+	var parts := PackedStringArray()
+	for rally in RallyLibrary.all():
+		var r: Dictionary = rally.get("restriction", {})
+		parts.append("rally:%s=%s" % [String(rally["id"]), JSON.stringify(r, "", true)])
+	for spec in CarLibrary.all():
+		var meta := UpgradeLibrary.effective_meta({}, spec)
+		parts.append("car:%s=%s|%s|%s|%s|%s" % [String(spec.get("id", "")),
+			str(meta.get("drive_mode", -1)), String(meta.get("country", "")),
+			String(meta.get("car_type", "")), str(meta.get("doors", 0)),
+			String(meta.get("engine", ""))])
+	for eng in EngineLibrary.all():
+		parts.append("engine:%s=%s|%s" % [String(eng.get("id", "")),
+			str(eng.get("displacement_l", 0.0)), str(EngineLibrary.cylinders(eng))])
+	parts.sort()
+	return "|".join(parts).sha256_text()
+
 
 func _ready() -> void:
 	var matrix := {}
@@ -56,6 +93,9 @@ func _ready() -> void:
 		# the reward ladder rather than a measure of pace — a tier-2 car can be quicker than a
 		# tier-3 one, and ordering the map by it put a fast car on HQ's doorstep.
 		"power_to_weight": _power_to_weight(),
+		# Freshness guard, mirroring data/track_cache.json's source_hash — see
+		# compute_source_hash() above for exactly what's hashed and why.
+		"source_hash": compute_source_hash(),
 	}
 	var f := FileAccess.open(OUT_PATH, FileAccess.WRITE)
 	f.store_string(JSON.stringify(payload, "  "))

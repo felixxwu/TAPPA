@@ -91,8 +91,14 @@ func test_car_body_hidden_while_overlay_shown() -> void:
 	if overlay == null:
 		return
 	# Whatever body node is showing for this car (procedural boxes or a glb model).
-	var body_names := ["Chassis", "Cabin", "Mx5Body", "FocusBody", "TwingoBody",
-		"ActyBody", "ChargerBody", "TheBeastBody", "Porsche911Body"]
+	# "Chassis"/"Cabin" are the always-present procedural boxes (car.gd); every other
+	# name is a catalogue car's "model_node" (CarLibrary.all()), derived rather than
+	# hand-copied so a newly added car's body node is automatically covered.
+	var body_names := ["Chassis", "Cabin"]
+	for spec in CarLibrary.all():
+		var model_node := String(spec.get("model_node", ""))
+		if model_node != "" and not body_names.has(model_node):
+			body_names.append(model_node)
 	var visible_before := []
 	for n in body_names:
 		var node := car.get_node_or_null(n) as Node3D

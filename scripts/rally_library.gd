@@ -63,6 +63,23 @@ const WEATHER_NIGHT := "night"
 # about one rival wrecks every two events, and never more than one per event.
 const FIELD_MIN := 9
 const FIELD_MAX := 9
+
+# THE DIFFICULTY DIALS BELOW LIVE IN GameConfig — the consts are FALLBACK DEFAULTS ONLY.
+# Every one of them is authored in config/game_config.tres (group "Rival Field & Pace") and read
+# through `Config.get_float("rival_...", <the const>)` at the point of use, per CLAUDE.md ("all
+# gameplay/look tuning values live in config/game_config.tres … script literals are only
+# fallback defaults"). The consts are kept because they document the shipped value beside the
+# design rationale and because outside callers (tests, tools/calibrate_pace_floor.gd) reference
+# them by name. RETUNE IN THE .tres, not here — editing a const alone changes nothing.
+#   OPPONENT_WRECK_CHANCE     -> rival_wreck_chance
+#   OPPONENT_SWAP_PW_SPREAD   -> rival_swap_pw_spread
+#   PACE_FAST_BASE            -> rival_pace_fast_base
+#   PACE_SLOW_BASE            -> rival_pace_slow_base
+#   PACE_FAST_STEP            -> rival_pace_fast_step
+#   PACE_SLOW_STEP            -> rival_pace_slow_step
+#   PACE_EVENT_NOISE          -> rival_pace_event_noise
+#   PACE_MIN_FLOOR            -> rival_pace_min_floor
+#   GHOST_SOLVABLE_PACE       -> rival_ghost_solvable_pace
 const OPPONENT_WRECK_CHANCE := 0.5   # per-event: probability ONE rival crashes out this event
 # How strongly the rival draw favours MODEST engine swaps. Each admitted car+engine combo
 # is weighted exp(-|pw - pw_stock| / this), where the deltas are hp/tonne against the
@@ -137,7 +154,11 @@ const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 # is a constant 1.1x (just off the physics optimum); only the slow end tightens up-tier.
 static func _pace_band(tier: int) -> Vector2:
 	var t := clampi(tier, 1, 4) - 1
-	return Vector2(PACE_FAST_BASE - t * PACE_FAST_STEP, PACE_SLOW_BASE - t * PACE_SLOW_STEP)
+	var fast_base := Config.get_float("rival_pace_fast_base", PACE_FAST_BASE)
+	var slow_base := Config.get_float("rival_pace_slow_base", PACE_SLOW_BASE)
+	var fast_step := Config.get_float("rival_pace_fast_step", PACE_FAST_STEP)
+	var slow_step := Config.get_float("rival_pace_slow_step", PACE_SLOW_STEP)
+	return Vector2(fast_base - t * fast_step, slow_base - t * slow_step)
 
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
@@ -1123,6 +1144,10 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	var mirror_tires := not player_car.is_empty()
 	var tire_id := player_tire_id(player_car) if mirror_tires else ""
 	var field: Array = []
+	# The pace dials, read ONCE for the whole field rather than per rival per event.
+	var event_noise := Config.get_float("rival_pace_event_noise", PACE_EVENT_NOISE)
+	var pace_floor := Config.get_float("rival_pace_min_floor", PACE_MIN_FLOOR)
+	var ghost_pace := Config.get_float("rival_ghost_solvable_pace", GHOST_SOLVABLE_PACE)
 	for i in count:
 		var combo: Dictionary = combos[i]
 		var car: Dictionary = combo["car"]
@@ -1168,14 +1193,14 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		for k in event_results.size():
 			var ev: Dictionary = events[k] if k < events.size() else {}
 			var floor_ms := LapTimeModel.optimum_ms(event_results[k], car_meta, ev)
-			var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * PACE_EVENT_NOISE
+			var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * event_noise
 			# The trim is applied AFTER the sanity floor, not before it: the fastest rival
 			# sits near the bottom of the pace band at every tier, so a trim folded in
 			# before a binding floor would be clamped straight back off — which is exactly
 			# where hardening is needed most. The only bound on the result is what the
 			# ghost can drive.
-			var factor := maxf(base_pace * noise, PACE_MIN_FLOOR) * pace_trim
-			times.append(int(round(floor_ms * maxf(factor, GHOST_SOLVABLE_PACE))))
+			var factor := maxf(base_pace * noise, pace_floor) * pace_trim
+			times.append(int(round(floor_ms * maxf(factor, ghost_pace))))
 		field.append({
 			"name": names[i],
 			"car_id": String(car.get("id", "")),
@@ -1216,8 +1241,9 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	# Wreck pass: each event crashes at most one still-running rival out. Drawn from the
 	# SAME seeded RNG so the wreck (and its roadside placement) is stable across
 	# re-attempts, exactly like the times above.
+	var wreck_chance := Config.get_float("rival_wreck_chance", OPPONENT_WRECK_CHANCE)
 	for k in event_results.size():
-		if rng.randf() >= OPPONENT_WRECK_CHANCE:
+		if rng.randf() >= wreck_chance:
 			continue
 		var candidates: Array = []
 		for i in field.size():
@@ -1567,7 +1593,8 @@ static func _residual_pace_trim(pool: Array, target_rating: int) -> float:
 # the car's stock engine. Monotonically decreasing in `pw_delta`, always > 0 so no
 # admitted combo is ever unreachable. Pure — see OPPONENT_SWAP_PW_SPREAD.
 static func swap_weight(pw_delta: float) -> float:
-	return exp(-absf(pw_delta) / maxf(OPPONENT_SWAP_PW_SPREAD, 0.001))
+	var spread := Config.get_float("rival_swap_pw_spread", OPPONENT_SWAP_PW_SPREAD)
+	return exp(-absf(pw_delta) / maxf(spread, 0.001))
 
 
 # How much a combo is favoured for being CLOSE TO THE PLAYER'S PACE, from the gap

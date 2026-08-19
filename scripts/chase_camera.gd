@@ -52,6 +52,7 @@ var _shake_impulse := 0.0    # decaying intensity from g-force spikes (0..1)
 var _shake_phase := 0.0      # seconds, advanced by delta — drives the oscillation
 var _prev_vel := Vector3.ZERO
 var _have_prev_vel := false
+var _gravity: float
 # The target the cached _prev_vel belongs to; when it changes (a car swap via
 # CameraManager.retarget) the history is dropped so the first frame on the new
 # car doesn't read a bogus acceleration spike off the old car's velocity.
@@ -77,6 +78,7 @@ var _terrain: Node = null
 
 
 func _ready() -> void:
+	_gravity = Platform.gravity()
 	var cfg: GameConfig = Config.data
 	_distance = cfg.follow_distance
 	_height = cfg.follow_distance * cfg.follow_height_ratio
@@ -257,7 +259,7 @@ func _apply_gforce_tilt(delta: float) -> float:
 			# catch. Gravity is deliberately not subtracted — a car in free flight reads a
 			# steady 1 g, which sits below any sensible shake_g_threshold, and the landing spike
 			# that follows is what matters. Same convention as DamageModel's deceleration rule.
-			accel_g = accel.length() / 9.8
+			accel_g = accel.length() / _gravity
 			var car_basis := target.global_transform.basis
 			var lateral := accel.dot(car_basis.x)       # + = accelerating rightward
 			var longitudinal := accel.dot(-car_basis.z) # + = speeding up forward

@@ -37,7 +37,7 @@ Owns all terrain state and the chunk lifecycle.
 - `layers: Array[TerrainLayer]` — each layer is a (`wavelength_m`,
   `amplitude_m`) pair. Defaults set in `_default_layers` on `_ready` if empty.
   `world.gd` (re)builds this from `cfg.terrain_layers()` whenever it changes
-  (`_layers_match` guard), so the hill shape follows the live config.
+  (`WorldRuntime.layers_match` guard, shared by `world.gd` and `overworld.gd`), so the hill shape follows the live config.
   **Per-event override:** an event may set any of the 6 flat keys
   `terrain_layer{1,2,3}_{wavelength,amplitude}` to reshape its hills; omitted
   keys fall back to the authored `GameConfig` global default (never to a prior
@@ -651,7 +651,7 @@ corridor. `has_bounds()` is the switch that fixes each:
 
 Keeping the light is not a leak — in an open world `light_at` is a repeated query and chunks
 are generated in *play*, so `lights` is a live input to every `chunk_source` write, not
-load-only data.
+load-only data. (`compute_chunk_data`'s five post-passes, `_chunk_view`, and the `bake_track` split: [terrain-chunk-modifiers.md](terrain-chunk-modifiers.md).)
 
 ### The coastline edge taper (D9)
 

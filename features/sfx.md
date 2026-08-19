@@ -35,8 +35,12 @@ func is_available() -> bool
 func beep_spec(frequency_hz := 0.0, duration_sec := 0.0, volume_db := 0.0) -> Dictionary
 static func render_beep(frames: int, frequency_hz: float, mix_rate: float,
         amplitude: float, decay: float) -> PackedVector2Array
-const BUS := &"SFX"
+const BUS := AudioBuses.SFX
 ```
+
+`AudioBuses` (`scripts/audio_buses.gd`) is the single definition of every mix bus name
+(`MASTER`, `MUSIC`, `ENGINE`, `SFX`) — audio.gd's `BUS` and music_director.gd's bus
+lookups all reference it, so a bus rename touches one file. See `features/music.md`.
 
 - `frequency_hz` / `duration_sec`: `<= 0` means "use the configured default"
   (`sfx_beep_frequency_hz` / `sfx_beep_duration_sec`). Pass a value only when the cue

@@ -4044,3 +4044,102 @@ func spectator_params() -> Dictionary:
 ## Purely a shader remap of the baked rank, so changing it is free — it does NOT invalidate the
 ## chunk cache and needs no re-bake.
 @export_range(0.02, 1.0, 0.01) var overworld_region_blend_width := 0.35
+
+
+@export_group("Rival Field & Pace")
+# The DIFFICULTY dials behind a rally's opponent field: how likely a rival is to crash out,
+# how far the rival draw wanders from stock engines, and the pace band every rival's lap time
+# is drawn from. Read by RallyLibrary (generate_opponent_field / _pace_band / swap_weight),
+# where the matching consts survive only as fallback defaults. See features/rally-roster.md,
+# features/adaptive-difficulty.md and features/opponent-wrecks.md.
+## Probability, PER EVENT, that exactly ONE not-yet-wrecked rival crashes out (a wreck is a DNF,
+## and a DNF in any event disqualifies the rival's whole rally). Capped at one per event whatever
+## this says, so it is purely "how often does the field thin out": 0 = nobody ever wrecks and
+## the standings are pure pace, 1 = a rival is lost every single event.
+@export_range(0.0, 1.0, 0.01) var rival_wreck_chance := 0.5
+## How strongly the rival draw favours MODEST engine swaps, in hp/tonne. Each admitted
+## car+engine combo is weighted `exp(-|pw - pw_stock| / this)`, so a stock combo weighs 1.0 and a
+## swap this far from stock ~0.37. Small = near-stock, recognisable fields; large = anything goes
+## and the grid fills with oddities. Never a filter, only a bias.
+@export_range(1.0, 200.0, 0.5) var rival_swap_pw_spread := 25.0
+## Pace of the FASTEST rival (skill 0), as a multiple of that rival's own physics optimum for
+## their car on the event track. The tight end of the band — lower it and the ace at the front
+## becomes near-unbeatable, raise it and the whole field is beatable on a clean run.
+@export_range(0.5, 3.0, 0.01) var rival_pace_fast_base := 1.10
+## Pace of the SLOWEST rival (skill 1) at difficulty tier 1 — the loose end of the band. The gap
+## to `rival_pace_fast_base` is how SPREAD OUT a tier-1 field feels from front to back.
+@export_range(0.5, 5.0, 0.01) var rival_pace_slow_base := 2.00
+## How much the FAST end of the band tightens per difficulty tier above 1. 0 keeps the ace at
+## the same pace at every tier, so only the back of the field improves up-tier.
+@export_range(0.0, 1.0, 0.001) var rival_pace_fast_step := 0.00
+## How much the SLOW end of the band tightens per difficulty tier above 1. Larger = higher-tier
+## rallies field a more uniformly quick pack, with no easy backmarkers to overtake.
+@export_range(0.0, 1.0, 0.0001) var rival_pace_slow_step := 0.1667
+## Per-event jitter, ±this fraction, around a rival's PERSISTENT base pace. Small enough that a
+## fast rival stays fast across all three events (so combined times rank into a real ladder),
+## large enough that a stage can spring an upset. 0 makes the field robotic and fully predictable.
+@export_range(0.0, 0.5, 0.005) var rival_pace_event_noise := 0.05
+## Absolute floor on a rival's pace multiplier — a SANITY GUARD, not a difficulty dial. Set far
+## below anything the band above can produce, so it never binds in normal play; its job is to
+## keep a degenerate case (empty combo pool, a divide-by-zero, an absurd difficulty target)
+## producing a SLOW field rather than a negative or impossible one.
+@export_range(0.05, 2.0, 0.01) var rival_pace_min_floor := 0.50
+## The quickest time a rival may be given, as a multiple of their own optimum, AFTER the residual
+## difficulty trim. Not a physics limit — it is what the windscreen GHOST can represent: past it
+## RivalPace's bisection bottoms out, warns, clamps, and the ghost visibly stops matching the
+## standings. Raise it only alongside the ghost's skill bracket. See features/rival-ghost.md.
+@export_range(0.5, 1.5, 0.001) var rival_ghost_solvable_pace := 0.976
+
+
+@export_group("Overworld Fog Frontier")
+# The SOFT turn-back at the edge of the revealed overworld (features/overworld.md → the fog
+# frontier): drive past it and the screen darkens and the car is nudged back, rather than
+# hitting an invisible wall. Read by overworld.gd, which caches them at boot.
+## Inward nudge (m/s²) applied to the car while it is beyond the frontier, as a force through its
+## own mass. Gentle: it should feel like the car does not want to go there, not like a hand
+## grabbing the wheel. Too high and it fights the player; 0 removes the push entirely.
+@export_range(0.0, 40.0, 0.5) var overworld_fog_push_accel := 6.0
+## How far (metres) past the last LIT pose the car may get before it is teleported back to that
+## pose. The hard backstop behind the soft push. Also sizes the precompute's safety margin
+## (`Overworld.reach_margin_map`), so raising it makes the first-launch bake cover more ground.
+@export_range(10.0, 1000.0, 5.0) var overworld_fog_hard_margin_m := 120.0
+## How dark the screen veil goes (alpha 0..1) once the car is at the hard margin. High enough to
+## read as "you should not be here", low enough to still drive back by. 0 disables the veil.
+@export_range(0.0, 1.0, 0.01) var overworld_fog_veil_alpha := 0.55
+## Speed the veil fades in and out, in alpha units per second. Large = a snappy warning that
+## clears the instant you are back in lit ground; small = a slow, moody bleed either way.
+@export_range(0.1, 20.0, 0.1) var overworld_fog_veil_fade := 2.5
+
+
+@export_group("HQ Present Box")
+# The PRESENT-BOX car reveal HQ opens on after a rally that won the player a car
+# (features/hq.md → the present box): a giant wrapped box in an empty car park whose lid
+# lifts away and whose four walls fall outward. Read by hq_present_reveal.gd.
+## Extra room (metres) added to the LARGEST car on the roster in all three axes when sizing the
+## box, so one box fits every possible prize. Snug on purpose — the box should read as wrapped
+## around a car. Raise it for a roomier, more gift-like box; drop it towards 0 and the widest
+## car's mirrors sit flush with the walls.
+@export_range(0.0, 3.0, 0.05) var hq_present_clearance_m := 0.55
+## How far (metres) the lid travels UP before it is out of frame. Must clear the top of the
+## screen for the shipped camera framing; more just means it keeps going after you stop seeing it.
+@export_range(1.0, 30.0, 0.5) var hq_present_lid_rise := 9.0
+## Seconds for the lid to lift clear. The walls start falling at 45% of this, so it also paces
+## the whole cinematic's overlap. Short = an eager reveal; long = a drawn-out ta-da.
+@export_range(0.1, 5.0, 0.05) var hq_present_open_time := 0.7
+## Seconds for one wall to fall flat. Deliberately slow — the walls are meant to have WEIGHT
+## (they tip on a gravity curve), and speeding this up makes them read as paper.
+@export_range(0.1, 5.0, 0.05) var hq_present_wall_time := 1.1
+
+
+@export_group("Loading")
+# The frame cap held for the DURATION of world generation only (WorldRuntime.loading_cap, used
+# by world.gd and overworld.gd). Loading awaits hundreds of frames, and a LOW cap makes each of
+# those yields idle away most of its frame budget instead of generating — measured on the web
+# export at 33.4 ms per awaited frame at cap 30 vs 8.3 ms uncapped. See features/loading.md.
+## Loading-window cap (FPS) on non-touch targets (desktop/native). 0 = uncapped, which is the
+## fastest load; a low number here directly lengthens every load in the game.
+@export_range(0, 240) var loading_max_fps := 0
+## Loading-window cap (FPS) on TOUCH and web targets. Bounded rather than uncapped on purpose:
+## running a phone flat-out through a long load is the thermal/battery failure this exists to
+## avoid, and a throttled phone then plays worse. 0 = uncapped.
+@export_range(0, 240) var loading_touch_max_fps := 60

@@ -21,7 +21,8 @@ extends Node3D
 # keyboard + gamepad navigable" rule in CLAUDE.md — but car cycling is wired to
 # ui_left/ui_right anyway (so a pad works) since it cost nothing.
 
-const CAR_SCENE := preload("res://car.tscn")
+## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
+## below since preload() cannot take that reference (needs a literal string).
 
 const GROUND_SIZE_M := 40.0
 const MIN_DISTANCE_M := 2.0
@@ -106,7 +107,7 @@ func _show_car(index: int) -> void:
 	_index = wrapi(index, 0, roster.size())
 	if is_instance_valid(_car):
 		_car.queue_free()
-	_car = CAR_SCENE.instantiate() as Node3D
+	_car = Scenes.car_scene().instantiate() as Node3D
 	add_child(_car)
 	# Frozen: this is a static display, and an un-frozen VehicleBody3D would settle,
 	# roll and drift off the apron while you are trying to aim at a fixed point on it.

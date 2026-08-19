@@ -13,6 +13,17 @@ Related: `terrain.md` (chunk cache, carve), `track.md` (the DFS search),
 `world.gd::_ready` puts a `LoadingScreen` up, then `await _generate_track(cfg, loading)`
 runs the whole build behind it. The stages, in order:
 
+`_generate_track` is now the PHASE SEQUENCE only — it takes the car freeze, then awaits one
+private coroutine per phase, each named after the load-stage label it opens:
+`_generate_centerline` → `_carve_road_into_terrain` → `_build_terrain_ring` → (car unfrozen)
+→ `_place_world_props` → `_warm_shaders_behind_cover`. Phase 1 returns the shape contract
+(`result`, `road_centerline`, `finish_len`, `start_pos`, `start_heading`, `staged`,
+`water_bounds`) the later phases read. `_ready` is split the same way:
+`_apply_scene_config` → `_field_player_car` → `await _generate_track` →
+`await _wire_session_and_stage` → `_build_overlays_and_benchmark`. The awaiting order is
+identical to when all of this ran inline; only the nesting changed. `_interactive(loading)`
+is the single definition of "an overlay is up AND we're not headless", shared by the phases.
+
 | stage label | what it does | where |
 |---|---|---|
 | Building terrain | `TerrainManager.build_initial()` — the 7x7 ring, pulled from the cache | `terrain_manager.gd` |
@@ -73,7 +84,8 @@ were both removed. Weather still announces itself in the world; see `weather.md`
 > that. **If you add a slow step, give it a label** or you will mis-attribute it.
 
 `_yield_frame()` collapses to a synchronous no-op under headless, so tests see a fully
-built world within `_ready`.
+built world within `_ready`. Its body is `WorldRuntime.yield_frame(get_tree(), _headless)`,
+shared with `overworld.gd`.
 
 ## The car is frozen for the whole window
 
@@ -91,8 +103,21 @@ If you add work between those two points, do not assume the car is on the ground
 ## Frame cap during load
 
 `world.gd::_apply_fps_cap()` applies a **loading-phase** cap during generation
-(`LOADING_MAX_FPS = 0` on non-touch, `LOADING_TOUCH_MAX_FPS = 60` on touch), and the
-player's real cap is applied on the line **after** `_end_load_timing()` in `_ready`.
+(`WorldRuntime.loading_cap(touch)`), and the player's real cap is applied on the line
+**after** `_end_load_timing()` in `_ready`.
+
+**The two caps are GameConfig fields** — `loading_max_fps` (non-touch) and
+`loading_touch_max_fps` (touch/web), authored in `config/game_config.tres` and read by
+`loading_cap`. `WorldRuntime.LOADING_MAX_FPS` / `LOADING_TOUCH_MAX_FPS` remain as the
+fallback defaults only, so retuning a const alone changes nothing; see
+[configuration.md](configuration.md) → *Loading*.
+
+The cap-applying logic lives in `scripts/world_runtime.gd`
+(`WorldRuntime.apply_fps_cap`, `WorldRuntime.loading_cap`), shared with `overworld.gd` — the
+two world hosts used to carry byte-identical copies. Each host keeps a thin `_apply_fps_cap`
+wrapper that passes its own `applied_fps_caps` array and headless flag, so the recorded
+intent (and the tests reading it) are unchanged. ⚠️ The two cap consts are loading-time
+TUNING values and carry a `TODO(config)` to move into `GameConfig` / `game_config.tres`.
 
 Why it matters, measured on a real web export at the web-touch branch:
 

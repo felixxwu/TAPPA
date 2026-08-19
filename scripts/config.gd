@@ -47,3 +47,36 @@ func reload_from_disk() -> bool:
 		return false
 	data = fresh.duplicate(true)
 	return true
+
+
+# --- Field lookups (the ONE place every call site reads a GameConfig field) -----------------
+#
+# Semantics: `field in cfg` (an "is this a real declared property" check), NOT
+# `cfg.get(field) != null`. The two callers this replaced disagreed on exactly this point, and
+# it matters for catching a typo'd field name: every GameConfig field is an `@export var` with
+# a non-null default (float/bool/int/Color — see game_config.gd), so a DECLARED field never
+# legitimately holds null. That means `in` and `!= null` agree for every real field; the only
+# case they could diverge is a field that doesn't exist at all, where both `in` (false) and
+# `get()` (null) already resolve to "missing" the same way. `in` is used here because it says
+# directly what we mean ("does this property exist"), rather than inferring existence from a
+# null check that happens to work only because no field is ever null-valued.
+#
+# A missing field pushes a warning rather than silently resolving to the fallback — a typo'd
+# field name should be loud, not a quiet revert to a default that then looks like a balance
+# choice nobody made.
+func get_float(field: String, fallback: float) -> float:
+	if data == null:
+		return fallback
+	if not (field in data):
+		push_warning("Config.get_float: no such GameConfig field %s (using fallback %s)" % [field, fallback])
+		return fallback
+	return float(data.get(field))
+
+
+func get_bool(field: String, fallback: bool) -> bool:
+	if data == null:
+		return fallback
+	if not (field in data):
+		push_warning("Config.get_bool: no such GameConfig field %s (using fallback %s)" % [field, fallback])
+		return fallback
+	return bool(data.get(field))

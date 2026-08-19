@@ -62,6 +62,34 @@ anneals the positions so the opening wave is a single rally beside the garage an
 later wave reveals about two. It also enforces the upgrade-chain ordering below, reading it
 out of `UpgradeLibrary` rather than duplicating it.
 
+**Eligibility is fed in from a committed matrix, not recomputed in Python.**
+`fit_map_pins.py` needs to know which cars can actually ENTER each rally (not just
+reach its pin), but `RallyLibrary.is_eligible`/`ineligibility_reason` live in GDScript
+and read the car/engine catalogues — reimplementing that predicate in Python would
+duplicate the game's central progression rule in a second language and drift the
+first time a band was retuned. So `tools/export_eligibility.gd` (run via
+`./export_eligibility.sh`) computes the real rally x car matrix once and writes it to
+`data/eligibility.json`; `fit_map_pins.py` just reads it. Regenerate after adding or
+removing a rally, or retuning a restriction band, a car, or an engine.
+
+`data/eligibility.json` is a committed generated artifact, so it can go stale exactly
+like `data/track_cache.json` can — an edit to `scripts/rally_library.gd` (e.g. adding a
+rally) does not by itself update the file. It carries the same `source_hash` guard
+pattern as the track cache (`scripts/track_cache.gd`): `export_eligibility.gd`'s
+`compute_source_hash()` fingerprints exactly what the matrix depends on — every
+rally's restriction dict, the categorical car fields `ineligibility_reason` branches
+on (`drive_mode`, `country`, `car_type`, `doors`, fitted `engine`), and the
+engine-derived fields it resolves (`displacement_l`, cylinder count) — and stores it
+as the JSON's `source_hash` field. Tunables that don't affect eligibility (mass,
+torque, `power_to_weight`, etc.) are deliberately excluded so a retune doesn't churn
+the hash. Because reimplementing that fingerprint in Python would hit the same
+duplication trap as reimplementing eligibility itself, `fit_map_pins.py` cannot
+recompute and cross-check the hash — instead it fails loudly (non-zero exit, pointing
+at `./export_eligibility.sh`) if `source_hash` is missing from the JSON, which is
+exactly the failure mode that let the matrix silently drift to 32 rallies while
+`RallyLibrary` had grown to 38 (six missing snow/Alps events). A JSON regenerated
+before this guard existed, or hand-edited, is caught the same way.
+
 The shipped roster is fitted: **17 waves, averaging 1.94 new rallies each**, against the
 `[1, 1, 1, 3, 3, 1, 2, 3, 3, 3, 4, 5, 2]` the old wave-counter layout produced. Two
 rallies per wave is deliberate — it is the smallest number that is still a CHOICE, which is
@@ -85,29 +113,29 @@ The HQ map table draws that graph under the pins: a dashed line between two rall
 whenever completing either would light the other. `RallyLibrary.reveal_link_pairs(profile)`
 decides the pairs — **one unordered entry per pair**, emitted when the link works in either
 direction, since `reveal_radius` is per-rally and A can reach B without B reaching A.
-`hq._build_reveal_links` is only the geometry: ids in, dashes on the table top, laid by
-`hq._dash_line` at a fixed metre pitch so a long link and a short one read as the same kind
+`hq_map_table._build_reveal_links` is only the geometry: ids in, dashes on the table top, laid by
+`hq_map_table._dash_line` at a fixed metre pitch so a long link and a short one read as the same kind
 of line.
 
 **The dashes are RIBBONS, not line primitives.** They were originally
 `Mesh.PRIMITIVE_LINES`, which is one *pixel* wide however far away the camera is — on a
 400-px-tall render target that made the graph a hairline that aliased into a shimmer and
 disappeared against the lit map, so the table still read as an unconnected scatter of pins.
-`hq._add_link_ribbons` now emits each dash as a quad with a real width in metres, extruded
+`hq_map_table._add_link_ribbons` now emits each dash as a quad with a real width in metres, extruded
 in the table's **XZ plane** (not toward the camera, so it stays drawn *on* the map as the
 view orbits) and extended by half a width at each end so consecutive dashes don't notch.
 A darker, slightly wider ribbon is drawn underneath as an outline — the map plane is a
 full-colour texture at full brightness where explored, so a light line needs its own edge
 to separate it from pale terrain. Both live on one `ImmediateMesh` as two surfaces with
 their own materials (outline first), so the pair can't be split or drawn out of order;
-`hq.MAP_LINK_CORE_LIFT` is the second, smaller separation that stops the two coplanar
+`hq_map_table.MAP_LINK_CORE_LIFT` is the second, smaller separation that stops the two coplanar
 ribbons z-fighting each other.
 
 Look values live in `GameConfig` and are authored in `config/game_config.tres`:
 `map_link_alpha` (0 turns the graph off entirely), `map_link_color`, `map_link_width_m`
 (the knob that actually governs readability), `map_link_dash_m`, `map_link_gap_m`, and the
 `map_link_outline_width_m` / `map_link_outline_color` pair (outline width 0 drops that pass).
-All of them are in `hq._map_pins_stamp`, so retuning any one rebuilds the map rather than
+All of them are in `hq_map_table._map_pins_stamp`, so retuning any one rebuilds the map rather than
 leaving a stale cache.
 
 **Both ends must already be REVEALED.** An edge drawn across the dark hands the player the
@@ -177,7 +205,7 @@ Surfaces that used to quote a count now name a destination instead:
   reward, so it read as a bare "UPGRADE: SUPERCHARGER" over the garage explaining nothing.
   The teaser below survives because on the MAP the name is placed where the player has to
   reach it.
-- The map's **locked-special teaser** (`hq._build_special_teaser_label`) shows the event's
+- The map's **locked-special teaser** (`hq_map_table._build_special_teaser_label`) shows the event's
   NAME over what it unlocks, with no progress fraction: there is no counter to show, and a
   distance readout would be noise. The dark map around it already says "not yet".
 - The **engine-swap locked hint** (`hq`'s car-park confirm popup) names the rally via

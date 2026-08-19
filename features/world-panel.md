@@ -130,7 +130,7 @@ the project's own rule against pinning tunable values.
 
 ## Relationship to the map-table pin labels
 
-`hq.gd::_build_readout_sprite` does the same `SubViewport` -> `Sprite3D` trick for pin labels. That
+`hq_map_table.gd::_build_readout_sprite` does the same `SubViewport` -> `Sprite3D` trick for pin labels. That
 path is **billboarded** and sets `gui_disable_input = true` (a label, not a menu); `WorldPanel`
 inverts both. Three lessons it already paid for are inherited and are not optional:
 

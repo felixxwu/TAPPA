@@ -119,8 +119,12 @@ Declared in `project.godot` `[autoload]`:
 
 1. `Config` autoload loads `game_config.tres` before any scene runs.
 2. `world.gd._ready()` pushes config values into scene-owned resources
-   (environment fog/color, terrain layers, material colors, post-process res),
-   then generates the world. It first puts up a full-screen `LoadingScreen`
+   (environment fog/color, terrain layers, material colors, post-process res —
+   `_apply_scene_config`), fields the player's car (`_field_player_car`), then
+   generates the world. `_ready` and `_generate_track` are both phase sequences
+   over private per-phase coroutines; see [loading.md](loading.md). Behaviour the
+   two world hosts (`world.gd`, `overworld.gd`) share lives in
+   `scripts/world_runtime.gd` (`WorldRuntime`, all statics). It first puts up a full-screen `LoadingScreen`
    (`scripts/loading_screen.gd`, created in code) and advances its step label
    across generation stages (track → carve road into terrain → precompute
    terrain → trees → bushes), yielding a frame between each so the message paints

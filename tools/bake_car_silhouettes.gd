@@ -47,7 +47,11 @@ extends SceneTree
 # does.
 
 const OUT_PATH := "res://scripts/car_silhouettes.gd"
-const CAR_SCENE := "res://car.tscn"
+const CAR_SCENE := "res://car.tscn"  # duplicated from Scenes.CAR (scripts/scenes.gd): this
+# tool runs via `-s`, compiled before the SceneTree/autoloads exist (see the TYPING NOTE
+# above), and Scenes.gd itself references the Config autoload, so importing it here fails
+# compilation the same way CarLibrary does — hence the untyped load() there and the literal
+# here instead of a Scenes reference.
 const WHEEL_MOUNT_Y := -0.1   # car.tscn's VehicleWheel3D mount height; car.gd preserves it
 const PAD_CELLS := 1          # empty border so a contour never runs along the mask edge
 

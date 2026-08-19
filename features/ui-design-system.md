@@ -40,8 +40,8 @@ defaults:
    board stock as the pacenote signs, [signs.md](signs.md)) — see `hq.gd`'s
    `ACCENT_READOUT_BG` / `_build_readout_sprite`'s `accent` flag and [menus.md](menus.md).
    Three surfaces take it, all on the HQ map table or the podium: a **SPECIAL event's**
-   pin readout (`hq._build_pin_label` via `RallyLibrary.is_special`), a locked special's
-   teaser (`hq._build_special_teaser_label`), and the **present box** that trades stars
+   pin readout (`hq_map_table._build_pin_label` via `RallyLibrary.is_special`), a locked special's
+   teaser (`hq_map_table._build_special_teaser_label`), and the **present box** that trades stars
    for a car (`hq._make_present_pin` — the one non-rally target on the map, so it should
    not read as another rally pin). The podium's `SPECIAL_UNLOCK` card
    (`podium.gd` → `_show_special_unlock`) used to be a fourth, keeping its own **white**

@@ -17,22 +17,11 @@ const CarScript := preload("res://scripts/car.gd")
 # Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
-const WRECK_CAR_SCENE := "res://car.tscn"
-# The two terrain shaders the floor material swaps between per stage. The base one is
-# kept deliberately free of a vertex stage (terrain is the heaviest geometry in the game
-# and this renderer targets low-end phones); the snow variant adds the off-road ground
-# raise the Alps need, so only a snow stage pays for it. See _apply_deep_snow_ground.
-const TERRAIN_BASE_SHADER := preload("res://shaders/ps1_models.gdshader")
-const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
-
-# Frame cap applied for the DURATION of world generation only (see _ready). Loading
-# yields hundreds of frames, and a low cap makes each of those yields idle away most
-# of its frame budget instead of generating. Bounded rather than uncapped on touch:
-# running a phone flat-out through a long load is the thermal/battery failure this is
-# meant to avoid, and a throttled phone then plays worse. 0 = uncapped. Deliberately
-# NOT a GameConfig field — a transient loading-only cap is not a value anyone retunes.
-const LOADING_MAX_FPS := 0         # non-touch (desktop/native): no ceiling for the load
-const LOADING_TOUCH_MAX_FPS := 60  # touch/web: fast, but still a ceiling
+const WRECK_CAR_SCENE := Scenes.CAR
+# The two terrain shaders the floor material swaps between per stage, and the loading-window
+# frame caps, both now shared with overworld.gd via WorldRuntime (scripts/world_runtime.gd) —
+# they were byte-for-byte duplicated in the two world hosts. The reasoning for each lives on
+# the consts there; WorldRuntime also carries the TODO about moving the caps into GameConfig.
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
@@ -59,11 +48,12 @@ var applied_fps_caps: Array[int] = []
 
 
 # Apply a frame cap and record the intent. The Engine write is suppressed under
-# --headless (nothing to pace, and it would throttle the test runner).
+# --headless (nothing to pace, and it would throttle the test runner). Shared with
+# overworld.gd — see WorldRuntime.apply_fps_cap.
+# Platform.is_headless() rather than the cached `_headless`: this can be called from
+# _ready BEFORE that flag is seated.
 func _apply_fps_cap(cap: int) -> void:
-	applied_fps_caps.append(cap)
-	if not Platform.is_headless():
-		Engine.max_fps = cap
+	WorldRuntime.apply_fps_cap(applied_fps_caps, cap, Platform.is_headless())
 
 
 func _ready() -> void:
@@ -118,9 +108,43 @@ func _ready() -> void:
 	# Engine.max_fps to restore later, and a transient loading cap must never be what
 	# it captures. See todo/mobile-web-performance.md §1.1.
 	if not Benchmark.active:
-		_apply_fps_cap(LOADING_TOUCH_MAX_FPS if _touch else LOADING_MAX_FPS)
+		_apply_fps_cap(WorldRuntime.loading_cap(_touch))
 	else:
 		_apply_fps_cap(fps_cap)
+
+	# Phase: push the config onto every scene-owned resource (environment, floor, car
+	# materials, post-process) — all of it BEFORE any generation, so the first chunks bake
+	# with the final lighting.
+	_apply_scene_config(cfg)
+
+	# Phase: lock and field the player's car.
+	_field_player_car()
+
+	await _generate_track(cfg, loading)
+	_end_load_timing()
+	# The real frame cap lands HERE, not inside _end_load_timing() — that function
+	# early-returns on headless / no recorded stage, which would leave the loading cap
+	# (possibly uncapped) in place for the whole session. See todo/mobile-web-performance.md §1.1.
+	_apply_fps_cap(fps_cap)
+	# Everything the load needed but the running game does not is freed here. MUST be
+	# a separate unconditional call, NOT folded into _end_load_timing() — that function
+	# early-returns under headless / with no recorded stage, so a hook inside it would
+	# silently never fire for the test runner (and for any path that skipped _stage).
+	# See todo/mobile-web-performance.md (shared "load finished" hook).
+	_on_load_finished()
+
+	# Phase: post-generation wiring — session signals, the pre-event start line, and the
+	# between-event pit-repair popup. The only phase that still awaits.
+	await _wire_session_and_stage(loading)
+
+	# Phase: the diagnostic overlay, the pause menu arm, and benchmark mode.
+	_build_overlays_and_benchmark()
+
+
+# _ready phase: apply the central GameConfig to every scene-owned resource — environment,
+# floor/terrain, the car materials, the post-process pass. Ordering inside here is
+# load-bearing and commented at each step; nothing in it awaits.
+func _apply_scene_config(cfg: GameConfig) -> void:
 	var env: Environment = $WorldEnvironment.environment
 	env.fog_density = cfg.fog_density
 	env.background_color = cfg.background_color
@@ -164,7 +188,7 @@ func _ready() -> void:
 	if $Floor.noise_seed != cfg.track_seed:
 		$Floor.noise_seed = cfg.track_seed
 	# Assigning layers triggers a full terrain regeneration; skip when equal.
-	if not _layers_match($Floor.layers, cfg.terrain_layers()):
+	if not WorldRuntime.layers_match($Floor.layers, cfg.terrain_layers()):
 		var layers: Array[TerrainLayer] = []
 		for params in cfg.terrain_layers():
 			var layer := TerrainLayer.new()
@@ -202,6 +226,10 @@ func _ready() -> void:
 	# the grid is pushed raw.
 	cfg.apply_post_process($PostProcess.material as ShaderMaterial)
 
+
+# _ready phase: hold the car still for the boot and field the right car for this mode
+# (challenge / rally / lobby loaner / free roam / dev boot). Nothing here awaits.
+func _field_player_car() -> void:
 	# Hold the car still for the entire boot. Generation below spans many awaited
 	# frames with the loading overlay up (non-headless); the car is already in the
 	# tree and physics-processing, so without this lock the player could press W and
@@ -245,19 +273,12 @@ func _ready() -> void:
 	# runs on a later car swap.
 	($CameraManager as CameraManager).refresh_bonnet_offset()
 
-	await _generate_track(cfg, loading)
-	_end_load_timing()
-	# The real frame cap lands HERE, not inside _end_load_timing() — that function
-	# early-returns on headless / no recorded stage, which would leave the loading cap
-	# (possibly uncapped) in place for the whole session. See todo/mobile-web-performance.md §1.1.
-	_apply_fps_cap(fps_cap)
-	# Everything the load needed but the running game does not is freed here. MUST be
-	# a separate unconditional call, NOT folded into _end_load_timing() — that function
-	# early-returns under headless / with no recorded stage, so a hook inside it would
-	# silently never fire for the test runner (and for any path that skipped _stage).
-	# See todo/mobile-web-performance.md (shared "load finished" hook).
-	_on_load_finished()
 
+# _ready phase, after generation: wire the stage/session signals, build the pre-event start
+# line (staged runs only) and show the between-event pit-repair popup. Awaits, so the caller
+# must await it — the frame it yields is the one that lets the fresh terrain render before the
+# start-line queue is laid out, exactly as when this ran inline.
+func _wire_session_and_stage(loading: LoadingScreen) -> void:
 	# The stage finish is handled in EVERY mode: a session run reports the event to
 	# the orchestrator; free roam / a dev boot has no session, so the finish panel's
 	# Next returns to HQ instead (_on_session_event_completed's no-session branch).
@@ -311,6 +332,10 @@ func _ready() -> void:
 		if RepairReveal.worth_showing(repair) and not _headless:
 			await _show_repair_popup(repair)
 
+
+# _ready phase: the in-game diagnostic overlay, arming the pause menu now the world is ready,
+# and benchmark mode's takeover. Nothing here awaits.
+func _build_overlays_and_benchmark() -> void:
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on. Render times
 	# are measured on the PostProcess SubViewport — the viewport that actually
@@ -358,9 +383,9 @@ func _ready() -> void:
 # otherwise spread world generation across frames and break tests that inspect
 # the world right after instantiating main.tscn — there the whole _ready chain
 # runs synchronously within add_child(), as it did before staged loading.
+# Shared with overworld.gd — see WorldRuntime.yield_frame.
 func _yield_frame() -> void:
-	if not _headless:
-		await get_tree().process_frame
+	await WorldRuntime.yield_frame(get_tree(), _headless)
 
 
 # Open a stage (closing the previous one into the perf log) and yield a frame so whatever
@@ -479,14 +504,12 @@ func _replace_named_child(node_name: String) -> void:
 
 # A point roughly 2 m in front of the active camera — where a warm-up instance is
 # guaranteed to sit inside the frustum (so it actually draws and compiles its
-# shader). Falls back to the car's position if no camera is up yet.
+# shader). The camera part is shared with overworld.gd (WorldRuntime.warm_up_point);
+# the FALLBACK is deliberately kept here because the two hosts diverge — this scene
+# owns an authored $Car, the overworld looks its car up by name.
 func _warm_up_point() -> Vector3:
-	var cam := get_viewport().get_camera_3d()
-	if cam != null:
-		return cam.global_position - cam.global_transform.basis.z * 2.0
-	if has_node("Car"):
-		return ($Car as Node3D).global_position
-	return Vector3.ZERO
+	var fallback := ($Car as Node3D).global_position if has_node("Car") else Vector3.ZERO
+	return WorldRuntime.warm_up_point(get_viewport().get_camera_3d(), fallback)
 
 
 # Paint the loading overlay's water preview for `bounds`, first expanding the rect to the
@@ -503,11 +526,25 @@ func _paint_water_preview(loading: LoadingScreen, params: TrackGenParams,
 	return rect
 
 
+# Is this an INTERACTIVE load — an overlay is up AND we're not headless? The one predicate
+# the whole generation sequence keys off, defined ONCE here (it used to be re-spelled at each
+# of eight sites, under three different local names) so the interactive and headless paths
+# cannot drift apart. Headless keeps generation effectively synchronous, so tests still build
+# the world within _ready.
+func _interactive(loading: LoadingScreen) -> bool:
+	return loading != null and not _headless
+
+
 # Build the track from the car's spawn pose, bake road heights, and build the
 # (deferred) terrain ring with flattening + colouring already applied — so no
 # chunk is ever rebuilt at startup. Each heavy step sets the loading label and
 # yields a frame first (outside headless) so the message paints before the
 # blocking work runs; `loading` is freed once the world is ready.
+#
+# This function is the PHASE SEQUENCE only; each phase is a private coroutine below, named
+# after the load-stage label it opens. Every phase is awaited in the order it used to run
+# inline, and the car freeze/unfreeze straddles them exactly where it did before — the
+# ordering and awaiting semantics are unchanged, only the nesting is.
 func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Suspend the car's physics for the whole generation window. controls_locked (set in
 	# _ready) stops the PLAYER driving off, but the body itself is still simulating across
@@ -522,6 +559,51 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var car_body := $Car as RigidBody3D
 	var was_frozen := car_body.freeze
 	car_body.freeze = true
+
+	# Phase 1 — "Generating track…": the road shape, the start pose, and the loading
+	# screen's track/water preview.
+	var shape := await _generate_centerline(cfg, loading)
+	var result: Dictionary = shape["result"]
+	var road_centerline := shape["road_centerline"] as Curve2D
+	var finish_len: float = shape["finish_len"]
+	var start_pos: Vector2 = shape["start_pos"]
+	var start_heading: Vector2 = shape["start_heading"]
+	var staged: bool = shape["staged"]
+
+	# Phase 2 — "Carving road into terrain…": the road bake (flatten + surface split +
+	# cliffs) and the final waterline pass it makes possible.
+	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"])
+
+	# Phase 3 — "Precomputing chunks…" / "Building terrain…": every chunk the play area
+	# realistically requests, then the initial ring built once from that cache.
+	await _build_terrain_ring(cfg, loading, road_centerline)
+
+	# Ground exists (carved, coloured, cache-built) — hand the car back to the physics
+	# engine. Everything after this point still runs behind the loading cover, so it has
+	# many frames to settle onto its wheels before the player or the start line sees it.
+	car_body.freeze = was_frozen
+
+	# Phase 4 — "Placing props…": everything that stands ON the built world (backdrop,
+	# foliage, lakes, signs, barriers, spectators, arches, the wreck, the managers).
+	await _place_world_props(cfg, result, road_centerline, finish_len,
+		start_pos, start_heading, staged)
+
+	# Phase 5 — "Warming shaders…": first-use shader compilation, absorbed behind the
+	# loading cover. Interactive path only (see the function).
+	await _warm_shaders_behind_cover(loading)
+
+	# World is ready — drop the loading overlay (absent for direct/programmatic
+	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment
+	# longer: _ready drops it only AFTER the start-line queue is laid out, so the
+	# black overlay hides the car at its pre-staged spot instead of flashing it.
+	if loading != null and not staged:
+		loading.finish()
+
+
+# Phase 1 of _generate_track. Generates the road centerline from the car's spawn pose and
+# returns the shape contract the later phases read:
+#   result, road_centerline, finish_len, start_pos, start_heading, staged, water_bounds.
+func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary:
 	await _stage("Generating track…")
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
@@ -543,11 +625,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Live preview: only when an overlay is up and we're not headless. Headless keeps
 	# generation effectively synchronous (empty Callable -> the search never yields a
 	# frame) so tests still build the world within _ready and test runtime is unchanged.
-	# `interactive` is the one predicate the rest of this function keys off: an overlay is
-	# up AND we're not headless. Defined once here instead of re-spelled at each of the
-	# eight sites below (it used to be, and was locally re-bound under three different
-	# names), so the interactive and headless paths cannot drift apart.
-	var interactive := loading != null and not _headless
+	# `interactive` is the one predicate the whole generation sequence keys off: an overlay
+	# is up AND we're not headless. Resolved through the single _interactive() definition so
+	# the interactive and headless paths cannot drift apart across the phases.
+	var interactive := _interactive(loading)
 	var on_progress := Callable()
 	if interactive:
 		on_progress = loading.update_track_preview
@@ -679,6 +760,23 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# the car has room to skid to a stop past the arch. It's baked into the terrain +
 	# road-marked like the rest; the finish stays at finish_len (see below).
 	road_centerline = _with_finish_runoff(road_centerline, result["runoff"])
+	return {
+		"result": result,
+		"road_centerline": road_centerline,
+		"finish_len": finish_len,
+		"start_pos": start_pos,
+		"start_heading": start_heading,
+		"staged": staged,
+		"water_bounds": water_bounds,
+	}
+
+
+# Phase 2 of _generate_track: bake the road into the terrain (flatten + surface split +
+# cliffs) — the heaviest single step — then repaint the loading preview's waterline now that
+# the bake makes a correct one possible.
+func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
+		road_centerline: Curve2D, water_bounds: Rect2) -> void:
+	var interactive := _interactive(loading)
 	# Road band + surface split, derived in the one place every baker shares
 	# (TerrainManager.bake_args) so the Seed Lab's preview bake can't drift from this
 	# one. Surface split: the track runs gravel + tarmac with one switch, the tarmac
@@ -723,6 +821,12 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# follows the same road the progress manager measures).
 	_road_centerline = road_centerline
 
+
+# Phase 3 of _generate_track: precompute the corridor chunks, then build the initial terrain
+# ring once from that cache (so no chunk is ever rebuilt at startup).
+func _build_terrain_ring(cfg: GameConfig, loading: LoadingScreen,
+		road_centerline: Curve2D) -> void:
+	var interactive := _interactive(loading)
 	# Precompute every chunk the play area realistically requests (the track-progress
 	# leash sizes it), so in-run chunk loads are instant cache pulls and
 	# height_at/light_at serve the flattened, collidable terrain. Batched with
@@ -760,11 +864,16 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	await _stage("Building terrain…")
 	$Floor.build_initial()
-	# Ground exists (carved, coloured, cache-built) — hand the car back to the physics
-	# engine. Everything after this point still runs behind the loading cover, so it has
-	# many frames to settle onto its wheels before the player or the start line sees it.
-	car_body.freeze = was_frozen
+	# The car is handed back to the physics engine by the caller, immediately after this
+	# phase returns — the freeze is owned by _generate_track, which took it.
 
+
+# Phase 4 of _generate_track ("Placing props…"): everything that stands ON the finished
+# terrain. Runs in the same order it ran inline — backdrop, foliage, lakes, signs, barriers,
+# then the props stage (spectators, arches, the opponent wreck, the persistent managers).
+func _place_world_props(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D,
+		finish_len: float, start_pos: Vector2, start_heading: Vector2, staged: bool) -> void:
+	var floor_tm := _floor()
 	# Static coarse backdrop over the whole reachable play area + margin, so the
 	# reduced fog reveals a horizon instead of the detail ring's edge. Built ONCE
 	# behind the loading screen; never rebuilds (the play area is bounded).
@@ -824,6 +933,11 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# engine smoke, stage flow) + the in-stage "vs P1" pace splits.
 	_build_persistent_managers(cfg, result, road_centerline, finish_len, staged)
 
+
+# Phase 5 of _generate_track ("Warming shaders…"): absorb first-use shader compilation while
+# the loading overlay still covers the view.
+func _warm_shaders_behind_cover(loading: LoadingScreen) -> void:
+	var interactive := _interactive(loading)
 	# Prime the surface-effect shaders while the loading overlay still covers the
 	# view. Under gl_compatibility a material's shader variant compiles on its first
 	# VISIBLE draw; the particle pools sit off-screen (HIDE_Y) and the tyre-mark
@@ -859,13 +973,6 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		# runs (benchmark / free-roam) drop the overlay below, so a later fly would be
 		# visible as the camera jumping around. See features/rendering.md.
 		await _prewarm_corridor()
-
-	# World is ready — drop the loading overlay (absent for direct/programmatic
-	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment
-	# longer: _ready drops it only AFTER the start-line queue is laid out, so the
-	# black overlay hides the car at its pre-staged spot instead of flashing it.
-	if loading != null and not staged:
-		loading.finish()
 
 
 # Below-water cell CENTRES + the sample step, over `bounds` (world XZ), for the
@@ -2201,7 +2308,7 @@ func _present_standings_overlay(_event_index: int) -> void:
 	# Standings overlay Control on its own CanvasLayer.
 	_standings_overlay = CanvasLayer.new()
 	_standings_overlay.name = "StandingsOverlay"
-	var panel: Control = load("res://standings.tscn").instantiate()
+	var panel: Control = load(Scenes.STANDINGS).instantiate()
 	panel.overlay_mode = true
 	# Pin the session BEFORE the panel enters the tree. On a challenge's final stage
 	# ChallengeSession clears itself between this signal and the panel's own _ready
@@ -2356,15 +2463,6 @@ func _completion_reward_body(item_id: String, grant: Dictionary) -> String:
 	return "%s\nReward: %s\n\n%s" % [placing, ", ".join(lines), where]
 
 
-func _layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:
-	if layers.size() != params.size():
-		return false
-	for i in layers.size():
-		if layers[i] == null or layers[i].wavelength_m != params[i].x or layers[i].amplitude_m != params[i].y:
-			return false
-	return true
-
-
 func _mat(mesh_instance: MeshInstance3D) -> ShaderMaterial:
 	return mesh_instance.get_surface_override_material(0) as ShaderMaterial
 
@@ -2398,21 +2496,6 @@ func _current_region_look() -> Dictionary:
 	return _region_look_cache
 
 
-# Deep snow: draw the ground ABOVE the collision surface off-road, so the car sinks in
-# (features/snow-region.md). Collision is untouched, so the wheels rest at true ground
-# level; car.gd's matching drag is what makes it read as ploughing rather than floating.
-#
-# Done by SWAPPING THE SHADER rather than setting a uniform on the shared one, because
-# the base terrain shader is deliberately kept free of a vertex stage — terrain is the
-# heaviest geometry in the game and this renderer targets low-end phones. See the header
-# of ps1_terrain_snow.gdshader and test_terrain_shader_has_no_vertex_stage. Non-snow
-# stages therefore pay literally nothing: they run the same shader they always did.
-#
-# Called UNCONDITIONALLY every stage boot, and that is load-bearing. The floor material
-# is a shared sub-resource of main.tscn with no resource_local_to_scene, so it survives
-# every scene instantiation in the process — exactly the trap that once left the ground
-# at rain_road_darken². Without the else-branch restoring the base shader, one snow
-# stage would leave every later stage's ground floating in mid-air.
 # The headlight cone follows the car every frame on a stage whose weather switches the
 # lights on (night, storm). This is the only per-frame work the feature does:
 # three-to-seven global uniform writes, no geometry, no draw calls. Elsewhere push()
@@ -2439,16 +2522,11 @@ func _exit_tree() -> void:
 	Config.data.weather_sun_mult = 1.0
 
 
+# The shader swap itself is shared with overworld.gd — see WorldRuntime.apply_deep_snow,
+# which carries the full reasoning (why a shader swap and not a uniform, and why calling
+# it unconditionally every boot is load-bearing). This host only supplies its material.
 func _apply_deep_snow_ground(cfg: GameConfig) -> void:
-	var floor_mat := $Floor.chunk_material as ShaderMaterial
-	if floor_mat == null:
-		return
-	if cfg.deep_snow_depth_m > 0.0:
-		if floor_mat.shader != TERRAIN_SNOW_SHADER:
-			floor_mat.shader = TERRAIN_SNOW_SHADER
-		floor_mat.set_shader_parameter("snow_depth", cfg.deep_snow_depth_m)
-	elif floor_mat.shader != TERRAIN_BASE_SHADER:
-		floor_mat.shader = TERRAIN_BASE_SHADER
+	WorldRuntime.apply_deep_snow($Floor.chunk_material as ShaderMaterial, cfg)
 
 
 func _apply_region_look() -> void:

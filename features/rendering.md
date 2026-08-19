@@ -694,7 +694,8 @@ A stage that lit its headlights and did not clear up after itself would leave a
 stray cone burning on those screens. `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
 unconditionally — every exit path, regardless of destination — which a
 per-destination reset would not cover. Same reasoning as
-`_apply_deep_snow_ground` being called unconditionally each stage boot.
+`WorldRuntime.apply_deep_snow` being called unconditionally each stage boot (via each host's
+`_apply_deep_snow_ground` wrapper).
 
 **The driver** is `scripts/headlight_cone.gd` (`class_name HeadlightCone`), all
 statics: `amount(cfg)` is the live condition's strength straight out of the
@@ -960,7 +961,8 @@ sets** — `ps1_terrain_snow` `#include`s `headlight_cone.gdshaderinc` and appli
 the cone exactly as `ps1_models` does, because the swap below relies on
 `ShaderMaterial` keeping its by-name parameter map across a shader change. A
 uniform added to one and not the other silently drops its value on a snow stage.
-`world.gd._apply_deep_snow_ground`
+`WorldRuntime.apply_deep_snow` (called from `world.gd._apply_deep_snow_ground` and the
+identical wrapper in `overworld.gd`)
 swaps the floor material between them every stage boot, including restoring the base
 shader, because that material is a shared `main.tscn` sub-resource that survives scene
 instantiation. See [snow-region.md](snow-region.md).

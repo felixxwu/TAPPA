@@ -25,6 +25,27 @@ const OVERWORLD := "res://overworld.tscn"
 const MAIN := "res://main.tscn"
 const PODIUM := "res://podium.tscn"
 const STANDINGS := "res://standings.tscn"
+# The player's car scene — spawned as the live drivable car (car.gd), a frozen
+# display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd,
+# bake_car_silhouettes.gd). Used to be "res://car.tscn" hardcoded at seven sites
+# under three different local names (CAR_SCENE / CAR_SCENE_PATH / WRECK_CAR_SCENE);
+# this is now the one definition, same as HQ/OVERWORLD/MAIN above.
+const CAR := "res://car.tscn"
+
+# Cached PackedScene for CAR, loaded on first use. `preload()` needs a literal
+# string constant — `preload(Scenes.CAR)` does not compile ("Preloaded path must
+# be a constant string"), so the three sites that used to `preload()` the car
+# scene at compile time now call this instead. It's still only loaded once
+# (Godot's own resource cache would dedupe repeat loads anyway), just on first
+# use rather than at script-parse time — not a per-call load(), so no hot-path
+# regression.
+static var _car_scene: PackedScene
+
+
+static func car_scene() -> PackedScene:
+	if _car_scene == null:
+		_car_scene = load(CAR)
+	return _car_scene
 
 
 # The scene to load for "return to the hub". OVERWORLD only when the dev flag is

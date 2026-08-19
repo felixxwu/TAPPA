@@ -971,3 +971,87 @@ func test_boot_values_are_unset_until_ready_resolves_them() -> void:
 	assert_eq(fresh._hq_map_pos, Vector2.INF,
 		"the garage position is unset before _ready rather than defaulting to the map centre")
 	fresh.free()
+
+
+# ==========================================================================================
+# THE PER-FRAME STAGE SEQUENCE — ONE definition, not two
+# ==========================================================================================
+#
+# `_process` used to carry an INLINED, TIMED copy of the per-frame stage sequence, with
+# `_process_stages` holding an untimed copy of the same thing and a comment asking whoever
+# added a stage to remember to add it to both. A stage added to one silently did not run on
+# the other path. There is now one sequence; the spike timing is a side-channel written into
+# it (`_spike_us`) rather than a second copy of the calls.
+#
+# These tests are the guard on that. They go through private members — the per-frame sequence
+# has no public seam — and they assert only SIDE EFFECTS that must hold for any budgets, never
+# an interval or a budget value.
+
+# Every stage's own bookkeeping moves when the single sequence runs. The two countdowns belong
+# to stages at OPPOSITE ends of it (region look first, cache eviction second-to-last), so both
+# moving is evidence the whole sequence ran rather than a prefix of it.
+func test_process_stages_runs_every_stage_of_the_sequence() -> void:
+	var region_before: int = _ow._region_countdown
+	var evict_before: int = _ow._evict_countdown
+	_ow._process_stages(Config.data, 0.016)  # private: the per-frame sequence has no public seam
+	assert_eq(_ow._region_countdown, region_before - 1, "the region-look stage ticked")
+	assert_eq(_ow._evict_countdown, evict_before - 1, "the cache-eviction stage ticked")
+
+
+# _process must DELEGATE to that one sequence rather than repeating it. Same observable move,
+# driven through the real per-frame entry point.
+func test_process_drives_the_same_single_sequence() -> void:
+	var region_before: int = _ow._region_countdown
+	var evict_before: int = _ow._evict_countdown
+	_ow._process(0.016)
+	assert_eq(_ow._region_countdown, region_before - 1, "_process ticked the region-look stage")
+	assert_eq(_ow._evict_countdown, evict_before - 1, "_process ticked the eviction stage")
+
+
+# The spike-log timing rides the SAME sequence: with the diagnostic armed, every stage boundary
+# is stamped, in order. This is what makes "add a stage and it is timed too" automatic instead
+# of a comment asking someone to remember. The array is preallocated and only written when the
+# log is on, so the shipping path allocates nothing — the test restores the flag either way.
+func test_arming_the_spike_log_times_every_stage_boundary_in_order() -> void:
+	var was_log: bool = _ow._spike_log
+	_ow._spike_log = true
+	# Zero the stamps first so a filled slot can only have come from this call.
+	for i in _ow._spike_us.size():
+		_ow._spike_us[i] = 0
+	_ow._process_stages(Config.data, 0.016)
+	var stamps := _ow._spike_us
+	_ow._spike_log = was_log
+	assert_gt(stamps.size(), 1, "there is a stamp per stage boundary")
+	for i in stamps.size():
+		assert_gt(stamps[i], 0, "stage boundary %d was stamped" % i)
+		if i > 0:
+			assert_true(stamps[i] >= stamps[i - 1],
+				"boundary %d is not before boundary %d" % [i, i - 1])
+
+
+# With the diagnostic OFF, nothing is written — the per-frame path must not pay for a
+# diagnostic nobody asked for.
+func test_the_shipping_path_records_no_timing() -> void:
+	var was_log: bool = _ow._spike_log
+	_ow._spike_log = false
+	for i in _ow._spike_us.size():
+		_ow._spike_us[i] = 0
+	_ow._process_stages(Config.data, 0.016)
+	var untouched := true
+	for i in _ow._spike_us.size():
+		untouched = untouched and _ow._spike_us[i] == 0
+	_ow._spike_log = was_log
+	assert_true(untouched, "no clock reads are recorded when the spike log is off")
+
+
+# THE ANTI-DUPLICATION PIN. Each per-frame stage must be CALLED from exactly one place in
+# overworld.gd — that is the property whose absence was the bug. A source scan is the only way
+# to assert "there is no second copy of the sequence"; behaviour alone cannot see a copy that
+# runs on a path the test did not take.
+func test_each_per_frame_stage_is_called_from_exactly_one_place() -> void:
+	var src := FileAccess.get_file_as_string("res://scripts/overworld.gd")
+	assert_false(src.is_empty(), "the source is readable")
+	for call_text in ["_apply_region_look(car_map_pos())", "_update_fog_boundary(delta)",
+			"_update_zones(delta)", "evict_to_cap()"]:
+		assert_eq(src.count(call_text), 1,
+			"'%s' is called from exactly one place — a second copy of the per-frame sequence is the bug this guards" % call_text)

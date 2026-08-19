@@ -8,7 +8,8 @@ region that does more than look different: it is the first to influence **handli
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
 - **Handling seat:** `RallySession.apply_event_config`
 - **Grip:** `Drivetrain.surface_tire_params`, `LapTimeModel._surface_grip`
-- **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `world.gd._apply_deep_snow_ground`,
+- **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `WorldRuntime.apply_deep_snow`
+  (via `world.gd._apply_deep_snow_ground` / the same wrapper in `overworld.gd`),
   `car.gd._apply_deep_snow_drag`
 - **Frozen lakes:** `LakeField.build` / `_add_ice_collider`
 - **Snowfall:** `WeatherLibrary` id `"snow"`, `WeatherField.spawn_snow`
@@ -177,7 +178,8 @@ It is also not done in `terrain_chunk_builder`: chunk data is cached with a preb
 `HeightMapShape3D`, so a region-dependent vertex offset would have to be keyed into that
 cache and agree across every LOD subsample.
 
-⚠️ `world.gd._apply_deep_snow_ground` runs **unconditionally every stage boot**, including
+⚠️ `world.gd._apply_deep_snow_ground` → `WorldRuntime.apply_deep_snow`
+(`scripts/world_runtime.gd`, shared with `overworld.gd`) runs **unconditionally every stage boot**, including
 the else-branch that restores the base shader. The floor material is a shared
 sub-resource of `main.tscn` with no `resource_local_to_scene`, so it survives every scene
 instantiation in the process — the same trap that once left the ground at

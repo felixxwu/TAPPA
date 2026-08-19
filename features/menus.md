@@ -7,11 +7,20 @@ back-reference to the `HqController` and reaches into it for state + button
 callbacks), the Rally Challenge screen in `scripts/hq_challenge.gd` (`class_name
 HqChallenge`), the Multiplayer entry screen in `scripts/hq_multiplayer.gd` (`class_name
 HqMultiplayer` — see [multiplayer-lobby.md](multiplayer-lobby.md) → "Entry point"), the
-map table in `scripts/hq_table.gd` (`class_name HqTable`), the car park in
-`scripts/hq_carpark.gd` (`class_name HqCarpark`) — all three the same shape as `HqOverlays`,
+map table's navigation in `scripts/hq_table.gd` (`class_name HqTable`) and its pin/fog layer in
+`scripts/hq_map_table.gd` (`class_name HqMapTable`), the car park in
+`scripts/hq_carpark.gd` (`class_name HqCarpark`), the tuning lift in
+`scripts/hq_tuning_lift.gd` (`class_name HqTuningLift` — its `handle_input` is the LIFT branch
+of `hq.gd::_unhandled_input`), the present-box car reveal in `scripts/hq_present_reveal.gd`
+(`class_name HqPresentReveal`) — all of them the same shape as `HqOverlays`,
 described below — the shared **rally-detail panel** in `scripts/rally_detail.gd` (`class_name
 RallyDetail`, hosted by either hub rather than holding a back-reference), the hub-scene
-routing seam in `scripts/scenes.gd` (`class_name Scenes` — `hub_path()` / `is_hub_scene()`),
+routing seam in `scripts/scenes.gd` (`class_name Scenes` — `hub_path()` / `is_hub_scene()`,
+plus the plain path consts `HQ`/`OVERWORLD`/`MAIN`/`PODIUM`/`STANDINGS`/`CAR` and the
+`car_scene()` cached-load accessor — the ONE place "res://car.tscn" is spelled in
+production code, the same seam as the other scene paths; `preload(Scenes.CAR)` does not
+compile in GDScript 4.6 (preload needs a literal string constant), which is why the three
+sites that used to `preload()` the car scene now call `Scenes.car_scene()` instead),
 `podium.tscn` + `scripts/podium.gd`, plus the
 session-aware fielding
 in `scripts/world.gd`. See the full design in [../todo/menus.md](../todo/menus.md).

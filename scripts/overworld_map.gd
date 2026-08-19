@@ -1188,17 +1188,11 @@ func _profile() -> Dictionary:
 # ==========================================================================================
 
 func _cfg_float(field: String, fallback: float) -> float:
-	var cfg: Object = Config.data
-	if cfg != null and field in cfg:
-		return float(cfg.get(field))
-	return fallback
+	return Config.get_float(field, fallback)
 
 
 func _cfg_bool(field: String, fallback: bool) -> bool:
-	var cfg: Object = Config.data
-	if cfg != null and field in cfg:
-		return bool(cfg.get(field))
-	return fallback
+	return Config.get_bool(field, fallback)
 
 
 # ==========================================================================================

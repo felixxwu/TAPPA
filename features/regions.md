@@ -494,7 +494,7 @@ region; the only per-pin state is:
   [map-exploration.md](map-exploration.md)). A locked pin renders grey,
   carries no hit spheres (can't be clicked/entered), and drops its readout box
   entirely — except a locked SPECIAL, which keeps a full-opacity non-pickable
-  teaser naming what it unlocks (`hq._build_special_teaser_label`). Either way
+  teaser naming what it unlocks (`hq_map_table._build_special_teaser_label`). Either way
   it's a "coming up" hint, not a hidden pin: locked rallies are still pinned
   and visible; they are simply not enterable yet.
 - earned stars / eligible-car state, same as always (`RallyFlag.build`).

@@ -82,9 +82,9 @@ func _render_in_context() -> void:
 	for _i in 4:  # let the Save autoload finish loading its profile
 		await process_frame
 	var save := get_root().get_node("Save")
-	save.complete_rally("shakedown", 60000, 1)        # P1 → 3 stars (gold)
-	save.complete_rally("coastal_sprint", 90000, 2)   # P2 → 2 stars (silver)
-	save.complete_rally("rwd_masters", 95000, 3)      # P3 → 1 star  (bronze)
+	save.record_podium_rally("shakedown", 60000, 1)        # P1 → 3 stars (gold)
+	save.record_podium_rally("coastal_sprint", 90000, 2)   # P2 → 2 stars (silver)
+	save.record_podium_rally("rwd_masters", 95000, 3)      # P3 → 1 star  (bronze)
 
 	var svp := SubViewport.new()
 	svp.size = Vector2i(1400, 900)

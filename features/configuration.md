@@ -19,6 +19,26 @@ body.mass = cfg.mass
 fresh `GameConfig.new()` if missing. Values are read-only during play; editing
 the `.tres` requires a scene reload to take effect.
 
+## Reading a field with a fallback
+
+Several call sites (audio.gd, overworld_map.gd, and others) need a specific field
+with a fallback for when `Config.data` is unavailable (e.g. an off-tree unit test).
+Use the shared accessors rather than re-deriving the null-handling:
+
+```gdscript
+Config.get_float("sfx_beep_frequency_hz", DEFAULT_FREQUENCY_HZ)
+Config.get_bool("sfx_enabled", true)
+```
+
+These used to be reimplemented locally in five places with two different (and two
+missing) null-handling strategies. The chosen semantics is `field in data` — "is this
+a genuinely declared `@export` property" — rather than `data.get(field) != null`,
+because every `GameConfig` field has a non-null default, so the two checks agree for
+every real field; `in` is preferred because it says what we mean directly, and a
+missing field (a typo'd name) `push_warning`s instead of silently resolving to the
+fallback, which is how that class of bug used to hide. See `scripts/config.gd` for
+the full rationale comment.
+
 ## The live config's identity is load-bearing
 
 `Config.data` is held **by reference**: the active car (and through it `Drivetrain` /
@@ -255,6 +275,60 @@ The kinematic P1 ghost shown while you drive — see
 | `rival_ghost_skill_max` | `1.15` | Fast end — above 1.0 deliberately, as a cached-vs-live divergence valve. |
 | `rival_ghost_skill_iterations` | `12` | Bisection steps. |
 | `rival_ghost_max_time_residual_ms` | `250` | Largest error the final micro-scale may absorb before warning. |
+
+### Rival Field & Pace
+The DIFFICULTY dials behind a rally's opponent field, read by `rally_library.gd`
+(`generate_opponent_field`, `_pace_band`, `swap_weight`). See
+[rally-roster.md](rally-roster.md), [adaptive-difficulty.md](adaptive-difficulty.md) and
+[opponent-wrecks.md](opponent-wrecks.md) for what each one does to a field.
+
+| Property | Old const | Purpose |
+|----------|-----------|---------|
+| `rival_wreck_chance` | `RallyLibrary.OPPONENT_WRECK_CHANCE` | Per-event probability that ONE not-yet-wrecked rival crashes out. The one-per-event cap is structural, not tunable. |
+| `rival_swap_pw_spread` | `OPPONENT_SWAP_PW_SPREAD` | hp/tonne scale of the `exp(-|Δpw| / this)` bias towards near-stock engine swaps. A bias, never a filter. |
+| `rival_pace_fast_base` | `PACE_FAST_BASE` | Pace of the fastest rival (skill 0), as a multiple of their own optimum. |
+| `rival_pace_slow_base` | `PACE_SLOW_BASE` | Pace of the slowest rival (skill 1) at tier 1. |
+| `rival_pace_fast_step` / `rival_pace_slow_step` | `PACE_FAST_STEP` / `PACE_SLOW_STEP` | How far each end of the band walks in per difficulty tier above 1. |
+| `rival_pace_event_noise` | `PACE_EVENT_NOISE` | ±jitter per event around a rival's persistent base pace. |
+| `rival_pace_min_floor` | `PACE_MIN_FLOOR` | Sanity guard only — far below anything the band produces. |
+| `rival_ghost_solvable_pace` | `GHOST_SOLVABLE_PACE` | Quickest time a rival may be given, bounded by what the windscreen ghost can represent. |
+
+### Overworld Fog Frontier
+The soft turn-back at the edge of the revealed overworld — see
+[overworld.md](overworld.md). `overworld.gd` caches all four at boot, because
+`_update_fog_boundary` is a per-frame path.
+
+| Property | Old const | Purpose |
+|----------|-----------|---------|
+| `overworld_fog_push_accel` | `Overworld.FOG_PUSH_ACCEL` | Inward nudge (m/s²) while beyond the frontier. |
+| `overworld_fog_hard_margin_m` | `FOG_HARD_MARGIN_M` | How far past the last lit pose before the car is teleported back. Also sizes the precompute margin (`Overworld.reach_margin_map`). |
+| `overworld_fog_veil_alpha` | `FOG_VEIL_ALPHA` | How dark the screen veil goes at the hard margin. |
+| `overworld_fog_veil_fade` | `FOG_VEIL_FADE` | Veil alpha units per second, in and out. |
+
+### HQ Present Box
+The present-box car reveal (`hq_present_reveal.gd`) — see [hq.md](hq.md).
+
+| Property | Old const | Purpose |
+|----------|-----------|---------|
+| `hq_present_clearance_m` | `HqPresentReveal.PRESENT_CLEARANCE_M` | Room added to `CarLibrary.max_car_bounds()` in all three axes when sizing the box. |
+| `hq_present_lid_rise` | `PRESENT_LID_RISE` | How far the lid travels up before it leaves frame. |
+| `hq_present_open_time` | `PRESENT_OPEN_TIME` | Seconds for the lid to clear; the walls start falling at 45% of it. |
+| `hq_present_wall_time` | `PRESENT_WALL_TIME` | Seconds for a wall to fall — deliberately slow, so walls read as heavy. |
+
+### Loading
+The frame cap held for the duration of world generation only, via
+`WorldRuntime.loading_cap(touch)` — see [loading.md](loading.md).
+
+| Property | Old const | Purpose |
+|----------|-----------|---------|
+| `loading_max_fps` | `WorldRuntime.LOADING_MAX_FPS` | Loading-window cap on non-touch targets. 0 = uncapped (the fastest load). |
+| `loading_touch_max_fps` | `WorldRuntime.LOADING_TOUCH_MAX_FPS` | The same on touch/web — bounded, to avoid cooking a phone through a long load. |
+
+> **The old consts still exist, as FALLBACK DEFAULTS ONLY.** Each of the scripts above
+> keeps its `const` (documenting the shipped value beside the design rationale, and
+> serving as the `Config.get_float` fallback), and outside callers — tests,
+> `tools/calibrate_pace_floor.gd` — still name them. Retuning one changes NOTHING on its
+> own: the authored value in `game_config.tres` is what the game reads.
 
 ## Engine data
 

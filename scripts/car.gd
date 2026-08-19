@@ -2,7 +2,8 @@ extends VehicleBody3D
 # Docs: features/car-physics.md, features/lakes.md, features/stage.md — update in the same change as this file.
 # Tests: tests/headless/test_car.gd, tests/headless/test_car_types.gd, tests/headless/test_hud.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'car' tests/headless/` and read the assertions that pin what you are about to change (11 test files touch this script).
 
-const CAR_SCENE := preload("res://car.tscn")
+## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
+## below since preload() cannot take that reference (needs a literal string).
 
 # Wheel-cap material: each car's Visual/Tire shows its own wheel.png on the cylinder
 # caps (ps1_wheel_tire.gdshader), or a blank dark disc for cars without an authored
@@ -1464,7 +1465,7 @@ static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node
 	# throws an out-of-bounds. A car being replaced must not step again.
 	old_car.set_physics_process(false)
 	old_car.queue_free()
-	var fresh := CAR_SCENE.instantiate()
+	var fresh := Scenes.car_scene().instantiate()
 	fresh.name = "Car"
 	fresh.transform = spawn_xform
 	parent.add_child(fresh)

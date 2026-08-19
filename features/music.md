@@ -152,6 +152,12 @@ straight to that song's segment 1 at the next beat-aligned handoff.
 
 ## Audio routing & volume
 
+Bus NAMES (`"Master"` / `"Music"` / `"Engine"` / `"SFX"`) live in exactly one place —
+`scripts/audio_buses.gd` (`class_name AudioBuses`, consts `MASTER` / `MUSIC` / `ENGINE`
+/ `SFX`) — so a rename can't miss a copy. Every `AudioServer` lookup/creation in
+`music_director.gd` and `audio.gd` goes through those consts rather than a raw string
+literal; see `features/sfx.md`.
+
 `MusicDirector` creates a dedicated **Music** bus at `_ready` (routed to Master),
 independent of the procedural engine audio (`features/engine-audio.md`, on its
 own **Engine** bus — also created here, by `_ensure_engine_bus`, and muted while a

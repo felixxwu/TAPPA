@@ -3,10 +3,13 @@
 **Sources:** `hq.tscn` + `scripts/hq.gd` (`class_name HqController`), the 2D overlay/menu-layer
 builders in `scripts/hq_overlays.gd` (`class_name HqOverlays`), the Rally Challenge screen in
 `scripts/hq_challenge.gd`, the Multiplayer entry screen in `scripts/hq_multiplayer.gd`, the map
-table in `scripts/hq_table.gd` (`class_name HqTable`), the car park in `scripts/hq_carpark.gd`
-(`class_name HqCarpark`), and the shared rally-detail panel in `scripts/rally_detail.gd`.
+table's navigation in `scripts/hq_table.gd` (`class_name HqTable`) and its pin/fog layer in
+`scripts/hq_map_table.gd` (`class_name HqMapTable`), the car park in `scripts/hq_carpark.gd`
+(`class_name HqCarpark`), the tuning lift in `scripts/hq_tuning_lift.gd` (`class_name
+HqTuningLift`), the present-box car reveal in `scripts/hq_present_reveal.gd` (`class_name
+HqPresentReveal`), and the shared rally-detail panel in `scripts/rally_detail.gd`.
 
-**Tests:** `tests/headless/test_menu_flow.gd`, `tests/headless/test_overworld_garage.gd`, `tests/headless/test_hq_multiplayer.gd`
+**Tests:** `tests/headless/test_menu_flow.gd`, `tests/headless/test_overworld_garage.gd`, `tests/headless/test_hq_multiplayer.gd`, `tests/headless/test_hq_map_table.gd`, `tests/headless/test_hq_tuning_lift.gd`, `tests/headless/test_hq_present_reveal.gd`
 
 The diegetic 3D hub the player returns to between rallies. The game-loop shell around it —
 what leads where — is [menus.md](menus.md); how any of these screens is driven by keyboard and
@@ -211,6 +214,32 @@ passes `_hq`; `self` would compile fine and fail only when the line ran. The boo
 helpers (`_log_boot_cost` and friends, driven from `_ready`) and the shared `_car_stats_text` /
 `_restriction_text` also stayed, below the carpark code under a banner saying so.
 
+**Three more cuts followed**, finishing the split the markers in `hq.gd` were admitting to
+(`4,764` lines → `3,564`):
+
+* **`HqMapTable`** (`scripts/hq_map_table.gd`), held as `_map_table_ui` — the map table's
+  DRAWN layer: `_refresh_map_pins` and its rebuild-skip stamp, `_make_pin` (flag / trophy /
+  prize-car marker), the floating readout sprites, the dotted reveal graph, and the
+  exploration-fog shader. The split against `HqTable` is **drawing vs. navigating**: this file
+  builds the pins, `HqTable` walks them. They meet at exactly two calls, `_refresh_map_pins`
+  and `_paint_pin_readout`, which stay as forwarders on `HqController` because `hq_table.gd`
+  and the menu tests reach them by those names.
+* **`HqTuningLift`** (`scripts/hq_tuning_lift.gd`), held as `_tuning_lift` — the whole lift
+  station: the raise/lower rig (car + beam), the two-row HUB cursor, the Upgrades / Tuning
+  sub-pages, the display car's spawn/reuse/stow cache, Repair, Test Drive, and the LIFT input
+  branch (now `handle_input`).
+* **`HqPresentReveal`** (`scripts/hq_present_reveal.gd`), held as `_present_ui` — the forced
+  won-a-car beat: the box, its single bay marker, the Open button's states and the opening
+  cinematic.
+
+These three moved **functions only**. Unlike the earlier cuts, almost none of their state
+followed, and that is the "ONE user" rule below doing its job rather than an omission: the
+lift's widgets are built by `hq_overlays.gd` and its flags are read by `go_to` /
+`update_overlays`; the pin state is navigated by `HqTable`; and `_present_opened` is branched on
+by `hq.gd::_car_back` and asserted by `test_menu_flow.gd`. Every entry point that something
+outside the new file already called by name stayed on `HqController` as a one-line forwarder —
+moving a call site is not a behaviour-preserving refactor, so the names did not move.
+
 ### Where a field lives: ONE user means it is not shared state
 
 The rule the cuts settled on. A field belongs to a collaborator when **exactly one**
@@ -250,7 +279,7 @@ match _view:
     View.EXTERIOR: _exterior_input(event)
     View.SETTINGS: _settings_input(event)
     View.GARAGE:   _garage_input(event)
-    View.LIFT:     _lift_input(event)
+    View.LIFT:     _tuning_lift.handle_input(event)
     View.TABLE:    _table_ui.handle_input(event)
     View.CARPARK:  _carpark_ui.handle_input(event)
 ```
@@ -259,10 +288,17 @@ Every handler returns **whether it consumed the event**. Nothing chains off the 
 the `match` — `_unhandled_input` is the last stop, and the one handler that must really mark the
 viewport handled (the reveal parade's press swallow, now `hq_table.gd::_is_any_press`) does that
 itself — but the contract is what lets `HqChallenge.handle_input` stand every station down by
-answering `true` instead of `hq.gd` reading `_challenge_shown` by hand. The four stations whose
-handlers stayed on `HqController` (title, settings, garage, lift) have no collaborator of their
+answering `true` instead of `hq.gd` reading `_challenge_shown` by hand. The three stations whose
+handlers stayed on `HqController` (title, settings, garage) have no collaborator of their
 own; their widgets are built by `HqOverlays` but their focus cursors and transitions are
-`hq.gd`'s.
+`hq.gd`'s. The LIFT branch was `hq.gd::_lift_input` until the lift cut and is now
+`HqTuningLift.handle_input`, reached exactly the same way — the move renamed the function, not
+the routing.
+
+The **present box** deliberately has no branch of its own. It runs INSIDE `View.CARPARK`
+(`CarparkMode.PRESENT`), so its keyboard/gamepad input arrives through
+`_carpark_ui.handle_input` plus `hq.gd`'s `_car_back` / `_on_start_pressed`, both of which
+branch on `_present_opened`. `HqPresentReveal` owns the beat's behaviour, not its input route.
 
 **No binding moved.** The keyboard/gamepad map is unchanged: EXTERIOR left/right/select, GARAGE
 left/right/select/back, LIFT hub up/down/left/right/select/back (sub-page: back), TABLE
@@ -692,7 +728,7 @@ region, no way to change maps. `_refresh_map_pins` loads that one texture and pi
 is visible from the first minute — its rallies simply render locked. Under the pins it
 also draws the **reveal graph** — faint dotted lines joining rallies whose circles reach
 each other, but **only where both ends are already revealed**, so the lines chart the route
-the player has lit rather than spoiling the dark (`hq._build_reveal_links` /
+the player has lit rather than spoiling the dark (`hq_map_table._build_reveal_links` /
 `RallyLibrary.reveal_link_pairs`, see
 [map-exploration.md](map-exploration.md) → "The graph on the table").
 See [regions.md](regions.md) for the region look (it no longer gates anything —
@@ -777,8 +813,8 @@ balance, see [star-economy.md](star-economy.md)). The fog mask on the map plane
 shades with the SAME predicate, so what looks lit and what can be entered cannot
 drift — see [map-exploration.md](map-exploration.md).
 **The next locked special still gets a teaser box:** it renders a **full-opacity,
-non-pickable** teaser (`hq._build_special_teaser_label`, via `hq._make_pin`) naming the
-event over an unlock line (`hq._special_unlock_line` — "unlocks engine swaps" for
+non-pickable** teaser (`hq_map_table._build_special_teaser_label`, via `hq_map_table._make_pin`) naming the
+event over an unlock line (`hq_map_table._special_unlock_line` — "unlocks engine swaps" for
 `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY`, and **empty** where the rally's own name already
 carries its reward, i.e. anything in `UpgradeLibrary.unlocked_by`). No count is quoted:
 with reveal geometric there is no counter to quote, so the line names a *destination*
@@ -962,11 +998,15 @@ the car, and `_car_back` holds them on the screen until they open it.
   curve**, so displacement goes as t²: a wall barely moves at first and then accelerates
   into the floor like a panel tipping past its balance point. Deliberately **not
   `TRANS_BACK`**, which overshoots *backwards* before travelling and made every wall visibly
-  suck inward through the box before falling out. `PRESENT_WALL_TIME` is a slow 1.1 s — the
-  panels should read as having weight.
+  suck inward through the box before falling out. The wall fall time is a slow ~1 s — the
+  panels should read as having weight. The reveal's four look/feel values are GameConfig
+  fields (`hq_present_clearance_m` / `_lid_rise` / `_open_time` / `_wall_time`), with the
+  `hq_present_reveal.gd` consts kept as fallback defaults only; see
+  [configuration.md](configuration.md) → *HQ Present Box*.
 - **Sizing is DERIVED, not tuned.** `PresentBox.build_openable(width, depth, body_h)` takes
   **metres**, and the car park sizes it from `CarLibrary.max_car_bounds()` — the per-axis
-  maximum across the whole roster — plus `hq.PRESENT_CLEARANCE_M`. So the box fits the widest
+  maximum across the whole roster — plus the `hq_present_clearance_m` GameConfig field
+  (fallback `HqPresentReveal.PRESENT_CLEARANCE_M`). So the box fits the widest
   and longest car by construction and keeps fitting when a bigger one is authored. A single
   scale multiplier could not express this: the roster spans **3.8 m to 5.9 m** of length
   against ~1.9 m of width, so a square box either clips the long cars or dwarfs the narrow

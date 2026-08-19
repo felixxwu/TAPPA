@@ -162,7 +162,7 @@ func _ready() -> void:
 		_ensure_music_bus()
 		_ensure_engine_bus()
 		_player = AudioStreamPlayer.new()
-		_player.bus = "Music"
+		_player.bus = AudioBuses.MUSIC
 		var poly := AudioStreamPolyphonic.new()
 		poly.polyphony = 4  # >= 2 overlapping voices (outgoing tail + incoming lead-in)
 		_player.stream = poly
@@ -315,7 +315,7 @@ func _update_loading_edge() -> void:
 # (player + opponent wreck + HQ display cars). No-op if the bus was never created
 # (headless — see _ready — where EngineAudio never calls play() either).
 func _apply_engine_mute(loading: bool) -> void:
-	var idx := AudioServer.get_bus_index("Engine")
+	var idx := AudioServer.get_bus_index(AudioBuses.ENGINE)
 	if idx == -1:
 		return
 	AudioServer.set_bus_mute(idx, loading)
@@ -346,16 +346,16 @@ func _launch(id: String, segment: int, from_offset: float) -> void:
 	# while working on desktop. play_stream()'s `bus` also defaults to "Master" (NOT
 	# the player's bus), so without this the music-volume bus never applied either.
 	_playback.play_stream(segs[segment], from_offset, 0.0, 1.0,
-		AudioServer.PLAYBACK_TYPE_STREAM, &"Music")
+		AudioServer.PLAYBACK_TYPE_STREAM, AudioBuses.MUSIC)
 
 
 func _ensure_music_bus() -> void:
-	if AudioServer.get_bus_index("Music") != -1:
+	if AudioServer.get_bus_index(AudioBuses.MUSIC) != -1:
 		return
 	var idx := AudioServer.bus_count
 	AudioServer.add_bus(idx)
-	AudioServer.set_bus_name(idx, "Music")
-	AudioServer.set_bus_send(idx, "Master")
+	AudioServer.set_bus_name(idx, AudioBuses.MUSIC)
+	AudioServer.set_bus_send(idx, AudioBuses.MASTER)
 
 
 # Dedicated bus every EngineAudio instance routes to (see engine_audio.gd _ready),
@@ -364,12 +364,12 @@ func _ensure_music_bus() -> void:
 # runs: autoloads are ready before the main scene, and Music is the last-declared
 # autoload in project.godot, so this always runs first.
 func _ensure_engine_bus() -> void:
-	if AudioServer.get_bus_index("Engine") != -1:
+	if AudioServer.get_bus_index(AudioBuses.ENGINE) != -1:
 		return
 	var idx := AudioServer.bus_count
 	AudioServer.add_bus(idx)
-	AudioServer.set_bus_name(idx, "Engine")
-	AudioServer.set_bus_send(idx, "Master")
+	AudioServer.set_bus_name(idx, AudioBuses.ENGINE)
+	AudioServer.set_bus_send(idx, AudioBuses.MASTER)
 
 
 # Set the music level (linear [0,1]): apply it live to the Music bus and, unless
@@ -386,7 +386,7 @@ func _apply_volume() -> void:
 
 
 func _apply_bus_volume(lin: float) -> void:
-	var idx := AudioServer.get_bus_index("Music")
+	var idx := AudioServer.get_bus_index(AudioBuses.MUSIC)
 	if idx == -1:
 		return
 	AudioServer.set_bus_volume_db(idx, linear_to_db(maxf(slider_to_amplitude(lin), 0.0001)))

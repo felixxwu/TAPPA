@@ -325,6 +325,23 @@ try:
 except FileNotFoundError:
     raise SystemExit("missing %s — run ./export_eligibility.sh first" % ELIGIBILITY_PATH)
 
+# Freshness guard. The real staleness check (recomputing the fingerprint over
+# RallyLibrary's restriction bands + the car/engine tables — see
+# tools/export_eligibility.gd:compute_source_hash) only runs in GDScript, and
+# reimplementing that hash here in Python would duplicate the game's eligibility
+# rule in a second language and drift the moment either side changed — the same
+# trap this whole file's docstring above warns about. So this side can only
+# check the field EXISTS, not that it's still current; that's still enough to
+# catch the failure mode that actually bit us (a committed eligibility.json with
+# no guard at all, so a rally_library.gd edit could drift for months unnoticed).
+# A loud, honest "can't verify, go regenerate" beats a fake verification that
+# always reports fresh.
+if not _elig_raw.get("source_hash"):
+    raise SystemExit(
+        "%s has no source_hash — it predates the freshness guard or was hand-edited. "
+        "Run ./export_eligibility.sh to regenerate it before trusting this matrix."
+        % ELIGIBILITY_PATH)
+
 CAR_BIT = {c: 1 << n for n, c in enumerate(_elig_raw["cars"])}
 STARTERS = _elig_raw["starters"]
 # rally_id -> bitmask of the cars that can enter it, so "can the garage drive this?" is one

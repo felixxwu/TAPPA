@@ -173,7 +173,7 @@ func _step(profile: Dictionary, enterable: Array, rng: RandomNumberGenerator) ->
 	var is_special := RallyLibrary.is_special(rally)
 	var placed := int(PLACEMENTS[rng.randi() % PLACEMENTS.size()])
 
-	# Mirrors Save.complete_rally: `completed` already means a top-3 finish, `best_placed`
+	# Mirrors Save.record_podium_rally: `completed` already means a top-3 finish, `best_placed`
 	# only ever improves, and the star LEDGER is credited the DELTA against what this rally
 	# was previously worth. This sim never replays a rally, so the delta always equals the
 	# placement rating — modelled properly anyway so the tool stays faithful if that changes.
