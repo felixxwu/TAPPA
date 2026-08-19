@@ -75,7 +75,11 @@ func open() -> void:
 	get_tree().paused = true
 	_set_open(true)
 	_show_settings(false)
-	UITheme.focus_grab.bind(_resume_button).call_deferred()  # land the cursor on Resume
+	# NO focus grab here. Showing the overlay fires its visibility_changed, and the
+	# MenuNav attached in _build owns where the cursor lands (see _build's attach
+	# call). One owner: a second grab here would silently beat the framework, and
+	# any change to opening focus made through MenuNav would look like it did
+	# nothing.
 
 
 # Unfreeze and hide the whole overlay.
@@ -325,11 +329,16 @@ func _refresh_pause_button() -> void:
 
 
 func _show_settings(on: bool) -> void:
+	# Only a genuine RETURN from the settings sub-panel puts the cursor back on
+	# Settings. open() also calls _show_settings(false), on a menu that was never
+	# showing settings, and grabbing there stole the opening focus from MenuNav —
+	# masked until now only because open() re-grabbed afterwards.
+	var was_showing_settings := _settings_panel.visible
 	if on:
 		settings_menu.show_list()  # always open Settings on the category list (focuses it)
 	_settings_panel.visible = on
 	_menu_panel.visible = not on
-	if not on:
+	if was_showing_settings and not on:
 		# Returning to the Resume/Settings menu — put the cursor back on Settings.
 		UITheme.focus_grab.bind(_settings_button).call_deferred()
 

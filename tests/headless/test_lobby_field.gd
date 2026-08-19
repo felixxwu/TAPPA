@@ -12,8 +12,20 @@ class StubSession:
 	extends RefCounted
 	signal field_updated(rows: Array)
 	var _now: int = 1_000_000
+	var _held := false
 	func now_ms() -> int:
 		return _now
+	func held() -> bool:
+		return _held
+	func release_at_ms() -> int:
+		return _now + 5_000
+
+
+class StubStageManager:
+	extends RefCounted
+	var launched := false
+	func launch_immediately() -> void:
+		launched = true
 
 
 var _field: LobbyField
@@ -114,3 +126,45 @@ func test_a_dnf_outranks_a_finish_in_the_sample() -> void:
 	_field.note_dnf()
 	var s: Dictionary = _field.local_sample()
 	assert_eq(String(s["state"]), LobbyStandings.STATE_DNF, "dnf is terminal")
+
+
+# --- the fallback name -------------------------------------------------------------
+
+func test_an_empty_username_falls_back_rather_than_failing() -> void:
+	# A fresh device has no stored username, and an empty name makes the board refuse
+	# the whole document SILENTLY — which is exactly how two phones each raced an
+	# apparently empty lobby at P1/1. Posting beats a pretty name.
+	assert_ne(LobbyField.display_name(""), "", "an empty name becomes a postable one")
+	assert_eq(LobbyField.display_name("Felix"), "Felix", "a real name passes through")
+
+
+# --- the synchronised release --------------------------------------------------------
+
+func test_the_hold_releases_exactly_once_and_skips_the_three_two_one() -> void:
+	# The lobby's own countdown ran to the AGREED instant, so release goes straight
+	# to RUNNING — stacking the standard 3-2-1 on top would push every client three
+	# seconds past the moment they synchronised on.
+	var sm := StubStageManager.new()
+	_field.stage_manager = sm
+	(_field.session as StubSession)._held = true
+	_field._process(0.016)
+	assert_false(sm.launched, "held means held — no launch yet")
+	(_field.session as StubSession)._held = false
+	_field._process(0.016)
+	assert_true(sm.launched, "crossing the shared instant launches directly into RUNNING")
+	sm.launched = false
+	_field._process(0.016)
+	assert_false(sm.launched,
+		"the release is one-shot — later frames must not relaunch")
+
+
+func test_a_held_sample_is_always_the_start_line() -> void:
+	# During the intermission the OLD world's field is still posting, and its
+	# TrackProgress reads the PREVIOUS track's finish offset — posting that into the
+	# new round would spawn a phantom at the far end of a track nobody has driven.
+	(_field.session as StubSession)._held = true
+	_field.note_finished(93.5)  # stale state from the round that just ended
+	var s: Dictionary = _field.local_sample()
+	assert_eq(int(s["progress_m"]), 0, "a held racer is at the start line, whatever the old world says")
+	assert_eq(String(s["state"]), LobbyStandings.STATE_RACING,
+		"and is racing-in-waiting, not carrying the finished flag into the new round")

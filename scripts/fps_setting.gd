@@ -1,5 +1,7 @@
 class_name FpsSetting
 extends RefCounted
+# Docs: features/settings.md — the canonical one-module-per-setting apply-owner; clone this shape for a new persisted setting. Update in the same change as this file.
+# Tests: tests/headless/test_world_fps_cap.gd, tests/headless/test_settings_menu.gd — extend in the same change.
 
 ## The player-facing frame-rate cap (Settings -> Display). A 3-way choice between
 ## 30, 60 and uncapped, persisted under SETTING_KEY as the Engine.max_fps int to

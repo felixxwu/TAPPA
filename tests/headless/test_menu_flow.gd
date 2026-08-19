@@ -1496,6 +1496,37 @@ func test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs() -> void:
 	assert_gt(sizes[0].y, 0.0, "sanity: the panel actually laid out")
 
 
+# The two headline strings must each read as ONE line at the CURRENT UI scale. Both the box
+# (set_body_width / set_body_fixed_height) and the fonts inside it are authored sizes inflated
+# by UITheme.UI_SCALE — but the box's numbers were left as raw logical pixels, so when the UI
+# was rescaled the text grew and its container did not and the header broke across lines.
+# Asserts the RELATION (the title and the ceiling subtitle fit on one line, whatever the kind),
+# so it survives a retune of the box, the type scale or the strings themselves.
+func test_hq_challenge_header_never_breaks_across_lines() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._challenge_ui._open_challenge_overlay()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	for kind in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
+		hq._challenge_kind = kind
+		hq._challenge_ui._refresh_challenge_overlay()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var title: Label = hq._challenge_title_label
+		var subtitle: Label = hq._challenge_subtitle_label
+		assert_false(title.text.is_empty(), "sanity: the %s title says something" % kind)
+		assert_eq(title.get_line_count(), 1,
+			"the %s challenge title renders on one line (%s)" % [kind, title.text])
+		# The ceiling subtitle is empty for a kind that sets no rating ceiling; only a
+		# populated one has a line count to check.
+		if not subtitle.text.is_empty():
+			assert_eq(subtitle.get_line_count(), 1,
+				"the %s ceiling subtitle renders on one line (%s)" % [kind, subtitle.text])
+
+
 func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)

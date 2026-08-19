@@ -206,3 +206,48 @@ func test_leaving_returns_to_idle() -> void:
 	_session.leave()
 	assert_eq(_session.state(), LobbySessionScript.STATE_IDLE, "leaving stops everything")
 	assert_false(_session.is_active(), "and the lobby is no longer active")
+
+
+# --- the synchronised start -------------------------------------------------------
+
+func test_a_fresh_claim_is_held_until_the_shared_release() -> void:
+	# The join window: whoever starts a round is held at the line so players who
+	# arrive within it start TOGETHER, on one shared clock.
+	_queue_state(5, _session.now_ms() - 3_600_000)  # dead lobby
+	_rest.queue_ok({})  # the advance
+	await _session.enter()
+	if Config.data.lobby_start_hold_seconds <= 0.0:
+		pass_test("hold disabled in config; nothing to hold")
+		return
+	assert_true(_session.held(), "a freshly claimed round is inside the join window")
+	assert_false(_session.joined_late(), "and its claimant is on time by definition")
+	# Jump the corrected clock past the release instant: the hold ends by clock, not
+	# by any message — that is what keeps every client's release simultaneous.
+	_session.set_clock_offset_ms(_session.release_at_ms() - _session.now_ms() + 1_000)
+	assert_false(_session.held(), "past the shared instant the round is released")
+
+
+func test_a_joiner_inside_the_hold_window_is_not_late() -> void:
+	_queue_state(500, _session.now_ms())  # a round claimed this instant
+	await _session.enter()
+	assert_false(_session.joined_late(),
+		"entering during the join window is on time — the window existing is its point")
+
+
+func test_a_spectator_is_not_held_they_are_spectating() -> void:
+	# held() speaks only for a racer at the line; a spectator's hold is their state.
+	_queue_state(500, _session.now_ms())
+	await _session.enter(true)
+	assert_false(_session.held(), "spectating is its own condition, not a held race")
+
+
+func test_an_early_end_schedules_the_next_start_in_the_future() -> void:
+	# started_at_ms in the shared document IS the agreed start instant, so the
+	# post-stage countdown on every client counts to the same moment off one write.
+	_queue_state(500, _session.now_ms() - 5_000)
+	await _session.enter()
+	_rest.queue_ok({})  # the advance PATCH
+	await _session.check_round_over([_finished_row("a", 90_000)])
+	assert_true(_session.release_at_ms() > _session.now_ms(),
+		"the next round starts in the FUTURE — an intermission, not an instant cut")
+	assert_true(_session.held(), "and every client is held until that shared instant")

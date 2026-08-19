@@ -128,10 +128,9 @@ func _gamepad_press(action: String) -> InputEvent:
 
 
 func _nav_of(root: Control) -> MenuNav:
-	for child in root.get_children():
-		if child is MenuNav:
-			return child as MenuNav
-	return null
+	# Thin wrapper on the framework's own accessor — kept so existing call sites read
+	# unchanged. New code should call MenuNav.of(root) directly.
+	return MenuNav.of(root as Control)
 
 
 func _page_root(page: int) -> Control:

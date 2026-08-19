@@ -155,6 +155,17 @@ func begin_countdown() -> void:
 		_hud.show_countdown(_countdown_left)
 
 
+# Leave STAGING and GO on the very next tick, skipping the 3-2-1. The multiplayer
+# lobby uses this: its own countdown ran on the shared wall clock (every client
+# counting to the SAME agreed instant), so stacking the standard countdown on top
+# would just delay everyone three seconds past the moment they agreed on.
+func launch_immediately() -> void:
+	if not _armed or _phase != Phase.STAGING:
+		return
+	begin_countdown()
+	_countdown_left = 0.0
+
+
 # Wire the leader's pace table: the per-turn progress thresholds + the rival's cumulative
 # time fraction at each turn (both from RallyLibrary.derive_turn_splits, converted to
 # fractions by world.gd) and the P1 rival's total event time (ms). Called by world.gd only

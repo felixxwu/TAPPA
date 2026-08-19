@@ -1,5 +1,7 @@
 class_name MusicDirector
 extends Node
+# Docs: features/music.md, features/settings.md (one of the canonical persisted-setting apply-owners) — update in the same change as this file.
+# Tests: tests/headless/test_music_director.gd, tests/headless/test_settings_menu.gd — extend in the same change.
 # Autoload: drives the interactive music loop. Owns ONE AudioStreamPlayer running
 # an AudioStreamPolyphonic; each 8-bar segment is a voice launched via
 # play_stream(stream, from_offset), so overlapping lead-out + lead-in tails share

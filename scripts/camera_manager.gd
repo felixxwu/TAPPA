@@ -1,5 +1,7 @@
 class_name CameraManager
 extends Node
+# Docs: features/camera.md, features/settings.md (this is one of the canonical persisted-setting apply-owners) — update in the same change as this file.
+# Tests: tests/headless/test_camera_manager.gd, tests/headless/test_settings_menu.gd — extend in the same change.
 # Owns the ordered list of camera modes and the C-key cycling between them.
 # Exactly one camera is `current` at a time. The bonnet camera is parented to
 # the active car (rigid to the car's heading); the chase camera follows from the

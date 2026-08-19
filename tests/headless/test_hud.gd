@@ -58,10 +58,14 @@ func before_each() -> void:
 	var hud = _scene.get_node("HUD")
 	hud.hide_countdown()
 	hud.hide_off_road()  # also clears its change-gate, so the next show_off_road re-formats
-	for w in ["StageCompletePanel", "StageDeltaLabel", "CutFlashLabel"]:
+	for w in ["StageCompletePanel", "CutFlashLabel"]:
 		var node := hud.get_node_or_null(w)
 		if node != null:
 			node.visible = false
+	# The standings readout and the cut flash SHARE the top-centre row, so a test that
+	# leaves a flash on the clock would suppress the next test's readout. Clear both.
+	hud.hide_position()
+	hud._cut_flash_left = 0.0
 	await get_tree().process_frame
 
 
@@ -435,7 +439,7 @@ func test_chasing_reads_the_position_and_the_time_to_find() -> void:
 	assert_string_contains(pos.text, "12", "the field size is named")
 	assert_true(gap.visible, "the gap line shows alongside it")
 	assert_string_contains(gap.text, "1.42", "the gap reads to the centisecond")
-	assert_string_contains(gap.text, "P2", "and names the position being chased")
+	assert_string_contains(gap.text, "behind P2", "and names the position being chased")
 
 
 func test_leading_words_the_gap_as_a_cushion_and_reads_positive() -> void:
@@ -443,7 +447,8 @@ func test_leading_words_the_gap_as_a_cushion_and_reads_positive() -> void:
 	parts[0].show_position(1, 12, 900, true)
 	var gap := parts[2] as Label
 	assert_string_contains(gap.text, "0.90", "the cushion reads to the centisecond")
-	assert_string_contains(gap.text, "over", "leading is worded as holding a gap, not chasing one")
+	assert_string_contains(gap.text, "ahead of P2",
+		"leading is worded as holding a gap, not chasing one")
 	assert_eq(gap.get_theme_color("font_color"), UITheme.GREEN, "leading tints the gap green")
 
 
@@ -451,8 +456,10 @@ func test_the_gap_line_is_worded_not_signed() -> void:
 	const Hud = preload("res://scripts/hud.gd")
 	# Pure helpers, so the wording is pinned without the scene. A bare ± in the corner of
 	# the screen at speed doesn't say WHICH WAY; these do.
-	assert_string_contains(Hud.gap_text(1500, false, 4), "to P3", "chasing points at the place above")
-	assert_string_contains(Hud.gap_text(1500, true, 1), "over P2", "leading points at the place below")
+	assert_string_contains(Hud.gap_text(1500, false, 4), "behind P3",
+		"chasing points at the place above")
+	assert_string_contains(Hud.gap_text(1500, true, 1), "ahead of P2",
+		"leading points at the place below")
 	assert_eq(Hud.position_text(3, 12), "P3/12", "the position line is place-of-field")
 
 
@@ -539,6 +546,136 @@ func test_hiding_the_readout_forgets_the_shown_position() -> void:
 	hud._tick_position_anim(0.05)
 	assert_almost_eq(pos.offset_top, resting, 0.001,
 		"the first position after a hide is an appearance, not a drop of seven places")
+
+
+func test_the_readout_sits_centre_screen_not_in_a_corner() -> void:
+	# It shares the top-centre popup row with the cut flash, under the pacenote strip —
+	# the eye-line the player already reads mid-stage. A corner-anchored readout (which is
+	# where this started) is the regression being guarded.
+	var parts := _standings_labels()
+	var pos := parts[1] as Label
+	var gap := parts[2] as Label
+	var cut := _scene.get_node("HUD/CutFlashLabel") as Label
+	assert_eq(pos.anchor_left, 0.5, "the position line is centre-anchored")
+	assert_eq(gap.anchor_left, 0.5, "so is the gap line")
+	assert_eq(pos.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER,
+		"and its text is centred within its box")
+	assert_eq(pos.offset_top, cut.offset_top,
+		"the position line and the cut flash share one row — they take turns on it")
+	assert_true(gap.offset_top > pos.offset_top, "the gap line sits below the position line")
+
+
+func test_a_cut_penalty_takes_over_the_standings_row() -> void:
+	var parts := _standings_labels()
+	var hud = parts[0]
+	Config.data.cut_penalty_enabled = true
+	hud.show_position(3, 12, 1420, false)
+	assert_true((parts[1] as Label).visible, "the readout is up before the cut")
+	hud.show_cut_flash(1.0, 2.5)
+	var cut := _scene.get_node("HUD/CutFlashLabel") as Label
+	assert_true(cut.visible, "the penalty takes the row")
+	assert_string_contains(cut.text, "2.5", "and shows the penalty applied")
+	assert_false((parts[1] as Label).visible, "the position line yields to it")
+	assert_false((parts[2] as Label).visible, "and so does the gap line")
+	# A frame driven while the penalty is up must not put the readout back over the top of it.
+	hud.show_position(3, 12, 1420, false)
+	assert_false((parts[1] as Label).visible, "the readout stays down while the penalty shows")
+
+
+func test_the_standings_come_back_once_the_penalty_has_had_its_say() -> void:
+	var parts := _standings_labels()
+	var hud = parts[0]
+	Config.data.cut_penalty_enabled = true
+	hud.show_position(2, 12, 800, false)
+	hud.show_cut_flash(1.0, 2.5)
+	# Run the flash's clock out the way _process does, then drive one more frame.
+	hud._cut_flash_left = 0.0
+	hud.show_position(2, 12, 800, false)
+	assert_true((parts[1] as Label).visible, "the readout returns on its own")
+	assert_string_contains((parts[1] as Label).text, "P2",
+		"still carrying the current position — nothing had to be restored by hand")
+
+
+func test_a_position_change_behind_the_penalty_is_not_lost() -> void:
+	# The player is passed while the cut flash is up. The readout is down, but the change
+	# must still register, so it isn't re-animated as a fresh overtake later.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	Config.data.cut_penalty_enabled = true
+	hud.show_position(3, 12, 1420, false)
+	hud.show_cut_flash(1.0, 2.5)
+	hud.show_position(4, 12, 300, false)   # dropped a place behind the flash
+	hud._cut_flash_left = 0.0
+	hud.show_position(4, 12, 300, false)
+	var pos := parts[1] as Label
+	assert_string_contains(pos.text, "P4", "the position caught up behind the flash")
+	var resting := pos.offset_top
+	hud._tick_position_anim(5.0)
+	hud.show_position(4, 12, 300, false)
+	hud._tick_position_anim(0.05)
+	assert_almost_eq(pos.offset_top, resting, 0.001,
+		"and is not replayed as an overtake once the row is handed back")
+
+
+func test_the_gap_number_eases_toward_a_moving_target() -> void:
+	# The projection behind the gap moves every frame, so the raw figure chatters in the
+	# hundredths. The displayed number chases it instead of being written raw.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var gap := parts[2] as Label
+	hud.show_position(3, 12, 1000, false)
+	assert_string_contains(gap.text, "1.00", "the first update snaps to the real gap")
+	hud.show_position(3, 12, 5000, false)   # target jumps four seconds
+	assert_string_contains(gap.text, "1.00",
+		"the jump does not land on the label in one frame")
+	hud._tick_gap_smoothing(0.1)
+	assert_false(gap.text.contains("1.00"), "a frame of easing moves the number")
+	assert_false(gap.text.contains("5.00"), "but not all the way there at once")
+	# Enough frames and it arrives — the easing is a delay, not a permanent offset.
+	for _i in 60:
+		hud._tick_gap_smoothing(0.05)
+	assert_string_contains(gap.text, "5.00", "the number settles on the real gap")
+
+
+func test_the_first_gap_of_a_stage_does_not_count_up_from_zero() -> void:
+	# Easing from a cold start would show seconds that were never true. It snaps instead.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	hud.show_position(5, 12, 3400, false)
+	assert_string_contains((parts[2] as Label).text, "3.40",
+		"the readout appears already showing the real gap")
+
+
+func test_changing_position_snaps_the_gap_instead_of_gliding() -> void:
+	# The gap is now measured against a DIFFERENT car, so gliding across the old value would
+	# quote seconds that were true of neither.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	var gap := parts[2] as Label
+	hud.show_position(3, 12, 1000, false)
+	hud.show_position(4, 12, 6000, false)   # passed — the car ahead is a different one
+	assert_string_contains(gap.text, "6.00", "a position change snaps to the new gap")
+	assert_string_contains(gap.text, "behind P3", "and re-names the place above")
+
+
+func test_taking_the_lead_snaps_the_gap_too() -> void:
+	# Same reason: chasing P2 and holding a cushion over P2 are different measurements.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	hud.show_position(1, 12, 4500, true)
+	assert_string_contains((parts[2] as Label).text, "4.50 ahead of P2",
+		"the cushion is shown as-is the frame it becomes one")
+
+
+func test_a_settled_gap_costs_nothing_to_tick() -> void:
+	# The ease bails out once it has arrived, so the common frame does no float work and
+	# builds no string.
+	var parts := _standings_labels()
+	var hud = parts[0]
+	hud.show_position(3, 12, 2000, false)
+	var before := (parts[2] as Label).text
+	hud._tick_gap_smoothing(0.016)
+	assert_eq((parts[2] as Label).text, before, "an arrived number is left alone")
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------

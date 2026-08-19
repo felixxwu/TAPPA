@@ -1,7 +1,7 @@
 class_name SettingsMenu
 extends VBoxContainer
-# Docs: features/benchmark.md — update in the same change as this file.
-# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
+# Docs: features/settings.md (adding/changing a setting), features/menu-navigation.md (every row must be keyboard+gamepad navigable) — update in the same change as this file.
+# Tests: tests/headless/test_settings_menu.gd, tests/headless/test_menu_nav.gd, tests/headless/test_benchmark_ui.gd — extend in the same change. Others: grep -rl SettingsMenu tests/.
 # A reusable settings panel shared by the HQ title screen and the in-run pause
 # menu, so both present the SAME options. It opens on a LIST of categories; each
 # row drills into its own sub-page:

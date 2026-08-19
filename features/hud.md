@@ -153,10 +153,14 @@ RUNNING. It shows the running event total (`CUT +total_s`), not the incident
 delta, so consecutive incidents read as one growing tag rather than flickering
 resets — built in code, anchored top-centre just below the pacenote strip
 (`_POPUP_TOP`), and fading out after `hud_popup_show_seconds` (a countdown ticked
-in `_process`). It is the only transient popup left in the corner-space, so it no
-longer has to negotiate precedence with anything: the standings readout it replaced
-the pace popup with lives down the top-LEFT edge and the two never overlap. Gated by
-`cut_penalty_enabled`.
+in `_process`). It **shares that row with the permanent standings readout and takes it
+over while it is up**: `show_cut_flash` drops `PositionLabel` / `PositionGapLabel`, and
+`show_position` keeps them down while `_cut_flash_left > 0.0`. Deliberate reuse rather
+than a second location — a freshly billed penalty is the most urgent thing the HUD has to
+say, and it gets said in the spot the player is already reading. Nothing restores the
+readout by hand: the flash fades on its own clock and the next `show_position` frame (the
+stage drives one every frame) puts it straight back, already carrying the current
+position. Gated by `cut_penalty_enabled`.
 
 ## Off-track warning
 
@@ -214,9 +218,9 @@ and advanced by `show_pacenotes(current)`.
   reads as a smooth left-slide; `_layout_pacenotes` positions/fades each board from
   its distance to the current slot (`_PACE_*` consts: slot width, upcoming count,
   dim step/floor). Gated by `hud_pacenotes_enabled` — off builds no boards.
-  The top-centre cut flash (`CutFlashLabel`) sits directly
-  below the strip: its top edge is `_POPUP_TOP = _PACE_TOP + _PACE_ICON + _POPUP_GAP`,
-  so bumping the pacenote icon size pushes the popup down with it rather than
+  The standings readout and the cut flash share the row directly
+  below the strip: their top edge is `_POPUP_TOP = _PACE_TOP + _PACE_ICON + _POPUP_GAP`,
+  so bumping the pacenote icon size pushes both down with it rather than
   overlapping.
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
@@ -231,7 +235,7 @@ it); see [menus.md](menus.md).
 
 The **`PositionLabel`** / **`PositionGapLabel`** pair is the *permanent* in-run
 standings readout: where the player currently sits in the rival field (`P3/12`) and
-the gap that matters underneath it (`1.42 to P2`, or `1.42 over P2` in green while
+the gap that matters underneath it (`1.42 behind P2`, or `1.42 ahead of P2` in green while
 leading). It **replaced** the old every-few-turns *"vs P1" pace popup*
 (`StageDeltaLabel` / `show_stage_delta`), and the swap was the point: a delta that
 flashed up for three seconds every fifth turn told you nothing between pulses, and
@@ -239,12 +243,14 @@ flashed up for three seconds every fifth turn told you nothing between pulses, a
 question is *what place am I in, and what do I have to find to gain one*. So the
 readout is always on and always current instead of being a pulse you might miss.
 
-Both labels are built in code by `_build_position_readout()` and anchored down the
-**top-left** edge, under the run timer: `_POS_TOP` is the position line's resting row,
-`_POS_HEIGHT` / `_GAP_HEIGHT` its two row heights, with the gap line seated directly
-below the position line. That corner is deliberate — position and elapsed time are one
-thought, so the eye should find them in one place, and stacking under the timer keeps
-the readout clear of the top-centre pacenote strip and the cut flash below it.
+Both labels are built in code by `_build_position_readout()` and centred on the
+**top-centre popup row, directly under the pacenote strip**: `_POS_TOP` is the position
+line's resting row (`= _POPUP_TOP`, so it follows the strip's size rather than a hand-copied
+number), `_POS_HEIGHT` / `_GAP_HEIGHT` are its two row heights, and the gap line is seated
+directly below the position line. Centre screen is deliberate — this is the readout the
+player checks most often mid-stage, so it belongs in the eye-line with the pacenotes rather
+than parked in a corner. It shares that row with `CutFlashLabel`, which borrows it for a
+moment whenever a cut is billed (above).
 
 **The projection is a gap-carry, not an extrapolation.** The maths lives in
 `scripts/live_standings.gd` (`LiveStandings`, pure static, no nodes and no `Config`
@@ -272,17 +278,36 @@ reads — see [stage.md](stage.md) for how `StageManager` feeds it):
 
 `Hud.position_text(position, field)` and `Hud.gap_text(gap_ms, leading, position)` are
 the **pure static formatters**, split out so the strings are testable without the HUD
-scene. The gap is **worded rather than signed** (`to` / `over`) — a bare `±` in the
-corner of the screen at speed reads as ambiguous, and this line has to answer "which
+scene. The gap is **worded rather than signed** (`behind` / `ahead of`) — a bare `±` in
+the middle of the screen at speed reads as ambiguous, and this line has to answer "which
 way" instantly. Leading colours it `UITheme.GREEN`, otherwise `INK_DIM`.
+
+**The gap number is eased, not written raw.** The projection behind it moves every frame
+and jitters with the player's own speed, so the raw figure chatters in the hundredths and
+reads as noise rather than information. `show_position` only sets `_gap_target_ms`;
+`_tick_gap_smoothing(delta)` chases it with `_gap_shown_ms` on the same
+`1 - exp(-delta * _GAP_SMOOTH_SPEED)` curve the pacenote strip slides on (fps-independent,
+and a little slower than the strip — this is a number being read, so it wants to settle),
+and `_write_gap_text()` is the only thing that writes the line, change-gated on the
+displayed centisecond. Three cases **snap** instead of easing, because in each the gap is
+suddenly measured against a *different car* and gliding across the old value would quote
+seconds that were true of neither: the first update after the readout appears (a stage
+opening with the number counting up from zero would be a lie, not a smoothing), a position
+change, and the leading flag turning over. `_gap_leading` is latched *before* any write for
+that reason — writing first would spell the opening frame of a lead as a deficit. The tick
+runs whether or not the labels are visible, so a readout hidden behind a cut flash comes
+back current instead of gliding up from a stale figure, and it bails out once the number
+has arrived so the settled frame does no work at all.
 
 `show_position(position, field, gap_ms, leading)` drives the pair and is gated by
 `hud_position_enabled`. Because `StageManager` polls it **every RUNNING frame** while
 the underlying projection moves continuously, both label writes are **change-gated on
 the displayed value** — position, field, and the gap rounded to the shown centisecond —
 so the common frame builds no strings at all. `moved` is in the gap line's gate too:
-that line *names* the position above (`to P4`), so it must be rebuilt when the position
-turns over even if the seconds round the same. A field of one classified car hides the
+that line *names* the position above (`behind P4`), so it must be rebuilt when the position
+turns over even if the seconds round the same. A frame driven while a cut flash owns the row
+updates that state as usual but leaves the labels hidden, so a place lost behind the flash is
+caught rather than missed — and isn't replayed as a fresh overtake when the row comes back. A field of one classified car hides the
 gap line outright — a gap to nobody. `hide_position()` takes the readout down at the
 finish or on a re-arm and forgets the shown values, so the next stage's first position
 is an appearance rather than an overtake.
@@ -311,9 +336,10 @@ small (font 14 for labels) — the HUD is rendered at 1/2 scale.
 The `ElapsedLabel` run timer is anchored to the **top centre**
 (`anchor_left/right = 0.5`, `grow_horizontal = 2`, `horizontal_alignment = 1`) so
 it sits in the middle of the screen regardless of viewport width, with the
-`CutFlashLabel` popup tucked below it (under the pacenote strip). The permanent
-standings readout (`PositionLabel` + `PositionGapLabel`) instead runs down the
-**top-left** edge from `_POS_TOP`, clear of both. The **top-right corner is left
+permanent standings readout (`PositionLabel` + `PositionGapLabel`) and the
+`CutFlashLabel` popup stacked below it on the same centred column, under the pacenote
+strip from `_POS_TOP` / `_POPUP_TOP` — the readout and the flash take turns on that one
+row rather than occupying two places. The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
 (see [menus.md](menus.md)), not the HUD. The three gauges are anchored to the
 **bottom centre** of the viewport (`anchor_top/bottom = 1.0`, `anchor_left/right =

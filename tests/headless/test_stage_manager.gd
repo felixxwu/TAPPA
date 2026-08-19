@@ -546,3 +546,16 @@ func test_main_scene_holds_car_at_boot() -> void:
 	# clears the full lock, leaving only the handbrake hold. (Regression: the loading
 	# lock must not survive into the playable run and freeze the player out.)
 	assert_false(car.controls_locked, "non-staged boot leaves input live (loading lock is cleared)")
+
+
+func test_launch_immediately_skips_the_countdown() -> void:
+	# The multiplayer lobby counts down to a shared wall instant on its own; the
+	# standard 3-2-1 stacked on top would delay every client past the agreed moment.
+	var sm := StageManager.new()
+	add_child_autofree(sm)
+	sm.setup(_car, _hud, _progress, true)  # staged: held at the line
+	sm.launch_immediately()
+	# One tick flips COUNTDOWN(0.0) into RUNNING — GO lands on the very next frame.
+	sm._timed_process(0.05)
+	assert_eq(sm.phase(), StageManager.Phase.RUNNING,
+		"launch_immediately reaches RUNNING without waiting out a countdown")

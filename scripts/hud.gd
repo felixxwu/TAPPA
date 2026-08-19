@@ -80,6 +80,16 @@ var _gap_label: Label
 var _last_position := -1
 var _last_field := -1
 var _last_gap_cs := -999999
+# The gap line's number is EASED rather than written raw. The projection behind it moves
+# every frame (and jitters with the player's own speed), so the raw figure flickers in the
+# hundredths and reads as noise; _gap_shown_ms chases _gap_target_ms at _GAP_SMOOTH_SPEED
+# so the digits settle instead of chattering. -1 = nothing shown yet, so the next update
+# SNAPS: a stage opening with the number counting up from zero would be a lie, not a
+# smoothing. _gap_leading is kept alongside because the target is measured against a
+# different car the moment that flips, which is a jump to snap through, not ease across.
+var _gap_target_ms := 0
+var _gap_shown_ms := -1.0
+var _gap_leading := false
 # Position-change animation (features/hud.md): a gained place slides the position label
 # UP into place and flashes GREEN; a lost place slides DOWN and flashes RED. `_pos_anim_left`
 # counts the remaining seconds, `_pos_anim_gain` says which way. Deliberately small and
@@ -174,14 +184,25 @@ const _POPUP_GAP := 8.0
 const _POPUP_TOP := _PACE_TOP + _PACE_ICON + _POPUP_GAP
 const _POPUP_HEIGHT := 24.0
 
-# The standings readout sits top-left directly under the run timer (ElapsedLabel ends at
-# y=32 in main.tscn), with the gap line under the position line. _POS_SLIDE is how far the
-# position label travels during a gain/lose animation, _POS_ANIM_SECONDS how long that takes.
-const _POS_TOP := 36.0
+# The standings readout sits TOP-CENTRE, on the popup row directly under the pacenote strip
+# (_POPUP_TOP, derived from the strip's own size), with the gap line under the position line.
+# Centre screen because this is the readout the player checks most often mid-stage — it
+# belongs in the eye-line with the pacenotes rather than parked in a corner. _POS_SLIDE is how
+# far the position label travels during a gain/lose animation, _POS_ANIM_SECONDS how long that
+# takes.
+#
+# The corner-cut flash shares this spot and takes it over while it is up (see show_cut_flash):
+# a freshly billed penalty is the more urgent thing to say, it gets said where the player is
+# already looking, and it is brief.
+const _POS_TOP := _POPUP_TOP
 const _POS_HEIGHT := 26.0
 const _GAP_HEIGHT := 18.0
 const _POS_SLIDE := 9.0
 const _POS_ANIM_SECONDS := 0.65
+# Ease rate of the gap number, in the same units as _PACE_SCROLL_SPEED (both go through
+# 1 - exp(-delta * speed), so both are fps-independent). Slower than the strip's slide: this
+# is a number being read, and it wants to settle rather than snap.
+const _GAP_SMOOTH_SPEED := 6.0
 
 # The off-track warning hangs this far BELOW the viewport centre (it anchors at 0.5,
 # unlike the top-anchored popups above), clearing the centred 3·2·1·GO countdown.
@@ -448,18 +469,22 @@ func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
 	return lbl
 
 
-# Build the two standings labels in code (they have no scene nodes): top-LEFT, stacked
-# directly under the run timer, because position and elapsed time are one thought and the
-# eye should find them in one place. Not `_make_popup_label` — these are a live state
-# readout with no fade timer, the same way the off-road warning mirrors a live clock.
+# Build the two standings labels in code (they have no scene nodes): centred on the popup row
+# under the pacenote strip, the position line with the gap line stacked beneath it. Not
+# `_make_popup_label` — these are a live state readout with no fade timer, the same way the
+# off-road warning mirrors a live clock.
 #
 # They start hidden: a plain dev boot of main.tscn has no rival field, so nothing ever
 # calls show_position() and the corner stays empty.
 func _build_position_readout() -> void:
 	_pos_label = Label.new()
 	_pos_label.name = "PositionLabel"
-	_pos_label.offset_left = 8.0
-	_pos_label.offset_right = 128.0
+	_pos_label.anchor_left = 0.5
+	_pos_label.anchor_right = 0.5
+	_pos_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_pos_label.offset_left = -110.0
+	_pos_label.offset_right = 110.0
+	_pos_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_pos_label.add_theme_font_size_override("font_size", UITheme.px(22))
 	_pos_label.add_theme_color_override("font_color", UITheme.INK)
 	_pos_label.visible = false
@@ -467,8 +492,12 @@ func _build_position_readout() -> void:
 	_seat_position_label(0.0)
 	_gap_label = Label.new()
 	_gap_label.name = "PositionGapLabel"
-	_gap_label.offset_left = 8.0
-	_gap_label.offset_right = 148.0
+	_gap_label.anchor_left = 0.5
+	_gap_label.anchor_right = 0.5
+	_gap_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_gap_label.offset_left = -140.0
+	_gap_label.offset_right = 140.0
+	_gap_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gap_label.offset_top = _POS_TOP + _POS_HEIGHT
 	_gap_label.offset_bottom = _POS_TOP + _POS_HEIGHT + _GAP_HEIGHT
 	_gap_label.add_theme_font_size_override("font_size", UITheme.px(14))
@@ -617,6 +646,7 @@ func _timed_process(_delta: float) -> void:
 	_update_damage(_delta)
 	# Hide each transient popup once its on-screen time elapses.
 	_tick_position_anim(_delta)
+	_tick_gap_smoothing(_delta)
 	_cut_flash_left = _tick_fade(_cut_flash_left, _delta, _cut_flash_label)
 	_tick_pacenotes(_delta)
 
@@ -746,15 +776,15 @@ static func position_text(position: int, field: int) -> String:
 	return "P%d/%d" % [maxi(1, position), maxi(1, field)]
 
 
-# The gap line: the time to find on the position above, or — while leading — the cushion
-# held over P2. Worded rather than signed ("to" / "over"): a bare ± in the corner of the
+# The gap line: the time to find on the position above, or — while leading — the cushion held
+# over P2. Worded rather than signed ("behind" / "ahead of"): a bare ± in the middle of the
 # screen at speed reads as ambiguous, and this line has to answer "which way" instantly.
 # Pure, for the same reason as position_text.
 static func gap_text(gap_ms: int, leading: bool, position: int) -> String:
 	var secs := absf(gap_ms / 1000.0)
 	if leading:
-		return "%.2f over P2" % secs
-	return "%.2f to P%d" % [secs, maxi(1, position - 1)]
+		return "%.2f ahead of P2" % secs
+	return "%.2f behind P%d" % [secs, maxi(1, position - 1)]
 
 
 # Drive the permanent standings readout, called every frame while the stage runs
@@ -771,6 +801,10 @@ static func gap_text(gap_ms: int, leading: bool, position: int) -> String:
 func show_position(position: int, field: int, gap_ms: int, leading: bool) -> void:
 	if not Config.data.hud_position_enabled:
 		return
+	# The cut flash has taken this row over for a moment. The state below still updates — so a
+	# position that turns over behind the flash is caught rather than missed — but the labels
+	# stay down until the penalty has had its say. `shown` carries that decision.
+	var shown := _cut_flash_left <= 0.0
 	var moved := position != _last_position
 	if moved or field != _last_field:
 		if moved and _last_position > 0:
@@ -779,21 +813,50 @@ func show_position(position: int, field: int, gap_ms: int, leading: bool) -> voi
 		_last_position = position
 		_last_field = field
 		_pos_label.text = position_text(position, field)
-	_pos_label.visible = true
+	_pos_label.visible = shown
 	# One classified car means the player is alone out there — a gap to nobody.
 	if field <= 1:
 		_gap_label.visible = false
 		return
-	var gap_cs := roundi(absf(gap_ms / 10.0))
-	# `moved` is in the gate as well as the gap itself: the gap line NAMES the position
-	# above ("to P4"), so it has to be rebuilt when the position turns over even if the
-	# number of seconds happens to round the same.
-	if gap_cs != _last_gap_cs or moved:
-		_last_gap_cs = gap_cs
-		_gap_label.text = gap_text(gap_cs * 10, leading, position)
-		_gap_label.add_theme_color_override("font_color",
-			UITheme.GREEN if leading else UITheme.INK_DIM)
-	_gap_label.visible = true
+	# Hand the eased number its new target. Two cases snap instead of easing, because in both
+	# the gap is suddenly measured against a DIFFERENT car and gliding across the old value
+	# would show seconds that were never true of either: the first update after the readout
+	# appears, and any frame where the position or the leading flag turns over.
+	# Latch the flag BEFORE any write: _write_gap_text words the line from _gap_leading, so
+	# assigning it afterwards would spell the first frame of a lead as a deficit.
+	var flipped := leading != _gap_leading
+	_gap_leading = leading
+	_gap_target_ms = absi(gap_ms)
+	if _gap_shown_ms < 0.0 or moved or flipped:
+		_gap_shown_ms = float(_gap_target_ms)
+		_write_gap_text()
+	_gap_label.visible = shown
+
+
+# Write the gap line from the EASED figure. Change-gated on the displayed centisecond, and
+# on the position, since the line names the place above ("behind P4") and so has to be
+# rebuilt when that turns over even if the seconds round the same.
+func _write_gap_text() -> void:
+	var gap_cs := roundi(_gap_shown_ms / 10.0)
+	if gap_cs == _last_gap_cs:
+		return
+	_last_gap_cs = gap_cs
+	_gap_label.text = gap_text(gap_cs * 10, _gap_leading, _last_position)
+	_gap_label.add_theme_color_override("font_color",
+		UITheme.GREEN if _gap_leading else UITheme.INK_DIM)
+
+
+# Ease the shown gap toward its target, one frame at a time — the same
+# 1 - exp(-delta * speed) curve the pacenote strip slides on, so it behaves the same at any
+# frame rate. Runs whether or not the labels are visible (it is a couple of floats), so a
+# readout hidden behind a cut flash comes back current rather than gliding up from a stale
+# figure. Costs nothing once the number has settled.
+func _tick_gap_smoothing(delta: float) -> void:
+	if _gap_shown_ms < 0.0 or absf(_gap_shown_ms - float(_gap_target_ms)) < 0.5:
+		return
+	_gap_shown_ms = lerpf(_gap_shown_ms, float(_gap_target_ms),
+		1.0 - exp(-delta * _GAP_SMOOTH_SPEED))
+	_write_gap_text()
 
 
 # Take the readout down (the stage ended, or a car swap re-armed the flow) and forget the
@@ -804,6 +867,8 @@ func hide_position() -> void:
 	_last_position = -1
 	_last_field = -1
 	_last_gap_cs = -999999
+	_gap_shown_ms = -1.0
+	_gap_target_ms = 0
 	_pos_anim_left = 0.0
 	_seat_position_label(0.0)
 
@@ -834,6 +899,11 @@ func show_cut_flash(_incident_s: float, total_s: float) -> void:
 	_cut_flash_label.text = "CUT +%.1fs" % total_s
 	_cut_flash_label.visible = true
 	_cut_flash_left = Config.data.hud_popup_show_seconds
+	# Borrow the standings row for the penalty. Nothing restores these by hand: the flash fades
+	# on its own clock (_tick_fade) and the next show_position frame — the stage drives it every
+	# frame — puts the readout straight back, already carrying the current position.
+	_pos_label.visible = false
+	_gap_label.visible = false
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------

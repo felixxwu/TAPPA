@@ -90,9 +90,46 @@ through `UITheme.px(authored)`. Fonts therefore get a genuinely larger point
 size — the TTF re-rasterises crisp at the new logical resolution — never a
 scaled-up small glyph. Keep `UI_SCALE` equal to `render_height / 400` when the
 render height is retuned, then re-run `tools/build_ui_theme.gd` (its stylebox
-margins go through `px` too). Sizes that do NOT live on the 2D canvas are
-exempt and stay authored — e.g. `hq.gd`'s `PIN_LABEL_FONT_SIZE` renders into a
-SubViewport shown in 3D.
+margins go through `px` too).
+
+**A box pinned in pixels must be scaled like the text inside it.** The trap is a
+container sized by a literal — `MenuPage.set_body_width` / `set_body_fixed_height`,
+a `custom_minimum_size`, a container `separation` — while the fonts within it go
+through `px`. The text then gets its genuinely larger point size and its container
+does not, so content clips into the body scroll and values wrap that used to fit on
+one line. The challenge entry screen (`hq_overlays.gd` → `build_challenge_overlay`)
+is the case that actually broke: it pinned a 480×210 body in raw logical pixels and
+went cramped the moment `UI_SCALE` stopped being 1. Both numbers are AUTHORED sizes
+and both belong multiplied by `UI_SCALE`, exactly like `hq_carpark.gd` already does
+for its column. The guard is
+`test_menu_flow.gd::test_hq_challenge_header_never_breaks_across_lines`, which asserts
+the relation (the headline strings still fit on one line on every kind tab) rather than
+either number, so it survives a retune of the box or the type scale.
+
+**A heading that must not wrap is a WIDTH problem, not a text-flow one.** The
+tempting fixes are both wrong: `AUTOWRAP_OFF` alone makes the Label's minimum width
+its entire string, which propagates up and widens the box past whatever
+`set_body_width` pinned (so the panel now resizes under content that changes length),
+and `clip_text` keeps the box still by throwing characters away. If a heading is
+wrapping, the honest answer is usually that something else in its row is eating the
+column. On the challenge screen the kind tabs sat *beside* the title, so the header
+demanded title-width **plus** tab-row-width and the titles got what was left; moving
+the tabs to their own row dropped the demand to the longer of the two and every string
+fits in full, unwrapped and unclipped, at one line of extra height. The guards are
+`test_hq_challenge_header_never_breaks_across_lines` (the strings stay on one line) and
+`test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs` (the box does not resize
+as they change) — the pair is what pins the fix, since either one alone can be passed
+by a bad answer.
+
+Diegetic (in-world) UI scales its MEDIUM by the same factor, never its apparent
+size — the world already got the resolution increase, so content scaled twice
+would read bigger in-world. `WorldPanel.logical_size()` grows by `UI_SCALE`
+(cancelling the widgets' inflation exactly; `SUPERSAMPLE` was turned 4 → 3 to
+keep the per-panel pixel bill flat), and `hq.gd`'s pin readouts scale
+`PIN_LABEL_PX` + `PIN_LABEL_FONT_SIZE` by `UI_SCALE` while dividing
+`PIN_LABEL_PIXEL_SIZE` by it, so the box keeps its exact world-metre size and
+only gains texture resolution. Truly canvas-independent art (e.g.
+`overworld_marker.gd`'s meter-sized star textures) stays authored.
 
 Tune the palette / type scale / spacing in **`scripts/ui_theme.gd`**, then
 regenerate the theme:

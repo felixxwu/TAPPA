@@ -774,6 +774,20 @@ func has_nitrous() -> bool:
 ## cushion over P2 while leading). Only inside an active rally session, which is where
 ## an opponent field exists. Replaced the old every-few-turns "vs P1" pace popup.
 @export var hud_position_enabled := true
+## How long (seconds) a fresh multiplayer lobby round is HELD at the line before every
+## client releases it — the join window that lets players who enter within it start
+## together. All clients compute the same release instant from the shared round's
+## started_at_ms plus this, on the server-corrected clock, so the start is synchronised
+## with no extra coordination. 0 releases immediately (Phase A behaviour).
+@export var lobby_start_hold_seconds := 30.0
+## How long (seconds) after a lobby round ENDS until the next one starts — the
+## intermission the post-stage countdown counts through. Written into the shared round
+## document as the scheduled start, so every client agrees on the instant.
+@export var lobby_intermission_seconds := 60.0
+## How long (seconds) before the next round's scheduled start a client leaves the
+## finished world and starts loading the next map, so generation (~15s) completes
+## before GO rather than eating into the race.
+@export var lobby_preload_lead_seconds := 30.0
 ## How long (seconds) a transient in-run HUD tag (the corner-cut flash) stays on screen
 ## before it fades out.
 @export var hud_popup_show_seconds := 3.0

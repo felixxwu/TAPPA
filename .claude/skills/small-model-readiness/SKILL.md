@@ -17,6 +17,36 @@ checkout on its own judgement, like `optimise-test-suite` and unlike
 `housekeeping`. It **never commits** — the user owns committing and reverting.
 It itemises everything it did in a round report afterwards.
 
+**Nothing that matters may live only in context.** A `/loop`-driven round runs in
+the SAME session as every round before it, so context piles up until the harness
+summarises it — at a moment it chooses, mid-round, discarding whatever it judged
+unimportant. You cannot control when that happens, so do not build the round on
+the assumption that it won't.
+
+The invariant is the protection; compaction is only a mechanism for it:
+
+- **Write it down before you need it.** `rounds/NNN.md`, `tasks.md`, `solved.md`,
+  `baseline.md` and `test-mode.md` are the round's memory; the conversation is
+  scratch. This is why §2.0 insists the report is appended to as things happen
+  rather than reconstructed at the end — a summarisation mid-round then costs
+  nothing but re-reading a file. Round 011 survived one this way: attempt scores
+  went to disk BEFORE diagnosing, so nothing was lost.
+- **The exposed window is between a probe returning and its scores hitting disk.**
+  The diff and the test output exist nowhere else in that gap. Close it fast —
+  and in drill mode, where §D3a makes grading the parent's own work, treat
+  "record the four axis scores" as the first thing you do with a returned probe,
+  not the last.
+- **Compact at the top of each round IF the harness exposes a way to.** Doing so
+  keeps rounds starting from a comparable context size instead of each one
+  starting more degraded than the last. Never compact between a probe dispatch
+  and its grading.
+- **If it does not — and as of round 011 an agent running this loop had no
+  compaction tool at all, only automatic harness-side summarisation — record that
+  in the round report and rely on the invariant above.** Do not treat this as a
+  failed mandatory step (a round that opens by failing a mandatory step teaches
+  the reader to skip mandatory steps), and never substitute a self-written summary
+  for the round's on-disk state. The user can type `/compact` between rounds.
+
 **One round per invocation.** End by printing `CONTINUE` or `STOP` and the
 reason. `/loop /small-model-readiness` drives the rounds; do not loop internally.
 **When driven by `/loop` in dynamic (self-paced) mode, schedule the next round to
@@ -69,7 +99,10 @@ spends the round on that fix; steps 1–2 and 9–12 still apply in full.)
     skipped under test mode `none`)
 6.  Grade each diff, 4 axes (§2.4)
 7.  Taxonomise every failure into a cause (§2.5)
-8.  Fix top 1–3 causes in the main checkout, layer coverage per fix (§2.6)
+8.  Fix top 1–3 causes in the main checkout, layer coverage per fix (§2.6).
+    **A round may correctly fix NOTHING** — a refutation is a result; do not
+    invent a cause to fill this step. If a fix is an experiment, write its
+    prediction and refutation condition BEFORE the next probe (§2.6)
 8a. **Durability pass — make each fix survive the NEXT file** (§2.6a). Not
     optional and not foldable into step 8: a fix applied to today's files decays
     the moment someone adds one.
@@ -235,7 +268,8 @@ the tree happened to be fully committed; no later round will be.
 Per sampled task:
 
 ```bash
-# VERIFIED round 002 (seed + transplant); rubric exclusion verified post-002
+# VERIFIED round 002 (seed + transplant); rubric scrub VERIFIED round 011
+# (per-line tags inside — the scrub ran, its guard line did not)
 cd /Users/felixwu/git/rallygodot
 SCRATCH="$(mktemp -d)"                       # NOT /tmp/fixed-name, NOT $CLAUDE_JOB_DIR
 git diff HEAD > "$SCRATCH/loop.patch"
@@ -250,17 +284,61 @@ git -C "$WT" apply "$SCRATCH/loop.patch"     # tracked uncommitted changes
 git ls-files --others --exclude-standard -z \
   | grep -zv -e '^evals/small-model/' -e '^todo/small-model-readiness' \
   | tar --null -T - -cf - | (cd "$WT" && tar xf -)
-# The exclusions SEAL THE MEASUREMENT: tasks.md carries every hidden rubric and
-# rounds/*.md describe the traps — transplanting them hands the probe the answer
-# key (found leaking in round 002).
+# The exclusions above only filter the TRANSPLANT, so they only ever covered the
+# case where these files are untracked. They are now tracked, and `git worktree
+# add ... HEAD` restores them into $WT directly — so the scrub below is what
+# actually seals the measurement, and it must run unconditionally, AFTER worktree
+# creation, regardless of tracked-vs-untracked status:
+# VERIFIED round 011 (executed in bash AND zsh, both directions: clean case
+# prints "scrub clean" and exits 0; leak case prints the path, the ABORT line,
+# and exits 1). The path list is written ONCE and used by both the scrub and its
+# check — two independent copies of the same four paths is the
+# enumerated-checklist rot §2.6 warns about, and they would drift the first time
+# a fifth path is added.
+RUBRIC_PATHS=(evals/small-model todo/small-model-readiness.md \
+              .claude/skills/small-model-readiness .claude/skills/small-model-readiness-drill)
+for p in "${RUBRIC_PATHS[@]}"; do rm -rf "$WT/$p"; done
+leaked=0
+for p in "${RUBRIC_PATHS[@]}"; do
+  if [ -e "$WT/$p" ]; then echo "RUBRIC STILL PRESENT — ABORT: $p"; leaked=1; fi
+done
+[ "$leaked" = 0 ] || { echo "ABORTING: probe worktree carries the answer key"; exit 1; }
+# Notes on the spelling, so a future edit does not undo them:
+#   - `[ -e ]` not `ls`: no stderr at all, so "does my shell redirect stderr?"
+#     stops being a question anyone has to answer.
+#   - `if ...; then ...; fi` not `[ -e ] && echo`: the && form exits non-zero when
+#     the last path is absent — i.e. on SUCCESS — which aborts the round under
+#     `set -e`.
+#   - the `leaked` flag and the non-zero exit are the point: a guard that only
+#     PRINTS is detection, and §2.6 is explicit that detection is not prevention.
+#     This one stops the round. Do not reduce it back to an echo.
+#   - the message names WHICH path leaked, so whoever hits it knows whether it is
+#     the task bank or a skill file.
+# WHY: tasks.md carries every hidden rubric, rounds/*.md describe the traps, and
+# the skills themselves describe the graders and the fix discipline — any of them
+# in $WT hands the probe its answer key. Round 002 caught the untracked half of
+# this; the tracked half stayed latent until the eval files were committed
+# (HEAD 4075355) and round 011 found the rubric sitting in a probe worktree one
+# dispatch before measurement. Never make this exclusion conditional again.
 cp -R .godot "$WT"/.godot                    # warm class cache — a cold worktree
                                              # pays a full --import rebuild
                                              # (WARMUP_TIMEOUT default 300 s)
 ```
 
-**Verify the seed landed before dispatching** — diff a file you know this loop
-changed against the worktree copy, and abort the round if it is absent. A probe
-against an unrefactored tree measures nothing and wastes the round.
+**Verify the seed landed before dispatching** — confirm the worktree CONTAINS
+this round's work, and abort if it does not. A probe against an unrefactored tree
+measures nothing and wastes the round. Do not phrase this check as "diff the
+changed file against the worktree copy": that assumed the loop's work is
+uncommitted, and once it has been committed `git diff HEAD` is empty and the
+transplant is a legitimate no-op. Grep the worktree for a symbol or line the work
+introduced instead — a presence check works whether the work is committed or not.
+
+**Then verify the scrub landed too**, in the same breath: `ls "$WT/evals/small-model"`
+must find nothing. The seed check and the scrub check fail in opposite directions
+and neither implies the other — in round 011 the seed check was GREEN (the
+previous rounds' symbols were present in the worktree) at the same moment the
+entire task bank was sitting beside them. A green seed check reads as "this
+worktree is correct" and means nothing of the kind.
 
 Then dispatch one plain `Agent` per task, in parallel, `model: "haiku"` — **no
 `isolation` option**. The prompt is the bare task text, the worktree boundary,
@@ -312,6 +390,23 @@ only the last — a red in an earlier selection scrolls away. Check every
 never trust a piped exit code: grep's status wins the pipe (both found in
 rounds 001–002).
 
+**Two more ways a green run reads as red, or a no-run reads as green. Both hit
+round 014; both cost a wrong conclusion if you skim.**
+
+- **`Passing Tests` < `Tests` usually means PENDING/RISKY, not failing.** GUT
+  prints `Risky/Pending N` and still ends `ALL TESTS PASSED`. Round 014's closing
+  suite showed `39/41` and `308/311` and both were pre-existing fixture skips
+  ("no blocked car in this fixture lineup"). **The `ALL TESTS PASSED` /
+  `TESTS FAILED` line is the verdict; the counts are not.** Do not report a
+  shortfall as red without reading it.
+- **A `--fast <name>` that matches NO test file prints nothing at all** — no
+  error, no warning, no summary. It is silence, and silence next to other
+  selections' output reads as a pass. Round 014 closed with two names
+  (`test_star_economy`, `test_progress`) that matched nothing; the real files
+  were named differently and one did not exist. **Count the summary blocks
+  against the names you passed.** If you passed seven names and got five
+  `Totals`, two selections did not run and you have not tested what you think.
+
 ### 2.4 Grade
 
 One Opus grader subagent per attempt. It reads the diff plus your recorded test
@@ -343,6 +438,42 @@ doc. As of round 001 that list is **EMPTY** (the once-flaky
 Audio-mixer SIGSEGVs are different: they are signal deaths, retried by
 `run_tests.sh` via `TEST_CRASH_RETRIES`, and never scored.
 
+**The convention axis is not always measuring this codebase. Know when it is
+measuring the HARNESS instead.** Rounds 012 and 013 spent themselves establishing
+this and it should not be re-derived:
+
+- Round 012 split a 2,539-line `features/menus.md` into four indexed area docs on
+  the hypothesis that the doc was too hard to FIND. Re-probed: the probe edited
+  no doc. Refuted.
+- Round 013 moved information the probe needed into the doc so it had to open it.
+  It did open it — and **cited it by line range in its own report** — and still
+  edited nothing. Refuted.
+
+What is left is round 008's conclusion: the probe's model of "done" is "the code
+works", and the only thing that reliably changes that is a check it **cannot
+self-certify past** — i.e. a failing test. **Probes are forbidden to run tests in
+every round of this loop, by construction.** So:
+
+> When a task scores **3/3/x/x with convention as the sole blocker across two
+> rounds**, stop attacking it. Record it as **harness-limited**, move it out of
+> the sampling pool, and say in the report that its convention score measures the
+> probe harness rather than the repo.
+
+This does not weaken the other three axes, which are measured honestly, and it
+does not excuse a real navigation or correctness gap. It means the loop should
+spend its rounds where it still has signal. §5's stop condition inherits this: a
+task blocked only on the tail is not evidence the codebase is unready.
+
+**The exception, and it is the useful one (round 014):** probes DO update a doc
+when their change makes a statement in that doc **false**. Round 014's probe
+rewrote the exact sentence its change falsified, unprompted. They do not update a
+doc merely because their change is *relevant* to it. So the lever is not
+"document the capability" — it is **write docs as falsifiable statements about
+the current system** ("there is no such counter", "these three fields exist").
+Round 003 wrote such a sentence as a warning; it worked as a tripwire eleven
+rounds later. Weigh this when grading convention: a doc left unedited may mean
+the doc asserted nothing the change could break.
+
 ### 2.5 Taxonomise
 
 Every failure gets a *cause*, not a description. Starter set, extensible:
@@ -353,11 +484,56 @@ Every failure gets a *cause*, not a description. Starter set, extensible:
 - hidden coupling across files
 - convention undiscoverable at the point of use
 - unclear which tests cover the area
+- **a frozen assertion blocking a sanctioned change** — an EXISTING test pins a
+  product choice that a live bank task exists to change, so no correct
+  implementation can reach green. Round 009 established the rule for guards this
+  loop writes; nothing said to go looking for pre-existing tests that are already
+  freezes. `test_pause_menu_is_keyboard_navigable` pinned "open() focuses
+  Resume", rounds 005 and 006 both saw it pass and called it incidental, and T002
+  was unwinnable for three rounds for a reason with nothing to do with
+  legibility. **Probes cannot discover this** — they cannot run tests — so it is
+  yours to check: before blaming a repeated failure on the codebase, read the
+  `expected_tests` for an assertion that forbids the task.
 
 ### 2.6 Fix
 
 Top 1–3 causes by frequency × cost, **in the main checkout**. Read §3 before
 touching anything — the objective is small-model legibility, not line count.
+
+**A round may legitimately fix NOTHING, and that can be its best outcome.** This
+step's wording ("fix the top 1–3 causes") creates real pressure to land a change
+so the report has something in it. Resist it. A round that **refutes a
+hypothesis** has produced knowledge the loop cannot get any other way, and
+inventing a fix to fill the section actively destroys that — you can no longer
+tell which of the two things moved the next measurement.
+
+Round 013 is the worked example: it eliminated both available explanations for
+why probes ship code without docs (see §2.4), changed one comment, and was the
+most valuable round of its sequence. Round 012, by contrast, landed a large,
+genuinely good structural fix **and was sold as solving a problem it did not
+solve** — the honest half of its value only became visible when round 013
+measured it.
+
+So: if the round's finding is a refutation, say so plainly, give it its own
+heading in the report, and write **`CONTINUE` with a changed target** rather than
+manufacturing a cause. What the round owes in that case is the *next* hypothesis
+or an explicit "no further hypothesis exists" — not a diff.
+
+**Hypothesis discipline — write the prediction BEFORE the probe returns.** When a
+fix is aimed at a mechanism you are inferring rather than a defect you can see,
+it is an **experiment**, and it must be recorded as one *in advance*:
+
+- state what you expect the next probe to do if the mechanism is real;
+- state **what result would refute it**;
+- write both into `rounds/NNN.md` before dispatching.
+
+This costs two minutes and is the difference between a measurement and a story.
+Round 013 wrote its refutation condition in advance and so could not
+reinterpret the outcome afterwards; round 012 fixed its acceptance test in
+advance ("a probe must reach the right section by grepping the request's own
+nouns") and so reported 7/10 as a partial instead of talking itself into a pass.
+Both of those are the *uncomfortable* readings, which is exactly why the
+discipline is worth the two minutes.
 
 **For every fix, walk the failure back to its earliest catchable moment and ask
 at each layer: does my fix fire HERE?**
@@ -518,6 +694,17 @@ pass as done:
    convention points at. Small models clone neighbours; make the nearest neighbour
    correct. Note that a sibling only propagates a pattern if the NEW file is
    plausibly created by copying it.
+   **This tier is ranked too generously, and round 011 is the counter-evidence.**
+   A probe wrote a test whose precondition line failed — reproducing a bug that the
+   ADJACENT test, seventeen lines above in the same file, fixes and explains by name
+   in a twelve-line comment, with the one-line call that establishes the precondition
+   sitting right there. It wrote twenty fresh lines instead of reading the neighbour.
+   So: **a sibling only counts as durability when copying it is genuinely the
+   CHEAPEST route to the goal.** A sibling that must be *found, read and understood*
+   loses to writing something new from scratch, and a prose comment on the sibling
+   explaining why it is shaped that way does not survive the comparison. If the
+   pattern matters, prefer tier 1 or 2; treat a sibling as a bonus, not as the
+   mechanism you are relying on.
 4. **A point-of-use note** — the weakest, and acceptable only where nothing above
    can apply (e.g. a fact about a value a test may not assert). Never let a note be
    the sole durability mechanism for a convention about FILES; a new file does not
@@ -525,6 +712,17 @@ pass as done:
 5. **`CLAUDE.md`** — project-wide rules a person will read. Real, but remember the
    loop's own evidence: a small model under context pressure does not reliably read
    it, which is why `CLAUDE.md` is a supplement to a test and not a substitute.
+6. **NONE — this is an experiment.** An honest answer, and it belongs on the list so
+   that "pick a tier" stops being a reason to attach a ratchet to a change that does
+   not warrant one. Use it when the change exists to TEST a mechanism rather than to
+   close a known defect: nothing enforces it and nothing carries it forward, and
+   saying so is more useful than a guard invented to satisfy this section. It comes
+   with an obligation, not a discount — state the prediction and the refutation
+   condition per §2.6 **before** the next probe runs, and report the outcome either
+   way. Round 013's comment-deduplication was one of these and was labelled as one;
+   round 009's mistake was the opposite — pressure from this section produced a
+   "ratchet" that asserted an equality only true while a tunable sat at its default,
+   and it reddened a sanctioned change a round later.
 
 **The baseline-allowlist ratchet.** When a property should hold for all future files
 but does not hold for all current ones, do not give up on the ratchet and do not
@@ -618,6 +816,13 @@ comply. A fix whose durability line reads "nothing" is carried into the backlog 
 unfinished, not filed under Fixed. Update
 `todo/small-model-readiness.md`, `solved.md`, and reconcile rubrics.
 
+**Record refutations as first-class results.** If the round tested a hypothesis
+(§2.6), the report must carry the prediction as written *before* the probe ran,
+the outcome, and the verdict — confirmed, refuted, or inconclusive. A refuted
+hypothesis gets its own heading; it is not a footnote to a fix. And when a round's
+fix was labelled tier-6 (an experiment, §2.6a), the report must say whether it
+worked, so the next round does not inherit it as settled.
+
 **Rubric reconciliation is round-blocking.** The fix step renames and splits the
 very files the rubrics name; re-derive every `expected_files`/`expected_tests`
 you invalidated, this round. Otherwise later rounds grade navigation against
@@ -708,11 +913,33 @@ full-suite runtime regression against the baseline; a failed mechanical
 post-check; an unreconciled rubric; an unjustifiable `Totals` delta; or a
 refactor needing a decision the user must make.
 
-Otherwise `CONTINUE`, with the round's retirements and causes.
+Otherwise `CONTINUE`, with the round's retirements and causes. **`CONTINUE` with
+a changed target is a full-strength verdict** — a round that refuted a hypothesis
+and fixed nothing (§2.6) ends this way, and should say what the next hypothesis
+is, or that none exists.
+
+**Do not count a harness-limited task toward the stop condition, in either
+direction.** A task stuck at 3/3/x/x with convention the sole blocker (§2.4) is
+not evidence the codebase is unready, and clearing it is not evidence that it is.
+Judge the condition on tasks whose remaining gaps are navigation or correctness.
+
+**A user-requested stop is not the stop condition firing.** If the user ends the
+loop, say so explicitly in the verdict and record what the bank actually looked
+like — live tasks, discards, the last scores — so a later reader does not mistake
+it for the loop concluding. Round 014 ended this way with nine live tasks.
 
 If a `/loop` is driving this skill, pair the verdict with the schedule: `CONTINUE`
 → schedule the next round immediately (minimum delay, see the Overview); `STOP` →
 stop the loop rather than scheduling another wakeup.
+
+**If a `/loop` wakeup fires while the PREVIOUS round is still in flight, do not
+start a new round.** `/loop`'s dynamic mode says "run the parsed prompt now", and
+obeying that literally would open round N+1 on top of an unclosed round N —
+corrupting the measurement and stranding probe worktrees on disk. Check first:
+an un-finished `rounds/NNN.md`, a live probe subagent, or anything under
+`.claude/worktrees/` means a round is open. Reschedule a fallback and let the
+in-flight work finish. This happened in round 013 and had to be reasoned around;
+the wakeup is a *heartbeat*, not an instruction to re-enter.
 
 **There is no round cap and no cost ceiling** — this is deliberate. The loop runs
 until the stop condition genuinely fires. Report each round's cost in its report

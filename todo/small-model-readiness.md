@@ -9,16 +9,111 @@ Design: `docs/superpowers/specs/2026-08-18-small-model-readiness-loop-design.md`
 
 ## Open
 
-**THE LOOP WAS STOPPED BY THE USER AFTER ROUND 010.** This file is the handoff. Items are
-ordered by what the evidence says is most valuable, not by age.
+**THE LOOP WAS RESTARTED AT ROUND 011, in DRILL mode** (`/small-model-readiness-drill`, its
+first ever execution). Round 010's handoff below still stands except where round 011 changed it.
+Items are ordered by what the evidence says is most valuable, not by age.
+
+**Round 011 (drill, T002) closed:**
+- The **rubric leak in the base skill's §2.2**. The exclusion only ever filtered *untracked*
+  files; once `evals/small-model/` became tracked, `git worktree add ... HEAD` restored the whole
+  task bank — including every hidden rubric — into the probe worktree. Caught before dispatch.
+  Fixed in both skills (by the authoring peer session) as an unconditional post-creation scrub.
+- **A frozen assertion that made T002 unwinnable for three rounds.**
+  `test_pause_menu_is_keyboard_navigable` pinned a product choice a live bank task exists to
+  change. Renegotiated; proven green both with and without the sanctioned change. Added to the
+  §2.5 cause taxonomy as "a frozen assertion blocking a sanctioned change".
+- **`remember` is now a `MenuNav` capability** (~50 call sites), with `MenuNav.of()` and
+  `forget()`, a filesystem-derived one-owner-for-opening-focus ratchet, and the framework's
+  `# Docs:` breadcrumb repointed from `features/world-panel.md` (which does not document it) to
+  `features/menus.md`.
+
+**Round 011 opened — and this is now the top structural item:**
+
+0. ~~**`features/menus.md` is ~2,500 lines...**~~ **DONE — round 012 (structural).** Split into
+   `menu-navigation.md`, `settings.md`, `modals.md` and `hq.md`; `menus.md` is now 492 lines.
+   Acceptance test 7/10 nouns (was ~3) — measured in `rounds/012.md`, **not** a pass. Two
+   residual misses (`pause`, `keyboard`) both trace to `features/overworld.md` at 1,817 lines,
+   which is **the next structural target** and is already frozen on the new doc-size baseline.
+   Also fixed on the way: `settings_menu.gd`'s breadcrumb pointed at `features/benchmark.md`.
+
+0a. **THE TAIL IS NOT MEASURABLE BY THIS LOOP — round 013's negative result, and the most
+   important thing on this list.** Two rounds and five probes eliminated both available
+   hypotheses for why probes ship code without docs or tests:
+   - *the doc is too hard to find* — refuted by round 012 (split `menus.md` 2,539 -> 492; probe
+     still edited nothing);
+   - *the doc is never opened* — refuted by round 013 attempt 2, which **opened
+     `features/menu-navigation.md`, cited it by line range, and still did not edit it**.
+
+   What remains is round 008's conclusion: the probe's model of "done" is "the code works", and
+   the only intervention that changes that is a check it **cannot self-certify past** — a failing
+   test. Probes are forbidden to run tests, by construction, in every round. So on tasks whose
+   only gap is the tail, the convention axis measures the HARNESS, not the codebase.
+
+   **Consequences:** (a) stop sampling tail-only tasks (T002, T004, T009 are all 3/3/x/x with
+   convention the sole blocker) — sample navigation/correctness gaps, where the loop still has
+   signal; (b) §2.4's convention axis and §5's stop condition assume convention is a codebase
+   property, which on these tasks it is not — a SKILL change, deliberately left to the user or the
+   skill author rather than made unilaterally.
+
+0b. ~~**Re-probe T002 out of "Too hard" in round 013.**~~ **DONE — see 0a.** Result: 3/3/0/2 twice.
+   Navigation and correctness solid, convention unmoved. Original text:
+   **Re-probe T002 out of "Too hard" in round 013.** It was discarded for doc-location cost,
+   which is exactly what round 012 attacked. A clean solve is the strongest evidence the fix
+   worked; a convention failure means the cause was never doc location.
+
+**Old text of item 0, for context:**
+   **`features/menus.md` was ~2,500 lines covering every menu in the game, and that was the
+   blocker.** Three probes in a row solved T002's code (one of them in a single line) and all
+   three updated no doc at all — while one of them wrote a test unprompted, so this is not
+   doc-writing reluctance, it is **doc-location cost**: finding the insertion point is more
+   expensive than the change. T002 was discarded `too_hard` on this. **The next round is declared
+   STRUCTURAL against this file.** Acceptance test, fixed in advance: a probe must reach the right
+   section by grepping the request's own nouns ("pause", "settings", "gear", "blur") without
+   reading an index first. Splitting it into parts that still need each other's context is the
+   `hq.gd` mistake in doc form and does not count.
+
+**Also learned in round 011, worth acting on:** §2.6a ranks "a copyable sibling" third among
+durability mechanisms, above a point-of-use note. Round 011 is counter-evidence. Attempt 3's probe
+wrote a test whose precondition line failed — reproducing a bug that the **adjacent test,
+seventeen lines above, fixes and explains by name in a twelve-line comment**. A prose-annotated
+sibling did not propagate. Treat "copyable sibling" as durable only when copying it is genuinely
+the cheapest route to the goal.
 
 **Round 010 closed:** item 25 (doc slot-count drift — now guarded by
 `test_no_feature_doc_states_a_slot_member_count`), and the round-009 `map_pos` template hazard
 (pasteable literal restored, both templates synced, both guarded).
 
+**ROUND 014 WAS THE LAST ROUND — the user stopped the loop here.** The skill's own stop
+condition did NOT fire; nine tasks are live and T005 scored 3/2/2/3, not clean.
+
+**Round 014 closed:** the undeclared-persisted-key defect. A probe added a `rallies_finished`
+counter without declaring it in `_default_profile()`, so `_migrate`'s key backfill never seeded
+it — silent, and every test passed. Now guarded by
+`test_every_persisted_key_written_is_declared_in_the_default_profile`, source-derived, validated
+red against the probe's tree and green on main.
+
+**Round 014's finding, which supersedes round 013's negative result and is the most useful thing
+the loop has produced about docs:**
+
+> **A probe updates a doc when its change makes a statement in that doc FALSE. It does not update
+> a doc merely because its change is relevant to that doc.**
+
+This fits every observation: round 010's T009/T006 probes changed systems their docs described;
+round 014's probe falsified one sentence and rewrote exactly that sentence; round 013's probe
+*used* a documented capability, invalidated nothing, and edited nothing even though it had opened
+the doc and cited it by line range. **It inverts the usual advice:** docs written as capability
+descriptions ("you can pass `remember = true`") will not be maintained by these agents; docs
+written as **falsifiable statements about the current system** ("there is no such counter") will.
+Round 003 wrote that sentence as a warning; it worked as a tripwire eleven rounds later.
+
+**FIRST THING TO DO IF THE LOOP RESUMES:** re-probe T005. Round 014's ratchet is **unmeasured** —
+the round ended after one attempt at the user's request. Round 013 predicts a test-based guard is
+invisible to a probe that cannot run tests, which would make it a repo-protecting fix rather than
+a probe-facing one. Worth knowing either way.
+
 **Top recommendations, if this work is picked up again:**
 
-A. **Run a full `./run_tests.sh`.** It is now EIGHT rounds overdue; ~+56 tests have been added
+A. **Run a full `./run_tests.sh`.** It is now NINE rounds overdue (round 011 also ran `fast`); ~+56 tests have been added
    and never verified together against round 002's baseline (3255 tests / 159,957 asserts /
    335.1 s). Every round since 004 ran in `fast` mode, which cannot detect this repo's
    characteristic failure — order-dependent cross-file leakage. This is the single highest-value

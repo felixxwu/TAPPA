@@ -56,8 +56,23 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   model fails HERE, the problem is navigation, not difficulty
 
 ### T002 — "Make the pause menu remember which row was selected when you reopen it."
-- status: live
-- clean_solves: 0  (rounds 003, 005, 006 non-clean)
+- status: **too_hard (round 011, 3 attempts)** — moved out of the live pool; see
+  "Too hard" at the foot of this file. NOT retired and NOT solved: a later round may
+  make it winnable, and round 011's fixes moved it a long way.
+- clean_solves: 0  (rounds 003, 005, 006 non-clean; round 011 drill 3/3/0/2 -> 3/2/0/2 -> 3/2/1/2)
+- RUBRIC NOTE round 011 (**supersedes the round-005/006 notes on the incidental pass —
+  the assertion they describe no longer exists**): `test_pause_menu_is_keyboard_navigable`
+  was renegotiated. It no longer pins "open() focuses Resume" unconditionally; it asserts
+  that with NOTHING REMEMBERED the cursor lands on `first`, establishing that precondition
+  via `MenuNav.forget()` instead of relying on file order, and a sibling test asserts the
+  cursor always lands inside the menu whatever is remembered. **Do not re-add the old
+  assertion.** Also: `remember` is now a `MenuNav.attach` opt, so the correct answer to this
+  task is ONE LINE plus a doc line plus a test — grade a four-site hand-rolled focus tracker
+  as a navigation miss, not as thoroughness.
+- RUBRIC NOTE round 011 on expected_docs: `features/menus.md` -> "Menu navigation" now
+  documents `remember` generically. What is still owed by a probe is the **Pause menu**
+  section noting that this menu opts in. Three probes in a row updated no doc at all, so
+  this remains a real, unmet requirement — do NOT delete it to make the task passable.
 - RUBRIC NOTE round 006: probed again, same result (2/3/0/2) — correctness 3,
   convention 0, and the incidental pass at `test_pause_menu.gd:121` left in place a
   second time. Two graders have now confirmed the incidental pass is real: the file
@@ -77,7 +92,8 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - areas: menus, ui
 - expected_files: `scripts/pause_menu.gd` (`open()` currently always focus-grabs
   `_resume_button`; the `_settings_button` return-focus precedent is right there)
-- expected_docs: `features/menus.md`
+- expected_docs: `features/menus.md` -> "Pause menu" for the screen itself;
+  `features/menu-navigation.md` for anything about focus behaviour (**split out in round 012**)
 - expected_tests: `menu_nav`, `menu_flow`
 - test_conventions: menu changes need a keyboard+gamepad nav test (CLAUDE.md);
   no pinning of focus indices as tunables
@@ -171,7 +187,19 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T005 — "Track how many rallies the player has finished and show it on the profile."
 - status: live
-- clean_solves: 0  (round 003 non-clean)
+- clean_solves: 0  (round 003 non-clean; round 014 3/2/2/3 non-clean)
+- RUBRIC NOTE round 014 (**3/2/2/3 — best result this task has had, and the first
+  completion-3 in the loop**): round 003's rename landed and WORKED. The probe did not
+  mislabel the podium count; it added a real `rallies_finished` counter, wired it in
+  `rally_session.gd` after `complete_rally()` so it counts every finish including DNF, put a
+  career-stat row on the map table, AND updated `features/save-persistence.md` — including
+  rewriting the "there is no finished-in-any-position counter" sentence its own change
+  falsified. One defect: it never declared `rallies_finished` in `_default_profile()`, so
+  `_migrate`'s key backfill never seeds it (silent; every test passed). **Round 014 added
+  `test_every_persisted_key_written_is_declared_in_the_default_profile` to catch exactly
+  that** — validated red against this probe's tree, green on main. Grade a future attempt
+  down if it writes a profile key it does not declare. `features/progress.md` still went
+  unupdated.
 - RUBRIC NOTE round 003: Save.completed_rally_count() counts TOP-3 finishes, not
   finishes — a correct attempt must either surface it honestly or use a true
   finish count. Probe's hq_overlays.gd title-label approach was otherwise sound
@@ -250,7 +278,8 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - areas: menus, settings, rendering
 - expected_files: `scripts/settings_menu.gd` (1432 lines), the rendering site,
   and the persisted setting
-- expected_docs: `features/menus.md`, `features/rendering.md`
+- expected_docs: `features/settings.md` (**moved out of `menus.md` in round 012** — the
+  settings half used to be a subsection under the HQ heading), `features/rendering.md`
 - expected_tests: `settings`, `menu_nav`
 - RUBRIC CORRECTED round 001: `Save.get_setting`/`set_setting` is a generic
   settings dict — NO `SCHEMA_VERSION` bump is needed. The real requirement is
@@ -416,3 +445,39 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   probe that references a `.wav` has invented an asset — round 003's dangling-region-
   path failure in a new area); a beep that retriggers every frame instead of once per
   count; and whether the probe notices `Config.data` has no sfx volume knob.
+
+
+---
+
+## Too hard
+
+Tasks that outran the drill loop's attempt cap. **Not retired, not solved.** Every fix made
+while drilling them was kept — a discard means the task outran the loop, not that the work
+was wasted. A later structural round may make one winnable; re-probe before assuming.
+
+### T002 — "Make the pause menu remember which row was selected when you reopen it."
+- discarded: round 011, drill mode, 3 attempts (`MAX_ATTEMPTS`)
+- attempt curve: **3/3/0/2 -> 3/2/0/2 -> 3/2/1/2**
+- **AMENDED round 013 — the round-011 reason below is REFUTED.** T002 was re-probed twice after
+  round 012 split `features/menus.md` (2,539 -> 492 lines, with `menu-navigation.md` carrying this
+  task's subject). Both probes scored **3/3/0/2**: one line, correct, suite green, no doc, no test.
+  Attempt 2 **opened `menu-navigation.md`, cited it by line range, and still did not edit it.** So
+  the blocker is neither doc-location cost nor doc-ignorance. It is that the probe's model of
+  "done" is "the code works", and the only thing that changes that is a check it cannot
+  self-certify past — i.e. a test, which probes are forbidden to run. **This task's convention
+  score measures the probe harness, not this codebase.** On navigation and correctness it is
+  3/3 and stable across four probes. Do NOT re-probe it to measure the codebase; re-probe it only
+  if the harness ever lets probes run tests.
+- ~~superseded~~ **why, in cause terms — the failures REPEATED, they did not wander.** Navigation was 3 at
+  every attempt. Convention was the blocker every time, on the same two obligations: the
+  `features/menus.md` entry (missed 3/3) and a working test (missed 3/3, though attempt 3
+  wrote one that did not pass). A repeating cause means a structural defect the round did not
+  reach — per §D2 that is "fixing the wrong layer", not a broad task.
+- **the unreached layer:** `features/menus.md` is ~2,500 lines covering every menu in the game.
+  The obligation is not that probes refuse to write docs — attempt 3 proved willingness by
+  writing a test unprompted. It is that **locating the insertion point in a 2,500-line monolith
+  costs more than the change itself**. That is the layer-1 target and it needs a structural
+  round.
+- **caveat on the earlier numbers:** rounds 005 and 006 graded this task with a frozen
+  assertion standing that made a correct implementation unable to reach green (see
+  `rounds/011.md` -> "Contamination notice"). Their convention-0 scores are not clean readings.

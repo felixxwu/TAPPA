@@ -91,3 +91,70 @@ func test_every_feature_doc_is_linked_from_the_readme() -> void:
 		assert_true(index.find(name) != -1,
 			("features/%s is not linked from features/README.md — add it to the feature " +
 			"index table, or nobody starting from the README will find it") % name)
+
+
+# --- Area docs must stay findable by size (ratchet) ----------------------------
+# The defect this guards, found by the small-model-readiness loop in rounds 011-012:
+# `features/menus.md` reached 2,539 lines covering every menu in the game, with
+# "Adding a setting" buried as a subsection under a heading named after a different
+# screen. Three probes in a row solved their task's CODE and updated no doc at all —
+# one of them wrote a test unprompted, so it was not doc-writing reluctance. It was
+# doc-LOCATION cost: finding the insertion point cost more than the change.
+#
+# A line count is a proxy for "can a reader find their section", but it is the proxy
+# that actually broke, and it is machine-checkable. The fix a failure asks for is
+# always the same and is stated in the message: move a self-contained topic into its
+# own area doc and index it — which is this folder's existing convention.
+const DOC_LINE_CAP := 1200
+
+# BASELINE, in the same spirit as test_script_breadcrumbs.gd's:
+#   * a doc NOT listed must stay under the cap — so no NEW monolith can appear;
+#   * a doc listed must not GROW past the size recorded here, so the existing ones
+#     can only shrink and the next addition has to go somewhere findable;
+#   * a doc listed that has fallen under the cap must be REMOVED from the list.
+# Do not add to this list. If you are here because a doc failed, split it.
+const OVERSIZED_BASELINE := {
+	"overworld.md": 1817,
+	"terrain.md": 1310,
+}
+
+
+# Matches `wc -l`: a file ending in a newline has that trailing empty segment dropped,
+# so the number here is the same one you get at a shell and the baseline is checkable
+# by hand.
+func _line_count(name: String) -> int:
+	var text := _read("%s/%s" % [FEATURES_DIR, name])
+	var parts := text.split("\n")
+	var n := parts.size()
+	if n > 0 and parts[n - 1] == "":
+		n -= 1
+	return n
+
+
+func test_no_area_doc_grows_into_an_unnavigable_monolith() -> void:
+	for name in _feature_docs():
+		var lines := _line_count(name)
+		if OVERSIZED_BASELINE.has(name):
+			assert_lte(lines, int(OVERSIZED_BASELINE[name]),
+				("features/%s is on the oversized baseline at %d lines and has grown to %d. "
+				+ "It may only SHRINK. Put your addition in its own area doc (with **Source:** "
+				+ "/ **Tests:** lines and a features/README.md index row) and link it from here "
+				+ "— see features/menu-navigation.md and features/settings.md, both split out "
+				+ "of menus.md in round 012 for exactly this reason.")
+					% [name, int(OVERSIZED_BASELINE[name]), lines])
+		else:
+			assert_lte(lines, DOC_LINE_CAP,
+				("features/%s is %d lines, over the %d-line cap. A doc this size stops being "
+				+ "navigable: a reader looking for one screen cannot find its section, which is "
+				+ "how round 011 lost a task. Split a self-contained topic into its own area "
+				+ "doc, give it **Source:** / **Tests:** lines, and index it in "
+				+ "features/README.md.") % [name, lines, DOC_LINE_CAP])
+
+
+func test_the_oversized_doc_baseline_only_shrinks() -> void:
+	for name in OVERSIZED_BASELINE:
+		assert_true(FileAccess.file_exists("%s/%s" % [FEATURES_DIR, name]),
+			"features/%s is on OVERSIZED_BASELINE but does not exist — remove the entry" % name)
+		assert_gt(_line_count(name), DOC_LINE_CAP,
+			("features/%s is on OVERSIZED_BASELINE but is now under the %d-line cap. Remove it "
+			+ "from the list so it cannot silently grow back.") % [name, DOC_LINE_CAP])

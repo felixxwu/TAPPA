@@ -1303,3 +1303,47 @@ func test_the_legacy_set_satisfies_the_rally_gate() -> void:
 	assert_true(UpgradeLibrary.rally_gate_met("test_part", profile),
 		"a legacy grant opens the gate without the rally")
 	UpgradeLibrary.reset()
+
+
+# --- Every persisted key is DECLARED, not conjured (ratchet) --------------------
+# The defect this guards, found by the small-model-readiness loop in round 014: a probe
+# added a `rallies_finished` counter with `profile["rallies_finished"] = ... + 1` and a
+# `profile.get("rallies_finished", 0)` reader, and never declared it in
+# `_default_profile()`. Everything worked and every test passed — the getter defaults to
+# 0 — but `_migrate`'s key backfill seeds existing profiles ONLY from `_default_profile()`,
+# so the key was absent from every fresh and every migrated profile and sprang into
+# existence on first write. That is inconsistent with every sibling counter
+# (`stars_earned`, `cloud_revision`, `username` and three more all say so in their own
+# comments) and invisible to the suite.
+#
+# Derived from the source, so a field added tomorrow is covered without touching this test.
+# Keys the migration chain writes for its own bookkeeping are exempt by name below.
+const PROFILE_KEY_WRITE_EXEMPT := [
+	"schema_version",  # written by every _migrate_step to advance the chain
+]
+
+
+func test_every_persisted_key_written_is_declared_in_the_default_profile() -> void:
+	var src := FileAccess.get_file_as_string("res://scripts/save_manager.gd")
+	assert_ne(src, "", "could not read save_manager.gd")
+
+	var declared := (Save._default_profile() as Dictionary).keys()
+	var re := RegEx.new()
+	re.compile('\\b(?:profile|p)\\["([a-z_]+)"\\]\\s*=')
+
+	var undeclared: Array[String] = []
+	for hit in re.search_all(src):
+		var key := hit.get_string(1)
+		if PROFILE_KEY_WRITE_EXEMPT.has(key):
+			continue
+		if not declared.has(key) and not undeclared.has(key):
+			undeclared.append(key)
+
+	assert_eq(undeclared, ([] as Array[String]),
+		"these profile keys are written but never declared in _default_profile(): %s. "
+		% str(undeclared)
+		+ "Add each one there with a default. That is not bookkeeping — _migrate() backfills "
+		+ "existing profiles from _default_profile() alone, so an undeclared key is missing "
+		+ "from every fresh and every migrated profile until something happens to write it. "
+		+ "A `.get(key, 0)` reader hides this completely and no test will catch it. "
+		+ "See the `stars_earned` / `cloud_revision` comments for the shape to copy.")

@@ -41,11 +41,15 @@ extends Node3D
 # need the ray→panel→pixel conversion below; key events are forwarded verbatim.
 
 # The logical canvas a hosted tree is laid out against: 16:9 at DisplayStretch's
-# DESIGN_HEIGHT. Read from DisplayStretch rather than hardcoded so the two cannot
-# drift — a panel laid out against a different height than the rest of the game's
-# menus would silently mis-size every authored margin in the hosted tree.
+# DESIGN_HEIGHT scaled by UITheme.UI_SCALE. Read from those two rather than
+# hardcoded so they cannot drift — a panel laid out against a different height
+# than the rest of the game's menus would silently mis-size every authored margin
+# in the hosted tree. The UI_SCALE factor mirrors the screen: hosted widgets are
+# authored-size × UI_SCALE (features/ui-design-system.md → "UI scale"), so growing
+# this canvas by the SAME factor keeps their apparent size on the panel unchanged
+# while the composited texture gains the resolution the sharper world now shows.
 static func logical_size() -> Vector2:
-	var h := DisplayStretch.DESIGN_HEIGHT
+	var h := DisplayStretch.DESIGN_HEIGHT * UITheme.UI_SCALE
 	return Vector2(h * 16.0 / 9.0, h)
 
 
@@ -70,8 +74,9 @@ static func logical_size() -> Vector2:
 # per panel. Affordable because ONE panel is visible at a time and a hidden panel's target is
 # UPDATE_DISABLED (see _apply_visibility), so the bill is one panel's worth, not six. If this ever
 # hurts on a phone, this is the first knob to turn back down — it is a look/perf tunable, and no test
-# pins it.
-const SUPERSAMPLE := 4
+# pins it. Turned 4 -> 3 when logical_size grew by UI_SCALE (540-tall canvas): 3x540 = 1620 target
+# height vs the 4x400 = 1600 this was tuned at, so the per-panel pixel bill stays what it was.
+const SUPERSAMPLE := 3
 
 # Panel height in metres. The width follows from the 16:9 logical aspect, so the panel
 # can never be authored to a shape its hosted tree wasn't laid out for. A look tunable.

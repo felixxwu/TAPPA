@@ -103,8 +103,11 @@ Two surfaces, both in `scripts/hud.gd` ([hud.md](hud.md)):
   `cut_billed` while running. Shows the running event total (`CUT +total_s`),
   not the incident delta, so back-to-back incidents read as one growing tag
   instead of flickering resets. Fades out after `hud_popup_show_seconds`
-  (ticked in `_process`) — it is now the only transient in-run tag, which is
-  what that knob times. No-ops when
+  (ticked in `_process`) — it is the only transient in-run tag, which is
+  what that knob times. It **borrows the permanent standings readout's row**
+  (top-centre, under the pacenote strip) for as long as it shows, so the penalty
+  lands where the player is already looking; the readout returns by itself when
+  the flash lapses. See [hud.md](hud.md) → "Live standings readout". No-ops when
   `cut_penalty_enabled` is off.
 - **Finish-panel breakdown** — `show_stage_complete(seconds, penalty_s)`.
   When `penalty_s > 0.0` the panel reads `FINISH / <time> / +X.Xs cut / =

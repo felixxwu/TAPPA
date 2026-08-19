@@ -89,12 +89,17 @@ const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of trut
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
 # billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
 # scales it to world metres; rise is how far above the flag tip the box floats.
-const PIN_LABEL_PX := Vector2i(400, 150)
+# The authored 400x150 medium is scaled by UITheme.UI_SCALE (and pixel_size divided by it)
+# so the pin keeps its exact world-metre size while the texture gains the resolution the
+# sharper world now renders at — the same medium-not-content scaling as WorldPanel and the
+# screen itself (features/ui-design-system.md -> "UI scale").
+const PIN_LABEL_PX := Vector2i(int(400 * UITheme.UI_SCALE + 0.5), int(150 * UITheme.UI_SCALE + 0.5))
 # Font size for the map's floating pin readouts ONLY (see _build_readout_sprite). Larger
 # than UITheme.FONT_SIZE because these are rendered to a texture and viewed at a distance in
-# 3D; the flat menus are read at native resolution and stay at the house size.
-const PIN_LABEL_FONT_SIZE := 24
-const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
+# 3D; the flat menus are read at native resolution and stay at the house size. Authored 24,
+# inflated with its medium (UI_SCALE) like every other size.
+const PIN_LABEL_FONT_SIZE := int(24 * UITheme.UI_SCALE + 0.5)
+const PIN_LABEL_PIXEL_SIZE := 0.00255 / UITheme.UI_SCALE  # authored 0.00255 (1.5x the original 0.0017 so the boxes read bigger); divided by UI_SCALE to cancel the PIN_LABEL_PX growth
 # Every map readout wears the SAME pure-black panel — design-system house rule 4, with no
 # exception. Special events used to get an inverted light-brown face to stand out, which is
 # gone: the 3D markers now carry that job (a car model, a trophy, or a flag), and a panel
@@ -1931,7 +1936,7 @@ func detail_wrap_label() -> Label:
 # (and NOT with the challenge cut) because HqOverlays is its only caller.
 func challenge_info_row(parent: VBoxContainer, heading_text: String) -> Label:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", UITheme.px(8))
 	parent.add_child(row)
 	var heading := detail_heading(heading_text)
 	heading.custom_minimum_size = Vector2(UITheme.px(140), 0)

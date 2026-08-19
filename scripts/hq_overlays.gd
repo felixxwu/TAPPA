@@ -600,33 +600,58 @@ func build_challenge_overlay() -> void:
 	# leaderboard rows), so a box that hugs its contents re-fits on every tab press and the
 	# panel jumps around under the player — moving the very tabs being clicked. Sized for the
 	# largest of the three views and pinned there. See MenuPage.set_body_fixed_height.
+	#
+	# BOTH numbers are AUTHORED sizes and so BOTH must be inflated by UITheme.UI_SCALE, exactly
+	# like the fonts inside them (features/ui-design-system.md → "UI scale"). They were literals
+	# in raw logical pixels, which is why this screen went cramped when the UI was rescaled: the
+	# text got its genuinely larger point size and the box that has to hold it did not, so the
+	# fixed height clipped the info rows into the body scroll and the column was ~a quarter too
+	# narrow, wrapping values that used to fit on one line. A box pinned in logical pixels
+	# around text measured in scaled pixels is always a bug — pin both in the same units.
 	var page := nav_root as MenuPage
-	page.set_body_width(_hq._modal_body_width(480.0))  # clamped to the current logical canvas
+	page.set_body_width(_hq._modal_body_width(480.0 * UITheme.UI_SCALE))  # clamped to the canvas
 	# EXACT, not a floor — a floor only stops the box getting smaller, so content taller than
 	# it still grew the box and the panel kept jumping. Content taller than the pin scrolls.
-	page.set_body_fixed_height(210.0)
+	page.set_body_fixed_height(250.0 * UITheme.UI_SCALE)
 
 	# --- Header: title ("Daily Challenge") + ceiling subtitle underneath, mirroring
 	# RallyDetail's title/region two-line shape.
+	# Titles get the FULL column width — the kind tabs used to sit beside them in this row, so
+	# the header demanded title-width PLUS tab-row-width and the two headline strings were
+	# squeezed into whatever was left. That squeeze is what wrapped them.
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 12)
+	header.add_theme_constant_override("separation", UITheme.px(12))
 	root.add_child(header)
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(titles)
-	# Both AUTOWRAP, which is what actually holds the panel's width steady. set_body_width is
-	# only a FLOOR — a child that demands more still widens the box — and these two are the
-	# only labels here that don't wrap: "Daily/Weekly/Monthly Challenge" are three different
-	# lengths, and each kind's ceiling subtitle differs too, so their min width was setting
-	# the panel's width and the box grew and shrank by a few px per tab. The info rows below
-	# already wrap (challenge_info_row -> detail_wrap_label), which is why they never did
-	# this.
+	# NEITHER WRAPS. "Daily Challenge" and the "Rating NNN max" ceiling line are the screen's
+	# two headline strings and each must read as ONE line — a title broken across two lines
+	# reads as a layout fault, not as a heading.
+	#
+	# They used to autowrap, to stop their differing lengths (three kind names, three ceiling
+	# figures) from setting the panel's width and jittering the box a few px per tab, because
+	# set_body_width is only a FLOOR — a child that demands more still widens the box. That
+	# defence is no longer load-bearing: the floor is now the authored width times UI_SCALE
+	# (see above), which is several times what either of these short strings measures, so
+	# neither can reach past it however the kind changes. The jitter guard is
+	# test_menu_flow.gd::test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs — if a
+	# future retune drops the floor below these strings, that test is what catches it.
+	#
+	# The info rows below still wrap (challenge_info_row -> detail_wrap_label): those carry
+	# sentences, not headings, and are the right place to spend vertical space.
+	#
+	# NOT clipped either — every character of both lines must be readable. That is affordable
+	# only because the kind tabs no longer sit beside the title (see the tab row below): the
+	# header's width demand is now the LONGER of title-or-tabs instead of their sum, which
+	# leaves both comfortably inside the pinned column, so neither has to wrap, clip, or push
+	# the box wider.
 	_hq._challenge_title_label = _hq.label("", 30)
-	_hq._challenge_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._challenge_title_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_hq._challenge_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_child(_hq._challenge_title_label)
 	_hq._challenge_subtitle_label = _hq.label("", 16)
-	_hq._challenge_subtitle_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hq._challenge_subtitle_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_hq._challenge_subtitle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hq._challenge_subtitle_label.add_theme_color_override("font_color", UITheme.MUTED)
 	titles.add_child(_hq._challenge_subtitle_label)
@@ -646,9 +671,15 @@ func build_challenge_overlay() -> void:
 	# "Weekly" would start the Weekly run instantly. _tab_pointer_select consumes the
 	# pointer press and grabs focus itself, preserving the original invariant that
 	# `pressed` can only ever arrive from ui_accept.
+	# THEIR OWN ROW, under the title — not beside it. Side by side, the header's minimum width
+	# was title + three tabs, which is what made this screen too narrow for its own text at the
+	# scaled-up font: the titles were left a fraction of the column and broke across lines.
+	# Stacked, the row costs one line of height (the box is pinned taller to match) and the
+	# header's width demand drops to the LONGER of the two instead of their sum, so the title,
+	# the ceiling subtitle and all three tabs each show in full.
 	var kind_row := HBoxContainer.new()
-	kind_row.add_theme_constant_override("separation", 6)
-	header.add_child(kind_row)
+	kind_row.add_theme_constant_override("separation", UITheme.px(6))
+	root.add_child(kind_row)
 	_hq._challenge_kind_buttons = []
 	for kind_str in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
 		var btn := Button.new()
@@ -675,7 +706,7 @@ func build_challenge_overlay() -> void:
 	# doesn't get its own section at all.
 	var body := VBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 4)
+	body.add_theme_constant_override("separation", UITheme.px(4))
 	root.add_child(body)
 
 	_hq._challenge_win_label = _hq.challenge_info_row(body, "Win condition")
@@ -727,7 +758,9 @@ func build_multiplayer_overlay() -> void:
 	var nav_root: Control = made[3]  # the MenuPage itself — for MenuNav.attach / UITheme.enforce
 
 	var page := nav_root as MenuPage
-	page.set_body_width(_hq._modal_body_width(380.0))
+	# Authored width SCALED, per the convention (features/ui-design-system.md → "UI
+	# scale"): fonts already go through UI_SCALE, so an unscaled box outgrows its text.
+	page.set_body_width(_hq._modal_body_width(380.0 * UITheme.UI_SCALE))
 
 	_hq._multiplayer_title_label = _hq.label("Multiplayer", 30)
 	_hq._multiplayer_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

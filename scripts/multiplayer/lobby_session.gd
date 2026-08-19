@@ -126,7 +126,9 @@ func enter(spectate := false) -> void:
 		else:
 			_round_index = int(res["round_index"])
 			_round_started_at_ms = int(res["started_at_ms"])
-			_joined_late = age > int(MAX_ROUND_MS * LATE_JOIN_FRACTION)
+			# Late is measured from the RELEASE: anyone inside the hold window is by
+			# definition on time — that window existing is the whole point of it.
+			_joined_late = now_ms() - release_at_ms() > int(MAX_ROUND_MS * LATE_JOIN_FRACTION)
 	elif res["absent"]:
 		# The lobby's very first player ever. Their advance CREATES the document.
 		await _claim_round(clock_idx)
@@ -147,13 +149,45 @@ func joined_late() -> bool:
 	return _joined_late
 
 
+# --- the synchronised start ------------------------------------------------------
+
+# When this round's racing begins: the shared started_at_ms plus the hold window.
+# Every client computes the same instant from the same document on the corrected
+# clock, so the start is synchronised with no extra coordination — the hold is what
+# lets one or two players who arrive within seconds of each other actually race
+# TOGETHER instead of on staggered clocks.
+# started_at_ms IS the scheduled start instant (whoever advances writes now + the
+# applicable window into the document), so the release needs no local arithmetic —
+# and cannot drift between clients whose configs differ.
+func release_at_ms() -> int:
+	return _round_started_at_ms
+
+
+func _hold_ms() -> int:
+	var cfg: GameConfig = Config.data
+	return int((cfg.lobby_start_hold_seconds if cfg != null else 30.0) * 1000.0)
+
+
+func _intermission_ms() -> int:
+	var cfg: GameConfig = Config.data
+	return int((cfg.lobby_intermission_seconds if cfg != null else 60.0) * 1000.0)
+
+
+# Still inside the join window: the car is held at the line and the HUD counts down
+# to the shared release. Spectators are held by their own state, not by this.
+func held() -> bool:
+	return _state == STATE_RACING and now_ms() < release_at_ms()
+
+
 # Claim `idx` as the current round in the shared document. Losing the write race is
 # NORMAL (two clients advancing the same round both try the same index; the rules
 # reject the second): the loser adopts whatever the winner wrote instead of retrying.
 # A signed-out player skips the write and just runs the round locally.
 func _claim_round(idx: int) -> void:
 	_round_index = idx
-	_round_started_at_ms = now_ms()
+	# The join window: the claimant schedules the start far enough out that whoever
+	# arrives in the meantime starts WITH them, on the same instant.
+	_round_started_at_ms = now_ms() + _hold_ms()
 	if auth == null or not auth.is_signed_in():
 		return
 	var res: Dictionary = await board.advance_state(idx, _round_started_at_ms)
@@ -203,7 +237,7 @@ func poll_round() -> void:
 	if now_ms() - _round_started_at_ms <= MAX_ROUND_MS:
 		return
 	_adopt_round(maxi(_round_index + 1, RoundClock.round_index(int(now_ms() / 1000))),
-		now_ms())
+		now_ms() + _hold_ms())
 
 
 # The round ends EARLY when every live racer has settled. Whoever observes it first
@@ -216,10 +250,13 @@ func check_round_over(rows: Array) -> void:
 	if not LobbyStandings.all_finished(live):
 		return
 	var next: int = maxi(_round_index + 1, RoundClock.round_index(int(now_ms() / 1000)))
+	# The next round STARTS a full intermission from now — that scheduled instant is
+	# what the post-stage countdown counts to, on every client, off this one write.
+	var next_start: int = now_ms() + _intermission_ms()
 	if auth != null and auth.is_signed_in():
-		var res: Dictionary = await board.advance_state(next, now_ms())
+		var res: Dictionary = await board.advance_state(next, next_start)
 		if res["ok"]:
-			_adopt_round(next, now_ms())
+			_adopt_round(next, next_start)
 			return
 	var st: Dictionary = await board.read_state()
 	if st["ok"] and int(st["round_index"]) > _round_index:

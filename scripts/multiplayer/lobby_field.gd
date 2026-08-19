@@ -27,6 +27,10 @@ var event: Dictionary = {}    # the round's stage dict, for GhostCar cosmetics
 # Set by world.gd for a SPECTATOR only: the CameraManager to point at the leader
 # ghost once one exists. A racer keeps their own chase camera untouched.
 var spectate_camera = null
+# Set by world.gd: the run's StageManager, so the field can hold the car at the
+# line until the shared release instant and then start the countdown. Null in
+# tests that only exercise the pure layer.
+var stage_manager = null
 
 var own_uid: String = ""
 var _wired := false           # setup() ran; _exit_tree only severs what it wired
@@ -74,6 +78,15 @@ func _exit_tree() -> void:
 # off the track/car; state flips once and stays (a finisher keeps posting the same
 # settled row so late joiners still see them — see the feature doc).
 func local_sample() -> Dictionary:
+	# While the round is HELD (the intermission / join window), the player hasn't
+	# moved yet BY DEFINITION — but this field may still be the OLD world's, whose
+	# TrackProgress reads the previous track's finish offset. Posting that into the
+	# new round would spawn a phantom at the line's far end, so a held sample is
+	# always the start line: present, stationary, racing.
+	if session != null and session.has_method("held") and session.held():
+		return {"progress_m": 0, "speed_mms": 0,
+			"state": LobbyStandings.STATE_RACING, "finish_ms": 0,
+			"at_ms": session.now_ms()}
 	var state := LobbyStandings.STATE_RACING
 	if _dnf:
 		state = LobbyStandings.STATE_DNF
@@ -95,8 +108,16 @@ func local_sample() -> Dictionary:
 
 
 func _identity() -> Dictionary:
-	return {"name": UsernamePopup.current(),
+	return {"name": display_name(UsernamePopup.current()),
 		"car_id": LobbyRound.car_id_for(session.round_key())}
+
+
+# A fresh device has no stored username, and an empty name makes LobbyBoard refuse
+# the whole document (the rules require name.size() >= 1) — SILENTLY, which is how
+# two phones each raced an apparently empty lobby at P1/1. Posting always beats a
+# pretty name: fall back rather than fail.
+static func display_name(raw: String) -> String:
+	return raw if raw != "" else "Racer"
 
 
 func _span() -> Dictionary:
@@ -120,6 +141,38 @@ func note_dnf() -> void:
 	_dnf = true
 
 
+# --- the synchronised release ------------------------------------------------------
+
+# Poll the shared release instant every frame while held. Cheap (two int compares)
+# and self-disarming: once the countdown is started the flag flips and this becomes
+# a single boolean check. Driven per-frame rather than by a Timer because the
+# release must land on the same FRAME the corrected clock crosses the line — a
+# timer seeded at setup would drift from clock-offset corrections learned later.
+var _released := false
+
+
+func _process(_delta: float) -> void:
+	if _released or session == null or stage_manager == null:
+		return
+	if not session.has_method("held"):
+		return
+	if session.held():
+		# The join window, counted down on the HUD's existing countdown label so a
+		# waiting player knows the hold is deliberate and shared, not a hang.
+		if hud != null and hud.has_method("show_countdown"):
+			hud.show_countdown(ceilf(float(session.release_at_ms() - session.now_ms()) / 1000.0))
+		return
+	_released = true
+	if hud != null and hud.has_method("hide_countdown"):
+		hud.hide_countdown()
+	# GO is the same wall instant on every client (same document, corrected clocks) —
+	# the lobby's own countdown already counted to it, so the standard 3-2-1 is
+	# SKIPPED: stacking it on top would push everyone three seconds past the moment
+	# they agreed on. launch_immediately flips straight to RUNNING.
+	if stage_manager.has_method("launch_immediately"):
+		stage_manager.launch_immediately()
+
+
 # --- what the lobby tells us ------------------------------------------------------
 
 func _on_field_updated(rows: Array) -> void:
@@ -135,7 +188,7 @@ func _on_field_updated(rows: Array) -> void:
 func merged_field(rows: Array) -> Array:
 	var sample: Dictionary = local_sample()
 	sample["uid"] = own_uid
-	sample["name"] = UsernamePopup.current()
+	sample["name"] = display_name(UsernamePopup.current())
 	sample["car_id"] = String(event.get("car_id", ""))
 	var merged: Array = []
 	for r: Dictionary in rows:

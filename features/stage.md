@@ -72,9 +72,9 @@ the runoff); `TrackProgress` reaches 100% at that offset ([progress.md](progress
 
 ## In-stage live standings readout
 
-During RUNNING the manager drives a **permanent** top-left HUD readout of the player's
-live position in the rival field (`P3/12`) and the gap to the position above — or the
-cushion over P2 while leading (see [hud.md](hud.md) → "Live standings readout"). It
+During RUNNING the manager drives a **permanent** top-centre HUD readout (under the
+pacenote strip) of the player's live position in the rival field (`P3/12`) and the gap to
+the position above — `1.42 behind P2`, or `1.42 ahead of P2` while leading (see [hud.md](hud.md) → "Live standings readout"). It
 replaced an every-few-turns "vs P1" pace popup, which only spoke in pulses and answered
 a question ("how far off the leader?") that isn't the one a driver mid-stage is asking.
 It reuses the **turn-based time estimate** the rest of the rally runs on rather than

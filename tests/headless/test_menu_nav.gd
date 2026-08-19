@@ -549,10 +549,9 @@ func _global_page(fetch: Callable, opts: Dictionary = {}) -> GlobalStandings:
 
 
 func _nav_of(root: Node) -> MenuNav:
-	for child in root.get_children():
-		if child is MenuNav:
-			return child as MenuNav
-	return null
+	# Thin wrapper on the framework's own accessor — kept so existing call sites read
+	# unchanged. New code should call MenuNav.of(root) directly.
+	return MenuNav.of(root as Control)
 
 
 # With nothing standing between the player and a posted time, the cursor seats on
@@ -724,3 +723,168 @@ func test_username_popup_back_cancels_without_writing() -> void:
 	nav._unhandled_input(_press("menu_back"))
 	assert_eq(results, [""], "gamepad B cancels, reporting no name")
 	assert_eq(UsernamePopup.current(), "", "and writes nothing")
+
+
+# --- MenuNav `remember` --------------------------------------------------------
+# The framework can return the cursor to whichever row the player last had selected
+# instead of always re-opening on `first`. It lives here, once, rather than in each
+# menu: hand-rolled per-widget focus_entered tracking in a menu script is the thing
+# this replaces. Behaviour only — nothing here pins which menus opt in.
+
+# Builds a two-row menu attached to MenuNav, returns [root, row_a, row_b].
+func _remember_menu(remember: bool) -> Array:
+	var root := Control.new()
+	add_child_autofree(root)
+	var a := Button.new()
+	a.text = "A"
+	root.add_child(a)
+	var b := Button.new()
+	b.text = "B"
+	root.add_child(b)
+	MenuNav.attach(root, {first = a, remember = remember})
+	await get_tree().process_frame
+	return [root, a, b]
+
+
+# Off by default: a menu that says nothing keeps re-opening on its `first` row, so
+# switching the framework on cannot change any existing menu's behaviour.
+func test_remember_is_off_by_default() -> void:
+	var parts: Array = await _remember_menu(false)
+	var root: Control = parts[0]
+	var a: Button = parts[1]
+	var b: Button = parts[2]
+	b.grab_focus()
+	root.visible = false
+	root.visible = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(root.get_viewport().gui_get_focus_owner(), a,
+		"without remember, re-showing the menu returns to first")
+
+
+# The whole feature: select a row, close, reopen, and the cursor is back on it.
+func test_remember_returns_to_the_row_that_was_selected() -> void:
+	var parts: Array = await _remember_menu(true)
+	var root: Control = parts[0]
+	var b: Button = parts[2]
+	b.grab_focus()
+	root.visible = false
+	root.visible = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(root.get_viewport().gui_get_focus_owner(), b,
+		"reopening the menu returns the cursor to the remembered row")
+
+
+# First open has nothing to remember, so it still lands on `first`.
+func test_remember_falls_back_to_first_before_anything_is_selected() -> void:
+	var parts: Array = await _remember_menu(true)
+	var a: Button = parts[1]
+	assert_eq(a.get_viewport().gui_get_focus_owner(), a,
+		"the first open lands on first, with nothing remembered yet")
+
+
+# A remembered row that is hidden (it lives on a sub-panel the host is not showing —
+# the pause menu's Settings page is the real case) must not be restored: the cursor
+# would land somewhere invisible. Falls back to `first`.
+func test_remember_skips_a_row_that_is_no_longer_on_screen() -> void:
+	var root := Control.new()
+	add_child_autofree(root)
+	var a := Button.new()
+	root.add_child(a)
+	var sub := Control.new()
+	root.add_child(sub)
+	var hidden_row := Button.new()
+	sub.add_child(hidden_row)
+	MenuNav.attach(root, {first = a, remember = true})
+	await get_tree().process_frame
+
+	hidden_row.grab_focus()
+	sub.visible = false
+	root.visible = false
+	root.visible = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(root.get_viewport().gui_get_focus_owner(), a,
+		"a remembered row on a hidden sub-panel falls back to first")
+
+
+# Focus landing outside the menu (another overlay, a modal) must not be recorded as
+# this menu's row — otherwise reopening would try to restore a foreign control.
+func test_remember_ignores_focus_outside_the_menu() -> void:
+	var parts: Array = await _remember_menu(true)
+	var root: Control = parts[0]
+	var a: Button = parts[1]
+	var b: Button = parts[2]
+	b.grab_focus()
+	var outsider := Button.new()
+	add_child_autofree(outsider)
+	outsider.grab_focus()
+	await get_tree().process_frame
+
+	root.visible = false
+	root.visible = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(root.get_viewport().gui_get_focus_owner(), b,
+		"focus outside the menu is ignored; the menu's own last row is restored")
+	assert_ne(root.get_viewport().gui_get_focus_owner(), a,
+		"and it is not reset to first just because focus left the menu")
+
+
+# --- One owner for opening focus (ratchet) -------------------------------------
+# A menu that attaches MenuNav must not ALSO grab focus itself in open(): showing the
+# root fires visibility_changed, which the framework already answers, so a host grab
+# silently wins the same deferred flush and any change made through MenuNav looks
+# like it did nothing. pause_menu.gd did this, and it masked a real bug for rounds
+# (its _show_settings(false) grabbed the Settings row even when opening fresh).
+#
+# Derives its subject list from the filesystem, so a menu written tomorrow is covered
+# without touching this test. The allowlist is EMPTY and must only ever shrink — if a
+# menu genuinely needs its own grab, fix the menu, don't add it here.
+const FOCUS_OWNER_EXEMPT: Array[String] = []
+
+
+func _gd_scripts_under(dir_path: String, out: Array) -> void:
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		var full := dir_path.path_join(entry)
+		if dir.current_is_dir():
+			if not entry.begins_with("."):
+				_gd_scripts_under(full, out)
+		elif entry.ends_with(".gd"):
+			out.append(full)
+		entry = dir.get_next()
+	dir.list_dir_end()
+
+
+func test_a_menunav_menu_does_not_also_grab_focus_in_open() -> void:
+	var scripts: Array = []
+	_gd_scripts_under("res://scripts", scripts)
+	assert_gt(scripts.size(), 0, "found scripts to scan")
+	var offenders: Array[String] = []
+	for path in scripts:
+		var text := FileAccess.get_file_as_string(path)
+		if text == "" or not text.contains("MenuNav.attach"):
+			continue
+		var in_open := false
+		for line in text.split("\n"):
+			if line.begins_with("func "):
+				in_open = line.begins_with("func open(")
+				continue
+			if in_open and line.contains("UITheme.focus_grab"):
+				offenders.append("%s (%s)" % [path, line.strip_edges()])
+				break
+	for path in FOCUS_OWNER_EXEMPT:
+		assert_true(offenders.has(path),
+			"%s is on FOCUS_OWNER_EXEMPT but no longer offends — remove it from the list" % path)
+		offenders.erase(path)
+	assert_eq(offenders, ([] as Array[String]),
+		"a menu using MenuNav must let the framework own opening focus — delete the "
+		+ "UITheme.focus_grab from open() and pass what you want through "
+		+ "MenuNav.attach(root, {first = ..., remember = ...}); see features/menus.md "
+		+ "-> \"Menu navigation\" -> \"One owner for opening focus\"")

@@ -267,3 +267,54 @@ ghost via `CameraManager.retarget`. A spectator becomes a racer at the next roun
 A late joiner's `finish_ms` is their own stage-elapsed time, shorter than a
 from-the-gun racer's — `joined_late()` exists so the standings can mark the entry
 provisional rather than pretending otherwise.
+
+## The synchronised start (the join window)
+
+A freshly claimed round is **held** for `lobby_start_hold_seconds` (GameConfig,
+default 30) before anyone races: every client computes the same release instant —
+the shared round's `started_at_ms` plus the hold, on the server-corrected clock —
+so the release is simultaneous with no extra coordination. Players entering inside
+the window start together and are never `joined_late()`; the HUD's existing
+countdown label counts the window down so the wait reads as deliberate, not a hang.
+`LobbyField._process` releases the held `StageManager` onto the normal 3-2-1
+countdown at the instant, one-shot. A synchronised GO is what makes every racer's
+elapsed clock agree — the precondition for "distance = pace" being a fair ranking.
+
+## Two on-device lessons (2026-08-19)
+
+**An empty username silently posted nothing.** A fresh device has no stored
+username; `LobbyBoard._document_from` refuses a nameless document (the rules
+require `name.size() >= 1`) and reports `POST_INVALID_SAMPLE` without sending —
+so two phones each raced an apparently empty lobby at P1/1 while the shared round
+counter advanced fine. `LobbyField.display_name` now falls back to a default:
+posting beats a pretty name.
+
+**The car spawned short of the road.** `TrackGenParams._apply_staging` seats the
+road origin one lead-in AHEAD of the nominal spawn whenever start lines are
+enabled, and only a STAGED run compensates. The lobby is event-shaped but
+unstaged, so the car sat on grass and the off-track timer reset it at the lights.
+`world.gd` now seats a lobby run's car ON `params.origin` after the dry-start
+relocation.
+
+## The intermission (stage end → next round)
+
+The next round's start is **scheduled, not immediate**: whoever advances the shared
+document writes `started_at_ms = now + lobby_intermission_seconds` (60 by default;
+a cold-start claim writes `now + lobby_start_hold_seconds` instead). `started_at_ms`
+therefore IS the agreed start instant — `release_at_ms()` returns it directly, and
+no client does local arithmetic that could drift on differing configs.
+
+The finished world stays up through the intermission showing a countdown of real
+seconds to the agreed start (`world._tick_lobby_intermission`, on the HUD's
+countdown label). At `lobby_preload_lead_seconds` (30) before the start the client
+leaves for the next map, so ~15s of track generation completes before GO instead of
+eating into the race. In the new world the countdown continues to zero and
+`StageManager.launch_immediately()` flips straight to RUNNING — **the standard
+3-2-1 is deliberately skipped**: the lobby already counted to the shared instant,
+and stacking the stock countdown on top would push every client three seconds past
+the moment they synchronised on.
+
+While held, `LobbyField.local_sample()` always reports the START LINE (progress 0,
+stationary, racing) — the old world's `TrackProgress` still reads the previous
+track's finish offset during the intermission, and posting that into the new round
+would spawn a phantom at the far end of a track nobody has driven.

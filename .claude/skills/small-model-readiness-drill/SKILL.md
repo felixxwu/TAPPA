@@ -12,6 +12,14 @@ precondition, every rule, every contract, every definition of "readable" — is
 `.claude/skills/small-model-readiness/SKILL.md`. **Read that file first, in
 full, at the start of every drill round.** It is the source of truth for:
 
+- The Overview's **"nothing that matters may live only in context"** rule —
+  inherited unchanged, and it binds harder here: a drill round runs up to
+  `MAX_ATTEMPTS` probe+grade cycles in one session, and §D3a moved grading to
+  you, so between a probe returning and its scores hitting disk the diff and the
+  test output exist nowhere else. Write the four axis scores to `rounds/NNN.md`
+  as the FIRST thing you do with a returned probe, before diagnosing the cause.
+  Compact at the top of the round if your harness offers it; record that you
+  could not if it does not
 - §0 preconditions P1–P4 and §0.5 test mode (ask once, persist, honour)
 - §1 the task bank format, hidden rubrics, retirement, the 8-task floor
 - §2.2 worktree creation + seeding + transplant (including the rubric exclusion)
@@ -74,6 +82,29 @@ retunes it: if most tasks pass at 1 the cap is idle and the tasks are too easy;
 if passes cluster at 3 it is too tight and real fixes are being abandoned one
 attempt short. Revisit it after a few rounds rather than treating it as settled.
 
+**`MAX_ATTEMPTS` is a CEILING, not a quota. Stopping early is often correct and
+needs no apology.** Rounds 011–014 hit the cap exactly once; two rounds stopped at
+2 and at 1, and both had to be written up as deviations against an instruction
+that only described running out of attempts. Stop the inner loop early when:
+
+- **No further hypothesis exists.** You have a failure but nothing to try that is
+  not a fourth note or a rubric weakening. Say what you considered and rejected —
+  that list is the finding.
+- **Attempts are re-confirming, not informing.** Two decisive attempts agreeing
+  makes a third a formality. Round 013 stopped at 2 after two independent
+  refutations of the same hypothesis.
+- **The user ends the round**, or something external makes a further attempt
+  unfollowable.
+
+In every case record it as a **deliberate early stop with its reason**, not as a
+discard and not as a cap. And note what it costs: a fix landed on the last attempt
+is **unmeasured** — no probe has seen it — which is a real gap and should be the
+first thing the next round closes. Round 014 ended this way and said so.
+
+**Reaching the cap with a legitimate structural fix still unexplored is a signal
+to declare a structural round (§D5), not to raise the cap.** The cap's job is to
+stop you buying a pass with notes; raising it just buys more notes.
+
 Each iteration is a complete probe → grade → fix cycle against a codebase that
 now carries every prior iteration's fix. That is the point: the loop asks "what
 would this codebase have to look like for a small model to get this right?" and
@@ -104,6 +135,15 @@ the loop is measuring:
 Not safe: any edit to `scripts/`, `tests/`, `features/`, or config. If you have
 nothing on the bookkeeping list, wait.
 
+**On attempt 1 the honest answer is "wait", and the list above should not imply
+otherwise.** By construction there is no previous attempt to write up, no rubric
+your fix has invalidated, and nothing to reconcile — the list is empty until
+attempt 2. Measured across the first four drill rounds, the only thing that ever
+filled an attempt-1 window was corresponding about a bug found during seeding.
+Waiting is not underuse; a probe takes ~90–120 s, and filling that with
+speculative work is how the fix-before-failure ban gets broken. From attempt 2 on
+the list is accurate and worth working through.
+
 **The probe must be genuinely fresh every attempt** — a new `Agent` dispatch,
 `model: "haiku"`, no memory of prior attempts, no `SendMessage` to a prior
 probe, no hint that this is attempt N, no mention of what changed. If a probe
@@ -121,10 +161,19 @@ checkout **changes between attempts** — that is the entire mechanism — so:
   main checkout as it stands NOW, including the untracked-file transplant and
   the `evals/small-model/` + `todo/small-model-readiness` exclusions that keep
   the rubric out of the probe's hands.
-- **Verify the seed carried this attempt's fix** — diff the file you just
-  changed against the worktree copy. A probe that runs against a tree missing
-  the fix produces a false failure and burns an attempt; this check is cheap and
-  catches it.
+- **Verify the worktree CONTAINS this attempt's fix** — grep it for a symbol or
+  line the fix introduced. Do not phrase this as a diff against the main
+  checkout: that only works while the loop's work is uncommitted, and once it is
+  committed the transplant is a legitimate no-op with nothing to diff. A probe
+  that runs against a tree missing the fix produces a false failure and burns an
+  attempt; this check is cheap and catches it.
+- **Verify the rubric scrub landed** — `ls "$WT/evals/small-model"` must find
+  nothing, and likewise for `todo/small-model-readiness.md` and both readiness
+  skill directories. The base §2.2 scrub is unconditional for a reason (round
+  011 found the whole task bank sitting in a probe worktree, restored straight
+  out of HEAD, one dispatch before measurement). Drill mode re-seeds once per
+  attempt, so this is up to `MAX_ATTEMPTS` chances per round to leak the answer
+  key instead of one — check it every attempt, not just the first.
 - Name worktrees `.claude/worktrees/drill-<task-id>-a<attempt>` so debris is
   attributable.
 
@@ -152,10 +201,16 @@ deliberately:
   confirm every edit the probe *claims* by reading the diff; grep the whole
   repo — `scripts/` **and** `tests/` — for every symbol whose signature or arity
   changed; check that every authored resource path exists on disk.
-- **Grade before you diagnose.** Read the diff and score the four axes first,
-  then move to §2.5 taxonomy and the fix. Deciding the fix first and
-  back-filling a score to justify it is the failure mode a separate grader
-  made structurally hard, and it is now on you to avoid.
+- **WRITE THE FOUR AXIS SCORES TO `rounds/NNN.md` BEFORE YOU DIAGNOSE ANYTHING.**
+  Not "grade before you diagnose" as a state of mind — *write them to the file*,
+  then diagnose. This is the whole mechanism, and everything else in this section
+  is commentary on it. Measured across four drill rounds, the prose about
+  neutrality did almost no work; the ordering did all of it, because once a score
+  is on disk the diagnosis has to fit the score instead of the reverse. It also
+  makes the round crash-safe (§D2) and it is the one bias guard that survives
+  you being tired, invested, or three attempts deep into a fix you wrote.
+  Deciding the fix first and back-filling a score to justify it is the failure
+  mode a separate grader made structurally hard, and it is now on you to avoid.
 - **You wrote the previous attempt's fix, so you are not a neutral reader.**
   This is the one real cost of inlining, and drill mode makes it sharper than
   the original ever could: by attempt 3 you are grading a probe against a
@@ -221,7 +276,15 @@ When `MAX_ATTEMPTS` iterations have run without a clean solve, the task is
   plus whether the failures repeated (same cause every attempt = a structural
   defect you did not reach) or wandered (a different cause each attempt = the
   task is too broad to be one task, and should be re-authored as two).
-- Then **draw a fresh task and start a new inner loop** on it, same rules.
+- Then **draw a fresh task and start a new inner loop** on it, same rules —
+  **unless the discard fired the structural trigger below.** If it did, close the
+  round instead and declare the next one structural. A second inner loop then
+  either lands in the same area (which the trigger has just forbidden drilling
+  with notes) or produces a finding you have already committed to acting on
+  structurally, and it spends the round's remaining budget on neither. Round 011
+  closed after one loop for exactly this reason and had to write it up as a
+  deviation. Say which it was in the report; the point is that the choice is
+  reasoned, not that one answer is always right.
 
 **Round-level cap: at most 2 too-hard discards per round.** After the second
 discard, close the round (§D6) rather than drawing a third. A round that keeps
@@ -278,6 +341,13 @@ Everything the original §2.11 requires, plus, per inner loop:
   says you are fixing the wrong layer — escalate per the original §2.6 rather
   than adding another note. Wandering scores say the task is too broad.
 - For a discarded task: the too-hard analysis from §D5.
+- **Any prediction you made, as written BEFORE the probe ran** (original §2.6's
+  hypothesis discipline), and the verdict on it. Drill mode is where this pays
+  most: each attempt is a controlled comparison against the previous one, which
+  is exactly the setup a prediction can be tested in — and exactly the setup
+  where hindsight is most tempting.
+- **If the loop stopped before the cap, the reason** (§D2), and explicitly that
+  the last fix is **unmeasured by a probe** if it landed on the final attempt.
 
 This per-attempt trace is the artefact drill mode exists to produce. The parallel
 original gives you a wide, shallow cause census; this gives you one deep,
@@ -301,3 +371,22 @@ internally (the inner loop of §D2 is within a round and is not the same thing).
 Under dynamic `/loop` pacing, schedule the next round immediately
 (`delaySeconds: 60`, `noop: false`) on `CONTINUE`, and `stop: true` on `STOP` —
 same as the original.
+
+**A wakeup that fires MID-ROUND must not start a new round.** This bites harder
+here than in the original: drill rounds run up to three probe cycles, so the
+window in which a round is open is long, and `/loop`'s dynamic mode instructs you
+to "run the parsed prompt now" the moment a wakeup lands. Obeying that literally
+opens round N+1 on top of an unclosed round N. Before re-entering, check for an
+unfinished `rounds/NNN.md`, a live probe subagent, or anything under
+`.claude/worktrees/` — any of those means a round is in flight. Reschedule a long
+fallback and let it finish. This happened in round 013's attempt 3. See the
+original §5, which now carries the same rule.
+
+Two verdict cases the original's §5 now covers and which drill rounds hit often —
+worth knowing before you write the verdict:
+
+- **A refuted hypothesis is a full-strength `CONTINUE` with a changed target**,
+  not a failed round. Drill mode produces these more than the parallel original
+  does, because a serial cause-chain is what makes a hypothesis testable at all.
+- **A user-requested stop is not the stop condition firing.** Say so, and record
+  the bank state so a later reader does not read it as the loop concluding.
