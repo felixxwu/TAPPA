@@ -23,7 +23,7 @@ var _frame := Rect2()                         # explicit fit region (world XZ); 
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(0, 220)
+	custom_minimum_size = Vector2(0, UITheme.px(220))
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = true  # squares beyond the track's frame clip at the edge

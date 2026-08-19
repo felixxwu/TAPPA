@@ -54,7 +54,7 @@ const COLINEAR_EPSILON := 0.001
 # name, so the chevrons walk left and right as you cycle — the same "one panel you keep opening
 # rather than a new one each time" reasoning `RallyDetail.BODY_WIDTH` exists for. A layout constant,
 # not a look dial.
-const BAR_NAME_WIDTH_PX := 320.0
+const BAR_NAME_WIDTH_PX := 320.0 * UITheme.UI_SCALE
 
 # The prop stands where the real car is; nothing here moves the car (the user was explicit).
 # These are the CAMERA's numbers and they are authored — see GameConfig.overworld_picker_*.

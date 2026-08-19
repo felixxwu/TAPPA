@@ -99,12 +99,45 @@ look/road/particle blocks are all skipped, so a dry stage constructs nothing and
 writes nothing and keeps **exactly zero** added per-frame cost (a hard requirement on
 the low-end phones this game targets).
 
+### Wetness — never compare against `"rain"`
+
+There is more than one wet condition. **`"storm"` is wetter than `"rain"`**, and a rule
+written as `weather == "rain"` (or `== WEATHER_RAIN`) is simply dead in a storm. That
+exact bug has been written three separate times — a wet tyre-grip axis, a spray effect,
+a handling tweak — because nothing in the code said which ids are wet.
+
+So there is a name for it:
+
+| ask | where |
+| --- | --- |
+| `WeatherLibrary.is_wet(id) -> bool` | the predicate — the only sanctioned way |
+| `WeatherLibrary.wet_ids() -> Array` | the set form, derived from the same table |
+| `RallyLibrary.event_is_wet(event) -> bool` | the same question at the event layer |
+
+Both are derived from **one declared table**, `WeatherLibrary.WETNESS` — an id → bool
+dict, *not* a per-entry key and *not* a hand-written boolean chain. It is separate from
+the entries on purpose: an omitted entry key legitimately means "does not have that
+feature", so an unclassified condition would read as dry with nothing to notice it. It
+is a hard error instead — `test_weather_library.gd::test_every_condition_is_classified_wet_or_dry`
+fails if a condition in `CONDITIONS` has no `WETNESS` row (and the reverse test fails on a
+stale row for a condition that no longer exists).
+
+**Wet means liquid water on the road** — the thing a grip/spray/reflection rule keys off.
+It is *not* "has precipitation" (snowfall lays a frozen layer) and *not* "has a grip
+multiplier" (a sandstorm has one and is the driest condition in the table). Which ids are
+wet is a design call and nothing pins it; that every id is *answered* is structural.
+
+Unknown ids go through `by_id`'s dry fallback, so a typo'd authored string is dry rather
+than a crash — the same tolerance every other query here has.
+
 ### Adding a condition
 
 1. Add its tuning fields to `scripts/game_config.gd` + `config/game_config.tres`.
 2. Add one entry to `WeatherLibrary.CONDITIONS` naming those fields (and, if it wants
    a name in code, a `WEATHER_*` const in `rally_library.gd`).
-3. Author `"weather": "<id>"` on the events that should run it.
+3. Add its `WETNESS` row — `"<id>": true/false`. Not optional: the guard test above
+   fails without it.
+4. Author `"weather": "<id>"` on the events that should run it.
 
 No consumer changes. If the condition needs a genuinely new *kind* of feature (a wind
 force, a lightning flash) add a new entry key plus the one consumer that reads it, and

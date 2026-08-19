@@ -11,7 +11,16 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T001 — "Add a gravel-spec tyre upgrade to the catalogue."
 - status: live
-- clean_solves: 0  (rounds 001–003 non-clean)
+- clean_solves: 0  (rounds 001–003, 009 non-clean)
+- RUBRIC NOTE round 009 (3/2/2/2, best result this task has had): the probe correctly
+  reused the EXISTING axes (flat + tarmac + snow terms, gravel as the neutral base) rather
+  than authoring a new one — under the round-004 registry that is the fully-correct answer,
+  so do NOT require three registry edits for a part that needs no new axis. Two real misses
+  remain: `features/drivetrain-and-tires.md` still said the tyre slot "holds two parts" and
+  went unupdated, and the new part is dominated everywhere by `race_tires` (a strictly-weaker
+  rung, which the slot was explicitly restructured to eliminate). CAUSE recorded for a later
+  round: the tyre-slot authoring checklist is attached to the `snow_tires` row, ABOVE the
+  point where a new part is appended, so it is positionally invisible. NOT fixed this round.
 - RUBRIC NOTE round 004 (**SUPERSEDES the round-002 and round-003 notes below — the
   design they graded against no longer exists**): round 004 restructured the surface
   axes into the `GameConfig.TIRE_SURFACE_AXES` registry. A new surface axis is now
@@ -79,7 +88,27 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T003 — "Add a new region with its own skybox and scatter set."
 - status: live
-- clean_solves: 0  (rounds 002–003 non-clean)
+- clean_solves: 0  (rounds 002–003, 009, 010 non-clean — never solved)
+- RUBRIC NOTE round 010 (2/1/1/1 — REGRESSION): the probe added the region with `look_from`
+  (correct idiom) but authored NO rally and touched NO doc — strictly worse than round 009,
+  which at least made the region reachable. Three assertions red across `test_region_assets`
+  and `test_region_docs`. It also cloned four values `look_from` already supplies, and knew
+  it (its own comment says so), so "its own skybox/scatter set" is unmet. I suspected my
+  round-009 template change (map_pos as an unevaluatable function call) caused this; a grader
+  refuted that — the probe skipped the DOCS too, which no map_pos blocker explains, and round
+  008 failed identically under the old literal template. Best read is budget/scope truncation.
+  Round 010 restored a pasteable literal anyway (with a guard that keeps it legal) since the
+  hazard was real even if it was not the cause. THIS TASK IS THE BANK'S HARDEST and has never
+  been solved; consider whether four parts is simply too much for one Haiku attempt.
+- RUBRIC NOTE round 009 (3/1/1/2): **the round-008 template worked.** Where round 008
+  refused to make the region reachable, this probe wrote a valid `RALLIES` row — three
+  events, real weather id, real map slot — and updated the region count in the doc. All five
+  texture paths resolve; the round-003 invented-asset failure did not recur. It failed on
+  ONE thing: `map_pos` landed 0.021 from an existing pin (limit 0.03), reddening
+  `test_map_pins_are_well_formed_and_never_stack`. Round 009 fixed that cause with
+  `RallyLibrary.suggest_map_pos()`, the template now says to paste its result, and the guard
+  prints a legal pin. Round 010 grades whether that lands. Also still open: reusing Greece's
+  sky/ground textures is not "its own skybox", and `look_from` remains unguarded.
 - RUBRIC NOTE round 003: probe read-and-IGNORED the TWO-edits note and invented 3
   nonexistent texture paths by analogy (-canyon). Now guarded by
   test_every_authored_region_resource_path_resolves; notes strengthened. Check asset
@@ -161,7 +190,25 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T006 — "Make the engine braking stronger when you lift off the throttle."
 - status: live
-- clean_solves: 0  (rounds 001, 002, 005 non-clean; round 006 best yet at 3/2/3/1)
+- clean_solves: 0  (rounds 001, 002, 005, 009 non-clean; round 010 best yet at 3/3/2/2)
+- RUBRIC NOTE round 010 (3/3/2/2 — FIRST CORRECTNESS 3): the probe used `is_lifting_off()`,
+  added `engine_braking_lift_off_gain` to GameConfig with an authored `.tres` value, and
+  updated the doc in three places. The grader verified it leaves fuel cut, mid-shift, declutch
+  and the idle clamp untouched. THE ONE RED WAS MY OWN TEST'S FAULT, not the probe's:
+  round 009's `test_coasting_and_fuel_cut_share_one_friction_term` pinned an equality that
+  holds only while the gain is 1.0 — it forbade the very feature this task asks for. Replaced
+  in round 010 with a fuel-cut-only invariant. Do NOT reinstate an equality assertion here.
+  Still missing: a behavioural test ("raising the gain increases coast decel and leaves
+  fuel-cut decel unchanged"), which is legal and easy.
+- RUBRIC NOTE round 009 (3/2/2/1): the probe multiplied coasting torque at `not combusting`,
+  which is ALSO true mid-gearchange and under `fuel_cut` (the rev limiter depends on that same
+  friction term), so it silently retuned shifts and limiter bounce. Round 009 fixed the cause:
+  `Engine.is_lifting_off()` now exists as the searchable throttle-position-only predicate and
+  `combusting`'s comment is an explicit three-state table. GRADE A ROUND-010 ATTEMPT ON
+  WHETHER IT FINDS `is_lifting_off`. Note for the grader: a new `@export` whose authored value
+  equals its default correctly has NO `config/game_config.tres` line — Godot serialises only
+  non-defaults. Do not dock convention for that (round 009's grader did; I overrode it).
+  Still missing from every attempt so far: `features/engine-and-transmission.md` and a test.
 - RUBRIC NOTE round 006: **solved on convention** (3/2/3/1) — the probe added
   `engine_friction_slope = 2.0` to `config/game_config.tres` and never touched the
   trap property, citing the hoisted FALLBACK ONLY block. The remaining gaps are
@@ -217,7 +264,28 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T008 — "Give the player a star bonus for finishing a rally without any damage."
 - status: live
-- clean_solves: 0  (round 002 non-clean)
+- clean_solves: 0  (rounds 002, 005, 007, 008, 009, 010 non-clean; round 010 best yet at 3/2/2/1)
+- RUBRIC NOTE round 010 (3/2/2/1 — the typed seam WORKED): the probe called
+  `_award_any_finish_bonus_stars()`, returned an int, put the amount in a NEW
+  `@export_range(0,10) no_damage_bonus_stars` with a `.tres` value, and never touched
+  `RallyLibrary.STARS_FOR_*`. Its whole logic is two lines. After five failures this is the
+  first attempt whose mechanic AND value placement are both right, and the grader judges the
+  int seam (not variance) the credible reason — the invented-key failure is now
+  unrepresentable. Two pre-existing tests went red; the grader confirms that is the CORRECT
+  consequence (both assert `stars_gained == stars_for_placement(...)` on undamaged fixtures)
+  and an implementer should relax them — round 010 added a note at the seam naming both tests,
+  since they are green until the seam pays out and so cannot be discovered by running first.
+  REMAINING: no docs, no test. And see backlog — a grader argues `stars_gained` is overloaded
+  and the bonus deserves its own displayed key; that is a PRODUCT decision, not mine to take.
+- RUBRIC NOTE round 009 (3/1/0/1 — DOWN, and the fourth failure at this site): the core
+  mechanic was right for the second round running (any-finish gate, `took_damage_this_rally()`
+  not the HP oracle), but the bonus was returned under an invented key `clean_run_stars` that
+  nothing reads — round 008 did the identical thing under the name `stars_bonus`. Confirmed by
+  run: `test_a_rewin_pays_stars_again_but_never_another_car` went red. Round 009 removed the
+  cause structurally: the seam is now `_award_any_finish_bonus_stars() -> int`, so an invented
+  key is not expressible, and a separate dict seam is allowlist-checked with a `push_error`
+  that hands back the instruction. **Round 010 must re-probe this task**; if the int seam is
+  used, the remaining failure is amount-placement (see backlog item 0, still open).
 - RUBRIC NOTE round 002: `reward_system.gd` and `features/reward-system.md` both disclaim
   owning WHEN a reward fires, so `rally_session.gd::_resolve_results` is a DEFENSIBLE home
   — do not mark navigation down for choosing it. Mark down for: the bonus as a bare
@@ -249,7 +317,26 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T009 — "Add a wet-weather tyre compound that grips better in the rain."
 - status: live
-- clean_solves: 0  (round 006 non-clean — but see the round-006 rubric note: the design, not the probe, was at fault)
+- clean_solves: 0  (rounds 006, 009, 010 non-clean; round 010 best yet at 3/3/2/2 — but see the round-006 rubric note: the design, not the probe, was at fault; round 009 was near-clean at 3/2/2/2)
+- RUBRIC NOTE round 010 (3/3/2/2 — FIRST CORRECTNESS 3, and the round-006/009 causes are
+  settled): the probe added the export, the registry row and a `_channel_weight` arm reading
+  `ctx["is_wet"]` — the bool round 009 seated in `fill_tire_context` — so the axis fires for
+  BOTH rain and storm, for player and AI, with no string comparison anywhere. The gate is real
+  in DATA this time (`unlocked_by_rally: "sp_lakeshore_trial"`, an id that exists). Grader
+  credits the seam over variance: three consecutive probes wrote at that exact site.
+  REMAINING (new): `features/upgrade-catalogue.md` is stale in three places after a tyre part
+  is added — round 010's `test_no_feature_doc_states_a_slot_member_count` now guards the count
+  half; the unlock-id list and menu-label list are still unguarded.
+- RUBRIC NOTE round 009 (3/2/2/2 — near-clean, and the round-006 note is now settled): the
+  probe made all three `TIRE_SURFACE_AXES` registry edits plus the `EFFECTS` row and BOTH tyre
+  docs, touched zero consumers, and the grader traced the axis firing end to end for player and
+  AI. The round-006 verdict that the DESIGN was at fault is confirmed — under the registry this
+  task is nearly solved. Two defects left: the arm was rain-only so wet tyres were dead in a
+  `storm` (third round running), and the row's comment claimed a rally gate it did not author.
+  Round 009 fixed the first cause — `WeatherLibrary.is_wet()` now exists, is guarded so no
+  condition can ship unclassified, and `fill_tire_context` seats `ctx["is_wet"]` at the exact
+  site where all three probes wrote their comparison. Grade round 010 on whether it reads that
+  bool. The `unlocked_by_rally`-claimed-in-prose-but-absent-in-data gap stays unguarded.
 - areas: catalogue, upgrades, physics, weather
 - DELIBERATELY HARDER than T001, and it is the direct measurement of round 004's
   structural fix. T001 has a legitimate no-new-axis answer (build a gravel part from
@@ -295,7 +382,16 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T010 — "Play a beep on each count of the 3-2-1-GO countdown."
 - status: live
-- clean_solves: 0  (authored round 007, not yet sampled)
+- clean_solves: 0  (round 008 2/0/0/0, round 010 3/3/2/1)
+- RUBRIC NOTE round 010 (3/3/2/1 — the biggest jump in the loop's history, from 2/0/0/0):
+  the probe called `Audio.play_beep()`, found the real timing owner (`stage_manager.gd`, not
+  `hud.gd`), and beeps exactly once per count via a `_last_countdown_display` tracker reset in
+  all three arm/reset paths. Four suites green where round 008's hand-rolled DSP took the
+  stage-manager suite down. The grader credits the hardcoded `1200.0` for GO as CORRECT — both
+  `sfx_beep_frequency_hz`'s docstring and `features/sfx.md` sanction overriding for a
+  deliberately different pitch — so do not dock it. REMAINING and the whole gap now:
+  `features/sfx.md` line ~108 still lists "the countdown beep" as PLANNED, `todo/audio.md` is
+  unticked, and there is no test (`beep_spec()` exists precisely so this is testable headless).
 - areas: audio, stage-start, hud
 - WHY THIS AREA: audio is the last major subsystem the bank never touches, and this
   task crosses three of them — the countdown state lives in the stage-start flow, the

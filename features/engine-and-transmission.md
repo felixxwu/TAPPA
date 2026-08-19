@@ -110,6 +110,32 @@ is just `−friction` — that is the **engine braking**, and because friction
 rises with revs the braking is stronger at high RPM (and bounces the revs off
 the limiter). The no-stall idle clamp still holds the bottom.
 
+### Coasting vs. fuel cut vs. mid-shift — three states, one drag term
+
+`step()` names three DISTINCT conditions, and confusing them is the classic bug
+here (`engine.gd` → `is_lifting_off`, the `lifting_off` / `combusting` locals):
+
+| Question | Where it's answered | Means |
+|---|---|---|
+| "has the driver lifted off?" | `EngineSim.is_lifting_off(throttle)` / the `lifting_off` local | **throttle position only** — coasting, engine braking, lift-off feel |
+| "is combustion suppressed?" | the `fuel_cut` field | rev limiter **or** damage misfire — usually with the throttle still wide open |
+| "is the engine making torque?" | the `combusting` local | pedal down **and** not mid-shift **and** not fuel-cut |
+
+`not combusting` is **not** "the driver lifted off": it is also true mid-gearchange
+(`shift_timer > 0`) and under a fuel cut. Work on lift-off/coasting feel must gate
+on `is_lifting_off`, never on `not combusting`, or it silently retunes gearchanges
+and the rev limiter as well.
+
+The `friction` term above has **two customers**: it is both the coasting engine
+braking and the only thing that pulls the revs back down through the limiter's
+hysteresis band in `_update_limiter` (which cuts fuel at full throttle). Scaling
+it, or bolting a lift-off multiplier onto it, changes limiter bounce too — a
+lift-off-only change belongs behind `lifting_off`, applied where it cannot reach
+the cut path. `test_engine_logic.gd` guards this:
+`test_limiter_bounce_depends_on_fuel_cut_friction` (the cut must still release),
+`test_coasting_and_fuel_cut_share_one_friction_term` (both decelerate alike), and
+`test_is_lifting_off_is_throttle_position_only`.
+
 `engine_friction_base` is **per-engine**, authored in `EngineLibrary` and written
 onto the config by `apply()` (see below): it scales vaguely with cylinder count /
 displacement, so a big-block V8 or the 27 L Merlin carries far more parasitic drag
@@ -258,5 +284,8 @@ loads and `apply()` writes the expected fields), `tests/headless/test_engine_log
 `engine_friction_slope`, `gear_ratios`, `reverse_ratio`, `final_drive`,
 `clutch_max_torque`, `clutch_engage_speed`, `auto_gearbox`,
 `upshift_redline_fraction`, `damage_rev_limit_min_fraction` (the damage rev cap's
-floor). Engine catalog: `scripts/engine_library.gd`
+floor). Note `engine_friction_base` / `engine_friction_slope` are **shared** by
+coasting engine braking and the rev limiter's pull-down (see "Coasting vs. fuel
+cut vs. mid-shift" above) — retuning them moves limiter bounce as well as
+off-throttle feel. Engine catalog: `scripts/engine_library.gd`
 (`EngineLibrary`).

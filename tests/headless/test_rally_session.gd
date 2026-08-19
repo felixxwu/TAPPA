@@ -1285,3 +1285,110 @@ func test_refielding_keeps_the_difficulty_offset() -> void:
 	var raw := RallySession._player_rating(_save.get_car(int(owned["instance_id"])))
 	assert_gt(RallySession._fielded_rating, raw,
 		"and the re-draw still carries the offset, not the raw rating")
+
+
+# --- The any-finish bonus-star seam (features/reward-system.md) ---------------
+#
+# `stars_gained` is the ONLY star channel the podium reads (podium.gd::_show_stars reads
+# `star_rating` and `stars_gained`, nothing else). Twice a bonus was added under an invented
+# result key: the ledger moved and the player saw nothing. These tests pin the CONTRACT —
+# whatever the seam pays reaches that one channel, and an invented key is refused loudly.
+
+# A RallySession whose any-finish seam pays a caller-chosen bonus. The amount is supplied by
+# the TEST, not read from config or a library, so nothing here pins a balance value.
+class _BonusSession extends "res://scripts/rally_session.gd":
+	var bonus := 0
+
+	func _award_any_finish_bonus_stars(_combined: int, _placed: int) -> int:
+		return bonus
+
+
+func test_an_any_finish_bonus_reaches_the_stars_gained_the_podium_reads() -> void:
+	var session := _BonusSession.new()
+	# An arbitrary positive amount chosen by the test — the assertions compare against this
+	# same variable, so retuning any real reward cannot break them.
+	session.bonus = 3
+	session.auto_load_scenes = false
+	add_child_autofree(session)
+
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	session.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
+	# A field the player's slow times cannot beat: a FINISH, but not a podium, so the
+	# podium-gated star payout contributes nothing and only the bonus is in play.
+	session._opponent_field = _field([10000, 20000, 30000, 40000, 50000])
+	var box: Array[Dictionary] = []
+	session.rally_finished.connect(
+		func(r: Dictionary) -> void: box.append(r), CONNECT_ONE_SHOT)
+	var before := int(_save.stars_available())
+	for i in session.stage_count():
+		session.report_event_result(1_000_000)
+		session.continue_to_next_event()
+
+	var r: Dictionary = box[0] if not box.is_empty() else {}
+	assert_false(r.is_empty(), "the rally resolved")
+	assert_gt(int(r["placed"]), 3, "setup: a finish, but not a podium")
+	assert_eq(int(r["stars_gained"]), session.bonus,
+		"the bonus arrives in stars_gained — the only star field the podium shows")
+	assert_eq(int(_save.stars_available()) - before, session.bonus,
+		"and the ledger moved by exactly that, so the podium and the balance agree")
+
+
+func test_the_seam_pays_nothing_extra_when_it_returns_zero() -> void:
+	# The seam is a no-op today; a session whose bonus is 0 must be indistinguishable from
+	# the shipped one — no stray credit, no stray field.
+	var session := _BonusSession.new()
+	session.bonus = 0
+	session.auto_load_scenes = false
+	add_child_autofree(session)
+
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	session.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
+	session._opponent_field = _field([10000, 20000, 30000, 40000, 50000])
+	var box: Array[Dictionary] = []
+	session.rally_finished.connect(
+		func(r: Dictionary) -> void: box.append(r), CONNECT_ONE_SHOT)
+	var before := int(_save.stars_available())
+	for i in session.stage_count():
+		session.report_event_result(1_000_000)
+		session.continue_to_next_event()
+
+	var r: Dictionary = box[0] if not box.is_empty() else {}
+	assert_false(r.is_empty(), "the rally resolved")
+	assert_eq(int(r["stars_gained"]), 0, "a zero bonus adds nothing to the star channel")
+	assert_eq(int(_save.stars_available()), before, "and nothing to the ledger")
+
+
+func test_an_unknown_merged_result_key_is_refused_and_announced() -> void:
+	# The belt-and-braces guard: a future any-finish field that nothing downstream reads must
+	# not slip silently into the result. `clean_run_stars` is the exact key a model invented.
+	var result := {"stars_gained": 1}
+	RallySession._merge_result_fields(result, {"clean_run_stars": 1})
+	assert_false(result.has("clean_run_stars"),
+		"a key outside RESULT_FIELDS never reaches the result")
+	assert_eq(int(result["stars_gained"]), 1, "and the real fields are left alone")
+	# The ANNOUNCEMENT is half the fix — dropping the key silently would repeat the very
+	# failure this guard exists to stop. assert_push_error both proves the error fired and
+	# marks it handled, so GUT does not count it as an unexpected error.
+	assert_push_error("clean_run_stars",
+		"and the drop announces itself, naming the offending key")
+
+
+func test_a_known_merged_result_key_is_accepted() -> void:
+	# The guard is an allowlist, not a ban: a field the UI already reads merges as before.
+	var result := {"stars_gained": 1}
+	RallySession._merge_result_fields(result, {"stars_gained": 2, "game_won": true})
+	assert_eq(int(result["stars_gained"]), 2, "a known key merges over the podium value")
+	assert_true(bool(result["game_won"]), "as does every other RESULT_FIELDS key")
+
+
+func test_every_field_the_result_carries_is_in_the_allowlist() -> void:
+	# Otherwise the guard would reject the result's own fields the moment the seam returned
+	# one — the allowlist and the result literal must not drift apart.
+	_grant_and_start("fx_open")
+	var box := _capture_finish()
+	_report_losing_run()
+	var r := _finish_result(box)
+	assert_false(r.is_empty(), "the rally resolved")
+	for key in r:
+		assert_true(RallySession.RESULT_FIELDS.has(String(key)),
+			"result field '%s' is listed in RESULT_FIELDS" % key)

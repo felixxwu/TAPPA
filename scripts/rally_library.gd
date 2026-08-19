@@ -24,6 +24,11 @@ const DEFAULT_WIDTH := 6.0
 
 # Authored per-event weather conditions (see event_weather below / features/weather.md).
 # Enum rather than a 0..1 float so "fog"/"snow"/"night" have an obvious home later.
+#
+# THESE ARE FOR AUTHORING, NOT FOR BRANCHING. Do not write `weather == WEATHER_RAIN` to
+# mean "wet" — WEATHER_STORM is wetter and that comparison silently skips it (it has been
+# written wrong three times). Ask `WeatherLibrary.is_wet(id)` / `RallyLibrary.event_is_wet(event)`
+# instead; anything else per-condition belongs as a KEY on the WeatherLibrary entry.
 const WEATHER_DRY := "dry"
 const WEATHER_RAIN := "rain"
 # Dust storm — authored only onto region == "greece" events (see events below and
@@ -158,7 +163,17 @@ static func _pace_band(tier: int) -> Vector2:
 # `rally_revealed` / `lit_sources`). So a pin's POSITION decides what it opens and what
 # opens it, and moving a pin re-derives its neighbourhood for free. Optional
 # `reveal_radius` (float, normalised map units) lets one rally open a wider frontier than
-# the GameConfig default. The retired fields are `reveal_after` and `requires_completions`,
+# the GameConfig default.
+#
+# DO NOT PICK A map_pos BY EYE, and do not paste one out of a comment — both go stale the
+# moment a pin moves. `RallyLibrary.suggest_map_pos("<your region id>")` returns a legal,
+# currently-free pin in that corner (>MIN_PIN_SEPARATION from every existing pin AND close
+# enough to an authored one that the new rally is reachable); `map_pos_is_free(pos)` checks
+# one you chose yourself. The last author to eyeball it landed 0.021 from an existing pin
+# and turned test_map_pins_are_well_formed_and_never_stack red — that test now prints a
+# suggested coordinate in its failure message, so you can paste the fix straight out of it.
+#
+# The retired fields are `reveal_after` and `requires_completions`,
 # two global wave counters whose unlocks had no visible relationship to the rally just won.
 #
 # A SPECIAL event (`special: true`) is reached the same way as everything else — there is
@@ -879,6 +894,18 @@ static func event_weather(event: Dictionary) -> String:
 	# condition added to WeatherLibrary is authorable immediately (by_id already
 	# falls back to the dry entry for an unknown string). See features/weather.md.
 	return String(WeatherLibrary.by_id(String(event.get("weather", WEATHER_DRY))).get("id", WEATHER_DRY))
+
+
+# Whether this event runs on a WET road. THE way to ask at the event layer — a rule that
+# should fire "when it's raining" almost always means "when the road is wet", and there is
+# more than one wet condition (see WeatherLibrary.WETNESS).
+#
+# `event_weather(event) == WEATHER_RAIN` is the bug this replaces: it silently excludes
+# WEATHER_STORM, which is WETTER than rain. Three separate attempts at a wet-conditioned
+# rule shipped that exact comparison before this predicate existed. If you are about to
+# write `== WEATHER_RAIN`, you almost certainly want this instead.
+static func event_is_wet(event: Dictionary) -> bool:
+	return WeatherLibrary.is_wet(event_weather(event))
 
 
 # The global leaderboards' board key for one stage: a track IDENTITY, not a stage
@@ -1883,6 +1910,84 @@ static func opening_rally_id_for(model_id: String) -> String:
 # corners rather than along a single axis. (This is the position the old present box
 # used, for the same reason: the middle of the table reads as "here", not as content.)
 const HQ_MAP_POS := Vector2(0.5, 0.5)
+
+# The closest two pins may sit, in normalised map units. Two pins nearer than this are
+# unpickable on the HQ map table, so this is a STRUCTURAL bound, not a tuning knob — it is
+# the number test_rally_library.gd::test_map_pins_are_well_formed_and_never_stack enforces,
+# and it lives here rather than in that test so authoring code and the guard cannot drift.
+const MIN_PIN_SEPARATION := 0.03
+
+
+# A LEGAL, CURRENTLY-FREE pin for a new rally in `region_id` — paste the result straight
+# into a new RALLIES row's `map_pos`.
+#
+# WHY THIS IS A FUNCTION AND NOT A COMMENT. `map_pos` used to be the one field of the
+# copy-pasteable rally template that could not be pasted: its rule was PROSE ("in your
+# corner, >0.03 from every other pin, within map_reveal_radius of one") sitting next to a
+# placeholder Vector2(0.5, 0.5) that is itself illegal — it is HQ. An author who pastes and
+# nudges is doing 40-odd distance computations in their head, and the last one to try landed
+# 0.021 from an existing pin and turned the pin-spacing guard red. A LIST of free
+# coordinates would go stale the moment a pin moves; a function re-derives from whatever is
+# authored right now, so it cannot.
+#
+# The result satisfies all three constraints at once:
+#   * inside [0,1]^2 (with a margin, so it is not clipped at the map edge);
+#   * more than `min_separation` from EVERY existing pin and from HQ_MAP_POS;
+#   * within the anchor rally's own reveal radius, so the new rally is reachable by
+#     exploring (test_every_shipped_rally_is_reachable_by_exploring_from_hq).
+#
+# The anchor is the first rally already authored in `region_id`, so the suggestion lands in
+# THAT CORNER of the map — which is what keeps a rally's name, region and terrain agreeing
+# with where its pin is (see the geography note above RALLIES). An unknown/empty region, or
+# a brand-new region with no rally yet, anchors on HQ instead — the middle of the map — and
+# the author should then move it into their corner and re-run this with a neighbouring
+# rally's region, or simply re-check the result against `map_pos_is_free()`.
+#
+# Deterministic (a fixed spiral of candidates, no RNG): the same roster always yields the
+# same suggestion. Returns Vector2(-1, -1) if the map is genuinely full at this separation,
+# which is a real answer and not a legal pin, so callers must check.
+static func suggest_map_pos(region_id := "", min_separation := MIN_PIN_SEPARATION) -> Vector2:
+	var anchor := HQ_MAP_POS
+	var reach := Config.data.map_reveal_radius if Config.data != null else 0.18
+	for rally in all():
+		if String(rally.get("region", "")) == region_id and region_id != "":
+			anchor = map_pos_of(rally)
+			reach = reveal_radius_of(rally)
+			break
+	var sep := maxf(min_separation, 0.0001)
+	# Rings from just outside the separation bound out to just inside the reveal radius,
+	# each rotated by the golden angle so candidates never line up into a grid.
+	var r := sep * 1.25
+	var ring := 0
+	while r <= maxf(reach * 0.9, sep * 1.25):
+		var base := float(ring) * 2.39996323  # golden angle, radians
+		for i in 24:
+			var a := base + TAU * float(i) / 24.0
+			var cand := anchor + Vector2(cos(a), sin(a)) * r
+			if map_pos_is_free(cand, min_separation):
+				return Vector2(snappedf(cand.x, 0.001), snappedf(cand.y, 0.001))
+		r += sep * 0.5
+		ring += 1
+	return Vector2(-1, -1)
+
+
+# Whether `pos` is a legal pin RIGHT NOW: on the map (with a margin) and clear of every
+# authored pin and of HQ by more than `min_separation`. The predicate form of the rule
+# test_map_pins_are_well_formed_and_never_stack enforces, so an author (or a tool) can
+# check a hand-picked coordinate without re-deriving the arithmetic.
+static func map_pos_is_free(pos: Vector2, min_separation := MIN_PIN_SEPARATION) -> bool:
+	var margin := maxf(min_separation, 0.0)
+	if pos.x < margin or pos.x > 1.0 - margin or pos.y < margin or pos.y > 1.0 - margin:
+		return false
+	# A small cushion above the bound: the guard test asserts STRICTLY greater than
+	# min_separation, so a suggestion sitting exactly on it would be red.
+	var need := min_separation * 1.1
+	if pos.distance_to(HQ_MAP_POS) <= need:
+		return false
+	for rally in all():
+		if pos.distance_to(map_pos_of(rally)) <= need:
+			return false
+	return true
 
 ## Metres between the garage pad and the rally pad it stands beside, edge to edge. The two pads
 ## must not merge: OverworldPads flattens a circle per pin, and overlapping interiors are held at

@@ -18,6 +18,21 @@ rally's `region`: that goes green while silently restyling a stage whose `map_po
 authored weather were written for its old corner. Do both edits in the same change —
 "ready for a rally to reference later" is a shipped half-feature.
 
+**Do not pick the new rally's `map_pos` by eye.** Every other field in that template is a
+literal you can keep; `map_pos` used to be the one whose rule was prose ("in your corner,
+`>0.03` from every other pin, within `map_reveal_radius` of one") next to a placeholder
+`Vector2(0.5, 0.5)` that is itself illegal — it is HQ. Ask for one instead:
+
+- `RallyLibrary.suggest_map_pos("<region_id>")` returns a legal, currently-free pin
+  anchored on an existing rally in that region — deterministic, derived from the live
+  roster, so it cannot go stale the way a listed coordinate would. For a brand-new region
+  with no rally yet it anchors on HQ (the map centre); pass a neighbouring region's id to
+  land the suggestion in the corner you actually want, then re-check it.
+- `RallyLibrary.map_pos_is_free(pos)` checks a coordinate you chose yourself.
+- `RallyLibrary.MIN_PIN_SEPARATION` is the single source of the `0.03` bound — the
+  authoring helpers and `test_map_pins_are_well_formed_and_never_stack` both read it, and
+  that test's failure message now prints a suggested legal coordinate to paste.
+
 **A region that is a variant of another inherits, it does not clone.** Author
 `look_from` plus only the keys that differ — see
 [`look_from` — one-level look inheritance](#look_from--one-level-look-inheritance)

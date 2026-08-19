@@ -285,7 +285,7 @@ func _make_button(text: String) -> ColorRect:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	label.add_theme_font_size_override("font_size", 16)
+	label.add_theme_font_size_override("font_size", UITheme.px(16))
 	panel.add_child(label)
 	add_child(panel)
 	return panel
@@ -304,7 +304,7 @@ func _build_debug_label() -> void:
 	if cfg == null or not cfg.mobile_controls_debug:
 		return
 	_debug_label = Label.new()
-	_debug_label.add_theme_font_size_override("font_size", 8)
+	_debug_label.add_theme_font_size_override("font_size", UITheme.px(8))
 	_debug_label.position = Vector2(4, 4)
 	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_debug_label)

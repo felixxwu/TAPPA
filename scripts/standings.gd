@@ -289,7 +289,7 @@ func _add_section(parent: VBoxContainer, heading: String, rows: Array) -> Array[
 		# Breathing room between the two stacked leaderboards. Always visible (it is
 		# blank) so the reveal doesn't shuffle the layout as rows appear.
 		var spacer := Control.new()
-		spacer.custom_minimum_size.y = 12.0
+		spacer.custom_minimum_size.y = 12.0 * UITheme.UI_SCALE
 		parent.add_child(spacer)
 	var head := UITheme.label(heading, "dim")
 	parent.add_child(head)

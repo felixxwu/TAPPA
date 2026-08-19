@@ -87,7 +87,7 @@ func build_title_overlay() -> void:
 	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
 	var version_label := Label.new()
 	version_label.text = ("v" + ver) if ver != "" else "dev"
-	version_label.add_theme_font_size_override("font_size", 12)
+	version_label.add_theme_font_size_override("font_size", UITheme.px(12))
 	version_label.anchor_left = 1.0
 	version_label.anchor_right = 1.0
 	version_label.anchor_top = 1.0
@@ -477,7 +477,7 @@ func build_car_overlay() -> void:
 	_hq._swap_preview_label.fit_content = true
 	_hq._swap_preview_label.scroll_active = false
 	_hq._swap_preview_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_hq._swap_preview_label.add_theme_font_size_override("normal_font_size", 13)
+	_hq._swap_preview_label.add_theme_font_size_override("normal_font_size", UITheme.px(13))
 	_hq._swap_preview_label.set_meta("menu_nav_skip", true)
 	_hq._swap_preview_label.visible = false
 	root.add_child(WorldPanel.text_backing(_hq._swap_preview_label))

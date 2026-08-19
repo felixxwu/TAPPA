@@ -25,18 +25,37 @@ whose *gate* you want:
 | Seam | Gate | What lives there today |
 |---|---|---|
 | `_award_podium_rewards(combined, placed, opening_first)` | top-3 finish, **or** the opening rally's first attempt | stars (`Save.complete_rally`), the prize car, special/part unlocks, the game-won beat |
-| `_award_any_finish_rewards(combined, placed)` | **any** non-DNF finish | *nothing yet — this is the empty seam* |
+| `_award_any_finish_bonus_stars(combined, placed)` | **any** non-DNF finish | *nothing yet — returns `0`; this is the empty seam* |
 
-Both return a `Dictionary` of fields merged into the `rally_finished` result;
-`_award_any_finish_rewards` is called **after** the podium gate has closed, and its
-fields are merged over the podium ones.
+`_award_podium_rewards` returns a `Dictionary` of fields for the `rally_finished`
+result. `_award_any_finish_bonus_stars` returns an **`int`** — bonus stars, nothing
+else. It is called **after** the podium gate has closed, and `_resolve_results`
+(the caller) both pays it with `Save.award_stars` and folds it into `stars_gained`
+*before* the result dict is built. The seam itself stays pure: do not touch `Save`
+in it.
+
+### `stars_gained` is the ONLY star channel the podium reads
+
+`podium.gd::_show_stars` reads exactly two keys off the finish result:
+`star_rating` (gold-star rating) and `stars_gained` (what the ledger moved by).
+**Nothing else.** A bonus reported under a new key — `stars_bonus`,
+`clean_run_stars`, anything — is credited to the save ledger and is *invisible to
+the player*, which is why the any-finish seam returns a bare `int` that can only
+land in `stars_gained`.
+
+Belt and braces: the result also has an allowlist. `RallySession.RESULT_FIELDS`
+lists every key the finish result may carry, and `_merge_result_fields` (the one
+merge point, fed by the non-star `_award_any_finish_fields` seam) `push_error`s and
+drops any key outside it — so an invented channel announces itself on the first
+headless run instead of vanishing. Adding a genuinely new result field means adding
+it to `RESULT_FIELDS` **and** to the UI that displays it.
 
 This split exists because everything used to sit inside a single ~60-line
 `if podium_or_opening:` block, so any reward added anywhere near the reward logic
 silently inherited the **podium gate** — including rewards that were never meant to
 be podium-only. A reward that should pay for *any* finish (a clean-run bonus, a
-stage-record bonus, a finisher's payout) goes in `_award_any_finish_rewards`, not in
-the podium method.
+stage-record bonus, a finisher's payout) goes in `_award_any_finish_bonus_stars`, not
+in the podium method.
 
 If your reward needs to know whether the run was clean, ask
 `RallySession.took_damage_this_rally()` (or the result's `took_damage` field) —

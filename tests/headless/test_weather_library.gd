@@ -268,3 +268,67 @@ func test_a_wind_block_names_only_config_fields_that_exist() -> void:
 			if lightning.has(key):
 				assert_true(cfg.get(String(lightning[key])) != null,
 					"%s names a real GameConfig field" % String(lightning[key]))
+
+
+# --- Wetness classification --------------------------------------------------
+
+# THE guard that makes is_wet a real seam rather than a helper that rots: the eighth
+# weather condition must be CLASSIFIED, not silently defaulted.
+#
+# WHY IT MATTERS: WETNESS is a separate dict from the entries, precisely because an
+# omitted entry KEY legitimately means "does not have that feature" — so an unclassified
+# condition would read as dry with nothing to notice it. Adding a condition to CONDITIONS
+# without a WETNESS row fails HERE, at the table, instead of showing up months later as a
+# wet-road rule that quietly does nothing on the new condition.
+#
+# Pins no tunable and no design call: the subject list is DERIVED from the library, and
+# nothing here asserts WHICH ids are wet — only that each one is answered. A designer may
+# flip any classification, or add a condition wet or dry, and this stays green.
+func test_every_condition_is_classified_wet_or_dry() -> void:
+	assert_gt(WeatherLibrary.all().size(), 0, "the table is non-empty (else this asserts nothing)")
+	var unclassified: Array = []
+	for entry in WeatherLibrary.all():
+		var id := String(entry.get("id", ""))
+		assert_ne(id, "", "every condition declares an id")
+		if not WeatherLibrary.WETNESS.has(id):
+			unclassified.append(id)
+	assert_eq(unclassified, [],
+		"every WeatherLibrary condition has a WETNESS row (add yours: \"<id>\": true/false)")
+
+
+func test_wetness_never_classifies_a_condition_that_does_not_exist() -> void:
+	# The other direction: a stale row for a removed/renamed condition is dead weight that
+	# makes the table look more complete than it is. Derived from the library, so it holds
+	# for any roster.
+	var ids: Array = []
+	for entry in WeatherLibrary.all():
+		ids.append(String(entry.get("id", "")))
+	var orphans: Array = []
+	for id in WeatherLibrary.WETNESS.keys():
+		if not ids.has(String(id)):
+			orphans.append(String(id))
+	assert_eq(orphans, [], "no WETNESS row names a condition the table does not declare")
+
+
+func test_is_wet_tolerates_unknown_ids_and_agrees_with_wet_ids() -> void:
+	# Contract, not classification. An unknown id resolves through by_id's dry fallback
+	# like every other query here, so a typo'd authored string can never make a stage wet.
+	# And wet_ids() is derived from is_wet, so the set form and the per-id form are one
+	# answer — a caller cannot get two different pictures of the same table.
+	assert_false(WeatherLibrary.is_wet("no_such_condition"), "an unknown id is not wet")
+	assert_false(WeatherLibrary.is_wet(""), "an empty id is not wet")
+	assert_false(WeatherLibrary.is_wet(WeatherLibrary.DEFAULT_ID),
+		"the dry fallback condition is not wet (structural: it is the absence of every feature)")
+	var wet: Array = WeatherLibrary.wet_ids()
+	for entry in WeatherLibrary.all():
+		var id := String(entry.get("id", ""))
+		assert_eq(WeatherLibrary.is_wet(id), wet.has(id),
+			"wet_ids() and is_wet() agree about '%s'" % id)
+
+
+func test_a_condition_installed_for_a_test_is_not_wet_by_accident() -> void:
+	# The override seam must not inherit a classification from a same-named shipped id by
+	# luck: an id nothing classifies is dry, which is the safe direction.
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "synthetic_condition"}] as Array[Dictionary])
+	assert_false(WeatherLibrary.is_wet("synthetic_condition"), "an unclassified condition is dry")
+	assert_eq(WeatherLibrary.wet_ids(), [], "and contributes nothing to the wet set")

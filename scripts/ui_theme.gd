@@ -90,23 +90,41 @@ const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 # to the rule so much as a different medium: they render into a SubViewport and are then
 # shown in 3D at a distance, losing resolution twice, so they carry their own larger size
 # (hq.PIN_LABEL_FONT_SIZE). Flat 2D menus stay at this value.
-const FONT_SIZE := 16
+# --- UI scale ------------------------------------------------------------------
+# The UI was authored against the original 400-tall logical canvas; the shipped
+# render height is now larger (GameConfig.render_height, applied by
+# DisplayStretch), which would draw everything proportionally smaller. UI_SCALE
+# re-inflates the AUTHORED sizes — fonts get a genuinely larger point size (the
+# TTF re-rasterises crisp at the new logical resolution; never scale a rendered
+# small glyph up) and metrics/spacing grow to match. Keep it equal to
+# GameConfig.render_height / 400 (the authoring canvas) — retune it whenever
+# render_height changes, then re-run tools/build_ui_theme.gd.
+const UI_SCALE := 540.0 / 400.0
+
+# An authored size (as designed on the 400 canvas) scaled to the shipped render
+# height. Use for any literal font/UI pixel size outside this file:
+#   lbl.add_theme_font_size_override("font_size", UITheme.px(14))
+static func px(authored: float) -> int:
+	return int(round(authored * UI_SCALE))
+
+
+const FONT_SIZE := int(16 * UI_SCALE + 0.5)
 
 # --- Rule 3: fixed, compact height for single-line menu buttons --------------
-const MENU_ROW_H := 30
+const MENU_ROW_H := int(30 * UI_SCALE + 0.5)
 # A modest min width so short buttons (BACK, QUIT) still read as a bar.
-const BUTTON_MIN_W := 180
+const BUTTON_MIN_W := int(180 * UI_SCALE + 0.5)
 
 # --- Spacing -----------------------------------------------------------------
 # Inner padding of a house panel (UITheme.panel / panel_box). Named so a caller wanting a
 # different padding can still fall back to the shipped one — see MenuPage's "padding" opt.
-const PANEL_PAD := 14
+const PANEL_PAD := int(14 * UI_SCALE + 0.5)
 
-const GAP_TIGHT := 6
-const GAP := 10
-const GAP_WIDE := 16
-const MARGIN := 24
-const SHADOW_OFFSET := 2    # hard drop shadow, x == y
+const GAP_TIGHT := int(6 * UI_SCALE + 0.5)
+const GAP := int(10 * UI_SCALE + 0.5)
+const GAP_WIDE := int(16 * UI_SCALE + 0.5)
+const MARGIN := int(24 * UI_SCALE + 0.5)
+const SHADOW_OFFSET := int(2 * UI_SCALE + 0.5)    # hard drop shadow, x == y
 
 
 # --- Resource loaders --------------------------------------------------------
@@ -255,7 +273,7 @@ static func reward_card_box() -> StyleBoxFlat:
 
 # Breathing room kept between a modal panel and the edges of the screen when the
 # body has to be capped. Only ever bites on a pathologically long string.
-const BODY_SCROLL_MARGIN := 32.0
+const BODY_SCROLL_MARGIN := 32.0 * UI_SCALE
 
 # SIZE A SCROLLED BODY LABEL TO ITS CONTENT. Shared by every modal that puts an
 # autowrapped body Label inside a (Touch)ScrollContainer — ConfirmPopup and

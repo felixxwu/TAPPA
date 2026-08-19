@@ -1911,6 +1911,16 @@ func has_nitrous() -> bool:
 @export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.0
 
 @export_group("PS1 Look")
+## Logical render height of the WHOLE frame (3D and UI): a positive value renders
+## at that fixed height; 0 follows the window height (device-native). Crisper
+## image at higher values / native; UI/HUD/touch controls are laid out in logical
+## units so they draw smaller as this rises. Applied by DisplayStretch
+## (scripts/display_stretch.gd); a benchmark's explicit resolution-sweep override
+## still wins while a benchmark is active. NOTE: the UI is authored against the
+## original 400-tall canvas and re-inflated by UITheme.UI_SCALE — keep that
+## constant equal to render_height / 400 when retuning this (see
+## scripts/ui_theme.gd → "UI scale", then re-run tools/build_ui_theme.gd).
+@export var render_height := 0
 @export var virtual_resolution := Vector2(480, 360)  # independent LOOK value (PS1 dither grid), deliberately decoupled from the window/viewport height (DisplayStretch.DESIGN_HEIGHT reads display/window/size/viewport_height) — do not "fix" this to match it
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
 ## and UI alike. 1.0 = off; 1.2 draws everything 20% wider than reality. Applied
@@ -3276,7 +3286,8 @@ static func tire_surface_mult_for(source, ctx: Dictionary) -> float:
 # It deliberately carries everything BOTH callers already have in hand at the call site —
 # the contact's tarmac weight, whether the region is snowy, and the stage weather — even
 # though no axis reads weather today. That is the point: adding a wet-weather axis is then
-# three edits in THIS FILE and nothing else.
+# three edits in THIS FILE and nothing else — and it should key on `ctx["is_wet"]` (seeded
+# below from WeatherLibrary.is_wet), not on the raw weather id.
 #
 # HONEST LIMIT, because the previous version of this comment over-promised and cost a
 # round: an axis keyed on something NOT in this dictionary (altitude, time of day, tyre
@@ -3288,6 +3299,12 @@ static func fill_tire_context(ctx: Dictionary, tarmac_weight: float, snowy: bool
 	ctx["tarmac"] = tarmac_weight
 	ctx["snowy"] = snowy
 	ctx["weather"] = weather
+	# The CLASSIFICATION, not just the id. A wet-weather axis must read this bool and never
+	# compare `ctx["weather"] == "rain"`: `storm` is wet too, and three separate attempts to
+	# add a wet axis have shipped a rain-only comparison that was silently dead in a storm.
+	# WeatherLibrary.WETNESS is the single table that decides, and a new condition cannot
+	# ship unclassified (test_every_condition_is_classified_wet_or_dry).
+	ctx["is_wet"] = WeatherLibrary.is_wet(weather)
 	return ctx
 
 

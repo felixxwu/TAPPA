@@ -73,7 +73,7 @@ func _build_ui() -> void:
 	panel.add_child(col)
 
 	_slot_label = Label.new()
-	_slot_label.add_theme_font_size_override("font_size", 40)
+	_slot_label.add_theme_font_size_override("font_size", UITheme.px(40))
 	_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_slot_label.custom_minimum_size = Vector2(_card_width(), 0)
 	# Wrap at the card width so a long part name doesn't stretch the card off-screen.
@@ -81,7 +81,7 @@ func _build_ui() -> void:
 	col.add_child(_slot_label)
 
 	_slot_caption = Label.new()
-	_slot_caption.add_theme_font_size_override("font_size", 16)
+	_slot_caption.add_theme_font_size_override("font_size", UITheme.px(16))
 	_slot_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_slot_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_slot_caption)
@@ -122,7 +122,7 @@ func _build_ui() -> void:
 # viewports (`viewport_width`) so the card (plus panel padding/border) never
 # overflows the screen. Shared with the podium's car-reveal card. Pure.
 static func card_width(viewport_width: float) -> float:
-	return minf(520.0, viewport_width * 0.8)
+	return minf(520.0 * UITheme.UI_SCALE, viewport_width * 0.8)
 
 
 func _card_width() -> float:
@@ -304,7 +304,7 @@ func _build_upgrades_overlay() -> void:
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", UITheme.GAP)
-	col.custom_minimum_size = Vector2(380.0, 0)
+	col.custom_minimum_size = Vector2(380.0 * UITheme.UI_SCALE, 0)
 	panel.add_child(col)
 	# No title here: UpgradesGrid draws its own heading, which is what carries the star
 	# balance (UpgradesGrid.build_title_row).

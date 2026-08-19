@@ -104,7 +104,7 @@ func _show() -> void:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.text = "TAP TO PLAY\n\nrotate your phone to landscape"
-	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_font_size_override("font_size", UITheme.px(20))
 	layer.add_child(label)
 	btn.grab_focus()
 

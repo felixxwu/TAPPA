@@ -78,6 +78,22 @@ left alone (e.g. the big 3·2·1 countdown stays large).
 
 ## Single source of truth
 
+## UI scale (`UITheme.UI_SCALE` / `UITheme.px`)
+
+The UI was authored against the original 400-tall logical canvas; the shipped
+render height is now larger (`GameConfig.render_height`, applied by
+`DisplayStretch` — see [rendering.md](rendering.md)). `UITheme.UI_SCALE`
+re-inflates the AUTHORED sizes so the UI keeps its apparent size: the design
+constants (`FONT_SIZE`, `MENU_ROW_H`, `BUTTON_MIN_W`, paddings/gaps) are defined
+as `authored × UI_SCALE`, and every literal font/UI pixel size in a script goes
+through `UITheme.px(authored)`. Fonts therefore get a genuinely larger point
+size — the TTF re-rasterises crisp at the new logical resolution — never a
+scaled-up small glyph. Keep `UI_SCALE` equal to `render_height / 400` when the
+render height is retuned, then re-run `tools/build_ui_theme.gd` (its stylebox
+margins go through `px` too). Sizes that do NOT live on the 2D canvas are
+exempt and stay authored — e.g. `hq.gd`'s `PIN_LABEL_FONT_SIZE` renders into a
+SubViewport shown in 3D.
+
 Tune the palette / type scale / spacing in **`scripts/ui_theme.gd`**, then
 regenerate the theme:
 

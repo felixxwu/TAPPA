@@ -121,7 +121,7 @@ A car authors **one `tire_compound`** (the rubber's intrinsic μ, ~0.85 hard eco
 (the `grip_balance` tuning slider then trims them apart) and copies the widths onto the
 config.
 
-**The compound is upgradeable.** The `tires` upgrade slot holds two parts — **Snow Tires**
+**The compound is upgradeable.** The `tires` upgrade slot holds the tyre compounds — **Snow Tires**
 (`snow_tires`, won at the Alps gateway pin) and **Race Tires**
 (`race_tires`, won deep in the Alps) — whose `tire_grip_mult` effect
 multiplies **both** axle μ figures in pipeline step 2 — i.e. *after* `apply_car` seeds them and *before* the `grip_balance`

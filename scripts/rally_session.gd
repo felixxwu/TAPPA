@@ -833,13 +833,25 @@ func _resolve_results() -> void:
 	# TWO REWARD SEAMS, deliberately separate — pick the one whose GATE your reward wants:
 	#   _award_podium_rewards      — pays only on a podium (or the opening rally's first
 	#                                attempt). Stars, the prize car, special unlocks.
-	#   _award_any_finish_rewards  — pays on ANY finish, podium or not. This is where a
-	#                                clean-run bonus, a stage-record bonus, or anything else
-	#                                that should not be podium-gated goes.
+	#   _award_any_finish_bonus_stars — pays on ANY finish, podium or not, and returns an
+	#                                INT of bonus stars. This is where a clean-run bonus, a
+	#                                stage-record bonus, or anything else that should not be
+	#                                podium-gated goes. The caller pays it and folds it into
+	#                                `stars_gained`, the only star channel the podium reads.
 	# They used to be one ~60-line `if podium_or_opening:` block, which meant every reward
 	# dropped anywhere near the reward logic silently inherited the podium gate.
 	var rewards := _award_podium_rewards(combined, placed, opening_first) if podium_or_opening else {}
-	var any_finish := _award_any_finish_rewards(combined, placed) if finished else {}
+	# The any-finish STAR seam returns a plain int, not a dict, and the caller (here) both
+	# pays it into the ledger and folds it into `stars_gained` below — see
+	# _award_any_finish_bonus_stars for why it cannot be allowed to invent its own key.
+	var bonus_stars := maxi(0, _award_any_finish_bonus_stars(combined, placed)) if finished else 0
+	if bonus_stars > 0:
+		# award_stars is the NON-rally credit path, which is right: complete_rally has
+		# already paid the placement stars, so this adds only the bonus on top — no
+		# double-credit. Silent when bonus_stars is 0, which is today's behaviour.
+		Save.award_stars(bonus_stars)
+	# Non-star any-finish fields (if any) — validated against RESULT_FIELDS at the merge.
+	var any_finish := _award_any_finish_fields(combined, placed) if finished else {}
 
 	# The car a CAR-UNLOCK rally hands over, captured for the podium's CAR_REVEAL stage
 	# (the slot-machine reel + showroom turntable). "" for every other rally and for a
@@ -856,7 +868,11 @@ func _resolve_results() -> void:
 	# differ on a re-win: rating is what best_placed is worth, gained is the improvement
 	# (0 when the placement did not beat the previous best). The podium's stars beat shows
 	# the rating as gold stars and the gained figure as text — see todo/star-economy.md.
-	var stars_gained := int(rewards.get("stars_gained", 0))
+	#
+	# `stars_gained` IS THE ONLY STAR CHANNEL THE PODIUM READS (podium.gd::_show_stars reads
+	# exactly `star_rating` and `stars_gained`). Any bonus star must be folded in HERE,
+	# before the result literal — a new result key would pay the ledger invisibly.
+	var stars_gained := int(rewards.get("stars_gained", 0)) + bonus_stars
 	var star_rating := int(rewards.get("star_rating", 0))
 
 	var result := {
@@ -892,9 +908,11 @@ func _resolve_results() -> void:
 		"car_reward_is_new": car_reward_is_new,
 		"game_won": game_won_now,
 	}
-	# Anything the any-finish seam paid out is reported alongside the podium fields. Empty
-	# today, so this merges nothing and the result is byte-for-byte what it always was.
-	result.merge(any_finish, true)
+	# Anything the any-finish seam reported is folded in alongside the podium fields, but
+	# ONLY under a key something downstream actually reads — see _merge_result_fields.
+	# _award_any_finish_fields returns {} today, so this merges nothing and the result is
+	# byte-for-byte what it always was.
+	_merge_result_fields(result, any_finish)
 	_last_result = result
 	_reset_to_idle()
 	rally_finished.emit(result)
@@ -904,7 +922,7 @@ func _resolve_results() -> void:
 # one carve-out (see _resolve_results). Stars, the prize car, and special/part unlocks.
 #
 # DO NOT put an any-finish reward in here: everything in this method is podium-gated by the
-# fact that the caller only calls it on a podium. _award_any_finish_rewards is the other seam.
+# fact that the caller only calls it on a podium. _award_any_finish_bonus_stars is the other seam.
 #
 # Returns the reward fields the finish result carries: car_reward, car_reward_is_new,
 # game_won, special_unlock, stars_gained, star_rating. Behaviour is exactly the old inline
@@ -1019,20 +1037,74 @@ func _award_podium_rewards(combined: int, placed: int, opening_first: bool) -> D
 	}
 
 
-# Rewards that pay on ANY finish — podium or not. The counterpart seam to
+# BONUS STARS that pay on ANY finish — podium or not. The counterpart seam to
 # _award_podium_rewards, called by _resolve_results AFTER the podium gate has closed, for
 # every non-DNF result.
 #
-# THIS IS THE PLACE for a reward that must not be podium-gated: a clean-run bonus (ask
+# THIS IS THE PLACE for a star reward that must not be podium-gated: a clean-run bonus (ask
 # took_damage_this_rally() / _took_damage_this_rally — never HP, see that field's note), a
-# stage-record bonus, a finisher's participation payout. Return the fields it wants merged
-# into the finish result; the caller merges them over the podium fields.
+# stage-record bonus, a finisher's participation payout.
 #
-# EMPTY TODAY, on purpose. There are no any-finish rewards yet — the seam exists so the next
-# one has an obvious home with the right gate, instead of being dropped into the podium block
-# and silently inheriting a gate it did not want.
-func _award_any_finish_rewards(_combined: int, _placed: int) -> Dictionary:
+# RETURNS AN INT ON PURPOSE. It used to return a free-form Dictionary merged into the finish
+# result, and twice in a row a clean-run bonus was added here under an invented key
+# (`stars_bonus`, `clean_run_stars`). The ledger moved, and the player saw nothing: the
+# podium reads exactly TWO star keys off the result — `star_rating` and `stars_gained`
+# (podium.gd::_show_stars). An int cannot express a channel nothing reads: the caller folds
+# whatever you return into `stars_gained` and pays it with Save.award_stars, so the payout
+# can only land where the UI already looks.
+#
+# Keep this PURE — do not touch Save here; the caller owns the credit.
+#
+# RETURNS 0 TODAY, on purpose. There are no any-finish rewards yet — the seam exists so the
+# next one has an obvious home with the right gate, instead of being dropped into the podium
+# block and silently inheriting a gate it did not want.
+#
+# WHEN YOU MAKE THIS RETURN NON-ZERO, TWO EXISTING TESTS WILL GO RED, AND THAT IS EXPECTED —
+# they are not your bug and you must not weaken them into meaninglessness:
+#   tests/headless/test_rally_session.gd
+#     · test_a_rewin_pays_stars_again_but_never_another_car
+#     · test_the_opening_rally_completes_on_a_losing_finish
+# Both assert `stars_gained == stars_for_placement(...)` on fixtures that finish UNDAMAGED,
+# so any any-finish bonus makes them off by exactly the bonus. Update them to account for the
+# bonus your feature pays (assert the placement part plus your knob, not a bare number).
+# You cannot see this by running the suite before you start — they are green until the seam
+# pays out — which is why it is written here rather than left to be discovered.
+func _award_any_finish_bonus_stars(_combined: int, _placed: int) -> int:
+	return 0
+
+
+# Non-star any-finish result fields, for a future reward that genuinely needs to say
+# something to the podium beyond stars. Anything returned here must ALREADY be a key in
+# RESULT_FIELDS and be read by something downstream — _merge_result_fields rejects the rest
+# loudly. Stars do NOT belong here; use _award_any_finish_bonus_stars.
+func _award_any_finish_fields(_combined: int, _placed: int) -> Dictionary:
 	return {}
+
+
+# Every key the finish result is allowed to carry. The podium and the results UI read from
+# this set and nothing else, so a key outside it is invisible to the player however
+# faithfully it was written.
+const RESULT_FIELDS: PackedStringArray = [
+	"placed", "completed", "combined_ms", "dnf", "took_damage", "rally_id", "rally_name",
+	"car_instance_id", "standings", "special_unlock", "star_rating", "stars_gained",
+	"car_reward", "car_reward_is_new", "game_won",
+]
+
+
+# Merge `extra` into the finish result, refusing (loudly) any key nothing downstream reads.
+# Cheap — one dictionary scan over a seam that is usually empty. The point is that an
+# invented channel ANNOUNCES ITSELF on the first headless run instead of vanishing.
+func _merge_result_fields(result: Dictionary, extra: Dictionary) -> void:
+	for key in extra:
+		var name := String(key)
+		if not RESULT_FIELDS.has(name):
+			push_error("RallySession: finish-result key '%s' is not in RESULT_FIELDS, so nothing "
+				% name + "reads it — the player would never see it. For bonus STARS return an "
+				+ "int from _award_any_finish_bonus_stars (the caller folds it into "
+				+ "stars_gained, which is what podium.gd shows). For anything else, add the key "
+				+ "to RESULT_FIELDS and to the UI that must display it.")
+			continue
+		result[name] = extra[key]
 
 
 # Is the rally being resolved this player's OPENING rally, on its first attempt?

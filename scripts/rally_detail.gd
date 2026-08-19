@@ -137,7 +137,7 @@ func build(host: Node, on_back: Callable, on_enter: Callable, on_dev_win: Callab
 	adjust.add_theme_color_override("font_color", UITheme.GOLD)
 	right.add_child(adjust)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 12)
+	gap.custom_minimum_size = Vector2(0, UITheme.px(12))
 	right.add_child(gap)
 	right.add_child(heading("Your record"))
 	var record_row := HBoxContainer.new()
@@ -258,7 +258,7 @@ func fill(rally: Dictionary, profile: Dictionary, rally_id := "") -> void:
 static func plain_label(text: String, size: int) -> Label:
 	var lbl := Label.new()
 	lbl.text = text
-	lbl.add_theme_font_size_override("font_size", size)
+	lbl.add_theme_font_size_override("font_size", UITheme.px(size))
 	return lbl
 
 

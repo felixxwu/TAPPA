@@ -666,7 +666,7 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 				# (~445 units on a 16:9 phone), so it's now the DESKTOP preference and
 				# _modal_body_width clamps it to whatever the frame can actually show;
 				# chrome = the panel's 20-unit padding either side plus the modal margin.
-				vbox.custom_minimum_size = Vector2(_hq._modal_body_width(460.0, 72.0), 0)
+				vbox.custom_minimum_size = Vector2(_hq._modal_body_width(460.0 * UITheme.UI_SCALE, 72.0 * UITheme.UI_SCALE), 0)
 				# No title here: UpgradesGrid draws its own heading, which is what
 				# carries the star balance (UpgradesGrid.build_title_row).
 				_upgrades_popup_menu = UpgradesGrid.new()

@@ -261,6 +261,63 @@ const CONDITIONS: Array[Dictionary] = [
 	},
 ]
 
+# WETNESS — the one classification of the table that is NOT a per-entry key, and the
+# answer to "is there water on the road right now".
+#
+# WHY THIS EXISTS AT ALL. Three separate attempts in a row at a weather-conditioned rule
+# (a wet tyre-grip axis, a wet spray effect, a wet handling tweak) were written as
+# `weather == "rain"` and so were DEAD IN A STORM — which is the wettest condition in the
+# table. There was nothing in the code that said which ids are wet, so every author had to
+# rediscover it from the entry comments and every one of them got it wrong the same way.
+# `is_wet()` below is that missing name. WRITE `WeatherLibrary.is_wet(id)`, NEVER
+# `id == "rain"` — the same rule the rest of this file already states for `== WEATHER_x`.
+#
+# WHY A TABLE AND NOT A BOOLEAN CHAIN: `id == "rain" or id == "storm"` has to be REMEMBERED
+# and extended by whoever adds the eighth condition. This dict cannot be forgotten, because
+# it must name EVERY id in CONDITIONS — adding a condition without classifying it FAILS
+# test_weather_library.gd::test_every_condition_is_classified_wet_or_dry. That test is the
+# whole point of the dict being separate from the entries: an omitted entry KEY reads as
+# "does not have that feature" (see the header), which would make an unclassified new
+# condition silently dry.
+#
+# WET means LIQUID WATER ON THE ROAD SURFACE — the thing a wet-grip, spray or reflection
+# rule actually keys off. It is NOT "has precipitation" and NOT "has a grip multiplier":
+# snowfall lays a dry frozen layer (and deliberately authors no grip multiplier at all —
+# see its entry), and a sandstorm carries a grip multiplier while being the driest
+# condition in the table. Whether a given id is wet is a DESIGN call; only the requirement
+# that every id is answered here is structural.
+const WETNESS := {
+	"dry": false,
+	"rain": true,
+	"storm": true,       # rain, harder — the id the `== "rain"` bug kept missing
+	"sandstorm": false,  # dust, not water
+	"fog": false,        # a visibility condition; the road under it is dry
+	"snow": false,       # settled/falling snow is a frozen surface, not standing water
+	"night": false,      # purely a look
+}
+
+# Whether `id` is a WET condition — water on the road. The ONLY sanctioned way to ask;
+# see WETNESS above for why a literal comparison is a bug rather than a style choice.
+#
+# Unknown ids resolve through by_id()'s dry fallback exactly like every other query here,
+# so a typo'd or removed condition is dry rather than a crash. A condition installed by
+# override_for_test() that WETNESS does not name is likewise dry.
+static func is_wet(id: String) -> bool:
+	return bool(WETNESS.get(String(by_id(id).get("id", DEFAULT_ID)), false))
+
+
+# Every wet condition id, in table order — for callers that need the SET rather than a
+# per-id question (a doc line, a test subject list, an authoring tool). Derived from
+# WETNESS so it can never drift from is_wet().
+static func wet_ids() -> Array:
+	var out: Array = []
+	for entry in all():
+		var id := String(entry.get("id", ""))
+		if id != "" and is_wet(id):
+			out.append(id)
+	return out
+
+
 # Sub-keys of a "road_tint" block, in a stable order — both name GameConfig fields.
 # "color" is OPTIONAL: without it the road albedo is multiplied by "amount" (darkened);
 # with it the albedo is lerped toward that colour by "amount". This is what keeps the

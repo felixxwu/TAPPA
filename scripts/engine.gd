@@ -15,6 +15,10 @@ const FLYWHEEL_DRAIN_TIME := 0.3
 # Boost above which snapping the throttle shut vents the blow-off valve.
 const BOV_BOOST_THRESHOLD := 0.3
 
+# Throttle below which the pedal counts as shut (analogue input noise floor). Above it the
+# driver is ON the throttle; at or below it they have LIFTED OFF — see is_lifting_off().
+const THROTTLE_DEADBAND := 0.001
+
 var omega := 0.0  # rad/s engine flywheel speed
 var gear := 1  # -1 = reverse, 0 = neutral, 1..N forward
 var auto := false  # automatic gearbox (picks the gear from the airspeed)
@@ -129,6 +133,13 @@ func _init(p_config: GameConfig) -> void:
 	_compute_shift_speeds()
 
 
+# Is the driver OFF the throttle — i.e. coasting / lifting off / on engine braking?
+# THE one place that question is answered, so lift-off behaviour can be written without
+# reaching for `not combusting`, which also covers gearchanges and fuel cuts (see step()).
+static func is_lifting_off(throttle_value: float) -> bool:
+	return throttle_value <= THROTTLE_DEADBAND
+
+
 func idle_omega() -> float:
 	return config.idle_rpm * TAU / 60.0
 
@@ -236,8 +247,9 @@ func select_forward(rear_omega: float) -> bool:
 
 # Resolve nitrous delivery for this substep and drain the tank. Only called when nitrous is
 # FITTED (the caller checks `_has_nitrous`). `combusting` is whether the engine is actually
-# making torque (throttle open, not mid-shift, not fuel-cut) — nitrous only flows when it
-# would do something, so the tank can't be dumped off-throttle.
+# making torque (throttle open AND not mid-shift AND not fuel-cut) — it is NOT a throttle-
+# position flag; for "has the driver lifted off" see is_lifting_off(). Nitrous only flows
+# when it would do something, so the tank can't be dumped off-throttle, mid-shift, or on a cut.
 # Sets nitrous_event on the delivery edge and nitrous_emptied on the substep the tank
 # runs dry; both are one-substep flags the audio bridge consumes. Returns whether the
 # torque multiplier applies.
@@ -328,6 +340,11 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	# so this is subtracted on every path — off throttle and fuel-cut it IS the
 	# engine braking (now larger at high revs), which lets the revs bounce off
 	# the limiter; the no-stall idle clamp below still holds the bottom.
+	# SHARED TERM, TWO CUSTOMERS: this same friction is (a) the coasting/lift-off engine
+	# braking the driver feels and (b) the only thing that pulls the revs back down through
+	# the rev limiter's hysteresis band in _update_limiter(). Scaling it — or adding a
+	# lift-off-only multiplier here — changes limiter bounce too. If you want lift-off feel
+	# alone, gate on `lifting_off` (see below), NOT on `not combusting` and not here.
 	# A fitted turbo adds a CONSTANT parasitic drag (backpressure/pumping loss), sized by
 	# the turbo — always-on, not gated on boost or rpm. Off boost it just bogs the engine;
 	# once boost is up the delivered torque swamps it. Big turbo + small engine = big
@@ -354,9 +371,26 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	_step_turbo(cfg, h, throttle_in)
 	# Belt boost is stateless — straight off this substep's rpm, no spool.
 	sc_boost = supercharger_boost_fraction(r, cfg.supercharger_rpm_ref) if blown else 0.0
-	# Whether combustion is making torque this substep — hoisted because both the nitrous
-	# gate and the crank-torque block below need it, and this runs 8 substeps x 60 Hz per car.
-	var combusting := throttle > 0.001 and shift_timer <= 0.0 and not fuel_cut
+	# THREE DISTINCT STATES, deliberately named apart because they are easy to confuse:
+	#
+	#   lifting_off  — THROTTLE POSITION ONLY: the driver is off the pedal. This is the
+	#                  "coasting / lift-off / engine braking" question. Anything about how
+	#                  the car feels when the driver lifts belongs here.
+	#   fuel_cut     — combustion suppressed by the REV LIMITER or a damage misfire, with
+	#                  the throttle wherever the driver left it (usually wide open).
+	#   combusting   — the engine is actually MAKING TORQUE: pedal down AND not mid-shift
+	#                  AND not fuel-cut. It says nothing on its own about pedal position.
+	#
+	# So `not combusting` is NOT "the driver lifted off" — it is also true mid-gearchange
+	# and under a fuel cut. Use `lifting_off` for lift-off/coasting behaviour; using
+	# `not combusting` there would silently retune gearchanges AND the rev limiter's bounce
+	# (see _update_limiter: it relies on the shared `friction` term above to pull the revs
+	# back down through its hysteresis band).
+	#
+	# Both are hoisted because the nitrous gate and the crank-torque block below need them,
+	# and this runs 8 substeps x 60 Hz per car.
+	var lifting_off := is_lifting_off(throttle)
+	var combusting := not lifting_off and shift_timer <= 0.0 and not fuel_cut
 	# Nitrous: resolve + drain BEFORE the crank torque so the multiplier and the audio cues
 	# reflect this substep. Gated on the same combustion conditions as the torque below —
 	# holding the button off-throttle or under a fuel cut delivers nothing and so must not
@@ -416,6 +450,11 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 # OFF only once the revs fall a full band below it. While latched, step() makes
 # no crank torque, so engine braking pulls the revs down through the band until
 # fuel restores and they climb again — the engine bounces off the limit.
+# DEPENDENCY: that pull-down is the SAME `friction` term step() uses for coasting drag,
+# and the limiter cut happens with the throttle still WIDE OPEN — so this is not a
+# "lift-off" state. Anything that weakens or conditions that friction must keep it
+# non-zero under a fuel cut or the limiter stops bouncing (guarded by
+# test_engine_logic.gd::test_limiter_bounce_depends_on_fuel_cut_friction).
 func _update_limiter(cfg: GameConfig) -> bool:
 	var band_omega := cfg.rev_limiter_band * TAU / 60.0
 	if omega >= redline_omega():

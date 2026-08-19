@@ -101,3 +101,40 @@ func test_design_height_default_matches_design_height() -> void:
 func test_degenerate_height_override_is_safe() -> void:
 	var logical := DisplayStretch.logical_size(Vector2i(1280, 960), 1.0, 0.0)
 	assert_gt(logical.y, 0, "zero override height is clamped, not rendered at 0")
+
+
+# --- Configured render height (features/rendering.md) ----------------------------
+
+func test_configured_height_is_used() -> void:
+	# A positive config render_height renders at exactly that logical height.
+	var h := DisplayStretch.design_height_for(Vector2i(1995, 1078), false, 0, 720)
+	assert_eq(h, 720.0, "a positive config height is the logical height")
+
+
+func test_zero_config_height_follows_the_window() -> void:
+	# 0 = device-native: the logical height follows the window height.
+	var h := DisplayStretch.design_height_for(Vector2i(1995, 1078), false, 0, 0)
+	assert_eq(h, 1078.0, "config height 0 renders at the window height")
+
+
+func test_benchmark_sweep_height_beats_the_config() -> void:
+	# An explicit sweep height must measure THAT resolution whatever the config says.
+	var h := DisplayStretch.design_height_for(Vector2i(1995, 1078), true, 900, 720)
+	assert_eq(h, 900.0, "the sweep override wins during a benchmark")
+
+
+func test_benchmark_without_sweep_height_measures_what_ships() -> void:
+	var h := DisplayStretch.design_height_for(Vector2i(1995, 1078), true, 0, 720)
+	assert_eq(h, 720.0, "baseline benchmark measures the shipped config height")
+
+
+func test_degenerate_window_with_native_config_is_safe() -> void:
+	var h := DisplayStretch.design_height_for(Vector2i(0, 0), false, 0, 0)
+	assert_eq(h, DESIGN_HEIGHT, "zero-size window falls back to the design height")
+
+
+func test_config_carries_a_sane_render_height() -> void:
+	# Sanity only (never pin the chosen value): non-negative, and if fixed, tall
+	# enough to be a usable frame.
+	var cfg := load("res://config/game_config.tres") as GameConfig
+	assert_true(cfg.render_height >= 0, "render_height is 0 (native) or a positive height")

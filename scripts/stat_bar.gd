@@ -43,14 +43,14 @@ const SEGMENTS := 20
 # mid-field cars, which is the one thing they exist to do). That page width matters twice over on a
 # world panel: it was overflowing the panel's right edge, and it sets the ceiling on how far that
 # screen's ui_scale can be pushed (features/world-panel.md).
-const SEGMENT_W := 6.0
-const SEGMENT_H := 12.0
+const SEGMENT_W := 6.0 * UITheme.UI_SCALE
+const SEGMENT_H := 12.0 * UITheme.UI_SCALE
 const SEGMENT_GAP := 2
 # The name and figure columns are kept narrow on purpose — every unit they give back goes
 # to the blocks, which are the part the player actually reads.
-const LABEL_MIN_W := 84.0
-const VALUE_MIN_W := 78.0
-const WRENCH_MIN_W := 34.0
+const LABEL_MIN_W := 84.0 * UITheme.UI_SCALE
+const VALUE_MIN_W := 78.0 * UITheme.UI_SCALE
+const WRENCH_MIN_W := 34.0 * UITheme.UI_SCALE
 # Every row is the same height whether or not it carries a wrench. UITheme.enforce pins
 # single-line buttons to MENU_ROW_H, so a wrenched row is that tall while a wrenchless one
 # is only as tall as its text — leaving the bars unevenly spaced down the page for a reason

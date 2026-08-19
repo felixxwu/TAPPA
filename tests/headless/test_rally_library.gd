@@ -389,7 +389,10 @@ func test_map_pins_are_well_formed_and_never_stack() -> void:
 	# pins on top of each other are unpickable, so both are structural bugs a corner
 	# re-site can introduce silently.
 	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
-	const MIN_SEPARATION := 0.03
+	# The bound is RallyLibrary's, not a copy: authoring code (suggest_map_pos /
+	# map_pos_is_free) and this guard must enforce ONE number or an author can be handed a
+	# "legal" pin this test then rejects.
+	var min_separation: float = RallyLibrary.MIN_PIN_SEPARATION
 	var seen: Array[Vector2] = []
 	for rally in RallyLibrary.all():
 		var pos: Vector2 = rally.get("map_pos", Vector2(-1, -1))
@@ -397,9 +400,82 @@ func test_map_pins_are_well_formed_and_never_stack() -> void:
 		assert_between(pos.x, 0.0, 1.0, "rally %s map_pos.x is in [0, 1]" % rid)
 		assert_between(pos.y, 0.0, 1.0, "rally %s map_pos.y is in [0, 1]" % rid)
 		for other in seen:
-			assert_gt(pos.distance_to(other), MIN_SEPARATION,
-				"rally %s pin is not stacked on another pin" % rid)
+			# The message HANDS BACK THE FIX rather than just naming the rule: a stacked pin
+			# is almost always a pasted placeholder, and the author's next question is "so
+			# what coordinate may I use?". suggest_map_pos re-derives a free one in the same
+			# region from the live roster, so the answer cannot go stale the way a listed
+			# coordinate in a comment would.
+			assert_gt(pos.distance_to(other), min_separation,
+				"rally %s pin is stacked on another pin (min separation %.3f). Use map_pos: %s — from RallyLibrary.suggest_map_pos(\"%s\")" % [
+					rid, min_separation,
+					RallyLibrary.suggest_map_pos(String(rally.get("region", ""))),
+					String(rally.get("region", ""))])
 		seen.append(pos)
+
+
+# suggest_map_pos is the seam that makes a legal `map_pos` COMPUTABLE instead of prose, so
+# what it returns must satisfy the very rules the guards above enforce — otherwise pasting
+# its answer would swap one red test for another.
+#
+# Pins no coordinate and no region: it asks the helper for a pin for every region the
+# CURRENT roster actually uses, and checks the structural properties. A designer may move
+# any pin, add a region or retune map_reveal_radius and this still holds.
+func test_suggest_map_pos_returns_a_legal_free_pin_for_every_authored_region() -> void:
+	var regions: Array = []
+	for rally in RallyLibrary.all():
+		var r := String(rally.get("region", ""))
+		if r != "" and not regions.has(r):
+			regions.append(r)
+	assert_gt(regions.size(), 0, "the roster authors at least one region (else this asserts nothing)")
+	var min_separation: float = RallyLibrary.MIN_PIN_SEPARATION
+	for region_id in regions:
+		var pos: Vector2 = RallyLibrary.suggest_map_pos(region_id)
+		assert_between(pos.x, 0.0, 1.0, "suggestion for '%s' is on the map in x" % region_id)
+		assert_between(pos.y, 0.0, 1.0, "suggestion for '%s' is on the map in y" % region_id)
+		var nearest := INF
+		for rally in RallyLibrary.all():
+			nearest = minf(nearest, pos.distance_to(RallyLibrary.map_pos_of(rally)))
+		assert_gt(nearest, min_separation,
+			"suggestion for '%s' clears every existing pin by more than the separation bound" % region_id)
+		# Reachability: it must fall inside SOME authored rally's reveal circle, or a rally
+		# pinned there would be stranded outside the explorable map.
+		var reachable := false
+		for rally in RallyLibrary.all():
+			if pos.distance_to(RallyLibrary.map_pos_of(rally)) <= RallyLibrary.reveal_radius_of(rally):
+				reachable = true
+				break
+		assert_true(reachable, "suggestion for '%s' is inside an existing rally's reveal circle" % region_id)
+		# And the predicate form agrees with the generator — they are one rule.
+		assert_true(RallyLibrary.map_pos_is_free(pos),
+			"suggestion for '%s' passes map_pos_is_free" % region_id)
+
+
+func test_map_pos_is_free_rejects_a_pin_on_top_of_an_authored_one() -> void:
+	# The predicate's contract, not any particular coordinate: an existing pin's own
+	# position is never free, and neither is the HQ centre (the illegal placeholder that
+	# used to sit in the rally template).
+	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this asserts nothing)")
+	var taken := RallyLibrary.map_pos_of(RallyLibrary.all()[0])
+	assert_false(RallyLibrary.map_pos_is_free(taken), "an authored pin's own position is not free")
+	assert_false(RallyLibrary.map_pos_is_free(RallyLibrary.HQ_MAP_POS), "the HQ centre is not free")
+	assert_false(RallyLibrary.map_pos_is_free(Vector2(-0.5, 0.5)), "a position off the map is not free")
+
+
+func test_event_is_wet_reads_the_weather_tables_classification() -> void:
+	# The event-layer wetness seam. It must be the WEATHER TABLE's answer, not a local
+	# string test — that is the whole reason it exists (a `== WEATHER_RAIN` rule silently
+	# skipped storms three times running).
+	#
+	# Pins no design call: the expected value for each id comes from WeatherLibrary.is_wet,
+	# so re-classifying a condition, or adding one, cannot break this. What it pins is the
+	# DELEGATION, plus the tolerance an authored typo relies on.
+	for entry in WeatherLibrary.all():
+		var id := String(entry.get("id", ""))
+		assert_eq(RallyLibrary.event_is_wet({"weather": id}), WeatherLibrary.is_wet(id),
+			"event_is_wet defers to the weather table for '%s'" % id)
+	assert_false(RallyLibrary.event_is_wet({}), "an event with no authored weather is dry")
+	assert_false(RallyLibrary.event_is_wet({"weather": "no_such_condition"}),
+		"an unrecognised string resolves to dry, so it is not wet")
 
 
 func test_event_forestiness_defaults_to_fully_wooded() -> void:
@@ -2258,3 +2334,50 @@ func test_the_garage_position_is_deterministic_for_a_profile() -> void:
 		var profile: Dictionary = {Save.KEY_RALLIES: {}, "starter_model_id": model_id}
 		assert_eq(RallyLibrary.hq_map_pos(profile), RallyLibrary.hq_map_pos(profile),
 			"same profile, same garage — the cache key depends on it")
+
+
+# ---------------------------------------------------------------------------------------
+# The authoring templates carry a PASTEABLE map_pos literal. Keep it legal, and keep the
+# two copies in step.
+#
+# Why this exists: readiness round 009 replaced the template's literal with "paste the
+# result of RallyLibrary.suggest_map_pos(...)". That is correct advice and useless to an
+# author who cannot run the project — round 010's probe authored no rally at all. So the
+# literal is back as the default and the function is the escalation path. A baked literal
+# rots, though: someone authors a pin next to it, or pastes it and makes it an authored pin
+# itself. These two tests are what stop it rotting SILENTLY — they fail with the
+# replacement value already computed.
+func _template_map_pos_from(path: String) -> Vector2:
+	var text := FileAccess.get_file_as_string(path)
+	assert_false(text.is_empty(), "template file %s is readable" % path)
+	# The literal appears bare in the REGIONS comment and BACKSLASH-ESCAPED inside the guard's
+	# string literal, so tolerate an optional backslash before each quote.
+	var re := RegEx.create_from_string('\\\\?"map_pos\\\\?": Vector2\\(([-0-9.]+), ?([-0-9.]+)\\)')
+	var m := re.search(text)
+	assert_not_null(m, "%s still carries a pasteable map_pos literal in its template" % path)
+	if m == null:
+		return Vector2.ZERO
+	return Vector2(float(m.get_string(1)), float(m.get_string(2)))
+
+
+func test_the_template_map_pos_is_still_a_legal_free_pin() -> void:
+	var pin := _template_map_pos_from("res://scripts/region_library.gd")
+	var replacement: Vector2 = RallyLibrary.suggest_map_pos("")
+	for r in RallyLibrary.all():
+		var authored: Vector2 = r.get("map_pos", Vector2.ZERO)
+		assert_gt(pin.distance_to(authored), RallyLibrary.MIN_PIN_SEPARATION,
+			("the template's pasteable map_pos %s is no longer free — rally '%s' now sits at "
+			+ "%s. Replace the literal in BOTH scripts/region_library.gd's REGIONS template "
+			+ "AND tests/headless/test_region_assets.gd's _unreachable_region_fix with %s "
+			+ "(a currently-free pin). If it went stale because someone PASTED it, that is "
+			+ "the expected lifecycle: rotate it to the new value.")
+			% [pin, r.get("id", "?"), authored, replacement])
+
+
+func test_both_authoring_templates_offer_the_same_map_pos() -> void:
+	# Two copy-pasteable rows exist: the REGIONS header comment and the reachability guard's
+	# failure message. Round 010 found them disagreeing (one updated, one not), which is how
+	# an author ends up pasting a coordinate the other half of the codebase calls illegal.
+	assert_eq(_template_map_pos_from("res://scripts/region_library.gd"),
+		_template_map_pos_from("res://tests/headless/test_region_assets.gd"),
+		"the REGIONS template and _unreachable_region_fix must hand back the SAME pin")

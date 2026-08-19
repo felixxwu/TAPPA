@@ -88,9 +88,16 @@ end-of-rally reward goes*:
 
 - `_award_podium_rewards(...)` — pays only on a podium (or the opening rally's first
   attempt). This is where the existing `Save.complete_rally` placement payout lives.
-- `_award_any_finish_rewards(...)` — pays on **any** non-DNF finish. Empty today. A bonus
-  that should not be podium-gated (e.g. one keyed on finishing without damage) belongs
-  here, and pays via `Save.award_stars`.
+- `_award_any_finish_bonus_stars(combined, placed) -> int` — pays on **any** non-DNF
+  finish. Returns `0` today. A bonus that should not be podium-gated (e.g. one keyed on
+  finishing without damage) belongs here: return the star count and nothing else. The
+  CALLER pays it (`Save.award_stars`) and folds it into `stars_gained`; keep the seam pure.
+
+**`stars_gained` is the only star channel the player ever sees.** `podium.gd::_show_stars`
+reads `star_rating` and `stars_gained` off the finish result and nothing else, so a bonus
+reported under a new result key moves the ledger *invisibly* — this has been written wrong
+twice. The `int` return makes it impossible; `RallySession.RESULT_FIELDS` +
+`_merge_result_fields` `push_error` on any unlisted key as a second line of defence.
 
 A bonus keyed on the run being **clean** must ask `RallySession.took_damage_this_rally()`
 (or the finish result's `took_damage`), never the car's HP — HQ repairs cost stars, so cars

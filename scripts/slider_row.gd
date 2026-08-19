@@ -23,7 +23,7 @@ extends RefCounted
 #
 # 200 against a logical canvas only a few hundred units wide (DisplayStretch) — so with the
 # 130 label column it asks for ~330 and still fits the narrow web-touch tier.
-const SLIDER_MIN_W := 200.0
+const SLIDER_MIN_W := 200.0 * UITheme.UI_SCALE
 
 # spec keys: name, lo, hi (label texts); min, max, step (slider range, defaults
 # −1..1 step 0.05 — the handling-axis shape).
@@ -45,16 +45,16 @@ static func build(spec: Dictionary) -> Dictionary:
 	# few hundred units wide (DisplayStretch), so 180 alone was eating roughly half the
 	# available width and starving the slider + its end labels — see
 	# features/menus.md "Upgrades / Tune panel width".
-	label_col.custom_minimum_size = Vector2(130, 0)
+	label_col.custom_minimum_size = Vector2(UITheme.px(130), 0)
 	label_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	row.add_child(label_col)
 	var name_label := Label.new()
 	name_label.text = String(spec.get("name", ""))
-	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.add_theme_font_size_override("font_size", UITheme.px(16))
 	name_label.clip_text = true
 	label_col.add_child(name_label)
 	var value := Label.new()
-	value.add_theme_font_size_override("font_size", 14)
+	value.add_theme_font_size_override("font_size", UITheme.px(14))
 	value.modulate = Color(1, 1, 1, 0.8)
 	value.clip_text = true
 	label_col.add_child(value)
@@ -83,13 +83,13 @@ static func build(spec: Dictionary) -> Dictionary:
 	slider_col.add_child(ends)
 	var lo := Label.new()
 	lo.text = String(spec.get("lo", ""))
-	lo.add_theme_font_size_override("font_size", 11)
+	lo.add_theme_font_size_override("font_size", UITheme.px(11))
 	lo.modulate = Color(1, 1, 1, 0.6)
 	lo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ends.add_child(lo)
 	var hi := Label.new()
 	hi.text = String(spec.get("hi", ""))
-	hi.add_theme_font_size_override("font_size", 11)
+	hi.add_theme_font_size_override("font_size", UITheme.px(11))
 	hi.modulate = Color(1, 1, 1, 0.6)
 	hi.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ends.add_child(hi)

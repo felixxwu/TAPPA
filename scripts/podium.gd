@@ -58,7 +58,7 @@ var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed
 # The stars beat wears a much bigger StarRow than the HQ map pins (11 px): this is the
 # reward moment, not a readout. Radius/gap are plain vars on StarRow, so "big stars" needs
 # no new widget.
-const STAR_BEAT_RADIUS := 34.0
+const STAR_BEAT_RADIUS := 34.0 * UITheme.UI_SCALE
 const STAR_BEAT_GAP := 20.0
 
 # 3D staging.
@@ -437,7 +437,7 @@ func _build_overlay() -> void:
 	root.add_child(title_plate)
 
 	_title_label = Label.new()
-	_title_label.add_theme_font_size_override("font_size", 30)
+	_title_label.add_theme_font_size_override("font_size", UITheme.px(30))
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title_plate.add_child(_title_label)
 
@@ -463,7 +463,7 @@ func _build_overlay() -> void:
 	middle.add_child(_body_plate)
 
 	_body_label = Label.new()
-	_body_label.add_theme_font_size_override("font_size", 22)
+	_body_label.add_theme_font_size_override("font_size", UITheme.px(22))
 	_body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body_plate.add_child(_body_label)
@@ -495,7 +495,7 @@ func _build_overlay() -> void:
 	_star_row.setup(0, RallyLibrary.MAX_STARS_PER_RALLY)
 	stars_col.add_child(_star_row)
 	_star_caption = Label.new()
-	_star_caption.add_theme_font_size_override("font_size", 16)
+	_star_caption.add_theme_font_size_override("font_size", UITheme.px(16))
 	_star_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_star_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stars_col.add_child(_star_caption)
@@ -509,7 +509,7 @@ func _build_overlay() -> void:
 	slot_col.add_theme_constant_override("separation", 8)
 	_slot_panel.add_child(slot_col)
 	_slot_label = Label.new()
-	_slot_label.add_theme_font_size_override("font_size", 40)
+	_slot_label.add_theme_font_size_override("font_size", UITheme.px(40))
 	_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_slot_label.custom_minimum_size = Vector2(_card_width(), 0)
 	# Wrap at the card width: without this a long part/car name at this font size
@@ -517,7 +517,7 @@ func _build_overlay() -> void:
 	_slot_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	slot_col.add_child(_slot_label)
 	_slot_caption = Label.new()
-	_slot_caption.add_theme_font_size_override("font_size", 16)
+	_slot_caption.add_theme_font_size_override("font_size", UITheme.px(16))
 	_slot_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_slot_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	slot_col.add_child(_slot_caption)
@@ -527,7 +527,7 @@ func _build_overlay() -> void:
 	# re-focused whenever it reappears after a reveal (_refresh_next_button).
 	_next_button.focus_mode = Control.FOCUS_ALL
 	_next_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_next_button.custom_minimum_size = Vector2(240, 48)
+	_next_button.custom_minimum_size = Vector2(UITheme.px(240), UITheme.px(48))
 	_next_button.pressed.connect(_on_next)
 	root.add_child(_next_button)
 

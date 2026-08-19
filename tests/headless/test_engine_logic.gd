@@ -305,3 +305,96 @@ func test_handbrake_declutches_so_the_engine_revs() -> void:
 		"declutched, full throttle climbs the revs free of the locked driveline")
 	assert_almost_eq(wheel_torque, 0.0, 0.0001,
 		"an open clutch delivers no torque to the wheels")
+
+
+# --- The shared friction term: coasting drag AND the limiter's pull-down ------------
+# These two guard the trap that `not combusting` covers THREE different situations
+# (lifted off, mid-gearchange, fuel cut) and that the rev limiter leans on the very
+# same friction term as coasting engine braking. They pin the STRUCTURE, never a value:
+# no torque, rpm, friction coefficient or band width is asserted.
+
+func test_is_lifting_off_is_throttle_position_only() -> void:
+	# The named question "has the driver lifted off" must depend on the pedal and on
+	# nothing else — not on the gearbox, not on a fuel cut. (A shifting or fuel-cut
+	# engine at full throttle is NOT lifting off, which is exactly what `not combusting`
+	# would wrongly claim.)
+	assert_true(EngineSim.is_lifting_off(0.0), "a shut pedal is a lift-off")
+	assert_false(EngineSim.is_lifting_off(1.0), "a wide-open pedal is not a lift-off")
+	assert_false(EngineSim.is_lifting_off(0.5), "a part-open pedal is not a lift-off")
+	# Same throttle, wildly different engine state -> same answer, because the state
+	# plays no part in it.
+	_engine.gear = 1
+	_engine.shift_timer = 1.0
+	_engine.fuel_cut = true
+	assert_false(EngineSim.is_lifting_off(1.0),
+		"mid-shift and fuel-cut at full throttle is still NOT the driver lifting off")
+
+
+func test_limiter_bounce_depends_on_fuel_cut_friction() -> void:
+	# The rev limiter cuts fuel with the throttle still WIDE OPEN and then relies on the
+	# engine's friction to drag the revs back down through its hysteresis band until the
+	# cut releases. If a future change ever gates that drag on the driver being off the
+	# throttle (or otherwise zeroes it under a cut), the limiter would latch and never
+	# release, and this goes red. Neutral isolates the flywheel from the driveline.
+	_engine.gear = 0
+	_engine.omega = _engine.redline_omega() - 5.0
+	var h := 0.001
+	for _i in 5000:
+		if _engine.limiting:
+			break
+		_engine.step(h, 1.0, 0.0)
+	assert_true(_engine.limiting, "precondition: full throttle in neutral latches the cut")
+
+	# While the cut is latched the revs must FALL, at full throttle, every substep.
+	var before := _engine.omega
+	_engine.step(h, 1.0, 0.0)
+	assert_true(_engine.limiting, "precondition: the cut is still latched over this substep")
+	assert_lt(_engine.omega, before,
+		"under a fuel cut the revs fall at full throttle — friction still applies when the driver has NOT lifted")
+
+	# And it must fall far enough to clear the band, i.e. the bounce actually completes.
+	var released := false
+	for _i in 20000:
+		_engine.step(h, 1.0, 0.0)
+		if not _engine.limiting:
+			released = true
+			break
+	assert_true(released, "the limiter releases again — the shared friction pulls the revs through the band")
+
+
+func test_a_fuel_cut_drags_the_revs_down_on_its_own_terms() -> void:
+	# WHAT THIS PROTECTS, and what it deliberately does NOT.
+	#
+	# The rev limiter has no drag of its own: it suppresses combustion and relies on the
+	# friction term to pull the revs back through its band. So a fuel cut MUST keep dragging
+	# the revs down, whatever anyone does to lift-off feel. That is the invariant.
+	#
+	# This test used to assert that coasting and fuel-cut decel were EQUAL — "one shared
+	# friction term". That was wrong and it cost a round: lift-off braking strength is an
+	# authored tunable (an eval task asks for exactly that knob), so the equality held only
+	# while the knob sat at 1.0, and the guard reddened the sanctioned implementation of a
+	# feature the surrounding comments actively tell you to add. CLAUDE.md forbids pinning a
+	# relationship a designer may legitimately retune; the equality was such a relationship.
+	#
+	# So: assert the fuel-cut path still works, NOT that it matches the coasting path.
+	var h := 0.001
+	var start := _engine.redline_omega() * 0.85
+	_engine.gear = 0
+
+	# Driver lifted off, engine firing-capable but no fuel demanded.
+	_engine.omega = start
+	_engine.fuel_cut = false
+	_engine.step(h, 0.0, 0.0)
+	var coast_drop := start - _engine.omega
+
+	# Throttle wide open but combustion suppressed by a cut (limiter/misfire).
+	_engine.omega = start
+	_engine.misfire_level = 1.0
+	_engine._misfire_timer = h * 10.0  # hold a damage cut open across this substep
+	_engine.step(h, 1.0, 0.0)
+	var cut_drop := start - _engine.omega
+
+	assert_gt(coast_drop, 0.0, "coasting drags the revs down")
+	assert_gt(cut_drop, 0.0,
+		"and a fuel cut at WIDE OPEN throttle drags them down too — the limiter has no drag "
+		+ "of its own, so zeroing this would leave it unable to pull the revs back")

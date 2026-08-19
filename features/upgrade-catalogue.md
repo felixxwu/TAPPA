@@ -112,7 +112,7 @@ tile offers only the three drive modes — no separate on/off. The `drivetrain` 
 is the current pick and the other two modes are listed greyed with their reason (earn-gated
 as a whole, like a part option greys until its kit is fitted) — so the tile reads like every
 other slot rather than vanishing from the grid.
-The **`weight` slot** holds ONE part plus `Stock`: the **Weight Reduction** kit
+The **`weight` slot** holds, besides `Stock`, the **Weight Reduction** kit
 (`weight_reduction`, `mass_mult` 0.80), the slot's one **earned** option — greyed until won.
 
 **Ballast is retired.** The slot used to also carry two `free: true` options that ADDED
@@ -129,7 +129,7 @@ still refuses to fit anything that adds mass — so `fx_ballast` remains in
 `fx_consumable` follows for the retired consumables.
 The weight slot's option list is **ordered and labelled bespokely** by `UpgradeOptions`
 rather than following the generic part-option shape — see below.
-The **`gearbox` slot** holds one part, the **Sequential Gearbox** (`sequential_gearbox`),
+The **`gearbox` slot** holds the **Sequential Gearbox** (`sequential_gearbox`),
 whose `shift_time_set` effect **replaces** `shift_time` with its own absolute figure (the
 `"set"` op) rather than scaling the car's. The kit IS a specific piece of hardware, so it
 shifts at its own rate whatever it replaces, and one authored number is what a designer tunes.
@@ -145,7 +145,7 @@ two" op — never a per-engine exception table.
 It has its own `gearbox` tile on the upgrades grid, and fitting it moves the page's
 `PERFORMANCE` line not at all — the rating reads power-to-weight, which a shift time cannot
 touch — the same position nitrous is in.
-The **`tires` slot** holds two parts, **Snow Tires** (`snow_tires`) and **Race Tires**
+The **`tires` slot** holds the tyre compounds, **Snow Tires** (`snow_tires`) and **Race Tires**
 (`race_tires`), whose `tire_grip_mult` effect multiplies the car's tyre μ. Race Tires is a
 flat gain everywhere, won at `sn_showdown` deep in the Alps chain; Snow Tires is won at
 `sp_woodland_trial`, the gateway pin into the Alps, so the player arrives in the frozen
@@ -170,7 +170,7 @@ Current set: three **forced-induction kits** (turbo slot — `turbo_small` ungat
 `turbo_large` prerequisite-gated on the same car having `turbo_small` plus its own
 event gate, and `supercharger` prerequisite-gated on `turbo_large` plus its own
 event gate, see above; the blower's belt physics are in [forced-induction.md](forced-induction.md)),
-an aero kit, the two tyre compounds (snow and race), the sequential gearbox, the three **weight** parts above, the
+an aero kit, the tyre compounds (snow and race), the sequential gearbox, the three **weight** parts above, the
 drivetrain conversion kit, and the `nitrous` slot's part (see below).
 
 **Nothing in the catalogue is a consumable any more.** Every entry sits in a real slot and
@@ -429,7 +429,7 @@ just ordinary cases of the same rule: a part already FITTED is selectable regard
 gate (the gate governs earning, never keeping), and an unlocked-but-unfitted part is
 selectable as a purchase, priced.
 
-The turbo slot has three parts — `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
+The turbo slot's menu labels run `Stock` / `Small` / `Big` / `Supercharger` (`turbo_small` /
 `turbo_large` / `supercharger`, shown by their `menu_label`), and the tyre slot two —
 `Stock` / `Snow` / `Race` (`snow_tires` / `race_tires`, likewise by `menu_label`); the
 single-part slots read `Stock` /

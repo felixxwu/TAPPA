@@ -127,8 +127,8 @@ func _build() -> void:
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size \
 		if get_viewport() != null else (Config.data.virtual_resolution if Config.data != null else Vector2(480, 360))
 	const SIDE_MARGIN := 32.0
-	const MIN_PANEL_WIDTH := 200.0
-	var panel_width: float = clampf(420.0, MIN_PANEL_WIDTH,
+	const MIN_PANEL_WIDTH := 200.0 * UITheme.UI_SCALE
+	var panel_width: float = clampf(420.0 * UITheme.UI_SCALE, MIN_PANEL_WIDTH,
 		maxf(viewport_size.x - SIDE_MARGIN, MIN_PANEL_WIDTH))
 
 	var vbox := VBoxContainer.new()

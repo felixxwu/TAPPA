@@ -65,12 +65,12 @@ func _build_button(theme: Theme) -> void:
 func _btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = bg
-	box.content_margin_left = 14
-	box.content_margin_right = 14
-	box.content_margin_top = 4
-	box.content_margin_bottom = 4
+	box.content_margin_left = UITheme.px(14)
+	box.content_margin_right = UITheme.px(14)
+	box.content_margin_top = UITheme.px(4)
+	box.content_margin_bottom = UITheme.px(4)
 	if selected:
-		box.border_width_bottom = 3
+		box.border_width_bottom = UITheme.px(3)
 		box.border_color = UITheme.GREEN
 	# Sharp corners, no outer border — the defining trait of the look.
 	return box
@@ -79,19 +79,19 @@ func _btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
 func _build_panels(theme: Theme) -> void:
 	var box := StyleBoxFlat.new()
 	box.bg_color = UITheme.BLACK  # pure black (rule 4)
-	box.content_margin_left = 14
-	box.content_margin_right = 14
-	box.content_margin_top = 14
-	box.content_margin_bottom = 14
+	box.content_margin_left = UITheme.px(14)
+	box.content_margin_right = UITheme.px(14)
+	box.content_margin_top = UITheme.px(14)
+	box.content_margin_bottom = UITheme.px(14)
 	theme.set_stylebox("panel", "PanelContainer", box)
 	theme.set_stylebox("panel", "Panel", box.duplicate())
 	# Popups / dialogs share the surface.
 	var popup := StyleBoxFlat.new()
 	popup.bg_color = UITheme.BLACK
-	popup.content_margin_left = 16
-	popup.content_margin_right = 16
-	popup.content_margin_top = 16
-	popup.content_margin_bottom = 16
+	popup.content_margin_left = UITheme.px(16)
+	popup.content_margin_right = UITheme.px(16)
+	popup.content_margin_top = UITheme.px(16)
+	popup.content_margin_bottom = UITheme.px(16)
 	theme.set_stylebox("panel", "PopupPanel", popup)
 
 
@@ -99,13 +99,13 @@ func _build_panels(theme: Theme) -> void:
 func _build_slider(theme: Theme) -> void:
 	var track := StyleBoxFlat.new()
 	track.bg_color = Color(0.10, 0.12, 0.10, 1.0)
-	track.content_margin_top = 3
-	track.content_margin_bottom = 3
+	track.content_margin_top = UITheme.px(3)
+	track.content_margin_bottom = UITheme.px(3)
 	theme.set_stylebox("slider", "HSlider", track)
 	var area := StyleBoxFlat.new()
 	area.bg_color = UITheme.GREEN
-	area.content_margin_top = 3
-	area.content_margin_bottom = 3
+	area.content_margin_top = UITheme.px(3)
+	area.content_margin_bottom = UITheme.px(3)
 	theme.set_stylebox("grabber_area", "HSlider", area)
 	theme.set_stylebox("grabber_area_highlight", "HSlider", area.duplicate())
 

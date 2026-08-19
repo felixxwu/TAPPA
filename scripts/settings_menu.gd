@@ -64,7 +64,7 @@ signal dev_car_upgraded()
 
 # Fixed width for the key-binding buttons (and their column captions), wide enough
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
-const _BIND_BUTTON_W := 168.0
+const _BIND_BUTTON_W := 168.0 * UITheme.UI_SCALE
 
 # Save-profile key for the transmission mode (1 = automatic, 0 = manual). Stored as an
 # int so it rides the shared _refresh_selection highlight helper with the camera / fps /
@@ -911,7 +911,7 @@ func _fit_upgrade(item_id: String, display_name: String) -> void:
 # trailing ASCII ">" reads as "drills in" (the font lacks arrow glyphs — same
 # reason the rest of the UI uses ASCII < / >).
 func _make_nav_button(text: String, on_press: Callable) -> Button:
-	var button := _make_row_button(48)
+	var button := _make_row_button(UITheme.px(48))
 	button.text = "%s  >" % text
 	button.pressed.connect(on_press)
 	return button
@@ -919,7 +919,7 @@ func _make_nav_button(text: String, on_press: Callable) -> Button:
 
 # A plain labelled action button (used by the dev page).
 func _make_action_button(text: String, on_press: Callable) -> Button:
-	var button := _make_row_button(40)
+	var button := _make_row_button(UITheme.px(40))
 	button.text = text
 	button.pressed.connect(on_press)
 	return button
@@ -941,7 +941,7 @@ func _build_option_page(page: VBoxContainer, options: Array, key_field: String,
 # The flat name+blurb row shared by the camera / fps / gearbox pages: a full-width
 # Button carrying the option's name and how-to text, no diagram.
 func _make_option_row(key: int, entry: Dictionary, rows: Array, on_select: Callable) -> Button:
-	var button := _make_row_button(64)
+	var button := _make_row_button(UITheme.px(64))
 	button.pressed.connect(on_select.bind(key))
 	var text := _make_row_text(button)
 	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
@@ -962,7 +962,7 @@ func _make_controls_header() -> HBoxContainer:
 		label.text = caption
 		label.custom_minimum_size = Vector2(_BIND_BUTTON_W, 0)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 13)
+		label.add_theme_font_size_override("font_size", UITheme.px(13))
 		row.add_child(label)
 	return row
 
@@ -979,7 +979,7 @@ func _make_control_row(entry: Dictionary) -> HBoxContainer:
 	name_label.text = String(entry["name"])
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.add_theme_font_size_override("font_size", UITheme.px(16))
 	row.add_child(name_label)
 
 	var keyboard_button := _make_binding_button(action, InputRemap.SLOT_KEYBOARD)
@@ -1002,7 +1002,7 @@ func _make_control_row(entry: Dictionary) -> HBoxContainer:
 func _make_binding_button(action: String, slot: String) -> Button:
 	var button := Button.new()
 	button.focus_mode = Control.FOCUS_ALL
-	button.custom_minimum_size = Vector2(_BIND_BUTTON_W, 36)
+	button.custom_minimum_size = Vector2(_BIND_BUTTON_W, UITheme.px(36))
 	button.pressed.connect(func() -> void: _begin_listen(action, slot, button))
 	return button
 
@@ -1012,7 +1012,7 @@ func _make_binding_button(action: String, slot: String) -> Button:
 # Same (key, entry, rows, on_select) shape as _make_option_row so _build_option_page
 # can drive this page too — it's the one row that carries an extra diagram.
 func _make_scheme_row(id: int, entry: Dictionary, rows: Array, on_select: Callable) -> Button:
-	var button := _make_row_button(92)
+	var button := _make_row_button(UITheme.px(92))
 	button.pressed.connect(on_select.bind(id))
 
 	var row := HBoxContainer.new()
@@ -1027,7 +1027,7 @@ func _make_scheme_row(id: int, entry: Dictionary, rows: Array, on_select: Callab
 
 	var diagram := ControlSchemeDiagram.new()
 	diagram.scheme = id
-	diagram.custom_minimum_size = Vector2(132, 76)
+	diagram.custom_minimum_size = Vector2(UITheme.px(132), UITheme.px(76))
 	row.add_child(diagram)
 
 	var text := VBoxContainer.new()
@@ -1093,14 +1093,14 @@ func _make_page() -> VBoxContainer:
 func _make_heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_font_size_override("font_size", UITheme.px(20))
 	return label
 
 
 func _make_sub(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_font_size_override("font_size", UITheme.px(14))
 	# Wrap long blurbs (e.g. the benchmark page's description) to the width the
 	# page's rows set, instead of forcing the whole settings panel wider.
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1118,7 +1118,7 @@ func _make_spin(mn: float, mx: float, stp: float, val: float) -> SpinBox:
 	spin.step = stp
 	spin.value = val
 	spin.update_on_text_changed = true  # type a value, not just click arrows
-	spin.custom_minimum_size = Vector2(130, 0)
+	spin.custom_minimum_size = Vector2(UITheme.px(130), 0)
 	spin.value_changed.connect(func(_v: float): _on_spin_changed())
 	return spin
 
@@ -1417,12 +1417,12 @@ func _make_row_text(button: Button) -> VBoxContainer:
 func _add_row_labels(text: VBoxContainer, name_text: String, desc_text: String) -> void:
 	var name_label := Label.new()
 	name_label.text = name_text
-	name_label.add_theme_font_size_override("font_size", 18)
+	name_label.add_theme_font_size_override("font_size", UITheme.px(18))
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	text.add_child(name_label)
 	var desc_label := Label.new()
 	desc_label.text = desc_text
-	desc_label.add_theme_font_size_override("font_size", 13)
+	desc_label.add_theme_font_size_override("font_size", UITheme.px(13))
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	text.add_child(desc_label)

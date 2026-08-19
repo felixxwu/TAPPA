@@ -701,3 +701,48 @@ func test_every_grip_feeding_effect_field_is_read_by_the_physics() -> void:
 			"applies and changes nothing. Declaring the @export is not enough; something " +
 			"must READ it.")
 				% [effect_key, field, ", ".join(GRIP_READER_SOURCES)])
+
+
+# ---------------------------------------------------------------------------------------
+# DOCS MUST NOT ENUMERATE SLOT MEMBERSHIP COUNTS.
+#
+# Why this exists (readiness rounds 009 + 010): two probes added a tyre part and left
+# `features/drivetrain-and-tires.md` saying the slot "holds two parts" and
+# `features/upgrade-catalogue.md` saying "the two tyre compounds". A member count in prose
+# is a fact the next catalogue edit invalidates, and nothing was checking it — the same
+# shape as the region-count drift that `test_region_docs.gd` already guards.
+#
+# The rule this encodes is deliberately NOT "the docs must say three": that would pin a
+# product choice, which CLAUDE.md forbids. It is "a doc may not state a slot's part count
+# AT ALL", because the count is derivable from UPGRADES and belongs nowhere else.
+func test_no_feature_doc_states_a_slot_member_count() -> void:
+	var number_words := ["one", "two", "three", "four", "five", "six", "seven", "eight"]
+	var slot_words := ["tires", "tyres", "turbo", "aero", "gearbox", "nitrous", "weight"]
+	var docs := ["res://features/upgrade-catalogue.md", "res://features/drivetrain-and-tires.md"]
+	var offenders: Array[String] = []
+	for doc in docs:
+		var text := FileAccess.get_file_as_string(doc)
+		assert_false(text.is_empty(), "%s is readable" % doc)
+		var line_no := 0
+		for raw in text.split("\n"):
+			line_no += 1
+			var line := String(raw).to_lower()
+			var mentions_slot := false
+			for w in slot_words:
+				if line.contains(w):
+					mentions_slot = true
+					break
+			if not mentions_slot:
+				continue
+			for w in number_words:
+				# "holds two parts", "the two tyre compounds", "three tyre compounds", ...
+				if line.contains(" " + w + " part") or line.contains(" " + w + " tyre") \
+						or line.contains(" " + w + " tire"):
+					offenders.append("%s:%d — %s" % [doc.get_file(), line_no, String(raw).strip_edges()])
+					break
+	assert_eq(offenders, [] as Array[String],
+		("a features/ doc states how many parts a slot holds. That count is derivable from "
+		+ "UpgradeLibrary.UPGRADES and goes stale on the next catalogue edit (it did, twice). "
+		+ "Rewrite the sentence WITHOUT the number — name the parts or say 'the parts in the "
+		+ "slot' — rather than updating the number.\nOffending lines:\n%s")
+		% "\n".join(offenders))

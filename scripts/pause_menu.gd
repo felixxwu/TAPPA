@@ -269,7 +269,7 @@ func _build_settings_panel() -> Control:
 
 	var title := Label.new()
 	title.text = "SETTINGS"
-	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_font_size_override("font_size", UITheme.px(28))
 	col.add_child(title)
 
 	var scroll := TouchScrollContainer.new()
@@ -304,7 +304,7 @@ func _make_menu_button(text: String) -> Button:
 	# Focusable so the pause menu is fully keyboard / gamepad navigable (ui_up/ui_down
 	# walk Resume/Settings/Quit, ui_accept fires the focused one).
 	button.focus_mode = Control.FOCUS_ALL
-	button.custom_minimum_size = Vector2(220, 44)
+	button.custom_minimum_size = Vector2(UITheme.px(220), UITheme.px(44))
 	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	return button
 

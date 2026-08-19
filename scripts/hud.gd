@@ -43,7 +43,7 @@ const _GRIP_CORNERS: Array[String] = ["FL", "FR", "RL", "RR"]
 # Grid geometry: each cell is one column wide, and the whole block sits below the seed
 # label. Kept here rather than inline so the block moves as one.
 const _GRIP_TOP := 108.0
-const _GRIP_CELL_W := 76.0
+const _GRIP_CELL_W := 76.0 * UITheme.UI_SCALE
 # The grid's parent, so the H toggle flips one node instead of four labels.
 var _grip_grid: GridContainer
 # Where a cell stops reading as neutral: gold approaching the limit, red at or past it.
@@ -283,7 +283,7 @@ func _make_debug_label(node_name: String, top: float, right: float) -> Label:
 	lbl.offset_top = top
 	lbl.offset_right = right
 	lbl.offset_bottom = top + 20.0
-	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_font_size_override("font_size", UITheme.px(14))
 	lbl.visible = false
 	add_child(lbl)
 	return lbl
@@ -355,7 +355,7 @@ func _build_grip_grid() -> void:
 		var lbl := Label.new()
 		lbl.name = "Grip" + corner
 		lbl.custom_minimum_size.x = _GRIP_CELL_W
-		lbl.add_theme_font_size_override("font_size", 14)
+		lbl.add_theme_font_size_override("font_size", UITheme.px(14))
 		lbl.text = grip_text(corner, -1.0)
 		grid.add_child(lbl)
 		_grip_labels.append(lbl)
@@ -442,7 +442,7 @@ func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
 	lbl.offset_top = offsets.z
 	lbl.offset_bottom = offsets.w
 	lbl.horizontal_alignment = align as HorizontalAlignment
-	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_font_size_override("font_size", UITheme.px(20))
 	lbl.visible = false
 	add_child(lbl)
 	return lbl
@@ -460,7 +460,7 @@ func _build_position_readout() -> void:
 	_pos_label.name = "PositionLabel"
 	_pos_label.offset_left = 8.0
 	_pos_label.offset_right = 128.0
-	_pos_label.add_theme_font_size_override("font_size", 22)
+	_pos_label.add_theme_font_size_override("font_size", UITheme.px(22))
 	_pos_label.add_theme_color_override("font_color", UITheme.INK)
 	_pos_label.visible = false
 	add_child(_pos_label)
@@ -471,7 +471,7 @@ func _build_position_readout() -> void:
 	_gap_label.offset_right = 148.0
 	_gap_label.offset_top = _POS_TOP + _POS_HEIGHT
 	_gap_label.offset_bottom = _POS_TOP + _POS_HEIGHT + _GAP_HEIGHT
-	_gap_label.add_theme_font_size_override("font_size", 14)
+	_gap_label.add_theme_font_size_override("font_size", UITheme.px(14))
 	_gap_label.add_theme_color_override("font_color", UITheme.INK_DIM)
 	_gap_label.visible = false
 	add_child(_gap_label)
@@ -499,7 +499,7 @@ func _build_off_road_label() -> void:
 	_off_road_label.anchor_top = 0.5
 	_off_road_label.anchor_bottom = 0.5
 	_off_road_label.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_off_road_label.add_theme_font_size_override("font_size", 28)
+	_off_road_label.add_theme_font_size_override("font_size", UITheme.px(28))
 	_off_road_label.add_theme_color_override("font_color", UITheme.RED)
 
 

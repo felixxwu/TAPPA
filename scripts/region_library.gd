@@ -70,10 +70,13 @@ const DEFAULT_TREE_MIX: Array = [
 #          "id": "<region_id>_trial", "name": "<Rally Name>",     # EDIT both
 #          "region": "<region_id>",                               # EDIT: your new region's id
 #          "difficulty": 2, "special": false, "restriction": {},  # {} = open to every car
-#          "map_pos": Vector2(0.5, 0.5),  # EDIT: 0..1 pin on textures/map_world.jpg. Put it in
-#              # YOUR corner (see the geography map above RALLIES), >0.03 from every other pin,
-#              # and within Config.data.map_reveal_radius of an existing pin, else the rally is
-#              # stranded (test_every_shipped_rally_is_reachable_by_exploring_from_hq).
+#          "map_pos": Vector2(0.05, 0.46),  # PASTE AS-IS — a currently-free pin, legal today
+#              # (clear of every authored pin and of HQ by well over RallyLibrary.MIN_PIN_SEPARATION,
+#              # and close enough to an existing pin to be reachable). A guard test keeps this
+#              # literal honest: test_the_template_map_pos_is_still_a_legal_free_pin reddens and
+#              # prints a replacement if someone authors a pin near it.
+#              # Want it in a specific corner instead? `RallyLibrary.suggest_map_pos("<region_id>")`
+#              # computes one at runtime — but you do NOT need to run anything to use this row.
 #          "events": [  # 3 stages. `water_level` should match the region's own waterline, and
 #              # the stages must NOT all share one weather (test_every_multi_stage_rally_mixes_weather).
 #              {"seed": 90001, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},

@@ -130,9 +130,10 @@ func _unreachable_region_fix(rid: String) -> String:
 		"\t{\n" +
 		"\t\t\"id\": \"%s_trial\", \"name\": \"<Rally Name>\",  # EDIT the name\n" +
 		"\t\t\"region\": \"%s\", \"difficulty\": 2, \"special\": false, \"restriction\": {},\n" +
-		"\t\t# EDIT map_pos: a 0..1 pin inside YOUR corner of textures/map_world.jpg, >0.03 from\n" +
-		"\t\t# every other pin, within Config.data.map_reveal_radius of an existing pin.\n" +
-		"\t\t\"map_pos\": Vector2(0.5, 0.5),\n" +
+		"\t\t# map_pos below is a currently-free pin you can paste as-is (the same literal the\n" +
+		"\t\t# REGIONS template in scripts/region_library.gd carries). Want a specific corner?\n" +
+		"\t\t# RallyLibrary.suggest_map_pos(\"<region_id>\") computes one.\n" +
+		"\t\t\"map_pos\": Vector2(0.05, 0.46),\n" +
 		"\t\t# 3 stages; water_level should match the region's waterline, and the stages must\n" +
 		"\t\t# not all share one weather.\n" +
 		"\t\t\"events\": [\n" +

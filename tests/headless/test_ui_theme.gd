@@ -110,3 +110,18 @@ func test_panel_box_is_black_and_sharp_cornered() -> void:
 	assert_eq(box.bg_color, Color(0.0, 0.0, 0.0, 0.9), "panel is black at the given alpha")
 	assert_eq(box.corner_radius_top_left, 0, "no rounded corners")
 	assert_eq(box.content_margin_left, 18.0, "honours the padding")
+
+
+# --- UI scale (features/ui-design-system.md → "UI scale") ------------------------
+
+func test_px_scales_authored_sizes_consistently() -> void:
+	# The design constants and px() must agree — whatever UI_SCALE is tuned to.
+	assert_eq(UITheme.FONT_SIZE, UITheme.px(16), "FONT_SIZE is the scaled authored 16")
+	assert_eq(UITheme.MENU_ROW_H, UITheme.px(30), "MENU_ROW_H is the scaled authored 30")
+	assert_eq(UITheme.px(0), 0, "px(0) stays 0")
+
+
+func test_ui_scale_is_a_sane_factor() -> void:
+	# Sanity only (never pin the chosen value): positive and monotonic.
+	assert_gt(UITheme.UI_SCALE, 0.0, "UI_SCALE is positive")
+	assert_true(UITheme.px(20) > UITheme.px(10), "px is monotonic")

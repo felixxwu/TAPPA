@@ -22,11 +22,11 @@ const INNER_RATIO := 0.42  # inner vertex radius as a fraction of the outer radi
 # The house size for an inline price star: sized to sit with the 16px house caps
 # (UITheme.FONT_SIZE). One constant so every price star in the game matches — the upgrade
 # option rows, the Repair button, the upgrades menu's balance row.
-const PRICE_RADIUS := 6.5
+const PRICE_RADIUS := 6.5 * UITheme.UI_SCALE
 
 var earned := 0
 var total := 3
-var star_radius := 11.0    # outer radius of each star (px)
+var star_radius := 11.0 * UITheme.UI_SCALE    # outer radius of each star (px)
 var gap := 7.0             # gap between stars (px)
 # Palette overrides for a row sitting on a NON-BLACK surface. The defaults (GOLD / MUTED)
 # assume the design system's black panel; on the white accent panel a special-event map pin

@@ -407,7 +407,7 @@ func _build_reveal_overlay() -> void:
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
-	box.custom_minimum_size = Vector2(360, 0)  # width for the stat rows to lay label|value
+	box.custom_minimum_size = Vector2(UITheme.px(360), 0)  # width for the stat rows to lay label|value
 	panel.add_child(box)
 
 	_reveal_name_label = UITheme.label("", "ink")

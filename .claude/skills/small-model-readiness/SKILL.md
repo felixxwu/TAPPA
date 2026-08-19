@@ -19,6 +19,13 @@ It itemises everything it did in a round report afterwards.
 
 **One round per invocation.** End by printing `CONTINUE` or `STOP` and the
 reason. `/loop /small-model-readiness` drives the rounds; do not loop internally.
+**When driven by `/loop` in dynamic (self-paced) mode, schedule the next round to
+fire immediately** — the minimum delay the runtime allows (`delaySeconds: 60`),
+`noop: false`, with a reason like "next readiness round, no wait needed". There is
+nothing external to wait for between rounds: the tree is green, the report is
+written, and the next round's probes can start at once. Idle-tick pacing
+(20–30 min) is wrong here and just stalls the loop. On `STOP`, end the loop
+(`stop: true`) instead of scheduling.
 **The round ends at §2.11 and nowhere else.** If you delegate fix-step work to
 subagents, their completion is a waypoint, not a resting point — §2.7–§2.11
 (closing suite, post-checks, teardown, report) are still yours. A round that
@@ -702,6 +709,10 @@ post-check; an unreconciled rubric; an unjustifiable `Totals` delta; or a
 refactor needing a decision the user must make.
 
 Otherwise `CONTINUE`, with the round's retirements and causes.
+
+If a `/loop` is driving this skill, pair the verdict with the schedule: `CONTINUE`
+→ schedule the next round immediately (minimum delay, see the Overview); `STOP` →
+stop the loop rather than scheduling another wakeup.
 
 **There is no round cap and no cost ceiling** — this is deliberate. The loop runs
 until the stop condition genuinely fires. Report each round's cost in its report

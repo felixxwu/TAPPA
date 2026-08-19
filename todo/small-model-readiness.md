@@ -9,6 +9,74 @@ Design: `docs/superpowers/specs/2026-08-18-small-model-readiness-loop-design.md`
 
 ## Open
 
+**THE LOOP WAS STOPPED BY THE USER AFTER ROUND 010.** This file is the handoff. Items are
+ordered by what the evidence says is most valuable, not by age.
+
+**Round 010 closed:** item 25 (doc slot-count drift — now guarded by
+`test_no_feature_doc_states_a_slot_member_count`), and the round-009 `map_pos` template hazard
+(pasteable literal restored, both templates synced, both guarded).
+
+**Top recommendations, if this work is picked up again:**
+
+A. **Run a full `./run_tests.sh`.** It is now EIGHT rounds overdue; ~+56 tests have been added
+   and never verified together against round 002's baseline (3255 tests / 159,957 asserts /
+   335.1 s). Every round since 004 ran in `fast` mode, which cannot detect this repo's
+   characteristic failure — order-dependent cross-file leakage. This is the single highest-value
+   next action and it needs a human to okay the ~6 minutes.
+
+B. **`stars_gained` is overloaded, and a grader makes a strong case it is the wrong shape**
+   (round 010, T008). It means both "what placement paid" (which two tests, the ledger and the
+   podium caption treat as an identity) and "total credited". Folding a bonus into it is the
+   only thing that WORKS today, but it means the podium can never say "+1 clean run", and every
+   future any-finish reward reddens the same two equalities. Proposed: return the bonus under
+   its own allowlisted `bonus_stars` key, sum it for `Save.award_stars`, and render it as a
+   second caption line. **I did not do this: it changes what the player sees, which is a product
+   decision for the user, not a legibility refactor.**
+
+C. **Backlog item 0 (star amounts as consts) is now PARTLY OBSOLETE and worth re-reading.**
+   Round 010's probe, given the typed int seam, put its amount in a new `GameConfig` `@export`
+   and never reached for `RallyLibrary.STARS_FOR_*`. So the const pattern may no longer be the
+   attractor it was in rounds 002-008 — the seam's type appears to have redirected the author
+   before the local pattern could. Re-probe before spending a structural round on the migration.
+   The migration still needs `fast+full` (25 call sites of `MAX_STARS_PER_RALLY`).
+
+D. **T003 (new region) has never been solved, in five attempts.** It is a four-part change
+   (region row + reachability rally + docs + a genuinely distinct look) and probes reliably do
+   part 1 and stop. Consider whether the task is simply too large for one small-model attempt,
+   or whether the four parts should be collapsed — e.g. a region row that is INERT until tagged
+   is arguably the design defect, and a `REGIONS` entry that carries its own starter rally would
+   remove the second part entirely.
+
+
+
+**Round 009 closed these (removed from the list below):** the free-form result-dict seam
+(now a typed `int`), the missing wetness predicate (`WeatherLibrary.is_wet` + classification
+guard + `ctx["is_wet"]`), `map_pos` as prose (now `suggest_map_pos()`), and `combusting` as a
+name that lies (now `is_lifting_off`).
+
+**NEW from round 009, not yet fixed:**
+
+25. ~~**The tyre-slot authoring checklist sits ABOVE the append point**~~ — the COUNT half is
+    FIXED (round 010, `test_no_feature_doc_states_a_slot_member_count`); the checklist-position
+    and part-dominance halves remain open. Original text: (round 009, T001). The
+    rules — both docs to update, the `unlocked_by_rally` parity question, "not a strictly-weaker
+    rung" — are attached to the `snow_tires` row; a new part is appended after `race_tires`,
+    below all of it. The probe wrote a part dominated everywhere by `race_tires` and updated
+    only one of the two docs. `features/drivetrain-and-tires.md` still said the slot "holds two
+    parts". Candidate: a doc guard in the shape of `test_region_docs.gd` (no doc line may state
+    a slot's member COUNT), plus moving the checklist to the end of the slot block. Note the
+    dominance rule has no data-level or test-level seam at all today.
+26. **`unlocked_by_rally` can be claimed in prose and absent in data** (round 009, T009). The
+    new part's own comment said it was gated behind a rain-heavy rally; the row had no gate key,
+    so it is silently buyable from the start. Nothing checks that a comment claiming a gate
+    matches the data.
+27. **`features/weather.md` and the `rain_*` doc comments in `game_config.gd` still teach the
+    rain-only comparison** (round 009). Prose at lines ~1628-1642 says "on a wet stage
+    (weather == RallyLibrary.WEATHER_RAIN)". That prose is what taught three probes the wrong
+    condition; it should point at `is_wet`. Cheap, and it is the same file the fix already
+    touched.
+
+
 0. **STRUCTURAL-ROUND CANDIDATE: star reward amounts are `const`s in
    `rally_library.gd`, which teaches every new reward to be one too** (round 005,
    T008 — the sharpened form of item 4). `STARS_FOR_WIN` / `STARS_FOR_PODIUM` /

@@ -29,14 +29,14 @@ func _init(label_text: String, placeholder := "", secret := false) -> void:
 	add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 
 	_label = UITheme.label(label_text, "dim")
-	_label.add_theme_font_size_override("font_size", 14)
+	_label.add_theme_font_size_override("font_size", UITheme.px(14))
 	add_child(_label)
 
 	line = LineEdit.new()
 	line.placeholder_text = placeholder
 	line.secret = secret
 	line.focus_mode = Control.FOCUS_ALL
-	line.custom_minimum_size = Vector2(320, UITheme.MENU_ROW_H)
+	line.custom_minimum_size = Vector2(UITheme.px(320), UITheme.MENU_ROW_H)
 	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# Bring up the on-screen keyboard on phones and in mobile browsers, where
 	# there is no hardware keyboard to fall back on.

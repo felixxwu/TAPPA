@@ -69,6 +69,14 @@ below), `car_reward` (model id — the car a PRIZE RALLY just handed over, `""` 
 other rally and for a re-win) with `car_reward_is_new`, and `game_won` (bool —
 renamed from `showdown_won`). The `car_rewarded(model_id)` signal fires with it.
 
+The result's key set is **closed**: `RallySession.RESULT_FIELDS` lists every legal key, and
+`_merge_result_fields` — the single point where a seam's extra fields are folded in —
+`push_error`s and drops anything else. `stars_gained` is the **only** star channel the
+podium renders (`podium.gd::_show_stars` reads it and `star_rating`, nothing more), so any
+bonus star must be folded into it; that is exactly why the any-finish seam
+(`_award_any_finish_bonus_stars`) returns a bare `int`. See
+[reward-system.md](reward-system.md) → *Where a NEW end-of-rally reward goes*.
+
 ### One-shot navigation flags
 
 Three, all set by the finish and all read + cleared by HQ on its next `_ready`

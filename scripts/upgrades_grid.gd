@@ -43,9 +43,9 @@ const COLUMNS := 3
 #
 # The label does NOT wrap, so these two constants do not have to grow to fit longer text —
 # the text is kept short instead (UpgradeOptions.tile_slot_name / `tile_label`).
-const TILE_MIN_W := 112.0
-const TILE_MIN_H := 54.0
-const ICON_SIZE := 26.0
+const TILE_MIN_W := 112.0 * UITheme.UI_SCALE
+const TILE_MIN_H := 54.0 * UITheme.UI_SCALE
+const ICON_SIZE := 26.0 * UITheme.UI_SCALE
 
 var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
@@ -222,7 +222,7 @@ func _make_tile(slot: String) -> Button:
 	# `tile_label` abbreviates the long values (engine shows "V12", not "27L Merlin V12").
 	# Clipping stays OFF so that if a future part name does overrun it is visibly wrong
 	# here rather than silently truncated in front of the player.
-	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_font_size_override("font_size", UITheme.px(12))
 	col.add_child(label)
 	return b
 

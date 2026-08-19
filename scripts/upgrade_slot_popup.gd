@@ -127,7 +127,7 @@ func _add_description(vbox: VBoxContainer, description: String) -> void:
 	# A little air between the explanation and the things you can press, so the two do not
 	# read as one list with a broken first row.
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 6)
+	spacer.custom_minimum_size = Vector2(0, UITheme.px(6))
 	vbox.add_child(spacer)
 
 
@@ -136,7 +136,7 @@ func _add_description(vbox: VBoxContainer, description: String) -> void:
 func _panel_width() -> float:
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size \
 		if get_viewport() != null else (Config.data.virtual_resolution if Config.data != null else Vector2(480, 360))
-	return clampf(300.0, 180.0, maxf(viewport_size.x - 32.0, 180.0))
+	return clampf(300.0 * UITheme.UI_SCALE, 180.0 * UITheme.UI_SCALE, maxf(viewport_size.x - 32.0, 180.0 * UITheme.UI_SCALE))
 
 
 func _build_list(options: Array, description := "") -> void:

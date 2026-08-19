@@ -1887,7 +1887,7 @@ func _make_modal_overlay(margin := 24.0) -> Array:
 # which resolves to the main viewport. Pass the real host if the content could ever sit on a
 # WorldPanel — inside one, the canvas is the panel's `_frame`, unrelated to the main viewport
 # width, and a column measured off the wrong one is either clipped or absurdly narrow.
-func _modal_body_width(preferred: float, chrome := 88.0, host: Node = null) -> float:
+func _modal_body_width(preferred: float, chrome := 88.0 * UITheme.UI_SCALE, host: Node = null) -> float:
 	return RallyDetail.body_width(host if host != null else self, preferred, chrome)
 
 
@@ -1934,7 +1934,7 @@ func challenge_info_row(parent: VBoxContainer, heading_text: String) -> Label:
 	row.add_theme_constant_override("separation", 8)
 	parent.add_child(row)
 	var heading := detail_heading(heading_text)
-	heading.custom_minimum_size = Vector2(140, 0)
+	heading.custom_minimum_size = Vector2(UITheme.px(140), 0)
 	row.add_child(heading)
 	var value := detail_wrap_label()
 	row.add_child(value)
@@ -1980,13 +1980,13 @@ func _show_android_app_notice() -> void:
 	msg.text = "Heads up: the browser version runs much slower on phones.\nFor smooth performance, install the free Android app from itch.io."
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg.add_theme_font_size_override("font_size", 22)
+	msg.add_theme_font_size_override("font_size", UITheme.px(22))
 	root_box.add_child(msg)
 
 	var get_app := Button.new()
 	get_app.text = "Get the Android app"
 	get_app.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	get_app.custom_minimum_size = Vector2(320, 52)
+	get_app.custom_minimum_size = Vector2(UITheme.px(320), UITheme.px(52))
 	get_app.pressed.connect(func() -> void: OS.shell_open(ANDROID_APP_URL))
 	root_box.add_child(get_app)
 
@@ -1995,7 +1995,7 @@ func _show_android_app_notice() -> void:
 	var stay := Button.new()
 	stay.text = "Continue in browser"
 	stay.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	stay.custom_minimum_size = Vector2(320, 44)
+	stay.custom_minimum_size = Vector2(UITheme.px(320), UITheme.px(44))
 	stay.pressed.connect(_dismiss_android_app_notice)
 	footer.alignment = BoxContainer.ALIGNMENT_CENTER
 	footer.add_child(stay)
