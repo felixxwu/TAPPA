@@ -8,6 +8,12 @@ plus `GameConfig.map_reveal_radius` and the
 
 **Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_rally_eligibility_reason.gd`, `tests/headless/rally_fixtures.gd`
 
+**Three surfaces render rally pins**, and a readout on one does not exist on the others:
+the 2D map screen (`scripts/overworld_map.gd` — minimap + M-key full map), the in-world
+floating markers (`scripts/overworld_marker.gd` / `overworld_zones.gd`, which carry a
+star-row readout), and the HQ map table (`scripts/hq.gd`, its own StarRow). The map
+screen's pins carry no progress/star readout.
+
 The world map is **dark except where the player has driven**. Every rally the player
 completes lights a circle around its own pin; a rally becomes enterable when it falls
 inside any lit circle. The player pushes the frontier outward and **chooses which

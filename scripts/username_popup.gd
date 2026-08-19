@@ -195,14 +195,10 @@ func _build() -> void:
 # Built on the shared UITheme.row_button factory. `on_press` is left invalid
 # here — Cancel/Save wire their own `pressed` connection at the call site,
 # same as before — and SIZE_EXPAND_FILL is added on top so the two buttons
-# share the row evenly.
-# focus_mode MUST be set here, not left to MenuNav.attach. TextField.wire_column
-# runs BEFORE attach and skips any control that is still FOCUS_NONE at that moment
-# (text_field.gd), so a button left unfocusable is silently dropped from the focus
-# column — the field then wires only to itself and Down out of it goes nowhere.
+# share the row evenly. Focusability comes from TextField.wire_column, which
+# promotes anything it is handed.
 func _button(text: String) -> Button:
 	var b := UITheme.row_button(text, Callable())
-	b.focus_mode = Control.FOCUS_ALL
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return b
 

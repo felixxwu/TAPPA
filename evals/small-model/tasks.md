@@ -295,9 +295,19 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   main, so they cannot be pre-adapted. **The reds are EXCUSED — score correctness on the implementation — and no
   future round should chase a clean solve here.**
 
-### T014 — "On the overworld map, show how many stars I've earned on a rally when I look at its pin."
-- status: live  (**authored round 033**)
-- clean_solves: 0  (never probed; round 033's dispatches were VOID — see below)
+### T014 — "When I open the full map with M, show how many stars I've earned on the rally pin I've highlighted."
+- status: live  (**authored round 033; RE-AUTHORED round 045 — see below**)
+- clean_solves: 0  (round 033's dispatches VOID — see below; **round 034 = 3/3/2/3, first scored probe**;
+  **round 045 drill: two attempts 1/0/0/1 → 1/0/0/1, deliberate early stop at 2 — both probes concluded
+  FALSE ALREADY-DONE from the in-world markers**, which genuinely satisfy a plain reading of the old
+  wording)
+- **RE-AUTHORED round 045.** Old wording ("On the overworld map … when I look at its pin") is satisfiable
+  by the in-world marker star rows (`overworld_marker.gd::_apply_stars`), so two drill probes verified
+  that surface and reported no work needed — even after round 045 planted a three-surface disambiguation
+  note in `overworld_map.gd`, `overworld_marker.gd` and `features/map-exploration.md` (that note stays;
+  it is true and serves T015). New wording pins the surface by the ACTION that opens it (M / full map).
+  The re-authored task is unmeasured — probe it fresh before trusting any prior score. Round-033 rule
+  extended: if two surfaces both satisfy the wording, the wording is the bug.
 - **RETARGETED round 033, and the reason is an authoring rule.** The task first read "…when I look at its map
   pin", which is ambiguous between the **overworld** map and the **HQ's diegetic 3D map table**. The probe chose
   the HQ table — and `hq.gd::_build_readout_box(title, stars, unlock)` **already** builds a `StarRow` there, with
@@ -532,8 +542,20 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 
 ### T004 — "Show the current gear on the HUD."
 - status: live
-- clean_solves: **1**  (rounds 002, 005, 006 non-clean; round 007 3/3/1/2;
-  **round 023 = 3/3/3/3 — CLEAN SOLVE**). One more in a round it is sampled in retires it (§1).
+- clean_solves: **1**  (rounds 002, 005, 006 non-clean; round 007 3/3/1/2; round 023 = 3/3/3/3 clean;
+  **round 044 drill: attempt 1 = 3/3/2/3, attempt 2 = 3/2/2/3, attempt 3 = 3/3/3/3 — PASSED at
+  attempt 3.** The non-clean attempts reset the counter per §1, then the clean attempt-3 solve set it
+  back to 1 — the round-023 solve is no longer consecutive with anything. One clean FIRST-attempt solve
+  in a future sampled round retires it.)
+- **RUBRIC NOTE round 044:** three general fixes landed off this task: (1) `test_hud_docs.gd`'s
+  membership parser was VACUOUS (stopped at the `]` in `Array[StringName]`, parsed empty, all guards
+  passed trivially) — fixed, empty parse now fails; (2) the transcription guard now also matches prose
+  word forms (speed/rpm/…), and a new inverse-direction test rejects docs calling an un-gated label
+  hidden; (3) `features/hud.md` gating prose is per-membership ("every label named in the constant is
+  hidden…") so a membership move needs NO doc edit, and the constant carries a per-label caution
+  (attempt 2's probe un-gated speed+RPM along with gear — scope overreach). Grade future attempts
+  accordingly: no doc edit to the gating paragraph is CORRECT; any extra label moved is a correctness
+  failure.
 - **RUBRIC NOTE round 023 — CLEAN SOLVE (3/3/3/3).** One-line `DEBUG_READOUT_NODES` membership edit,
   `features/hud.md` given a Visibility column plus prose fixes, **and `features/debug-tools.md` updated
   unprompted** (three falsified statements found there — it is not in `expected_docs`). No test edit

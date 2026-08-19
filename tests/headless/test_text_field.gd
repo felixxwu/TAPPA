@@ -69,6 +69,43 @@ func test_wire_column_links_neighbours_top_to_bottom() -> void:
 	assert_eq(second.line.get_node(second.line.focus_neighbor_bottom), submit)
 
 
+func test_wire_column_promotes_focus_none_controls() -> void:
+	# Being passed to wire_column IS the declaration that a control belongs in
+	# the focus column, so a FOCUS_NONE button (e.g. a fresh UITheme.row_button,
+	# which defers focusability to MenuNav) is promoted, not silently dropped —
+	# dropping it left a field wired only to itself and Down going nowhere.
+	var field := TextField.new("Name")
+	var save := Button.new()
+	save.focus_mode = Control.FOCUS_NONE
+	_root.add_child(field)
+	_root.add_child(save)
+
+	TextField.wire_column([field, save])
+
+	assert_eq(save.focus_mode, Control.FOCUS_ALL,
+		"a FOCUS_NONE control handed to wire_column becomes focusable")
+	assert_eq(field.line.get_node(field.line.focus_neighbor_bottom), save,
+		"down out of the field reaches the promoted button")
+
+
+func test_wire_column_respects_menu_nav_skip() -> void:
+	# The same opt-out MenuNav._enable honours: a control tagged menu_nav_skip
+	# stays out of the column and keeps its focus mode.
+	var field := TextField.new("Name")
+	var decorative := Button.new()
+	decorative.focus_mode = Control.FOCUS_NONE
+	decorative.set_meta("menu_nav_skip", true)
+	_root.add_child(field)
+	_root.add_child(decorative)
+
+	TextField.wire_column([field, decorative])
+
+	assert_eq(decorative.focus_mode, Control.FOCUS_NONE,
+		"a menu_nav_skip control is left alone")
+	assert_eq(field.line.get_node(field.line.focus_neighbor_bottom), field.line,
+		"the skipped control is not wired into the column")
+
+
 func test_the_ends_of_a_column_do_not_wrap() -> void:
 	# Wrapping would make "down" at the bottom jump back to the top, which reads
 	# as the cursor teleporting.

@@ -481,13 +481,10 @@ func _sub(text: String) -> Label:
 # Built on the shared UITheme.row_button factory, with this page's one real
 # extra behaviour layered on top: a button goes disabled while a cloud call is
 # in flight, so a double-tap during sign-in/sync can't fire the request twice.
-# focus_mode MUST be set here, not left to MenuNav.attach. TextField.wire_column
-# runs BEFORE attach and skips any control that is still FOCUS_NONE at that moment
-# (text_field.gd), so a button left unfocusable is silently dropped from the focus
-# column this page builds for its sign-in form.
+# Focusability comes from TextField.wire_column / MenuNav.attach, which promote
+# anything they are handed.
 func _action(text: String, on_press: Callable) -> Button:
 	var b := UITheme.row_button(text, on_press)
-	b.focus_mode = Control.FOCUS_ALL
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.disabled = _busy
 	return b

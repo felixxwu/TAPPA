@@ -2,6 +2,15 @@ class_name OverworldMap
 extends CanvasLayer
 # THE OVERWORLD'S MAP — one script, two presentations, one drawing routine.
 #
+# THREE SURFACES RENDER RALLY PINS — do not conclude a pin feature exists (or is missing)
+# from the wrong one:
+#   * THIS FILE — the 2D MAP SCREEN: the top-left minimap and the M-key full map.
+#   * scripts/overworld_marker.gd + overworld_zones.gd — the floating 3D signs above zones
+#     in the drivable world. These carry a star-row readout; this map screen's pins do NOT.
+#   * scripts/hq.gd — the HQ's diegetic map table, with its own StarRow readout.
+# A readout on one surface does not exist on the others; check the surface the request
+# actually names before adding — or before reporting it already done.
+#
 #   * MINIMAP — a small always-on panel in the TOP-LEFT corner, showing the player's
 #     neighbourhood. Heading-up by default.
 #   * FULL MAP — a full-screen overlay on `toggle_map` (M / gamepad Back), showing the whole

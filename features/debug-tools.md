@@ -54,8 +54,9 @@ active) is skipped.
   use the first three; `grip` feeds the HUD grid below),
 - `car.downforce_readouts` — `[global_point, force_vector]` pairs.
 
-The same **H** toggle also reveals the HUD's speed / gear / rpm / **boost**
-readout (hidden by default — a dev diagnostic; see [hud.md](hud.md)). The boost line
+The same **H** toggle also reveals the HUD's numeric readout cluster — membership is
+`hud.gd` → `DEBUG_READOUT_NODES`, read it there rather than from any prose list
+(hidden by default — a dev diagnostic; see [hud.md](hud.md)). The boost line
 reads the live boost pressure as a percentage of full boost (`hud.gd`'s pure
 `boost_text` off `maxf(EngineSim.boost, EngineSim.sc_boost)`, so a supercharger's belt
 boost shares the gauge), or `Boost N/A` on a naturally-aspirated engine (no turbo and
@@ -146,7 +147,7 @@ drives grip-servo steering (`Drivetrain.front_axle_state()` →
 basis is what makes that servo stable. If you change `grip_fraction`, you change how the car
 steers — see [todo/grip-servo-steering.md](../todo/grip-servo-steering.md).
 
-Unlike the speed / gear / rpm / boost / seed readouts, this one does **not** keep
+Unlike the other H-gated readouts, this one does **not** keep
 refreshing while hidden — `Drivetrain.readouts` is only populated while
 `publish_readouts` is on, which the car ties to the force-arrow overlay's visibility
 (the same H toggle), so there is nothing to read when it's down.

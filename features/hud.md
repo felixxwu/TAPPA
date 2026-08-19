@@ -16,17 +16,20 @@ On-screen readout plus two interactive mode buttons.
 | `GearLabel` | `R` / `N` / `1`–`5` | `engine.gear` via `_gear_text()` |
 | `RPMLabel` | `"<n> rpm"` | `engine.rpm()` |
 
-The `SpeedLabel` / `GearLabel` / `RPMLabel` trio, plus a code-built `BoostLabel`
+Beyond the table there is a code-built `BoostLabel`
 (boost as a percentage of full boost, or `Boost N/A` on a naturally-aspirated engine —
 formatted by the pure `hud.gd::boost_text`; it reads
 `maxf(engine.boost, engine.sc_boost)` so a **supercharger**'s belt boost shows on the
 same gauge as a turbo's, see [forced-induction.md](forced-induction.md)) and a code-built `SeedLabel` (the
 current world seed, `Config.data.track_seed`, formatted by the pure
-`hud.gd::seed_text` — for identifying/reproducing a run), is a **dev diagnostic**: hidden by
-default and toggled with **H** (`toggle_debug_arrows`) — the same gate as the debug
-force arrows, and like them honoured only in a debug build (release/web ignore the
-key). Their text keeps refreshing while hidden, so it's correct the instant H
-reveals it. See [debug-tools.md](debug-tools.md).
+`hud.gd::seed_text` — for identifying/reproducing a run).
+
+**Visibility is per-label data, not a fixed set.** Every label named in `hud.gd` →
+`DEBUG_READOUT_NODES` is a **dev diagnostic**: hidden by default and toggled with **H**
+(`toggle_debug_arrows`) — the same gate as the debug force arrows, and like them honoured
+only in a debug build (release/web ignore the key). Every label NOT named there is always
+visible. Gated labels keep refreshing while hidden, so they're correct the instant H
+reveals them. See [debug-tools.md](debug-tools.md).
 
 **Membership is data, in one place.** `hud.gd` → `DEBUG_READOUT_NODES` is the single
 source of truth for which elements the H key gates. **Read the current membership

@@ -155,12 +155,14 @@
   config/resources, physics or scene setup that depends on what you touched —
   and include those tests too, not just the one file you edited. When in doubt,
   pull a test in rather than leaving it out.
-- Reserve the full `./run_tests.sh` run for when it actually makes sense: a
-  change with wide or hard-to-scope blast radius (shared physics/config, core
-  scene setup, cross-cutting refactors), when you're genuinely unsure which
-  tests cover the work, or as a final pre-handoff check on a large task. For
-  small, well-contained changes a targeted subset is enough — don't run the
-  whole suite by reflex.
+- **Targeted runs only mid-task; the full suite runs once, at the very end.**
+  Never kick off a full `./run_tests.sh` mid-task — not after a
+  wide-blast-radius change, not as a checkpoint between stages of a multi-stage
+  piece of work. The full run takes ~8 minutes and stalls visible progress to
+  re-verify things targeted runs already covered. On a long task it runs once,
+  after the last stage, as the final pre-handoff check. If something seems to
+  need whole-suite verification sooner, say so and let the user decide rather
+  than starting one.
 - The Godot project lives at the repository root — `project.godot`, `run_tests.sh`,
   `build_web.sh`, etc. are all directly in the repo root, so there's no subdirectory
   to `cd` into. Invoke the runners by path (`./run_tests.sh`) from the root.
@@ -186,7 +188,22 @@
   without asking, so it's the one-step answer to "the suite got slow".
 - Don't start a test run while another `./run_tests.sh` is already in
   progress — wait for it to finish and use its result. Concurrent runs waste
-  resources and produce confusing, interleaved output.
+  resources and produce confusing, interleaved output. Before launching any
+  run (especially a backgrounded one), check with
+  `pgrep -f run_tests.sh || pgrep -f gut_cmdln`. If a run seems hung (minutes
+  past its usual time — the audio-mixer SIGSEGV flake can wedge a Godot
+  process without exiting), `ps -eo pid,etime,command | grep run_tests` and
+  kill the stale process and its Godot child rather than launching another
+  alongside it. If concurrent runs did happen, treat the verification state
+  as UNKNOWN and re-run cleanly — never report interleaved results as green.
+- Don't spawn polling shells (`until grep -q ...; do sleep; done`) to babysit
+  work started with `run_in_background: true` — the harness sends a completion
+  notification on its own; watcher shells leak, match mid-stream output early,
+  and turn partial output into false results. Launch the background command
+  and simply move on until the notification arrives. If a genuine wait is
+  unavoidable (external state the harness can't track), use ONE loop whose
+  condition matches only a true terminal marker (`TESTS PASSED|TESTS FAILED`),
+  and never a second watcher for the same task.
 - If an existing test breaks, treat the NEW CHANGES as the prime suspect, not
   the test. The tests encode agreed behavior (e.g. W drives the car forward,
   reset returns to start), so a previously-green test failing usually means

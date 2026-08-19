@@ -2,7 +2,9 @@ class_name OverworldMarker
 extends Node3D
 # The floating, slowly rotating sign above one overworld zone — the life-size version of the
 # map table's pin marker (docs/superpowers/specs/2026-08-17-overworld-hq-design.md, slice 2,
-# "Zone markers"). Its job is to say, from a distance and with no text, WHAT KIND of rally is
+# "Zone markers"). This is ONE of three pin surfaces: the 2D map screen (minimap + M-key
+# full map) is scripts/overworld_map.gd and the HQ map table is scripts/hq.gd — a readout
+# on these in-world signs (e.g. the star row) does NOT also exist on those surfaces. Its job is to say, from a distance and with no text, WHAT KIND of rally is
 # parked here:
 #
 #   ordinary rally  -> a flag        (RallyFlag.build, as hq._make_pin already uses)

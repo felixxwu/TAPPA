@@ -230,12 +230,12 @@ var _debug_readout := false
 # Removing a name from this list makes that element permanently visible; that is a
 # behaviour change the bound tests will report by name.
 #
-# EDITING THIS LIST IS A THREE-PART CHANGE — the list, the named test, AND the docs:
-#   features/hud.md          -> Elements table + the "Membership is data" section
-#   features/debug-tools.md  -> the "speed / gear / rpm readout" description
-# The docs are the part that gets missed, because this file's header breadcrumb is
-# ~180 lines above here and nobody editing a constant scrolls back to it. Both docs
-# NAME their members in prose, so prose is what rots when the data changes.
+# Each entry here is gated DELIBERATELY, one label at a time: move only the label whose
+# visibility your change is actually about, never its neighbours (they are separate
+# product decisions). The docs (features/hud.md, features/debug-tools.md) describe the
+# gate per-membership — they point at this constant instead of listing it — so a
+# membership move normally needs NO doc edit; tests/headless/test_hud_docs.gd goes red
+# if either doc contradicts this list in either direction.
 const DEBUG_READOUT_NODES: Array[StringName] = [
 	&"SpeedLabel", &"GearLabel", &"RPMLabel", &"BoostLabel", &"SeedLabel",
 	&"DifficultyLabel", &"GripGrid",

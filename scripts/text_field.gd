@@ -73,13 +73,21 @@ func set_secret(value: bool) -> void:
 # LineEdit swallows left/right for the caret, and the automatic search can pick
 # a surprising target once a row is mixed. Wiring the column explicitly makes
 # the order the same one the player sees.
+#
+# Being passed here IS the declaration that a control belongs in the focus
+# column, so FOCUS_NONE controls (e.g. fresh UITheme.row_button results, which
+# defer focusability to MenuNav) are promoted to FOCUS_ALL rather than dropped —
+# only the `menu_nav_skip` meta opts a control out, same as MenuNav._enable.
 static func wire_column(controls: Array) -> void:
 	var focusables: Array[Control] = []
 	for c in controls:
 		if c is TextField:
 			focusables.append((c as TextField).line)
-		elif c is Control and (c as Control).focus_mode != Control.FOCUS_NONE:
-			focusables.append(c as Control)
+		elif c is Control and not (c as Control).has_meta("menu_nav_skip"):
+			var ctrl := c as Control
+			if ctrl.focus_mode == Control.FOCUS_NONE:
+				ctrl.focus_mode = Control.FOCUS_ALL
+			focusables.append(ctrl)
 	for i in focusables.size():
 		var above := focusables[maxi(i - 1, 0)]
 		var below := focusables[mini(i + 1, focusables.size() - 1)]
