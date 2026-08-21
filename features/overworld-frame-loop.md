@@ -33,7 +33,7 @@ There used to be TWO copies of that sequence — a timed one inlined in `_proces
 one in `_process_stages` — with a comment asking whoever added a stage to add it to both. A
 stage added to one silently did not run on the other path. The spike timing is now a
 side-channel written *into* the single sequence: `_process_stages` stamps `_spike_us[0..5]` at
-each stage boundary, but only when `_spike_log` is armed (`OS.is_debug_build()`, non-headless,
+each stage boundary, but only when `_spike_log` is armed (`SettingsMenu.dev_tools_enabled()`, non-headless,
 `OVERWORLD_SPIKE_LOG != 0`), and `_log_frame_spike` reads the stamps from there instead of
 taking them as arguments.
 

@@ -591,8 +591,8 @@ func _timed_physics_process(delta: float) -> void:
 	# The H-key debug-arrow toggle is handled HERE, before the step, rather than in the
 	# overlay: the overlay is a child (runs after this parent), so flipping visibility
 	# there would lag the drivetrain's readout gate by a frame and the arrows would draw
-	# in empty on the frame they're toggled on. Dev-only, so gated to debug builds.
-	if _debug_overlay != null and OS.is_debug_build() \
+	# in empty on the frame they're toggled on. Gated on SettingsMenu.dev_tools_enabled().
+	if _debug_overlay != null and SettingsMenu.dev_tools_enabled() \
 			and Input.is_action_just_pressed("toggle_debug_arrows"):
 		_debug_overlay.visible = not _debug_overlay.visible
 		# Hide the car body while the overlay is up so the (slightly smaller) hitbox

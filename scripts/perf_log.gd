@@ -1,15 +1,17 @@
 extends Node
 ## Debug perf logger: prints Performance monitors once per second so CPU cost
-## can be read back from the Godot log after a play session. Debug builds only.
+## can be read back from the Godot log after a play session. Gated on
+## SettingsMenu.dev_tools_enabled() (true by default, in every build).
 
 const INTERVAL := 1.0
 
 var _accum := 0.0
 var _frames := 0
 var _script_us: Dictionary = {}  # StringName -> accumulated usec since last print
-# OS.is_debug_build() cached once — track() is called ~34x/frame and the whole
-# point of the early-out is to not pay per call. Tests flip it via set_debug().
-var _debug := OS.is_debug_build()
+# SettingsMenu.dev_tools_enabled() cached once — track() is called ~34x/frame and
+# the whole point of the early-out is to not pay per call. Tests flip it via
+# set_debug().
+var _debug := SettingsMenu.dev_tools_enabled()
 
 # --- Benchmark capture window --------------------------------------------------
 # A second, independent accumulator the benchmark opens for a whole run so it can
@@ -24,11 +26,9 @@ var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_captu
 ## Called by the timing wrappers around per-frame callbacks (see e.g.
 ## car.gd._physics_process). Accumulates cost per script between prints.
 func track(key: StringName, usec: int) -> void:
-	# In a release build _process is off, so nothing ever reads or clears
-	# _script_us — accumulating into it is pure waste on every wrapped callback.
-	# The debug flag is cached (an OS.is_debug_build() call per track() would cost
-	# more than it saves); _capturing still records in ANY build so the benchmark
-	# can profile the release export.
+	# _debug is cached (a SettingsMenu.dev_tools_enabled() call per track() would
+	# cost more than it saves); _capturing still records in ANY build so the
+	# benchmark can profile the release export.
 	if _capturing:
 		_cap_us[key] = int(_cap_us.get(key, 0)) + usec
 	if not _debug:

@@ -108,9 +108,10 @@ Deck / PlayStation, button glyphs follow the SDL standard layout):
 
 The debug overlays (`toggle_debug_arrows`, `toggle_perf_overlay`) and the
 `skip_to_finish` event cheat are intentionally keyboard-only. `toggle_debug_arrows`
-(**H**) and `skip_to_finish` (**F**) are further gated to **debug builds**
-(`OS.is_debug_build()`) — release exports ignore the keys. See
-[debug-tools.md](debug-tools.md) for skip-to-finish.
+(**H**) and `skip_to_finish` (**F**) are further gated on
+`SettingsMenu.dev_tools_enabled()`, which defaults to **true** — the keys work in
+release/web exports too, not just debug builds. See [debug-tools.md](debug-tools.md)
+for skip-to-finish.
 
 ## Touch / mobile
 

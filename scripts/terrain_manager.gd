@@ -2665,8 +2665,9 @@ func _timed_process(_delta: float) -> void:
 	if _initial_pending:
 		return
 	# H (`toggle_debug_arrows`, the shared debug key) toggles the chunk-border
-	# overlay in debug builds — lazily created so release/editor pay nothing.
-	if OS.is_debug_build() and not Engine.is_editor_hint() \
+	# overlay whenever SettingsMenu.dev_tools_enabled() — lazily created so it
+	# pays nothing while hidden.
+	if SettingsMenu.dev_tools_enabled() and not Engine.is_editor_hint() \
 			and Input.is_action_just_pressed("toggle_debug_arrows"):
 		_toggle_chunk_borders()
 	if not stage_timing:

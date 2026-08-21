@@ -1,6 +1,6 @@
 # Debug Tools
 
-## Debug-build-only keys
+## Dev keys (exposed to every build)
 
 | Key | Action | Does |
 |-----|--------|------|
@@ -8,8 +8,9 @@
 | **F7** | `toggle_world_menus` | A/B world-space menus against the flat overlays ([world-panel.md](world-panel.md)) |
 | **F8** | `reload_config` | Re-read `config/game_config.tres` from disk and re-apply, no restart ([world-panel.md](world-panel.md) → "Tuning it live") |
 
-All three are gated on `OS.is_debug_build()`, so release exports ignore them. A config value that
-starts a feature on still works in any build — the keys are dev affordances, not player features.
+All three are gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** — release
+exports (including the web build) get them too, same as the editor and debug exports. A config
+value that starts a feature on still works in any build regardless of the switch.
 
 **Tests:** `tests/headless/test_debug_arrows.gd`, `tests/headless/test_hud.gd`, `tests/headless/test_perf_overlay.gd`, `tests/headless/test_perf_log.gd`, `tests/headless/test_benchmark_mode.gd`
 
@@ -19,10 +20,10 @@ starts a feature on still works in any build — the keys are dev affordances, n
 MeshInstance3D`). Created by `car.gd` in `_ready()`.
 
 Draws per-wheel and aero force arrows as an immediate mesh. Toggled with **H**
-(`toggle_debug_arrows` input action). The **H** toggle only responds in a **debug
-build** (`OS.is_debug_build()` — editor / debug export); release exports such as
-the web build ignore the key, so players can't summon the dev arrows. A config
-that starts them visible (`debug_wheel_forces`) still works in any build.
+(`toggle_debug_arrows` input action). The **H** toggle responds whenever
+`SettingsMenu.dev_tools_enabled()` is true (the default in every build, including
+release exports such as the web build), so players can summon the dev arrows too.
+A config that starts them visible (`debug_wheel_forces`) still works in any build.
 
 The **H** toggle is handled in `car.gd._timed_physics_process`, **before** the
 drivetrain step — not in the overlay. The car flips the overlay's `visible`, hides
@@ -159,8 +160,8 @@ Instantly completes the current rally event: teleports the car onto the finish
 line and force-completes the stage, so the real completion → reward → progression
 flow fires exactly as it would on a genuine finish (nothing is faked downstream).
 
-Gated the same way as the H arrows — **debug builds only** (`OS.is_debug_build()`),
-so release/web builds ignore the key. It also does nothing unless a rally event is
+Gated the same way as the H arrows — `SettingsMenu.dev_tools_enabled()`, on by
+default in every build including release/web. It also does nothing unless a rally event is
 active (`RallySession.is_active()`) with a live `StageManager` that hasn't already
 finished. Mechanism:
 
@@ -210,8 +211,8 @@ it (and always headless); the overlay labels that case.
 
 ## PerfLog autoload (per-second log lines + per-script timing)
 
-**Source:** `scripts/perf_log.gd`, registered as the `PerfLog` autoload. Debug
-builds only (`OS.is_debug_build()` disables it otherwise). Once per second it
+**Source:** `scripts/perf_log.gd`, registered as the `PerfLog` autoload. Gated on
+`SettingsMenu.dev_tools_enabled()` (true by default in every build). Once per second it
 prints to stdout (and therefore the Godot log at
 `user://logs/godot.log`):
 

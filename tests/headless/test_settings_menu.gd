@@ -261,7 +261,7 @@ func test_add_star_dev_button_credits_one_star() -> void:
 # --- Reset progress ----------------------------------------------------------
 
 # Starting over is a PLAYER setting, not dev tooling: the category is offered even
-# with the dev pages forced off (the case OS.is_debug_build() alone can't produce).
+# with the dev pages forced off (the case the always-on default alone can't produce).
 func test_reset_progress_category_is_offered_to_players() -> void:
 	SettingsMenu.dev_tools_override = 0
 	var menu := _make_menu()

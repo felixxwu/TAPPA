@@ -219,17 +219,21 @@ to itself** and doesn't need to scroll. The two pages:
 
 ## Developer-only pages
 
-**Benchmark, Dev and Seed lab are hidden from players.** `_build_list_page` adds
-those three category buttons only when `SettingsMenu.dev_tools_enabled()` — which
-keys off `OS.is_debug_build()`, the same signal `car.gd` / `hud.gd` / `world.gd` /
-`perf_log.gd` use, so an exported release build never shows them while the editor,
-debug exports and the headless test runner do.
+**Benchmark, Dev and Seed lab are shown to everyone.** `_build_list_page` adds
+those three category buttons whenever `SettingsMenu.dev_tools_enabled()` — the
+single switch `car.gd` / `hud.gd` / `world.gd` / `hq.gd` / `world_panel_host.gd` /
+`terrain_manager.gd` / `perf_log.gd` / `overworld.gd` all key off for every other
+dev affordance (force arrows, grip grid, world-menu A/B, config hot-reload,
+skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev
+tools are exposed in the exported release/web build, not just the editor and
+debug exports.
 
-The pages are still **built**, and `show_benchmark()` / `show_dev()` /
-`show_seedlab()` still work — only the way in is removed. That keeps `_pages`,
-focus handling and the tests that drive those pages directly unchanged.
-`dev_tools_override` (static, `-1` = real build type) exists so a test can assert
-the player-facing case, which `OS.is_debug_build()` alone makes untestable.
+The pages are still **built** either way, and `show_benchmark()` / `show_dev()` /
+`show_seedlab()` still work regardless of the switch — only the way in is gated.
+That keeps `_pages`, focus handling and the tests that drive those pages directly
+unchanged. `dev_tools_override` (static, `-1` = real default of `true`) exists so
+a test can still assert the **hidden** case, which the always-on default alone
+can't produce.
 
 **Reset progress is NOT one of them.** Wiping the save used to sit on the Dev page
 and so was invisible in release builds; it is now its own **player** category

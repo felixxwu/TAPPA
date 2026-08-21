@@ -582,10 +582,10 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(_delta: float) -> void:
-	# Toggle the debug readout (DEBUG_READOUT_NODES) with H, gated to debug builds like the
-	# force arrows. Text below still refreshes while hidden, so it's correct the
+	# Toggle the debug readout (DEBUG_READOUT_NODES) with H, gated on
+	# SettingsMenu.dev_tools_enabled() like the force arrows. Text below still refreshes while hidden, so it's correct the
 	# instant it's shown.
-	if OS.is_debug_build() and Input.is_action_just_pressed("toggle_debug_arrows"):
+	if SettingsMenu.dev_tools_enabled() and Input.is_action_just_pressed("toggle_debug_arrows"):
 		_debug_readout = not _debug_readout
 		# Membership comes from DEBUG_READOUT_NODES (the single source of truth above),
 		# not from a hand-maintained list of assignments.

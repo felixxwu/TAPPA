@@ -3283,11 +3283,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# predicate so this guard cannot drift from the one MenuNav uses.
 	if MenuNav.is_text_editing():
 		return
-	# WORLD-SPACE MENU A/B (F7), debug builds only — the same shape as the wheel-force
-	# arrows' H toggle: a config that starts world menus on works in any build, but the
-	# live key is a dev affordance and release exports ignore it. Flips the config field
+	# WORLD-SPACE MENU A/B (F7), gated on SettingsMenu.dev_tools_enabled() — the same
+	# shape as the wheel-force arrows' H toggle. Flips the config field
 	# the host swap reads, then re-runs the swap so the tree moves immediately.
-	if OS.is_debug_build() and event.is_action_pressed("toggle_world_menus"):
+	if SettingsMenu.dev_tools_enabled() and event.is_action_pressed("toggle_world_menus"):
 		Config.data.world_space_menus = not Config.data.world_space_menus
 		update_overlays()
 		# The car-park framing differs between the two modes (world_panel_camera_look_shift /
@@ -3299,7 +3298,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_snap_camera_to_focus()
 		get_viewport().set_input_as_handled()
 		return
-	# HOT-RELOAD THE CONFIG (F8), debug builds only — the tuning loop for world-space menus. Edit
+	# HOT-RELOAD THE CONFIG (F8), gated on SettingsMenu.dev_tools_enabled() — the tuning loop for world-space menus. Edit
 	# any value on config/game_config.tres in the inspector, press this, and the running game picks
 	# it up: no restart, no losing your place in the HQ.
 	#
@@ -3308,7 +3307,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# baked in at construction, so a retune of either rebuilds the panel), and the camera is
 	# re-posed because a station's pose is only recomputed when it moves. Panel offsets, yaw, pitch
 	# and the camera shifts need none of this — WorldPanel re-reads its anchor every frame.
-	if OS.is_debug_build() and event.is_action_pressed("reload_config"):
+	if SettingsMenu.dev_tools_enabled() and event.is_action_pressed("reload_config"):
 		hot_reload_config()
 		get_viewport().set_input_as_handled()
 		return

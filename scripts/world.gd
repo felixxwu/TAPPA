@@ -1976,7 +1976,7 @@ func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("skip_to_finish"):
 		return
-	if not OS.is_debug_build() or not DrivingContext.session_active():
+	if not SettingsMenu.dev_tools_enabled() or not DrivingContext.session_active():
 		return
 	if _stage_manager == null or _track_progress == null:
 		return

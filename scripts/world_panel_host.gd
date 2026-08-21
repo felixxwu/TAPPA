@@ -113,7 +113,7 @@ func _stand_down_flat() -> void:
 	if flat_layer == null:
 		return
 	flat_layer.visible = false
-	if not OS.is_debug_build():
+	if not SettingsMenu.dev_tools_enabled():
 		return
 	for child in flat_layer.get_children():
 		if child == tree or child.has_meta(ALLOW_HIDDEN_META) or not (child is CanvasItem):

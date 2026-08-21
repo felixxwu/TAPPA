@@ -86,22 +86,24 @@ const RESET_WARNING := "Start a brand new game. Every car, star, upgrade and " \
 	+ "rally result is erased — on this device and, while you are signed in, in " \
 	+ "the cloud. This cannot be undone."
 
-# Test override for dev_tools_enabled(): -1 = use the real build type, 0 = force
-# off, 1 = force on. A test cannot change OS.is_debug_build(), and "players don't
-# see the dev pages" is exactly the case worth asserting.
+# Test override for dev_tools_enabled(): -1 = use the real default, 0 = force
+# off, 1 = force on. Lets a test assert the off case even though the shipped
+# default is now always-on.
 static var dev_tools_override := -1
 
 
-# Are the developer-only settings pages (Benchmark / Dev / Seed lab) reachable?
-#
-# Gated on the build type, matching how the rest of the project decides this
-# (car.gd, hud.gd, world.gd, perf_log.gd all key off OS.is_debug_build()). An
-# exported release build is not a debug build, so players never see them; the
-# editor and debug exports — and the headless test runner — do.
+# Are the developer-only settings pages (Benchmark / Dev / Seed lab) reachable,
+# and — via this same switch, checked at every OTHER dev-affordance site in the
+# project (car.gd, hud.gd, world.gd, hq.gd, world_panel_host.gd,
+# terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
+# switch, defaulting to true: dev features are exposed to every player, not just
+# debug builds, so the whole in-game toolkit (grip grid, force arrows, seed lab,
+# skip-to-finish, world-menu A/B, config hot-reload, perf overlay/log) is
+# reachable in the shipped release/web export as well as the editor.
 static func dev_tools_enabled() -> bool:
 	if dev_tools_override >= 0:
 		return dev_tools_override == 1
-	return OS.is_debug_build()
+	return true
 
 # Selectable rows, exposed for tests / hosts: [{key: Variant, button: Button}].
 var camera_rows: Array = []

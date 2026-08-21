@@ -411,7 +411,7 @@ func _ready() -> void:
 	_headless = Platform.is_headless()
 	_cheap = _resolve_cheap()
 	_drain_hub_one_shots()
-	_spike_log = OS.is_debug_build() and not _headless \
+	_spike_log = SettingsMenu.dev_tools_enabled() and not _headless \
 		and OS.get_environment("OVERWORLD_SPIKE_LOG") != "0"
 	var cfg: GameConfig = Config.data
 	_size_m = cheap_size_m if _cheap else cfg.overworld_size_m
