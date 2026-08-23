@@ -1447,6 +1447,27 @@ func reset_to(xform: Transform3D) -> void:
 	drivetrain.engine.reset()
 
 
+# Detach `old_car` from the tree (retiring it) and return a bare, unfielded fresh
+# instance parented and named exactly where it was — the shared first half of
+# `respawn` / `respawn_owned` below.
+static func _respawn_fresh(old_car: Node, spawn_xform: Transform3D) -> Node:
+	var parent := old_car.get_parent()
+	old_car.name = "CarRetired"
+	# Stop the retired car simulating: queue_free() is deferred to frame end, so
+	# without this it would run one more _physics_process AFTER the fresh car's
+	# apply_car()/apply_owned() has reshaped the shared Config.data (the active car
+	# keeps config == Config.data). Reading the new car's gearbox with its own stale
+	# gear state (e.g. a 7-speed still in gear 6, now indexing a 3-speed ratio table)
+	# throws an out-of-bounds. A car being replaced must not step again.
+	old_car.set_physics_process(false)
+	old_car.queue_free()
+	var fresh := Scenes.car_scene().instantiate()
+	fresh.name = "Car"
+	fresh.transform = spawn_xform
+	parent.add_child(fresh)
+	return fresh
+
+
 # Replace `old_car` with a FRESH car instance configured to `index`, spawned at
 # `spawn_xform`, and return the new node. Swapping cars by re-instantiating
 # (rather than repeatedly reshaping one body in place) is what keeps them
@@ -1455,21 +1476,22 @@ func reset_to(xform: Transform3D) -> void:
 # with no traction. A fresh body is configured exactly once, which is reliable.
 # Callers must re-point anything holding the old car (camera target, HUD).
 static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node:
-	var parent := old_car.get_parent()
-	old_car.name = "CarRetired"
-	# Stop the retired car simulating: queue_free() is deferred to frame end, so
-	# without this it would run one more _physics_process AFTER the fresh car's
-	# apply_car() has reshaped the shared Config.data (the active car keeps
-	# config == Config.data). Reading the new car's gearbox with its own stale gear
-	# state (e.g. a 7-speed still in gear 6, now indexing a 3-speed ratio table)
-	# throws an out-of-bounds. A car being replaced must not step again.
-	old_car.set_physics_process(false)
-	old_car.queue_free()
-	var fresh := Scenes.car_scene().instantiate()
-	fresh.name = "Car"
-	fresh.transform = spawn_xform
-	parent.add_child(fresh)
+	var fresh := _respawn_fresh(old_car, spawn_xform)
 	fresh.apply_car(index)
+	return fresh
+
+
+# The `apply_owned` counterpart of `respawn` — same swap-by-re-instantiating
+# recipe, but fields the fresh body from a full OwnedCar dict (upgrades, tuning,
+# engine swap, HP) instead of a bare CarLibrary index. For a body that has
+# already simulated (driven, not fresh off the world-build `_field_car`), this
+# is the ONLY safe way to change which car it is — `apply_owned` in place on a
+# live body is exactly the "wheels relocated again and again" case the doc
+# comment above warns about (see `overworld_garage.gd`'s "Change Car" page,
+# which uses this rather than reshaping the driven car in place).
+static func respawn_owned(old_car: Node, owned: Dictionary, spawn_xform: Transform3D) -> Node:
+	var fresh := _respawn_fresh(old_car, spawn_xform)
+	fresh.apply_owned(owned)
 	return fresh
 
 
@@ -1528,10 +1550,13 @@ func use_isolated_config() -> void:
 # Field this car to a CarLibrary entry: overlays the spec onto `config`, RELOCATES the
 # wheels (detach/re-attach from the tree) and RESETS the pose (_reset at the end). Those
 # last two are destructive to a LIVE, simulating VehicleBody3D — they corrupt its
-# suspension contact (wheels drop through the floor). So only field a FRESH/idle body
-# (a just-instantiated instance, e.g. Car.respawn), never re-field the live player car
-# mid-stage. To change a live car's tuning use retune() (config-only, no reshape); to
-# change its car re-instantiate via respawn(). Re-running it purely to re-derive config
+# suspension contact (wheels drop through the floor / render sunk into the body, and the
+# car can lose traction). So only field a FRESH/idle body (a just-instantiated instance,
+# e.g. Car.respawn / Car.respawn_owned), never re-field the live player car mid-stage —
+# this applies just as much to a body that has merely been DRIVEN AROUND (overworld_garage.gd's
+# "Change Car", overworld_picker.gd's starter grant) as to one mid-rally. To change a live
+# car's tuning use retune() (config-only, no reshape); to change its car re-instantiate via
+# respawn() / respawn_owned(). Re-running it purely to re-derive config
 # (with no reliance on the body's physics afterward) is fine — the test suite does this.
 func apply_car(index: int, rebuild_audio := true) -> String:
 	var spec: Dictionary = CarLibrary.all()[index]

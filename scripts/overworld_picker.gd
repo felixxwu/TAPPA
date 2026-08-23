@@ -140,6 +140,15 @@ var _back: Button = null
 #   visuals    bool                       false = no camera, no prop (the Control tree is still
 #                                          built — a Control needs no renderer, so the whole
 #                                          menu and its navigation stay testable headless).
+# Re-point at a DIFFERENT car node — for when the driven car has been REPLACED
+# (`Car.respawn_owned`, see `overworld_garage.gd`'s "Change Car" page) rather than
+# reshaped in place. The picker only reads `_car` while open, so a respawn that
+# happens while it's closed would otherwise leave it holding a freed node the next
+# time it opens.
+func retarget(car: Variant) -> void:
+	_car = car
+
+
 func setup(opts: Dictionary) -> void:
 	_car = opts.get("car", null)
 	_car_scene = opts.get("car_scene", null)
@@ -458,48 +467,57 @@ func _hand_car_back() -> void:
 		_car.set("freeze", false)
 
 
-## Re-field the LIVE car as `owned` and re-seat it where it stands. The ONE in-place reshape in
-## this file, and the host calls it only after a starter grant.
+## Re-field the LIVE car as `owned` and re-seat it where it stands, RESPAWNING it (a fresh
+## body) rather than reshaping the standing one in place. The host calls it only after a
+## starter grant. Returns the fresh car node so the host can re-point everything else that
+## caches the car (`Overworld._repoint_car`); null if there was no car / nothing to field.
 ##
-## It follows the tuning lift's recipe exactly (`overworld_garage._on_upgrade_changed`), because
-## `apply_owned` ends in a reset and relocates the wheels:
+## THIS USED TO REUSE THE SAME BODY (unfreeze, `apply_owned`, re-seat) — the tuning lift's
+## own recipe. That looked safe on the reasoning "the picker opens on boot, before the car
+## has even fallen its `spawn_clearance`" — but `_build_world` awaits several frames
+## (terrain precompute, horizon, shader warm-up) between fielding the car and opening the
+## starter pick, so the body HAS already been simulating (falling, settling, maybe
+## bouncing) by the time a grant confirms. `apply_owned` on an already-simulated
+## `VehicleBody3D` is exactly what `car.gd`'s `respawn()` docstring warns corrupts its
+## wheel/suspension state — the same bug the garage's "Change Car" page hit reshaping the
+## DRIVEN car in place (see `features/overworld.md` → "The garage" → "Change Car"). A first
+## car's wheels reading wrong is that bug's other call site, not a separate one.
 ##
-##   1. unfreeze first — a frozen body's reset is what leaves it stuck;
-##   2. apply_owned (the model, its upgrades, its tuning, its saved HP);
-##   3. RE-SEAT at the pose it was standing in, at the NEW model's own rest height. A different
-##      car has a different `wheel_radius` / axle travel, so re-using the old body origin sinks
-##      or floats it — this project has sunk props into the ground four times for exactly that. The
-##      contact plane is what is preserved, computed from each model's `settled_ride_height`.
+## `Car.respawn_owned` is the fix: field a FRESH, never-simulated body exactly once.
+## Preserving the CONTACT PLANE (not the body origin) across the swap still matters — a
+## different car has a different `wheel_radius` / axle travel, so re-using the old origin
+## sinks or floats it:
 ##
-##      THE ORDER OF THOSE TWO READS IS LOAD-BEARING: `settled_ride_height()` answers for whichever
-##      car is currently fielded, so the plane must be measured BEFORE `apply_owned` (with the
-##      outgoing car's height) and restored AFTER it (with the incoming car's). Read it at one
-##      moment for both and the re-seat is a no-op that leaves the body exactly where it was —
-##      wrong by the difference between the two cars' rest heights, which looks like a sunk car and
-##      is what `test_refielding_preserves_the_contact_plane_at_the_new_ride_height` pins;
-##   4. `reset_to`, never a bare transform write (the physics server discards those outside the
-##      step, and it wakes a sleeping body);
-##   5. clear the wheel-visual droop, in case anything settled it while frozen — a settled car
-##      handed back to physics renders its wheels below where the solver has them;
-##   6. re-disable damage: `apply_owned` calls `damage.field(...)`, which re-binds the model to
-##      the saved HP, and the hub deliberately runs with damage OFF (`Overworld._field_car`), so
-##      the disable has to be re-applied AFTER every fielding or a hub drive starts costing HP.
-func refield_live_car(owned: Dictionary) -> void:
+##   1. measure the OUTGOING car's contact plane BEFORE the swap — `settled_ride_height()`
+##      answers for whichever car is currently fielded, so this has to happen first;
+##   2. `Car.respawn_owned` — spawns fresh, names/parents it exactly where the old one was,
+##      fields it from `owned` (model, upgrades, tuning, saved HP);
+##   3. re-seat at the SAME contact plane, at the fresh body's OWN rest height, via
+##      `reset_to` (never a bare transform write — the physics server discards those
+##      outside the step, and it wakes a sleeping body);
+##   4. clear the wheel-visual droop, in case anything settled it while frozen — a settled
+##      car handed back to physics renders its wheels below where the solver has them;
+##   5. re-disable damage: `apply_owned` calls `damage.field(...)`, which re-binds the
+##      model to the saved HP, and the hub deliberately runs with damage OFF
+##      (`Overworld._field_car`), so the disable has to be re-applied after every fielding
+##      or a hub drive starts costing HP.
+func refield_live_car(owned: Dictionary) -> Node3D:
 	if _car == null or not is_instance_valid(_car) or owned.is_empty():
-		return
+		return null
 	var node := _car as Node3D
 	var pose := node.global_transform
 	var plane := _contact_plane_of(_car, pose)
-	_car.set("freeze", false)
-	_car.call("apply_owned", owned)
+	var fresh := preload("res://scripts/car.gd").respawn_owned(_car, owned, pose) as Node3D
 	var seated := pose
-	seated.origin = plane + pose.basis.y.normalized() * _ride_height_of(_car)
-	_car.call("reset_to", seated)
-	if _car.has_method("clear_wheel_visual_droop"):
-		_car.call("clear_wheel_visual_droop")
-	var model = _car.get("damage")
+	seated.origin = plane + pose.basis.y.normalized() * _ride_height_of(fresh)
+	fresh.call("reset_to", seated)
+	if fresh.has_method("clear_wheel_visual_droop"):
+		fresh.call("clear_wheel_visual_droop")
+	var model = fresh.get("damage")
 	if model != null:
 		model.enabled = false
+	_car = fresh
+	return fresh
 
 
 # The ground point under a car's wheels, derived from its own analytic rest height — the ONE

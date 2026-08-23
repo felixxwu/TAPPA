@@ -138,6 +138,7 @@ func _page_root(page: int) -> Control:
 		OverworldGarage.Page.HUB: "Hub",
 		OverworldGarage.Page.TUNE: "Tune",
 		OverworldGarage.Page.UPGRADES: "Upgrades",
+		OverworldGarage.Page.CARS: "Cars",
 	}
 	return _garage.ui_root().find_child(String(names[page]), true, false) as Control
 
@@ -559,3 +560,193 @@ func test_the_stop_tube_is_visuals_only() -> void:
 		assert_almost_eq(tube.scale.x, g.stop_tube_radius(), 0.001,
 			"the column is drawn at the radius it advertises, so what you see is where to park")
 		assert_gt(tube.get_child_count(), 0, "the column has its mesh")
+
+
+# --- The garage camera ----------------------------------------------------------------------
+#
+# The smooth fly between the driving camera and the lift shot. `visuals: false` (the shared
+# `_garage` fixture) never builds a camera at all, so these use their own visuals-on garage next
+# to a real CameraManager sibling — the same sibling relationship `overworld.gd` gives the real
+# scene.
+
+
+func _park_car_in_bay(g: OverworldGarage, car: StubCar) -> void:
+	g.update_with(0.1, _outside_point(), 0.0)
+	var p := Vector3(0.0, 0.0, -0.1)
+	for _i in range(400):
+		if g.inside_bay(p):
+			break
+		p.z -= 0.25
+	car.global_position = p
+	g.update_with(0.1, p, 0.0)
+
+
+# A CameraManager sibling, built the same way the real overworld scene has one standing next to
+# the garage node — `_garage._camera_manager()` reaches it via `get_parent().get_node_or_
+# null("CameraManager")`, exactly the lookup `overworld_picker.gd` uses for its own showroom
+# camera. Both cameras are given real Camera3D nodes so `.current` is a meaningful flag.
+func _build_camera_manager() -> CameraManager:
+	var mgr := CameraManager.new()
+	mgr.name = "CameraManager"
+	var chase := Camera3D.new()
+	var bonnet := Camera3D.new()
+	mgr.chase_camera = chase
+	mgr.bonnet_camera = bonnet
+	add_child_autofree(chase)
+	add_child_autofree(bonnet)
+	add_child_autofree(mgr)
+	return mgr
+
+
+# With no CameraManager to fly FROM, driving in must not be left holding a half-built override:
+# no camera is ever activated, so the driving camera (whatever it is) keeps the viewport.
+func test_no_camera_manager_means_no_flight_and_no_dangling_override() -> void:
+	var g := OverworldGarage.new()
+	add_child_autofree(g)
+	var car := StubCar.new()
+	add_child_autofree(car)
+	g.setup({"world_pos": Vector3.ZERO, "car": car, "visuals": true})
+	_park_car_in_bay(g, car)
+	assert_false(g.camera_flying(), "nothing to fly between, so no transition starts")
+	assert_false(g.camera().current,
+		"the garage camera never takes the viewport with no driving camera to fly from")
+
+
+# Driving in with a real CameraManager sibling starts a fly FROM wherever the driving camera
+# was standing, and hands the viewport to the garage's own camera immediately (so there is
+# never a frame with no current camera) — the transition, not the destination, is what removes
+# the jump.
+func test_driving_in_flies_from_the_driving_camera_to_the_lift_shot() -> void:
+	var mgr := _build_camera_manager()
+	mgr.chase_camera.global_transform = Transform3D(Basis(), Vector3(50.0, 3.0, 50.0))
+	mgr.set_mode(CameraManager.Mode.CHASE)
+	var g := OverworldGarage.new()
+	add_child_autofree(g)
+	var car := StubCar.new()
+	add_child_autofree(car)
+	g.setup({"world_pos": Vector3.ZERO, "car": car, "visuals": true})
+	_park_car_in_bay(g, car)
+	assert_true(g.camera().current,
+		"the garage camera takes the viewport the instant the car is seated")
+	assert_almost_eq(g.camera().global_position.distance_to(mgr.chase_camera.global_position), 0.0,
+		0.01, "the fly starts from exactly where the driving camera was standing — no jump")
+	assert_true(g.camera_flying(), "and the fly is under way")
+	for _i in range(200):
+		g.update_with(0.1, car.global_position, 0.0)
+	assert_false(g.camera_flying(), "the fly completes")
+	assert_true(g.camera().current, "the garage camera still holds the viewport once parked")
+
+
+# Driving out reverses it: the fly starts from the lift shot and lands back on the driving
+# camera, which is handed the viewport back exactly on arrival.
+func test_leaving_flies_back_to_the_driving_camera_and_hands_it_the_viewport() -> void:
+	var mgr := _build_camera_manager()
+	mgr.set_mode(CameraManager.Mode.CHASE)
+	var g := OverworldGarage.new()
+	add_child_autofree(g)
+	var car := StubCar.new()
+	add_child_autofree(car)
+	g.setup({"world_pos": Vector3.ZERO, "car": car, "visuals": true})
+	_park_car_in_bay(g, car)
+	for _i in range(200):
+		g.update_with(0.1, car.global_position, 0.0)
+	g.leave()
+	assert_true(g.camera_flying(), "leaving starts the reverse fly")
+	# The chase camera can move while the fly is under way (it follows the car); moving it here
+	# stands in for that and checks the fly re-reads the target every frame rather than a
+	# stale pose captured at the start.
+	mgr.chase_camera.global_transform = Transform3D(Basis(), Vector3(12.0, 2.0, -8.0))
+	for _i in range(200):
+		g.update_with(0.1, car.global_position, 0.0)
+	assert_false(g.camera_flying(), "the fly completes")
+	assert_false(g.camera().current, "the garage camera hands the viewport back on arrival")
+	assert_true(mgr.chase_camera.current, "landing back on the driving camera the player had chosen")
+
+
+# --- Change Car -------------------------------------------------------------------------------
+#
+# Swapping which owned car is on the lift, without leaving the garage. Unlike an upgrade edit
+# (`_on_upgrade_changed`, which reshapes the SAME body in place), a genuine model swap goes
+# through `Car.respawn_owned` — a FRESH body, never reshaping the driven car directly. Reshaping
+# an already-simulated `VehicleBody3D` in place is exactly what `car.gd`'s own `respawn()`
+# docstring warns corrupts its wheel/suspension state ("left some cars spinning in place with no
+# traction"); an upgrade never surfaces it because it keeps the same track/wheelbase/radius, a
+# model swap does. These tests use a REAL car.tscn (not the StubCar mock the rest of this file
+# uses) because the respawn path instantiates one for real via `Scenes.car_scene()`.
+
+
+# With only one owned car there is nothing to switch to, so the entry point is hidden — the
+# same "a button that would change nothing must never exist" rule the repair button follows.
+func test_change_car_is_hidden_with_only_one_car_owned() -> void:
+	_drive_in()
+	var hub := _page_root(OverworldGarage.Page.HUB)
+	var found: Button = null
+	for b in hub.find_children("*", "Button", true, false):
+		if String((b as Button).text).to_lower().begins_with("change car"):
+			found = b
+			break
+	assert_not_null(found, "the Change Car row exists on the hub")
+	if found != null:
+		assert_false(found.visible, "hidden with nothing else to switch to")
+
+
+const CAR_SCENE := "res://car.tscn"
+
+
+# A real garage + real car (not the StubCar mock), for the two tests below that exercise
+# the actual respawn path. `visuals: false` still means no MESHES for the GARAGE building,
+# but the car itself is the genuine scene (respawn always instantiates one for real).
+func _real_garage() -> Dictionary:
+	var car: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(car)
+	car.apply_car(0)
+	var g := OverworldGarage.new()
+	add_child_autofree(g)
+	g.setup({"world_pos": Vector3.ZERO, "car": car, "visuals": false})
+	return {"garage": g, "car": car}
+
+
+# The Cars page lists every owned car, and picking one RESPAWNS the car on the lift (a fresh
+# body, not the same one reshaped) — persisting the selection and returning to the hub.
+func test_choosing_a_car_respawns_the_live_car_and_persists_the_selection() -> void:
+	var second: Dictionary = _save.grant_car(String(CarFixtures.cars()[1]["id"]))
+	var second_id := int(second["instance_id"])
+	var setup := _real_garage()
+	var g: OverworldGarage = setup["garage"]
+	var original: Node = setup["car"]
+	g.update_with(0.1, Vector3(0, 0, 50), 0.0)
+	var p := Vector3(0.0, 0.0, -0.1)
+	for _i in range(400):
+		if g.inside_bay(p):
+			break
+		p.z -= 0.25
+	(original as Node3D).global_position = p
+	g.update_with(0.1, p, 0.0)
+	for _i in range(200):
+		g.update_with(0.1, (original as Node3D).global_position, 0.0)
+	g._open_page(OverworldGarage.Page.CARS)
+	var page := g.ui_root().find_child("Cars", true, false) as Control
+	assert_gt(page.find_children("*", "Button", true, false).size(), 0,
+		"the page lists at least one car row plus its Back button")
+	g._switch_to_car(second_id)
+	assert_eq(Save.selected_instance_id(), second_id, "the selection persisted through Save")
+	assert_ne(g._car, original, "the car on the lift is now a DIFFERENT (respawned) body")
+	assert_true(original.is_queued_for_deletion(), "the old body is retired, not reused")
+	assert_eq(String(g._car.call("current_car_name")), String(CarFixtures.cars()[1]["name"]),
+		"the fresh body was fielded as the newly-chosen car")
+	assert_eq(g.page(), OverworldGarage.Page.HUB, "choosing a car returns to the hub")
+	(g._car as Node).queue_free()   # not registered with add_child_autofree — respawned fresh
+
+
+# Picking the car that is already on the lift is a no-op that still returns to the hub — it
+# must never respawn a car that is already correctly shaped.
+func test_choosing_the_current_car_is_a_no_op() -> void:
+	var setup := _real_garage()
+	var g: OverworldGarage = setup["garage"]
+	var original: Node = setup["car"]
+	var id := Save.selected_instance_id()
+	g._open_page(OverworldGarage.Page.CARS)
+	g._switch_to_car(id)
+	assert_eq(g._car, original, "no respawn for the car already on the lift")
+	assert_false(original.is_queued_for_deletion(), "the live body is left alone")
+	assert_eq(g.page(), OverworldGarage.Page.HUB, "and it still backs out to the hub")

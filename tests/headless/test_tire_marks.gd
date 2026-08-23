@@ -384,39 +384,29 @@ func test_incremental_buffer_matches_full_rebuild() -> void:
 	_drive(tm, 4.0, [])          # landing point: starts a NEW strip (a gap here)
 	for s in range(5, 12):       # keep laying so the ring buffer pops from the front
 		_drive(tm, float(s), [])
-	tm.flush_uploads()           # uploads are coalesced to a rendered frame
 	var expected: Dictionary = TireMarks._build_ribbon(tm._pairs[0])
 	assert_eq(tm.ribbon_verts(0), expected["verts"], "incremental verts match a full rebuild")
 	assert_eq(tm.ribbon_cols(0), expected["cols"], "incremental colours match a full rebuild")
 
 
-func test_uploads_are_coalesced_to_one_per_wheel_per_frame() -> void:
-	# Mesh uploads are batched to at most one per wheel per RENDERED frame, not one per
-	# physics tick — the expensive part (clear_surfaces + add_surface_from_arrays) must
-	# not scale with the tick rate.
+func test_uploads_happen_eagerly_per_segment() -> void:
+	# Each emitted segment uploads its wheel's ribbon immediately, rather than batching
+	# to one upload per rendered frame — a wheel's mark must never lag the physics tick
+	# that laid it, whatever the render frame rate is doing.
 	var tm := _make()
 	for s in 12:
 		_drive(tm, float(s), [-0.8, 0.8, -0.8, 0.8])
 	assert_gt(tm.segment_count(0), 1, "the run laid several segments (precondition)")
-	assert_eq(tm.upload_count(), 0, "no mesh upload happens on the physics tick itself")
-	tm.flush_uploads()
-	assert_eq(tm.upload_count(), tm.wheel_count(),
-		"one upload per wheel for the whole batch of ticks, not one per segment")
-	# And a second flush with nothing new does no work at all.
-	tm.flush_uploads()
-	assert_eq(tm.upload_count(), tm.wheel_count(), "a clean flush uploads nothing")
+	assert_gt(tm.upload_count(), 0, "marks upload as they're laid, with no explicit flush needed")
 
 
-func test_coalescing_loses_no_segments() -> void:
-	# The real risk of batching: geometry emitted between flushes going missing. After a
-	# single flush covering many ticks, what actually reached each wheel's MESH must equal
-	# the reference full rebuild of its segment list — same geometry, fewer uploads. Read
-	# the surface back off the mesh rather than an internal buffer, so this can't pass on
-	# a ribbon that was staged but never uploaded.
+func test_no_segments_lost_without_a_flush() -> void:
+	# What actually reached each wheel's MESH (read back off the mesh, not an internal
+	# buffer, so this can't pass on a ribbon that was staged but never uploaded) must equal
+	# the reference full rebuild of its segment list — with no flush_uploads() call at all.
 	var tm := _make()
 	for s in 15:
 		_drive(tm, float(s), [-0.8, 0.8, -0.8, 0.8])
-	tm.flush_uploads()
 	for i in tm.wheel_count():
 		var expected: Dictionary = TireMarks._build_ribbon(tm._pairs[i])
 		var mesh := tm._ribbons[i].mesh as ArrayMesh
@@ -435,10 +425,10 @@ func test_coalescing_loses_no_segments() -> void:
 			"wheel %d: the uploaded colour is the segment's colour" % i)
 
 
-func test_coalescing_survives_a_broken_strip_and_the_cap() -> void:
-	# Batch several ticks that also cross a break (airborne) and the ring-buffer cap,
-	# then flush once: the mesh still matches the reference rebuild, so neither the
-	# dropped front quads nor the gap desync the coalesced upload.
+func test_eager_upload_survives_a_broken_strip_and_the_cap() -> void:
+	# Run several ticks that also cross a break (airborne) and the ring-buffer cap: the
+	# mesh (already uploaded eagerly, no flush needed) still matches the reference
+	# rebuild, so neither the dropped front quads nor the gap desync it.
 	Config.data.tire_mark_max_segments = 4
 	var tm := _make()
 	for s in 3:
@@ -448,12 +438,11 @@ func test_coalescing_survives_a_broken_strip_and_the_cap() -> void:
 	_wheels[0]._contact = true
 	for s in range(4, 14):
 		_drive(tm, float(s), [])
-	tm.flush_uploads()
 	var expected: Dictionary = TireMarks._build_ribbon(tm._pairs[0])
-	assert_eq(tm.ribbon_verts(0), expected["verts"], "batched verts match the full rebuild")
-	assert_eq(tm.ribbon_cols(0), expected["cols"], "batched colours match the full rebuild")
+	assert_eq(tm.ribbon_verts(0), expected["verts"], "eagerly-uploaded verts match the full rebuild")
+	assert_eq(tm.ribbon_cols(0), expected["cols"], "eagerly-uploaded colours match the full rebuild")
 	assert_eq(tm.segment_count(0), Config.data.tire_mark_max_segments,
-		"the cap still holds across coalesced uploads")
+		"the cap still holds with eager uploads")
 
 
 func test_jump_leaves_a_gap_not_a_stretched_quad() -> void:

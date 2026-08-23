@@ -817,12 +817,22 @@ func _prompt_wipe_progress() -> void:
 #
 # Called by the confirm modal, and directly by tests — the confirmation is
 # _prompt_wipe_progress's job, so this stays the plain "do it" entry point.
+#
+# Ends by reloading the hub scene from scratch (see _reload_after_wipe). A wipe
+# clears the save's car/garage state out from under a scene that is still
+# live — the player was left driving their old car through a fully-dark
+# overworld, because nothing re-ran the "no starter car yet" setup that a real
+# new game boots into. Reloading is the same fix a restart would give, without
+# asking the player to actually quit: it re-instantiates the hub fresh against
+# the just-wiped profile, so the starter-car picker (etc.) runs exactly as it
+# would for a brand new player.
 func _wipe_progress() -> void:
 	Save.reset_new_game()
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
 	_reset_status.text = "Wiped all progress."
 	if Cloud == null or not Cloud.is_signed_in():
+		_reload_after_wipe()
 		return
 	var result: Dictionary = await CloudBusy.run_covered(
 		self, "Wiping your progress…", "Clearing your cloud save…",
@@ -832,6 +842,15 @@ func _wipe_progress() -> void:
 	_reset_status.text = "Wiped all progress (local and cloud)." \
 		if bool(result.get("ok", false)) \
 		else "Wiped locally — the cloud copy could not be cleared, so it may come back."
+	_reload_after_wipe()
+
+
+# Reload the hub scene fresh so the wiped profile is picked up exactly like a
+# new player's first boot (starter car picker included), instead of leaving
+# the current scene running against state it no longer matches. Routed through
+# Scenes.change_to so tests (which arm Scenes.block_real_changes) stay inert.
+func _reload_after_wipe() -> void:
+	Scenes.change_to(get_tree(), Scenes.hub_path())
 
 
 # --- Dev actions -------------------------------------------------------------

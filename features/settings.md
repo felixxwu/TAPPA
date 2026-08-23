@@ -241,3 +241,16 @@ and so was invisible in release builds; it is now its own **player** category
 a second copy — one route to an irreversible action, guarded by a confirm modal
 rather than by hiding. Dev builds simply see both categories.
 
+**Confirming the wipe reloads the hub scene** (`SettingsMenu._wipe_progress` →
+`_reload_after_wipe`, at the end of the local wipe and again after the cloud
+publish resolves when signed in). `Save.reset_new_game()` only replaces the
+save profile in memory — it does nothing to whatever scene is currently live,
+so without a reload the player kept driving their old car through a
+now-nonsensical (fully dark) overworld: nothing re-ran the "no starter car
+yet" setup a real new game boots into. The reload routes through
+`Scenes.change_to(get_tree(), Scenes.hub_path())`, the same seam every other
+hub transition uses, so it re-instantiates the hub fresh against the
+just-wiped profile (starter-car picker included) exactly like a brand-new
+player's first boot, and stays inert under `Scenes.block_real_changes` in
+tests.
+

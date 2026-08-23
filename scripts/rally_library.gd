@@ -399,7 +399,15 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "shitbox_cup", "name": "Sh*tbox Cup", "region": "home", "difficulty": 1, "special": false,
-		"map_pos": Vector2(0.527, 0.476),
+		# Moved from (0.527, 0.476). That sat only ~24m from HQ_MAP_POS, and the garage
+		# (RallyLibrary.hq_map_pos) stands offset from the player's OPENING rally pin by up
+		# to ~52m (HQ_BESIDE_RALLY_GAP_M + both pad radii) toward the map centre — for the
+		# MX-5/Focus starters the garage pad ended up overlapping this zone's pad (as close
+		# as ~18m edge distance). Still deliberately inside BOTH the MX-5 (`shakedown`) and
+		# Focus (`hm_timber_trophy`) opening rallies' reveal circles (map_reveal_radius,
+		# ~104m) — see features/rally-roster.md's anti-soft-lock note — but far enough that
+		# the garage pad clears it by 50m+ for either starter, and every other pin by 49m+.
+		"map_pos": Vector2(0.656, 0.363),
 		# The bottom band, below even Shakedown: a sub-100 hp/tonne class the true
 		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
 		"restriction": {"engine_max_l": 1.5},  # the cheapest, smallest engines in the game
@@ -2286,6 +2294,17 @@ static func all_specials_completed(profile: Dictionary) -> bool:
 		if is_special(rally) and not bool(rallies.get(rally["id"], {}).get("completed", false)):
 			return false
 	return true
+
+
+# Whether a rally has already been COMPLETED (a podium/top-3 finish — see the save-schema note
+# above `podium_count()`, never "attempted in any position", which the schema does not track).
+# The same inline `.get(KEY_RALLIES, {}).get(id, {}).get("completed", false)` every other reader
+# of this field already does (podium_count, all_specials_completed, lit_sources, ...), factored
+# out once so a caller outside this file — overworld_zone.gd's idle-tube dimming — has a named
+# predicate to call instead of reaching into the profile dict itself.
+static func rally_completed(rally: Dictionary, profile: Dictionary) -> bool:
+	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
+	return bool(rallies.get(String(rally.get("id", "")), {}).get("completed", false))
 
 
 # Whether a rally's pin is REVEALED (enterable) yet: does its map_pos fall inside any lit

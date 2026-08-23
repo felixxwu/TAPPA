@@ -660,3 +660,138 @@ func test_the_tube_is_drawn_at_the_live_trigger_radius() -> void:
 		"...and they still agree after a live retune")
 	assert_true(inside, "just inside the drawn radius is inside the trigger")
 	assert_false(outside, "just outside it is outside")
+
+
+# --- A rally already completed shows a dimmer idle tube ---------------------------------
+#
+# `overworld_zone_tube_completed_alpha_scale` is a GameConfig tunable, so — same discipline as
+# the rest of this file — nothing here pins an alpha VALUE. What must hold for ANY reasonable
+# scale is the RELATIONSHIP: a rally completed on a PREVIOUS visit reads dimmer at rest than an
+# otherwise-identical zone that has not been completed, by exactly the configured scale; and a
+# fresh dwell on that same completed zone still ramps all the way up to full brightness.
+
+func test_a_completed_rally_shows_a_dimmer_idle_tube_than_an_incomplete_one() -> void:
+	var incomplete := OverworldZone.new()
+	add_child_autofree(incomplete)
+	incomplete.setup(_fx("fx_open"), Vector3.ZERO, true)
+	_complete("fx_open")
+	incomplete.refresh_revealed(Save.profile)   # reveal only — NOT refresh_completed
+	var base_alpha := incomplete.tube_body_alpha()
+	assert_gt(base_alpha, 0.0, "the incomplete zone's idle tube is visible at all")
+
+	var completed := OverworldZone.new()
+	add_child_autofree(completed)
+	completed.setup(_fx("fx_open"), Vector3.ZERO, true)
+	completed.refresh_revealed(Save.profile)
+	completed.refresh_completed(Save.profile)
+	assert_true(completed.completed(), "fx_open really is completed in the profile this reads")
+	var dimmed_alpha := completed.tube_body_alpha()
+
+	assert_lt(dimmed_alpha, base_alpha, "a completed rally's idle tube is dimmer, not brighter")
+	assert_almost_eq(dimmed_alpha, base_alpha * Config.data.overworld_zone_tube_completed_alpha_scale,
+		0.001, "dimmed by exactly the configured scale, not some other amount")
+
+
+func test_an_incomplete_rally_is_not_dimmed() -> void:
+	# Non-vacuity for the test above: the SAME zone, SAME profile call, on a rally that has not
+	# been completed, must come back exactly as bright as the undimmed baseline reads elsewhere —
+	# i.e. `refresh_completed` on a false profile must be a no-op on the alpha.
+	var zone := OverworldZone.new()
+	add_child_autofree(zone)
+	zone.setup(_fx("fx_open"), Vector3.ZERO, true)
+	zone.refresh_revealed(Save.profile)
+	var before := zone.tube_body_alpha()
+	zone.refresh_completed(Save.profile)
+	assert_false(zone.completed(), "fx_open is not completed in a fresh profile")
+	assert_almost_eq(zone.tube_body_alpha(), before, 0.001,
+		"refresh_completed changes nothing when the rally has not been completed")
+
+
+func test_re_entering_a_completed_zone_still_ramps_up_to_full_brightness() -> void:
+	# The idle dimming must not mute the actual dwell feedback — a player re-running a completed
+	# rally still needs to see the fill/gold-snap punctuation exactly as before. Built with
+	# visuals ON directly (not the `_zone()` helper, which builds visuals off) since this test
+	# reads the tube material.
+	var zone := OverworldZone.new()
+	add_child_autofree(zone)
+	zone.setup(_fx("fx_open"), Vector3.ZERO, true)
+	# ARM it — see `_zone()`'s own comment on why a dwell test must start from outside.
+	zone.tick(1.0 / 60.0, _far_from(zone), 0.0)
+	_complete("fx_open")
+	zone.refresh_revealed(Save.profile)
+	zone.refresh_completed(Save.profile)
+	assert_true(zone.completed(), "fx_open really is completed (else this test is vacuous)")
+
+	_drive(zone, Vector3.ZERO, 0.0, _generous_seconds(zone))
+	assert_eq(zone.fill_fraction(), 1.0, "the dwell still completes on a re-entered zone")
+	assert_almost_eq(zone.tube_body_alpha(),
+		clampf(Config.data.overworld_zone_tube_ready_alpha, 0.0, 1.0), 0.001,
+		"a completed dwell still snaps the body to full ready alpha, dimming or not")
+
+
+# --- Tube COLOUR: white incomplete, green completed, muted locked, gold on the snap ---------
+#
+# Unlike the alpha (a GameConfig tunable), the palette colours ARE fixed identifiers — the
+# whole point of this feature is that GREEN specifically means "done", so asserting the exact
+# `UITheme` constant is the contract, not a pinned incidental value. Same precedent as
+# test_ui_theme.gd / test_hud.gd, which already assert exact UITheme colours.
+
+func test_a_revealed_incomplete_zone_shows_white() -> void:
+	# fx_open lights fx_gated's pin once completed, but that only reveals fx_gated — it does not
+	# complete IT, which is exactly "revealed, not yet completed" (see `_complete`'s own comment:
+	# a rally reveals ITSELF only by being completed, so fx_open cannot show this state on its
+	# own roster position — a rally lit by a NEIGHBOUR is the only way to get it).
+	_complete("fx_open")
+	var zone := OverworldZone.new()
+	add_child_autofree(zone)
+	zone.setup(_fx("fx_gated"), Vector3.ZERO, true)
+	zone.refresh_revealed(Save.profile)
+	zone.refresh_completed(Save.profile)
+	assert_true(zone.revealed(), "fx_open's completion lights fx_gated (else this test is vacuous)")
+	assert_false(zone.completed(), "fx_gated itself has not been completed")
+	assert_eq(zone.tube_body_color(), Color(UITheme.INK.r, UITheme.INK.g, UITheme.INK.b, 1.0),
+		"a revealed, not-yet-completed zone shows the white/off-white body tint")
+
+
+func test_a_completed_zone_shows_green() -> void:
+	var zone := OverworldZone.new()
+	add_child_autofree(zone)
+	zone.setup(_fx("fx_open"), Vector3.ZERO, true)
+	_complete("fx_open")
+	zone.refresh_revealed(Save.profile)
+	zone.refresh_completed(Save.profile)
+	assert_true(zone.completed(), "fx_open really is completed (else this test is vacuous)")
+	assert_eq(zone.tube_body_color(), Color(UITheme.GREEN.r, UITheme.GREEN.g, UITheme.GREEN.b, 1.0),
+		"a completed zone shows the green body tint")
+
+
+func test_an_unrevealed_zone_stays_muted_regardless_of_completion() -> void:
+	# A dark zone must not leak "completed" through its tint just because some OTHER rally that
+	# lights it later happens to have been finished before — locked always reads as locked.
+	var zone := OverworldZone.new()
+	add_child_autofree(zone)
+	zone.setup(_fx("fx_gated"), Vector3.ZERO, true)
+	assert_false(zone.revealed(), "fx_gated starts dark (else this test is vacuous)")
+	assert_eq(zone.tube_body_color(), Color(UITheme.MUTED.r, UITheme.MUTED.g, UITheme.MUTED.b, 1.0),
+		"an unrevealed zone shows the muted/locked body tint")
+
+
+func test_the_completion_snap_still_goes_gold_over_the_white_resting_colour() -> void:
+	# The gold "it just fired" punctuation must win over the white resting tint — a completely
+	# separate concept (this visit's live dwell) from the persisted white/green distinction. Uses
+	# fx_gated, lit by completing fx_open first: the dwell state machine only accumulates
+	# progress on a REVEALED zone (see `refresh_revealed`'s activation re-check), and fx_gated is
+	# revealed-but-not-completed the same way the white-tint test above needs it to be.
+	_complete("fx_open")
+	var zone := OverworldZone.new()
+	add_child_autofree(zone)
+	zone.setup(_fx("fx_gated"), Vector3.ZERO, true)
+	zone.tick(1.0 / 60.0, _far_from(zone), 0.0)   # arm it
+	zone.refresh_revealed(Save.profile)
+	assert_true(zone.revealed(), "fx_open's completion lights fx_gated (else this test is vacuous)")
+	assert_false(zone.completed(), "fx_gated itself not completed yet (white resting tint)")
+
+	_drive(zone, Vector3.ZERO, 0.0, _generous_seconds(zone))
+	assert_eq(zone.fill_fraction(), 1.0, "the dwell completed (else this test is vacuous)")
+	assert_eq(zone.tube_body_color(), Color(UITheme.GOLD.r, UITheme.GOLD.g, UITheme.GOLD.b, 1.0),
+		"the completion snap goes gold even from the white (not-yet-completed) resting tint")

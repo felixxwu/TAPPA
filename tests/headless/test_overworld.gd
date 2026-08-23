@@ -834,6 +834,32 @@ func test_the_starter_pick_opens_only_for_a_profile_that_owns_nothing() -> void:
 		"...and closing it handed the car back")
 
 
+# THE PICKER SUSPENDS THE FOG VEIL. A profile choosing its starter is very likely to be
+# standing outside the small `map_hq_reveal_radius` circle (see rally_library.gd::lit_sources),
+# so without this the showroom shot the player is meant to actually see would be darkened by the
+# same soft turn-back that punishes driving off the lit map. Driven directly against
+# `_update_fog_boundary` rather than by waiting frames, so it needs no car movement at all.
+func test_the_fog_veil_is_suspended_while_the_picker_is_open() -> void:
+	var cars_was: Array = Save.profile[Save.KEY_CARS]
+	var selected_was: Variant = Save.profile.get("selected_instance_id", -1)
+	CarFixtures.restore()
+	Save.profile[Save.KEY_CARS] = []
+	Save.profile["selected_instance_id"] = -1
+	var opened := _ow._maybe_open_starter_pick()
+	assert_true(opened, "fixture setup: a carless profile must be offered the starter pick")
+
+	_ow._veil_alpha = 1.0
+	_ow._update_fog_boundary(0.5)
+	var alpha_while_open: float = _ow._veil_alpha
+
+	_ow._picker.close()
+	Save.profile[Save.KEY_CARS] = cars_was
+	Save.profile["selected_instance_id"] = selected_was
+	CarFixtures.install()
+
+	assert_lt(alpha_while_open, 1.0, "the veil fades rather than holding or darkening further")
+
+
 # THE STARTER PICK LAUNCHES THE OPENING RALLY, the way the old HQ does (`hq.gd::_confirm_starter`):
 # the player who just chose their first car is dropped into the event that AWARDS it rather than left
 # parked in a hub with nothing behind them. `RallyLibrary.opening_rally_id_for(model_id)` names it.

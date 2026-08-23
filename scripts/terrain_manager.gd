@@ -492,6 +492,9 @@ func set_pad_source(source: Object) -> void:
 		pad_source = null
 		return
 	pad_source = source
+	# _road_surface_at reads pad_source too (a pad wins over the road, same as the mesh bake), so
+	# a stale memoed answer from before the pad was attached must not survive the swap.
+	_road_surf_valid = false
 
 
 # The coastline falloff (D9). `h` is the generated height at world (x, z); the return value
@@ -985,22 +988,26 @@ func _apply_edge_taper(data: Dictionary) -> void:
 # Bake the FLAT PADS into one freshly generated chunk's grid — a level circle of ground under
 # every rally zone and under the garage, so the zone's light tube, its floating marker, its
 # ghost car and (the case that actually broke) the GARAGE BUILDING stand on level ground
-# instead of straddling a slope. See features/terrain.md -> "Flat pads".
+# instead of straddling a slope. Also bakes the pad's TARMAC surface (COLOR.a / UV2.x, the
+# same channels the road carve fills), feathered by the identical weight as the height
+# flatten, so the whole disc reads as forecourt rather than roads meeting on bare grass. See
+# features/terrain.md -> "Flat pads".
 #
 # Rewrites `heights` and `vertices` in LOCKSTEP, exactly as _apply_edge_taper does, so the
 # mesh, the HeightMapShape3D, height_at and the cached bytes all derive from one number. The
-# per-point maths is `pad_height`, the SAME function _noise_height_at calls — which is what
-# makes the pure-noise fallback agree with the baked grid (see pad_height's header for why the
-# pad, unlike the road carve, belongs in the generator).
+# per-point height maths mirrors `pad_height` (the SAME `pad_at` lookup _noise_height_at goes
+# through) — inlined here rather than called, since this loop also needs the raw weight that
+# `pad_height` does not return, and calling `pad_at` a second time per vertex would double the
+# cost of the hot loop.
 #
 # ORDERING — three rules, all load-bearing (compute_chunk_data is where they are enforced):
 #
 #  1. AFTER _apply_road_carve. A pad must WIN over a road inside it: the garage forecourt is
-#     level ground the road paints across, not a ribbon that re-tilts the yard. The carve
-#     writes only COLOR.a / UV2.x besides the height, and this pass touches neither, so the
-#     road still reads as road across the pad — it is just flat. The two heights cannot fight
-#     at the join either, because the carve's own roadbed target is already pulled toward the
-#     pad level at the foot (see the JUNCTION note in _apply_road_carve).
+#     level ground the road paints across, not a ribbon that re-tilts the yard. Both the height
+#     and the COLOR.a/UV2.x weight take `maxf` against whatever the carve already wrote, so a
+#     road ribbon crossing the pad is not weakened, and the two heights cannot fight at the join
+#     either, because the carve's own roadbed target is already pulled toward the pad level at
+#     the foot (see the JUNCTION note in _apply_road_carve).
 #  2. BEFORE _apply_edge_taper. THE COASTLINE STILL WINS. The taper is a plain function of
 #     (h, x, z) that re-derives the shoreline from scratch, so a pad placed near the map edge
 #     is pulled down to the sea floor with everything else rather than standing as an island
@@ -1016,28 +1023,52 @@ func _apply_edge_taper(data: Dictionary) -> void:
 # LOD note: full-res grids only, exactly as the carve and the region blend — chunk_class
 # returns full_res for every chunk in a bounded world, so the coarse branch is unreachable
 # there.
-func _apply_pad_flatten(data: Dictionary) -> void:
+#
+# `flatten_heights` false does the TARMAC ONLY — for `_rehydrate_chunk_data`'s no-stored-surface
+# branch, whose `heights` came out of `compute_chunk_data` and already carry the pad flatten,
+# but whose colour/uv2 rows were just rebuilt by `_apply_road_carve(out, false)` from scratch and
+# so would come back with no trace of the pad's tarmac. Mirrors `_apply_road_carve`'s
+# `carve_heights` parameter exactly, for the same reason.
+func _apply_pad_flatten(data: Dictionary, flatten_heights: bool = true) -> void:
 	if pad_source == null:
 		return
 	if not pad_source.has_method("pads_in_rect"):
 		return
 	# VIEW_FULL_RES: coarse grids are skipped — unreachable in a bounded world (see the LOD note).
-	if not _chunk_view(data, VIEW_HEIGHTS | VIEW_FULL_RES):
+	# Needs COLORS/UV2S too, the same channels the road carve fills, for the tarmac bake below.
+	if not _chunk_view(data, VIEW_HEIGHTS | VIEW_COLORS | VIEW_UV2S | VIEW_FULL_RES):
 		return
 	var heights := _cvw_heights
 	var verts := _cvw_verts
+	var colors := _cvw_colors
+	var uv2s := _cvw_uv2s
 	var center := _cvw_center
 	var near: Array = pad_source.call("pads_in_rect", _cvw_rect)
 	if near.is_empty():
 		return
 	for i in heights.size():
 		var v := verts[i]
-		var h := pad_height(heights[i], center.x + v.x, center.z + v.z)
-		heights[i] = h
-		v.y = h
-		verts[i] = v
-	data["heights"] = heights
-	data["vertices"] = verts
+		var wx := center.x + v.x
+		var wz := center.z + v.z
+		var hit: Vector2 = pad_source.call("pad_at", wx, wz)
+		if hit.x <= 0.0:
+			continue
+		if flatten_heights:
+			var h := lerpf(heights[i], hit.y, hit.x)
+			heights[i] = h
+			v.y = h
+			verts[i] = v
+		var c := colors[i]
+		c.a = maxf(c.a, hit.x)
+		colors[i] = c
+		var t := uv2s[i]
+		t.x = maxf(t.x, hit.x)
+		uv2s[i] = t
+	if flatten_heights:
+		data["heights"] = heights
+		data["vertices"] = verts
+	data["colors"] = colors
+	data["uv2s"] = uv2s
 
 
 # Snap a freshly generated chunk's heights onto a fixed lattice, in lockstep across `heights`
@@ -1407,10 +1438,13 @@ func surface_at(x: float, z: float) -> Vector2:
 	if has_bounds():
 		# A bounded world has no bake_track, so track_weights / track_surface are empty and
 		# the dictionary reads below would answer 0 by accident rather than by decision.
-		# With a road network attached, ASK IT — otherwise the tyre model, grip, deep-snow drag
-		# and reset logic would all see one flat surface and a carved road would have no grip
-		# difference at all. Without one, answer from the declared constant (all grass/gravel).
+		# With a road network OR a pad source attached, ASK — otherwise the tyre model, grip,
+		# deep-snow drag and reset logic would all see one flat surface, and a carved road or a
+		# pad's baked-tarmac forecourt would have no grip/particle difference at all. Without
+		# either, answer from the declared constant (all grass/gravel).
 		if road_source != null and road_source.has_method("road_at"):
+			return _road_surface_at(x, z)
+		if pad_source != null and pad_source.has_method("pad_at"):
 			return _road_surface_at(x, z)
 		return bounds_surface
 	var cell := Vector2i(floori(x / CELL_M), floori(z / CELL_M))
@@ -1434,15 +1468,30 @@ func _road_surface_at(x: float, z: float) -> Vector2:
 	var key := Vector2i(roundi(x / quant), roundi(z / quant))
 	if _road_surf_valid and key == _road_surf_key:
 		return _road_surf_val
-	var hit: Dictionary = road_source.call("road_at", x, z)
-	# The SAME pair the dictionary path returns: (road_weight, tarmac_weight). Off the network
-	# the answer is `bounds_surface`, not a hard zero, so declaring a base surface for the open
-	# ground still works — the road only overrides it where there IS road.
-	# On the network the pair is passed through UNSCALED — road_weight is already the feathered
-	# ramp, and tarmac_weight is the gravel/tarmac split of the road itself, exactly as the mesh
-	# carries them in COLOR.a / UV2.x. Only fully off it does the constant answer.
-	var w := float(hit["road_weight"])
-	_road_surf_val = bounds_surface if w <= 0.0 else Vector2(w, float(hit["tarmac_weight"]))
+	# NO ROAD SOURCE is a real caller shape here — surface_at reaches this function for a
+	# pad-only manager too (a pad must read as tarmac even without a road network), so this
+	# cannot assume road_source is set the way every other line in this function used to.
+	var w := 0.0
+	var tarmac := 0.0
+	if road_source != null and road_source.has_method("road_at"):
+		var hit: Dictionary = road_source.call("road_at", x, z)
+		# The SAME pair the dictionary path returns: (road_weight, tarmac_weight). Off the
+		# network the answer is `bounds_surface`, not a hard zero, so declaring a base surface
+		# for the open ground still works — the road only overrides it where there IS road.
+		# On the network the pair is passed through UNSCALED — road_weight is already the
+		# feathered ramp, and tarmac_weight is the gravel/tarmac split of the road itself,
+		# exactly as the mesh carries them in COLOR.a / UV2.x. Only fully off it does the
+		# constant answer.
+		w = float(hit["road_weight"])
+		tarmac = float(hit["tarmac_weight"])
+	# PAD WINS, the same `maxf` precedence `_apply_pad_flatten` bakes into COLOR.a / UV2.x — a
+	# wheel standing on a rally-zone/garage forecourt must read exactly the tarmac the mesh shows
+	# it standing on, not fall back to grass/gravel just because the pad sits off the road graph.
+	if pad_source != null and pad_source.has_method("pad_at"):
+		var pad_hit: Vector2 = pad_source.call("pad_at", x, z)
+		w = maxf(w, pad_hit.x)
+		tarmac = maxf(tarmac, pad_hit.x)
+	_road_surf_val = bounds_surface if w <= 0.0 else Vector2(w, tarmac)
 	_road_surf_key = key
 	_road_surf_valid = true
 	return _road_surf_val
@@ -1806,6 +1855,10 @@ func _rehydrate_chunk_data(coord: Vector2i, heights: PackedFloat32Array,
 	# compute_chunk_data), but the colour/uv2 rows above were rebuilt from track_weights /
 	# track_surface, which a bounded world never fills. No-op without a road source.
 	_apply_road_carve(out, false)
+	# Pad tarmac ONLY, same reasoning: the stored heights already carry the pad flatten, but the
+	# road carve above just rebuilt colour/uv2 from scratch, wiping any pad contribution to them.
+	# No-op without a pad source, which is every stage.
+	_apply_pad_flatten(out, false)
 	# UV2.y likewise: the row builders above rebuilt uv2s from scratch (UV2.y = 0), so a
 	# rehydrated chunk would come back region-less and render as slot A everywhere. The rank is a
 	# pure function of position, so re-deriving it here reproduces the generated value exactly.

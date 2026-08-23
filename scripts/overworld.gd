@@ -92,7 +92,7 @@ const GARAGE_ZONE_ID := "garage"
 
 # How far PAST the road's feathered shoulder to keep foliage. Wants promoting to GameConfig with
 # the rest of the `overworld_road_*` knobs once the roads have been driven and tuned.
-const ROAD_FOLIAGE_MARGIN_M := 3.0
+const ROAD_FOLIAGE_MARGIN_M := 1.0
 
 # A frame longer than this is a SPIKE worth attributing. ~2x a 60 fps budget, so an ordinary
 # frame never prints and a visible stutter always does. See _log_frame_spike.
@@ -1625,6 +1625,16 @@ func position_revealed(map_pos: Vector2) -> bool:
 # (FOG_HARD_MARGIN_M) is teleported, and then only back to ground it has actually stood on.
 func _update_fog_boundary(delta: float) -> void:
 	var car := $Car as RigidBody3D
+	# The picker puts the car in a showroom shot the player is meant to actually see — darkening
+	# it (or shoving it) while they're choosing defeats the point, so the veil just fades out and
+	# the push pauses for as long as the picker is up, wherever the car happens to be standing.
+	if picker_open():
+		_veil_alpha = maxf(0.0, _veil_alpha - _fog_veil_fade * delta)
+		if _fog_veil != null:
+			var col := _fog_veil.color
+			col.a = _veil_alpha
+			_fog_veil.color = col
+		return
 	var lit := position_revealed(car_map_pos())
 	if lit:
 		_veil_alpha = maxf(0.0, _veil_alpha - _fog_veil_fade * delta)
@@ -2176,11 +2186,14 @@ func _on_picker_granted(instance_id: int) -> void:
 	# STAYING HERE, which is already a place: so the loaner the world was fielded with becomes the
 	# car the player just chose, and they drive off to find a rally themselves.
 	#
-	# This is the only path that reshapes the live car in place (`refield_live_car`) — the normal one
+	# This is the only path that RESPAWNS the live car (`refield_live_car`) — the normal one
 	# leaves for the stage scene, which fields the chosen car itself.
 	if not owned.is_empty() and _picker != null:
-		_picker.refield_live_car(owned)
-	($CameraManager as CameraManager).refresh_bonnet_offset()
+		var fresh := _picker.refield_live_car(owned)
+		# `_repoint_car` retargets CameraManager too (bonnet offset included) — no separate
+		# refresh_bonnet_offset() call needed here.
+		if fresh != null:
+			_repoint_car(fresh)
 	# The zone markers and the card's eligibility read-out both key off what the player owns, so they
 	# are stale the instant a first car exists.
 	if _zones != null and _zones.has_method("refresh"):
@@ -2586,12 +2599,32 @@ func _build_garage() -> void:
 		"ground_at": Callable(self, "_zone_ground_on").bind(tm),
 		"car": get_node_or_null("Car"),
 		"visuals": not _cheap,
+		"on_car_respawned": Callable(self, "_repoint_car"),
 	})
 
 
 func _update_garage(delta: float) -> void:
 	if _garage != null:
 		_garage.update(delta)
+
+
+# THE ONE PLACE a respawned car (`Car.respawn_owned` — a fresh node, not the same one
+# reshaped in place; see `overworld_garage.gd`'s "Change Car" page) gets re-pointed into
+# every system that cached the OLD car rather than looking it up by name each time.
+# Everything using a bare `$Car` / `get_node_or_null("Car")` lookup self-heals for free —
+# respawn keeps the node named "Car" in the same parent slot — so this list is exactly
+# the systems that do NOT: the camera (follow target + bonnet parent), the zone loop
+# (position/velocity reads) and the picker/tire-marks (wheel node collections), neither
+# of which is live at the moment a garage car-switch can happen, but both of which must
+# not be left holding a freed node the NEXT time they are.
+func _repoint_car(fresh: Node3D) -> void:
+	($CameraManager as CameraManager).retarget(fresh)
+	if _zones != null:
+		_zones.call("retarget", fresh)
+	if _tire_marks != null:
+		_tire_marks.retarget(fresh)
+	if _picker != null:
+		_picker.retarget(fresh)
 
 
 # The overworld IS the hub, so the pause menu's "Quit to HQ" has nowhere of its own to go —

@@ -16,6 +16,7 @@ extends GutTest
 
 const SaveTestHelpers = preload("res://tests/headless/save_test_helpers.gd")
 const TEST_PATH := "user://test_overworld_picker.json"
+const CAR_SCENE := "res://car.tscn"
 
 var _save: Node
 var _picker: OverworldPicker
@@ -494,28 +495,38 @@ func test_a_second_starter_confirm_cannot_grant_twice() -> void:
 # re-fielding a car and re-using the old body origin sinks it into the road (or floats it). What
 # must be preserved is the CONTACT PLANE under the wheels, and the re-seat must go through
 # `reset_to` — the only safe teleport.
+#
+# A REAL car.tscn, not the StubCar the rest of this file uses: `refield_live_car` now RESPAWNS
+# (`Car.respawn_owned`) rather than reshaping in place — reshaping an already-simulated body in
+# place is exactly what corrupted wheel geometry on a genuine model swap (see
+# `features/overworld.md` → "The garage" → "Change Car"), and this is the picker's own call site
+# of the same recipe. The stub can't stand in for a real instantiate().
 func test_refielding_preserves_the_contact_plane_at_the_new_ride_height() -> void:
-	var owned := _grant_cars(1)[0]
+	var second: Dictionary = _save.grant_car(String(CarFixtures.cars()[1]["id"]))
+	var real_car: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(real_car)
+	real_car.apply_car(0)
+	var picker := OverworldPicker.new()
+	add_child_autofree(picker)
+	picker.setup({"car": real_car, "visuals": false})
 	var pose := Transform3D(Basis(Vector3.UP, 0.6), Vector3(5.0, 20.0, 7.0))
-	_car.ride_height = 0.30           # the car standing there NOW
-	_car.global_transform = pose
-	var plane := pose.origin.y - _car.ride_height
-	# The car being swapped in rests HIGHER — and the height changes when `apply_owned` runs, not
-	# before it, exactly as the real `settled_ride_height()` does. That ordering is the whole test:
-	# the contact plane has to be measured with the OLD car's height and restored with the NEW
-	# one's, so a re-seat that reads either at the wrong moment lands 0.25 m out.
-	_car.next_ride_height = 0.55
-	_picker.refield_live_car(owned)
-	assert_eq(_car.ride_height, 0.55, "the fielding is what changed the rest height")
-	assert_eq(_car.applied.size(), 1, "the car was re-fielded once")
-	assert_eq(_car.reset_calls, 1, "...and re-seated through reset_to, not a bare transform write")
-	assert_almost_eq(_car.last_reset.origin.y - _car.ride_height, plane, 0.0001,
+	real_car.global_transform = pose
+	var old_ride_height: float = real_car.settled_ride_height()
+	var plane := pose.origin.y - old_ride_height
+	var fresh: Variant = picker.refield_live_car(second)
+	assert_not_null(fresh, "refielding returns the fresh car")
+	assert_ne(fresh, real_car, "it is a DIFFERENT (respawned) body, not the same one reshaped")
+	assert_true(real_car.is_queued_for_deletion(), "the old body is retired, not reused")
+	assert_eq(String(fresh.call("current_car_name")), String(CarFixtures.cars()[1]["name"]),
+		"the fresh body is fielded as the newly-chosen car")
+	var new_ride_height: float = fresh.settled_ride_height()
+	assert_almost_eq(fresh.global_transform.origin.y - new_ride_height, plane, 0.0001,
 		"the wheels stay on the same ground: the contact plane is preserved")
-	assert_almost_eq(_car.last_reset.origin.x, pose.origin.x, 0.0001, "it does not move in x")
-	assert_almost_eq(_car.last_reset.origin.z, pose.origin.z, 0.0001, "...or in z")
-	assert_eq(_car.clear_calls, 1, "the wheel-visual droop is cleared before physics resumes")
-	assert_false(_car.damage.enabled,
+	assert_almost_eq(fresh.global_transform.origin.x, pose.origin.x, 0.0001, "it does not move in x")
+	assert_almost_eq(fresh.global_transform.origin.z, pose.origin.z, 0.0001, "...or in z")
+	assert_false(fresh.damage.enabled,
 		"damage is re-disabled after fielding — the hub never costs the player HP")
+	(fresh as Node).queue_free()   # not registered with add_child_autofree — respawned fresh
 
 
 # --- The bar's chrome -----------------------------------------------------------------------

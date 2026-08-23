@@ -19,10 +19,13 @@ extends Node3D
 #   * the on_change job — re-read `Save.selected_car()` and refresh the CAR so a freshly
 #     fitted part is visible on the model (hq.gd `_on_lift_upgrade_changed` respawns its
 #     display PROP; we have the player's real car, so we `apply_owned` it in place).
-# What is NOT borrowed: the camera-station machinery, the hub cursor, the prize-car props and
-# the whole `_unhandled_input` spatial-nav rig. Those exist because the HQ's stations are a 3D
-# carousel driven by left/right; these pages are flat widget lists, which is precisely what
-# `MenuNav.attach` is for (features/menus.md → "Menu navigation").
+# What is NOT borrowed: hq.gd's TWEENED-STATION camera machinery, the hub cursor, the prize-car
+# props and the whole `_unhandled_input` spatial-nav rig. Those exist because the HQ's stations
+# are a 3D carousel driven by left/right; these pages are flat widget lists, which is precisely
+# what `MenuNav.attach` is for (features/menus.md → "Menu navigation"). The garage's OWN camera
+# ("The garage camera" below) instead borrows `overworld_picker.gd`'s override-camera protocol —
+# a different HQ-adjacent precedent, chosen because it is a one-shot fly rather than a station
+# carousel.
 #
 # THE CAR IS THE PLAYER'S OWN CAR. It drove in. Nothing here instantiates a car, and every
 # repositioning goes through `Car.reset_to` (the only teleport the physics server honours);
@@ -41,7 +44,7 @@ signal entered()
 signal exited()
 
 # The lift pages, mirroring hq.gd's `LiftPage`.
-enum Page { HUB, TUNE, UPGRADES }
+enum Page { HUB, TUNE, UPGRADES, CARS }
 
 # Where the garage is in its own lifecycle. `RAISING`/`LOWERING` are the animated halves; the
 # car is frozen and locked for all three non-OUTSIDE states, so there is no window in which
@@ -71,6 +74,12 @@ var _ground_at := Callable()
 # `reset_to` are car.gd members reached dynamically, the same discipline overworld_zones.gd
 # and CarProp use, so this file never depends on the analyser resolving car.tscn's script.
 var _car: Variant = null
+# `Callable(Node3D) -> void`, optional. Called once after `_switch_to_car` REPLACES `_car`
+# with a fresh respawned node (`Car.respawn_owned` — see "Change Car" below), so the host can
+# re-point everything ELSE that caches the car (the camera, the zone loop, the picker,
+# tire marks) — this file only knows about its OWN reference. A no-op with visuals off /
+# no host wired, which is exactly what every headless test wants.
+var _on_car_respawned := Callable()
 
 var _state: int = State.OUTSIDE
 # Is the car a LIVE physics body right now? True from the moment `leave()` starts the descent
@@ -105,12 +114,31 @@ var _ui_root: Control = null
 var _hub_page: VBoxContainer = null
 var _tune_page: VBoxContainer = null
 var _upg_page: VBoxContainer = null
+var _cars_page: VBoxContainer = null
+var _cars_list: VBoxContainer = null
 var _tune_panel: TuningPanel = null
 var _upgrades: UpgradesGrid = null
 var _repair_button: Button = null
+var _change_car_button: Button = null
 var _hub_title: Label = null
 var _tune_actions: HBoxContainer = null   # holds "< Back" plus TuningPanel's own buttons
 var _upg_back: Button = null              # bound through UpgradesGrid.bind_close_button
+
+# --- The garage camera ----------------------------------------------------------------------
+#
+# A THREE-QUARTER FRONT VIEW OF THE CAR ON THE LIFT, and a SMOOTH FLY rather than a hard cut
+# between it and whatever the player was driving with (chase or bonnet) — the same protocol
+# `overworld_picker.gd`'s `ShowroomCamera` established: an own `Camera3D` made `.current = true`
+# (CameraManager writes no transforms of its own, so an override never fights it), handed back
+# through `CameraManager.activate_current()`. The fly is what removes the jump: the camera does
+# not appear already framing the lift, it starts exactly where the driving camera was standing
+# and eases across, and the same happens in reverse on the way out.
+var _cam: Camera3D = null
+var _flying := false
+var _fly_dir := 0        # +1 flying IN (toward the lift shot), -1 flying OUT (toward driving cam)
+var _fly_t := 0.0
+var _fly_from := Transform3D.IDENTITY
+var _fly_from_fov := 70.0
 
 
 # `opts`:
@@ -129,10 +157,14 @@ var _upg_back: Button = null              # bound through UpgradesGrid.bind_clos
 #   yaw          float (radians)                  which way the opening faces. 0 = opens +Z.
 #   car          the player car node              optional (only `update` needs it).
 #   visuals      bool                             false = no meshes (headless).
+#   on_car_respawned  Callable(Node3D) -> void     optional. Called after "Change Car"
+#                                                 REPLACES the car (a respawn, not a
+#                                                 reshape) — see `_switch_to_car`.
 func setup(opts: Dictionary) -> void:
 	_visuals = bool(opts.get("visuals", true))
 	_ground_at = opts.get("ground_at", Callable())
 	_car = opts.get("car", null)
+	_on_car_respawned = opts.get("on_car_respawned", Callable())
 	var pos: Vector3 = opts.get("world_pos", Vector3.ZERO)
 	if not opts.has("world_pos"):
 		var to_world: Callable = opts.get("to_world", Callable())
@@ -181,6 +213,7 @@ func update(delta: float) -> void:
 # whether driving in (or back out) changes anything.
 func update_with(delta: float, car_pos: Vector3, speed_kmh: float) -> void:
 	_advance_lift(delta)
+	_advance_camera_fly(delta)
 	if _state != State.OUTSIDE:
 		# Parked (or animating): the column has done its job and the car is standing in it.
 		_set_tube_ready(false)
@@ -456,6 +489,7 @@ func enter() -> void:
 	_armed = false
 	_lift_t = 0.0
 	_seat_car_on_lift()
+	_start_camera_fly(1)
 	_owned = Save.get_car(Save.selected_instance_id())
 	# SHOW THE MENU BEFORE BUILDING THE PAGE, not after. `_open_page` resolves the page's
 	# focus cursor (MenuNav's `first`, and the grab that puts the cursor on screen), and
@@ -476,6 +510,7 @@ func leave() -> void:
 		return
 	_state = State.LOWERING
 	_show_ui(false)
+	_start_camera_fly(-1)
 	# Park the page state on the hub so the NEXT visit opens showing the hub rather than
 	# whatever page was up when the player drove out, and drop the focus cursor with the
 	# menu — a focus owner left on a hidden button would keep eating ui_accept out on the map.
@@ -483,6 +518,7 @@ func leave() -> void:
 	_hub_page.visible = true
 	_tune_page.visible = false
 	_upg_page.visible = false
+	_cars_page.visible = false
 	var focused := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
 	if focused != null and _ui_root != null and _ui_root.is_ancestor_of(focused):
 		focused.release_focus()
@@ -629,6 +665,143 @@ func _release_car() -> void:
 	exited.emit()
 
 
+# --- The garage camera ---------------------------------------------------------------------
+
+
+func _build_camera() -> void:
+	if not _visuals:
+		return
+	if _cam == null:
+		_cam = Camera3D.new()
+		_cam.name = "GarageCamera"
+		add_child(_cam)
+		# Explicit, not assumed: with no other Camera3D around (a bare test world, or a moment
+		# before CameraManager's own cameras exist), Godot auto-promotes the first camera it
+		# sees to `current` — which would silently take the viewport the instant this node
+		# enters the tree, before `_start_camera_fly` has decided whether there is anyone to
+		# fly from.
+		_cam.current = false
+
+
+# Begin a fly. `dir` +1 starts from wherever the driving camera currently sits and ends on the
+# lift shot; -1 starts from wherever the garage camera currently sits and ends back on the
+# driving camera. No-op headless, or with no driving camera to fly between (falls back to the
+# instant hand-back `_advance_camera_fly` would otherwise never reach).
+func _start_camera_fly(dir: int) -> void:
+	if not _visuals:
+		return
+	_build_camera()
+	if _cam == null:
+		return
+	var mgr := _camera_manager()
+	if dir > 0:
+		var driving := _player_camera(mgr)
+		if driving == null:
+			return
+		_fly_from = driving.global_transform
+		_fly_from_fov = driving.fov
+		_cam.global_transform = _fly_from
+		_cam.fov = _fly_from_fov
+		_cam.current = true
+	else:
+		if not _cam.current:
+			return
+		_fly_from = _cam.global_transform
+		_fly_from_fov = _cam.fov
+	_fly_dir = dir
+	_fly_t = 0.0
+	_flying = true
+
+
+func _advance_camera_fly(delta: float) -> void:
+	if not _visuals or _cam == null:
+		return
+	if not _flying:
+		# Once the fly-in has landed, keep tracking the lift shot every frame while the car is
+		# parked (or still rising) — the same continuous reframe `overworld_picker.gd::update`
+		# does for its showroom shot, needed here because the raise can outlast the fly.
+		if _cam.current and _fly_dir > 0 and _state != State.OUTSIDE:
+			_cam.global_transform = _lift_camera_pose()
+		return
+	var secs := maxf(Config.data.overworld_garage_camera_move_time, 0.0001)
+	_fly_t += delta
+	var k := smoothstep(0.0, 1.0, clampf(_fly_t / secs, 0.0, 1.0))
+	var to: Transform3D
+	var to_fov: float
+	if _fly_dir > 0:
+		to = _lift_camera_pose()
+		to_fov = maxf(Config.data.overworld_picker_camera_fov, 1.0)
+	else:
+		var driving := _player_camera(_camera_manager())
+		if driving == null:
+			_flying = false
+			_hand_camera_back()
+			return
+		to = driving.global_transform
+		to_fov = driving.fov
+	_cam.global_transform = Transform3D(_fly_from.basis.slerp(to.basis, k),
+		_fly_from.origin.lerp(to.origin, k))
+	_cam.fov = lerpf(_fly_from_fov, to_fov, k)
+	if _fly_t >= secs:
+		_cam.global_transform = to
+		_cam.fov = to_fov
+		_flying = false
+		if _fly_dir < 0:
+			_hand_camera_back()
+
+
+# The three-quarter-front shot of the car on the lift. `OverworldPicker.showroom_pose` is the
+# shared, pure framing function (offset in the car's own space, colinear-`look_at` guarded) —
+# reused rather than re-derived, with this file's own offset/aim-drop/fov tunables.
+func _lift_camera_pose() -> Transform3D:
+	if _cam == null:
+		return Transform3D.IDENTITY
+	if _car == null or not is_instance_valid(_car):
+		return _cam.global_transform
+	var pose: Transform3D = (_car as Node3D).global_transform
+	return OverworldPicker.showroom_pose(pose, Config.data.overworld_garage_camera_offset,
+		_ride_height(), Config.data.overworld_garage_camera_aim_drop_m)
+
+
+func _hand_camera_back() -> void:
+	if _cam != null:
+		_cam.current = false
+	var mgr := _camera_manager()
+	if mgr != null:
+		mgr.activate_current()
+
+
+func _camera_manager() -> CameraManager:
+	var host := get_parent()
+	if host == null:
+		return null
+	return host.get_node_or_null("CameraManager") as CameraManager
+
+
+# The camera the player would be looking through if the garage camera were not up — chase or
+# bonnet, whichever they last chose. Mirrors `overworld_picker.gd::_player_camera`.
+func _player_camera(mgr: CameraManager) -> Camera3D:
+	if mgr == null:
+		return null
+	var chase := mgr.chase_camera
+	var bonnet := mgr.bonnet_camera
+	if mgr.active_index() == CameraManager.ORDER.find(CameraManager.Mode.BONNET):
+		return bonnet if bonnet != null else chase
+	return chase if chase != null else bonnet
+
+
+## The garage's own camera, or null headless / before it has been built. Test seam, mirroring
+## `overworld_picker.gd::camera()`.
+func camera() -> Camera3D:
+	return _cam
+
+
+## Is the viewport currently mid-fly between the driving camera and the lift shot (either
+## direction)? Test seam.
+func camera_flying() -> bool:
+	return _flying
+
+
 # --- The building ------------------------------------------------------------------------
 
 
@@ -740,9 +913,11 @@ func _build_ui() -> void:
 	_hub_page = _build_hub()
 	_tune_page = _build_tune()
 	_upg_page = _build_upgrades()
+	_cars_page = _build_cars()
 	column.add_child(_hub_page)
 	column.add_child(_tune_page)
 	column.add_child(_upg_page)
+	column.add_child(_cars_page)
 
 
 func _build_hub() -> VBoxContainer:
@@ -755,7 +930,24 @@ func _build_hub() -> VBoxContainer:
 	box.add_child(UITheme.row_button("Upgrades", _open_page.bind(Page.UPGRADES)))
 	_repair_button = UITheme.row_button("Repair", _repair_selected_car)
 	box.add_child(_repair_button)
+	_change_car_button = UITheme.row_button("Change Car", _open_page.bind(Page.CARS))
+	box.add_child(_change_car_button)
 	box.add_child(UITheme.row_button("Drive Out", leave))
+	return box
+
+
+# The list of owned cars to switch onto — plain rows, no chevron carousel, because unlike the
+# picker's showroom this page browses cars that are NOT standing in front of the camera; you
+# pick a name off a list, and the car on the lift changes to match (see `_switch_to_car`).
+func _build_cars() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.name = "Cars"
+	box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	box.add_child(UITheme.title("Change Car"))
+	_cars_list = VBoxContainer.new()
+	_cars_list.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	box.add_child(_cars_list)
+	box.add_child(UITheme.row_button("< Back", _to_hub))
 	return box
 
 
@@ -815,6 +1007,7 @@ func _open_page(next: int) -> void:
 	_hub_page.visible = next == Page.HUB
 	_tune_page.visible = next == Page.TUNE
 	_upg_page.visible = next == Page.UPGRADES
+	_cars_page.visible = next == Page.CARS
 	var opened: Control = _hub_page
 	match next:
 		Page.TUNE:
@@ -836,6 +1029,10 @@ func _open_page(next: int) -> void:
 			_upgrades.bind_close_button(_upg_back, _to_hub)
 			opened = _upg_page
 			_bind_nav(_upg_page, _to_hub)
+		Page.CARS:
+			_refresh_cars_page()
+			opened = _cars_page
+			_bind_nav(_cars_page, _to_hub)
 		_:
 			_refresh_hub()
 			_bind_nav(_hub_page, leave)
@@ -926,6 +1123,67 @@ func _refresh_hub() -> void:
 		var entry := CarLibrary.for_owned(_owned)
 		_hub_title.text = UITheme.caps(EngineSwap.display_name(entry, _owned))
 	_refresh_repair_button()
+	# Hidden entirely with nothing to switch to — the same "a button that would change nothing
+	# is the one thing it must never be" rule the repair button follows just above.
+	if _change_car_button != null and is_instance_valid(_change_car_button):
+		_change_car_button.visible = Save.profile.get(Save.KEY_CARS, []).size() > 1
+
+
+# One row per owned car, rebuilt fresh every time the page opens (the roster can have changed
+# since the last visit — a car bought, a car repaired). Mirrors `UpgradesGrid.rebuild`'s own
+# "replace every tile" recipe rather than trying to diff the list in place.
+func _refresh_cars_page() -> void:
+	if _cars_list == null:
+		return
+	for child in _cars_list.get_children():
+		child.queue_free()
+	var selected := Save.selected_instance_id()
+	for car in Save.profile.get(Save.KEY_CARS, []):
+		var owned: Dictionary = car
+		var id := int(owned.get("instance_id", -1))
+		var entry := CarLibrary.for_owned(owned)
+		if entry.is_empty():
+			continue     # a model the catalogue no longer has
+		var label := EngineSwap.display_name(entry, owned)
+		if id == selected:
+			label += "  (current)"
+		var row := UITheme.row_button(label, _switch_to_car.bind(id))
+		row.disabled = id == selected
+		_cars_list.add_child(row)
+
+
+# Switch the car ON THE LIFT to a different owned car. Exactly `_on_upgrade_changed`'s recipe
+# (unfreeze -> apply_owned -> re-seat -> re-settle) plus the selection write that recipe never
+# needed, because an upgrade never changes WHICH car is selected.
+# RESPAWNS the driven car (a fresh body), rather than reshaping the existing one in place
+# the way `_on_upgrade_changed` does. That distinction is load-bearing, not a style choice:
+# by the time the player is in the garage this car has already been DRIVEN — `apply_owned`
+# on an already-simulated `VehicleBody3D` corrupts its wheel/suspension state (`car.gd`'s
+# own `respawn()` docstring: "left some cars spinning in place with no traction"), which an
+# upgrade edit never surfaces because it keeps the same track/wheelbase/radius, but a
+# genuine model swap does — wheels rendering sunk into the body, and the car unable to
+# drive off. `Car.respawn_owned` is the sanctioned fix: configure a FRESH, never-simulated
+# body exactly once (the same recipe `overworld_picker.gd`'s starter grant uses for the
+# same reason).
+#
+# Respawning replaces the node, so `_on_car_respawned` (if the host wired one) runs BEFORE
+# `_seat_car_on_lift` — every OTHER system holding the old car (camera, zones, tire marks,
+# picker) needs to be re-pointed too, and letting the lift re-seat the still-stale-elsewhere
+# car first would just be a different ordering of the same bug.
+func _switch_to_car(instance_id: int) -> void:
+	if instance_id >= 0 and instance_id != Save.selected_instance_id():
+		Save.set_selected_car(instance_id)
+		_owned = Save.get_car(instance_id)
+		if _car != null and is_instance_valid(_car):
+			var pose: Transform3D = (_car as Node3D).global_transform
+			var fresh := preload("res://scripts/car.gd").respawn_owned(_car, _owned, pose) as Node3D
+			_car = fresh
+			if _on_car_respawned.is_valid():
+				_on_car_respawned.call(fresh)
+			_seat_car_on_lift()
+			_apply_lift_height()
+			_settle_wheels()
+	_to_hub()
 
 
 # Repair, priced by Save so a quote and a charge can never disagree. Hidden entirely when the

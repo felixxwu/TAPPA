@@ -3790,6 +3790,12 @@ func spectator_params() -> Dictionary:
 ## The jump from `overworld_zone_tube_alpha` to this IS the "it fired" punctuation, so keep
 ## the gap wide.
 @export_range(0.0, 1.0, 0.01) var overworld_zone_tube_ready_alpha := 0.85
+## Scale applied to `overworld_zone_tube_alpha` for a rally ALREADY completed (podium finish,
+## a persisted save fact — not this visit's live dwell fraction): 0.2 keeps a fifth of the idle
+## alpha, i.e. 80% more transparent, so a completed zone reads as done-and-quiet against the
+## still-untouched ones. Only dims the resting column — parking there again to re-run the
+## rally still ramps the fill/band up to `overworld_zone_tube_ready_alpha` exactly as before.
+@export_range(0.0, 1.0, 0.01) var overworld_zone_tube_completed_alpha_scale := 0.2
 ## How far in (metres) from the map bounds the coastline taper begins. Inside this band
 ## the ground falls away to the perimeter depth, so the map ends in water rather than at a
 ## visible wall. Part of the cache invalidation key — changing it regenerates the terrain.
@@ -3910,6 +3916,21 @@ func spectator_params() -> Dictionary:
 ## level circle the building has to stand on, so raising this past what the pad can hold does
 ## nothing until the pad grows too.
 @export_range(0.0, 40.0, 0.5) var overworld_garage_road_offset_m := 8.0
+
+## The GARAGE CAMERA — the fixed three-quarter-front shot of the car once it is seated on the
+## lift, and the smooth fly the viewport takes to and from it (rather than a hard cut) when the
+## car drives in or out. Same offset convention as `overworld_picker_camera_offset`: x = to the
+## car's right, y = up from the ground it stands on, z = ahead of its nose (car.tscn faces -Z).
+## Shares `overworld_picker_camera_fov` rather than carrying its own — both are a menu camera
+## framing the player's own car, and a second dial here would just be an easy way for the two
+## to drift out of sync.
+@export var overworld_garage_camera_offset := Vector3(-2.6, 1.7, 3.4)
+## How far below the car's mid-body the camera aims, pushing the car up the frame clear of the
+## menu panel docked on the right — same purpose as `overworld_picker_camera_aim_drop_m`.
+@export_range(0.0, 6.0, 0.05) var overworld_garage_camera_aim_drop_m := 0.6
+## How long the viewport takes to fly between the driving camera (chase or bonnet) and the
+## garage camera, in seconds, each way. This is what keeps the cut from ever reading as a jump.
+@export_range(0.05, 3.0, 0.05) var overworld_garage_camera_move_time := 0.6
 
 ## The STOP TUBE inside the garage — the translucent light column standing on the lift bay that
 ## says "park here". Radius in metres; the column reads as the spot you have to be in, the same

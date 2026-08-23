@@ -74,6 +74,14 @@ var _since_refresh := INF
 #   rallies      Array[Dictionary]                      defaults to the whole roster.
 #   profile      Dictionary                             defaults to Save.profile.
 #   visuals      bool                                   false = no meshes at all (headless).
+# Re-point at a DIFFERENT car node — for when the driven car has been REPLACED
+# (`Car.respawn_owned`, see `overworld_garage.gd`'s "Change Car" page) rather than
+# reshaped in place. Only `_car` itself is cached here (position/velocity reads, never a
+# wheel node), so re-pointing is this one assignment.
+func retarget(car: Variant) -> void:
+	_car = car
+
+
 func setup(opts: Dictionary) -> void:
 	_to_world = opts.get("to_world", Callable())
 	_ground_at = opts.get("ground_at", Callable())
@@ -103,9 +111,13 @@ func setup(opts: Dictionary) -> void:
 
 # Re-evaluate the fog gate on every zone (a completed rally lights new ones) and force the
 # marker set to be recomputed on the next update. Cheap enough to call on any progress change.
+# Also re-evaluates each zone's own completion dimming — the rally that just fired is the one
+# whose tube needs to go quiet, and this is the one place that already walks every zone after
+# a completion.
 func refresh(profile: Dictionary = Save.profile) -> void:
 	for zone in _zones:
 		zone.refresh_revealed(profile)
+		zone.refresh_completed(profile)
 	_since_refresh = INF
 
 
@@ -227,6 +239,7 @@ func _add_zone(entry: Dictionary, profile: Dictionary) -> void:
 	add_child(zone)
 	zone.setup(entry, _zone_world_pos(entry), _visuals)
 	zone.refresh_revealed(profile)
+	zone.refresh_completed(profile)
 	zone.activated.connect(_on_zone_activated)
 	_zones.append(zone)
 	_by_id[rally_id] = zone

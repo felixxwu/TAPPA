@@ -791,6 +791,14 @@ same point in the same tick (`Drivetrain.surface_tire_params`, itself allocation
 variant on `OverworldRoads` would remove the miss allocation too, if it ever shows up in a
 profile.
 
+`_road_surface_at` also consults `pad_source`, `maxf`'d over the road's own answer with the same
+pad-wins precedence `_apply_pad_flatten` bakes into the mesh (see "Flat pads" below) — this is
+what keeps `wheel_particles.gd` and `Drivetrain.surface_tire_params` agreeing with what the pad
+*looks* like. Both go through this one function, so the fix lives here rather than being
+duplicated in each consumer. `set_pad_source` invalidates the one-entry memo for the same reason
+`set_road_source` already does: a query made before the pad was attached (or before a pad swap)
+must not answer stale afterwards.
+
 ### Flat pads
 
 A **level circle of ground** under every rally zone and under the garage, so the things standing
@@ -799,7 +807,8 @@ there sit flat. The pad set is `OverworldPads` (`scripts/overworld_pads.gd`, and
 duck-typed through `pad_source` / `set_pad_source`, never by class, so `null` — **every stage** —
 is byte-identical to before pads existed.
 
-Two entry points, both calling the one function `pad_height(h, x, z)`:
+Two entry points for the HEIGHT flatten, both driven by `pad_at(x, z)` (`.x` = feathered weight,
+`.y` = target height) — `pad_height(h, x, z)` wraps it for callers that only want the height:
 
 - `_apply_pad_flatten(data)`, a grid post-pass in `compute_chunk_data`, rewriting `heights` and
   `vertices` in lockstep exactly as `_apply_edge_taper` does. It exits on one `pads_in_rect`
@@ -811,15 +820,34 @@ Two entry points, both calling the one function `pad_height(h, x, z)`:
   the chunk cache has not built. Leaving the pad out of the generator would break the pad exactly
   where it is used, so the pad follows the taper, not the carve.
 
+`_apply_pad_flatten` **also bakes tarmac** — `COLOR.a` (road weight) and `UV2.x` (tarmac weight),
+the same channels `_apply_road_carve` fills and `ps1_models.gdshader`'s `blend_road` branch reads
+— using the *same* `pad_at(x, z).x` weight that drives the height blend, `maxf`'d against whatever
+the carve already wrote there. So the whole pad disc (every rally zone **and the garage**) reads as
+forecourt rather than roads simply meeting on bare grass at the pin, and it fades to grass across
+exactly the same feather band the height flatten uses — one weight, no separate radius to keep in
+sync. A `flatten_heights := true` parameter lets `_rehydrate_chunk_data`'s no-stored-surface branch
+call it a second time for the tarmac alone (see below).
+
 **Ordering in `compute_chunk_data`, all three rules load-bearing:**
 
-1. **After `_apply_road_carve`.** A pad wins over a road inside it: the forecourt is level ground
-   the road paints across (the carve's `COLOR.a` / `UV2.x` are untouched, so it still *reads* as
-   road), not a ribbon that re-tilts the yard.
+1. **After `_apply_road_carve`.** A pad wins over a road inside it, on *both* channels: the
+   forecourt is level ground the road paints across, and its tarmac weight is `maxf`'d over the
+   carve's rather than left as the carve wrote it — a dirt/dead road running through a pad (its own
+   `tarmac_weight` might be `0`) must not leave a stripe of non-tarmac ground across the pad's own
+   surface.
 2. **Before `_apply_edge_taper` — the coastline still wins.** The taper re-derives the shoreline
    from `(h, x, z)`, so a pad near the map edge is pulled to the sea floor rather than standing on
    a plinth out of the water. Same rule, same order, as the carve.
 3. **`_apply_height_quantum` stays last.**
+
+**Rehydration.** `_rehydrate_chunk_data` splices a stored `surface` section straight back in when
+present — it already carries the pad's tarmac contribution bit-for-bit, since it was written from a
+`compute_chunk_data` that included this pass. When no `surface` is stored, colours/UV2 are rebuilt
+from scratch via `_apply_road_carve(out, false)`, which would otherwise wipe any pad tarmac back out
+even though the stored heights already carry the flatten; `_apply_pad_flatten(out, false)` runs
+right after it to restore just the two texture channels, mirroring the road carve's own
+`carve_heights` split.
 
 `_noise_height_at` applies pad-then-taper for the same reason, so the generator and the baked grid
 cannot disagree.

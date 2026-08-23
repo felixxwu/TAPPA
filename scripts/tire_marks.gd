@@ -121,15 +121,13 @@ var _snap_verts := PackedVector3Array()
 var _snap_cols := PackedColorArray()
 # Reused surface-array scratch for _upload (Mesh.ARRAY_MAX slots, allocated once).
 var _surface_arrays: Array = []
-# Upload coalescing. Emitting a segment only marks the wheel DIRTY; the snapshot copy
-# plus the ArrayMesh surface rebuild happen at most once per wheel per RENDERED frame,
-# in _process (which runs after the frame's physics ticks and before the draw, so a
-# mark still appears on the very frame it was laid). Physics is 60 Hz and can run two
-# ticks per rendered frame on a capped/slow build, and at speed a wheel emits a segment
-# nearly every tick — so this removes a large fraction of the ~240 full
-# `clear_surfaces` + `add_surface_from_arrays` rebuilds/second with no visual change.
-# `_process` is self-disabling: nothing dirty, no per-frame work at all.
-var _dirty := PackedByteArray()   # per wheel: 1 = ring changed since its last upload
+# Every emitted segment uploads its wheel's ribbon to the GPU immediately (no
+# once-per-rendered-frame batching) — physics can tick more than once per rendered
+# frame, and batching those into a single upload meant a wheel's mark only visibly
+# grew on frames that happened to coincide with a tick, i.e. it could lag a frame
+# behind the physics that laid it. Uploading eagerly keeps the ribbon in lockstep
+# with every tick at the cost of more `clear_surfaces` + `add_surface_from_arrays`
+# calls, which is cheap next to the ring-buffer bookkeeping that already runs.
 var _upload_count := 0            # total surface rebuilds performed (readout for tests)
 
 
@@ -153,6 +151,16 @@ func setup(centerline: Curve2D, car: Node, terrain: Node, half_width: float) -> 
 	_retarget_internal(car)
 
 
+# Re-point at a DIFFERENT car node, re-collecting its wheels and dropping every ribbon —
+# for when the driven car itself has been replaced (`Car.respawn_owned`, see
+# `overworld_garage.gd`'s "Change Car" page), not merely reshaped in place. A reshaped car
+# keeps its own node and wheel nodes, so it never needs this; a respawned one is a fresh
+# node with fresh wheels, and `_wheels` holding the OLD (freed) ones would silently mark
+# nothing forever.
+func retarget(car: Node) -> void:
+	_retarget_internal(car)
+
+
 func _retarget_internal(car: Node) -> void:
 	_car = car
 	for r in _ribbons:
@@ -162,8 +170,6 @@ func _retarget_internal(car: Node) -> void:
 	_ribbons = []
 	_pairs = []
 	_last_pos = []
-	_dirty = PackedByteArray()
-	set_process(false)
 	# Force _ensure_ring() to (re)build the rings for the new wheel set.
 	_ring_cap = 0
 	_ring_head = PackedInt32Array()
@@ -175,7 +181,6 @@ func _retarget_internal(car: Node) -> void:
 		_ribbons.append(mi)
 		_pairs.append([])
 		_last_pos.append(null)
-		_dirty.append(0)
 
 
 # A car's wheels — duck-typed on is_in_contact() so VehicleWheel3D (real play) and
@@ -201,6 +206,10 @@ func _timed_physics_process(_delta: float) -> void:
 		return
 	if _centerline == null and not _ungated:
 		return
+	# A live inspector flip of tire_mark_alpha_enabled rebuilds the material here so the
+	# very next mark laid this tick already uploads against it (existing ribbons are
+	# only refreshed by an explicit flush_uploads()).
+	_ensure_material()
 	# Below the speed floor (parked / countdown): break every ribbon so a later
 	# segment doesn't draw a line across the stop.
 	if _car.linear_velocity.length() < Config.data.tire_mark_min_speed_mps:
@@ -215,9 +224,7 @@ func _timed_physics_process(_delta: float) -> void:
 		_offset = _windowed_offset(Vector2(_car.global_position.x, _car.global_position.z))
 	var gate := _half_width + Config.data.tire_mark_gravel_margin_m
 	# Per-target segment spacing: a web TOUCH device lays coarser marks, halving both the
-	# emit rate and the eventual ArrayMesh surface rebuilds. Complements the per-rendered-
-	# frame upload coalescing below — that only wins where physics outruns rendering,
-	# whereas a bigger step cuts the work at any frame rate.
+	# emit rate and the eventual ArrayMesh surface rebuilds.
 	var step := _segment_step
 	for i in _wheels.size():
 		var wheel: Node = _wheels[i]
@@ -364,10 +371,7 @@ func _emit_segment(i: int, wheel_pos: Vector3, across_n: Vector2, connected: boo
 		pairs.append(slot)
 	else:
 		pairs.append([left, right, connected, color])
-	# Coalesced: the mesh is rebuilt once for this wheel in _process, however many
-	# segments the physics ticks of this rendered frame appended. Every append is
-	# already in the ring, so nothing is lost — the flush uploads the whole ring.
-	_mark_dirty(i)
+	_upload(i)
 
 
 # Size the per-wheel quad rings to `cap` slots (one per possible segment point —
@@ -400,7 +404,7 @@ func _ensure_ring(cap: int) -> void:
 			_ring_verts[base + n] = verts[skip * RING_QUAD_VERTS + n]
 			_ring_cols[base + n] = cols[skip * RING_QUAD_VERTS + n]
 		_ring_count[w] = quads
-		_mark_dirty(w)
+		_upload(w)
 
 
 # Append one ribbon quad (two triangles, 6 verts) bridging the previous segment
@@ -452,34 +456,14 @@ func _sync_snapshot(i: int) -> void:
 			_snap_cols[dst + k] = _ring_cols[src + k]
 
 
-# Flag a wheel's ribbon as needing a re-upload on the next rendered frame.
-func _mark_dirty(i: int) -> void:
-	if i < 0 or i >= _dirty.size():
-		return
-	_dirty[i] = 1
-	set_process(true)
-
-
-# One rendered frame = at most one upload per wheel. Runs only while something is
-# dirty (set_process is switched back off once the queue drains).
-func _process(_delta: float) -> void:
-	flush_uploads()
-
-
-# Upload every dirty wheel's ribbon now. Called once per rendered frame; also the
-# explicit entry point tests use, since they drive _physics_process directly.
+# Re-upload every wheel's ribbon now. Marks upload eagerly as they're emitted (see
+# _emit_segment / _ensure_ring), so this exists for the one case that isn't tied to
+# a new segment: tire_mark_alpha_enabled flipped live in the inspector needs every
+# existing ribbon rebuilt against the new material, not just the next one laid.
 func flush_uploads() -> void:
-	# One bool compare, and it makes tire_mark_alpha_enabled a LIVE toggle: flip it in the
-	# inspector and every ribbon re-uploads against the rebuilt material on the next frame
-	# that lays a mark, rather than waiting for the next track generation.
-	if _ensure_material():
-		for i in _dirty.size():
-			_dirty[i] = 1
-	for i in _dirty.size():
-		if _dirty[i] != 0:
-			_dirty[i] = 0
-			_upload(i)
-	set_process(false)
+	_ensure_material()
+	for i in _wheels.size():
+		_upload(i)
 
 
 # Push the maintained triangle buffer for a wheel onto its ribbon ArrayMesh.
@@ -719,8 +703,7 @@ func segment_color(wheel: int, index: int) -> Color:
 	return pairs[index][3]
 
 
-# How many ArrayMesh surface rebuilds have happened since this node was built —
-# the thing upload coalescing exists to keep down.
+# How many ArrayMesh surface rebuilds have happened since this node was built.
 func upload_count() -> int:
 	return _upload_count
 

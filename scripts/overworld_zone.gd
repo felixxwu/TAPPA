@@ -59,6 +59,8 @@ var always_revealed := false
 var _revealed := false
 # The profile `refresh_revealed` last gated on — defaults to the live one. See that function.
 var _gate_profile: Dictionary = {}
+# Already completed (a podium finish, persisted) — dims the idle tube. See `refresh_completed`.
+var _completed := false
 # Has the car been seen OUTSIDE this zone since it was built? Until it has, the zone cannot
 # fire — see the arm-on-exit note in `tick`.
 var _armed := false
@@ -88,6 +90,7 @@ func setup(p_rally: Dictionary, world_pos: Vector3, visuals := true) -> void:
 	centre = world_pos
 	position = world_pos
 	refresh_revealed()
+	refresh_completed()
 	_build_area()
 	if visuals:
 		_build_tube()
@@ -159,6 +162,40 @@ func refresh_revealed(profile: Dictionary = Save.profile) -> void:
 
 func revealed() -> bool:
 	return _revealed
+
+
+# Re-evaluate the persisted completion flag — a podium finish from a PREVIOUS visit
+# (`RallyLibrary.rally_completed`), never this visit's live `fill_fraction()`/`done`, which
+# `_push_progress` already tracks on its own. Same calling convention and same call sites as
+# `refresh_revealed` (build, and whenever the manager rebuilds after a completion), so the two
+# stay in lockstep rather than one silently lagging the other.
+func refresh_completed(profile: Dictionary = Save.profile) -> void:
+	_completed = not rally.is_empty() and RallyLibrary.rally_completed(rally, profile)
+	_push_progress()
+
+
+func completed() -> bool:
+	return _completed
+
+
+# The tube BODY's current alpha, or -1.0 with visuals off — same headless-guard convention as
+# `tube_radius()`. Exposed so a test can assert the completed-dimming RELATIONSHIP (dimmer than
+# an otherwise-identical incomplete zone, by the configured scale) without reaching into the
+# material directly or pinning an alpha value.
+func tube_body_alpha() -> float:
+	if _body_mat == null:
+		return -1.0
+	return _body_mat.albedo_color.a
+
+
+# The tube BODY's current colour (RGB, alpha aside), or transparent black with visuals off.
+# Exposed alongside `tube_body_alpha()` for the same reason: a headless test can assert the
+# incomplete/completed/locked/completion-snap tint without reaching into the material.
+func tube_body_color() -> Color:
+	if _body_mat == null:
+		return Color(0.0, 0.0, 0.0, 0.0)
+	var c := _body_mat.albedo_color
+	return Color(c.r, c.g, c.b, 1.0)
 
 
 # Horizontal containment. The Area3D exists (and carries the same radius) so the zone is a
@@ -434,11 +471,22 @@ func _push_progress() -> void:
 	var p := fill_fraction()
 	var base_a := clampf(Config.data.overworld_zone_tube_alpha, 0.0, 1.0)
 	var ready_a := clampf(Config.data.overworld_zone_tube_ready_alpha, 0.0, 1.0)
+	# A rally already completed on a PREVIOUS visit dims to a quiet resting state — done-and-
+	# quiet against the ones still worth driving to. Only the idle end of the range: parking
+	# here again still ramps the fill/band up to `ready_a` exactly as an incomplete zone does,
+	# via the `lerpf(base_a, ready_a, p)` below, so re-entering a completed rally still gives
+	# full dwell feedback.
+	if _completed:
+		base_a *= clampf(Config.data.overworld_zone_tube_completed_alpha_scale, 0.0, 1.0)
 	var done := p >= 1.0
 
-	# The body keeps the locked/unlocked distinction the old ring carried: an unrevealed zone
-	# is an olive-grey column that never lights, a revealed one is the positive green.
-	var body_tint := UITheme.MUTED if not _revealed else UITheme.GREEN
+	# The body keeps the locked/unlocked distinction the old ring carried, and now also the
+	# incomplete/completed one: an unrevealed zone is an olive-grey column that never lights, a
+	# revealed-but-not-yet-completed one is plain white (INK — the palette's off-white), and a
+	# rally already completed on a previous visit is the positive green — so green means "done",
+	# not merely "reachable", at a glance from across the map.
+	var rest_tint := UITheme.GREEN if _completed else UITheme.INK
+	var body_tint := UITheme.MUTED if not _revealed else rest_tint
 	if done:
 		# COMPLETION SNAP. The whole column goes gold at full strength on the tick that fires —
 		# a punctuation mark the player cannot miss, and one that costs no timer (it is a pure
@@ -448,11 +496,13 @@ func _push_progress() -> void:
 
 	# The FILL is the same column squashed to the dwell fraction, so its top edge is a fill
 	# line with a readable position — far stronger than a brightness ramp, which tells you
-	# something is happening but not how far through you are.
+	# something is happening but not how far through you are. Ramps from the SAME resting tint
+	# the body just used (white for an incomplete rally, green for a completed one) up to gold,
+	# so the fill agrees with what the idle column was already showing.
 	var lit := _revealed and p > 0.0
 	_tube_fill.visible = lit
 	_tube_fill.scale = Vector3(1.0, maxf(p, 0.0001), 1.0)
-	_fill_mat.albedo_color = _tinted(UITheme.GREEN.lerp(UITheme.GOLD, p), lerpf(base_a, ready_a, p))
+	_fill_mat.albedo_color = _tinted(rest_tint.lerp(UITheme.GOLD, p), lerpf(base_a, ready_a, p))
 
 	# ...and the BAND rides that edge, sweeping up as it fills and collapsing back down at
 	# DRAIN_RATE when the player drives off, which is what makes a broken dwell read instantly.

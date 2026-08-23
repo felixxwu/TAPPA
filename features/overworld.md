@@ -164,6 +164,9 @@ Two halves:
   has driven `overworld_fog_hard_margin_m` beyond it is teleported, and then only onto ground it has
   actually stood on ([configuration.md](configuration.md) → *Overworld Fog Frontier*). Soft rather
   than a collider because the lit region is a union of circles and a scalloped wall reads as a bug.
+  Suspended entirely while `picker_open()` is true: the car picker (starter or garage) puts the
+  car in a showroom shot the player is meant to see clearly, so `_update_fog_boundary` just fades
+  the veil to zero and skips the push for as long as it's up, wherever the car is standing.
 - **Unlit ground — implemented.** `Overworld._push_fog_uniforms` pushes the mask as the global
   shader parameters `ow_fog_mask` / `ow_fog_size_m` / `ow_fog_unlit` / `ow_fog_amount`, declared
   in `shaders/overworld_fog.gdshaderinc` and included by **both** ground shaders
@@ -543,8 +546,12 @@ the car, the terrain and the floating marker all stay visible through it.
 Dwell progress reads on the tube itself (`_push_progress`, the only place that touches the
 visuals, driven purely by `progress`):
 
-- **Body** — the always-there column, `GREEN`.
-- **Fill** — the same column scaled in Y to `fill_fraction()`, ramping `GREEN` → `GOLD` and
+- **Body** — the always-there column: `MUTED` grey while unrevealed, `INK` (off-white) once
+  revealed but not yet completed, `GREEN` once the rally has been completed on a previous visit
+  (the `_completed` flag — see above), `GOLD` on this visit's completion snap regardless of which
+  resting tint it snapped from.
+- **Fill** — the same column scaled in Y to `fill_fraction()`, ramping from the SAME resting tint
+  the body is currently showing (`INK` or `GREEN`) up to `GOLD`, and its alpha from
   `overworld_zone_tube_alpha` → `overworld_zone_tube_ready_alpha`. Its top edge is a **fill line
   with a readable position**, which a brightness ramp alone is not.
 - **Band** — a thin bright ring riding that edge (`TUBE_BAND_FRACTION` / `TUBE_BAND_SWELL`), so
@@ -552,11 +559,24 @@ visuals, driven purely by `progress`):
 - **Completion snap** — at `progress == 1.0` the whole column goes `GOLD` at the ready alpha and
   the band retires. A pure function of progress, so no timer and no change to `tick`.
 
-`fill_fraction()`, `tube_radius()` and `tube_node()` expose this state for headless tests;
-`tube_node()` is null when built with `visuals: false`.
+`fill_fraction()`, `tube_radius()`, `tube_node()`, `tube_body_alpha()` and `tube_body_color()`
+expose this state for headless tests; `tube_node()` is null when built with `visuals: false`.
 
 Reveal is the shared predicate (`RallyLibrary.rally_revealed`), re-checked at the moment of
 firing so a stale cache cannot open a dark zone.
+
+**A rally already completed on a previous visit shows a dimmer idle tube.** This is a SEPARATE
+flag from reveal or from this visit's live `fill_fraction()`: `_completed`/`refresh_completed()`
+mirror `_revealed`/`refresh_revealed()` exactly (same calling convention, same call sites — build,
+`OverworldZones.refresh` after a completion, and `_add_zone`), reading the persisted podium fact
+via `RallyLibrary.rally_completed(rally, profile)` rather than the in-progress dwell. When set, the
+**Body**'s idle alpha is scaled by `overworld_zone_tube_completed_alpha_scale` (0.2 by default —
+80% more transparent), so a done rally reads as quiet against the ones still worth driving to. Only
+the idle end of the range is dimmed: parking on a completed zone again still ramps the Fill/Band up
+through `overworld_zone_tube_alpha` → `overworld_zone_tube_ready_alpha` and hits the same
+completion snap as any other zone — rallies are re-enterable, so re-running one must give full
+dwell feedback, not a permanently muted tube. `tube_body_alpha()` and `completed()` expose this for
+headless tests, same discipline as `fill_fraction()`/`tube_radius()`.
 
 **An unrevealed zone draws NO tube at all.** `_push_progress` sets `_tube_root.visible` from the
 same reveal flag, so a dark zone is invisible rather than a dim olive column. The tube is the one
@@ -728,10 +748,45 @@ roughly half the lift's scheduled time, so a clock-driven platform would visibly
 under the wheels. The deck tracks the lower of the two, so it can descend early but never hang
 above the car.
 
+### The garage camera
+
+`enter()` / `leave()` also drive a smooth fly of the viewport between the driving camera (chase
+or bonnet, whichever the player has chosen) and a fixed three-quarter-front shot of the car on
+the lift — a hard cut here would read as a jump, since the last frame of driving and the first
+frame of the lift shot are two completely different angles on the same car.
+
+It borrows `overworld_picker.gd`'s override-camera protocol rather than `hq.gd`'s tweened-station
+one (see the file header for why: a one-shot fly, not a carousel of fixed poses). `OverworldGarage`
+owns its own `Camera3D` (`_cam`, built lazily, `visuals: false` builds none at all — the whole fly
+is skipped headless). `CameraManager` never writes a transform of its own, so the override never
+fights it; hand-back goes through `CameraManager.activate_current()`, which re-asserts whichever
+mode (chase/bonnet) the player actually had selected, exactly as the picker's own hand-back does.
+
+- **`enter()`** calls `_start_camera_fly(1)`: capture the driving camera's current pose, snap the
+  garage camera onto it and make it `.current` immediately (so there is never a frame with *no*
+  current camera), then ease toward `_lift_camera_pose()` over `overworld_garage_camera_move_time`
+  seconds. The target keeps tracking the car every frame — `OverworldPicker.showroom_pose` is the
+  shared, pure framing function, reused here with the garage's own `overworld_garage_camera_offset`
+  / `_aim_drop_m` tunables (the FOV is `overworld_picker_camera_fov`, shared with the picker's
+  showroom camera rather than carrying a second dial for the same kind of shot) — so the shot
+  stays right even while the lift is still raising the car underneath it.
+- Once the fly-in lands, the camera keeps reframing the lift shot every frame for as long as the
+  car is parked (or still rising) — the raise can outlast the fly, and a static camera would then
+  drift off the car.
+- **`leave()`** calls `_start_camera_fly(-1)`: the reverse fly, capturing wherever the garage
+  camera currently sits and easing back toward the driving camera's pose (re-read every frame,
+  since the chase camera follows the car and would otherwise be a stale target by arrival), handing
+  the viewport back with `_hand_camera_back()` the instant it lands.
+- With no `CameraManager` sibling to fly *from or to* (a bare `visuals: true` garage with nothing
+  wired next to it), `_start_camera_fly` is a no-op rather than a broken half-transition: the
+  garage camera is never made current, and whatever camera the player has just keeps the viewport.
+
+Test seams: `camera()`, `camera_flying()`.
+
 ### The pages
 
-`Page.HUB` / `TUNE` / `UPGRADES`, hosted on a `CanvasLayer` this node owns. The components are
-the shipped ones, fed the same way `hq.gd`'s lift feeds them:
+`Page.HUB` / `TUNE` / `UPGRADES` / `CARS`, hosted on a `CanvasLayer` this node owns. The
+first three are the shipped ones, fed the same way `hq.gd`'s lift feeds them:
 
 - `TuningPanel.setup(owned, Callable(), Callable())` — a no-op `on_change` is deliberate and
   copied from the HQ lift (a tune edit lands on the next fielding). Its `Reset` / `Wheels`
@@ -745,13 +800,40 @@ the shipped ones, fed the same way `hq.gd`'s lift feeds them:
   in place and re-seat it on the lift.
 - Repair is offered only when `Save.car_needs_repair`, priced by `Save.repair_price`, and
   disabled when `Save.stars_available()` is short — the same three questions `hq.gd` asks.
+- **`Page.CARS`** — "Change Car": a plain list of the player's owned cars (one `UITheme.row_button`
+  per car, rebuilt fresh every time the page opens), so a car parked on the lift can be swapped for
+  a different owned one without leaving the garage. Picking a row calls `_switch_to_car`, plus the
+  `Save.set_selected_car` write an upgrade never needs (an upgrade never changes *which* car is
+  selected; changing cars is the whole point here). The hub's `Change Car` button is hidden with
+  fewer than two owned cars, the same "a button that would change nothing must never exist" rule
+  the Repair button already follows.
+  - **`_switch_to_car` RESPAWNS the car — it does NOT reuse `_on_upgrade_changed`'s in-place
+    `apply_owned` recipe**, even though the two look similar. By the time the player is in the
+    garage the car has already been driven, and `apply_owned` on an already-simulated
+    `VehicleBody3D` corrupts its wheel/suspension state — `car.gd`'s own `respawn()` docstring:
+    "left some cars spinning in place with no traction". An upgrade edit never surfaces this
+    (same track/wheelbase/radius, so `_relocate_wheels` barely moves anything); a genuine model
+    swap does, and showed up as wheels rendering sunk into the body with the car unable to drive
+    off. `Car.respawn_owned(old_car, owned, spawn_xform)` (car.gd, alongside `respawn`) is the
+    fix: field a FRESH, never-simulated body exactly once. `overworld_picker.gd`'s starter grant
+    (`refield_live_car`) hit the SAME bug — `_build_world` awaits several frames between
+    fielding the car and opening the starter pick, so it too has already been simulating — and
+    was converted to `respawn_owned` in the same fix; see "Picking a car in place" below.
+  - Respawning replaces the `$Car` node, so anything holding a reference to the OLD one has to be
+    re-pointed. `OverworldGarage.setup`'s `on_car_respawned: Callable(Node3D)` opt is called right
+    after the swap; `Overworld._repoint_car` (the only wiring of it) re-targets
+    `CameraManager.retarget` (follow target + bonnet parent), `OverworldZones.retarget` and
+    `OverworldPicker.retarget` (both a bare `_car = car` — see their own files) and
+    `TireMarks.retarget` (re-collects the wheel nodes too, not just `_car`). Everything using a
+    bare `$Car` / `get_node_or_null("Car")` lookup self-heals for free, because `respawn`/
+    `respawn_owned` keep the fresh node named `"Car"` in the same parent slot.
 
 **Navigation is `MenuNav`, not the `hq.gd::_unhandled_input` pattern.** The HQ needs its own
 handler because its stations are a 3D carousel that left/right drives; these pages are flat
 widget lists, which is exactly `MenuNav.attach`'s case — it makes every row focusable (so the
 D-pad, stick and arrows work natively), adds WASD, and routes Esc / gamepad-B to the page's back
 action. Back is bound in one place (`_open_page`), so "no page is a dead end" is a property of a
-single function: TUNE and UPGRADES back to HUB, HUB backs out of the garage.
+single function: TUNE, UPGRADES and CARS back to HUB, HUB backs out of the garage.
 
 Three rules that were paid for once and must not be undone:
 
@@ -919,10 +1001,14 @@ This is the crux. `car.gd::respawn`'s own comment records that swapping cars by 
 reshaping ONE body is what left cars "spinning in place with no traction" — a `VehicleBody3D`
 accumulates stale wheel/suspension state when its wheels are relocated again and again, which is
 why the tuning lift uses `_rederive_live_config` for a mere upgrade change. `Car.respawn` (a fresh
-instance) is the sanctioned alternative, but in this hub a dozen things hold the car — both of
-`CameraManager`'s cameras (one is a *child* of it), the zone manager, the map, the garage, the
-surface/exhaust effects, `SpeedLines`, `TireMarks`, and 21 `$Car` lookups — so re-instantiating per
-browse step is a re-pointing exercise, not a swap.
+instance) IS the sanctioned recipe for a genuine model swap on a body that has already
+simulated — but in this hub a dozen things hold the car — both of `CameraManager`'s cameras
+(one is a *child* of it), the zone manager, the map, the garage, the surface/exhaust effects,
+`SpeedLines`, `TireMarks`, and 21 `$Car` lookups — so re-instantiating per browse step (the car
+changes every time the player presses left/right) would be a re-pointing exercise on every
+keystroke, not a swap. That trade is what the `CarProp` stand-in below buys; it is NOT a reason
+to avoid respawning altogether — the ONE real reshape this file does (the starter grant, below)
+uses exactly `Car.respawn_owned`, and its re-pointing runs once, not per browse step.
 
 So **browsing shows a frozen `CarProp`** standing exactly where the real car is, with the real car
 hidden behind it and frozen. The prop is the established recipe (the zone ghost cars, the HQ lineup
@@ -930,10 +1016,18 @@ and the podium all use it), **cached per candidate** — keyed by owned *instanc
 one model differ in upgrades, tune and wheels) or by model id for a starter preview — so browsing
 back and forth costs nothing after the first look.
 
-**The real car is reshaped exactly once, and only on a starter grant** (`refield_live_car`), which
-follows the tuning lift's recipe: unfreeze → `apply_owned` → re-seat → clear the wheel droop →
-re-disable damage. The rally flow never reshapes it at all: confirming leaves for the stage scene,
-which fields the chosen car itself.
+**The real car is respawned exactly once, and only on a starter grant** (`refield_live_car`) —
+measure the contact plane → `Car.respawn_owned` (fresh body, fielded from `owned`) → re-seat on
+that plane → clear the wheel droop → re-disable damage → return the fresh node so the host
+(`Overworld._on_picker_granted` → `_repoint_car`) can re-target everything else that caches the
+car. This used to reshape the SAME body in place (unfreeze → `apply_owned` → re-seat), reasoning
+that a body which had "just spawned" was safe to reshape the way `apply_owned` requires — but
+`_build_world` awaits several frames (terrain precompute, horizon, shader warm-up) between
+fielding the car and opening the starter pick, so the body has genuinely already simulated by
+the time a grant confirms, and hit the exact wheel-corruption bug `apply_owned`-in-place is
+documented to cause (see "The live car is NOT reshaped while browsing" above, and the garage's
+"Change Car", which hit the same bug independently). The rally flow never reshapes it at all:
+confirming leaves for the stage scene, which fields the chosen car itself.
 
 ### Seating: the contact plane, not the origin
 
@@ -1045,10 +1139,11 @@ they drove to would refuse them.
   the car's freeze, so a blocked or failed scene change cannot leave the hub in showroom state.
 - **The empty case is a real branch.** If no rally awards the model (a synthetic roster, or a content
   edit) the HQ falls back to its garage view; the hub's equivalent is simply **staying here**, which is
-  already a place — the loaner becomes the car they just chose (`refield_live_car`, the only path that
-  reshapes the live car in place) and they drive off to find a rally themselves.
-  `CameraManager.refresh_bonnet_offset` is called there, because the bonnet camera hangs off a body
-  whose dimensions just changed.
+  already a place — the loaner becomes the car they just chose (`refield_live_car`, the only path
+  that respawns the live car — see "Picking a car in place" above) and they drive off to find a
+  rally themselves. `Overworld._repoint_car` is called there with the fresh node, which retargets
+  `CameraManager` (bonnet offset included, since the bonnet camera hangs off a body whose
+  dimensions just changed), the zone loop, the picker itself and tire marks.
 - `hq.tscn`'s own starter picker is **untouched and still shipping**: with `overworld_enabled` off,
   the HQ is the live game.
 

@@ -567,3 +567,200 @@ func test_pad_bands_do_not_overlap_unless_the_feather_floor_forced_it() -> void:
 	# the widening alone had settled would leave slack here.
 	assert_almost_eq(tightest, 0.0, 0.05,
 		"some pair's bands meet exactly, i.e. the neighbour cap set their widths")
+
+
+# --- 6. The pad bakes TARMAC, not just flat ground -------------------------------
+#
+# COLOR.a (road weight) and UV2.x (tarmac weight) are the channels ps1_models.gdshader's
+# blend_road branch reads (see _apply_road_carve). The pad pass writes the SAME channels, with
+# the SAME feathered weight (`pad_at(x, z).x`) that already drives the height blend, so the
+# whole forecourt reads as tarmac and fades to grass exactly where the height flatten does —
+# no separate radius or feather to keep in sync.
+
+func test_the_pad_centre_bakes_full_tarmac_weight() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var coord := m.chunk_coord_for(Vector3(c.x, 0.0, c.y))
+	var data := m.compute_chunk_data(coord)
+	var heights: PackedFloat32Array = data["heights"]
+	var verts: PackedVector3Array = data["vertices"]
+	var colors: PackedColorArray = data["colors"]
+	var uv2s: PackedVector2Array = data["uv2s"]
+	var centre: Vector3 = data["center"]
+	var closest := -1
+	var closest_d := INF
+	for i in heights.size():
+		var wx: float = centre.x + verts[i].x
+		var wz: float = centre.z + verts[i].z
+		var d := Vector2(wx, wz).distance_to(c)
+		if d < closest_d:
+			closest_d = d
+			closest = i
+	assert_ne(closest, -1, "the pad's chunk really does have vertices")
+	assert_almost_eq(colors[closest].a, 1.0, EPS, "the pad centre bakes full road weight")
+	assert_almost_eq(uv2s[closest].x, 1.0, EPS, "the pad centre bakes full tarmac weight")
+
+
+func test_tarmac_fades_out_with_distance_and_vanishes_beyond_the_feather() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var r := 0.0
+	var feather := 0.0
+	for i in pads.pad_count():
+		if pads.pad_centre(i).is_equal_approx(c):
+			r = pads.pad_radius(i)
+			feather = pads.pad_feather(i)
+
+	var far_x: float = c.x + r + feather + 1.0
+	var coord := m.chunk_coord_for(Vector3(far_x, 0.0, c.y))
+	var data := m.compute_chunk_data(coord)
+	var heights: PackedFloat32Array = data["heights"]
+	var verts: PackedVector3Array = data["vertices"]
+	var colors: PackedColorArray = data["colors"]
+	var uv2s: PackedVector2Array = data["uv2s"]
+	var centre: Vector3 = data["center"]
+	var closest := -1
+	var closest_d := INF
+	for i in heights.size():
+		var wx: float = centre.x + verts[i].x
+		var wz: float = centre.z + verts[i].z
+		var d := Vector2(wx, wz).distance_to(Vector2(far_x, c.y))
+		if d < closest_d:
+			closest_d = d
+			closest = i
+	assert_ne(closest, -1, "there is a vertex out here to check")
+	assert_eq(colors[closest].a, 0.0, "past the feather the pad leaves road weight alone")
+	assert_eq(uv2s[closest].x, 0.0, "past the feather the pad leaves tarmac weight alone")
+
+
+# The pad must WIN the tarmac channel over a road crossing it, exactly as it already wins the
+# height — a dirt/dead road (tarmac_weight 0) running through the forecourt must not leave a
+# stripe of non-tarmac ground across the pad's own surface.
+func test_pad_tarmac_wins_over_a_road_with_no_tarmac_weight_of_its_own() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_road_source(FakeRoads.new())
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var coord := m.chunk_coord_for(Vector3(c.x, 0.0, c.y))
+	var data := m.compute_chunk_data(coord)
+	var heights: PackedFloat32Array = data["heights"]
+	var verts: PackedVector3Array = data["vertices"]
+	var uv2s: PackedVector2Array = data["uv2s"]
+	var centre: Vector3 = data["center"]
+	var closest := -1
+	var closest_d := INF
+	for i in heights.size():
+		var wx: float = centre.x + verts[i].x
+		var wz: float = centre.z + verts[i].z
+		var d := Vector2(wx, wz).distance_to(c)
+		if d < closest_d:
+			closest_d = d
+			closest = i
+	assert_ne(closest, -1, "the pad's chunk really does have vertices")
+	# FakeRoads.road_at always answers tarmac_weight 0.0, so if the road's write were the last
+	# word here this would read 0 — it must instead read the pad's full tarmac weight.
+	assert_almost_eq(uv2s[closest].x, 1.0, EPS,
+		"the pad's tarmac is not overwritten by a road with no tarmac weight of its own")
+
+
+# A rehydrated chunk (heights + light from a store, no stored surface section) recomputes
+# COLOR.a/UV2.x from scratch via _apply_road_carve(out, false) and must not lose the pad's
+# tarmac contribution in the process — the gap _apply_pad_flatten's `flatten_heights` parameter
+# exists to close.
+func test_a_rehydrated_chunk_without_a_stored_surface_still_has_pad_tarmac() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var coord := m.chunk_coord_for(Vector3(c.x, 0.0, c.y))
+	var generated := m.compute_chunk_data(coord)
+	var rehydrated: Dictionary = m.call(
+		"_rehydrate_chunk_data", coord, generated["heights"], generated["lights"])
+	var gen_colors: PackedColorArray = generated["colors"]
+	var gen_uv2s: PackedVector2Array = generated["uv2s"]
+	var re_colors: PackedColorArray = rehydrated["colors"]
+	var re_uv2s: PackedVector2Array = rehydrated["uv2s"]
+	assert_eq(re_colors.size(), gen_colors.size(), "same vertex count")
+	var worst_a := 0.0
+	var worst_x := 0.0
+	for i in gen_colors.size():
+		worst_a = maxf(worst_a, absf(re_colors[i].a - gen_colors[i].a))
+		worst_x = maxf(worst_x, absf(re_uv2s[i].x - gen_uv2s[i].x))
+	assert_lt(worst_a, EPS, "rehydration reproduces the generated road weight, pad included")
+	assert_lt(worst_x, EPS, "rehydration reproduces the generated tarmac weight, pad included")
+
+
+# --- 7. `surface_at` agrees with the baked tarmac, for particles AND grip --------
+#
+# The mesh texture (COLOR.a / UV2.x, baked above) and `surface_at` (queried per wheel contact
+# per tick by wheel_particles.gd for FX and by Drivetrain.surface_tire_params for grip) are two
+# INDEPENDENT reads of "what is the car standing on". Baking the pad into one without the other
+# is exactly the bug this guards: the ground would look like tarmac but still kick up gravel/
+# grass particles and grip as if it were off-road. `_road_surface_at` must consult `pad_source`
+# with the same `maxf` precedence `_apply_pad_flatten` bakes into the mesh.
+
+func test_surface_at_reads_full_tarmac_at_a_pad_centre() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var surf := m.surface_at(c.x, c.y)
+	assert_almost_eq(surf.x, 1.0, EPS, "surface_at reads full road weight at a pad centre")
+	assert_almost_eq(surf.y, 1.0, EPS, "surface_at reads full tarmac weight at a pad centre")
+
+
+func test_surface_at_without_a_pad_source_is_off_road_at_the_same_point() -> void:
+	var m := _manager()
+	var c := _garage_xz()
+	# No set_pad_source call: the non-vacuity half — without a pad the same point must NOT
+	# already read as tarmac, or the test above would prove nothing.
+	assert_eq(m.surface_at(c.x, c.y), m.bounds_surface,
+		"without a pad source the same point is the declared off-road default")
+
+
+func test_surface_at_fades_the_pad_out_with_distance_like_the_mesh_does() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var r := 0.0
+	var feather := 0.0
+	for i in pads.pad_count():
+		if pads.pad_centre(i).is_equal_approx(c):
+			r = pads.pad_radius(i)
+			feather = pads.pad_feather(i)
+	var far_x: float = c.x + r + feather + 1.0
+	assert_eq(m.surface_at(far_x, c.y), m.bounds_surface,
+		"past the feather surface_at leaves the declared off-road default alone")
+
+
+# A road with no tarmac of its own (FakeRoads always answers tarmac_weight 0.0) must not pull
+# surface_at's tarmac reading back down inside a pad — same "pad wins" precedence as the mesh.
+func test_surface_at_pad_tarmac_wins_over_a_road_with_no_tarmac_of_its_own() -> void:
+	var m := _manager()
+	var pads := _pads_for(m)
+	m.set_road_source(FakeRoads.new())
+	m.set_pad_source(pads)
+	var c := _garage_xz()
+	var surf := m.surface_at(c.x, c.y)
+	assert_almost_eq(surf.y, 1.0, EPS,
+		"surface_at's tarmac reading at a pad is not dragged down by a tarmac-less road")
+
+
+# set_pad_source must invalidate the one-entry surface memo, or a query made before the pad was
+# attached (or before a pad swap) could stick around and answer stale.
+func test_attaching_a_pad_source_invalidates_a_previously_memoed_surface_answer() -> void:
+	var m := _manager()
+	var c := _garage_xz()
+	# Prime the memo with the off-road answer, at exactly the point a pad will cover.
+	assert_eq(m.surface_at(c.x, c.y), m.bounds_surface, "primed off-road, before any pad exists")
+	var pads := _pads_for(m)
+	m.set_pad_source(pads)
+	var surf := m.surface_at(c.x, c.y)
+	assert_almost_eq(surf.x, 1.0, EPS,
+		"attaching the pad source invalidated the stale memo, so the pad now reads through")

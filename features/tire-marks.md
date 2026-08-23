@@ -80,16 +80,17 @@ dropped one trims a quad off the front — rather than reconstructed from the wh
 segment list on every emit (`_build_ribbon` is the reference that incremental
 buffer must equal, asserted in `test_tire_marks`).
 
-**Uploads are coalesced to one per wheel per rendered frame.** Emitting a segment only
-flags that wheel dirty (`_mark_dirty`); the snapshot copy plus the
-`clear_surfaces` + `add_surface_from_arrays` + `surface_set_material` rebuild happen in
-`_process` → `flush_uploads()`. Physics runs at 60 Hz and can tick twice per rendered
-frame on a capped web build, and at speed a wheel emits nearly every tick, so this cuts
-a large fraction of the driver-level buffer re-uploads with no visual change (the flush
-runs after the frame's physics and before the draw, so a mark still appears on the frame
-it was laid). `_process` is self-disabling — nothing dirty, no per-frame work.
-`flush_uploads()` is also the explicit entry point tests use, since they drive
-`_physics_process` directly. Same unshaded, cull-disabled
+**Uploads happen eagerly, one per emitted segment.** Emitting a segment immediately
+runs the snapshot copy plus the `clear_surfaces` + `add_surface_from_arrays` +
+`surface_set_material` rebuild for that wheel (`_upload`, called from `_emit_segment`).
+This used to be batched to once per rendered frame (flagging the wheel dirty and
+flushing in `_process`), but physics can tick more than once per rendered frame, and a
+wheel's ribbon could then visibly lag the tick that laid it — so it uploads on every
+tick instead, trading some redundant driver-level re-uploads for marks that are never a
+frame behind. `flush_uploads()` still exists as an explicit re-upload of every wheel,
+used by the live `tire_mark_alpha_enabled` toggle (a rebuilt material needs the
+*existing* ribbons re-pushed, not just the next one laid) and as the entry point tests
+use. Same unshaded, cull-disabled
 material style as the `wheel_force_debug` overlay. Each segment carries its
 own **vertex colour** (the shared material has `vertex_color_use_as_albedo`), so one
 ribbon per wheel carries both the gravel rut and the tarmac skid — which, both being
@@ -120,7 +121,7 @@ In ungated mode:
   right axis rather than a curve tangent.
 
 Everything else — the gravel/tarmac split, the force/grip-driven strength and colour,
-the ring buffers, upload coalescing, the material and the shader warm-up — is shared.
+the ring buffers, the eager upload, the material and the shader warm-up — is shared.
 Supplying a centerline restores the stage's corridor gate; nothing else differs.
 
 ## Width and direction
