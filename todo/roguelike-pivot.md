@@ -1,11 +1,14 @@
 # Roguelike pivot — replacing the career loop
 
-**Status: DESIGN DRAFT, not agreed.** This is the spec for a *complete* pivot of
-TAPPA's gameplay loop, from the Gran-Turismo-shaped career it ships today to a
-run-based roguelike modelled on `felixxwu/roguelike-rally` (referred to below as
-**RR**). It is written to be argued with — the "Open questions" section at the
-bottom is the part that still needs the user, and nothing here should be
-implemented before those are settled.
+**Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
+*complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
+ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
+(referred to below as **RR**). Decisions 1–20 are settled. **Read the Blockers
+section before starting stage 2** — it lists errors in the plan that would break
+the demolition if followed as written.
+
+Landed so far: the multiplayer lobby is deleted (decision 16). Nothing else in
+this document has been implemented.
 
 Sibling design docs: `gameplay.md` is the CURRENT north star and **contradicts
 this document on almost every point** — if this pivot is agreed, rewriting
@@ -39,7 +42,11 @@ Settled with the user during the brainstorm that produced this file:
 13. **Stages carry collectables** (RR's coins) as a second star source.
 14. **A failed run keeps 100% of stars** and never costs you the car.
 15. **The Daily/Weekly/Monthly challenge survives** the pivot.
-16. **Multiplayer is left dormant** — not ported to the new shell, not deleted.
+16. **Multiplayer is deleted.** ~~Left dormant~~ — revised, and **already done**:
+    dormant code cannot survive a destructive pivot with no flag to hide it
+    behind. `scripts/multiplayer/`, `hq_multiplayer.gd`, `cloud/lobby_board.gd`,
+    the `LobbySession` autoload, 9 test files, `features/multiplayer-lobby.md`
+    and the `lobby_rounds` / `lobby_state` Firestore rules are gone.
 17. **Engine swap is re-gated as a meta shop purchase** rather than retired.
 18. **Cars are shown as a 3D turntable** in the flat UI, not as flat art.
 19. **A run ends on a run-summary screen**, replacing `podium.tscn`.
@@ -124,8 +131,10 @@ regions with stable ids — `home`, `home_coast`, `taiga`, `greece`,
 explicitly **not** a gate (`features/regions.md` says so in as many words); this
 pivot makes it the *only* gate. Two things to add:
 
-- an authored **order** on `REGIONS` (a new `order` field, or just the array
-  order made load-bearing), since linear unlock needs a sequence;
+- an authored **`order` field** on `REGIONS`, since linear unlock needs a
+  sequence. Not the array order — see Blockers: `REGIONS` explicitly forbids an
+  ordering dependency, and `override_for_test()` lets tests pass arbitrary
+  arrays;
 - `profile["regions_cleared"]` — an array of region ids — as the unlock ledger.
   A region is playable if it is first in order, or its predecessor is in that
   array.
@@ -141,14 +150,18 @@ Per the decision, stages come from the authored pool, not fresh procgen. Each
 event is a `{seed, turn_count, surface_mix, weather, …}` `TrackGenerator` spec.
 Flattening rallies-in-region into their events gives the per-region stage pool:
 
-| region | rallies | authored events |
-| --- | --- | --- |
-| `home` | 14 | 42 |
-| `greece` | 8 | 24 |
-| `snow` | 6 | 18 |
-| `taiga` | 5 | 15 |
-| `home_coast` | 4 | 12 |
-| `greece_coast` | 1 | **3** |
+**Not every rally has 3 events** — `shakedown`, `hm_timber_trophy` and
+`hm_forest_gt` carry one apiece, so the pool must be counted, not multiplied.
+Actual authored event counts (108 total):
+
+| region | authored events |
+| --- | --- |
+| `home` | 36 |
+| `greece` | 24 |
+| `snow` | 18 |
+| `taiga` | 15 |
+| `home_coast` | 12 |
+| `greece_coast` | **3** |
 
 **`greece_coast` cannot fill an 8-stage run** — it has one rally, so its pool is
 3 events against a requirement of 8. Per decision 10 this is fixed by
@@ -159,11 +172,18 @@ topping up procedurally. Two consequences:
   belongs in the stage that introduces region runs, not in a later polish pass.
 - **Every region needs the same check.** A pool of exactly 8 means every run in
   that region draws the identical 8 stages, so the practical floor is
-  comfortably above 8. `home` (42), `greece` (24), `snow` (18), `taiga` (15) and
-  `home_coast` (12) all clear a floor of 8 today, but `home_coast` at 12 offers
-  little variety between runs. Worth deciding a minimum pool size as a rule and
-  authoring every region up to it, rather than treating `greece_coast` as a
-  one-off.
+  comfortably above 8. Every region except `greece_coast` clears 8 today, but
+  `home_coast` at 12 offers little variety between runs. Worth deciding a
+  minimum pool size as a rule and authoring every region up to it, rather than
+  treating `greece_coast` as a one-off.
+
+**`RegionLibrary` explicitly forbids the ordering decision 2 requires.** The
+header comment on `REGIONS` reads: *"ORDER CARRIES NO MEANING — regions do not
+unlock in sequence … so do NOT re-introduce any ordering dependency. Regions gate
+nothing."* Making array order load-bearing therefore collides with an authored
+invariant, and with `override_for_test()`, which lets tests substitute arbitrary
+region arrays. **An explicit `order` field is the only safe option**, and that
+comment plus `features/regions.md` must be rewritten in the same change.
 
 The draw itself should be seeded per run so a run is reproducible for debugging,
 and should escalate: RR grows its tracks with
@@ -569,14 +589,21 @@ returns with `RunSession` in stage 3, since it shares the pieces being torn out.
    to the roguelike vision, and fold `todo/challenge-career-reuse-drift.md` into
    this plan. No code.
 2. **Demolition.** One destructive change, on its own commit so the revert is
-   clean: delete the rival field and everything serving it, the map and its
-   reveal geometry, the car-bound parts model, prize rallies, `RallySession`,
-   `podium.tscn`, `standings.tscn`, `hq.tscn` and its nine collaborators,
-   `overworld.tscn`, `WorldPanel`, and adaptive difficulty. Reset the save schema
-   with **no migration** (see below). Resolve the coupled systems the review
-   found — tuning's unlock gate, the start-line menu, `stage_key` — rather than
-   leaving them dangling. The tree compiles at the end of this stage; the game
-   does not run.
+   clean. **Extract before deleting**: `RallySession.apply_event_config` /
+   `canonical_event_config` / `apply_field_repair_to` and `RallyLibrary`'s
+   empty-field `build_standings` have live non-career callers (see Blockers), so
+   they move to their new home first. `UpgradeLibrary.EFFECTS` / `_cfg_set` /
+   `apply` are likewise **retained**, not deleted. Then delete: the rival field
+   and everything serving it, the map and its reveal geometry, the parts
+   catalogue and install/buy paths, prize rallies, the rest of `RallySession`,
+   `podium.tscn`, `standings.tscn`, `hq.tscn` and its collaborators,
+   `overworld.tscn`, `WorldPanel`, adaptive difficulty, `map_fog.gd` and
+   `rally_trophy.gd`. Update `project.godot` (main scene, autoloads) and
+   `Scenes.is_hub_scene` so music still resolves. Reset the save schema with **no
+   migration**. Resolve the coupled systems the reviews found — tuning's unlock
+   gate and the aero wing meshes it drives, the start-line menu, `stage_key`,
+   wheel customisation, the starter picker. The tree compiles at the end of this
+   stage; the game does not run.
 3. **Back to playable — the minimum spine.** `RunSession` generalised from
    `ChallengeSession`, a bare flat shell (title → car select → run), the region
    stage draw, the fixed reference-car timer, run-over on a missed target, and a
@@ -598,6 +625,95 @@ Dependencies, per `CLAUDE.md`'s todo rules: everything depends on 2; 4–8 all
 render on the shell from 3; 7's perks depend on 7's stats; 8 depends on 3 (it
 needs a generated stage to place props along). Nothing depends on a save
 migration, because there isn't one.
+
+## Blockers found in a second review
+
+These are errors in the plan above, not open questions. Verified against the code.
+
+### `RallySession` cannot be deleted wholesale — the challenge depends on it
+
+The spec calls `RallySession` "over half rival plumbing" and deletes it in stage
+2, with the challenge (decision 15) returning in stage 3. But `ChallengeSession`
+calls into it **right now**, for the exact mechanisms this pivot plans to keep:
+
+| Call site | What it needs |
+| --- | --- |
+| `challenge_session.gd` → `RallySession.apply_field_repair_to()` | the `_pending_repair` between-stage repair the boost-pick screen reuses |
+| `challenge_session.gd` → `RallySession.clear_free_roam_handoff()` | the free-roam supersede rule |
+| `challenge_session.gd` → `RallyLibrary.build_standings()` (twice) | its own standings, with an empty rival array |
+| `challenge_session.gd` → `RallyLibrary.stars_for_placement()` | its completion reward |
+
+`RallySession` is also a **`project.godot` autoload**, and its statics
+`apply_event_config()` / `canonical_event_config()` are the shared stage-config
+spine — consumed by `driving_context.gd`, `track_cache.gd`, `region_library.gd`,
+`challenge_library.gd` and `benchmark_mode.gd`. Roughly 34 scripts reference it.
+
+So stage 2's claim that "the tree compiles at the end of this stage" is **not
+achievable as written**. The fix: stage 2 must *extract* the surviving statics
+(event config, field repair, the empty-field standings builder) into their new
+home before deleting the rest, and the spec must name that home. This is real
+work the plan currently hides inside the word "delete".
+
+### Deleting `hq.tscn` leaves the project unbootable
+
+`project.godot` line 15: `run/main_scene="res://hq.tscn"`. Nothing in the 9
+stages edits `project.godot`, yet stage 2 deletes that scene and the autoload
+block needs changing too (`RallySession` out, any `RunSession` in). Separately,
+`MusicLibrary.is_hq_scene` → `Scenes.is_hub_scene` picks hub-vs-rally music off
+the hub scene path, so the flat shell must be registered there or every hub
+screen plays a rally song.
+
+### Deleting the parts model silently changes every car's bodywork
+
+`car.gd` calls `_set_aero_visible(_active_body(),
+UpgradeLibrary.aero_tuning_unlocked(owned))` — the **visible rear wing** is
+gated on a fitted aero part. The earlier gap entry caught that deleting parts
+breaks *tuning's* unlock; it missed that it also un-decides every car's
+silhouette, with `tests/headless/test_aero_visibility.gd` and
+`test_aero_visible_traversal.gd` pinning the behaviour.
+
+### `UpgradeLibrary.EFFECTS` must be explicitly retained, not deleted
+
+Stage 5's in-run boosts route through `UpgradeLibrary.EFFECTS` / `_cfg_set` /
+`apply()` — the reuse section says so — while the deletion list says "most of
+`UpgradeLibrary` (1182 lines)" goes in stage 2. Those directly contradict. The
+effects funnel is the part that survives; the catalogue, slots and install/buy
+paths are what go.
+
+### The testing blast radius is understated about fivefold
+
+The spec says 7 test files touch `RallyLibrary` and 10 touch `UpgradeLibrary`.
+Actual counts, of 226 test files: **49** touch `RallyLibrary`, **23**
+`UpgradeLibrary`, **21** `RallySession`. That moves "no testing strategy" from a
+process gap to **the dominant cost of stage 2**, and it undercuts the claim that
+deletions will comfortably pull the suite under its ~5 minute budget — stage 3's
+new `RunSession` and flat shell need new scene tests, and nothing in the plan
+reserves a budget check or points at `features/testing.md`'s cheap patterns.
+
+### More systems still unaccounted for
+
+- **Wheel customisation** (`features/wheel-customization.md`, `wheel_style.gd`,
+  `CarparkMode.WHEELS` and its own camera framing) — the spec collapses
+  `CarparkMode` "to a flat car list" and never mentions it.
+- **The starter picker lives in `overworld_picker.gd`** (`starter_cars`,
+  `_starter_ids`, writes `profile["starter_picked"]`) — a file deleted with the
+  overworld. So the starter-car loose end does not merely lack a decision, it
+  loses its implementation.
+- **`map_fog.gd`** reads `RallyLibrary.lit_sources(profile)` — reveal geometry
+  being deleted, but the file is not in the deletion list.
+- **`rally_trophy.gd`** is built on `MAX_STARS_PER_RALLY` / `STARS_FOR_WIN` /
+  `STARS_FOR_PODIUM` / `STARS_FOR_FINISH`, all placement-derived.
+- **`upgrade_options.gd`** (`SLOT_ENGINE` / `SLOT_TUNE` pseudo-slots,
+  `grid_slots()`) is the shared data source for the garage grid *and* the
+  start-line Upgrades page — and is the only UI seam the surviving engine swap
+  (decision 17) is rendered through.
+- **`registry.gd`, `crosswind.gd`, `weather_library.gd`, `stage_manager.gd`,
+  `settings_menu.gd`, `global_standings.gd`** all reference `RallyLibrary` or
+  `RallySession` and are in-stage runtime, not hub code.
+- **`TrackCache`**: the spec bumps `BOARD_EPOCH` but not `CACHE_VERSION`.
+  `data/track_cache.json` is a committed lockfile keyed to authored events, so
+  scaling `turn_count` on later stages makes every drawn stage miss the cache and
+  fall back to live DFS search — an uncosted per-stage load-time hit.
 
 ## Gaps found in review
 
@@ -699,9 +815,10 @@ They are recorded here rather than silently decided.
   suite — 7 test files touch `RallyLibrary`, 10 touch `UpgradeLibrary`, plus
   `test_hq_map_table`, `test_hq_tuning_lift`, `test_hq_present_reveal`,
   `test_menu_flow`, `test_menu_nav`, `test_overworld_garage`,
-  `test_cloud_leaderboard` and more. Stage 12 says "one full run" but nothing
-  about which tests are deleted versus rewritten. Worth claiming as a win: the
-  deletions should pull the suite well under its ~5 minute budget.
+  `test_cloud_leaderboard` and more. **See the Blockers section for the real
+  counts** — 49 / 23 / 21 files of 226, not the 7 / 10 claimed earlier. Stage 9
+  says "one full run" but nothing about which tests are deleted versus
+  rewritten.
 - ~~**No rollback position for the gameplay pivot.**~~ **Resolved by decision
   20, in the opposite direction to what this gap proposed:** there is
   deliberately no in-code rollback. Maintaining two paths everywhere costs more
