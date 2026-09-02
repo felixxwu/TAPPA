@@ -19,9 +19,11 @@ Read the spec's **Hazards** section before starting stage 2.
   > it for this work. `main` was deliberately reset to `8cfae5f` (pre-pivot) after
   > the spec work had been merged to it by mistake.
 
-- **Stage 2 is a single commit.** Decision 20 makes `git revert` the rollback
-  mechanism, and that only works if the demolition is one thing to revert. Every
-  other stage commits freely — only the demolition needs to be atomic.
+- **Stage 2 lands as a single commit.** Decision 20 makes `git revert` the
+  rollback mechanism, and that only works if the demolition is one thing to
+  revert. It is *worked* in waves with checkpoint commits — that is how the
+  parallelism below is possible — and then **squashed into one commit before
+  stage 3 begins**. Every other stage commits freely.
 - **Tests per `CLAUDE.md`:** implementation first, tests before the stage is
   called done, targeted runs mid-stage, the full suite only at the very end
   (stage 9). Never start a run while another is in progress.
@@ -30,6 +32,89 @@ Read the spec's **Hazards** section before starting stage 2.
   not the backlog.
 - **A stage is done when its gate passes**, listed per stage below. "It compiles"
   is a gate only where stated.
+
+## Parallel execution
+
+Work the stages in **waves**: a set of agents editing disjoint files at once,
+then a parent checkpoint. The constraint that shapes everything below is that all
+agents share **one working tree** (`CLAUDE.md`), so the unit of parallelism is a
+**file**, not a system.
+
+### Wave rules
+
+1. **Assign file ownership explicitly.** Every agent is told the paths it owns
+   and the paths that are off-limits. Two agents never own one file. Where a
+   system's deletion touches a shared file (`rally_library.gd`,
+   `save_manager.gd`, `world.gd`, `project.godot`), that file belongs to *one*
+   agent for the whole wave and the others report what they need changed in it.
+2. **Subagents do not run tests. Ever.** `CLAUDE.md` binds them directly. The
+   **parent** runs one targeted run per wave, covering the combined blast radius
+   of every agent in it. A subagent's own run would measure a half-finished tree
+   and violate the no-concurrent-runs rule.
+3. **Verify diffs, do not trust reports.** The repo's own eval rounds found
+   Haiku-class probes writing *"confident completion reports over empty diffs"*
+   (round 045), and one claiming a pre-seeded doc edit as its own work. After
+   every wave: `git diff --stat` per claimed file before believing any agent.
+4. **A wave ends at a green checkpoint.** Parent runs the targeted tests, fixes
+   or reassigns what failed, commits, then launches the next wave. Never overlap
+   waves.
+5. **Serialise anything that cascades.** If getting task A wrong makes task B's
+   output meaningless, they are not in the same wave.
+
+### Model selection
+
+Pick per task, not per stage. This repo has invested 45 rounds in
+Haiku-readiness (`evals/small-model/`), so small models are viable here for the
+shapes the task bank covers — additive, single-surface, explicit target.
+
+| Model | Use for | Because |
+| --- | --- | --- |
+| **Haiku** | Mechanical work against an explicit file list: deleting a named system, removing a config block, a `features/` doc whose subject is entirely gone, retiring an eval task, index updates | Cheapest, and the eval bank shows this codebase is legible to it for exactly this shape. Always give the exact file and symbol — the documented failure mode is *vocabulary/surface collision*, picking a similarly-named surface |
+| **Sonnet** | Feature implementation with judgement: menu screens, the shop, perks, stats, test rewrites, `features/` docs for systems that partly survive | The bulk of stages 4–8. Bounded, multi-file, but a wrong call is local |
+| **Opus** | The `RallySession` extraction seam, the `RunSession` generalisation, the save-schema redesign, the `gameplay.md` rewrite | Where a wrong call cascades through everything after it. These are also the tasks whose cost is dominated by reading, not writing |
+
+**Never give a Haiku agent a task whose success cannot be checked from the
+diff.** "Delete these six files and their references" is checkable. "Make the
+boost shop feel good" is not.
+
+### Wave map
+
+| Stage | Parallelises? | Shape |
+| --- | --- | --- |
+| 0 | No | One command, parent only |
+| 1 | Barely | `gameplay.md` is one coherent document — one Opus agent. The `challenge-career-reuse-drift` fold is a Haiku task alongside it |
+| 2a | **No — serial** | The extraction is one seam through `rally_session.gd`. One Opus agent, alone in the tree |
+| 2b | **Yes, 4–5 agents** | Independent deletions, below |
+| 2c | **No — serial** | `project.godot`, `Scenes`, the save schema. One Opus agent; a wrong autoload breaks everything |
+| 2d | Yes, 3–4 agents | Test triage, partitioned by test-file prefix |
+| 3 | **No — serial** | The spine is one coherent design. One Opus agent, or the parent directly |
+| 4–8 | Yes, but sequential stages | Each stage is one Sonnet agent; **within** a stage, split UI from logic where the files are disjoint |
+| 9 | **Yes, 6–8 agents** | The `features/` audit partitions across 76 docs beautifully; eval re-authoring is one Haiku agent per task |
+
+### Stage 2b — the one wave that needs care
+
+These deletions are independent *in system terms* but converge on three files.
+Assign those files to one owner and have the others hand their edits to it:
+
+| Agent | Owns | Model |
+| --- | --- | --- |
+| A | `rally_library.gd` **and** `save_manager.gd` — the shared files. Applies every other agent's requested edits to them | Sonnet |
+| B | Rival field: `rival_pace.gd`, ghost, wrecks, `ai_difficulty.gd` | Haiku |
+| C | Leaderboards: `cloud/leaderboard.gd`, `global_standings.gd`, `firestore.rules` | Haiku |
+| D | Free roam + `game_config.gd`'s `free_roam_*` block + obsolete `todo/` specs | Haiku |
+| E | Parts model: `upgrade_library.gd`, `upgrade_options.gd`, `upgrades_grid.gd` | Sonnet |
+
+The hub demolition (`hq.tscn` and its nine collaborators, `overworld.tscn`,
+`WorldPanel`) is **its own wave after this one** — it is the largest single
+deletion and touches `hq.gd` at 3563 lines.
+
+### Cost note
+
+The saving is real but comes from task shape, not from agent count: a Haiku agent
+deleting a named system costs a fraction of an Opus agent doing the same work,
+while an Opus agent is *cheaper* than a Sonnet one that gets the extraction seam
+wrong and takes the demolition with it. Spend the expensive model where a mistake
+cascades; spend the cheap one where the diff proves the work.
 
 ## Stage 0 — verify the tree (before anything)
 
@@ -48,6 +133,8 @@ measured against — without it, a stage-2 failure is unattributable.
 
 ## Stage 1 — decide and document (no code)
 
+> **Wave:** 2 agents — Opus on `gameplay.md`, Haiku on the drift-spec fold.
+
 1. Rewrite `gameplay.md` to the roguelike vision. It currently describes the GT
    career and contradicts the spec on nearly every point.
 2. Fold `todo/challenge-career-reuse-drift.md` into the pivot spec (its open item
@@ -58,7 +145,10 @@ measured against — without it, a stage-2 failure is unattributable.
 
 **Gate:** `gameplay.md` describes the game the spec describes.
 
-## Stage 2 — demolition (one commit)
+## Stage 2 — demolition (worked in waves, squashed to one commit)
+
+> **Waves:** 2a serial (Opus, alone) → 2b five agents → hub demolition wave →
+> 2c serial (Opus) → 2d four agents. Parent runs targeted tests between each.
 
 The risky stage. Work in this order — extractions first, deletions second,
 project wiring third — so the tree never sits in a state where the next step is
@@ -130,6 +220,9 @@ the surviving test files compile. **The game does not run — that is expected.*
 
 ## Stage 3 — back to playable
 
+> **Wave:** none — serial, Opus or the parent directly. The spine is one design;
+> splitting it across agents costs more in seam-fixing than it saves.
+
 The bar is *running*, not *good*. Everything here gets replaced or extended
 later; nothing here should be polished.
 
@@ -152,6 +245,9 @@ rule. Nav test for the shell (`CLAUDE.md` requires it for any new menu).
 
 ## Stages 4–8 — features
 
+> **Waves:** one Sonnet agent per stage, sequential by stage. Within a stage,
+> split UI from logic only where the files are genuinely disjoint.
+
 Conventional work once stage 3 lands; each is independently shippable and each
 brings its own tests and `features/` doc.
 
@@ -167,6 +263,10 @@ The authoring pass in stage 4 is the one to schedule generously: three regions
 need real events written, and they are not playable until they have them.
 
 ## Stage 9 — audit and close
+
+> **Wave:** the widest — 6–8 agents. Partition the 76 `features/` docs across
+> Haiku agents (one per doc-cluster); one Haiku agent per eval task to re-author.
+> Parent runs the single full suite at the end.
 
 1. Flesh out the flat shell beyond stage 3's spine.
 2. **Full `features/` audit** — all 76 docs, each fixed or deleted, index rebuilt
