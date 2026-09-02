@@ -140,9 +140,10 @@ func _failure(status: int, error: String, network: bool) -> Dictionary:
 # The server's clock, in unix milliseconds, from an HTTP Date header. 0 when absent
 # or unparseable.
 #
-# The lobby leans on this: a device with a skewed clock would otherwise race a
-# different round than everyone else and never find out why. Every other caller
-# ignores the key.
+# Currently UNUSED: its only consumer was the deleted multiplayer lobby, which
+# needed it because a device with a skewed clock would race a different round than
+# everyone else. Kept as a generic utility — `date_ms` is part of every response
+# dict's shape — but no caller reads the key today.
 static func date_ms_from(headers: PackedStringArray) -> int:
 	for h: String in headers:
 		if not h.to_lower().begins_with("date:"):
