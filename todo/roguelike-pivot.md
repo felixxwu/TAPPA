@@ -3,7 +3,7 @@
 **Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
 *complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
 ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
-(referred to below as **RR**). Decisions 1–37 are settled. **Read the Blockers
+(referred to below as **RR**). Decisions 1–45 are settled. **Read the Blockers
 section before starting stage 2** — it lists errors in the plan that would break
 the demolition if followed as written.
 
@@ -112,7 +112,29 @@ Settled with the user during the brainstorm that produced this file:
     decision 14 (a failed run keeps its money) rather than being a separate
     choice: with off-line placement the detour already risks the run, and losing
     the coins too would punish the same gamble twice.
-37. **No endgame, for now.** Clearing the last region leaves every region
+38. **Test triage: delete dead, fix incidental.** Tests whose subject is deleted
+    (rally, rival, parts, map, HQ) go. The physics, car, drivetrain, terrain and
+    track-gen tests stay — most touch `RallyLibrary` only incidentally through
+    fixtures — and those couplings are fixed rather than deleted. Stages 3–8
+    bring their own tests per `CLAUDE.md`.
+39. **`restriction` is deleted.** Decision 22 answers region difficulty with
+    `target_pace`, so nothing needs the categorical car filter. Recoverable from
+    git if the car shop ever needs to be about more than speed.
+40. **`features/` gets a full audit in stage 9** — all 76 docs walked, each fixed
+    or deleted, per `CLAUDE.md`'s self-correcting index rule. Not just the ~16
+    the pivot obviously invalidates.
+41. **The dead small-model eval tasks are re-authored in stage 9** against the
+    new systems, so the suite keeps measuring a real codebase and
+    `/small-model-readiness` and `/small-model-readiness-drill` keep working.
+42. **The boost shop shows the effect range per level** — "engine boosts now roll
+    +8–15%" rather than a bare level number — so the purchase is legible without
+    a live car to compute against.
+43. **No first-clear bounty.** Decision 31's region payout scaling already makes
+    progressing pay better; a second progression reward is one more number to
+    balance for no new information.
+44. **The three obsolete `todo/` specs are deleted outright** in stage 2:
+    `star-economy.md`, `menus.md`, `star-gated-special-events.md`.
+45. **No endgame, for now.** Clearing the last region leaves every region
     unlocked and repeatable; there is no credits roll, ascension mode or
     difficulty ladder. Accepted deliberately — see the Third pass section for
     the one demolition consequence (the existing credits trigger dies with
@@ -700,7 +722,11 @@ returns with `RunSession` in stage 3, since it shares the pieces being torn out.
    wheel customisation, the starter picker. Also delete: the star ledger and
    everything on it (decision 21), the global stage leaderboards with `stage_key`
    and `BOARD_EPOCH` (decision 30), free roam (decision 25), and the
-   `_migrate_step` chain with its legacy backfill keys (decision 34). The tree
+   `_migrate_step` chain with its legacy backfill keys (decision 34), the
+   `restriction` field (decision 39), and the three obsolete `todo/` specs
+   (decision 44). Triage the tests as you go (decision 38): delete those whose
+   subject is deleted, fix the incidental `RallyLibrary` couplings in the
+   physics/car/terrain tests that survive. The tree
    compiles at the end of this stage; the game does not run.
 3. **Back to playable — the minimum spine.** `RunSession` generalised from
    `ChallengeSession`, a bare flat shell (title → car select → run), the region
@@ -718,12 +744,11 @@ returns with `RunSession` in stage 3, since it shares the pieces being torn out.
    signposting, pickup trigger, HUD counter, audio, and banking at stage clear.
    Deliberately last of the features: it is the only wholly new runtime system in
    the pivot, and the economy can be tuned without it.
-9. **Polish and docs.** Flesh out the flat shell beyond stage 3's spine,
-   `features/` rewritten, the obsolete `todo/` specs retired
-   (`star-economy.md`, `menus.md`, `star-gated-special-events.md`,
-   `overworld-hq.md`), the small-model eval tasks re-authored against the new
-   systems (see Third pass — about half are invalidated, and two skills run off
-   them), one full `./run_tests.sh`.
+9. **Polish and docs.** Flesh out the flat shell beyond stage 3's spine; a
+   **full audit of all 76 `features/` docs** (decision 40), each fixed or
+   deleted; the dead small-model eval tasks **re-authored** against the new
+   systems (decision 41); one full `./run_tests.sh` against the ~5 minute
+   budget.
 
 Dependencies, per `CLAUDE.md`'s todo rules: everything depends on 2; 4–8 all
 render on the shell from 3; 7's perks depend on 7's stats; 8 depends on 3 (it
@@ -1046,34 +1071,10 @@ They are recorded here rather than silently decided.
 
 ## Open questions
 
-Everything this spec opened has been decided except the following. Items 1–2 are
-design questions; 3–5 are work-scoping questions that stage 2 or stage 9 will
-force. None blocks starting stage 1.
+**None.** Every question this spec raised across three review passes has been
+decided (1–45 above). What remains is execution, and the two things to read
+before starting are the **Blockers** section — errors in the plan that would
+break the demolition if followed as written — and stage 2's revised scope.
 
-1. **Does the boost-level shop communicate its value?** Levels scale the
-   magnitude of in-run boost picks, so their worth is invisible until you are
-   mid-run. A presentation question, not a mechanical one.
-2. **Does a first region clear pay a money bounty?** With acquisition purely
-   transactional, clearing a region currently rewards only the next unlock.
-   Decision 31 (payout scales with region index) partly covers this by making
-   progression pay better, so a bounty may be unnecessary.
-3. **What happens to `restriction`?** The categorical car filter (drive_mode /
-   country / doors / cylinders) is on the deletion list, and decision 22 answers
-   region difficulty with `target_pace` instead — so nothing needs it any more.
-   But deleting it removes the only way a region could ever demand a *class* of
-   car rather than a fast one, which is the one lever that would make the car
-   shop about something other than raw speed. Delete it, or re-point it at
-   regions and keep that option alive?
-4. **What is the testing strategy for the demolition?** Not a question about
-   whether to test — a question about *how much survives*. 49 test files touch
-   `RallyLibrary`, 23 `UpgradeLibrary`, 21 `RallySession`, of 226. Each is
-   delete, rewrite, or leave, and nobody has decided the split. This is the
-   dominant cost of stage 2 and the least specified part of the plan.
-5. **How many `features/` docs actually need rewriting?** The plan names ~16 of
-   76. Many more mention rallies, rivals, stars or the HQ in passing. Someone has
-   to walk the whole folder in stage 9; the size of that pass is unknown.
-
-Two further items are scheduled rather than open, but their *content* is
-undecided: which small-model eval tasks get re-authored and into what (about half
-of the 15 die with the pivot, and two skills run off them), and what replaces the
-three obsolete `todo/` specs. Both sit in stage 9.
+If something new surfaces during implementation, add it here rather than
+deciding it silently.
