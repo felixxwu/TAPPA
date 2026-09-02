@@ -10,6 +10,10 @@ system* is the design. *What gets deleted* and *Staging* are the work. **Read
 *Hazards* before starting stage 2** — it lists things that will break the
 demolition or silently change behaviour if not handled.
 
+The executable task sequence lives in **`todo/roguelike-pivot-plan.md`**. This
+file owns the decisions; that one owns the order of work and holds no decisions
+of its own.
+
 Landed so far: the multiplayer lobby is deleted (decision 16), unverified by any
 test run (see Hazards → Unverified). Nothing else here is implemented.
 
@@ -747,14 +751,16 @@ silently change behaviour if not handled — not open questions.
 | --- | --- |
 | `RallySession.apply_field_repair_to()` | the `_pending_repair` between-stage repair the boost-pick screen reuses |
 | `RallySession.clear_free_roam_handoff()` | the free-roam supersede rule (moot once free roam goes, but the call must be removed) |
-| `RallyLibrary.build_standings()` ×2 | its own standings, with an empty rival array |
+| `RallyLibrary.build_standings()` ×2 | its own standings, empty rival array — **delete rather than extract**: its consumers feed `standings.tscn`, which decision 30 deletes. Rewrite the two callers to return plain time lists for the run summary |
 | `RallyLibrary.stars_for_placement()` | its completion reward — re-point at money (decision 21) |
 
 `RallySession` is also a **`project.godot` autoload**, and its statics
 `apply_event_config` / `canonical_event_config` are the shared stage-config spine
 used by `driving_context.gd`, `track_cache.gd`, `region_library.gd`,
 `challenge_library.gd` and `benchmark_mode.gd`. ~34 scripts reference it. Extract
-the survivors to their new home (name it during stage 2) *before* deleting.
+the survivors *before* deleting — `todo/roguelike-pivot-plan.md` §2a names their
+homes (`scripts/stage_config.gd` for the event-config statics, `Save` for the
+field repair).
 
 ### Deleting `hq.tscn` leaves the project unbootable
 
