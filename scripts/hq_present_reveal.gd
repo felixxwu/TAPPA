@@ -9,7 +9,7 @@ extends RefCounted
 #
 # Holds a back-reference to the HqController and reaches into it for the car-park widgets it
 # re-labels and the reveal's own state — the same shape as HqOverlays / HqChallenge /
-# HqMultiplayer / HQEnvironment.
+# HQEnvironment.
 #
 # NO INPUT BRANCH OF ITS OWN, on purpose: the present runs INSIDE View.CARPARK
 # (CarparkMode.PRESENT), so keyboard/gamepad input reaches it through HqCarpark.handle_input and
@@ -21,7 +21,7 @@ extends RefCounted
 # tests call by name (_enter_present_box, _open_present, _leave_present_to_garage). The state is
 # read from outside this file (a test asserts on _present_opened, hq.gd's _car_back branches on
 # it), so it is shared state, not this file's private bookkeeping — the same split
-# HqMultiplayer uses for _multiplayer_shown.
+# HqChallenge uses for _challenge_shown.
 
 var _hq: HqController
 

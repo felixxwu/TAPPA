@@ -425,9 +425,6 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   the way to every stage, so it was flattened — Career and Online sit alongside Garage,
   **Free Roam moved to the title screen** (it needs no owned car, session or lift), and
   the drive-level camera pose (`_drive_cam_xform`, `hq_drive_cam_*`) went with it.
-  **Multiplayer** joined the row afterwards, last (see the Entry point section of
-  [multiplayer-lobby.md](multiplayer-lobby.md)), as a modal overlay over the garage the
-  same way Online is — not a sixth View, just a fifth garage-row stop.
   **Garage** (`_enter_lift`) drops **straight into the tuning lift bay** for the currently
   selected car. It used to open the car park FIRST (a `CarparkMode.GARAGE` mode, parking the
   whole owned collection, whose Select committed the focused car and then entered the bay);

@@ -5,8 +5,7 @@ overlay/menu-layer builders in `scripts/hq_overlays.gd` (`class_name HqOverlays`
 the `build_*_overlay()` methods, split out of `hq.gd` to shrink it; each holds a
 back-reference to the `HqController` and reaches into it for state + button
 callbacks), the Rally Challenge screen in `scripts/hq_challenge.gd` (`class_name
-HqChallenge`), the Multiplayer entry screen in `scripts/hq_multiplayer.gd` (`class_name
-HqMultiplayer` — see [multiplayer-lobby.md](multiplayer-lobby.md) → "Entry point"), the
+HqChallenge`), the
 map table's navigation in `scripts/hq_table.gd` (`class_name HqTable`) and its pin/fog layer in
 `scripts/hq_map_table.gd` (`class_name HqMapTable`), the car park in
 `scripts/hq_carpark.gd` (`class_name HqCarpark`), the tuning lift in

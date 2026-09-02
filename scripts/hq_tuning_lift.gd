@@ -14,18 +14,18 @@ extends RefCounted
 # wiring.
 #
 # INPUT: `handle_input` is the LIFT branch of hq.gd's `_unhandled_input` dispatch — reached the
-# same way HqTable.handle_input / HqCarpark.handle_input / HqMultiplayer.handle_input are, and
+# same way HqTable.handle_input / HqCarpark.handle_input are, and
 # it answers whether the event was this station's to act on. It was `hq._lift_input` before the
 # cut; the routing is unchanged.
 #
 # Holds a back-reference to the HqController and reaches into it for state, widgets and node
-# parenting — the same shape as HqOverlays / HqChallenge / HqMultiplayer / HQEnvironment.
+# parenting — the same shape as HqOverlays / HqChallenge / HQEnvironment.
 #
 # WHAT STAYED ON HqController, deliberately:
 #   * every lift STATE field and WIDGET (_lift_car, _lift_page, _lift_row, _lift_raised,
 #     _lift_tween, _hub_focus, the cursors, _lift_repair_button, _tune_panel, …). hq_overlays.gd
 #     BUILDS those widgets and update_overlays / go_to read the flags, so they are shared, not
-#     this file's private state — the same split HqMultiplayer uses for its overlay widgets.
+#     this file's private state — the same split HqChallenge uses for its overlay widgets.
 #   * thin forwarders for every entry point hq_overlays.gd, the tests and hq.gd itself already
 #     call by name (_enter_lift, _lift_hub, _cycle_lift_car, _test_drive, …). Renaming those
 #     call sites is not a behaviour-preserving move, so the names stay put and delegate here.

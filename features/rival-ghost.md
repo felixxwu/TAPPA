@@ -501,11 +501,12 @@ car. Styled after `finish_arch.gd`'s banners so the game keeps one 3D-text look.
 testing stays on: a name showing through a hillside reads as UI, not as part of the world.
 Config: `rival_ghost_nametag_enabled`, `_height_m`, `_size_m`.
 
-## External-offset posing (no `RivalPace`) — for the multiplayer lobby
+## External-offset posing (no `RivalPace`) — currently unused
 
-`GhostCar` can also be posed from a **network-extrapolated arc-length offset** rather
-than a `RivalPace`, for the round leader in a multiplayer lobby
-([multiplayer-lobby.md](multiplayer-lobby.md)). The world-posing chain that used to be
+`GhostCar` can also be posed from an **extrapolated arc-length offset** rather
+than a `RivalPace`. This existed for the round leader in the multiplayer lobby; that
+mode has been deleted, so the path has **no production caller** today and survives
+only under `tests/headless/test_ghost_car.gd`. The world-posing chain that used to be
 the tail of `pose_at` is factored out into `pose_at_offset(rendered, speed, accel, delta
 := 0.0)`, which takes an already-computed arc-length offset, speed (m/s) and longitudinal
 acceleration (m/s^2) and does everything from `progress.sample_at(rendered)` onward —

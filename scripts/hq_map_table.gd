@@ -21,7 +21,7 @@ extends RefCounted
 #
 # Holds a back-reference to the HqController and reaches into it for the pin PARENT and the
 # table STATE (_pins, _pins_root, _map_plane, _pins_stamp, _table_focus_node,
-# _table_targets_cache) — the same shape as HqOverlays / HqChallenge / HqMultiplayer /
+# _table_targets_cache) — the same shape as HqOverlays / HqChallenge /
 # HQEnvironment. That state stays on the controller because HqTable and hq.gd both read it.
 #
 # The prize-car prop CACHE lives here (below), because nothing outside these functions touches

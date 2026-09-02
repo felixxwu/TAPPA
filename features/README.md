@@ -77,7 +77,6 @@ with them, and working toward the special-event finale.
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [sfx.md](sfx.md) | **One-shot sound effects — `Audio` autoload (`scripts/audio.gd`), `Audio.play_beep(...)`, the SFX bus. Read this before playing ANY sound; never hand-roll an `AudioStreamGenerator` at a call site.** |
 | [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
-| [multiplayer-lobby.md](multiplayer-lobby.md) | Round-based drop-in multiplayer — the wall-clock round derivation, the seeded stage + loaner car, the Firestore progress collection, and the extrapolated field |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (stateless rpm-linear belt drive, rpm-scaled drag) — engine property, stock or via the shared-slot `turbo_small` / `turbo_large` / `supercharger` upgrade ladder |
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |

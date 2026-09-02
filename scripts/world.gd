@@ -228,7 +228,7 @@ func _apply_scene_config(cfg: GameConfig) -> void:
 
 
 # _ready phase: hold the car still for the boot and field the right car for this mode
-# (challenge / rally / lobby loaner / free roam / dev boot). Nothing here awaits.
+# (challenge / rally / free roam / dev boot). Nothing here awaits.
 func _field_player_car() -> void:
 	# Hold the car still for the entire boot. Generation below spans many awaited
 	# frames with the loading overlay up (non-headless); the car is already in the
@@ -248,13 +248,6 @@ func _field_player_car() -> void:
 		_field_car(ChallengeSession.car_instance_id())
 	elif RallySession.is_active():
 		_field_car(RallySession.car_instance_id())
-	elif LobbySession.is_active():
-		# The round's loaner: everyone drives the same car, nobody owns it. A bare
-		# catalogue model, so stock parts / full HP / no tuning come for free and
-		# nothing is written back to the profile — which is what lets a player with
-		# an empty garage race the first time they open the mode.
-		var lobby_idx := CarLibrary.index_of(LobbyRound.car_id_for(LobbySession.round_key()))
-		$Car.apply_car(lobby_idx if lobby_idx >= 0 else 0)
 	elif RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "":
 		# Free roam (session-less): field the car the player picked in the car park.
 		# An OWNED instance runs with its baseline + upgrades + saved HP; a bare catalogue
@@ -290,15 +283,6 @@ func _wire_session_and_stage(loading: LoadingScreen) -> void:
 	# start line, then drain that session's pending pit repair. The only thing that
 	# differs between the two is WHICH orchestrator the repair summary comes from,
 	# so this is one block with one branch rather than two near-identical ones.
-	# A multiplayer lobby run: hand the run-scene pieces to a LobbyField (which wires
-	# the LobbySession's sample/span callables, the leader ghost, and the HUD position
-	# readout — see features/multiplayer-lobby.md), route the finish into it, and
-	# reload this scene when the shared round advances. Spectators keep the stage
-	# built but never start the countdown — the camera chases the leader ghost once
-	# one exists.
-	if LobbySession.is_active():
-		_setup_lobby_field()
-
 	if RallySession.is_active() or ChallengeSession.is_active():
 		_wire_session_signals()
 		# Pre-event start-line scene: briefing + presence cars before the countdown
@@ -641,8 +625,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# it onto dry ground if the start would be underwater — identical logic to the
 	# target derivation, so the shapes stay in sync.
 	var event := ChallengeSession.current_stage_params() if ChallengeSession.is_active() \
-		else (LobbyRound.stage_for(LobbySession.round_key()) if LobbySession.is_active() \
-		else RallySession.current_event())
+		else RallySession.current_event()
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
 	# The dry-start search may relocate the generation origin onto dry ground. Derive
@@ -657,18 +640,6 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 		start_pos = start_line
 		var car := $Car as Node3D
 		car.global_position = Vector3(start_line.x, car.global_position.y, start_line.y)
-	# A lobby run is event-shaped but UNSTAGED: the generator seats the road origin
-	# one lead-in AHEAD of the nominal spawn whenever start lines are enabled
-	# (TrackGenParams._apply_staging), and normally only the staged start-line scene
-	# compensates. With no start line, seat the car ON the road origin — otherwise it
-	# spawns on grass short of the road and the off-track timer resets it at the
-	# lights (found on-device). Runs after the relocate block so a dry-start
-	# relocation is already folded into params.origin.
-	if LobbySession.is_active():
-		start_pos = params.origin
-		var lobby_car := $Car as Node3D
-		lobby_car.global_position = Vector3(params.origin.x,
-			lobby_car.global_position.y, params.origin.y)
 	# Paint the waterline into the preview BEFORE generation — it's a pure function
 	# of (seed, water_level), so it can show first and the road animates over it. This
 	# early pass covers a rough box around the origin (the track extent isn't known
@@ -1315,17 +1286,7 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	if not Benchmark.active:
 		# Staged runs hold the car in the start-line sequence until the player launches;
 		# otherwise the countdown arms immediately, as before.
-		# A lobby SPECTATOR is held exactly the way a staged run is held — in
-		# STAGING, controls locked — except no StartLine will ever launch them; the
-		# camera watches the leader ghost instead (see _setup_lobby_field).
-		# A lobby racer inside the join window is held the same way, and released
-		# onto a synchronised countdown by LobbyField._process at the shared release
-		# instant. A spectator is held with no release.
-		var lobby_holding: bool = LobbySession.is_active() \
-			and (LobbySession.state() == LobbySession.STATE_SPECTATING \
-			or LobbySession.held())
-		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress,
-			staged or lobby_holding)
+		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
 		# Route the finish panel's NEXT button to advance the stage into the results flow
 		# (both nodes persist across regenerations, so guard the connection).
 		var hud_node := $HUD
@@ -1693,12 +1654,6 @@ var _road_centerline: Curve2D
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).
 var _stage_manager: StageManager
-# The multiplayer lobby's run-scene glue (leader ghost, HUD readout, sample feed).
-# Built by _setup_lobby_field() only when LobbySession.is_active().
-var _lobby_field: LobbyField
-# Unix ms at which the finished lobby world leaves for the next round's map; 0 = no
-# intermission pending. Set by _on_lobby_round_changed, consumed in _process.
-var _lobby_reload_at_ms := 0
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
@@ -1858,62 +1813,6 @@ func _wire_stage_splits(target_ms: int) -> void:
 		turn_progress.append(clampf(profile_off / span, 0.0, 1.0))
 		turn_time_frac.append(clampf(_rival_pace.time_at_offset(profile_off) / total_s, 0.0, 1.0))
 	_stage_manager.setup_splits(turn_progress, turn_time_frac, target_ms)
-
-
-# Build the lobby's run-scene glue and route the round lifecycle into this scene:
-# the finish marks the local racer settled, and the shared round advancing reloads
-# the scene onto the new round's track (the field's _exit_tree severs its callables
-# on the way out, so the reload cannot leave the autoload calling into freed nodes).
-func _setup_lobby_field() -> void:
-	_lobby_field = LobbyField.new()
-	_lobby_field.name = "LobbyField"
-	add_child(_lobby_field)
-	_lobby_field.setup(LobbySession, _track_progress, _floor(), $HUD, $Car,
-		load(WRECK_CAR_SCENE), LobbyRound.stage_for(LobbySession.round_key()))
-	_lobby_field.stage_manager = _stage_manager
-	if LobbySession.state() == LobbySession.STATE_SPECTATING:
-		_lobby_field.spectate_camera = $CameraManager
-	if not LobbySession.round_changed.is_connected(_on_lobby_round_changed):
-		LobbySession.round_changed.connect(_on_lobby_round_changed)
-
-
-# The shared round moved on (everyone finished, or the ceiling fired). The next
-# round's start is SCHEDULED (started_at_ms is the agreed instant), so this world
-# does not reload at once: it stays up showing the intermission countdown, and
-# leaves for the next map a preload-lead before the start so ~15s of generation
-# completes before GO instead of eating into the race. The countdown itself ticks
-# in _process below.
-func _on_lobby_round_changed(_index: int) -> void:
-	if not LobbySession.is_active():
-		if LobbySession.round_changed.is_connected(_on_lobby_round_changed):
-			LobbySession.round_changed.disconnect(_on_lobby_round_changed)
-		return
-	var cfg: GameConfig = Config.data
-	var lead_s: float = cfg.lobby_preload_lead_seconds if cfg != null else 30.0
-	_lobby_reload_at_ms = LobbySession.release_at_ms() - int(lead_s * 1000.0)
-	var hud := $HUD
-	if hud != null and hud.has_method("hide_position"):
-		hud.hide_position()
-
-
-# Intermission tick: count the whole gap to the agreed start on the HUD's countdown
-# label (the player reads real seconds-to-go, not a mystery wait), and reload onto
-# the next map at the preload instant. Runs from world._process.
-func _tick_lobby_intermission() -> void:
-	if _lobby_reload_at_ms <= 0:
-		return
-	if not LobbySession.is_active():
-		_lobby_reload_at_ms = 0
-		return
-	var hud := $HUD
-	if hud != null and hud.has_method("show_countdown"):
-		hud.show_countdown(ceilf(float(LobbySession.release_at_ms() - LobbySession.now_ms()) / 1000.0))
-	if LobbySession.now_ms() < _lobby_reload_at_ms:
-		return
-	_lobby_reload_at_ms = 0
-	if LobbySession.round_changed.is_connected(_on_lobby_round_changed):
-		LobbySession.round_changed.disconnect(_on_lobby_round_changed)
-	_change_scene(Scenes.MAIN)
 
 
 # Build the ghost node + its car. Construction only: it is hidden and clockless until
@@ -2205,13 +2104,6 @@ func _change_scene(path: String) -> void:
 
 
 func _on_session_event_completed(elapsed_seconds: float) -> void:
-	# A lobby finish is not a scene exit: the racer settles into the field as
-	# "finished" (which is what lets the round end early once everyone has), and the
-	# world stays up until LobbySession.round_changed reloads it for the next round.
-	if LobbySession.is_active():
-		if _lobby_field != null:
-			_lobby_field.note_finished(elapsed_seconds)
-		return
 	# No active session — free roam (or a plain dev boot) reached the finish. There is
 	# no session to report to (report_event_result would silently no-op, leaving the
 	# finish panel's Next doing nothing), so Next returns to HQ instead — the same
@@ -2501,7 +2393,6 @@ func _current_region_look() -> Dictionary:
 # three-to-seven global uniform writes, no geometry, no draw calls. Elsewhere push()
 # early-outs into a reset, so the cost on every other stage is one branch.
 func _process(_delta: float) -> void:
-	_tick_lobby_intermission()
 	if not HeadlightCone.has_headlights(Config.data):
 		return
 	HeadlightCone.push(Config.data, $Car.global_transform, $Car.half_width() * 2.0)

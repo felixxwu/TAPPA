@@ -135,7 +135,7 @@ func test_the_optimum_slip_follows_the_surface_mix() -> void:
 	assert_almost_eq(half, asin(0.20), 0.001,
 			"a half-and-half surface blends the two peaks before taking the angle")
 
-# --- External-offset posing: no RivalPace (features/multiplayer-lobby.md) ---------
+# --- External-offset posing: no RivalPace -----------------------------------------
 
 func test_pose_at_offset_places_the_car_without_a_pace() -> void:
 	var tp := _progress_on_straight()

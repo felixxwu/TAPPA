@@ -94,7 +94,12 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - why this task: catalogue tables are the easiest possible change — if a small
   model fails HERE, the problem is navigation, not difficulty
 
-### T011 — "Also show the gap to the car behind me, not just the one ahead."
+### T011 — "Also show the gap to the car behind me, not just the one ahead." — RETIRED
+
+> **RETIRED: unrunnable.** This task's whole subject — the multiplayer lobby
+> (`scripts/multiplayer/`, `LobbyStandings.gap_ms`, `features/multiplayer-lobby.md`)
+> — has been deleted from the project. The round records below are kept as history;
+> do not dispatch this task. See `todo/roguelike-pivot.md`.
 - status: live  (**authored round 026**)
 - clean_solves: 0  (never probed)
 - AUTHORED ROUND 026, and why: after 25 rounds the bank had **no task at all** in the

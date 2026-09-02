@@ -324,7 +324,8 @@ func _process(delta: float) -> void:
 	if not running or progress == null:
 		return
 	if offset_source.is_valid():
-		# External-offset mode (features/multiplayer-lobby.md): no RivalPace required. The
+		# External-offset mode: no RivalPace required. Currently UNUSED in production —
+		# its only caller was the deleted multiplayer lobby. The
 		# source hands us a raw arc-length offset (a network extrapolation, up to ~3 s old
 		# and corrected on every update) plus a speed; clamp it into the same arc-length
 		# window pace mode uses so it cannot park the ghost past the finish or before the
@@ -358,7 +359,7 @@ func pose_at(elapsed_s: float, delta := 0.0) -> void:
 # The shared world-posing chain: given an arc-length offset, a speed (m/s) and a
 # longitudinal acceleration (m/s^2, magnitude only matters), place and orient the display
 # car. Needs no RivalPace — pose_at (career) and _process's external-offset branch
-# (multiplayer lobby, features/multiplayer-lobby.md) both funnel into this.
+# (formerly the multiplayer lobby, now unused) both funnel into this.
 func pose_at_offset(rendered: float, speed: float, accel: float, delta := 0.0) -> void:
 	if car == null or progress == null:
 		return
