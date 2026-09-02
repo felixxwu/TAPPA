@@ -825,7 +825,7 @@ The first two reviews were both code-shaped. This pass looked at the *design* an
 at surfaces neither examined. The first finding is the most consequential in the
 document.
 
-### Linear region unlock has no basis in the data
+### ~~Linear region unlock has no basis in the data~~ — resolved by decision 22
 
 Decision 2 unlocks regions in sequence. But **every region already spans nearly
 the whole difficulty range** — measured from the authored `difficulty` field:
@@ -851,13 +851,13 @@ difficulty band per region and restrict each region's pool to it; scale
 favour of something the data supports. It cannot be left as "regions unlock in
 order" with pools that contradict it.
 
-### ~~There is no endgame~~ — ACCEPTED, deferred (decision 21)
+### ~~There is no endgame~~ — ACCEPTED, deferred (decision 37)
 
 Six regions of 8 stages is 48 stages, and then the spec stops. Today TAPPA ends
 on `RallyLibrary.all_specials_completed` → credits. RR never ends, but RR also
 has no region progression to exhaust.
 
-**Decided: shipping with no endgame is fine for now.** Clearing the last region
+**Decided (decision 37): shipping with no endgame is fine for now.** Clearing the last region
 simply leaves every region unlocked and repeatable (decision 12), which is a
 coherent, if open, terminal state — the player keeps running regions for money.
 Two consequences to keep in view rather than solve now:
@@ -869,7 +869,7 @@ Two consequences to keep in view rather than solve now:
   region, not just the `regions_cleared` unlock ledger — the ledger already
   supplies that, so nothing needs designing ahead of time.
 
-### The run has one decision, repeated eight times
+### ~~The run has one decision, repeated eight times~~ — accepted by decision 23
 
 Roguelike texture comes from decision density. Here the player picks a region
 (linear — not a choice), picks a car (whichever is fastest — not really a
@@ -878,7 +878,7 @@ RR is the same, but RR is a small game; a pivot that justifies deleting the map,
 the rival field, the parts model and the 3D hub should probably end up *more*
 interesting than the thing it is copying, not equally thin.
 
-### Collectables and a fixed timer pull against each other
+### ~~Collectables and a fixed timer pull against each other~~ — resolved by decisions 35/36
 
 Decision 13 adds collectables; decision 11 makes the timer fixed and decision 4
 makes missing it fatal. Detouring for a collectable risks the run — and losing
@@ -888,7 +888,7 @@ tight and hoover them when it is loose, with little interesting middle. If they
 are to be a real decision, the timer needs enough slack that a detour is a live
 gamble, which is in tension with the timer being the only fail state.
 
-### Perks are weakest exactly where the game is thinnest
+### ~~Perks are weakest exactly where the game is thinnest~~ — deferred by decision 26
 
 Perks unlock on lifetime stat thresholds (decision from the RR lift). A new
 player has no stats, so no perks, and only one region — the opening hours are the
@@ -896,7 +896,7 @@ least interesting the game will ever be, and that is where players quit. Worth
 seeding a first perk cheaply, or gating the earliest ones on thresholds a first
 run crosses.
 
-### The hub is a vending machine
+### ~~The hub is a vending machine~~ — partly resolved by decisions 24/25 (tuning and wheels survive; free roam does not)
 
 Between runs the flat shell offers: car shop, boost shop, perks, stats, settings.
 All of it is spending. Today's HQ also has tuning, engine swap, wheel
@@ -969,7 +969,9 @@ They are recorded here rather than silently decided.
   The boards can survive — each drawn authored event still has a stable identity
   — but `TrackCache.BOARD_EPOCH` must be bumped, since the pivot changes stage
   identity and stale entries would otherwise compete with new ones.
-- **Cloud save.** `CloudSync` compares `Save.SCHEMA_VERSION` against the remote
+- ~~**Cloud save.**~~ **Resolved by decision 20: an accepted clean break — old
+  cloud documents are not migrated and a stale device is expected to update.**
+  `CloudSync` compares `Save.SCHEMA_VERSION` against the remote
   document and refuses one newer than it knows. A schema bump plus a wholesale
   profile rewrite is a cross-device event — the old career on one device, the
   pivot on another. The spec discusses local migration and never mentions the
@@ -1044,8 +1046,9 @@ They are recorded here rather than silently decided.
 
 ## Open questions
 
-Everything this spec opened has now been decided except the following. None
-blocks starting stage 1.
+Everything this spec opened has been decided except the following. Items 1–2 are
+design questions; 3–5 are work-scoping questions that stage 2 or stage 9 will
+force. None blocks starting stage 1.
 
 1. **Does the boost-level shop communicate its value?** Levels scale the
    magnitude of in-run boost picks, so their worth is invisible until you are
@@ -1054,3 +1057,23 @@ blocks starting stage 1.
    transactional, clearing a region currently rewards only the next unlock.
    Decision 31 (payout scales with region index) partly covers this by making
    progression pay better, so a bounty may be unnecessary.
+3. **What happens to `restriction`?** The categorical car filter (drive_mode /
+   country / doors / cylinders) is on the deletion list, and decision 22 answers
+   region difficulty with `target_pace` instead — so nothing needs it any more.
+   But deleting it removes the only way a region could ever demand a *class* of
+   car rather than a fast one, which is the one lever that would make the car
+   shop about something other than raw speed. Delete it, or re-point it at
+   regions and keep that option alive?
+4. **What is the testing strategy for the demolition?** Not a question about
+   whether to test — a question about *how much survives*. 49 test files touch
+   `RallyLibrary`, 23 `UpgradeLibrary`, 21 `RallySession`, of 226. Each is
+   delete, rewrite, or leave, and nobody has decided the split. This is the
+   dominant cost of stage 2 and the least specified part of the plan.
+5. **How many `features/` docs actually need rewriting?** The plan names ~16 of
+   76. Many more mention rallies, rivals, stars or the HQ in passing. Someone has
+   to walk the whole folder in stage 9; the size of that pass is unknown.
+
+Two further items are scheduled rather than open, but their *content* is
+undecided: which small-model eval tasks get re-authored and into what (about half
+of the 15 die with the pivot, and two skills run off them), and what replaces the
+three obsolete `todo/` specs. Both sit in stage 9.
