@@ -208,9 +208,32 @@ guesswork.
 ### 2a. Extract what survives
 
 - **`apply_event_config` / `canonical_event_config`** → a new
-  `scripts/stage_config.gd` (`StageConfig`), pure statics, no autoload. Update
-  the five callers: `driving_context.gd`, `track_cache.gd`, `region_library.gd`,
-  `challenge_library.gd`, `benchmark_mode.gd`.
+  `scripts/stage_config.gd` (`StageConfig`), pure statics, no autoload.
+
+  The call-site list this plan first carried — *"the five callers:
+  `driving_context.gd`, `track_cache.gd`, `region_library.gd`,
+  `challenge_library.gd`, `benchmark_mode.gd`"* — **was wrong in both
+  directions** and is corrected here from a verified grep.
+  `region_library.gd` and `challenge_library.gd` contain only COMMENTS, no call;
+  `settings_menu.gd`, `hq.gd` and three `tools/` scripts were missed entirely.
+
+  **Real call sites (6 in `scripts/`, 3 in `tools/`):**
+  `track_cache.gd:113`, `settings_menu.gd:1370`, `driving_context.gd:98` and
+  `:102`, `hq.gd:2096`, `benchmark_mode.gd:196`, `tools/generate_track_cache.gd:18`,
+  `tools/calibrate_benchmark.gd:217`, `tools/probe_track_event.gd:90`.
+  (`hq.gd` is deleted in the hub wave, but must compile until then.)
+
+  **Test call sites (24 across 5 files):** `test_snow_region.gd` (8),
+  `test_rally_session.gd` (9), `test_seedlab.gd` (3), `test_track_cache.gd` (3),
+  `test_challenge_session.gd` (1).
+
+  **Comment-only references (13 more)** in `game_config.gd` (×5),
+  `hq_challenge.gd`, `settings_menu.gd` (×2), `driving_context.gd`,
+  `challenge_session.gd`, `hq.gd`, `benchmark_mode.gd` (×2), `challenge_library.gd`,
+  `track_gen_params.gd`, `region_library.gd` (×2), `test_lap_time_model.gd`,
+  `test_menu_flow.gd`. These name `RallySession.apply_event_config` as the
+  canonical writer and go stale the moment it moves — repoint them in this stage,
+  not stage 9, because they are load-bearing explanation rather than pointers.
 - **`apply_field_repair_to`** → fold into `Save` beside `field_repair`, which it
   already delegates to. It is four lines reading two `GameConfig` fields; it does
   not need a home of its own.
