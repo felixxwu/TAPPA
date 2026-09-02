@@ -3,7 +3,7 @@
 **Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
 *complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
 ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
-(referred to below as **RR**). Decisions 1–21 are settled. **Read the Blockers
+(referred to below as **RR**). Decisions 1–27 are settled. **Read the Blockers
 section before starting stage 2** — it lists errors in the plan that would break
 the demolition if followed as written.
 
@@ -39,8 +39,8 @@ Settled with the user during the brainstorm that produced this file:
     reference car, so a faster car is straightforwardly better.
 12. **A cleared region stays repeatable at full payout.** This is the economy's
     grind valve.
-13. **Stages carry collectables** (RR's coins) as a second star source.
-14. **A failed run keeps 100% of stars** and never costs you the car.
+13. **Stages carry collectables** (RR's coins), boosting the money a stage pays.
+14. **A failed run keeps 100% of the money earned** and never costs you the car.
 15. **The Daily/Weekly/Monthly challenge survives** the pivot.
 16. **Multiplayer is deleted.** ~~Left dormant~~ — revised, and **already done**:
     dormant code cannot survive a destructive pivot with no flag to hide it
@@ -57,7 +57,25 @@ Settled with the user during the brainstorm that produced this file:
     **git is the rollback mechanism** — the old career is one `git revert` away,
     which is cheaper and more reliable than a flag threaded through every
     transition site.
-21. **No endgame, for now.** Clearing the last region leaves every region
+21. **Stars are replaced wholesale by RR-style money.** Not retained and
+    re-sourced as earlier drafts assumed — the star ledger, placement tiers and
+    everything built on them are deleted. Money is earned from stage completion
+    (scaling with stages cleared), a fast-completion bonus proportional to time
+    saved against the target, and coins picked up mid-stage.
+22. **Region difficulty comes from `target_pace` scaled by region index**, not
+    from re-authored per-region difficulty bands. One tunable, no roster
+    re-authoring — the same stage simply demands a faster time later in the
+    order.
+23. **The run ships thin — one decision type, revisited after playing.** No route
+    choice or stage modifiers until the loop is playable and the need is felt.
+24. **Tuning survives, ungated.** All three axes free on every car; the aero-part
+    gate goes with the parts model, and the rear-wing mesh becomes a plain
+    per-car property rather than a parts-derived one.
+25. **Wheel customisation survives; free roam does not.** The hub keeps cosmetic
+    wheel swapping as its one non-shopping activity; Test Drive is retired with
+    the rest of the car park's modes.
+26. **Perk pacing is left as authored and tuned after playing.**
+27. **No endgame, for now.** Clearing the last region leaves every region
     unlocked and repeatable; there is no credits roll, ascension mode or
     difficulty ladder. Accepted deliberately — see the Third pass section for
     the one demolition consequence (the existing credits trigger dies with
@@ -68,21 +86,21 @@ Settled with the user during the brainstorm that produced this file:
 ```
 title
   └─ region select (linear unlock; locked regions shown greyed with their gate)
-       └─ car select (owned cars; buy new ones with stars — RR-style shop)
+       └─ car select (owned cars; buy new ones with money — RR-style shop)
             └─ RUN START (stage 1 of 8)
                  ├─ stage: drive a drawn event against a target time
-                 │    ├─ beat the timer → stage cleared, stars paid out
+                 │    ├─ beat the timer → stage cleared, money paid out
                  │    └─ miss the timer → RUN OVER
                  ├─ between-stage pick: repair, or 1 of N random boosts
                  └─ …repeat to stage 8
                       └─ region cleared → next region unlocked
   └─ (on run end, win or lose) back to the hub:
-       stars, owned cars, perks, boost levels and lifetime stats all persist
+       money, owned cars, perks, boost levels and lifetime stats all persist
 ```
 
 **Soft permadeath, exactly as RR.** A failed run destroys the run: stage
 progress, every temporary boost picked during it, and the car's accrued damage.
-It does **not** touch stars, owned cars, purchased perks, purchased boost levels,
+It does **not** touch money, owned cars, purchased perks, purchased boost levels,
 or lifetime stat counters.
 
 ## The big reuse win: `ChallengeSession`, not `RallySession`
@@ -281,7 +299,7 @@ RR's `PERK_DEFINITIONS` gives 9 perks (coinMagnet, selfHealing, treeHugger,
 driftBonus, nitrous, rubberBody, trailBlazer, luckyCoins, crowdPleaser), each
 with a `price`, a `description`, and an `unlock: {stat, threshold}` gate keyed to
 a lifetime counter in `GLOBAL_STAT_DEFINITIONS`. Crossing a threshold makes a
-perk *purchasable*; buying it is a separate star cost; at most
+perk *purchasable*; buying it is a separate money cost; at most
 `PERK_MAX_EQUIPPED = 3` are equipped at once.
 
 For TAPPA this needs three new pieces: a `PerkLibrary` (authored content module,
@@ -298,7 +316,7 @@ costs a specific amount, or unlocks at a specific threshold.
 
 New, and load-bearing for perks. RR tracks counters like `totalCoinsCollected`,
 `totalDamageTaken`, `totalMoneySpent`. TAPPA's natural equivalents: total stages
-cleared, total runs started/failed, total damage taken, total stars earned/spent,
+cleared, total runs started/failed, total damage taken, total money earned/spent,
 total distance, best region depth. These live on the profile, only ever grow, and
 survive run failure. Follow RR's single-registry pattern (its `CLAUDE.md` calls
 this out explicitly: one registry with `satisfies`, type derived via
@@ -327,11 +345,11 @@ place left — between runs the car resets anyway. Recommend retiring it.
 
 Today TAPPA has **no car shop at all**: cars are won outright at prize rallies
 (`RallyLibrary.prize_car_id`, `features/prize-rallies.md`,
-`RewardSystem.draw_car`), and stars only buy repairs and parts. RR is the
+`RewardSystem.draw_car`), and the old star currency only bought repairs and parts. RR is the
 opposite — a flat currency shop (`CAR_LIST`, each `CarDefinition` with a fixed
 `cost`, purchase recorded in persisted `boughtCars`).
 
-Following RR, as decided and re-confirmed: `CarLibrary.CARS` gains a star `cost`
+Following RR, as decided and re-confirmed: `CarLibrary.CARS` gains a money `cost`
 per car, the car select screen offers a Buy action for unowned cars, and
 ownership persists in the existing `profile["cars"]` structure. This retires
 prize rallies and `RewardSystem.draw_car` along with the rallies that advertised
@@ -341,7 +359,7 @@ Worth keeping in view as a design loss: prize rallies were a more interesting
 acquisition hook than a price list, and with car acquisition now purely
 transactional, **clearing a region rewards only the next region's unlock**. If
 region clears end up feeling unrewarding in play, the cheapest fix is a one-off
-star bounty for a first clear rather than reintroducing reveal-gating.
+money bounty for a first clear rather than reintroducing reveal-gating.
 
 ### The UI — dropping the diegetic HQ
 
@@ -383,7 +401,7 @@ The screen list, each a `MenuPage` wired with `MenuNav.attach`:
 
 **The run summary** (decision 19) is one screen for both outcomes — cleared all 8
 stages, or ended on a missed timer — showing stages cleared, time margin per
-stage, stars earned and boosts taken. One screen rather than a podium-plus-defeat
+stage, money earned and boosts taken. One screen rather than a podium-plus-defeat
 pair, because a run that ends by missing a clock has no placement to celebrate
 and the same information is worth showing either way. `podium.tscn` and
 `scripts/podium.gd` retire with it.
@@ -453,40 +471,52 @@ nobody exercises.
 
 ### Economy
 
-Stars survive as the single persistent currency, and the ledger already works the
-way this pivot needs: `stars_earned` / `stars_spent` on the profile, spendable
-figure via `Save.stars_available()`, never reset. RR likewise keeps `money` across
-death and has no run-scoped second currency.
+**Stars are deleted outright and replaced by money** (decision 21). Earlier drafts
+of this spec kept the star ledger and merely re-sourced it; that is no longer the
+plan. The whole star surface goes: `stars_earned` / `stars_spent`,
+`Save.stars_available()` / `award_stars` / `spend_stars` / `record_podium_rally`,
+`RallyLibrary.stars_for_placement` and the `STARS_FOR_WIN` / `STARS_FOR_PODIUM` /
+`STARS_FOR_FINISH` / `MAX_STARS_PER_RALLY` tiers, `rally_trophy.gd`,
+`features/star-economy.md`, `todo/star-economy.md` and
+`todo/star-gated-special-events.md`.
 
-A failed run keeps **100% of stars** and never costs the player a car
-(decisions 14 and 15's RR-faithful reading): the run's stage progress and its
-temporary boosts are the only casualties. Combined with decision 12 — a cleared
-region stays **repeatable at full payout** — the player can always grind a
-region they've beaten to afford the next car, so the economy has no dead end.
+This is a **simplification of the demolition**, not extra work: the ledger was
+one of the few career structures the plan tried to carry across, and carrying it
+meant keeping a placement-shaped crediting path alive with no placements left to
+credit. Deleting it removes that seam entirely.
 
-What changes is the **source**. Today stars come from rally placement
-(`RallyLibrary.stars_for_placement` — 3/2/1 by podium position), which dies with
-the rival field. Replacing it, per RR:
+**Money**, per RR, is a single persistent currency, never reset by a failed run
+(decision 14), with no run-scoped second currency. Three sources:
 
-1. **Per-stage payout** that grows with stages completed
-   (`LEVEL_WINNINGS_BASE * LEVEL_WINNINGS_MULTIPLIER^tracksCompleted`), so
+1. **Per-stage payout** growing with stages cleared (RR's
+   `LEVEL_WINNINGS_BASE * LEVEL_WINNINGS_MULTIPLIER^tracksCompleted`), so
    surviving deep into a run is where the money is.
-2. **Fast-completion bonus** proportional to time saved against the target.
-3. **Collectables** picked up mid-stage (decision 13).
+2. **Fast-completion bonus** proportional to time saved against the target — the
+   reason to drive well rather than merely clear the timer.
+3. **Coins** picked up mid-stage, boosting what the stage pays.
+
+Sinks: cars, boost levels, perks, the engine-swap unlock (decision 17) and
+cosmetic wheels (decision 25). Five sinks against three sources, versus today's
+one source and two sinks.
+
+**One knock-on to re-point:** `ChallengeSession.try_grant_completion_reward`
+currently pays out through `RallyLibrary.stars_for_placement`. The challenge
+survives (decision 15), so its reward must be re-pointed at money in the same
+change that deletes the star tiers.
 
 **Collectables are genuinely new work** — there is no pickup or trigger-volume
 system in the codebase today. It needs a prop mesh, placement along the generated
-track, a pickup trigger, a HUD counter, audio, and a rule for what happens to
-uncollected ones on a failed stage. The nearest existing patterns to model
-placement on are the scatter fields (`bush_field.gd`, `billboard_field.gd`,
-`TreeMeshField`) and the trackside props in `rally_flag.gd`. Because they compete
-with the clock for the player's attention, collectables also interact with
-decision 4 — detouring for one can cost the run — which is a *good* tension, but
-placement needs to be authored with that in mind rather than scattered blindly.
+track, a pickup trigger, a HUD counter and audio. The nearest existing patterns
+to model placement on are the scatter fields (`bush_field.gd`,
+`billboard_field.gd`, `TreeMeshField`) and the trackside props in
+`rally_flag.gd`.
 
-Sinks, all star-priced: cars, boost levels, perks, and the engine-swap unlock
-(decision 17). Four sinks against three sources is a far healthier economy than
-TAPPA has today, where stars only buy repairs and parts.
+**Coin placement is still open.** Because money now comes mostly from finishing
+fast, coins are a bonus on top rather than the main source — which softens, but
+does not remove, the tension with decision 4: a detour that costs the run still
+costs every remaining stage's payout. Placement (on the racing line as a reward
+for a good line, versus off it as a real gamble) is the open question, and is
+listed as such below.
 
 ### Save schema
 
@@ -764,7 +794,7 @@ has no region progression to exhaust.
 
 **Decided: shipping with no endgame is fine for now.** Clearing the last region
 simply leaves every region unlocked and repeatable (decision 12), which is a
-coherent, if open, terminal state — the player keeps running regions for stars.
+coherent, if open, terminal state — the player keeps running regions for money.
 Two consequences to keep in view rather than solve now:
 
 - The **credits** currently fire from `RallyLibrary.all_specials_completed`,
@@ -915,9 +945,8 @@ They are recorded here rather than silently decided.
   three-car starter picker exist today. RR instead grants `INITIAL_MONEY` and
   sends you to the shop. The spec never says which the pivot uses, and it is the
   first thirty seconds of the game.
-- **`Save.record_podium_rally`** is the placement-shaped star-crediting entry
-  point. Placement dies, but this function is not named among the deletions or
-  rewrites.
+- ~~**`Save.record_podium_rally`**~~ — resolved by decision 21: it dies with the
+  whole star ledger, not merely with placement.
 
 ### Process gaps
 
@@ -949,10 +978,11 @@ block starting stage 1.
    `greece_coast` up rather than fold it, but a pool of exactly 8 makes every run
    in that region identical. A rule (say 16+, two runs' worth with no repeats)
    sets the authoring target for `greece_coast` and probably `home_coast` too.
-2. **Do collectables persist within a run?** If you collect 20 on stage 3 and
-   then fail stage 4, are those stars banked or lost with the run? Banking them
-   fits decision 14 (a failed run keeps its stars); losing them makes late-run
-   collecting tenser.
+2. **Where are coins placed, and do they bank per stage?** On the racing line
+   (a reward for a good line) or off it (a real gamble against the clock) — and
+   if you collect on stage 3 then fail stage 4, is that money already banked?
+   Decision 14 says a failed run keeps its money, which argues for banking at
+   stage clear.
 3. **Does a first region clear pay a bounty?** With acquisition purely
    transactional, clearing a region currently rewards only the next unlock — see
    the note under Car acquisition.
