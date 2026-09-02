@@ -3,7 +3,7 @@
 **Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
 *complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
 ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
-(referred to below as **RR**). Decisions 1–35 are settled. **Read the Blockers
+(referred to below as **RR**). Decisions 1–37 are settled. **Read the Blockers
 section before starting stage 2** — it lists errors in the plan that would break
 the demolition if followed as written.
 
@@ -34,7 +34,8 @@ Settled with the user during the brainstorm that produced this file:
 9. **The diegetic 3D HQ is dropped for a simple flat UI.** The hub stops being a
    3D space the camera flies through and becomes ordinary menu screens.
 10. **`greece_coast` gets more authored rallies** rather than being folded or
-    topped up procedurally — every region must carry a real 8-stage pool.
+    topped up procedurally — every region carries a real pool of its own.
+    (Pool size later fixed at 16 by decision 32.)
 11. **The stage target time is FIXED, not car-relative** — computed from a
     reference car, so a faster car is straightforwardly better.
 12. **A cleared region stays repeatable at full payout.** This is the economy's
@@ -92,15 +93,26 @@ Settled with the user during the brainstorm that produced this file:
     early region is strictly worse per unit time than progressing. This is what
     stops "farm region 1 forever" without taking the grind valve away.
 32. **Minimum stage pool: 16 events per region** — two runs with no repeats.
-    Only `greece_coast` (3) and `home_coast` (12) need authoring up; `home` (36),
-    `greece` (24), `snow` (18) and `taiga` (15) are at or near it already.
+    `home` (36), `greece` (24) and `snow` (18) already pass; `taiga` (15) is one
+    event short; `home_coast` (12) and `greece_coast` (3) need real authoring.
+    So this is a content pass across three regions, not a `greece_coast` one-off.
+    Supersedes decision 10's "8-stage pool" wording.
 33. **A doomed run is driven out.** No retire option and no unwinnable-run
     warning: missing the timer ends the run anyway, so the worst case is one
     stage of known-lost driving.
 34. **The old `_migrate_step` chain (schemas 1–5) is deleted** along with the
     legacy backfill keys. No migration is written for the pivot, so a pre-pivot
     profile resets whatever its version.
-35. **No endgame, for now.** Clearing the last region leaves every region
+35. **Coins are placed OFF the racing line**, as a real gamble against the clock
+    rather than a reward for a good line. They must be **signposted far enough
+    ahead to commit or decline** — an unseen coin on a procedurally-drawn stage
+    is a memory test, not a decision. The existing pacenote strip
+    (`hud_pacenotes_enabled`, `features/hud.md`) is the natural place to flag one.
+36. **Coin money banks at stage clear**, not at run end. This follows from
+    decision 14 (a failed run keeps its money) rather than being a separate
+    choice: with off-line placement the detour already risks the run, and losing
+    the coins too would punish the same gamble twice.
+37. **No endgame, for now.** Clearing the last region leaves every region
     unlocked and repeatable; there is no credits roll, ascension mode or
     difficulty ladder. Accepted deliberately — see the Third pass section for
     the one demolition consequence (the existing credits trigger dies with
@@ -551,12 +563,20 @@ to model placement on are the scatter fields (`bush_field.gd`,
 `billboard_field.gd`, `TreeMeshField`) and the trackside props in
 `rally_flag.gd`.
 
-**Coin placement is still open.** Because money now comes mostly from finishing
-fast, coins are a bonus on top rather than the main source — which softens, but
-does not remove, the tension with decision 4: a detour that costs the run still
-costs every remaining stage's payout. Placement (on the racing line as a reward
-for a good line, versus off it as a real gamble) is the open question, and is
-listed as such below.
+**Coins sit off the racing line** (decision 36), so taking one is a real gamble:
+money comes mostly from finishing fast, and a detour that costs the run costs
+every remaining stage's payout. Two things follow that the implementation has to
+respect:
+
+- **Signposting is not optional.** Stages are drawn from a pool the player may
+  never have driven, so a coin they cannot see coming is not a decision. Flag it
+  on the pacenote strip, place it in clear sight, or both.
+- **Late stages will price coins out, by design.** `target_pace` tightens with
+  both stage index and region index (decisions 11 and 22), so a detour that is
+  affordable on stage 2 of region 1 may be untakeable on stage 8 of region 5.
+  That is a reasonable emergent curve — the gamble gets steeper as the run gets
+  deeper — but it does mean late-run coins are close to decorative unless
+  placement gets easier as the clock gets harder.
 
 ### Save schema
 
@@ -694,9 +714,10 @@ returns with `RunSession` in stage 3, since it shares the pieces being torn out.
 5. **In-run boosts + repair pick** between stages, wiped on run end.
 6. **Meta shop**: boost levels, then car purchasing, then the engine-swap unlock.
 7. **Lifetime stats, then perks** (perks depend on stats).
-8. **Collectables** (decision 13) — prop, placement, pickup trigger, HUD counter,
-   audio. Deliberately last of the features: it is the only wholly new runtime
-   system in the pivot, and the economy can be tuned without it.
+8. **Collectables** (decisions 13, 35, 36) — prop, off-line placement, pacenote
+   signposting, pickup trigger, HUD counter, audio, and banking at stage clear.
+   Deliberately last of the features: it is the only wholly new runtime system in
+   the pivot, and the economy can be tuned without it.
 9. **Polish and docs.** Flesh out the flat shell beyond stage 3's spine,
    `features/` rewritten, the obsolete `todo/` specs retired
    (`star-economy.md`, `menus.md`, `star-gated-special-events.md`,
@@ -1026,16 +1047,10 @@ They are recorded here rather than silently decided.
 Everything this spec opened has now been decided except the following. None
 blocks starting stage 1.
 
-1. **Where are coins placed?** On the racing line (a reward for a good line) or
-   off it (a real gamble against the clock) — and are they banked at stage clear
-   or only at run end? Decision 14 (a failed run keeps its money) argues for
-   banking per stage. Money now comes mostly from finishing fast, so coins are a
-   bonus rather than the main source, which softens the tension with decision 4
-   without removing it.
-2. **Does the boost-level shop communicate its value?** Levels scale the
+1. **Does the boost-level shop communicate its value?** Levels scale the
    magnitude of in-run boost picks, so their worth is invisible until you are
    mid-run. A presentation question, not a mechanical one.
-3. **Does a first region clear pay a money bounty?** With acquisition purely
+2. **Does a first region clear pay a money bounty?** With acquisition purely
    transactional, clearing a region currently rewards only the next unlock.
    Decision 31 (payout scales with region index) partly covers this by making
    progression pay better, so a bounty may be unnecessary.
