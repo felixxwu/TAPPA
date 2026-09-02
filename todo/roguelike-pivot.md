@@ -1,14 +1,17 @@
 # Roguelike pivot — replacing the career loop
 
-**Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
-*complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
-ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
-(referred to below as **RR**). Decisions 1–45 are settled. **Read the Blockers
-section before starting stage 2** — it lists errors in the plan that would break
-the demolition if followed as written.
+**Status: AGREED, demolition not started.** A *complete* pivot of TAPPA's
+gameplay loop, from the Gran-Turismo-shaped career it ships today to a run-based
+roguelike modelled on `felixxwu/roguelike-rally` (**RR** below). All 45 decisions
+are settled and there are no open questions; what remains is execution.
 
-Landed so far: the multiplayer lobby is deleted (decision 16). Nothing else in
-this document has been implemented.
+**How to read this:** *Decisions* is the settled record — the why. *System-by-
+system* is the design. *What gets deleted* and *Staging* are the work. **Read
+*Hazards* before starting stage 2** — it lists things that will break the
+demolition or silently change behaviour if not handled.
+
+Landed so far: the multiplayer lobby is deleted (decision 16), unverified by any
+test run (see Hazards → Unverified). Nothing else here is implemented.
 
 Sibling design docs: `gameplay.md` is the CURRENT north star and **contradicts
 this document on almost every point** — if this pivot is agreed, rewriting
@@ -136,9 +139,9 @@ Settled with the user during the brainstorm that produced this file:
     `star-economy.md`, `menus.md`, `star-gated-special-events.md`.
 45. **No endgame, for now.** Clearing the last region leaves every region
     unlocked and repeatable; there is no credits roll, ascension mode or
-    difficulty ladder. Accepted deliberately — see the Third pass section for
-    the one demolition consequence (the existing credits trigger dies with
-    specials and must be removed, not left dangling).
+    difficulty ladder. Accepted deliberately — one demolition consequence, in
+    Hazards: the credits trigger dies with specials and must be removed, not left
+    dangling on a predicate that can never be true.
 
 ## The new loop, end to end
 
@@ -214,9 +217,10 @@ explicitly **not** a gate (`features/regions.md` says so in as many words); this
 pivot makes it the *only* gate. Two things to add:
 
 - an authored **`order` field** on `REGIONS`, since linear unlock needs a
-  sequence. Not the array order — see Blockers: `REGIONS` explicitly forbids an
-  ordering dependency, and `override_for_test()` lets tests pass arbitrary
-  arrays;
+  sequence. **Not** the array order: `REGIONS`'s own header says "ORDER CARRIES
+  NO MEANING … do NOT re-introduce any ordering dependency", and
+  `override_for_test()` lets tests pass arbitrary arrays. That comment and
+  `features/regions.md` are rewritten in the same change;
 - `profile["regions_cleared"]` — an array of region ids — as the unlock ledger.
   A region is playable if it is first in order, or its predecessor is in that
   array.
@@ -632,449 +636,181 @@ difficulty counters (`AiDifficulty.KEY_STEPS` / `KEY_WIN_STREAK` /
 
 ## What gets deleted
 
-Sized honestly, because this is the bulk of the work and most of the risk:
+The demolition list. Stage 2 executes this; it is kept here rather than inline so
+the stage stays readable.
 
-- **Rival field and everything serving it** — `RallyLibrary.generate_opponent_field`,
+**Retained first — extract before deleting** (see Hazards):
+`RallySession.apply_event_config` / `canonical_event_config` /
+`apply_field_repair_to`, `RallyLibrary.build_standings` (empty-field form), and
+`UpgradeLibrary.EFFECTS` / `_cfg_set` / `apply`. These have live non-career
+callers and must move to their new home before the surrounding code goes.
+
+**Deleted:**
+
+- **The rival field and everything serving it** — `RallyLibrary.generate_opponent_field`,
   `_eligible_combos`, `_draw_distinct_combos`, `_residual_pace_trim`, `swap_weight`,
-  `rating_match_weight`, `placement`, `is_top3`, `build_standings`, `event_wreck`,
-  `RIVAL_NAMES`, the `PACE_*` band consts, `scripts/rival_pace.gd`, the rival ghost
-  (`features/rival-ghost.md`), opponent wrecks (`features/opponent-wrecks.md`), and
+  `rating_match_weight`, `placement`, `is_top3`, `event_wreck`, `RIVAL_NAMES`, the
+  `PACE_*` consts, `scripts/rival_pace.gd`, the rival ghost, opponent wrecks, and
   adaptive difficulty (`scripts/ai_difficulty.gd`).
+- **The star economy** (decision 21) — `stars_earned` / `stars_spent`,
+  `Save.stars_available` / `award_stars` / `spend_stars` / `record_podium_rally`,
+  `stars_for_placement` and the `STARS_FOR_*` tiers, `rally_trophy.gd`.
 - **The overworld map** — `hq_map_table.gd`, `hq_table.gd`, `rally_detail.gd`, the
-  reveal geometry listed above, `textures/map_world.jpg`, and the map-pin half of
-  `hq.gd` (`_refresh_map_pins`, `_make_pin`).
+  reveal geometry (`rally_revealed`, `lit_sources`, `reveal_link_pairs`,
+  `suggest_map_pos`, …), `map_fog.gd`, `textures/map_world.jpg`.
 - **The diegetic 3D hub** (decision 9) — `hq.tscn`, the bulk of `hq.gd` (3563
-  lines: the `View` station enum, `go_to`, the `Area3D` picking, `_unhandled_input`'s
-  spatial branches), `hq_environment.gd`, `hq_tuning_lift.gd`,
-  `hq_present_reveal.gd`, `scripts/map_table.gd`, the parked-car lineup and lift
-  car props, the `LoadingScreen` cover in `_ready`, and every `GameConfig.hq_*`
-  camera pose. `hq_carpark.gd`'s `CarparkMode` collapses to a flat car list.
-- **`WorldPanel`** — `scripts/world_panel.gd`, `scripts/world_panel_host.gd`,
-  `features/world-panel.md`, and the `world_space_menus` config flag.
-- **The overworld hub** — `overworld.tscn`, `scripts/overworld_region.gd`,
-  `GameConfig.overworld_enabled`, `Scenes.hub_path()`'s branch,
-  `features/overworld.md`, `features/overworld-frame-loop.md`, and
-  `todo/overworld-hq.md`.
-- **The persistent parts model** — most of `UpgradeLibrary` (1182 lines) and the
-  `Save` methods listed under Upgrades.
+  lines), `hq_environment.gd`, `hq_tuning_lift.gd`, `hq_present_reveal.gd`,
+  `scripts/map_table.gd`, every `GameConfig.hq_*` camera pose, the `LoadingScreen`
+  cover in `_ready`.
+- **`WorldPanel`** — `world_panel.gd`, `world_panel_host.gd`, the
+  `world_space_menus` flag.
+- **The overworld hub** — `overworld.tscn`, `overworld_region.gd`,
+  `overworld_picker.gd`, `GameConfig.overworld_enabled`, `Scenes.hub_path()`'s
+  branch.
+- **The persistent parts model** — the `UpgradeLibrary` catalogue, `SLOTS`,
+  install/buy paths, `Save.install_upgrade` / `set_upgrade_enabled` / `buy_part`,
+  `auto_build_plan`, `upgrade_options.gd`, `upgrades_grid.gd`.
 - **Prize rallies and reward draws** — `RewardSystem.draw_car`, `prize_car_id`,
   `prize_part_id`, `prize_capability_id`, `has_prize`.
-- **`RallySession`** as a whole, once its stage-loop responsibilities move to the
-  generalised run session.
-- **The authored `RALLIES` table's non-event fields** — `restriction`, `map_pos`,
-  `special`, `difficulty` (unless reused as the draw's ordering proxy),
-  `prize_*`, `unlocked_by_rally`. The `events` arrays are the part that survives.
-- **The podium** — `podium.tscn`, `scripts/podium.gd`, replaced by the run
-  summary (decision 19).
+- **`RallySession`**, once its retained statics have moved.
+- **Global stage leaderboards** (decision 30) — `cloud/leaderboard.gd`,
+  `global_standings.gd`, the `stage_times` Firestore rules, `RallyLibrary.stage_key`,
+  `TrackCache.BOARD_EPOCH`.
+- **Free roam** (decision 25) — `_prepare_free_roam`, the `free_roam_*` GameConfig
+  block, `RallySession`'s handoff state.
+- **The `RALLIES` table's non-event fields** — `restriction` (decision 39),
+  `map_pos`, `special`, `prize_*`, `unlocked_by_rally`. The `events` arrays survive
+  and become the stage pool.
+- **`podium.tscn`** and `scripts/podium.gd` (decision 19), **`standings.tscn`**
+  (decision 30).
+- **The migration chain** (decision 34) — `_migrate_step`, `_MIGRATABLE_FROM`,
+  `KEY_LEGACY_PART_UNLOCKS`, `KEY_LEGACY_ENGINE_SWAP`, `MOVED_PART_UNLOCKS`.
+- **Three obsolete `todo/` specs** (decision 44) — `star-economy.md`, `menus.md`,
+  `star-gated-special-events.md`.
+- **Already done:** the multiplayer lobby (decision 16).
 
-**Explicitly NOT deleted**, despite sitting next to all of the above:
+**Explicitly retained:** the Daily/Weekly/Monthly challenge (15), engine swap
+re-gated as a purchase (17), tuning ungated (24), wheel customisation (25), the
+challenge's own cloud leaderboard and `firestore_board.gd`, and the start line
+(29 — its MENU survives, its rival REVEAL phase does not).
 
-- **The Daily/Weekly/Monthly challenge** (decision 15) — kept, and is the base
-  the new run session is generalised from.
-- **Multiplayer** (decision 16) — `hq_multiplayer.gd`, `LobbySession`,
-  `features/multiplayer-lobby.md` stay in the tree, unreachable from the new
-  shell. **But "dormant" is in tension with decision 20**: demolition deletes
-  `RallySession`, so if the lobby references it, dormant code will not compile
-  and there is no flag to hide behind. The destructive-policy answer is to delete
-  multiplayer in stage 2 rather than carry a broken mode — but that is a whole
-  feature, so stage 2 must check the coupling and get a call on it rather than
-  discovering it mid-demolition.
-- **Engine swap** (decision 17) — survives, re-gated as a shop purchase.
+## Staging
 
-Corresponding `features/` docs must be deleted or rewritten in the same change,
-per `CLAUDE.md` — at minimum `map-exploration.md`, `regions.md`,
-`prize-rallies.md`, `star-economy.md`, `rally-session.md`, `upgrade-catalogue.md`,
-`damage.md`, `rally-roster.md`, `menus.md`, `hq.md`, `menu-navigation.md` (loses
-a whole regime), `world-panel.md`, `overworld.md`, `overworld-frame-loop.md`,
-`rival-ghost.md`, `opponent-wrecks.md`, and `features/README.md`'s index.
-
-## Suggested staging
-
-**Demolish first, then rebuild on clean ground** (decision 20). The earlier draft
-of this plan deleted last, so the game stayed playable throughout; that ordering
-is abandoned deliberately. Deleting first means every later stage writes new code
-against a small codebase instead of threading around a career that is on its way
-out, and it removes the temptation to keep a compatibility shim "just for now".
+**Demolish first, then rebuild on clean ground** (decision 20). Deleting first
+means every later stage writes against a small codebase instead of threading
+around a career on its way out.
 
 **The cost, stated plainly: the game does not run between stages 2 and 3.** That
-window is the whole risk of this approach, so stage 3 is deliberately scoped to
-the minimum that gets back to playable — not the minimum that is fun. The
-Daily/Weekly/Monthly challenge (decision 15) also breaks during demolition and
-returns with `RunSession` in stage 3, since it shares the pieces being torn out.
+window is the whole risk, so stage 3 is scoped to the minimum that gets back to
+playable — not the minimum that is fun. The challenge mode also breaks during
+demolition and returns with `RunSession` in stage 3.
 
-1. **Decide and document.** Settle the remaining questions, rewrite `gameplay.md`
-   to the roguelike vision, and fold `todo/challenge-career-reuse-drift.md` into
-   this plan. No code.
-2. **Demolition.** One destructive change, on its own commit so the revert is
-   clean. **Extract before deleting**: `RallySession.apply_event_config` /
-   `canonical_event_config` / `apply_field_repair_to` and `RallyLibrary`'s
-   empty-field `build_standings` have live non-career callers (see Blockers), so
-   they move to their new home first. `UpgradeLibrary.EFFECTS` / `_cfg_set` /
-   `apply` are likewise **retained**, not deleted. Then delete: the rival field
-   and everything serving it, the map and its reveal geometry, the parts
-   catalogue and install/buy paths, prize rallies, the rest of `RallySession`,
-   `podium.tscn`, `standings.tscn`, `hq.tscn` and its collaborators,
-   `overworld.tscn`, `WorldPanel`, adaptive difficulty, `map_fog.gd` and
-   `rally_trophy.gd`. Update `project.godot` (main scene, autoloads) and
-   `Scenes.is_hub_scene` so music still resolves. Reset the save schema with **no
-   migration**. Resolve the coupled systems the reviews found — tuning's unlock
-   gate and the aero wing meshes it drives, the start-line menu, `stage_key`,
-   wheel customisation, the starter picker. Also delete: the star ledger and
-   everything on it (decision 21), the global stage leaderboards with `stage_key`
-   and `BOARD_EPOCH` (decision 30), free roam (decision 25), and the
-   `_migrate_step` chain with its legacy backfill keys (decision 34), the
-   `restriction` field (decision 39), and the three obsolete `todo/` specs
-   (decision 44). Triage the tests as you go (decision 38): delete those whose
-   subject is deleted, fix the incidental `RallyLibrary` couplings in the
-   physics/car/terrain tests that survive. The tree
-   compiles at the end of this stage; the game does not run.
+1. **Decide and document.** Rewrite `gameplay.md` to the roguelike vision; fold
+   `todo/challenge-career-reuse-drift.md` into this plan. No code.
+2. **Demolition.** One commit, so the revert is clean. Execute *What gets
+   deleted* above — extractions first. Update `project.godot` (main scene,
+   autoloads) and `Scenes.is_hub_scene`. Reset the save schema, no migration.
+   Resolve the coupled systems named in *Hazards*. Triage tests per decision 38.
+   **The tree compiles; the game does not run.**
 3. **Back to playable — the minimum spine.** `RunSession` generalised from
-   `ChallengeSession`, a bare flat shell (title → car select → run), the region
-   stage draw, the fixed reference-car timer, run-over on a missed target, and a
-   plain run-summary screen. Ugly is fine; running is the bar. The challenge mode
-   comes back here too, as the second caller of `RunSession`.
+   `ChallengeSession`; a bare flat shell (title → car select → run); the region
+   stage draw; the fixed reference-car timer; run-over on a missed target; a plain
+   run-summary screen. The challenge returns as `RunSession`'s second caller.
 4. **Region select + linear unlock**, replacing the map table. Includes the
    **stage-pool authoring pass** to decision 32's 16-event floor — `greece_coast`
-   (3), `home_coast` (12) and `taiga` (15) all need events written, and those
-   regions are not playable without them.
+   (3), `home_coast` (12) and `taiga` (15) need events written before those
+   regions are playable.
 5. **In-run boosts + repair pick** between stages, wiped on run end.
-6. **Meta shop**: boost levels, then car purchasing, then the engine-swap unlock.
+6. **Meta shop** — boost levels, car purchasing, the engine-swap unlock.
 7. **Lifetime stats, then perks** (perks depend on stats).
-8. **Collectables** (decisions 13, 35, 36) — prop, off-line placement, pacenote
-   signposting, pickup trigger, HUD counter, audio, and banking at stage clear.
-   Deliberately last of the features: it is the only wholly new runtime system in
-   the pivot, and the economy can be tuned without it.
-9. **Polish and docs.** Flesh out the flat shell beyond stage 3's spine; a
-   **full audit of all 76 `features/` docs** (decision 40), each fixed or
-   deleted; the dead small-model eval tasks **re-authored** against the new
-   systems (decision 41); one full `./run_tests.sh` against the ~5 minute
-   budget.
+8. **Collectables** (13, 35, 36) — prop, off-line placement, pacenote
+   signposting, pickup trigger, HUD counter, audio, banking at stage clear. Last
+   of the features: the only wholly new runtime system in the pivot.
+9. **Polish and docs.** Flesh out the shell beyond stage 3's spine; a **full audit
+   of all 76 `features/` docs** (40); the dead small-model eval tasks
+   **re-authored** (41); one full `./run_tests.sh` against the ~5 minute budget.
 
-Dependencies, per `CLAUDE.md`'s todo rules: everything depends on 2; 4–8 all
-render on the shell from 3; 7's perks depend on 7's stats; 8 depends on 3 (it
-needs a generated stage to place props along). Nothing depends on a save
-migration, because there isn't one.
+Dependencies: everything depends on 2; 4–8 render on the shell from 3; 7's perks
+depend on 7's stats; 8 depends on 3. Nothing depends on a save migration, because
+there isn't one.
 
-## Blockers found in a second review
+## Hazards
 
-These are errors in the plan above, not open questions. Verified against the code.
+Verified against the code. These are things that will break the demolition or
+silently change behaviour if not handled — not open questions.
 
-### `RallySession` cannot be deleted wholesale — the challenge depends on it
+### `RallySession` cannot be deleted wholesale
 
-The spec calls `RallySession` "over half rival plumbing" and deletes it in stage
-2, with the challenge (decision 15) returning in stage 3. But `ChallengeSession`
-calls into it **right now**, for the exact mechanisms this pivot plans to keep:
+`ChallengeSession` — which survives — calls into it right now:
 
 | Call site | What it needs |
 | --- | --- |
-| `challenge_session.gd` → `RallySession.apply_field_repair_to()` | the `_pending_repair` between-stage repair the boost-pick screen reuses |
-| `challenge_session.gd` → `RallySession.clear_free_roam_handoff()` | the free-roam supersede rule |
-| `challenge_session.gd` → `RallyLibrary.build_standings()` (twice) | its own standings, with an empty rival array |
-| `challenge_session.gd` → `RallyLibrary.stars_for_placement()` | its completion reward |
+| `RallySession.apply_field_repair_to()` | the `_pending_repair` between-stage repair the boost-pick screen reuses |
+| `RallySession.clear_free_roam_handoff()` | the free-roam supersede rule (moot once free roam goes, but the call must be removed) |
+| `RallyLibrary.build_standings()` ×2 | its own standings, with an empty rival array |
+| `RallyLibrary.stars_for_placement()` | its completion reward — re-point at money (decision 21) |
 
 `RallySession` is also a **`project.godot` autoload**, and its statics
-`apply_event_config()` / `canonical_event_config()` are the shared stage-config
-spine — consumed by `driving_context.gd`, `track_cache.gd`, `region_library.gd`,
-`challenge_library.gd` and `benchmark_mode.gd`. Roughly 34 scripts reference it.
-
-So stage 2's claim that "the tree compiles at the end of this stage" is **not
-achievable as written**. The fix: stage 2 must *extract* the surviving statics
-(event config, field repair, the empty-field standings builder) into their new
-home before deleting the rest, and the spec must name that home. This is real
-work the plan currently hides inside the word "delete".
+`apply_event_config` / `canonical_event_config` are the shared stage-config spine
+used by `driving_context.gd`, `track_cache.gd`, `region_library.gd`,
+`challenge_library.gd` and `benchmark_mode.gd`. ~34 scripts reference it. Extract
+the survivors to their new home (name it during stage 2) *before* deleting.
 
 ### Deleting `hq.tscn` leaves the project unbootable
 
-`project.godot` line 15: `run/main_scene="res://hq.tscn"`. Nothing in the 9
-stages edits `project.godot`, yet stage 2 deletes that scene and the autoload
-block needs changing too (`RallySession` out, any `RunSession` in). Separately,
-`MusicLibrary.is_hq_scene` → `Scenes.is_hub_scene` picks hub-vs-rally music off
-the hub scene path, so the flat shell must be registered there or every hub
-screen plays a rally song.
+`project.godot` line 15 is `run/main_scene="res://hq.tscn"`. The autoload block
+also changes (`RallySession` out, `RunSession` in). And `MusicLibrary.is_hq_scene`
+→ `Scenes.is_hub_scene` picks hub-vs-rally music off the hub scene path, so the
+flat shell must register there or every hub screen plays a rally song.
 
-### Deleting the parts model silently changes every car's bodywork
+### Deleting the parts model changes every car's bodywork
 
 `car.gd` calls `_set_aero_visible(_active_body(),
-UpgradeLibrary.aero_tuning_unlocked(owned))` — the **visible rear wing** is
-gated on a fitted aero part. The earlier gap entry caught that deleting parts
-breaks *tuning's* unlock; it missed that it also un-decides every car's
-silhouette, with `tests/headless/test_aero_visibility.gd` and
-`test_aero_visible_traversal.gd` pinning the behaviour.
+UpgradeLibrary.aero_tuning_unlocked(owned))` — the **visible rear wing** is gated
+on a fitted aero part. Decision 24 makes tuning ungated, so the wing must become a
+plain per-car property. `tests/headless/test_aero_visibility.gd` and
+`test_aero_visible_traversal.gd` pin the current behaviour.
 
-### `UpgradeLibrary.EFFECTS` must be explicitly retained, not deleted
+### The test blast radius is the dominant cost of stage 2
 
-Stage 5's in-run boosts route through `UpgradeLibrary.EFFECTS` / `_cfg_set` /
-`apply()` — the reuse section says so — while the deletion list says "most of
-`UpgradeLibrary` (1182 lines)" goes in stage 2. Those directly contradict. The
-effects funnel is the part that survives; the catalogue, slots and install/buy
-paths are what go.
+Of 226 test files: **49** touch `RallyLibrary`, **23** `UpgradeLibrary`, **21**
+`RallySession`. Decision 38 sets the policy (delete dead, fix incidental), but the
+volume is real. Stage 3's new `RunSession` and shell need new scene tests —
+reach for `SceneTestHelpers.minimal_world()` and the cheap patterns in
+`features/testing.md` rather than full world generation.
 
-### The testing blast radius is understated about fivefold
+### Systems that will be found mid-demolition if not planned for
 
-The spec says 7 test files touch `RallyLibrary` and 10 touch `UpgradeLibrary`.
-Actual counts, of 226 test files: **49** touch `RallyLibrary`, **23**
-`UpgradeLibrary`, **21** `RallySession`. That moves "no testing strategy" from a
-process gap to **the dominant cost of stage 2**, and it undercuts the claim that
-deletions will comfortably pull the suite under its ~5 minute budget — stage 3's
-new `RunSession` and flat shell need new scene tests, and nothing in the plan
-reserves a budget check or points at `features/testing.md`'s cheap patterns.
-
-### More systems still unaccounted for
-
-- **Wheel customisation** (`features/wheel-customization.md`, `wheel_style.gd`,
-  `CarparkMode.WHEELS` and its own camera framing) — the spec collapses
-  `CarparkMode` "to a flat car list" and never mentions it.
-- **The starter picker lives in `overworld_picker.gd`** (`starter_cars`,
-  `_starter_ids`, writes `profile["starter_picked"]`) — a file deleted with the
-  overworld. So the starter-car loose end does not merely lack a decision, it
-  loses its implementation.
-- **`map_fog.gd`** reads `RallyLibrary.lit_sources(profile)` — reveal geometry
-  being deleted, but the file is not in the deletion list.
-- **`rally_trophy.gd`** is built on `MAX_STARS_PER_RALLY` / `STARS_FOR_WIN` /
-  `STARS_FOR_PODIUM` / `STARS_FOR_FINISH`, all placement-derived.
 - **`upgrade_options.gd`** (`SLOT_ENGINE` / `SLOT_TUNE` pseudo-slots,
   `grid_slots()`) is the shared data source for the garage grid *and* the
-  start-line Upgrades page — and is the only UI seam the surviving engine swap
-  (decision 17) is rendered through.
+  start-line page — and the only UI seam the surviving engine swap renders
+  through. Deleting it needs a replacement seam for engine swap.
+- **The start line** (`start_line.gd`, `features/start-line.md`) runs
+  MENU → FLY_IN → REVEAL → FADE. REVEAL exists to show the top-three rivals and
+  dies with them — but a rival-free path **already ships**: a challenge stage runs
+  the identical MENU and skips to the fade via the empty-leaders branch. The
+  structure survives; only the menu contents change (decision 29).
+- **The credits trigger** fires from `RallyLibrary.all_specials_completed`, which
+  dies with specials. Remove it rather than leaving it on a predicate that can
+  never be true (decision 37).
 - **`registry.gd`, `crosswind.gd`, `weather_library.gd`, `stage_manager.gd`,
-  `settings_menu.gd`, `global_standings.gd`** all reference `RallyLibrary` or
-  `RallySession` and are in-stage runtime, not hub code.
-- **`TrackCache`**: the spec bumps `BOARD_EPOCH` but not `CACHE_VERSION`.
-  `data/track_cache.json` is a committed lockfile keyed to authored events, so
-  scaling `turn_count` on later stages makes every drawn stage miss the cache and
-  fall back to live DFS search — an uncosted per-stage load-time hit.
+  `settings_menu.gd`** all reference `RallyLibrary` or `RallySession` and are
+  in-stage runtime, not hub code.
+- **`TrackCache`**: `data/track_cache.json` is a committed lockfile keyed to
+  authored events. If the stage draw scales `turn_count`, every drawn stage misses
+  the cache and falls back to live DFS search — bump `CACHE_VERSION` and re-bake,
+  or keep `turn_count` as authored.
+- **`GhostCar.pose_at_offset`** is already dead production code (its only caller
+  was the deleted lobby) and goes with the rival ghost.
 
-## Third pass — design holes and untouched surfaces
+### Unverified
 
-The first two reviews were both code-shaped. This pass looked at the *design* and
-at surfaces neither examined. The first finding is the most consequential in the
-document.
-
-### ~~Linear region unlock has no basis in the data~~ — resolved by decision 22
-
-Decision 2 unlocks regions in sequence. But **every region already spans nearly
-the whole difficulty range** — measured from the authored `difficulty` field:
-
-| region | authored difficulties |
-| --- | --- |
-| `home` | 1,1,1,2,2,2,2,2,3,3,3,4,4,4 |
-| `home_coast` | 1,3,3,4 |
-| `greece` | 1,1,3,3,3,4,4,4 |
-| `taiga` | 2,2,2,2,3 |
-| `snow` | 1,2,2,3,4,4 |
-| `greece_coast` | 4 |
-
-So there is no sense in which region 2 is "after" region 1. A run draws 8 stages
-from a region's pool and orders them by difficulty, which means **every region
-produces roughly the same curve**, and linear unlock gates *scenery*, not
-*challenge*. Combined with decision 12 (cleared regions stay repeatable at full
-payout), a player has no gameplay reason to ever leave the first region.
-
-This needs a real answer, and there are only a few shapes it can take: author a
-difficulty band per region and restrict each region's pool to it; scale
-`target_pace` by region index on top of stage index; or drop linear unlock in
-favour of something the data supports. It cannot be left as "regions unlock in
-order" with pools that contradict it.
-
-### ~~There is no endgame~~ — ACCEPTED, deferred (decision 37)
-
-Six regions of 8 stages is 48 stages, and then the spec stops. Today TAPPA ends
-on `RallyLibrary.all_specials_completed` → credits. RR never ends, but RR also
-has no region progression to exhaust.
-
-**Decided (decision 37): shipping with no endgame is fine for now.** Clearing the last region
-simply leaves every region unlocked and repeatable (decision 12), which is a
-coherent, if open, terminal state — the player keeps running regions for money.
-Two consequences to keep in view rather than solve now:
-
-- The **credits** currently fire from `RallyLibrary.all_specials_completed`,
-  which dies with specials. Demolition must remove that trigger rather than
-  leave it dangling on a predicate that can no longer be true.
-- Whatever endgame eventually arrives will want a "region cleared" record per
-  region, not just the `regions_cleared` unlock ledger — the ledger already
-  supplies that, so nothing needs designing ahead of time.
-
-### ~~The run has one decision, repeated eight times~~ — accepted by decision 23
-
-Roguelike texture comes from decision density. Here the player picks a region
-(linear — not a choice), picks a car (whichever is fastest — not really a
-choice), then takes 1-of-N boosts eight times. That is a single decision type.
-RR is the same, but RR is a small game; a pivot that justifies deleting the map,
-the rival field, the parts model and the 3D hub should probably end up *more*
-interesting than the thing it is copying, not equally thin.
-
-### ~~Collectables and a fixed timer pull against each other~~ — resolved by decisions 35/36
-
-Decision 13 adds collectables; decision 11 makes the timer fixed and decision 4
-makes missing it fatal. Detouring for a collectable risks the run — and losing
-the run costs every remaining stage's payout, which will usually dwarf what the
-collectable was worth. So the rational play is to ignore them when the timer is
-tight and hoover them when it is loose, with little interesting middle. If they
-are to be a real decision, the timer needs enough slack that a detour is a live
-gamble, which is in tension with the timer being the only fail state.
-
-### ~~Perks are weakest exactly where the game is thinnest~~ — deferred by decision 26
-
-Perks unlock on lifetime stat thresholds (decision from the RR lift). A new
-player has no stats, so no perks, and only one region — the opening hours are the
-least interesting the game will ever be, and that is where players quit. Worth
-seeding a first perk cheaply, or gating the earliest ones on thresholds a first
-run crosses.
-
-### ~~The hub is a vending machine~~ — partly resolved by decisions 24/25 (tuning and wheels survive; free roam does not)
-
-Between runs the flat shell offers: car shop, boost shop, perks, stats, settings.
-All of it is spending. Today's HQ also has tuning, engine swap, wheel
-customisation and free roam. The pivot keeps engine swap (decision 17), leaves
-tuning undecided, and never mentions **free roam** or **wheel customisation**
-surviving at all. If none of them come along, there is nothing to *do* between
-runs except shop.
-
-### Surfaces neither earlier review touched
-
-- **The small-model eval suite is largely invalidated.**
-  `evals/small-model/tasks.md` holds 15 tasks; roughly half die with the pivot —
-  T001 (add a tyre upgrade to the catalogue), T005 (rallies finished on the
-  profile), T008 (star bonus for a damage-free rally), T009 (wet-weather tyre
-  compound), T014 (stars on a rally pin on the map), T015 (which rallies are won,
-  on the overworld map), plus T003 (adding a region) whose shape changes. T011 is
-  already retired. Both `/small-model-readiness` and
-  `/small-model-readiness-drill` run off this suite, so the pivot silently breaks
-  two skills unless the tasks are re-authored against the new systems.
-- **Three `todo/` specs describe systems being deleted** and are unaccounted for:
-  `todo/star-economy.md`, `todo/menus.md`, and `todo/star-gated-special-events.md`
-  (the spec handles `overworld-hq.md` and `challenge-career-reuse-drift.md`).
-
-## Gaps found in review
-
-A pass back over the codebase turned up systems this spec does not account for.
-They are recorded here rather than silently decided.
-
-### Systems the spec forgot entirely
-
-- ~~**Free roam / "Test Drive".**~~ **Resolved by decision 25: retired.** Reached from the car park
-  (`CarparkMode.FREEROAM`), generated by `hq.gd._prepare_free_roam` from its own
-  `GameConfig` block (`free_roam_straightness`, `free_roam_forestiness`,
-  `free_roam_tarmac_fraction`, `free_roam_water_level_min_m/max_m`,
-  `free_roam_relief_min`), with handoff state on `RallySession`
-  (`free_roam_instance_id`, `free_roam_model_id`, `free_roam_region_id`,
-  `clear_free_roam_handoff`) that `ChallengeSession` explicitly clears in two
-  places and `benchmark_mode.gd` resets. Its entry point is being flattened away
-  and nothing in this spec says whether it survives. It also has **no
-  `features/` doc**, which per `CLAUDE.md` is its own gap to close.
-- ~~**Tuning.**~~ **Resolved by decision 24: survives, ungated.** `TuningLibrary` (`AXES := ["grip_balance", "brake_bias",
-  "aero_balance"]`, `apply`, `axis_unlocked`) and `scripts/tuning_panel.gd` are
-  free, reversible per-car config nudges, reachable from the start-line menu.
-  The spec deletes the 3D tuning *lift* but never decides the fate of tuning
-  itself. There is a **hard coupling**: `axis_unlocked` /
-  `UpgradeLibrary.aero_tuning_unlocked` gate an axis on a *fitted aero part*, so
-  deleting the parts model breaks tuning's unlock gate. Retire tuning, make all
-  axes free, or re-gate on boost levels — but it cannot be left as-is.
-- **The start line** (menu contents resolved by decision 29: Tune Car only).
-  `scripts/start_line.gd` (`features/start-line.md`) runs
-  MENU → FLY_IN → REVEAL → FADE before every stage. REVEAL exists to show the
-  top-three rivals and dies with them. The good news is that a rival-free path
-  **already exists and ships**: a challenge stage runs the identical MENU and
-  skips straight to the fade via the empty-leaders branch, so the pivot inherits
-  a working start line. The problem is that the MENU hosts **Upgrades and Tune
-  Car** — both systems this pivot replaces — so its contents need redesigning
-  even though its structure survives.
-- ~~**`standings.tscn`.**~~ **Resolved by decisions 30/31: it retires; the
-  between-stage screen is the boost pick alone.** Every event currently pauses on it, and `world.gd`
-  instantiates it as a panel. Its page 2 is `GlobalStandings`, the world
-  leaderboard view. The spec introduces a between-stage pick screen but never
-  says standings retires, nor what happens to its leaderboard page.
-- ~~**Global leaderboards.**~~ **Resolved by decision 30: the stage boards are
-  deleted, which also kills `stage_key` and `BOARD_EPOCH`.**
-  `features/global-leaderboards.md`,
-  `scripts/cloud/leaderboard.gd`, and a world-readable
-  `stage_times/{stage}/times/{uid}` collection in `firestore.rules`, keyed by
-  **`RallyLibrary.stage_key(rally, event_index)`**. Flattening rallies into a
-  stage pool changes what a "stage" *is*, so the key derivation needs a decision.
-  The boards can survive — each drawn authored event still has a stable identity
-  — but `TrackCache.BOARD_EPOCH` must be bumped, since the pivot changes stage
-  identity and stale entries would otherwise compete with new ones.
-- ~~**Cloud save.**~~ **Resolved by decision 20: an accepted clean break — old
-  cloud documents are not migrated and a stale device is expected to update.**
-  `CloudSync` compares `Save.SCHEMA_VERSION` against the remote
-  document and refuses one newer than it knows. A schema bump plus a wholesale
-  profile rewrite is a cross-device event — the old career on one device, the
-  pivot on another. The spec discusses local migration and never mentions the
-  cloud path.
-
-### Contradictions inside the spec
-
-- ~~**The run-state slot collides with the surviving challenge.**~~ **Resolved
-  by decision 27: one slot, one run at a time.** The Save schema
-  section says run state "can reuse the `challenge_run` shape", while decision 15
-  keeps the challenge itself. But `Save.is_challenge_locked` reads a *single*
-  `profile["challenge_run"]`, and `set_challenge_run` replaces "whatever was
-  there". A paused challenge run plus an active region run means two persisted
-  runs and two locked cars. This needs two slots or a discriminated union — the
-  casual "reuse the shape" hides a real decision.
-- ~~**Pool size is an economy dependency.**~~ **Resolved by decision 32: a
-  16-event floor per region.** Decision 12
-  makes regions infinitely repeatable and repeatability is now the *primary*
-  grind valve, while decision 10 keeps pools finite and authored. Open question 1
-  frames minimum pool size as variety; it is actually load-bearing for the
-  economy, because grinding a region is how a player affords the next car.
-- ~~**A fixed target plus a strictly-better car plus repeatable regions has a
-  solved optimum.**~~ **Resolved by decision 31: payout scales with region
-  index.** Once a player owns a fast car, an early region becomes
-  trivial and farmable. RR's escalating per-stage payout rewards depth, but
-  nothing here stops the efficient strategy being "farm region 1 forever". The
-  spec should decide whether payout scales with region difficulty, or whether
-  early regions taper.
-- ~~**"Damage fails indirectly" is stronger than it sounds under a fixed
-  target.**~~ **Resolved by decision 33: a doomed run is driven out.**
-  `DamageModel` floors HP at 0 and keeps the car drivable, so with a *fixed*
-  target a heavily damaged car can become mathematically unable to hit the time
-  — turning "indirect failure" into a known-doomed run the player must still
-  drive out. The repair-vs-boost pick is the intended tension, but the spec
-  should say whether a run can become unwinnable and, if so, whether the player
-  is told and allowed to retire.
-
-### Loose ends
-
-- **`restriction` vs. region gating.** The spec deletes the `restriction` field
-  (drive_mode / country / doors / cylinders), yet decision 11's note proposes
-  "region-gated car tiers" as the balance lever if fast cars flatten early
-  stages. That is approximately the restriction mechanism, unspecified. Either
-  keep `restriction` re-pointed at regions, or drop the note.
-- ~~**The starter car.**~~ **Resolved by decision 28: start with money, buy from
-  the shop.** `profile["starter_picked"]` / `starter_model_id` and the
-  three-car starter picker exist today. RR instead grants `INITIAL_MONEY` and
-  sends you to the shop. The spec never says which the pivot uses, and it is the
-  first thirty seconds of the game.
-- ~~**`Save.record_podium_rally`**~~ — resolved by decision 21: it dies with the
-  whole star ledger, not merely with placement.
-
-### Process gaps
-
-- **No testing strategy.** This pivot deletes or rewrites a large share of the
-  suite — 7 test files touch `RallyLibrary`, 10 touch `UpgradeLibrary`, plus
-  `test_hq_map_table`, `test_hq_tuning_lift`, `test_hq_present_reveal`,
-  `test_menu_flow`, `test_menu_nav`, `test_overworld_garage`,
-  `test_cloud_leaderboard` and more. **See the Blockers section for the real
-  counts** — 49 / 23 / 21 files of 226, not the 7 / 10 claimed earlier. Stage 9
-  says "one full run" but nothing about which tests are deleted versus
-  rewritten.
-- ~~**No rollback position for the gameplay pivot.**~~ **Resolved by decision
-  20, in the opposite direction to what this gap proposed:** there is
-  deliberately no in-code rollback. Maintaining two paths everywhere costs more
-  than the safety buys, and git is the rollback. The consequence is accepted
-  rather than mitigated — if the roguelike loop disappoints, the recovery is
-  reverting the demolition commit, which is why stage 2 is kept as a single
-  clean commit.
-- **`features/` is bigger than the rewrite list.** There are 76 docs; the spec
-  names ~16. Many more reference rallies, rivals, or the HQ in passing.
+The multiplayer deletion and its follow-up cleanup were made in an environment
+with **no Godot binary** — no compile check, no test run. Verify locally with
+`./run_tests.sh` before starting stage 1.
 
 ## Open questions
 
-**None.** Every question this spec raised across three review passes has been
-decided (1–45 above). What remains is execution, and the two things to read
-before starting are the **Blockers** section — errors in the plan that would
-break the demolition if followed as written — and stage 2's revised scope.
-
-If something new surfaces during implementation, add it here rather than
-deciding it silently.
+**None.** Every question raised across three review passes is settled in
+decisions 1–45. If something new surfaces during implementation, add it here
+rather than deciding it silently.
