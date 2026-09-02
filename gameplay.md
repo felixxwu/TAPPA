@@ -1,375 +1,376 @@
-# Gameplay Design — "Gran Turismo, but with rally stages"
+# Gameplay Design — "Eight stages, one clock"
 
 > **This is a design / vision document, not an implementation spec.** It captures
-> the intended game and the decisions made while brainstorming it. Concrete
-> implementation is broken out into `todo/` specs (grounded in real code, per
-> `CLAUDE.md`); this file is the north star those specs ladder up to. Where it
-> names real systems it's to show feasibility, not to prescribe code.
+> the intended game and *why* it is shaped this way. Where it names real systems
+> it's to show feasibility, not to prescribe code.
+>
+> The settled decision record and the system-by-system design live in
+> **`todo/roguelike-pivot.md`**; the order of work lives in
+> **`todo/roguelike-pivot-plan.md`**. **If this file and that spec ever disagree,
+> the spec wins** — it is authoritative, this file is the north star it ladders
+> up to.
 
 ## Tagline & fantasy
 
-**Gran Turismo, but with rally stages.** You build and tune a garage of cars,
-enter seeded rallies around a world map, and chase a clean combined time across
-three events — but every car you field (except the starter) is a real,
-depreciating asset that wears down as you race it. The pull is the
-collection-and-tuning loop of GT crossed with the **attrition of a roguelike**: do you
-push a hurt car for the win, or back off and protect the stage times you have left?
-Crashing never takes the car or the run away — it takes your **speed**, for the rest of
-the rally, plus the stars to put it right.
+**A rally roguelike: eight stages, one clock, no second chances.**
 
-## Core loop
+Pick a region, pick a car, and drive **eight point-to-point stages** back to back.
+Every stage carries a target time. Beat it and you bank money and take a boost;
+**miss it and the run ends on the spot**, however many stages you had left. There
+is no rival field, no championship table, no placing — there is the clock, the car
+you brought, and how much of that car is still working by stage six.
 
-1. Pick a rally on the world map you have an **eligible car** for.
-2. Choose **which** of your eligible cars to field (risk vs. reward).
-3. Watch the **pre-launch scene** (car ahead launching, car behind waiting),
-   then run the **3 events**; combined time sets your rally result.
-4. See the **leaderboard** after each event vs. AI opponents.
-5. Finish the rally → earn **one random upgrade** (slot-machine reveal); **win the
-   rally** (top 3) → a **random car** (slot-machine reveal). Damage you took
-   **carries over**.
-6. **Tune & upgrade** between rallies. Repeat, completing rallies (finish
-   **top 3**); stars earned along the way unlock the **special-event ladder**.
+The pull is the roguelike ratchet. A **run** is disposable and always will be. The
+**meta** is not: money, owned cars, purchased perks, purchased boost levels and
+lifetime stat counters all survive a failed run untouched. You lose runs, and you
+get stronger anyway. Every failure ends with a number to spend and a stat that
+ticked up, so the next attempt starts from a better place than the last one.
 
-## Locked decisions (from design brainstorm)
+This is a deliberate replacement for the Gran-Turismo-shaped career the game used
+to describe: a garage, a world map, a rival field and a star ladder. That loop
+asked the player to plan a season; this one asks them to survive an evening. It's
+a smaller game with a much tighter feedback loop, and the systems it keeps —
+driving, damage, tuning, cars — are the ones that were always the point.
 
-| Topic | Decision |
-|---|---|
-| Economy | **No currency.** Progression is purely cars + upgrades won. |
-| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits have been **removed entirely**, and repair happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`) — a partial restore. A car sitting at 0 HP benefits from it most. See `features/damage.md`. |
-| Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
-| Damage floor | **SUPERSEDED — there is no wreck.** Originally HP→0 wrecked the car and DNF'd the rally. As implemented, damage can never end a run: HP bottoms out at **0** and the car **keeps driving**, under a misfire capped at `damage_misfire_level_max` and a rev cap that falls to `damage_rev_limit_min_fraction` of redline. So a crash costs **pace, not the result and not the asset** — you limp the remaining stages on a stumbling, rev-limited engine and pay stars to fix it. Because nothing can be destroyed and nothing can strand you, **no anti-soft-lock floor is needed**, and the map's reachability guarantee holds trivially. See `features/damage.md`. |
-| Rally complete | **Finish top 3** in a rally (combined time). |
-| Special unlock | **Star total** (3 per rally won, 2 for 2nd, 1 for 3rd). The world map is a **finite, curated set**. |
-| Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
-| Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
-| Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable so 100% stays reachable — belt-and-braces now that no car can be lost in the first place. Farmed rewards stay under the **same progress-tier ceiling**. |
-| Upgrades and damage | **Nothing is ever lost.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment) and never refunded, but damage cannot take the car away from them: a car at 0 HP keeps its parts, keeps its garage slot and races again the moment you point it at a start line. |
+## The run, end to end
 
----
+```
+title
+  └─ hub (Run · Cars · Shop · Perks · Stats · Settings)
+       └─ region select (linear unlock; locked regions shown, with their gate)
+            └─ car select (owned cars; buy new ones with money)
+                 └─ RUN START — stage 1 of 8
+                      ├─ drive a drawn stage against its target time
+                      │    ├─ beat it → stage cleared, money banked
+                      │    └─ miss it → RUN OVER
+                      ├─ between-stage pick: repair, or 1 of N random boosts
+                      └─ …repeat to stage 8
+                           └─ region cleared → next region unlocked
+  └─ (run over, win or lose) → run summary → back to the hub
+```
 
-## Cars & the garage
+The run summary is **one screen for both outcomes** — cleared all eight, or
+stopped by the clock. A run that ends on a missed timer has no placement to
+celebrate, and the same information (stages cleared, margin per stage, money
+earned, boosts taken) is worth reading either way.
 
-- **Starters:** the player picks **1 of 3** starter cars at the beginning. Each is
-  low-performance and, historically, **damage-immune** — the permanent safety net so the
-  player could never be left with nothing drivable. Damage no longer removes any car, so
-  that safety net is redundant and the starter is just a dependable first car.
-  The **two unchosen starters can be obtained later** as reward cars. *(Which 3
-  cars are starters is a content decision: the current `CarLibrary` is six
-  performance cars, so designate the lowest-power existing car(s) and/or add a
-  couple of humble starter chassis — a `CarLibrary` roster call, not a schema
-  one. The **immortal** flag is per owned instance, set only on the chosen
-  starter — `features/save-persistence.md`.)*
-- **Car metadata for restrictions.** Every car needs tags so rallies can filter
-  it: **engine size/type**, **drivetrain layout** (FWD/RWD/AWD — the sim already
-  models drive modes via `Drivetrain.drive_mode`), **country**, **car type**
-  (e.g. hatch/coupe/saloon), and **power-to-weight** (derivable from engine
-  torque + `mass`). Home for this: extend **`CarLibrary`** (per-car overrides
-  already live there) with these tags. *(New: metadata schema → its own todo.)*
-- **Owned vs. catalog.** The garage holds owned cars + their per-car damage and
-  installed upgrades. The car reveal doubles as the player's window into what
-  cars *exist* in the game.
+### Soft permadeath — what a failed run actually costs
 
-<!-- Implementation: `features/damage.md`. -->
+A failed run destroys **the run and only the run**: stage progress, every
+temporary boost picked up during it, and the damage the car accumulated. It does
+**not** touch money, owned cars, perks, boost levels or lifetime stats. You keep
+**100% of the money you earned before you died**, and you never lose the car.
+
+That combination is the whole design in one line. The stakes are real *within* an
+evening — a stage-7 timer miss throws away the deep-run payouts you were driving
+toward — while being zero *across* evenings. Nothing can brick a profile, nothing
+needs an anti-soft-lock guarantee, and there is no state a bad run can leave you
+in that a fresh run can't climb out of.
+
+## The clock — the one fail state
+
+Each stage's target time is **fixed, not car-relative**: it is computed from the
+stage's own geometry against a single reference car, then scaled by a pace
+tunable. Everyone's target for a given stage is the same target.
+
+This is the decision that makes the car shop matter. If the target scaled to the
+car you brought, buying a faster car would just raise the bar and buy you nothing
+— the classic rubber-band trap. With a fixed target, **a faster car is
+straightforwardly better**, and money spent on cars converts directly into
+survivable stages. Two consequences we accept on purpose:
+
+- **The cheapest car sets the difficulty floor.** Stage 1 has to be clearable in
+  the worst car a player can own, or a bad purchase makes the game unwinnable.
+  The pace tunable is calibrated against the bottom of the roster, not the middle.
+- **A late-tier car will trivialise early stages.** That is the reward for owning
+  it, not a bug. If it ever flattens out too far, the lever is gating car tiers by
+  region — never reintroducing a car-relative target.
+
+Difficulty escalates two ways off one tunable: the target tightens **within** a
+run (stage 8 is harder than stage 1) and **across** regions (region 5 demands a
+faster time on the same stage than region 1 does). No per-region difficulty
+authoring, one number to tune.
+
+**A doomed run is driven out.** There's no retire button and no "you can't make
+this up" warning. Missing the timer ends the run anyway, so the worst case is one
+stage of knowingly-lost driving — and dressing that up in a confirmation dialog
+would cost more than it saves.
+
+## Regions & the stage draw
+
+Regions replace the world map entirely. **There is no map** — no pins, no fog, no
+reveal geometry, no travel. Regions are a **list you pick from**, and they unlock
+**linearly**: only the home region is open at the start, and clearing a region's
+eighth stage unlocks the next one. A locked region is shown, greyed, with the gate
+that opens it — locking hides availability, never information.
+
+**A cleared region stays repeatable at full payout.** That's the grind valve: if
+you're short of money for the car you want, you can go back and earn it. What
+stops "farm region 1 forever" is that **the payout scales with region index** —
+the same index that tightens the clock also raises the reward, so grinding an
+early region is strictly worse per hour than pushing forward. The valve is open;
+it just isn't the fast road.
+
+**Stages are drawn from an authored pool, not generated fresh.** Every region owns
+a pool of hand-authored point-to-point events (seed, turn count, surface mix,
+weather), and a run draws its eight from that region's pool, seeded so a run is
+reproducible for debugging. The pool floor is **16 events per region — two full
+runs with no repeats** — so a run feels drawn rather than recited, and back-to-back
+runs in the same region don't replay the same eight stages.
+
+The drawn eight are **ordered by difficulty**, so stage 8 is the hardest of the
+set. Escalation is felt in the road, not just in the number on the clock.
+
+## Cars & the shop
+
+Cars are **bought with money**, from a flat shop. Every car has a price; buying it
+is permanent; the garage is simply the set of cars you own. A new player starts
+with money rather than a hand-picked starter, so **the car shop is the first
+screen that carries a decision** — buy the cheap thing now, or bank for something
+that survives deeper.
+
+Cars are shown as a **3D turntable**: the real model, slowly rotating, against a
+plain background. The models are the game's main authored art and a flat UI must
+not hide them.
+
+There are **no eligibility restrictions**. No drivetrain gates, no country classes,
+no power-to-weight bands, no "you don't own a car for this event". Any car can
+enter any region. The clock is the filter — a slow car in a late region simply
+loses — and that is a far more legible gate than a categorical one.
+
+**What this gives up, stated honestly:** cars used to be *won*, at prize rallies,
+with a slot-machine reveal. That was a better acquisition hook than a price list,
+and with acquisition now purely transactional, **clearing a region rewards only
+the next region's unlock**. We're taking that trade for the simplicity, with a
+first-clear money bounty as the cheapest fix if region clears end up feeling flat.
 
 ## Damage model
 
-- Each car has **HP (durability)** — a per-car stat. **Heavier cars tend to have
-  more HP** (more durable); the value is a per-car override in **`CarLibrary`**,
-  loosely keyed to `mass`. HP **only depletes** between events and rallies (no
-  passive regen). Damage is **unified on deceleration**: HP loss is keyed to how much
-  velocity the car sheds in a single instant — a wall, a tree, a cliff face, a
-  nose-first drop, or a brushed bush/crowd all decelerate the car, and that *is* the
-  signal (nothing on the track has bespoke damage logic). It's a **square-law**
-  (kinetic-energy) curve above a braking-proof threshold, so hard braking and clean
-  landings are free, most cars survive 4-5 hits at ~60 km/h, a low-speed nudge barely
-  scratches, and a high-speed crash — or a long tumble down a drop — bites hard.
-- **Effects scale with damage** (i.e. with HP lost, as a fraction of max):
-  - **Wheel alignment** → a steering pull (the car drifts to one side). The sim
-    has no alignment-offset knob today; add one (a constant toe/steer bias fed
-    into the steering in `car.gd`).
-  - **Engine power** → reduced output. Originally sketched as a flat "damage
-    power-multiplier" on torque. As implemented it is two effects off one shared ramp
-    (`DamageModel.damage_ramp`), both of which are *audible* rather than just numerically
-    slower: an intermittent **misfire** that cuts fuel in stumbling bursts (capped, so the
-    engine never dies), and a **rev cap** that walks the usable redline down so every gear
-    runs out early. Neither starts until health drops past
-    `damage_misfire_health_threshold` — a scuffed car runs clean.
-- **0 HP is a floor, not a fail state.** HP bottoms out at **0** and the car keeps
-  driving. There is no wreck, no DNF-by-damage, no "car wrecked" menu and no moment the
-  game takes the wheel off you — a maximally damaged engine is *stumbling and rev-capped,
-  not dead*. Concretely, at 0 HP the misfire tops out at `damage_misfire_level_max` (well
-  under a total cut) and the usable redline bottoms out at
-  `damage_rev_limit_min_fraction`, so every gear runs out early and the car is slower
-  everywhere — you hear it bouncing off a lower limiter. The intent is that a big crash is
-  **felt for the rest of the rally** rather than announced by a screen: you keep playing,
-  just wounded. Nothing removes a car from the garage, and nothing ends a run.
-- **HP carries over** across events and rallies — chip damage from one rally
-  weakens the car in the next unless repaired.
-- **Getting stuck auto-recovers for free.** If a car ends up trapped — pinned,
-  flipped, or dropped into a pit it can't climb out of — it's snapped back onto the
-  road at its last good spot after a few seconds, with no penalty (you've already lost
-  the time). See `features/progress.md`.
-- **Starter immunity** was conceived as the anti-soft-lock floor. Since damage costs
-  neither the car nor the run, there is nothing left to be safe from; the first car is
-  simply a dependable fallback.
-- **In-run feedback.** Because damage is a running tax on your pace, the run shows a **live
-  health gauge** in the in-car HUD (labelled *Health* + a **percentage**, not a raw
-  HP number — "HP" reads as horsepower) with a **low-health warning** and an impact
-  cue, so the player can make the "back off or push?" call in the moment.
-  *(Implementation in `features/damage.md` › HUD; impact/crash audio in
-  `todo/audio.md`.)*
-- **Repair — SUPERSEDED.** Originally designed as a rare **"repair kit"** item,
-  spent at the tuning lift or the car-select screen, that fully restores a car's
-  health. As implemented, repair kits never drop and the lift/car-park repair
-  buttons are hidden; repair instead happens **automatically between events**
-  (`Save.field_repair`, called from `RallySession._enter_event`) — a partial
-  restore (see `field_repair_hp_fraction` / `field_repair_toe_fraction` in
-  `config/game_config.tres`). That between-event repair is also what lifts a car off the
-  0 HP floor for free, so a bad stage never compounds indefinitely; `Save.apply_damage`
-  simply clamps at 0 and never writes a car off.
-- *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
-  power degrade with HP lost are tuning numbers; defer exact values to a damage
-  todo + playtesting. Reuses the existing collision on signs/trees as impact
-  sources.)*
+Damage survives the pivot almost unchanged — it's one of the systems the pivot
+exists to protect. What changes is what it *means*: damage no longer costs stars
+or follows a car across a career. **It costs you the clock**, and it resets when
+the run does.
 
-## World map & rallies
+- Each car has an **HP pool**. HP loss is unified on **deceleration**: a wall, a
+  tree, a cliff face, a nose-first drop, a brushed bush or crowd all shed velocity,
+  and that *is* the signal — nothing on the track has bespoke damage logic. It's a
+  square-law (kinetic-energy) curve above a braking-proof threshold, so hard
+  braking and clean landings are free, a low-speed nudge barely scratches, and a
+  big hit bites hard.
+- **Effects scale with damage**, and they're *audible* rather than merely slower:
+  a **wheel-alignment pull** that drags the car to one side, an intermittent
+  **misfire** that cuts fuel in stumbling bursts, and a **rev cap** that walks the
+  usable redline down so every gear runs out early. None of it starts until health
+  drops past a threshold — a scuffed car runs clean.
+- **0 HP is a floor, not a fail state.** HP bottoms out at zero and the car keeps
+  driving. There is no wreck, no DNF-by-damage, no "car destroyed" screen and no
+  moment the game takes the wheel away. A maximally damaged engine is stumbling
+  and rev-capped, not dead.
+- **Damage kills you indirectly.** That's the point of keeping the floor: a wrecked
+  car doesn't end the run, it makes you *slow*, and slow misses the timer. The
+  failure is always the clock, and it's always something you can see coming on the
+  split. (The spec also floats a direct time penalty for impacts as a second damage
+  channel — same idea, more immediate.)
+- **HP carries across stages within a run** and is wiped at run end. Chip damage on
+  stage 2 is a debt you carry into stage 7 unless you spend a pick on repair; a new
+  run always starts on a clean car.
+- **Getting stuck auto-recovers for free.** Pinned, flipped or dropped into a pit
+  it can't climb out of, the car is snapped back onto the road at its last good
+  spot after a few seconds, with no penalty — you've already lost the time.
+- **In-run feedback.** The HUD carries a live **Health** gauge (a percentage, not a
+  raw HP number — "HP" reads as horsepower), a low-health warning and an impact
+  cue, so the "back off or push?" call can be made in the moment rather than
+  discovered at the finish.
 
-- The world map offers a **finite, curated set of rallies** (large but countable
-  — "complete them all" must be a reachable goal), each **generated from an RNG
-  seed** (the track generator is already seeded — `track_seed`). Curated = a
-  fixed list of seeds + restrictions, not an endless stream.
-- Each rally is **primarily gated on power-to-weight**: the earliest rallies set a
-  ceiling only (so the low-power starter qualifies and a strong car can't trivially
-  dominate them), and the harder rallies tighten to a **band** (a floor *and* a
-  ceiling). A rally may layer a secondary restriction (drivetrain layout, country,
-  engine size, car type, …) on top of its p/w gate. The player must **own a
-  matching car** to enter. The **difficulty tier is hidden** — the p/w requirement
-  is the visible gate. The starter always keeps at least one banded entry rally plus
-  the **open-class specials**, so it always has somewhere to race.
-- A rally = **3 events**. **Combined time across all 3** sets the final rally
-  time and finishing position. A rally is **completed** by finishing **top 3**.
-- After **each event** the player sees a **leaderboard**: their time vs. the AI
-  field, so they always know how they're doing.
+*(Implementation: `features/damage.md`. Per-car max HP, HP-per-impact and the
+degradation curves are tuning numbers, settled by playtesting.)*
 
-## Events, target times & opponents
+## Between stages: repair or boost
 
-- Each event has a **hidden target time** representing "correct" difficulty.
-  - **Tension:** with a *large number of seeded* rallies, hand-setting a target
-    per event isn't feasible. **Proposed resolution:** target time is an
-    **auto-derived function of the seeded track** (length + corner-difficulty
-    mix), **calibrated by Felix during testing** on a sample of seeds so the
-    formula lands correct difficulty everywhere. A curated few (e.g. the
-    a special) can still get hand-set targets. **Decided.** A dedicated
-    fine-tuning session (run sample seeds, eyeball the derived targets, adjust
-    the formula's difficulty weights) is planned once the formula exists.
-- **Opponents:** each AI gets a random time in **[target, 2 × target]**. **Some
-  opponents DNF** an event, disqualifying them from that rally. Opponent times +
-  who DNFs are **fixed per rally seed** so the leaderboard is stable across
-  re-attempts (you're chasing a fixed field, not a re-rolled one).
-- **Field size: 10–15 opponents** per rally — a full leaderboard, with some DNFs
-  thinning it out.
-- **No retry, damage sticks:** there is no in-place retry. A rally you don't win
-  drops you back to HQ; you can **re-enter it later from the map** (a fresh full
-  attempt), but any damage taken persists and the opponent field is unchanged.
-  Re-attempting therefore routes through HQ — auto-repair happens between events,
-  or swap cars first.
-- **Player DNF: there is none.** No time-cut DNF (a slow run just places badly) and no
-  damage DNF either — running out of HP makes the car slow, not retired. Every rally the
-  player starts, they finish. **Rivals still DNF** (above), and the standings still carry
-  a DNF flag for them.
+Clear a stage and you get **one pick**: a **repair**, or one of a few **randomly
+drawn boosts**. Nothing else happens between stages — no leaderboard, no shop, no
+detour.
 
-<!-- Implementation: `features/reward-system.md` (draw policy). -->
+Making repair *compete* with a boost is what turns damage into a decision. Under
+the old design repair happened automatically and damage was just a tax; here,
+taking the repair costs you the boost you didn't take, and skipping it means
+carrying the misfire into a tighter target. The repair also **shrinks as the run
+goes on**, so late damage is genuinely threatening rather than something you can
+always patch out.
 
-## Progression & rewards
+Boosts are **temporary, run-scoped** multipliers on the car's physics — engine
+force, grip, brakes, weight, shift time, downforce, drag. They stack over the
+course of a run and are **wiped at run end**, which is what makes stage 8 feel
+different from stage 1 in the car as well as on the clock.
 
-- **Parts are bought, not drawn.** There is no random per-event upgrade draw any
-  more: the player spends stars on whichever catalogue part they want, whenever
-  they want, and a few parts are gated behind winning the rally that carries them
-  (`unlocked_by_rally`). Bought parts stay unlocked to apply later from the garage
-  upgrades menu, and applied parts can be enabled/disabled per car there.
-- **Per rally completed (top 3 on combined time):** a **random car** is granted.
-- **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
-  again grants its car reward again** — completion itself is recorded once (it's
-  the star metric), but the **reward repeats** on every top-3 finish.
-  So the car supply is **infinite**: any car can be re-won by re-racing, and the player
-  can grind any rally for spares (never a *necessity* now that cars can't be lost, but it
-  keeps the collection loop open). **The
-  progress-tier ceiling still clamps farmed rewards** (you farm at your current
-  power band, not above it), so grinding builds *breadth*, not a difficulty skip.
-  Parts are no longer drawn at random at all: they are **bought with stars** at
-  any time, and a handful are unlocked by winning the rally that carries them
-  (`unlocked_by_rally`). Between the buyable catalogue and the renewable car
-  reward, the ladder stays reachable — see *Anti-soft-lock*.
-- **Reveal as a slot machine** — spinning reels that settle on the granted car,
-  so the player glimpses the breadth of cars that exist (a discovery hook, not
-  just a grant). Implemented as `UpgradeReveal` behind the car-reveal present box.
-- **Reward balancing (both):** tier = **f(rally difficulty)** (harder rally →
-  better reward) **clamped by a progress ceiling** (early game can't yield a top
-  car even on a lucky win). Progress = **number of rallies completed** — the same
-  count that drives the CAR reward ceiling; the special ladder keys off stars.
-- **Anti-soft-lock (both, + renewable supply):** open-class rallies as the floor
-  **+** reward logic that guarantees every granted car is eligible for **≥1
-  still-incomplete rally** and the player is **never** left with zero enterable
-  rallies. **Crucially, because rewards are farmable** (re-winning a rally
-  re-grants its car), the car supply is *renewable*: even if your only car
-  eligible for a narrow-restriction rally is **beaten up**, you can always re-win a
-  fresh one by re-racing. This closed the one remaining hole — that finite car
-  rewards + permanent car destruction could otherwise make 100% completion (the
-  a special) permanently unreachable.
+## The meta shop: boost levels
 
-<!-- Upgrades implementation: `features/upgrade-catalogue.md`. -->
+Money buys **boost levels** in the hub shop. A level does **not** make your car
+faster directly — it scales the magnitude of *future in-run picks*. Buying a level
+of Engine doesn't add power; it means the engine boosts you draw during runs roll
+bigger.
 
-## Tuning & upgrades
+That indirection is the point: it keeps the run's own upgrade curve intact (you
+still have to draw the boost and choose it over repair) while giving money a sink
+that compounds across runs. Levels are priced exponentially with a cap, and the
+shop **shows the effect range per level** — "engine boosts now roll +8–15%" rather
+than a bare level number — because a level is meaningless without a live car to
+compute it against.
 
-Two distinct systems:
+The **engine swap** survives here as a purchasable unlock rather than a rally
+prize: buy it once, then swap engines between owned cars freely. It's the one
+piece of permanent per-car modification that outlives the pivot.
 
-- **Tuning** — **free, reversible** adjustments made in the garage, per car. Maps
-  directly onto existing `GameConfig` car knobs. *(Implementation: `features/tuning.md`
-  — three single-axis sliders, stored as `OwnedCar.tuning` deltas.)*
-  - **Front/rear grip balance** (understeer ↔ oversteer): `wheel_friction_slip_front`
-    (0.8) vs `wheel_friction_slip_rear` (0.6).
-  - **Brake bias**: not a knob today — `brake_torque` is per-axle/equal; **add a
-    front/rear brake-split** parameter (the one new code knob `features/tuning.md` owns).
-  - **Aero balance** (only if the **aero upgrade** is installed): how much front
-    vs rear downforce — `downforce_front` / `downforce_rear`.
-- **Upgrades** — **unlocked parts** applied to a car (consumed from the unlocked
-  pool on apply, so fitting is a one-time, confirmed commitment; once fitted a
-  part can be enabled/disabled per car but never moved), won as rewards and lost
-  with the car if it is destroyed. Examples:
-  engine/power, aero kit (unlocks aero tuning), suspension. *(The repair kit was
-  originally planned as an upgrade-catalogue item too, but it's been retired —
-  repair is now automatic between events, see the Damage repair row in Locked
-  decisions. Exact upgrade list + how each maps
-  to config knobs → its own todo.)*
+**What retires with this:** the entire car-bound persistent parts model — seven
+slots, a parts catalogue, install-and-consume commitments, parts gated behind
+winning specific rallies. Boosts replace it, and they're better suited to a
+run-based game: a part you fit forever is a decision you make once, while a boost
+you draw under pressure is a decision you make every stage.
 
-- **Appearance** — a third, purely **cosmetic** system: any car's **wheels** can be
-  fitted to any owned car, **free and ungated**, with every car's wheels available
-  from the start regardless of what the player owns. No stat consequence of any kind,
-  and unrelated to the engine-swap economy. Tried on in a solo car-park view where
-  the car sits settled on its suspension (wheels are judged by stance).
-  *(Implementation: `features/wheel-customization.md`.)*
+## Perks & lifetime stats
 
-Per the project's config-first rule, every tuning value and upgrade effect should
-resolve into `GameConfig`/`CarLibrary` values, never hardcoded.
+**Lifetime stats** are counters that only ever grow and never reset: stages
+cleared, runs started and failed, damage taken, money earned and spent, distance
+driven, deepest region reached. They're the visible proof that a failed run still
+moved you forward.
 
-## Presence & atmosphere
+They're also **load-bearing**, because they gate **perks**. A perk is unlocked by
+crossing a lifetime threshold, *bought* separately with money, and only a few can
+be equipped at once. Their effects are the flavour layer the run loop otherwise
+lacks — a wider coin pickup radius, slow self-repair during a stage, money for
+near-misses with trees or crowds, money for drifting, a once-per-stage nitrous
+burst, reduced collision damage, a bigger fast-completion bonus.
 
-The player should never feel alone in the rally:
-- **Pre-countdown scene:** a car **ahead** launching its run and a car **behind**
-  waiting its turn — an animated start-area beat before control is handed over.
-  These are **atmospheric flavour, not the real opponent field** — so they're cheap to
-  stage and don't have to match the leaderboard.
-- **The leader IS a driven car, though.** The field is still *derived times* rather than
-  simulated drivers, but the leading rival's time is now re-solved into an actual driving
-  line and shown on track as a ghost you race — see `features/rival-ghost.md`. So "derived
-  times, not driven cars" describes how the field is GENERATED, not what the player sees:
-  P1's ghost is held to exactly the time the standings will report.
-- **Podium scene:** at the rally's end, an animated **podium** showing who placed.
-- *(These hook into the start/end flow — see `features/stage.md` + `features/start-line.md`; the
-  pre-countdown scene precedes that spec's 3-second countdown.)*
+Two things follow from the unlock-then-buy shape. First, **playing unlocks perks
+and money buys them** — neither alone is enough, so the perk screen always has
+both a "keep playing" goal and a "keep earning" goal on it. Second, because the
+gates are lifetime counters, they reward *breadth of play*: the perk that pays for
+near-misses unlocks by having near-misses, which is a nudge to drive a particular
+way rather than a number to grind.
 
-## The special-event ladder
+The three-equipped cap keeps a build legible. Perks are a loadout, not a list of
+everything you've ever bought.
 
-**SUPERSEDES the original "one final showdown" plan.** That design gated a single
-finale on 100% completion, which couldn't be paced — the map was either finished or
-it wasn't. It shipped instead as a LADDER of **special events** gated on the
-player's running **star total** (a rally is worth 3 stars for a win, 2 for 2nd, 1
-for 3rd), so progress is continuous and rewards both breadth and mastery: going
-back to convert a 2nd into a 1st is real progress. See
-[features/rally-roster.md](features/rally-roster.md) and
-`todo/star-gated-special-events.md`.
+## Collectables
 
-- **Eight specials**, every 8 stars, each with **extra-long events** and
-  **open-class** entry (so the low-power starter can always race one).
-- Each one is a **door into the tech tree** rather than another loot drop: it
-  unlocks a part or a capability into the normal reward pool — the Big Turbo, the
-  Drivetrain Conversion, the Supercharger, engine swapping, then nitrous and its
-  upgrades. The player still has to WIN the part itself at an ordinary rally.
-- The map's HUD shows **progress in stars** (`Stars: N / M`), and a locked
-  special's pin shows `X/24 stars` over what it unlocks — locking hides
-  availability, never information.
-- **Win / credits beat:** completing EVERY special (whichever is last — no
-  designated finale rally).
+Stages carry **coins**: pickups that boost what the stage pays.
 
-## Foundations this implies (cross-cutting)
+They sit **deliberately off the racing line**. A coin on the line would be a
+reward for driving well, which the fast-completion bonus already pays for; a coin
+*off* the line is a **gamble against the clock**, which is the only interesting
+version. Money comes mostly from finishing fast, so a detour that costs you the
+target costs every remaining stage's payout too.
 
-These underpin everything above and likely each become their own todo:
-- **Save / persistence** — owned cars, per-car HP, installed upgrades, inventory,
-  rally completion (which rallies are top-3'd), reward history. Nothing here works
-  without it.
-- **CarLibrary metadata** — the restriction tags (engine/drivetrain/country/
-  type/p-w) **plus per-car max HP**. An additive pass on the existing
-  `CarLibrary`; specced in `features/save-persistence.md` › *Prerequisite*.
-- **Rally roster** — the finite curated list of rallies (seed + restriction);
-  its completion count drives the car reward ceiling; stars drive the ladder.
-  Specced in `features/rally-roster.md`.
-- **Meta-game UI shell** — **diegetic / in-world**: menus are 3D locations (an HQ
-  garage hub with an outdoor car park for the lineup, a tuning lift that also
-  installs upgrades, and a stylised map with 3D pins; a start-line; a podium)
-  with world-anchored floating panels, not a flat menu
-  layer. The in-car HUD already exists. Broken down into locations + reusable
-  rigs in **`todo/menus.md`** (incl. the Title beat, Pause/Settings/Standings
-  overlays, and menu-navigation input).
-- **Audio** — beyond the procedural engine sound, the game needs **impact/crash,
-  countdown, UI and reward/podium sound** + a **bus layout** so volumes are
-  mixable. Specced in **`todo/audio.md`**.
-- **Settings** — a small **options surface** (volume sliders + a quality toggle)
-  persisted to a separate `settings.cfg` (not the progression save). Specced in
-  **`features/menus.md`** + **`features/controls.md`**.
+Two things that gamble requires:
 
-## Relationship to existing todos
+- **Signposting is not optional.** Stages are drawn from a pool the player may
+  never have driven, so a coin they can't see coming isn't a decision — it's a
+  memory test. Coins get flagged far enough ahead to commit or decline (the
+  pacenote strip is the natural place), and placed in clear sight.
+- **Coins bank at stage clear**, not at run end. With off-line placement the
+  detour already risks the run; losing the coins as well would punish the same
+  gamble twice.
 
-- `features/rally-session.md` — the session controller that sequences a rally's 3
-  events and drives the handoffs to HP/standings/rewards/podium/HQ. Sits above the
-  per-stage flow below and is the rally-level consumer of its `stage_completed`
-  hook.
-- `features/stage.md` + `features/start-line.md` — countdown, elapsed timer, stage-complete. The
-  **pre-countdown presence scene** and **podium** extend its start/end flow; the
-  **event timer** is the per-event time that sums into the rally result.
-- `features/progress.md` + `features/corner-cutting.md` — progress %, on-road reset. Drives "event
-  complete" and the off-track recovery during a run.
-- `features/signs.md` — sectors + start/finish + collision. Sign collisions
-  are an **impact source for the damage model**; the 4 sectors can show split
-  times within an event.
+**Late stages will price coins out, by design.** As the target tightens with stage
+and region, a detour that's affordable on stage 2 of region 1 becomes untakeable
+on stage 8 of region 5. The gamble getting steeper as the run gets deeper is a
+good curve — it just means late-run coin placement has to get *easier* as the
+clock gets harder, or they become decorative.
 
-## Open questions / to decide later
+## Tuning & appearance
 
-- **Damage tuning:** per-car max HP, HP-per-impact, and how steeply alignment/
-  power degrade with HP lost — settle via playtesting. *(Mechanism specced in
-  `features/damage.md`; only the numbers are open.)*
-- **Upgrade catalogue:** the full list of upgrade types and each one's config
-  mapping. *(Data model + pipeline specced in `features/upgrade-catalogue.md`; the
-  concrete part list/numbers are open.)*
-- **HP↔mass curve:** how strongly durability tracks weight (a soft guideline, or
-  a fixed formula CarLibrary defaults from?).
-- **Roster size:** roughly how many rallies make up the finite world map (sets
-  how long "complete them all" takes).
-- **Which 3 cars are starters:** a `CarLibrary` content call (the current six are
-  all performance cars) — designate low-power existing cars and/or add humble
-  starter chassis.
-- **Win / credits beat:** what completing every special actually presents (credits +
-  a stats summary is the likely shape) — its own small spec when we get there.
-- **Quality toggle:** which single lever the Settings *quality* option drives
-  (render scale, post-process, or foliage density) — `features/menus.md`.
+- **Tuning** — free, reversible, per-car adjustments made before a stage: front/rear
+  grip balance, brake bias, aero balance. All three axes are **ungated on every
+  car** now that parts are gone; tuning is a skill expression, not a purchase.
+  The start line offers **Tune Car and nothing else** — it's the one adjustment
+  that's per-stage useful.
+- **Appearance** — any car's **wheels** can be fitted to any owned car, free and
+  ungated, with every set available from the start. No stat consequence of any
+  kind. It's the hub's one non-shopping activity, and it survives precisely
+  because it costs nothing and asks nothing.
 
-### Decided (kept here for trace)
+Every tuning value and boost effect resolves into `GameConfig` values, never
+script literals.
 
-- **Target-time model:** auto-derived from the seeded track, Felix-calibrated in
-  a dedicated fine-tuning session once the formula exists.
-- **Opponent count:** 10–15 per rally, thinned by DNFs.
-- **Player DNF:** none at all — no time-cut and no damage fail-out; only rivals DNF.
-- **Starter cars:** the two unchosen starters are obtainable later as rewards.
-- **Rally completion:** finish top-3 (combined time). **Specials:** all rallies
-  completed. Rally-completion count is the single progress metric (also caps
-  reward tier) — no separate points system.
-- **Reward supply:** **infinite / farmable** — re-winning a completed rally
-  re-grants its car reward (clamped by the progress-tier ceiling); completion is
-  recorded once. Makes the car supply renewable so nothing can permanently
-  brick 100% completion. *(`features/reward-system.md`.)*
-- **Tuning:** the **minimal three-knob** set (grip balance, brake bias, aero
-  balance) as single-axis sliders; brake-bias is the one new code knob.
-  *(`features/tuning.md`.)*
-- **In-run damage feedback:** a live HP gauge + low-HP warning + impact cue in the
-  HUD. *(`features/damage.md` › HUD, `todo/audio.md`.)*
-- **Audio & settings:** spec a sound system (impacts/countdown/UI + bus layout)
-  and a minimal settings overlay now. *(`todo/audio.md`, `features/menus.md`.)*
+## The economy
+
+**One currency: money.** Stars, placement tiers and everything built on them are
+gone — a placement-shaped economy makes no sense in a game with no placements.
+
+**Three sources:**
+
+1. **Per-stage payout**, growing with stages cleared — so surviving deep into a run
+   is where the money is, and a stage-7 death costs real value.
+2. **A fast-completion bonus**, proportional to time saved against the target — the
+   reason to drive well rather than merely clear.
+3. **Coins**, banked at stage clear.
+
+**Five sinks:** cars, boost levels, perks, the engine-swap unlock, and cosmetic
+wheels. Against the career's single source and two sinks, that's an economy with
+somewhere to go — and every sink competes with every other, which is what makes
+"what do I buy?" a question worth asking after a failed run.
+
+Money is never reset by a failed run, and there is no run-scoped second currency.
+One number, always going up, always spendable.
+
+## The hub — flat, not diegetic
+
+The hub is **ordinary menu screens**: title, hub, region select, car select and
+buy, boost shop, perks, stats, between-stage pick, run summary, settings. Every one
+of them keyboard- and gamepad-navigable, with a nav test — that rule doesn't bend
+for a flat UI.
+
+The diegetic 3D hub is dropped: no camera flying between stations, no clickable
+props, no garage shell, no map table, no tuning lift, no present box, no drivable
+open-world hub. Menus stop being a place and become menus.
+
+**This is a real loss and worth naming.** The 3D hub was a lot of the game's
+character, and the environment, the map table, the present-box reveal and the lift
+are substantial authored work being deleted rather than mothballed. What buys it:
+the hub was the largest script in the project and a visible loading beat on
+startup, it forced a second navigation regime that every screen had to work in,
+and it was the single biggest obstacle between "we changed the loop" and "we can
+play the new loop". A run-based game lives or dies on how fast you can start the
+next run.
+
+The car turntable is what keeps the art in the game. Cars remain the thing you
+look at.
+
+## The daily / weekly / monthly challenge
+
+The rotating **Daily / Weekly / Monthly challenge** survives the pivot intact,
+with its own cloud leaderboard and username. It's a run against a globally shared
+seed rather than a regional draw — structurally the same object as a region run,
+which is exactly why it survives: **both are "N sequential stages, no rivals, with
+a fail rule"**, and they share one session type rather than two.
+
+**One run at a time, one slot.** Starting a region run discards a paused challenge
+run and vice versa, behind a confirm. Two parallel runs would need two of every
+piece of run state for very little play value.
+
+## No endgame, for now
+
+Clearing the last region leaves every region unlocked and repeatable, and that's
+where the game currently stops. No credits roll, no ascension mode, no difficulty
+ladder — accepted deliberately rather than overlooked. The old design's final
+showdown and its star-gated special-event ladder are both gone with the career
+that framed them.
+
+If an endgame is wanted later, the meta ratchet (perks, boost levels, lifetime
+stats) is the natural surface to build it on, and a repeatable region set is a
+better foundation for one than a finite map that could be exhausted.
+
+## The decisions behind all this
+
+**There are no open questions.** Every design question raised across the pivot's
+review passes is settled, and the settled record is
+**`todo/roguelike-pivot.md` › _Decisions already taken_** — that is the
+authoritative list, deliberately not duplicated here so the two can't drift. Read
+it for the *why* behind anything above; read
+`todo/roguelike-pivot-plan.md` for the order the work happens in.
+
+What remains genuinely open is **tuning, not design**: the pace values that set
+the difficulty curve, per-car HP and impact costs, boost and perk pricing, coin
+placement density, and how fast the payout grows with depth. Those are numbers to
+find by playing, and they all live in `config/game_config.tres` and the authored
+content tables.

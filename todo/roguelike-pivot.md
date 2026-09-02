@@ -2,8 +2,14 @@
 
 **Status: AGREED, demolition not started.** A *complete* pivot of TAPPA's
 gameplay loop, from the Gran-Turismo-shaped career it ships today to a run-based
-roguelike modelled on `felixxwu/roguelike-rally` (**RR** below). All 45 decisions
+roguelike modelled on `felixxwu/roguelike-rally` (**RR** below). All decisions
 are settled and there are no open questions; what remains is execution.
+
+**On the numbering:** the list runs 1–36 then 38–45 — **44 decisions, and there is
+no decision 37.** The gap is an artefact of a renumbering during review. It is
+kept rather than closed because these numbers are cited from
+`todo/roguelike-pivot-plan.md`, from `gameplay.md`, and from within this file;
+renumbering would silently invalidate every one of them. Do not "fix" it.
 
 **How to read this:** *Decisions* is the settled record — the why. *System-by-
 system* is the design. *What gets deleted* and *Staging* are the work. **Read
@@ -151,7 +157,10 @@ Settled with the user during the brainstorm that produced this file:
 
 ```
 title
-  └─ region select (linear unlock; locked regions shown greyed with their gate)
+  └─ hub / main menu (Run, Cars, Shop, Perks, Stats, Settings) — the screen every
+  │    run starts and ends at; a NEW player is sent to the car shop first, since
+  │    that is the first screen carrying a decision (decision 28)
+  └─ Run ─ region select (linear unlock; locked regions greyed, with their gate)
        └─ car select (owned cars; buy new ones with money — RR-style shop)
             └─ RUN START (stage 1 of 8)
                  ├─ stage: drive a drawn event against a target time
@@ -352,7 +361,8 @@ more easily, rather than having the bar raised to match it. Three things follow:
   reasoned about from the model.
 
 RR also has `SPECTATOR_HIT_TIME_PENALTY_SECONDS` — hitting things costs time
-directly. Worth considering as a second damage channel here, since it converts
+directly. Deliberately NOT adopted for the pivot — noted only as a known lever
+if impacts read as too forgiving in play, since it converts
 crashes into timer pressure, which is exactly the indirect-failure model
 decision 6 asks for.
 
@@ -441,8 +451,10 @@ run progresses (`REPAIR_AMOUNT` is a curve keyed by `tracksCompleted`), which
 makes late-run damage genuinely threatening. That curve is a `GameConfig`
 tunable here.
 
-The paid garage repair (`Save.repair_car`, `Save.repair_price`) has no obvious
-place left — between runs the car resets anyway. Recommend retiring it.
+The paid garage repair (`Save.repair_car`, `Save.repair_price`) is **retired**:
+between runs the car resets anyway, so it has no place left. Listed in *What gets
+deleted*. (Stated as a decision rather than a recommendation so the "no open
+questions" claim above stays honest.)
 
 ### Car acquisition — RR's shop
 
@@ -460,9 +472,10 @@ them.
 
 Worth keeping in view as a design loss: prize rallies were a more interesting
 acquisition hook than a price list, and with car acquisition now purely
-transactional, **clearing a region rewards only the next region's unlock**. If
-region clears end up feeling unrewarding in play, the cheapest fix is a one-off
-money bounty for a first clear rather than reintroducing reveal-gating.
+transactional, **clearing a region rewards only the next region's unlock**. Decision 43 rejects a first-clear bounty, so this ships without one. Recorded
+here only as the contingency lever: **if** region clears prove unrewarding in
+play, revisiting 43 for a one-off money bounty is cheaper than reintroducing
+reveal-gating. That is a post-playtest question, not an open design question.
 
 ### The UI — dropping the diegetic HQ
 
@@ -630,7 +643,7 @@ to model placement on are the scatter fields (`bush_field.gd`,
 `billboard_field.gd`, `TreeMeshField`) and the trackside props in
 `rally_flag.gd`.
 
-**Coins sit off the racing line** (decision 36), so taking one is a real gamble:
+**Coins sit off the racing line** (decision 35), so taking one is a real gamble:
 money comes mostly from finishing fast, and a detour that costs the run costs
 every remaining stage's payout. Two things follow that the implementation has to
 respect:
@@ -719,6 +732,9 @@ callers and must move to their new home before the surrounding code goes.
   `TrackCache.BOARD_EPOCH`.
 - **Free roam** (decision 25) — `_prepare_free_roam`, the `free_roam_*` GameConfig
   block, `RallySession`'s handoff state.
+- **The paid garage repair** — `Save.repair_car`, `Save.repair_price` and their
+  callers. Between-run resets leave it nothing to do; the between-stage repair
+  pick replaces it.
 - **The `RALLIES` table's non-event fields** — `restriction` (decision 39),
   `map_pos`, `special`, `prize_*`, `unlocked_by_rally`. The `events` arrays survive
   and become the stage pool.
@@ -836,7 +852,7 @@ reach for `SceneTestHelpers.minimal_world()` and the cheap patterns in
   structure survives; only the menu contents change (decision 29).
 - **The credits trigger** fires from `RallyLibrary.all_specials_completed`, which
   dies with specials. Remove it rather than leaving it on a predicate that can
-  never be true (decision 37).
+  never be true (decision 45's closing clause).
 - **`registry.gd`, `crosswind.gd`, `weather_library.gd`, `stage_manager.gd`,
   `settings_menu.gd`** all reference `RallyLibrary` or `RallySession` and are
   in-stage runtime, not hub code.

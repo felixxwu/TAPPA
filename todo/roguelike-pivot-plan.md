@@ -165,8 +165,11 @@ against 536s, not against 300s.
 
 > **Wave:** 2 agents — Opus on `gameplay.md`, Haiku on the drift-spec fold.
 
-1. Rewrite `gameplay.md` to the roguelike vision. It currently describes the GT
-   career and contradicts the spec on nearly every point.
+1. **DONE.** Rewrite `gameplay.md` to the roguelike vision. Retitled *"Eight
+   stages, one clock"*; the GT career, rival fields, world map, star ladder,
+   prize rallies, special-event ladder and free roam are gone from it. The
+   `## Damage model` heading is kept verbatim because `features/damage.md` line 4
+   points at it by name.
 2. **DONE.** Fold `todo/challenge-career-reuse-drift.md` into the pivot spec and
    delete it. It had **two** open items, not one: retiring
    `ChallengeSession.abandon()` is subsumed by the `RunSession` extraction, but
@@ -174,8 +177,22 @@ against 536s, not against 300s.
    Daily/Weekly/Monthly challenge, so that stays live work. Both now live in the
    spec's *Absorbed: challenge/career reuse drift*, along with the seventeen code
    comments that cite the deleted file by item number (swept in stage 9, not now).
-3. Sanity-read the spec's Hazards against the tree once more; anything that has
-   drifted since it was written gets corrected now, while it is still cheap.
+3. **DONE.** Sanity-read the spec. Six defects found and fixed: there is no
+   decision 37 (44 decisions, not 45 — gap kept deliberately and now documented,
+   since renumbering would invalidate every citation); the credits-trigger hazard
+   cited that non-existent 37 (now decision 45's closing clause); coins-off-the-
+   racing-line was cited as 36 (it is 35); the car-acquisition section read as
+   contradicting decision 43 (now framed as a post-playtest contingency lever);
+   `Save.repair_car` sat as a "recommend retiring" under a "no open questions"
+   heading (now a stated decision, added to *What gets deleted*); and RR's
+   `SPECTATOR_HIT_TIME_PENALTY_SECONDS` sat as a live "worth considering" (now
+   explicitly not adopted). The end-to-end loop diagram also skipped the hub and
+   decision 28's new-player shop entry; both are in it now.
+4. **Carried to stage 9:** `CLAUDE.md` (~line 29) still describes `gameplay.md`
+   as *"Gran Turismo, but with rally stages"* and mentions "the final showdown";
+   `README.md` lines 8 and 57 frame the game the old way too. Both are now false.
+   Left alone deliberately — `CLAUDE.md` is the live agent-instruction file and
+   is not this wave's to rewrite.
 
 **Gate:** `gameplay.md` describes the game the spec describes.
 
