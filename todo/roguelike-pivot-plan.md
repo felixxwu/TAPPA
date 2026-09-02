@@ -9,9 +9,19 @@ Read the spec's **Hazards** section before starting stage 2.
 
 ## Ground rules
 
-- **One stage per branch, merged when its gate passes.** Stage 2 is a *single
-  commit* on its own — decision 20 makes `git revert` the rollback mechanism, and
-  that only works if the demolition is one thing to revert.
+- **Everything stays on `claude/tappa-roguelike-pivot-qgmfrq` until the pivot is
+  finished.** `main` holds the working pre-pivot game and is not touched until
+  stage 9's gate passes, then merged once.
+
+  > **This suspends `CLAUDE.md`'s auto-merge rule** ("if you're running in a
+  > managed remote execution environment … ALWAYS merge that branch into `main`").
+  > That rule normally fires at the start of every remote session — do not follow
+  > it for this work. `main` was deliberately reset to `8cfae5f` (pre-pivot) after
+  > the spec work had been merged to it by mistake.
+
+- **Stage 2 is a single commit.** Decision 20 makes `git revert` the rollback
+  mechanism, and that only works if the demolition is one thing to revert. Every
+  other stage commits freely — only the demolition needs to be atomic.
 - **Tests per `CLAUDE.md`:** implementation first, tests before the stage is
   called done, targeted runs mid-stage, the full suite only at the very end
   (stage 9). Never start a run while another is in progress.
@@ -26,7 +36,8 @@ Read the spec's **Hazards** section before starting stage 2.
 The multiplayer deletion landed without a compile check or test run (no Godot
 binary in the environment it was made in).
 
-1. `./run_tests.sh` — full suite, on a clean checkout, before any pivot work.
+1. `./run_tests.sh` — full suite, **on this branch**, not on `main`. `main` is
+   the old game and will pass trivially; the multiplayer deletion lives here.
 2. Fix anything the lobby removal broke. Suspects, in order: `world.gd` (six edit
    sites), `driving_context.gd`, `hq.gd` / `hq_overlays.gd` (the garage row lost a
    button), `test_stage_manager.gd`, `test_ghost_car.gd`, `test_menu_flow.gd`,
@@ -164,7 +175,8 @@ need real events written, and they are not playable until they have them.
    (decision 41) — T001, T005, T008, T009, T014, T015, and reshape T003.
 4. One full `./run_tests.sh` against the ~5 minute budget. If it is over, invoke
    `/optimise-test-suite` rather than eyeballing it.
-5. Ask whether `todo/roguelike-pivot.md` and this file should now be deleted
+5. **Merge to `main`** — the one time, once the gate below passes.
+6. Ask whether `todo/roguelike-pivot.md` and this file should now be deleted
    (`CLAUDE.md`: do not delete a completed spec without checking).
 
 **Gate:** green suite inside budget; no `features/` doc describes a system that
