@@ -113,7 +113,7 @@ func test_load_event_copies_terrain() -> void:
 	var ev: Dictionary = _menu._seedlab_event()
 	assert_eq(float(ev["terrain_layer1_amplitude"]), float(picked["terrain_layer1_amplitude"]),
 		"lab event carries the terrain amplitude")
-	var cfg = RallySession.canonical_event_config(ev)
+	var cfg = StageConfig.canonical_event_config(ev)
 	assert_eq(cfg.terrain_layer1_amplitude, float(picked["terrain_layer1_amplitude"]),
 		"canonical config carries the event's terrain amplitude")
 
@@ -148,12 +148,12 @@ func test_loaded_event_matches_career_cache_key() -> void:
 	_menu._load_event(event)
 	await get_tree().process_frame
 	# Career derivation.
-	var career_cfg: GameConfig = RallySession.canonical_event_config(event)
+	var career_cfg: GameConfig = StageConfig.canonical_event_config(event)
 	var career_key: String = TrackCache.key_for(
 		TrackGenParams.for_event(event, career_cfg), career_cfg)
 	# Lab derivation (from the spinboxes it copied the event into).
 	var lab_ev: Dictionary = _menu._seedlab_event()
-	var lab_cfg: GameConfig = RallySession.canonical_event_config(lab_ev)
+	var lab_cfg: GameConfig = StageConfig.canonical_event_config(lab_ev)
 	var lab_key: String = TrackCache.key_for(
 		TrackGenParams.for_event(lab_ev, lab_cfg), lab_cfg)
 	assert_eq(lab_key, career_key,

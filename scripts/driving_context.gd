@@ -16,10 +16,6 @@ extends RefCounted
 # about sessions).
 const NO_LIMIT := -1.0
 
-# RallySession is an autoload with no class_name, so its STATIC members must be
-# reached through the script resource (calling a static via the instance warns).
-const RallySessionScript = preload("res://scripts/rally_session.gd")
-
 
 # The instance id of the car actively being driven/fielded by whichever session
 # (if any) is running — ChallengeSession first (only one can be active at a
@@ -77,7 +73,7 @@ static func rating_limit_for_car(instance_id: int) -> float:
 # so "a new scene-entry site forgot to seat the config" stops being expressible.
 # Same session precedence as active_car_instance_id(): challenge first, then career.
 #
-# Safe to call at consume time because RallySession.apply_event_config is pure and
+# Safe to call at consume time because StageConfig.apply_event_config is pure and
 # idempotent: it reloads the authored baseline on every call and pins every omitted
 # field to it, so applying here is identical to applying before the scene load.
 #
@@ -95,11 +91,11 @@ static func apply_stage_config(cfg: GameConfig) -> void:
 	if ChallengeSession.is_active():
 		var stage := ChallengeSession.current_stage_params()
 		if not stage.is_empty():
-			RallySessionScript.apply_event_config(cfg, stage)
+			StageConfig.apply_event_config(cfg, stage)
 	elif RallySession.is_active():
 		var event := RallySession.current_event()
 		if not event.is_empty():
-			RallySessionScript.apply_event_config(cfg, event)
+			StageConfig.apply_event_config(cfg, event)
 
 
 # Whether `instance_id` is the car an active challenge run is COMMITTED to.

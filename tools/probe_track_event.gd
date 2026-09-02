@@ -85,9 +85,9 @@ func _events_for(args: Dictionary) -> Array:
 
 
 func _probe(event: Dictionary) -> bool:
-	# canonical_event_config + for_event is exactly the pair generate_track_cache.gd
+	# StageConfig.canonical_event_config + for_event is exactly the pair generate_track_cache.gd
 	# uses, so a probe here is the same generation the baker performs.
-	var cfg := RallySession.canonical_event_config(event)
+	var cfg := StageConfig.canonical_event_config(event)
 	var p := TrackGenParams.for_event(event, cfg)
 	print("--- rally %s seed %d ---" % [event.get("_rally", "?"), p.seed])
 	print("  turns=%d width=%.1f clearance=%.1f straightness=%.2f runoff=%.1f reserve_behind=%.1f"

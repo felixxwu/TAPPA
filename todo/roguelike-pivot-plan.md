@@ -246,6 +246,31 @@ guesswork.
   feed `standings.tscn` — itself deleted by decision 30. Rewrite those two to
   return plain time lists for the run summary instead.
 
+**2a landed.** `scripts/stage_config.gd` (`StageConfig`, statics only) now owns
+both entry points; `canonical_event_config` became a static (it was an instance
+`func` only because it lived on an autoload). `apply_field_repair_to` folded into
+`Save` as an INSTANCE method — `field_repair` is one, and a static would have
+raised `STATIC_CALLED_ON_INSTANCE` at every call site through the autoload.
+`ChallengeSession.current_event_standings` / `current_standings` are replaced by
+`current_stage_times_ms()` and `run_times_ms()`, both `Array[int]`; `standings.gd`
+now receives `[]` in challenge mode, which keeps it compiling until 2b deletes it.
+
+> **HAZARD FOR 2d — do this BEFORE deleting `test_rally_session.gd`.**
+> `tests/headless/test_rally_session.gd` ~926–1000 (the `apply_event_config`
+> override/fallback tests and the waterline-resolution block under it) are now
+> tests of **`StageConfig`**, not of `RallySession` — the writer moved out and only
+> the tests' address stayed behind. They are the ONLY coverage of the config seam
+> every kind of run goes through. Move that block into a new
+> `tests/headless/test_stage_config.gd` FIRST; `grep -rn 'StageConfig'
+> tests/headless/` finds it, and a loud comment marks the block. Decision 38's
+> "delete tests whose subject is deleted" would otherwise take it silently.
+
+> **Also for 2b/2c:** `ChallengeSession.stage_times_ms()` (untyped) and the new
+> `run_times_ms()` (`Array[int]`) are near-duplicates. The untyped one was left
+> alone deliberately — a resumed run's times come back out of JSON as floats and
+> its callers pass them straight through, so retyping it inside an extraction
+> would have smuggled in a behaviour change. **Stage 3 should collapse the two.**
+
 ### 2b. Delete
 
 Execute the spec's *What gets deleted* list. Suggested order, each step leaving

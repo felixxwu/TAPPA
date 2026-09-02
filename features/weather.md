@@ -1,5 +1,8 @@
 # Weather (dry / rain / sandstorm / fog / storm / snow / night)
 
+The per-stage config funnel this file leans on lives in `scripts/stage_config.gd`
+(`class_name StageConfig`) — see *One funnel into the live config* below.
+
 Design doc: `docs/superpowers/specs/2026-08-02-weather-design.md` (anticipated a
 string enum specifically so later conditions — "fog / snow / night" — would have
 an obvious home; sandstorm is exactly that case). The feature is fully implemented:
@@ -242,7 +245,7 @@ disagree.
 
 - `weather: String` — the LIVE condition for the stage currently being played
   (`RallyLibrary.WEATHER_DRY` / `WEATHER_RAIN` / `WEATHER_SANDSTORM`). Seated only
-  by `RallySession.apply_event_config` (see below) — never assigned anywhere else.
+  by `StageConfig.apply_event_config` (see below) — never assigned anywhere else.
 - The authored rain block, near `gravel_grip`/`tarmac_grip` and the fog/sky
   exports:
   - `rain_grip_mult` — global tyre μ multiplier applied when wet (a single
@@ -388,8 +391,8 @@ there — keep it that way.
 
 ## One funnel into the live config
 
-`RallySession.apply_event_config(cfg: GameConfig, event: Dictionary)`
-(`scripts/rally_session.gd`) seats `cfg.weather = RallyLibrary.event_weather(event)`
+`StageConfig.apply_event_config(cfg: GameConfig, event: Dictionary)`
+(`scripts/stage_config.gd`) seats `cfg.weather = RallyLibrary.event_weather(event)`
 alongside `track_seed` / `track_turn_count` / `track_tarmac_fraction` / etc. This
 function is the ONE place a stage's parameters reach the live config, pulled at
 consume time by `world.gd._ready` via `DrivingContext.apply_stage_config` — so a

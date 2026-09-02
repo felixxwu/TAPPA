@@ -42,7 +42,7 @@ func after_each() -> void:
 
 func _seat(region_id: String) -> GameConfig:
 	var live: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate(true)
-	RallySession.apply_event_config(live, {"seed": 1, "region": region_id})
+	StageConfig.apply_event_config(live, {"seed": 1, "region": region_id})
 	return live
 
 
@@ -125,9 +125,9 @@ func test_an_eventless_region_tag_does_not_leak_into_the_next_stage() -> void:
 	# slippery too — the same trap track_water_level_m is protected from.
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	var live: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate(true)
-	RallySession.apply_event_config(live, {"seed": 1, "region": SNOW_REGION})
+	StageConfig.apply_event_config(live, {"seed": 1, "region": SNOW_REGION})
 	assert_ne(live.grass_grip, base.grass_grip, "setup: the snow stage overrode grip")
-	RallySession.apply_event_config(live, {"seed": 2, "region": PLAIN_REGION})
+	StageConfig.apply_event_config(live, {"seed": 2, "region": PLAIN_REGION})
 	assert_eq(live.grass_grip, base.grass_grip, "the next stage is back to baseline")
 	assert_eq(live.deep_snow_drag, 0.0, "…with no residual drag")
 	assert_eq(live.frozen_water_grip, 0.0, "…and no residual ice")
@@ -137,7 +137,7 @@ func test_an_event_with_no_region_gets_the_baseline() -> void:
 	# Free roam / benchmark / dev boot pass events with no region tag.
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	var live: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate(true)
-	RallySession.apply_event_config(live, {"seed": 3})
+	StageConfig.apply_event_config(live, {"seed": 3})
 	assert_eq(live.grass_grip, base.grass_grip)
 	assert_eq(live.deep_snow_drag, 0.0)
 	assert_eq(live.frozen_water_grip, 0.0)
@@ -161,14 +161,14 @@ func test_region_grip_reaches_the_lap_time_model() -> void:
 	var base: GameConfig = load(Config.CONFIG_PATH)
 
 	var dry_cfg: GameConfig = base.duplicate(true)
-	RallySession.apply_event_config(dry_cfg, event.duplicate())
+	StageConfig.apply_event_config(dry_cfg, event.duplicate())
 	Config.data = dry_cfg
 	var dry_ms := LapTimeModel.optimum_ms(track, car, event)
 
 	var snow_event: Dictionary = event.duplicate()
 	snow_event["region"] = SNOW_REGION
 	var snow_cfg: GameConfig = base.duplicate(true)
-	RallySession.apply_event_config(snow_cfg, snow_event)
+	StageConfig.apply_event_config(snow_cfg, snow_event)
 	Config.data = snow_cfg
 	var snow_ms := LapTimeModel.optimum_ms(track, car, snow_event)
 
@@ -187,13 +187,13 @@ func test_the_car_rating_is_immune_to_a_slippery_region() -> void:
 	}
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	var dry_cfg: GameConfig = base.duplicate(true)
-	RallySession.apply_event_config(dry_cfg, {"seed": 1})
+	StageConfig.apply_event_config(dry_cfg, {"seed": 1})
 	Config.data = dry_cfg
 	CarPerformance.reset()
 	var dry_rating := CarPerformance.rating(car)
 
 	var snow_cfg: GameConfig = base.duplicate(true)
-	RallySession.apply_event_config(snow_cfg, {"seed": 1, "region": SNOW_REGION})
+	StageConfig.apply_event_config(snow_cfg, {"seed": 1, "region": SNOW_REGION})
 	Config.data = snow_cfg
 	CarPerformance.reset()
 	assert_eq(CarPerformance.rating(car), dry_rating,

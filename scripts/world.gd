@@ -560,7 +560,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Phase 3 — "Precomputing chunks…" / "Building terrain…": every chunk the play area
 	# realistically requests, then the initial ring built once from that cache.
-	await _build_terrain_ring(cfg, loading, road_centerline)
+	await _build_terrain_ring(loading, road_centerline)
 
 	# Ground exists (carved, coloured, cache-built) — hand the car back to the physics
 	# engine. Everything after this point still runs behind the loading cover, so it has
@@ -795,7 +795,7 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 
 # Phase 3 of _generate_track: precompute the corridor chunks, then build the initial terrain
 # ring once from that cache (so no chunk is ever rebuilt at startup).
-func _build_terrain_ring(cfg: GameConfig, loading: LoadingScreen,
+func _build_terrain_ring(loading: LoadingScreen,
 		road_centerline: Curve2D) -> void:
 	var interactive := _interactive(loading)
 	# Precompute every chunk the play area realistically requests (the track-progress

@@ -214,7 +214,7 @@ func _generate_stages(count: int, base_seed: int) -> Array:
 			"water_enabled": false,
 			"region": "",
 		}
-		var cfg := RallySession.canonical_event_config(event)
+		var cfg := StageConfig.canonical_event_config(event)
 		var params := TrackGenParams.for_event(event, cfg)
 		var result := await TrackGenerator.generate(params)
 		var centerline := result.get("centerline") as Curve2D

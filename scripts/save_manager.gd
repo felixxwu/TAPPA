@@ -1172,6 +1172,25 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 	}
 
 
+# field_repair with THE fractions — the ones every stage-to-stage transition uses
+# (GameConfig's field_repair_hp_fraction / field_repair_toe_fraction). Every
+# between-stage and final-stage repair in the game goes through this one entry
+# point, so no caller can drift on which fractions it applies; the raw
+# field_repair above stays available for a caller that genuinely needs its own.
+#
+# Folded here from RallySession, whose four lines already did nothing but read
+# those two config fields and delegate. Callers: RallySession._apply_field_repair
+# (stage-to-stage + the silent final-event repair) and
+# ChallengeSession.report_event_result (the same two beats for a challenge run).
+# `instance_id` < 0 (nothing fielded) is a no-op, not an error.
+func apply_field_repair_to(instance_id: int) -> Dictionary:
+	if instance_id < 0:
+		return {"repaired": false}
+	var cfg := Config.data
+	return field_repair(instance_id,
+		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
+
+
 # --- Rally completion --------------------------------------------------------
 
 # Record a top-3 rally finish. Idempotent for the `completed` flag; updates the

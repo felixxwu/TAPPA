@@ -15,7 +15,7 @@ func _ready() -> void:
 	for rally in RallyLibrary.all():
 		for event in rally.get("events", []):
 			print("track cache: generating rally %s seed %d ..." % [rally.get("id", "?"), int(event.get("seed", -1))])
-			var cfg := RallySession.canonical_event_config(event)
+			var cfg := StageConfig.canonical_event_config(event)
 			var params := TrackGenParams.for_event(event, cfg)
 			var result := await TrackGenerator.generate(params)
 			var key := TrackCache.key_for(params, cfg)

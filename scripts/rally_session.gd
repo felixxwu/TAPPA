@@ -711,8 +711,8 @@ func last_result() -> Dictionary:
 
 # Seats the owning rally's "region" tag onto the returned dict (a shallow copy,
 # never mutating the authored event) so downstream water-level resolution
-# (TrackGenParams.resolve_water_level, via apply_event_config) can fall back to the
-# region's waterline for an event that authors none — see features/lakes.md.
+# (TrackGenParams.resolve_water_level, via StageConfig.apply_event_config) can fall
+# back to the region's waterline for an event that authors none — see features/lakes.md.
 func current_event() -> Dictionary:
 	var events: Array = _rally.get("events", [])
 	if _event_index < 0 or _event_index >= events.size():
@@ -751,27 +751,13 @@ func take_pending_repair() -> Dictionary:
 	return r
 
 
-# Shared repair-application: patch the fielded car up by the same partial fraction
-# used at every stage-to-stage transition (Save.field_repair with cfg's
-# field_repair_hp_fraction / field_repair_toe_fraction). Extracted so the
-# between-event repair (_enter_event) and the final-event repair (_resolve_results)
-# can't drift apart on which fractions they apply. Caller decides what (if
-# anything) to do with the returned summary.
-#
-# STATIC, and public, because ChallengeSession's stage-to-stage and final-stage
-# repairs go through it too (todo/challenge-career-reuse-drift.md item 5) — it
-# used to hand-roll the same two config reads as _field_repair_for_next_stage,
-# which is exactly the one-rule-two-places drift this fold removes.
-static func apply_field_repair_to(instance_id: int) -> Dictionary:
-	if instance_id < 0:
-		return {"repaired": false}
-	var cfg := Config.data
-	return Save.field_repair(instance_id,
-		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
-
-
+# The shared between-stage repair now lives on Save (Save.apply_field_repair_to),
+# next to the Save.field_repair it always delegated to. Both this rally's
+# stage-to-stage repair (_enter_event) and its final-event repair
+# (_resolve_results) go through it, as does ChallengeSession's — one rule, one
+# place, so no caller can drift on which config fractions it applies.
 func _apply_field_repair() -> Dictionary:
-	return apply_field_repair_to(_car_instance_id)
+	return Save.apply_field_repair_to(_car_instance_id)
 
 
 # Total the events, place against the field, record completion + grant rewards on
@@ -1170,7 +1156,7 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 		# the run scene (see TrackGenParams.resolve_water_level).
 		var event: Dictionary = stage_event.duplicate()
 		event["region"] = rally.get("region", "")
-		var cfg := canonical_event_config(event)
+		var cfg := StageConfig.canonical_event_config(event)
 		var params := TrackGenParams.for_event(event, cfg)
 		var result := await TrackGenerator.generate_cached(params, cfg)
 		# Let the rival grid feel the stage's hills. LapTimeModel is a point mass on a
@@ -1202,70 +1188,11 @@ func _load_event_scene(_event: Dictionary) -> void:
 	Scenes.change_to(get_tree(), Scenes.MAIN)
 
 
-# Write an event's track parameters into `cfg`. Extracted from _load_event_scene
-# as a pure (scene-free) seam so the fallback semantics can be tested directly.
-#
-# Fields an event may OMIT fall back to the AUTHORED baseline (the pristine cached
-# .tres — Config.data is a duplicate of it), NOT the current cfg value. Config.data
-# is a persistent session working copy that's never reset between events, so a
-# cfg-value fallback would let one event's override leak into a later event that
-# omits the key. `base` pins every omitted field to its global default.
-static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
-	var base: GameConfig = load(Config.CONFIG_PATH)
-	cfg.track_seed = int(event.get("seed", base.track_seed))
-	cfg.track_turn_count = int(event.get("turn_count", base.track_turn_count))
-	cfg.track_straightness = RallyLibrary.event_straightness(event)
-	cfg.track_width = RallyLibrary.event_width(event)
-	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
-	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
-	cfg.weather = RallyLibrary.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
-	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
-	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
-	# event -> event's region (if the caller seated one, see current_event() /
-	# _generate_event_tracks) -> the authored baseline. See TrackGenParams.resolve_water_level.
-	cfg.track_water_level_m = TrackGenParams.resolve_water_level(event, base.track_water_level_m)
-	# Per-region HANDLING overrides (features/snow-region.md). The snow region drops
-	# every surface's grip and adds deep snow at the roadside; every other region
-	# authors neither, so these resolve to the authored baseline and a zero deep-snow
-	# block — an exact no-op. Read off the event's own region, which the caller already
-	# seated for resolve_water_level above, so no signature change was needed.
-	#
-	# Note the grip is seated onto the SAME live fields the lap-time model reads
-	# (LapTimeModel._surface_grip), so the rival field scales with the player
-	# automatically: snow is a variety lever, not a difficulty one. CarPerformance is
-	# unaffected — it benchmarks at a frozen mu, so ratings cannot drift.
-	var region_id := String(event.get("region", ""))
-	var sgrip := RegionLibrary.surface_grip_of(base, region_id)
-	cfg.grass_grip = float(sgrip.get("grass", base.grass_grip))
-	cfg.gravel_grip = float(sgrip.get("gravel", base.gravel_grip))
-	cfg.tarmac_grip = float(sgrip.get("tarmac", base.tarmac_grip))
-	var deep_snow := RegionLibrary.deep_snow_of(base, region_id)
-	cfg.deep_snow_drag = float(deep_snow.get("drag", 0.0))
-	cfg.deep_snow_depth_m = float(deep_snow.get("depth", 0.0))
-	# Frozen lakes: 0.0 means liquid, which is every region but the Alps, so the lake
-	# stays the soft drag hazard it has always been unless a region says otherwise.
-	cfg.frozen_water_grip = float(
-		RegionLibrary.frozen_water_of(base, region_id).get("grip", 0.0))
-	# Per-event terrain hill shape: any of the 3 Perlin layers' wavelength/amplitude
-	# may be overridden; omitted ones use the authored global default (features/terrain.md).
-	cfg.terrain_layer1_wavelength = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))
-	cfg.terrain_layer1_amplitude = float(event.get("terrain_layer1_amplitude", base.terrain_layer1_amplitude))
-	cfg.terrain_layer2_wavelength = float(event.get("terrain_layer2_wavelength", base.terrain_layer2_wavelength))
-	cfg.terrain_layer2_amplitude = float(event.get("terrain_layer2_amplitude", base.terrain_layer2_amplitude))
-	cfg.terrain_layer3_wavelength = float(event.get("terrain_layer3_wavelength", base.terrain_layer3_wavelength))
-	cfg.terrain_layer3_amplitude = float(event.get("terrain_layer3_amplitude", base.terrain_layer3_amplitude))
-
-
-# The canonical, event-resolved config for track generation: a fresh duplicate of
-# the authored base with this event's overrides applied. Every generation site (the
-# lockfile generator, target-time derivation, the run scene) must resolve params
-# from THIS so their cache keys match. Standalone (no shared Config.data mutation).
-# Instance method (called via the RallySession autoload) — apply_event_config stays
-# static so it can be unit-tested scene-free.
-func canonical_event_config(event: Dictionary) -> GameConfig:
-	var cfg := (load(Config.CONFIG_PATH) as GameConfig).duplicate() as GameConfig
-	apply_event_config(cfg, event)
-	return cfg
+# The per-event config writer (apply_event_config) and its fresh-config form
+# (canonical_event_config) used to live here. They are neither session state nor
+# rally-specific — every kind of run seats a stage the same way — so they now live
+# on StageConfig (scripts/stage_config.gd), reachable by class_name from anywhere.
+# Call StageConfig.apply_event_config / StageConfig.canonical_event_config.
 
 
 # Show the between-event standings interstitial; its Continue calls

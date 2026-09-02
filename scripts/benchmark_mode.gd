@@ -32,11 +32,6 @@ const TRACK_TURN_COUNT := 30   # a long stage — more varied content to stress;
                                # time-boxed by BenchmarkRunner.MAX_RUN_SECONDS, not by finishing it
 const NEUTRAL_FRACTION := 0.5  # straightness / forestiness / tarmac mid-point
 
-# RallySession is an autoload with no class_name, so its STATIC canonical config
-# writer must be reached through the script resource (calling a static via the
-# instance warns). Same precedent as driving_context.gd.
-const RallySessionScript = preload("res://scripts/rally_session.gd")
-
 # The pre-run feature toggles, in the order the Settings page lists them. Each is
 # ON by default (the full game as shipped); turning one OFF removes that cost
 # from the run so its share of the frame can be measured by comparison.
@@ -160,7 +155,7 @@ func exit_to_hq() -> void:
 
 # The fields apply_overrides writes DIRECTLY (the toggles and frame pacing). The
 # benchmark STAGE itself is no longer written field-by-field here: it goes through
-# RallySession.apply_event_config, whose field set is free to grow, so the snapshot
+# StageConfig.apply_event_config, whose field set is free to grow, so the snapshot
 # can't be a hand-maintained list of it — see _snapshot_fields.
 const _OVERRIDDEN_FIELDS: Array[String] = [
 	"target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
@@ -183,7 +178,7 @@ func apply_overrides(cfg: GameConfig) -> void:
 		_saved[field] = cfg.get(field)
 
 	# The benchmark stage as an EVENT dict, seated by the canonical writer
-	# (RallySession.apply_event_config) rather than field-by-field here. Config.data is
+	# (StageConfig.apply_event_config) rather than field-by-field here. Config.data is
 	# never reset between scenes, so hand-writing a subset left every field the subset
 	# omitted — cliffiness, the waterline, the three terrain layers — at whatever the
 	# last rally happened to leave behind, and a benchmark run after a rally then wasn't
@@ -193,7 +188,7 @@ func apply_overrides(cfg: GameConfig) -> void:
 	# Cliffiness is passed explicitly from that baseline: an event that omits it means
 	# "flat", and a flat benchmark would drop the cliff geometry out of the measurement.
 	var base: GameConfig = load(Config.CONFIG_PATH)
-	RallySessionScript.apply_event_config(cfg, {
+	StageConfig.apply_event_config(cfg, {
 		"seed": TRACK_SEED,
 		"turn_count": TRACK_TURN_COUNT,
 		"straightness": NEUTRAL_FRACTION,

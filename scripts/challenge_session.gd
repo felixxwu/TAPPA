@@ -100,7 +100,7 @@ func current_stage_params() -> Dictionary:
 # NOTE: there is deliberately no apply_stage_config here. A stage's rolled track
 # parameters reach the live config in exactly ONE place — world.gd._ready calls
 # DrivingContext.apply_stage_config, which pulls current_stage_params() from
-# whichever session is active and forwards it to RallySession.apply_event_config.
+# whichever session is active and forwards it to StageConfig.apply_event_config.
 # A challenge stage dict is TrackGenParams-shaped by construction
 # (ChallengeLibrary.stages_for authors exactly the fields a RALLIES event does),
 # so that shared writer's "omitted fields fall back to the AUTHORED baseline,
@@ -360,9 +360,9 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	# writer so the fractions can never drift apart.
 	if is_final:
 		@warning_ignore("return_value_discarded")
-		RallySession.apply_field_repair_to(_car_instance_id)
+		Save.apply_field_repair_to(_car_instance_id)
 	else:
-		_pending_repair = RallySession.apply_field_repair_to(_car_instance_id)
+		_pending_repair = Save.apply_field_repair_to(_car_instance_id)
 	_persist()
 	# ORDER MATTERS, and this is the fix for item 2. standings_ready is emitted
 	# while the run is STILL ACTIVE, so every consumer that branches on
@@ -378,37 +378,40 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 		_finish_locally()
 
 
-# --- Local standings (a field of one) ------------------------------------------
+# --- Run-summary times ---------------------------------------------------------
 #
-# A challenge has NO rival field (spec §3), so both leaderboards the standings
-# interstitial stacks degrade to the player's own row. Rather than inventing a
-# "no standings" UI state, these feed RallyLibrary.build_standings the SAME way
-# RallySession does with an empty field — the exact rendering a rally with zero
-# rivals would produce — so standings.gd's section builder is reused verbatim.
+# These were a pair of RANKED STANDINGS TABLES: a challenge has no rival field
+# (spec §3), so both handed RallyLibrary.build_standings an empty field and got
+# back the player's own row alone, which standings.gd then rendered as a
+# one-entrant leaderboard. Nothing wants a ranking any more — there is no field to
+# rank against and standings.tscn is going — so what is left is what a run summary
+# actually reads: TIMES, in milliseconds, in stage order.
+#
+# Both return plain int lists so a summary can render "this stage" and "the run so
+# far" through one code path.
 
-# The just-finished stage's time alone, ranked. Empty before any stage completes.
-func current_event_standings() -> Array:
+# The just-finished stage's time, as a one-element list. [] before any stage
+# completes (nothing has been driven yet), which is the emptiness the run summary
+# branches on rather than a sentinel time.
+func current_stage_times_ms() -> Array[int]:
+	var out: Array[int] = []
 	var idx := _stage_times_ms.size() - 1
-	if idx < 0:
-		return []
-	return RallyLibrary.build_standings([], int(_stage_times_ms[idx]), _dnf, "You",
-		_player_car_name(), _player_car_model_id())
+	if idx >= 0:
+		out.append(int(_stage_times_ms[idx]))
+	return out
 
 
-# The cumulative time over the stages completed so far, ranked.
-func current_standings() -> Array:
-	return RallyLibrary.build_standings([], cumulative_ms(), _dnf, "You",
-		_player_car_name(), _player_car_model_id())
-
-
-func _player_car_model_id() -> String:
-	return String(Save.get_car(_car_instance_id).get("model_id", ""))
-
-
-# Mirrors RallySession._player_car_name — "" when nothing resolves (headless).
-func _player_car_name() -> String:
-	var owned := Save.get_car(_car_instance_id)
-	return EngineSwap.display_name(CarLibrary.for_owned(owned), owned)
+# Every completed stage's time, in stage order — the run summary's per-stage
+# breakdown. [] before any stage completes; the entries sum to cumulative_ms().
+#
+# The typed twin of stage_times_ms(), which stays UNTYPED and unchanged because a
+# resumed run's times come back out of JSON as floats and its callers (persistence,
+# _finish_locally's result dict) pass them straight back through.
+func run_times_ms() -> Array[int]:
+	var out: Array[int] = []
+	for t in _stage_times_ms:
+		out.append(int(t))
+	return out
 
 
 # --- Stage-to-stage advancement -------------------------------------------------

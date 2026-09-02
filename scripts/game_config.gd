@@ -205,7 +205,7 @@ var peak_torque_rpm := 4500.0
 ## HANDLING rather than only look. The region names these fields (it never authors
 ## numbers), exactly as a WeatherLibrary condition does, so all tuning stays here.
 ##
-## RegionLibrary.surface_grip_of resolves them; RallySession.apply_event_config seats
+## RegionLibrary.surface_grip_of resolves them; StageConfig.apply_event_config seats
 ## them onto grass_grip/gravel_grip/tarmac_grip for the stage. Every other region
 ## leaves those at the authored baseline above, so this is an exact no-op elsewhere.
 ##
@@ -279,7 +279,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## Applied in ps1_models.gdshader's vertex stage against the baked road weight, so the
 ## road itself is never raised and the existing feather turns the step into a bank.
 @export_range(0.0, 2.0) var snow_visual_depth_m := 0.35
-## LIVE per-stage values, seated by RallySession.apply_event_config from the driven
+## LIVE per-stage values, seated by StageConfig.apply_event_config from the driven
 ## region (0.0 for every region that authors no deep snow). Never author these — they
 ## are the deep-snow counterpart to `weather`, written by the funnel and read by
 ## car.gd (drag) and world.gd (the shader uniform).
@@ -298,7 +298,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 @export var ice_color := Color(0.80, 0.86, 0.90)
 @export var ice_shore_color := Color(0.88, 0.92, 0.95)
 ## LIVE per-stage: the ice μ, or 0.0 when this stage's water is liquid. Seated by
-## RallySession.apply_event_config from the driven region. 0.0 is the "not frozen"
+## StageConfig.apply_event_config from the driven region. 0.0 is the "not frozen"
 ## sentinel and is what every non-Alps stage runs, so the lake stays a soft hazard
 ## everywhere it always was.
 @export var frozen_water_grip := 0.0
@@ -402,7 +402,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 @export_range(0.2, 1.0) var traction_factor_awd := 1.0
 @export_range(0.2, 1.0) var traction_factor_fwd := 0.4
 ## The LIVE weather condition for the stage currently being played (RallyLibrary.
-## WEATHER_DRY / WEATHER_RAIN). Seated by RallySession.apply_event_config from the
+## WEATHER_DRY / WEATHER_RAIN). Seated by StageConfig.apply_event_config from the
 ## event's authored `weather` field — the ONE funnel into the live config, so a new
 ## scene-entry site can't route weather around it. Session-less callers (free roam,
 ## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
@@ -3242,7 +3242,7 @@ func weather_lit(col: Color) -> Color:
 
 
 # Whether the ground under this stage is SNOW rather than dirt with snow painted on.
-# Derived from the deep-snow block RallySession.apply_event_config seats off the
+# Derived from the deep-snow block StageConfig.apply_event_config seats off the
 # region, which is 0.0 for every region that authors none — so this is exactly "the
 # stage is in a snowy region" with no second flag to keep in sync. Same shape as the
 # `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.

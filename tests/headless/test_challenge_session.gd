@@ -513,7 +513,7 @@ func test_the_latched_mode_still_resolves_the_challenge_board_after_the_run_ende
 # RallySession._resolve_results applies the partial field repair after the FINAL
 # event so its damage isn't left standing; the challenge's final branch used to be
 # a literal `pass`. Both now go through the one shared writer
-# (RallySession.apply_field_repair_to), which is what this asserts — an AGREEMENT
+# (Save.apply_field_repair_to), which is what this asserts — an AGREEMENT
 # between the two paths, so no repair fraction is pinned.
 func test_the_final_stage_repairs_the_cars_damage_the_same_way_career_does() -> void:
 	var t := int(Time.get_unix_time_from_system())
@@ -542,7 +542,7 @@ func test_the_final_stage_repairs_the_cars_damage_the_same_way_career_does() -> 
 	var control: Dictionary = _save.get_car(control_id)
 	control["hp"] = damaged
 	@warning_ignore("return_value_discarded")
-	RallySession.apply_field_repair_to(control_id)
+	Save.apply_field_repair_to(control_id)
 	assert_almost_eq(hp_after, float(_save.get_car(control_id)["hp"]), 0.001,
 		"a challenge's final repair is exactly the repair a career rally's final event applies")
 
@@ -618,26 +618,40 @@ func test_continue_to_next_stage_is_a_no_op_once_the_run_is_over() -> void:
 		"a finished run never re-enters the driving scene")
 
 
-# --- Local standings (a field of one) -----------------------------------------
+# --- Run-summary times --------------------------------------------------------
+#
+# These two were ranked standings tables (RallyLibrary.build_standings with an empty
+# rival field, rendering the player's own row alone). A run has no field to rank
+# against, so they are plain ms time lists now: "the stage just finished" and "the
+# run so far". What is pinned here is the RELATIONSHIP between them and the times
+# reported in — not any particular duration.
 
-func test_stage_standings_are_the_players_own_row_alone() -> void:
+func test_run_times_are_the_stage_just_driven_and_the_run_so_far() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
 	ChallengeSession.start(_longest_kind(), car, t)
-	assert_eq(ChallengeSession.current_event_standings(), [],
-		"no stage standings before any stage completes")
+	assert_eq(ChallengeSession.current_stage_times_ms(), [],
+		"no stage time before any stage completes")
+	assert_eq(ChallengeSession.run_times_ms(), [],
+		"and no run breakdown either")
 
 	ChallengeSession.report_event_result(50000)
-	var stage_rows := ChallengeSession.current_event_standings()
-	assert_eq(stage_rows.size(), 1, "a challenge has no rival field, so one row")
-	assert_true(bool(stage_rows[0]["is_player"]), "and that row is the player's")
-	assert_eq(int(stage_rows[0]["combined_ms"]), 50000, "carrying that stage's time")
+	assert_eq(ChallengeSession.current_stage_times_ms(), [50000],
+		"the stage just finished reports its own time, alone")
+	assert_eq(ChallengeSession.run_times_ms(), [50000],
+		"and the run so far is that one stage")
 
 	ChallengeSession.continue_to_next_stage()
 	ChallengeSession.report_event_result(40000)
-	var overall := ChallengeSession.current_standings()
-	assert_eq(overall.size(), 1)
-	assert_eq(int(overall[0]["combined_ms"]), 90000, "the overall row sums the stages")
+	assert_eq(ChallengeSession.current_stage_times_ms(), [40000],
+		"the second stage reports ITS time, not the running total")
+	assert_eq(ChallengeSession.run_times_ms(), [50000, 40000],
+		"the run breakdown carries both stages, in stage order")
+	var summed := 0
+	for ms in ChallengeSession.run_times_ms():
+		summed += ms
+	assert_eq(summed, ChallengeSession.cumulative_ms(),
+		"the breakdown sums to the run's cumulative time")
 
 
 # --- The Phase.RUNNING gate on results -----------------------------------------
@@ -808,7 +822,7 @@ func test_a_stages_resolved_config_equals_the_canonical_event_config() -> void:
 
 	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
 	DrivingContext.apply_stage_config(cfg)
-	var canonical := RallySession.canonical_event_config(stage)
+	var canonical := StageConfig.canonical_event_config(stage)
 
 	var compared := 0
 	for prop in cfg.get_property_list():

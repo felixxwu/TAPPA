@@ -79,7 +79,7 @@ static func _sampler_for(seed_value: int, cfg: GameConfig) -> Callable:
 # the event carries a "region" tag (RallySession seats this from the owning
 # rally — see current_event() / _generate_event_tracks) and that region authors a
 # waterline (RegionLibrary.has_water_level), inherit it; otherwise fall back to
-# `base` (the GameConfig baseline). Shared by RallySession.apply_event_config and
+# `base` (the GameConfig baseline). Shared by StageConfig.apply_event_config and
 # for_event below, so the run scene, target-time derivation and the track cache all
 # agree on the same water level for the same event — see features/lakes.md.
 static func resolve_water_level(event: Dictionary, base: float) -> float:

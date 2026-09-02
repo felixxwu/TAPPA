@@ -90,11 +90,11 @@ func test_generate_cached_miss_falls_back_live() -> void:
 # (the bug this fixes: _generate_event_tracks used unmodified Config.data).
 func test_canonical_event_config_applies_overrides() -> void:
 	var event := {"seed": 3, "turn_count": 6, "terrain_layer1_amplitude": 99.0}
-	var cfg := RallySession.canonical_event_config(event)
+	var cfg := StageConfig.canonical_event_config(event)
 	assert_eq(cfg.terrain_layer1_amplitude, 99.0, "event override applied to fresh base")
 	# An omitted field falls back to the authored base, not a leaked prior value.
 	var event2 := {"seed": 4, "turn_count": 6}
-	var cfg2 := RallySession.canonical_event_config(event2)
+	var cfg2 := StageConfig.canonical_event_config(event2)
 	var base := load(Config.CONFIG_PATH) as GameConfig
 	assert_eq(cfg2.terrain_layer1_amplitude, base.terrain_layer1_amplitude, "omitted field uses base")
 
@@ -112,7 +112,7 @@ func test_committed_cache_covers_every_event() -> void:
 	TrackCache.reset()  # force a real load from disk
 	for rally in RallyLibrary.all():
 		for event in rally.get("events", []):
-			var cfg := RallySession.canonical_event_config(event)
+			var cfg := StageConfig.canonical_event_config(event)
 			var params := TrackGenParams.for_event(event, cfg)
 			var entry := TrackCache.raw_entry(params, cfg)
 			assert_false(entry.is_empty(),

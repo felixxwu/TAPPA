@@ -886,7 +886,7 @@ Check these against anything you move. All verified present in this repo:
 - **`class_name`** — one flat namespace, ~172 entries. Prefix extracted modules
   by owner (`hq.gd` → `HqLineup`). A collision breaks project load.
 - **Autoloads** — 11 in `project.godot`, none with `class_name`, so their statics
-  are reached by `preload` of the script (`hq.gd`'s `RallySessionScript` idiom),
+  are reached by `preload` of the script (`hq.gd`'s `ChallengeSessionScript` idiom),
   plus ~23 other `preload("res://scripts/*.gd")` sites and `scripts/scenes.gd`'s
   path constants.
 - **`scripts/game_config.gd` is split-exempt.** `config/game_config.tres` binds

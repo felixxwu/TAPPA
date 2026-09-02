@@ -388,7 +388,7 @@ func test_a_gravel_stage_is_untouched_by_a_surface_compound() -> void:
 
 func test_a_snow_stage_rewards_the_compound_the_player_fitted() -> void:
 	# Snowiness is a property of the STAGE's region, seated on the live config, not of
-	# the event dict — so this drives it the same way RallySession.apply_event_config
+	# the event dict — so this drives it the same way StageConfig.apply_event_config
 	# does. Restored afterwards: the config is shared across the suite.
 	var cfg: GameConfig = Config.data
 	var was := cfg.deep_snow_depth_m

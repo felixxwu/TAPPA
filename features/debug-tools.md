@@ -326,7 +326,7 @@ The debugging companion to `./cache_tracks.sh`, which can only rebake **every**
 event — there is no per-track bake. When the baker reports
 `track cache: rally X seed N did not complete`
 (`tools/generate_track_cache.gd` → `_ready`), this runs that ONE event through the
-same `RallySession.canonical_event_config` + `TrackGenParams.for_event` +
+same `StageConfig.canonical_event_config` + `TrackGenParams.for_event` +
 `TrackGenerator.generate` path and prints why, writing **nothing** (the committed
 `data/track_cache.json` is left untouched).
 

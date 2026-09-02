@@ -6,7 +6,7 @@ region that does more than look different: it is the first to influence **handli
 **Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`, `tests/headless/test_lake_field.gd`
 
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
-- **Handling seat:** `RallySession.apply_event_config`
+- **Handling seat:** `StageConfig.apply_event_config`
 - **Grip:** `Drivetrain.surface_tire_params`, `LapTimeModel._surface_grip`
 - **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `WorldRuntime.apply_deep_snow`
   (via `world.gd._apply_deep_snow_ground` / the same wrapper in `overworld.gd`),
@@ -69,7 +69,7 @@ have, instead of silently yielding 0.0 — which would read as "no grip at all".
 
 ### Seating it
 
-`RallySession.apply_event_config` resolves the region off `event["region"]`, which
+`StageConfig.apply_event_config` resolves the region off `event["region"]`, which
 `RallySession` already seats (lines 665 / 1001) for `TrackGenParams.resolve_water_level`
 — so **no signature change was needed**. Because that function reloads the authored
 baseline and pins every omitted field to it, a session-less caller (free roam, benchmark,

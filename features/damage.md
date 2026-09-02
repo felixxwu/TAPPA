@@ -397,8 +397,8 @@ repair, and the ONLY way HP is ever restored:
   than the HP patch so alignment recovers faster across a rally. Each wheel keeps its
   sign; a fully-bent car straightens out over the events.
 
-`RallySession._enter_event()` calls `Save.field_repair(instance_id, hp_fraction,
-toe_fraction)` for `_event_index >= 1` **before the per-event scene reload**, so the
+`RallySession._enter_event()` calls `Save.apply_field_repair_to(instance_id)` for
+`_event_index >= 1` **before the per-event scene reload**, so the
 freshly-loaded run scene fields the already-repaired car. `field_repair` returns a
 summary (`{repaired, hp_before, hp_after, max_hp, hp_gained}`) stashed on the session
 and read once via `take_pending_repair()`. It reports `repaired: false` — and writes
@@ -429,7 +429,13 @@ carry forward untouched into whatever the player drives next (the next rally, fr
 roam, etc.). `RallySession._resolve_results()` closes that gap: it also calls the
 same repair (`RallySession._apply_field_repair()`, the shared helper both call sites
 now use) for the just-finished car, with the identical `field_repair_hp_fraction`/
-`field_repair_toe_fraction` fractions. Unlike the between-event repair, this one is
+`field_repair_toe_fraction` fractions. **`Save.apply_field_repair_to(instance_id)` is
+the one entry point for that pairing** — it reads the two `GameConfig` fractions and
+calls `field_repair` with them, so no caller picks its own. Every between-stage and
+final-stage repair in the game goes through it: RallySession's two, and
+`ChallengeSession.report_event_result`'s two. (It lived on `RallySession` until the
+roguelike pivot's extraction stage; it is four lines of config reads and belongs next
+to the `field_repair` it delegates to.) Unlike the between-event repair, this one is
 applied **silently** — the summary is discarded rather than stashed for
 `take_pending_repair()`, so it never fights with the podium flow's own
 UI for the player's attention.

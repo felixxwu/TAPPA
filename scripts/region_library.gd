@@ -270,7 +270,7 @@ const REGIONS: Array[Dictionary] = [
 		# set to white, which would read as fresh paint on a snowy road.
 
 		# --- Handling. NOT LOOK_KEYS, and deliberately so: these are consumed by
-		# RallySession.apply_event_config at stage setup, not by world.gd's look pass
+		# StageConfig.apply_event_config at stage setup, not by world.gd's look pass
 		# after generation, so folding them into look_of would deliver them too late
 		# AND leak non-look keys into the dict world.gd treats as look overrides. Same
 		# reasoning that keeps `water_level` out of the whitelist.
@@ -336,7 +336,7 @@ static func has_water_level(region_id: String) -> bool:
 
 # --- Handling overrides (features/snow-region.md) -----------------------------
 # A region may override the per-surface grip scales and author a deep-snow block. Both
-# are read at stage setup by RallySession.apply_event_config, NOT through look_of — see
+# are read at stage setup by StageConfig.apply_event_config, NOT through look_of — see
 # the comment on the snow entry for why they are not LOOK_KEYS.
 #
 # Like water_level, each is a has_*/­*_of PAIR rather than one function returning a

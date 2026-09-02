@@ -34,7 +34,7 @@ seed-lab.
   `RallySession.current_event()` and `RallySession._generate_event_tracks` are the
   two places that seat it, duplicating the per-stage event dict and copying in the
   owning rally's `region` field so it survives into `TrackGenParams.for_event` and
-  `RallySession.apply_event_config` (both call the shared resolver — the "exactly
+  `StageConfig.apply_event_config` (both call the shared resolver — the "exactly
   two consumers" of an event's `water_level`). A dict with no `"region"` key at all
   — `challenge_library.gd`'s rolled challenge stages, `hq.gd`'s free-roam draw,
   `settings_menu.gd`'s dev track page — falls straight through to the `GameConfig`
@@ -215,7 +215,7 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   **Terrain…** / Randomize / Back (`go_back` returns to the category list).
 - **Faithful generation.** `_regen_seedlab` builds an EventDef from the inputs
   (`_seedlab_event`) and generates through the **exact career path** —
-  `RallySession.canonical_event_config(ev)` → `TrackGenParams.for_event(ev, cfg)` —
+  `StageConfig.canonical_event_config(ev)` → `TrackGenParams.for_event(ev, cfg)` —
   NOT `for_trial`. This matters: `for_trial` skipped start-line staging (no lead-in
   `reserve_behind`, origin at nominal) and used `cfg.track_width` (7.0) instead of the
   event width (`DEFAULT_WIDTH` 6.0), so its shapes disagreed with the cached career

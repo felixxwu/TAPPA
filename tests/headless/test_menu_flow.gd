@@ -3174,7 +3174,7 @@ func _challenge_after_stage_one() -> Control:
 
 func test_standings_opens_a_challenge_stage_straight_on_the_world_board() -> void:
 	# A challenge has no AI opponents — only real people online — so page 1 (the local
-	# event standings) would be a table holding nothing but the player's own row. The
+	# event standings) has nothing to rank and is fed an empty row list. The
 	# interstitial skips it entirely and opens on the world board.
 	var sc := _challenge_after_stage_one()
 	await get_tree().process_frame
@@ -4568,7 +4568,7 @@ func test_challenge_committed_car_is_still_an_engine_swap_partner() -> void:
 #
 # Config.data is never reset between scenes, so any field free roam doesn't write
 # survives from the last event that did. Free roam therefore goes through the same
-# canonical writer a rally does (RallySession.apply_event_config), which pins every
+# canonical writer a rally does (StageConfig.apply_event_config), which pins every
 # field the caller omits back to the authored baseline.
 func test_hq_free_roam_clears_a_previous_events_track_shape() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()

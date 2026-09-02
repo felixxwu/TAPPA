@@ -74,10 +74,9 @@ func _first_focusable(n: Node) -> Control:
 
 # --- A challenge skips page 1 (there are no AI opponents to rank against) ---------
 
-# A challenge run has no rival field — ChallengeSession feeds build_standings an
-# empty one — so page 1 (the local event standings) would be a table containing
-# nothing but the player's own row. The interstitial goes straight to the world
-# board instead. Keyed off the LATCHED mode, so it holds on the FINAL stage too,
+# A challenge run has no rival field, so page 1 (the local event standings) has
+# nothing to rank and is fed an empty row list. The interstitial goes straight to
+# the world board instead. Keyed off the LATCHED mode, so it holds on the FINAL stage too,
 # where the session has already gone inactive by the time this screen builds.
 func test_a_challenge_skips_straight_to_the_world_board() -> void:
 	var s: Control = load("res://standings.tscn").instantiate()

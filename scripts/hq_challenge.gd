@@ -77,8 +77,8 @@ func _open_challenge_overlay() -> void:
 	# eligible_cars are pure static helpers (no Save dependency, testable with a
 	# synthetic profile per challenge_session.gd) called through the autoload the same
 	# way every other ChallengeSession call in this file is — the analyzer's "static
-	# called on instance" warning is expected here, same as it would be for
-	# RallySession.apply_event_config called via the RallySession autoload.
+	# called on instance" warning is expected here, and is the price of a static living
+	# on an autoload that has no class_name to reach it by.
 	@warning_ignore("static_called_on_instance")
 	if ChallengeSession.has_stale_run(Save.profile, unix_time):
 		ChallengeSession.discard_stale_run(unix_time)

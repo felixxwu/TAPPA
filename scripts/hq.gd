@@ -53,13 +53,10 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 # alias keeps the existing hq.STARTER_MODEL_IDS call sites and test hooks working.
 const STARTER_MODEL_IDS := CarLibrary.STARTER_MODEL_IDS
 
-# RallySession is an autoload with no class_name, so its STATIC canonical config
-# writer (apply_event_config) must be reached through the script resource — calling a
-# static via the instance warns. Same precedent as driving_context.gd.
-const RallySessionScript := preload("res://scripts/rally_session.gd")
-# Same idiom as RallySessionScript above, and for the same reason: ChallengeSession is an
-# AUTOLOAD, so the bare name is the node instance — and calling one of its `static func`s through
-# an instance raises STATIC_CALLED_ON_INSTANCE. Reaching the script directly keeps the call clean.
+# ChallengeSession is an AUTOLOAD, so the bare name is the node instance — and calling one of
+# its `static func`s through an instance raises STATIC_CALLED_ON_INSTANCE. Reaching the script
+# directly keeps the call clean. (The stage-config writer needs no such dance any more: it is
+# StageConfig, a real class_name — see scripts/stage_config.gd.)
 const ChallengeSessionScript := preload("res://scripts/challenge_session.gd")
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
@@ -2059,7 +2056,7 @@ func _launch_free_roam(instance_id: int, model_id: String) -> void:
 #
 # Free roam is SESSION-LESS, so DrivingContext.apply_stage_config (world.gd._ready)
 # deliberately no-ops for it and these writes are what generation actually consumes.
-# They go through the CANONICAL writer (RallySession.apply_event_config) with the rolled
+# They go through the CANONICAL writer (StageConfig.apply_event_config) with the rolled
 # values shaped as an event dict, rather than hand-writing the handful of fields free
 # roam cares about: Config.data is never reset between scenes, so every field a
 # hand-written subset omitted (turn count, width, cliffiness, the terrain layers) used to
@@ -2086,14 +2083,14 @@ func _prepare_free_roam() -> void:
 	#
 	# The region is drawn FIRST and seated onto the event dict, because a region can now
 	# carry handling as well as look (the Alps drop every surface's grip and add deep
-	# snow — features/snow-region.md) and apply_event_config resolves that off
+	# snow — features/snow-region.md) and StageConfig.apply_event_config resolves that off
 	# event["region"], exactly as it resolves the waterline. Drawn afterwards, free roam
 	# would get the white look with home grip: it would LOOK like snow and drive like
 	# a summer forest.
 	var regions := RegionLibrary.all()
 	RallySession.free_roam_region_id = "" if regions.is_empty() \
 		else String(regions[randi() % regions.size()].get("id", ""))
-	RallySessionScript.apply_event_config(cfg, {
+	StageConfig.apply_event_config(cfg, {
 		"seed": randi(),
 		"region": RallySession.free_roam_region_id,
 		"straightness": base.free_roam_straightness,

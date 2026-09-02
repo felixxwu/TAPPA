@@ -4,8 +4,9 @@ extends Control
 # Tests: tests/headless/test_replay_camera.gd, tests/headless/test_replay_playback.gd, tests/headless/test_replay_recorder.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Standings' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Between-event standings interstitial (features/menus.md, features/rally-session.md).
 # Shown after each event, as ONE page carrying both leaderboards stacked:
-#   1. STAGE n RESULT — that one stage's finishing times, ranked (current_event_standings)
-#   2. OVERALL — the cumulative leaderboard so far (current_standings)
+#   1. STAGE n RESULT — that one stage's finishing times, ranked
+#      (RallySession.current_event_standings)
+#   2. OVERALL — the cumulative leaderboard so far (RallySession.current_standings)
 # Each section lists the top PODIUM_ROWS finishers; if the player placed outside
 # them their own row is appended at the bottom (with a gap marker when it isn't
 # adjacent) so they can always see where they came. Both sections show on EVERY stage,
@@ -85,12 +86,16 @@ func _ready() -> void:
 # at all. Pinning the mode at construction makes the whole page resolve against
 # ONE session for its whole life. See todo/challenge-career-reuse-drift.md item 2.
 #
-# A challenge has no rival field, so its two leaderboards are the player's own row
-# alone (ChallengeSession.current_event_standings / current_standings feed
-# RallyLibrary.build_standings an empty field — the identical rendering a rally
-# with zero rivals produces). Every ChallengeSession getter below stays valid
-# after the run ends: _finish_locally clears only `_active`, not the stage times,
-# period key or fielded car. See features/rally-challenge.md.
+# A challenge has no rival field, so it has no local leaderboard at all: _ready
+# tears page 1 down for a challenge and opens straight on the world board, and the
+# two sections below are fed an EMPTY row list in that mode rather than a
+# one-entrant table. (They used to be fed ChallengeSession's own standings rows;
+# those are gone — a challenge run's per-stage times now come off
+# ChallengeSession.current_stage_times_ms / run_times_ms as plain ms, which is
+# what a run summary wants and is not a ranking.) Every other ChallengeSession
+# getter below stays valid after the run ends: _finish_locally clears only
+# `_active`, not the stage times, period key or fielded car. See
+# features/rally-challenge.md.
 var _challenge := false
 
 
@@ -233,11 +238,12 @@ func _build_ui() -> void:
 	# player learns where to look once instead of having the layout change under them.
 	var row_nodes: Array[Control] = []
 	var challenge := _challenge
+	# Empty in challenge mode: there is no field to rank and _ready frees this whole
+	# page for a challenge anyway (see the _challenge block comment above).
 	row_nodes.append_array(_add_section(content, "STAGE %d RESULT" % done,
-		ChallengeSession.current_event_standings() if challenge \
-			else RallySession.current_event_standings()))
+		[] if challenge else RallySession.current_event_standings()))
 	row_nodes.append_array(_add_section(content, overall_heading(done),
-		ChallengeSession.current_standings() if challenge else RallySession.current_standings()))
+		[] if challenge else RallySession.current_standings()))
 
 	# The action row sits side by side rather than stacked: two full-width buttons
 	# eat a leaderboard row's worth of height each, and this screen is tight enough

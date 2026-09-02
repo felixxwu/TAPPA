@@ -165,7 +165,7 @@ var _syncing_spins := false
 # wavelength+amplitude). These shape the track too — the generator routes the road
 # around below-water cells and relocates the dry start — so without them the lab's
 # lakes disagree with the real career event. _seedlab_cfg folds them into the config
-# the preview generates against, matching RallySession.apply_event_config.
+# the preview generates against, matching StageConfig.apply_event_config.
 var _seedlab_terrain_popup: Control
 var _t1w: SpinBox  # layer 1 wavelength
 var _t1a: SpinBox  # layer 1 amplitude
@@ -1260,7 +1260,7 @@ func _close_event_picker() -> void:
 # source of truth AND the preview matches the real career stage. Terrain matters
 # because the generator routes the road around below-water cells and relocates the
 # dry start — omitting it made the lab's lakes disagree with the event. Omitted keys
-# fall back to the authored base config (exactly as RallySession.apply_event_config).
+# fall back to the authored base config (exactly as StageConfig.apply_event_config).
 func _load_event(event: Dictionary) -> void:
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	_syncing_spins = true
@@ -1367,7 +1367,7 @@ func _regen_seedlab() -> void:
 	# line staging, lead-in reserve, width, water, terrain). for_trial skipped staging,
 	# which is why the lab's shapes disagreed with the cached career tracks.
 	var ev := _seedlab_event()
-	var cfg := RallySession.canonical_event_config(ev)
+	var cfg := StageConfig.canonical_event_config(ev)
 	var params := TrackGenParams.for_event(ev, cfg)
 	# Paint the waterline first (known up-front) over a rough box, then animate.
 	var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)

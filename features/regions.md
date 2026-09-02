@@ -55,7 +55,7 @@ boreal corner: home's look with one much taller tree).
 **A region is no longer look-only.** `snow` also carries HANDLING: per-surface grip
 overrides, a deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS`
 (exactly as `water_level` does) because they are consumed by
-`RallySession.apply_event_config` at stage setup, not by `world.gd`'s look pass after
+`StageConfig.apply_event_config` at stage setup, not by `world.gd`'s look pass after
 generation. Each is a `has_*` / `*_of` pair for the same value-vs-absent reason
 `water_level_of` documents, and none is inherited through `look_from`.
 Every rally is pinned on the one world map (`textures/map_world.jpg`, 848x848)

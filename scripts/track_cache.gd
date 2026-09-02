@@ -110,7 +110,7 @@ static func all_event_keys() -> Array:
 	var keys: Array = []
 	for rally in RallyLibrary.all():
 		for event in rally.get("events", []):
-			var cfg := RallySession.canonical_event_config(event)
+			var cfg := StageConfig.canonical_event_config(event)
 			var params := TrackGenParams.for_event(event, cfg)
 			keys.append(key_for(params, cfg))
 	return keys

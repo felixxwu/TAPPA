@@ -41,7 +41,7 @@ Owns all terrain state and the chunk lifecycle.
   **Per-event override:** an event may set any of the 6 flat keys
   `terrain_layer{1,2,3}_{wavelength,amplitude}` to reshape its hills; omitted
   keys fall back to the authored `GameConfig` global default (never to a prior
-  event's override — see `RallySession.apply_event_config`, [rally-session.md](rally-session.md)).
+  event's override — see `StageConfig.apply_event_config`, [rally-session.md](rally-session.md)).
 - `texture_tile_per_meter: float` — UV tiling for the ground texture (the road
   texture tiles independently via `road_tile_per_meter`, applied as the shader's
   `road_uv_scale`; see [rendering.md](rendering.md)).

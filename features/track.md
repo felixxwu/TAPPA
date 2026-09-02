@@ -2,7 +2,9 @@
 
 **Source:** `scripts/corner_library.gd` (`class_name CornerLibrary`),
 `scripts/corner_catalog.gd` (`class_name CornerCatalog`), `corner_catalog.tscn`,
-`scripts/track_generator.gd` (`class_name TrackGenerator`).
+`scripts/track_generator.gd` (`class_name TrackGenerator`),
+`scripts/stage_config.gd` (`class_name StageConfig` — the canonical event→config
+writer every generation site resolves its params through).
 
 **Tests:** `tests/headless/test_corner_library.gd`, `tests/headless/test_track_generator.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`, `tests/headless/test_track_cache.gd`
 
@@ -413,7 +415,7 @@ never overlaps the placed track beyond the join buffer).
 input-sensitive, and origin-independent; `rebuild_from_pieces` reproduces a live
 `generate` byte-for-byte (centerline + per-piece/union cells); `TrackCache.lookup`
 misses to `{}` and hits rebuild; `generate_cached` falls back to live on a miss;
-`canonical_event_config` applies event overrides onto a fresh base; and the
+`StageConfig.canonical_event_config` applies event overrides onto a fresh base; and the
 committed `data/track_cache.json` covers every event with a matching `source_hash`.
 
 `tests/headless/test_road_markings.gd` — `RoadMarkings.build()` against a straight

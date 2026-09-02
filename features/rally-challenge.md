@@ -89,7 +89,7 @@ have caught this).
 seated at CONSUME time, in exactly one place:** `world.gd._ready` calls
 `DrivingContext.apply_stage_config(Config.data)` before anything reads the config.
 That resolver asks whichever session is active (challenge first, then career) for its
-stage/event dict and forwards it to `RallySession.apply_event_config`.
+stage/event dict and forwards it to `StageConfig.apply_event_config`.
 
 There is deliberately **no per-producer call**. `rally_session._load_event_scene`,
 `challenge_session.continue_to_next_stage` and `hq._hand_off_to_challenge_scene` used
@@ -105,7 +105,7 @@ This is load-bearing because the split is not obvious:
 `cfg.track_water_level_m` in `world.gd._build_lakes` (and the car's
 `set_water_query`), not from `params.water_level`.
 
-Safe at consume time because `apply_event_config` is pure and idempotent: it reloads
+Safe at consume time because `StageConfig.apply_event_config` is pure and idempotent: it reloads
 the pristine `config/game_config.tres` on every call and pins every omitted field to
 it. Session-less entries (free roam, benchmark, dev boot) no-op, so their deliberate
 writes survive — free roam now goes through the same canonical writer
@@ -121,7 +121,7 @@ retry above then papered over.
 
 Regression coverage lives in `test_challenge_session.gd` and `test_rally_session.gd`:
 the resolved config is asserted **field-for-field identical** to
-`RallySession.canonical_event_config(stage)` (diffing every `SCRIPT_VARIABLE`, so a
+`StageConfig.canonical_event_config(stage)` (diffing every `SCRIPT_VARIABLE`, so a
 per-event field added later is covered automatically), plus a session-less no-op
 guard. Nothing pins a value; every one is a rolled/tunable number.
 
@@ -537,8 +537,8 @@ is no live path that ends a run as a DNF: a run either completes every stage or 
 left with `pause_run()` / `abandon()` (see below), which record no outcome at all.
 The `dnf` shape SURVIVES either side of that, and is not dead code: `_dnf` is still
 read back from a persisted `challenge_run`, still written into the persisted run dict
-and the finished-run result, still feeds `RallyLibrary.build_standings`, and the entry
-screen still renders a stored `DNF` outcome in red. The cloud half likewise stands —
+and the finished-run result, and the entry screen still renders a stored `DNF`
+outcome in red. The cloud half likewise stands —
 `ChallengeLeaderboard.post_dnf`, the `isDnfFlip()` rules branch, and
 `world.gd._on_challenge_run_finished`'s `result["dnf"]` arm are all still there for
 legacy/persisted runs, they simply never fire from a run started today.
@@ -673,11 +673,15 @@ does after a career rally event (both are driven by the same `StageManager` /
   `_reward_pending` / `_stage_upgrade` / `_reveal` are all gone from `standings.gd`,
   and `ChallengeSession._stage_upgrade` / `stage_upgrade()` with them) — see
   [reward-system.md](reward-system.md).
-- **Local standings are a field of one.** A challenge has no rivals, so
-  `ChallengeSession.current_event_standings()` / `current_standings()` feed
-  `RallyLibrary.build_standings` an EMPTY field — the exact rendering a rally with
-  zero rivals produces — rather than introducing a "no standings" UI state. The
-  player's row carries that stage's time and the cumulative time respectively.
+- **A challenge has no local standings at all.** It has no rivals, so there is
+  nothing to rank: `standings.gd` feeds page 1's two sections an EMPTY row list in
+  challenge mode (and `_ready` frees the page outright, opening straight on the
+  world board). What a challenge run reports instead are plain millisecond TIMES —
+  `ChallengeSession.current_stage_times_ms()` (the stage just driven, as a
+  one-element list, `[]` before any stage completes) and `run_times_ms()` (every
+  completed stage, in stage order, summing to `cumulative_ms()`). These two used to
+  be `current_event_standings()` / `current_standings()`, which handed
+  `RallyLibrary.build_standings` an empty field to get the player's own row back.
 ### Known deferred: field-repair timing
 
 `report_event_result` computes the field repair at stage END, whereas

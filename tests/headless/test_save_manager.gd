@@ -420,6 +420,40 @@ func test_field_repair_bends_each_wheel_back_toward_straight() -> void:
 		assert_almost_eq(float(toe[i]), [0.08, -0.06, 0.04, -0.02][i] * 0.5, 0.0001, "wheel %d bent halfway back" % i)
 
 
+# --- apply_field_repair_to: the ONE fraction pairing ---------------------------
+#
+# Every between-stage and final-stage repair in the game goes through this wrapper
+# so no caller picks its own fractions (it was folded here off RallySession). What
+# is pinned is the AGREEMENT with a hand-made field_repair at the config's own
+# fractions — not the fractions themselves, which are tunables.
+
+func test_apply_field_repair_to_uses_the_configs_own_fractions() -> void:
+	var cfg: GameConfig = Config.data
+	var driven := int(_save.grant_car("fx_rwd_coupe")["instance_id"])
+	var control := int(_save.grant_car("fx_rwd_coupe")["instance_id"])
+	_save.apply_damage(driven, 400.0)
+	_save.apply_damage(control, 400.0)
+	_save.set_wheel_toe(driven, [0.08, -0.06, 0.04, -0.02])
+	_save.set_wheel_toe(control, [0.08, -0.06, 0.04, -0.02])
+
+	var wrapped: Dictionary = _save.apply_field_repair_to(driven)
+	var by_hand: Dictionary = _save.field_repair(control,
+		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
+
+	assert_eq(bool(wrapped.get("repaired", false)), bool(by_hand.get("repaired", false)),
+		"the wrapper repairs exactly when the raw call does")
+	assert_almost_eq(float(_save.get_car(driven)["hp"]), float(_save.get_car(control)["hp"]),
+		0.001, "the wrapper's HP result is field_repair at the config fractions")
+	assert_eq(_save.get_car(driven)["wheel_toe"], _save.get_car(control)["wheel_toe"],
+		"and its wheel result too")
+
+
+func test_apply_field_repair_to_no_ops_when_nothing_is_fielded() -> void:
+	# -1 is "no car fielded" (a session between runs), not an error.
+	var summary: Dictionary = _save.apply_field_repair_to(-1)
+	assert_false(summary.get("repaired", false), "no fielded car -> nothing repaired")
+
+
 func test_field_repair_skips_a_pristine_car() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")  # full hp, straight wheels
 	var summary: Dictionary = _save.field_repair(car["instance_id"], 0.2, 0.5)

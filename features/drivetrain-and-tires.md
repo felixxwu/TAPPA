@@ -431,7 +431,7 @@ Two ways the per-surface μ scales can be replaced for a stage, both introduced 
 Alps (see [snow-region.md](snow-region.md)):
 
 - **Per-surface overrides.** A region may override `grass_grip` / `gravel_grip` /
-  `tarmac_grip` for every stage tagged to it. `RallySession.apply_event_config` seats the
+  `tarmac_grip` for every stage tagged to it. `StageConfig.apply_event_config` seats the
   values, so `surface_tire_params` needs no change at all — it reads the same live config
   fields it always did, and so does `LapTimeModel`, which is why the rival field scales
   automatically.

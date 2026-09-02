@@ -152,16 +152,18 @@ In real play (`auto_load_scenes = true`) each event writes its
 **Between-event pit repairs.** `_enter_event()` runs at the start of every event
 (via `start_rally` for the first, `continue_to_next_event` for the rest). For every
 event AFTER the first (`_event_index >= 1`) with a fielded car, it calls
-`Save.field_repair(instance_id, field_repair_hp_fraction, field_repair_toe_fraction)`
-BEFORE the scene reload — restoring a slice of the lost HP and bending the bent wheels
+`Save.apply_field_repair_to(instance_id)` — the shared wrapper that reads
+`field_repair_hp_fraction` / `field_repair_toe_fraction` off the config and calls
+`Save.field_repair` with them — BEFORE the scene reload — restoring a slice of the lost HP and bending the bent wheels
 part-way back toward straight (see [damage.md](damage.md) → *Between-event pit
 repairs*). Because the OwnedCar is mutated before the reload, `world.gd` fields the
 already-repaired car. The repair summary is stashed on the session and read once via
 `take_pending_repair()` (cleared on read + on `start_rally`, so a pause→reset can't
 replay it); `world.gd` renders it as a `RepairReveal` popup before the start line.
 Both `_enter_event()` and `_resolve_results()` apply the repair through the same
-private `_apply_field_repair()` helper, so the two call sites can't drift on which
-fractions they use.
+private `_apply_field_repair()` helper — and that in turn through
+`Save.apply_field_repair_to`, which `ChallengeSession` also uses — so no call site
+picks its own fractions.
 
 **Final-event repair.** The between-event repair above only ever fires going INTO
 an event, so damage from the LAST event of a rally previously got no repair at all —
@@ -173,9 +175,11 @@ applied silently — its summary is discarded rather than stashed for
 `take_pending_repair()`, so it doesn't compete with the podium flow's
 own UI.
 
-The config write is `apply_event_config(cfg, event)` — a static, scene-free seam
-(extracted from `_load_event_scene` so its fallback semantics are directly
-testable). **Every field an event may omit resolves to the AUTHORED baseline**
+The config write is `StageConfig.apply_event_config(cfg, event)`
+(`scripts/stage_config.gd`) — a static, scene-free seam. It used to live on
+RallySession, extracted from `_load_event_scene` so its fallback semantics were
+directly testable; it now lives on its own class because it is not rally-specific
+at all — every kind of run seats a stage through it. **Every field an event may omit resolves to the AUTHORED baseline**
 (the pristine cached `.tres`; `Config.data` is a duplicate of it), *not* the
 current `cfg` value. This matters because `Config.data` is a persistent session
 working copy that is never reset between events — a cfg-value fallback would let
@@ -263,7 +267,7 @@ deferred full menus build — RallySession already emits the signals it hooks.
 ## Opponent target times (turn cache)
 
 `_generate_event_tracks` derives each event's opponent times from its generated
-track. It now resolves params through `RallySession.canonical_event_config(event)`
+track. It now resolves params through `StageConfig.canonical_event_config(event)`
 (a fresh authored-base config with the event's overrides applied) and generates via
 `TrackGenerator.generate_cached`, so the times come from the committed turn lockfile
 (`data/track_cache.json`) instead of running the DFS 3× per rally. Using

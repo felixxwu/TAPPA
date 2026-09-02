@@ -185,7 +185,7 @@ static func stages_for(period_key: String, stage_count: int) -> Array:
 		# draws the amplitude from the SAME band real content uses for whichever
 		# water level came up, rather than risking a pairing no shipped stage has
 		# ever exercised. Both values only reach generation via
-		# DrivingContext.apply_stage_config -> RallySession.apply_event_config.
+		# DrivingContext.apply_stage_config -> StageConfig.apply_event_config.
 		var water_level := -12.0 if rng.randf() < 0.5 else -5.0
 		var amplitude := rng.randf_range(16.0, 19.0) if water_level == -5.0 \
 			else rng.randf_range(11.0, 25.0)
