@@ -3,7 +3,7 @@
 **Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
 *complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
 ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
-(referred to below as **RR**). Decisions 1–20 are settled. **Read the Blockers
+(referred to below as **RR**). Decisions 1–21 are settled. **Read the Blockers
 section before starting stage 2** — it lists errors in the plan that would break
 the demolition if followed as written.
 
@@ -57,6 +57,11 @@ Settled with the user during the brainstorm that produced this file:
     **git is the rollback mechanism** — the old career is one `git revert` away,
     which is cheaper and more reliable than a flag threaded through every
     transition site.
+21. **No endgame, for now.** Clearing the last region leaves every region
+    unlocked and repeatable; there is no credits roll, ascension mode or
+    difficulty ladder. Accepted deliberately — see the Third pass section for
+    the one demolition consequence (the existing credits trigger dies with
+    specials and must be removed, not left dangling).
 
 ## The new loop, end to end
 
@@ -751,13 +756,23 @@ difficulty band per region and restrict each region's pool to it; scale
 favour of something the data supports. It cannot be left as "regions unlock in
 order" with pools that contradict it.
 
-### There is no endgame
+### ~~There is no endgame~~ — ACCEPTED, deferred (decision 21)
 
 Six regions of 8 stages is 48 stages, and then the spec stops. Today TAPPA ends
 on `RallyLibrary.all_specials_completed` → credits. RR never ends, but RR also
-has no region progression to exhaust. What happens after the last region clears
-is unspecified: credits, an endless/ascension mode, a difficulty ladder over the
-same regions, or nothing.
+has no region progression to exhaust.
+
+**Decided: shipping with no endgame is fine for now.** Clearing the last region
+simply leaves every region unlocked and repeatable (decision 12), which is a
+coherent, if open, terminal state — the player keeps running regions for stars.
+Two consequences to keep in view rather than solve now:
+
+- The **credits** currently fire from `RallyLibrary.all_specials_completed`,
+  which dies with specials. Demolition must remove that trigger rather than
+  leave it dangling on a predicate that can no longer be true.
+- Whatever endgame eventually arrives will want a "region cleared" record per
+  region, not just the `regions_cleared` unlock ledger — the ledger already
+  supplies that, so nothing needs designing ahead of time.
 
 ### The run has one decision, repeated eight times
 
