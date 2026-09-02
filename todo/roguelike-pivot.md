@@ -3,7 +3,7 @@
 **Status: AGREED IN OUTLINE, demolition not started.** This is the spec for a
 *complete* pivot of TAPPA's gameplay loop, from the Gran-Turismo-shaped career it
 ships today to a run-based roguelike modelled on `felixxwu/roguelike-rally`
-(referred to below as **RR**). Decisions 1–27 are settled. **Read the Blockers
+(referred to below as **RR**). Decisions 1–35 are settled. **Read the Blockers
 section before starting stage 2** — it lists errors in the plan that would break
 the demolition if followed as written.
 
@@ -75,7 +75,32 @@ Settled with the user during the brainstorm that produced this file:
     wheel swapping as its one non-shopping activity; Test Drive is retired with
     the rest of the car park's modes.
 26. **Perk pacing is left as authored and tuned after playing.**
-27. **No endgame, for now.** Clearing the last region leaves every region
+27. **One run at a time, one slot.** `profile["challenge_run"]` generalises to a
+    single run record of either kind; starting a region run discards a paused
+    challenge run and vice versa, behind a confirm. Keeps the existing car-lock
+    query working with no discriminator.
+28. **A new player starts with money and buys from the shop.** The three-car
+    starter picker is not rebuilt — it dies with `overworld_picker.gd`, and the
+    car shop becomes the first screen carrying a decision.
+29. **The start line offers Tune Car only.** Upgrades has nothing to show once
+    parts are gone and boosts are picked between stages; tuning survives
+    (decision 24) and is per-stage useful.
+30. **Global stage leaderboards are dropped.** The between-stage screen is the
+    boost pick alone. See the Economy/leaderboards note for what that deletes.
+31. **Money payout scales with region index.** The same region index that
+    tightens `target_pace` (decision 22) also raises the reward, so grinding an
+    early region is strictly worse per unit time than progressing. This is what
+    stops "farm region 1 forever" without taking the grind valve away.
+32. **Minimum stage pool: 16 events per region** — two runs with no repeats.
+    Only `greece_coast` (3) and `home_coast` (12) need authoring up; `home` (36),
+    `greece` (24), `snow` (18) and `taiga` (15) are at or near it already.
+33. **A doomed run is driven out.** No retire option and no unwinnable-run
+    warning: missing the timer ends the run anyway, so the worst case is one
+    stage of known-lost driving.
+34. **The old `_migrate_step` chain (schemas 1–5) is deleted** along with the
+    legacy backfill keys. No migration is written for the pivot, so a pre-pivot
+    profile resets whatever its version.
+35. **No endgame, for now.** Clearing the last region leaves every region
     unlocked and repeatable; there is no credits roll, ascension mode or
     difficulty ladder. Accepted deliberately — see the Third pass section for
     the one demolition consequence (the existing credits trigger dies with
@@ -193,12 +218,11 @@ topping up procedurally. Two consequences:
 
 - This is authoring work that gates the region being playable at all, so it
   belongs in the stage that introduces region runs, not in a later polish pass.
-- **Every region needs the same check.** A pool of exactly 8 means every run in
-  that region draws the identical 8 stages, so the practical floor is
-  comfortably above 8. Every region except `greece_coast` clears 8 today, but
-  `home_coast` at 12 offers little variety between runs. Worth deciding a
-  minimum pool size as a rule and authoring every region up to it, rather than
-  treating `greece_coast` as a one-off.
+- **The floor is 16 events per region** (decision 32) — two runs with no
+  repeats. Against that bar: `home` (36), `greece` (24) and `snow` (18) pass;
+  `taiga` (15) is one event short; `home_coast` (12) and `greece_coast` (3) need
+  real authoring. So this is a content pass across three regions, not a
+  `greece_coast` one-off, and it gates those regions being playable at all.
 
 **`RegionLibrary` explicitly forbids the ordering decision 2 requires.** The
 header comment on `REGIONS` reads: *"ORDER CARRIES NO MEANING — regions do not
@@ -504,6 +528,22 @@ currently pays out through `RallyLibrary.stars_for_placement`. The challenge
 survives (decision 15), so its reward must be re-pointed at money in the same
 change that deletes the star tiers.
 
+**Dropping the global stage leaderboards** (decision 30) deletes
+`scripts/cloud/leaderboard.gd`, `scripts/global_standings.gd`, the world-readable
+`stage_times/{stage}/times/{uid}` rules in `firestore.rules`, and
+`tests/headless/test_cloud_leaderboard.gd`. It also makes
+**`RallyLibrary.stage_key` and `TrackCache.BOARD_EPOCH` dead** — `stage_key` has
+no other consumer — which retires an earlier Blocker outright: there is no longer
+a question about how to derive a stage key once rallies are flattened, and no
+epoch to bump.
+
+Two things survive it. `scripts/cloud/firestore_board.gd` stays, because it is
+the shared base for the **challenge** leaderboard
+(`challenge_leaderboard.gd`, `challenge_runs/{period_key}/entries`), which comes
+along with the challenge itself (decision 15) — decision 30 is read as dropping
+the *stage* boards, not the challenge's. And `username_popup.gd` still owns
+`profile["username"]`, which the challenge board needs.
+
 **Collectables are genuinely new work** — there is no pickup or trigger-volume
 system in the codebase today. It needs a prop mesh, placement along the generated
 track, a pickup trigger, a HUD counter and audio. The nearest existing patterns
@@ -637,16 +677,20 @@ returns with `RunSession` in stage 3, since it shares the pieces being torn out.
    `Scenes.is_hub_scene` so music still resolves. Reset the save schema with **no
    migration**. Resolve the coupled systems the reviews found — tuning's unlock
    gate and the aero wing meshes it drives, the start-line menu, `stage_key`,
-   wheel customisation, the starter picker. The tree compiles at the end of this
-   stage; the game does not run.
+   wheel customisation, the starter picker. Also delete: the star ledger and
+   everything on it (decision 21), the global stage leaderboards with `stage_key`
+   and `BOARD_EPOCH` (decision 30), free roam (decision 25), and the
+   `_migrate_step` chain with its legacy backfill keys (decision 34). The tree
+   compiles at the end of this stage; the game does not run.
 3. **Back to playable — the minimum spine.** `RunSession` generalised from
    `ChallengeSession`, a bare flat shell (title → car select → run), the region
    stage draw, the fixed reference-car timer, run-over on a missed target, and a
    plain run-summary screen. Ugly is fine; running is the bar. The challenge mode
    comes back here too, as the second caller of `RunSession`.
-4. **Region select + linear unlock**, replacing the map table. Includes
-   **authoring the extra `greece_coast` rallies** (decision 10) and whatever else
-   a minimum pool size demands — the region is not playable without them.
+4. **Region select + linear unlock**, replacing the map table. Includes the
+   **stage-pool authoring pass** to decision 32's 16-event floor — `greece_coast`
+   (3), `home_coast` (12) and `taiga` (15) all need events written, and those
+   regions are not playable without them.
 5. **In-run boosts + repair pick** between stages, wiped on run end.
 6. **Meta shop**: boost levels, then car purchasing, then the engine-swap unlock.
 7. **Lifetime stats, then perks** (perks depend on stats).
@@ -862,7 +906,7 @@ They are recorded here rather than silently decided.
 
 ### Systems the spec forgot entirely
 
-- **Free roam / "Test Drive".** Reached from the car park
+- ~~**Free roam / "Test Drive".**~~ **Resolved by decision 25: retired.** Reached from the car park
   (`CarparkMode.FREEROAM`), generated by `hq.gd._prepare_free_roam` from its own
   `GameConfig` block (`free_roam_straightness`, `free_roam_forestiness`,
   `free_roam_tarmac_fraction`, `free_roam_water_level_min_m/max_m`,
@@ -872,7 +916,7 @@ They are recorded here rather than silently decided.
   places and `benchmark_mode.gd` resets. Its entry point is being flattened away
   and nothing in this spec says whether it survives. It also has **no
   `features/` doc**, which per `CLAUDE.md` is its own gap to close.
-- **Tuning.** `TuningLibrary` (`AXES := ["grip_balance", "brake_bias",
+- ~~**Tuning.**~~ **Resolved by decision 24: survives, ungated.** `TuningLibrary` (`AXES := ["grip_balance", "brake_bias",
   "aero_balance"]`, `apply`, `axis_unlocked`) and `scripts/tuning_panel.gd` are
   free, reversible per-car config nudges, reachable from the start-line menu.
   The spec deletes the 3D tuning *lift* but never decides the fate of tuning
@@ -880,7 +924,8 @@ They are recorded here rather than silently decided.
   `UpgradeLibrary.aero_tuning_unlocked` gate an axis on a *fitted aero part*, so
   deleting the parts model breaks tuning's unlock gate. Retire tuning, make all
   axes free, or re-gate on boost levels — but it cannot be left as-is.
-- **The start line.** `scripts/start_line.gd` (`features/start-line.md`) runs
+- **The start line** (menu contents resolved by decision 29: Tune Car only).
+  `scripts/start_line.gd` (`features/start-line.md`) runs
   MENU → FLY_IN → REVEAL → FADE before every stage. REVEAL exists to show the
   top-three rivals and dies with them. The good news is that a rival-free path
   **already exists and ships**: a challenge stage runs the identical MENU and
@@ -888,11 +933,14 @@ They are recorded here rather than silently decided.
   a working start line. The problem is that the MENU hosts **Upgrades and Tune
   Car** — both systems this pivot replaces — so its contents need redesigning
   even though its structure survives.
-- **`standings.tscn`.** Every event currently pauses on it, and `world.gd`
+- ~~**`standings.tscn`.**~~ **Resolved by decisions 30/31: it retires; the
+  between-stage screen is the boost pick alone.** Every event currently pauses on it, and `world.gd`
   instantiates it as a panel. Its page 2 is `GlobalStandings`, the world
   leaderboard view. The spec introduces a between-stage pick screen but never
   says standings retires, nor what happens to its leaderboard page.
-- **Global leaderboards.** `features/global-leaderboards.md`,
+- ~~**Global leaderboards.**~~ **Resolved by decision 30: the stage boards are
+  deleted, which also kills `stage_key` and `BOARD_EPOCH`.**
+  `features/global-leaderboards.md`,
   `scripts/cloud/leaderboard.gd`, and a world-readable
   `stage_times/{stage}/times/{uid}` collection in `firestore.rules`, keyed by
   **`RallyLibrary.stage_key(rally, event_index)`**. Flattening rallies into a
@@ -908,25 +956,29 @@ They are recorded here rather than silently decided.
 
 ### Contradictions inside the spec
 
-- **The run-state slot collides with the surviving challenge.** The Save schema
+- ~~**The run-state slot collides with the surviving challenge.**~~ **Resolved
+  by decision 27: one slot, one run at a time.** The Save schema
   section says run state "can reuse the `challenge_run` shape", while decision 15
   keeps the challenge itself. But `Save.is_challenge_locked` reads a *single*
   `profile["challenge_run"]`, and `set_challenge_run` replaces "whatever was
   there". A paused challenge run plus an active region run means two persisted
   runs and two locked cars. This needs two slots or a discriminated union — the
   casual "reuse the shape" hides a real decision.
-- **Pool size is an economy dependency, not an authoring nicety.** Decision 12
+- ~~**Pool size is an economy dependency.**~~ **Resolved by decision 32: a
+  16-event floor per region.** Decision 12
   makes regions infinitely repeatable and repeatability is now the *primary*
   grind valve, while decision 10 keeps pools finite and authored. Open question 1
   frames minimum pool size as variety; it is actually load-bearing for the
   economy, because grinding a region is how a player affords the next car.
-- **A fixed target plus a strictly-better car plus repeatable regions has a
-  solved optimum.** Once a player owns a fast car, an early region becomes
+- ~~**A fixed target plus a strictly-better car plus repeatable regions has a
+  solved optimum.**~~ **Resolved by decision 31: payout scales with region
+  index.** Once a player owns a fast car, an early region becomes
   trivial and farmable. RR's escalating per-stage payout rewards depth, but
   nothing here stops the efficient strategy being "farm region 1 forever". The
   spec should decide whether payout scales with region difficulty, or whether
   early regions taper.
-- **"Damage fails indirectly" is stronger than it sounds under a fixed target.**
+- ~~**"Damage fails indirectly" is stronger than it sounds under a fixed
+  target.**~~ **Resolved by decision 33: a doomed run is driven out.**
   `DamageModel` floors HP at 0 and keeps the car drivable, so with a *fixed*
   target a heavily damaged car can become mathematically unable to hit the time
   — turning "indirect failure" into a known-doomed run the player must still
@@ -941,7 +993,8 @@ They are recorded here rather than silently decided.
   "region-gated car tiers" as the balance lever if fast cars flatten early
   stages. That is approximately the restriction mechanism, unspecified. Either
   keep `restriction` re-pointed at regions, or drop the note.
-- **The starter car.** `profile["starter_picked"]` / `starter_model_id` and the
+- ~~**The starter car.**~~ **Resolved by decision 28: start with money, buy from
+  the shop.** `profile["starter_picked"]` / `starter_model_id` and the
   three-car starter picker exist today. RR instead grants `INITIAL_MONEY` and
   sends you to the shop. The spec never says which the pivot uses, and it is the
   first thirty seconds of the game.
@@ -970,30 +1023,19 @@ They are recorded here rather than silently decided.
 
 ## Open questions
 
-The 13 questions this spec opened have all been answered — they are decisions
-3–20 above. What follows are the questions those answers *created*, none of which
-block starting stage 1.
+Everything this spec opened has now been decided except the following. None
+blocks starting stage 1.
 
-1. **What is the minimum stage-pool size per region?** Decision 10 says author
-   `greece_coast` up rather than fold it, but a pool of exactly 8 makes every run
-   in that region identical. A rule (say 16+, two runs' worth with no repeats)
-   sets the authoring target for `greece_coast` and probably `home_coast` too.
-2. **Where are coins placed, and do they bank per stage?** On the racing line
-   (a reward for a good line) or off it (a real gamble against the clock) — and
-   if you collect on stage 3 then fail stage 4, is that money already banked?
-   Decision 14 says a failed run keeps its money, which argues for banking at
-   stage clear.
-3. **Does a first region clear pay a bounty?** With acquisition purely
-   transactional, clearing a region currently rewards only the next unlock — see
-   the note under Car acquisition.
-4. **What does the boost-level shop scale when a run hasn't started?** RR's
-   `boostLevels` scale the magnitude of in-run picks, so their value is invisible
-   until you're mid-run. Worth deciding how the shop communicates that.
-5. **Does multiplayer still compile once `RallySession` is deleted?** Decision 16
-   leaves it dormant, but under decision 20 there is no flag to hide broken code
-   behind. If it references the career session it must be deleted in stage 2 or
-   ported then — the one question stage 2 cannot defer.
-6. **Is the old `_migrate_step` chain deleted outright?** Decision 20 writes no
-   new migration, but the existing ladder from schema 1–5 could either go
-   entirely (simplest) or stay for players mid-upgrade. Simplest is consistent
-   with the rest of the policy.
+1. **Where are coins placed?** On the racing line (a reward for a good line) or
+   off it (a real gamble against the clock) — and are they banked at stage clear
+   or only at run end? Decision 14 (a failed run keeps its money) argues for
+   banking per stage. Money now comes mostly from finishing fast, so coins are a
+   bonus rather than the main source, which softens the tension with decision 4
+   without removing it.
+2. **Does the boost-level shop communicate its value?** Levels scale the
+   magnitude of in-run boost picks, so their worth is invisible until you are
+   mid-run. A presentation question, not a mechanical one.
+3. **Does a first region clear pay a money bounty?** With acquisition purely
+   transactional, clearing a region currently rewards only the next unlock.
+   Decision 31 (payout scales with region index) partly covers this by making
+   progression pay better, so a bounty may be unnecessary.
