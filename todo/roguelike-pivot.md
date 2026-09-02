@@ -200,9 +200,46 @@ pivot deletes.
 takes its stage list and its fail rule from a strategy, with the daily/weekly/
 monthly challenge becoming one caller and the region run the other. That keeps
 the challenge mode working for free and avoids a third copy of the
-stage-loop/persist/repair logic. Note `todo/challenge-career-reuse-drift.md`
-already tracks drift between these two session types — this pivot should absorb
-and close that spec rather than adding a third divergent path.
+stage-loop/persist/repair logic. This approach absorbs the prior challenge/career
+reuse drift spec; its remaining work is folded into this plan below.
+
+### Absorbed: challenge/career reuse drift
+
+The prior `/refactor-after-bugfix` spec (2026-07-31, all 13 sections implemented)
+tracked drift between `ChallengeSession` and `RallySession`. `features/rally-challenge.md`
+and `features/cloud-save.md` are the living docs. Two items remain.
+
+**1. Retire the `ChallengeSession.abandon()` alias** — a deprecated alias for
+`pause_run()`, kept only so five test teardowns compile. With the DNF path
+removed and pause as the only non-completion exit, the alias is a pure duplicate
+with no distinct behaviour. This item **is subsumed** by the `RunSession`
+extraction above: renaming `ChallengeSession` to `RunSession` and generalising it
+to cover both challenge and region runs is where the alias dies. Migrate these
+five test files from `abandon()` to `pause_run()` as part of the extraction:
+`tests/headless/test_start_line.gd`, `tests/headless/test_menu_flow.gd` (also
+has a comment referring to `abandon()`), `tests/headless/test_challenge_run_end.gd`,
+`tests/headless/test_rally_session.gd`, `tests/headless/test_upgrade_reveal.gd`.
+
+**Note:** `RallySession.abandon()` is a different method — career only, called
+from the Pause overlay to end a rally incomplete — and is unaffected by this
+extraction. It dies with `RallySession` itself, not with the alias.
+
+**2. A synthetic period-key seam for tests,** so a challenge period can be forced
+rather than depending on the real clock. This item **is NOT mooted** by the pivot:
+the Daily/Weekly/Monthly challenge is explicitly retained (decision 15), so this
+stays live work and must survive the fold as a real outstanding item.
+
+**3. Seventeen code comments cite this now-deleted spec by item number** (e.g.
+`todo/challenge-career-reuse-drift.md item 9`) across `world.gd`,
+`challenge_session.gd`, `cloud/cloud_busy.gd`, `cloud/conflict_prompt.gd`,
+`confirm_popup.gd`, `rally_session.gd`, `global_standings.gd`, `standings.gd`
+and six `tests/headless/` files. Four of those files are themselves deleted by
+this pivot (`rally_session.gd`, `global_standings.gd`, `standings.gd`, and the
+challenge-session comment moves with the `RunSession` rewrite), so do NOT sweep
+them now — stage 2 churns most of them anyway. The survivors get repointed at
+this section during the stage 9 `features/` audit, which is already a
+pointer-fixing wave. Tracked here so the reference rot is not discovered by
+accident later.
 
 ## System-by-system design
 
@@ -709,8 +746,9 @@ window is the whole risk, so stage 3 is scoped to the minimum that gets back to
 playable — not the minimum that is fun. The challenge mode also breaks during
 demolition and returns with `RunSession` in stage 3.
 
-1. **Decide and document.** Rewrite `gameplay.md` to the roguelike vision; fold
-   `todo/challenge-career-reuse-drift.md` into this plan. No code.
+1. **Decide and document.** Rewrite `gameplay.md` to the roguelike vision.
+   Absorb the challenge/career reuse drift spec into this plan (done: see
+   "Absorbed: challenge/career reuse drift" above). No code.
 2. **Demolition.** One commit, so the revert is clean. Execute *What gets
    deleted* above — extractions first. Update `project.godot` (main scene,
    autoloads) and `Scenes.is_hub_scene`. Reset the save schema, no migration.

@@ -167,9 +167,13 @@ against 536s, not against 300s.
 
 1. Rewrite `gameplay.md` to the roguelike vision. It currently describes the GT
    career and contradicts the spec on nearly every point.
-2. Fold `todo/challenge-career-reuse-drift.md` into the pivot spec (its open item
-   — retiring `ChallengeSession.abandon()` — is subsumed by the `RunSession`
-   extraction) and delete it.
+2. **DONE.** Fold `todo/challenge-career-reuse-drift.md` into the pivot spec and
+   delete it. It had **two** open items, not one: retiring
+   `ChallengeSession.abandon()` is subsumed by the `RunSession` extraction, but
+   the synthetic period-key test seam is NOT — decision 15 retains the
+   Daily/Weekly/Monthly challenge, so that stays live work. Both now live in the
+   spec's *Absorbed: challenge/career reuse drift*, along with the seventeen code
+   comments that cite the deleted file by item number (swept in stage 9, not now).
 3. Sanity-read the spec's Hazards against the tree once more; anything that has
    drifted since it was written gets corrected now, while it is still cheap.
 
