@@ -43,8 +43,13 @@ Settled with the user during the brainstorm that produced this file:
 17. **Engine swap is re-gated as a meta shop purchase** rather than retired.
 18. **Cars are shown as a 3D turntable** in the flat UI, not as flat art.
 19. **A run ends on a run-summary screen**, replacing `podium.tscn`.
-20. **The flat UI ships behind a hub flag first**; `hq.tscn` is deleted only once
-    the flat shell has proven itself.
+20. **Everything is deleted destructively, up front. No flags, no dual code
+    paths, no migration.** `hq.tscn` goes in the demolition stage rather than
+    behind a hub flag; the save schema is reset rather than migrated. Maintaining
+    two code paths everywhere costs more complexity than the safety is worth, and
+    **git is the rollback mechanism** — the old career is one `git revert` away,
+    which is cheaper and more reliable than a flag threaded through every
+    transition site.
 
 ## The new loop, end to end
 
@@ -408,14 +413,18 @@ and this trades it for speed and simplicity. The 3D environment, the map table
 model, the present-box reveal and the tuning lift are substantial authored work
 being deleted, not mothballed.
 
-Which is why, per decision 20, **the flat shell ships behind a hub flag first**
-and `hq.tscn` is deleted only once the flat one has proven itself. The
-`overworld_enabled` precedent shows the codebase can carry two hubs, and
-`Scenes.hub_path()` is the existing seam for exactly this — every "return to the
-hub" transition already routes through it, so adding a third destination is one
-edit rather than seven. The flag is **temporary**: carrying two hubs
-indefinitely recreates the drift problem that seam exists to manage, so the
-deletion in stage 9 is part of the plan, not an optional follow-up.
+Per decision 20 this is done **destructively and up front** — no hub flag, no
+period of carrying both. The `overworld_enabled` precedent proves the codebase
+*can* hold two hubs, and that is exactly the argument against doing it again:
+`Scenes.hub_path()` exists only to stop two hubs drifting apart, and its own
+header comment records the seven transition sites that had to be corralled to
+make it safe. Adding a third destination means every one of those sites, every
+menu test, and every doc carries the branch for as long as the flag lives.
+
+So `hq.tscn`, `overworld.tscn` and `WorldPanel` all go in the demolition stage,
+and the flat shell is built on the empty space. **Git is the rollback**: the old
+hub is one revert away, which is both cheaper and more trustworthy than a flag
+nobody exercises.
 
 ### Economy
 
@@ -456,10 +465,28 @@ TAPPA has today, where stars only buy repairs and parts.
 
 ### Save schema
 
-Needs a `SCHEMA_VERSION` bump (currently `6`, `scripts/save_manager.gd`) and a
-migration step in `_migrate_step`. Existing profiles carry cars, parts and stars
-earned under rules that will no longer exist, so the migration has to decide
-whether to convert (e.g. refund fitted parts as stars) or reset. New keys:
+Needs a `SCHEMA_VERSION` bump (currently `6`, `scripts/save_manager.gd`), and per
+decision 20 **no migration is written**. Existing profiles carry cars, parts,
+placements and stars earned under rules that will no longer exist; converting
+them means writing (and testing) a transform between two economies that never
+coexist. Instead, a profile older than the pivot version is treated as "start
+fresh".
+
+That also lets the old `_migrate_step` chain and its `_MIGRATABLE_FROM :=
+[1, 2, 3, 4, 5]` ladder go, along with the legacy backfill keys
+(`KEY_LEGACY_PART_UNLOCKS`, `KEY_LEGACY_ENGINE_SWAP`, `MOVED_PART_UNLOCKS`,
+`OLD_ENGINE_SWAP_UNLOCK_RALLY`) — a meaningful simplification of a file that
+currently carries five versions of history.
+
+**The cloud path needs the same treatment, and is the sharper edge.** `CloudSync`
+refuses a remote document whose `schema_version` exceeds `Save.SCHEMA_VERSION`,
+so a player who opens the pivot on one device and the old build on another will
+have the old build reject the new save. Under a destructive policy the answer is
+to accept that: the pivot is a clean break, old cloud documents are not
+migrated, and a stale device is expected to be updated rather than
+interoperated with.
+
+New keys:
 `regions_cleared`, the run state (which can reuse the `challenge_run` shape),
 lifetime stats, `bought_perks` / `equipped_perks`, `boost_levels`. Retired keys:
 `KEY_RALLIES` (per-rally best placements), `reward_history`, the adaptive
@@ -508,10 +535,13 @@ Sized honestly, because this is the bulk of the work and most of the risk:
 - **The Daily/Weekly/Monthly challenge** (decision 15) — kept, and is the base
   the new run session is generalised from.
 - **Multiplayer** (decision 16) — `hq_multiplayer.gd`, `LobbySession`,
-  `features/multiplayer-lobby.md` stay in the tree, simply unreachable from the
-  new shell until someone decides its fate. Note it will not compile against a
-  deleted `RallySession` if it depends on one, so stage 9 needs to check what it
-  actually references before assuming "dormant" is free.
+  `features/multiplayer-lobby.md` stay in the tree, unreachable from the new
+  shell. **But "dormant" is in tension with decision 20**: demolition deletes
+  `RallySession`, so if the lobby references it, dormant code will not compile
+  and there is no flag to hide behind. The destructive-policy answer is to delete
+  multiplayer in stage 2 rather than carry a broken mode — but that is a whole
+  feature, so stage 2 must check the coupling and get a call on it rather than
+  discovering it mid-demolition.
 - **Engine swap** (decision 17) — survives, re-gated as a shop purchase.
 
 Corresponding `features/` docs must be deleted or rewritten in the same change,
@@ -523,44 +553,51 @@ a whole regime), `world-panel.md`, `overworld.md`, `overworld-frame-loop.md`,
 
 ## Suggested staging
 
-Each stage should land working and testable on its own; this is too large for one
-change.
+**Demolish first, then rebuild on clean ground** (decision 20). The earlier draft
+of this plan deleted last, so the game stayed playable throughout; that ordering
+is abandoned deliberately. Deleting first means every later stage writes new code
+against a small codebase instead of threading around a career that is on its way
+out, and it removes the temptation to keep a compatibility shim "just for now".
 
-1. **Decide and document.** Settle the Open questions, rewrite `gameplay.md` to
-   the roguelike vision, and fold `todo/challenge-career-reuse-drift.md` into
-   this plan.
-2. **Generalise the session.** Extract `RunSession` from `ChallengeSession` with
-   a pluggable stage source and fail rule; keep the challenge mode green on top
-   of it. No player-visible change yet.
-3. **Region run mode, behind the existing menus.** Region stage pool, seeded
-   8-stage draw, `LapTimeModel`-derived timer, run-over on a missed target.
-   Playable end to end while the old career still exists.
-4. **The flat UI shell** (decision 9) — title, hub, settings, car select, all as
-   `MenuPage` + `MenuNav.attach` on a plain `CanvasLayer`, re-hosting the
-   existing `HqOverlays` builders. Recommend landing this *behind a hub flag*
-   alongside the HQ rather than deleting the HQ in the same change, so the flat
-   shell can be judged before the 3D one is gone. Nav tests included.
-5. **Region select + linear unlock**, replacing the map table, on the new shell.
-   Includes **authoring the extra `greece_coast` rallies** (decision 10) and
-   whatever else a minimum pool size demands — the region is not playable
-   without them.
-6. **In-run boosts + repair pick** between stages, wiped on run end.
-7. **Run summary screen** (decision 19), retiring `podium.tscn`.
-8. **Meta shop**: boost levels, then car purchasing, then the engine-swap unlock.
-9. **Lifetime stats, then perks** (perks depend on stats).
-10. **Collectables** (decision 13) — prop, placement, pickup trigger, HUD
-    counter, audio. Deliberately late: it is the only wholly new runtime system
-    in the pivot, and the economy can be tuned without it until then.
-11. **Delete the old career and the 3D hubs** — rivals, map, parts, prize
-    rallies, `hq.tscn`, `overworld.tscn`, `WorldPanel` — and the save migration.
-    Last, so the game is never non-functional mid-pivot.
-12. **Docs and full suite.** `features/` rewritten, one full `./run_tests.sh`.
+**The cost, stated plainly: the game does not run between stages 2 and 3.** That
+window is the whole risk of this approach, so stage 3 is deliberately scoped to
+the minimum that gets back to playable — not the minimum that is fun. The
+Daily/Weekly/Monthly challenge (decision 15) also breaks during demolition and
+returns with `RunSession` in stage 3, since it shares the pieces being torn out.
 
-Dependencies worth stating explicitly, per `CLAUDE.md`'s todo rules: 5–9 all
-render on the shell from 4, so 4 comes first among the UI work; 6 depends on 3;
-9's perks depend on 9's stats; 10 depends on 3 (it needs a generated stage to
-place props along); 11 depends on everything; the save migration in 11 cannot be
-written until 5–9 have settled what the profile holds.
+1. **Decide and document.** Settle the remaining questions, rewrite `gameplay.md`
+   to the roguelike vision, and fold `todo/challenge-career-reuse-drift.md` into
+   this plan. No code.
+2. **Demolition.** One destructive change, on its own commit so the revert is
+   clean: delete the rival field and everything serving it, the map and its
+   reveal geometry, the car-bound parts model, prize rallies, `RallySession`,
+   `podium.tscn`, `standings.tscn`, `hq.tscn` and its nine collaborators,
+   `overworld.tscn`, `WorldPanel`, and adaptive difficulty. Reset the save schema
+   with **no migration** (see below). Resolve the coupled systems the review
+   found — tuning's unlock gate, the start-line menu, `stage_key` — rather than
+   leaving them dangling. The tree compiles at the end of this stage; the game
+   does not run.
+3. **Back to playable — the minimum spine.** `RunSession` generalised from
+   `ChallengeSession`, a bare flat shell (title → car select → run), the region
+   stage draw, the fixed reference-car timer, run-over on a missed target, and a
+   plain run-summary screen. Ugly is fine; running is the bar. The challenge mode
+   comes back here too, as the second caller of `RunSession`.
+4. **Region select + linear unlock**, replacing the map table. Includes
+   **authoring the extra `greece_coast` rallies** (decision 10) and whatever else
+   a minimum pool size demands — the region is not playable without them.
+5. **In-run boosts + repair pick** between stages, wiped on run end.
+6. **Meta shop**: boost levels, then car purchasing, then the engine-swap unlock.
+7. **Lifetime stats, then perks** (perks depend on stats).
+8. **Collectables** (decision 13) — prop, placement, pickup trigger, HUD counter,
+   audio. Deliberately last of the features: it is the only wholly new runtime
+   system in the pivot, and the economy can be tuned without it.
+9. **Polish and docs.** Flesh out the flat shell beyond stage 3's spine,
+   `features/` rewritten, one full `./run_tests.sh`.
+
+Dependencies, per `CLAUDE.md`'s todo rules: everything depends on 2; 4–8 all
+render on the shell from 3; 7's perks depend on 7's stats; 8 depends on 3 (it
+needs a generated stage to place props along). Nothing depends on a save
+migration, because there isn't one.
 
 ## Gaps found in review
 
@@ -665,9 +702,13 @@ They are recorded here rather than silently decided.
   `test_cloud_leaderboard` and more. Stage 12 says "one full run" but nothing
   about which tests are deleted versus rewritten. Worth claiming as a win: the
   deletions should pull the suite well under its ~5 minute budget.
-- **No rollback position for the gameplay pivot.** Decision 20's flag protects
-  the *UI*. Nothing protects the loop: if the roguelike doesn't feel good by
-  stage 6, the career is already half-dismantled.
+- ~~**No rollback position for the gameplay pivot.**~~ **Resolved by decision
+  20, in the opposite direction to what this gap proposed:** there is
+  deliberately no in-code rollback. Maintaining two paths everywhere costs more
+  than the safety buys, and git is the rollback. The consequence is accepted
+  rather than mitigated — if the roguelike loop disappoints, the recovery is
+  reverting the demolition commit, which is why stage 2 is kept as a single
+  clean commit.
 - **`features/` is bigger than the rewrite list.** There are 76 docs; the spec
   names ~16. Many more reference rallies, rivals, or the HQ in passing.
 
@@ -692,9 +733,10 @@ block starting stage 1.
    `boostLevels` scale the magnitude of in-run picks, so their value is invisible
    until you're mid-run. Worth deciding how the shop communicates that.
 5. **Does multiplayer still compile once `RallySession` is deleted?** Decision 16
-   leaves it dormant, but dormant is only free if it doesn't reference the career
-   session. Stage 11 must check rather than assume.
-6. **Which stage does the hub flag flip on?** Decision 20 ships the flat shell
-   behind a flag; someone has to decide when the flat hub becomes the default for
-   real players, which is a judgement call about the shell's quality, not a
-   scheduled task.
+   leaves it dormant, but under decision 20 there is no flag to hide broken code
+   behind. If it references the career session it must be deleted in stage 2 or
+   ported then — the one question stage 2 cannot defer.
+6. **Is the old `_migrate_step` chain deleted outright?** Decision 20 writes no
+   new migration, but the existing ladder from schema 1–5 could either go
+   entirely (simplest) or stay for players mid-upgrade. Simplest is consistent
+   with the rest of the policy.
