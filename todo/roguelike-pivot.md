@@ -30,6 +30,21 @@ Settled with the user during the brainstorm that produced this file:
 8. **Upgrades and car acquisition follow RR** — see those sections below.
 9. **The diegetic 3D HQ is dropped for a simple flat UI.** The hub stops being a
    3D space the camera flies through and becomes ordinary menu screens.
+10. **`greece_coast` gets more authored rallies** rather than being folded or
+    topped up procedurally — every region must carry a real 8-stage pool.
+11. **The stage target time is FIXED, not car-relative** — computed from a
+    reference car, so a faster car is straightforwardly better.
+12. **A cleared region stays repeatable at full payout.** This is the economy's
+    grind valve.
+13. **Stages carry collectables** (RR's coins) as a second star source.
+14. **A failed run keeps 100% of stars** and never costs you the car.
+15. **The Daily/Weekly/Monthly challenge survives** the pivot.
+16. **Multiplayer is left dormant** — not ported to the new shell, not deleted.
+17. **Engine swap is re-gated as a meta shop purchase** rather than retired.
+18. **Cars are shown as a 3D turntable** in the flat UI, not as flat art.
+19. **A run ends on a run-summary screen**, replacing `podium.tscn`.
+20. **The flat UI ships behind a hub flag first**; `hq.tscn` is deleted only once
+    the flat shell has proven itself.
 
 ## The new loop, end to end
 
@@ -130,9 +145,20 @@ Flattening rallies-in-region into their events gives the per-region stage pool:
 | `home_coast` | 4 | 12 |
 | `greece_coast` | 1 | **3** |
 
-**`greece_coast` cannot fill an 8-stage run** — it has one rally. Options: fold
-it into `greece`'s pool, author more rallies for it, or let a thin pool top up
-procedurally. This needs a decision (see Open questions).
+**`greece_coast` cannot fill an 8-stage run** — it has one rally, so its pool is
+3 events against a requirement of 8. Per decision 10 this is fixed by
+**authoring more `greece_coast` rallies**, not by folding it into `greece` or
+topping up procedurally. Two consequences:
+
+- This is authoring work that gates the region being playable at all, so it
+  belongs in the stage that introduces region runs, not in a later polish pass.
+- **Every region needs the same check.** A pool of exactly 8 means every run in
+  that region draws the identical 8 stages, so the practical floor is
+  comfortably above 8. `home` (42), `greece` (24), `snow` (18), `taiga` (15) and
+  `home_coast` (12) all clear a floor of 8 today, but `home_coast` at 12 offers
+  little variety between runs. Worth deciding a minimum pool size as a rule and
+  authoring every region up to it, rather than treating `greece_coast` as a
+  one-off.
 
 The draw itself should be seeded per run so a run is reproducible for debugging,
 and should escalate: RR grows its tracks with
@@ -148,16 +174,26 @@ With rivals gone, `RallySession.current_event_target_ms()` loses its source (it
 reads the P1 rival's time via `current_event_p1()`). The replacement already
 exists: **`LapTimeModel.optimum_ms(track_result, car_meta, event)`**
 (`scripts/lap_time_model.gd`) computes a physics optimum for a given track and
-car. Target time becomes `optimum_ms * target_pace`, where `target_pace` is a
-`GameConfig` tunable that tightens with stage index.
+car.
 
-Two consequences worth being explicit about:
+Per decision 11 the target is **fixed, not car-relative**: pass
+**`CarPerformance.REFERENCE_CAR`** (`scripts/car_performance.gd` — the same
+reference the rating system normalises against) as the `car_meta`, so a stage's
+target is a property of the *stage*, identical for every player and every car.
+Target time is then `optimum_ms(track, REFERENCE_CAR, event) * target_pace`, with
+`target_pace` a `GameConfig` tunable that tightens with stage index.
 
-- The target is now **car-relative**, so a faster car gets a proportionally
-  faster target and cannot trivially cruise the early stages. This is a real
-  design choice, not an implementation detail — the alternative (a fixed
-  per-stage time, so a better car is straightforwardly better) is arguably more
-  roguelike. Flagged in Open questions.
+This is what makes the car shop matter — a faster car genuinely beats the clock
+more easily, rather than having the bar raised to match it. Three things follow:
+
+- **The starter car sets the difficulty floor.** Stage 1's target must be
+  clearable in the worst car a player can own, or the run is unwinnable from a
+  bad purchase. Tune `target_pace` against the starter, not against a mid-tier
+  car.
+- **A late-tier car will trivialise early stages, by design.** That is the
+  reward for buying it. If it ever feels *too* flat, the lever is region-gated
+  car tiers, not a car-relative target — reintroducing that would undo this
+  decision.
 - `LapTimeModel`'s optimum is a point-mass centreline *reference*, not a hard
   physical bound — `RallyLibrary.GHOST_SOLVABLE_PACE`'s comment is explicit that
   a real driver can beat it by straightening corners. So `target_pace` values
@@ -198,10 +234,15 @@ gate on), and `auto_build_plan`. That is a large deletion and the single
 riskiest part of this pivot — `grep -rn 'UpgradeLibrary' tests/headless/` reports
 10 test files touching it.
 
-Open sub-question: does the **engine swap** (`EngineSwap`, free and unlimited
-once `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` is won) survive? Its unlock gate is
-a rally that will no longer exist. Simplest answer: retire it with the rest, or
-re-gate it as a meta shop purchase.
+The **engine swap** (`EngineSwap`, free and unlimited once
+`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY` is won) survives, re-gated as a **meta
+shop purchase** per decision 17 — its old gate was a rally that will no longer
+exist. `UpgradeLibrary.drivetrain_swap_unlocked` and
+`RallyLibrary.engine_swaps_unlocked` both currently read a rally-completion flag
+off the profile; both re-point at a purchased-unlock flag instead. Note this is
+the one piece of the persistent per-car modification model that outlives the
+pivot, so `Save.swap_engines` and the engine-swap car-select flow stay alive
+even as `install_upgrade` / `buy_part` go.
 
 ### Perks — a straight lift from RR
 
@@ -260,16 +301,17 @@ Today TAPPA has **no car shop at all**: cars are won outright at prize rallies
 opposite — a flat currency shop (`CAR_LIST`, each `CarDefinition` with a fixed
 `cost`, purchase recorded in persisted `boughtCars`).
 
-Following RR, as decided: `CarLibrary.CARS` gains a star `cost` per car, the car
-select screen offers a Buy action for unowned cars, and ownership persists in the
-existing `profile["cars"]` structure. This retires prize rallies and
-`RewardSystem.draw_car` along with the rallies that advertised them.
+Following RR, as decided and re-confirmed: `CarLibrary.CARS` gains a star `cost`
+per car, the car select screen offers a Buy action for unowned cars, and
+ownership persists in the existing `profile["cars"]` structure. This retires
+prize rallies and `RewardSystem.draw_car` along with the rallies that advertised
+them.
 
-Worth noting as a design loss: prize rallies are a more interesting acquisition
-hook than a flat shop, and a plain price list makes the run's own rewards feel
-thin. A middle option — a car is *revealed* by clearing a region, then bought
-with stars — keeps a discovery beat inside the RR model. Flagged in Open
-questions since the decision was "follow RR".
+Worth keeping in view as a design loss: prize rallies were a more interesting
+acquisition hook than a price list, and with car acquisition now purely
+transactional, **clearing a region rewards only the next region's unlock**. If
+region clears end up feeling unrewarding in play, the cheapest fix is a one-off
+star bounty for a first clear rather than reintroducing reveal-gating.
 
 ### The UI — dropping the diegetic HQ
 
@@ -306,8 +348,15 @@ The screen list, each a `MenuPage` wired with `MenuNav.attach`:
 | Boost-level shop | new (pivot) |
 | Perks | new (pivot) |
 | Between-stage pick | new (pivot) |
-| Run summary / run over | new (pivot), replaces `podium.tscn` |
+| Run summary | new (pivot), replaces `podium.tscn` — decision 19 |
 | Settings | `SettingsMenu` — already host-neutral, also backs the pause menu |
+
+**The run summary** (decision 19) is one screen for both outcomes — cleared all 8
+stages, or ended on a missed timer — showing stages cleared, time margin per
+stage, stars earned and boosts taken. One screen rather than a podium-plus-defeat
+pair, because a run that ends by missing a clock has no placement to celebrate
+and the same information is worth showing either way. `podium.tscn` and
+`scripts/podium.gd` retire with it.
 
 **One navigation regime instead of two.** `features/menu-navigation.md`
 currently documents two: flat menus driven by `MenuNav.attach`, and the spatial
@@ -331,14 +380,21 @@ the opposite direction from decision 9, so it retires with the rest, and
 `Scenes.hub_path()` collapses from a branch to a single constant (the seam's own
 header comment explains it exists solely to keep the two hubs in sync).
 
-**How cars are shown without a 3D car park.** The car park stages real 3D car
-models in bays. A flat car list still wants to show the car, and the asset for it
-already exists: `scripts/car_silhouettes.gd` (`CarSilhouettes`) holds baked
-side-profile vector outlines per `CarLibrary` model id, generated by
-`tools/bake_car_silhouettes.gd` and designed to be rasterised by `PolygonIcon`.
-That is the cheap answer. The richer alternative is a small `SubViewport` with
-just the car on a turntable and no environment — far lighter than the current HQ
-without losing the 3D model. Flagged in Open questions.
+**How cars are shown without a 3D car park.** Per decision 18, a **turntable
+`SubViewport`**: the real car model on a slow rotation against a plain
+background, no environment, no lot, no lighting rig beyond a key light. This
+keeps the models — which are the game's main authored art — visible in a UI that
+has otherwise gone flat, at a tiny fraction of the current HQ's build cost
+(`Scenes.car_scene()` already exists as the one cached load of `car.tscn`, used
+by the HQ lineup, the podium and the dev tools, so the spawn path is in place).
+
+Two practical notes: a `SubViewport` renders every frame it's visible, so it
+should be paused when the car list isn't on screen, and mobile/web
+(`todo/mobile-web-performance.md`) is where that cost will show first. The baked
+`CarSilhouettes` outlines (`scripts/car_silhouettes.gd`, generated by
+`tools/bake_car_silhouettes.gd`) remain available as a cheap fallback for dense
+list rows or a low-spec path, since they're already generated and cost nothing to
+draw.
 
 **Two incidental wins.** `hq.gd::_ready` currently has to show a `LoadingScreen`
 cover because building the HQ (ground mesh, buildings, tree ring, bush ring,
@@ -348,12 +404,18 @@ improvement, and relevant to `todo/mobile-web-performance.md`. It also removes
 the single biggest script in the codebase from the maintenance surface.
 
 **What is genuinely lost:** the diegetic hub is a lot of the game's character,
-and this trades it for speed and simplicity. Worth being clear-eyed that it is a
-one-way door — the 3D environment, the map table model, the present-box reveal
-and the tuning lift are all substantial authored work being deleted, not
-mothballed. If there is any doubt, the flat UI can be built alongside the HQ
-behind a flag first (the `overworld_enabled` precedent shows the codebase can
-carry two hubs) and the HQ deleted only once the flat one is clearly better.
+and this trades it for speed and simplicity. The 3D environment, the map table
+model, the present-box reveal and the tuning lift are substantial authored work
+being deleted, not mothballed.
+
+Which is why, per decision 20, **the flat shell ships behind a hub flag first**
+and `hq.tscn` is deleted only once the flat one has proven itself. The
+`overworld_enabled` precedent shows the codebase can carry two hubs, and
+`Scenes.hub_path()` is the existing seam for exactly this — every "return to the
+hub" transition already routes through it, so adding a third destination is one
+edit rather than seven. The flag is **temporary**: carrying two hubs
+indefinitely recreates the drift problem that seam exists to manage, so the
+deletion in stage 9 is part of the plan, not an optional follow-up.
 
 ### Economy
 
@@ -362,16 +424,35 @@ way this pivot needs: `stars_earned` / `stars_spent` on the profile, spendable
 figure via `Save.stars_available()`, never reset. RR likewise keeps `money` across
 death and has no run-scoped second currency.
 
+A failed run keeps **100% of stars** and never costs the player a car
+(decisions 14 and 15's RR-faithful reading): the run's stage progress and its
+temporary boosts are the only casualties. Combined with decision 12 — a cleared
+region stays **repeatable at full payout** — the player can always grind a
+region they've beaten to afford the next car, so the economy has no dead end.
+
 What changes is the **source**. Today stars come from rally placement
 (`RallyLibrary.stars_for_placement` — 3/2/1 by podium position), which dies with
-the rival field. RR's model: a per-stage payout that grows with stages completed
-(`LEVEL_WINNINGS_BASE * LEVEL_WINNINGS_MULTIPLIER^tracksCompleted`), plus a
-fast-completion bonus proportional to time saved against the target, plus
-collectables picked up mid-stage. The first two map cleanly onto the new stage
-loop; the third (RR's coins) would be a new prop system and is optional.
+the rival field. Replacing it, per RR:
 
-Sinks, all star-priced: cars, boost levels, perks. That is three sinks against
-one source, which is a healthier economy than TAPPA has today.
+1. **Per-stage payout** that grows with stages completed
+   (`LEVEL_WINNINGS_BASE * LEVEL_WINNINGS_MULTIPLIER^tracksCompleted`), so
+   surviving deep into a run is where the money is.
+2. **Fast-completion bonus** proportional to time saved against the target.
+3. **Collectables** picked up mid-stage (decision 13).
+
+**Collectables are genuinely new work** — there is no pickup or trigger-volume
+system in the codebase today. It needs a prop mesh, placement along the generated
+track, a pickup trigger, a HUD counter, audio, and a rule for what happens to
+uncollected ones on a failed stage. The nearest existing patterns to model
+placement on are the scatter fields (`bush_field.gd`, `billboard_field.gd`,
+`TreeMeshField`) and the trackside props in `rally_flag.gd`. Because they compete
+with the clock for the player's attention, collectables also interact with
+decision 4 — detouring for one can cost the run — which is a *good* tension, but
+placement needs to be authored with that in mind rather than scattered blindly.
+
+Sinks, all star-priced: cars, boost levels, perks, and the engine-swap unlock
+(decision 17). Four sinks against three sources is a far healthier economy than
+TAPPA has today, where stars only buy repairs and parts.
 
 ### Save schema
 
@@ -419,6 +500,19 @@ Sized honestly, because this is the bulk of the work and most of the risk:
 - **The authored `RALLIES` table's non-event fields** — `restriction`, `map_pos`,
   `special`, `difficulty` (unless reused as the draw's ordering proxy),
   `prize_*`, `unlocked_by_rally`. The `events` arrays are the part that survives.
+- **The podium** — `podium.tscn`, `scripts/podium.gd`, replaced by the run
+  summary (decision 19).
+
+**Explicitly NOT deleted**, despite sitting next to all of the above:
+
+- **The Daily/Weekly/Monthly challenge** (decision 15) — kept, and is the base
+  the new run session is generalised from.
+- **Multiplayer** (decision 16) — `hq_multiplayer.gd`, `LobbySession`,
+  `features/multiplayer-lobby.md` stay in the tree, simply unreachable from the
+  new shell until someone decides its fate. Note it will not compile against a
+  deleted `RallySession` if it depends on one, so stage 9 needs to check what it
+  actually references before assuming "dormant" is free.
+- **Engine swap** (decision 17) — survives, re-gated as a shop purchase.
 
 Corresponding `features/` docs must be deleted or rewritten in the same change,
 per `CLAUDE.md` — at minimum `map-exploration.md`, `regions.md`,
@@ -447,50 +541,51 @@ change.
    alongside the HQ rather than deleting the HQ in the same change, so the flat
    shell can be judged before the 3D one is gone. Nav tests included.
 5. **Region select + linear unlock**, replacing the map table, on the new shell.
+   Includes **authoring the extra `greece_coast` rallies** (decision 10) and
+   whatever else a minimum pool size demands — the region is not playable
+   without them.
 6. **In-run boosts + repair pick** between stages, wiped on run end.
-7. **Meta shop**: boost levels, then car purchasing.
-8. **Lifetime stats, then perks** (perks depend on stats).
-9. **Delete the old career and the 3D hubs** — rivals, map, parts, prize
-   rallies, `hq.tscn`, `overworld.tscn`, `WorldPanel` — and the save migration.
-   Last, so the game is never non-functional mid-pivot.
-10. **Docs and full suite.** `features/` rewritten, one full `./run_tests.sh`.
+7. **Run summary screen** (decision 19), retiring `podium.tscn`.
+8. **Meta shop**: boost levels, then car purchasing, then the engine-swap unlock.
+9. **Lifetime stats, then perks** (perks depend on stats).
+10. **Collectables** (decision 13) — prop, placement, pickup trigger, HUD
+    counter, audio. Deliberately late: it is the only wholly new runtime system
+    in the pivot, and the economy can be tuned without it until then.
+11. **Delete the old career and the 3D hubs** — rivals, map, parts, prize
+    rallies, `hq.tscn`, `overworld.tscn`, `WorldPanel` — and the save migration.
+    Last, so the game is never non-functional mid-pivot.
+12. **Docs and full suite.** `features/` rewritten, one full `./run_tests.sh`.
 
-Dependencies worth stating explicitly, per `CLAUDE.md`'s todo rules: 5–8 all
+Dependencies worth stating explicitly, per `CLAUDE.md`'s todo rules: 5–9 all
 render on the shell from 4, so 4 comes first among the UI work; 6 depends on 3;
-8's perks depend on 8's stats; 9 depends on everything; the save migration in 9
-cannot be written until 5–8 have settled what the profile holds.
+9's perks depend on 9's stats; 10 depends on 3 (it needs a generated stage to
+place props along); 11 depends on everything; the save migration in 11 cannot be
+written until 5–9 have settled what the profile holds.
 
 ## Open questions
 
-1. **`greece_coast` has 3 authored events and a run needs 8.** Fold it into
-   `greece`, author more rallies, or allow procedural top-up?
-2. **Is the target time car-relative or fixed per stage?** Car-relative
-   (`optimum_ms * pace`) neutralises car choice; fixed makes a better car
-   straightforwardly better, which is more RR-like and makes the car shop matter.
-3. **Do stars persist through a failed run in full?** RR keeps 100% of money.
-   Confirm no partial loss on failure.
-4. **Does the car itself survive a failed run?** RR keeps `boughtCars` — a run
-   loss costs progress, not the car. Confirm no permadeath of the vehicle.
-5. **Is one run per region, repeatable?** Can a cleared region be re-run for
-   stars, or does it lock once cleared? Repeatable is the obvious grind valve.
-6. **Does the daily/weekly/monthly challenge survive the pivot?** It is a
-   substantial shipped feature (`features/rally-challenge.md`, cloud
-   leaderboards) that fits the new model better than the old one — recommend
-   keeping it, which is why stage 2 preserves it.
-7. **Engine swap:** retire, or re-gate as a meta purchase?
-8. **Car acquisition:** flat price list as decided, or the reveal-then-buy middle
-   option noted above?
-9. **Do collectables (RR's coins) come along** as an in-stage star source, or is
-   the payout purely time-based?
-10. **How are cars shown in the flat UI** — baked `CarSilhouettes` outlines
-    (cheap, already generated), or a small turntable `SubViewport` keeping the
-    real 3D model?
-11. **Is the HQ deleted outright, or does the flat shell ship behind a flag
-    first?** Staging above assumes the latter; deleting outright is faster but
-    unrecoverable if the flat UI disappoints.
-12. **What happens to the podium?** `podium.tscn` is a flat scene already, but a
-    run that ends by missing a timer has no placement to celebrate. Replace with
-    a run-summary screen, or keep it for a cleared region?
-13. **Multiplayer** (`hq_multiplayer.gd`, `LobbySession`,
-    `features/multiplayer-lobby.md`) is reached from the HQ and assumes the
-    rally/rival model. Keep it on the new shell, or retire it with the career?
+The 13 questions this spec opened have all been answered — they are decisions
+3–20 above. What follows are the questions those answers *created*, none of which
+block starting stage 1.
+
+1. **What is the minimum stage-pool size per region?** Decision 10 says author
+   `greece_coast` up rather than fold it, but a pool of exactly 8 makes every run
+   in that region identical. A rule (say 16+, two runs' worth with no repeats)
+   sets the authoring target for `greece_coast` and probably `home_coast` too.
+2. **Do collectables persist within a run?** If you collect 20 on stage 3 and
+   then fail stage 4, are those stars banked or lost with the run? Banking them
+   fits decision 14 (a failed run keeps its stars); losing them makes late-run
+   collecting tenser.
+3. **Does a first region clear pay a bounty?** With acquisition purely
+   transactional, clearing a region currently rewards only the next unlock — see
+   the note under Car acquisition.
+4. **What does the boost-level shop scale when a run hasn't started?** RR's
+   `boostLevels` scale the magnitude of in-run picks, so their value is invisible
+   until you're mid-run. Worth deciding how the shop communicates that.
+5. **Does multiplayer still compile once `RallySession` is deleted?** Decision 16
+   leaves it dormant, but dormant is only free if it doesn't reference the career
+   session. Stage 11 must check rather than assume.
+6. **Which stage does the hub flag flip on?** Decision 20 ships the flat shell
+   behind a flag; someone has to decide when the flat hub becomes the default for
+   real players, which is a judgement call about the shell's quality, not a
+   scheduled task.
