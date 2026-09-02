@@ -128,8 +128,38 @@ binary in the environment it was made in).
    button), `test_stage_manager.gd`, `test_ghost_car.gd`, `test_menu_flow.gd`,
    `test_menu_nav.gd`.
 
-**Gate:** green suite, ~5 minutes. This is the baseline every later stage is
-measured against — without it, a stage-2 failure is unattributable.
+**Gate:** the suite's result matches the recorded baseline below — not
+necessarily green. What matters is that a stage-2 failure is *attributable*.
+
+### Baseline, as measured
+
+Run on this branch with Godot 4.6 stable (`GODOT=/tmp/Godot_v4.6-stable_linux.x86_64`):
+
+```
+Scripts 214 · Tests 3479 · Passing 3474 · Failing 2 · Time 536s
+```
+
+**One failure was mine and is fixed:** `features/hq.md` still listed
+`tests/headless/test_hq_multiplayer.gd` in its `**Tests:**` line after the lobby
+deletion removed it. A deletion that greps clean in code can still leave a doc
+pointing at the corpse — `test_features_docs.gd` catches exactly that.
+
+**Two failures are pre-existing on `main`** — `test_features_docs.gd` →
+`test_no_area_doc_grows_into_an_unnavigable_monolith`:
+
+- `features/overworld.md` 1912 lines vs a 1817 baseline
+- `features/terrain.md` 1338 vs 1310
+
+Both files were last touched by `8cfae5f`, the commit `main` currently sits at,
+and neither was touched by this branch. They are **not** pivot damage. The
+`overworld.md` failure resolves itself in stage 2 (the file is deleted with the
+overworld hub); `terrain.md` needs a genuine split or shrink and is unrelated
+debt — not this pivot's job, but it will stay red until someone does it.
+
+**Runtime note:** 536s here versus the ~5 minute budget in `CLAUDE.md`. This
+container is slower than the development Mac, so treat 536s as *this
+environment's* baseline rather than evidence of a regression. Compare later runs
+against 536s, not against 300s.
 
 ## Stage 1 — decide and document (no code)
 

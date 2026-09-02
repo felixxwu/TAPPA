@@ -9,7 +9,7 @@ table's navigation in `scripts/hq_table.gd` (`class_name HqTable`) and its pin/f
 HqTuningLift`), the present-box car reveal in `scripts/hq_present_reveal.gd` (`class_name
 HqPresentReveal`), and the shared rally-detail panel in `scripts/rally_detail.gd`.
 
-**Tests:** `tests/headless/test_menu_flow.gd`, `tests/headless/test_overworld_garage.gd`, `tests/headless/test_hq_multiplayer.gd`, `tests/headless/test_hq_map_table.gd`, `tests/headless/test_hq_tuning_lift.gd`, `tests/headless/test_hq_present_reveal.gd`
+**Tests:** `tests/headless/test_menu_flow.gd`, `tests/headless/test_overworld_garage.gd`, `tests/headless/test_hq_map_table.gd`, `tests/headless/test_hq_tuning_lift.gd`, `tests/headless/test_hq_present_reveal.gd`
 
 The diegetic 3D hub the player returns to between rallies. The game-loop shell around it —
 what leads where — is [menus.md](menus.md); how any of these screens is driven by keyboard and
