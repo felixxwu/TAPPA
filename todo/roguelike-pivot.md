@@ -619,7 +619,11 @@ returns with `RunSession` in stage 3, since it shares the pieces being torn out.
    audio. Deliberately last of the features: it is the only wholly new runtime
    system in the pivot, and the economy can be tuned without it.
 9. **Polish and docs.** Flesh out the flat shell beyond stage 3's spine,
-   `features/` rewritten, one full `./run_tests.sh`.
+   `features/` rewritten, the obsolete `todo/` specs retired
+   (`star-economy.md`, `menus.md`, `star-gated-special-events.md`,
+   `overworld-hq.md`), the small-model eval tasks re-authored against the new
+   systems (see Third pass — about half are invalidated, and two skills run off
+   them), one full `./run_tests.sh`.
 
 Dependencies, per `CLAUDE.md`'s todo rules: everything depends on 2; 4–8 all
 render on the shell from 3; 7's perks depend on 7's stats; 8 depends on 3 (it
@@ -714,6 +718,97 @@ reserves a budget check or points at `features/testing.md`'s cheap patterns.
   `data/track_cache.json` is a committed lockfile keyed to authored events, so
   scaling `turn_count` on later stages makes every drawn stage miss the cache and
   fall back to live DFS search — an uncosted per-stage load-time hit.
+
+## Third pass — design holes and untouched surfaces
+
+The first two reviews were both code-shaped. This pass looked at the *design* and
+at surfaces neither examined. The first finding is the most consequential in the
+document.
+
+### Linear region unlock has no basis in the data
+
+Decision 2 unlocks regions in sequence. But **every region already spans nearly
+the whole difficulty range** — measured from the authored `difficulty` field:
+
+| region | authored difficulties |
+| --- | --- |
+| `home` | 1,1,1,2,2,2,2,2,3,3,3,4,4,4 |
+| `home_coast` | 1,3,3,4 |
+| `greece` | 1,1,3,3,3,4,4,4 |
+| `taiga` | 2,2,2,2,3 |
+| `snow` | 1,2,2,3,4,4 |
+| `greece_coast` | 4 |
+
+So there is no sense in which region 2 is "after" region 1. A run draws 8 stages
+from a region's pool and orders them by difficulty, which means **every region
+produces roughly the same curve**, and linear unlock gates *scenery*, not
+*challenge*. Combined with decision 12 (cleared regions stay repeatable at full
+payout), a player has no gameplay reason to ever leave the first region.
+
+This needs a real answer, and there are only a few shapes it can take: author a
+difficulty band per region and restrict each region's pool to it; scale
+`target_pace` by region index on top of stage index; or drop linear unlock in
+favour of something the data supports. It cannot be left as "regions unlock in
+order" with pools that contradict it.
+
+### There is no endgame
+
+Six regions of 8 stages is 48 stages, and then the spec stops. Today TAPPA ends
+on `RallyLibrary.all_specials_completed` → credits. RR never ends, but RR also
+has no region progression to exhaust. What happens after the last region clears
+is unspecified: credits, an endless/ascension mode, a difficulty ladder over the
+same regions, or nothing.
+
+### The run has one decision, repeated eight times
+
+Roguelike texture comes from decision density. Here the player picks a region
+(linear — not a choice), picks a car (whichever is fastest — not really a
+choice), then takes 1-of-N boosts eight times. That is a single decision type.
+RR is the same, but RR is a small game; a pivot that justifies deleting the map,
+the rival field, the parts model and the 3D hub should probably end up *more*
+interesting than the thing it is copying, not equally thin.
+
+### Collectables and a fixed timer pull against each other
+
+Decision 13 adds collectables; decision 11 makes the timer fixed and decision 4
+makes missing it fatal. Detouring for a collectable risks the run — and losing
+the run costs every remaining stage's payout, which will usually dwarf what the
+collectable was worth. So the rational play is to ignore them when the timer is
+tight and hoover them when it is loose, with little interesting middle. If they
+are to be a real decision, the timer needs enough slack that a detour is a live
+gamble, which is in tension with the timer being the only fail state.
+
+### Perks are weakest exactly where the game is thinnest
+
+Perks unlock on lifetime stat thresholds (decision from the RR lift). A new
+player has no stats, so no perks, and only one region — the opening hours are the
+least interesting the game will ever be, and that is where players quit. Worth
+seeding a first perk cheaply, or gating the earliest ones on thresholds a first
+run crosses.
+
+### The hub is a vending machine
+
+Between runs the flat shell offers: car shop, boost shop, perks, stats, settings.
+All of it is spending. Today's HQ also has tuning, engine swap, wheel
+customisation and free roam. The pivot keeps engine swap (decision 17), leaves
+tuning undecided, and never mentions **free roam** or **wheel customisation**
+surviving at all. If none of them come along, there is nothing to *do* between
+runs except shop.
+
+### Surfaces neither earlier review touched
+
+- **The small-model eval suite is largely invalidated.**
+  `evals/small-model/tasks.md` holds 15 tasks; roughly half die with the pivot —
+  T001 (add a tyre upgrade to the catalogue), T005 (rallies finished on the
+  profile), T008 (star bonus for a damage-free rally), T009 (wet-weather tyre
+  compound), T014 (stars on a rally pin on the map), T015 (which rallies are won,
+  on the overworld map), plus T003 (adding a region) whose shape changes. T011 is
+  already retired. Both `/small-model-readiness` and
+  `/small-model-readiness-drill` run off this suite, so the pivot silently breaks
+  two skills unless the tasks are re-authored against the new systems.
+- **Three `todo/` specs describe systems being deleted** and are unaccounted for:
+  `todo/star-economy.md`, `todo/menus.md`, and `todo/star-gated-special-events.md`
+  (the spec handles `overworld-hq.md` and `challenge-career-reuse-drift.md`).
 
 ## Gaps found in review
 
