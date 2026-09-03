@@ -302,41 +302,6 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## sentinel and is what every non-Alps stage runs, so the lake stays a soft hazard
 ## everywhere it always was.
 @export var frozen_water_grip := 0.0
-## ADAPTIVE DIFFICULTY (features/adaptive-difficulty.md). The field is drawn matched to
-## the player's rating; these steer it AWAY from that match based on results — harder when
-## the player keeps winning stages, easier when they keep losing them.
-##
-## The lever is deliberately the opponents' MACHINERY rather than their pace: a rival in a
-## quicker car has a genuinely lower optimum, so the ghost can still represent its time.
-## Scaling pace instead would need rivals to beat their own physics optimum, which the
-## ghost cannot show.
-##
-## Turning ai_adapt_enabled off restores the pre-adaptive behaviour exactly — as does an
-## offset of 0, which is where every career starts.
-@export var ai_adapt_enabled := true
-## One step, as a fraction of the player's rating. 0.04 => each step moves the field the
-## opponents are drawn from by 4%.
-@export_range(0.005, 0.25) var ai_adapt_step_fraction := 0.04
-## Consecutive stages (won, or not won) needed to push PAST a matched field. One rally is
-## three stages, so 3 means a clean sweep or a clean loss is what commits to a handicap.
-## Coming BACK toward matched always takes a single result, never this many.
-@export_range(1, 10) var ai_adapt_stages_per_step := 3
-## Caps, separate per direction because the car roster is not symmetric around the player:
-## there is far more of it below a mid-pack car than above a quick one, so the easy side is
-## fully reachable while the hard side is limited by what can actually be fielded.
-## Placeholders — set these from real play (design D4).
-@export_range(0, 12) var ai_adapt_max_ease_steps := 5
-@export_range(0, 12) var ai_adapt_max_hard_steps := 5
-## How tightly the AI field is matched to the player's CarPerformance rating, in
-## rating points. Rivals are drawn with a weight of exp(-|their rating - yours| /
-## this), so it is a BIAS, not a filter: a mismatched car stays possible, just
-## unlikely, and a rally whose categorical restriction admits only a handful of
-## cars still fields a full grid.
-##
-## Smaller = a tighter, more evenly-matched grid. Larger = a more ragged field with
-## clearer front-runners and backmarkers. Zero would make the draw degenerate, so it
-## is floored. See features/car-performance.md.
-@export_range(5.0, 400.0) var opponent_rating_match_spread := 60.0
 ## Geometry of the CarPerformance benchmark track (scripts/benchmark_track.gd) —
 ## a straight, then a hairpin, then N sweepers, scored on the TOTAL time only.
 ## See docs/superpowers/specs/2026-08-15-car-performance-rating-design.md.
@@ -376,8 +341,8 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## benchmark-geometry question (benchmark_straight_m, above).
 ##
 ## Changing this RE-SCORES EVERY CAR, and rating-space values elsewhere — notably
-## opponent_rating_match_spread and any authored rating ceiling — are then measured against
-## a wider field, so revisit those together.
+## any authored rating ceiling (e.g. a challenge's ChallengeLibrary.ceiling_for) —
+## are then measured against a wider field, so revisit those together.
 @export_range(0.5, 4.0) var rating_spread := 1.0
 ## Corner-exit traction ceiling per drive mode, used by LapTimeModel's forward
 ## pass (a = min(factor * grip_long, a_engine)). The real Drivetrain couples the
@@ -672,16 +637,6 @@ func has_nitrous() -> bool:
 ## from the active camera a car's engine plays at 0 dB; beyond it the level falls
 ## off with distance (1/d sound-pressure law, -6 dB per doubling). Tunable.
 @export var engine_audio_ref_distance_m := 8.0
-## Full-volume radius (m) used INSTEAD of engine_audio_ref_distance_m for cars
-## waiting behind the reveal-card focus car during the start-line REVEAL sequence
-## (start_line.gd). The queue spacing (start_queue_gap, 7 m) is smaller than the
-## normal 8 m radius, so with the general radius every queued car sits at/near full
-## volume at once — cluttered. A smaller radius here makes queued cars fall off
-## faster with distance while the reveal camera is anchored, without touching the
-## general/racing-context radius or the departing car's already-fine falloff once
-## it has actually launched. Tunable; keep it comfortably under start_queue_gap so
-## adjacent queued cars actually differentiate.
-@export var engine_audio_ref_distance_reveal_m := 0.5
 ## Attenuation floor (dB, <= 0) for a distant engine — the quietest a car's voice
 ## drops to, so a far car recedes to near-silence without going to -inf. Tunable.
 @export var engine_audio_max_attenuation_db := -60.0
@@ -808,21 +763,19 @@ func has_nitrous() -> bool:
 @export_range(0.0, 100.0) var stage_complete_percent := 100.0
 ## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
 @export var hud_elapsed_enabled := true
-## Show the permanent in-run standings readout under the run timer: the player's live
-## position in the rival field ("P3/12") and the gap to the position above (or the
-## cushion over P2 while leading). Only inside an active rally session, which is where
-## an opponent field exists. Replaced the old every-few-turns "vs P1" pace popup.
-@export var hud_position_enabled := true
 ## How long (seconds) a transient in-run HUD tag (the corner-cut flash) stays on screen
 ## before it fades out.
 @export var hud_popup_show_seconds := 3.0
 @export_group("Start Line")
-## The pre-event start-line sequence (todo/menus.md location 2): on track load the
-## "time to beat" is shown while an orbit camera circles the car queued between a
-## leader and a trailing car; on launch the leader drives off and the field scoots
-## up, then the screen fades to black and back to the chase camera + driving UI as
-## the countdown starts. Only runs inside an active RallySession; a plain dev boot
-## of main.tscn skips straight to the countdown. Off restores that old behaviour.
+## The pre-event start-line sequence (todo/menus.md location 2): on track load an
+## orbit camera circles the car while a MENU offers Start / Upgrades / Tune Car;
+## on launch the screen fades to black and back to the chase camera + driving UI
+## as the countdown starts. Runs inside an active ChallengeSession stage; a plain
+## dev boot of main.tscn skips straight to the countdown. Off restores that old
+## behaviour. The per-opponent reveal this sequence used to run between the MENU
+## and the fade — a rival queue rolling up, launching one at a time — is deleted
+## along with the rival field (todo/roguelike-pivot.md decision 5; decision 29
+## keeps the MENU).
 @export var start_line_enabled := true
 ## Orbit camera angular speed (rad/s) around the car during the start reveal.
 @export var start_orbit_speed := 0.5
@@ -830,57 +783,21 @@ func has_nitrous() -> bool:
 @export var start_orbit_radius := 7.0
 ## Orbit camera height (m) above the car it looks at.
 @export var start_orbit_height := 2.4
-## Gap (m) between queued cars along the start heading (leader ahead, one behind).
-@export var start_queue_gap := 7.0
-## Stagger (s) between successive cars launching, so the queue rolls off one after
-## another (leader, then player, then trailer) rather than all at once.
-@export var start_queue_stagger_seconds := 0.35
 ## Seconds each half (out, then back) of the fade-to-black transition takes.
 @export var start_fade_seconds := 0.6
-## Straight road (m) forced AHEAD of the start line on a staged run, so the leader
-## has road to drive off down (the queue cars are axis-locked to a straight line).
+## Straight road (m) forced AHEAD of the start line on a staged run, so the car has
+## road to drive off down.
 @export var start_lead_in_ahead_m := 22.0
-## Straight road (m) extended BEHIND the start line on a staged run, so the player
-## (staged behind the three-car opponent grid) sits on paved road. Constraint:
-## start_lead_in_behind_m >= 3 * start_queue_gap + ~4 m (a car length) — the player is
-## staged three gaps back, so widening the gap needs a wider stub.
+## Straight road (m) extended BEHIND the start line on a staged run, so a staged
+## player sits on paved road rather than the generated track's raw edge.
 @export var start_lead_in_behind_m := 30.0
-## Height (m) the start-line cars are seated ABOVE the road at spawn — the player and
-## both queue cars (leader ahead, trailer behind) — so they settle onto their wheels
-## instead of spawning clipped into the ground. Smaller than the general drop-in
-## spawn_clearance: at the line the road height is known, so a gentle seat is enough.
+## Height (m) the start-line car is seated ABOVE the road at spawn, so it settles
+## onto its wheels instead of spawning clipped into the ground. Smaller than the
+## general drop-in spawn_clearance: at the line the road height is known, so a
+## gentle seat is enough.
 @export var start_spawn_clearance := 0.5
 ## Field of view (degrees) of the start-line orbit camera during the reveal.
 @export_range(30.0, 120.0) var start_orbit_fov := 70.0
-## Seconds the camera takes to fly from the orbit idle pose to the anchored 3/4 reveal
-## shot in front of the start line, once the player presses Start.
-@export var start_reveal_fly_seconds := 1.2
-## Reveal shot: camera distance (m) AHEAD of the start line (down the lead-in), so it
-## looks back at the car on the line.
-@export var start_reveal_cam_front_m := 6.0
-## Reveal shot: lateral offset (m) from the centreline, giving the 3/4 angle.
-@export var start_reveal_cam_side_m := 4.0
-## Reveal shot: camera height (m) above the line — low to the ground.
-@export var start_reveal_cam_height_m := 1.0
-## Reveal shot: height (m) of the look-at point on the car (roughly its roofline).
-@export var start_reveal_cam_look_height_m := 0.8
-## Field of view (degrees) of the anchored reveal shot.
-@export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
-## Roll-up decel model divisor: a scripted queue car's braking distance is
-## v*v / this (+ the reaction margin below), i.e. it assumes a deceleration of
-## (this / 2) m/s² when deciding where to start braking. 28 ≈ 14 m/s² decel.
-@export var start_roll_decel_divisor := 28.0
-## Reaction margin (m) added to the computed braking distance so a roll-up car starts
-## braking slightly before the pure decel model would — absorbs reaction lag.
-@export var start_roll_brake_margin_m := 0.25
-## Coast band (m): while the target is farther than brake_dist + this, the car rolls up
-## at full throttle; inside it (but still beyond brake_dist) the car coasts into the
-## brake point instead of powering to it.
-@export var start_roll_coast_band_m := 1.0
-## Creep threshold (m/s): while braking onto the target the foot brake stays pressed
-## only while the car is still rolling faster than this; below it, throttle drops to
-## zero so the auto box doesn't grab reverse against the held handbrake.
-@export var start_roll_creep_speed := 1.5
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -2852,35 +2769,6 @@ func has_nitrous() -> bool:
 @export_range(10.0, 300.0) var spectator_despawn_behind_m := 70.0
 
 
-@export_group("Opponent Wrecks")
-# A crashed-out rival is shown as a wrecked car by the roadside for the event they
-# wrecked in (features/opponent-wrecks.md): the ACTUAL car they drove, frozen (hitbox
-# kept) with a small standing crowd around it and lazy engine smoke. The wreck ITSELF
-# (how often / how many) is decided in RallyLibrary (OPPONENT_WRECK_CHANCE); these knobs
-# only shape the roadside presentation.
-## Stage roadside wrecks at all. Off = a crashed rival still DNFs, just isn't shown.
-@export var opponent_wrecks_enabled := true
-## Gap (m) between the road edge (half track width) and the NEAR side of the wreck —
-## the minimum; the placement then searches OUTWARD from here for the flattest patch
-## so the wreck rests on level ground beside the road instead of buried in a slope.
-@export_range(0.0, 20.0) var opponent_wreck_road_offset_m := 1.3
-## Extra yaw (rad) the wreck is skewed by, off the road direction, so it reads as
-## crashed rather than parked. Randomised per wreck within ±this.
-@export_range(0.0, 3.14159) var opponent_wreck_yaw_skew := 1.2
-## People in the small gathering around the wreck (a static standing cluster, no AI).
-@export_range(0, 40) var opponent_wreck_crowd_size := 7
-## Radius (m) of the ring the onlookers stand in around the wreck.
-@export_range(0.5, 12.0) var opponent_wreck_crowd_radius_m := 3.2
-## Conservative wreck-car footprint (m) used to sample verge flatness and keep the
-## car clear of the carriageway: half-width and half-length of the sampled box.
-@export_range(0.1, 5.0) var opponent_wreck_footprint_half_w := 1.1
-@export_range(0.1, 10.0) var opponent_wreck_footprint_half_len := 2.0
-## Half-angle (rad) of the crescent the onlookers are spread across, about the outward
-## (verge) direction — ±this. ~2.0 rad ≈ ±115°, covering the verge side + flanks but
-## never the road-ward hemisphere between the wreck and the carriageway.
-@export_range(0.0, 3.14159) var opponent_wreck_crowd_arc_half := 2.0
-
-
 @export_group("Star Economy")
 ## Stars: what a REPAIR costs (features/star-economy.md). Flat, whatever the damage —
 ## one star returns a car to full health and straightens its wheels.
@@ -3615,111 +3503,6 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 1.0) var crosswind_nose_on_fraction := 0.35
 
 
-@export_group("Rival Ghost")
-# While the player drives, the rally leader (P1) is shown on track as a translucent
-# ghost car, crossing the finish exactly when the standings say they did
-# (features/rival-ghost.md). It is NOT an AI driver: it is posed kinematically from
-# LapTimeModel.optimum_profile, re-solved with a degraded "driver skill" envelope until
-# the profile's total lands on P1's drawn time. These knobs shape the look and the
-# solve; WHO gets ghosted (the fastest classified rival) is not tunable.
-## Show the ghost at all. Off = no ghost, but the in-stage "vs P1" delta popup still
-## works — the shared pace object is built for every session run regardless.
-@export var rival_ghost_enabled := true
-## Cull distance (m). Beyond this the ghost is hidden — a ghost minutes up the road is
-## not worth drawing. Its pose stays valid at any distance (it needs no terrain
-## collider), so this is purely a rendering budget.
-@export_range(50.0, 2000.0) var rival_ghost_visible_m := 400.0
-## Ghost body opacity at a normal chasing distance. Low enough to read as "not really
-## there", high enough to chase.
-@export_range(0.05, 1.0) var rival_ghost_opacity := 0.4
-## Float P1's name above the ghost, so it reads as a rival you are racing rather than an
-## anonymous car. Billboarded, and it fades with the ghost's proximity fade.
-@export var rival_ghost_nametag_enabled := true
-## Height (m) of the nametag above the ghost's origin.
-@export_range(0.5, 8.0) var rival_ghost_nametag_height_m := 2.2
-## On-screen size (m of world height) of the nametag text.
-@export_range(0.1, 3.0) var rival_ghost_nametag_size_m := 0.55
-## Give the ghost its own gravel spray. It needs a SECOND WheelParticles system (that
-## node tracks one car), so it is a real cost rather than a free ride on the player's —
-## off is a legitimate choice on a tight frame budget.
-@export var rival_ghost_dust_enabled := true
-## Distance (m) over which the ghost fades OUT as it gets close to the player: full
-## opacity at this range, fully transparent at zero. Stops a ghost you are overlapping
-## from filling the screen and hiding the road you are trying to drive.
-@export_range(0.0, 60.0) var rival_ghost_fade_near_m := 14.0
-## Peak lateral shift (m) off the centerline as the ghost threads a line — wide on
-## entry, tucked at the apex, drifting out on exit. Shares one road-width budget with
-## the slip angle below, so nose and tail stay on the carriageway.
-@export_range(0.0, 6.0) var rival_ghost_line_offset_m := 1.2
-## Artistic multiplier on the ghost's slip angle. The angle ITSELF is derived from the
-## tyre model, not authored here: a tyre at peak lateral force sits at its peak-slip angle,
-## which is asin(*_slip_peak) for the surface (~11.5 deg on tarmac, ~20.5 deg on gravel),
-## scaled by how much of the friction circle cornering is actually using. So the
-## gravel-vs-tarmac difference comes out of the physics for free — retune
-## gravel_slip_peak / tarmac_slip_peak to change it. 1.0 = physical; raise it to
-## exaggerate the drift for looks.
-@export_range(0.0, 3.0) var rival_ghost_slip_scale := 1.0
-## Hard ceiling (deg) on slip. Past this the ghost reads as a spin, not a slide.
-@export_range(0.0, 90.0) var rival_ghost_max_slip_deg := 45.0
-## Smoothing time constant (s) for the ghost's LATERAL position (how far off the
-## centerline it sits). The road curve is only baked every ~5 m and lerped, so the geometry
-## the ghost reads steps at each chord vertex; this filters the residual sideways motion.
-## Applied to the lateral offset ONLY — never to along-track position, which is the ghost's
-## clock and must stay exact. 0 disables it.
-@export_range(0.0, 2.0) var rival_ghost_position_smoothing_s := 1.0
-## The same, for the ghost's ROTATION. Kept SHORTER than the positional constant on
-## purpose: heavy rotational filtering makes the car turn lazily and lag its own direction
-## of travel, which reads as sliding rather than driving, while sideways position wants the
-## heavier hand. 0 disables it.
-## CAREFUL: this is NOT the only thing that smooths rotation. rival_ghost_slip_lag_s below
-## lags the slip angle, which is a yaw folded into the same basis — so setting THIS to 0
-## alone still leaves the ghost's rotation filtered in corners. Zero both for genuinely
-## unfiltered rotation.
-@export_range(0.0, 2.0) var rival_ghost_rotation_smoothing_s := 0.0
-## Smoothing time (s) for the slip angle, so yaw builds through entry and unwinds on
-## exit instead of snapping at the apex. This is the SECOND rotational filter — slip is a
-## yaw applied to the body, so it lags rotation exactly as rival_ghost_rotation_smoothing_s
-## does. See the note there.
-@export_range(0.0, 2.0) var rival_ghost_slip_lag_s := 0.25
-## How much of the driver-skill deficit comes out of CORNERING: grip scales by
-## pow(k, this). 0 = grip is never reduced, so the ghost corners at the car's true limit
-## and every bit of its deficit comes from power (the default -- it makes the ghost a
-## usable reference line: it brakes where you should brake and carries the right apex
-## speed, and only loses to you down the straights). 1 = the old coupled behaviour, where
-## a slower rival is slower everywhere.
-## Caution: with this at 0 the only lever left is straight-line pace, so a very twisty
-## stage may not have enough straight to give away and the solve will clamp (it warns).
-## That ceiling is structural -- lowering rival_ghost_skill_min will not fix it.
-@export_range(0.0, 2.0) var rival_ghost_grip_exponent := 0.0
-## How much comes out of STRAIGHT-LINE pace: power scales by pow(k, this). Grip is the dominant loss, power the weaker secondary one —
-## at k=0.8 and 0.30 that is a 20% grip cut against a ~6.5% power cut, i.e. a crew
-## that loses it in the corners and is only slightly down on straights.
-## Toward 1.0 = slower rivals feel gutless on straights. Toward 0 = corner-limited
-## only, and straightness-dominated stages stop converging (they trip the residual cap
-## below, which is exactly what that cap is for).
-@export_range(0.05, 1.0) var rival_ghost_power_exponent := 1.0
-## Lower end of the skill bracket the solve bisects over. Must be low enough to reach
-## the slowest authored pace; if clamp warnings prove common, lower THIS before touching
-## the exponents (an exponent changes how every ghost looks).
-## Measured, not guessed: with the grip exponent at 0 the worst career stage needs 0.151
-## (tools/audit_ghost_pace.tscn sweeps all 96 of them), so this sits well under that.
-## A wide bracket costs nothing — the bisection still lands on whichever k matches the
-## target, so a low floor only extends what is REACHABLE; it never makes a normal ghost
-## slower. Raise the grip exponent and this can come back up.
-@export_range(0.01, 1.0) var rival_ghost_skill_min := 0.05
-## Upper end of the bracket. Deliberately ABOVE 1.0: it is a safety valve for
-## cached-vs-live track divergence, where the target can land beyond the car's
-## ungraded optimum. Without the headroom those solves fall onto the uniform-scale
-## fallback this design exists to avoid.
-@export_range(1.0, 2.0) var rival_ghost_skill_max := 1.15
-## Bisection steps. Plus 2 bracket evaluations = the sweep budget per solve.
-@export_range(1, 40) var rival_ghost_skill_iterations := 12
-## Largest time error (ms) the final uniform micro-scale may absorb. Beyond this the
-## solve has failed to find a real SHAPE and is falling back to disguised uniform
-## scaling, so it warns instead of shipping silently.
-@export_range(1, 5000) var rival_ghost_max_time_residual_ms := 250
-
-
 @export_group("Overworld")
 # The drivable overworld map — a single open landmass the player drives across to reach
 # rallies, dealerships and the workshop, standing in for the HQ's menu tables. See
@@ -4051,51 +3834,6 @@ func spectator_params() -> Dictionary:
 ## Purely a shader remap of the baked rank, so changing it is free — it does NOT invalidate the
 ## chunk cache and needs no re-bake.
 @export_range(0.02, 1.0, 0.01) var overworld_region_blend_width := 0.35
-
-
-@export_group("Rival Field & Pace")
-# The DIFFICULTY dials behind a rally's opponent field: how likely a rival is to crash out,
-# how far the rival draw wanders from stock engines, and the pace band every rival's lap time
-# is drawn from. Read by RallyLibrary (generate_opponent_field / _pace_band / swap_weight),
-# where the matching consts survive only as fallback defaults. See features/rally-roster.md,
-# features/adaptive-difficulty.md and features/opponent-wrecks.md.
-## Probability, PER EVENT, that exactly ONE not-yet-wrecked rival crashes out (a wreck is a DNF,
-## and a DNF in any event disqualifies the rival's whole rally). Capped at one per event whatever
-## this says, so it is purely "how often does the field thin out": 0 = nobody ever wrecks and
-## the standings are pure pace, 1 = a rival is lost every single event.
-@export_range(0.0, 1.0, 0.01) var rival_wreck_chance := 0.5
-## How strongly the rival draw favours MODEST engine swaps, in hp/tonne. Each admitted
-## car+engine combo is weighted `exp(-|pw - pw_stock| / this)`, so a stock combo weighs 1.0 and a
-## swap this far from stock ~0.37. Small = near-stock, recognisable fields; large = anything goes
-## and the grid fills with oddities. Never a filter, only a bias.
-@export_range(1.0, 200.0, 0.5) var rival_swap_pw_spread := 25.0
-## Pace of the FASTEST rival (skill 0), as a multiple of that rival's own physics optimum for
-## their car on the event track. The tight end of the band — lower it and the ace at the front
-## becomes near-unbeatable, raise it and the whole field is beatable on a clean run.
-@export_range(0.5, 3.0, 0.01) var rival_pace_fast_base := 1.10
-## Pace of the SLOWEST rival (skill 1) at difficulty tier 1 — the loose end of the band. The gap
-## to `rival_pace_fast_base` is how SPREAD OUT a tier-1 field feels from front to back.
-@export_range(0.5, 5.0, 0.01) var rival_pace_slow_base := 2.00
-## How much the FAST end of the band tightens per difficulty tier above 1. 0 keeps the ace at
-## the same pace at every tier, so only the back of the field improves up-tier.
-@export_range(0.0, 1.0, 0.001) var rival_pace_fast_step := 0.00
-## How much the SLOW end of the band tightens per difficulty tier above 1. Larger = higher-tier
-## rallies field a more uniformly quick pack, with no easy backmarkers to overtake.
-@export_range(0.0, 1.0, 0.0001) var rival_pace_slow_step := 0.1667
-## Per-event jitter, ±this fraction, around a rival's PERSISTENT base pace. Small enough that a
-## fast rival stays fast across all three events (so combined times rank into a real ladder),
-## large enough that a stage can spring an upset. 0 makes the field robotic and fully predictable.
-@export_range(0.0, 0.5, 0.005) var rival_pace_event_noise := 0.05
-## Absolute floor on a rival's pace multiplier — a SANITY GUARD, not a difficulty dial. Set far
-## below anything the band above can produce, so it never binds in normal play; its job is to
-## keep a degenerate case (empty combo pool, a divide-by-zero, an absurd difficulty target)
-## producing a SLOW field rather than a negative or impossible one.
-@export_range(0.05, 2.0, 0.01) var rival_pace_min_floor := 0.50
-## The quickest time a rival may be given, as a multiple of their own optimum, AFTER the residual
-## difficulty trim. Not a physics limit — it is what the windscreen GHOST can represent: past it
-## RivalPace's bisection bottoms out, warns, clamps, and the ghost visibly stops matching the
-## standings. Raise it only alongside the ghost's skill bracket. See features/rival-ghost.md.
-@export_range(0.5, 1.5, 0.001) var rival_ghost_solvable_pace := 0.976
 
 
 @export_group("Overworld Fog Frontier")

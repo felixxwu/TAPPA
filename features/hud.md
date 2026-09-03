@@ -3,8 +3,7 @@
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
 `main.tscn`, with `car` wired to the `Car`.
 
-**Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`,
-`tests/headless/test_live_standings.gd`
+**Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`
 
 On-screen readout plus two interactive mode buttons.
 
@@ -156,14 +155,10 @@ RUNNING. It shows the running event total (`CUT +total_s`), not the incident
 delta, so consecutive incidents read as one growing tag rather than flickering
 resets — built in code, anchored top-centre just below the pacenote strip
 (`_POPUP_TOP`), and fading out after `hud_popup_show_seconds` (a countdown ticked
-in `_process`). It **shares that row with the permanent standings readout and takes it
-over while it is up**: `show_cut_flash` drops `PositionLabel` / `PositionGapLabel`, and
-`show_position` keeps them down while `_cut_flash_left > 0.0`. Deliberate reuse rather
-than a second location — a freshly billed penalty is the most urgent thing the HUD has to
-say, and it gets said in the spot the player is already reading. Nothing restores the
-readout by hand: the flash fades on its own clock and the next `show_position` frame (the
-stage drives one every frame) puts it straight back, already carrying the current
-position. Gated by `cut_penalty_enabled`.
+in `_process`). Gated by `cut_penalty_enabled`. It used to share its row with a
+permanent live-standings readout (the player's position in the rival field);
+that readout is gone with the rival field (`todo/roguelike-pivot.md` decision 5),
+so the flash now has the row to itself.
 
 ## Off-track warning
 
@@ -221,10 +216,9 @@ and advanced by `show_pacenotes(current)`.
   reads as a smooth left-slide; `_layout_pacenotes` positions/fades each board from
   its distance to the current slot (`_PACE_*` consts: slot width, upcoming count,
   dim step/floor). Gated by `hud_pacenotes_enabled` — off builds no boards.
-  The standings readout and the cut flash share the row directly
-  below the strip: their top edge is `_POPUP_TOP = _PACE_TOP + _PACE_ICON + _POPUP_GAP`,
-  so bumping the pacenote icon size pushes both down with it rather than
-  overlapping.
+  The cut flash sits on the row directly below the strip: its top edge is
+  `_POPUP_TOP = _PACE_TOP + _PACE_ICON + _POPUP_GAP`, so bumping the pacenote
+  icon size pushes it down with it rather than overlapping.
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
 code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**
@@ -234,95 +228,19 @@ keyboard/gamepad navigable via `MenuNav.attach` (attached in `_ready`, so it's
 `FOCUS_ALL` and re-grabs focus whenever the panel is shown — `ui_accept` triggers
 it); see [menus.md](menus.md).
 
-## Live standings readout
+## Live standings readout — REMOVED
 
-The **`PositionLabel`** / **`PositionGapLabel`** pair is the *permanent* in-run
-standings readout: where the player currently sits in the rival field (`P3/12`) and
-the gap that matters underneath it (`1.42 behind P2`, or `1.42 ahead of P2` in green while
-leading). It **replaced** the old every-few-turns *"vs P1" pace popup*
-(`StageDeltaLabel` / `show_stage_delta`), and the swap was the point: a delta that
-flashed up for three seconds every fifth turn told you nothing between pulses, and
-"how far off P1" is not the question a driver mid-stage is actually asking — the
-question is *what place am I in, and what do I have to find to gain one*. So the
-readout is always on and always current instead of being a pulse you might miss.
+There used to be a permanent `PositionLabel` / `PositionGapLabel` pair here,
+showing the player's live position in the rival field (`P3/12`) and the gap to
+the position that mattered. It was deleted along with the rival field
+(`todo/roguelike-pivot.md` decision 5): a run races the clock, not a grid, so
+there is no field to report a position in.
 
-Both labels are built in code by `_build_position_readout()` and centred on the
-**top-centre popup row, directly under the pacenote strip**: `_POS_TOP` is the position
-line's resting row (`= _POPUP_TOP`, so it follows the strip's size rather than a hand-copied
-number), `_POS_HEIGHT` / `_GAP_HEIGHT` are its two row heights, and the gap line is seated
-directly below the position line. Centre screen is deliberate — this is the readout the
-player checks most often mid-stage, so it belongs in the eye-line with the pacenotes rather
-than parked in a corner. It shares that row with `CutFlashLabel`, which borrows it for a
-moment whenever a cut is billed (above).
-
-**The projection is a gap-carry, not an extrapolation.** The maths lives in
-`scripts/live_standings.gd` (`LiveStandings`, pure static, no nodes and no `Config`
-reads — see [stage.md](stage.md) for how `StageManager` feeds it):
-
-- `time_frac_at(frac, turn_progress, turn_time_frac)` reads the leader's fraction of
-  stage *time* completed at the player's track progress off the same per-turn pace
-  table the old popup used, linearly interpolated between turn boundaries. It returns
-  `-1.0` when there is no usable table, because "no projection" is a real state (a
-  plain dev boot has no rival field at all), not an error.
-- `project_total_ms(...)` turns that into the player's projected finishing time as
-  **the leader's total plus the player's live delta to the leader at this instant** —
-  i.e. "if the rest of the stage goes like the leader's did". The obvious alternative,
-  extrapolating the player's own average pace (`elapsed / frac`), was rejected: it
-  reads wildly optimistic or pessimistic off a single slow opening sector and swings on
-  every corner, which makes the position number flicker between places for no reason
-  the player can see. The gap-carry only moves when the player actually gains or loses
-  time, which is exactly when the readout *should* move.
-- `standing(projected_ms, rival_times_ms)` slots that projection into the field and
-  returns `{position, field, gap_ms, leading}` — a 1-based place counting the player,
-  the classified field size including the player, an always-positive gap (the time to
-  find on the car ahead, or the cushion back to P2 when leading), and which of those
-  two the gap is. A tie goes to the player, which is why a run reads `P1` off the
-  start line: at zero progress the projection *is* the leader's time.
-
-`Hud.position_text(position, field)` and `Hud.gap_text(gap_ms, leading, position)` are
-the **pure static formatters**, split out so the strings are testable without the HUD
-scene. The gap is **worded rather than signed** (`behind` / `ahead of`) — a bare `±` in
-the middle of the screen at speed reads as ambiguous, and this line has to answer "which
-way" instantly. Leading colours it `UITheme.GREEN`, otherwise `INK_DIM`.
-
-**The gap number is eased, not written raw.** The projection behind it moves every frame
-and jitters with the player's own speed, so the raw figure chatters in the hundredths and
-reads as noise rather than information. `show_position` only sets `_gap_target_ms`;
-`_tick_gap_smoothing(delta)` chases it with `_gap_shown_ms` on the same
-`1 - exp(-delta * _GAP_SMOOTH_SPEED)` curve the pacenote strip slides on (fps-independent,
-and a little slower than the strip — this is a number being read, so it wants to settle),
-and `_write_gap_text()` is the only thing that writes the line, change-gated on the
-displayed centisecond. Three cases **snap** instead of easing, because in each the gap is
-suddenly measured against a *different car* and gliding across the old value would quote
-seconds that were true of neither: the first update after the readout appears (a stage
-opening with the number counting up from zero would be a lie, not a smoothing), a position
-change, and the leading flag turning over. `_gap_leading` is latched *before* any write for
-that reason — writing first would spell the opening frame of a lead as a deficit. The tick
-runs whether or not the labels are visible, so a readout hidden behind a cut flash comes
-back current instead of gliding up from a stale figure, and it bails out once the number
-has arrived so the settled frame does no work at all.
-
-`show_position(position, field, gap_ms, leading)` drives the pair and is gated by
-`hud_position_enabled`. Because `StageManager` polls it **every RUNNING frame** while
-the underlying projection moves continuously, both label writes are **change-gated on
-the displayed value** — position, field, and the gap rounded to the shown centisecond —
-so the common frame builds no strings at all. `moved` is in the gap line's gate too:
-that line *names* the position above (`behind P4`), so it must be rebuilt when the position
-turns over even if the seconds round the same. A frame driven while a cut flash owns the row
-updates that state as usual but leaves the labels hidden, so a place lost behind the flash is
-caught rather than missed — and isn't replayed as a fresh overtake when the row comes back. A field of one classified car hides the
-gap line outright — a gap to nobody. `hide_position()` takes the readout down at the
-finish or on a re-arm and forgets the shown values, so the next stage's first position
-is an appearance rather than an overtake.
-
-A position **change** plays a subtle animation, ticked by `_tick_position_anim`: a
-gained place slides the position label up into its resting row and flashes
-`UITheme.GREEN`, a lost place slides down and flashes `UITheme.RED`, both easing back
-to `INK` over `_POS_ANIM_SECONDS` from a `_POS_SLIDE` offset. It is eased (`u * u`) so
-most of the travel and nearly all of the colour happen in the first instants — that's
-what makes it read as a flick rather than a drift — and it costs nothing once the timer
-lapses. The animation only fires once a position has already been shown, since the
-first frame of a stage is the readout appearing, not an overtake.
+`scripts/live_standings.gd` (`LiveStandings`, the pure projection maths behind
+the old readout) and `StageManager.setup_splits` / `setup_live_standings` are
+left in place, unreached — see [stage.md](stage.md) → "In-stage live standings
+readout" for why they were not deleted outright and what a future readout
+should or should not build on.
 
 ## Behavior
 
@@ -339,10 +257,8 @@ small (font 14 for labels) — the HUD is rendered at 1/2 scale.
 The `ElapsedLabel` run timer is anchored to the **top centre**
 (`anchor_left/right = 0.5`, `grow_horizontal = 2`, `horizontal_alignment = 1`) so
 it sits in the middle of the screen regardless of viewport width, with the
-permanent standings readout (`PositionLabel` + `PositionGapLabel`) and the
-`CutFlashLabel` popup stacked below it on the same centred column, under the pacenote
-strip from `_POS_TOP` / `_POPUP_TOP` — the readout and the flash take turns on that one
-row rather than occupying two places. The **top-right corner is left
+`CutFlashLabel` popup stacked below it on the same centred column, under the
+pacenote strip from `_POPUP_TOP`. The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
 (see [menus.md](menus.md)), not the HUD. The three gauges are anchored to the
 **bottom centre** of the viewport (`anchor_top/bottom = 1.0`, `anchor_left/right =
@@ -366,5 +282,5 @@ web `.pck`. Editor and test runs fall back to the committed default
 ## Related config
 
 `hud_enabled`, `hud_elapsed_enabled`, `hud_hp_enabled`, `hud_low_hp_warn_frac`,
-`hud_position_enabled`, `hud_popup_show_seconds`.
+`hud_popup_show_seconds`.
 See [configuration.md](configuration.md) and [damage.md](damage.md).

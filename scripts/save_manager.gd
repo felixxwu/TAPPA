@@ -590,11 +590,6 @@ func _default_profile() -> Dictionary:
 		# every part is gated purely by the CURRENT unlocked_by_rally mapping.
 		KEY_LEGACY_PART_UNLOCKS: [],
 		KEY_LEGACY_ENGINE_SWAP: false,
-		# Adaptive difficulty (features/adaptive-difficulty.md). Zero is "field matched to
-		# the player", i.e. the behaviour before the system existed.
-		AiDifficulty.KEY_STEPS: 0,
-		AiDifficulty.KEY_WIN_STREAK: 0,
-		AiDifficulty.KEY_LOSS_STREAK: 0,
 		"reward_history": [],
 		"settings": {},
 		# --- Star ledger (see todo/star-economy.md) ---
@@ -730,12 +725,11 @@ func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 					tuning["engine_detune"] = 1.0
 			p["schema_version"] = 3
 		3:
-			# Adaptive difficulty. All three start at zero, and zero means "field matched
-			# to the player exactly", which IS the pre-adaptive behaviour — so a migrated
-			# career resumes at parity and only diverges once it produces results.
-			p[AiDifficulty.KEY_STEPS] = 0
-			p[AiDifficulty.KEY_WIN_STREAK] = 0
-			p[AiDifficulty.KEY_LOSS_STREAK] = 0
+			# Used to seed the adaptive-difficulty keys here. AiDifficulty and the rival
+			# field it adapted are deleted (todo/roguelike-pivot.md decision 5); this step
+			# is kept as a schema-version no-op so the chain still counts up correctly for
+			# a profile migrating from further back. The whole chain is slated for
+			# deletion with the rest of the migration ladder (decision 34) — not this wave.
 			p["schema_version"] = 4
 		4:
 			# Two parts were re-sited into the Alps to give that corner something worth
@@ -1512,15 +1506,10 @@ func apply_build_plan(instance_id: int, plan: Dictionary) -> bool:
 	return true
 
 
-# Fold one stage result into the adaptive-difficulty offset and persist it.
-#
-# Called once per finished stage from RallySession. The RULE lives in AiDifficulty; this
-# only stores the answer, so the difficulty logic stays testable without a save.
-func record_stage_result(won: bool) -> void:
-	var out := AiDifficulty.apply_stage_result(profile, won)
-	for k in out:
-		profile[k] = out[k]
-	save()
+# record_stage_result (adaptive difficulty) used to live here. Its only caller was
+# RallySession, deleted with the rival field it adapted (todo/roguelike-pivot.md
+# decision 5); AiDifficulty is deleted too, so this seam is gone rather than
+# left calling into a class that no longer exists.
 
 
 # Did this rally's record get written at all — i.e. did the player PODIUM it (or was it

@@ -38,13 +38,6 @@ class StubHud:
 	func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
 		complete_time = seconds
 		complete_penalty = penalty_s
-	# Every show_position() call, as [position, field, gap_ms, leading].
-	var positions: Array = []
-	var hide_position_calls := 0
-	func show_position(position: int, field: int, gap_ms: int, leading: bool) -> void:
-		positions.append([position, field, gap_ms, leading])
-	func hide_position() -> void:
-		hide_position_calls += 1
 	var flash_args := []
 	func show_cut_flash(incident_s: float, total_s: float) -> void:
 		flash_args = [incident_s, total_s]
@@ -311,79 +304,11 @@ func _wire_even_splits(sm: StageManager) -> void:
 	sm.setup_splits(prog, tfrac, 120000)
 
 
-func test_no_readout_without_the_pace_table_or_the_field() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_progress.pct = 0.5
-	sm._process(30.0)
-	assert_eq(_hud.positions.size(), 0, "a plain dev boot (nothing wired) drives no readout")
-	# The field alone isn't enough: without the leader's pace table there is no projection.
-	sm.setup_live_standings([100000, 130000])
-	sm._process(1.0)
-	assert_eq(_hud.positions.size(), 0, "a field without a pace table still shows nothing")
-
-
-func test_a_player_up_on_the_leader_runs_first_with_a_cushion() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_wire_even_splits(sm)
-	# The leader (120 s) plus one slower rival (130 s). 55 s used where the leader had
-	# used 60: 5 s up -> projected 115 s -> P1 of 3, holding 5 s over the leader (who is
-	# now the car in second). Deliberately not "dead level": that ties, and a tie reads as
-	# P1 with a 0.00 cushion, which pins nothing about where the gap is measured from.
-	sm.setup_live_standings([120000, 130000])
-	_progress.pct = 0.5
-	sm._process(55.0)
-	assert_eq(_hud.positions.size(), 1, "the readout is driven every running frame")
-	var shown: Array = _hud.positions[0]
-	assert_eq(int(shown[0]), 1, "5 s up on the leader reads as P1")
-	assert_eq(int(shown[1]), 3, "the field counts both rivals and the player")
-	assert_true(bool(shown[3]), "leading is flagged")
-	assert_eq(int(shown[2]), 5000, "the cushion is over the next car back, not the slowest")
-
-
-func test_time_lost_drops_the_player_down_the_field() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_wire_even_splits(sm)
-	sm.setup_live_standings([120000, 130000])
-	# 75 s used where the leader had used 60: 15 s down -> projected 135 s, behind both.
-	_progress.pct = 0.5
-	sm._process(75.0)
-	var shown: Array = _hud.positions[0]
-	assert_eq(int(shown[0]), 3, "15 s down on the leader is last of three here")
-	assert_false(bool(shown[3]), "and not leading")
-	assert_eq(int(shown[2]), 5000, "the gap quoted is to the car directly ahead (130 s)")
-
-
-func test_the_readout_is_taken_down_at_the_finish() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_wire_even_splits(sm)
-	sm.setup_live_standings([120000, 130000])
-	# setup() hides the readout on arm, so count from HERE to test the finish edge itself.
-	var hidden_before := _hud.hide_position_calls
-	_progress.pct = 1.0
-	sm._process(100.0)
-	assert_true(_hud.hide_position_calls > hidden_before,
-		"a live position off a frozen clock would just sit there being wrong")
-
-
-func test_re_arming_clears_the_previous_events_field() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_wire_even_splits(sm)
-	sm.setup_live_standings([120000, 130000])
-	# A car swap / next event re-arms the manager; the old field and pace table must go
-	# with it, or the next stage would rank the player against the wrong race.
-	var hidden_before := _hud.hide_position_calls
-	sm.setup(_car, _hud, _progress)
-	assert_true(_hud.hide_position_calls > hidden_before, "re-arming takes the readout down")
-	_hud.positions.clear()
-	_to_running(sm)
-	_progress.pct = 0.5
-	sm._process(60.0)
-	assert_eq(_hud.positions.size(), 0, "and leaves nothing wired for the new stage")
+# NOTE: the live standings readout (position, gap-to-leader, LiveStandings) and its
+# five tests are DELETED, not weakened. It projected the player's finish time into a
+# RIVAL FIELD, and there are no rivals (decision 5) — `setup_live_standings` had no
+# production caller left and `_field_times` was permanently empty. The pace table it
+# read (`setup_splits`) survives: the fixed per-stage timer still needs it.
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------

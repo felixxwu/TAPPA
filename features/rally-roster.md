@@ -6,7 +6,14 @@ player state. It holds `const RALLIES: Array[Dictionary]` plus the pure function
 the rest of the game runs over it. Player completion lives in the save profile
 (`Save`, `features/save-persistence.md`), keyed by the stable rally `id` here.
 
-**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_opponent_tires.gd`, `tests/headless/test_ai_difficulty.gd`, `tests/headless/test_catalogue_seam.gd`, `tests/headless/test_sim_career.gd`
+**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_catalogue_seam.gd`, `tests/headless/test_sim_career.gd`
+
+**STALE DOC WARNING:** this file still documents the rival field at length (tyre
+mirroring, `generate_opponent_field`, engine-swap build levels, pace bands, wrecks) —
+all deleted along with `RallySession` (todo/roguelike-pivot.md decision 5). Only this
+header line has been corrected; the body below needs a real rewrite. Do not trust the
+sections below this line as current — verify against `scripts/rally_library.gd`
+before citing them.
 
 **`RALLIES` is not grouped by geography.** The array is in AUTHORING ORDER and its order
 carries no meaning at all — it is not a progression order, and adjacent entries need not

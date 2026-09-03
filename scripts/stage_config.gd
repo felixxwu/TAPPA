@@ -1,7 +1,7 @@
 class_name StageConfig
 extends RefCounted
 # Docs: features/weather.md, features/track.md — update in the same change as this file.
-# Tests: tests/headless/test_rally_session.gd, tests/headless/test_track_cache.gd, tests/headless/test_snow_region.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageConfig' tests/headless/` and read the assertions that pin what you are about to change.
+# Tests: tests/headless/test_stage_config.gd, tests/headless/test_track_cache.gd, tests/headless/test_snow_region.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageConfig' tests/headless/` and read the assertions that pin what you are about to change.
 # The CANONICAL writer that turns a stage/event dict into a GameConfig — i.e. the
 # one place an authored (or rolled) stage's track parameters reach the config the
 # world is generated from. Extracted from RallySession, which owned it only by

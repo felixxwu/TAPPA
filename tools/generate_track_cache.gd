@@ -1,6 +1,6 @@
 extends Node
-# Scene-run lockfile generator (NOT a --script SceneTree: Config/RallySession are
-# autoloads that only exist in a scene run). Writes res://data/track_cache.json.
+# Scene-run lockfile generator (NOT a --script SceneTree: Config and the other
+# autoloads only exist in a scene run). Writes res://data/track_cache.json.
 # Invoked by cache_tracks.sh; validated in CI. See
 # docs/superpowers/specs/2026-07-21-track-turn-cache-design.md.
 

@@ -8,9 +8,8 @@ const CAR := {
 	"tire_compound": 1.1, "drag": 0.2,
 }
 
-# These shapes moved to TrackFixtures when test_rival_pace.gd needed the same ones —
-# one definition instead of a copy per test file. Kept as thin local names so the
-# assertions below read unchanged.
+# These shapes live in TrackFixtures, shared across the track-generation test files.
+# Kept as thin local names so the assertions below read unchanged.
 func _straight_track(length: float) -> Dictionary:
 	return TrackFixtures.straight(length)
 
@@ -66,16 +65,15 @@ func test_wet_event_is_slower_than_dry_in_a_corner():
 	var t_wet := LapTimeModel.optimum_ms(track, CAR, wet_event)
 	assert_gt(t_wet, t_dry, "wet event is strictly slower than the identical dry event")
 
-# --- Skill-factor seam (grip_mult / power_mult), for the rival ghost -------------
-# The ghost's pace comes from re-solving this model with a degraded envelope
-# (features/rival-ghost.md). These are the injection points; the defaults must be
-# perfect no-ops so every existing caller — and the baked opponent cache — is
-# untouched.
+# --- Skill-factor seam (grip_mult / power_mult) -----------------------------
+# A degraded-envelope re-solve injection point. Its original motivating caller — the
+# rival ghost's pace solve — is deleted (todo/roguelike-pivot.md decision 5); the
+# seam itself is left in place as generic LapTimeModel API, still exercised here so
+# a future caller inherits a proven no-op default rather than an unverified one.
 
 func test_default_multipliers_match_the_no_argument_call():
-	# The invariance every existing caller depends on: passing the defaults explicitly
-	# must be byte-identical to not passing them. If this breaks, rival times move and
-	# data/opponent_cache.json silently diverges from live generation.
+	# The invariance every caller of this seam depends on: passing the defaults
+	# explicitly must be byte-identical to not passing them.
 	var track := _arc_track(40.0, PI)
 	var bare: Dictionary = LapTimeModel.optimum_profile(track, CAR, {})
 	var defaulted: Dictionary = LapTimeModel.optimum_profile(track, CAR, {}, 1.0, 1.0)
@@ -328,38 +326,18 @@ func test_a_descent_too_steep_to_brake_does_not_produce_a_bad_number():
 		assert_true(v[i] >= 0.0, "velocity sample %d is non-negative" % i)
 
 
-func test_the_gradient_term_reaches_the_rival_field_through_the_track_result():
-	# The seam itself: rivals are timed off the same optimum_ms, so seating road_height
-	# on the track result is what makes the AI field climb the hills the player climbs.
-	# Without this the ghost solves a flat version of a road that goes up.
-	var track := _straight_track(400.0)
-	var flat_field := RallyLibrary.generate_opponent_field(
-		{"id": "t", "difficulty": 2, "events": [{}]}, [track], [{}], 100.0)
-	track["road_height"] = _constant_grade(0.12)
-	var hilly_field := RallyLibrary.generate_opponent_field(
-		{"id": "t", "difficulty": 2, "events": [{}]}, [track], [{}], 100.0)
-	assert_gt(hilly_field.size(), 0, "a field was drawn")
-	assert_eq(hilly_field.size(), flat_field.size(), "the same number of rivals either way")
-	# The grid is drawn from the same rng for the same inputs, so rival i is the same
-	# build in both — only the hill differs, and every classified one must have paid for
-	# it. A rival can carry a non-positive combined_ms (the unclassified sentinel); it has
-	# no time to compare, so it is skipped rather than asserted on.
-	var compared := 0
-	for i in hilly_field.size():
-		var flat_ms := int(flat_field[i]["combined_ms"])
-		if flat_ms <= 0:
-			continue
-		compared += 1
-		assert_gt(int(hilly_field[i]["combined_ms"]), flat_ms,
-			"rival %d is slower up the hill" % i)
-	assert_gt(compared, 0, "at least one classified rival was compared")
+# test_the_gradient_term_reaches_the_rival_field_through_the_track_result used to live
+# here, exercising the gradient term through RallyLibrary.generate_opponent_field.
+# Deleted along with the rival field (todo/roguelike-pivot.md decision 5) — the
+# gradient term itself (road_height on the track result) is still exercised directly
+# by the optimum_ms tests above.
 
 
 # --- Surface-specialised tyre compounds (features/drivetrain-and-tires.md) --------
 # The snow compound trades tarmac grip for snow grip, and the model has to see that
-# trade or the AI field would silently diverge from the car the player is driving —
-# rivals would lap a tarmac stage on rubber the player no longer has. Relations only:
-# the two multipliers are supplied by the test, so retuning the shipped part is free.
+# trade or a car's own lap-time estimate would silently diverge from the tyres it is
+# actually running. Relations only: the two multipliers are supplied by the test, so
+# retuning the shipped part is free.
 
 const SNOW_SHOD := {
 	"mass": 1200.0, "peak_torque": 300.0, "redline": 7000.0,

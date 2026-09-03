@@ -50,15 +50,10 @@ var _results_emitted := false  # true once proceed_to_results() has fired stage_
 # rival; empty for a plain dev boot. _turn_progress[i] is the progress fraction (0..1)
 # at the end of turn i; _turn_time_frac[i] is the rival's cumulative time fraction at
 # that turn (so the rival's time there ≈ p1 total × that). See
-# RallyLibrary.derive_turn_splits, and LiveStandings for what the table is read for.
+# RallyLibrary.derive_turn_splits.
 var _turn_progress: Array = []
 var _turn_time_frac: Array = []
 var _p1_total_ms := 0
-# Every classified rival's event time (ms, ascending), from setup_live_standings() —
-# the whole field, which is what turns the leader-relative projection above into a
-# POSITION. Empty means no live standings readout (a dev boot, or a field of DNFs).
-var _field_times: Array = []
-
 # Rally pacenote strip (features/hud.md), wired by setup_pacenotes() from world.gd on
 # every run (no P1 rival needed — pacenotes are just track reading). _pace_fracs[i] is
 # the progress fraction (0..1) of turn i's corner entry, ascending. _pace_cursor is the
@@ -88,7 +83,7 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_hud = hud
 	_hud_can.clear()
 	for m in ["show_countdown", "hide_countdown", "show_elapsed",
-			"show_stage_complete", "show_position", "hide_position", "show_cut_flash",
+			"show_stage_complete", "show_cut_flash",
 			"show_pacenotes", "show_off_road", "hide_off_road"]:
 		_hud_can[m] = _hud != null and _hud.has_method(m)
 	# Clear any warning left up by the previous arm (a car swap / new event) — the
@@ -103,14 +98,11 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	# Clear any finish-stop braking from a previous arm (car swap / new event).
 	if car != null and "finish_stop" in car:
 		car.finish_stop = false
-	# Clear any pace table / field from a previous arm (a car swap / new event); a session
-	# run re-wires them via setup_splits() + setup_live_standings() after this.
+	# Clear any pace table from a previous arm (a car swap / new event); a session
+	# run re-wires it via setup_splits() after this.
 	_turn_progress = []
 	_turn_time_frac = []
 	_p1_total_ms = 0
-	_field_times = []
-	if _hud_can.get("hide_position", false):
-		_hud.hide_position()
 	# Clear pacenotes from a previous arm; world.gd re-wires them via setup_pacenotes().
 	_pace_fracs = []
 	_pace_cursor = 0
@@ -163,17 +155,6 @@ func setup_splits(turn_progress: Array, turn_time_frac: Array, p1_total_ms: int)
 	_turn_progress = turn_progress
 	_turn_time_frac = turn_time_frac
 	_p1_total_ms = p1_total_ms
-
-
-# Wire the live standings readout with the field the player is racing: every classified
-# rival's event time (ms), from RallySession.current_event_field_times_ms(). With this
-# AND setup_splits() wired, RUNNING drives hud.show_position() every frame.
-#
-# Separate from setup_splits because the two answer different questions and arrive at
-# different times — the pace table can only be built once the rival pace is solved at GO,
-# while the field is known as soon as the event is set up.
-func setup_live_standings(field_times_ms: Array) -> void:
-	_field_times = field_times_ms
 
 
 # Wire the HUD pacenote strip: the per-corner progress fractions (0..1) of each turn
@@ -311,7 +292,6 @@ func _tick_running(delta: float) -> void:
 	_elapsed += delta
 	if _hud_can["show_elapsed"]:
 		_hud.show_elapsed(_elapsed)
-	_update_live_standings()
 	_maybe_advance_pacenotes()
 	_update_off_road_warning()
 	# Hold the "GO" flash a moment, then clear it.
@@ -337,10 +317,6 @@ func _complete() -> void:
 	# with nothing the player can do about it. (TrackProgress keeps its clock running,
 	# so a car that crossed the line off-road is still recovered — just silently.)
 	_hide_off_road_warning()
-	# The projection is over too: the finish panel is showing the real time, and a live
-	# "position" derived from a frozen clock would just sit there being wrong.
-	if _hud_can.get("hide_position", false):
-		_hud.hide_position()
 	# Re-lock so the finished car skids to a stop under the panel (controls_locked
 	# forces the handbrake on) instead of driving on. It stays visible behind the
 	# overlay; the runoff road (features/track.md) gives it room to stop.
@@ -383,29 +359,6 @@ func force_complete() -> void:
 	if not _armed or _phase == Phase.COMPLETE:
 		return
 	_complete()
-
-
-# Drive the permanent standings readout: project the player's finishing time from their
-# live gap to the leader (LiveStandings.project_total_ms, which reads the pace table), slot
-# that projection into the rival field, and hand the HUD the position and the gap that
-# matters. Polled every frame rather than pulsed at turn boundaries — it is a live state
-# readout like the run timer, and the HUD change-gates its own string building.
-#
-# Needs BOTH wirings: the pace table (no projection without it) and the field (no position
-# without it). Silently does nothing otherwise, which is the dev-boot case.
-func _update_live_standings() -> void:
-	if _field_times.is_empty() or _turn_progress.is_empty() or _p1_total_ms <= 0:
-		return
-	if not _hud_can["show_position"]:
-		return
-	var frac := 0.0
-	if _progress != null and _progress.has_method("progress_percent"):
-		frac = _progress.progress_percent()
-	var projected := LiveStandings.project_total_ms(int(round(_elapsed * 1000.0)), frac,
-			_turn_progress, _turn_time_frac, _p1_total_ms)
-	var st := LiveStandings.standing(projected, _field_times)
-	_hud.show_position(int(st["position"]), int(st["field"]), int(st["gap_ms"]),
-			bool(st["leading"]))
 
 
 # Advance the pacenote strip: count how many corner entries the car's progress has now

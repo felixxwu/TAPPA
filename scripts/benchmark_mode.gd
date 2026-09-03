@@ -106,10 +106,9 @@ func start() -> void:
 		# PAUSED, never DNF'd (item 12): starting a dev benchmark must not spend the
 		# player's one attempt at this period — the run stays resumable from the HQ.
 		ChallengeSession.pause_run()
-	if RallySession.is_active():
-		RallySession.abandon()  # its scene change is superseded by ours below
-	RallySession.free_roam_instance_id = -1
-	RallySession.free_roam_model_id = ""
+	# The career-rally abandon and free-roam handoff clear that used to sit here read
+	# RallySession, deleted along with the rival field it served
+	# (todo/roguelike-pivot.md decision 5).
 	# Capture the frame pacing only on first entry — a re-start from inside a
 	# running benchmark (pause menu → Settings → Start) must keep the ORIGINAL
 	# cap/vsync so exit_to_hq restores the pre-benchmark state, not our override.

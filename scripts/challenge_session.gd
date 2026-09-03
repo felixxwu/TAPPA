@@ -236,11 +236,10 @@ func start(kind_str: String, owned_car: Dictionary, unix_time: int) -> bool:
 	_last_result = {}
 	_active = true
 	_stage_running = true
-	# A challenge stage fields its own car and authors no region, so it supersedes
-	# any pending free-roam pick exactly as start_rally does — otherwise a
-	# free-roam drive quit at the pause menu leaves free_roam_region_id set and the
-	# stage wears that region's sky/ground/tree mix (item 9).
-	RallySession.clear_free_roam_handoff()
+	# A challenge stage fields its own car and authors no region, so free roam (and
+	# the RallySession handoff state that used to need superseding here — item 9)
+	# can't leak its sky/ground/tree mix into it. Both are deleted along with
+	# RallySession (todo/roguelike-pivot.md decision 5).
 	_persist()
 	return true
 
@@ -267,7 +266,6 @@ func resume(unix_time: int) -> bool:
 	_last_result = {}
 	_active = true
 	_stage_running = true
-	RallySession.clear_free_roam_handoff()  # same supersede rule as start() (item 9)
 	return true
 
 

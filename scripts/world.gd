@@ -11,13 +11,6 @@ const BUSH_SEED_OFFSET := 1013
 # difference matters.
 const ROCK_SEED_OFFSET := 2027
 
-# car.gd has no class_name; preload it to reach its static helpers (compression_budget).
-const CarScript := preload("res://scripts/car.gd")
-
-# Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
-# is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
-# display cars); the onlookers reuse the shared low-poly spectator figure.
-const WRECK_CAR_SCENE := Scenes.CAR
 # The two terrain shaders the floor material swaps between per stage, and the loading-window
 # frame caps, both now shared with overworld.gd via WorldRuntime (scripts/world_runtime.gd) —
 # they were byte-for-byte duplicated in the two world hosts. The reasoning for each lives on
@@ -75,11 +68,9 @@ func _ready() -> void:
 	# the loading tip for this one load — it is about the car the player is sitting in,
 	# which beats a generic tip, and taking it here clears it so the remaining stages
 	# go back to tips.
-	# Tell the player which stage of the rally is loading (no-op for a one-stage rally or a
-	# session-less drive). Replaced the weather tell that used to own this line.
-	if RallySession.is_active():
-		loading.set_stage(RallySession.event_index(), RallySession.stage_count())
-	elif ChallengeSession.is_active():
+	# Tell the player which stage of the run is loading (no-op for a session-less drive).
+	# Replaced the weather tell that used to own this line.
+	if ChallengeSession.is_active():
 		loading.set_stage(ChallengeSession.events_completed(), ChallengeSession.stage_count())
 	# Resolve the per-target render quality ONCE, before apply_terrain_lod() and any
 	# scatter run: a web TOUCH device (the low-end / 30fps target) gets the shorter
@@ -240,25 +231,15 @@ func _field_player_car() -> void:
 	# governs the loading window itself.
 	$Car.controls_locked = true
 
-	# Field the car. With an active RallySession this event runs the player's
-	# OwnedCar (baseline + upgrades + saved HP, features/rally-session.md); a plain
-	# dev boot keeps the first library car (the Mazda MX-5).
+	# Field the car. With an active ChallengeSession this event runs the player's
+	# OwnedCar (baseline + upgrades + saved HP); a plain dev boot keeps the first
+	# library car (the Mazda MX-5). The career-rally session and free-roam handoff
+	# that used to field a car here were deleted with RallySession
+	# (todo/roguelike-pivot.md) — the roguelike run session (stage 3) is their
+	# replacement.
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if ChallengeSession.is_active():
 		_field_car(ChallengeSession.car_instance_id())
-	elif RallySession.is_active():
-		_field_car(RallySession.car_instance_id())
-	elif RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "":
-		# Free roam (session-less): field the car the player picked in the car park.
-		# An OWNED instance runs with its baseline + upgrades + saved HP; a bare catalogue
-		# MODEL (a not-yet-owned car picked in Free Roam) fields the base model by id.
-		# Falls back to the default library car if neither resolves.
-		var owned: Dictionary = Save.get_car(RallySession.free_roam_instance_id)
-		if not owned.is_empty():
-			$Car.apply_owned(owned)
-		else:
-			var idx := CarLibrary.index_of(RallySession.free_roam_model_id)
-			$Car.apply_car(idx if idx >= 0 else 0)
 	else:
 		$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
@@ -277,17 +258,15 @@ func _wire_session_and_stage(loading: LoadingScreen) -> void:
 	# Next returns to HQ instead (_on_session_event_completed's no-session branch).
 	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
 		_stage_manager.stage_completed.connect(_on_session_event_completed)
-	# A session run additionally routes the rally's finish to the podium.
-	# A rally event and a challenge stage take the SAME path here (they're mutually
-	# exclusive — only one session is ever active): wire the signals, stage the
-	# start line, then drain that session's pending pit repair. The only thing that
-	# differs between the two is WHICH orchestrator the repair summary comes from,
-	# so this is one block with one branch rather than two near-identical ones.
-	if RallySession.is_active() or ChallengeSession.is_active():
+	# A session run additionally routes the run's finish onward. Only ChallengeSession
+	# survives as a session caller now — the career RallySession that used to share
+	# this path is deleted (todo/roguelike-pivot.md); the roguelike RunSession (stage
+	# 3) is the eventual second caller.
+	if ChallengeSession.is_active():
 		_wire_session_signals()
 		# Pre-event start-line scene: briefing + presence cars before the countdown
 		# (todo/menus.md location 2). Only when staged (start_line_enabled + a real
-		# rally / challenge stage); the StageManager is already waiting in STAGING for
+		# challenge stage); the StageManager is already waiting in STAGING for
 		# its launch.
 		if _should_stage():
 			# Let the freshly-built terrain render one frame before laying out the
@@ -301,18 +280,16 @@ func _wire_session_and_stage(loading: LoadingScreen) -> void:
 			_build_start_line()
 			loading.finish()
 		# Between-event pit-repair popup: at the start of every event after the first,
-		# the engineers have patched the fielded car up (RallySession._enter_event /
-		# Save.field_repair, already applied before this reload). Shown AFTER the
-		# loading overlay is gone — staged runs keep it up until _build_start_line +
-		# loading.finish() just above, non-staged runs drop it inside _generate_track —
-		# so the popup sits over the ready world / start-line reveal, not a frozen
-		# loading screen. Headless just drains the summary so it can't replay on a
-		# later scene rebuild.
+		# the engineers have patched the fielded car up (Save.field_repair, already
+		# applied before this reload). Shown AFTER the loading overlay is gone — staged
+		# runs keep it up until _build_start_line + loading.finish() just above,
+		# non-staged runs drop it inside _generate_track — so the popup sits over the
+		# ready world / start-line reveal, not a frozen loading screen. Headless just
+		# drains the summary so it can't replay on a later scene rebuild.
 		# Only pop up for a repair that moved health by at least the min threshold — a
 		# smaller touch-up (e.g. wheels-only on a near-full car) still applied to the
 		# save, it just doesn't interrupt the player (RepairReveal.worth_showing).
-		var repair: Dictionary = ChallengeSession.take_pending_repair() if ChallengeSession.is_active() \
-			else RallySession.take_pending_repair()
+		var repair: Dictionary = ChallengeSession.take_pending_repair()
 		if RepairReveal.worth_showing(repair) and not _headless:
 			await _show_repair_popup(repair)
 
@@ -616,16 +593,16 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	var on_progress := Callable()
 	if interactive:
 		on_progress = loading.update_track_preview
-	# Build the shape contract. In a rally, use the current event so the shape (and
-	# its water avoidance) matches the times RallySession derived; a challenge stage
-	# uses ChallengeSession's rolled TrackGenParams-shaped stage dict the same way
-	# (spec §1/§4 — the seed comes from the period hash, not a RallyLibrary event,
-	# but the dict shape TrackGenParams.for_event reads is identical); free-roam
-	# uses the live cfg. The factory seats the staged origin from cfg and relocates
-	# it onto dry ground if the start would be underwater — identical logic to the
-	# target derivation, so the shapes stay in sync.
+	# Build the shape contract. A challenge stage uses ChallengeSession's rolled
+	# TrackGenParams-shaped stage dict (spec §1/§4 — the seed comes from the period
+	# hash, not a RallyLibrary event, but the dict shape TrackGenParams.for_event
+	# reads is identical); a session-less run (dev boot, free roam) uses the live
+	# cfg. The factory seats the staged origin from cfg and relocates it onto dry
+	# ground if the start would be underwater. The career-rally arm that used to
+	# read RallySession.current_event() here is deleted (todo/roguelike-pivot.md);
+	# the roguelike run session (stage 3) is its replacement.
 	var event := ChallengeSession.current_stage_params() if ChallengeSession.is_active() \
-		else RallySession.current_event()
+		else {}
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
 	# The dry-start search may relocate the generation origin onto dry ground. Derive
@@ -895,13 +872,11 @@ func _place_world_props(cfg: GameConfig, result: Dictionary, road_centerline: Cu
 	# Finish + start inflatable arches straddling the road.
 	_build_arches(road_centerline, finish_len, start_pos, start_heading, cfg)
 
-	# Roadside opponent wreck: if a rival crashed out of THIS event, stage their ACTUAL
-	# car by the verge — frozen (hitbox kept), smoking, with a small crowd around it
-	# (features/opponent-wrecks.md). Uses the built centerline + terrain.
-	_spawn_opponent_wreck(road_centerline, finish_len, _floor(), cfg)
+	# The roadside opponent wreck used to be staged here — deleted with the rival
+	# field it dramatized (todo/roguelike-pivot.md decision 5).
 
 	# Persistent per-stage managers (progress, tire marks, road paint, wheel dust,
-	# engine smoke, stage flow) + the in-stage "vs P1" pace splits.
+	# engine smoke, stage flow).
 	_build_persistent_managers(cfg, result, road_centerline, finish_len, staged)
 
 
@@ -1292,9 +1267,6 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		var hud_node := $HUD
 		if not hud_node.finish_next_pressed.is_connected(_stage_manager.proceed_to_results):
 			hud_node.finish_next_pressed.connect(_stage_manager.proceed_to_results)
-		# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
-		# elapsed time compares to the leading rival's estimated time at that point.
-		_setup_stage_splits(result, staged, cfg)
 		# Rally pacenote strip along the top of the HUD (features/hud.md): the current
 		# turn + the upcoming turns queued to its right. Wired on every run (no rival
 		# needed), so the strip reads the track whether or not a session is active.
@@ -1363,224 +1335,6 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 	group.setup(members, $Car, terrain, road_cells, tree_grid, params)
 
 
-# --- Roadside opponent wreck (features/opponent-wrecks.md) -------------------
-
-# Stage the crashed rival's car by the roadside for the CURRENT event, if a rival
-# wrecked in it. The ACTUAL car the rival drove is spawned off the verge as a frozen
-# prop (its hitbox kept, so crashing into it still bites — it just won't be shoved),
-# lazy engine smoke rising from it like a damaged HQ car, and a small standing crowd
-# gathered around it. Named "OpponentWreck" so entering a new event replaces rather
-# than stacks it. No-op without an active session, the feature disabled, no wreck this
-# event, or a car id that no longer resolves.
-func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
-		terrain: TerrainManager, cfg: GameConfig) -> void:
-	_replace_named_child("OpponentWreck")
-	if not cfg.opponent_wrecks_enabled or not RallySession.is_active():
-		return
-	var wreck := RallySession.current_event_wreck()
-	if wreck.is_empty():
-		return
-	var idx := CarLibrary.index_of(String(wreck.get("car_id", "")))
-	if idx < 0:
-		return
-	var baked := centerline.get_baked_length()
-	var span := finish_len if finish_len > 0.0 else baked
-	if span <= 0.0:
-		return
-	# Seeded crash point (fraction along the timed track) + which verge.
-	var progress := clampf(float(wreck.get("progress", 0.5)), 0.0, 1.0)
-	var side := signf(float(wreck.get("side", 1.0)))
-	if side == 0.0:
-		side = 1.0
-	# Search near the seeded point for the FLATTEST patch of verge, so the wreck rests
-	# on level ground beside the road rather than buried in a slope. `half_w`/`half_len`
-	# are a conservative car footprint (m) used both to sample flatness and to keep the
-	# car clear of the carriageway; the near side sits opponent_wreck_road_offset_m off
-	# the road edge, and the search extends outward from there.
-	var half_w := cfg.opponent_wreck_footprint_half_w
-	var half_len := cfg.opponent_wreck_footprint_half_len
-	var edge := cfg.track_width * 0.5
-	var base_lat := edge + half_w + cfg.opponent_wreck_road_offset_m
-	# Gate the site on the droop budget of the ACTUAL wreck car (apply_car overwrites
-	# stiffness + per-axle travel from the library entry), not the base cfg.
-	var wreck_spec: Dictionary = CarLibrary.CARS[idx]
-	var gate_cfg: GameConfig = cfg.duplicate() as GameConfig
-	gate_cfg.suspension_stiffness = wreck_spec.get("suspension_stiffness", cfg.suspension_stiffness)
-	gate_cfg.suspension_travel = wreck_spec.get("suspension_travel", cfg.suspension_travel)
-	gate_cfg.suspension_travel_front = wreck_spec.get("suspension_travel_front", 0.0)
-	gate_cfg.suspension_travel_rear = wreck_spec.get("suspension_travel_rear", 0.0)
-	var budget: float = CarScript.compression_budget(gate_cfg)
-	var spot := _flattest_wreck_spot(centerline, baked, progress * span, side,
-		base_lat, half_w, half_len, terrain, budget)
-	var pos2: Vector2 = spot["pos2"]
-	var tan2: Vector2 = spot["tan2"]
-	var top_y: float = spot["top"]  # highest ground under the footprint — seat on top, never buried
-	var outward := Vector2(-tan2.y, tan2.x) * side  # away from the road
-
-	var container := Node3D.new()
-	container.name = "OpponentWreck"
-	add_child(container)
-
-	# The crashed car, skewed off the road direction so it reads as wrecked, not parked
-	# (deterministic from the seeded progress so it's stable across re-attempts). Placed
-	# ON the highest ground under it (top_y is the seat plane); _spawn_wreck_car lifts it
-	# by the car's analytic rest ride height so its wheels sit on the ground.
-	var fwd := Vector3(tan2.x, 0.0, tan2.y)
-	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
-	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
-	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container, terrain,
-		String(wreck.get("engine_id", "")))
-
-	# The small gathering of onlookers, on the verge side of the wreck (off the road).
-	_spawn_wreck_crowd(container, Vector3(pos2.x, top_y, pos2.y), outward, terrain, cfg)
-
-
-# Find the flattest patch of verge near the seeded crash point: a small deterministic
-# search over along-track and lateral offsets on the wreck's side. Returns the chosen
-# centre `pos2`, the road tangent `tan2` there, and `top` = the highest terrain height
-# under the car footprint at that centre (so the car seats on top and can't spawn
-# buried). No RNG, so the wreck stays stable across re-attempts.
-# Choose the wreck site from ordered candidates (best-placed first, e.g. nearest shoulder).
-# Prefer the first whose terrain spread fits the suspension droop budget (no wheel floats);
-# if none fit, fall back to the flattest and warn. Empty in -> empty out.
-static func _pick_wreck_candidate(candidates: Array, budget: float) -> Dictionary:
-	var flattest := {}
-	var flattest_spread := INF
-	for cand in candidates:
-		var spread: float = cand["spread"]
-		if spread <= budget:
-			return cand
-		if spread < flattest_spread:
-			flattest_spread = spread
-			flattest = cand
-	if not flattest.is_empty():
-		push_warning("wreck site: no verge within suspension budget (%.2f m); using flattest spread %.2f m" % [
-			budget, flattest_spread])
-	return flattest
-
-
-func _flattest_wreck_spot(centerline: Curve2D, baked: float, seed_offset: float,
-		side: float, base_lat: float, half_w: float, half_len: float,
-		terrain: TerrainManager, budget: float) -> Dictionary:
-	# Candidates in PREFERENCE order: nearest-shoulder first, then step outward, then
-	# widen along-track. The gate picks the first that fits the droop budget (else flattest).
-	var cands: Array = []
-	for extra: float in [0.0, 1.0, 2.0, 3.0, 4.0, 6.0]:            # lateral: closest first
-		for d_along: float in [0.0, -6.0, 6.0, -12.0, 12.0]:       # along-track: seed first
-			var off := clampf(seed_offset + d_along, 0.05 * baked, 0.95 * baked)
-			var c := centerline.sample_baked(off)
-			var t := centerline.sample_baked(minf(off + 1.0, baked)) - c
-			if t.length() < 1e-4:
-				t = Vector2(0.0, 1.0)
-			t = t.normalized()
-			var road_out := Vector2(-t.y, t.x) * side
-			var c2 := c + road_out * (base_lat + extra)
-			var fp := _footprint_terrain(terrain, c2, t, half_len, half_w)
-			cands.append({"pos2": c2, "tan2": t, "top": fp["top"], "spread": fp["spread"]})
-	var chosen := _pick_wreck_candidate(cands, budget)
-	if chosen.is_empty():
-		# Degenerate curve: fall back to the seeded point.
-		var c := centerline.sample_baked(clampf(seed_offset, 0.0, baked))
-		chosen = {"pos2": c, "tan2": Vector2(0.0, 1.0), "top": terrain.height_at(c.x, c.y), "spread": 0.0}
-	return chosen
-
-
-# The terrain under a car footprint centred at `c2` (world XZ), aligned to tangent `t`:
-# the height SPREAD across a small grid (flatness — lower is flatter) and the highest
-# sampled point (`top`, so the car seats on top and no corner is buried).
-func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
-		half_len: float, half_w: float) -> Dictionary:
-	var right := Vector2(-t.y, t.x)
-	var lo := INF
-	var hi := -INF
-	for a: float in [-1.0, 0.0, 1.0]:
-		for b: float in [-1.0, 0.0, 1.0]:
-			var p := c2 + t * (a * half_len) + right * (b * half_w)
-			var h := terrain.height_at(p.x, p.y)
-			lo = minf(lo, h)
-			hi = maxf(hi, h)
-	return {"spread": hi - lo, "top": hi}
-
-
-# Spawn the wrecked rival's car as a frozen roadside prop under `parent`. Mirrors the
-# podium/HQ display-car recipe: an isolated config so its reshape can't clobber the
-# player car's tuning, its own mesh copies, engine silenced. `seat` places the car on
-# the ground plane (origin at the highest terrain under it); the car is lifted by its
-# analytic rest ride height (car.gd:settled_ride_height) so its wheels sit on the ground
-# and then frozen at once — no live physics, so it can't fall through the un-streamed
-# verge, roll down a slope, or re-wreck on landing (all past bugs of the old drop-and-
-# settle approach). FREEZE_MODE_STATIC (the default) keeps the collider, so the frozen
-# wreck is a solid, immovable obstacle. Its HP is zeroed so the smoke reads it as a wreck.
-func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terrain: TerrainManager,
-		engine_id := "") -> Node3D:
-	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
-	# apply_car + dup meshes + silence + freeze (+ synthetic wreck smoke). The wreck's
-	# own steps — seat/settle, lock controls, zero HP — run in `configure` after the
-	# meshes are duplicated. freeze is FREEZE_MODE_STATIC (default): collider stays a
-	# solid obstacle.
-	var configure := func(c) -> void:
-		# Lift the car off its ground seat by its resting ride height so the wheels sit
-		# on the ground, then settle the wheel visuals.
-		c.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * c.settled_ride_height())
-		# Frozen prop: droop each wheel onto the terrain under it (analytic height — the
-		# same surface the collider is built from, valid over the un-streamed verge).
-		c.settle_wheels_to_ground(func(p: Vector3) -> float: return terrain.height_at(p.x, p.z))
-		c.controls_locked = true  # driverless prop: ignore live input, hold the handbrake
-		# Read as a wreck: 0 HP drives the synthetic smoke (a wrecked car smokes hardest),
-		# exactly as a damaged HQ car does.
-		if c.get("damage") != null:
-			c.damage.hp = 0.0
-	return CarProp.spawn(parent, load(WRECK_CAR_SCENE), {
-		"index": library_index,
-		# The wrecked rival's FITTED engine (event_wreck carries it — RallyLibrary
-		# .RIVAL_IDENTITY_KEYS). Matters here only through engine mass -> resting ride
-		# height, but keeps the staged wreck the same build the standings name.
-		"engine_id": engine_id,
-		"configure": configure,
-		"disable_process": true,
-		"smoke": _add_wreck_smoke,
-	})
-
-
-# Give the wreck lazy engine smoke like a damaged HQ display car: the frozen prop's
-# engine never runs, so EngineSmoke self-times puffs from the car's (zeroed) damage
-# severity. Parented to the car so it's freed with it, PROCESS_MODE_ALWAYS so it keeps
-# puffing though the car itself is frozen / process-disabled.
-func _add_wreck_smoke(car: Node) -> void:
-	EngineSmoke.attach_synthetic(car)
-
-
-# A small standing crowd of onlookers gathered around the wreck — pure scenery in one
-# MultiMesh (no steering / ragdolls, like the HQ crowd), each facing the wreck. Placed
-# in a crescent on the VERGE side (`outward` points away from the road), so the crowd
-# never spills onto the carriageway. `center` is the wreck's ground position. No-op
-# with a zero crowd size or a missing figure mesh.
-func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
-		terrain: TerrainManager, cfg: GameConfig) -> void:
-	var count := cfg.opponent_wreck_crowd_size
-	if count <= 0:
-		return
-	var base_ang := atan2(outward.y, outward.x)  # away from the road
-	var positions := PackedVector2Array()
-	var yaws := PackedFloat32Array()
-	for i in count:
-		# A crescent spanning ±~115° about 'outward' — the verge side + flanks, never the
-		# road-ward hemisphere between the wreck and the carriageway.
-		var frac := 0.0 if count <= 1 else float(i) / float(count - 1)
-		var ang := base_ang + lerpf(-cfg.opponent_wreck_crowd_arc_half, cfg.opponent_wreck_crowd_arc_half, frac)
-		var r: float = cfg.opponent_wreck_crowd_radius_m
-		var px := center.x + cos(ang) * r
-		var pz := center.z + sin(ang) * r
-		positions.append(Vector2(px, pz))
-		# Face the wreck at the centre (the figure's default facing is +Z).
-		yaws.append(atan2(center.x - px, center.z - pz))
-	# The shared Crowd helper owns the figure mesh + foot offset + MultiMesh build
-	# (and the `positions` meta tests read); it seats each figure on the terrain.
-	var crowd := Crowd.multimesh_instance("WreckCrowd", positions, yaws, terrain.height_at, cfg)
-	if crowd != null:
-		parent.add_child(crowd)
-
-
 # The live event framing — the event's name, which stage of how many, and the
 # time-to-beat. Single source for BOTH the arch banners and the start-line header
 # (_build_start_line), so a challenge stage reads its framing in exactly one place.
@@ -1597,12 +1351,6 @@ func _arch_event_info() -> Dictionary:
 		info["rally_name"] = "%s Challenge" % ChallengeSession.kind().capitalize()
 		info["stage_index"] = ChallengeSession.events_completed()
 		info["stage_count"] = ChallengeSession.stage_count()
-	elif RallySession.is_active():
-		var rally := RallyLibrary.by_id(RallySession.rally_id())
-		info["rally_name"] = String(rally.get("name", ""))
-		info["stage_index"] = RallySession.event_index()
-		info["stage_count"] = RallySession.stage_count()
-		info["target_ms"] = RallySession.current_event_target_ms()
 	return info
 
 
@@ -1667,20 +1415,9 @@ var _exhaust_flames: ExhaustFlames
 
 # Cinematic replay behind the between-event standings overlay (features/event-replay.md).
 var _replay_recorder: ReplayRecorder
-# Rival ghost (features/rival-ghost.md). The pace object is built for EVERY session run
-# (the "vs P1" popup depends on it); the ghost node is additionally gated on the display
-# config. Both are solved at GO, not at generation — see _solve_rival_pace.
-var _rival_pace: RivalPace = null
-var _ghost: GhostCar = null
-# Captured at generation, consumed at GO: the P1 snapshot, the raw turn boundaries, and
-# whether this run is staged (which decides the raw->profile offset shift).
-var _p1_snapshot: Dictionary = {}
-# The inputs _setup_stage_splits was last run with, so the P1 snapshot can be REDONE if
-# the field is re-drawn while the player is still on the start line. Regenerating the
-# track to get them back would be absurd for what is a pure re-read.
-var _splits_track_result: Dictionary = {}
-var _split_boundaries: Array = []
-var _splits_staged := false
+# The rival ghost + its pace-solve wiring (_setup_stage_splits, _solve_rival_pace,
+# _wire_stage_splits, _setup_rival_ghost, _on_opponent_field_changed) used to live
+# here — deleted with the rival field it raced (todo/roguelike-pivot.md decision 5).
 var _replay_camera: ReplayCamera
 var _standings_overlay: CanvasLayer
 # The live challenge interstitial, when one is up. Non-null only for a challenge
@@ -1705,147 +1442,12 @@ var _event_hp_at_finish := 0.0
 var _event_toe_at_finish: Array = []
 
 
-# Wire the StageManager's in-stage "vs P1" pace popup for a session run. Builds the
-# per-turn split table from the generated track (RallyLibrary.derive_turn_splits) and
-# the leading rival's event time, converting each turn's arc offset to a progress
-# fraction (matching TrackProgress.progress_percent) and its par time to a fraction of
-# the stage total. No-op without an active session, a classified P1 rival, or pieces.
-# Phase 1 of the rival-pace wiring: capture what the solve will need, and build the
-# ghost node. No solving here — see _solve_rival_pace for why.
-#
-# The per-turn BOUNDARIES still come from RallyLibrary.derive_turn_splits: it is the only
-# thing that knows where each placed piece ends, and the popup needs those. Only the
-# TIMES move to RivalPace, so the ghost in the windscreen and the delta on the HUD are
-# describing one rival with one pace model.
-func _setup_stage_splits(track_result: Dictionary, staged: bool, _cfg: GameConfig) -> void:
-	_rival_pace = null
-	_p1_snapshot = {}
-	_split_boundaries = []
-	_splits_staged = staged
-	_splits_track_result = track_result
-	if _stage_manager == null or not RallySession.is_active():
-		return
-	# ONE snapshot: the time, the car id, the engine id and the meta all come from the
-	# same leaders[0] row, so the ghost cannot show a car the standings never mention.
-	var p1 := RallySession.current_event_p1()
-	if p1.is_empty() or int(p1.get("time_ms", -1)) <= 0:
-		return
-	var meta: Dictionary = p1.get("meta", {})
-	if meta.is_empty():
-		return
-	_p1_snapshot = p1
-	# The field the live standings readout ranks the player against (features/hud.md). Wired
-	# here rather than at GO with the pace table: the field is known as soon as the event is
-	# set up, and this path also re-runs when the grid is re-drawn under us
-	# (_on_opponent_field_changed), so the readout can't be left ranking a stale field.
-	_stage_manager.setup_live_standings(RallySession.current_event_field_times_ms())
-	var splits := RallyLibrary.derive_turn_splits(track_result, meta, RallySession.current_event())
-	for sp in splits:
-		_split_boundaries.append(float(sp["end_offset_m"]))
-	_setup_rival_ghost()
-
-
-# The rival grid was re-drawn under us (RallySession.opponent_field_changed) — re-read P1
-# and rebuild the ghost against it.
-#
-# WHY THIS IS NEEDED: the stage snapshots P1 when it builds, which happens BEFORE the
-# start-line overlay appears. The player can edit upgrades on that overlay, which
-# re-matches the whole field to their new rating — so the leader they are about to chase
-# is not the one the ghost was built from. Left alone, the windscreen ghost and the
-# "vs P1" delta would both be describing a rival who is no longer in the race.
-#
-# Ignored once the stage has actually started (GO solves the pace and sets _rival_pace):
-# swapping the ghost out from under a running stage would move the target mid-lap.
-func _on_opponent_field_changed() -> void:
-	if _rival_pace != null or _splits_track_result.is_empty():
-		return
-	_setup_stage_splits(_splits_track_result, _splits_staged, Config.data)
-
-
-# Phase 2, at GO: solve the pace over the span the player is actually timed on, then feed
-# BOTH consumers from it — the ghost and the "vs P1" popup.
-func _solve_rival_pace() -> void:
-	if _p1_snapshot.is_empty() or _track_progress == null or _road_centerline == null:
-		return
-	var target_ms := int(_p1_snapshot.get("time_ms", -1))
-	if target_ms <= 0:
-		return
-	# The timed span, read from the LIVE anchor rather than reconstructed from the
-	# lead-in config fields (that arithmetic already exists twice in this file; a third
-	# copy would drift, and origin_offset() is not the start line anyway — the player is
-	# staged several queue gaps behind it).
-	var span_track := RivalPace.timed_span_track(_road_centerline,
-			_track_progress.origin_offset(), _track_progress.finish_offset())
-	_rival_pace = RivalPace.solve(span_track, _p1_snapshot.get("meta", {}),
-			RallySession.current_event(), target_ms,
-			float(_p1_snapshot.get("skill_k", -1.0)))
-	if _rival_pace.is_degenerate():
-		_rival_pace = null
-		return
-	_wire_stage_splits(target_ms)
-	if _ghost != null:
-		_ghost.pace = _rival_pace
-		_ghost.elapsed_source = Callable(_stage_manager, "elapsed")
-		_ghost.start()
-
-
-# Feed the in-stage "vs P1" popup: boundaries from derive_turn_splits, times from the
-# shared pace object.
-func _wire_stage_splits(target_ms: int) -> void:
-	if _stage_manager == null or _split_boundaries.is_empty() or _rival_pace == null:
-		return
-	var cfg: GameConfig = Config.data
-	# derive_turn_splits measures offsets on the RAW generated curve; the pace profile
-	# starts at the timing origin, which sits a lead-in earlier on a staged run. Without
-	# this shift every turn would be read one lead-in early and the final boundary would
-	# no longer land on the profile total (breaking the popup's cum/total -> 1.0 tail).
-	var shift := cfg.start_lead_in_ahead_m if _splits_staged else 0.0
-	var span := _track_progress.finish_offset() - _track_progress.origin_offset()
-	if span <= 0.0:
-		return
-	var total_s := float(target_ms) / 1000.0
-	if total_s <= 0.0:
-		return
-	var turn_progress: Array[float] = []
-	var turn_time_frac: Array[float] = []
-	for end_offset in _split_boundaries:
-		var profile_off: float = float(end_offset) + shift
-		turn_progress.append(clampf(profile_off / span, 0.0, 1.0))
-		turn_time_frac.append(clampf(_rival_pace.time_at_offset(profile_off) / total_s, 0.0, 1.0))
-	_stage_manager.setup_splits(turn_progress, turn_time_frac, target_ms)
-
-
-# Build the ghost node + its car. Construction only: it is hidden and clockless until
-# _solve_rival_pace hands it a pace at GO.
-#
-# NOT gated on _headless — the test runner is always headless, so gating construction
-# there would make the whole feature untestable. GhostCar gates only VISIBILITY.
-func _setup_rival_ghost() -> void:
-	# Replaced, not reused: an _ensure_child would carry the previous event's pace object
-	# and car build into the next stage.
-	_replace_named_child("RivalGhost")
-	_ghost = null
-	var cfg: GameConfig = Config.data
-	if not cfg.rival_ghost_enabled or Benchmark.active or _p1_snapshot.is_empty():
-		return
-	if _track_progress == null:
-		return
-	var ghost := GhostCar.new()
-	ghost.name = "RivalGhost"
-	add_child(ghost)
-	_ghost = ghost
-	_ghost.player = $Car
-	# Pace is null here on purpose — it arrives at GO, once the timing origin is anchored.
-	_ghost.setup(null, _track_progress, _floor(), _p1_snapshot,
-			load(WRECK_CAR_SCENE), RallySession.current_event())
-
-
 # Build the HUD pacenote strip for this stage (features/hud.md) and wire the strip's
 # per-corner progress thresholds into the StageManager. Runs on every non-benchmark
 # run — pacenotes are track reading, not a rival comparison — so it needs no session.
-# The progress fractions use the same start-line span as _setup_stage_splits so they
-# line up with TrackProgress.progress_percent(): a staged run's lead-in ahead of the
-# generated track is added to both the corner offset and the span.
+# The progress fractions line up with TrackProgress.progress_percent(): a staged
+# run's lead-in ahead of the generated track is added to both the corner offset
+# and the span.
 func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -> void:
 	var centerline := track_result.get("centerline") as Curve2D
 	if centerline == null:
@@ -1861,17 +1463,17 @@ func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -
 	_stage_manager.setup_pacenotes(Pacenotes.notes_to_fracs(notes, ahead, span))
 
 
-# --- RallySession run-scene integration (features/rally-session.md) ------------
+# --- Session run-scene integration ------------------------------------------
 
 # Dev cheat (F key, features/debug-tools.md): skip straight to the finish of the
 # current stage. Debug-build only (release/web ignore it) and only inside an active
-# run — career rally OR Rally Challenge — with a live StageManager. Teleports the car
-# onto the finish line and force-completes the stage, so the whole completion →
-# reward → progression flow fires exactly as it would on a real finish.
+# run — Rally Challenge today, the roguelike run session once it lands — with a live
+# StageManager. Teleports the car onto the finish line and force-completes the
+# stage, so the whole completion → reward → progression flow fires exactly as it
+# would on a real finish.
 #
-# Gated on DrivingContext.session_active(), NOT RallySession.is_active(): the latter
-# silently excluded challenge runs, leaving the cheat dead in exactly the mode whose
-# multi-stage flow is slowest to exercise by hand.
+# Gated on DrivingContext.session_active(), not any one session's is_active(): a
+# check tied to a single session type silently excludes every other one.
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("skip_to_finish"):
 		return
@@ -1904,18 +1506,15 @@ func _on_reset_to_track_requested() -> void:
 
 
 # Whether this run should open with the pre-event start-line scene: a session run
-# with the feature enabled AND a resolvable event (so a missing rally / a run that
-# has no stage left never strands the car in STAGING with no StartLine to launch
-# it). A challenge stage stages exactly like a rally event — same countdown screen,
-# same pre-race Upgrades/Tuning menus — it just has no rival field to reveal (the
-# StartLine's existing empty-leaders path covers that; see _build_start_line).
+# with the feature enabled AND a resolvable stage (so a run that has no stage left
+# never strands the car in STAGING with no StartLine to launch it). Rivals are
+# gone (todo/roguelike-pivot.md decision 5), so there is no field to reveal — the
+# StartLine's existing empty-leaders path covers that; see _build_start_line.
 func _should_stage() -> bool:
 	if not Config.data.start_line_enabled:
 		return false
-	if ChallengeSession.is_active():
-		return not ChallengeSession.current_stage_params().is_empty()
-	return RallySession.is_active() \
-		and not RallyLibrary.by_id(RallySession.rally_id()).is_empty()
+	return ChallengeSession.is_active() \
+		and not ChallengeSession.current_stage_params().is_empty()
 
 
 # Show the between-event pit-repair popup and block until the player dismisses it.
@@ -1950,18 +1549,15 @@ func _show_repair_popup(summary: Dictionary) -> void:
 func _build_start_line() -> void:
 	# The framing (name / stage index) comes from the same _arch_event_info() the
 	# arch banners read, so the header and the gate can never disagree.
+	#
+	# _should_stage() only stages a ChallengeSession run now (RallySession, the
+	# career caller, is deleted — todo/roguelike-pivot.md decision 5 — and the
+	# roguelike run session has not landed yet), so this always runs against a
+	# challenge stage. A challenge has no authored rally, so synthesise just enough
+	# for StartLine's header. There is no rival field left to reveal — StartLine's
+	# MENU fades straight to the countdown (decision 29).
 	var info := _arch_event_info()
-	var rally := RallyLibrary.by_id(RallySession.rally_id())
-	var leaders: Array = RallySession.current_event_leaders(3) if RallySession.is_active() else []
-	if ChallengeSession.is_active():
-		# A challenge has no authored rally, so synthesise just enough for StartLine's
-		# header. NO `restriction`: a rally restriction is categorical now, and a
-		# challenge's ceiling is a CarPerformance rating that only challenge_session.gd
-		# knows how to compare — putting it in this dict would send it through
-		# RallyLibrary.ineligibility_reason, which no longer speaks that language.
-		# `leaders` stays empty: no rival field (spec §3), so StartLine's existing
-		# empty-leaders path skips the reveal and fades straight to the countdown.
-		rally = {"name": String(info["rally_name"])}
+	var rally := {"name": String(info["rally_name"])}
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)
@@ -1976,7 +1572,7 @@ func _build_start_line() -> void:
 		if not _start_line.sequence_finished.is_connected(_on_start_line_finished):
 			_start_line.sequence_finished.connect(_on_start_line_finished)
 	_start_line.setup($Car, $Floor, _stage_manager, rally, int(info["stage_index"]),
-		leaders, $CameraManager as CameraManager,
+		$CameraManager as CameraManager,
 		$HUD as CanvasLayer, $MobileControls as CanvasLayer, pause_menu)
 
 
@@ -2054,29 +1650,16 @@ func _field_car(instance_id: int) -> void:
 	_event_toe_at_finish = $Car.damage.toe_array()
 
 
-# Route this event's StageManager / damage signals to the session, and the rally's
-# finish to the podium. Connections on the per-event scene's nodes are dropped
-# automatically when the scene reloads for the next event. Called for BOTH a
-# RallySession run and a ChallengeSession run (mutually exclusive — only one is
-# ever active at a time), branching only where the two sessions' APIs differ.
+# Route this event's StageManager / damage signals to the session, and the run's
+# finish onward. Connections on the per-event scene's nodes are dropped
+# automatically when the scene reloads for the next event. ChallengeSession is the
+# sole session caller now — RallySession, the career caller this used to branch on,
+# is deleted (todo/roguelike-pivot.md decision 5); the roguelike run session is the
+# eventual second caller.
 func _wire_session_signals() -> void:
 	# stage_completed is already connected in _ready() (every mode wires it before
 	# this session-only pass runs), so it's intentionally not re-connected here.
-	if RallySession.is_active():
-		if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
-			RallySession.rally_finished.connect(_on_session_rally_finished)
-		# Live (non-headless) runs own the standings presentation as an in-world
-		# overlay, keeping this run world alive behind it for the cinematic replay;
-		# RallySession then skips its own scene-change path (see rally_session.gd).
-		RallySession.standings_overlay_host = not _headless
-		if not RallySession.standings_ready.is_connected(_present_standings_overlay):
-			RallySession.standings_ready.connect(_present_standings_overlay)
-		# The start-line overlay lets the player change the car AFTER this stage snapshotted
-		# P1, and that re-matches the whole field — so the ghost has to be rebuilt against
-		# whoever is actually leading now. See _on_opponent_field_changed.
-		if not RallySession.opponent_field_changed.is_connected(_on_opponent_field_changed):
-			RallySession.opponent_field_changed.connect(_on_opponent_field_changed)
-	elif ChallengeSession.is_active():
+	if ChallengeSession.is_active():
 		if not ChallengeSession.run_finished.is_connected(_on_challenge_run_finished):
 			ChallengeSession.run_finished.connect(_on_challenge_run_finished)
 		# _present_standings_overlay reads nothing session-specific (just $Car / $HUD /
@@ -2106,9 +1689,9 @@ func _change_scene(path: String) -> void:
 func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# No active session — free roam (or a plain dev boot) reached the finish. There is
 	# no session to report to (report_event_result would silently no-op, leaving the
-	# finish panel's Next doing nothing), so Next returns to HQ instead — the same
+	# finish panel's Next doing nothing), so Next returns to the hub instead — the same
 	# destination as the pause menu's Quit with no session.
-	if not RallySession.is_active() and not ChallengeSession.is_active():
+	if not ChallengeSession.is_active():
 		_change_scene(Scenes.hub_path())
 		return
 	# HP lost + persisted wheel-toe are snapshotted at the FINISH CROSSING (see
@@ -2116,30 +1699,18 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
 	# that post-finish coast would be wrongly charged to the event's damage.
 	var hp_lost: float = maxf(0.0, _event_start_hp - _event_hp_at_finish)
-	# A challenge run routes to ChallengeSession instead of RallySession — the two
-	# sessions are mutually exclusive, and this is the single call site the spec
-	# (§3) calls out for the mode branch.
-	var challenge_active := ChallengeSession.is_active()
-	var iid: int = ChallengeSession.car_instance_id() if challenge_active else RallySession.car_instance_id()
+	var iid: int = ChallengeSession.car_instance_id()
 	if iid >= 0:
 		Save.set_wheel_toe(iid, _event_toe_at_finish)
 	if _replay_recorder != null:
 		_replay_recorder.stop()
 	var elapsed_ms := int(round(elapsed_seconds * 1000.0))
-	if challenge_active:
-		ChallengeSession.report_event_result(elapsed_ms, hp_lost)
-	else:
-		RallySession.report_event_result(elapsed_ms, hp_lost)
+	ChallengeSession.report_event_result(elapsed_ms, hp_lost)
 
 
 func _on_stage_started() -> void:
 	if _replay_recorder != null:
 		_replay_recorder.start()
-	# The pace solve MUST happen here, not during generation: it spans
-	# TrackProgress.origin_offset() -> finish_offset(), and mark_start() only anchors the
-	# origin once the player has been reset_to their grid slot and the countdown has run.
-	# Solving earlier measures a span the ghost is never posed over.
-	_solve_rival_pace()
 
 
 # Fired the instant the finish is crossed (StageManager._complete), before the NEXT
@@ -2149,10 +1720,6 @@ func _on_stage_started() -> void:
 func _on_finish_reached() -> void:
 	if _replay_recorder != null:
 		_replay_recorder.stop()
-	# The ghost's own clock ends at P1's time, but stop it here too so it can't keep
-	# posing while the finish panel is up (and so the post-event replay owns the world).
-	if _ghost != null:
-		_ghost.stop()
 	_event_hp_at_finish = $Car.damage.hp
 	_event_toe_at_finish = $Car.damage.toe_array()
 
@@ -2178,8 +1745,7 @@ func _hide_driving_ui() -> void:
 
 
 # Present the standings as an in-world CanvasLayer overlay and start the replay,
-# keeping the run world alive behind it. Headless runs (no display) skip this;
-# RallySession then falls back to its scene-change path.
+# keeping the run world alive behind it. Headless runs (no display) skip this.
 func _present_standings_overlay(_event_index: int) -> void:
 	if _headless or _replay_recorder == null:
 		return
@@ -2241,21 +1807,14 @@ func _on_leaderboard_hidden_changed(hidden: bool) -> void:
 		ea.process_mode = Node.PROCESS_MODE_INHERIT if hidden else Node.PROCESS_MODE_DISABLED
 
 
-# Rally over (or DNF): show the podium. Loads under the (placeholder) transition.
-# Exception: a rally ABANDONED from the pause menu has no result to celebrate, so it
-# skips the podium and returns straight to HQ (opening on the garage view).
-func _on_session_rally_finished(result: Dictionary) -> void:
-	if result.get("abandoned", false):
-		RallySession.return_to_garage = true
-		_change_scene(Scenes.hub_path())
-	else:
-		_change_scene(Scenes.PODIUM)
-
+# _on_session_rally_finished (RallySession.rally_finished -> the podium, or straight
+# to the hub on an abandon) used to live here. Its only wiring was in the
+# RallySession arm of _wire_session_signals, deleted with RallySession
+# (todo/roguelike-pivot.md decision 5), so nothing connects to it any more.
 
 # A challenge run has no podium (no rival field to place against, no per-rally
-# car reward). Both a clean finish and a DNF return straight to HQ — but the
-# run's END is resolved here first, the challenge's counterpart to
-# RallySession._resolve_results:
+# car reward). Both a clean finish and a DNF return straight to the hub — but the
+# run's END is resolved here first:
 #
 #   CLEAN FINISH — spec §6's placement-gated completion reward. This fires while
 #   the player is still IN the driving scene (ChallengeSession._finish_locally
@@ -2328,7 +1887,6 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 			# allow_stack means modal contention alone can never refuse it.
 			if popup != null:
 				await popup.finished
-	RallySession.return_to_garage = true
 	_change_scene(Scenes.hub_path())
 
 
@@ -2368,21 +1926,12 @@ var _region_look_ready := false
 func _current_region_look() -> Dictionary:
 	if _region_look_ready:
 		return _region_look_cache
+	# A challenge stage is rolled from the period hash and authors no region, so it
+	# wears the plain home look. The career-rally and free-roam arms that used to
+	# pick a region here (off RallySession) are deleted along with it
+	# (todo/roguelike-pivot.md decision 5); the roguelike region-select system
+	# (stage 4) is what will give this a real region to read.
 	var region_id := "home"
-	if ChallengeSession.is_active():
-		# A challenge stage is rolled from the period hash and authors no region, so
-		# it wears the plain home look — explicitly, so a leftover free-roam pick
-		# can't drop through to the branch below and dress the stage in the last
-		# free-roam drive's sky/ground/tree mix. (ChallengeSession.start/resume also
-		# clear the handoff now; this arm is the belt to that's braces, and it is
-		# what makes "a challenge has no region" a stated rule rather than an
-		# accident of ordering.) See todo/challenge-career-reuse-drift.md item 9.
-		region_id = "home"
-	elif RallySession.is_active():
-		region_id = String(RegionLibrary.region_for_rally(RallySession.rally_id()).get("id", "home"))
-	elif (RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "") \
-			and RallySession.free_roam_region_id != "":
-		region_id = RallySession.free_roam_region_id
 	_region_look_cache = RegionLibrary.look_of(region_id)
 	_region_look_ready = true
 	return _region_look_cache

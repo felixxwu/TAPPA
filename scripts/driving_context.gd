@@ -1,13 +1,17 @@
 class_name DrivingContext
 extends RefCounted
 # The ONE place the game answers "which session is fielding a car, and what
-# constraints does it impose right now". Career (RallySession) and Rally
-# Challenge (ChallengeSession) both feed this identically — screens that read
-# RallySession/ChallengeSession directly for these questions are exactly how a
-# past bug (a challenge car's detune slider got a redundant, undocumented hard
-# lock instead of reusing the existing rating_limit/close-button gate) happened.
-# Free roam is session-less and has no equivalent — it answers "no context"
-# (see world.gd's car-fielding chain for how free roam resolves its own car).
+# constraints does it impose right now". Rally Challenge (ChallengeSession) feeds
+# this — screens that read ChallengeSession directly for these questions are
+# exactly how a past bug (a challenge car's detune slider got a redundant,
+# undocumented hard lock instead of reusing the existing rating_limit/close-button
+# gate) happened. Free roam is session-less and has no equivalent — it answers "no
+# context" (see world.gd's car-fielding chain for how free roam resolves its own
+# car).
+#
+# RallySession, the career-rally session this used to feed alongside
+# ChallengeSession, is deleted (todo/roguelike-pivot.md decision 5). The
+# roguelike run session (stage 3) is its eventual replacement here.
 #
 # Static-only, no autoload (same shape as RallyLibrary / ChallengeLibrary).
 
@@ -17,22 +21,19 @@ extends RefCounted
 const NO_LIMIT := -1.0
 
 
-# The instance id of the car actively being driven/fielded by whichever session
-# (if any) is running — ChallengeSession first (only one can be active at a
-# time), else RallySession, else -1.
-# True when EITHER session is fielding a run right now — the "is the player driving
-# a real event" question, as opposed to free roam / benchmark / dev boot. Use this
-# instead of testing RallySession.is_active() alone: doing that silently excludes
-# challenges, which is how the F-to-finish dev cheat ended up dead in challenge mode.
+# The instance id of the car actively being driven/fielded by ChallengeSession, if
+# it is running — else -1.
+# True when a session is fielding a run right now — the "is the player driving a
+# real event" question, as opposed to free roam / benchmark / dev boot. Use this
+# rather than reading ChallengeSession.is_active() inline at each call site, so a
+# future second session caller (the roguelike run) has one place to join.
 static func session_active() -> bool:
-	return ChallengeSession.is_active() or RallySession.is_active()
+	return ChallengeSession.is_active()
 
 
 static func active_car_instance_id() -> int:
 	if ChallengeSession.is_active():
 		return ChallengeSession.car_instance_id()
-	if RallySession.is_active():
-		return RallySession.car_instance_id()
 	return -1
 
 
@@ -71,7 +72,6 @@ static func rating_limit_for_car(instance_id: int) -> float:
 # The ONE place a stage's/event's track parameters reach the live config, pulled
 # at CONSUME time (world.gd._ready) rather than pushed by each scene producer —
 # so "a new scene-entry site forgot to seat the config" stops being expressible.
-# Same session precedence as active_car_instance_id(): challenge first, then career.
 #
 # Safe to call at consume time because StageConfig.apply_event_config is pure and
 # idempotent: it reloads the authored baseline on every call and pins every omitted
@@ -83,7 +83,7 @@ static func rating_limit_for_car(instance_id: int) -> float:
 # actually rendered and collided against is built from cfg.track_water_level_m
 # (world.gd._build_lakes), not from params.water_level.
 #
-# An active session with an empty stage/event dict (a run already over) and the
+# An active session with an empty stage dict (a run already over) and the
 # session-less callers — free roam, benchmark, dev boot — leave cfg exactly as the
 # caller authored it; applying {} would reset every field to the baseline and wipe
 # those deliberate writes.
@@ -92,10 +92,6 @@ static func apply_stage_config(cfg: GameConfig) -> void:
 		var stage := ChallengeSession.current_stage_params()
 		if not stage.is_empty():
 			StageConfig.apply_event_config(cfg, stage)
-	elif RallySession.is_active():
-		var event := RallySession.current_event()
-		if not event.is_empty():
-			StageConfig.apply_event_config(cfg, event)
 
 
 # Whether `instance_id` is the car an active challenge run is COMMITTED to.

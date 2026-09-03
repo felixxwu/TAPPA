@@ -1,7 +1,7 @@
 class_name TrackProgress
 extends Node
-# Docs: features/progress.md, features/rival-ghost.md — update in the same change as this file.
-# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_rival_pace.gd, tests/headless/test_track_progress.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TrackProgress' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Docs: features/progress.md — update in the same change as this file.
+# Tests: tests/headless/test_track_progress.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TrackProgress' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Tracks how far along the generated road the car has driven, and snaps it back
 # onto the road when it has been off it too long. Both behaviours run off the road
 # centerline (a Curve2D in the XZ plane, from TrackGenerator), but off two DIFFERENT

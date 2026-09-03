@@ -367,11 +367,10 @@ func _build_dev_page() -> void:
 	# (features/star-economy.md), so this is the quick way to exercise the present box —
 	# and, being +1, to sit exactly on a price boundary and check the affordability states.
 	_dev_page.add_child(_make_action_button("Add 1 star", _add_star))
-	# Only meaningful mid-rally: instantly finish the whole rally with a perfect time
-	# and jump to the podium (where the top-3 finish grants the car). Hidden in the HQ
-	# settings, where there is no rally to complete.
-	if RallySession.is_active():
-		_dev_page.add_child(_make_action_button("Complete rally (win now)", _complete_rally))
+	# The "Complete rally (win now)" shortcut that used to sit here — instantly
+	# finish the active rally with a perfect time and jump to the podium — was
+	# RallySession-gated. Deleted along with RallySession and the rival field it
+	# served (todo/roguelike-pivot.md decision 5).
 	_dev_page.add_child(_make_sub("Unlock a car:"))
 	for car in CarLibrary.all():
 		var car_id := String(car["id"])
@@ -847,18 +846,6 @@ func _reload_after_wipe() -> void:
 
 
 # --- Dev actions -------------------------------------------------------------
-
-# Dev: instantly win the active rally. Unfreeze first (this page is reached from the
-# in-run pause overlay, which paused the tree — mirrors PauseMenu.quit_to_hq) so the
-# podium the resolve routes to isn't left paused, then complete the rally: RallySession
-# fills every event with a 0 ms time, resolves to a P1 finish, and emits rally_finished,
-# which world.gd routes to the podium (where the car reward is granted).
-func _complete_rally() -> void:
-	if not RallySession.is_active():
-		return
-	get_tree().paused = false
-	RallySession.dev_complete_rally()
-
 
 # Dev: 3-star every rally, which also completes every region's showdown and so
 # finishes the game (regions no longer unlock in sequence — see

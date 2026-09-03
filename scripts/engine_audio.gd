@@ -200,19 +200,12 @@ func _timed_process(_delta: float) -> void:
 		_cam = cur  # check-and-update: only re-seat when the active camera actually changed
 	if _cam != null and _car != null:
 		var d2 := _cam.global_position.distance_squared_to(_car.global_position)
-		# During the start-line REVEAL sequence, tighten the radius for cars waiting
-		# behind the reveal-card focus car (see engine_audio_ref_distance_reveal_m):
-		# the queue spacing is smaller than the normal radius, so every queued car
-		# otherwise sits at/near full volume at once. The focus car itself (the one
-		# on the card, closest to the anchored camera) is exempted so it keeps
-		# sounding exactly as it did before this change; a car that has actually
-		# launched is never in _grid any more, so its normal falloff is untouched.
-		var ref_dist := cfg.engine_audio_ref_distance_m
-		var sl := StartLine.active_instance
-		if sl != null and _car != sl.reveal_focus_car() and sl.sequence_phase() == StartLine.Seq.REVEAL:
-			ref_dist = cfg.engine_audio_ref_distance_reveal_m
+		# The start-line REVEAL sequence used to tighten the radius here for cars
+		# waiting in the rival reveal queue. Deleted along with the rival field and
+		# the reveal itself (todo/roguelike-pivot.md decision 5) — StartLine no
+		# longer has a REVEAL phase or a reveal_focus_car() to ask.
 		volume_db = EngineAudioSynth.attenuation_db(
-			d2, ref_dist, cfg.engine_audio_max_attenuation_db)
+			d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
 	# Far enough away that attenuation has pinned the level to its floor: the synth
 	# output is inaudible, so paying the per-sample DSP for it is wasted CPU. Push
 	# silence instead and skip the fill entirely. Matters wherever several cars are

@@ -1,7 +1,7 @@
 extends RefCounted
 class_name LapTimeModel
-# Docs: features/car-performance.md, features/rival-ghost.md — update in the same change as this file.
-# Tests: tests/headless/test_ghost_car.gd, tests/headless/test_lap_time_model.gd, tests/headless/test_rival_pace.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'LapTimeModel' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
+# Docs: features/car-performance.md — update in the same change as this file.
+# Tests: tests/headless/test_lap_time_model.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'LapTimeModel' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 
 # Quasi-steady-state (QSS) lap-time model. Treats the car as a point mass that
 # follows the centerline exactly, subject to its real forces (power, weight, drag,

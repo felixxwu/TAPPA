@@ -145,7 +145,6 @@ const BREADCRUMB_BASELINE := [
 	"exhaust_lab.gd",
 	"garage.gd",
 	"gauge_icons.gd",
-	"global_standings.gd",
 	"headlight_cone.gd",
 	"hud_gauge.gd",
 	"input_remap.gd",

@@ -5,7 +5,7 @@ and wired by `scripts/world.gd` (`_build_start_line`) for staged session runs. H
 [`StageManager`](stage.md) in its `STAGING` phase and launches it after a cinematic
 reveal. Uses the scripted-control hook on [`car.gd`](car-physics.md) for the grid cars.
 
-**Tests:** `tests/headless/test_start_line.gd`, `tests/headless/test_rally_session.gd`, `tests/headless/test_stage_manager.gd`
+**Tests:** `tests/headless/test_start_line.gd`, `tests/headless/test_stage_manager.gd`
 
 The diegetic sequence between picking a car in HQ and the `3·2·1·GO` countdown
 (`todo/menus.md` location 2). It runs **inside the live run scene** (`main.tscn`) once
@@ -254,7 +254,7 @@ See [configuration.md](configuration.md).
   exactly once; empty leaders skip straight to the fade; the eligibility / over-power gates
   and the Tune Car / Upgrades overlays behave as before; an underpowered-but-eligible car
   launches straight through (its warning now lives at car selection, not the start line).
-- `tests/headless/test_rally_session.gd` — `current_event_leaders()` returns the top three
+- (deleted with RallySession) `current_event_leaders()` returned the top three
   rivals (fastest first, DNF-this-event omitted) each with `car_id` (so the grid can spawn
   their actual car), `car_name` and `time_ms`.
 - `tests/headless/test_stage_manager.gd` — the `STAGING` phase holds until

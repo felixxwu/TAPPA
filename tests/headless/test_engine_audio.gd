@@ -804,32 +804,9 @@ func test_attenuation_clamped_at_floor() -> void:
 	assert_eq(v, -60.0, "clamped to the floor")
 
 
-# --- Start-line reveal radius (engine_audio.gd's ref_dist swap) --------------
-# engine_audio.gd swaps in cfg.engine_audio_ref_distance_reveal_m (smaller than the
-# normal engine_audio_ref_distance_m) for queued cars while the start-line REVEAL
-# sequence is active, so cars packed at start_queue_gap spacing differentiate in
-# volume instead of all sitting near full volume. attenuation_db is the pure
-# function that swap feeds into, so exercise the behavioral difference directly
-# without booting a scene — no pinned dB values, just the comparison the fix relies on.
-func test_reveal_radius_attenuates_a_queued_car_more_than_the_normal_radius() -> void:
-	var cfg := GameConfig.new()
-	# A car one start_queue_gap behind the reveal-focus car, roughly at the queue
-	# spacing distance from the reveal camera (see start_line.gd's grid layout).
-	var d2: float = cfg.start_queue_gap * cfg.start_queue_gap
-	var normal := EngineAudioSynth.attenuation_db(
-		d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
-	var reveal := EngineAudioSynth.attenuation_db(
-		d2, cfg.engine_audio_ref_distance_reveal_m, cfg.engine_audio_max_attenuation_db)
-	assert_lt(reveal, normal,
-		"the reveal-queue radius attenuates a car at queue-gap distance more than the normal radius")
-
-
-func test_reveal_radius_is_narrower_than_the_normal_radius() -> void:
-	var cfg := GameConfig.new()
-	assert_lt(cfg.engine_audio_ref_distance_reveal_m, cfg.engine_audio_ref_distance_m,
-		"the reveal radius is a tighter full-volume radius than the general/racing one")
-	assert_lt(cfg.engine_audio_ref_distance_reveal_m, cfg.start_queue_gap,
-		"the reveal radius is smaller than the queue spacing, so adjacent queued cars differentiate")
+# The start-line reveal radius (engine_audio_ref_distance_reveal_m, and the
+# StartLine REVEAL-queue attenuation swap that read it) was deleted along with the
+# rival reveal (todo/roguelike-pivot.md decision 5).
 
 
 # --- Mix-rate resolution + inaudible skip (todo/mobile-web-performance.md 2.1) ---

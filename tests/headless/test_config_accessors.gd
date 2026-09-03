@@ -26,8 +26,8 @@ func test_get_float_returns_fallback_for_missing_field() -> void:
 
 
 func test_get_bool_returns_authored_value_for_existing_field() -> void:
-	Config.data.ai_adapt_enabled = false
-	assert_eq(Config.get_bool("ai_adapt_enabled", true), false,
+	Config.data.hud_enabled = false
+	assert_eq(Config.get_bool("hud_enabled", true), false,
 		"an existing bool field returns the live authored value, not the fallback")
 
 

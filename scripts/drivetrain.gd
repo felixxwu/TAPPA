@@ -1,7 +1,7 @@
 class_name Drivetrain
 extends RefCounted
 # Docs: features/drivetrain-and-tires.md — update in the same change as this file.
-# Tests: tests/headless/test_drive_mode.gd, tests/headless/test_drivetrain.gd, tests/headless/test_opponent_tires.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Drivetrain' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
+# Tests: tests/headless/test_drive_mode.gd, tests/headless/test_drivetrain.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Drivetrain' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Custom drivetrain + tire model. Godot's wheel friction is disabled
 # (wheel_friction_slip = 0); VehicleBody3D only provides suspension and the
 # wheel raycasts. This object owns the wheel spin states, integrates torques,

@@ -1,7 +1,7 @@
 class_name RestClient
 extends Node
 # Docs: features/cloud-save.md — update in the same change as this file.
-# Tests: tests/headless/test_cloud_auth.gd, tests/headless/test_cloud_leaderboard.gd — extend in the same change.
+# Tests: tests/headless/test_cloud_auth.gd, tests/headless/test_challenge_leaderboard.gd — extend in the same change.
 # The ONLY place in the project that touches HTTPRequest.
 #
 # Everything in scripts/cloud/ talks to the network through this one awaitable

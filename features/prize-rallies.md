@@ -6,7 +6,7 @@
 `rally_session.gd::_resolve` (`car_reward` / `special_unlock`); `Save.owns_model` /
 `Save.grant_car`.
 
-**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_rally_session.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_reward_system.gd`
+**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_reward_system.gd`
 
 A **prize rally** hands over a car or a part on top of its stars. This is the whole
 incentive structure of map exploration: the dark map is dotted with things you can SEE and
@@ -111,7 +111,7 @@ In `test_rally_library.gd`, none pinning which rally awards what:
   `test_a_prize_rallys_restriction_governs_its_field` — carrying a prize buys no exemption
   from the restriction.
 
-Award behaviour lives in `test_rally_session.gd` (first win hands it over, a re-win mints
+Award behaviour lived in `test_rally_session.gd`, deleted with RallySession (first win handed it over, a re-win minted
 no duplicate, an ordinary rally hands over nothing).
 
 ## Related

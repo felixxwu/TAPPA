@@ -1,9 +1,9 @@
 extends RefCounted
 class_name TrackFixtures
 
-# Synthetic centerlines for tests that exercise LapTimeModel / RivalPace, so no test
-# has to reach into a generated track or the authored catalogue. Promoted out of
-# test_lap_time_model.gd when test_rival_pace.gd needed the same shapes — see
+# Synthetic centerlines for tests that exercise LapTimeModel, so no test has to reach
+# into a generated track or the authored catalogue. Promoted out of
+# test_lap_time_model.gd for reuse across the track-generation test files — see
 # features/testing.md. Every helper returns the {"centerline", "pieces"} dict shape the
 # model consumes.
 

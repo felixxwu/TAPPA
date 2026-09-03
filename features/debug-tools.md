@@ -76,33 +76,6 @@ little smaller than the visible body and would otherwise be obscured by it. Dism
 the overlay restores the body by re-running the normal per-spec visibility
 (`_apply_model_visibility`). Wheels stay visible either way.
 
-## Adaptive-difficulty readout
-
-`hud.gd` → `_difficulty_label`, built by `_build_difficulty_label`, revealed by the **same
-H toggle** as the rest of the dev readout and sitting just under the seed line.
-
-Shows how far the rival field is currently pitched from "matched to the player"
-([adaptive-difficulty.md](adaptive-difficulty.md)):
-
-| Text | Meaning |
-|------|---------|
-| `AI matched` | 0 steps — the field is drawn at the player's own rating (the no-op state) |
-| `AI +2 (x1.08)` | 2 steps HARDER — the matcher is handed a rating 8% above the player's |
-| `AI -1 (x0.96)` | 1 step EASIER |
-| `AI off` | `ai_adapt_enabled` is false, whatever offset the profile still carries |
-
-It exists because the mechanism is otherwise **invisible by design**: the lever is the
-*machinery* the rivals turn up in, not their driving, so a harder field looks exactly like
-an ordinary field of quicker cars. Without this there is no way to tell "the opponents are
-pitched above me" from "I am slow today" — which is the whole question the offset raises.
-
-The **multiplier**, not just the step count, because a step means nothing without
-`ai_adapt_step_fraction`; the multiplier is what actually reaches
-`AiDifficulty.target_rating`. The text comes from the pure static `Hud.difficulty_text`
-(unit-tested without the HUD scene, like `seed_text` and `boost_text`), and is repainted
-only when it changes — the offset moves only at a stage boundary
-(`Save.record_stage_result`), so the per-frame cost is a string compare.
-
 ## Per-tire grip grid
 
 **Source:** `hud.gd` → `_build_grip_grid` / `_update_grip_grid`, plus the pure
@@ -346,8 +319,8 @@ a start **marooned on a small dry patch** — every first corner's footprint tri
 `TrackGenerator._collide_and_cells`' `WATER_MAX_WET_FRACTION` rejection, so no
 restart can place even one corner. See [track.md](track.md) and [lakes.md](lakes.md).
 
-It must be a SCENE run (like the cache baker), not `--script`: `Config`/
-`RallySession` are autoloads, and `TrackGenerator._search` calls
+It must be a SCENE run (like the cache baker), not `--script`: `Config` and the
+other autoloads only exist in a scene run, and `TrackGenerator._search` calls
 `Platform.is_headless()`.
 
 ## Road-curve probe jitter
@@ -359,26 +332,10 @@ it.
 It exists because the road curve is baked every 5 m and lerped, so anything sampling it
 with a probe shorter than a chord gets a piecewise-constant reading that jumps at each
 vertex. That is invisible in code review and hard to reproduce synthetically (a uniform arc
-turns by the same angle at every vertex, so short probes look fine on one) — but it made
-the rival ghost slide side to side, because a curvature sign flip swaps which side of the
-road it sits on. Use this before trusting any new consumer of the road centerline's
-geometry. See [rival-ghost.md](rival-ghost.md) -> *Smoothness*.
-
-## Rival-ghost pace audit
-
-`tools/audit_ghost_pace.tscn` (headless) sweeps **every career stage** and asks whether the
-rival ghost's pace solve can reach its target with the current `GameConfig` exponents, or
-has to clamp and fall back to uniform scaling ([rival-ghost.md](rival-ghost.md)).
-
-Per stage it prints the pace P1 needs, the most the current exponents can deliver at
-`skill_min` and at a near-zero skill factor, and a verdict for both P1 (the only rival
-ghosted today — this column gates shipping) and the slowest rival (a bound for a future
-multi-ghost field). It exits non-zero if any P1 solve clamped, so it can gate CI.
-
-It also reports **the worst-case skill factor any stage needs**, which is how
-`rival_ghost_skill_min` should be chosen. Run it after changing either exponent: with
-`grip_exponent = 0` the only lever is straight-line pace, so a stage without much straight
-can become unreachable.
+turns by the same angle at every vertex, so short probes look fine on one) — but it once made
+the (now-deleted) rival ghost slide side to side, because a curvature sign flip swaps which
+side of the road it sits on. Use this before trusting any new consumer of the road
+centerline's geometry.
 
 ## Tests
 

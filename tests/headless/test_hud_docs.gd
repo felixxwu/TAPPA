@@ -28,7 +28,7 @@ const DOCS := ["res://features/hud.md", "res://features/debug-tools.md"]
 # documents needs no guard.
 const DOCUMENTED_LABELS := [
 	&"SpeedLabel", &"GearLabel", &"RPMLabel", &"BoostLabel", &"SeedLabel",
-	&"DifficultyLabel", &"GripGrid",
+	&"GripGrid",
 ]
 
 # Phrases that assert a label is NOT behind the H toggle. Matched against the sentence a

@@ -27,12 +27,9 @@ func after_each() -> void:
 	Config.reset()
 	UpgradeFixtures.restore()
 	CarFixtures.restore()
-	if RallySession.is_active():
-		RallySession.abandon()
 	if ChallengeSession.is_active():
 		ChallengeSession.abandon()
 	Save.profile["challenge_run"] = {}
-	RallySession.auto_load_scenes = true
 	RallyLibrary.reset()
 
 func _make() -> UpgradeReveal:
@@ -209,7 +206,6 @@ func test_upgrades_overlay_gets_the_challenges_ceiling_not_no_limit() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
 	_start_challenge_on(id)
-	assert_false(RallySession.is_active(), "setup: no rally is running alongside the challenge")
 	_save.install_upgrade(id, "fx_aero", false)
 	var w := _make()
 	w.reveal("fx_aero", id)

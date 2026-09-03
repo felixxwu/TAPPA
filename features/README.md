@@ -49,11 +49,8 @@ with them, and working toward the special-event finale.
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
 | [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
-| [global-leaderboards.md](global-leaderboards.md) | Optional per-stage world leaderboards — `Leaderboard`, `FirestoreCodec`, the standings interstitial's page 2, the one world-readable Firestore collection |
-| [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, the star-per-placement curve; reveal is geometric now — see map-exploration.md) |
+| [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`) |
 | [car-performance.md](car-performance.md) | `CarPerformance` — a car's speed as ONE number (Forza-style, higher = faster), derived from a simulated lap of the fixed `BenchmarkTrack` rather than a formula over stats; the `benchmark_*` knobs, the reference-car anchor, and the downforce / drive-mode solver enrichment behind it |
-| [adaptive-difficulty.md](adaptive-difficulty.md) | The rival field pitches itself at the player — it eases after stages they don't win and tightens when they keep taking P1, by handing the rating matcher an OFFSET rating so rivals turn up in quicker or slower machinery (never by making them drive impossibly) |
-| [rival-ghost.md](rival-ghost.md) | The rally leader shown on track while you drive — a kinematic ghost posed from `LapTimeModel` re-solved with a degraded driver-skill envelope, so it crosses the line exactly when the standings say it did |
 | [star-economy.md](star-economy.md) | Stars as the one currency — the persisted `stars_earned`/`stars_spent` ledger, what pays them, why gating counts completions instead, buying a car at the present box + the dead-end rescue, and the podium's stars beat |
 | [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm / fog / storm / snowfall / night) — the `WeatherLibrary` table that is the single source of truth for every condition, `RallyLibrary.event_weather`, the `GameConfig` blocks it names, the `StageConfig.apply_event_config` funnel that seats it, and the fake headlight cone night re-lights the world with (authored on five stages, one per region) |
 | [prize-rallies.md](prize-rallies.md) | Rallies that award a CAR or a PART — `prize_car` authored, part prizes derived from `UpgradeLibrary`; the prize tops its own band; first-win-only claiming. Cars are no longer bought or drawn |
@@ -65,11 +62,9 @@ with them, and working toward the special-event finale.
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars — the only gate is the rally that unlocks the capability; neither a token nor car health blocks a swap — engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
 | [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (the car pick/pricing with its tier clamp, the prize-rally part unlock). There is no random per-event upgrade draw any more |
-| [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, rival DNFs, no-retry) |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeSession` autoload (resume persistence, per-stage flow, placement reward), the HQ entry-point screen |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, capped misfire + rev cap at 0 HP (never a wreck) |
-| [opponent-wrecks.md](opponent-wrecks.md) | Rival crash-outs — the rare/capped wreck decision (`RallyLibrary`) + the roadside staging (frozen car + crowd + smoke) in `world.gd` |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
@@ -131,7 +126,7 @@ with them, and working toward the special-event finale.
 | Track generation | `scripts/track_generator.gd` |
 | Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
 | Eligibility report (rally x car authoring check) | `tools/report_eligibility.gd`/`.tscn`, `report_eligibility.sh` — see [rally-roster.md](rally-roster.md) |
-| Eligibility matrix for pin fitting (rally x car, `source_hash`-guarded) | `tools/export_eligibility.gd`, `export_eligibility.sh`, `data/eligibility.json`, consumed by `tools/fit_map_pins.py` — see [map-exploration.md](map-exploration.md) → *Eligibility is fed in from a committed matrix* |
+| Eligibility matrix for pin fitting (rally x car, `source_hash`-guarded) | `tools/export_eligibility.gd`, `export_eligibility.sh`, `data/eligibility.json`, consumed by `tools/fit_map_pins.py` |
 | Career simulation (progression pacing / soft-lock check) | `tools/sim_career.gd`/`.tscn`, `sim_career.sh`, `tests/headless/test_sim_career.gd` — see [rally-roster.md](rally-roster.md) |
 | Benchmark fidelity calibration (C1 — does the rating rank cars like real stages?) | `tools/calibrate_benchmark.gd`/`.tscn`, `calibrate_benchmark.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
 | Pace-floor calibration (C2 — what `PACE_MIN_FLOOR` can and cannot be derived from) | `tools/calibrate_pace_floor.gd`/`.tscn`, `calibrate_pace_floor.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |

@@ -5,9 +5,10 @@ extends CanvasLayer
 # In-run pause menu. A top-right Pause button freezes the game
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
-# controls). Quit to HQ abandons the current rally (no retry penalty, damage persisted,
-# no reward — RallySession.abandon) after a confirm and returns to HQ; a CHALLENGE run is
-# only PAUSED (ChallengeSession.pause_run) — nothing DNFs a challenge. The whole layer
+# controls). Quit to HQ returns to the hub; a CHALLENGE run is only PAUSED
+# (ChallengeSession.pause_run) — nothing DNFs a challenge. (The career-rally abandon
+# path this used to branch to is deleted with RallySession — todo/roguelike-pivot.md
+# decision 5.) The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu too.
@@ -98,12 +99,13 @@ func _on_reset_to_track_pressed() -> void:
 
 
 # Pop the quit confirm; quit_to_hq() runs only if the player accepts. The body
-# differs by session: a career rally really is abandoned (progress lost), while a
-# challenge is only PAUSED — challenge_run stays persisted and the entry screen
-# offers Resume — so it must not claim the run is lost (item 12).
+# differs by session: a challenge is only PAUSED — challenge_run stays persisted and
+# the entry screen offers Resume — so it must not claim the run is lost (item 12);
+# everything else (a plain dev boot, or the roguelike run session once it lands)
+# gets the plain "abandon" wording.
 # Ask to quit, then quit. PUBLIC because the pre-countdown start line's Exit button
-# raises the same prompt — the wording branches on challenge-vs-rally and the quit
-# branches on benchmark/challenge/rally, and neither belongs in two places.
+# raises the same prompt — the wording branches on challenge-vs-not and the quit
+# branches on benchmark/challenge/plain, and neither belongs in two places.
 func confirm_quit_to_hq() -> void:
 	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
 	if ChallengeSession.is_active():
@@ -115,10 +117,8 @@ func confirm_quit_to_hq() -> void:
 		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
-# Leave the run for HQ: unfreeze, then leave the active rally/challenge.
-# RallySession.abandon really abandons (no retry penalty, damage persisted, no
-# reward) and emits rally_finished, which world.gd routes back to HQ (the garage
-# view). A CHALLENGE is only PAUSED (item 12) — nothing DNFs a challenge run at all, so
+# Leave the run for HQ: unfreeze, then leave the active challenge (if any). A
+# CHALLENGE is only PAUSED (item 12) — nothing DNFs a challenge run at all, so
 # quitting must not spend the period. pause_run() deliberately emits no
 # run_finished (world.gd's handler would post a DNF to the board on it), so this
 # owns the transition itself, matching the garage-view landing of the other paths.
@@ -131,11 +131,11 @@ func quit_to_hq() -> void:
 		Benchmark.exit_to_hq()
 	elif ChallengeSession.is_active():
 		ChallengeSession.pause_run()
-		RallySession.return_to_garage = true
 		Scenes.change_to(get_tree(), Scenes.hub_path())
-	elif RallySession.is_active():
-		RallySession.abandon()
 	else:
+		# The career-rally abandon that used to sit here (RallySession.abandon()) is
+		# deleted along with RallySession (todo/roguelike-pivot.md decision 5); a
+		# plain dev boot and the roguelike run session both fall through to here.
 		Scenes.change_to(get_tree(), Scenes.hub_path())
 
 

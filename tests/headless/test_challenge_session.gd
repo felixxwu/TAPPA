@@ -25,9 +25,6 @@ func before_each() -> void:
 func after_each() -> void:
 	_leave_run()
 	ChallengeSession.auto_load_scenes = true
-	# The free-roam handoff lives on the RallySession autoload, so a test that sets
-	# it must not leak it into the next one.
-	RallySession.clear_free_roam_handoff()
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
@@ -197,42 +194,11 @@ func test_resume_restores_the_stage_and_banked_times_of_a_stored_run() -> void:
 	assert_eq(ChallengeSession.events_completed(), 2, "the resumed run advances")
 
 
-# Item 9: a challenge fields its own car and authors no region, so it supersedes a
-# pending free-roam pick exactly as RallySession.start_rally does. Left set, a
-# free-roam drive quit at the pause menu dressed the next challenge stage in that
-# drive's random region look.
-func test_starting_a_challenge_clears_a_pending_free_roam_pick() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	var car := _grant()
-	RallySession.free_roam_instance_id = 4242
-	RallySession.free_roam_model_id = "fx_light_rwd"
-	RallySession.free_roam_region_id = "some_other_region"
-
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, car, t))
-
-	assert_eq(RallySession.free_roam_instance_id, -1)
-	assert_eq(RallySession.free_roam_model_id, "")
-	assert_eq(RallySession.free_roam_region_id, "",
-		"the region is cleared too — it is what leaked into the stage's look")
-
-
-func test_resuming_a_challenge_clears_a_pending_free_roam_pick() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	var car := _grant()
-	ChallengeSession.start(_longest_kind(), car, t)
-	var stored: Dictionary = (_save.profile["challenge_run"] as Dictionary).duplicate(true)
-	ChallengeSession.pause_run()
-	_save.profile["challenge_run"] = stored
-
-	RallySession.free_roam_instance_id = 4242
-	RallySession.free_roam_model_id = "fx_light_rwd"
-	RallySession.free_roam_region_id = "some_other_region"
-
-	assert_true(ChallengeSession.resume(t))
-
-	assert_eq(RallySession.free_roam_instance_id, -1)
-	assert_eq(RallySession.free_roam_model_id, "")
-	assert_eq(RallySession.free_roam_region_id, "")
+# NOTE: two tests lived here — "starting a challenge clears a pending free-roam pick"
+# and its resume twin (drift spec item 9). Both are DELETED, not weakened: they drove
+# RallySession.free_roam_* , and free roam is removed outright by decision 25. The bug
+# they guarded (a quit free-roam drive dressing the next challenge stage in that drive's
+# random region look) cannot occur once nothing can author a pending free-roam pick.
 
 
 # --- eligible_cars --------------------------------------------------------------

@@ -9,9 +9,9 @@ extends Node
 # DFS actually placed. It writes NOTHING: data/track_cache.json is never touched, so
 # this is safe to run while the committed lockfile is in a known-good state.
 #
-# It is a SCENE run (not --script): Config/RallySession are autoloads that only
-# exist in a scene run, and TrackGenerator._search calls Platform.is_headless(),
-# which needs them. Same reason generate_track_cache.gd is a scene.
+# It is a SCENE run (not --script): Config and the other autoloads only exist in
+# a scene run, and TrackGenerator._search calls Platform.is_headless(), which
+# needs them. Same reason generate_track_cache.gd is a scene.
 #
 # Usage from the repo root (see ./probe_track.sh for a wrapper):
 #   $GODOT --headless --path . res://tools/probe_track_event.tscn -- \
