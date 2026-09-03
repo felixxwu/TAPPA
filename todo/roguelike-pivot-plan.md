@@ -273,8 +273,47 @@ now receives `[]` in challenge mode, which keeps it compiling until 2b deletes i
 
 ### 2b. Delete
 
-Execute the spec's *What gets deleted* list. Suggested order, each step leaving
-fewer dangling references than the last:
+> **ORDER CHANGED — the hub goes FIRST, not last.** This plan originally put the
+> hub demolition after the five system deletions ("its own wave after this one").
+> That is backwards, and a reference map proves it: the hub and overworld are the
+> **dominant consumers** of every system being deleted. `UpgradeLibrary` is read
+> by `hq_map_table.gd`, `rally_detail.gd` and `overworld_marker.gd`;
+> `stars_available` by `hq.gd`, `hq_tuning_lift.gd`, `overworld_garage.gd`,
+> `podium.gd` and `upgrades_grid.gd`; `rally_revealed` by `hq_map_table.gd`,
+> `hq_table.gd`, `overworld_zone.gd`, `overworld_map.gd` and `overworld_blocks.gd`.
+>
+> Deleting systems first means five agents all editing `hq.gd` (3527 lines) and
+> `overworld.gd` (2785) to remove references **from files that are themselves
+> deleted a wave later** — maximum conflict, and every edit thrown away. Deleting
+> the hub first makes those references vanish, so the system deletions then touch
+> only survivors. The hub cluster is **29 scripts, ~22,000 lines**, plus 2 scenes,
+> 24 test files and 5 `features/` docs.
+>
+> Accepted cost: the tree does not compile between the hub wave and the rewiring
+> wave. That is fine — stage 2 already accepts a broken tree, we are on a branch,
+> and stage 3 is "back to playable" regardless.
+
+**Hub wave A — parallel, 2 Sonnet agents, disjoint clusters.** Each deletes only
+its own files and is told to LEAVE dangling references in shared survivors alone:
+- *overworld cluster*: `overworld*.gd` (14 files), `overworld.tscn`, its 15 tests,
+  `features/overworld.md`, `overworld-frame-loop.md`, `map-exploration.md`.
+- *hq cluster*: `hq*.gd` (9 files), `hq.tscn`, `map_table.gd`, `map_house.gd`,
+  `map_fog.gd`, its 5 tests, `features/hq.md`.
+
+**Hub wave B — serial, 1 Opus agent.** Rewire every shared survivor and get the
+project compiling: `project.godot` main scene (→ placeholder), `scenes.gd`,
+`game_config.gd`'s hub blocks, `settings_menu.gd`, `terrain_manager.gd`,
+`cloud/rest_client.gd`.
+
+> **`WorldPanel` is NOT a mechanical delete — it is surgery on code that
+> survives.** `world_panel.gd` / `world_panel_host.gd` are referenced from
+> `menu_page.gd`, `menu_nav.gd`, `ui_theme.gd` and `upgrade_slot_popup.gd` — the
+> **menu framework stage 4 builds the entire new flat UI on**. Un-threading the
+> 3D-hosting path out of `MenuPage`/`MenuNav` without damaging the flat-page path
+> belongs to wave B's Opus agent, never to a cluster agent.
+
+Then the system deletions, each step leaving fewer dangling references than the
+last:
 
 1. Rival field + `rival_pace.gd` + ghost + wrecks + `ai_difficulty.gd`.
 2. Star economy (ledger, `stars_for_placement`, `STARS_FOR_*`, `rally_trophy.gd`)
