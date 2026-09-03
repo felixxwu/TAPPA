@@ -367,6 +367,19 @@ Findings worth carrying:
 - 39 dangling links to the deleted docs remain across 17 `features/*.md` —
   deliberately left for the stage 9 audit wave.
 
+**Leaderboards / podium / standings deleted.** `cloud/leaderboard.gd` was verified
+to be the GLOBAL stage board (`stage_times/{stage_key}/times/{uid}`) — decision 30's
+target — and is distinct from the retained `ChallengeLeaderboard`
+(`challenge_runs/{period_key}/entries/{uid}`) and the shared `FirestoreBoard` base,
+both untouched. `firestore.rules` lost only the `stage_times` block.
+
+> **COVERAGE DEBT FOR STAGE 3.** Two tests in `test_challenge_session.gd` were
+> removed because they asserted through the deleted `GlobalStandings.for_current_stage()`:
+> the signal-ordering test and the session-latching test. **The regression they
+> guarded is still real** — a challenge's standings resolving against the career
+> session instead of the challenge. When stage 3 gives the challenge a new
+> interstitial host, re-write both against it. A comment in the file marks the spot.
+
 > **THE BIG ONE — `test_menu_flow.gd` is 5884 lines with ~1080 `hq.<member>`
 > references.** With `test_cloud_boot_gate.gd` and `test_wheel_customization.gd` it
 > drives real SURVIVING logic (start-line preflight, wheel swap, cloud boot gating,

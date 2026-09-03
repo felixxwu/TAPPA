@@ -608,23 +608,38 @@ failure collapses to `{"ok": false}` / a no-op, no retry loop:
   only) to encode/decode `dnf` as a real Firestore boolean rather than the
   string `"true"`, which the rules' `d.dnf == false` comparisons require.
 
-`GlobalStandings` (the per-stage interstitial, `global_standings.gd`) grows a
-parallel `is_challenge` path: `for_current_stage()` returns
-`{is_challenge, period_key, stage_index, time_ms (= cumulative, via
-ChallengeSession.cumulative_ms()), car_name, car_id, dnf}` instead of a
-`stage_key`-based dict (a challenge stage has no `stage_key` and is never
-posted to `stage_times` — spec §5). `_refresh_challenge`/`_land_challenge`
-call `Cloud.challenge_leaderboard.post_checkpoint` + `fetch_standings_at`
-instead of `Cloud.leaderboard.submit_and_fetch`, reusing the SAME `State`
-enum (`LOADING`/`SIGNED_OUT`/`NO_USERNAME`/`POSTED`/`UNAVAILABLE`) and
-`Leaderboard.display_rows` assembly — a `challenge_fetcher: Callable` test
-seam mirrors the existing `fetcher` one.
+**UI layer deleted (roguelike pivot, decision 30).** `GlobalStandings`
+(`global_standings.gd`) and its host `standings.gd`/`standings.tscn` are gone —
+along with `scripts/cloud/leaderboard.gd` (`Leaderboard`, the per-stage global
+board and `Cloud.leaderboard`) and the `stage_times` Firestore rules. The
+paragraph that used to describe `GlobalStandings`'s `is_challenge` routing
+path and its `Leaderboard.display_rows` reuse is removed with it — there is no
+longer a screen that posts to `Cloud.challenge_leaderboard` at all. The client
+half (`ChallengeLeaderboard`, `post_checkpoint` / `post_dnf` /
+`fetch_standings_at` / `fetch_final_rank`, described above) and the Firestore
+rules are untouched and still correct; they just have no caller until stage 3
+(`todo/roguelike-pivot-plan.md`) gives the challenge a new run-summary host.
 
 ## Stage-to-stage advancement (the between-stage interstitial)
 
-`world.gd` loads `standings.tscn` after EVERY stage of a challenge, exactly as it
-does after a career rally event (both are driven by the same `StageManager` /
-`TrackProgress`), so `standings.gd` serves both sessions.
+**The screen this section describes is deleted.** `standings.tscn` /
+`scripts/standings.gd` and `scripts/global_standings.gd` were removed in the
+roguelike pivot (decision 30, `todo/roguelike-pivot.md`) along with the global
+per-stage leaderboards they were built to host a page for. `world.gd` no
+longer loads them. The section below is kept as-is because everything it
+documents on the **`ChallengeSession` side** — `continue_to_next_stage()`,
+`current_stage_times_ms()` / `run_times_ms()`, `take_pending_repair()`, the
+`standings_ready` / `run_completed` signals, and the session-latching bug fix
+— is still live and still correct; only the UI that consumed it is gone. A
+challenge run currently has **no working between-stage screen at all** until
+stage 3 (`todo/roguelike-pivot-plan.md`) gives it one, built on the new
+`RunSession`/run-summary screen that replaces `podium.tscn` (decision 19) —
+read this section for what that replacement has to reproduce on the
+`ChallengeSession` side, not for what currently renders.
+
+`world.gd` used to load `standings.tscn` after EVERY stage of a challenge,
+exactly as it did after a career rally event (both are driven by the same
+`StageManager` / `TrackProgress`), so `standings.gd` served both sessions.
 
 - **`ChallengeSession.continue_to_next_stage()`** is the counterpart to
   `RallySession.continue_to_next_event()` and the interstitial's single exit when

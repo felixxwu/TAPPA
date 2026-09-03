@@ -432,81 +432,18 @@ func _run_up_to_the_final_stage() -> void:
 
 
 # --- Item 2: the FINAL stage's interstitial belongs to the CHALLENGE ------------
-
-# THE regression test for "a Daily's time never reaches Firestore". The final
-# stage used to call _finish_locally() (clearing _active) and only THEN emit
-# standings_ready, so the interstitial — and every session read it makes — fell
-# through to the idle career session. A Daily has exactly one stage, so its only
-# stage is also its final stage: the challenge branch was never taken, the board
-# opts described the career `stage_times` board with a blank stage_key, and
-# ChallengeLeaderboard.post_checkpoint (reachable ONLY from the is_challenge
-# branch) was never called on any run.
 #
-# Deliberately run against a DAILY — a multi-stage kind would mask this, because
-# its earlier stages post correctly.
-func test_the_final_stages_interstitial_resolves_against_the_challenge_not_the_career() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	var car := _grant()
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, car, t))
-	_run_up_to_the_final_stage()
-
-	var seen: Dictionary = {}
-	var order: Array = []
-	ChallengeSession.standings_ready.connect(func(_idx: int) -> void:
-		order.append("standings_ready")
-		seen["active"] = ChallengeSession.is_active()
-		seen["done"] = ChallengeSession.events_completed()
-		seen["total"] = ChallengeSession.stage_count()
-		seen["opts"] = GlobalStandings.for_current_stage(), CONNECT_ONE_SHOT)
-	ChallengeSession.run_finished.connect(func(_r: Dictionary) -> void:
-		order.append("run_finished"), CONNECT_ONE_SHOT)
-
-	ChallengeSession.report_event_result(45_000)
-
-	assert_eq(order, ["standings_ready", "run_finished"],
-		"the interstitial is announced BEFORE the run tears itself down, not after")
-	assert_eq(int(seen["done"]), int(seen["total"]),
-		"setup: the interstitial under test is the FINAL stage's")
-	assert_true(bool(seen["active"]),
-		"the challenge is still the active session while its interstitial is built")
-
-	var opts: Dictionary = seen["opts"]
-	assert_true(bool(opts["is_challenge"]),
-		"the final stage's board opts route to the CHALLENGE board — this is the call " \
-		+ "that reaches ChallengeLeaderboard.post_checkpoint at all")
-	assert_false(opts.has("stage_key"),
-		"and NOT to the career stage_times board (whose opts carry a stage_key)")
-	assert_ne(String(opts["period_key"]), "", "carrying a real period key, not a blank one")
-	assert_eq(String(opts["period_key"]), ChallengeSession.period_key(),
-		"the period key is this run's own")
-	assert_eq(int(opts["time_ms"]), ChallengeSession.cumulative_ms(),
-		"and the posted time is the run's cumulative time")
-
-
-# Page 2 of the interstitial is reached AFTER the player presses Continue, by
-# which time the run has ended for real. standings.gd latches the session at
-# construction and passes it in, so the board the final checkpoint posts to does
-# not change under the player mid-screen.
-func test_the_latched_mode_still_resolves_the_challenge_board_after_the_run_ended() -> void:
-	var t := int(Time.get_unix_time_from_system())
-	var car := _grant()
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, car, t))
-	var period_key := ChallengeSession.period_key()
-	_run_up_to_the_final_stage()
-	ChallengeSession.report_event_result(45_000)
-	assert_false(ChallengeSession.is_active(), "setup: the run has ended")
-
-	var latched := GlobalStandings.for_current_stage(true)
-	assert_true(bool(latched["is_challenge"]),
-		"a latched interstitial still resolves the challenge board once _active is false")
-	assert_eq(String(latched["period_key"]), period_key)
-	assert_eq(int(latched["time_ms"]), ChallengeSession.cumulative_ms())
-
-	# Without the latch this is what the page would have got instead.
-	var unlatched := GlobalStandings.for_current_stage()
-	assert_false(bool(unlatched["is_challenge"]),
-		"setup: re-asking is_active() here IS the bug — it lands on the career board")
-
+# REMOVED (roguelike pivot, decision 30, todo/roguelike-pivot.md): both tests that
+# lived in this section (`..._resolves_against_the_challenge_not_the_career` and
+# `..._latched_mode_still_resolves_...`) asserted through `GlobalStandings.
+# for_current_stage()`, which is deleted along with `global_standings.gd` /
+# `standings.gd`. Their subject — the `standings_ready`-before-`run_finished`
+# signal ORDER, and the session-latching fix (re-asking `is_active()` after the
+# run ends silently routes to the wrong board) — is still real ChallengeSession
+# behaviour and still worth guarding once stage 3 (todo/roguelike-pivot-plan.md)
+# gives the challenge run a new interstitial/run-summary host: re-derive
+# equivalent coverage against whatever replaces `GlobalStandings.for_current_stage`
+# then, rather than reintroducing this dependency now.
 
 # --- Item 5: the final stage repairs, like a career rally's last event ----------
 

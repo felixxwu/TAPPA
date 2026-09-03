@@ -1,12 +1,24 @@
 # Event replay (behind the standings screen)
 
+**Host screen deleted, capture/playback mechanism NOT deleted (roguelike
+pivot, decision 30, `todo/roguelike-pivot.md`).** `scripts/standings.gd` /
+`standings.tscn` — the "standings screen" this doc's title refers to, and the
+`overlay_mode` this fed the replay behind — is gone, along with its nav/overlay
+test `tests/headless/test_replay_standings.gd`. `ReplayRecorder`/`ReplayCamera`
+and `car.gd`'s `replay_playback` machinery are untouched; whether they get a
+new host, and what happens to `world.gd`'s `_present_standings_overlay` /
+`rally_session.gd`'s `standings_overlay_host` (both mid-demolition in this
+same wave — see `todo/roguelike-pivot-plan.md`), is undecided as of this
+change. Flagged here rather than fixed: this file's own scope is the replay
+mechanism, not the standings/rally-session demolition.
+
 **Sources:** `scripts/replay_recorder.gd` (`ReplayRecorder`), `scripts/replay_camera.gd`
 (`ReplayCamera`), `scripts/car.gd` (`replay_playback` / `begin_replay` / `end_replay` /
 `_step_replay`), `scripts/drivetrain.gd` (`replay_omega`), `scripts/world.gd`
-(`_present_standings_overlay` / `_on_leaderboard_hidden_changed`), `scripts/standings.gd`
-(`overlay_mode`), `scripts/rally_session.gd` (`standings_overlay_host`).
+(`_present_standings_overlay` / `_on_leaderboard_hidden_changed` — DANGLING, see
+above), `scripts/rally_session.gd` (`standings_overlay_host` — DANGLING, see above).
 
-**Tests:** `tests/headless/test_replay_recorder.gd`, `tests/headless/test_replay_playback.gd`, `tests/headless/test_replay_camera.gd`, `tests/headless/test_replay_standings.gd`
+**Tests:** `tests/headless/test_replay_recorder.gd`, `tests/headless/test_replay_playback.gd`, `tests/headless/test_replay_camera.gd`
 
 After each event, instead of cutting straight to a flat standings screen, the run world
 stays alive and the just-driven lap plays back as a short cinematic behind a

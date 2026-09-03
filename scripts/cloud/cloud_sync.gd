@@ -349,8 +349,8 @@ func apply_remote(remote: Dictionary, backup := false) -> Dictionary:
 
 # --- Firestore document encoding ---------------------------------------------
 # The value-level encoding (type tags, the integer-as-string trap) lives in
-# FirestoreCodec, shared with Leaderboard. What stays here is only the SHAPE of
-# the user document — which fields it has and what they mean.
+# FirestoreCodec, shared with ChallengeLeaderboard. What stays here is only the
+# SHAPE of the user document — which fields it has and what they mean.
 
 const DOC_FIELDS := ["profile", "schema_version", "revision", "updated_utc", "device"]
 

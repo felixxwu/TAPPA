@@ -10,9 +10,12 @@ rules_version = '2';
 // signed-in player can only ever write their own save and their own leaderboard
 // entries, and nothing else in the database is reachable at all.
 //
-// One collection — stage_times — is world-READABLE, because a signed-out player
-// has to be able to see a leaderboard. See the block below for why that is safe
-// and what it costs.
+// One collection — challenge_runs, the Daily/Weekly/Monthly Rally Challenge
+// leaderboard — is world-READABLE, because a signed-out player has to be able
+// to see the board. See the block below for why that is safe and what it costs.
+// (The global per-stage leaderboards that used to share this trust model —
+// stage_times — were dropped with the roguelike pivot's rival field; see
+// todo/roguelike-pivot.md decision 30.)
 //
 // Anonymous ("guest") accounts get a real uid, so they are covered by the same
 // rule with no special case.
@@ -30,53 +33,9 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Global per-stage leaderboards: one document per player per stage.
-    //
-    // THIS IS THE ONE WORLD-READABLE COLLECTION. A signed-out player must be
-    // able to see the board, so `allow read: if true` is deliberate — and it is
-    // what drives the document's shape. Everything in here is public forever to
-    // anyone holding the (public) project id, so a row carries a chosen display
-    // name and a car, and nothing else: no email, no profile data, no
-    // uid-derived identity. The uid appears only as the document id, which is
-    // already public in the same sense.
-    //
-    // hasOnly + hasAll together pin the document to exactly these five fields,
-    // so a client cannot smuggle extra data into a public collection. The 24h
-    // time cap is a shape guard against absurd values, not a balance figure.
-    // updated_utc is length-capped but its format is NOT validated — nothing
-    // branches on it, exactly as in the users document.
-    //
-    // `allow delete` is deliberately absent: a client cannot remove an entry,
-    // its own or anyone else's. The improvement-only clause on update is a
-    // BACKSTOP — the client already declines to write a slower time.
-    match /stage_times/{stage}/times/{uid} {
-      function validEntry() {
-        let d = request.resource.data;
-        return d.keys().hasOnly(['name', 'car_name', 'car_id', 'time_ms', 'updated_utc'])
-            && d.keys().hasAll(['name', 'car_name', 'car_id', 'time_ms', 'updated_utc'])
-            && d.time_ms is int    && d.time_ms > 0 && d.time_ms < 86400000
-            && d.name is string    && d.name.size() >= 1 && d.name.size() <= 16
-            && d.car_name is string && d.car_name.size() <= 40
-            && d.car_id is string   && d.car_id.size() <= 40
-            && d.updated_utc is string && d.updated_utc.size() <= 32;
-      }
-
-      allow read: if true;
-
-      allow create: if request.auth != null
-                    && request.auth.uid == uid
-                    && validEntry();
-
-      allow update: if request.auth != null
-                    && request.auth.uid == uid
-                    && validEntry()
-                    && request.resource.data.time_ms < resource.data.time_ms;
-    }
-
     // Daily / Weekly / Monthly Rally Challenge leaderboard: one document per
-    // player per period, mirroring stage_times's trust model one level
-    // deeper. World-readable, owner-only write, updated after every stage
-    // (not just at the end) — see docs/superpowers/specs/
+    // player per period, world-readable and owner-only write, updated after
+    // every stage (not just at the end) — see docs/superpowers/specs/
     // 2026-07-31-rally-challenge-design.md section 5 for the full rationale.
     //
     // Each cum_ms_N field is write-once (a stage's checkpoint, once posted,

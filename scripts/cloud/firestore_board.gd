@@ -1,19 +1,22 @@
 class_name FirestoreBoard
 extends Node
-# Docs: features/global-leaderboards.md — update in the same change as this file.
-# Tests: tests/headless/test_cloud_leaderboard.gd — extend in the same change.
-# Shared Firestore plumbing for the two world leaderboards (Leaderboard —
-# stage_times/{stage_key}/times/{uid} — and ChallengeLeaderboard —
-# challenge_runs/{period_key}/entries/{uid}). Extracted because both boards
-# had near-identical copies of: building the documents root/entry path,
-# deciding signed-in-ness, classifying a failed response, pulling a uid out of
-# a Firestore document path, running a top-N `runQuery`, and unwrapping a
-# `runAggregationQuery` COUNT response.
+# Docs: features/rally-challenge.md — update in the same change as this file.
+# Tests: tests/headless/test_challenge_leaderboard.gd — extend in the same change.
+# Shared Firestore plumbing for a world leaderboard: ChallengeLeaderboard —
+# challenge_runs/{period_key}/entries/{uid} — is the only board built on this
+# base today. It was extracted while a second board (Leaderboard, the global
+# per-stage board at stage_times/{stage_key}/times/{uid}) shared near-identical
+# copies of: building the documents root/entry path, deciding signed-in-ness,
+# classifying a failed response, pulling a uid out of a Firestore document
+# path, running a top-N `runQuery`, and unwrapping a `runAggregationQuery`
+# COUNT response. `Leaderboard` was deleted in the roguelike pivot (decision
+# 30, todo/roguelike-pivot.md) along with the global per-stage boards it
+# served; this base class stayed rather than being folded back into
+# ChallengeLeaderboard, since it is still the right shape for any future board.
 #
 # What is deliberately NOT here, because it genuinely differs between boards:
-# `_read_own` (return shapes differ — one row per time, one row per
-# checkpoint set), `_row_from_document` (row shape differs), `_unavailable`
-# (payload shape differs), all POST_* semantics, and every write path. A wrong
+# `_read_own` (return shape), `_row_from_document` (row shape), `_unavailable`
+# (payload shape), all POST_* semantics, and every write path. A wrong
 # unification of any of those would silently corrupt another player's data,
 # so each board keeps its own.
 #

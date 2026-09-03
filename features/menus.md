@@ -7,6 +7,14 @@
 > run) on `MenuPage` + `MenuNav.attach`; this doc is rewritten then. What below is still
 > TRUE: the `Scenes` routing seam, `MenuPage`/`MenuNav`, `PauseMenu`, the modals, and
 > `RallyDetail` — everything naming `HqController` or an `hq_*.gd` script is not.
+>
+> **ALSO DELETED, same wave:** `podium.tscn`/`scripts/podium.gd` and
+> `standings.tscn`/`scripts/standings.gd`/`scripts/global_standings.gd` (decisions
+> 19 and 30) — see their sections below, which are rewritten in place rather than
+> just flagged. Every OTHER mention of "podium" or "standings" elsewhere in this
+> file (the loop diagram, the Sources list, the Deferred/Tests sections) is now
+> equally stale and NOT individually fixed here — this file's full rewrite is
+> stage 3/9 work, not a demolition-wave patch.
 
 **Sources:** `hq.tscn` + `scripts/hq.gd` (`class_name HqController`), the 2D
 overlay/menu-layer builders in `scripts/hq_overlays.gd` (`class_name HqOverlays` —
@@ -280,89 +288,17 @@ stops the player pausing *during* the awaited generation window (loading overlay
 opening the menu then would freeze the tree mid-build and allow quit/resume into a
 half-built world. Covered by `tests/headless/test_pause_menu.gd`.
 
-## Podium (`podium.gd`)
+## Podium — DELETED
 
-A **3D reward sequence** (the scene root is a `Node3D`), stepped through with a
-single **Next** button, reading `RallySession.last_result()`. The stages present
-depend on the result (`_compute_stages`): the first two always show; the reveals
-only when something was won.
-
-1. **PODIUM** — the **top-3 finishers' cars stand on a 3D podium** (1st centred +
-   tallest, 2nd/3rd to the sides). The cars are spawned above their steps and drop
-   in live so they **settle onto their suspension** (then freeze the settled pose,
-   like the HQ car park), reading the `car_id` now carried on each standings entry.
-   The headline result (rally, placement + time, or DNF; top-3 → `RALLY WON!`) sits
-   over it. The camera (`_podium_cam`) sits **low and close, looking up** at the cars
-   from just off head-on, and **always frames the player's car** — whichever step
-   they finished on, not just the centre P1 step (tracked as `_player_car` when the
-   player is in the top 3; falls back to the podium centre otherwise).
-2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
-   position, name + car, time / `WRECKED`, the player's row tinted + marked.
-3. **STARS** — the reward beat, and it **always runs, even on a DNF**: three dim stars is
-   honest feedback about the miss, where hiding the beat would read as a missing screen
-   rather than a result. Three **big** stars (the same `StarRow` widget as the map pins and
-   the rally detail, just scaled up — `podium.STAR_BEAT_RADIUS`/`_GAP`) fill in gold one at
-   a time (`_reveal_stars`, gated by `_reveal_gen`, instant under headless) up to the
-   rally's rating — what the player's BEST-EVER placement here is worth
-   (`RallyLibrary.stars_for_placement`, still the single definition of a placement's
-   worth). The caption (`podium._stars_caption`) reports the **ledger delta**, not the
-   rating: `"+2 stars — 7 in the bank"`, or on a re-win that didn't improve
-   `"No new stars — your best here is already N"` (lighting gold stars while the balance
-   didn't budge would look like a bug). It always ends on the **spendable balance** and
-   **never** an "x of N" denominator — see [star-economy.md](star-economy.md).
-4. **SPECIAL_UNLOCK** (only if `special_unlock != {}`, i.e. the FIRST top-3 win of a
-   special that gates a part) — a milestone card naming the upgrade the
-   special just opened, and whether it was fitted to the car that earned it. Deliberately
-   **not** the slot-machine reel the other two reveals use: a reel implies a random draw and
-   this outcome is fixed by which special was won. **Inverted** (light face, dark ink, drop
-   shadow cleared — same house-rule-4 exception as a special's map pin), so a milestone does
-   not read as another routine reward card. No spin, so it is instantly steppable and
-   headless needs no special case. The panel's stylebox and text colour are reset in
-   `_enter_stage`, or the following CAR_REVEAL would inherit the inverted look.
-   See [reward-system.md](reward-system.md) → Special-event unlock.
-5. **CAR_REVEAL** — **retired.** A won car is now revealed at HQ, in the present box the
-   player has to open (`hq.gd::_enter_present_box`, handed over by
-   `RallySession.pending_car_reveal_instance_id`). The podium stage put the game's biggest
-   moment on the results screen, away from the garage the car arrives in, and over in a
-   moment. The box puts the reveal where the car is, and makes the player perform it —
-   Back is hidden and the Back ACTION is refused until the lid is off, so it cannot be
-   skipped past. The enum member and its showroom/slot helpers remain in `podium.gd` but
-   are no longer reachable: `_compute_stages` never appends the stage.
-
-**No upgrade is revealed on the podium** — parts are unlocked by winning the prize
-rally that carries them, not handed out per event (see
-[reward-system.md](reward-system.md)); the podium
-closes on the **stars** beat (or the special-unlock card after it).
-
-During the car reveal the overlay's content stack drops to the **bottom of the
-screen** (`_middle.alignment = ALIGNMENT_END`) so the slot card clears the
-camera's view of the revealed car; the podium + leaderboard stay centred.
-
-The **Next button is hidden during a slot spin** and only reappears once it locks
-on (`_reveal_done`). The final Next returns to HQ, setting
-`RallySession.return_to_garage` so HQ opens on the **garage** view. Slot durations /
-drop height / settle time / turntable speed are `GameConfig` tunables
-(`podium_*`). Headless runs build synchronously and resolve the spins instantly so
-tests can step the stages.
-
-**Environment & scenery.** The floor is **grass with two feathered tarmac pads**
-(one under the podium, one under the showroom) — built as a subdivided mesh whose
-per-vertex `COLOR.a`/`UV2.x` drive `shaders/ps1_models.gdshader`, the **same
-grass↔tarmac crossfade the generated road uses**, so each pad feathers softly into
-the grass. Its triangles are **wound front-face-up** — that shader culls back
-faces, so a downward-wound floor draws nothing when viewed from above. Both focal areas are dressed with **trees, bushes and a standing
-crowd** (`_build_scenery`): the same billboard trees (`textures/tree.png`),
-`groundcover_opaque.glb` bushes and `spectator.glb` crowd the world uses, routed
-through `Foliage` / placed as plain decorative `MultiMesh`es (seeded, no
-collision, no steering AI — the
-spectators just face the podium / showroom). Scenery is **skipped under headless**
-(pure dressing; keeps the test budget). Counts / ring radii / pad size + feather
-are `podium_*` `GameConfig` tunables.
-
-`last_result` carries `rally_name`, `standings` (each entry with `car_id`),
-`upgrades` (the part ids this rally's win unlocked, if any), `car_reward`, `car_reward_is_new`, and
-`game_won` (renamed from `showdown_won`; see [rally-session.md](rally-session.md))
-alongside the original `placed`/`completed`/`combined_ms`/`dnf`.
+`podium.tscn` / `scripts/podium.gd` (the 3D reward sequence — podium stand,
+leaderboard, stars beat, special-unlock card — this section used to document
+in full) are deleted, roguelike pivot decision 19, `todo/roguelike-pivot.md`:
+"A run ends on a run-summary screen, replacing `podium.tscn`." Placement,
+stars and the prize-rally upgrade draw it presented are gone with it (decisions
+5 and 21 — see [reward-system.md](reward-system.md) and
+[star-economy.md](star-economy.md), both themselves mid-demolition in this
+same wave). The run-summary screen that replaces this one is stage 3 work
+(`todo/roguelike-pivot-plan.md`).
 
 ## Start line (location 2)
 
@@ -370,75 +306,24 @@ The pre-event **start-line scene** — the diegetic **briefing** panel (rally, e
 N/3, restriction, fielded car + HP bar) and the **pre-launch presence** cars — is
 built inside the run scene before the countdown; the player launches it into the
 `StageManager` countdown. See [start-line.md](start-line.md). The in-run **Pause**
-menu is covered above (`pause_menu.gd`); the between-event **standings**
-(`standings.tscn`) interstitial is covered next.
+menu is covered above (`pause_menu.gd`); the between-event standings
+interstitial it used to hand off to is deleted — see next section.
 
-## Standings interstitial (`standings.gd`)
+## Standings interstitial — DELETED
 
-Shown after **every** event (`RallySession.report_event_result` always enters
-`Phase.STANDINGS`), not just the ones before a next event. For any event after the
-first it stacks **two leaderboards on ONE page**. There is deliberately **no screen
-title or rally-name line** — the section headings already say what each list is, and
-those two lines cost enough height to push the second leaderboard below the fold on a
-phone. Both lists are built by the same `UITheme.standings_row`
-renderer (the row's `combined_ms` field carries the stage time in the first section,
-the cumulative time in the second), each behind a dim section heading added by
-`_add_section`:
+`scripts/standings.gd` / `standings.tscn` (the between-event two-leaderboard
+page this section used to document, stacking "STAGE n RESULT" over "OVERALL")
+and its overlay use behind the event-replay cinematic are deleted — roguelike
+pivot decision 30, `todo/roguelike-pivot.md`. Rivals are gone (decision 5), so
+there is no field left to rank on either page, and `RallyLibrary.build_standings`
+(the field-standings computation both pages read) is deleted with `RallySession`.
+Its replacement, a single run-summary screen, is stage 3 work
+(`todo/roguelike-pivot-plan.md`) — decision 19.
 
-1. **"STAGE n RESULT"** — that one event's finishing times, ranked via
-   `RallySession.current_event_standings()`. A rival who DNF'd just that event sinks
-   to the bottom of this section (they may still be alive overall).
-2. **"OVERALL — stages 1 + 2"** — the cumulative leaderboard via
-   `RallySession.current_standings()`. The heading spells out exactly which stages
-   are summed, built by the pure `Standings.overall_heading(done)`: "OVERALL — stage 1
-   only" after stage 1, then "OVERALL — stages 1 + 2", "OVERALL — stages 1 + 2 + 3".
-
-Each section is **trimmed to the top `Standings.PODIUM_ROWS` (3)** so both fit on one
-screen. When the player finished outside that, their own row is appended at the
-bottom — with a dim `...` marker between when the two aren't adjacent — so they can
-always see where they came. The pure `Standings.visible_rows(rows, top)` does that
-selection and is unit-tested directly (it returns `{"gap": true}` for the marker).
-
-The action row is an **`HBoxContainer`** — in overlay mode **Watch Replay sits left
-and the forward action right**, each `SIZE_EXPAND_FILL` — rather than two stacked
-full-width buttons, for the same vertical-space reason. Geometry gives `MenuNav`
-left/right between them for free (`find_valid_focus_neighbor`).
-
-BOTH sections show on **every** stage, including the first — where the two lists are
-necessarily identical (one stage's time IS the combined time). The duplication is
-deliberate: the screen keeps the same shape from stage 1 to stage 3 rather than
-changing layout under the player, and the "stage 1 only" heading is what stops the
-repeated list reading as a bug. Every stage — including
-the **final** one — then has a single action button reading **"Continue to next
-stage >"** which calls `continue_to_next_event()`. On a middling event that loads the next event;
-on the final event `continue_to_next_event()` instead resolves the rally
-(`_resolve_results` → `PODIUM`, `rally_finished`), and the scene (connected to
-`RallySession.rally_finished` in non-overlay mode) then changes to `podium.tscn` itself
-— the finished rally's full leaderboard lives on the podium's LEADERBOARD stage.
-
-**Overlay mode** (`overlay_mode := false`, set by the host BEFORE `_ready`): `world.gd`
-hosts this scene over the in-world **event-replay** cinematic instead of as a flat
-interstitial — see [event-replay.md](event-replay.md) for the recorder/camera/car
-playback this sits on top of, and [rally-session.md](rally-session.md) for how
-`RallySession.standings_overlay_host` routes the scene here instead of a scene swap. In
-overlay mode: the `Background`
-`ColorRect` is transparent (alpha 0) instead of opaque `UITheme.BLACK`, so the replay
-shows through; `_ready` does NOT connect `RallySession.rally_finished` (the live host
-owns the rally-finished -> podium transition, not the overlay); and a
-**Hide/Show leaderboard** toggle (`toggle_leaderboard()`,
-`leaderboard_hidden_changed(hidden)` signal, `leaderboard_hidden` var) lets the player
-watch the replay full-screen — hidden state rebuilds with ONLY a "Show leaderboard >"
-button, still `FOCUS_ALL` and re-seated via `MenuNav.attach` with `first = show_btn` and
-`on_back = toggle_leaderboard` (so Esc/gamepad B also re-shows it, mirroring the
-attach-without-on_back convention elsewhere in this file — here `on_back` IS wired
-because showing the leaderboard again is the natural "back" action from the hidden
-state); shown state adds a "Hide leaderboard" button next to Continue, and the row of
-buttons (Continue + Hide leaderboard) stays reachable the same way the non-overlay
-button is — both states are fully keyboard/gamepad focusable, never mouse-only. The
-host (`world._on_leaderboard_hidden_changed`) listens
-for `leaderboard_hidden_changed` to mute/unmute the car's engine audio while the
-leaderboard is shown vs. hidden. Non-overlay mode is unchanged (opaque bg, owns the
-podium transition, no hide/show button).
+The **event-replay overlay mechanism itself is not deleted** (`ReplayRecorder`
+/ `ReplayCamera` / `car.gd`'s `replay_playback`) — see
+[event-replay.md](event-replay.md) — only the flat page it used to render
+behind. What re-hosts it, if anything, is undecided as of this change.
 
 ## Deferred (rest of the diegetic 3D build)
 

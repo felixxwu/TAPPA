@@ -9,9 +9,10 @@ extends RefCounted
 # stayed consistent only by accident (nothing scaled them), and any change to one
 # would silently drift from the others.
 #
-# The three DECORATIVE crowds — the podium (podium.gd), the HQ clearing
-# (hq_environment.gd), and the wreck onlookers (world.gd) — build a static crowd
-# via multimesh_instance(). The live, car-reactive stage crowd (SpectatorGroup)
+# DECORATIVE crowds build a static crowd via multimesh_instance() — currently
+# just the wreck onlookers (world.gd); the podium (podium.gd) and HQ clearing
+# (hq_environment.gd) call sites this used to also serve are both deleted
+# (roguelike pivot). The live, car-reactive stage crowd (SpectatorGroup)
 # owns its own dynamic MultiMesh (rewritten each frame) and uses the mesh for
 # ragdolls too, so it isn't a static-crowd caller — but it still pulls the mesh +
 # foot offset through mesh() / foot_offset() so the figure can't drift either.
