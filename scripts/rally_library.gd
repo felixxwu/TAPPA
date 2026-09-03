@@ -1,6 +1,6 @@
 class_name RallyLibrary
 extends RefCounted
-# Docs: features/map-exploration.md, features/regions.md — update in the same change as this file.
+# Docs: features/regions.md — update in the same change as this file.
 # Tests: tests/headless/rally_fixtures.gd, tests/headless/test_menu_nav.gd, tests/headless/test_rally_library.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RallyLibrary' tests/headless/` and read the assertions that pin what you are about to change (7 test files touch this script).
 # The finite, curated list of rallies — authored CONTENT (like CarLibrary), not
 # player state. A rally is a fixed set of 3 seeded TrackGenerator tracks plus a

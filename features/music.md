@@ -66,14 +66,15 @@ current HQ loop finishes and the rally song comes in beat-aligned (and vice-vers
 on return). The `MusicDirector` autoload persists across scene changes, so
 playback is continuous throughout.
 
-**The hub-scene predicate.** The hub test is `MusicLibrary.is_hq_scene`, which now
+**The hub-scene predicate.** The hub test is `MusicLibrary.is_hq_scene`, which
 delegates to `Scenes.is_hub_scene` (`scripts/scenes.gd`) rather than comparing
-against a single literal. It is true for `Scenes.HQ` (`hq.tscn`) **and** for
-`Scenes.OVERWORLD` (`overworld.tscn`, the dev-gated second hub) — because the
-selection is by live scene path, a path-equality test against `hq.tscn` alone
-would have made the overworld a "rally" context and played a rally song as its
-hub theme. `MusicLibrary.HQ_SCENE` remains as an alias of `Scenes.HQ` so there is
-one source of truth for the path. See
+against a literal of its own. Selection is by LIVE SCENE PATH, so a hardcoded
+path here would silently make the hub a "rally" context — playing a stage song as
+the hub theme — the first time the hub shell was swapped. It was swapped: the
+roguelike pivot deleted `hq.tscn` and `overworld.tscn` and `Scenes.HUB` now names
+the replacement shell, with nothing in this file to change.
+`MusicLibrary.HQ_SCENE` remains as an alias of `Scenes.HUB` so there is one
+source of truth for the path. See
 [architecture.md](architecture.md) → "Scene routing (`Scenes`)".
 
 ### Random HQ song and rally song (per visit / per event)

@@ -1,5 +1,13 @@
 # Menus & game-loop shell
 
+> **STALE — the diegetic 3D hub described below was DELETED.** Stage 2b of the
+> roguelike pivot ([../todo/roguelike-pivot-plan.md](../todo/roguelike-pivot-plan.md))
+> removed `hq.tscn`, `overworld.tscn` and their 29 collaborator scripts. `res://hub.tscn`
+> is a bare placeholder Control until stage 3 builds the flat shell (title → car select →
+> run) on `MenuPage` + `MenuNav.attach`; this doc is rewritten then. What below is still
+> TRUE: the `Scenes` routing seam, `MenuPage`/`MenuNav`, `PauseMenu`, the modals, and
+> `RallyDetail` — everything naming `HqController` or an `hq_*.gd` script is not.
+
 **Sources:** `hq.tscn` + `scripts/hq.gd` (`class_name HqController`), the 2D
 overlay/menu-layer builders in `scripts/hq_overlays.gd` (`class_name HqOverlays` —
 the `build_*_overlay()` methods, split out of `hq.gd` to shrink it; each holds a
@@ -15,7 +23,7 @@ of `hq.gd::_unhandled_input`), the present-box car reveal in `scripts/hq_present
 described below — the shared **rally-detail panel** in `scripts/rally_detail.gd` (`class_name
 RallyDetail`, hosted by either hub rather than holding a back-reference), the hub-scene
 routing seam in `scripts/scenes.gd` (`class_name Scenes` — `hub_path()` / `is_hub_scene()`,
-plus the plain path consts `HQ`/`OVERWORLD`/`MAIN`/`PODIUM`/`STANDINGS`/`CAR` and the
+plus the plain path consts `HUB`/`MAIN`/`PODIUM`/`STANDINGS`/`CAR` and the
 `car_scene()` cached-load accessor — the ONE place "res://car.tscn" is spelled in
 production code, the same seam as the other scene paths; `preload(Scenes.CAR)` does not
 compile in GDScript 4.6 (preload needs a literal string constant), which is why the three
@@ -256,7 +264,7 @@ accept (`quit_to_hq`), unfreezes and calls `RallySession.abandon()` — the rall
 left **incomplete with no retry penalty** (damage persisted, no reward); `abandon`
 emits `rally_finished` which `world.gd` routes **straight back to HQ** (the garage
 view) instead of the podium. (With no active session — a plain dev boot of
-`main.tscn` — it just loads `hq.tscn` directly.) `ui_cancel` (Esc / gamepad B)
+`main.tscn` — it just loads `Scenes.hub_path()` directly.) `ui_cancel` (Esc / gamepad B)
 toggles the menu and backs out of Settings first; the gamepad **Start** button
 (`pause` action) also opens it (open-only — it does not double as a menu "back"). A camera pick applies
 **immediately** to the live `CameraManager` (wired via the `SettingsMenu.camera_changed`

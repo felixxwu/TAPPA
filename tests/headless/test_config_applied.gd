@@ -331,15 +331,3 @@ func test_wreck_chance_of_zero_and_one_are_honoured() -> void:
 	assert_eq(wrecked, events.size(),
 		"at a chance of 1 exactly one rival wrecks per event")
 	_restore(previous)
-
-
-func test_reach_margin_grows_with_the_configured_fog_hard_margin() -> void:
-	# The precompute's safety margin is "everywhere the fog push permits, plus the streaming
-	# ring". The first term is the config field, so a bigger hard margin must bake more ground.
-	var previous := _override({"overworld_fog_hard_margin_m": 100.0})
-	var near := Overworld.reach_margin_map(1000.0, 4)
-	_override({"overworld_fog_hard_margin_m": 600.0})
-	var far := Overworld.reach_margin_map(1000.0, 4)
-	assert_almost_eq(far - near, 0.5, 0.0001,
-		"the margin carries the hard margin through in normalised map units (500 m / 1000 m)")
-	_restore(previous)

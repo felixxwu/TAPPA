@@ -1,7 +1,7 @@
 extends GutTest
 # Guards the single-source-of-truth seam for the car scene path: `Scenes.CAR`
 # (scripts/scenes.gd) is meant to be the ONE place that spells "res://car.tscn" in
-# production code, the same way Scenes.HQ/OVERWORLD/MAIN/PODIUM/STANDINGS are the
+# production code, the same way Scenes.HUB/MAIN/PODIUM/STANDINGS are the
 # one place for the other scene paths. It used to be hardcoded at seven sites under
 # three different local names (CAR_SCENE / CAR_SCENE_PATH / WRECK_CAR_SCENE) — this
 # is a source-scan lint (same style as test_features_docs.gd) so a future hardcode

@@ -8,7 +8,7 @@ concrete floor, tool chests along the back wall, a workbench, a pegboard and a
 tyre stack — while the **bay centres are kept clear** so the game can stage its
 own contents there. The model carries **no team branding**.
 
-**Tests:** `tests/headless/test_garage.gd`, `tests/headless/test_overworld_garage.gd`
+**Tests:** `tests/headless/test_garage.gd`
 
 It has **two hosts**:
 

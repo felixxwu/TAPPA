@@ -5,7 +5,7 @@ extends GutHookScript
 # at user://profile.json with a blank default carrying synthetic fixture cars
 # (fx_light_rwd). Any test that mutates the Save autoload without first pointing
 # Save.profile_path somewhere throwaway writes the REAL file — and there are dozens
-# of tests that instantiate main.tscn / hq.tscn / overworld.tscn, any of which can
+# of tests that instantiate main.tscn or the hub shell (Scenes.hub_path), either of which can
 # save from inside the scene's own lifecycle rather than from the test body. Relying
 # on every one of those files to remember the redirect is how the data loss happened.
 #

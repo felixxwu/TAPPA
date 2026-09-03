@@ -306,22 +306,21 @@ func test_floor_is_terrain_manager() -> void:
 	assert_gt(floor_node.loaded_coords().size(), 0, "chunks loaded around the car at boot")
 
 
-func test_overworld_scene_loads_with_its_structure() -> void:
-	# The overworld hub (features/terrain.md -> "Open-world mode") is the second hub scene,
-	# so it gets the same structural check main.tscn does. CHEAP mode is mandatory here:
-	# the full path generates a life-size world and would blow the suite's time budget.
-	var prev_mode: int = Overworld.load_mode
-	Overworld.load_mode = Overworld.LoadMode.CHEAP
-	var ow: Node3D = load("res://overworld.tscn").instantiate()
-	add_child_autofree(ow)
-	for node_name in ["Floor", "Car", "WorldEnvironment", "CameraManager", "PauseMenu"]:
-		assert_not_null(ow.get_node_or_null(node_name),
-			"overworld.tscn carries its %s node" % node_name)
-	assert_true(ow.get_node("Floor").has_method("height_at"),
-		"the overworld Floor is a TerrainManager")
-	assert_eq(ow.get_node("Car").scene_file_path, "res://car.tscn",
-		"the overworld instances the shared car scene")
-	Overworld.load_mode = prev_mode
+func test_the_main_scene_is_the_hub_and_it_loads() -> void:
+	# The one thing that broke when the diegetic hub was deleted: project.godot still
+	# named `res://hq.tscn`, so the GAME would not boot at all while every test stayed
+	# green (nothing instantiates the main scene by its project setting). This closes
+	# that hole from both ends — the setting must name whatever `Scenes.hub_path()`
+	# routes "back to the hub" to, and that scene must actually load.
+	#
+	# Deliberately no assertion about the hub's CONTENTS: it is a placeholder Control
+	# until stage 3 of the roguelike pivot builds the flat shell, and pinning the
+	# placeholder's widgets would just have to be deleted again.
+	var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
+	assert_eq(main_scene, Scenes.hub_path(),
+		"project.godot's run/main_scene must be the same scene every 'back to the hub' "
+		+ "transition routes to — two spellings of the hub is how the boot broke")
+	assert_not_null(load(main_scene) as PackedScene, "%s loads as a scene" % main_scene)
 
 
 func test_shaders_load_with_code() -> void:

@@ -45,8 +45,6 @@ extends GutTest
 # script path rather than node name so a scene rename can't quietly disarm the guard.
 const GAME_SCENE_SCRIPTS := [
 	"res://scripts/world.gd",     # main.tscn
-	"res://scripts/hq.gd",        # hq.tscn
-	"res://scripts/overworld.gd", # overworld.tscn
 	"res://scripts/podium.gd",    # podium.tscn
 	"res://scripts/standings.gd", # standings.tscn
 ]

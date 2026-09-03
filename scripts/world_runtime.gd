@@ -1,6 +1,6 @@
 class_name WorldRuntime
 extends RefCounted
-# Docs: features/loading.md, features/rendering.md, features/snow-region.md, features/overworld.md
+# Docs: features/loading.md, features/rendering.md, features/snow-region.md
 # — update in the same change as this file.
 # Tests: tests/headless/test_world_runtime.gd, tests/headless/test_world_fps_cap.gd.
 #

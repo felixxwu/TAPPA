@@ -92,11 +92,11 @@ const SONGS: Array[Dictionary] = [
 # MusicDirector at every loading screen (see MusicDirector._update_loading_edge)
 # and held for the whole HQ visit / event respectively. The swap latches at the
 # next 8-bar handoff, so it always lands beat-aligned.
-# The hub scene path. Kept as an alias of the single source of truth (`Scenes.HQ`)
+# The hub scene path. Kept as an alias of the single source of truth (`Scenes.HUB`)
 # rather than a second literal. NOTE the context test is `is_hq_scene()`, which
-# accepts EITHER hub (see Scenes.is_hub_scene) — the overworld hub must not be
-# treated as a rally context, or it would play a rally song as its hub theme.
-const HQ_SCENE := Scenes.HQ
+# delegates to `Scenes.is_hub_scene` — a hub shell must never be treated as a rally
+# context, or it would play a rally song as its hub theme.
+const HQ_SCENE := Scenes.HUB
 # The pool the HQ context draws from. Any of these is a valid HQ song; the
 # director picks one per HQ visit. Order is not significant.
 const HQ_SONGS: Array[String] = ["echo_chamber", "skillz"]
@@ -157,10 +157,10 @@ static func segment_count(id: String) -> int:
 	return (song["segment_paths"] as Array).size() if not song.is_empty() else 0
 
 
-# True when the given scene is a HUB (the one context with a fixed song) — the
-# shipped HQ or the overworld hub. Every other scene is a "rally" context that
-# plays a randomly-chosen RALLY_SONGS entry. Delegates to `Scenes.is_hub_scene`
-# so the hub set is defined once, not once per consumer.
+# True when the given scene is a HUB (the one context with a fixed song). Every
+# other scene is a "rally" context that plays a randomly-chosen RALLY_SONGS entry.
+# Delegates to `Scenes.is_hub_scene` so the hub set is defined once, not once per
+# consumer.
 static func is_hq_scene(scene_path: String) -> bool:
 	return Scenes.is_hub_scene(scene_path)
 

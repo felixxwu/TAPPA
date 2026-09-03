@@ -114,7 +114,6 @@ const DOC_LINE_CAP := 1200
 #   * a doc listed that has fallen under the cap must be REMOVED from the list.
 # Do not add to this list. If you are here because a doc failed, split it.
 const OVERSIZED_BASELINE := {
-	"overworld.md": 1817,
 	"terrain.md": 1310,
 }
 

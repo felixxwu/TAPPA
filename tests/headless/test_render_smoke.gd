@@ -121,31 +121,6 @@ func test_post_process_shader_wired() -> void:
 		"post-process subviewport shares the main World3D")
 
 
-func test_hq_hosts_the_same_post_process_pass() -> void:
-	# The HQ hub gets the identical PS1 pass as the stage, so the colour grade covers
-	# the whole game's 3D rather than stopping at the garage door.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	var container := hq.get_node_or_null("PostProcess") as SubViewportContainer
-	assert_not_null(container, "HQ has a post-process SubViewportContainer")
-	if container == null:
-		return
-	_assert_shader_material(container.material, "HQ post-process SubViewportContainer")
-	var view := container.get_node("View") as SubViewport
-	assert_eq(view.find_world_3d(), container.get_viewport().find_world_3d(),
-		"HQ post-process subviewport shares the HQ World3D")
-	# The container must not swallow mouse events: the HQ's table / lift / pin
-	# stations are Area3D picked through the ROOT viewport.
-	assert_eq(container.mouse_filter, Control.MOUSE_FILTER_IGNORE,
-		"HQ post-process container ignores the mouse so 3D picking still reaches the stations")
-	# Grade values must actually be pushed, not left on the shader defaults.
-	var cfg: GameConfig = Config.data
-	var mat := container.material as ShaderMaterial
-	assert_eq(mat.get_shader_parameter("grade_saturation"), cfg.grade_saturation,
-		"HQ grade pushed from config")
-
-
 func test_post_process_mirror_camera_syncs() -> void:
 	var src := _scene.get_viewport().get_camera_3d()
 	assert_not_null(src, "an active gameplay camera exists")

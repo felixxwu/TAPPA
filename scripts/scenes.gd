@@ -4,24 +4,26 @@ extends RefCounted
 # Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Scenes' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # The canonical scene paths, and the ONE place that decides which scene is "the hub".
 #
-# WHY THIS SEAM EXISTS. `hq.tscn` is both the project's main scene and the
+# WHY THIS SEAM EXISTS. The hub scene is both the project's main scene and the
 # "back to the hub" destination, and that path used to be hardcoded at SEVEN
 # transition sites (podium finish, two pause-menu quits, the benchmark end, and
 # three in world.gd: free-roam/no-session finish, abandoned rally, challenge run
-# end). The overworld hub (see docs/superpowers/specs/2026-08-17-overworld-hq-design.md)
-# is a SECOND hub selected by `GameConfig.overworld_enabled`, so every one of
-# those transitions must honour the flag — a single missed site sends the player
-# to the wrong hub. Routing them all through `hub_path()` makes that impossible
-# to get wrong, and gives tests one helper to compare against instead of a
-# literal.
+# end). Routing them all through `hub_path()` means a new hub shell is swapped in
+# at ONE line, and gives tests one helper to compare against instead of a literal.
+# That is exactly what the roguelike pivot needed: `hq.tscn` and `overworld.tscn`
+# were both deleted in stage 2b (todo/roguelike-pivot-plan.md) and only this file
+# had to learn the replacement.
 #
 # `is_hub_scene()` exists for the non-transition coupling: MusicDirector picks
 # hub-vs-rally music from the LIVE SCENE PATH (see music_library.gd
-# `is_hq_scene`), so the predicate has to accept either hub or the overworld
-# would silently play a rally song as its hub theme.
+# `is_hq_scene`), so the predicate has to agree with `hub_path()` or the hub would
+# silently play a rally song as its theme. There is one hub again today, so the
+# two collapse to the same constant — keep them as separate functions anyway:
+# the pivot may reintroduce a second shell, and the callers are already routed.
 
-const HQ := "res://hq.tscn"
-const OVERWORLD := "res://overworld.tscn"
+# The hub shell. A PLACEHOLDER today (hub.tscn is a Control and a label) — stage 3
+# of the pivot replaces the file, not this constant.
+const HUB := "res://hub.tscn"
 const MAIN := "res://main.tscn"
 const PODIUM := "res://podium.tscn"
 const STANDINGS := "res://standings.tscn"
@@ -29,7 +31,7 @@ const STANDINGS := "res://standings.tscn"
 # display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd,
 # bake_car_silhouettes.gd). Used to be "res://car.tscn" hardcoded at seven sites
 # under three different local names (CAR_SCENE / CAR_SCENE_PATH / WRECK_CAR_SCENE);
-# this is now the one definition, same as HQ/OVERWORLD/MAIN above.
+# this is now the one definition, same as HUB/MAIN above.
 const CAR := "res://car.tscn"
 
 # Cached PackedScene for CAR, loaded on first use. `preload()` needs a literal
@@ -48,31 +50,16 @@ static func car_scene() -> PackedScene:
 	return _car_scene
 
 
-# The scene to load for "return to the hub". OVERWORLD only when the dev flag is
-# on; otherwise the shipped HQ, so behaviour with the flag off is unchanged.
+# The scene to load for "return to the hub". One shell today; the indirection is
+# what let the hub be swapped out without touching the six transition sites.
 static func hub_path() -> String:
-	# NEVER the overworld under --headless, whatever the flag says.
-	#
-	# `overworld_enabled` is a DEV switch a developer leaves on for days, and the test suite reads
-	# the same authored config. With it on, every "return to the hub" transition in a test loaded
-	# overworld.tscn FOR REAL — which left an `Overworld` under /root, leaked its terrain into the
-	# shared physics space, and broke car-settling in unrelated files (caught by
-	# tests/headless/test_world_isolation.gd). The suite must be immune to the state of a dev flag,
-	# the same rule `hq.gd::_maybe_redirect_to_overworld` follows.
-	#
-	# This is not hiding the overworld from tests: `test_overworld*` instance the scene directly,
-	# which is the honest way to test it, and `Scenes.OVERWORLD` is still reachable by name.
-	if Platform.is_headless():
-		return HQ
-	if Config.data != null and Config.data.overworld_enabled:
-		return OVERWORLD
-	return HQ
+	return HUB
 
 
-# True for EITHER hub scene, regardless of the flag: a scene path recorded before
-# a flag flip (or a live scene the flag doesn't currently select) is still a hub.
+# True for the hub shell. Kept as a predicate rather than an `==` at every call site
+# so a second shell (or a versioned path) stays a one-line change here.
 static func is_hub_scene(path: String) -> bool:
-	return path == HQ or path == OVERWORLD
+	return path == HUB
 
 
 # ==========================================================================================

@@ -334,6 +334,39 @@ consts), `project.godot:15` (main scene), `settings_menu.gd:380,893-912`
 
 *Orphaned spec:* `todo/overworld-hq.md` now describes a deleted feature — delete it.
 
+**Hub wave B LANDED — the project boots again** (`--headless --quit` exits 0,
+clean). `hub.tscn` is a placeholder Control+Label; `project.godot`'s main scene
+points at it; `Scenes.HQ` and `Scenes.OVERWORLD` collapse into one
+`Scenes.HUB`, and all six transition sites needed no edits — the abstraction held.
+
+Findings worth carrying:
+
+- **`shaders/overworld_fog.gdshaderinc` is NOT orphaned. The handover list was
+  wrong.** It is `#include`d by `ps1_models.gdshader` and `ps1_terrain_snow.gdshader`,
+  both shipped and both calling `overworld_fog_at()`. Deleting it would have broken
+  the game's two main lit shaders. **Rename it** (`distance_fog.gdshaderinc`) before
+  someone deletes it on the name. `overworld_sky.gdshader` genuinely was orphaned
+  and is gone.
+- **Same trap in `GameConfig`:** `terrain_manager.gd::apply_overworld_bounds` is the
+  surviving streaming API, and it plus `rally_library.gd` still read
+  `overworld_load_radius`, `overworld_chunk_build_budget`, `overworld_edge_taper_m`,
+  `overworld_edge_depth_m`, `overworld_size_m`, `overworld_pad_*_radius_m`,
+  `map_reveal_radius`, `map_hq_reveal_radius`. These are live, not dead. Only
+  `overworld_enabled` now has no reader at all. A later wave that deletes the `hq_*`
+  poses must also update `config/game_config.tres` and `test_config_applied.gd`'s
+  field lists.
+- **`test_rally_detail.gd` was the `test_overworld_terrain.gd` trap again** — 186
+  lines hosted on `hq.tscn`, but `rally_detail.gd` survives and already exposed the
+  logic as statics. Seven tests re-pointed at `RallyDetail` directly, four deleted
+  (the ones genuinely testing hub widgets). The suite also lost a 3D hub build.
+- **Gap for stage 3:** `test_world_isolation.gd`'s leak guard matches by root
+  script, and `hub.tscn` has none. Give the flat shell a root script and add it back
+  to `GAME_SCENE_SCRIPTS`.
+- **`test_features_docs` now has only ONE pre-existing failure**, `terrain.md`
+  (1338 vs 1310). The `overworld.md` one resolved itself when the doc was deleted.
+- 39 dangling links to the deleted docs remain across 17 `features/*.md` —
+  deliberately left for the stage 9 audit wave.
+
 > **THE BIG ONE — `test_menu_flow.gd` is 5884 lines with ~1080 `hq.<member>`
 > references.** With `test_cloud_boot_gate.gd` and `test_wheel_customization.gd` it
 > drives real SURVIVING logic (start-line preflight, wheel swap, cloud boot gating,
