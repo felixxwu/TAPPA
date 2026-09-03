@@ -238,13 +238,14 @@ func fill(rally: Dictionary, profile: Dictionary, rally_id := "") -> void:
 	# and the button would be a dead end.
 	enter_button.disabled = qualifying + adjustable == 0
 
-	# --- Record: best finish + medal stars.
+	# --- Record: best finish.
 	var best := Save.best_placement(id)
 	record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
-	# The star row always shows, unrun or not — an empty row of three reads as
-	# "no medals yet" and keeps the record line's layout stable between rallies.
-	stars.visible = true
-	stars.setup(stars_for(id), RallyLibrary.MAX_STARS_PER_RALLY)
+	# The medal star row is RETIRED with the star ledger (todo/roguelike-pivot.md
+	# decision 21 — RallyLibrary.stars_for_placement / MAX_STARS_PER_RALLY are gone). Hidden
+	# rather than removed: the `stars` node and the layout gap it held stay so this panel
+	# does not need retuning ahead of whatever a money-era record readout replaces it with.
+	stars.visible = false
 
 	open = true
 
@@ -446,8 +447,6 @@ static func qualifying_cars_text(names: Array) -> String:
 		shown.append(String(names[i]))
 	return "%s, +%d more" % [", ".join(shown), names.size() - MAX_QUALIFY_NAMES]
 
-
-# Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
-# anything else (or never placed) → 0.
-static func stars_for(rally_id: String) -> int:
-	return RallyLibrary.stars_for_placement(Save.best_placement(rally_id))
+# stars_for() (RallyLibrary.stars_for_placement over Save.best_placement) was deleted
+# with the star ledger (todo/roguelike-pivot.md decision 21) -- see fill()'s `stars`
+# note above.

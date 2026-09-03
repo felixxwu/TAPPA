@@ -135,106 +135,37 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
 
 
-# --- Star ledger (todo/star-economy.md) --------------------------------------
-# Stars are a persisted ledger, not a derived total. These assert the LEDGER RULES,
-# never a particular star count for a particular placement — stars_for_placement is
-# the single definition and is free to change.
+# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) -------------------------
+# The whole "Star ledger" test block (a fresh profile's empty ledger, a completion crediting
+# a placement and returning it, re-winning for stars, award_stars / spend_stars, the ledger
+# surviving a save/reload, an old profile backfilling to zero) is gone with
+# Save.stars_earned / stars_spent / stars_available / award_stars / spend_stars and
+# RallyLibrary.stars_for_placement — see Save._default_profile()'s "Star ledger: DELETED"
+# note. Two of those tests mixed STAR assertions with BOOKKEEPING assertions
+# (record_podium_rally's `completed` / `best_placed` / `best_combined_ms` survive the star
+# deletion — see that function's own comment); their bookkeeping halves are kept below,
+# trimmed of the star half.
 
-func test_a_fresh_profile_has_an_empty_star_ledger() -> void:
-	assert_eq(int(_save.profile["stars_earned"]), 0, "nothing earned yet")
-	assert_eq(int(_save.profile["stars_spent"]), 0, "nothing spent yet")
-	assert_eq(_save.stars_available(), 0, "nothing to spend")
-
-
-func test_completing_a_rally_credits_the_placement_and_returns_it() -> void:
-	var gained: int = _save.record_podium_rally("alpine", 60_000, 1)
-	assert_eq(gained, RallyLibrary.stars_for_placement(1),
-		"a first win credits what that placement is worth")
-	assert_eq(_save.stars_available(), gained, "the balance reflects the credit")
-
-
-func test_a_rally_can_be_rewon_for_stars() -> void:
-	# Rallies are a RENEWABLE star source: replaying one pays for the finish again, every time.
-	# (It used to credit only the improvement on the rally's best placement, so a replay at an
-	# equal or worse placement paid nothing.)
-	var first: int = _save.record_podium_rally("alpine", 60_000, 1)
-	var again: int = _save.record_podium_rally("alpine", 61_000, 1)
-	assert_gt(first, 0, "the original win pays")
-	assert_eq(again, first, "re-winning at the same placement pays the same again")
-	assert_eq(_save.stars_available(), first + again, "and both credits are in the balance")
-
-
-func test_a_worse_replay_still_pays_for_what_it_placed() -> void:
-	# The payout follows THIS run's placement, not the record — so a scrappier replay still
-	# earns, just less if it dropped off the podium.
+func test_a_dnf_does_not_corrupt_the_best_placement_record() -> void:
+	# The one case record_podium_rally's own guard exists for: a DNF (combined_ms <= 0) must
+	# not overwrite a real best time, and a placed=0 call must not demote a real best
+	# placement. Used to also assert this "pays nothing"; that half is gone with the ledger.
 	_save.record_podium_rally("alpine", 60_000, 1)
-	var before: int = _save.stars_available()
-	var off_podium: int = _save.record_podium_rally("alpine", 90_000, RallyLibrary.PODIUM_PLACES + 1)
-	assert_eq(off_podium, RallyLibrary.stars_for_placement(RallyLibrary.PODIUM_PLACES + 1),
-		"a non-podium replay pays what finishing is worth")
-	assert_eq(_save.stars_available(), before + off_podium, "the balance moved by that much")
-	# The map rating still tracks the BEST placement — paying for a replay must not demote it.
+	_save.record_podium_rally("alpine", 0, 0)
+	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 60_000,
+		"a DNF does not overwrite the recorded best time")
+	assert_eq(_save.best_placement("alpine"), 1, "nor does it demote the recorded best placement")
+
+
+func test_a_worse_replay_keeps_the_best_placement_record() -> void:
+	# The record follows the BEST placement ever achieved, not the most recent — so a
+	# scrappier replay must not demote it. Used to also assert what a worse replay "pays";
+	# that half is gone with the ledger.
+	_save.record_podium_rally("alpine", 60_000, 1)
+	_save.record_podium_rally("alpine", 90_000, 4)  # off the podium; RallyLibrary.PODIUM_PLACES is deleted
 	assert_eq(_save.best_placement("alpine"), 1, "the record is still the best finish")
 
 
-func test_a_dnf_replay_pays_nothing() -> void:
-	# The one case that must stay at zero: the opening rally can complete on a DNF, and a
-	# ledger that paid for that would pay for quitting.
-	_save.record_podium_rally("alpine", 60_000, 1)
-	var before: int = _save.stars_available()
-	var dnf: int = _save.record_podium_rally("alpine", 0, 0)
-	assert_eq(dnf, 0, "a run that did not place credits nothing")
-	assert_eq(_save.stars_available(), before, "the balance did not move")
-
-
-func test_award_stars_credits_non_rally_sources() -> void:
-	_save.award_stars(4)
-	assert_eq(_save.stars_available(), 4, "a non-rally source credits the ledger")
-	_save.award_stars(0)
-	_save.award_stars(-5)
-	assert_eq(_save.stars_available(), 4, "zero and negative awards are ignored")
-
-
-func test_spending_debits_the_balance_and_refuses_when_short() -> void:
-	_save.award_stars(10)
-	assert_true(_save.spend_stars(4), "an affordable spend succeeds")
-	assert_eq(_save.stars_available(), 6, "the balance dropped by the amount spent")
-	assert_false(_save.spend_stars(7), "an unaffordable spend is refused")
-	assert_eq(_save.stars_available(), 6, "a refused spend changes nothing")
-	assert_false(_save.spend_stars(-1), "a negative spend is refused")
-	assert_eq(_save.stars_available(), 6, "a negative spend changes nothing")
-
-
-func test_earned_never_decreases_and_balance_never_goes_negative() -> void:
-	_save.award_stars(6)
-	_save.spend_stars(6)
-	assert_eq(_save.stars_available(), 0, "spending everything leaves nothing")
-	assert_eq(int(_save.profile["stars_earned"]), 6, "earned is a ledger, not a balance")
-	assert_false(_save.spend_stars(1), "cannot spend past zero")
-	assert_true(_save.stars_available() >= 0, "the balance is never negative")
-
-
-func test_the_star_ledger_survives_a_save_and_reload() -> void:
-	_save.record_podium_rally("alpine", 60_000, 1)
-	_save.award_stars(3)
-	_save.spend_stars(2)
-	var earned := int(_save.profile["stars_earned"])
-	var spent := int(_save.profile["stars_spent"])
-	_save.save_now()
-	_save.load_or_new()
-	assert_eq(int(_save.profile["stars_earned"]), earned, "earned round-trips")
-	assert_eq(int(_save.profile["stars_spent"]), spent, "spent round-trips")
-
-
-func test_a_profile_predating_the_ledger_backfills_to_zero() -> void:
-	# No migration by design: an older profile starts at 0 rather than being seeded
-	# from the old derived total. The _migrate key backfill is what supplies the keys.
-	var legacy: Dictionary = _save._default_profile()
-	legacy.erase("stars_earned")
-	legacy.erase("stars_spent")
-	var migrated: Dictionary = _save._migrate(legacy)
-	assert_eq(int(migrated["stars_earned"]), 0, "stars_earned backfills to 0")
-	assert_eq(int(migrated["stars_spent"]), 0, "stars_spent backfills to 0")
 
 
 func test_damage_past_zero_keeps_the_car_its_upgrades_and_its_bent_wheels() -> void:
@@ -250,7 +181,8 @@ func test_damage_past_zero_keeps_the_car_its_upgrades_and_its_bent_wheels() -> v
 	# health. The car sits at exactly 0 and stays fully owned.
 	assert_eq(_save.profile["cars"].size(), 1, "the car is kept")
 	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP clamps at exactly zero, never negative")
-	assert_true(_save.car_needs_repair(id), "and it reads as needing repair")
+	# car_needs_repair() was asserted here too; it is deleted with the paid garage repair
+	# (todo/roguelike-pivot.md decision 21) — see the "Star sinks" block comment further down.
 	# Its upgrades ride along with the car (bound to it; never moved or returned).
 	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
 		"the upgrade is still installed on the 0-HP car")
@@ -500,14 +432,9 @@ func test_sanitise_drops_parts_retired_from_the_catalogue() -> void:
 # no wreck record, no terminal state — so the whole scaffolding terminal wrecking
 # needed (an all-cars-wrecked check, a free rescue box) is gone with it.
 
-func test_a_zero_hp_car_can_be_repaired_back_into_service() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.apply_damage(id, 999999.0)
-	assert_true(_save.car_needs_repair(id), "the car reads as needing repair")
-	_save.award_stars(20)
-	assert_true(_save.repair_car(id), "and stars put it right")
-	assert_false(_save.car_needs_repair(id), "back in service")
+# test_a_zero_hp_car_can_be_repaired_back_into_service DELETED: repair_car / car_needs_repair
+# / award_stars are all gone with the paid garage repair and the star ledger
+# (todo/roguelike-pivot.md decision 21).
 
 
 func test_the_starter_bottoms_out_and_recovers_like_any_car() -> void:
@@ -573,40 +500,14 @@ func test_migration_refuses_newer_version() -> void:
 	assert_true(_save._migrate(future).is_empty(), "a newer-version profile is refused (returns empty)")
 
 
-func test_migration_v2_restores_full_power_to_detuned_cars() -> void:
-	# v2 -> v3: rally entry stopped gating on power-to-weight, so a saved engine_detune
-	# set to duck under a ceiling has nothing left to duck under — and the slider that
-	# set it went with the ceiling. Without this the car would be permanently and
-	# invisibly down on power with no way for the player to put it right.
-	var v2: Dictionary = _save._default_profile()
-	v2["schema_version"] = 2
-	v2[_save.KEY_CARS] = [
-		{"model_id": "a", "tuning": {"engine_detune": 0.72}},
-		{"model_id": "b", "tuning": {"engine_detune": 1.0}},
-		{"model_id": "c", "tuning": {}},
-	]
-	var migrated: Dictionary = _save._migrate(v2)
-	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
-	var cars: Array = migrated[_save.KEY_CARS]
-	assert_eq(float(cars[0]["tuning"]["engine_detune"]), 1.0, "the detuned car is restored to full power")
-	assert_eq(float(cars[1]["tuning"]["engine_detune"]), 1.0, "an already-full car is untouched")
-	assert_false((cars[2]["tuning"] as Dictionary).has("engine_detune"),
-		"a car that never carried a detune does not gain one")
+# test_migration_v2_restores_full_power_to_detuned_cars and
+# test_migration_v1_strips_the_unbound_inventory DELETED: both drove
+# Save._migrate_step's per-version transforms (2 -> 3, 1 -> 2), which are deleted along
+# with the whole migration ladder (todo/roguelike-pivot.md decision 34) -- see
+# SCHEMA_VERSION's own comment for why a pre-pivot profile now resets instead of stepping
+# forward. test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile below is
+# untouched -- it exercises _sanitise(), a separate, version-independent tolerant pass.
 
-
-func test_migration_v1_strips_the_unbound_inventory() -> void:
-	# v1 -> v2: upgrades became car-bound, so the old shared pool of slottable parts is
-	# dropped (they were never applied and have no car to belong to). The repair kits
-	# that used to be preserved here go too — the item no longer exists.
-	var v1: Dictionary = _save._default_profile()
-	v1["schema_version"] = 1
-	v1["inventory"] = {"fx_turbo_small": 2, "fx_aero": 1, "repair_kit": 3}
-	var migrated: Dictionary = _save._migrate(v1)
-	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
-	var inv: Dictionary = migrated["inventory"]
-	assert_false(inv.has("fx_turbo_small"), "unbound slottable part dropped")
-	assert_false(inv.has("fx_aero"), "unbound slottable part dropped")
-	assert_false(inv.has("repair_kit"), "the retired repair kit is dropped too")
 
 
 func test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile() -> void:
@@ -1009,165 +910,47 @@ func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
 		"a restored career's already-open rally is seeded as seen, not paraded")
 	RallyLibrary.reset()
 
-# --- Star sinks: repair + part copies (features/star-economy.md) --------------
-# Cars are not bought any more, so these are what the balance is FOR. Neither test pins a
-# price — star_cost_per_repair / star_cost_per_part are tunable content; they assert the
-# balance moves BY the configured price and that the transaction is all-or-nothing.
+# --- Star sinks: repair + part copies -- DELETED (todo/roguelike-pivot.md decision 21) --
+# The paid garage repair (repair_car / repair_price / car_needs_repair / car_handles_badly)
+# is RETIRED outright, not stubbed -- see the "Spending stars: DELETED" block comment in
+# save_manager.gd above can_buy_part. Buying a part or a drivetrain conversion is a
+# DIFFERENT case -- the star economy and the parts model INTERLEAVING -- so can_buy_part /
+# buy_part / can_buy_drive_mode / buy_drive_mode / part_price / drive_mode_price keep their
+# signatures (upgrade_options.gd / upgrades_grid.gd still call them by name) but are left
+# DANGLING: every purchase predicate now always refuses. These two tests are the regression
+# guard for that dangling state -- when the economy stage wires real money into these, they
+# are the tests to replace.
 
-func _damaged_car() -> int:
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	var id: int = int(car["instance_id"])
-	_save.get_car(id)["hp"] = 1.0
-	return id
-
-
-func test_a_repair_restores_health_and_charges_the_price() -> void:
-	var id := _damaged_car()
-	_save.award_stars(20)
-	var before: int = _save.stars_available()
-	var price: int = _save.repair_price(id)
-	assert_true(_save.repair_car(id), "the repair went through")
-	var entry: Dictionary = CarLibrary.by_id(String(_save.get_car(id)["model_id"]))
-	assert_eq(float(_save.get_car(id)["hp"]), float(entry["max_hp"]), "back to full health")
-	assert_eq(_save.stars_available(), before - price, "and the balance moved by the price")
-
-
-func test_a_repair_straightens_bent_wheels_too() -> void:
-	var id := _damaged_car()
-	_save.get_car(id)["wheel_toe"] = [0.05, -0.05, 0.0, 0.0]
-	_save.award_stars(20)
-	assert_true(_save.repair_car(id))
-	for toe in _save.get_car(id)["wheel_toe"]:
-		assert_almost_eq(float(toe), 0.0, 0.0001, "every wheel is straight again")
-
-
-func test_an_undamaged_car_cannot_be_charged_for_a_repair() -> void:
-	# NOTHING TO FIX = NOTHING SPENT. A flat price makes this the one thing that must not
-	# happen: paying a star and getting nothing back.
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	_save.award_stars(20)
-	var before: int = _save.stars_available()
-	assert_eq(_save.repair_price(int(car["instance_id"])), 0, "a pristine car is quoted nothing")
-	assert_false(_save.repair_car(int(car["instance_id"])), "and cannot be repaired")
-	assert_eq(_save.stars_available(), before, "so nothing is spent")
-
-
-func test_a_repair_is_refused_when_the_balance_is_short() -> void:
-	var id := _damaged_car()
-	var hp_before: float = float(_save.get_car(id)["hp"])
-	assert_eq(_save.stars_available(), 0, "precondition: broke")
-	assert_false(_save.repair_car(id), "refused")
-	assert_eq(float(_save.get_car(id)["hp"]), hp_before, "and the car is untouched")
-
-
-func test_buying_a_part_fits_it_disabled_and_charges_the_price() -> void:
+func test_buying_a_part_always_refuses_with_no_money_wired() -> void:
 	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
 	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
 	var id: int = int(car["instance_id"])
-	_save.award_stars(50)
-	var before: int = _save.stars_available()
-	assert_true(_save.can_buy_part(id, item_id), "precondition: discovered, affordable, no prereq")
-	assert_true(_save.buy_part(id, item_id), "the purchase went through")
-	assert_has(_save.get_car(id)["installed_upgrades"], item_id, "fitted to this car")
-	assert_has(_save.get_car(id)["disabled_upgrades"], item_id,
-		"but PARKED — which part runs in a slot stays the player's choice")
-	assert_eq(_save.stars_available(), before - _save.part_price(item_id),
-		"and the balance moved by the price")
-
-
-func test_a_part_cannot_be_bought_twice_for_one_car() -> void:
-	# Per-car dedup: a car can never hold the same part twice, so the second sale is refused
-	# rather than silently charging for a duplicate.
-	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	var id: int = int(car["instance_id"])
-	_save.award_stars(50)
-	assert_true(_save.buy_part(id, item_id))
-	var after_first: int = _save.stars_available()
-	assert_false(_save.can_buy_part(id, item_id), "already fitted")
-	assert_false(_save.buy_part(id, item_id), "so the second sale is refused")
-	assert_eq(_save.stars_available(), after_first, "and costs nothing")
-
-
-func test_an_undiscovered_part_is_not_for_sale() -> void:
-	# The shop sells what the player has proven they can earn. A part whose unlock rally is
-	# unwon must not be purchasable, or stars would buy a shortcut past the exploration.
-	var gated := {"id": "fx_gated_part", "name": "Gated", "slot": "fxslot",
-		"consumable": false, "unlocked_by_rally": "fx_never_won"}
-	var items: Array[Dictionary] = UpgradeFixtures.upgrades()
-	items.append(gated)
-	UpgradeLibrary.override_for_test(items)
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	_save.award_stars(50)
-	assert_false(_save.can_buy_part(int(car["instance_id"]), "fx_gated_part"),
-		"not discovered, so not for sale")
-	assert_false(_save.buy_part(int(car["instance_id"]), "fx_gated_part"))
-	UpgradeLibrary.reset()
-
-
-func test_a_part_is_not_for_sale_until_this_car_has_its_prerequisite() -> void:
-	# Upgrades are car-bound, so buying must not skip a rung: every car climbs its own
-	# ladder even when another car in the garage is already at the top.
-	var items: Array[Dictionary] = UpgradeFixtures.upgrades()
-	var base_id := String(items[0]["id"])
-	items.append({"id": "fx_rung_two", "name": "Rung Two", "slot": "fxslot",
-		"consumable": false, "requires_upgrade_id": base_id})
-	UpgradeLibrary.override_for_test(items)
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	var id: int = int(car["instance_id"])
-	_save.award_stars(50)
-	assert_false(_save.can_buy_part(id, "fx_rung_two"), "prerequisite not fitted to THIS car")
-	assert_true(_save.buy_part(id, base_id), "buy the rung below first")
-	assert_true(_save.can_buy_part(id, "fx_rung_two"), "now the ladder is satisfied")
-	UpgradeLibrary.reset()
-
-
-func test_a_part_is_not_for_sale_when_the_balance_is_short() -> void:
-	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	var id: int = int(car["instance_id"])
-	assert_eq(_save.stars_available(), 0, "precondition: broke")
-	assert_false(_save.can_buy_part(id, item_id), "cannot afford it")
-	assert_false(_save.buy_part(id, item_id), "so the sale is refused")
+	assert_false(_save.can_buy_part(id, item_id),
+		"no star ledger left to check a price against -- always refuses")
+	assert_false(_save.buy_part(id, item_id), "so the purchase never goes through")
 	assert_eq((_save.get_car(id)["installed_upgrades"] as Array).size(), 0, "nothing fitted")
 
 
-# --- Handling warning vs. needs-repair ----------------------------------------
-
-# Two DIFFERENT questions that used to be one call. "Needs repair" is true of any car that
-# is not pristine — right for offering a repair, wrong as a red warning, which is why a car
-# at 98% health was told it would handle badly.
-func test_a_lightly_scratched_car_needs_repair_but_still_handles_fine() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var entry := CarLibrary.by_id("fx_rwd_coupe")
-	var max_hp := float(entry.get("max_hp", 1000.0))
-	# Just under pristine: damage exists but is nowhere near the point it costs power.
-	_save.get_car(id)["hp"] = max_hp * 0.99
-	assert_true(_save.car_needs_repair(id), "any lost health is worth repairing")
-	assert_false(_save.car_handles_badly(id), "but a scratch does not make it handle badly")
+func test_buying_a_drive_mode_always_refuses_with_no_money_wired() -> void:
+	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
+	var id: int = int(car["instance_id"])
+	var stock: int = UpgradeLibrary.stock_drive_mode(car)
+	var non_stock := 0 if stock != 0 else 1
+	assert_false(_save.can_buy_drive_mode(id, non_stock),
+		"no star ledger left to check a price against -- always refuses")
+	assert_false(_save.buy_drive_mode(id, non_stock), "so the purchase never goes through")
+	assert_eq((_save.get_car(id)["drivetrain_modes_bought"] as Array).size(), 0,
+		"nothing recorded as bought")
 
 
-func test_a_properly_hurt_car_warns() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var entry := CarLibrary.by_id("fx_rwd_coupe")
-	# Comfortably below the misfire threshold, so the engine really is down on power.
-	_save.get_car(id)["hp"] = (float(entry.get("max_hp", 1000.0))
-		* Config.data.damage_misfire_health_threshold * 0.5)
-	assert_true(_save.car_handles_badly(id), "a properly damaged car warns")
+# repair_car / repair_price / car_needs_repair / car_handles_badly are all DELETED
+# (see the block comment above) -- the paid garage repair had no callers left once the
+# star ledger was gone, and between-run resets leave it nothing to do once the run loop
+# lands. Their tests (a repair restoring health and charging the price, straightening
+# wheels, an undamaged car refusing a charge, a short balance refusing the repair, and
+# the two "handling warning vs needs-repair" distinctions) are deleted with them.
 
 
-# Bent alignment alone does NOT warn. The warning is about damage costing engine power, and
-# a car at full health has lost none — the red line appearing over "HEALTH 100%" reads as a
-# bug, whatever the alignment says. Alignment is still repaired (car_needs_repair counts
-# it), it just does not raise the alarm.
-func test_bent_alignment_alone_does_not_warn() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.get_car(id)["wheel_toe"] = [0.0, 0.0, 0.03, 0.0]
-	assert_false(_save.car_handles_badly(id), "a full-health car does not warn")
-	assert_true(_save.car_needs_repair(id), "but it is still worth repairing")
 
 
 # --- Legacy NOS migration -----------------------------------------------------
@@ -1225,77 +1008,17 @@ func test_the_migration_never_installs_nitrous_a_car_lacks() -> void:
 			"no nitrous is invented for a car that had none")
 
 
-# --- v4 -> v5: two part unlocks moved into the Alps ----------------------------
-# See features/snow-region.md. The migration must hand the part to a player who already
-# won it where it used to live, WITHOUT handing over the new rally's other rewards.
+# --- v4 -> v5 / v5 -> v6 migration tests: DELETED (todo/roguelike-pivot.md decision 34) --
+# test_migration_v4_grants_parts_whose_unlock_rally_moved,
+# test_migration_v4_does_not_fake_the_new_rally_completion,
+# test_migration_v5_keeps_engine_swapping_for_a_career_that_won_the_old_rally and
+# test_migration_v5_does_not_grant_engine_swapping_to_a_career_that_never_won_it all drove
+# Save._migrate_step / _MIGRATABLE_FROM / MOVED_PART_UNLOCKS / OLD_ENGINE_SWAP_UNLOCK_RALLY,
+# all deleted with the whole migration ladder -- no migration is written for the pivot, so a
+# pre-pivot profile resets instead (see Save.SCHEMA_VERSION's own comment).
+# test_engine_swaps_unlock_by_winning_the_current_rally below is untouched -- it exercises
+# the surviving, non-legacy unlock path.
 
-func test_migration_v4_grants_parts_whose_unlock_rally_moved() -> void:
-	var v4: Dictionary = _save._default_profile()
-	v4["schema_version"] = 4
-	v4.erase(_save.KEY_LEGACY_PART_UNLOCKS)
-	# Completed the OLD rally for the first moved part only.
-	var moved: Array = _save.MOVED_PART_UNLOCKS
-	assert_gt(moved.size(), 1, "setup: more than one part moved, so the split below is real")
-	v4[_save.KEY_RALLIES] = {String(moved[0][0]): {"completed": true, "best_placed": 1}}
-
-	var migrated: Dictionary = _save._migrate(v4)
-	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
-	var legacy: Array = migrated[_save.KEY_LEGACY_PART_UNLOCKS]
-	assert_true(legacy.has(String(moved[0][1])),
-		"the part whose old rally was won is granted directly")
-	assert_false(legacy.has(String(moved[1][1])),
-		"a part whose old rally was NOT won is not granted")
-
-
-func test_migration_v4_does_not_fake_the_new_rally_completion() -> void:
-	# Marking the destination rally completed would also light its map-reveal circle and
-	# pay its placement stars — progress and currency the player never earned. The grant
-	# must be the PART and nothing else.
-	var moved: Array = _save.MOVED_PART_UNLOCKS
-	var old_rally := String(moved[0][0])
-	var v4: Dictionary = _save._default_profile()
-	v4["schema_version"] = 4
-	v4[_save.KEY_RALLIES] = {old_rally: {"completed": true, "best_placed": 1}}
-
-	var migrated: Dictionary = _save._migrate(v4)
-	var rallies: Dictionary = migrated[_save.KEY_RALLIES]
-	assert_eq(rallies.size(), 1, "no rally completion was invented by the migration")
-	assert_true(bool(rallies[old_rally]["completed"]), "the real completion survives")
-
-
-# --- v5 -> v6: the engine-swap capability's unlock rally moved -----------------
-# Same rule as the part moves above, one rung down: the capability follows the player,
-# not the rally it happened to be authored on.
-
-func test_migration_v5_keeps_engine_swapping_for_a_career_that_won_the_old_rally() -> void:
-	var v5: Dictionary = _save._default_profile()
-	v5["schema_version"] = 5
-	v5.erase(_save.KEY_LEGACY_ENGINE_SWAP)
-	v5[_save.KEY_RALLIES] = {
-		_save.OLD_ENGINE_SWAP_UNLOCK_RALLY: {"completed": true, "best_placed": 1},
-	}
-
-	var migrated: Dictionary = _save._migrate(v5)
-	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
-	assert_true(RallyLibrary.engine_swaps_unlocked(migrated),
-		"a career that won the capability where it used to live still has it")
-	# The grant is the CAPABILITY and nothing else — no invented rally completion, so no
-	# map-reveal circle and no stars the player never earned.
-	var rallies: Dictionary = migrated[_save.KEY_RALLIES]
-	assert_eq(rallies.size(), 1, "no rally completion was invented by the migration")
-	assert_false(rallies.has(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY),
-		"the new unlock rally is not faked as completed")
-
-
-func test_migration_v5_does_not_grant_engine_swapping_to_a_career_that_never_won_it() -> void:
-	var v5: Dictionary = _save._default_profile()
-	v5["schema_version"] = 5
-	v5.erase(_save.KEY_LEGACY_ENGINE_SWAP)
-	v5[_save.KEY_RALLIES] = {}
-
-	var migrated: Dictionary = _save._migrate(v5)
-	assert_false(RallyLibrary.engine_swaps_unlocked(migrated),
-		"the capability is still earned, not handed out by the migration")
 
 
 func test_engine_swaps_unlock_by_winning_the_current_rally() -> void:
@@ -1310,12 +1033,11 @@ func test_engine_swaps_unlock_by_winning_the_current_rally() -> void:
 		"winning the unlock rally opens engine swapping")
 
 
-func test_a_fresh_profile_has_no_legacy_grants() -> void:
-	assert_false(bool(_save._default_profile()[_save.KEY_LEGACY_ENGINE_SWAP]),
-		"a career started after the move earns the capability the current way")
-	# A career started after the move is gated purely by the CURRENT mapping.
-	assert_eq(_save._default_profile()[_save.KEY_LEGACY_PART_UNLOCKS], [],
-		"nothing has been re-sited under this player")
+# test_a_fresh_profile_has_no_legacy_grants DELETED: KEY_LEGACY_ENGINE_SWAP /
+# KEY_LEGACY_PART_UNLOCKS are no longer declared in _default_profile() at all
+# (todo/roguelike-pivot.md decision 34 -- see that dict's own comment), so indexing
+# either off a fresh profile now errors instead of reading a default.
+
 
 
 func test_the_legacy_set_satisfies_the_rally_gate() -> void:
@@ -1347,13 +1069,16 @@ func test_the_legacy_set_satisfies_the_rally_gate() -> void:
 # 0 — but `_migrate`'s key backfill seeds existing profiles ONLY from `_default_profile()`,
 # so the key was absent from every fresh and every migrated profile and sprang into
 # existence on first write. That is inconsistent with every sibling counter
-# (`stars_earned`, `cloud_revision`, `username` and three more all say so in their own
+# (`cloud_revision`, `username` and several more all say so in their own
 # comments) and invisible to the suite.
 #
 # Derived from the source, so a field added tomorrow is covered without touching this test.
 # Keys the migration chain writes for its own bookkeeping are exempt by name below.
+# (The migration ladder itself is deleted -- todo/roguelike-pivot.md decision 34 -- so
+# nothing currently matches "schema_version" any more; kept as a harmless exemption in
+# case a future one-off transform writes it again the same way.)
 const PROFILE_KEY_WRITE_EXEMPT := [
-	"schema_version",  # written by every _migrate_step to advance the chain
+	"schema_version",
 ]
 
 
@@ -1380,7 +1105,7 @@ func test_every_persisted_key_written_is_declared_in_the_default_profile() -> vo
 		+ "existing profiles from _default_profile() alone, so an undeclared key is missing "
 		+ "from every fresh and every migrated profile until something happens to write it. "
 		+ "A `.get(key, 0)` reader hides this completely and no test will catch it. "
-		+ "See the `stars_earned` / `cloud_revision` comments for the shape to copy.")
+		+ "See the `cloud_revision` / `username` comments for the shape to copy.")
 
 
 # --- Guard: a "finished" metric may not be derived from the podium-gated record ---------

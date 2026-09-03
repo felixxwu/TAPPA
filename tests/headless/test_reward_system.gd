@@ -1,12 +1,15 @@
 extends GutTest
-# The reward policy (RewardSystem): the tier clamp, the per-rally car draw with its
-# prefer-un-owned + anti-soft-lock behaviour, and the special-unlock cascade. Pure
-# functions, driven with an injected seeded RNG. See todo/reward-system.md.
+# The reward policy (RewardSystem): the special-unlock cascade, plus the two part GATES
+# it used to filter a draw pool on. See todo/reward-system.md, features/reward-system.md.
 #
-# THE RANDOM UPGRADE DRAW IS GONE, and so are its tests. Parts are won at their prize
-# rally or bought with stars, so nothing is left to roll for; the two GATES that pool used
-# to filter on survive and are asserted directly against UpgradeLibrary below, since they
-# now decide what the player can BUY.
+# THE CAR DRAW IS GONE (todo/roguelike-pivot.md decision 28), and so are its tests —
+# draw_car / target_tier / tier_ceiling and the whole tier-clamp model died with prize
+# rallies; car acquisition is a money shop now, not a rally-win draw. THE RANDOM UPGRADE
+# DRAW WAS ALREADY GONE before this pass. Parts are won at their prize rally or bought
+# with stars — and now that stars are ALSO gone (decision 21), only the "won at the rally
+# that unlocks it" route survives — so nothing is left to roll for; the two GATES that
+# pool used to filter on survive and are asserted directly against UpgradeLibrary below,
+# since they decide what a part unlock can reach.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 const SaveTestHelpers = preload("res://tests/headless/save_test_helpers.gd")
@@ -41,10 +44,6 @@ func after_each() -> void:
 	RallyFixtures.restore()
 
 
-func _rng(seed_value: int) -> RandomNumberGenerator:
-	var r := RandomNumberGenerator.new()
-	r.seed = seed_value
-	return r
 func _profile(completed: Array, owned: Array) -> Dictionary:
 	var rallies := {}
 	for rally_id in completed:
@@ -58,9 +57,8 @@ func _profile(completed: Array, owned: Array) -> Dictionary:
 	return {"rallies": rallies, "cars": cars}
 
 
-# A profile with EVERY rally on the roster won 1st. Used to force every star gate open so
-# a test can exercise the rest of the draw against the whole catalogue — the star gate
-# gets its own dedicated test rather than silently shrinking every other pool.
+# A profile with EVERY rally on the roster won 1st. Used to force every rally gate open so
+# a test can exercise the rest against the whole catalogue.
 func _all_completed_profile() -> Dictionary:
 	var rallies := {}
 	for rally in RallyLibrary.all():
@@ -68,31 +66,10 @@ func _all_completed_profile() -> Dictionary:
 	return {"rallies": rallies, "cars": []}
 
 
-# --- Tier clamp --------------------------------------------------------------
-
-func test_tier_ceiling_is_monotonic_and_clamped() -> void:
-	var prev := 0
-	for c in range(0, 20):
-		var ceiling := RewardSystem.tier_ceiling(c)
-		assert_gte(ceiling, prev, "ceiling never decreases as completion rises")
-		assert_lte(ceiling, RewardSystem.MAX_TIER, "ceiling never exceeds MAX_TIER")
-		assert_gte(ceiling, 1, "ceiling is at least 1")
-		prev = ceiling
-
-
-func test_target_tier_never_exceeds_ceiling() -> void:
-	# Fresh profile (0 completed) -> a low ceiling clamps even a hard rally down to it.
-	var fresh := _profile([], [])
-	var ceiling := RewardSystem.tier_ceiling(0)
-	assert_lte(RewardSystem.target_tier(4, fresh), ceiling,
-		"a tier-4 rally never pays above the current ceiling")
-
-
 # --- The two part GATES ------------------------------------------------------
 # These used to be asserted through the random upgrade pool (RewardSystem._eligible_parts).
-# That pool is gone — parts are won at their prize rally or bought with stars — but the two
-# gates it filtered on are very much alive: UpgradeOptions._lock_reason greys a row on
-# exactly these, so they now decide what the player can BUY rather than what can drop.
+# That pool is gone — parts are won at their prize rally — but the two gates it filtered on
+# are very much alive: UpgradeOptions._lock_reason greys a row on exactly these.
 # Asserted directly against UpgradeLibrary, which is where they always really lived.
 
 func test_a_prerequisite_gate_opens_only_once_the_car_has_the_earlier_rung() -> void:
@@ -110,7 +87,7 @@ func test_a_prerequisite_gate_opens_only_once_the_car_has_the_earlier_rung() -> 
 		"and allowed once the car has Small Turbo")
 
 
-func test_a_star_gated_part_is_refused_until_its_event_is_won() -> void:
+func test_a_rally_gated_part_is_refused_until_its_event_is_won() -> void:
 	# The gate itself, against the real catalogue: SOME part is authored behind a special,
 	# and a profile that has won nothing must not be offered it. No specific id is pinned.
 	RallyFixtures.restore()
@@ -132,113 +109,6 @@ func test_a_star_gated_part_is_refused_until_its_event_is_won() -> void:
 		"and allowed once it has been")
 
 
-func _lowest_tier_model() -> Dictionary:
-	var best: Dictionary = {}
-	for entry in CarLibrary.all():
-		if best.is_empty() or int(entry["reward_tier"]) < int(best["reward_tier"]):
-			best = entry
-	return best
-
-
-func test_draw_car_clamped_by_progress_ceiling() -> void:
-	# The car draw is clamped by the PROGRESS ceiling (rallies completed) — the same clamp
-	# the upgrade draw uses (gameplay.md) — NOT by the garage's highest owned tier. At 0
-	# completed the ceiling is tier_ceiling(0), so even beating a top-difficulty rally can't
-	# drop a car above it. Synthetic open-class rally (reveal_after 0, incomplete) keeps the
-	# owned car eligible — the standard-draw path this asserts.
-	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
-	])
-	var starter := _lowest_tier_model()
-	var profile := _profile([], [String(starter["id"])])
-	var ceiling := RewardSystem.tier_ceiling(0)
-	for i in 40:
-		var model: Variant = RewardSystem.draw_car(profile, RewardSystem.MAX_TIER, _rng(i))
-		var meta := CarLibrary.by_id(String(model))
-		assert_false(meta.is_empty(), "draw returns a real catalogue car")
-		assert_lte(int(meta["reward_tier"]), ceiling,
-			"a drawn car never exceeds the progress ceiling, even off a top-difficulty rally")
-	RallyLibrary.reset()
-
-
-func test_draw_car_difficulty_caps_below_progress_ceiling() -> void:
-	# reward tier = min(f(difficulty), progress ceiling): with LOTS completed (a high
-	# progress ceiling) but a LOW-difficulty rally, the draw is still capped at the
-	# difficulty tier — a soft rally never pays a top car just because progress is high.
-	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
-	])
-	var completed: Array = []
-	for n in 8:  # ids need not be real — podium_count only counts them
-		completed.append("done_%d" % n)
-	var starter := _lowest_tier_model()
-	var profile := _profile(completed, [String(starter["id"])])
-	assert_gt(RewardSystem.tier_ceiling(8), 1, "setup: the progress ceiling is above tier 1")
-	for i in 40:
-		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))  # difficulty-1 rally
-		var meta := CarLibrary.by_id(String(model))
-		assert_false(meta.is_empty(), "draw returns a real catalogue car")
-		assert_lte(int(meta["reward_tier"]), 1,
-			"a difficulty-1 rally never pays above tier 1, even with a high progress ceiling")
-	RallyLibrary.reset()
-
-
-func test_draw_car_prefers_unowned() -> void:
-	# Within the clamped pool the draw prefers un-owned models. Own every catalogue car
-	# EXCEPT the highest-tier one; with a top-difficulty rally + high progress the pool
-	# spans the whole roster, so the draw must always return that remaining un-owned car
-	# (owned alternatives exist yet are never picked).
-	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 4},
-	])
-	var completed: Array = []
-	for n in 8:
-		completed.append("done_%d" % n)
-	var pool: Array = RewardSystem._cars_at_or_below_tier(RewardSystem.MAX_TIER)
-	var target := ""
-	var best_tier := -1
-	for id in pool:
-		var t := int(CarLibrary.by_id(String(id))["reward_tier"])
-		if t > best_tier:
-			best_tier = t
-			target = String(id)
-	if target == "":
-		RallyLibrary.reset()
-		return  # empty roster — nothing to prove
-	var owned: Array = []
-	for id in pool:
-		if String(id) != target:
-			owned.append(String(id))
-	var profile := _profile(completed, owned)
-	for i in 30:
-		assert_eq(RewardSystem.draw_car(profile, 4, _rng(i)), target,
-			"draws the un-owned car within the clamped pool, never an owned one")
-	RallyLibrary.reset()
-
-
-func test_draw_car_grants_duplicate_when_everything_owned() -> void:
-	# Own the whole roster: no un-owned candidate remains anywhere, so the draw
-	# still grants (guaranteed reward) — a duplicate of an owned model.
-	var owned: Array = []
-	for entry in CarLibrary.all():
-		owned.append(String(entry["id"]))
-	var profile := _profile([], owned)
-	var model: Variant = RewardSystem.draw_car(profile, 0, _rng(1))
-	assert_true(owned.has(model), "with every car owned, draws a duplicate of an owned one")
-
-
-func test_draw_car_always_grants_even_with_everything_completed() -> void:
-	# Every rally completed and nothing owned — the old policy returned null
-	# here; the new one must still pay a real car (guaranteed reward).
-	var all_ids := []
-	for rally in RallyLibrary.RALLIES:
-		all_ids.append(rally["id"])
-	var profile := _profile(all_ids, [])
-	var model: Variant = RewardSystem.draw_car(profile, 0, _rng(1))
-	assert_not_null(model, "a car is always granted, even post-completion")
-	assert_false(CarLibrary.by_id(String(model)).is_empty(), "and it is a catalogue car")
-
-
 # --- Map-reveal gating -------------------------------------------------------
 # A rally opens when the player has lit the map out to its pin (RallyLibrary.rally_revealed),
 # so these fixtures express "locked" and "open" as PIN POSITIONS: inside the starting
@@ -246,7 +116,10 @@ func test_draw_car_always_grants_even_with_everything_completed() -> void:
 #
 # The starting circle belongs to the player's OPENING RALLY, not to HQ — HQ lights nothing
 # (see features/map-exploration.md) — so the open fixture carries a `prize_car` and the
-# profile names it as the starter. Without that pairing the whole map is dark and a test
+# profile names it as the starter. This is a SYNTHETIC rally dict handed straight to
+# RallyLibrary.prize_car_id(), which still reads whatever `prize_car` key it is given —
+# only the SHIPPED roster's `prize_car` fields were deleted (todo/roguelike-pivot.md
+# decision 28), not the accessor. Without that pairing the whole map is dark and a test
 # like this passes for the wrong reason.
 
 func test_the_eligibility_query_excludes_an_unrevealed_special() -> void:
@@ -285,53 +158,6 @@ func test_a_special_opens_once_the_map_is_lit_out_to_it() -> void:
 	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
 		ids.append(r["id"])
 	assert_has(ids, "sp_near", "the special opens once the map is lit out to it")
-	RallyLibrary.reset()
-
-
-# --- Duplicate-reward guards --------------------------------------------------
-# The tier a draw resolves at is min(rally_difficulty, earned_ceiling), so a
-# low-difficulty rally keeps drawing the low-tier pool however far the player has
-# come. There are more low-difficulty rallies than low-tier cars, so that pool runs
-# out and the reward becomes a car already in the garage. These two guards cover the
-# step-up and the never-twice-running rule. Both use the synthetic CarFixtures roster
-# and assert relations only — no authored tier or car id is pinned.
-
-func test_an_exhausted_tier_steps_up_to_a_car_the_player_has_earned() -> void:
-	# Own every car at the drawn tier, but have earned a higher one: the draw must
-	# find something NEW rather than hand back a duplicate.
-	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
-	])
-	var low_tier: Array = RewardSystem._cars_at_or_below_tier(1)
-	if low_tier.size() < 1 or RewardSystem._cars_at_or_below_tier(2).size() <= low_tier.size():
-		RallyLibrary.reset()
-		return  # fixture roster has no higher tier to climb to; nothing to assert
-	# Enough completions that tier 2 is earned (tier_ceiling = 1 + completed/2).
-	var profile := _profile(["a", "b"], low_tier)
-	for i in 12:
-		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
-		assert_not_null(model, "an exhausted tier still yields a grant")
-		assert_false(low_tier.has(String(model)),
-			"the grant climbs past the exhausted tier instead of repeating an owned car")
-	RallyLibrary.reset()
-
-
-func test_a_draw_does_not_repeat_the_previous_grant_when_an_alternative_exists() -> void:
-	# Pool fully owned and no higher tier earned, so a duplicate is unavoidable — but
-	# it must not be the SAME duplicate the player just received.
-	RallyLibrary.override_for_test([
-		{"id": "r_open", "region": "home", "special": false, "restriction": {}, "difficulty": 1},
-	])
-	var low_tier: Array = RewardSystem._cars_at_or_below_tier(1)
-	if low_tier.size() < 2:
-		RallyLibrary.reset()
-		return  # need two owned cars for "not the previous one" to mean anything
-	var profile := _profile([], low_tier)          # no completions -> no tier to climb to
-	var cars: Array = profile["cars"]
-	var last := String((cars[cars.size() - 1] as Dictionary)["model_id"])
-	for i in 12:
-		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
-		assert_ne(String(model), last, "the draw never repeats the car granted last time")
 	RallyLibrary.reset()
 
 

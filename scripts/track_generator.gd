@@ -299,9 +299,10 @@ static func generate_cached(params: TrackGenParams, cfg: GameConfig,
 
 # Cache consult for the NON-event (for_config) paths: the benchmark boot and a
 # default-config boot. Unlike generate_cached this treats a miss as completely normal
-# and silent — free roam rolls a fresh random seed (plus water level and relief) on
-# every entry (hq.gd _prepare_free_roam), so those keys can never be in the lockfile and
-# a warning/error there would be pure noise. See todo/mobile-web-performance.md §2.6.
+# and silent — neither of those is a fixed, authored key that belongs in the lockfile,
+# so a warning/error there would be pure noise. (Free roam used to be a third such
+# caller, rolling a fresh random seed/water level/relief per entry — it is deleted,
+# todo/roguelike-pivot.md decision 25.) See todo/mobile-web-performance.md §2.6.
 static func generate_optional_cached(params: TrackGenParams, cfg: GameConfig,
 		on_progress: Callable = Callable(), should_abort: Callable = Callable()) -> Dictionary:
 	var hit := TrackCache.lookup(params, cfg)

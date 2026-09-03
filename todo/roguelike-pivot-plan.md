@@ -380,6 +380,40 @@ both untouched. `firestore.rules` lost only the `stage_times` block.
 > session instead of the challenge. When stage 3 gives the challenge a new
 > interstitial host, re-write both against it. A comment in the file marks the spot.
 
+**Save / economy cluster deleted.** Stars, prize rallies, the reward draw, free roam,
+and the migration chain. Four judgement calls worth knowing:
+
+- **`SCHEMA_VERSION` bumped 6 → 7, and `_migrate()` now refuses any non-matching
+  version** (older OR newer). `load_or_new()`'s existing fallback already means
+  "start fresh, file left on disk untouched", so a pre-pivot profile resets rather
+  than loading as a hybrid with dangling stars and a purchase flow that can never
+  succeed. This is decision 34 made concrete.
+- **`record_podium_rally` was NOT fully deleted.** Its `completed` / `best_placed` /
+  `best_combined_ms` bookkeeping feeds `UpgradeLibrary.rally_gate_met` and the reveal
+  system — nothing to do with stars. Only the star-crediting lines went; return type
+  is now `void`.
+- **`prize_car_id` survives as a stub returning `""`.** Deleting it outright would
+  have required gutting `opening_rally_id_for` / `hq_map_pos` / `lit_sources` /
+  `reveal_depths` — map-reveal geometry belonging to a different deletion item. The
+  stub lets that subsystem take its own already-coded empty-map path.
+- **`tools/sim_career.gd` + its test + `sim_career.sh` are deleted** (parent's call,
+  not the agent's). A Monte Carlo simulator of the career loop has no subject once the
+  career loop, the star economy and the car draw it simulates are all gone.
+
+> **DEBT FOR THE ECONOMY STAGE.** `ChallengeSession.try_grant_completion_reward` now
+> grants NOTHING, behind a loud `MONEY SEAM` comment. The challenge is retained
+> (decision 15) so its reward is a concept that must survive — only the currency died.
+> `test_challenge_run_end.gd` lost its reward-card modal-stacking test as a direct
+> consequence (no grant → no card → nothing to stack). **Restore that test when the
+> money grant lands**; the stacking behaviour it guarded is still real in `world.gd`.
+
+> **LEFT DANGLING FOR THE PARTS WAVE, deliberately:** `Save.can_buy_part` / `buy_part` /
+> `can_buy_drive_mode` / `buy_drive_mode` are gutted to always refuse (their callers
+> live in parts-model files), and **`upgrades_grid.gd:160` calls the deleted
+> `Save.stars_available()` — a runtime error the moment that screen builds.** Not
+> caught by `--headless --quit`, which does not deep-validate autoload calls.
+> `upgrades_grid.gd` is deleted by the parts wave, which resolves it.
+
 > **THE BIG ONE — `test_menu_flow.gd` is 5884 lines with ~1080 `hq.<member>`
 > references.** With `test_cloud_boot_gate.gd` and `test_wheel_customization.gd` it
 > drives real SURVIVING logic (start-line preflight, wheel swap, cloud boot gating,

@@ -156,11 +156,17 @@ func test_a_clean_finish_resolves_the_completion_reward_before_handing_off() -> 
 	assert_eq(_scenes, [Scenes.hub_path()], "and then hands off to the hub")
 
 
-func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() -> void:
+func test_a_headless_clean_finish_resolves_the_reward_flow_with_no_popup_attempted() -> void:
 	# Headless play (server exports, and the test runner itself) must never try to
-	# put a ConfirmPopup on screen, but the grant is unconditional and must still
-	# land — a headless finish is not a lesser finish. _scene._headless mirrors
-	# real play here (Platform.is_headless() is true under the test runner).
+	# put a ConfirmPopup on screen. _scene._headless mirrors real play here
+	# (Platform.is_headless() is true under the test runner).
+	#
+	# RENAMED, AND THE GRANT ASSERTION IS GONE (todo/roguelike-pivot.md decision 21): this
+	# used to assert Save.stars_available() > 0 — the challenge completion payout replaced
+	# the mystery-box grant. Both the star ledger AND that payout are deleted now (see
+	# ChallengeSession.try_grant_completion_reward's "MONEY SEAM" comment); a qualifying
+	# finish still resolves placement and hands off cleanly, it just has nothing to grant
+	# until the economy stage wires money in.
 	assert_true(_scene._headless, "setup: this scene sees a headless runtime, same as real headless play")
 	var car := _start_run(ChallengeLibrary.DAILY)
 	var stage_count: int = int(ChallengeLibrary.STAGE_COUNTS[ChallengeLibrary.DAILY])
@@ -173,9 +179,6 @@ func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() ->
 	})
 
 	assert_null(ConfirmPopup.any_open(get_tree()), "headless never opens a popup")
-	# Stars, not boxes: the challenge completion payout replaced the mystery-box grant.
-	assert_gt(_save.stars_available(), 0,
-		"the placement-gated reward was still granted with nothing on screen to show it")
 	assert_eq(_scenes, [Scenes.hub_path()], "and the hand-off to HQ still happens")
 
 
@@ -193,40 +196,15 @@ func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() ->
 # via ConfirmPopup's allow_stack escape hatch. This proves that guarantee: with
 # another modal already occupying the one modal slot, the reward card still opens
 # (stacked on top) rather than being refused.
-func test_the_completion_reward_reveal_stacks_over_an_existing_modal_instead_of_being_dropped() -> void:
-	_scene._headless = false
-	var car := _start_run(ChallengeLibrary.DAILY)
-	var stage_count: int = int(ChallengeLibrary.STAGE_COUNTS[ChallengeLibrary.DAILY])
-	_queue_qualifying_rank(stage_count)
-
-	var earlier := ConfirmPopup.open(_scene, "Already on screen", "some other modal",
-		[{"label": "OK"}])
-	assert_not_null(earlier, "setup: a modal is on screen before the reward fires")
-
-	# Not awaited: _on_challenge_run_finished suspends on popup.finished, so it must
-	# be driven from outside like the DNF tests above.
-	_scene._on_challenge_run_finished({
-		"completed": true, "dnf": false, "kind": ChallengeLibrary.DAILY,
-		"period_key": ChallengeSession.period_key(),
-		"car_instance_id": int(car["instance_id"]),
-	})
-	for i in 10:
-		await get_tree().process_frame
-
-	var open_modals := get_tree().get_nodes_in_group(ConfirmPopup.MODAL_GROUP)
-	assert_eq(open_modals.size(), 2,
-		"the reward card opened ON TOP of the pre-existing modal rather than being refused")
-	assert_eq(_scenes, [], "the run hasn't handed off to HQ yet — still waiting on the reward card")
-
-	# Dismiss both so the coroutine can finish and hand off.
-	for m in open_modals.duplicate():
-		if is_instance_valid(m):
-			(m as ConfirmPopup).trigger_back()
-	for i in 10:
-		await get_tree().process_frame
-
-	assert_null(ConfirmPopup.any_open(get_tree()), "both modals are gone")
-	assert_eq(_scenes, [Scenes.hub_path()], "and the run now hands off to HQ")
+# DEBT FOR THE ECONOMY STAGE. A test lived here asserting the completion-reward card
+# STACKS over a modal already on screen rather than being dropped. It cannot run now:
+# the star payout is deleted and the money grant is not wired yet (see
+# ChallengeSession.try_grant_completion_reward's "MONEY SEAM"), so nothing is granted,
+# world.gd's won_something check reads false by design, and no card is ever shown.
+#
+# The stacking behaviour it guarded is REAL and still in world.gd — restore this test
+# the moment the money grant lands. Deleted rather than weakened: an assertion loosened
+# to "0 or 1 modals" would pass forever and guard nothing.
 
 
 func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> void:

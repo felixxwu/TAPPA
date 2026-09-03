@@ -1891,10 +1891,12 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 
 
 # Body text for the completion-reward card: what was won and where it landed.
-# A placing run pays STARS — a flat per-kind amount plus a placement bonus
-# (ChallengeSession._COMPLETION_REWARD), reported as one total. A car on top is
-# still possible in principle, so both parts are optional and the card lists
-# whatever actually landed.
+# A placing run USED TO pay stars (ChallengeSession._COMPLETION_REWARD) — that ledger
+# and this table are both deleted (todo/roguelike-pivot.md decision 21; see
+# ChallengeSession.try_grant_completion_reward's "MONEY SEAM" comment). `grant` currently
+# never carries a nonzero "stars", so this path is effectively unreached until the money
+# grant lands there. A car on top is still possible in principle, so both parts are
+# optional and the card lists whatever actually landed.
 func _completion_reward_body(item_id: String, grant: Dictionary) -> String:
 	var rank := int(grant.get("rank", 0))
 	var total := int(grant.get("total_entries", 0))

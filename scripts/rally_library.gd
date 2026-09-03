@@ -160,7 +160,6 @@ const WEATHER_NIGHT := "night"
 const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Win: Miot Roadster", "region": "home", "difficulty": 1, "special": false,
-		"prize_car": "mx5",  # wave 3  — Shakedown has always been the MX-5's event
 		"map_pos": Vector2(0.637, 0.485),  # normalised pin position on the world map (hq.gd)
 		# NO class field. It was `car_type: roadster`, which made the MX-5 all but its own
 		# prerequisite: the only other roadster in the catalogue is the Viper, itself a
@@ -205,7 +204,6 @@ const RALLIES: Array[Dictionary] = [
 		# A hot-hatch cup: the class is the BODY, not a narrow power slice, so it keeps
 		# meaning if a hatch is retuned or a new one joins the roster.
 		"id": "hm_hatch_cup", "name": "Win: Honcho Actus", "region": "home", "difficulty": 2, "special": false,
-		"prize_car": "acty",  # wave 3  — a cheap kei runabout, the first car won
 		"map_pos": Vector2(0.581, 0.590),
 		"restriction": {"doors_max": 3},  # small two/three-door cars; it awards a kei, not a hatch
 		"events": [
@@ -225,7 +223,6 @@ const RALLIES: Array[Dictionary] = [
 		# (todo/opening-rally.md), so the door clause is gone. A prize rally has to admit
 		# its own prize — test_every_starter_car_opens_in_a_rally_that_admits_it.
 		"id": "hm_timber_trophy", "name": "Win: Fjord Focal", "region": "home", "difficulty": 2, "special": false,
-		"prize_car": "focus",  # wave 4
 		"map_pos": Vector2(0.584, 0.387),
 		"restriction": {"cylinders_max": 4},  # four cylinders or fewer, like the Focus it awards
 		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
@@ -242,7 +239,6 @@ const RALLIES: Array[Dictionary] = [
 		# Twingo's driver OPENS here (todo/opening-rally.md), so the band has to reach down
 		# to a stock city car rather than starting above one.
 		"id": "hm_forest_gt", "name": "Win: Rondel Twist", "region": "home", "difficulty": 3, "special": false,
-		"prize_car": "twingo",  # wave 3
 		"map_pos": Vector2(0.344, 0.580),
 		"restriction": {"doors_max": 3},  # small two/three-door cars, like the Twingo it awards
 		# ONE EVENT ONLY — an opening rally; see the RALLIES header.
@@ -334,7 +330,6 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "rwd_masters", "name": "Win: The Beast", "region": "home_coast", "difficulty": 3, "special": false,
-		"prize_car": "beast",  # wave 15 — RWD Masters awards the rear-drive monster
 		"map_pos": Vector2(0.229, 0.488),
 		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
 		"restriction": {"drive_mode": CarLibrary.RWD},  # rear-drive only, like The Beast it awards
@@ -396,10 +391,12 @@ const RALLIES: Array[Dictionary] = [
 	# have re-fitted the whole map (tools/fit_map_pins.py) and moved every other rally's
 	# neighbourhood with it.
 	#
-	# THE DEMOTION (now): both parts MOVED AWAY in the 4 -> 5 migration — Race Tires
-	# gr_showdown -> sn_showdown, Sequential Gearbox hc_showdown -> sp_summit_trial, to give the
-	# Alps corner something worth working toward (Save.MOVED_PART_UNLOCKS records the move and is
-	# HISTORICAL: it must never be edited). The `special: true` flags were left behind, so for a
+	# THE DEMOTION (now): both parts MOVED AWAY in the (now-deleted) 4 -> 5 migration — Race
+	# Tires gr_showdown -> sn_showdown, Sequential Gearbox hc_showdown -> sp_summit_trial, to
+	# give the Alps corner something worth working toward. `Save.MOVED_PART_UNLOCKS`, which
+	# recorded the move, is gone with the whole migration chain (todo/roguelike-pivot.md
+	# decision 34); this note is what is left of the history. The `special: true` flags were
+	# left behind, so for a
 	# while the roster held two specials that awarded nothing at all — precisely what the rule at
 	# the top of this note forbids. They pay stars like any other rally, so they are ordinary
 	# rallies now: `special: false`, no trophy, no teaser, and no seat in the all-specials
@@ -449,7 +446,6 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "american_muscle", "name": "Win: Swerve Surger R/T", "region": "taiga", "difficulty": 2, "special": false,
-		"prize_car": "charger",  # wave 7  — the American Muscle event awards the Charger
 		"map_pos": Vector2(0.380, 0.261),
 		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
 		# (Charger ~216, Viper ~264). Country-gated, not car_type-gated, so it fields more
@@ -474,7 +470,6 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "gr_mountain_pass", "name": "Win: Panthera XJS", "region": "home_coast", "difficulty": 3, "special": false,
-		"prize_car": "xjs",  # wave 6
 		"map_pos": Vector2(0.185, 0.382),
 		"restriction": {"country": "GB"},  # a British hill climb, and it awards a British car
 		"events": [
@@ -485,7 +480,6 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "gr_ancient_ruins", "name": "Win: Porker 930 Turbo", "region": "greece", "difficulty": 3, "special": false,
-		"prize_car": "porsche911",  # wave 9
 		"map_pos": Vector2(0.266, 0.736),
 		"restriction": {"cylinders_max": 6},  # small-capacity classics on a tight ruins stage
 		"events": [
@@ -596,7 +590,6 @@ const RALLIES: Array[Dictionary] = [
 	{
 		# A national class: British cars, wide on power.
 		"id": "gc_island_gp", "name": "Win: Swerve Serpent RT/10", "region": "greece_coast", "difficulty": 4, "special": false,
-		"prize_car": "viper",  # wave 13
 		"map_pos": Vector2(0.612, 0.840),
 		# NO class field. It was `country: GB`, which excluded the US Viper this rally
 		# AWARDS; making it roadster-only fixed that but made the Viper its own
@@ -983,57 +976,12 @@ static func completed_count(profile: Dictionary) -> int:
 	return podium_count(profile)
 
 
-# --- Star scoring ------------------------------------------------------------
-# What a PLACEMENT is worth lives here; the running total does not. Stars are a persisted
-# LEDGER on the profile now (Save.stars_earned / stars_spent — see todo/star-economy.md),
-# because a derived total could not see Rally Challenge income and shrank whenever a rally
-# was renamed or removed.
-#
-# Specials DO award stars, and no longer gate on them — the ladder counts completed ordinary
-# rallies instead (see "Completion gating" below). Those two facts are linked: while specials
-# were star-gated, paying them stars would have let a special bootstrap the next rung.
-
-# How many places count as the podium. NOT a star count — the two were once the same number
-# doing both jobs (a 1st -> 3, 2nd -> 2, 3rd -> 1 ramp made the podium size and the top rating
-# necessarily equal). They are separate constants now, so widening the podium does not silently
-# change what a win pays.
-const PODIUM_PLACES := 3
-## What winning outright (1st) pays — the top of the curve.
-const STARS_FOR_WIN := 3
-## What a podium finish pays, 2nd place down to PODIUM_PLACES.
-const STARS_FOR_PODIUM := 2
-## What merely FINISHING pays, anywhere off the podium.
-const STARS_FOR_FINISH := 1
-# The most a single rally can pay — i.e. the denominator the star rows draw against.
-const MAX_STARS_PER_RALLY := STARS_FOR_WIN
-
-
-# Stars a finishing position is worth: 1st -> STARS_FOR_WIN, the rest of the podium ->
-# STARS_FOR_PODIUM, any other finish -> STARS_FOR_FINISH, and not finishing at all -> 0.
-#
-# THREE TIERS. Winning outright pays strictly more than scraping the podium — the win is the
-# thing the player is chasing, and the rally's car/part prize alone did not make that legible
-# in the currency itself. Below that, turning up and finishing always pays something, so a
-# rally the player cannot podium is still worth driving.
-#
-# `placed <= 0` is "did not finish / never placed" and pays nothing — the one case that must
-# stay at zero, since the opening rally can complete on a DNF (todo/opening-rally.md) and a
-# ledger that paid for that would pay for quitting.
-#
-# THE one definition — Save.record_podium_rally's credit, the Rally Challenge award and the
-# HQ's per-pin star row all go through it, so what a star is worth can never disagree
-# between the surfaces that pay it and the ones that show it.
-#
-# NOTE stars are no longer summed from the roster: they are a PERSISTED LEDGER on the
-# profile (`stars_earned` / `stars_spent`, see Save.stars_available and
-# todo/star-economy.md). The old total_stars / max_total_stars are gone — a derived total
-# could not see Rally Challenge income and shrank whenever a rally was renamed.
-static func stars_for_placement(placed: int) -> int:
-	if placed <= 0:
-		return 0
-	if placed == 1:
-		return STARS_FOR_WIN
-	return STARS_FOR_PODIUM if placed <= PODIUM_PLACES else STARS_FOR_FINISH
+# --- Star scoring: DELETED (todo/roguelike-pivot.md decision 21) -------------
+# PODIUM_PLACES, STARS_FOR_WIN / STARS_FOR_PODIUM / STARS_FOR_FINISH, MAX_STARS_PER_RALLY
+# and stars_for_placement() are gone with the rest of the star ledger — see
+# Save._default_profile()'s "Star ledger: DELETED" note. Nothing here replaces "how many
+# places count as a podium" as a standalone concept; record_podium_rally's callers decide
+# that for themselves (the old rally_session.gd gated on `top3 or opening_first`).
 
 
 static func is_special(rally: Dictionary) -> bool:
@@ -1041,66 +989,25 @@ static func is_special(rally: Dictionary) -> bool:
 
 
 # --- Prizes: what a rally hands over ------------------------------------------
-# A rally may award a CAR or a PART on top of its stars, and the map shows which by
-# standing the prize itself on the pin (see features/map-exploration.md). This is what
-# replaced buying cars with stars: the player can SEE what is out there and go and win it,
-# instead of saving up for a random draw.
+# PARTIALLY DELETED (todo/roguelike-pivot.md decision 28 / task "Prize rallies and the
+# reward draw"): a rally used to award a CAR or a PART on top of its stars, and the map
+# showed which by standing the prize itself on the pin. Car acquisition is a money shop
+# now, not a rally-win draw, so `prize_part_id`, `prize_capability_id` and `has_prize` —
+# and RewardSystem.draw_car, which drew from this — are gone, along with the `prize_car`
+# field on every RALLIES entry.
 #
-# The two halves are authored differently, on purpose:
-#
-#   * CAR — authored here as `prize_car`, a CarLibrary id. There is nowhere else for it to
-#     live: a car does not know which event awards it.
-#   * PART — NOT authored here. Derived from UpgradeLibrary's `unlocked_by_rally`, which
-#     already names the rally that opens each part. Authoring it on both sides would be two
-#     sources for one fact, and they would drift the first time a part was re-gated.
-#
-# Prize claiming is a PODIUM finish (top 3), the same `completed` bar that lights the map —
-# so one good result advances exploration and hands over the reward together.
-
-
-# The CarLibrary id this rally awards, or "" if it awards no car.
+# `prize_car_id` ITSELF SURVIVES, deliberately, as a narrower exception: with the field
+# gone it now always returns "" (rally.get("prize_car", "") has nothing left to find), but
+# deleting the function outright would require gutting `opening_rally_id_for` /
+# `hq_map_pos` / `lit_sources` / `reveal_depths` below — the overworld map-reveal geometry,
+# which is a SEPARATE, larger deletion ("The overworld map" in the pivot doc's What gets
+# deleted, not this task's four items) and is currently config-gated off
+# (`GameConfig.overworld_enabled == false`). Keeping the field's accessor as an always-""
+# stub lets that whole subsystem degrade to its own already-coded empty-map fallback with
+# no code changes here, rather than this task reaching into a wave it does not own. See
+# this agent's report for the full reasoning.
 static func prize_car_id(rally: Dictionary) -> String:
 	return String(rally.get("prize_car", ""))
-
-
-# The UpgradeLibrary id this rally awards, or "" if it awards no part. Derived from the
-# upgrade catalogue's own gate, never authored on the rally — see the note above.
-static func prize_part_id(rally: Dictionary) -> String:
-	return String(UpgradeLibrary.unlocked_by(String(rally.get("id", ""))).get("id", ""))
-
-
-# --- Capability prizes -------------------------------------------------------
-#
-# A CAPABILITY is the third kind of thing a rally can award, alongside a car and a part: a garage
-# MECHANIC rather than an object. Engine swapping is the only one today.
-#
-# It is gated differently on purpose — `ENGINE_SWAP_UNLOCK_RALLY` names the rally here, where parts
-# are gated the other way round (UpgradeLibrary.unlocked_by_rally names the rally on the PART) —
-# because a capability has no catalogue entry to hang the gate on. That asymmetry is deliberate and
-# is NOT being collapsed; what it cost was a blind spot, because every "what does this rally award"
-# query only ever asked about cars and parts. So a capability special looked prize-less to the map
-# markers, the "prize rally" wording and the standing rule that a special must award SOMETHING.
-# This is the one query that closes it.
-#
-# Returns a STABLE CAPABILITY ID, not an icon slot: the art mapping belongs to the view layer
-# (OverworldMarker.capability_slot_of), and reaching UpgradeOptions from here would make this file
-# and that one mutually dependent — the same cycle overworld_roads.gd documents avoiding with
-# TerrainManager.
-const CAPABILITY_ENGINE_SWAP := "engine_swap"
-
-
-## The capability this rally awards, or "" for the overwhelming majority that award none.
-static func prize_capability_id(rally: Dictionary) -> String:
-	return CAPABILITY_ENGINE_SWAP if String(rally.get("id", "")) == ENGINE_SWAP_UNLOCK_RALLY else ""
-
-
-# Does this rally hand over anything beyond stars? Drives the map marker choice (a car
-# model / a part icon / a capability icon / a trophy / an ordinary flag) and the "prize rally"
-# wording — and it is the predicate the shipped-roster contract test holds every `special: true`
-# rally to, so a special can never again be a special by label alone.
-static func has_prize(rally: Dictionary) -> bool:
-	return prize_car_id(rally) != "" or prize_part_id(rally) != "" \
-		or prize_capability_id(rally) != ""
 
 
 # --- The opening rally -------------------------------------------------------
@@ -1461,12 +1368,11 @@ static func engine_swap_unlock_rally_name() -> String:
 
 
 static func engine_swaps_unlocked(profile: Dictionary) -> bool:
-	# Careers that won the capability where it USED to live (The Foothills Trial) carry it
-	# directly, written by the 5 -> 6 migration — checked first so a re-sited unlock is
-	# never taken back. Empty for every career started after the move, exactly like
-	# UpgradeLibrary.rally_gate_met's legacy part set.
-	if bool(profile.get(Save.KEY_LEGACY_ENGINE_SWAP, false)):
-		return true
+	# The Save.KEY_LEGACY_ENGINE_SWAP fallback (careers that won the capability where it USED
+	# to live, The Foothills Trial, carried directly by the 5 -> 6 migration) is deleted along
+	# with the whole migration chain (todo/roguelike-pivot.md decision 34) — no migration is
+	# written for the pivot, so a pre-pivot profile resets instead of carrying this flag
+	# forward. See Save.SCHEMA_VERSION's own comment.
 	return bool((profile.get(Save.KEY_RALLIES, {}) as Dictionary)
 		.get(ENGINE_SWAP_UNLOCK_RALLY, {}).get("completed", false))
 

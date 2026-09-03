@@ -198,20 +198,9 @@ func test_gearbox_page_is_keyboard_and_gamepad_navigable() -> void:
 	assert_true(menu.at_root(), "Back returns to the category list")
 
 
-# The dev "Add 1 star" shortcut credits the ledger. Asserts the DELTA, never a resulting
-# total — the ledger starts wherever the profile happens to sit.
-func test_add_star_dev_button_credits_one_star() -> void:
-	var save: Node = get_node("/root/Save")
-	var before: int = save.stars_available()
-	var menu := _make_menu()
-	var button := _dev_button(menu, "Add 1 star")
-	assert_not_null(button, "the dev page offers the add-star shortcut")
-	button.pressed.emit()
-	assert_eq(save.stars_available(), before + 1, "pressing it banks exactly one star")
-	button.pressed.emit()
-	assert_eq(save.stars_available(), before + 2, "and it is repeatable")
-	assert_string_contains(menu._dev_status.text.to_lower(), "star",
-		"the dev status line reports what happened")
+# test_add_star_dev_button_credits_one_star DELETED: the "Add 1 star" dev shortcut and
+# Save.stars_available/award_stars are gone with the star ledger
+# (todo/roguelike-pivot.md decision 21).
 
 
 # --- Reset progress ----------------------------------------------------------

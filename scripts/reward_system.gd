@@ -2,56 +2,25 @@ class_name RewardSystem
 extends RefCounted
 # Docs: features/reward-system.md — update in the same change as this file.
 # Tests: tests/headless/test_reward_system.gd — extend in the same change.
-# The reward DRAW POLICY: what CAR the player is granted for a top-3 rally finish, and
-# what PART a special event's unlock hands over. Pure functions over the authored
-# libraries + the save profile — no state beyond an injected RNG, mirroring
-# RallyLibrary / UpgradeLibrary (not an autoload). See todo/reward-system.md.
+# What's left of the reward DRAW POLICY after todo/roguelike-pivot.md decisions 21 and
+# the prize-rallies deletion: what PART a special event's unlock hands over.
 #
-# There is no per-event random UPGRADE draw any more, and no consumables to draw: parts
-# are won outright at the rally that advertises them (features/prize-rallies.md) or bought
-# with stars (features/star-economy.md), and engine swapping is simply unlimited once its
-# rally unlocks it. Equipment now only ever arrives by a route the player chose.
+# EVERYTHING ELSE THAT USED TO LIVE HERE IS GONE:
+#   - The CAR draw (draw_car, tier_ceiling, _difficulty_to_tier, target_tier, MAX_TIER,
+#     highest_owned_tier, _cars_at_or_below_tier, _pick_prefer_unowned, _all_owned,
+#     _last_granted_model_id, _owned_model_ids, _ensure_rng) died with prize rallies
+#     (decision 28 — car acquisition is a money shop now, not a rally-win draw).
+#   - stars_available_in died with the star ledger (decision 21 — see
+#     Save._default_profile()'s "Star ledger: DELETED" note).
+# grant_special_unlock survives because it is PARTS-MODEL machinery, not prize/star
+# machinery: it hands over the UpgradeLibrary part a special's unlock gates, cascading
+# down UpgradeLibrary's own prerequisite chain. That gate (UpgradeLibrary.rally_gate_met,
+# unlocked_by_rally) is untouched by this wave — it belongs to the parts model, a later
+# wave's territory — so this function is left exactly as it was.
 #
-# Scope: this module answers WHAT to grant. It does NOT own WHEN a reward fires
-# (the flow controller, features/rally-session.md) or HOW it's revealed (menus
-# rig 5). draw_car returns an id; the caller delivers it via
-# Save.add_item / Save.grant_car and then Save.save() — saving immediately after
-# resolve is what makes the unseeded RNG savescum-proof (no re-roll on reload).
-
-# Highest tier any reward can reach (cars top out at reward_tier 4). The
-# tier-ceiling and difficulty-remap CURVES are GameConfig tunables in the final
-# balance pass; the values here are placeholder defaults (deferred, per spec).
-#
-# TIER IS NOW A CAR-DRAW CONCEPT ONLY. Upgrades used to carry a `tier` too, walked by
-# the old _parts_at_or_below, but the star gate (UpgradeLibrary.rally_gate_met) does that
-# job better: tier gated by rally DIFFICULTY and had gone vestigial (every part sat at
-# tier 1 bar one), whereas the gate is explicit and legible. Upgrades are no longer drawn at
-# random at all — they're won or bought — so no rarity model replaces it. The car ladder below
-# is untouched — it's also where the "harder rally, better prize" correlation still lives.
-const MAX_TIER := 4
-
-
-# --- Tier model & clamp ------------------------------------------------------
-
-# Monotonic mapping from PODIUM (top-3) finishes to the highest tier that can drop, so
-# an early lucky win can't yield a top-tier reward. Placeholder curve.
-static func tier_ceiling(podium_count: int) -> int:
-	return clampi(1 + podium_count / 2, 1, MAX_TIER)
-
-
-# f(difficulty) — default identity (reward tier = rally difficulty), an optional
-# GameConfig remap can decouple them later.
-static func _difficulty_to_tier(rally_difficulty: int) -> int:
-	return rally_difficulty
-
-
-# The clamped tier the CAR draw resolves at (draw_car's one caller). Exposed for tests.
-static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
-	var ceiling := tier_ceiling(RallyLibrary.podium_count(profile))
-	return clampi(_difficulty_to_tier(rally_difficulty), 1, ceiling)
-
-
-# --- Upgrade grants ----------------------------------------------------------
+# Scope now: this module answers WHAT PART a special hands over. It does NOT own WHEN a
+# reward fires or HOW it's revealed — those live at the call site (currently
+# Save._grant_rally_prizes, the dev cheat's mirror of the real award path).
 
 # Sentinel meaning "nothing was awarded this event". Callers must NOT install it, append it
 # to the won list, or fire a reveal — they skip straight on to the next menu. It outlived
@@ -121,152 +90,3 @@ static func grant_special_unlock(car_instance_id: int, item_id: String) -> Array
 	# Headline first: the caller shows granted[0] and the cascade stays implementation detail.
 	granted.reverse()
 	return granted
-
-
-# --- Car draw (per rally finished top-3, including re-wins / farming) ---------
-
-# Draw the car model id to grant for a top-3 finish. Fires on EVERY top-3
-# finish — re-winning a completed rally re-grants a car (renewable supply).
-# The draw is GUARANTEED: the pool (tier <= the ceiling) always has the tier-1
-# roster in it, so a car is always granted. Any car whose reward_tier is at or
-# below the DRAW CEILING — clamp(f(rally difficulty), 1, tier_ceiling(rallies
-# completed)), gameplay.md's progress clamp. So a higher-difficulty rally pays a
-# better car, but only up to the tier the player's progress has earned — a lucky early win can't drop a top
-# car. Prefers un-owned.
-# rally_difficulty defaults to 0 (garage tier alone governs). Returns a model_id
-# (Variant only for the defensive empty-roster null); caller delivers via
-# Save.grant_car.
-static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: RandomNumberGenerator = null) -> Variant:
-	rng = _ensure_rng(rng)
-	# gameplay.md's progress clamp: reward tier = f(difficulty), capped by the
-	# progress ceiling (rallies completed), so a lucky early win at a higher-difficulty
-	# rally still can't drop a car above the player's earned tier. This is the SAME
-	# clamp. (Upgrades don't use a tier at all any more — see the note on MAX_TIER —
-	# so this is now the car ladder's own clamp.) Cars deliberately don't key
-	# off the garage's highest owned tier, which let one d2 win open the whole roster.
-	var earned := tier_ceiling(RallyLibrary.podium_count(profile))
-	var ceiling := target_tier(rally_difficulty, profile)
-	var pool := _cars_at_or_below_tier(ceiling)
-	# EXHAUSTED-TIER STEP-UP. The tier is min(difficulty, earned), so a difficulty-1
-	# rally always draws the tier-1 pool however far the player has come — and there
-	# are far more low-difficulty rallies than low-tier cars, so that pool runs out
-	# and every later win hands back a car already in the garage. When that happens,
-	# climb toward the tier the player has actually EARNED until something new
-	# appears. This never exceeds the earned ceiling, so the progress clamp
-	# (gameplay.md — a lucky early win can't drop a car above your tier) still holds;
-	# it only stops an exhausted pool turning a win into a no-op reward.
-	var owned_ids := _owned_model_ids(profile)
-	while ceiling < earned and _all_owned(pool, owned_ids):
-		ceiling += 1
-		pool = _cars_at_or_below_tier(ceiling)
-	# Avoid handing out the same model twice running when there is any alternative —
-	# back-to-back duplicates read as a broken reward even when a duplicate is the
-	# only honest outcome.
-	return _pick_prefer_unowned(pool, _owned_model_ids(profile), rng,
-		_last_granted_model_id(profile))
-
-
-# The highest reward_tier among the cars in the garage, or 0 for an empty one.
-# Sizes a reward against what the player has actually worked up to, rather than always
-# paying out at the bottom of the ladder.
-static func highest_owned_tier(profile: Dictionary) -> int:
-	var best := 0
-	for car in profile.get(Save.KEY_CARS, []):
-		var entry := CarLibrary.for_owned(car)
-		best = maxi(best, int(entry.get("reward_tier", 0)))
-	return best
-
-
-# CarLibrary model ids with reward_tier at or below `tier`.
-static func _cars_at_or_below_tier(tier: int) -> Array:
-	var out: Array = []
-	for entry in CarLibrary.all():
-		if int(entry.get("reward_tier", 0)) <= tier:
-			out.append(entry["id"])
-	return out
-
-
-# --- Spending stars ----------------------------------------------------------
-# Cars are NOT bought. They are won at the rally that advertises them
-# (features/prize-rallies.md), so what the player owns is exactly what they went out and
-# won — which is what keeps the per-rally `restriction` bands meaningful and gives the dark
-# map something worth exploring toward.
-#
-# The retired API was `car_price` / `purchase_car` / `stars_available_in`'s pricing role,
-# plus the present box on the HQ map and a `GameConfig.star_cost_per_car` price (stars are
-# now spent per item instead — `star_cost_per_repair` / `star_cost_per_part` /
-# `star_cost_per_drive_mode`). The soft-lock
-# rescue that once rode along with it (a price-0 car when stranded, then an unlock-draw
-# fallback) is gone too: entry requirements are purely categorical, so no build can be
-# too slow to enter anything, and reachability is a CONTENT invariant proven over the map
-# (test_every_starter_car_can_enter_something_on_a_fresh_profile and the roster's
-# reachability closure) rather than a runtime rescue.
-#
-# What stars buy instead: repairs and copies of discovered parts — see
-# features/star-economy.md.
-
-
-# The spendable balance held by `profile`. Mirrors Save.stars_available() but reads the dict
-# it is given, keeping this whole module pure over a profile the way draw_car already is.
-static func stars_available_in(profile: Dictionary) -> int:
-	return maxi(0, int(profile.get("stars_earned", 0)) - int(profile.get("stars_spent", 0)))
-
-
-
-# Uniform pick from `pool`, restricted to not-yet-owned models when any exist
-# (the discovery hook); otherwise a duplicate of an owned one. Null on an empty pool.
-# `avoid` is the model granted LAST time: it is dropped from the candidates whenever
-# doing so still leaves something to pick, so a player never sees the same car twice
-# running while any alternative exists. It is a preference, never a hard filter — a
-# single-entry pool still grants that car rather than returning null.
-static func _pick_prefer_unowned(pool: Array, owned: Dictionary, rng: RandomNumberGenerator,
-		avoid: String = "") -> Variant:
-	if pool.is_empty():
-		return null
-	var unowned: Array = []
-	for model_id in pool:
-		if not owned.has(model_id):
-			unowned.append(model_id)
-	var pick_from: Array = unowned if not unowned.is_empty() else pool
-	if avoid != "" and pick_from.size() > 1 and pick_from.has(avoid):
-		var without: Array = pick_from.duplicate()
-		without.erase(avoid)
-		pick_from = without
-	return pick_from[rng.randi_range(0, pick_from.size() - 1)]
-
-
-# True when every model in `pool` is already in the garage — the condition that makes
-# a draw from it a guaranteed duplicate (see draw_car's exhausted-tier step-up).
-static func _all_owned(pool: Array, owned: Dictionary) -> bool:
-	for model_id in pool:
-		if not owned.has(model_id):
-			return false
-	return not pool.is_empty()
-
-
-# The most recently granted car model, or "" for an empty garage. grant_car appends,
-# so the last entry is the newest — no extra state to persist or migrate.
-static func _last_granted_model_id(profile: Dictionary) -> String:
-	var cars: Array = profile.get(Save.KEY_CARS, [])
-	if cars.is_empty():
-		return ""
-	return String((cars[cars.size() - 1] as Dictionary).get("model_id", ""))
-
-
-static func _owned_model_ids(profile: Dictionary) -> Dictionary:
-	var owned := {}
-	for car in profile.get(Save.KEY_CARS, []):
-		owned[car.get("model_id", "")] = true
-	return owned
-
-
-# --- Helpers -----------------------------------------------------------------
-
-# Unseeded RNG for real play (randomized so successive grants vary); tests inject
-# a seeded rng for reproducibility. Savescum-safety comes from the caller saving
-# immediately after a grant resolves, not from a seed.
-static func _ensure_rng(rng: RandomNumberGenerator) -> RandomNumberGenerator:
-	if rng == null:
-		rng = RandomNumberGenerator.new()
-		rng.randomize()
-	return rng

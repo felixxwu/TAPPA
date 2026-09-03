@@ -6,7 +6,9 @@ extends RefCounted
 # Two builders off one set of proportions, so the thing the player taps on the map and the
 # thing that opens in the car park are recognisably the same object:
 #
-#   build()          — a small static box for the map pin (like RallyFlag / RallyTrophy).
+#   build()          — a small static box for the map pin (like RallyFlag; RallyTrophy,
+#                      the star-gated special's version of this, is deleted along with the
+#                      star ledger — todo/roguelike-pivot.md decision 21).
 #   build_openable() — the same box at ANY SIZE IN METRES (width x depth x wall height), with
 #                      the lid and the four side walls as SEPARATELY NAMED children so the
 #                      car-park cinematic can tween them apart. Nothing here animates; the

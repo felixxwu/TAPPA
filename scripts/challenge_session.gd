@@ -491,39 +491,35 @@ func abandon() -> void:
 
 
 # --- Completion reward (placement-gated, §6) -----------------------------------
+#
+# MONEY SEAM (todo/roguelike-pivot.md decision 21, and the "One knock-on to re-point" note
+# in the pivot doc's Economy section). This reward used to pay STARS — a flat per-kind
+# amount (_COMPLETION_REWARD, now deleted) plus a placement bonus on
+# RallyLibrary.stars_for_placement (also deleted) — and both are gone with the whole star
+# ledger (see Save._default_profile()'s "Star ledger: DELETED" note). The challenge itself
+# is RETAINED (decision 15), so ITS REWARD IS A CONCEPT THAT MUST SURVIVE — only the
+# currency it paid is deleted. THIS IS THAT SEAM: wire the money grant here once the
+# economy stage lands. It is not a drop-in rename, because the pivot doc's Economy section
+# defines three money sources (per-stage payout scaling with stages cleared, a
+# fast-completion bonus, and mid-stage coins) and none of them obviously fits a
+# placement-gated LUMP SUM the way stars_for_placement's curve did — that needs a real
+# design decision when the economy stage is built, not a mechanical substitution here.
+#
+# Until then this grants NOTHING — deliberately, not silently: `try_grant_completion_reward`
+# below still runs the whole placement check (so `{"placed": true, ...}` is still reported
+# correctly) but stops at that point instead of paying anything, and the returned dict
+# carries no "stars" key any more so world.gd's `int(grant.get("stars", 0)) > 0` reveal
+# gate reads false rather than a fabricated nonzero amount.
 
-# Per-kind completion reward table — TUNABLE, change the numbers here.
-#
-# `stars` is a flat completion payout, and it REPLACED the mystery-box payout this table
-# used to carry: boxes (and the random draw behind them) are gone, parts and cars are
-# bought with stars now, so the only currency a challenge can pay in is stars. The car
-# draw that used to sit here is long gone for the same reason (todo/star-economy.md,
-# change 5). Ordering is deliberate — Daily < Weekly < Monthly — because a longer period
-# is a scarcer, bigger prize.
-#
-# This flat amount is paid on TOP of the placement stars below, which are credited through
-# the same RallyLibrary.stars_for_placement curve career rallies use, so a star earned in a
-# challenge is worth exactly what one earned in a rally is. The flat part exists because
-# "placed" here is only the top HALF of the board, far more lenient than the podium the
-# star curve pays out to — without it a mid-table finish would bank nothing at all, which
-# is exactly what the boxes used to cover.
-#
-# One attempt per period and the outcome is terminal, so a period cannot be re-farmed —
-# but unlike career stars this income IS renewable over real time, which is deliberate:
-# it is the only star source that keeps flowing once the roster is complete.
+
 # The single source of truth for "how much of the board counts as PLACING" — the reward
 # RULE below (`rank > ceili(float(total) * CHALLENGE_TOP_FRACTION)`) and the win-condition
 # label the HQ entry screen shows (hq_challenge.gd -> _CHALLENGE_WIN_CONDITION, formatted
 # from this) both read it, so the rule and its label cannot silently disagree. It lives
 # here as a const rather than in game_config.tres because it is a REWARD RULE, not a look
-# or feel tunable: moving it changes who gets paid.
+# or feel tunable: moving it changes who gets paid. Survives the star deletion untouched —
+# it gates WHO placed, not what placing pays.
 const CHALLENGE_TOP_FRACTION := 0.5
-
-const _COMPLETION_REWARD := {
-	ChallengeLibrary.DAILY: {"stars": 2},
-	ChallengeLibrary.WEEKLY: {"stars": 4},
-	ChallengeLibrary.MONTHLY: {"stars": 8},
-}
 
 
 # Finishing every stage (no DNF) is eligible for one placement-gated reward:
@@ -532,9 +528,10 @@ const _COMPLETION_REWARD := {
 # field — accepted as a deliberate generous quirk, not a bug, per spec §6).
 # Requires a cloud rank to exist at all — skipped entirely if signed out /
 # no username / the final checkpoint never posted (all read the same way:
-# Cloud.challenge_leaderboard.fetch_final_rank returning not-ok). Grants via
-# the same Save star ledger a career rally uses, and returns what (if
-# anything) was granted.
+# Cloud.challenge_leaderboard.fetch_final_rank returning not-ok).
+#
+# MONEY SEAM: see the block comment above. Placement is still fully resolved and reported;
+# only the payout is gone, pending the economy stage.
 func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	if not bool(result.get("completed", false)):
 		return {}  # DNF gets nothing from this path (§6)
@@ -550,17 +547,8 @@ func try_grant_completion_reward(result: Dictionary) -> Dictionary:
 	var total := int(rank_info["total_entries"])
 	if rank > ceili(float(total) * CHALLENGE_TOP_FRACTION):
 		return {"placed": false, "rank": rank, "total_entries": total}
-	var reward: Dictionary = _COMPLETION_REWARD.get(kind_str, {})
-	if reward.is_empty():
-		return {"placed": true, "rank": rank, "total_entries": total}
-	# The flat completion payout (which replaced the mystery boxes) plus the placement
-	# bonus on the SAME curve as a career rally (1st/2nd/3rd -> 3/2/1). Granted as ONE
-	# credit so the ledger is written once, and reported split so the card can say where
-	# each part came from.
-	var base_stars := int(reward.get("stars", 0))
-	var placement_stars := RallyLibrary.stars_for_placement(rank)
-	var stars := base_stars + placement_stars
-	if stars > 0:
-		Save.award_stars(stars)
-	return {"placed": true, "rank": rank, "total_entries": total,
-		"item_id": "", "stars": stars, "placement_stars": placement_stars}
+	# Placed, but nothing is granted -- see the MONEY SEAM comment above. No "stars" key on
+	# purpose: world.gd's won_something check (`item_id != "" or int(grant.get("stars", 0))
+	# > 0`) must read false here, not "0 stars", so no empty reward card is shown for a
+	# reward that has not been wired yet.
+	return {"placed": true, "rank": rank, "total_entries": total, "item_id": ""}

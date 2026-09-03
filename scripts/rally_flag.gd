@@ -53,13 +53,23 @@ enum { PENNANT_CHECKERED, PENNANT_SOLID_GREEN, PENNANT_SOLID_GREY }
 # One shared checkerboard texture for the whole game (deterministic, generated once).
 static var _checker_tex: Texture2D
 
+# The medal-count ceiling `stars` is clamped against below. Was RallyLibrary.MAX_STARS_PER_RALLY
+# / STARS_FOR_WIN — the same number, since the top medal tier and the podium-pay ceiling were
+# always equal — but that whole star LEDGER is deleted (todo/roguelike-pivot.md decision 21).
+# RallyFlag never cared about stars as a currency, only about a 0..3 medal count a caller had
+# already computed, so it keeps its own small constant rather than lose that entirely. This
+# marker is itself orphaned production code pending "The overworld map" deletion (a separate,
+# larger wave — see rally_library.gd's prize_car_id comment); kept building for its one
+# remaining caller, the map-pin dev tools, until that wave removes it outright.
+const MAX_MEDALS := 3
+
 
 # Which pennant a rally shows. A podium result (placed 3rd or better → stars >= 1)
 # always wins and shows the checkered flag; otherwise green when the player owns a
 # car eligible to enter, else grey. A locked rally can never be podiumed and is
 # treated as having no eligible car, so it reads grey/disabled.
 static func pennant_kind(locked: bool, stars: int, has_eligible_car: bool) -> int:
-	if not locked and clampi(stars, 0, RallyLibrary.MAX_STARS_PER_RALLY) >= 1:
+	if not locked and clampi(stars, 0, MAX_MEDALS) >= 1:
 		return PENNANT_CHECKERED
 	if not locked and has_eligible_car:
 		return PENNANT_SOLID_GREEN
@@ -69,7 +79,7 @@ static func pennant_kind(locked: bool, stars: int, has_eligible_car: bool) -> in
 # The tip + base colour: warm gold once the rally is WON (the top star tier = finished
 # 1st), metal grey otherwise (including locked).
 static func accent_color(locked: bool, stars: int) -> Color:
-	if not locked and clampi(stars, 0, RallyLibrary.MAX_STARS_PER_RALLY) >= RallyLibrary.STARS_FOR_WIN:
+	if not locked and clampi(stars, 0, MAX_MEDALS) >= MAX_MEDALS:
 		return ACCENT_GOLD
 	return ACCENT_METAL
 

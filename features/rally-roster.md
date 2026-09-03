@@ -6,7 +6,7 @@ player state. It holds `const RALLIES: Array[Dictionary]` plus the pure function
 the rest of the game runs over it. Player completion lives in the save profile
 (`Save`, `features/save-persistence.md`), keyed by the stable rally `id` here.
 
-**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_catalogue_seam.gd`, `tests/headless/test_sim_career.gd`
+**Tests:** `tests/headless/test_rally_library.gd`, `tests/headless/test_catalogue_seam.gd`
 
 **STALE DOC WARNING:** this file still documents the rival field at length (tyre
 mirroring, `generate_opponent_field`, engine-swap build levels, pace bands, wrecks) —

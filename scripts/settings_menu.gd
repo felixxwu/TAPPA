@@ -363,10 +363,9 @@ func _build_dev_page() -> void:
 	_dev_status = _make_sub("Unlock anything.")
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("3-star all rallies (unlock all regions)", _three_star_all_rallies))
-	# Top up the star ledger without racing. Stars are the currency cars are bought with
-	# (features/star-economy.md), so this is the quick way to exercise the present box —
-	# and, being +1, to sit exactly on a price boundary and check the affordability states.
-	_dev_page.add_child(_make_action_button("Add 1 star", _add_star))
+	# The "Add 1 star" dev button that used to sit here topped up the star ledger without
+	# racing. Deleted along with the ledger itself (todo/roguelike-pivot.md decision 21) —
+	# there is nothing left to add to, and money (its replacement) does not exist yet.
 	# The "Complete rally (win now)" shortcut that used to sit here — instantly
 	# finish the active rally with a perfect time and jump to the podium — was
 	# RallySession-gated. Deleted along with RallySession and the rival field it
@@ -861,13 +860,8 @@ func _grant_car(model_id: String, display_name: String) -> void:
 	_dev_status.text = "Granted %s." % display_name
 
 
-# Credit one star to the ledger. Goes through Save.award_stars — the same entry point the
-# Rally Challenge uses — rather than poking `stars_earned` directly, so the dev button can
-# never drift from how stars are really banked. Reports the new spendable balance, which is
-# what the map meter and the present box both read.
-func _add_star() -> void:
-	Save.award_stars(1)
-	_dev_status.text = "Added 1 star (%d to spend)." % Save.stars_available()
+# _add_star() (Save.award_stars) was deleted with the star ledger
+# (todo/roguelike-pivot.md decision 21) — see the dev-page comment above.
 
 
 # Fit a slottable part straight onto the selected car — upgrades are car-bound, so

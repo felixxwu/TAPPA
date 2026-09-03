@@ -603,7 +603,8 @@ func has_forced_induction() -> bool:
 # full), and holding the `nitrous` action multiplies delivered crank torque while the
 # tank drains. Deliberately NOT part of effective_meta / power-to-weight, so fitting
 # nitrous can never move a car's rally eligibility — it makes events easier, it is not
-# a stat. See todo/star-gated-special-events.md and features/nitrous.md.
+# a stat. See features/nitrous.md. (todo/star-gated-special-events.md, cited here, is
+# deleted — todo/roguelike-pivot.md decision 44.)
 
 ## Extra torque fraction while nitrous is held — delivered torque is multiplied by
 ## (1.0 + this). 0 = no nitrous fitted. The upgrade ladder raises this ("harder").
@@ -767,7 +768,8 @@ func has_nitrous() -> bool:
 ## before it fades out.
 @export var hud_popup_show_seconds := 3.0
 @export_group("Start Line")
-## The pre-event start-line sequence (todo/menus.md location 2): on track load an
+## The pre-event start-line sequence (todo/menus.md, which named this "location 2", is
+## deleted — todo/roguelike-pivot.md decision 44): on track load an
 ## orbit camera circles the car while a MENU offers Start / Upgrades / Tune Car;
 ## on launch the screen fades to black and back to the chase camera + driving UI
 ## as the countdown starts. Runs inside an active ChallengeSession stage; a plain
@@ -1537,20 +1539,13 @@ func has_nitrous() -> bool:
 @export var hq_lift_cam_eye := Vector3(1.75, 1.5, -4.3)
 @export var hq_lift_cam_look := Vector3(4.0, 1.0, -1.0)
 
-@export_group("Free Roam")
-## Free roam (Test Drive) generation settings — hq.gd's _prepare_free_roam writes
-## these into the live Config before the scene change. The three shape values are
-## fixed ("neutral" track); the water level and layer-1 relief are rolled per entry
-## inside the min/max bands below, so every entry gets a fresh landscape.
-@export_range(0.0, 1.0) var free_roam_straightness := 0.5
-@export_range(0.0, 1.0) var free_roam_forestiness := 0.5
-@export_range(0.0, 1.0) var free_roam_tarmac_fraction := 0.5
-## Random lake depth band (world Y) rolled per free-roam entry.
-@export var free_roam_water_level_min_m := -15.0
-@export var free_roam_water_level_max_m := -5.0
-## Random large-scale relief band (terrain layer-1 amplitude) rolled per entry.
-@export_range(0.0, 100.0) var free_roam_relief_min := 10.0
-@export_range(0.0, 100.0) var free_roam_relief_max := 35.0
+# The "Free Roam" export group (free_roam_straightness / free_roam_forestiness /
+# free_roam_tarmac_fraction / free_roam_water_level_min_m / free_roam_water_level_max_m /
+# free_roam_relief_min / free_roam_relief_max) is DELETED (todo/roguelike-pivot.md
+# decision 25 — "wheel customisation survives; free roam does not"). Its producer
+# (hq.gd::_prepare_free_roam) died with the diegetic hub in an earlier wave; these
+# fields were the last trace of it, orphaned since. Matching lines removed from
+# config/game_config.tres in the same change.
 
 @export_group("World")
 ## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
