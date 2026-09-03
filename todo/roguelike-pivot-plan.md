@@ -300,10 +300,48 @@ its own files and is told to LEAVE dangling references in shared survivors alone
 - *hq cluster*: `hq*.gd` (9 files), `hq.tscn`, `map_table.gd`, `map_house.gd`,
   `map_fog.gd`, its 5 tests, `features/hq.md`.
 
+**Hub wave A LANDED.** 100 files deleted (29 scripts + 2 scenes + 20 tests + 4
+docs, with `.uid` pairs). Both agents edited `features/README.md` without
+clobbering. Two findings acted on already:
+
+- **Two deleted tests were not overworld tests at all.** `test_overworld_terrain.gd`
+  and `test_overworld_streaming.gd` drive `TerrainManager` — which survives — and
+  were named for the feature that motivated them. Restored as
+  `test_terrain_manager_bounds.gd` and `test_terrain_manager_streaming.gd`
+  (762 lines). **Lesson for every later deletion wave: a test's filename is not its
+  subject.** Grep the body before deleting on a name match.
+- **`hq_challenge.gd`'s orchestration is salvaged into the spec** (*Salvaged from
+  `hq_challenge.gd`*) — the generation-guarded async board fetch, per-visit caching,
+  signed-out short-circuit, entry/start spend ordering and the car-picker coupling.
+  Stage 4 rebuilds against that section.
+
 **Hub wave B — serial, 1 Opus agent.** Rewire every shared survivor and get the
-project compiling: `project.godot` main scene (→ placeholder), `scenes.gd`,
-`game_config.gd`'s hub blocks, `settings_menu.gd`, `terrain_manager.gd`,
-`cloud/rest_client.gd`.
+project compiling. The handover list from wave A:
+
+*Code that will not compile:* `scripts/scenes.gd:23-24` (`HQ` / `OVERWORLD`
+consts), `project.godot:15` (main scene), `settings_menu.gd:380,893-912`
+(`_enter_overworld` + its dev button), `tests/headless/test_smoke.gd:309-324`,
+`test_config_applied.gd:340,342`, `test_world_isolation.gd:49`,
+`test_script_breadcrumbs.gd:150,163-177`, `test_features_docs.gd:117`
+(`OVERSIZED_BASELINE` still keys `overworld.md`).
+
+*Dead tools:* `tools/analyse_road_grades.gd` (entirely), `tools/menu_capture.gd`,
+`tools/render_hq_carpark.gd`, `tools/render_hq_garage.gd`, `tools/render_flags.gd`,
+`tools/render_map_table.sh`.
+
+*Orphaned assets:* `shaders/overworld_sky.gdshader`,
+`shaders/overworld_fog.gdshaderinc` (+ `.uid`s).
+
+*Orphaned spec:* `todo/overworld-hq.md` now describes a deleted feature — delete it.
+
+> **THE BIG ONE — `test_menu_flow.gd` is 5884 lines with ~1080 `hq.<member>`
+> references.** With `test_cloud_boot_gate.gd` and `test_wheel_customization.gd` it
+> drives real SURVIVING logic (start-line preflight, wheel swap, cloud boot gating,
+> challenge flow) entirely through the deleted `HqController`. This is the largest
+> single piece of fallout in the whole demolition and it is NOT wave B's job to
+> rewrite — wave B only needs the project to compile. Schedule it as its own stage,
+> after stage 3 lands the flat UI these assertions can be re-pointed at. Deleting
+> the file outright would take genuine coverage of surviving systems with it.
 
 > **`WorldPanel` is NOT a mechanical delete — it is surgery on code that
 > survives.** `world_panel.gd` / `world_panel_host.gd` are referenced from

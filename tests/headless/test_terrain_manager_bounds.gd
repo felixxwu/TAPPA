@@ -1,7 +1,16 @@
 extends GutTest
-# The TerrainManager side of the Overworld HQ feature (features/terrain.md ->
-# "Open-world mode"): the bounded world, the coastline taper, the duck-typed chunk store,
+# TerrainManager's BOUNDED-WORLD seam: set_bounds/clear_bounds/has_bounds and
+# apply_overworld_bounds, the coastline taper, the duck-typed chunk store,
 # generate-on-miss and the LRU cap.
+#
+# WAS test_overworld_terrain.gd. Renamed during the roguelike pivot's hub demolition:
+# the name said "overworld" because the open-world hub is what motivated writing these,
+# but the SUBJECT is TerrainManager, which survives. The overworld itself is gone.
+#
+# TRIAGE NOTE (stage 2d): the chunk-store / generate-on-miss / LRU tests cover streaming
+# that every stage run uses and must stay. The bounds tests cover TerrainManager.set_bounds
+# and apply_overworld_bounds, whose only caller was the deleted overworld — decide there
+# whether the bounded-world mode itself is retired, and take these with it if so.
 #
 # Every test here is SCENE-FREE — a bare TerrainManager built via set_script with
 # `defer_initial_build` and no focus node, the cheap seam test_terrain_memory.gd uses. No

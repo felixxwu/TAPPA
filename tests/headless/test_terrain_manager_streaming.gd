@@ -1,4 +1,8 @@
 extends GutTest
+# WAS test_overworld_streaming.gd. Renamed during the roguelike pivot's hub demolition:
+# it has ZERO dependency on the overworld — every test here drives TerrainManager, which
+# survives. It was named for the feature that motivated it, not for its subject.
+#
 # THE CHUNK LIFECYCLE NET — the composition tests for TerrainManager's streaming window,
 # built as the safety net for the TerrainDomain refactor (which unifies the stage CORRIDOR
 # and the overworld BOUNDS behind one domain abstraction, one supply pipeline and one

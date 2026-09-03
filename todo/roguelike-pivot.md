@@ -477,6 +477,41 @@ here only as the contingency lever: **if** region clears prove unrewarding in
 play, revisiting 43 for a one-off money bounty is cheaper than reintroducing
 reveal-gating. That is a post-playtest question, not an open design question.
 
+### Salvaged from `hq_challenge.gd` — what the flat rebuild MUST reproduce
+
+The Rally Challenge screen died with the hub (its file is deleted; this section is
+the only record). Decision 15 RETAINS the challenge, so stage 4 rebuilds this flat.
+Most business logic already lives in the surviving `challenge_session.gd` /
+`challenge_library.gd` autoloads — `has_stale_run`, `discard_stale_run`,
+`resumable_run`, `classify_cars`, `start`, `resume`, `period_outcome`,
+`displayed_ceiling`, `CHALLENGE_TOP_FRACTION`. But the deleted screen held real
+orchestration with no other home:
+
+- **A generation-guarded async board fetch.** Both the completed-run placing and
+  the win-condition cut-line come from `Cloud.challenge_leaderboard`
+  asynchronously, and a generation counter discarded stale in-flight answers when
+  the screen rebuilt mid-fetch. This is correctness logic, not decoration — a flat
+  rebuild that just awaits the fetch will show one period's placing on another
+  period's tab.
+- **Per-visit-only caching**, cleared on close: cheap kind-tab switching within one
+  visit, never stale across visits.
+- **Signed-out short-circuit** before firing either board query.
+- **Entry/start sequencing.** Pressing Start spends nothing; the attempt is spent
+  at the later `_begin_challenge_start` point. The original cites a regression test
+  for this ordering — preserve it.
+- **The car picker.** Challenge car selection rode the 3D car park
+  (`CarparkMode.CHALLENGE` on `hq_carpark.gd`). This is the ONE place challenge
+  logic depended on hub-only code, and the flat rebuild needs its own
+  challenge-eligible picker.
+
+From `hq_tuning_lift.gd` (tuning survives, decision 24), one behavioural rule worth
+keeping: the car cycle order sorted by ascending `instance_id` — acquisition order —
+because `Save.set_selected_car` promotes the selected car to the front of the array.
+Everything else there was 3D lift positioning and correctly died.
+
+Also noted: "Test Drive" called `hq.gd`'s `_launch_free_roam`, which is gone. Free
+roam is deleted by decision 25 anyway, so this entry point does not come back.
+
 ### The UI — dropping the diegetic HQ
 
 Per decision 9. Today the hub is `hq.tscn` + `scripts/hq.gd` (`HqController`,
