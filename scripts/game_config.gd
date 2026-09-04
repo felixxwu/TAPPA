@@ -4001,3 +4001,14 @@ func spectator_params() -> Dictionary:
 ## a meta shop purchase, replacing the old rally-completion gate). Read by
 ## Save.engine_swap_unlock_price / buy_engine_swap_unlock.
 @export_range(0.0, 50000.0, 100.0) var engine_swap_unlock_price := 6000.0
+
+
+@export_group("Roguelike Perks")
+# THE PERK CAP (todo/roguelike-pivot.md "Perks — a straight lift from RR", stage 7 of
+# todo/roguelike-pivot-plan.md). Owning a perk (Save.KEY_BOUGHT_PERKS) and EQUIPPING it
+# (Save.KEY_EQUIPPED_PERKS) are separate — this is the ceiling on the second list, read
+# by Save.equip_perk. RR's own constant is PERK_MAX_EQUIPPED = 3; a shipped default here
+# matching it is a starting point, not a pinned value — no test may assert this exact
+# number (CLAUDE.md), only that equip_perk refuses past whatever it is currently set to.
+## The most perks that may be equipped at once, whatever how many are owned.
+@export_range(1, 10) var perk_max_equipped := 3

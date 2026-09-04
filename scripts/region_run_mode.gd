@@ -1,6 +1,6 @@
 class_name RegionRunMode
 extends RunMode
-# Docs: features/region-runs.md — update in the same change as this file.
+# Docs: features/region-runs.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_region_run.gd, tests/headless/test_region_stage_pool.gd, tests/headless/test_boost_library.gd — extend in the same change.
 #
 # THE ROGUELIKE RUN (todo/roguelike-pivot.md) — caller TWO of `RunSession`. Eight
@@ -150,6 +150,14 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int) -> int:
 func record_outcome(result: Dictionary, _unix_time: int) -> void:
 	if not bool(result.get("completed", false)):
 		return
+	# LIFETIME STATS (todo/roguelike-pivot.md), written BEFORE the dedupe check below on
+	# purpose: REGIONS_CLEARED_TOTAL counts every completed run, repeats included
+	# (decision 12's grind valve), which is exactly what distinguishes it from the
+	# unique KEY_REGIONS_CLEARED unlock ledger this function also writes.
+	# BEST_REGION_ORDER is a high-water mark, ratcheted rather than added — a repeat
+	# clear of an earlier region must not read as new progress.
+	Save.add_lifetime_stat(LifetimeStats.REGIONS_CLEARED_TOTAL)
+	Save.raise_lifetime_stat(LifetimeStats.BEST_REGION_ORDER, region_index())
 	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
 	if cleared.has(region_id):
 		return

@@ -1001,6 +1001,59 @@ func test_the_run_meta_block_round_trips_through_a_save_and_load() -> void:
 		"lifetime stats survive")
 
 
+# --- Perks (todo/roguelike-pivot.md "Perks — a straight lift from RR") ----------
+# Save-level purchase/equip mutators. The state-machine contract (locked/purchasable/
+# owned, the equip cap) belongs to test_perk_library.gd; this file only pins the
+# "a refused purchase leaves the profile byte-identical" rule every meta-shop
+# purchase shares (see the engine-swap-unlock tests just above).
+
+const _FX_PERK_ID := "fx_save_manager_perk"
+const _FX_PERKS: Array[Dictionary] = [
+	{
+		"id": _FX_PERK_ID, "label": "Fixture Perk", "price": 500,
+		"unlock": {"stat": "fx_stat", "threshold": 3},
+	},
+]
+
+
+func test_buy_perk_refuses_while_locked_and_changes_nothing() -> void:
+	PerkLibrary.override_for_test(_FX_PERKS)
+	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 0}
+	_save.profile[_save.KEY_MONEY] = 999999
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_perk(_FX_PERK_ID), "below its threshold — refused")
+	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
+	PerkLibrary.reset()
+
+
+func test_buy_perk_succeeds_once_unlocked_and_affordable() -> void:
+	PerkLibrary.override_for_test(_FX_PERKS)
+	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 3}
+	_save.profile[_save.KEY_MONEY] = 500
+	assert_true(_save.buy_perk(_FX_PERK_ID), "unlocked and affordable")
+	assert_true(_save.owns_perk(_FX_PERK_ID))
+	assert_eq(_save.money(), 0, "the price is fully spent")
+	PerkLibrary.reset()
+
+
+func test_equip_perk_refuses_past_the_config_cap_and_changes_nothing() -> void:
+	var cap := int(Config.data.perk_max_equipped)
+	var extra: Array[Dictionary] = []
+	for i in cap + 1:
+		extra.append({"id": "fx_cap_%d" % i, "label": "Fixture %d" % i, "price": 0,
+			"unlock": {"stat": "fx_stat", "threshold": 0}})
+	PerkLibrary.override_for_test(extra)
+	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 1}
+	for i in cap:
+		_save.buy_perk("fx_cap_%d" % i)
+		assert_true(_save.equip_perk("fx_cap_%d" % i), "setup: filling the cap")
+	_save.buy_perk("fx_cap_%d" % cap)
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.equip_perk("fx_cap_%d" % cap), "the cap refuses one more")
+	assert_eq(_save.profile, before, "a refused equip leaves the profile untouched")
+	PerkLibrary.reset()
+
+
 # --- Every persisted key is DECLARED, not conjured (ratchet) --------------------
 # The defect this guards, found by the small-model-readiness loop in round 014: a probe
 # added a `rallies_finished` counter with `profile["rallies_finished"] = ... + 1` and a

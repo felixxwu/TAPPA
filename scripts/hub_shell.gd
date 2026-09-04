@@ -1,6 +1,6 @@
 class_name HubShell
 extends Control
-# Docs: features/hub-shell.md — update in the same change as this file.
+# Docs: features/hub-shell.md, features/perks.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_hub_shell.gd — extend in the same change. Before you change
 # behaviour here, `grep -rn 'HubShell' tests/headless/` and read what is pinned.
 #
@@ -33,7 +33,13 @@ extends Control
 # for THIS run. Car BUYING, per decision 28's wording ("the car select screen offers a
 # Buy action for unowned cars"), is folded into the existing CAR page instead of a fifth
 # view — see _build_car().
-enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP }
+#
+# PERKS / STATS are stage 7 (todo/roguelike-pivot.md "Perks — a straight lift from RR" +
+# "Lifetime global stats"), both reached from MAIN like SHOP: permanent, run-independent
+# pages. STATS is pure read-out (LifetimeStats.IDS, one row each) — CLAUDE.md's menu-nav
+# trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
+# its Back action is the page's ONE focusable control; see _build_stats().
+enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
@@ -68,6 +74,8 @@ func _title_for(view: int) -> String:
 			return "Region cleared" if completed else "Run over"
 		View.SHOP: return "Shop"
 		View.BOOST_SHOP: return "Boost levels"
+		View.PERKS: return "Perks"
+		View.STATS: return "Lifetime stats"
 		_: return "TAPPA"
 
 
@@ -92,6 +100,8 @@ func _show(view: int) -> void:
 		View.SUMMARY: _build_summary()
 		View.SHOP: _build_shop()
 		View.BOOST_SHOP: _build_boost_shop()
+		View.PERKS: _build_perks()
+		View.STATS: _build_stats()
 	# `remember: false` — each page is rebuilt from scratch, so there is no earlier focus
 	# on it worth restoring; the first action is always the right landing spot.
 	MenuNav.attach(_page, {"on_back": _back})
@@ -105,6 +115,8 @@ func _back() -> void:
 		View.CAR: _show(View.REGION)
 		View.SHOP: _show(View.MAIN)
 		View.BOOST_SHOP: _show(View.SHOP)
+		View.PERKS: _show(View.MAIN)
+		View.STATS: _show(View.MAIN)
 		_: pass
 
 
@@ -140,6 +152,8 @@ func _build_main() -> void:
 
 	_row("New run", func() -> void: _show(View.REGION))
 	_row("Shop", func() -> void: _show(View.SHOP))
+	_row("Perks", func() -> void: _show(View.PERKS))
+	_row("Lifetime stats", func() -> void: _show(View.STATS))
 	_action("Quit", func() -> void: get_tree().quit())
 
 
@@ -342,3 +356,82 @@ func _build_boost_shop() -> void:
 func _buy_boost_level(id: String) -> void:
 	if Save.buy_boost_level(id):
 		_show(View.BOOST_SHOP)
+
+
+# --- PERKS -----------------------------------------------------------------------
+# Stage 7's perks (todo/roguelike-pivot.md "Perks — a straight lift from RR"). One row
+# per PerkLibrary.all() entry, in ONE of three states — locked (unlock stat below its
+# threshold, shown but not focusable, same idiom as a locked region), purchasable (a Buy
+# row), or owned (an Equip/Unequip row, gated on GameConfig.perk_max_equipped once
+# every owned slot is full). NO GAMEPLAY EFFECT YET — see PerkLibrary's own header —
+# this page is the gate/purchase/equip state machine, not a stat-boosting one.
+
+func _build_perks() -> void:
+	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	var equipped := Save.equipped_perks()
+	var cap := int(Config.data.perk_max_equipped)
+	_page.body().add_child(UITheme.label("Equipped: %d/%d" % [equipped.size(), cap]))
+	for perk in PerkLibrary.all():
+		var id := String(perk.get("id", ""))
+		if id.is_empty():
+			continue
+		var label := PerkLibrary.label_for(id)
+		if not PerkLibrary.is_unlocked(id, Save.profile):
+			var locked := _row("%s — locked (%s)" % [label, PerkLibrary.unlock_label(id)],
+				func() -> void: pass)
+			# The framework's own opt-out (see the REGION page's locked rows):
+			# menu_nav_skip, not just focus_mode — MenuNav.attach runs AFTER this build
+			# and re-enables focus on every BaseButton it finds.
+			locked.disabled = true
+			locked.set_meta("menu_nav_skip", true)
+			locked.focus_mode = Control.FOCUS_NONE
+			continue
+		if not Save.owns_perk(id):
+			var price := PerkLibrary.price_of(id)
+			var buy_row := _row("Buy %s — %d" % [label, price],
+				func() -> void: _buy_perk(id))
+			if Save.money() < price:
+				buy_row.disabled = true
+				buy_row.set_meta("menu_nav_skip", true)
+				buy_row.focus_mode = Control.FOCUS_NONE
+			continue
+		if Save.perk_equipped(id):
+			_row("%s — equipped (unequip)" % label, func() -> void: _unequip_perk(id))
+		else:
+			var equip_row := _row("%s — equip" % label, func() -> void: _equip_perk(id))
+			if equipped.size() >= cap:
+				equip_row.disabled = true
+				equip_row.set_meta("menu_nav_skip", true)
+				equip_row.focus_mode = Control.FOCUS_NONE
+	_action("Back", func() -> void: _show(View.MAIN))
+
+
+func _buy_perk(id: String) -> void:
+	if Save.buy_perk(id):
+		_show(View.PERKS)
+
+
+func _equip_perk(id: String) -> void:
+	if Save.equip_perk(id):
+		_show(View.PERKS)
+
+
+func _unequip_perk(id: String) -> void:
+	if Save.unequip_perk(id):
+		_show(View.PERKS)
+
+
+# --- STATS -------------------------------------------------------------------------
+# Stage 7's lifetime stats (todo/roguelike-pivot.md "Lifetime global stats"). Pure
+# read-out, one row per LifetimeStats.IDS — THE TRAP HERE, per CLAUDE.md, is that a
+# wall of read-only rows has nothing focusable at all if every row is a Label; every
+# row here IS a Label (nothing on this page is chooseable), so Back — a real Button —
+# is deliberately the page's ONLY focusable control, same as MenuNav requires of
+# every menu in the game.
+
+func _build_stats() -> void:
+	for id in LifetimeStats.IDS:
+		var stat_id := String(id)
+		_page.body().add_child(UITheme.label(
+			"%s: %d" % [LifetimeStats.label_for(stat_id), Save.lifetime_stat(stat_id)]))
+	_action("Back", func() -> void: _show(View.MAIN))

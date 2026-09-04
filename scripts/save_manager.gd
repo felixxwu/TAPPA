@@ -1,5 +1,5 @@
 extends Node
-# Docs: features/engine-swap.md, features/save-persistence.md — update in the same change as this file.
+# Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md, features/perks.md — update in the same change as this file.
 # Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /
@@ -1012,20 +1012,33 @@ func money() -> int:
 
 
 # Bank `amount` (clamped at 0 — this only ever adds). Returns the new balance.
+#
+# THE ONE FUNNEL every money source goes through, which is why LifetimeStats.MONEY_EARNED
+# is written HERE rather than at each payout site: a stage clear, a fast-completion
+# bonus and a future challenge reward all land here, so the lifetime counter can never
+# miss one without a second call site to keep in sync.
 func add_money(amount: int) -> int:
 	if amount <= 0:
 		return money()
 	profile[KEY_MONEY] = money() + amount
+	add_lifetime_stat(LifetimeStats.MONEY_EARNED, amount)
 	save()
 	return money()
 
 
 # Deduct `amount` if the player can afford it, else leave the balance untouched.
 # Returns whether the purchase went through, so a caller can never half-spend.
+#
+# THE ONE FUNNEL every purchase goes through (buy_car, buy_boost_level,
+# buy_engine_swap_unlock, buy_perk) — LifetimeStats.MONEY_SPENT is written HERE so it
+# covers every sink automatically, the same reasoning as add_money's own comment.
+# Never called on a refused purchase (every buy_* checks its own precondition first),
+# so a rejected buy never inflates this counter.
 func spend_money(amount: int) -> bool:
 	if amount <= 0 or money() < amount:
 		return amount <= 0
 	profile[KEY_MONEY] = money() - amount
+	add_lifetime_stat(LifetimeStats.MONEY_SPENT, amount)
 	save()
 	return true
 
@@ -1107,6 +1120,117 @@ func buy_engine_swap_unlock() -> bool:
 	if not spend_money(engine_swap_unlock_price()):
 		return false
 	profile[KEY_ENGINE_SWAP_UNLOCKED] = true
+	save()
+	return true
+
+
+# --- Lifetime stats (todo/roguelike-pivot.md "Lifetime global stats") -----------
+#
+# The registry itself — which ids exist, their labels, which call site writes each —
+# lives in LifetimeStats (scripts/lifetime_stats.gd); this is only the persistence,
+# exactly the CarLibrary/Save split every other authored table already follows.
+#
+# ONLY EVER GROWS, and SURVIVES A FAILED RUN — soft permadeath destroys the run
+# (stage progress, this run's boosts, the car's accrued damage) and never touches
+# this ledger, the same asymmetry the run-meta block comment above states for money.
+# Two mutators because not every stat is a running sum: a plain counter (stages
+# cleared, money earned) adds; a high-water mark (the deepest region reached) must
+# ratchet up to a maximum without a repeat visit double-counting it.
+
+func lifetime_stat(id: String) -> int:
+	return int((profile.get(KEY_LIFETIME, {}) as Dictionary).get(id, 0))
+
+
+# Add `amount` (default 1) to stat `id`'s running total. A non-positive amount is a
+# no-op — this only ever adds, mirroring add_money's own guard.
+func add_lifetime_stat(id: String, amount: int = 1) -> void:
+	if amount <= 0:
+		return
+	var stats: Dictionary = profile.get(KEY_LIFETIME, {})
+	stats[id] = int(stats.get(id, 0)) + amount
+	profile[KEY_LIFETIME] = stats
+	save()
+
+
+# Ratchet stat `id` up to max(current, value) — for a high-water-mark counter
+# (BEST_REGION_ORDER) rather than a running sum. A no-op when `value` would not
+# raise the stored value, so a repeat of an earlier achievement never regresses it
+# and never fires an unnecessary write.
+func raise_lifetime_stat(id: String, value: int) -> void:
+	var stats: Dictionary = profile.get(KEY_LIFETIME, {})
+	if value <= int(stats.get(id, 0)):
+		return
+	stats[id] = value
+	profile[KEY_LIFETIME] = stats
+	save()
+
+
+# --- Perks (todo/roguelike-pivot.md "Perks — a straight lift from RR") -----------
+#
+# Three states, kept apart by PerkLibrary.is_unlocked / is_purchasable (both pure,
+# reading a profile dict) and owns_perk below: LOCKED (unlock stat below its
+# threshold), PURCHASABLE (threshold crossed, not yet bought), OWNED (bought).
+# Equipping is a SEPARATE step from owning — perk_equipped / equip_perk /
+# unequip_perk — capped at GameConfig.perk_max_equipped (RR's PERK_MAX_EQUIPPED = 3).
+#
+# NO GAMEPLAY EFFECT YET (see PerkLibrary's own header) — buy_perk/equip_perk only
+# move an id between these three lists; nothing currently reads KEY_EQUIPPED_PERKS
+# for anything but display.
+
+func owns_perk(id: String) -> bool:
+	return (profile.get(KEY_BOUGHT_PERKS, []) as Array).has(id)
+
+
+func equipped_perks() -> Array:
+	return (profile.get(KEY_EQUIPPED_PERKS, []) as Array).duplicate()
+
+
+func perk_equipped(id: String) -> bool:
+	return equipped_perks().has(id)
+
+
+# Buy `id` outright. Refuses (no mutation) for an id PerkLibrary does not catalogue,
+# one already owned, one not yet PURCHASABLE (its unlock stat hasn't crossed its
+# threshold — PerkLibrary.is_purchasable), or one the player cannot afford. Same
+# "byte-identical on refusal" rule as buy_car / buy_boost_level: every precondition
+# is checked BEFORE spend_money, so a caller never half-spends into a purchase that
+# was going to be rejected anyway.
+func buy_perk(id: String) -> bool:
+	if owns_perk(id):
+		return false
+	if not PerkLibrary.is_purchasable(id, profile):
+		return false
+	if not spend_money(PerkLibrary.price_of(id)):
+		return false
+	var bought: Array = profile.get(KEY_BOUGHT_PERKS, [])
+	bought.append(id)
+	profile[KEY_BOUGHT_PERKS] = bought
+	save()
+	return true
+
+
+# Equip an OWNED perk. Refuses (no mutation) if not owned, already equipped, or the
+# cap (GameConfig.perk_max_equipped) is already full.
+func equip_perk(id: String) -> bool:
+	if not owns_perk(id) or perk_equipped(id):
+		return false
+	var equipped: Array = profile.get(KEY_EQUIPPED_PERKS, [])
+	if equipped.size() >= int(Config.data.perk_max_equipped):
+		return false
+	equipped.append(id)
+	profile[KEY_EQUIPPED_PERKS] = equipped
+	save()
+	return true
+
+
+# Unequip a perk. Refuses (no mutation) if it wasn't equipped — still owned either
+# way, this only ever changes which SLOTTED perks are in force.
+func unequip_perk(id: String) -> bool:
+	var equipped: Array = profile.get(KEY_EQUIPPED_PERKS, [])
+	if not equipped.has(id):
+		return false
+	equipped.erase(id)
+	profile[KEY_EQUIPPED_PERKS] = equipped
 	save()
 	return true
 

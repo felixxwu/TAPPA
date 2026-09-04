@@ -1,5 +1,5 @@
 extends Node
-# Docs: features/rally-challenge.md, features/region-runs.md — update in the same change as this file.
+# Docs: features/rally-challenge.md, features/region-runs.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_challenge_session.gd, tests/headless/test_region_run.gd, tests/headless/test_challenge_run_end.gd — extend in the same change.
 #
 # Autoload "RunSession" — the ONE session type in the game. A run is N sequential
@@ -302,6 +302,10 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_boosts = []
 	_active = true
 	_stage_running = true
+	# Written HERE, the one shared entry point BOTH callers (region + challenge) pass
+	# through, so LifetimeStats.RUNS_STARTED counts every run of either kind without a
+	# second call site (todo/roguelike-pivot.md "Lifetime global stats").
+	Save.add_lifetime_stat(LifetimeStats.RUNS_STARTED)
 	_persist()
 	return true
 
@@ -428,6 +432,9 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	_stage_times_ms.append(elapsed_ms)
 	if _car_instance_id >= 0 and hp_lost > 0.0:
 		Save.apply_damage(_car_instance_id, hp_lost)
+		# Rounded to the nearest whole point — the lifetime counter is an int ledger,
+		# same as money (todo/roguelike-pivot.md "Lifetime global stats").
+		Save.add_lifetime_stat(LifetimeStats.DAMAGE_TAKEN, int(round(hp_lost)))
 	# THE ONE FAIL STATE (decision 4), asked of the mode BEFORE the cursor moves so
 	# the failing stage's own index is what is judged. A challenge always says no.
 	var driven_index := _stage_index
@@ -435,6 +442,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	_stage_index += 1
 	var is_final := _stage_index >= stage_count()
 	if not missed:
+		Save.add_lifetime_stat(LifetimeStats.STAGES_CLEARED)
 		# MONEY BANKS AT STAGE CLEAR, not at run end (decision 36), so a run that dies
 		# later keeps everything the earlier stages paid.
 		var earned := _mode.stage_money(driven_index, elapsed_ms, _stage_target_ms)
@@ -596,6 +604,11 @@ func _finish_locally() -> void:
 	_pick_awaiting = false
 	if _mode != null:
 		_mode.record_outcome(_last_result, int(Time.get_unix_time_from_system()))
+	# THE ONE HARD FAIL STATE (decision 4) — a challenge run never sets _failed (its
+	# mode's stage_failed always returns false), so this counter is region-run-only by
+	# construction, matching what LifetimeStats.RUNS_FAILED's own comment promises.
+	if _failed:
+		Save.add_lifetime_stat(LifetimeStats.RUNS_FAILED)
 	_clear_persisted()
 	run_finished.emit(_last_result)
 

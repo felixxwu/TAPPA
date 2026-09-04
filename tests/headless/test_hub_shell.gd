@@ -60,7 +60,8 @@ func _press(text: String) -> bool:
 # failure this guards.
 func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP]:
+			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP,
+			HubShell.View.PERKS, HubShell.View.STATS]:
 		_shell._show(view)
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
@@ -327,3 +328,73 @@ func test_the_engine_swap_row_is_shown_but_not_focusable_once_bought() -> void:
 	for b in _buttons():
 		assert_false(String((b as Button).text).to_upper().contains("ENGINE SWAP"),
 			"but it is not focusable — nothing left to buy")
+
+
+# --- Perks + lifetime stats (stage 7) -------------------------------------------
+# Synthetic perks throughout (PerkLibrary.override_for_test), never the shipped
+# PERKS table — per CLAUDE.md, a perk's price/threshold/existence is authored data
+# and must not be pinned by a test.
+
+const FX_PERKS: Array[Dictionary] = [
+	{
+		"id": "fx_locked", "label": "Fixture Locked Perk", "price": 100,
+		"unlock": {"stat": "fx_stat", "threshold": 999},
+	},
+	{
+		"id": "fx_buyable", "label": "Fixture Buyable Perk", "price": 50,
+		"unlock": {"stat": "fx_stat", "threshold": 0},
+	},
+]
+
+
+func test_perks_page_shows_a_locked_perk_but_not_focusable() -> void:
+	PerkLibrary.override_for_test(FX_PERKS)
+	_shell._show(HubShell.View.PERKS)
+	await get_tree().process_frame
+	var texts: Array[String] = []
+	for b in _page().find_children("*", "Button", true, false):
+		texts.append(String((b as Button).text).to_upper())
+	assert_true(" | ".join(texts).contains("FIXTURE LOCKED PERK"), "the locked perk is still shown")
+	for b in _buttons():
+		assert_false(String((b as Button).text).to_upper().contains("FIXTURE LOCKED PERK"),
+			"but it is not focusable — its threshold has not been crossed")
+	PerkLibrary.reset()
+
+
+func test_buying_an_unlocked_perk_from_the_page_moves_it_to_owned() -> void:
+	PerkLibrary.override_for_test(FX_PERKS)
+	_save.profile[_save.KEY_MONEY] = 50
+	_shell._show(HubShell.View.PERKS)
+	await get_tree().process_frame
+	assert_true(_press("Buy Fixture Buyable Perk"), "setup: a buy row is on the page")
+	assert_true(_save.owns_perk("fx_buyable"), "the perk is now owned")
+	PerkLibrary.reset()
+
+
+func test_equipping_an_owned_perk_from_the_page_marks_it_equipped() -> void:
+	PerkLibrary.override_for_test(FX_PERKS)
+	_save.profile[_save.KEY_MONEY] = 50
+	_save.buy_perk("fx_buyable")
+	_shell._show(HubShell.View.PERKS)
+	await get_tree().process_frame
+	assert_true(_press("Equip"), "setup: an equip row is on the page")
+	assert_true(_save.perk_equipped("fx_buyable"))
+	PerkLibrary.reset()
+
+
+func test_stats_page_lists_every_lifetime_stat_and_still_backs_out() -> void:
+	_save.profile[_save.KEY_LIFETIME] = {}
+	_shell._show(HubShell.View.STATS)
+	await get_tree().process_frame
+	var texts: Array[String] = []
+	# Walk the whole subtree, not just direct children: MenuPage nests its body inside a
+	# scroll container. And compare UPPERCASED — UITheme.enforce uppercases every label, so
+	# a case-sensitive match tests the theme's casing rather than the page's content.
+	for label in _page().find_children("*", "Label", true, false):
+		texts.append(String((label as Label).text).to_upper())
+	var joined := " | ".join(texts)
+	for id in LifetimeStats.IDS:
+		assert_true(joined.contains(LifetimeStats.label_for(String(id)).to_upper()),
+			"the stats page shows a row for '%s'" % id)
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.MAIN, "stats backs out to the main page")
