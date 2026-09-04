@@ -69,6 +69,18 @@ const SCHEMA_VERSION := 7
 const KEY_CARS := "cars"
 const KEY_RALLIES := "rallies"
 
+# --- Roguelike run-meta keys (todo/roguelike-pivot.md) -------------------------
+# Everything a failed run must NOT touch. Soft permadeath destroys the run -- stage
+# progress, the boosts picked during it, the car's accrued damage -- and nothing here.
+# That asymmetry is the whole progression design, so these live on the PROFILE and are
+# written outside the run, never inside it.
+const KEY_MONEY := "money"                    # the single currency (decision 21)
+const KEY_REGIONS_CLEARED := "regions_cleared" # ids of regions whose 8 stages are done
+const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (meta tier)
+const KEY_BOUGHT_PERKS := "bought_perks"      # perk ids owned
+const KEY_EQUIPPED_PERKS := "equipped_perks"  # perk ids currently slotted (capped)
+const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
+
 # Consumables that no longer exist, erased from `inventory` on load (see _sanitise).
 # A LIST rather than a branch per id, because retiring a consumable is a recurring event
 # and three copies of the same two lines is how one of them ends up forgotten:
@@ -525,6 +537,14 @@ func _default_profile() -> Dictionary:
 		"inventory": {},
 		KEY_RALLIES: {},
 		"reward_history": [],
+		# The run-meta block. Declared here because the ratchet test below requires every
+		# persisted key to be DECLARED rather than conjured at the write site.
+		KEY_MONEY: 0,
+		KEY_REGIONS_CLEARED: [],
+		KEY_BOOST_LEVELS: {},
+		KEY_BOUGHT_PERKS: [],
+		KEY_EQUIPPED_PERKS: [],
+		KEY_LIFETIME: {},
 		"settings": {},
 		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
 		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaces

@@ -1400,16 +1400,10 @@ static func engine_swaps_unlocked(profile: Dictionary) -> bool:
 const ENGINE_SWAP_UNLOCK_RALLY := "front_runners"
 
 
-# Whether EVERY special on the roster is won — the win/credits beat, replacing the old
-# the retired per-region gate. A roster with no specials reads as completed.
-static func all_specials_completed(profile: Dictionary) -> bool:
-	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
-	for rally in all():
-		if is_special(rally) and not bool(rallies.get(rally["id"], {}).get("completed", false)):
-			return false
-	return true
-
-
+# NOTE: `all_specials_completed` — the win/credits beat — is DELETED (decision 45's
+# closing clause). The pivot has no endgame: clearing the last region leaves every region
+# unlocked and repeatable, with no credits roll. Leaving the predicate would have left a
+# trigger hanging on a condition nothing can satisfy once specials stop being a ladder.
 # Whether a rally has already been COMPLETED (a podium/top-3 finish — see the save-schema note
 # above `podium_count()`, never "attempted in any position", which the schema does not track).
 # The same inline `.get(KEY_RALLIES, {}).get(id, {}).get("completed", false)` every other reader

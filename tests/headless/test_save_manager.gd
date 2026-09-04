@@ -43,8 +43,6 @@ func test_dev_three_star_all_rallies_completes_everything_and_finishes_the_game(
 		var rid := String(rally["id"])
 		assert_true(_save.rally_podiumed(rid), "rally %s marked completed" % rid)
 		assert_eq(_save.best_placement(rid), 1, "rally %s is 3-starred (1st place)" % rid)
-	assert_true(RallyLibrary.all_specials_completed(_save.profile),
-		"every special completed after 3-starring all rallies")
 
 
 func test_default_profile_is_empty_and_valid() -> void:
@@ -818,6 +816,44 @@ func test_engine_swaps_unlock_by_winning_the_current_rally() -> void:
 # (todo/roguelike-pivot.md decision 34 -- see that dict's own comment), so indexing
 # either off a fresh profile now errors instead of reading a default.
 
+
+
+# --- The roguelike run-meta block (todo/roguelike-pivot.md) --------------------
+# These are the keys a failed run must NOT touch. Soft permadeath destroys the run --
+# stage progress, its boosts, the car's damage -- and nothing here. That asymmetry IS the
+# progression design, so it gets a test rather than a comment.
+
+func test_a_fresh_profile_declares_the_run_meta_block() -> void:
+	var p: Dictionary = _save._default_profile()
+	# Shapes, not values: a designer may change the starting purse freely.
+	assert_true(p.has(_save.KEY_MONEY), "money is declared")
+	assert_typeof(p[_save.KEY_REGIONS_CLEARED], TYPE_ARRAY, "regions_cleared is a list of ids")
+	assert_typeof(p[_save.KEY_BOOST_LEVELS], TYPE_DICTIONARY, "boost_levels maps id -> level")
+	assert_typeof(p[_save.KEY_BOUGHT_PERKS], TYPE_ARRAY, "bought_perks is a list of ids")
+	assert_typeof(p[_save.KEY_EQUIPPED_PERKS], TYPE_ARRAY, "equipped_perks is a list of ids")
+	assert_typeof(p[_save.KEY_LIFETIME], TYPE_DICTIONARY, "lifetime maps stat -> total")
+
+
+func test_the_run_meta_block_round_trips_through_a_save_and_load() -> void:
+	# The point of the block is that it OUTLIVES things. A value that does not survive a
+	# save/load cannot survive a failed run either.
+	_save.profile[_save.KEY_MONEY] = 1234
+	_save.profile[_save.KEY_REGIONS_CLEARED] = ["home"]
+	_save.profile[_save.KEY_BOOST_LEVELS] = {"engine": 2}
+	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_perk"]
+	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_perk"]
+	_save.profile[_save.KEY_LIFETIME] = {"stages_cleared": 7}
+	_save.save_now()
+	_save.load_or_new()
+
+	assert_eq(int(_save.profile[_save.KEY_MONEY]), 1234, "money survives")
+	assert_eq(_save.profile[_save.KEY_REGIONS_CLEARED], ["home"], "cleared regions survive")
+	assert_eq(int((_save.profile[_save.KEY_BOOST_LEVELS] as Dictionary)["engine"]), 2,
+		"purchased boost levels survive")
+	assert_eq(_save.profile[_save.KEY_BOUGHT_PERKS], ["fx_perk"], "bought perks survive")
+	assert_eq(_save.profile[_save.KEY_EQUIPPED_PERKS], ["fx_perk"], "equipped perks survive")
+	assert_eq(int((_save.profile[_save.KEY_LIFETIME] as Dictionary)["stages_cleared"]), 7,
+		"lifetime stats survive")
 
 
 # --- Every persisted key is DECLARED, not conjured (ratchet) --------------------

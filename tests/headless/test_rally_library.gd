@@ -726,18 +726,10 @@ func test_spending_stars_cannot_close_a_reveal_gate() -> void:
 			"%s stays open after the balance is spent to zero" % rid)
 
 
-func test_all_specials_completed_needs_every_rung() -> void:
-	var profile := {"rallies": {}}
-	assert_false(RallyLibrary.all_specials_completed(profile), "nothing won yet")
-	var ids: Array = []
-	for rally in RallyLibrary.all():
-		if RallyLibrary.is_special(rally):
-			ids.append(String(rally["id"]))
-	for i in ids.size():
-		profile["rallies"][ids[i]] = {"completed": true}
-		var done: bool = RallyLibrary.all_specials_completed(profile)
-		assert_eq(done, i == ids.size() - 1,
-			"only the LAST special completed finishes the game")
+# NOTE: a test lived here pinning "only the LAST special completed finishes the game".
+# There is no game-finishing beat any more -- decision 45 accepts no endgame, so
+# all_specials_completed is deleted rather than left hanging on a condition that no longer
+# means anything.
 
 
 func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:

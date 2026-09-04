@@ -490,6 +490,29 @@ last:
   `equipped_perks`, lifetime stats. `challenge_run` generalises to one run slot
   (decision 27).
 
+**2c LANDED.** Most of it was already done by earlier waves — the autoloads were clean,
+`Scenes` collapsed to one `HUB` const in the hub wave, `car.gd`'s wing stopped reading
+`aero_tuning_unlocked` and `TuningLibrary.axis_unlocked` went with the parts model. What
+this stage actually added:
+
+- **The run-meta block on the profile**: `KEY_MONEY`, `KEY_REGIONS_CLEARED`,
+  `KEY_BOOST_LEVELS`, `KEY_BOUGHT_PERKS`, `KEY_EQUIPPED_PERKS`, `KEY_LIFETIME`. These are
+  exactly the keys a failed run must NOT touch, so they get a round-trip test rather than a
+  comment — that asymmetry is the progression design.
+- **`RallyLibrary.all_specials_completed` deleted** (decision 45's closing clause). No
+  endgame means no credits beat, and leaving the predicate would have left a trigger
+  hanging on a condition nothing can satisfy.
+
+> **DEFERRED TO STAGE 3, deliberately.** The spec also retires `KEY_RALLIES` and
+> `reward_history`. Both are still load-bearing for `rally_library`'s reveal path and
+> `rally_detail`, and their replacements (region unlock, the run summary) do not exist yet.
+> Retiring them now would break a live path with nothing to put in its place — so they go
+> when `RunSession` and region unlock land, not before.
+>
+> **`challenge_run` → one run slot (decision 27) also defers to stage 3.** The
+> generalisation IS the `RunSession` extraction; renaming the key without it is churn, and
+> `SCHEMA_VERSION` is already at 7 with profiles resetting, so a later rename costs nothing.
+
 ### 2d. Triage tests as you go
 
 Per decision 38: delete tests whose subject is deleted; keep physics, car,
