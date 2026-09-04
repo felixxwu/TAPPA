@@ -17,7 +17,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `nitrous` | Left Shift | — | X / Square (West) | Held: spray nitrous while on throttle (see [nitrous.md](nitrous.md)) |
 | `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
-| `toggle_map` | M | — | Back | Open/close the full map (`scripts/overworld_map.gd`); deliberately NOT rebindable — kept out of `InputRemap.ACTIONS` because that list is the driving controls and this action isn't one |
+| `toggle_map` | M | — | Back | Opened the overworld's full map; **the overworld is deleted, so this action is unbound to anything**. Kept in `project.godot`, out of `InputRemap.ACTIONS` (that list is the driving controls) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |

@@ -35,7 +35,7 @@ Three properties define it, and every design decision below falls out of them:
    rung left nothing to decide. With one part there IS something to decide — fit it
    or don't — and without a row a won bottle could only ever be fitted by the award
    path, never by the player. It is also still named, read-only, on the car-stats
-   readout: `hq.gd::_car_stats_text`
+   readout: the deleted `hq.gd::_car_stats_text`
    (shared by the tuning lift and the car-park lineup — see [tuning.md](tuning.md))
    appends `UpgradeLibrary.fitted_nitrous_id(owned)`'s name after the health
    segment, omitted entirely when the car has none, so the player can tell a
@@ -53,7 +53,7 @@ with the turbo and the supercharger — exactly wrong, since nitrous is meant to
 stack on top of whatever induction the car carries.
 
 The slot behaves like every other one: it gets an ordinary tile on the upgrades grid
-(`UpgradeOptions.grid_slots()` → `scripts/upgrades_grid.gd`), the part
+(the deleted upgrades grid), the part
 installs **disabled** and the player enables it, and the single authored entry is gated
 on winning its special via `unlocked_by_rally` (see
 [upgrade-catalogue.md](upgrade-catalogue.md) and [rally-roster.md](rally-roster.md)).

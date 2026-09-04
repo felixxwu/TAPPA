@@ -135,7 +135,7 @@ flow fires exactly as it would on a genuine finish (nothing is faked downstream)
 
 Gated the same way as the H arrows — `SettingsMenu.dev_tools_enabled()`, on by
 default in every build including release/web. It also does nothing unless a rally event is
-active (`RallySession.is_active()`) with a live `StageManager` that hasn't already
+active (`RunSession.is_active()`) with a live `StageManager` that hasn't already
 finished. Mechanism:
 
 - `TrackProgress.jump_to_finish()` pins progress to 100% (the local-window search
@@ -211,7 +211,7 @@ above is off there). See [benchmark.md](benchmark.md) → "Feedback loop".
 
 ## HQ boot cost logging
 
-`hq.gd` logs its own boot split on the non-headless path, in the same greppable style as
+The deleted `hq.gd` logged its own boot split on the non-headless path, in the same greppable style as
 `load stage:`:
 
 ```
@@ -240,13 +240,13 @@ What the numbers showed on a fast Mac: the **free-roam prewarm was ~3x the entir
 the HQ build** (349 ms build + 1093 ms prewarm = 1442 ms boot), while duplicated mesh data
 is negligible (~26 KB per prop). So the resident-memory concern about per-car mesh copies
 is real but small, and the cost worth attacking was the prewarm's contribution to
-time-to-first-interaction — now fixed by deferring it (`hq_carpark.gd` →
+time-to-first-interaction — fixed at the time by deferring it (the deleted `hq_carpark.gd` →
 `_prewarm_free_roam_deferred`), taking HQ boot to ~352 ms. Note the mesh walk
 does not see nodes, physics bodies, materials or textures — for a true RAM figure measure
 `Performance.MEMORY_STATIC` / `RENDER_VIDEO_MEM_USED` deltas around the prewarm instead.
 
 The prewarm and the session-resident `_car_cache` are a **deliberate** trade documented in
-`hq.gd`: the cost is paid once, shortly after boot, to hide the first-entry lag spike.
+the deleted `hq.gd`: the cost was paid once, shortly after boot, to hide the first-entry lag spike.
 
 ## Standalone dev scenes
 

@@ -41,8 +41,8 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `next_instance_id` — monotonic counter minting unique owned-car ids.
 - **The two most widely-read keys are NAMED on `SaveManager`:** `Save.KEY_CARS`
   (`"cars"`) and `Save.KEY_RALLIES` (`"rallies"`), used by every consumer
-  (`reward_system.gd`, `rally_library.gd`, `upgrade_library.gd`, the HQ screens,
-  `cloud/cloud_sync.gd`, …) instead of the bare literal — the cloud-sync copy is
+  (`rally_library.gd`, `region_stage_pool.gd`, `hub_shell.gd`, `cloud/cloud_sync.gd`, …)
+  instead of the bare literal — the cloud-sync copy is
   why a missed rename would be a cross-device DATA bug rather than a crash. Their
   VALUES are on-disk key strings: frozen unless a `SCHEMA_VERSION` bump and a
   `_migrate_step` come with the change. `car_library.gd` still spells `"cars"`
@@ -50,10 +50,12 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   no `Save` dependency at all, and naming the key is not worth adding one.
 - `cars` — array of **instance-based** owned cars. Each is a unique instance
   (`instance_id`) referencing a `CarLibrary` model id (`model_id`), carrying its
-  own `hp`, `installed_upgrades`, `disabled_upgrades` (applied parts toggled off
-  in the upgrades menu — fitted but inert), and `tuning` deltas. Two cars of the
-  same model can diverge (the random-car reward can grant a model you already
-  own). Two further fields support [engine-swap.md](engine-swap.md), both
+  own `hp`, `wheel_toe`, `tuning` deltas, `wheels` (cosmetic) and
+  `drivetrain_modes_bought`. Two cars of the same model can diverge. **`boosts` is NOT
+  stored here** — a run's picked boosts and the player's equipped perks are merged onto a
+  DUPLICATE at fielding time and must never reach the profile
+  ([perks.md](perks.md)). `installed_upgrades` / `disabled_upgrades` went with the parts
+  model. Two further fields support [engine-swap.md](engine-swap.md), both
   defaulted on read so no `SCHEMA_VERSION` bump was needed for either:
   - **`swapped_engine`** (string, default `""`) — a non-stock `EngineLibrary` id
     currently fitted, written/cleared by `Save.swap_engines`; absent/empty means
@@ -103,17 +105,17 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   The seeding itself is `Save._seed_reveals_if_needed()`, called by `Save` ITSELF at the
   two points a profile actually becomes live — the tail of `load_or_new()` and the tail
   of `adopt_profile()` (the cloud-restore path) — rather than left as a call site a scene
-  has to remember to make. (An earlier version had `hq.gd` call it from `_enter_table()`
-  and separately from `_on_cloud_profile_replaced()`; that shape meant a THIRD future
-  path reaching the map or replacing the profile could silently forget it, so it moved
-  into `Save` where it seats itself automatically.) It marks everything already open
+  has to remember to make. (An earlier version had the map screen call it from two of its
+  own entry points; that shape meant a THIRD future path replacing the profile could
+  silently forget it, so it moved into `Save` where it seats itself automatically. The
+  lesson outlived the screen.) It marks everything already open
   (via `RallyLibrary.rally_revealed`) plus everything already completed — so the "no
   flags at all" state can't survive the pass — as seen, silently, with NO eligible-car
   check: seeding's job is "anything already open already reads as seen", not "anything
-  the player can currently enter", and skipping that clause keeps `Save` independent of
-  `hq.gd`'s `_entry_plan` (owned cars, tuning headroom, etc). The eligible-car hold is
-  applied only by `hq_table.gd._pending_reveals()`, the query that decides what actually
-  parades on a given map open.
+  the player can currently enter", and skipping that clause kept `Save` independent of the
+  eligibility query. The reveal PARADE that consumed these flags is deleted with the map
+  table, so nothing reads them today — the flags are still written, and a flat "here is
+  what just opened" beat could use them.
 - **Region unlock is not stored here at all** — `RegionLibrary` no longer gates
   anything (it's look + waterline only, see [regions.md](regions.md)). (An
   earlier `showdown_unlocked`/`showdown_completed` pair of persisted, never-read
@@ -249,8 +251,9 @@ API. `rally_podiumed(id)` /
 
 **`podium_rally_count()` counts PODIUMS, not finishes — and so does every other field of
 a rally's record.** The gate is on the WRITE, not on any one field: `record_podium_rally` has
-exactly one caller (`rally_session.gd`, inside `_award_podium_rewards`, gated on
-`podium_or_opening`), so a 5th-place finish writes **nothing** into the rally's record.
+exactly one caller — which was on the deleted career session, inside `_award_podium_rewards`
+and gated on `podium_or_opening` — so a 5th-place finish wrote **nothing** into the rally's
+record.
 `completed`, `best_placed` and `best_combined_ms` are therefore all podium-gated, and
 **there is no untainted sibling field to escape through** — counting `best_placed > 0`
 returns the same podium number under a more honest-sounding name. There is **no
@@ -272,49 +275,36 @@ persisted `completed` KEY is unchanged (renaming it would need a save migration)
   malformed input returns an error code rather than crashing).
 - **Unknown `model_id`** (a car dropped from `CarLibrary`) is pruned on load with
   a warning, keeping old saves loadable as the roster evolves. The same pass
-  (`_prune_unknown_upgrades`) drops fitted / toggled-off part ids that no longer
-  resolve against `UpgradeLibrary`, so a part retired from the catalogue can't
-  linger in a car's `installed_upgrades` and occupy a phantom slot in the menu.
-- **Migration** is keyed by version (`_MIGRATABLE_FROM`, currently `[1, 2, 3, 4, 5]`) as
-  pure `Dictionary -> Dictionary` transforms (`_migrate_step`); a newer-than-known
-  version, or a version with no step in `_MIGRATABLE_FROM`, refuses to load and
-  runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is **6**,
-  and the five authored steps are:
-  - **1 → 2**, alongside upgrades becoming CAR-BOUND: the old shared `inventory` pool of
-    slottable parts is gone (parts now live on the `OwnedCar` they were won for), so the
-    step strips **every** entry from `inventory` — those unbound parts were never applied
-    and have no car to belong to.
-  - **2 → 3**, after rally entry stopped gating on power-to-weight: a saved
-    `tuning.engine_detune` set purely to duck under a ceiling had nothing left to duck
-    under and no player-reachable way to restore it, so every car is reset to full power.
-  - **3 → 4**, adaptive difficulty's offset + streak counters, all zero — which IS the
-    pre-adaptive "matched field" behaviour, so a migrated career resumes at parity. See
-    the deleted adaptive difficulty.
-  - **4 → 5**, two part unlocks moving into the Alps (Race Tires `gr_showdown` →
-    `sn_showdown`, Sequential Gearbox `hc_showdown` → `sp_summit_trial`). A player who
-    already won the old rally keeps the part, granted directly via
-    `KEY_LEGACY_PART_UNLOCKS` — an early-out in `UpgradeLibrary.rally_gate_met`. It is
-    deliberately NOT done by marking the new rally completed, which would also light its
-    map-reveal circle and pay its placement stars, handing over progress and currency
-    never earned. `MOVED_PART_UNLOCKS` is the data it reads, so a future move is one row
-    plus one arm. See [snow-region.md](snow-region.md).
-  - **5 → 6**, the engine-swap CAPABILITY moving (`sp_woodland_trial` → `front_runners`,
-    the difficulty-1 pin beside HQ) so the old rally could carry Snow Tires instead. Same
-    shape one level up: a player who already won the old rally keeps the capability,
-    granted directly via `KEY_LEGACY_ENGINE_SWAP` (a bool), which
-    `RallyLibrary.engine_swaps_unlocked` checks BEFORE the rally record — again not by
-    marking the new rally completed, which would light its reveal circle and pay stars
-    never earned. See [engine-swap.md](engine-swap.md).
+  (`_prune_unknown_upgrades`) dropped part ids that no longer resolved against the
+  upgrade catalogue; that catalogue is deleted, so the pass has nothing left to prune.
+- **Migration: THERE IS NONE ANY MORE.** `_migrate` refuses any profile whose
+  `schema_version` is not exactly `SCHEMA_VERSION` (currently **7**) — it returns `{}`, the
+  loader keeps the file untouched on disk, runs on a fresh in-memory profile and sets
+  `save_disabled = true` so nothing overwrites it. What survives of the old chain is one
+  step: a **key backfill** from `_default_profile()`, so a new key added without a version
+  bump appears on an existing profile.
 
-  **Retired items are NOT a migration.** `SaveManager._sanitise` erases every id in
-  `SaveManager.RETIRED_ITEM_IDS` (the repair kit, the mystery box, the engine swap
-  token) from `inventory` on load, and no `SCHEMA_VERSION` bump goes with it. The
-  reasoning is the same each time an item is deleted: the stale key is already inert
+  This is deliberate and it is a ONE-WAY door. The roguelike pivot deleted the career loop,
+  the star ledger and the parts model wholesale, so there is no sensible mapping from a
+  pre-pivot profile: a v6 save's stars, installed upgrades, rally podiums and reward
+  history describe systems that no longer exist. Guessing would hand the player a career
+  reconstructed from nothing. Refusing and keeping the file is the honest failure.
+
+  > The five authored steps that used to live here (1→2 unbinding the shared inventory
+  > pool, 2→3 clearing a detune with nothing left to duck under, 3→4 seeding adaptive
+  > difficulty's counters, 4→5 and 5→6 grandfathering two re-sited unlocks through
+  > `KEY_LEGACY_PART_UNLOCKS` / `KEY_LEGACY_ENGINE_SWAP`) are all gone with their
+  > subsystems. The PATTERN in 4→5 and 5→6 is the part worth remembering: when content
+  > moves, grandfather the EARNED THING directly, never by marking the new rally completed
+  > — that would also have lit its map-reveal circle and paid its placement stars, handing
+  > over progress and currency never earned.
+
+  **Retired items are NOT a migration.** `_sanitise` erases every id in `RETIRED_ITEM_IDS`
+  (the repair kit, the mystery box, the engine-swap token) from `inventory` on load, with
+  no version bump. The reasoning holds for anything deleted: a stale key is already inert
   once nothing reads it, whereas a version bump makes older builds refuse the profile
   outright — a real cost when cloud save moves one profile between devices running
-  different builds. Deleting an item is therefore a one-row change to that list, not
-  a new migration arm. The `inventory` key itself always survives; only the dead ids
-  inside it go.
+  different builds. Deleting an item is a one-row change to that list.
 - **Web build:** on the HTML5 export `user://` is IndexedDB (Emscripten IDBFS) —
   `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
   *asynchronously*, so a write that hasn't synced when the page goes away is

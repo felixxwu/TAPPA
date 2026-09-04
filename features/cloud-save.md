@@ -272,9 +272,8 @@ That is reachable from every pause screen, because `pause_menu.gd` sets
 `get_tree().paused = true` and its embedded `SettingsMenu` can start real cloud
 calls (the reset page's `_wipe_progress` → `Cloud.publish_local_wipe`, the account
 page's sign-in/out). The symptom was `CloudBusy`'s full-screen cover going up and
-never coming down — "Wipe all progress" from the Overworld HQ, or from a mid-rally
-pause, looked *stuck*. The shipped menu HQ (`hq.tscn`) never paused the tree, which
-is why the same button worked there.
+never coming down — "Wipe all progress" from a mid-run pause looked *stuck*. A screen that
+never paused the tree worked fine, which is why it took a while to see.
 
 `RestClient._ready` therefore sets `process_mode = PROCESS_MODE_ALWAYS`; its
 `HTTPRequest` child inherits it. Fixed at the one place that owns the socket, so
@@ -302,14 +301,14 @@ correctly.
 
 A pull that REPLACES the local profile (first sign-in on a new device, or "Use
 cloud" on a conflict) changes the career out from under a running HQ. `CloudSync`
-emits **`profile_replaced`**, re-emitted by `Cloud`, and `hq.gd` rebuilds on it
-(`_on_cloud_profile_replaced`): it clears the car cache, rebuilds the title
-lineup or the lift car depending on the current view, and refreshes the map pins
-and progress meter.
+emits **`profile_replaced`**, re-emitted by `Cloud`. The deleted `hq.gd` rebuilt on it
+(`_on_cloud_profile_replaced`): clearing its car cache, rebuilding the lineup or the lift
+car depending on the view, and refreshing the map pins.
 
-This is a MID-SESSION path, not the boot one. A profile landing at boot is now
-waited for before anything is built (`_await_boot_pull`, below), so what reaches
-this handler is a first sign-in from the account page or "Use cloud" on a conflict.
+**`HubShell` does not connect to it.** Its pages are rebuilt on every transition
+(`_show()` frees and rebuilds), so a page opened after the download is correct — but a
+page already on screen when it lands shows a stale money figure or car list until the
+player navigates. Minor next to the boot-gate gap below, and the same fix would cover it.
 
 **The handler no-ops until the HQ exists (`_hq_built`).** `_ready` connects
 `profile_replaced` *before* it awaits the boot pull — it has to, since that pull is
@@ -348,14 +347,12 @@ already works:
   `show_account`, an entry in `_pages` and in the category grid). This is the
   canonical route, reachable from the title screen's Settings button before any
   career is started — which is the reinstall / new-device case.
-- **Standings → sign in** (`global_standings.gd`), which mounts the same widget as
-  an inline overlay so a player can sign in without leaving the leaderboard.
-
-There used to be a **third** host: a dedicated Account button on the title row with
-its own modal layer (`hq.gd::_open_account_overlay`). It was removed — the Settings
-page already covers the same need from the same screen, and two routes into one
-optional-cloud-save form is one more than the title screen needs. Free Roam took the
-slot (see [menus.md](menus.md)).
+There were two other hosts, both deleted: the standings page's inline sign-in prompt
+(`global_standings.gd`), which mounted the same widget so a player could sign in without
+leaving the leaderboard, and — before that — a dedicated Account button on the title row
+with its own modal layer. The second was removed deliberately: the Settings page already
+covered the same need from the same screen, and two routes into one optional-cloud-save
+form is one more than a title screen needs.
 
 Signed out: Google (hidden when unconfigured) / sign in with email / create an
 account. There is deliberately no "continue without an account" button — that is
@@ -387,94 +384,89 @@ Signing out needs no confirm and **never touches the local profile**: nothing is
 destroyed, the career on the device carries on, and the cloud copy is reachable
 again by signing back in.
 
-## Boot-time race: the starter-pick gate
+## Boot-time race: the gate, and its MISSING CONSUMER
 
-**The race.** `Cloud._ready` calls `auth.restore()` then defers
-`_kick_off_initial_pull` — a network round trip. `hq.gd._ready` builds behind
-the loading cover and reveals the title in about a second, well before that
-pull can land. A returning player on a new device can press Start, get
-offered a starter car (their local `starter_picked` reads `false`, since the
-career hasn't arrived yet), and `_confirm_starter` grants a car and calls
-`Save.save()` — which marks the profile `unsynced`. The pull then lands with
-`remote_revision > agreed_revision` and `local_moved == true`, which
-`CloudSync.pull` reads as a genuine conflict: the player is asked to choose
-between their whole career and the one starter car they just picked, and
-either answer loses data.
+> **READ THIS FIRST: nothing waits for the boot pull any more.** Every consumer described
+> below was on `hq.gd`, and the diegetic hub is deleted (decision 9). `HubShell._ready`
+> awaits nothing — it builds its MAIN page immediately. The `Cloud` half of the mechanism
+> is intact, live and tested (`test_cloud_boot_gate.gd`); what is gone is the caller.
+>
+> **The hazard is therefore real again**, in a new shape: the starter picker that made it
+> concrete is deleted too (decision 28 hands a fresh profile money and sends it to the car
+> shop), but the hub lets a returning player **buy a car or start a run** the instant it
+> opens, and either writes the profile and marks it `unsynced` — which is exactly what
+> turns an arriving download into a conflict prompt over a career they never lost.
+> Re-wiring it is a small change with a UI question attached (what does the player look at
+> while it waits?), which is why stage 9 flagged it rather than inventing an answer.
 
-**Waiting for the pull is not sufficient on its own.** The pull can settle as a
-CONFLICT (both sides moved on), in which case the download was NOT applied and a real
-career may be sitting in the cloud right now. The gate used to release anyway and
-offer the starter pick — and picking one WRITES to the profile, so "keep this device"
-stopped meaning "keep what I had" and started meaning "keep the fresh save I was just
-handed". A player hit exactly this: signed in, progress apparently lost, happily
-allowed to pick a starter, conflict popup never shown.
+**The race.** `Cloud._ready` calls `auth.restore()` then defers `_kick_off_initial_pull` —
+a network round trip. The game reaches an interactive screen in about a second, well before
+that pull can land. A returning player on a new device could therefore act on a profile
+that is about to be replaced; the write marks it `unsynced`, the pull lands with
+`remote_revision > agreed_revision` and `local_moved == true`, and `CloudSync.pull` reads
+that as a genuine conflict. The player is asked to choose between their whole career and
+the one thing they just did, and either answer loses data.
 
-So after the wait, `hq.gd` also checks `ConflictPrompt.is_blocked()`. If a conflict is
-unsettled it raises the shared prompt and BLOCKS: "decide later" means no new career
-begins, "use cloud" restores the real career and goes to the garage, and only a
-resolved state lets the picker open. Covered by `test_cloud_boot_gate.gd` — blocked
-while unresolved, releases once settled, and untouched when there is no conflict.
+**Waiting for the pull is not sufficient on its own.** The pull can settle as a CONFLICT
+(both sides moved on), in which case the download was NOT applied and a real career may be
+sitting in the cloud right now. The old gate released anyway and offered the starter pick —
+and picking one WRITES to the profile, so "keep this device" stopped meaning "keep what I
+had" and started meaning "keep the fresh save I was just handed". A player hit exactly
+this: signed in, progress apparently lost, happily allowed to pick a starter, conflict
+popup never shown. **So a consumer must check `ConflictPrompt.is_blocked()` after the
+wait**, not just the wait itself.
 
-**The boot build waits too — `hq.gd::_await_boot_pull`.** This doc used to say the
-title was deliberately NOT gated, because "gating it would make an offline player
-wait for a pull that is never coming." The concern is real; the conclusion was too
-broad. `initial_pull_pending` is *already* false for anyone without a stored
-credential, so gating on it costs the offline player nothing — the narrow gate was
-available all along. Without it the title was built from the LOCAL profile and then
-visibly rebuilt by `_on_cloud_profile_replaced` a second or two later, and the player
+**Gating the BUILD costs an offline player nothing**, which is the non-obvious part and
+the reason the old hub gated its title too: `initial_pull_pending` is *already* false for
+anyone without a stored credential, so the narrow gate is free. Without it the screen was
+built from the LOCAL profile and then visibly rebuilt a second or two later, and the player
 watched their garage pop in.
 
-So `_ready` awaits `_await_boot_pull` before `_build_hq()`: no credential → build
-immediately; credential → wait for the pull under the same hard cap, then build once
-from the settled profile. It re-labels the boot `LoadingScreen` that is already on
-screen rather than stacking a second cover. Two things it must not break, both pinned
-in `test_cloud_boot_gate.gd`: a pull that never lands still reveals the title (the cap
-is the backstop), and a pull that settles as a CONFLICT reveals the title against the
-local profile with the conflict still live for `_on_exterior_start` to catch — gating
-the title must not swallow the prompt that item 10 exists to surface.
+### The surviving mechanism (`cloud_manager.gd`)
 
-`_await_cloud_restore` survives alongside it for the starter pick, because a pull can
-also land mid-session (a first sign-in from the account page), long after boot.
+- `initial_pull_pending: bool` — armed `true` in `_ready`, right before the deferred
+  kick-off, but ONLY when there is a stored credential to restore. No credential means it
+  is never set and nothing downstream waits at all.
+- `initial_sync_settled` (signal), `INITIAL_SYNC_WAIT_SEC := 8.0`.
+- `await_initial_sync(timeout_sec)` — polls the member `initial_pull_pending` in a loop
+  and returns `not initial_pull_pending`, up to the hard cap. Never cancels the pull
+  itself; it just stops waiting on it.
+- `_settle_initial_sync()` — clears the flag and fires the signal. Called on EVERY pull
+  outcome (success, 4xx, 5xx, transport failure) and on `sign_out`, so nothing can leave
+  the gate armed forever.
 
-Mechanism, split across two files:
+**A real bug lived here first:** `await_initial_sync` originally watched a local
+`settled := false` flipped by a lambda connected to the signal. GDScript lambdas capture
+outer locals BY VALUE, so the lambda's write never reached the outer `settled` — every
+signed-in player sat through the full 8-second cap even when their pull finished in 200 ms.
+The fix deletes the closure rather than boxing it in a holder dict: polling the shared
+member directly means there is nothing left to capture, so the class of bug cannot recur
+here. Worth remembering elsewhere in this codebase: **a lambda closing over a plain local
+to receive a signal's result is the shape to be suspicious of** — a member field or a
+one-element array/dict survives value capture, a bare local does not.
 
-- **`cloud_manager.gd`** — `initial_pull_pending: bool` (armed `true` in
-  `_ready`, right before the deferred kick-off, but only when there's a
-  stored credential to restore — no credential means it's never set and
-  nothing downstream waits at all), `initial_sync_settled` (signal),
-  `INITIAL_SYNC_WAIT_SEC := 8.0`, `await_initial_sync(timeout_sec)` (polls
-  the member `initial_pull_pending` — cleared by `_settle_initial_sync` — in
-  a loop and returns `not initial_pull_pending`, up to the hard cap; never
-  cancels the pull itself, just stops waiting on it), and `_settle_initial_sync()`
-  (clears `initial_pull_pending`, fires `initial_sync_settled`; called on every
-  pull outcome — success, 4xx, 5xx, transport failure — and on `sign_out`, so
-  nothing can leave the gate armed forever).
-  **A real bug lived here first:** `await_initial_sync` originally watched a
-  local `settled := false` flipped by a lambda connected to the signal.
-  GDScript lambdas capture outer locals BY VALUE, so the lambda's write never
-  reached the outer `settled` — every signed-in player sat through the full
-  8-second cap even when their pull finished in 200ms. The fix deletes the
-  closure rather than boxing it in a holder dict: polling the shared member
-  directly means there is nothing left to capture, so the class of bug can't
-  recur here. Worth remembering elsewhere in this codebase: a lambda closing
-  over a plain local to receive a signal's result is the shape to be
-  suspicious of; a member field or a one-element array/dict survives value
-  capture, a bare local does not.
-- **`hq.gd`** — `_on_exterior_start()` awaits `_await_cloud_restore()` BEFORE
-  checking `starter_picked`, then
-  **re-checks** `starter_picked` afterward: if the pull delivered a real
-  career while it waited, it routes straight to `View.GARAGE` instead of
-  opening the starter picker at all. `_on_cloud_profile_replaced` gained a
-  CARPARK/STARTER branch it didn't have before (it previously only handled
-  EXTERIOR/GARAGE/LIFT, and was purely reactive — it could repaint after a
-  conflict already happened, never prevent one): if a download lands while
-  the starter picker is open — the player got there before the gate armed,
-  or waited it out — it backs out of the picker to the title rather than
-  letting them grant a second free car on top of a career that just arrived.
+### What a consumer owed, when there was one
 
-Tests: `tests/headless/test_cloud_boot_gate.gd` (8 tests) — the guaranteed
-zero-wait exit, the hard-cap timeout, settling on every pull outcome and on
-sign-out, and the re-check/back-out behaviour in `hq.gd`.
+The deleted `hq.gd` did four things, and a re-wiring owes the same four:
+
+1. **Await before building**, so the screen is built once from the settled profile
+   (`_await_boot_pull` → `_build_hq()`), re-labelling the loading screen already on screen
+   rather than stacking a second cover.
+2. **Await again before any profile-writing action**, and **re-check the state
+   afterwards** — the pull may have delivered a real career while it waited.
+3. **Check `ConflictPrompt.is_blocked()`** and block on an unsettled conflict: "decide
+   later" means no new career begins, "use cloud" restores the real one.
+4. **React to a download that lands anyway** (`_on_cloud_profile_replaced`) by backing out
+   of whatever would double-write.
+
+Two invariants it must not break, both still pinned in `test_cloud_boot_gate.gd`: a pull
+that never lands still reveals the screen (the cap is the backstop), and a pull that
+settles as a conflict still reveals it, with the conflict live for the next step to catch —
+gating the build must not swallow the prompt.
+
+Tests: `tests/headless/test_cloud_boot_gate.gd` — the guaranteed zero-wait exit, the
+hard-cap timeout, settling on every pull outcome and on sign-out, and idempotent settling.
+Its 15 HQ-routing tests went with the hub; see [testing.md](testing.md).
 
 ## Waiting on the network: `CloudBusy`
 
@@ -533,10 +525,13 @@ nothing, and `cloud_sync` then refused every later push with "Resolve the sync c
 first." Cloud saving silently stopped, with the only thing that could clear it hidden
 behind a page the player had no reason to visit.
 
-Now three hosts raise the same prompt: `account_menu.gd`, `hq.gd` (always in the tree,
-so a conflict reaches the player wherever they are), and the boot gate below. The
-account page's private copy of the resolution handlers was DELETED rather than kept in
-parallel — keeping it is what let the behaviour drift in the first place.
+Three hosts used to raise the same prompt: `account_menu.gd`, `hq.gd` (always in the tree,
+so a conflict reached the player wherever they were) and the boot gate. **Only the account
+page is left** — the other two were on the deleted hub — so a conflict now reaches the
+player only if they happen to open Settings → Account. That is the same gap the boot gate
+above describes, from the other end. The account page's private copy of the resolution
+handlers was DELETED rather than kept in parallel; keeping it is what let the behaviour
+drift in the first place.
 
 `ConflictPrompt.is_blocked()` is the single predicate for "is there an unsettled
 conflict". Reaching into `Cloud.sync.blocked_by_conflict` directly is how a second,

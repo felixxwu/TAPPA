@@ -21,7 +21,7 @@ builds a `StartLine` and the countdown arms immediately.
 > decisions 5 and 29). Before the pivot this screen ran a four-phase sequence —
 > `MENU → FLY_IN → REVEAL → FADE` — where `FLY_IN`/`REVEAL` lined up the real
 > top-three rivals ahead of the player and walked them up to the line one
-> opponent at a time, reading `RallySession.current_event_leaders(3)`. Rivals are
+> opponent at a time, reading the career session's `current_event_leaders(3)`. Rivals are
 > gone entirely (decision 5: "rivals are dropped entirely; you race the clock,
 > not a field"), so there is no field left to reveal. `StartLine.Seq` is now just
 > `{ MENU, FADE_OUT, FADE_IN, DONE }`; `setup()` no longer takes a `leaders`

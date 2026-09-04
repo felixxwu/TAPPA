@@ -108,7 +108,7 @@ separate lines. `engine_smoke.gd` makes the same call for stacked puffs.
 
 `setup(centerline, …)` accepts a **null** centerline, which switches the node into
 *ungated* mode (`_ungated`). The overworld hub has no single `Curve2D` — it has a road
-NETWORK (`overworld.gd::_road_polylines`) — so there is no corridor to test against.
+NETWORK (the deleted `overworld.gd::_road_polylines`) — so there is no corridor to test against.
 In ungated mode:
 
 - the car-offset cache and both windowed nearest-point searches are skipped entirely

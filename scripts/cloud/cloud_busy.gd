@@ -28,7 +28,7 @@ extends RefCounted
 #             fetches). A modal over a leaderboard would be worse than nothing.
 #
 # HEADLESS: skip the VISUAL, never the await and never the decision — the rule
-# hq.gd._await_cloud_restore and ConflictPrompt._resolve already follow
+# ConflictPrompt._resolve already follows
 # (features/testing.md). The marker node is created in EVERY environment, so
 # `CloudBusy.showing(host)` answers the same headless as on screen and tests can
 # prove the relationship (busy during the call, gone after) rather than guessing.

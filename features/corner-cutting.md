@@ -92,7 +92,7 @@ _reported_seconds = _elapsed + _penalty_s
 `_elapsed` (the on-screen run timer) stays clean throughout the run; only the
 `stage_completed(_reported_seconds)` signal — fired later by
 `proceed_to_results()` on the NEXT button — carries the penalty. Nothing
-downstream (`RallySession`'s rally-total accumulation, standings, etc.) needs
+downstream (the career session's rally-total accumulation, standings, etc.) needed
 to know a penalty exists; it just sees a slightly larger event time.
 
 ## HUD

@@ -90,7 +90,7 @@ A local debug-signed reproduction (JDK 17 + `android-commandlinetools` +
 NDK r23c installed via `sdkmanager`, debug APK sideloaded onto a Pixel 8) surfaced
 the missing-texture errors directly in `adb logcat` and traced them to a related,
 separately-fixed bug: a null car returned by a failed spawn permanently hung
-`hq_carpark.gd::_spawn_lineup_progressive` instead of crashing outright (see
+the deleted `hq_carpark.gd::_spawn_lineup_progressive` instead of crashing outright (see
 `menus.md` → *"A car that fails to spawn must never hang boot forever"*). Both the
 export-config regression (this section) and the missing null-guard (`menus.md`)
 needed fixing; neither alone was sufficient.
@@ -202,7 +202,7 @@ textures exist or what any of them chose.
 mesh is a merged-vertex *duplicate* built purely to speed up shadow passes — turning
 it off does not remove any shadow, it just renders the shadow from the normal mesh.
 The stage has **no lights at all**; the HQ and podium suns
-(`hq_environment.gd`, `podium.gd`) leave `shadow_enabled` at its default `false`; the
+(the deleted `hq_environment.gd` / `podium.gd`) left `shadow_enabled` at its default `false`; the
 **only** shadow caster in the game is the garage sun (`garage.gd`, `shadow_enabled =
 true`) plus its per-bay omnis. So this buys import time and memory everywhere and
 costs a negligible amount in one indoor scene.

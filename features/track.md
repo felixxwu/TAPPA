@@ -231,7 +231,7 @@ event's turn layout is **precomputed once** and committed as a lockfile —
 `data/track_cache.json` — instead of being searched at runtime. This removes the
 search cost (and its restart/backtrack variability) from both generation sites
 (`world.gd._generate_track` and the 3×-per-rally opponent-time derivation in
-`rally_session.gd._generate_event_tracks`). Design:
+the deleted career session's track pre-solve). Design:
 `docs/superpowers/specs/2026-07-21-track-turn-cache-design.md`.
 
 - **What's stored:** per entry, the ordered `pieces` (`corner`, `flip`, `straight`,

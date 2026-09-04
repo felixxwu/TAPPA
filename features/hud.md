@@ -279,7 +279,7 @@ leaves health exactly where the eye expects it, rather than shuffling the row.
 ## Build version
 
 The build version is shown on the **title screen only** (the HQ exterior title
-overlay, `scripts/hq.gd` → `_build_title_overlay()`, bottom-right corner) — not on
+overlay, the deleted `hq.gd` → `_build_title_overlay()`, bottom-right corner) — not on
 the in-run HUD. It is derived automatically as `0.<git commit count>` with the
 short SHA appended (e.g. `v0.61 (b154d5c)`). `build_web.sh` computes this from git
 and stamps it into `application/config/version` in `project.godot` for the

@@ -439,13 +439,13 @@ radius is the opponent field, not progression.
 
 The rival field is matched to the player's rating, and the start line lets the player
 edit upgrades while standing on the grid — after the field has already been drawn. So
-`start_line.gd::_close_upgrades` calls `RallySession.refield_opponents()`, which
+The deleted `start_line.gd::_close_upgrades` called the session's `refield_opponents()`, which
 re-draws the grid against the build actually about to race. Without it, fitting a part
 on the grid would leave you racing a field picked for the car you arrived in, and the
 matching would stop meaning anything at exactly the moment the player engages with it.
 
 It is cheap enough to run on a menu close — **~17 ms** — because the tracks are already
-generated and held in `RallySession._event_results`; only the point-mass times are
+generated and held on the deleted career session; only the point-mass times are
 re-solved. No loading screen: a sub-frame hitch is less disruptive than a screen.
 
 **Only before the first stage.** `refield_opponents` refuses when `_event_index != 0` or
@@ -460,7 +460,7 @@ closed without an edit costs nothing.
 ## Reading the match: the console log
 
 Every draw prints the grid, sorted fastest-first, against the player's own rating
-(`RallySession._log_opponent_field`, called from all three draw sites — rally start, the
+(the deleted session's `_log_opponent_field`, called from all three draw sites — rally start, the
 test path, and a start-line re-draw). Each rival carries its `rating` on the field entry
 so the match can be inspected after the fact rather than being a number that only existed
 inside the draw:
@@ -529,7 +529,7 @@ gate is therefore still unanswered.
 
 The rating surfaces in the **upgrade screen**, which is where it changes:
 
-- **One persistent readout, and only one.** `UpgradesGrid` (`scripts/upgrades_grid.gd`)
+- **One persistent readout, and only one.** The deleted `UpgradesGrid`
   puts a single `PERFORMANCE  <n>` line under its heading row — `current_rating()` is the
   figure, built through `merged_meta` so fitting tyres or an aero kit visibly moves the
   number, which is the main thing power-to-weight could never show. There is deliberately

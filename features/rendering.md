@@ -166,7 +166,7 @@ Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Tw
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
 Applied as the material of a `PostProcess` **SubViewportContainer**
 (`scripts/post_process_view.gd`), hosted by **both `main.tscn` (the driving
-stage) and `hq.tscn` (the hub)** so the PS1 treatment covers the whole game's 3D
+stage)** — it used to cover `hq.tscn` too, and the flat hub needs no 3D pass — so the PS1 treatment covers the game's 3D
 rather than stopping at the garage door. The 3D world stays in the main tree but
 is rendered through `PostProcess/View`, a `SubViewport` that shares the host's
 `World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
@@ -180,7 +180,7 @@ submit) every frame on the Compatibility backend.
 
 Every uniform — the `virtual_resolution` dither grid plus the whole colour grade
 — is pushed by **`GameConfig.apply_post_process`**, called from `world.gd`'s
-`_ready` and `hq.gd`'s `_apply_post_process`. That single helper is deliberately
+`_ready` (and, before it was deleted, `hq.gd`'s `_apply_post_process`). That single helper is deliberately
 the only writer: two hosts each setting their own uniforms would eventually drift
 into grading the stage and the hub differently. Read the config for the current
 values; the grid is authored to match the design height, so don't restate the
@@ -429,7 +429,7 @@ takes the same dimming through the vertex-colour bake instead. Full write-up in
   with a CC0 photographic open-field sky equirect (`textures/sky_field.png`, a tonemapped
   LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
   to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
-  `hq.gd` builds the same sky in code so HQ matches.
+  The deleted `hq.gd` built the same sky in code so the hub matched.
   **The panorama is re-seeded every stage boot, not conditionally overridden.**
   `world.gd._apply_region_look` assigns it unconditionally, falling back to
   `GameConfig.default_sky_panorama` when the region names none, then
@@ -911,7 +911,7 @@ The plane is **flat**, so the ONLY thing subdivision buys is resolution for the
 smoothstep feather band around the pad edges — a few metres of a 120–240 m plane.
 A uniform `(subdiv+1)²` grid therefore spends essentially all its vertices on
 nothing: the HQ ground alone used to be **58,081 verts / 115,200 tris**, drawn
-every frame on `hq.tscn`, the game's first screen. With no lights, no shadows and
+every frame on the 3D hub, the game's first screen at the time. With no lights, no shadows and
 a low virtual resolution, the game is vertex- and draw-call-bound, not
 fragment-bound, so that was the single largest vertex outlier in the project.
 
@@ -932,7 +932,7 @@ podium floor: 2,337 / 4,480).
 `subdiv` is now only the coarse lattice, and both callers read it from
 `GameConfig.ground_subdiv_for(web, touch)` (`ground_subdiv` /
 `ground_subdiv_web_touch`) rather than hardcoding it — `HQEnvironment.build` and
-`podium.gd::_build_environment`. Verification aid:
+the deleted `podium.gd::_build_environment`. Verification aid:
 `tools/render_ground_feather.gd` renders the apron and a podium pad with the old
 uniform grid and the new one (`docs/perf/ground_*.png`) so the band can be
 compared directly.
@@ -962,7 +962,7 @@ the cone exactly as `ps1_models` does, because the swap below relies on
 `ShaderMaterial` keeping its by-name parameter map across a shader change. A
 uniform added to one and not the other silently drops its value on a snow stage.
 `WorldRuntime.apply_deep_snow` (called from `world.gd._apply_deep_snow_ground` and the
-identical wrapper in `overworld.gd`)
+identical wrapper in the deleted `overworld.gd`)
 swaps the floor material between them every stage boot, including restoring the base
 shader, because that material is a shared `main.tscn` sub-resource that survives scene
 instantiation. See [snow-region.md](snow-region.md).

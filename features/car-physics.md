@@ -352,7 +352,7 @@ now read `wheel_mount()`. Pinned by `tests/headless/test_live_refit_suspension.g
 ### Static rest pose (`settled_ride_height`)
 
 Display / prop cars — the roadside opponent wreck (`world.gd`), the podium finishers
-(`podium.gd`), and the HQ parked lineup (`hq.gd`) — are placed **analytically at rest
+(`podium.gd`), and the HQ parked lineup (`hq.gd`) — both deleted — were placed **analytically at rest
 and frozen at once**, instead of being dropped as live physics bodies and frozen a beat
 later. That old drop-and-settle was a recurring bug source: it depended on a ground
 collider being present under the car (the wreck sank through the streamed-in-only-near-

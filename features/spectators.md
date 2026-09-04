@@ -21,8 +21,8 @@ is a thin wrapper over `SpatialGrid.of_points`.
 | `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one LIVE crowd: steering, its own dynamic MultiMesh (rewritten each frame), LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). Not a `Crowd.multimesh_instance()` caller (dynamic, not static) but shares the figure via `Crowd.mesh()`/`Crowd.foot_offset()`. |
 | `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three live groups in `_generate_track`; `_spawn_wreck_crowd()` builds a STATIC onlooker crescent at an opponent wreck via `Crowd.multimesh_instance()`. |
 | `scripts/game_config.gd` | `@export_group("Spectators")` + `spectator_params()`. |
-| `scripts/hq_environment.gd` | `_build_spectators()` — STATIC scenery spectators spread around the HQ clearing (3 × `spectator_group_size`, off the tarmac apron, out of the trees), built via `Crowd.multimesh_instance()`; no steering/ragdolls (no car in HQ). |
-| `scripts/podium.gd` | `_spectator_layout()` — STATIC crowd arc behind the podium + a showroom fan, built via `Crowd.multimesh_instance()`. |
+| `scripts/hq_environment.gd` | **DELETED** — `_build_spectators()` spread STATIC scenery spectators around the HQ clearing via `Crowd.multimesh_instance()`, with no steering or ragdolls (no car in HQ). |
+| `scripts/podium.gd` | **DELETED** — `_spectator_layout()` built a STATIC crowd arc behind the podium plus a showroom fan, via `Crowd.multimesh_instance()`. |
 | `blender/spectator/spectator.glb` | The low-poly figure: 150 triangles, no armature (hence single-capsule ragdolls). Quadric-decimated for cheap crowds; one mesh used at all distances. |
 
 ## How it works

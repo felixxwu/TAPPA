@@ -565,12 +565,10 @@ func _default_profile() -> Dictionary:
 		KEY_ENGINE_SWAP_UNLOCKED: false,
 		"settings": {},
 		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
-		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaces
-		# stars wholesale with RR-style money (per-stage payout + a fast-completion bonus +
-		# mid-stage coins -- see the pivot doc's Economy section). Money does not exist yet --
-		# it arrives in the economy stage -- so there is nothing to backfill here. Do NOT
-		# reintroduce a "stars_earned"/"stars_spent" pair, and do NOT invent a placeholder
-		# money key ahead of that stage.
+		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaced
+		# stars wholesale with RR-style money (KEY_MONEY above -- per-stage payout, a
+		# fast-completion bonus and mid-stage coins; see the pivot doc's Economy section).
+		# Do NOT reintroduce a "stars_earned"/"stars_spent" pair.
 		# --- Optional cloud save (see features/cloud-save.md) ---
 		# The Firestore document revision this profile last agreed with. 0 means
 		# "never synced". Both fields are backfilled by _migrate's key backfill,

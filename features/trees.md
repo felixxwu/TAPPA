@@ -20,8 +20,8 @@ toggle — the mesh-tree rendering path was removed.
 > light. See [rocks.md](rocks.md).
 
 **Centralised spawning (`Foliage`).** Every place that spawns foliage — the stage
-(`world.gd`), the HQ clearing (`hq_environment.gd`), and the podium's decorative
-dressing (`podium.gd`) — goes through `Foliage.spawn_trees()` /
+(`world.gd`) — and, before they were deleted, the HQ clearing and the podium's decorative
+dressing — goes through `Foliage.spawn_trees()` /
 `Foliage.spawn_bushes()`. So the shared meshes and the size normalization all
 live in exactly one file: a tree is the same kind of tree wherever it appears (an
 opaque billboard cutout), and a tree/bush is scaled to `cfg.tree_size_m` /
@@ -215,7 +215,7 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
 
   It's **per rally event**
   (`RallyLibrary.event_forestiness` → `cfg.track_forestiness`, written by
-  `RallySession`); free-roam defaults to 1.0 (fully wooded). **Bushes pass the default
+  the drawn stage's event dict); a stage that authors none defaults to 1.0 (fully wooded). **Bushes pass the default
   1.0**, so undergrowth covers the whole stage regardless of the forest pattern.
 
   **`road_cells` is the visible road footprint inflated by the margin**,

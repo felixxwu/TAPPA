@@ -60,7 +60,7 @@ true and are untouched by normal play.
   (`pause_menu.gd`), so bailing out mid-run can't leak a disabled feature or the
   fixed seed into normal play.
 
-Like `RallySession` the autoload survives scene changes, which is what makes the
+Like `RunSession` the autoload survives scene changes, which is what makes the
 results screen's **Run again** a plain `reload_current_scene()` — the overrides
 are still in place, so the identical stage regenerates and re-runs.
 
@@ -142,7 +142,7 @@ viewer). Normal play is untouched.
 ## Dev auto-profiling loop (iterate on the phone)
 
 For hands-off iteration on a real phone, load the web build with **`?bench=1`** in
-the URL. On boot `hq.gd` (`_should_autostart_benchmark`) then launches straight into
+the URL. On boot the hub used to launch straight into
 a benchmark run — skipping the HQ it would discard — and the run POSTs its result
 back (below). Two pieces make it a loop with no taps:
 
@@ -163,7 +163,7 @@ back (below). Two pieces make it a loop with no taps:
   lays the frame out at that logical height instead of `DESIGN_HEIGHT`
   (`scripts/display_stretch.gd` → `logical_size`'s `design_height` parameter;
   the knob lives on the autoload as `Benchmark.render_height`, applied by
-  `hq.gd` → `_apply_bench_sweep_config`). Sweeping several heights up to the
+  the deleted `hq.gd` → `_apply_bench_sweep_config`). Sweeping several heights up to the
   device's native landscape height measures how frame cost scales with render
   resolution. The run label gains an `h<height>` part
   (`BenchmarkReport.make_label`) so the results files are distinguishable;

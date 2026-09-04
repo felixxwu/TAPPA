@@ -537,7 +537,7 @@ to keep crossing frames short (see [terrain.md](terrain.md)).
 
 `scripts/car_preview_audio.gd` (`class_name CarPreviewAudio`, an `AudioStreamPlayer`)
 plays a short engine rev for whichever car is highlighted in the HQ lineup, so the
-player hears each car as they flick through the car-park. `hq.gd` lazily creates one
+player heard each car as they flicked through the car-park. The deleted `hq.gd` lazily created one
 and calls `_preview_rev(engine_id, owned_car)` from `_focus_changed()` — the single choke-point
 every selection change (arrows, swipe-flick, tap, and the initial lineup show) passes
 through, so the rev fires on every flick *and* on the first car shown. It reads the

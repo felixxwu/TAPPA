@@ -57,7 +57,7 @@ Which track plays is decided by the **live scene state**, not by transition hook
 `get_tree().current_scene.scene_file_path` and resolves it via
 `MusicDirector._song_for_scene`: a **hub scene** wants the **current HQ song** — one entry of
 `MusicLibrary.HQ_SONGS` (`echo_chamber`, `skillz`); **every other scene**
-(loading/start line/driving `main.tscn`, `standings.tscn`, `podium.tscn`, …) wants
+(loading/start line/driving `main.tscn`, and the deleted `standings.tscn`/`podium.tscn`) wants
 the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS` (`skillz`,
 `deadlock`, `nightandday`, `threaded`, `whoyouare`). The result is re-queued via
 `play_song`, which is idempotent and **latches the swap for the next 8-bar

@@ -26,8 +26,8 @@ chase.
 `activate_current()` re-asserts the player's chosen camera as the active one. It's
 used when another system temporarily took over the viewport with its own `Camera3D` —
 the **start-line reveal**'s orbiting camera (`scripts/start_line.gd`), the diegetic
-car picker's showroom camera (`scripts/overworld_picker.gd`, `ShowroomCamera`), and
-the drive-in garage's own lift-shot camera (`scripts/overworld_garage.gd`, see
+car picker's showroom camera (`ShowroomCamera`) and the drive-in garage's lift-shot camera,
+both deleted with the overworld (see
 `features/overworld.md` → "The garage camera") — and must hand control back once
 done. The hand-off goes through the manager (not a hard-coded chase camera), so a
 player who picked **bonnet** keeps it through any of these instead of being snapped

@@ -146,23 +146,20 @@ with them, and working toward the special-event finale.
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
 | Car performance rating | `scripts/car_performance.gd` (`CarPerformance` — rating, benchmark time, `merged_meta`), `scripts/benchmark_track.gd` (`BenchmarkTrack` — the fixed test track) |
-| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, sequential unlock) |
-| Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots) |
-| Upgrades page | `scripts/upgrades_grid.gd` (`UpgradesGrid` — the slot-tile grid every host mounts), `scripts/upgrade_slot_popup.gd` (`UpgradeSlotPopup` — the per-slot option list / detune slider), `scripts/upgrade_options.gd` (`UpgradeOptions` — the pure option model), `scripts/upgrade_icons.gd` (`UpgradeIcons` — the per-slot SVG icons) |
+| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the linear unlock order) |
+| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts), `scripts/perk_library.gd` (`PerkLibrary` — the permanent perks) |
 | Roster-wide stat scale | `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max), `scripts/stat_bar.gd` (`StatBar` — segmented bar widget drawn against it) |
-| Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/hq.gd` (tuning lift) |
-| Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`), `scripts/hq.gd` (`CarparkMode.WHEELS`) |
+| Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the start line) |
+| Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |
-| Reward draws | `scripts/reward_system.gd` (`RewardSystem` — the car draw + its tier clamp, and the prize-rally part unlock) |
-| Rally session | `scripts/rally_session.gd` (`RallySession` autoload — event-flow orchestration) |
+| Run session | `scripts/run_session.gd` (`RunSession` autoload — stage-flow orchestration), `scripts/run_mode.gd` + `region_run_mode.gd` / `challenge_run_mode.gd` (the strategy seam), `scripts/region_stage_pool.gd` (the stage draw) |
 | Event replay | `scripts/replay_recorder.gd` (`ReplayRecorder`), `scripts/replay_camera.gd` (`ReplayCamera`), `scripts/car.gd` (`replay_playback`) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
-| Opponent wrecks | `scripts/rally_library.gd` (`generate_opponent_field` / `event_wreck`), `scripts/world.gd` (`_spawn_opponent_wreck`) |
 | Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + key-binding + mobile-control picker) |
 | Key rebinding | `scripts/input_remap.gd` (`InputRemap` autoload — keyboard/controller rebind over the InputMap) |
 | Pause menu | `scripts/pause_menu.gd` (`PauseMenu` — top-right freeze button → Resume / Settings) |
-| Game-loop shell | `hub.tscn` (a PLACEHOLDER — stage 3 of the roguelike pivot builds the flat shell; `scripts/scenes.gd` `HUB` / `hub_path()` is the one place that names it), `podium.tscn`/`scripts/podium.gd`, `scripts/world.gd` (session fielding) |
+| Game-loop shell | `hub.tscn` + `scripts/hub_shell.gd` (`HubShell` — every flat page; `scripts/scenes.gd` `HUB` / `hub_path()` is the one place that names the scene), `scripts/world.gd` (session fielding) |
 | Garage model | `garage.tscn`/`scripts/garage.gd`, `tools/render_garage.gd`/`.sh` (multi-angle renders) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard_opaque.gdshader` |
@@ -174,7 +171,7 @@ with them, and working toward the special-event finale.
 | In-game benchmark | `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_runner.gd`, `scripts/benchmark_stats.gd`, `scripts/benchmark_results.gd` |
 | Tests | `tests/`, `run_tests.sh` |
 | Release / CI | `.github/workflows/deploy.yml`, `.github/actions/install-butler/action.yml`, `build_web.sh`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh` |
-| Update check | `scripts/update_check.gd` (`UpdateCheck`), `scripts/hq.gd` (`_check_for_update`), `deploy.yml` → `deploy-pages` (`docs/version.json`) |
+| Update check | `scripts/update_check.gd` (`UpdateCheck` — **no caller**: its prompt was `hq.gd::_check_for_update`), `deploy.yml` → `deploy-pages` (`docs/version.json`) |
 
 > **Keep this current:** when you add or change a feature, update the matching
 > file here in the same piece of work (see CLAUDE.md).

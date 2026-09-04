@@ -10,16 +10,18 @@ own contents there. The model carries **no team branding**.
 
 **Tests:** `tests/headless/test_garage.gd`
 
-It has **two hosts**:
-
-- the **HQ hub's garage** (`hq.gd._build_garage`): the LEFT bay frames the
-  world-map table, the RIGHT bay frames the tuning lift with the player's car
-  raised on it;
-- the **overworld's drive-in garage** (`scripts/overworld_garage.gd`), where the
-  same model is a building standing on the terrain that the player physically
-  drives into — see "Wiring into the overworld" below.
-
-It also stands alone for the render harness below.
+> **NO HOST TODAY.** Both of its hosts are deleted: the HQ hub's garage
+> (`hq.gd._build_garage` — LEFT bay framing the world-map table, RIGHT bay framing the
+> tuning lift with the player's car raised on it) and the overworld's drive-in garage
+> (`scripts/overworld_garage.gd`), a building on the terrain the player physically drove
+> into. Decision 9 replaced the diegetic hub with a flat UI, and the overworld went with
+> it.
+>
+> `scripts/garage.gd` + `garage.tscn` + its textures + `tests/headless/test_garage.gd` are
+> all still here and still pass. Nothing in the game instantiates them; the render harness
+> below does. Like `WorldPanel` ([world-panel.md](world-panel.md)), this is a finished
+> asset waiting for a screen rather than dead weight to clear out — but it IS currently
+> unreferenced, and that is the user's call, not an audit's.
 
 ## Where it lives
 
@@ -34,14 +36,13 @@ It also stands alone for the render harness below.
 
 ## How it's built
 
-Like `hq.gd` and `podium.gd`, the geometry is **procedural** — built from Godot
-primitives (`BoxMesh`, `PlaneMesh`, `CylinderMesh`) via the `_block` / `_tex_block`
+The geometry is **procedural** — built from Godot primitives (`BoxMesh`, `PlaneMesh`, `CylinderMesh`) via the `_block` / `_tex_block`
 helpers. There is **no imported mesh** and no signage, so the model stays light
 and every proportion is a tweakable constant.
 
 `garage.gd` is **self-contained and autoload-free**: it builds its own
 `WorldEnvironment`, sun and per-bay `OmniLight3D`, and pulls in no `Config` /
-`Save` / `RallySession` singletons. That keeps it cheap to instance in headless
+`Save` / session singletons. That keeps it cheap to instance in headless
 tests and lets the render harness `new()` it directly, isolated from the
 project's normal boot.
 
@@ -116,28 +117,25 @@ concrete apron, so the model is added with `build_environment = false` and
 `tools/render_hq_garage.gd` (+ `.sh`) is a verification aid: it boots the real
 HQ and captures the garage station to `docs/garage/hq_garage_view.png`.
 
-## Wiring into the overworld
+## What a host has to supply (the overworld's, recorded)
 
-`OverworldGarage` (`scripts/overworld_garage.gd`) instances the same builder with
-`build_environment = false` / `build_ground = false` (the overworld supplies sky,
-sun and terrain) and re-proportions it from `overworld_garage_bay_width_m` /
-`overworld_garage_bay_depth_m`.
+The overworld's drive-in garage is deleted, but what it had to add on top of the model is
+exactly what any future host will:
 
-Two things the model does **not** provide, and the host therefore adds:
+- **Colliders.** `garage.gd` is pure geometry — no `StaticBody3D` anywhere — so a host
+  that lets the player drive into it must build its own wall bodies (back, both sides, the
+  divider between the bays), leaving the front open as the opening. Without them you drive
+  straight through the building.
+- **A lift pad**, if the car is to be raised.
+- **Its own sky, sun and ground** if it passes `build_environment = false` /
+  `build_ground = false`, and its own proportions (the overworld re-proportioned the bays
+  from config fields of its own).
+- **Placement.** The overworld offset the building perpendicular to the roads meeting its
+  hub node and yawed it to face back at them, so it was never dropped in the middle of a
+  junction with roads running into its back wall.
 
-- **Colliders.** `garage.gd` is pure geometry — no `StaticBody3D` anywhere — so
-  the host builds its own wall bodies (back, both sides, the divider between the
-  bays), leaving the front open as the opening the player drives in through.
-  Without them you would drive straight through the building.
-- **A lift pad**, raised with the car.
-
-The bay-centre-clear discipline the interior props already follow is what makes
-this work: the car parks in the middle of a bay with nothing in the way. See
-`features/overworld.md` → "The garage" for the entry rules, the lift and the
-pages, and → "Standing off the road" for *where* the building ends up: it is
-offset perpendicular to the roads meeting the HQ node and yawed to face back at
-them (`OverworldGarage.placement_from_config`), so it is never dropped in the
-middle of the junction with the roads running into its back wall.
+The bay-centre-clear discipline the interior props already follow is what makes any of
+this work: a car parks in the middle of a bay with nothing in the way.
 
 ## Notes / future work
 

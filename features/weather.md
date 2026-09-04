@@ -150,7 +150,7 @@ list it in `config_fields` — then, **only if it can change a lap time**, in
 ## Authored field
 
 An EventDef (`RallyLibrary.RALLIES`, `ChallengeLibrary`, `BenchmarkMode`, free roam
-via `hq.gd`) may carry an optional `"weather"` string, e.g.:
+via the deleted free-roam draw) may carry an optional `"weather"` string, e.g.:
 
 ```gdscript
 {"seed": 31001, "turn_count": 22, "forestiness": 0.7, "surface_mix": 0.6,
@@ -614,7 +614,7 @@ higher-difficulty rallies pinned on open water.
 - **Track cache: unaffected.** Weather is not a shape determinant and never reaches
   `TrackGenParams`, so no track entry is invalidated by a wet event.
 - **Opponent field: nothing to invalidate.** The rival grid is generated live in
-  `RallySession.start_rally` (it is matched to the player's car rating, so it was
+  the deleted career session's rally start (it was matched to the player's car rating, so it was
   never cacheable per rally), and a weather retune therefore lands on the next start
   with no bake step. `WeatherLibrary.fingerprint(cfg)` survives as the structural
   guard on the rule above — one hash of the whole weather table plus every
@@ -766,7 +766,7 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   authoring policy a designer can retune freely (moving a fog event, adding a
   fifth one), so pinning it as a test would fail on a legitimate content change
   with no bug present; see "Authored field" above for the guidance instead.
-- `tests/headless/test_rally_session.gd` →
+- The deleted `tests/headless/test_rally_session.gd` →
   `test_apply_event_config_carries_weather_and_defaults_to_dry` — an event's
   weather lands on the config; an event with no weather key leaves it dry.
 - `tests/headless/test_drivetrain.gd` — a wet contact yields strictly less μ than

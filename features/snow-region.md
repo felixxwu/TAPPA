@@ -9,7 +9,7 @@ region that does more than look different: it is the first to influence **handli
 - **Handling seat:** `StageConfig.apply_event_config`
 - **Grip:** `Drivetrain.surface_tire_params`, `LapTimeModel._surface_grip`
 - **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `WorldRuntime.apply_deep_snow`
-  (via `world.gd._apply_deep_snow_ground` / the same wrapper in `overworld.gd`),
+  (via `world.gd._apply_deep_snow_ground`; the deleted `overworld.gd` had the same wrapper),
   `car.gd._apply_deep_snow_drag`
 - **Frozen lakes:** `LakeField.build` / `_add_ice_collider`
 - **Snowfall:** `WeatherLibrary` id `"snow"`, `WeatherField.spawn_snow`
@@ -70,13 +70,13 @@ have, instead of silently yielding 0.0 — which would read as "no grip at all".
 ### Seating it
 
 `StageConfig.apply_event_config` resolves the region off `event["region"]`, which
-`RallySession` already seats (lines 665 / 1001) for `TrackGenParams.resolve_water_level`
+`StageConfig.apply_event_config` already seats for `TrackGenParams.resolve_water_level`
 — so **no signature change was needed**. Because that function reloads the authored
 baseline and pins every omitted field to it, a session-less caller (free roam, benchmark,
 dev boot) and every non-snow rally get baseline grip and a zero deep-snow block
 automatically, and one stage's slippery override cannot leak into the next.
 
-`hq.gd._prepare_free_roam` draws its random region **before** calling the funnel and seats
+Free roam (deleted) drew its random region **before** calling the funnel and seated
 it on the event, so a free-roam Alps stage drives like snow instead of looking like snow
 and driving like a summer forest.
 
@@ -85,7 +85,7 @@ and driving like a summer forest.
 `LapTimeModel._surface_grip` reads the same live `gravel_grip` / `tarmac_grip`, so once
 the funnel has seated them **the rival field scales for free, with no change to the
 lap-time model**. A snow stage is no harder to podium; it changes how the car must be
-driven. Consistent with rain and sandstorm, deliberately unlike fog. `ghost_car.gd`
+driven. Consistent with rain and sandstorm, deliberately unlike fog. The deleted `ghost_car.gd`
 computes μ the same way, so the windscreen ghost stays consistent too.
 
 **`CarPerformance` is unaffected by construction** — it benchmarks at a frozen
@@ -179,7 +179,7 @@ It is also not done in `terrain_chunk_builder`: chunk data is cached with a preb
 cache and agree across every LOD subsample.
 
 ⚠️ `world.gd._apply_deep_snow_ground` → `WorldRuntime.apply_deep_snow`
-(`scripts/world_runtime.gd`, shared with `overworld.gd`) runs **unconditionally every stage boot**, including
+(`scripts/world_runtime.gd`, which had a second caller in the deleted `overworld.gd`) runs **unconditionally every stage boot**, including
 the else-branch that restores the base shader. The floor material is a shared
 sub-resource of `main.tscn` with no `resource_local_to_scene`, so it survives every scene
 instantiation in the process — the same trap that once left the ground at

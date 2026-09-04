@@ -3,7 +3,7 @@
 **Source:** `scripts/lake_field.gd` (`LakeField`), `scripts/track_gen_params.gd`
 (`TrackGenParams`), `scripts/terrain_noise.gd` (`TerrainNoise`),
 `shaders/water.gdshader`, plus water-avoidance in `scripts/track_generator.gd`
-and wiring in `scripts/world.gd` / `scripts/rally_session.gd` / `scripts/car.gd`.
+and wiring in `scripts/world.gd` / `scripts/stage_config.gd` / `scripts/car.gd`.
 
 **Tests:** `tests/headless/test_lake_field.gd`, `tests/headless/test_lakes_integration.gd`
 
@@ -31,12 +31,12 @@ seed-lab.
   its owning region's waterline (`RegionLibrary.water_level_of`/`has_water_level`,
   since regions now own the inland/coastal waterline split — see
   `features/regions.md`) — but only if the `event` dict carries a `"region"` tag.
-  `RallySession.current_event()` and `RallySession._generate_event_tracks` are the
+  The drawn stage dict and the track solve are the
   two places that seat it, duplicating the per-stage event dict and copying in the
   owning rally's `region` field so it survives into `TrackGenParams.for_event` and
   `StageConfig.apply_event_config` (both call the shared resolver — the "exactly
   two consumers" of an event's `water_level`). A dict with no `"region"` key at all
-  — `challenge_library.gd`'s rolled challenge stages, `hq.gd`'s free-roam draw,
+  — `challenge_library.gd`'s rolled challenge stages,
   `settings_menu.gd`'s dev track page — falls straight through to the `GameConfig`
   baseline, exactly as before; none of those have a region to inherit, and free
   roam in particular keeps its own randomised `water_level` only because the event
@@ -51,7 +51,7 @@ seed-lab.
   (`./cache_all.sh`). Deliberately not rebaked as part of adding this mechanism; see
   `todo/one-map-four-corners.md`.
 
-Both are applied per event in `RallySession._load_event_scene` (real run) and read
+Both are applied per stage in `StageConfig.apply_event_config` and read
 by `TrackGenParams.for_event` (both the run scene and target derivation).
 
 ## `TrackGenParams` — the shape contract
@@ -64,7 +64,7 @@ shore_clearance, origin, heading, base_origin, water_sampler`) and is built only
 via factories that require a water decision:
 
 - `for_event(event, cfg)` — the single source of truth used by the run scene
-  (`world.gd`), target-time derivation (`RallySession._generate_event_tracks`), and
+  (`world.gd`), target-time derivation (`RegionRunMode.stage_target_ms`), and
   the loading preview.
 - `for_config(cfg)` — free-roam / benchmark / editor (cfg-driven, reproduces the
   pre-lakes behaviour).

@@ -2,7 +2,7 @@
 
 **Sources:** `scripts/finish_arch.gd` (`FinishArch`, a self-building `Node3D` used
 for **both** gates), placed by `scripts/world.gd._place_arch` (which reads the live
-event off `RallySession`). Iterated visually with `tools/render_model.gd`.
+stage off `RunSession`). Iterated visually with `tools/render_model.gd`.
 
 **Tests:** `tests/headless/test_finish_arch.gd`
 
@@ -98,7 +98,7 @@ the arch catches the same hemisphere+sun shading as the car; `_make_material()`
 sets the light params.
 
 The banners show the **live event** the player is driving, not placeholder art.
-`world.gd._arch_event_info()` reads `RallySession` into an `info` dict — `rally_name`,
+`world.gd._arch_event_info()` reads `RunSession` into an `info` dict — `rally_name`,
 `stage_index`, `stage_count`, `target_ms` (the time-to-beat) — and sets it (plus
 `is_start`) on the gate before `build()`. The rally's `difficulty` is a **hidden**
 tier and is deliberately **not** included or rendered. `_add_banners()` renders the

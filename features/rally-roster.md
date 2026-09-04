@@ -139,7 +139,7 @@ rival field, the overworld map/reveal geometry, categorical eligibility, and
 prize rallies. **The RALLIES-side rival machinery is gone** (`generate_opponent_field`,
 `_eligible_combos`, `_draw_distinct_combos`, `swap_weight`, `RIVAL_NAMES`, the
 `PACE_*`/`FIELD_*` consts, tyre mirroring, build levels — all deleted along
-with `RallySession`, `rival_pace.gd` and `ai_difficulty.gd`, per decision 5). But
+with the career session, `rival_pace.gd` and `ai_difficulty.gd`, per decision 5). But
 a second cluster — the world **map**, and everything that reads restriction/
 special/`map_pos` fields — is still physically present in this file and in the
 roster's data, **unreachable from any live screen, and not yet deleted**. The

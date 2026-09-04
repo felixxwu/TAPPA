@@ -10,7 +10,7 @@ boot critical path, and every failure mode is a silent no-op.
 | Piece | Where |
 |---|---|
 | The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |
-| Placement + the modal | `scripts/hq.gd` → `_check_for_update` |
+| Placement + the modal | **DELETED** with the diegetic hub — it was `hq.gd` → `_check_for_update`. `UpdateCheck` itself is live and tested, and nothing calls it |
 | The published document | `.github/workflows/deploy.yml` → `deploy-pages` → *Generate docs/version.json* |
 | The "this is a Play build" marker | `export_presets.cfg` → `preset.2` (`custom_features="play"`) |
 | Tests | `tests/headless/test_update_check.gd` |
@@ -121,7 +121,7 @@ cache-buster so a CDN can't pin a stale copy. Offline, non-2xx, a missing
 document, a malformed `build` field and a null client all return `-1` = "no newer
 build"; a version check must never be something the player notices going wrong.
 
-`hq.gd._check_for_update()` is called at the end of `_ready`, **not awaited** —
+It was called at the end of the hub's `_ready`, **not awaited** —
 boot must never wait on a network round trip. It then:
 
 1. re-checks `_view == View.EXTERIOR` **after** the await — the fetch outlives the

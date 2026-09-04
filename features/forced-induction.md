@@ -180,7 +180,7 @@ exactly the kind of tunable value that drifts.)
 
 Each of the three carries up to two independent gates, both of which must pass
 before the part can be TAKEN. There is no reward draw to be admitted to any
-more (`RewardSystem.draw_upgrade` / `_eligible_parts` are deleted); the gates
+more (the reward system's `draw_upgrade` / `_eligible_parts` are deleted); the gates
 are read by the **garage's star shop** — `UpgradeOptions._lock_reason`, called
 from `_part_options` for every row in a slot's option list:
 
@@ -197,7 +197,7 @@ from `_part_options` for every row in a slot's option list:
   OWN gate is geometric now, like any other rally — `RallyLibrary.rally_revealed`
   — not a completion count or a star total, see
   the deleted star economy). This gates ACQUIRING only:
-  `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the
+  `UpgradeLibrary.apply` walks the car's `boosts` list and never consults the
   gate, so a part already fitted keeps working even if the gate that unlocked
   it were somehow revisited.
 
@@ -382,7 +382,7 @@ car without any upgrade — see `scripts/engine_library.gd`.
 
 ## Save-compat note
 
-Old save profiles (`OwnedCar.installed_upgrades`) may still list the removed
+Old save profiles' `OwnedCar.installed_upgrades` (a key the schema no longer carries) may still list the removed
 `engine_stage1` / `engine_stage2` ids from before the turbo tiers replaced
 them. `UpgradeLibrary.by_id()` returns `{}` for an unknown id, and every
 reader (`enabled_upgrades`, `UpgradeLibrary.apply`, `effective_meta`) treats

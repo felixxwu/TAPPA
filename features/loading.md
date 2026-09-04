@@ -46,7 +46,7 @@ the mechanic it names — every entry must read correctly in ISOLATION, since th
 ever sees one. `_build_lakes` / `_build_foliage` / `_build_signs` dropped their now-unused
 `loading: LoadingScreen` parameters when the forwarding call was removed.
 
-Other `LoadingScreen` users (`hq.gd`, `hq_challenge.gd`) build their own instance for a
+The other `LoadingScreen` users (the deleted `hq.gd` / `hq_challenge.gd`) built their own instance for a
 menu-transition wait and call `set_step()` on it directly with their own short status text
 ("Preparing the garage…") — that path is unrelated and unchanged; only world.gd's
 generation stages stopped forwarding to the label.
@@ -59,7 +59,7 @@ starts. That swaps the headline for `"Loading stage 2 of 3…"` (uppercased by
 `UITheme.caps` like every other loading line), so a multi-stage rally tells the player how
 far through it they are while they wait.
 
-`total` is the RALLY'S OWN stage count (`RallySession.stage_count`), **not** a constant 3:
+`total` is the RUN'S OWN stage count (`RunSession.stage_count()`), **not** a constant:
 the opening rallies run a single stage (`todo/opening-rally.md`). A total of 1 or less is a
 no-op and keeps the default headline — "stage 1 of 1" is noise, and implies a series that
 is not there. The index is clamped, because it comes from live session state that sits AT
@@ -85,7 +85,7 @@ were both removed. Weather still announces itself in the world; see `weather.md`
 
 `_yield_frame()` collapses to a synchronous no-op under headless, so tests see a fully
 built world within `_ready`. Its body is `WorldRuntime.yield_frame(get_tree(), _headless)`,
-shared with `overworld.gd`.
+shared with the deleted `overworld.gd` when there were two world hosts.
 
 ## The car is frozen for the whole window
 
@@ -113,7 +113,7 @@ fallback defaults only, so retuning a const alone changes nothing; see
 [configuration.md](configuration.md) → *Loading*.
 
 The cap-applying logic lives in `scripts/world_runtime.gd`
-(`WorldRuntime.apply_fps_cap`, `WorldRuntime.loading_cap`), shared with `overworld.gd` — the
+(`WorldRuntime.apply_fps_cap`, `WorldRuntime.loading_cap`), which had a second caller in the deleted `overworld.gd` — the
 two world hosts used to carry byte-identical copies. Each host keeps a thin `_apply_fps_cap`
 wrapper that passes its own `applied_fps_caps` array and headless flag, so the recorded
 intent (and the tests reading it) are unchanged. ⚠️ The two cap consts are loading-time
@@ -146,17 +146,17 @@ into `_saved_max_fps` and a transient value must never land there.
 
 ## Cached vs live generation
 
-A **rally stage** (`RallySession.current_event()` non-empty) resolves through
+A **run stage** (`RunSession.current_stage_params()` non-empty) resolves through
 `TrackCache` and **skips the DFS entirely**. The `for_config` path
 (`generate_optional_cached`) also hits the lockfile for the **benchmark stage** and the
 **default-config boot**, which are baked.
 
-> **Free roam is unbakeable and always pays the live DFS.**
-> `hq.gd::_prepare_free_roam` randomises `track_seed`, `track_water_level_m` *and*
-> `terrain_layer1_amplitude` on every entry, and all three feed the cache key — so it
-> misses by construction. This is a gameplay decision (fresh terrain each time), not an
-> oversight. A career load and a free-roam load therefore have materially different
-> profiles: **always say which one you measured.**
+> **Free roam was unbakeable and always paid the live DFS.** Its entry point randomised
+> `track_seed`, `track_water_level_m` *and* `terrain_layer1_amplitude` every time, and all
+> three feed the cache key — so it missed by construction. Free roam is deleted (decision
+> 25), so every load in the game is now a cached one; the lesson stays, because anything
+> that randomises a cache-key field re-introduces the same profile. **Always say which
+> kind of load you measured.**
 
 `data/track_cache.json` is the lockfile; `TrackCache.CACHE_VERSION` plus
 `TrackGenerator.constants_fingerprint()` invalidate it. Regenerate with `./cache_all.sh`.

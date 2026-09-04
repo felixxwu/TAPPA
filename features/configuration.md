@@ -21,7 +21,7 @@ the `.tres` requires a scene reload to take effect.
 
 ## Reading a field with a fallback
 
-Several call sites (audio.gd, overworld_map.gd, and others) need a specific field
+Several call sites (audio.gd and others) need a specific field
 with a fallback for when `Config.data` is unavailable (e.g. an off-tree unit test).
 Use the shared accessors rather than re-deriving the null-handling:
 
@@ -253,7 +253,7 @@ Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
 | `cliff_run_m` | 6.0 | Horizontal run road-edge band → full height (small ⇒ steep) |
 | `cliff_fade_m` | 6.0 | Horizontal run full height → back to grade (bounds the influence radius R) |
 | `cliff_open_radius_m` | 4.0 | Radius of the post-bake morphological open that knocks down thin tall walls (narrower than ~2× this); 0 disables |
-| `cliff_amount` | 1.0 | Runtime per-event scale on `cliff_max_height_m` (`[0,1]`); written by `RallySession` from the event's `cliffiness`, else the shipped fallback |
+| `cliff_amount` | 1.0 | Runtime per-stage scale on `cliff_max_height_m` (`[0,1]`); written by `StageConfig.apply_event_config` from the event's `cliffiness`, else the shipped fallback |
 
 Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors
 `apply_terrain_light`). `cliff_seed = track_seed`.
@@ -314,7 +314,7 @@ the deleted opponent-wreck system for what each one does to a field.
 
 ### Overworld Fog Frontier
 The soft turn-back at the edge of the revealed overworld — see
-the deleted overworld. `overworld.gd` caches all four at boot, because
+the deleted overworld, which cached all four at boot because
 `_update_fog_boundary` is a per-frame path.
 
 | Property | Old const | Purpose |
@@ -325,7 +325,7 @@ the deleted overworld. `overworld.gd` caches all four at boot, because
 | `overworld_fog_veil_fade` | `FOG_VEIL_FADE` | Veil alpha units per second, in and out. |
 
 ### HQ Present Box
-The present-box car reveal (`hq_present_reveal.gd`) — see the deleted diegetic hub.
+The present-box car reveal (`hq_present_reveal.gd`) is deleted with the diegetic hub; these fields are unread.
 
 | Property | Old const | Purpose |
 |----------|-----------|---------|

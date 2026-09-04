@@ -98,7 +98,7 @@ car park, the lift prop is **reused only while both its instance id and a deep
 `owned.hash()` match** — so any in-place data change to the selected car (repair, upgrade
 toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild.
 
-The lift and the car park **share the same `_car_cache`** (`hq.gd` → `_spawn_lift_car`
+The deleted lift and car park **shared one `_car_cache`** (`hq.gd` → `_spawn_lift_car`
 checks `_car_cache` before building, exactly like `_obtain_parked_car`): a car already
 warmed by the parked lineup — the title screen, an engine-swap pick, or
 Free Roam — is *borrowed* onto the lift by reconfiguring its transform/process-mode
@@ -134,7 +134,7 @@ authored car glb bodies (it reveals one and hides the rest — `car.gd` →
 whole catalogue at once. Two mitigations keep the click from hitching: (1) each frozen
 display prop **prunes the bodies it will never show** before duplicating meshes
 (`car.gd` → `prune_inactive_bodies`, called from `CarProp.spawn`), and (2) the whole
-catalogue is **pre-warmed once just after HQ boot** (`hq.gd` → `_ready` starts
+catalogue was **pre-warmed once just after HQ boot** (the deleted `hq.gd` → `_ready` started
 `_prewarm_free_roam_deferred` *after* the `LoadingScreen` lifts, spawning **one prop per
 frame**), each preview becoming a hidden cached prop **kept in memory** for the session —
 preview entries use negative instance ids and are **exempt from
@@ -221,8 +221,8 @@ to itself** and doesn't need to scroll. The two pages:
 
 **Benchmark, Dev and Seed lab are shown to everyone.** `_build_list_page` adds
 those three category buttons whenever `SettingsMenu.dev_tools_enabled()` — the
-single switch `car.gd` / `hud.gd` / `world.gd` / `hq.gd` / `world_panel_host.gd` /
-`terrain_manager.gd` / `perf_log.gd` / `overworld.gd` all key off for every other
+single switch `car.gd` / `hud.gd` / `world.gd` / `world_panel_host.gd` /
+`terrain_manager.gd` / `perf_log.gd` all key off for every other
 dev affordance (force arrows, grip grid, world-menu A/B, config hot-reload,
 skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev
 tools are exposed in the exported release/web build, not just the editor and

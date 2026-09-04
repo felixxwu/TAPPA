@@ -45,9 +45,9 @@ already works on any body.
 | Style catalogue | `scripts/car_library.gd` → `wheel_catalogue(profile)` — derived from `profile["cars"]` (owned cars only), no authored wheel table |
 | Persistence | `scripts/save_manager.gd` → `set_wheels()` |
 | Applied to the car | `scripts/car.gd` → `_owned_wheel_texture`, `_wheel_texture_for`, `reskin_wheels` |
-| The wheel view | `scripts/hq.gd` → `CarparkMode.WHEELS`, `_enter_wheel_swap`, `_cycle_wheel`, `_apply_wheel_preview`, `_revert_wheel_preview`, `_commit_wheels` |
+| The wheel view | **DELETED** with the diegetic hub — it was `hq.gd` → `CarparkMode.WHEELS` (`_enter_wheel_swap`, `_cycle_wheel`, `_apply_wheel_preview`, `_revert_wheel_preview`, `_commit_wheels`). No screen fits wheels today |
 | Entry button | `scripts/tuning_panel.gd` → `TuningPanel._wheels_button` (inside the Tuning menu; wired via `setup(owned, on_change, on_wheels)`) |
-| Camera framing | `scripts/hq.gd` → `_camera_target_xform`; `hq_wheel_cam_offset` / `hq_wheel_cam_look_height` in `GameConfig` |
+| Camera framing | Deleted with it; `hq_wheel_cam_offset` / `hq_wheel_cam_look_height` survive in `GameConfig`, unread |
 | Tests | `tests/headless/test_wheel_customization.gd` |
 
 ## Data model
@@ -86,52 +86,50 @@ geometry, physics or the pose — that's the live try-on. Pass `""` to restore s
 Contrast `_relocate_wheels`, whose wheel detach/re-attach dance exists only to
 re-latch moved suspension connection points.
 
-## The wheel view
+## The wheel view is DELETED — what a rebuild owes
 
-**Not the tuning lift** — the lift holds the car **raised** off its suspension, and
-wheels are judged by *stance*. So wheel-swapping happens in the **car park**, where
-`hq_carpark.gd → _spawn_lineup_progressive` places each car frozen at its analytic rest
-height and then droops its wheels onto the lot floor with a real raycast
-(`settle_wheels_to_ground`). The car is genuinely sitting on its springs.
+There is **no screen that fits wheels today.** `TuningPanel` still builds the **Wheels**
+button, but it is hidden whenever the host wires no `on_wheels`, and no host does
+([tuning.md](tuning.md)). Everything below the data model still works: the catalogue, the
+eligibility rule, `Save.set_wheels`, and the apply path. Only the way in is gone.
 
-`_enter_wheel_swap` (from the Tuning menu's **Wheels** button) parks `_lift_owned`
-**alone**: a one-element lineup, which `_render_lineup_page` centres in the bays, so
-no neighbour competes for the frame. `_camera_target_xform` swaps in the low side-on
-`hq_wheel_cam_offset` framing while the mode is live.
+These are the decisions the deleted view had made, all of them earned, and a rebuild
+should not re-derive them from scratch:
 
-- **Cycling** — `_cycle_focus` hands left/right to `_cycle_wheel` in this mode (a
-  solo lineup has no bays to page), which wraps the cursor and previews the style on
-  the car via `_apply_wheel_preview`. Deliberately bypasses `_focus_changed`: the
-  focused car never changes, and that path would rev the engine and overwrite the
-  wheel name label on every flick. The stats line under the wheel name reads "Unlock
-  more wheels by owning more cars." — it surfaces the eligibility rule (own more
-  cars to widen the style list), not the cosmetic-only guarantee (that's still true,
-  just no longer what this particular label says).
-- **Fit** — the action button (`_commit_wheels`) writes the style and returns to the
-  lift. The stock option commits as an erase.
-- **Back** — `_car_back` calls `_revert_wheel_preview` **before** `_clear_lineup`.
-  This is load-bearing: the node survives in `_car_cache` under an unchanged
-  `owned.hash()` (nothing was saved) and the lift borrows that *same* node, so an
-  uncommitted preview would otherwise reappear on the lift.
-- **Damage never gates it.** `_refresh_focus_damage` exempts `WHEELS` — now the only
-  exemption from the wrecked-car gate, since the GARAGE picker mode it used to sit
-  beside is gone — a wrecked car can always be re-shod.
+- **Not on a lift.** The old tuning lift held the car RAISED off its suspension, and
+  wheels are judged by **stance**. The wheel view parked the car in the car park instead,
+  frozen at its analytic rest height with its wheels drooped onto the floor by a real
+  raycast (`settle_wheels_to_ground`) — genuinely sitting on its springs.
+- **Alone in frame.** It parked a one-element lineup so no neighbour competed for the
+  shot, and swapped in a low side-on camera framing for the duration.
+- **Cycling previews live**, and deliberately bypassed the normal focus-change path: the
+  focused car never changes, and that path would have revved the engine and overwritten
+  the wheel-name label on every flick.
+- **Back DISCARDS the preview, and the order matters.** `_revert_wheel_preview` ran
+  BEFORE the lineup was cleared, because the car node survived in a cache under an
+  unchanged `owned.hash()` (nothing was saved) and the lift borrowed that *same* node — so
+  an uncommitted preview would otherwise have reappeared on the lift. **This was a bug
+  first.** Any host that previews on a shared/cached node inherits it.
+- **Re-entering after an early back-out must rewire cleanly** — also a bug first.
+- **Damage never gates it.** A wrecked car can always be re-shod.
+- **The label surfaces the eligibility rule** ("Unlock more wheels by owning more cars"),
+  not the cosmetic-only guarantee.
 
-## Navigation
+Its 17 tests went with it; the 20 host-free ones in
+`tests/headless/test_wheel_customization.gd` remain and cover the whole feature minus its
+UI. See [testing.md](testing.md) → *The `test_menu_flow.gd` salvage*.
 
-The car park is a spatially-navigated 3D view, so this follows the
-`hq.gd._unhandled_input` → `_cars_input` action pattern rather than
-`MenuNav.attach` (see [menus.md](menus.md) → *Menu navigation*):
+## Navigation, when it is rebuilt
 
-- `menu_left` / `menu_right` **and** `menu_up` / `menu_down` step the style list —
-  the list reads vertically, so both axes are bound. All four are keyboard **and**
-  gamepad actions.
-- `menu_select` fits; `menu_back` discards and returns to the lift.
-- The ◄ ► nav-row buttons and the swipe gesture route through `_cycle_focus`, so
-  they cycle styles for free. Tap-to-focus (`_focus_car_at`) is a no-op here.
-- The Tuning menu's **Wheels** button is a native `FOCUS_ALL` button (like the
-  handling sliders and Reset to neutral), so it's reachable by keyboard/gamepad and
-  not only by pointer. It sits in the Tuning page's **bottom action row** beside
-  `< Back` and Reset — `TuningPanel` builds it but the HOST parents it
-  (`TuningPanel.action_buttons()`; see [tuning.md](tuning.md)) — not as a full-width row
-  inside the panel body.
+The old view was a spatially-navigated 3D screen, so it followed the deleted hub's
+`_unhandled_input` action pattern rather than `MenuNav.attach`. A flat rebuild uses
+`MenuNav` like every other page ([menu-navigation.md](menu-navigation.md)). What to keep
+either way:
+
+- **Both axes step the style list.** The list reads vertically but a car park reads
+  horizontally, so left/right AND up/down were both bound — all four keyboard and gamepad.
+- **Select fits; Back discards** (see the ordering trap above).
+- **The entry button is natively focusable.** `TuningPanel`'s Wheels button is `FOCUS_ALL`
+  like the sliders, so it is reachable by keyboard/gamepad and not only by pointer, and it
+  sits in the page's bottom action row beside `< Back` and Reset — `TuningPanel` builds it,
+  the HOST parents it (`TuningPanel.action_buttons()`, [tuning.md](tuning.md)).
