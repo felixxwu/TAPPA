@@ -25,8 +25,10 @@ extends RefCounted
 # of the pivot replaces the file, not this constant.
 const HUB := "res://hub.tscn"
 const MAIN := "res://main.tscn"
-const PODIUM := "res://podium.tscn"
-const STANDINGS := "res://standings.tscn"
+# PODIUM and STANDINGS are DELETED, not renamed: podium.tscn (decision 19) and
+# standings.tscn (decision 30) no longer exist, so the constants were paths to nothing —
+# a load() away from a crash for anyone who trusted them. The run summary is a HubShell
+# page and the between-stage beat is RunPickPanel; neither is a scene.
 # The player's car scene — spawned as the live drivable car (car.gd), a frozen
 # display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd,
 # bake_car_silhouettes.gd). Used to be "res://car.tscn" hardcoded at seven sites

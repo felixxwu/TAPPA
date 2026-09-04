@@ -67,7 +67,7 @@ gating now lives entirely in `RallyLibrary`, and it is **geometric, not a
 counter**: a rally — ordinary or special, no distinction — becomes enterable
 once the player's lit map reaches its `map_pos` (`RallyLibrary.rally_revealed`
 / `lit_sources`, one predicate for every rally — see
-[map-exploration.md](map-exploration.md)). Specials used to gate on the
+the deleted map exploration). Specials used to gate on the
 roster-wide STAR TOTAL, then on a global completed-rally counter
 (`completions_required`); both were retired because a counter's unlocks had no
 visible relationship to the rally just won, whereas a pin's position does. The
@@ -197,7 +197,7 @@ region's `terrain_tint` and `tarmac_color` are uploaded together as a rank→loo
 (`Overworld.region_look_lut`, `_push_region_lut`) so distant ground of ANY region paints in its
 own colours, while `grass_texture` still cross-fades between only the two regions nearest the car
 (a texture sampler cannot live in a uniform array). See
-[overworld.md](overworld.md) → "Region blending" for the full split.
+the deleted overworld → "Region blending" for the full split.
 
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
 are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
@@ -381,7 +381,7 @@ against the lit circles of every completed rally on the WHOLE roster
 region's rallies at once, so "complete a rally in one corner to reveal one in
 another corner" is the intended drip-feed — a reveal scoped to one region
 would have cut that off at each corner's border. See
-[map-exploration.md](map-exploration.md) (the reveal rule itself) and
+the deleted map exploration (the reveal rule itself) and
 [menus.md](menus.md) (the grey "coming up" pin).
 
 ## Theming the driven world (`world.gd._apply_region_look`)
@@ -491,7 +491,7 @@ region; the only per-pin state is:
 - **locked** (`not RallyLibrary.rally_revealed(rally, Save.profile)`) — the
   rally's `map_pos` doesn't yet fall inside any lit circle (one geometric
   predicate for every rally, special or not — see
-  [map-exploration.md](map-exploration.md)). A locked pin renders grey,
+  the deleted map exploration). A locked pin renders grey,
   carries no hit spheres (can't be clicked/entered), and drops its readout box
   entirely — except a locked SPECIAL, which keeps a full-opacity non-pickable
   teaser naming what it unlocks (`hq_map_table._build_special_teaser_label`). Either way
@@ -504,7 +504,7 @@ trades stars for a car (`hq._make_present_pin`, at `hq.PRESENT_MAP_POS`). It
 belongs to no region and needs none — it is deliberately parked near the
 map's CENTRE rather than in any corner, so it reads as a facility rather than
 another corner's content. See [menus.md](menus.md) → TABLE and
-[star-economy.md](star-economy.md).
+the deleted star economy.
 
 None of the old per-region table state exists any more: there is no
 `_viewed_region_index`, no `_swap_region`, no `_furthest_unlocked_index`, and
@@ -550,7 +550,7 @@ influenced how a stage drives rather than only how it looks. See
   so is the completion-count ladder that briefly replaced them
   (`completions_required` / `completions_needed`). Stars are now a spent
   balance, and a gate reading a balance would close behind a player who had
-  already passed it — see [star-economy.md](star-economy.md).
+  already passed it — see the deleted star economy.
 - **Global-completion credits.** `rally_session.gd` emits `RallySession.game_won`
   (renamed from `showdown_won`) when `RallyLibrary.all_specials_completed(profile)`
   is true — every special on the roster completed, regardless of which region
@@ -560,9 +560,9 @@ influenced how a stage drives rather than only how it looks. See
   placement's **stars** into the ledger (specials pay them too now — they used
   to pay nothing, which made the prestige events the least rewarding on the
   map). No rally hands over a car any more; cars are bought with those stars at
-  the map's present box. See [star-economy.md](star-economy.md),
-  [rally-session.md](rally-session.md),
-  [reward-system.md](reward-system.md) and [rally-roster.md](rally-roster.md).
+  the map's present box. See the deleted star economy,
+  the deleted career rally session,
+  the deleted reward system and [rally-roster.md](rally-roster.md).
 
 ## Tests
 

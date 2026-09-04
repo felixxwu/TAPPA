@@ -292,7 +292,7 @@ frozen lake is an off-road hazard or shortcut and rival times are unaffected. Se
 
 ## The overworld's coastline uses this, unchanged
 
-The Overworld HQ ([overworld.md](overworld.md)) makes the edge of its map a **coast**: the
+The Overworld HQ (the deleted overworld) makes the edge of its map a **coast**: the
 terrain tapers down to below the waterline around the whole perimeter, so the world reads as an
 island and the sea is the border — no invisible wall, and nothing to explain to the player.
 

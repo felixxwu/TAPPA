@@ -27,8 +27,8 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). |
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page (and, as an inline overlay, by the standings page's sign-in prompt). |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
-| `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see [global-leaderboards.md](global-leaderboards.md)). |
-| `firestore.rules` | Security rules, kept in git rather than only in the console. **One collection, `stage_times`, is world-readable — see below and [global-leaderboards.md](global-leaderboards.md).** |
+| `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see the deleted global leaderboards). |
+| `firestore.rules` | Security rules, kept in git rather than only in the console. **One collection, `stage_times`, is world-readable — see below and the deleted global leaderboards.** |
 | `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
 | `.github/workflows/deploy.yml` › `deploy-rules` | Deploys the rules on change (and on manual dispatch). |
 
@@ -146,7 +146,7 @@ this document but its own owner. That stays true after global leaderboards
 landed. The ONE exception in the whole database is a *different* collection,
 `stage_times/{stage}/times/{uid}`, which is world-readable by design so a
 signed-out player can see a leaderboard — see
-[global-leaderboards.md](global-leaderboards.md) for what that collection
+the deleted global leaderboards for what that collection
 holds and why making it public is safe (short version: it never carries
 anything from this `users/{uid}` document — no email, no profile blob, just a
 chosen name/car/time).
@@ -154,7 +154,7 @@ chosen name/car/time).
 Encoding lives in the pure statics `CloudSync.to_document` / `from_document`,
 which build the document SHAPE (which five fields, in what order) and delegate
 the actual value tagging/mask-building to `FirestoreCodec` (see
-[global-leaderboards.md](global-leaderboards.md) for why that split exists).
+the deleted global leaderboards for why that split exists).
 Note that Firestore encodes `integerValue` as a JSON **string** (so 64-bit values
 survive JSON); decoding it as a number would silently yield 0 and break every
 revision comparison. `PATCH` always carries an explicit `updateMask.fieldPaths`,

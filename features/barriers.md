@@ -214,7 +214,7 @@ cross product, then assert `basis.y ≈ Vector3.UP` in its test.
 centre poses the caller already worked out (obeying the local frame above) and skips
 the roadside layout entirely, sharing everything below the transforms — prototype
 reuse, batching, culling and collision. Its one client is the overworld's
-**roadblocks** (`OverworldBlocks`, [overworld.md](overworld.md) → "Roadblocks"), a
+**roadblocks** (`OverworldBlocks`, the deleted overworld → "Roadblocks"), a
 short jersey-rail run laid **across** a carriageway to signal a road the player
 cannot take yet — the opposite orientation to a roadside run, which is why it computes
 its own poses rather than going through `BarrierLayout`. `module_aabb(style, params)`

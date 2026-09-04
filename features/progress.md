@@ -6,7 +6,7 @@
 > Looking for how many rallies the player has finished or podiumed, stars, unlocks, or
 > anything persisted between sessions? That is
 > [save-persistence.md](save-persistence.md) (the profile and its API) and
-> [star-economy.md](star-economy.md) (the star ledger). There is no career "progress"
+> the deleted star economy (the star ledger). There is no career "progress"
 > module; the profile IS the career state.
 
 `TrackProgress` (`scripts/track_progress.gd`, `class_name TrackProgress extends

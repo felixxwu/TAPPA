@@ -98,8 +98,10 @@ func test_real_scene_changes_are_suppressed_for_this_run() -> void:
 # that was never requested.
 func test_a_suppressed_change_records_its_destination() -> void:
 	var before := Scenes.last_blocked_path
-	Scenes.change_to(get_tree(), Scenes.PODIUM)
-	assert_eq(Scenes.last_blocked_path, Scenes.PODIUM,
+	# Any real path serves; MAIN is used because it is one of the two that still exist
+	# (this asserted Scenes.PODIUM until podium.tscn and its constant were deleted).
+	Scenes.change_to(get_tree(), Scenes.MAIN)
+	assert_eq(Scenes.last_blocked_path, Scenes.MAIN,
 		"a suppressed transition records the path it wanted, for tests to assert on")
 	assert_eq(_leaked_scene_names(), [],
 		"and it does NOT actually load the scene")

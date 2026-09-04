@@ -59,7 +59,7 @@ curve straight near both ends and dumps all the turning into the middle.
 each chord and then a whole chord's turn in one step — it reported turn 1 as a 0.39 m
 radius instead of 16.9 m. Set `bake_interval` small first, then probe at a step above it.
 Same quantisation trap as the rival ghost's timed-span resample
-([rival-ghost.md](rival-ghost.md)).
+(the deleted rival ghost).
 
 ## Track generation (`TrackGenerator`)
 
@@ -270,8 +270,8 @@ search cost (and its restart/backtrack variability) from both generation sites
   radius 4.7 m -> 8.4 m), and to **4** for `TrackGenerator.CORNER_WEIGHTS` (the candidate
   draw became weighted at every straightness, including `0` where it was a plain
   shuffle). `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
-  (see [global-leaderboards.md](global-leaderboards.md)), which is the id every
-  posted [global leaderboard](global-leaderboards.md) entry is keyed by. A
+  (see the deleted global leaderboards), which is the id every
+  posted the deleted global leaderboards entry is keyed by. A
   `CACHE_VERSION` bump means the cached track for a stage changed shape, so any
   time already posted against that stage's old key is no longer a fair
   comparison — `BOARD_EPOCH` forces a fresh key and the board starts clean for

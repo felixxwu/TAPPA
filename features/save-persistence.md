@@ -128,7 +128,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   gated upgrade part (`UpgradeDef.unlocked_by_rally`) reads the same
   `completed` flag on the naming special's rally record — again nothing new.
   See [rally-roster.md](rally-roster.md) for the ladder and
-  [reward-system.md](reward-system.md) for where the gate is applied to the
+  the deleted reward system for where the gate is applied to the
   draw pool.
 - `money` (`Save.KEY_MONEY`) — the **single currency**, and the whole economy's
   persisted state (`todo/roguelike-pivot.md` decision 21; it replaced the deleted
@@ -211,11 +211,11 @@ or bent alignment), `car_handles_badly(instance_id)` (the narrower question the 
 red warning asks: is the damage below `damage_misfire_health_threshold`, i.e. actually
 costing engine power),
 `can_buy_part(instance_id, item_id)` / `part_price(item_id)` / `buy_part(instance_id, item_id)`
-(buying a discovered upgrade for a car — see [star-economy.md](star-economy.md)),
+(buying a discovered upgrade for a car — see the deleted star economy),
 `owns_model(model_id)`,
 `rally_revealed_seen(rally_id)` / `mark_rally_revealed(rally_id)` (the map's
 new-rally reveal acknowledgement — only the ACKNOWLEDGEMENT is persisted, never the
-unlock, which stays derived; see [map-exploration.md](map-exploration.md)),
+unlock, which stays derived; see the deleted map exploration),
 `set_tuning(instance_id, tuning)`,
 `swap_engines(id_a, id_b)` (exchanges two owned cars' CURRENT engines; free,
 unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap`
@@ -238,7 +238,7 @@ override, then the plan's absolute detune; a no-op returning `false` for a plan 
 `changed` is false or a car that isn't in the save),
 `record_podium_rally(rally_id, combined_ms,
 placed)` (idempotent; keeps the best time **and** best placement; grants no car — cars
-are bought, see [star-economy.md](star-economy.md)). It **returns the stars it credited
+are bought, see the deleted star economy). It **returns the stars it credited
 for THIS finish** — every finish pays what its placement is worth, so a rally can be
 re-driven for stars. (It used to credit only the improvement over the rally's previous
 best, an anti-grind guard that was deliberately removed; the consequence is that star
@@ -289,7 +289,7 @@ persisted `completed` KEY is unchanged (renaming it would need a save migration)
     under and no player-reachable way to restore it, so every car is reset to full power.
   - **3 → 4**, adaptive difficulty's offset + streak counters, all zero — which IS the
     pre-adaptive "matched field" behaviour, so a migrated career resumes at parity. See
-    [adaptive-difficulty.md](adaptive-difficulty.md).
+    the deleted adaptive difficulty.
   - **4 → 5**, two part unlocks moving into the Alps (Race Tires `gr_showdown` →
     `sn_showdown`, Sequential Gearbox `hc_showdown` → `sp_summit_trial`). A player who
     already won the old rally keeps the part, granted directly via

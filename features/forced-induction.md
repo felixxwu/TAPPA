@@ -167,7 +167,7 @@ term (the always-on backpressure N·m). `UpgradeLibrary.UPGRADES` no longer
 authors a `tier` field at all — that field is gone from the table entirely;
 see "Gating" below for what replaced it. There is no random pool weighting
 either: `RewardSystem.draw_upgrade` and the per-event upgrade draw it fed are
-**deleted** (see [reward-system.md](reward-system.md)), so nothing enumerates a
+**deleted** (see the deleted reward system), so nothing enumerates a
 pool of parts — every route to a part names it directly.
 
 (The exact `install_turbo`/`install_supercharger` numeric fields on each entry
@@ -196,7 +196,7 @@ from `_part_options` for every row in a slot's option list:
   `todo/star-gated-special-events.md` (the spec's filename only; the special's
   OWN gate is geometric now, like any other rally — `RallyLibrary.rally_revealed`
   — not a completion count or a star total, see
-  [star-economy.md](star-economy.md)). This gates ACQUIRING only:
+  the deleted star economy). This gates ACQUIRING only:
   `UpgradeLibrary.apply` walks `installed_upgrades` and never consults the
   gate, so a part already fitted keeps working even if the gate that unlocked
   it were somehow revisited.

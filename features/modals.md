@@ -2,10 +2,9 @@
 
 **Sources:** `scripts/confirm_popup.gd` (`class_name ConfirmPopup` — the shared confirm
 dialog and the tree-wide `MODAL_GROUP` that keeps one modal at a time), `scripts/menu_page.gd`
-(`class_name MenuPage` — `open_modal`, the scrolled-body / pinned-exit page shape), and
-`scripts/hq.gd::_make_modal_overlay`.
+(`class_name MenuPage` — `open_modal`, the scrolled-body / pinned-exit page shape).
 
-**Tests:** `tests/headless/test_menu_page.gd`, `tests/headless/test_menu_flow.gd`, `tests/headless/test_menu_nav.gd`
+**Tests:** `tests/headless/test_menu_page.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_confirm_popup.gd`
 
 Anything that takes over the screen and must be dismissed before the player can carry on.
 A modal is also a menu, so it must be keyboard + gamepad navigable — see
@@ -40,9 +39,12 @@ The popup **builds its own CanvasLayer** under `host` (layer 101, above overlays
 independent of the hosting scene. It's **MenuNav-wired** (keyboard + gamepad navigable),
 emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it. **New
 confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
-`ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause
-menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms** (`hq.gd::_show_swap_confirm`, which is just two branches now
-— capability locked, or go ahead — since a permitted swap costs nothing to spend), HQ **detune-to-enter confirm** (over-powered car), and the HQ **"Update available" prompt** on the native builds (`hq.gd::_check_for_update` — see [update-check.md](update-check.md)).
+`ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause menu's
+quit-to-HQ confirm** (`PauseMenu.confirm_quit_to_hq`), the **hub's abandon-a-paused-run
+confirm** (`HubShell._start_run`, which owes the player the words "the attempt is used" —
+decision 48), and the **"Update available" prompt** on the native builds (see
+[update-check.md](update-check.md)). The HQ's engine-swap and detune-to-enter confirms
+were two more, and are deleted with it.
 
 **Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its
 own action buttons (`trigger_back` is reachable only from `ui_cancel`/`menu_back` — Escape
@@ -90,10 +92,10 @@ been arrived at independently three times: `"loading_screen"` (queried by
 `music_director.gd`), `CloudBusy.GROUP`, and this group. The bug that forced it: one
 `Cloud.conflict_detected` broadcast reached two subscribers, each checking its own
 private latch, so **both** opened a conflict prompt — dismissing the top one appeared
-to "do nothing" except reveal a twin with the focus cursor reset. `hq.gd` and
-`account_menu.gd` no longer keep modal latches at all; `account_menu` in particular
-can be instantiated three times over (Settings, the HQ title overlay, the standings
-page), so a per-instance bool could never have answered the question.
+to "do nothing" except reveal a twin with the focus cursor reset. No host keeps a modal
+latch of its own any more; `account_menu` in particular could be instantiated three times
+over (Settings, the HQ title overlay, the standings page — the latter two now deleted), so
+a per-instance bool could never have answered the question.
 
 #### Commit AFTER you have the screen (`ConfirmPopup.open_committing`)
 
@@ -130,9 +132,10 @@ Every menu host needs to know whether to ignore menu input, for two reasons that
 to be asked separately (or not at all): the player is **typing**
 (`MenuNav.is_text_editing`), and **a modal owns the screen** (`ConfirmPopup.any_open`).
 `MenuNav.input_blocked(node)` folds both into one shared predicate, the same convention
-`is_text_editing` established. `hq.gd`'s `_unhandled_input` had rolled its own version
-that allowlisted its two overlays but not `ConfirmPopup`, so HQ station rows still fired
-behind an open popup — which is exactly what made the double-open reachable.
+`is_text_editing` established. What forced it: `hq.gd`'s `_unhandled_input` had rolled its
+own version that allowlisted its two overlays but not `ConfirmPopup`, so station rows still
+fired behind an open popup — which is exactly what made the double-open above reachable.
+That host is deleted; the predicate is the rule for the next one.
 
 **The carve-out: a node inside the open modal is NOT blocked.** The popup builds a
 `MenuNav` of its own on its centring container (`ConfirmPopup._build`), and that nav has
@@ -157,22 +160,23 @@ Covered by `test_confirm_popup.gd` — joins the group, a second popup is refuse
 `allow_stack` gets through, and the exclusivity holds in both directions between the
 two popup kinds.
 
-## Modal page shape — scrolled body, pinned exit (`hq.gd::_make_modal_overlay`)
+## Modal page shape — scrolled body, pinned exit (`MenuPage`)
 
 **Every modal menu page must scroll its content and pin its exit control outside the
-scroll.** `hq.gd::_make_modal_overlay(margin)` is the builder: it returns
-`[layer, body, footer, root]` — `body` is a `VBoxContainer` inside a
-`TouchScrollContainer` (`SIZE_EXPAND_FILL`), `footer` is an `HBoxContainer` pinned
-below it as a sibling, and `root` is the outer full-rect VBox you hand to
-`MenuNav.attach` / `UITheme.enforce`. Variable-height content goes in `body`; the
-control that LEAVES the page (Back / Done / Close / "Continue") goes in `footer`.
-`hq_carpark.gd::_make_carpark_modal(build_body, build_footer)` is the same contract for the
-car-park's centred house panel. It is now a thin wrapper over `MenuPage`
-(`{"dim": true, "margin": 16.0, "padding": 20}`) rather than a hand-rolled stack: `MenuPage`
-gained a **`dim`** option for true modals like this one, and its `_sync_body_height` already
-budgets the box against the frame height instead of centring it at its full minimum size —
-which is what stops a tall body pushing the footer off screen. Note the footer callable is
-handed an **`HBoxContainer`** (the page's action row, outside the box), not a `VBoxContainer`.
+scroll.** `MenuPage` is the builder and the only one left: `body()` is a `VBoxContainer`
+inside a `TouchScrollContainer` (`SIZE_EXPAND_FILL`), the action row is an
+`HBoxContainer` pinned below it as a sibling, and the page itself is what you hand to
+`MenuNav.attach` / `UITheme.enforce`. Variable-height content goes in the body; the control
+that LEAVES the page (Back / Done / Close / Continue) goes in the action row.
+`_sync_body_height` budgets the box against the frame height instead of centring it at its
+full minimum size — which is what stops a tall body pushing the action row off screen. The
+`dim` option makes it a true modal.
+
+The two hand-rolled builders this section used to describe — `hq.gd::_make_modal_overlay`
+(returning `[layer, body, footer, root]`) and `hq_carpark.gd::_make_carpark_modal` — had
+already become thin wrappers over `MenuPage` before the hub was deleted, and went with it.
+Every page in the game is a `MenuPage` now, `HubShell`'s included
+([hub-shell.md](hub-shell.md)).
 
 ### Hosting a modal (`MenuPage.open_modal`) — not optional either
 
@@ -197,11 +201,12 @@ wrong, each with a silent failure mode:
    allowed to open the confirms they host. Membership sits on the page, not its layer, so
    hiding the page releases the claim (hosts keep these pages alive and toggle `visible`).
 
-`hq.gd::_make_modal_overlay` and `hq_carpark.gd::_make_carpark_modal` are both thin wrappers
-over it now, so all three HQ modals (rally detail, challenge, Android notice) get the same
-hosting. The **Android boot notice** additionally stands the title down through
-`update_overlays` — `_title_layer.visible = false` only ever addressed the flat host, so
-with world menus on it stood nothing down and left two live `MenuNav`s fighting one keypress.
+Point 1's failure mode is worth keeping even though its example is deleted: a page added to
+a station's own layer was built, gated and nav-wired but rendered NOWHERE once
+`WorldPanelHost.sync` hid that layer. The class of bug — "the page exists, is navigable,
+and is invisible" — is what `open_modal` owning its own `CanvasLayer` prevents. Same for
+point 3's: two live `MenuNav`s fighting one keypress, because the thing that was supposed to
+stand down only ever addressed the flat host.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
 fixed — `DisplayStretch.DESIGN_HEIGHT`, read from `project.godot`'s
@@ -221,26 +226,22 @@ the footer, and `MenuNav._enable_scroll_follow` sets `follow_focus = true` on ev
 the row the cursor moved onto. `build_settings_overlay` (title → scroll → `< Back`
 sibling) and `build_lift_overlay` are the reference implementations.
 
-**The passthrough carve-out.** This is for MODAL pages only. The diegetic 3D stations —
-garage, map table, car park (`build_garage_overlay`, `build_table_overlay`,
-`build_car_overlay`) — call `hq.gd::_passthrough_overlay`, which sets
-`MOUSE_FILTER_IGNORE` on the overlay root and its non-button children so taps fall through
-to the `Area3D` pickers behind the HUD. A `ScrollContainer` defaults to
-`MOUSE_FILTER_STOP` and would eat those picks (and its drag gesture would fight the map
-pan). Plain `_make_overlay` stays as-is for those; **never** wrap a passthrough overlay in
-`_make_modal_overlay`.
+**The passthrough carve-out is gone with its stations.** The diegetic 3D stations (garage,
+map table, car park) set `MOUSE_FILTER_IGNORE` on their overlay roots so taps fell through
+to the `Area3D` pickers behind the HUD — a `ScrollContainer` defaults to
+`MOUSE_FILTER_STOP` and would have eaten those picks. No screen in the flat shell sits over
+a 3D picker, so nothing needs it. The rule it implies survives: **never wrap a
+tap-through overlay in the modal page shape.** The in-run HUD is the one live surface with
+that shape of concern ([hud.md](hud.md)).
 
-Pages on this shape: the rally detail card (`rally_detail.gd::RallyDetail.build` — its
-`< Map` stays `FOCUS_NONE` because the panel has no MenuNav; in `hq.tscn` the
-`hq_table.gd::handle_input` branch drives it from the TABLE view), the challenge entry screen (`build_challenge_overlay`), Settings
-(`build_settings_overlay`), the Android
-app notice (`hq._show_android_app_notice`), and the car-park Change-Upgrades popup
-(`hq_carpark.gd::_show_upgrades_popup`, whose Done is additionally p/w-gated).
+Pages on this shape today: every `HubShell` page, the pause menu's settings page, the
+account form, and the start line's overlay. `rally_detail.gd::RallyDetail.build` is still
+live and still built this way, though its old host (the map table) is deleted.
 
 **Widths, not just heights.** A centred modal column asking for a fixed pixel width can
 also exceed the frame: a narrow/portrait phone aspect can leave well under 445 logical units wide.
-`RallyDetail.body_width(host, preferred, chrome)` clamps an authored desktop width to what the
-current canvas can actually show (`viewport width - chrome`, floored at 160);
-`hq.gd::_modal_body_width` is the HQ-hosted wrapper over it, and the upgrades popup and the
-account menu both go through that.
+`RallyDetail.body_width(host, preferred, chrome)` clamps an authored desktop width to what
+the current canvas can actually show (`viewport width - chrome`, floored at 160). The
+`hq.gd::_modal_body_width` wrapper that most callers used is deleted; call `body_width`
+directly, or `MenuPage.set_body_width` with its result.
 

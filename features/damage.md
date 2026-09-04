@@ -15,7 +15,7 @@ gutless car for the rest of the rally — a misfiring, rev-limited engine and be
 plus a repair bill. HP climbs back two ways: the free **between-event pit repair** applied
 at the start of every rally event after the first (see below), and a **paid repair** at the
 tuning lift that restores full health and straightens the wheels for a flat star price
-(`Save.repair_car`, see [star-economy.md](star-economy.md)).
+(`Save.repair_car`, see the deleted star economy).
 
 ### Wrecking is gone entirely, and it took a lot of machinery with it
 
@@ -43,8 +43,8 @@ Three reasons the change was worth making:
    to paper over that, and each one was a place the logic could be wrong. Now there is no
    failure state to rescue from, so there is no rescue code at all.
 2. **It makes the map's reachability guarantee sound.** Cars are won at specific rallies
-   now ([prize-rallies.md](prize-rallies.md)) and the roster is authored so exploring from
-   HQ reaches everything ([map-exploration.md](map-exploration.md)). That closure is only a
+   now (the deleted prize rallies) and the roster is authored so exploring from
+   HQ reaches everything (the deleted map exploration). That closure is only a
    real guarantee if the player cannot LOSE the car an authored route depends on.
 3. **A terminal state is a worse punishment than a slow car.** Being sent to a menu ends
    the drive; limping the last two stages on a wounded engine is a consequence the player
@@ -75,7 +75,7 @@ they are now different calls.
 
 `field(max_hp, hp, instance_id, wheel_toe)` configures all of the above for a run.
 `car.gd` calls it (unbound, full HP, straight wheels) from `apply_car`; the
-rally/Start-line layer ([rally-session.md](rally-session.md)) re-fields it from the
+rally/Start-line layer (the deleted career rally session) re-fields it from the
 OwnedCar (stored HP + instance id + persisted `wheel_toe`) via `apply_owned` when a
 car is taken to the line.
 
@@ -369,13 +369,13 @@ lost. **There is no anti-soft-lock machinery, because nothing can strand a playe
 at 0 HP is still a drivable car, and HP climbs back via the free between-event field repair
 and the paid repair at the lift. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
 `ensure_wreck_safety_net` and the free rescue car that existed to dig the player out are
-all retired — see [reward-system.md](reward-system.md).
+all retired — see the deleted reward system.
 
 ### Nothing DNFs the player any more
 
 `RallySession.report_wreck()` and `RunSession.report_wreck()` / `_end_as_dnf()` are
 gone, so **the player cannot DNF a rally or a challenge through damage** — see
-[rally-session.md](rally-session.md) and [rally-challenge.md](rally-challenge.md). The
+the deleted career rally session and [rally-challenge.md](rally-challenge.md). The
 `_dnf` flag survives in both: **rivals** still DNF an event, the standings/result contract
 still carries a `dnf` field, and a persisted challenge run still reads one back. Only the
 player's own route to it was removed. The `"WRECKED"` labels the UI shows (rally detail,
@@ -406,7 +406,7 @@ that case.
 ## Between-event pit repairs (`Save.field_repair`)
 
 A rally is a campaign of `EVENTS_PER_RALLY` events run back-to-back on one fielded
-car (see [rally-session.md](rally-session.md)). At the **start of every event after
+car (see the deleted career rally session). At the **start of every event after
 the first**, the engineers patch the car up a bit — a free, automatic partial
 repair, and the ONLY way HP is ever restored:
 
@@ -461,34 +461,28 @@ applied **silently** — the summary is discarded rather than stashed for
 `take_pending_repair()`, so it never fights with the podium flow's own
 UI for the player's attention.
 
-## HP is NOT a damage oracle — ask `RallySession.took_damage_this_rally()`
+## HP is NOT a damage oracle (the rule outlived its API)
 
-**Never derive "did the player take damage this rally" from the car's HP.** It is
-wrong in *both* directions:
+**Never derive "did the player take damage this stage" from the car's HP.** It is wrong in
+*both* directions:
 
-- **A crashed car can read pristine.** The between-event repair above runs at every
-  stage boundary, and `_resolve_results()` runs one more on its **first lines**,
-  before a single line of reward logic. By the time anything at resolve time reads
-  `hp`, this rally's damage has already been partly healed.
-- **A clean run can read damaged.** Cars routinely *start* a rally below `max_hp`,
-  because repairing at HQ costs stars (see [star-economy.md](star-economy.md) →
-  *Repairs*). `hp < max_hp` at the finish may be damage the player brought with
-  them; `hp >= max_hp` is simply unreachable for such a car however flawlessly they
-  drove.
+- **A crashed car can read pristine.** The between-stage repair above runs at every stage
+  boundary, so by the time anything downstream reads `hp`, some of the damage has already
+  been healed. The self-heal trickle does the same thing continuously.
+- **A clean run can read damaged.** A car routinely *starts* a stage below `max_hp`,
+  carrying damage in from an earlier stage of the same run. `hp < max_hp` at the finish may
+  be none of this stage's doing, and `hp >= max_hp` is simply unreachable for such a car
+  however flawlessly it was driven.
 
-So `RallySession` **latches the fact instead**, in `_took_damage_this_rally`:
+`RallySession` used to latch the fact instead (`_took_damage_this_rally`, read via
+`took_damage_this_rally()` and carried on the `rally_finished` result as `took_damage`) —
+the clean-run signal its podium rewards keyed off. **That flag no longer exists**, because
+nothing needs it: rewards are money, and money is paid per stage on time and coins, never
+on a clean-run bonus.
 
-- set the moment any event reports `hp_lost > 0` (`report_event_result`) — now the ONLY
-  place it is latched, since `report_wreck` (the one path that bypassed
-  `report_event_result`) no longer exists;
-- latched off whether damage *happened*, not whether it could be persisted — an
-  unbound car with no save slot still took the hit;
-- cleared only in `start_rally`, so it survives every repair to resolve time and is
-  still readable during the finish beat;
-- read via **`RallySession.took_damage_this_rally()`**, and carried on the
-  `rally_finished` result as **`took_damage`**.
-
-That flag is the clean-run signal any reward should use.
+The rule is kept because the reasoning is not obvious and the next feature that wants
+"was this run clean?" will otherwise reach for `hp`. Latch it at the moment
+`report_event_result` sees `hp_lost > 0`; do not reconstruct it afterwards.
 
 ## In-run HUD (see [hud.md](hud.md))
 

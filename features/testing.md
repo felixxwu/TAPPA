@@ -207,7 +207,7 @@ levers, in order of payoff:
   final visible state — the audio gate above is the safe shape, and it is
   safe specifically because "not played" is genuinely the correct end state
   in both paths.** The global standings page (`GlobalStandings`, see
-  [global-leaderboards.md](global-leaderboards.md)) got this wrong: it built
+  the deleted global leaderboards) got this wrong: it built
   its body nodes hidden and relied on a `_reveal()` coroutine to un-hide them
   one at a time, with the coroutine itself skipped headless — so headless saw
   the nodes (never hidden in the first place) while a real player saw a
@@ -236,7 +236,7 @@ handles) and `straight_then_arc(...)`.
 The distinction between `arc` and `handled_arc` matters and is easy to get wrong: `arc` is
 already a handle-free polyline, so resampling it is near-lossless by construction. Any test
 asserting that a **resample** preserves curvature must use `handled_arc`, or it will pass
-against a broken implementation. See [rival-ghost.md](rival-ghost.md) → *The timed-span
+against a broken implementation. See the deleted rival ghost → *The timed-span
 curve*.
 
 ### Test-catalogue seam — `CarFixtures`

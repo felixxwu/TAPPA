@@ -1,29 +1,27 @@
-# Event replay (behind the standings screen)
+# Event replay (behind the between-stage panel)
 
-**Host screen deleted, capture/playback mechanism NOT deleted (roguelike
-pivot, decision 30, `todo/roguelike-pivot.md`).** `scripts/standings.gd` /
-`standings.tscn` — the "standings screen" this doc's title refers to, and the
-`overlay_mode` this fed the replay behind — is gone, along with its nav/overlay
-test `tests/headless/test_replay_standings.gd`. `ReplayRecorder`/`ReplayCamera`
-and `car.gd`'s `replay_playback` machinery are untouched; whether they get a
-new host, and what happens to `world.gd`'s `_present_standings_overlay` /
-`rally_session.gd`'s `standings_overlay_host` (both mid-demolition in this
-same wave — see `todo/roguelike-pivot-plan.md`), is undecided as of this
-change. Flagged here rather than fixed: this file's own scope is the replay
-mechanism, not the standings/rally-session demolition.
+The just-driven stage plays back as a short cinematic while the player makes the
+between-stage pick: the run world stays alive, the car re-drives its own recorded run, and
+a `ReplayCamera` cuts between a handful of chase shots behind a transparent overlay.
+
+**The host screen changed; the mechanism did not.** This used to play behind
+`standings.tscn`'s two-leaderboard interstitial. That screen is deleted (decision 30 — no
+more per-stage boards, and with rivals gone there is no field to rank), and `RunPickPanel`
+takes its place: the drawn boosts plus repair when the run has a pick pending, or a bare
+Continue when it does not (the challenge, and a run's final or failed stage). See
+[region-runs.md](region-runs.md) → *Between-stage pick*. `ReplayRecorder`, `ReplayCamera`
+and `car.gd`'s `replay_playback` machinery are untouched.
 
 **Sources:** `scripts/replay_recorder.gd` (`ReplayRecorder`), `scripts/replay_camera.gd`
 (`ReplayCamera`), `scripts/car.gd` (`replay_playback` / `begin_replay` / `end_replay` /
 `_step_replay`), `scripts/drivetrain.gd` (`replay_omega`), `scripts/world.gd`
-(`_present_standings_overlay` / `_on_leaderboard_hidden_changed` — DANGLING, see
-above), `scripts/rally_session.gd` (`standings_overlay_host` — DANGLING, see above).
+(`_present_standings_overlay` — the presenter, still named for the screen it no longer
+loads — plus `_hide_driving_ui`, `_reset_props_for_replay`, `_teardown_interstitial` and
+`_on_leaderboard_hidden_changed`), `scripts/run_pick_panel.gd` (`RunPickPanel`).
 
 **Tests:** `tests/headless/test_replay_recorder.gd`, `tests/headless/test_replay_playback.gd`, `tests/headless/test_replay_camera.gd`
 
-After each event, instead of cutting straight to a flat standings screen, the run world
-stays alive and the just-driven lap plays back as a short cinematic behind a
-transparent standings overlay — the car re-drives its own recorded run while a
-`ReplayCamera` cuts between a handful of chase shots.
+
 
 ## `ReplayRecorder` — capture
 
@@ -217,55 +215,46 @@ recorder reference is accepted by `setup` but not currently read by `_tick` — 
 camera frames the car's live (replayed) position rather than scrubbing the recording
 independently.
 
-## Standings overlay presentation
+## How the overlay is presented
 
-Previously the between-event standings were a flat scene swap
-(`standings.tscn`, opaque background). Now `world.gd` presents them as an **in-world
-overlay** so the replay is visible behind the leaderboard:
+`world.gd::_present_standings_overlay` — still named for the screen it no longer loads —
+keeps the run world alive and plays the replay behind the between-stage panel:
 
-- `RallySession.standings_ready` (emitted from `report_event_result`) is connected to
-  `world._present_standings_overlay`, which — skipped entirely under headless runs
-  (`_headless`, no display) — stops the recorder if still running, hides the
-  driving-only UI (`_hide_driving_ui`, see below), spins up the `ReplayCamera`, resets the knocked-over props (`_reset_props_for_replay`),
-  puts the car into `begin_replay`, and instantiates `standings.tscn` with
-  `overlay_mode = true` onto its own `CanvasLayer` (`_standings_overlay`).
-- **The driving UI is hidden, including the speed lines.** `_hide_driving_ui()` hides
-  the `HUD`, `MobileControls` and `SpeedLines` CanvasLayers together, because all three
-  exist to serve the person DRIVING and the player is now a viewer. The anime speed
-  lines are the non-obvious member: they are a feedback cue that sells the sensation of
-  speed to whoever holds the controller, and they are screen-centred, so they belong to
-  the driving camera rather than to the chase and trackside shots the replay cuts
-  between. Hiding the layer also stops `speed_lines.gd` shading a full-screen pass
-  behind the standings overlay for a car nobody is driving. One-way on purpose — this
-  world is torn down after the replay, never returned to.
-- **Props reset before the replay.** Right before `begin_replay`, `_reset_props_for_replay()`
-  sweeps the world's direct children and calls `reset_fallen()` on every foliage field
-  (`TreeMeshField` / `BillboardField` — felled trees stood back up) and `reset_knocked()`
-  on the `SignField` (toppled signs re-frozen at their resting pose). Each reset only
-  touches the props it actually knocked over, so it's a light early-out on an undamaged
-  stage. The result: the replay plays back against a pristine, intact stage rather than
-  the wreckage the driven run left — see [trees.md](trees.md) / [signs.md](signs.md).
-- `RallySession.standings_overlay_host` is set by `world.gd` on setup
-  (`not _headless`) and read by `RallySession._load_standings_scene()`, which becomes a
-  **no-op** when the flag is set — the host (`world.gd`) owns showing the panel instead
-  of `RallySession` changing to `standings.tscn` itself. `continue_to_next_event()`
-  still changes scene as usual (to the next event, or to the podium on the final
-  event).
-- In `overlay_mode`, `standings.gd`'s `Background` `ColorRect` is transparent
-  (alpha 0) instead of opaque `UITheme.BLACK`, and the scene does **not** connect
-  `RallySession.rally_finished` itself — the live host (`world.gd`) still exists and
-  owns that transition in overlay mode, unlike the flat/non-overlay scene which
-  connects it because the run scene is already gone by then.
-- A **hide/show leaderboard toggle** (`toggle_leaderboard()`,
-  `leaderboard_hidden_changed(hidden)` signal, `leaderboard_hidden` var) lets the player
-  watch the replay full-screen: hidden state rebuilds the overlay down to just a "Show
-  leaderboard >" button; shown state adds a "Hide leaderboard" button next to Continue.
-  See [menus.md](menus.md) for the `MenuNav` wiring of both states.
+- `RunSession.standings_ready` (emitted from `report_event_result`) is connected to it.
+  **Skipped entirely under headless runs** (`_headless`, no display). It stops the recorder
+  if still running, hides the driving-only UI (`_hide_driving_ui`, below), spins up the
+  `ReplayCamera`, resets the knocked-over props (`_reset_props_for_replay`), puts the car
+  into `begin_replay`, and opens `RunPickPanel` on its own `CanvasLayer`.
+- **The driving UI is hidden, including the speed lines.** `_hide_driving_ui()` hides the
+  `HUD`, `MobileControls` and `SpeedLines` CanvasLayers together, because all three exist
+  to serve the person DRIVING and the player is now a viewer. The anime speed lines are the
+  non-obvious member: they are a feedback cue that sells the sensation of speed to whoever
+  holds the controller, and they are screen-centred, so they belong to the driving camera
+  rather than to the chase and trackside shots the replay cuts between. Hiding the layer
+  also stops `speed_lines.gd` shading a full-screen pass behind the panel for a car nobody
+  is driving. One-way on purpose — this world is torn down after the replay, never returned
+  to.
+- **Props reset before the replay.** Right before `begin_replay`,
+  `_reset_props_for_replay()` sweeps the world's direct children and calls `reset_fallen()`
+  on every foliage field (`TreeMeshField` / `BillboardField` — felled trees stood back up)
+  and `reset_knocked()` on the `SignField` (toppled signs re-frozen at their resting pose).
+  Each reset only touches the props it actually knocked over, so it is a light early-out on
+  an undamaged stage. The result: the replay plays against a pristine stage rather than the
+  wreckage the driven run left — see [trees.md](trees.md) / [signs.md](signs.md).
+- **The panel's choice ends the replay.** `_on_interstitial_choice` applies the pick
+  (`RunSession.choose_repair` / `choose_boost`), tears the overlay down
+  (`_teardown_interstitial`), then either carries the run into the next stage or — when
+  this was the run's final or failed stage, so the session has already gone idle — emits
+  `run_interstitial_dismissed` for the run-end path to pick up.
+- **The hide/show leaderboard toggle is gone** with the leaderboard. What survives of it is
+  the audio gate below, which `_present_standings_overlay` and `_teardown_interstitial` now
+  drive directly (shown → muted on open, audible again on teardown).
+
 - `world._on_leaderboard_hidden_changed(hidden)` is the **engine-audio gate**: it
   **disables** the car's `EngineAudio` processing (`process_mode = DISABLED`, draining the
-  generator to silence) while the leaderboard is shown, and re-enables it while hidden — so
-  the replay is silent-but-visible behind the UI by default, and only sounds once the player
-  clears the leaderboard to watch. It disables processing rather than writing `volume_db`
+  generator to silence) while the panel is up, and re-enables it once the panel is torn
+  down — so the replay is silent-but-visible behind the UI, and only sounds when the pick
+  is made and the world is about to hand over. It disables processing rather than writing `volume_db`
   because `engine_audio.gd` now writes `volume_db` every frame for proximity attenuation
   ([engine-audio.md](engine-audio.md)), which would overwrite a flat `volume_db` mute.
 
@@ -274,7 +263,7 @@ overlay** so the replay is visible behind the leaderboard:
 The transform lesson above (a scripted `VehicleBody3D` pose only reaches the render
 transform when written in `_process`, plus the `process_priority` ordering trap) is no
 longer replay-only. `car.gd` now also has a **`kinematic_pose`** mode, used by the rival
-ghost ([rival-ghost.md](rival-ghost.md)) to pose a SECOND car from a synthesized pace
+ghost (the deleted rival ghost) to pose a SECOND car from a synthesized pace
 profile while the player drives.
 
 It is deliberately a distinct flag rather than reusing `replay_playback`, for two reasons
@@ -311,7 +300,12 @@ be driven by the player's live input.
 `sample_at` interpolation. `tests/headless/test_replay_playback.gd` — car
 `begin_replay`/`end_replay`, the ghost taking no damage, pinned engine/wheel signals, and
 looping via `fmod`. `tests/headless/test_replay_camera.gd` — deterministic shot cycling
-(`_tick`) across the four shots. `tests/headless/test_replay_standings.gd` — the
-overlay presentation: transparent background, hide/show toggle, and the
-`standings_overlay_host` / `_load_standings_scene` no-op wiring. See
-[testing.md](testing.md) for the general test-cost patterns used throughout.
+(`_tick`) across the four shots. `tests/headless/test_run_pick_panel.gd` covers the panel
+the replay now plays behind.
+
+`tests/headless/test_replay_standings.gd` is DELETED with the screen it drove (the
+transparent background, the hide/show toggle, and the `standings_overlay_host` no-op
+wiring it asserted are all gone). **The presentation path is currently untested**: it
+early-returns under `_headless`, which is every test run, so there is nothing a headless
+test can observe. See [testing.md](testing.md) for the general test-cost patterns used
+throughout.

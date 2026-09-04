@@ -228,7 +228,7 @@ integer hash of `(seed, octave)`, so evaluation order cannot matter). Two runs o
 same stage therefore meet the identical gust at the identical point on the road.
 
 Why it matters: every stage has a **global leaderboard** keyed by
-`RallyLibrary.stage_key` ([global-leaderboards.md](global-leaderboards.md)). A wind
+`RallyLibrary.stage_key` (the deleted global leaderboards). A wind
 that differed run to run would silently stop every storm board comparing like with
 like. Keying on *distance* rather than time also makes gusts **learnable** — the same
 gust waits in the same place every attempt — which is fairer play as well as fairer

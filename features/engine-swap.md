@@ -183,7 +183,7 @@ it never fires today; it exists to catch the third caller.
 ### `apply_owned`
 
 `apply_owned` is the pipeline that turns a saved `OwnedCar` into a live,
-physically simulated car (see [rally-session.md](rally-session.md)):
+physically simulated car (see the deleted career rally session):
 
 ```
 1. CarLibrary baseline    apply_car(index)            -> Config.data

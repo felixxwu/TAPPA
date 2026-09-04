@@ -4,7 +4,7 @@ A held-button torque boost with a per-stage tank. The single genuinely new
 mechanic introduced by the special-event ladder
 (`todo/star-gated-special-events.md` — the spec's filename, but the ladder gates
 on the count of completed ordinary rallies now, not on a star total, see
-[star-economy.md](star-economy.md)): a special event unlocks it, so it is
+the deleted star economy): a special event unlocks it, so it is
 deliberately a reward that makes hard events easier rather than a stat that
 reshapes the car.
 

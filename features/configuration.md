@@ -272,7 +272,7 @@ are the ones a feature doc points at directly.
 
 ### Rival Ghost
 The kinematic P1 ghost shown while you drive — see
-[rival-ghost.md](rival-ghost.md) for what each knob does and how the solve uses it.
+the deleted rival ghost for what each knob does and how the solve uses it.
 
 | Property | Default | Purpose |
 |----------|---------|---------|
@@ -298,8 +298,8 @@ The kinematic P1 ghost shown while you drive — see
 ### Rival Field & Pace
 The DIFFICULTY dials behind a rally's opponent field, read by `rally_library.gd`
 (`generate_opponent_field`, `_pace_band`, `swap_weight`). See
-[rally-roster.md](rally-roster.md), [adaptive-difficulty.md](adaptive-difficulty.md) and
-[opponent-wrecks.md](opponent-wrecks.md) for what each one does to a field.
+[rally-roster.md](rally-roster.md), the deleted adaptive difficulty and
+the deleted opponent-wreck system for what each one does to a field.
 
 | Property | Old const | Purpose |
 |----------|-----------|---------|
@@ -314,7 +314,7 @@ The DIFFICULTY dials behind a rally's opponent field, read by `rally_library.gd`
 
 ### Overworld Fog Frontier
 The soft turn-back at the edge of the revealed overworld — see
-[overworld.md](overworld.md). `overworld.gd` caches all four at boot, because
+the deleted overworld. `overworld.gd` caches all four at boot, because
 `_update_fog_boundary` is a per-frame path.
 
 | Property | Old const | Purpose |
@@ -325,7 +325,7 @@ The soft turn-back at the edge of the revealed overworld — see
 | `overworld_fog_veil_fade` | `FOG_VEIL_FADE` | Veil alpha units per second, in and out. |
 
 ### HQ Present Box
-The present-box car reveal (`hq_present_reveal.gd`) — see [hq.md](hq.md).
+The present-box car reveal (`hq_present_reveal.gd`) — see the deleted diegetic hub.
 
 | Property | Old const | Purpose |
 |----------|-----------|---------|

@@ -406,7 +406,7 @@ per-rally lockfile at all — `data/opponent_cache.json`, `OpponentCache`,
 `cache_opponents.sh` and `tools/verify_opponent_cache.gd` are all gone, and
 fields are generated live at stage load. (The **track** cache is unaffected and
 still bakes normally via `cache_tracks.sh`.) See
-[rally-session.md](rally-session.md).
+the deleted career rally session.
 
 So moving a traction factor off `1.0`, or authoring downforce onto a catalogue
 car, no longer risks serving stale baked times — there are none. It DOES still
@@ -417,7 +417,7 @@ test to fail (correctly) when you do it.
 ## The rating is also a DIFFICULTY lever
 
 Matching the field to the player's rating is what
-[adaptive-difficulty.md](adaptive-difficulty.md) steers: it hands
+the deleted adaptive difficulty steers: it hands
 `generate_opponent_field` a rating deliberately above or below the player's, and rivals
 turn up in better or worse machinery accordingly. Two consequences for this file:
 
@@ -582,7 +582,7 @@ again.
 
 - [rally-roster.md](rally-roster.md) — `LapTimeModel`'s day job: PAR times,
   rival times and the opponent field.
-- [rival-ghost.md](rival-ghost.md) — the other seam into `optimum_profile`
+- the deleted rival ghost — the other seam into `optimum_profile`
   (`grip_mult` / `power_mult`), also no-op at its defaults.
 - [upgrade-catalogue.md](upgrade-catalogue.md) — the `feeds_pw` / `feeds_grip`
   split behind `merged_meta`.
