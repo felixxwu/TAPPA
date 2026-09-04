@@ -86,7 +86,14 @@ func _leave_run() -> void:
 	Save.profile[Save.KEY_RUN] = {}
 
 
-func test_entering_a_challenge_stage_generates_its_track() -> void:
+# TWO ASSERTIONS, ONE WORLD, DELIBERATELY. A challenge stage's track is generated LIVE —
+# its seed is rolled from the period hash, so the committed lockfile cannot cover it and
+# SceneTestHelpers.minimal_world() cannot trim it either (TrackGenParams.for_event
+# overrides the turn count with the event's own). That makes this the most expensive world
+# build in the suite at ~25 s, and it used to be paid TWICE: a sibling test built a second
+# challenge world solely to assert that no CoinField appears. Both assertions are about
+# what a challenge stage's world contains, so they share the build.
+func test_a_challenge_stage_generates_its_track_and_places_no_coins() -> void:
 	# Reproduces a Daily/Weekly/Monthly challenge stage's real track-gen path — unlike
 	# the rally test above (which pokes Config.data.track_* directly, actually
 	# exercising the free-roam/no-session TrackGenParams.for_config fallback, NOT
@@ -120,6 +127,12 @@ func test_entering_a_challenge_stage_generates_its_track() -> void:
 	assert_not_null(track_progress, "TrackProgress built for the challenge stage")
 	assert_gt(track_progress.baked_length(), 0.0,
 		"the generated track has real, non-empty length (not a degenerate/empty terrain)")
+	# The other arm of the coins gate (features/collectables.md): a challenge has no
+	# per-stage money to boost and no fail state to gamble against, so nothing is placed
+	# even though coins_enabled stays on. The REGION arm is
+	# test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter, which builds
+	# a cheap minimal world of its own.
+	assert_null(scene.get_node_or_null("CoinField"), "a challenge stage places no coins")
 
 	scene.free()
 	_leave_run()
@@ -200,30 +213,6 @@ func test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter() -
 	_leave_run()
 	CarFixtures.restore()
 	Config.reset()  # undo minimal_world()'s 1-turn / no-foliage overrides
-
-
-func test_a_challenge_stage_builds_no_coin_field() -> void:
-	# The opposite arm of the gate above: a challenge has no per-stage money to boost
-	# and no fail state to gamble against (features/collectables.md), so nothing is
-	# placed for it even though coins_enabled stays on.
-	SceneTestHelpers.minimal_world()
-	CarFixtures.install()
-	var owned: Dictionary = Save.grant_car("fx_light_rwd")
-	RunSession.auto_load_scenes = false
-	Save.profile["challenge_results"] = {}
-	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
-		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
-
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child(scene)
-	await get_tree().physics_frame
-
-	assert_null(scene.get_node_or_null("CoinField"), "a challenge stage places no coins")
-
-	scene.free()
-	_leave_run()
-	CarFixtures.restore()
-	Config.reset()
 
 
 func test_spectator_groups_spawn_and_are_not_obstacles() -> void:

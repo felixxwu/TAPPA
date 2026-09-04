@@ -361,6 +361,19 @@ func test_eligible_cars_ignores_cars_missing_from_the_catalogue() -> void:
 
 # --- report_event_result --------------------------------------------------------
 
+# A challenge authors NO region — its stages are rolled from the period hash — so
+# RunSession.region_id() is empty for one. world.gd::_current_region_look reads exactly
+# this to decide whether a stage wears a region's look or the plain home default; pinning
+# it here costs nothing, where pinning it against a built challenge world cost ~25 s
+# (see test_world_fielding.gd).
+func test_a_challenge_run_has_no_region() -> void:
+	var t := int(Time.get_unix_time_from_system())
+	RunSession.start(ChallengeLibrary.DAILY, _grant(), t)
+	assert_eq(RunSession.mode_id(), RunMode.CHALLENGE, "setup: a challenge is live")
+	assert_eq(RunSession.region_id(), "",
+		"a challenge stage authors no region, so nothing region-scoped applies to it")
+
+
 func test_report_event_result_appends_to_stage_times() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()

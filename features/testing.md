@@ -51,25 +51,28 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 
 ### Keeping the suite fast
 
-**The table below predates the roguelike pivot and is STALE — re-measure, don't trust
-the numbers.** It was taken 2026-08-18, before the pivot's demolition stage deleted
-roughly **40,000 lines** across the codebase (the diegetic HQ, the rival field, the star
-economy, the persistent parts model, the overworld map, and every test that existed only
-to cover them — see `todo/roguelike-pivot.md` → "What gets deleted"). Test count, file
-count and per-file timings have all moved a lot since, in a direction nobody has measured:
-fewer files (dead ones removed), but also new ones (`RunSession`, region runs, the flat
-shell) that didn't exist in 2026-08. **Do not cite the figures below as current** — run
-`/optimise-test-suite` or a full `./run_tests.sh` to get a fresh baseline before reasoning
-about the budget from them. They are kept only because the *shape* of the cost model (what
-categories of cost exist, and which levers apply to which) is still correct; the numbers
-inside it are not.
+**Re-measured 2026-09-04**, at the end of the roguelike pivot. The previous table
+(2026-08-18) is void: the demolition stage deleted roughly **40,000 lines** — the diegetic
+HQ, the rival field, the star economy, the persistent parts model, the overworld map, and
+every test that existed only to cover them — while region runs, `RunSession` and the flat
+shell brought new ones. Re-measure with `/optimise-test-suite` (or a full `./run_tests.sh`
+plus the JUnit XML) rather than reasoning from a stale table; that skill's §0 has the exact
+invocation.
 
-| Cost (2026-08-18, PRE-PIVOT — do not cite as current) | Measured | Reducible? |
+| Cost (2026-09-04, POST-PIVOT — measured) | Measured | Reducible? |
 |---|---|---|
-| Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly`, `test_smoke`'s two generation tests, `test_lakes_integration`, `test_track_gen_frame_consistency`) | ~87 s | **No** — see "The irreducible sweeps" below |
-| `test_menu_flow.gd` | 53.3 s (~0.2 s per test) | **Deleted outright in stage 9** — 207 tests driving the diegetic hub, which no longer exists. Its salvageable cases were re-homed (see *The `test_menu_flow.gd` salvage* below); the ~53 s it cost is simply gone from the budget |
-| The flat tail — many further files at roughly 0.2–0.3 s per test, genuine CPU (terrain chunk rebuilds, per-car physics), no single outlier inside any file and no §2a "cheap call would do" seam | ~185 s | **No cheap lever found** as of 2026-08-18 — re-check post-pivot |
-| `before_all` builds + loading the test scripts in `tests/headless/` | ~33 s | No — `minimal_world()` per file is already minimal |
+| `test_track_generator.gd` → `test_every_rally_event_generates_a_complete_track_quickly` | **94 s** | **No** — see *The irreducible sweeps* below. It grew with the roster: stage 4 authored 20 more events, and this generates every one of them live |
+| `test_smoke.gd` | 32 s | Partly done. Its two challenge-stage world builds were merged into one (a challenge track is generated LIVE — the seed is rolled from the period hash, so no lockfile covers it and `minimal_world()` cannot trim it either, because `TrackGenParams.for_event` overrides the turn count). ~25 s recovered; the remaining build is load-bearing |
+| `test_terrain_memory.gd` | 24 s | **No cheap lever.** 21 tests, each baking a road into its own `TerrainManager` — and what they assert IS what the cache keeps and drops between builds, so sharing one manager would destroy the subject |
+| `test_world_fielding.gd` | 18 s | Partly done. Every test here boots `main.tscn` because the seam under test (`world.gd::_field_car`) is only reachable that way. Two tests were merged into one build, one was deleted as duplicate coverage of `test_perk_library.gd`, and its challenge-fallback case was re-pointed at a NO-SESSION boot — the identical `region_id` branch for ~5 s instead of ~25 s |
+| `test_car_types.gd` / `test_car_library.gd` / `test_retune.gd` / `test_car.gd` | 16 / 12 / 14 / 7 s | **No** — per-car physics sweeps over the whole roster, already on `SimTest`'s cached settle where applicable |
+| `test_terrain_precompute.gd` | 10 s | **No** — chunk prebake work it asserts on directly |
+| The flat tail — ~175 further files | ~90 s | **No cheap lever found** (2026-09-04) |
+| `before_all` builds + loading 189 test scripts | ~36 s | No — `minimal_world()` per file is already minimal. Note this is INVISIBLE in the JUnit XML: per-test times summed to 314 s against a 350 s wall-clock |
+
+**Full-suite baseline: 350 s** (2553 tests, 161164 asserts, 189 scripts), plus a ~6 s
+class-cache warmup that is not test cost. **That is over the ~5 minute budget by ~50 s**,
+and the gap is structural rather than wasteful — see the sweeps below.
 
 **The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
 generates every authored rally event live (~0.7 s each). It is the regression guard
@@ -80,7 +83,11 @@ defeats it (the original bug was a *single* seed), and it covers what
 generation is still fast. **Do not weaken it to hit the budget.** If the ~5 min
 budget must be met, the structural options are to move these sweeps into a slow
 CI/pre-release lane (as `run_benchmark.sh` is to the suite), or to re-base the
-budget here and in `CLAUDE.md` with the measured floor.
+budget here and in `CLAUDE.md` with the measured floor. **Both are the user's call**, so
+neither has been taken: as of 2026-09-04 the suite runs 350 s and the sweeps alone are
+~140 s of it (94 s track generator + 28 s of `test_smoke`'s live challenge build + 7 s
+lakes + 5 s frame-consistency). Roughly 210 s of ordinary test cost sits under a 300 s
+budget; the sweeps are what put it over.
 
 By default Godot's headless main loop is **paced to real time** at the tick
 rate, so each `await get_tree().physics_frame` costs ~1/60 s of wall-clock

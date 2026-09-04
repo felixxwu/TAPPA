@@ -78,40 +78,32 @@ func test_the_run_scene_fields_the_bound_session_car() -> void:
 # THE DECISION-51 SEAM, end to end: an equipped perk reaches the live config through the
 # same `boosts` list a run's picks use. Asserts the RELATION (the field moved by the
 # multiplier the perk names), never a shipped number — both are tunables.
-func test_an_equipped_perk_reaches_the_fielded_cars_config() -> void:
+func test_an_equipped_perk_reaches_the_car_without_reaching_the_profile() -> void:
+	# THE DECISION-51 SEAM, end to end, and its safety property — one world build for both
+	# because they are two halves of the same merge: the effect must land on the live
+	# config AND must not be written back onto the saved car (a run's picks are wiped when
+	# it ends; a perk lives on the profile, not on one car).
+	#
+	# Asserts the RELATION (the field moved by the multiplier the perk names), never a
+	# shipped number — both are tunables.
 	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_magnet"]
 	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_magnet"]
 	var authored := float(Config.authored_value("coin_pickup_radius_m", 0.0))
 	var mult: float = Config.data.perk_coin_radius_mult
 
-	await _field("fx_awd")
+	var owned := await _field("fx_awd")
 
 	assert_almost_eq(Config.data.coin_pickup_radius_m, authored * mult, 0.001,
 		"the equipped perk's effect landed on the live config at fielding time")
-
-
-func test_an_unequipped_perk_leaves_the_config_at_its_authored_value() -> void:
-	# The other half of the reseed contract, at the world level: owning a perk without
-	# equipping it must change nothing.
-	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_magnet"]
-	_save.profile[_save.KEY_EQUIPPED_PERKS] = []
-
-	await _field("fx_awd")
-
-	assert_almost_eq(Config.data.coin_pickup_radius_m,
-		float(Config.authored_value("coin_pickup_radius_m", 0.0)), 0.001)
-
-
-# The merge happens on a DUPLICATE. A run's boosts and a player's perks must never be
-# written back into profile["cars"] — a run's picks are wiped when it ends, and a perk
-# lives on the profile, not on one car.
-func test_fielding_writes_no_boosts_into_the_saved_profile() -> void:
-	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_magnet"]
-	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_magnet"]
-	var owned := await _field("fx_awd")
 	var stored: Dictionary = _save.get_car(int(owned["instance_id"]))
 	assert_false(stored.has("boosts"),
-		"the effects were merged onto a duplicate, never onto the saved car")
+		"and it was merged onto a duplicate, never onto the saved car")
+
+
+# The UNEQUIPPED half of the reseed contract is deliberately NOT here: it needs no world,
+# and test_perk_library.gd::test_unequipping_restores_the_authored_value already pins it
+# against UpgradeLibrary.apply directly, for free. A world build to re-assert it would buy
+# ~6 s of runtime and no coverage.
 
 
 # --- The stage wears its REGION's look ------------------------------------------------
@@ -135,13 +127,16 @@ func test_a_region_runs_stage_wears_that_regions_look() -> void:
 		"the driven stage resolves the RUN's region, not the home default")
 
 
-func test_a_challenge_stage_falls_back_to_the_home_look() -> void:
-	# A challenge is rolled from the period hash and authors no region at all, so it must
-	# land on the plain home look rather than whatever the last region run left behind.
-	var owned: Dictionary = _save.grant_car("fx_awd")
-	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
-		int(Time.get_unix_time_from_system())), "setup: the challenge started")
+func test_a_stage_with_no_region_falls_back_to_the_home_look() -> void:
+	# The fallback arm of the same branch. Driven with NO SESSION rather than with a
+	# CHALLENGE run, deliberately: both take the identical `region_id` path (a challenge
+	# authors no region, so RunSession.region_id() returns ""), but a challenge stage
+	# generates its track LIVE — its seed is rolled from the period hash, so no lockfile
+	# covers it — which cost this one test ~25 s for a branch a no-session boot reaches in
+	# ~5. That RunSession.region_id() is empty for a challenge is pinned where it is free,
+	# in test_challenge_session.gd.
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 	await get_tree().process_frame
+	assert_false(RunSession.is_active(), "setup: no session, so no region to resolve")
 	assert_eq(_scene._current_region_look(), RegionLibrary.look_of("home"))
