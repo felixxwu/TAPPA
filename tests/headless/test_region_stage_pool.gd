@@ -157,3 +157,61 @@ func test_the_drawn_run_escalates_by_the_parent_rallys_difficulty() -> void:
 		var d := int(stage["difficulty"])
 		assert_true(d >= previous, "stage difficulty never drops as the run progresses")
 		previous = d
+
+
+# --- The shipped roster's own contract (decision 46) ---------------------------
+#
+# These three read the REAL RallyLibrary, unlike everything above: their subject IS the
+# shipped content, so each drops the synthetic override this file installs in before_each.
+# That is the narrow exception CLAUDE.md allows — "iterating the whole table as opaque
+# input is fine; that's the code's contract" — and none of them pins a particular entry,
+# a chosen difficulty, or any tuned number.
+
+# Every region must be able to fill a run — and then some. This is a CONTENT contract, not
+# a tuning value: a region below the floor is not "badly balanced", it is unplayable, and
+# before this pass greece_coast had three events against a run that wants eight.
+#
+# The floor is two full runs with no repeats, so a player who runs a region twice does not
+# see the same stage twice. RegionStagePool refills a short bag rather than failing, which
+# keeps a half-authored region playable during development — this test is what stops that
+# stopgap becoming the shipped experience.
+func test_every_region_can_fill_two_runs_without_repeats() -> void:
+	RallyLibrary.reset()  # the SHIPPED roster is this test's subject
+	var floor_needed := RegionRunMode.STAGE_COUNT * 2
+	for region in RegionLibrary.all():
+		var id := String(region.get("id", ""))
+		var pool := RegionStagePool.events_in(id)
+		assert_gte(pool.size(), floor_needed,
+			"region '%s' has %d events; a run draws %d, and the floor is two runs with no repeats"
+				% [id, pool.size(), RegionRunMode.STAGE_COUNT])
+
+
+# The draw orders stages by their parent rally's difficulty, so a region whose rallies all
+# sit on one rung has an ordering that orders nothing — the run has no gradient. Asserts a
+# SPREAD exists, never which rung any particular rally is on: difficulty is authored data a
+# designer retunes freely.
+func test_every_region_offers_more_than_one_difficulty() -> void:
+	RallyLibrary.reset()  # the SHIPPED roster is this test's subject
+	for region in RegionLibrary.all():
+		var id := String(region.get("id", ""))
+		var seen := {}
+		for event in RegionStagePool.events_in(id):
+			seen[int((event as Dictionary).get("difficulty", 0))] = true
+		assert_gt(seen.size(), 1,
+			"region '%s' has only one difficulty, so ordering the draw by difficulty is a no-op"
+				% id)
+
+
+# Seeds are the identity of a generated track: two events sharing one seed generate the
+# same road, so a "different" stage is the stage you just drove. Cheap to assert, and the
+# kind of thing an authoring pass gets wrong by copying a block and forgetting the number.
+func test_no_two_authored_events_share_a_seed() -> void:
+	RallyLibrary.reset()  # the SHIPPED roster is this test's subject
+	var seen := {}
+	for rally in RallyLibrary.all():
+		for event in (rally.get("events", []) as Array):
+			var seed_value := int((event as Dictionary).get("seed", 0))
+			assert_false(seen.has(seed_value),
+				"seed %d is authored twice (%s and %s) — they generate the same road"
+					% [seed_value, String(seen.get(seed_value, "")), String(rally.get("id", ""))])
+			seen[seed_value] = String(rally.get("id", ""))

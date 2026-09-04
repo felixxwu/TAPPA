@@ -362,6 +362,51 @@ const RALLIES: Array[Dictionary] = [
 			{"seed": 36003, "turn_count": 36, "forestiness": 0.25, "surface_mix": 0.6, "straightness": 0.575, "cliffiness": 0.8, "water_level": -4.0, "terrain_layer1_amplitude": 16.0, "weather": "rain"},
 		],
 	},
+	# --- home_coast, authored for the roguelike run pool (decision 46) ---------------
+	#
+	# The region shipped with 12 events across difficulties 1, 3, 3 and 4 — four short of
+	# the 16-event floor, and with NOTHING on difficulty 2, so a run's ordered draw jumped
+	# straight from the opening stage to a hard one. This entry fills that rung.
+	#
+	# Parameters sit between hc_lakeside_kei (d1) and rwd_masters (d3), which is what
+	# difficulty 2 means here: more turns and less straightness than the Kei cup, gentler
+	# cliffs than the Masters. WATERLINE IS THE REGION'S, -7.0 — home_coast's d4 promenade
+	# uses -4.0 because it runs the headland, but the lake rallies are all -7.0 and mixing
+	# them would put a stage's road under water no shipped event has driven.
+	{
+		"id": "hc_boathouse_loop", "name": "Boathouse Loop", "region": "home_coast", "difficulty": 2, "special": false,
+		# A legal free pin. `map_pos` is deleted content (the world map went with the
+		# overworld) but a rally with none defaults to the origin, inside HQ's reveal circle,
+		# which reads as unlocked unearned. Goes when the whole field does.
+		"map_pos": Vector2(0.050, 0.540),
+		"events": [
+			{"seed": 65001, "turn_count": 22, "forestiness": 0.57, "surface_mix": 0.4, "straightness": 0.8, "cliffiness": 0.45, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 65002, "turn_count": 22, "forestiness": 0.70, "surface_mix": 0.25, "straightness": 0.775, "cliffiness": 0.5, "water_level": -7.0, "weather": "rain", "terrain_layer1_amplitude": 16.0},
+			{"seed": 65003, "turn_count": 23, "forestiness": 0.45, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 65004, "turn_count": 22, "forestiness": 0.65, "surface_mix": 0.35, "straightness": 0.775, "cliffiness": 0.55, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+		],
+	},
+	# --- taiga, authored for the roguelike run pool (decision 46) --------------------
+	#
+	# The region shipped with 15 events, one short of the floor, and with four of its five
+	# rallies on difficulty 2 — the ordered draw had almost no gradient to walk. This is
+	# its OPENING rung: taiga had no difficulty 1 at all.
+	#
+	# Parameters follow the region's voice — deep forest, low cliffs, the taiga waterline
+	# of -12.0 that every one of its events uses — with the high turn counts the region
+	# likes, softened by straightness rather than by fewer corners.
+	{
+		"id": "tg_frozen_river", "name": "Frozen River", "region": "taiga", "difficulty": 1, "special": false,
+		# A legal free pin. `map_pos` is deleted content (the world map went with the
+		# overworld) but a rally with none defaults to the origin, inside HQ's reveal circle,
+		# which reads as unlocked unearned. Goes when the whole field does.
+		"map_pos": Vector2(0.050, 0.750),
+		"events": [
+			{"seed": 66001, "turn_count": 20, "forestiness": 0.70, "surface_mix": 0.6, "straightness": 0.875, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
+			{"seed": 66002, "turn_count": 20, "forestiness": 0.85, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.3, "water_level": -12.0, "weather": "snow", "terrain_layer1_amplitude": 14.0},
+			{"seed": 66003, "turn_count": 21, "forestiness": 0.55, "surface_mix": 0.8, "straightness": 0.85, "cliffiness": 0.3, "water_level": -12.0, "weather": "rain", "terrain_layer1_amplitude": 14.0},
+		],
+	},
 	{
 		# Unlocks the Supercharger. Pinned in the eastern forest, inland: despite the id it
 		# is nowhere near a shore, so it runs the inland waterline. It must NOT creep north
@@ -601,6 +646,68 @@ const RALLIES: Array[Dictionary] = [
 			{"seed": 54001, "turn_count": 35, "forestiness": 0.30, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 19.0, "weather": "sandstorm"},
 			{"seed": 54002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.9, "straightness": 0.6, "cliffiness": 0.8, "water_level": -4.0, "weather": "night", "terrain_layer1_amplitude": 19.0},
 			{"seed": 54104, "turn_count": 36, "forestiness": 0.25, "surface_mix": 0.7, "straightness": 0.6, "cliffiness": 0.85, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+		],
+	},
+	# --- greece_coast, authored for the roguelike run pool (decision 46) -------------
+	#
+	# The region shipped with ONE rally and three events, all difficulty 4 — it could not
+	# fill an eight-stage run at all, and its whole pool sat at one difficulty, so the
+	# draw's difficulty ordering had nothing to order. These four entries take it to 16
+	# events across difficulties 1-4, which is the floor for two runs with no repeats.
+	#
+	# Parameters mirror gc_island_gp, the region's authored voice: coastal cliffs
+	# (cliffiness 0.7-0.9), sparse trees (forestiness 0.2-0.5), mixed surface, and the
+	# region's waterline. WATER LEVEL AND AMPLITUDE ARE A PAIR, not independent rolls —
+	# every greece_coast event is -4.0 with amplitude 19.0, and a combination no shipped
+	# stage has driven is exactly what the challenge generator's own comment warns against.
+	# Difficulty is carried by turn_count and straightness, as it is elsewhere in the table.
+	{
+		"id": "gc_harbour_run", "name": "Harbour Run", "region": "greece_coast", "difficulty": 1, "special": false,
+		# A legal free pin. `map_pos` is deleted content (the world map went with the
+		# overworld) but a rally with none defaults to the origin, inside HQ's reveal circle,
+		# which reads as unlocked unearned. Goes when the whole field does.
+		"map_pos": Vector2(0.050, 0.050),
+		"events": [
+			{"seed": 61001, "turn_count": 18, "forestiness": 0.35, "surface_mix": 0.8, "straightness": 0.85, "cliffiness": 0.5, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 61002, "turn_count": 18, "forestiness": 0.45, "surface_mix": 0.9, "straightness": 0.825, "cliffiness": 0.55, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 61003, "turn_count": 19, "forestiness": 0.25, "surface_mix": 0.7, "straightness": 0.8, "cliffiness": 0.6, "water_level": -4.0, "weather": "night", "terrain_layer1_amplitude": 19.0},
+		],
+	},
+	{
+		"id": "gc_cliff_road", "name": "Cliff Road", "region": "greece_coast", "difficulty": 2, "special": false,
+		# A legal free pin. `map_pos` is deleted content (the world map went with the
+		# overworld) but a rally with none defaults to the origin, inside HQ's reveal circle,
+		# which reads as unlocked unearned. Goes when the whole field does.
+		"map_pos": Vector2(0.050, 0.170),
+		"events": [
+			{"seed": 62001, "turn_count": 24, "forestiness": 0.30, "surface_mix": 0.6, "straightness": 0.75, "cliffiness": 0.7, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 62002, "turn_count": 24, "forestiness": 0.45, "surface_mix": 0.8, "straightness": 0.725, "cliffiness": 0.75, "water_level": -4.0, "weather": "night", "terrain_layer1_amplitude": 19.0},
+			{"seed": 62003, "turn_count": 25, "forestiness": 0.25, "surface_mix": 0.5, "straightness": 0.75, "cliffiness": 0.8, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 62004, "turn_count": 24, "forestiness": 0.40, "surface_mix": 0.7, "straightness": 0.7, "cliffiness": 0.7, "water_level": -4.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
+		],
+	},
+	{
+		"id": "gc_olive_terraces", "name": "Olive Terraces", "region": "greece_coast", "difficulty": 3, "special": false,
+		# A legal free pin. `map_pos` is deleted content (the world map went with the
+		# overworld) but a rally with none defaults to the origin, inside HQ's reveal circle,
+		# which reads as unlocked unearned. Goes when the whole field does.
+		"map_pos": Vector2(0.050, 0.300),
+		"events": [
+			{"seed": 63001, "turn_count": 30, "forestiness": 0.50, "surface_mix": 0.5, "straightness": 0.675, "cliffiness": 0.75, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 63002, "turn_count": 30, "forestiness": 0.35, "surface_mix": 0.7, "straightness": 0.65, "cliffiness": 0.8, "water_level": -4.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
+			{"seed": 63003, "turn_count": 31, "forestiness": 0.25, "surface_mix": 0.4, "straightness": 0.675, "cliffiness": 0.85, "water_level": -4.0, "weather": "night", "terrain_layer1_amplitude": 19.0},
+		],
+	},
+	{
+		"id": "gc_lighthouse_climb", "name": "Lighthouse Climb", "region": "greece_coast", "difficulty": 4, "special": false,
+		# A legal free pin. `map_pos` is deleted content (the world map went with the
+		# overworld) but a rally with none defaults to the origin, inside HQ's reveal circle,
+		# which reads as unlocked unearned. Goes when the whole field does.
+		"map_pos": Vector2(0.050, 0.420),
+		"events": [
+			{"seed": 64001, "turn_count": 36, "forestiness": 0.25, "surface_mix": 0.8, "straightness": 0.6, "cliffiness": 0.85, "water_level": -4.0, "weather": "night", "terrain_layer1_amplitude": 19.0},
+			{"seed": 64002, "turn_count": 35, "forestiness": 0.40, "surface_mix": 0.6, "straightness": 0.575, "cliffiness": 0.9, "water_level": -4.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 64003, "turn_count": 36, "forestiness": 0.30, "surface_mix": 0.9, "straightness": 0.6, "cliffiness": 0.8, "water_level": -4.0, "weather": "sandstorm", "terrain_layer1_amplitude": 19.0},
 		],
 	},
 	{

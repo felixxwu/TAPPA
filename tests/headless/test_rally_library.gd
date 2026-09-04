@@ -104,6 +104,15 @@ func test_map_pins_are_well_formed_and_never_stack() -> void:
 	var min_separation: float = RallyLibrary.MIN_PIN_SEPARATION
 	var seen: Array[Vector2] = []
 	for rally in RallyLibrary.all():
+		# `map_pos` is DELETED CONTENT — it positioned a pin on the world map, and the map
+		# went with the overworld (todo/roguelike-pivot.md). Rallies authored since then do
+		# not carry one, and requiring it would force new content to author a coordinate for
+		# a screen that no longer exists. What still holds, and is what this test is for, is
+		# that a pin WHICH IS authored is a legal one: in range, and not stacked on another.
+		# The whole field goes in the stage-2 cleanup that removes the RALLIES table's
+		# non-event fields; this loop goes with it.
+		if not rally.has("map_pos"):
+			continue
 		var pos: Vector2 = rally.get("map_pos", Vector2(-1, -1))
 		var rid := String(rally.get("id", "?"))
 		assert_between(pos.x, 0.0, 1.0, "rally %s map_pos.x is in [0, 1]" % rid)

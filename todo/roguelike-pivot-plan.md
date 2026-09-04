@@ -557,7 +557,15 @@ brings its own tests and `features/` doc.
 
 | Stage | Work | Gate |
 | --- | --- | --- |
-> **Stage 4 is SPLIT.** Its code half is DONE: the authored `order` field on `REGIONS`,
+> **Stage 4 is DONE, both halves.** The authoring pass landed: `greece_coast` 3 → 16,
+> `home_coast` 12 → 16, `taiga` 15 → 18, every region now spanning at least three
+> difficulties. `test_region_stage_pool.gd` pins the floor as a CONTENT contract so a
+> region can never drop below it again, and the `RegionStagePool` refill stopgap can no
+> longer fire on shipped content. **The new stages have not been driven** — the parameters
+> mirror each region's existing voice but nobody has confirmed they route cleanly, which
+> is what decision 46 wanted a human for. Drive them before trusting the pool.
+>
+> Its code half: the authored `order` field on `REGIONS`,
 > `RegionLibrary.order_of` / `ordered()` / `is_unlocked()` / `gate_for()`, the ledger write
 > in `RegionRunMode.record_outcome`, and the region page's locked rows. The AUTHORING half
 > — writing real events for `greece_coast` (3), `home_coast` (12) and `taiga` (15) — is
