@@ -374,6 +374,15 @@ func _stage(label: String) -> void:
 ## headless, so tests can assert against it.
 signal load_finished
 
+# Emitted the moment the between-stage interstitial (RunPickPanel, or the plain
+# Continue it falls back to) is dismissed — the player pressed a pick row or
+# Continue. Only meaningful right after the run's FINAL stage: _on_run_finished
+# awaits it (when the overlay was actually built — never headless) before returning
+# to the hub, so the player has a chance to read the result rather than being
+# ejected the instant report_event_result finishes. A no-op signal for every other
+# beat (mid-run, nobody awaits it).
+signal run_interstitial_dismissed
+
 
 # Fire the shared "load finished" hook. Guarded so a second generation pass (a
 # programmatic regeneration) can't double-free: subscribers may drop data that is
@@ -1433,12 +1442,13 @@ var _replay_recorder: ReplayRecorder
 # _wire_stage_splits, _setup_rival_ghost, _on_opponent_field_changed) used to live
 # here — deleted with the rival field it raced (todo/roguelike-pivot.md decision 5).
 var _replay_camera: ReplayCamera
-var _standings_overlay: CanvasLayer
-# The live challenge interstitial, when one is up. Non-null only for a challenge
-# stage; _on_challenge_run_finished waits on its run_completed signal so the
-# player dismisses the final standings themselves. Null headless (no overlay is
-# built), where the run end stays immediate.
-var _challenge_standings_panel: Node = null
+# The live between-stage interstitial (RunPickPanel), when one is up. Non-null only
+# while the player has not yet dismissed it; _on_run_finished awaits
+# run_interstitial_dismissed while this is valid so the player dismisses the FINAL
+# stage's result themselves rather than being ejected to the hub the instant
+# report_event_result finishes. Null headless (no overlay is built), where the run
+# end stays immediate.
+var _interstitial_page: MenuPage = null
 
 # Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
 var _distant_terrain: DistantTerrain
@@ -1657,6 +1667,15 @@ func _field_car(instance_id: int) -> void:
 	if owned.is_empty():
 		$Car.apply_car(0)
 		return
+	if RunSession.is_active():
+		# RUN-SCOPED BOOSTS (todo/roguelike-pivot.md "Upgrades — RR's two-tier model",
+		# features/region-runs.md -> "Where boosts live, and what wipes them"). Merged
+		# onto a DUPLICATED copy of the owned-car dict, never the live reference
+		# Save.get_car returned — writing "boosts" onto that would persist a run's
+		# temporary picks straight into the profile, which must never happen (they are
+		# wiped when the run ends, win or lose; see RunSession._finish_locally).
+		owned = owned.duplicate(true)
+		owned["boosts"] = RunSession.boosts()
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
@@ -1673,15 +1692,16 @@ func _field_car(instance_id: int) -> void:
 func _wire_session_signals() -> void:
 	# stage_completed is already connected in _ready() (every mode wires it before
 	# this session-only pass runs), so it's intentionally not re-connected here.
-	# _on_challenge_run_finished posts to the CHALLENGE cloud board, so it is wired
-	# only for a challenge run — a region run's end is the run summary's business
-	# (todo/roguelike-pivot.md decision 19), not the board's.
-	if RunSession.is_active() and RunSession.mode_id() == RunMode.CHALLENGE:
-		if not RunSession.run_finished.is_connected(_on_challenge_run_finished):
-			RunSession.run_finished.connect(_on_challenge_run_finished)
-	# _present_standings_overlay reads nothing session-specific (just $Car / $HUD /
-	# the replay recorder), so it serves every kind of run's between-stage beat.
+	# ONE mode-agnostic wire for both: _on_run_finished dispatches by mode internally
+	# (the challenge posts to its cloud board and awaits the interstitial's dismissal
+	# before the grant reveal; a region run just waits for the same dismissal, then
+	# both return to the hub) — there is no RallySession/ChallengeSession split left to
+	# route between (features/rally-challenge.md).
 	if RunSession.is_active():
+		if not RunSession.run_finished.is_connected(_on_run_finished):
+			RunSession.run_finished.connect(_on_run_finished)
+		# _present_standings_overlay reads nothing session-specific (just $Car / $HUD /
+		# the replay recorder), so it serves every kind of run's between-stage beat.
 		if not RunSession.standings_ready.is_connected(_present_standings_overlay):
 			RunSession.standings_ready.connect(_present_standings_overlay)
 
@@ -1762,8 +1782,16 @@ func _hide_driving_ui() -> void:
 			layer.visible = false
 
 
-# Present the standings as an in-world CanvasLayer overlay and start the replay,
-# keeping the run world alive behind it. Headless runs (no display) skip this.
+# Present the between-stage interstitial over a cinematic replay, keeping the run world
+# alive behind it. Headless runs (no display) skip this — RunSession's own state (see
+# pending_pick/choose_repair/choose_boost) is exercised directly by tests instead.
+#
+# What used to load here — standings.tscn, a per-stage GLOBAL LEADERBOARD — is deleted
+# (decision 30: no more per-stage boards). RunPickPanel replaces it: the drawn boosts +
+# repair when RunSession has a pick pending (a region run's non-final, non-missed
+# stage), or a bare Continue when it doesn't (the challenge, and this run's own
+# final/failed stage — see features/region-runs.md -> "Between-stage pick: repair or
+# boost").
 func _present_standings_overlay(_event_index: int) -> void:
 	if _headless or _replay_recorder == null:
 		return
@@ -1781,25 +1809,34 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
-	# Standings overlay Control on its own CanvasLayer.
-	_standings_overlay = CanvasLayer.new()
-	_standings_overlay.name = "StandingsOverlay"
-	var panel: Control = load(Scenes.STANDINGS).instantiate()
-	panel.overlay_mode = true
-	# Pin the session BEFORE the panel enters the tree. On a challenge's final stage
-	# RunSession clears itself between this signal and the panel's own _ready
-	# latch running would still be fine (standings_ready is emitted while the run is
-	# active), but stating it here removes the ordering dependency entirely.
-	panel.set_challenge_mode(RunSession.is_active())
-	panel.leaderboard_hidden_changed.connect(_on_leaderboard_hidden_changed)
-	if RunSession.is_active():
-		# THIS panel owns the end of a challenge run: _on_challenge_run_finished
-		# waits on its run_completed rather than ejecting the player to the HQ while
-		# they are still reading the final standings.
-		_challenge_standings_panel = panel
-	_standings_overlay.add_child(panel)
-	add_child(_standings_overlay)
+	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(), _on_interstitial_choice)
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
+
+
+# The interstitial's row was pressed — "repair", a boost id, or "" (plain Continue,
+# offered when RunSession had no pick to draw). Applies the choice, tears the overlay
+# down, then either carries the run into the next stage or — if this was the run's
+# final/failed stage, so RunSession is no longer active — signals that the player has
+# seen the result.
+func _on_interstitial_choice(choice: String) -> void:
+	if choice == "repair":
+		RunSession.choose_repair()
+	elif choice != "":
+		RunSession.choose_boost(choice)
+	_teardown_interstitial()
+	if RunSession.is_active():
+		RunSession.continue_to_next_stage()
+	else:
+		run_interstitial_dismissed.emit()
+
+
+func _teardown_interstitial() -> void:
+	if is_instance_valid(_interstitial_page):
+		var layer := _interstitial_page.get_parent()
+		if is_instance_valid(layer):
+			layer.queue_free()
+	_interstitial_page = null
+	_on_leaderboard_hidden_changed(true)   # dismissed -> engine audible again
 
 
 # Restore every knocked-over prop before the replay so it plays back against an intact
@@ -1830,6 +1867,24 @@ func _on_leaderboard_hidden_changed(hidden: bool) -> void:
 # RallySession arm of _wire_session_signals, deleted with RallySession
 # (todo/roguelike-pivot.md decision 5), so nothing connects to it any more.
 
+# ONE mode-agnostic handler for "the run just ended", wired for either kind
+# (_wire_session_signals). Delegates entirely to _on_challenge_run_finished for a
+# challenge (its own function so tests/headless/test_challenge_run_end.gd can drive
+# it directly with no world-level dispatch — that file's cloud-reward coverage
+# predates this stage and its call sites are unchanged); every OTHER kind of run
+# (today: only the region run) just waits for the player to dismiss the final
+# stage's interstitial (RunPickPanel's Continue — a region run's final/failed stage
+# draws no pick, so it is always Continue) before leaving for the hub, so nobody is
+# ejected mid-read the instant report_event_result finishes.
+func _on_run_finished(result: Dictionary) -> void:
+	if String(result.get("mode", "")) == RunMode.CHALLENGE:
+		await _on_challenge_run_finished(result)
+		return
+	if is_instance_valid(_interstitial_page):
+		await run_interstitial_dismissed
+	_change_scene(Scenes.hub_path())
+
+
 # A challenge run has no podium (no rival field to place against, no per-rally
 # car reward). Both a clean finish and a DNF return straight to the hub — but the
 # run's END is resolved here first:
@@ -1839,73 +1894,78 @@ func _on_leaderboard_hidden_changed(hidden: bool) -> void:
 #   emits run_finished from report_event_result, before the hand-off to HQ), and
 #   the scene change below is what ends the run, so the grant is awaited here and
 #   shown on a plain ConfirmPopup card over the world — the same shape hq.gd's
-#   HQ uses for a "reward, but not mid-interstitial" moment — the interstitial
-#   (standings.gd) is not up at this point.
+#   HQ uses for a "reward, but not mid-interstitial" moment — the between-stage
+#   interstitial (RunPickPanel) is already torn down by this point (see
+#   run_interstitial_dismissed below).
 #
 #   DNF — flip the board's `dnf` field (spec §6). Best-effort and deliberately
 #   NOT awaited: the house posture is that no cloud call ever costs the player
 #   anything, so the return to HQ must not wait on (or surface) the network. The
 #   coroutine resolves against Cloud.challenge_leaderboard, an autoload that
-#   outlives this scene.
+#   outlives this scene. Does NOT wait for the interstitial's dismissal either — a
+#   DNF is only reachable on a run persisted by an older build (RunSession's own
+#   header comment: nothing DNFs a challenge today), so this branch is legacy and
+#   was never changed to wait, same as before this stage.
 func _on_challenge_run_finished(result: Dictionary) -> void:
 	if bool(result.get("dnf", false)):
 		if Cloud != null and Cloud.challenge_leaderboard != null:
 			@warning_ignore("return_value_discarded")
 			Cloud.challenge_leaderboard.post_dnf(RunSession.period_key())
-	else:
-		# ONE owner of "what happens after the last stage". The final stage's
-		# interstitial is already on screen (report_event_result emits
-		# standings_ready before finishing the run), so wait for the player to press
-		# through it instead of racing it with a network round-trip and then ejecting
-		# them mid-read. Waiting also means the final checkpoint has POSTED by the
-		# time try_grant_completion_reward fetches the rank it gates on — previously
-		# the grant was judged against a board this run had never been written to.
-		# Headless (no overlay) keeps the old immediate path.
-		if is_instance_valid(_challenge_standings_panel):
-			await _challenge_standings_panel.run_completed
-		# try_grant_completion_reward fetches the run's final rank from Firestore — a
-		# real round-trip with nothing on screen, which read as the game hanging right
-		# at the moment the player is waiting to hear how they did. Cover it with the
-		# shared cloud-busy state (todo/challenge-career-reuse-drift.md item 11); this
-		# was the last unmigrated `await Cloud.*` site. RunSession is an autoload
-		# with no screen of its own, so the covering host is this scene.
-		var busy := CloudBusy.cover(self, "Scoring your run…", "Checking the leaderboard…")
-		var grant: Dictionary = await ChallengeRunMode.try_grant_completion_reward(result)
-		await busy.end()
-		var item_id := String(grant.get("item_id", ""))
-		# Money alone is a reward worth showing — a placing run's whole payout is money
-		# now (todo/roguelike-pivot.md decision 21), so gating the card on item_id would
-		# leave every challenge win silent.
-		var won_something := item_id != "" or int(grant.get("money", 0)) > 0
-		if won_something and not _headless:
-			# NOT open_committing. That helper's whole point is making a mutation
-			# unrepresentable without its reveal, by acquiring the modal slot BEFORE
-			# calling a commit callable and skipping the callable entirely when the
-			# slot is refused — the right shape for an action whose "it never happened"
-			# state is true and harmless to fall back to. This grant has
-			# no such fallback: try_grant_completion_reward already ran above (it has
-			# to — fetch_final_rank is judged against THIS run's own posted time, so
-			# it can't be deferred behind a modal check), and
-			# RunSession._finish_locally recorded this period's outcome and
-			# cleared challenge_run before run_finished even fired. There is no
-			# "reward pending reveal" state and no way back into a finished period
-			# (period_outcome is terminal — start()/resume() both refuse once it's
-			# set), so skipping the reveal here would not defer the grant, it would
-			# silently keep it while making it undiscoverable — worse than today's
-			# bug, which never loses the stars themselves, only their reveal.
-			# So: grant unconditionally (already done above), then GUARANTEE the
-			# reveal instead of letting it be dropped. `allow_stack` is the existing,
-			# sanctioned escape hatch for exactly this "must be seen even over
-			# another modal" class — CloudBusy.report_failure uses it for the same
-			# reason (a failed sync silently going invisible). A reward the player
-			# already earned deserves at least the same guarantee.
-			var popup := ConfirmPopup.open(self, "Challenge Complete!",
-				_completion_reward_body(item_id, grant),
-				[{"label": "Nice", "callback": Callable()}], 0, -1, true)
-			# Only null when `self` has left the tree (host torn down mid-await) —
-			# allow_stack means modal contention alone can never refuse it.
-			if popup != null:
-				await popup.finished
+		_change_scene(Scenes.hub_path())
+		return
+	# ONE owner of "what happens after the last stage". The final stage's
+	# interstitial is already on screen (report_event_result emits standings_ready
+	# before finishing the run), so wait for the player to dismiss it instead of
+	# racing it with a network round-trip and then ejecting them mid-read. Waiting
+	# also means the final checkpoint has POSTED by the time
+	# try_grant_completion_reward fetches the rank it gates on — previously the grant
+	# was judged against a board this run had never been written to. Headless (no
+	# overlay) keeps the old immediate path.
+	if is_instance_valid(_interstitial_page):
+		await run_interstitial_dismissed
+	# try_grant_completion_reward fetches the run's final rank from Firestore — a
+	# real round-trip with nothing on screen, which read as the game hanging right
+	# at the moment the player is waiting to hear how they did. Cover it with the
+	# shared cloud-busy state (todo/challenge-career-reuse-drift.md item 11); this
+	# was the last unmigrated `await Cloud.*` site. RunSession is an autoload
+	# with no screen of its own, so the covering host is this scene.
+	var busy := CloudBusy.cover(self, "Scoring your run…", "Checking the leaderboard…")
+	var grant: Dictionary = await ChallengeRunMode.try_grant_completion_reward(result)
+	await busy.end()
+	var item_id := String(grant.get("item_id", ""))
+	# Money alone is a reward worth showing — a placing run's whole payout is money
+	# now (todo/roguelike-pivot.md decision 21), so gating the card on item_id would
+	# leave every challenge win silent.
+	var won_something := item_id != "" or int(grant.get("money", 0)) > 0
+	if won_something and not _headless:
+		# NOT open_committing. That helper's whole point is making a mutation
+		# unrepresentable without its reveal, by acquiring the modal slot BEFORE
+		# calling a commit callable and skipping the callable entirely when the
+		# slot is refused — the right shape for an action whose "it never happened"
+		# state is true and harmless to fall back to. This grant has
+		# no such fallback: try_grant_completion_reward already ran above (it has
+		# to — fetch_final_rank is judged against THIS run's own posted time, so
+		# it can't be deferred behind a modal check), and
+		# RunSession._finish_locally recorded this period's outcome and
+		# cleared challenge_run before run_finished even fired. There is no
+		# "reward pending reveal" state and no way back into a finished period
+		# (period_outcome is terminal — start()/resume() both refuse once it's
+		# set), so skipping the reveal here would not defer the grant, it would
+		# silently keep it while making it undiscoverable — worse than today's
+		# bug, which never loses the stars themselves, only their reveal.
+		# So: grant unconditionally (already done above), then GUARANTEE the
+		# reveal instead of letting it be dropped. `allow_stack` is the existing,
+		# sanctioned escape hatch for exactly this "must be seen even over
+		# another modal" class — CloudBusy.report_failure uses it for the same
+		# reason (a failed sync silently going invisible). A reward the player
+		# already earned deserves at least the same guarantee.
+		var popup := ConfirmPopup.open(self, "Challenge Complete!",
+			_completion_reward_body(item_id, grant),
+			[{"label": "Nice", "callback": Callable()}], 0, -1, true)
+		# Only null when `self` has left the tree (host torn down mid-await) —
+		# allow_stack means modal contention alone can never refuse it.
+		if popup != null:
+			await popup.finished
 	_change_scene(Scenes.hub_path())
 
 

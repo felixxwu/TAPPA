@@ -3939,3 +3939,26 @@ func spectator_params() -> Dictionary:
 ## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
 ## no target time to be fast against, and its whole reward is the placement.
 @export_range(0.0, 20000.0, 25.0) var challenge_completion_money := 500.0
+
+
+@export_group("Roguelike Run Boosts")
+# The IN-RUN boost catalogue (BoostLibrary, scripts/boost_library.gd — todo/roguelike-pivot.md
+# -> "Upgrades — RR's two-tier model"). Every value here is a magnitude a designer retunes in
+# the inspector, so nothing in tests/headless/ may pin one (CLAUDE.md) — only the RELATIONSHIP
+# "the draw reads this field live" is fair game. Stage 6's boost-LEVEL shop scales these
+# further (BoostLibrary.effect_for is where that hook lands); nothing here reads a level yet.
+## How many DISTINCT boosts are drawn for one between-stage pick, on top of the always-offered
+## repair. Clamped to the catalogue's own size (BoostLibrary.draw) if this exceeds it.
+@export_range(1, 6) var run_boost_choices := 3
+## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost).
+@export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.93
+## "Sticky tyres" — tire_grip_mult (above 1.0 = more grip).
+@export_range(1.0, 1.5, 0.01) var run_boost_grip_mult := 1.08
+## "Quick-shift gearbox" — an ABSOLUTE shift time (the "set" op), not a scaling.
+@export_range(0.02, 0.3, 0.01) var run_boost_shift_time_s := 0.12
+## "Aero kit" — added downforce (N), the SAME figure on both front and rear.
+@export_range(0.0, 15.0, 0.5) var run_boost_downforce_n := 3.0
+## "Big brakes" — brake_torque multiplier.
+@export_range(1.0, 1.5, 0.01) var run_boost_brake_mult := 1.12
+## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
+@export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92

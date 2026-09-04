@@ -93,8 +93,17 @@ func _start(seed_value := RUN_SEED) -> Dictionary:
 
 
 # Drive the current stage in `elapsed_ms` and, if the run continues, boot the next.
+#
+# A region run's non-final, non-missed clear now offers a between-stage PICK instead
+# of repairing automatically (stage 5) — continue_to_next_stage() refuses to advance
+# while one is outstanding. Every test using this helper just wants the run to keep
+# moving, so it resolves the pick with the repair (an arbitrary, consistent choice;
+# tests that care about the CHOICE itself drive report_event_result/choose_* directly
+# instead of going through this helper).
 func _drive(elapsed_ms: int) -> void:
 	RunSession.report_event_result(elapsed_ms)
+	if RunSession.pick_awaiting():
+		RunSession.choose_repair()
 	if RunSession.is_active():
 		RunSession.continue_to_next_stage()
 		@warning_ignore("return_value_discarded")
@@ -304,3 +313,141 @@ func test_the_run_reports_what_it_banked() -> void:
 	_drive(maxi(1, RunSession.stage_target_ms() - 1))
 	assert_eq(RunSession.money_earned(), _save.money(),
 		"the run's own tally agrees with what reached the profile")
+
+
+# --- The between-stage pick: repair competes with a boost (stage 5) --------------
+
+func test_clearing_a_non_final_stage_offers_a_pick_instead_of_auto_repairing() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.is_active(), "setup: the run continues")
+	assert_true(RunSession.pick_awaiting(), "a cleared non-final stage offers a pick")
+	assert_false(RunSession.pending_pick().is_empty(), "…of at least one boost")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"repair is no longer applied automatically — it's one of the offered picks")
+
+
+func test_continue_to_next_stage_refuses_while_a_pick_is_awaiting() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.pick_awaiting(), "setup: a pick is outstanding")
+	var stage_before := RunSession.events_completed()
+
+	RunSession.continue_to_next_stage()
+
+	assert_eq(RunSession.events_completed(), stage_before,
+		"the run does not advance until the pick is resolved")
+	assert_true(RunSession.is_active(), "…and stays active, not stuck or ended")
+
+
+func test_choosing_repair_resolves_the_pick_exactly_like_the_old_automatic_path() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	RunSession.choose_repair()
+
+	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
+	assert_true(RunSession.pending_pick().is_empty())
+	var repair := RunSession.take_pending_repair()
+	assert_false(repair.is_empty(),
+		"choosing repair leaves the same pending repair the old automatic path did")
+	RunSession.continue_to_next_stage()
+	assert_eq(RunSession.events_completed(), 1, "and the run now advances")
+
+
+func test_choosing_a_boost_records_it_on_the_run_and_takes_no_repair() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered: Array = RunSession.pending_pick()
+	var id := String((offered[0] as Dictionary)["id"])
+
+	RunSession.choose_boost(id)
+
+	assert_false(RunSession.pick_awaiting())
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"taking a boost costs the repair, not the other way round")
+	var picked_ids: Array = []
+	for b in RunSession.boosts():
+		picked_ids.append(String((b as Dictionary)["id"]))
+	assert_true(picked_ids.has(id), "the chosen boost is recorded on the run")
+
+
+func test_a_boost_pick_never_reaches_the_persisted_car() -> void:
+	var car := _start()
+	var iid := int(car["instance_id"])
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered: Array = RunSession.pending_pick()
+
+	RunSession.choose_boost(String((offered[0] as Dictionary)["id"]))
+
+	assert_false(_save.get_car(iid).has("boosts"),
+		"a run's boosts are RUN state, never written to Save's persisted car")
+
+
+func test_a_resumed_run_re_offers_the_identical_pick() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var before: Array = RunSession.pending_pick()
+
+	RunSession.pause_run()
+	assert_true(RunSession.resume(int(Time.get_unix_time_from_system())))
+
+	assert_true(RunSession.pick_awaiting(), "the pick survives a pause/resume")
+	assert_eq(RunSession.pending_pick(), before,
+		"a resumed run offers the identical choice it offered before")
+
+
+func test_boosts_do_not_survive_a_completed_run() -> void:
+	_start()
+	for _i in RegionRunMode.STAGE_COUNT:
+		RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+		if RunSession.pick_awaiting():
+			var offered: Array = RunSession.pending_pick()
+			RunSession.choose_boost(String((offered[0] as Dictionary)["id"]))
+		if RunSession.is_active():
+			RunSession.continue_to_next_stage()
+			@warning_ignore("return_value_discarded")
+			RunSession.set_stage_track(_track())
+	assert_false(RunSession.is_active(), "setup: the run completed")
+	assert_true(bool(RunSession.last_result()["completed"]))
+	assert_true(RunSession.boosts().is_empty(),
+		"every picked boost is wiped the moment the run ends, even a win")
+
+
+func test_boosts_do_not_survive_a_failed_run() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered: Array = RunSession.pending_pick()
+	RunSession.choose_boost(String((offered[0] as Dictionary)["id"]))
+	assert_false(RunSession.boosts().is_empty(), "setup: a boost was picked")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)  # miss the target
+
+	assert_false(RunSession.is_active(), "setup: the run failed")
+	assert_true(RunSession.boosts().is_empty(),
+		"a failed run wipes its boosts too — soft permadeath, not just the loss")
+
+
+func test_a_fresh_run_starts_with_no_boosts_from_a_previous_one() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered: Array = RunSession.pending_pick()
+	RunSession.choose_boost(String((offered[0] as Dictionary)["id"]))
+	assert_false(RunSession.boosts().is_empty(), "setup: a boost was picked")
+	# The pick has to be RESOLVED AND ADVANCED before the next stage can be reported:
+	# continue_to_next_stage() refuses while a pick is awaiting, and the next stage needs
+	# its own track before it has a target to miss. Reporting straight through leaves the
+	# session mid-stage, and the run never actually ends.
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)  # fail the run
+	assert_false(RunSession.is_active(), "setup: the run failed")
+
+	_start()
+
+	assert_true(RunSession.boosts().is_empty(), "a new run never inherits the last one's boosts")

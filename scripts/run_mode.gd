@@ -96,3 +96,29 @@ func is_resumable(_unix_time: int) -> bool:
 # ledger is `Save.KEY_REGIONS_CLEARED`, written by the region-select stage).
 func record_outcome(_result: Dictionary, _unix_time: int) -> void:
 	pass
+
+
+# --- The between-stage pick (todo/roguelike-pivot.md "Between stages: repair or
+# boost", stage 5 of todo/roguelike-pivot-plan.md) -----------------------------
+#
+# Does clearing a stage of THIS mode offer a drawn boost pick (repair competing
+# against N boosts) instead of the old automatic repair? False for every mode by
+# default — only RegionRunMode opts in; the challenge keeps repairing
+# automatically on every non-final stage, exactly as before this stage landed.
+# RunSession asks this ONLY for a stage that is neither the run's last nor a
+# missed target (report_event_result's `over`) — there is no next stage to carry
+# a boost into once the run is over, so this never needs to know about that case.
+func offers_boost_pick() -> bool:
+	return false
+
+
+# The boosts drawn for the pick ahead of stage `stage_index` (the stage about to
+# be ENTERED, i.e. RunSession._stage_index after the just-cleared stage's cursor
+# advance) — BoostLibrary entries, `{"id","effect"}`. MUST be deterministic in
+# (this mode's own seed, stage_index) so a resumed run re-derives the identical
+# offer (RunSession persists only `pick_awaiting`, not the picks themselves, and
+# re-asks this on resume). Empty for any mode that answers false to
+# offers_boost_pick() above — RunSession never calls it in that case, but every
+# mode gets a safe default regardless.
+func boost_choices(_stage_index: int) -> Array:
+	return []

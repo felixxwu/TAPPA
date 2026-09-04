@@ -2090,9 +2090,15 @@ func retune(owned: Dictionary) -> void:
 # engine audio and RECONFIGURES the existing drivetrain (a drivetrain conversion changes the
 # driven axle; a turbo or gearbox effect changes the engine's derived caches).
 #
-# ITS CALLER MOVED. It was the start-line Upgrades menu, deleted with the parts model; this
-# is the hook stage 5 applies a freshly-picked run boost through — write the boost onto the
-# car, then call this to make the live car reflect it without re-staging.
+# ITS CALLER MOVED. It was the start-line Upgrades menu, deleted with the parts model.
+# STAGE 5 (in-run boosts) turned out NOT to need this hook: a picked boost is written to
+# RunSession's own run-scoped list (RunSession.boosts()) and only reaches the car at
+# world.gd._field_car, which runs on the FULL scene reload continue_to_next_stage() already
+# does between every stage (a different track needs a fresh world regardless) — so the next
+# stage's apply_owned already carries the new boost with no live re-staging in between. Left
+# live for whatever future flow DOES want to reflect an effect change onto an
+# already-staged car without a reload (e.g. a mid-run repair/boost preview before the
+# scene changes) — write the boost onto the owned-car dict, then call this.
 #
 # It deliberately does NOT rebuild the drivetrain. A rebuild re-derives everything from the
 # live scene, which on a settled car meant re-capturing drifted wheel geometry (the ~60%

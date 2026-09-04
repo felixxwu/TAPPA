@@ -1,7 +1,7 @@
 class_name RegionRunMode
 extends RunMode
 # Docs: features/region-runs.md — update in the same change as this file.
-# Tests: tests/headless/test_region_run.gd, tests/headless/test_region_stage_pool.gd — extend in the same change.
+# Tests: tests/headless/test_region_run.gd, tests/headless/test_region_stage_pool.gd, tests/headless/test_boost_library.gd — extend in the same change.
 #
 # THE ROGUELIKE RUN (todo/roguelike-pivot.md) — caller TWO of `RunSession`. Eight
 # stages drawn from one region's authored event pool, driven back to back by one
@@ -156,3 +156,25 @@ func record_outcome(result: Dictionary, _unix_time: int) -> void:
 	cleared.append(region_id)
 	Save.profile[Save.KEY_REGIONS_CLEARED] = cleared
 	Save.save_now()
+
+
+# --- The between-stage pick (see run_mode.gd) -----------------------------------
+
+func offers_boost_pick() -> bool:
+	return true
+
+
+# BoostLibrary.draw is seeded from THIS RUN, never the wall clock — see _boost_seed.
+func boost_choices(stage_index: int) -> Array:
+	return BoostLibrary.draw(_boost_seed(stage_index), Config.data.run_boost_choices)
+
+
+# The run's own seed, offset by the stage the pick is FOR — the same "bump by a large
+# prime stride" convention world.gd already uses to re-roll a challenge stage's seed on
+# retry (features/rally-challenge.md -> "Stage-generation retry"), reused here so a
+# resumed run's pick matches what it drew the first time (deterministic in
+# (run_seed, stage_index), nothing else). Distinct from RegionStagePool's own stage
+# draw, which is keyed on run_seed alone — this needs a SECOND, independent seed per
+# stage so the two draws (which stage, which boosts) can't accidentally correlate.
+func _boost_seed(stage_index: int) -> int:
+	return run_seed + stage_index * 104729

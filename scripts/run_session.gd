@@ -58,6 +58,21 @@ var _money_earned := 0
 var _stage_target_ms := 0
 var _pending_repair: Dictionary = {}
 var _last_result: Dictionary = {}
+# --- The between-stage pick (todo/roguelike-pivot.md "Between stages: repair or
+# boost", stage 5) ---------------------------------------------------------------
+# The boosts drawn for the pick currently awaiting a choice — BoostLibrary entries,
+# {"id","effect"}. Empty when no pick is outstanding (every mode that answers false
+# to RunMode.offers_boost_pick, and this run's own final/failed stage).
+var _pending_pick: Array = []
+# True while _pending_pick is awaiting choose_repair()/choose_boost(). Blocks
+# continue_to_next_stage() — the player picks exactly one before the run advances.
+var _pick_awaiting := false
+# This run's OWN picked boosts, in pick order — {"id","effect"}, UpgradeLibrary's
+# shape. RUN-SCOPED: never written to Save's persisted car (world.gd._field_car
+# merges this onto a DUPLICATED owned-car dict at fielding time), so nothing here can
+# leak past the run it was picked in. Reset only by begin() (a fresh run) and
+# _finish_locally() (the run just ended, win or lose) — see boosts() below.
+var _boosts: Array = []
 
 
 # --- Read surface --------------------------------------------------------------
@@ -134,6 +149,26 @@ func money_earned() -> int:
 
 func last_result() -> Dictionary:
 	return _last_result
+
+
+# The boosts drawn for the pick currently awaiting a choice, or [] when none is
+# outstanding. world.gd's between-stage interstitial reads this to decide what to
+# show — the pick rows plus repair, or a bare Continue.
+func pending_pick() -> Array:
+	return _pending_pick.duplicate(true)
+
+
+# True while a between-stage pick is drawn and unresolved (see choose_repair /
+# choose_boost). continue_to_next_stage() refuses to advance while this holds.
+func pick_awaiting() -> bool:
+	return _pick_awaiting
+
+
+# This run's picked boosts so far, in pick order — the exact shape
+# UpgradeLibrary.active_effects reads off an owned car's "boosts" key. world.gd
+# merges this onto the fielded car; it is never written to Save.
+func boosts() -> Array:
+	return _boosts.duplicate(true)
 
 
 # Drop the terminal result once a screen has SHOWN it. The hub shell reads last_result()
@@ -262,6 +297,9 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_stage_target_ms = 0
 	_pending_repair = {}
 	_last_result = {}
+	_pending_pick = []
+	_pick_awaiting = false
+	_boosts = []
 	_active = true
 	_stage_running = true
 	_persist()
@@ -317,6 +355,14 @@ func resume(unix_time: int) -> bool:
 	_stage_target_ms = 0
 	_pending_repair = {}
 	_last_result = {}
+	_boosts = (run.get("boosts", []) as Array).duplicate(true)
+	# A pick that was still awaiting a choice when this run was last persisted
+	# RE-DERIVES rather than being stored verbatim — boost_choices is a pure function
+	# of (the mode's own seed, stage_index), so this always matches what was offered
+	# before (todo/roguelike-pivot.md: "a resumed run offers the same choice it
+	# offered before").
+	_pick_awaiting = bool(run.get("pick_awaiting", false))
+	_pending_pick = _mode.boost_choices(_stage_index) if _pick_awaiting else []
 	_active = true
 	_stage_running = true
 	return true
@@ -357,6 +403,7 @@ func _persist() -> void:
 		"mode": _mode.mode_id(), "car_instance_id": _car_instance_id,
 		"stage_index": _stage_index, "stage_times_ms": _stage_times_ms.duplicate(),
 		"dnf": _dnf, "money_earned": _money_earned,
+		"boosts": _boosts.duplicate(true), "pick_awaiting": _pick_awaiting,
 	}
 	record.merge(_mode.to_record(), true)
 	Save.set_run(record)
@@ -405,7 +452,17 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if over:
 		@warning_ignore("return_value_discarded")
 		Save.apply_field_repair_to(_car_instance_id)
+	elif _mode.offers_boost_pick():
+		# THE PICK (todo/roguelike-pivot.md, "Between stages: repair or boost"). Repair
+		# stops being automatic and becomes ONE option among the drawn boosts — the
+		# player gives up a boost to take it. Nothing is applied until choose_repair()
+		# / choose_boost() resolves the pick; continue_to_next_stage() refuses to
+		# advance until one of them has.
+		_pending_pick = _mode.boost_choices(_stage_index)
+		_pick_awaiting = true
 	else:
+		# Every mode that does not opt into the pick (the challenge) keeps the old
+		# automatic behaviour, unchanged.
 		_pending_repair = Save.apply_field_repair_to(_car_instance_id)
 	_persist()
 	# ORDER MATTERS. standings_ready is emitted while the run is STILL ACTIVE, so
@@ -461,8 +518,13 @@ func run_times_ms() -> Array[int]:
 # is re-entering the driving scene: world.gd._ready seats the new stage's config
 # (via DrivingContext.apply_stage_config) and reads current_stage_params() /
 # take_pending_repair() on boot, exactly as it did for stage 1.
+#
+# Refuses while a between-stage pick is still awaiting a choice (_pick_awaiting) —
+# choose_repair() / choose_boost() must resolve it first. "The player picks exactly
+# one" (todo/roguelike-pivot.md) is enforced HERE, not just by the UI only offering
+# those two actions.
 func continue_to_next_stage() -> void:
-	if not _active:
+	if not _active or _pick_awaiting:
 		return
 	_stage_running = true
 	stage_started.emit(_stage_index)
@@ -477,6 +539,42 @@ func take_pending_repair() -> Dictionary:
 	return r
 
 
+# --- Resolving the between-stage pick -------------------------------------------
+
+# Resolve the pending pick by taking the repair. Exactly the SAME field repair every
+# other stage transition applies (Save.apply_field_repair_to) — the only change from
+# before this stage landed is that it is now a CHOICE instead of automatic, and
+# choosing it costs the boost the player didn't take. world.gd's between-stage boot
+# still consumes it via take_pending_repair(), unchanged. No-op if no pick is
+# outstanding (a stray second call, or a mode that never draws one).
+func choose_repair() -> void:
+	if not _pick_awaiting:
+		return
+	_pending_repair = Save.apply_field_repair_to(_car_instance_id)
+	_pending_pick = []
+	_pick_awaiting = false
+	_persist()
+
+
+# Resolve the pending pick by taking boost `id` — one of the entries pending_pick()
+# just offered. Appended to THIS RUN's own boost list (never Save's persisted car —
+# see boosts() / world.gd._field_car), so it is visible to UpgradeLibrary.apply the
+# moment the next stage fields the car, and gone the moment the run ends (win or
+# lose). An id that isn't in the current pick (a stale button press, a miskeyed id)
+# still resolves the pick — the player has made a choice, even if it landed on
+# nothing — rather than leaving the run stuck unable to advance.
+func choose_boost(id: String) -> void:
+	if not _pick_awaiting:
+		return
+	for entry in _pending_pick:
+		if String((entry as Dictionary).get("id", "")) == id:
+			_boosts.append((entry as Dictionary).duplicate(true))
+			break
+	_pending_pick = []
+	_pick_awaiting = false
+	_persist()
+
+
 func _finish_locally() -> void:
 	_last_result = {
 		"mode": mode_id(), "period_key": period_key(), "kind": kind(),
@@ -488,6 +586,14 @@ func _finish_locally() -> void:
 	}
 	_active = false
 	_stage_running = false
+	# BOOSTS ARE WIPED HERE, WIN OR LOSE (todo/roguelike-pivot.md, "Soft permadeath" +
+	# this stage's own "gone when the run ends"). _clear_persisted() below already
+	# deletes the whole run record — boosts included — from Save, so this in-memory
+	# clear is belt-and-braces: the one place that answers "what wipes them", named
+	# explicitly rather than left to fall out of begin() resetting it for the NEXT run.
+	_boosts = []
+	_pending_pick = []
+	_pick_awaiting = false
 	if _mode != null:
 		_mode.record_outcome(_last_result, int(Time.get_unix_time_from_system()))
 	_clear_persisted()

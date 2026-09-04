@@ -61,7 +61,7 @@ with them, and working toward the special-event finale.
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars — the only gate is the rally that unlocks the capability; neither a token nor car health blocks a swap — engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeRunMode` (the challenge half of `RunSession`: eligibility, period outcome, placement reward), the entry-point screen |
-| [region-runs.md](region-runs.md) | The roguelike region run — `RunSession` + `RunMode` (the shared stage loop and its strategy seam), `RegionStagePool` (the authored stage draw), the fixed reference-car timer, run-over on a missed target, money per stage clear |
+| [region-runs.md](region-runs.md) | The roguelike region run — `RunSession` + `RunMode`, `RegionStagePool`, `BoostLibrary` and the repair-vs-boost between-stage pick, the fixed reference-car timer, run-over on a missed target, money banked per stage clear |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, capped misfire + rev cap at 0 HP (never a wreck) |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |

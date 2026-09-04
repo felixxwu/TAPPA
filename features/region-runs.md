@@ -5,16 +5,18 @@ pick a car, and drive **8 stages back to back against a fixed clock**. Miss a
 stage's target time and the run is over on the spot — that is the only hard fail
 state in the game. Money is banked at every stage clear and never taken back.
 
-**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_challenge_session.gd`
+**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`
 
 This doc owns the **run spine** — the session, its strategy seam, the stage draw,
-the timer and the money. The Daily/Weekly/Monthly challenge, which is the spine's
-*other* caller, is documented in [rally-challenge.md](rally-challenge.md).
+the timer, the money and the between-stage pick. The Daily/Weekly/Monthly
+challenge, which is the spine's *other* caller, is documented in
+[rally-challenge.md](rally-challenge.md).
 
-**Stage 3 of the pivot ships the spine only.** Region SELECT and the linear unlock
-ledger (`Save.KEY_REGIONS_CLEARED`) are stage 4; in-run boosts are stage 5; the meta
-shop is stage 6; coins are stage 8. Nothing here builds those — it builds the thing
-they hang off.
+**Stage 3 shipped the spine; stage 4 (region select + linear unlock) and stage 5
+(in-run boosts, this section) are landed.** The meta shop (boost LEVELS, car
+purchasing, engine-swap unlock) is stage 6; lifetime stats + perks are stage 7;
+coins are stage 8. Nothing here builds those — see "The meta seam" below for
+exactly where stage 6 hooks in.
 
 ## The pieces
 
@@ -25,6 +27,8 @@ they hang off.
 | `RegionRunMode` | `scripts/region_run_mode.gd` | The region run: the stage draw, the fixed timer, the fail rule, the money |
 | `ChallengeRunMode` | `scripts/challenge_run_mode.gd` | The challenge: rolled stages, no clock, one placement payout |
 | `RegionStagePool` | `scripts/region_stage_pool.gd` | A region's authored event pool, and the seeded draw taken out of it |
+| `BoostLibrary` | `scripts/boost_library.gd` | The in-run boost catalogue and its seeded draw |
+| `RunPickPanel` | `scripts/run_pick_panel.gd` | The between-stage MenuPage modal (repair vs. boost, or a plain Continue) |
 
 ## The strategy seam
 
@@ -55,7 +59,8 @@ inside the session:
 | Does this time end the run? | `stage_failed(i, elapsed, target)` | never | `elapsed > target` |
 | What does clearing it pay? | `stage_money(i, elapsed, target)` | `0` (paid once, at the end) | completion + fast bonus |
 | What is persisted? | `to_record()` / `is_resumable(t)` | `{period_key, kind}`, stale once the period rolls | `{region_id, run_seed, stage_count}`, never stale |
-| What does a finished run record? | `record_outcome(result, t)` | the period's one-attempt outcome | nothing (stage 4's `regions_cleared` ledger) |
+| What does a finished run record? | `record_outcome(result, t)` | the period's one-attempt outcome | the `regions_cleared` ledger (stage 4) |
+| Does clearing a stage offer a boost pick? | `offers_boost_pick()` / `boost_choices(i)` | never — repair stays automatic | always (unless it was the run's own final/failed stage) |
 
 ## One run slot
 
@@ -195,10 +200,114 @@ this same stage-clear moment.
 `Save.money()` / `add_money()` / `spend_money()` are the whole currency surface.
 `RunSession.money_earned()` is the run's own running tally, for the run summary.
 
-## Known placeholder
+## Between-stage pick: repair or boost
 
-`RegionRunMode.region_index()` reads the region's **array index** in
-`RegionLibrary.REGIONS`. That table's own header says array order carries no meaning,
-and `override_for_test` lets a test substitute an arbitrary array — so this is a
-stand-in that **must not outlive stage 4**, which adds the authored `order` field
-decision 2 needs and re-points both the pace ramp and the money scale at it.
+`report_event_result` used to apply the field repair **automatically** on every
+non-final stage clear. Per `todo/roguelike-pivot.md` → "Upgrades — RR's two-tier
+model" that is wrong on purpose: repair is meant to **compete** with a boost, so
+taking it costs the boost you didn't take. `RunMode.offers_boost_pick()` is the
+switch — `RegionRunMode` opts in, `ChallengeRunMode` does not, so a challenge
+stage still repairs automatically exactly as before (`test_challenge_session.gd`
+pins that unchanged behaviour).
+
+When the mode opts in and the stage was **not** the run's last (and did not miss
+the clock — `over` in `report_event_result`), the automatic repair is replaced
+with a drawn pick:
+
+```gdscript
+_pending_pick = _mode.boost_choices(_stage_index)   # BoostLibrary entries
+_pick_awaiting = true                               # continue_to_next_stage() now refuses
+```
+
+`RunSession.choose_repair()` / `.choose_boost(id)` resolve it — repair goes
+through the same `Save.apply_field_repair_to` every other transition uses (so
+`take_pending_repair()` / world.gd's between-stage repair popup are unchanged for
+the repair case), and a boost is appended to the run's own list:
+
+```gdscript
+func boosts() -> Array   # this run's picks so far, {"id","effect"} — UpgradeLibrary's shape
+```
+
+`continue_to_next_stage()` is a no-op while `_pick_awaiting` is true — the player
+must resolve the pick before the run advances (todo/roguelike-pivot.md: "the
+player picks exactly one"). On the run's **final or failed** stage no pick is
+drawn at all (there is no next stage to carry a boost into) and the repair applies
+silently, exactly as before.
+
+### Where boosts live, and what wipes them
+
+**Never `Save`'s persisted car.** `RunSession._boosts` is RUN state, merged onto a
+**duplicated** owned-car dict only at fielding time — `world.gd._field_car`:
+
+```gdscript
+if RunSession.is_active():
+    owned = owned.duplicate(true)
+    owned["boosts"] = RunSession.boosts()
+$Car.apply_owned(owned)
+```
+
+so `UpgradeLibrary.active_effects` sees them (via `_field_car` → `apply_owned` →
+`UpgradeLibrary.apply`) without a single byte reaching `profile["cars"]`. They
+persist across a **pause/resume** of the same run (`_persist()`/`resume()` carry
+`boosts` and `pick_awaiting` in the run record — a resumed run mid-pick
+re-derives the *same* offer via `_mode.boost_choices(_stage_index)`, since the
+draw is a pure function of `(run_seed, stage_index)`) and are wiped **the moment
+the run ends, win or lose**: `_finish_locally()` clears `_boosts` in memory and
+`_clear_persisted()` deletes the whole run record — including `boosts` — from
+`Save`, so nothing survives into the next run (`todo/roguelike-pivot.md`, "Soft
+permadeath").
+
+### The catalogue and its draw
+
+`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — six entries, each an
+`effect` dict keyed by an **existing** `UpgradeLibrary.EFFECTS` row (no second
+effects system): `mass_mult`, `tire_grip_mult`, `shift_time_set`,
+`downforce_front`/`_rear`, and two new rows added alongside this stage —
+`brake_force_mult` (`GameConfig.brake_torque`) and `drag_mult`
+(`GameConfig.drag_coefficient`). RR's `engineForce` category is deliberately not
+reproduced: its natural GameConfig target, `global_torque_scale`, is a hidden
+global de-rate (engine.gd's own comment), not a per-car effect field, so hooking
+a boost onto it would fight that knob's real job.
+
+Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
+Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
+`_brake_mult`, `_drag_mult`, plus `run_boost_choices` for how many are drawn) —
+`BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no test
+may pin the shipped numbers (CLAUDE.md).
+
+`BoostLibrary.draw(seed_value, count)` picks `count` **distinct** entries with no
+replacement, seeded by `RegionRunMode._boost_seed(stage_index) = run_seed +
+stage_index * 104729` — the same "big prime stride" convention
+`features/rally-challenge.md` documents for bumping a challenge stage's retry
+seed. No sort step (unlike `RegionStagePool.draw`), so there is no sort-stability
+tie-break to reason about.
+
+### The pick screen
+
+`RunPickPanel.open(host, pick, on_choice)` (`scripts/run_pick_panel.gd`) builds
+the modal — a repair button plus one per drawn boost, or a bare "Continue" when
+`pick` is empty — as a `MenuPage` wired through `MenuNav.attach`
+(`tests/headless/test_run_pick_panel.gd` is the nav test CLAUDE.md requires).
+It is deliberately decoupled from `world.gd`/`$Car`/the replay machinery so it
+can be tested without booting a world scene at all. `world.gd._present_standings_overlay`
+hosts it over the just-finished stage's cinematic replay — the same beat that
+used to load the now-deleted `standings.tscn` (decision 30: no more per-stage
+leaderboards) — and `_on_interstitial_choice` applies the pick, tears the modal
+down, then either continues the run (`RunSession.continue_to_next_stage()`) or,
+if the run just ended, emits `run_interstitial_dismissed` so `_on_run_finished`
+(mode-agnostic — challenge and region both wait on it before returning to the
+hub) knows the player has seen the result.
+
+### The meta seam (stage 6 — not built here)
+
+`BoostLibrary.effect_for` is the one place a magnitude is resolved from
+`Config.data`. A purchased "boost level" (decision 42: the shop shows the effect
+range per level) belongs there — nothing here reads a level; every pick rolls at
+the single authored magnitude.
+
+## Known placeholder — resolved
+
+`RegionRunMode.region_index()` used to read the region's raw array index in
+`RegionLibrary.REGIONS`; stage 4 landed the authored `order` field this section
+used to call for, and `region_index()` now reads `RegionLibrary.order_of(region_id)`.
+Nothing left calling for changes here.

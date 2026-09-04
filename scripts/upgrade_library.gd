@@ -130,6 +130,12 @@ const EFFECTS := {
 	"shift_time_set":      {"field": "shift_time", "op": "set", "feeds_pw": false},
 	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false, "feeds_grip": true},
 	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false, "feeds_grip": true},
+	# Two rows added for the in-run BOOST catalogue (BoostLibrary, stage 5 of
+	# todo/roguelike-pivot-plan.md). Neither feeds power-to-weight or the max-lateral-G
+	# model — braking and drag are their own axes, not inputs either of those two care
+	# about — so both are cfg-only, exactly like tire_grip_mult's sibling rows above.
+	"brake_force_mult": {"field": "brake_torque", "op": "mult", "feeds_pw": false},
+	"drag_mult":         {"field": "drag_coefficient", "op": "mult", "feeds_pw": false},
 	# THE TWO `flag` ROWS ARE GONE. `unlocks_aero_tuning` and `unlocks_drivetrain_swap`
 	# existed so a fitted part could open a tuning slider; tuning is ungated on every axis
 	# now (todo/roguelike-pivot.md decision 24) and there are no parts to fit, so the "flag"
