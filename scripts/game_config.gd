@@ -4092,6 +4092,12 @@ func spectator_params() -> Dictionary:
 ## a meta shop purchase, replacing the old rally-completion gate). Read by
 ## Save.engine_swap_unlock_price / buy_engine_swap_unlock.
 @export_range(0.0, 50000.0, 100.0) var engine_swap_unlock_price := 6000.0
+## Price of ONE drivetrain conversion — a single non-stock layout (FWD/RWD/AWD) on a
+## single car, bought per car and kept for that car forever (Save.buy_drive_mode). The
+## sixth money sink; see features/region-runs.md -> "The meta tier". Priced per car
+## rather than as a global unlock because the conversion IS per car: buying AWD on one
+## car says nothing about another, unlike the Engine Swap capability above.
+@export_range(0.0, 50000.0, 100.0) var drivetrain_conversion_price := 3500.0
 
 
 @export_group("Roguelike Perks")

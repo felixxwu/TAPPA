@@ -34,12 +34,20 @@ extends Control
 # Buy action for unowned cars"), is folded into the existing CAR page instead of a fifth
 # view — see _build_car().
 #
+# CHALLENGE is stage 9's MINIMAL entry point for the Daily/Weekly/Monthly challenge
+# (decision 15 keeps the mode; RunSession has always been able to drive it through
+# ChallengeRunMode). It is deliberately the SMALLEST screen that makes the mode
+# reachable: pick a period, pick an eligible car, go. There is no cloud board, no
+# placement table and no ceiling explainer here — those were `hq_challenge.gd`'s and are
+# not rebuilt; see features/rally-challenge.md for what a full screen would owe.
+#
 # PERKS / STATS are stage 7 (todo/roguelike-pivot.md "Perks — a straight lift from RR" +
 # "Lifetime global stats"), both reached from MAIN like SHOP: permanent, run-independent
 # pages. STATS is pure read-out (LifetimeStats.IDS, one row each) — CLAUDE.md's menu-nav
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
-enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS }
+enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS, CHALLENGE,
+	DRIVETRAIN, DRIVETRAIN_CAR }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
@@ -50,6 +58,15 @@ var _view: int = View.MAIN
 var _page: MenuPage = null
 # The region the player picked on the REGION page, held while they pick a car on the next.
 var _pending_region := ""
+# The challenge KIND picked on the CHALLENGE page, held over the same car pick. Non-empty
+# is what makes the CAR page a challenge car pick rather than a region one — the two flows
+# share that page, since "which of my cars" is the identical question. Cleared on every
+# entry to REGION so a back-and-forth cannot start a region run as a challenge.
+var _pending_challenge := ""
+# The owned car whose drivetrain the DRIVETRAIN_CAR page is showing. An INSTANCE ID, not a
+# dict: a conversion writes through Save, so the page must re-read the car on every rebuild
+# rather than render a snapshot taken before the purchase.
+var _drivetrain_car_id := -1
 
 
 func _ready() -> void:
@@ -76,6 +93,9 @@ func _title_for(view: int) -> String:
 		View.BOOST_SHOP: return "Boost levels"
 		View.PERKS: return "Perks"
 		View.STATS: return "Lifetime stats"
+		View.CHALLENGE: return "Rally challenge"
+		View.DRIVETRAIN: return "Drivetrain conversions"
+		View.DRIVETRAIN_CAR: return "Drivetrain"
 		_: return "TAPPA"
 
 
@@ -102,6 +122,9 @@ func _show(view: int) -> void:
 		View.BOOST_SHOP: _build_boost_shop()
 		View.PERKS: _build_perks()
 		View.STATS: _build_stats()
+		View.CHALLENGE: _build_challenge()
+		View.DRIVETRAIN: _build_drivetrain()
+		View.DRIVETRAIN_CAR: _build_drivetrain_car()
 	# `remember: false` — each page is rebuilt from scratch, so there is no earlier focus
 	# on it worth restoring; the first action is always the right landing spot.
 	MenuNav.attach(_page, {"on_back": _back})
@@ -112,11 +135,17 @@ func _show(view: int) -> void:
 func _back() -> void:
 	match _view:
 		View.REGION: _show(View.MAIN)
-		View.CAR: _show(View.REGION)
+		# The CAR page serves BOTH flows, so Esc must return to whichever one opened it —
+		# the page's own Back button already does. A back that always went to region
+		# select would drop a challenge picker into a flow they never opened.
+		View.CAR: _show(View.CHALLENGE if _pending_challenge != "" else View.REGION)
 		View.SHOP: _show(View.MAIN)
 		View.BOOST_SHOP: _show(View.SHOP)
 		View.PERKS: _show(View.MAIN)
 		View.STATS: _show(View.MAIN)
+		View.CHALLENGE: _show(View.MAIN)
+		View.DRIVETRAIN: _show(View.SHOP)
+		View.DRIVETRAIN_CAR: _show(View.DRIVETRAIN)
 		_: pass
 
 
@@ -151,6 +180,7 @@ func _build_main() -> void:
 		_row("Resume run", _resume_run)
 
 	_row("New run", func() -> void: _show(View.REGION))
+	_row("Rally challenge", func() -> void: _show(View.CHALLENGE))
 	_row("Shop", func() -> void: _show(View.SHOP))
 	_row("Perks", func() -> void: _show(View.PERKS))
 	_row("Lifetime stats", func() -> void: _show(View.STATS))
@@ -173,6 +203,7 @@ func _resume_run() -> void:
 # explanation is worse. Its button is disabled, so MenuNav skips it and the keyboard
 # cannot land on a dead row.
 func _build_region() -> void:
+	_pending_challenge = ""
 	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
 	for region in RegionLibrary.ordered():
 		var id := String(region.get("id", ""))
@@ -208,6 +239,19 @@ func _build_region() -> void:
 # now lists something it can actually afford.
 func _build_car() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	# A CHALLENGE pick judges every owned car against the period's rating ceiling
+	# (ChallengeRunMode.classify_cars — the ONE implementation of that rule; this page
+	# does not re-derive it). An over-ceiling car is SHOWN and unfocusable rather than
+	# hidden, for the same reason a locked region is: a player whose only car is too fast
+	# needs to see why the list is empty. A region pick has no such gate and lists them all.
+	var eligible_ids := {}
+	if _pending_challenge != "":
+		var now := int(Time.get_unix_time_from_system())
+		var classified := ChallengeRunMode.classify_cars(_pending_challenge, Save.profile, now)
+		for car in (classified["eligible"] as Array):
+			eligible_ids[int((car as Dictionary).get("instance_id", -1))] = true
+		_page.body().add_child(UITheme.label(
+			"Rating cap: %d" % int(classified["ceiling"])))
 	var owned: Array = Save.profile.get(Save.KEY_CARS, [])
 	for car in owned:
 		var entry: Dictionary = car
@@ -216,6 +260,12 @@ func _build_car() -> void:
 			continue
 		var spec: Dictionary = CarLibrary.for_owned(entry)
 		var label := String(spec.get("name", entry.get("model_id", "car")))
+		if _pending_challenge != "" and not eligible_ids.has(iid):
+			var over := _row(label + " — over the rating cap", func() -> void: pass)
+			over.disabled = true
+			over.set_meta("menu_nav_skip", true)
+			over.focus_mode = Control.FOCUS_NONE
+			continue
 		_row(label, func() -> void: _start_run(entry))
 
 	for spec in CarLibrary.all():
@@ -234,7 +284,8 @@ func _build_car() -> void:
 			buy_row.set_meta("menu_nav_skip", true)
 			buy_row.focus_mode = Control.FOCUS_NONE
 
-	_action("Back", func() -> void: _show(View.REGION))
+	_action("Back", func() -> void:
+		_show(View.CHALLENGE if _pending_challenge != "" else View.REGION))
 
 
 func _buy_car(model_id: String) -> void:
@@ -262,9 +313,143 @@ func _start_run(owned_car: Dictionary) -> void:
 			_begin_run(owned_car)}])
 
 
+# The one place the two flows diverge. RunSession.start refuses a challenge whose period
+# is already finished (one attempt per period) and start_region refuses nothing, so a
+# refusal here simply leaves the player on the page rather than changing scene — which is
+# why the CHALLENGE page marks a finished period rather than relying on this.
 func _begin_run(owned_car: Dictionary) -> void:
-	if RunSession.start_region(_pending_region, owned_car):
+	var started := false
+	if _pending_challenge != "":
+		started = RunSession.start(_pending_challenge, owned_car,
+			int(Time.get_unix_time_from_system()))
+	else:
+		started = RunSession.start_region(_pending_region, owned_car)
+	if started:
 		Scenes.change_to(get_tree(), Scenes.MAIN)
+
+
+# --- CHALLENGE ---------------------------------------------------------------
+
+# The three periods, one row each, in ascending length. THE MINIMUM that makes decision
+# 15's retained mode reachable: it names the period, its stage count and its rating cap,
+# and hands off to the shared CAR page. It does NOT show the cloud leaderboard, the
+# player's standing, or the placement reward rule — `hq_challenge.gd` did, and it is
+# deleted; features/rally-challenge.md carries what a full screen would owe.
+#
+# A period ALREADY FINISHED (completed or DNF'd) is shown, named and unfocusable rather
+# than hidden or silently dead: it is one attempt per period (RunSession.start refuses a
+# second), so a row that looked live and did nothing would read as a bug.
+const CHALLENGE_KINDS: Array[String] = [
+	ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY,
+]
+
+
+func _build_challenge() -> void:
+	var now := int(Time.get_unix_time_from_system())
+	for kind in CHALLENGE_KINDS:
+		var period := ChallengeLibrary.current_period(kind, now)
+		if period.is_empty():
+			continue  # an unknown kind names no period — skip rather than show a dead row
+		var label := "%s — %d stage(s), rating cap %d" % [
+			kind.capitalize(), int(period.get("stage_count", 0)),
+			ChallengeRunMode.displayed_ceiling(kind, now)]
+		if ChallengeRunMode.is_period_finished(kind, Save.profile, now):
+			var done_row := _row(label + " — already run", func() -> void: pass)
+			done_row.disabled = true
+			done_row.set_meta("menu_nav_skip", true)
+			done_row.focus_mode = Control.FOCUS_NONE
+			continue
+		var kind_id := kind
+		_row(label, func() -> void:
+			_pending_challenge = kind_id
+			_show(View.CAR))
+	_action("Back", func() -> void: _show(View.MAIN))
+
+
+# --- DRIVETRAIN (the sixth money sink) ---------------------------------------
+
+# Pick which owned car to convert, then which layout. Two pages rather than one flat
+# car x layout list because the second page has to say what each layout COSTS and which
+# one is running, which does not fit a row shared with a car name.
+#
+# It hangs off SHOP rather than the run's own CAR page for the same reason boost levels
+# do: it is a permanent purchase available any time, not part of picking a car for THIS
+# run (features/hub-shell.md).
+func _build_drivetrain() -> void:
+	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	for car in (Save.profile.get(Save.KEY_CARS, []) as Array):
+		var entry: Dictionary = car
+		var iid := int(entry.get("instance_id", -1))
+		if iid < 0:
+			continue
+		var spec: Dictionary = CarLibrary.for_owned(entry)
+		var car_name := String(spec.get("name", entry.get("model_id", "car")))
+		_row("%s — %s" % [car_name, _drive_mode_name(_running_drive_mode(entry))],
+			func() -> void:
+				_drivetrain_car_id = iid
+				_show(View.DRIVETRAIN_CAR))
+	_action("Back", func() -> void: _show(View.SHOP))
+
+
+# The layout this car actually RUNS: its paid-for override, or its stock layout when it has
+# none. UpgradeLibrary.resolve_drive_override is the one implementation of that rule (it
+# returns -1 for "stock"), so this page asks it rather than re-deriving the gate.
+func _running_drive_mode(owned_car: Dictionary) -> int:
+	var override_mode := UpgradeLibrary.resolve_drive_override(owned_car)
+	return override_mode if override_mode >= 0 else UpgradeLibrary.stock_drive_mode(owned_car)
+
+
+func _drive_mode_name(mode: int) -> String:
+	match mode:
+		Drivetrain.DriveMode.FWD: return "FWD"
+		Drivetrain.DriveMode.AWD: return "AWD"
+		_: return "RWD"
+
+
+# One row per layout. THREE states, and the row says which: the layout it is running now,
+# one it owns and can switch to for free (you buy the hardware once, then run whichever you
+# like), and one it has yet to buy, priced. Buying does NOT switch — the same
+# owning-vs-equipping split perks use — so a bought layout comes back as a switch row.
+func _build_drivetrain_car() -> void:
+	var owned: Dictionary = Save.get_car(_drivetrain_car_id)
+	if owned.is_empty():
+		# The car vanished from the profile between pages (nothing does this today, but a
+		# page that renders a stale id would look broken rather than empty).
+		_action("Back", func() -> void: _show(View.DRIVETRAIN))
+		return
+	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	var spec: Dictionary = CarLibrary.for_owned(owned)
+	_page.body().add_child(UITheme.label(String(spec.get("name", "car"))))
+	var running := _running_drive_mode(owned)
+	var stock := UpgradeLibrary.stock_drive_mode(owned)
+	var price := Save.drive_mode_price()
+	for mode in Drivetrain.DriveMode.values():
+		var mode_id := int(mode)
+		var mode_name := _drive_mode_name(mode_id)
+		var stock_mark := " (stock)" if mode_id == stock else ""
+		if mode_id == running:
+			var current := _row("%s%s — running" % [mode_name, stock_mark], func() -> void: pass)
+			current.disabled = true
+			current.set_meta("menu_nav_skip", true)
+			current.focus_mode = Control.FOCUS_NONE
+			continue
+		if Save.drive_mode_available(owned, mode_id):
+			_row("Switch to %s%s" % [mode_name, stock_mark], func() -> void:
+				# -1 means "stock" to the resolver, and writing the stock mode as an
+				# explicit override would work but leaves the profile saying something
+				# subtly different from a car that never converted. Normalise instead.
+				Save.set_drivetrain_override(_drivetrain_car_id,
+					-1 if mode_id == stock else mode_id)
+				_show(View.DRIVETRAIN_CAR))
+			continue
+		var buy := _row("Convert to %s — %d" % [mode_name, price], func() -> void:
+			if Save.buy_drive_mode(_drivetrain_car_id, mode_id):
+				_show(View.DRIVETRAIN_CAR))
+		if Save.money() < price:
+			buy.disabled = true
+			buy.set_meta("menu_nav_skip", true)
+			buy.focus_mode = Control.FOCUS_NONE
+	_action("Back", func() -> void: _show(View.DRIVETRAIN))
 
 
 # --- SUMMARY -----------------------------------------------------------------
@@ -301,6 +486,7 @@ func _build_summary() -> void:
 func _build_shop() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
 	_row("Boost levels", func() -> void: _show(View.BOOST_SHOP))
+	_row("Drivetrain conversions", func() -> void: _show(View.DRIVETRAIN))
 
 	var unlocked := Save.engine_swap_unlocked()
 	var price := Save.engine_swap_unlock_price()

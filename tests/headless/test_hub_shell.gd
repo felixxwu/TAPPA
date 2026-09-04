@@ -61,7 +61,8 @@ func _press(text: String) -> bool:
 func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
 			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP,
-			HubShell.View.PERKS, HubShell.View.STATS]:
+			HubShell.View.PERKS, HubShell.View.STATS, HubShell.View.CHALLENGE,
+			HubShell.View.DRIVETRAIN, HubShell.View.DRIVETRAIN_CAR]:
 		_shell._show(view)
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
@@ -398,3 +399,99 @@ func test_stats_page_lists_every_lifetime_stat_and_still_backs_out() -> void:
 			"the stats page shows a row for '%s'" % id)
 	_shell._back()
 	assert_eq(_shell._view, HubShell.View.MAIN, "stats backs out to the main page")
+
+
+# --- The challenge entry point (stage 9, decision 15) ---------------------------------
+#
+# The MINIMUM that makes the retained challenge mode reachable. These pin the SCREEN GRAPH
+# and the eligibility gate, not the wording or the period rules (ChallengeLibrary's own
+# tests own those).
+
+func test_the_main_page_reaches_the_challenge() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_press("Rally challenge"), "the main page offers the challenge")
+	assert_eq(_shell._view, HubShell.View.CHALLENGE)
+
+
+func test_the_challenge_page_backs_out_to_main() -> void:
+	_shell._show(HubShell.View.CHALLENGE)
+	await get_tree().process_frame
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.MAIN)
+
+
+# Picking a period hands off to the SHARED car page — and the car page must then back out
+# to the challenge, not to region select, or the player is dropped into a flow they never
+# opened.
+func test_picking_a_period_opens_the_car_page_and_backs_out_to_the_challenge() -> void:
+	_shell._show(HubShell.View.CHALLENGE)
+	await get_tree().process_frame
+	assert_true(_press("Daily"), "a live period is offered")
+	assert_eq(_shell._view, HubShell.View.CAR)
+	await get_tree().process_frame
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.CHALLENGE)
+
+
+# Region select CLEARS the pending challenge, so a player who backs out of a challenge and
+# starts a region run does not silently start a challenge instead.
+func test_opening_region_select_clears_a_pending_challenge() -> void:
+	_shell._show(HubShell.View.CHALLENGE)
+	await get_tree().process_frame
+	assert_true(_press("Daily"))
+	assert_ne(_shell._pending_challenge, "", "setup: a challenge is pending")
+	_shell._show(HubShell.View.REGION)
+	await get_tree().process_frame
+	assert_eq(_shell._pending_challenge, "", "region select drops the challenge intent")
+
+
+# --- Drivetrain conversions (stage 9, the sixth money sink) ---------------------------
+
+func test_the_shop_reaches_drivetrain_conversions() -> void:
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	assert_true(_press("Drivetrain"), "the shop offers drivetrain conversions")
+	assert_eq(_shell._view, HubShell.View.DRIVETRAIN)
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.SHOP, "and it backs out to the shop")
+
+
+func test_buying_a_conversion_spends_money_and_records_the_layout() -> void:
+	var car: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
+	var iid := int(car["instance_id"])
+	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
+	_shell._drivetrain_car_id = iid
+	_shell._show(HubShell.View.DRIVETRAIN_CAR)
+	await get_tree().process_frame
+	assert_true(_press("Convert to"), "a conversion is offered")
+	var bought: Array = _save.get_car(iid).get("drivetrain_modes_bought", [])
+	assert_eq(bought.size(), 1, "the layout is recorded on the car")
+	assert_eq(_save.money(), 0, "and it was paid for")
+
+
+# Buying is not switching — the same owning-vs-equipping split perks use. A bought layout
+# comes back as a free switch row.
+func test_a_bought_layout_becomes_a_free_switch() -> void:
+	var car: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
+	var iid := int(car["instance_id"])
+	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
+	_shell._drivetrain_car_id = iid
+	_shell._show(HubShell.View.DRIVETRAIN_CAR)
+	await get_tree().process_frame
+	assert_true(_press("Convert to"))
+	await get_tree().process_frame
+	assert_eq(_save.money(), 0, "setup: the purse is empty, so nothing more can be bought")
+	assert_true(_press("Switch to"), "the bought layout is now a free switch")
+	assert_eq(_save.money(), 0, "switching costs nothing")
+
+
+func test_an_unaffordable_conversion_row_is_shown_but_not_focusable() -> void:
+	var car: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
+	_save.profile[_save.KEY_MONEY] = 0
+	_shell._drivetrain_car_id = int(car["instance_id"])
+	_shell._show(HubShell.View.DRIVETRAIN_CAR)
+	await get_tree().process_frame
+	for b in _buttons():
+		assert_false(String((b as Button).text).to_upper().begins_with("CONVERT"),
+			"with no money, no conversion row is focusable")

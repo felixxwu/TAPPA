@@ -365,6 +365,36 @@ func test_zero_coins_collected_never_regresses_the_lifetime_ledger() -> void:
 		"report_event_result's default coins_collected (0) writes nothing")
 
 
+# --- Distance driven (stage 9) --------------------------------------------------
+#
+# world.gd snapshots TrackProgress.progress_offset() at the finish crossing and passes it
+# here. Counted on EVERY stage, missed ones included — the metres were driven either way,
+# exactly like DAMAGE_TAKEN and COINS_COLLECTED.
+
+func test_distance_driven_is_added_to_the_lifetime_ledger() -> void:
+	_start()
+	var before: int = _save.lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M)
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1), 0.0, 0, 1234.6)
+	assert_eq(_save.lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M), before + 1235,
+		"metres are rounded to the nearest whole point, like every other int ledger")
+
+
+func test_a_missed_stages_distance_still_counts() -> void:
+	_start()
+	var before: int = _save.lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M)
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1, 0.0, 0, 900.0)
+	assert_eq(_save.lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M), before + 900,
+		"a stage that missed its target was still driven")
+
+
+func test_no_distance_reported_never_regresses_the_ledger() -> void:
+	_start()
+	var before: int = _save.lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M)
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(_save.lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M), before,
+		"the default distance_m (0.0) writes nothing")
+
+
 # --- The between-stage pick: repair competes with a boost (stage 5) --------------
 
 func test_clearing_a_non_final_stage_offers_a_pick_instead_of_auto_repairing() -> void:

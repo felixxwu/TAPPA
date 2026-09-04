@@ -47,9 +47,9 @@ asymmetry is the whole point (mirrors the money/regions-cleared/boost-levels blo
 | `regions_cleared_total` | yes | `RegionRunMode.record_outcome()`, on every COMPLETED region run — repeats included (decision 12's grind valve), unlike the unique `Save.KEY_REGIONS_CLEARED` unlock ledger it sits beside |
 | `damage_taken` | yes | `RunSession.report_event_result`, alongside `Save.apply_damage`, rounded to the nearest whole HP |
 | `money_earned` | yes | `Save.add_money` — the ONE funnel every money source (stage payout, fast-completion bonus, a future challenge reward) already goes through |
-| `money_spent` | yes | `Save.spend_money` — the ONE funnel every purchase (car, boost level, engine-swap unlock, perk) already goes through |
+| `money_spent` | yes | `Save.spend_money` — the ONE funnel every purchase (car, boost level, engine-swap unlock, perk, drivetrain conversion) already goes through |
 | `best_region_order` | yes | `RegionRunMode.record_outcome()`, ratcheted via `raise_lifetime_stat` against `region_index()` |
-| `distance_driven_m` | **declared, not yet written** | no call site currently reports a stage's final along-track distance to `Save`. `TrackProgress.progress_offset()` (already read live by `car.gd`'s crosswind force) is the natural odometer to report from once a stage-end hook exists — see `LifetimeStats`'s own header for the open TODO |
+| `distance_driven_m` | yes | `RunSession.report_event_result`, from the offset `world.gd` snapshots at the finish crossing (`_event_distance_at_finish`). The odometer is `TrackProgress.progress_offset()` — a BEST-offset reading, so forward progress down the centreline counts and a reverse or a wander off it does not. Missed stages count too: the metres were driven either way |
 
 Writing at the shared funnel (`add_money`/`spend_money`) rather than at each payout
 or purchase site is deliberate: it means a future money source or shop sink is
@@ -66,9 +66,15 @@ added via `HubShell._action`) is deliberately its only focusable control, so the
 still satisfies CLAUDE.md's "every menu is keyboard + gamepad navigable" rule despite
 having nothing to choose.
 
-## Not yet done
+## Every id has a writer, and that is a rule
 
-- `distance_driven_m` needs a stage-end hook to report `TrackProgress`'s odometer.
+There are no declared-but-unwritten stats left (`distance_driven_m` was the last, wired in
+stage 9 — decision 54). **If you add an id here, wire its writer in the same change:** an
+unwritten stat is a row on the Stats page pinned at zero forever, which a player reads as a
+broken counter rather than an unfinished feature.
+
+## Notes
+
 - These counters are read ONLY by the unlock gates. A perk's actual effect comes from
   its `effect_fields` (`features/perks.md` → "What each perk actually does"), never
   from a lifetime stat, so a counter that stops moving weakens no equipped perk.

@@ -321,9 +321,10 @@ if the run just ended, emits `run_interstitial_dismissed` so `_on_run_finished`
 (mode-agnostic — challenge and region both wait on it before returning to the
 hub) knows the player has seen the result.
 
-### The meta tier — boost levels, car purchasing, the Engine Swap unlock
+### The meta tier — boost levels, car purchasing, the Engine Swap unlock, drivetrain conversions
 
-Stage 6. Three sinks, all thin wrappers over `Save.spend_money` sharing one refusal
+Stage 6 built the first three; stage 9 added the fourth. All four are thin wrappers over
+`Save.spend_money` sharing one refusal
 rule: an invalid or unaffordable purchase leaves the profile **byte-identical** — no
 half-spend, no partial mutation. `HubShell`'s `SHOP` / `BOOST_SHOP` views
 (`features/hub-shell.md`) are the only sellers.
@@ -375,16 +376,34 @@ a rally-completion flag; see [engine-swap.md](engine-swap.md) → *Capability ga
 full history. `Save.buy_engine_swap_unlock()` spends `GameConfig.engine_swap_unlock_price`
 and refuses a second purchase once bought.
 
-**Deliberately NOT sold here: the drivetrain-conversion `MONEY SEAM`s.** Two other seams
-name stage 6 as their owner — `Save.drive_mode_available` /
-`UpgradeLibrary.resolve_drive_override` (a paid-for drivetrain layout override, e.g.
-converting a car to a rally's required drive mode) — but `todo/roguelike-pivot.md`'s
-Economy section lists exactly five sinks (cars, boost levels, perks, the engine-swap
-unlock, cosmetic wheels) and a drivetrain conversion purchase is not one of them. Selling
-one would be inventing a feature the settled decision record does not call for, so those
-two seams are left open, still refusing every stored override as unpaid-for. If the
-design ever wants to sell conversions, that is a new decision to brainstorm with the
-user (per `CLAUDE.md`'s todo-spec rule), not an inference from "stage 6 sells things".
+**Drivetrain conversions — the sixth sink, sold in stage 9.** `Save.drive_mode_available`
+/ `UpgradeLibrary.resolve_drive_override` (a paid-for drivetrain layout override) survived
+the parts-model deletion with no way to BUY a layout: the resolver refused every stored
+override as unpaid-for, so in practice every car ran its authored stock layout. Stage 6
+deliberately left that alone — `todo/roguelike-pivot.md`'s Economy section listed five
+sinks and this was not one of them, so selling it then would have been inventing a feature
+the decision record did not call for. It was put to the user in stage 9 and they chose to
+sell it.
+
+`Save.drive_mode_price()` is a flat `GameConfig.drivetrain_conversion_price` — not scaled
+by the car, nor by how many layouts it already has, so the shop rule stays legible.
+`Save.buy_drive_mode(instance_id, mode)` appends the mode to that car's
+`drivetrain_modes_bought` and follows the identical refusal rule as every purchase above:
+an unknown car, a mode outside `Drivetrain.DriveMode`, a mode already available (its stock
+layout or one already bought — never charge twice), or an unaffordable price all leave the
+profile byte-identical.
+
+Two properties worth stating outright, both pinned by tests:
+
+- **Per car, not a global unlock** (unlike the Engine Swap capability): buying AWD on one
+  car says nothing about another, because the conversion is a physical change to that car.
+- **Buying is not running.** `buy_drive_mode` records the layout;
+  `set_drivetrain_override` switches to it, and switching between layouts the car already
+  owns is free. You buy the hardware once, then run whichever you like — the same
+  owning-vs-equipping split perks use.
+
+`HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` views are the seller
+([hub-shell.md](hub-shell.md)).
 
 ## Known placeholder — resolved
 

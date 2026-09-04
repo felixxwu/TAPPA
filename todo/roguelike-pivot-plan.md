@@ -582,12 +582,13 @@ brings its own tests and `features/` doc.
 > `GameConfig.run_starting_money`, which affords the three cheapest cars — deliberately
 > mirroring the retired three-car starter picker (decision 28).
 >
-> **Two of the four MONEY SEAM markers stay open, correctly.** The engine-swap gate is
-> closed; the DRIVETRAIN CONVERSION seams in `save_manager.gd` and `upgrade_library.gd` are
-> not, because the spec's Economy section lists five sinks — cars, boost levels, perks, the
-> engine-swap unlock, wheels — and a conversion is not among them. Do not close them by
-> inventing a purchase the design does not call for; either the spec gains a sixth sink or
-> those seams become deletions.
+> **Two of the four MONEY SEAM markers stayed open through stage 6, correctly.** The
+> engine-swap gate was closed then; the DRIVETRAIN CONVERSION seams in `save_manager.gd`
+> and `upgrade_library.gd` were not, because the spec's Economy section listed five sinks —
+> cars, boost levels, perks, the engine-swap unlock, wheels — and a conversion was not among
+> them. Closing them by inventing a purchase the design did not call for was the wrong move;
+> the right one was to put it to the user, which stage 9 did. They chose to sell it, so the
+> spec now carries a sixth sink (decision 52) and both seams are closed.
 
 | 6 | Meta shop — boost levels (with per-level effect ranges, decision 42), car purchasing, engine-swap unlock | Money buys each; boost level changes the magnitude of a drawn pick; nav test |
 | 7 | Lifetime stats, then perks (`PerkLibrary`, unlock thresholds, ≤3 equipped) | A perk below threshold is not offered; equip cap holds; nav test |

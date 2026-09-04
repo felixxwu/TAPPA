@@ -1515,6 +1515,13 @@ var _event_start_hp := 0.0
 # report time so the post-finish runoff coast can't alter the event's damage.
 var _event_hp_at_finish := 0.0
 var _event_toe_at_finish: Array = []
+# Along-track metres at the finish crossing, for LifetimeStats.DISTANCE_DRIVEN_M.
+# TrackProgress.progress_offset() is a BEST-offset odometer: it counts forward progress
+# down the centreline and never rewards reversing or wandering off it, which is what makes
+# it the honest reading of "metres driven" rather than a raw path length. Snapshotted at
+# the crossing for the same reason HP is — the post-finish coast down the runoff is not
+# part of the stage.
+var _event_distance_at_finish := 0.0
 
 
 # Build the HUD pacenote strip for this stage (features/hud.md) and wire the strip's
@@ -1739,6 +1746,7 @@ func _field_car(instance_id: int) -> void:
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
 	_event_hp_at_finish = _event_start_hp
 	_event_toe_at_finish = $Car.damage.toe_array()
+	_event_distance_at_finish = 0.0
 
 
 # Route this event's StageManager / damage signals to the session, and the run's
@@ -1808,7 +1816,8 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# stage that rolled an empty layout). Banking is RunSession/RegionRunMode's call
 	# (decision 36 — only on a stage that isn't missed); this just reports the count.
 	var coins_collected := _coin_field.collected_count if _coin_field != null else 0
-	RunSession.report_event_result(elapsed_ms, hp_lost, coins_collected)
+	RunSession.report_event_result(elapsed_ms, hp_lost, coins_collected,
+		_event_distance_at_finish)
 
 
 func _on_stage_started() -> void:
@@ -1825,6 +1834,8 @@ func _on_finish_reached() -> void:
 		_replay_recorder.stop()
 	_event_hp_at_finish = $Car.damage.hp
 	_event_toe_at_finish = $Car.damage.toe_array()
+	if _track_progress != null:
+		_event_distance_at_finish = _track_progress.progress_offset()
 
 
 # Hide every overlay that exists to serve the PERSON DRIVING, leaving only the world

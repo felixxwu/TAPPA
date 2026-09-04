@@ -198,6 +198,29 @@ Settled with the user during the brainstorm that produced this file:
     `UpgradeLibrary.EFFECTS` + a car's `boosts` list; do not build a parallel
     modifier path.
 
+52. **Drivetrain conversion is the SIXTH money sink, sold per car.** Put to the user in
+    stage 9 alongside three other leftovers; they chose to sell it rather than delete the
+    seam or leave it inert. `Save.drive_mode_price()` / `buy_drive_mode()` close the two
+    surviving `MONEY SEAM` markers (`save_manager.gd`, `upgrade_library.gd`) that the
+    parts-model deletion left open. PER CAR, not a global unlock like the engine swap of
+    decision 17 — a conversion is a physical change to one car — and buying is separate
+    from running it, so switching between layouts a car already owns is free. Sold on
+    `HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` pages.
+
+53. **The challenge gets a MINIMAL entry point, not its old screen back.** Decision 15
+    kept the Daily/Weekly/Monthly challenge and `RunSession` has always driven it, but
+    after `hq_challenge.gd` was deleted nothing could reach it. Stage 9 adds a
+    `CHALLENGE` page that names each period, its stage count and its rating cap, and hands
+    off to the shared car page. NO cloud board, NO standing, NO reward explainer — those
+    were the old screen's and are not rebuilt; the alternative offered (a full screen) was
+    declined as too much for an audit stage.
+
+54. **Every `LifetimeStats` id must have a writer.** `distance_driven_m` shipped in stage
+    7 declared but unwritten, which reads as a broken counter rather than an unfinished
+    feature — the Stats page showed a row pinned at zero. `world.gd` now snapshots
+    `TrackProgress.progress_offset()` at the finish crossing and `RunSession
+    .report_event_result` writes it. If you add an id, wire its writer in the same change.
+
 ## The new loop, end to end
 
 ```
@@ -691,9 +714,9 @@ credit. Deleting it removes that seam entirely.
    reason to drive well rather than merely clear the timer.
 3. **Coins** picked up mid-stage, boosting what the stage pays.
 
-Sinks: cars, boost levels, perks, the engine-swap unlock (decision 17) and
-cosmetic wheels (decision 25). Five sinks against three sources, versus today's
-one source and two sinks.
+Sinks: cars, boost levels, perks, the engine-swap unlock (decision 17),
+per-car drivetrain conversions (decision 52) and cosmetic wheels (decision 25).
+Six sinks against three sources, versus today's one source and two sinks.
 
 **One knock-on to re-point:** `ChallengeSession.try_grant_completion_reward`
 currently pays out through `RallyLibrary.stars_for_placement`. The challenge

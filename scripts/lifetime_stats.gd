@@ -22,12 +22,11 @@ extends RefCounted
 #
 # WHICH COUNTERS ARE ACTUALLY WRITTEN, AND WHERE (see each stat's own comment below
 # for the call site):
-#   wired    — STAGES_CLEARED, RUNS_STARTED, RUNS_FAILED, REGIONS_CLEARED_TOTAL,
-#              DAMAGE_TAKEN, MONEY_EARNED, MONEY_SPENT, BEST_REGION_ORDER,
-#              COINS_COLLECTED
-#   declared but NOT YET WRITTEN — DISTANCE_DRIVEN_M (see its own comment: the
-#              odometer this would read, `TrackProgress.progress_offset()`, exists
-#              but nothing currently reports a stage's final distance to Save)
+#   EVERY stat here is written — STAGES_CLEARED, RUNS_STARTED, RUNS_FAILED,
+#   REGIONS_CLEARED_TOTAL, DAMAGE_TAKEN, MONEY_EARNED, MONEY_SPENT, BEST_REGION_ORDER,
+#   COINS_COLLECTED, DISTANCE_DRIVEN_M. A DECLARED-BUT-UNWRITTEN stat is a row on the
+#   Stats page pinned at zero forever, which reads as a broken counter rather than an
+#   unfinished feature: if you add an id here, wire its writer in the same change.
 
 const STAGES_CLEARED := "stages_cleared"
 const RUNS_STARTED := "runs_started"
@@ -84,11 +83,12 @@ const STATS := {
 	},
 	DISTANCE_DRIVEN_M: {
 		"label": "Distance driven",
-		"description": "Metres driven across every stage. DECLARED BUT NOT YET " +
-			"WRITTEN: no call site currently reports a stage's final along-track " +
-			"distance to Save. TrackProgress.progress_offset() (read live by " +
-			"car.gd's crosswind) is the natural odometer to report from once a " +
-			"stage-end hook is wired — see this file's own header note.",
+		"description": "Metres driven across every stage, missed stages included — " +
+			"the distance was driven either way. world.gd snapshots " +
+			"TrackProgress.progress_offset() at the finish crossing (a BEST-offset " +
+			"odometer: forward progress down the centreline, never rewarding a " +
+			"reverse or a wander off it) and passes it to " +
+			"RunSession.report_event_result, which writes it here.",
 	},
 	BEST_REGION_ORDER: {
 		"label": "Deepest region reached",

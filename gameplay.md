@@ -311,8 +311,8 @@ gone — a placement-shaped economy makes no sense in a game with no placements.
    reason to drive well rather than merely clear.
 3. **Coins**, banked at stage clear.
 
-**Five sinks:** cars, boost levels, perks, the engine-swap unlock, and cosmetic
-wheels. Against the career's single source and two sinks, that's an economy with
+**Six sinks:** cars, boost levels, perks, the engine-swap unlock, per-car drivetrain
+conversions, and cosmetic wheels. Against the career's single source and two sinks, that's an economy with
 somewhere to go — and every sink competes with every other, which is what makes
 "what do I buy?" a question worth asking after a failed run.
 

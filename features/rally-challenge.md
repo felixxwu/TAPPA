@@ -8,7 +8,7 @@ same object as a region run ("N sequential stages, no rivals, with a fail
 rule"), which is exactly why it shares `RunSession` with the region run rather
 than keeping its own session type.
 
-**Tests:** `tests/headless/test_challenge_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_challenge_run_end.gd`, `tests/headless/test_challenge_leaderboard.gd`
+**Tests:** `tests/headless/test_challenge_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_challenge_run_end.gd`, `tests/headless/test_challenge_leaderboard.gd`, `tests/headless/test_hub_shell.gd` (the CHALLENGE page + its nav)
 
 **This doc owns the challenge's own half only.** The shared run spine —
 `RunSession`, the `RunMode` strategy seam, the persisted run slot, the field
@@ -191,27 +191,36 @@ equals the displayed cap, so the challenge path rounds in exactly one place:
   lists hold the same cars — a UI reads `eligible` as "what can enter" and
   `ready` as "what to name"). `eligible_cars` is just its `"eligible"` list.
 
-## The flat entry screen does not exist yet
+## The entry screen is MINIMAL, on purpose (decision 53)
 
-**Everything this section used to document — `hq_challenge.gd`'s garage-station
-overlay, its Daily/Weekly/Monthly tab row, the win-condition/reward/eligible-cars/
-progress readout, `hq.gd`'s `CarparkMode.CHALLENGE` car-park hand-off — is gone.**
-`hq.gd`, `hq_challenge.gd`, `hq_overlays.gd` and `hq_carpark.gd` were all deleted
-in the diegetic-hub demolition (decision 9). Every piece of business logic those
-files orchestrated (the win-condition fetch, the caching/generation-guard
-pattern, the per-visit cache, the signed-out short-circuit, the car picker) is
-recorded as a requirement in `todo/roguelike-pivot.md` → "Salvaged from
-`hq_challenge.gd` — what the flat rebuild MUST reproduce" — read that section
-before building the replacement screen, not this doc, since this doc no longer
-has a live UI to describe. Stage 4+ of the pivot plan (`todo/roguelike-pivot-plan.md`)
-is where the flat hub, including a challenge entry point, gets built; nothing
-in `scripts/` today opens a challenge except a direct `RunSession.start(kind,
-owned_car, unix_time)` call, which currently has **no menu caller at all**.
+`HubShell.View.CHALLENGE` (`hub_shell.gd::_build_challenge`), reached from the hub's
+"Rally challenge" row. It is the smallest screen that makes the mode reachable:
 
-If you're implementing that screen: the pieces above (`ChallengeRunMode.classify_cars`,
-`displayed_ceiling`, `CHALLENGE_TOP_FRACTION`, `try_grant_completion_reward`)
-are all still live and unit-tested — build the new screen on them, don't
-re-derive any of the comparisons they already own.
+- one row per period (Daily / Weekly / Monthly), naming its **stage count** and its
+  **rating cap** (`ChallengeRunMode.displayed_ceiling`);
+- a period ALREADY RUN — completed or DNF'd — is shown, marked and unfocusable rather
+  than hidden. It is one attempt per period (`RunSession.start` refuses a second), so a
+  row that looked live and did nothing would read as a bug;
+- picking one hands off to the shell's SHARED car page, which in challenge mode judges
+  every owned car with `ChallengeRunMode.classify_cars` and shows an over-ceiling car
+  disabled and labelled rather than hiding it — a player whose only car is too fast needs
+  to see why the list is empty;
+- `_begin_run` then calls `RunSession.start(kind, owned_car, unix_time)`.
+
+**What it deliberately does NOT show**, all of which `hq_challenge.gd` did:
+the cloud leaderboard, the player's own standing, the win-condition text, the reward
+rule, and the eligible-car/progress readout. Those went with the diegetic-hub demolition
+(decision 9, which deleted `hq.gd`, `hq_challenge.gd`, `hq_overlays.gd`,
+`hq_carpark.gd` and its `CarparkMode.CHALLENGE` hand-off), and rebuilding them was
+declined in stage 9 as too much for an audit stage.
+
+**Before you build the fuller screen**, read `todo/roguelike-pivot.md` → "Salvaged from
+`hq_challenge.gd` — what the flat rebuild MUST reproduce": the win-condition fetch, the
+caching/generation-guard pattern, the per-visit cache and the signed-out short-circuit are
+recorded there as requirements, and none of them are in the minimal screen. The business
+logic they hang off (`ChallengeRunMode.classify_cars`, `displayed_ceiling`,
+`CHALLENGE_TOP_FRACTION`, `try_grant_completion_reward`) is all still live and
+unit-tested — build on those, don't re-derive the comparisons they already own.
 
 ## Car lock (§2) — the RUN is locked to a car, the CAR is not reserved
 

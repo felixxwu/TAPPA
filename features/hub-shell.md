@@ -14,17 +14,18 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 ## Deliberately plain, and deliberately temporary
 
 Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
-still holds — the shell is stacked pages of plain buttons, now eight of them rather than
+still holds — the shell is stacked pages of plain buttons, now eleven of them rather than
 four (stage 6 added `SHOP` / `BOOST_SHOP` in place, on this same script, rather than
-spinning off a dedicated one; stage 7 added `PERKS` and `STATS`). **Do not
+spinning off a dedicated one; stage 7 added `PERKS` and `STATS`; stage 9 added
+`CHALLENGE` and the `DRIVETRAIN` pair). **Do not
 invest in its looks, and do not grow it past what a plain button list can hold** — give a
 future screen its own script if it needs anything richer than a row-of-buttons page. The
 whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The eight pages
+## The eleven pages
 
 `HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`, `PERKS`,
-`STATS`. One page is
+`STATS`, `CHALLENGE`, `DRIVETRAIN`, `DRIVETRAIN_CAR`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
 
@@ -38,11 +39,24 @@ next, so a stale page can never sit under the tree still claiming input.
 | `BOOST_SHOP` | One row per `BoostLibrary.CATALOGUE` id: level, price of the next level, `BoostLibrary.effect_range_text` |
 | `PERKS` | One row per `PerkLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([perks.md](perks.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
+| `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |
+| `DRIVETRAIN` | Owned cars, each showing the layout it runs |
+| `DRIVETRAIN_CAR` | That car's three layouts: running / owned (free switch) / priced |
 
-`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`, `BOOST_SHOP → SHOP → MAIN`, and
-`PERKS`/`STATS → MAIN`.
+`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`, `BOOST_SHOP → SHOP → MAIN`,
+`DRIVETRAIN_CAR → DRIVETRAIN → SHOP → MAIN`, and `PERKS`/`STATS`/`CHALLENGE → MAIN`.
+**The `CAR` page serves two flows**, so its back destination is conditional: `CHALLENGE`
+when `_pending_challenge` is set, `REGION` otherwise — in `_back()` AND on the page's own
+Back button, which is a thing to get wrong once and only once (a test pins both).
 `MAIN` and `SUMMARY` are roots and absorb Back rather than dropping the player into a page
 they never opened.
+
+Drivetrain conversions are the sixth money sink and hang off `SHOP`, per-car rather than
+as a global unlock — buying AWD on one car says nothing about another, because the
+conversion is a physical change to that car. Buying and RUNNING a layout are separate
+steps (the same split perks use): a bought layout becomes a free switch, since you buy the
+hardware once and then run whichever you like. See [region-runs.md](region-runs.md) →
+*The meta tier*.
 
 Car BUYING lives on the `CAR` page rather than a `SHOP` sub-page, per decision 28's own
 wording ("the car select screen offers a Buy action for unowned cars") — one list serves
@@ -58,7 +72,7 @@ actually does.
 new menu to ship with a nav test in the same piece of work. Every page here goes through
 `MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
 `MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all eight views and asserts each
+and silently break the contract. `test_hub_shell.gd` walks all eleven views and asserts each
 has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
 even when every purchasable row on them is disabled (unaffordable or at its level cap):
 `Back` is always a live `_action`, so the assertion holds regardless of the player's money.
@@ -112,11 +126,14 @@ a player loses a run they meant to finish.
 
 ## Known gaps, by design
 
-- **No challenge entry point.** The Daily/Weekly/Monthly challenge is retained (decision
-  15) and `RunSession` already drives it through `ChallengeRunMode`, but its flat screen is
-  still outstanding — see `todo/roguelike-pivot.md` → *Salvaged from `hq_challenge.gd`* for
-  the orchestration that screen must reproduce.
+- **The challenge screen is MINIMAL, deliberately.** `CHALLENGE` names each period, its
+  stage count and its rating cap, and hands off to the shared `CAR` page. It shows no cloud
+  leaderboard, no standing, and no explanation of the placement reward — `hq_challenge.gd`
+  did all three and is deleted. See `todo/roguelike-pivot.md` → *Salvaged from
+  `hq_challenge.gd`* for the orchestration a full screen would reproduce.
 - **No re-displayed "locked" swap UI.** The Engine Swap unlock can be BOUGHT (the `SHOP`
   page), but there is no picker screen yet that re-checks
   `RallyLibrary.engine_swaps_unlocked` and shows a locked state — see
   [engine-swap.md](engine-swap.md) for the two old consumers that used to and are gone.
+  (The DRIVETRAIN pages are the pattern such a screen would follow: pick a car, then pick
+  what to do to it.)

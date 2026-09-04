@@ -425,7 +425,8 @@ func _clear_persisted() -> void:
 #
 # Does its OWN local bookkeeping only — it does not talk to the cloud board itself;
 # that happens in the interstitial page via Cloud.challenge_leaderboard.
-func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected: int = 0) -> void:
+func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected: int = 0,
+		distance_m: float = 0.0) -> void:
 	if not _active or not _stage_running:
 		return
 	_stage_running = false
@@ -443,6 +444,11 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		# was taken, and DAMAGE_TAKEN is a monotonic ledger (it gates a perk unlock, so
 		# letting it run backwards would un-unlock a perk the player had earned).
 		Save.heal_car(_car_instance_id, -hp_lost)
+	# METRES DRIVEN, counted on every stage whether or not it was missed — the distance
+	# was driven either way. world.gd snapshots it at the finish crossing off
+	# TrackProgress.progress_offset(); an int ledger like every other lifetime counter.
+	if distance_m > 0.0:
+		Save.add_lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M, int(round(distance_m)))
 	if coins_collected > 0:
 		# Counted UNCONDITIONALLY, like DAMAGE_TAKEN above — a coin picked up on a
 		# missed stage was still a real detour the player drove (decision 35's
