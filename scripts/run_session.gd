@@ -314,10 +314,31 @@ func resume(unix_time: int) -> bool:
 # Discard a stored run that can no longer be resumed, with no further posting —
 # §3: "the run is discarded locally (no further posts)". No-op if the stored run is
 # empty or still resumable.
+# Throw away a paused run without finishing it. THE ATTEMPT IS BURNED, not refunded
+# (decision 48): the mode records a DNF outcome first, so a challenge period the player
+# started and walked away from cannot be restarted from stage 1.
+#
+# Without this, decision 27's one-slot rule hands out a free retry — starting a region run
+# discards the paused challenge, which used to write no outcome at all, so the player could
+# reroll a daily until they liked their opening stage. The UI must say plainly that
+# quitting costs the attempt; a silent burn is the version of this rule that is unfair.
+func discard_run(unix_time: int) -> void:
+	var record: Dictionary = Save.profile.get(Save.KEY_RUN, {})
+	if record.is_empty():
+		return
+	var mode := _mode_from_record(record, unix_time)
+	if mode != null:
+		mode.record_outcome({"dnf": true, "completed": false,
+			"cumulative_ms": 0, "abandoned": true}, unix_time)
+	Save.clear_run()
+
+
+# Back-compat name for the stale-run path (a run whose period has since rolled over).
+# Same rule: a stale run has still been attempted.
 func discard_stale_run(unix_time: int) -> void:
 	if not has_stale_run(Save.profile, unix_time):
 		return
-	Save.clear_run()
+	discard_run(unix_time)
 
 
 func _persist() -> void:

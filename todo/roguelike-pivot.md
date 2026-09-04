@@ -4,6 +4,7 @@
 gameplay loop, from the Gran-Turismo-shaped career it ships today to a run-based
 roguelike modelled on `felixxwu/roguelike-rally` (**RR** below). All decisions
 are settled and there are no open questions; what remains is execution.
+Decisions 46-49 were settled during stage 3, from holes the implementation found.
 
 **On the numbering:** the list runs 1–36 then 38–45 — **44 decisions, and there is
 no decision 37.** The gap is an artefact of a renumbering during review. It is
@@ -152,6 +153,26 @@ Settled with the user during the brainstorm that produced this file:
     difficulty ladder. Accepted deliberately — one demolition consequence, in
     Hazards: the credits trigger dies with specials and must be removed, not left
     dangling on a predicate that can never be true.
+
+46. **`greece_coast` gets more authored events** rather than a repeat-refilled bag.
+    It has 3; a single 8-stage run needs 8, and the spec's no-repeat-across-two-runs
+    floor wants 16. The `RegionStagePool` refill that currently covers a short pool
+    is a STOPGAP and must never fire once stage 4's authoring lands. Do not "solve"
+    a short pool by shortening the run — 8 stages is the run's identity.
+47. **`test_menu_flow.gd` is salvaged, not deleted.** 5884 lines, 146 parse errors,
+    all from driving the deleted `HqController` — but it holds the only coverage of
+    start-line preflight, wheel swap and cloud boot gating. Read it, re-point the
+    assertions whose subject survives at the flat shell once that exists, delete the
+    rest. Its own stage, after the shell.
+48. **Discarding a paused challenge run BURNS the attempt, behind a hard confirm.**
+    Decision 27's one-slot rule otherwise hands out a free retry: discarding writes
+    no `challenge_results` outcome, so the player can restart the same period from
+    stage 1 and reroll until they like their start. The confirm must say plainly
+    that quitting costs the attempt — the rule is fine, a silent surprise is not.
+49. **`CLAUDE.md`'s stale game description is corrected** (it called `gameplay.md`
+    "Gran Turismo, but with rally stages" and cited a "final showdown"). Every agent
+    reads that file. `README.md` is deliberately NOT changed yet, and `main` stays
+    parked until the loop is playable end to end.
 
 ## The new loop, end to end
 

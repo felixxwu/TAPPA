@@ -206,6 +206,35 @@ func test_resume_restores_the_stage_and_banked_times_of_a_stored_run() -> void:
 # random region look) cannot occur once nothing can author a pending free-roam pick.
 
 
+# --- Discarding burns the attempt (decision 48) --------------------------------
+
+# Decision 27 gives the profile ONE run slot, so starting a region run discards a paused
+# challenge. That used to write no outcome, which handed the player a free retry: quit a
+# daily, start anything else, and the daily was startable again from stage 1. The attempt
+# is burned instead. Asserts the RULE, not any stored field's spelling.
+func test_discarding_a_paused_run_burns_the_attempt() -> void:
+	var t := int(Time.get_unix_time_from_system())
+	var car := _grant()
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, car, t), "setup: a daily is running")
+	assert_false(ChallengeRunMode.is_period_finished(ChallengeLibrary.DAILY, _save.profile, t),
+		"setup: the period is not finished while the run is live")
+	RunSession.pause_run()
+
+	RunSession.discard_run(t)
+
+	assert_true(ChallengeRunMode.is_period_finished(ChallengeLibrary.DAILY, _save.profile, t),
+		"the discarded period counts as attempted — no free retry")
+	assert_false(RunSession.start(ChallengeLibrary.DAILY, car, t),
+		"and the same period cannot be started again")
+
+
+func test_discarding_with_no_run_is_a_no_op() -> void:
+	var t := int(Time.get_unix_time_from_system())
+	RunSession.discard_run(t)  # nothing paused
+	assert_false(ChallengeRunMode.is_period_finished(ChallengeLibrary.DAILY, _save.profile, t),
+		"discarding nothing does not burn an attempt the player never started")
+
+
 # --- eligible_cars --------------------------------------------------------------
 
 func test_eligible_cars_admits_under_the_ceiling_and_excludes_over_it() -> void:

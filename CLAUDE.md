@@ -24,13 +24,16 @@
   mouse / touch). When you ADD a new menu or CHANGE an existing one, wire its
   navigation in the SAME piece of work and add/update a nav test — see
   `features/menu-navigation.md` for the how (the `MenuNav.attach`
-  framework for flat widget lists vs. the `hq.gd._unhandled_input` pattern for
-  the diegetic 3D HQ). Don't ship a menu reachable only by pointer.
-- `gameplay.md` is the high-level gameplay design / vision doc ("Gran Turismo,
-  but with rally stages") — the north star the `todo/` specs ladder up to. Read
-  it for intent on progression, damage, rewards, tuning, and the final showdown.
-  It's design-level, not an implementation spec; keep it aligned when gameplay
-  direction changes.
+  framework for flat widget lists). The diegetic 3D HQ and its
+  `hq.gd._unhandled_input` spatial pattern are DELETED — every menu is a flat
+  page now. Don't ship a menu reachable only by pointer.
+- `gameplay.md` is the high-level gameplay design / vision doc ("Eight stages,
+  one clock" — a rally roguelike) — the north star the `todo/` specs ladder up
+  to. Read it for intent on the run loop, the timer as sole fail state, soft
+  permadeath, regions, boosts, perks, repair and the money economy. It's
+  design-level, not an implementation spec; keep it aligned when gameplay
+  direction changes. `todo/roguelike-pivot.md` is the settled decision record
+  and wins over `gameplay.md` on any disagreement.
 
 ## Todo / specs folder
 
