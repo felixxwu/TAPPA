@@ -69,9 +69,24 @@ func _fresh_field(owned: Dictionary) -> GameConfig:
 	return fresh.config
 
 
-func _owned(upgrades: Array, disabled: Array, tuning: Dictionary) -> Dictionary:
+# The fixture car with `fitted` effects, minus the `parked` ones, plus `tuning`.
+#
+# THE TWO-LIST SIGNATURE IS KEPT ON PURPOSE. It used to be `installed_upgrades` +
+# `disabled_upgrades` — a part could be fitted and toggled off — and every call site below
+# expresses a live refit as "same fitted list, one more id parked". That IS the thing under
+# test (a change to the ACTIVE set re-derived on a staged car), so the shape stays and only
+# the seam moves: `UpgradeLibrary.active_effects` reads `boosts`, so the two lists are
+# resolved to one active set here.
+#
+# An owned dict still carrying the old keys applies NOTHING, which is how the assertions in
+# this file went silently vacuous across the pivot — a car compared against itself.
+func _owned(fitted: Array, parked: Array, tuning: Dictionary) -> Dictionary:
+	var active: Array = []
+	for id in fitted:
+		if not parked.has(id):
+			active.append(id)
 	return {"model_id": "fx_light_rwd", "instance_id": 1,
-		"installed_upgrades": upgrades, "disabled_upgrades": disabled, "tuning": tuning}
+		"boosts": UpgradeFixtures.boosts(active), "tuning": tuning}
 
 
 # Regression (the "really slow after removing the turbo" bug): a live upgrade change

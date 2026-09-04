@@ -43,9 +43,23 @@ func before_each() -> void:
 	_car = _scene.get_node("Car")
 
 
-func _owned(disabled: Array) -> Dictionary:
+# The fixture car wearing the snow compound, unless `parked` names it.
+#
+# THE ARGUMENT IS THE PARKED (inactive) LIST, kept that way deliberately: it used to be
+# `disabled_upgrades` beside a fixed `installed_upgrades`, and every call site below reads
+# `_owned([])` as "the compound is on" / `_owned(["fx_snow_tires"])` as "the compound is
+# off". Flipping the argument's sense to an active list would have inverted seventeen call
+# sites silently.
+#
+# What DID change is the seam. `UpgradeLibrary.active_effects` reads a car's `boosts` list
+# now; the persistent parts model that filled `installed_upgrades`/`disabled_upgrades` is
+# deleted (todo/roguelike-pivot.md). An owned dict still carrying the old keys applies
+# NOTHING, so every assertion about a fitted compound compared a value to itself and
+# passed — which is exactly how this file went quietly red-then-green across the pivot.
+func _owned(parked: Array) -> Dictionary:
+	var active: Array = [] if parked.has("fx_snow_tires") else ["fx_snow_tires"]
 	return {"model_id": "fx_light_rwd", "instance_id": 1,
-		"installed_upgrades": ["fx_snow_tires"], "disabled_upgrades": disabled, "tuning": {}}
+		"boosts": UpgradeFixtures.boosts(active), "tuning": {}}
 
 
 func _wait(frames: int) -> void:

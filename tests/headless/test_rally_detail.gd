@@ -32,9 +32,12 @@ func after_all() -> void:
 	SaveTestHelpers.cleanup(TEST_PATH)
 
 
-# A minimal OwnedCar dict — just the fields effective_meta / _entry_plan read.
-func _owned(model_id: String, tuning := {}, upgrades := []) -> Dictionary:
-	return {"model_id": model_id, "tuning": tuning, "installed_upgrades": upgrades}
+# A minimal OwnedCar dict — just the fields effective_meta / entry_plan read. `bought` is
+# the car's `drivetrain_modes_bought` list: `convertible_for` gates on the target layout
+# being PAID FOR (Save.drive_mode_available), so a car with an empty list is never a
+# conversion candidate however wrong its stock layout is.
+func _owned(model_id: String, tuning := {}, bought := []) -> Dictionary:
+	return {"model_id": model_id, "tuning": tuning, "drivetrain_modes_bought": bought}
 
 
 func test_empty_roster_counts_nothing() -> void:
@@ -58,9 +61,13 @@ func test_drive_mode_restriction_counts_only_matching_cars() -> void:
 	# (`adjust` used to be a subset of `qualify`, because the car park silently switched such
 	# a car at the Start button and counted it as qualifying; that auto-switch is gone.)
 	var rally := {"restriction": {"drive_mode": CarFixtures.RWD}}
+	# The two non-RWD cars have BOUGHT the RWD layout (decision 52 made conversions a real
+	# purchase — Save.buy_drive_mode). Without that they would not be convertible at all,
+	# which is the point `convertible_for` enforces and what this test would otherwise
+	# quietly stop measuring.
 	var roster := [
-		_owned("fx_light_rwd"), _owned("fx_fwd_hatch"),
-		_owned("fx_rwd_coupe"), _owned("fx_awd"),
+		_owned("fx_light_rwd"), _owned("fx_fwd_hatch", {}, [CarFixtures.RWD]),
+		_owned("fx_rwd_coupe"), _owned("fx_awd", {}, [CarFixtures.RWD]),
 	]
 	var summary: Dictionary = RallyDetail.eligibility_summary(rally, roster)
 	assert_eq(summary["total"], 4, "every resolvable car is counted in the roster size")
