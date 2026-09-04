@@ -1,12 +1,22 @@
 # TAPPA
 
-A rally career game built in Godot — "Gran Turismo, but with rally stages."
-You build and tune a garage of cars, enter seeded rallies on a world map, and
-chase a clean combined time across three events per rally, all while every car
-you field is a real asset that damage never destroys but always slows: crash it and
-it stumbles and runs out of revs for the rest of the rally, then costs stars to
-repair. See [`gameplay.md`](gameplay.md) for the full
-design vision — it's the north star the implementation ladders up to.
+A rally roguelike built in Godot — **eight stages, one clock, no second chances.**
+Pick a region, pick a car, and drive eight point-to-point stages back to back.
+Every stage carries a target time: beat it and you bank money and take a boost;
+miss it and the run ends on the spot. There is no rival field and no placement —
+there is the clock, the car you brought, and how much of that car is still working
+by stage six, because damage never destroys a car but always slows it.
+
+A failed run costs you the run and nothing else: money, owned cars, purchased
+perks, boost levels and lifetime stats all survive it. You lose runs and get
+stronger anyway. See [`gameplay.md`](gameplay.md) for the full design vision —
+it's the north star the implementation ladders up to.
+
+> **Mid-pivot.** The game is being rebuilt from a Gran-Turismo-style career loop
+> into the roguelike above. `todo/roguelike-pivot.md` is the settled decision
+> record and wins over every other document; `todo/roguelike-pivot-plan.md` is the
+> order of work. Feature docs under `features/` may still describe deleted systems
+> — they are being swept as the pivot lands.
 
 ## Engine version
 
@@ -20,7 +30,7 @@ The Godot project lives at the **repository root** — `project.godot`,
 subdirectory to `cd` into.
 
 For how the codebase itself works, start at [`features/README.md`](features/README.md) —
-an agent-oriented index of ~60 feature docs (car physics, drivetrain, engine,
+an agent-oriented index of the feature docs (car physics, drivetrain, engine,
 terrain, rendering, menus, testing, and more).
 
 ## Running the tests
@@ -30,7 +40,8 @@ terrain, rendering, menus, testing, and more).
 ./run_tests.sh --fast <name> # only test files matching <name>, for quick iteration
 ```
 
-A full run currently takes roughly 8 minutes. Set `$GODOT` if your Godot binary
+A full run takes roughly 5 minutes on a development machine (about 9 on a slower
+CI-class container). Set `$GODOT` if your Godot binary
 isn't at one of the runner's default locations. See
 [`features/testing.md`](features/testing.md) for the full test-suite writeup.
 
