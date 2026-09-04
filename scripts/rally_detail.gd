@@ -322,7 +322,7 @@ static func body_width(host: Node, preferred: float, chrome := 88.0) -> float:
 # instance id: reading the missing key as 0 would print `WRECKED` for a brand-new car, and
 # defaulting it to full would print a figure the grant is free to contradict. Health is a property
 # of an owned INSTANCE, not of a model — the line is honest one field shorter. (The field is
-# already optional-shaped, exactly as the nitrous suffix is.)
+# already optional-shaped.)
 static func car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
@@ -342,9 +342,8 @@ static func car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	]
 	if hp_text != "":
 		stats += " | %s" % hp_text
-	var nitrous_id := UpgradeLibrary.fitted_nitrous_id(owned)
-	if nitrous_id != "":
-		stats += " | %s" % String(UpgradeLibrary.by_id(nitrous_id).get("name", ""))
+	# The fitted-nitrous suffix went with the parts model: nitrous was a catalogue PART
+	# (UpgradeLibrary.fitted_nitrous_id), and nothing is fitted to a car any more.
 	return stats
 
 
@@ -383,21 +382,23 @@ static func restriction_text(rally_restriction: Dictionary) -> String:
 # Entry is purely CATEGORICAL (body/country/doors/cylinders/displacement/drive mode), so
 # there is no "too fast" or "too slow" car — only a car of the wrong kind. It judges the
 # car AS BUILT and proposes nothing: a wrong-drivetrain car is simply ineligible, and
-# converting it is a garage decision the player makes themselves, where the conversion's
-# star price is on screen (features/upgrade-catalogue.md).
+# converting it is a garage decision the player makes themselves.
 static func entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var entry := CarLibrary.for_owned(car)
 	return {"eligible": RallyLibrary.is_eligible(rally, UpgradeLibrary.effective_meta(car, entry))}
 
 
-# Whether this car is ineligible ONLY on drive mode — i.e. converting it (which the player
-# does themselves in the garage, for stars) would let it in. Requires the conversion
-# capability to be unlocked at all, so the panel never suggests a fix the player cannot buy.
+# Whether this car is ineligible ONLY on drive mode — i.e. switching it would let it in.
+# Asks Save.drive_mode_available, so the panel never suggests a layout this car cannot
+# actually run. The garage-wide "is conversion unlocked at all" capability it used to check
+# first was a parts-catalogue gate (UpgradeLibrary.drivetrain_swap_unlocked) and is deleted;
+# the per-car paid-for record is the whole rule now — see the MONEY SEAM note in
+# save_manager.gd, which is where a conversion will be sold.
 static func convertible_for(rally: Dictionary, car: Dictionary, entry: Dictionary) -> bool:
 	var r: Dictionary = rally.get("restriction", {})
 	if not r.has("drive_mode"):
 		return false
-	if not UpgradeLibrary.drivetrain_swap_unlocked(Save.profile):
+	if not Save.drive_mode_available(car, int(r["drive_mode"])):
 		return false
 	var switched := UpgradeLibrary.effective_meta(car, entry).duplicate()
 	switched["drive_mode"] = int(r["drive_mode"])

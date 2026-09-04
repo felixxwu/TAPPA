@@ -7,12 +7,8 @@ extends GutTest
 const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
 
-func before_each() -> void:
-	UpgradeFixtures.install()
 
 
-func after_each() -> void:
-	UpgradeFixtures.restore()
 
 
 func _cfg() -> GameConfig:
@@ -63,17 +59,20 @@ func test_grip_balance_needs_no_upgrade() -> void:
 	assert_gt(cfg.wheel_friction_slip_front, 0.8, "grip balance applies with no upgrades")
 
 
-func test_aero_balance_is_gated_by_the_aero_upgrade() -> void:
-	# No aero kit → aero_balance is a no-op even at full slider.
-	var locked := _cfg()
-	TuningLibrary.apply({"installed_upgrades": [], "tuning": {"aero_balance": 1.0}}, locked)
-	assert_almost_eq(locked.downforce_front, 0.5, 0.0001, "no aero kit: front downforce unchanged")
-	assert_almost_eq(locked.downforce_rear, 0.5, 0.0001, "no aero kit: rear downforce unchanged")
-	# With the aero kit, +1 shifts downforce rearward by tuning_aero_authority.
-	var unlocked := _cfg()
-	TuningLibrary.apply({"installed_upgrades": ["fx_aero"], "tuning": {"aero_balance": 1.0}}, unlocked)
-	assert_almost_eq(unlocked.downforce_front, 0.5 * 0.5, 0.0001, "aero kit: +1 drops front downforce")
-	assert_almost_eq(unlocked.downforce_rear, 0.5 * 1.5, 0.0001, "aero kit: +1 raises rear downforce")
+# CHANGED DELIBERATELY: aero_balance used to be GATED on owning the aero kit. Tuning is
+# ungated in the pivot (todo/roguelike-pivot.md decision 24) and the kit that gated it went
+# with the parts model, so the axis now applies on any car. What is still worth pinning is
+# the SHIFT ITSELF -- +1 moves downforce rearward -- not who is allowed to ask for it.
+func test_aero_balance_shifts_downforce_rearward_on_any_car() -> void:
+	var cfg := _cfg()
+	TuningLibrary.apply({"tuning": {"aero_balance": 1.0}}, cfg)
+	assert_lt(cfg.downforce_front, 0.5, "+1 drops front downforce")
+	assert_gt(cfg.downforce_rear, 0.5, "and raises rear downforce")
+
+	var neutral := _cfg()
+	TuningLibrary.apply({"tuning": {"aero_balance": 0.0}}, neutral)
+	assert_almost_eq(neutral.downforce_front, 0.5, 0.0001, "a centred slider changes nothing")
+	assert_almost_eq(neutral.downforce_rear, 0.5, 0.0001)
 
 
 func test_brake_bias_is_tunable_with_no_upgrades() -> void:
@@ -120,13 +119,10 @@ func test_out_of_range_sliders_clamp() -> void:
 	assert_lt(cfg.brake_bias, 1.0, "brake bias never saturates past the split")
 
 
-func test_axis_unlocked_reports_gating() -> void:
-	var bare := {"installed_upgrades": []}
-	assert_true(TuningLibrary.axis_unlocked(bare, "grip_balance"), "grip always tunable")
-	assert_true(TuningLibrary.axis_unlocked(bare, "brake_bias"), "brake bias always tunable")
-	assert_false(TuningLibrary.axis_unlocked(bare, "aero_balance"), "aero locked without the kit")
-	var kitted := {"installed_upgrades": ["fx_aero"]}
-	assert_true(TuningLibrary.axis_unlocked(kitted, "aero_balance"), "aero kit unlocks aero balance")
+# NOTE: the aero_balance tuning GATE and its test are deleted. Tuning is ungated in the
+# pivot (todo/roguelike-pivot.md decision 24) and the aero kit that gated it went with the
+# parts model, so TuningLibrary.axis_unlocked has nothing left to answer. The slider
+# CLAMPING and application logic below is unaffected and still covered.
 
 
 func test_engine_detune_scales_torque() -> void:

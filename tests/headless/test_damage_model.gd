@@ -14,7 +14,6 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	UpgradeFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -26,7 +25,6 @@ func after_each() -> void:
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 
@@ -357,12 +355,12 @@ func test_apply_loss_past_zero_clamps_and_signals_nothing() -> void:
 	assert_eq(_save.profile["cars"].size(), 0, "an unbound model never touches the save")
 
 
-func test_bound_model_at_zero_hp_keeps_the_car_and_its_upgrades() -> void:
-	# Running a BOUND car's HP to 0 costs the run's pace, never the car: the instance,
-	# and everything fitted to it, is still in the save afterwards, needing a repair.
+func test_bound_model_at_zero_hp_keeps_the_car() -> void:
+	# Running a BOUND car's HP to 0 costs the run's pace, never the car: the instance is
+	# still in the save afterwards. (It used to assert fitted parts rode along too; there
+	# are no persistent parts any more -- todo/roguelike-pivot.md.)
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	var id := int(car["instance_id"])
-	assert_true(_save.install_upgrade(id, "fx_turbo_small"), "upgrade fitted")
 
 	var dm := DamageModel.new()
 	dm.field(800.0, 40.0, id)
@@ -370,8 +368,6 @@ func test_bound_model_at_zero_hp_keeps_the_car_and_its_upgrades() -> void:
 
 	assert_eq(dm.hp, 0.0, "the model reads empty")
 	assert_false(_save.get_car(id).is_empty(), "the instance is kept in the save")
-	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
-		"the fitted upgrade stays on the car")
 
 
 func test_a_zero_hp_car_is_maximally_weakened_but_still_drivable() -> void:

@@ -9,11 +9,9 @@ extends GutTest
 
 func before_each() -> void:
 	CarFixtures.install()
-	UpgradeFixtures.install()
 
 
 func after_each() -> void:
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 
@@ -68,7 +66,6 @@ func test_a_degenerate_range_does_not_divide_by_zero() -> void:
 	# compare against; "this is the whole range" is the only honest answer.
 	var single: Array[Dictionary] = [CarLibrary.all()[0].duplicate(true)]
 	CarLibrary.override_for_test(single)
-	UpgradeLibrary.override_for_test([] as Array[Dictionary])
 	var frac := CarStatBounds.fraction("pw", CarLibrary.power_to_weight_hp_tonne(
 		UpgradeLibrary.effective_meta({}, single[0])))
 	assert_true(is_finite(frac), "the fraction is a real number")

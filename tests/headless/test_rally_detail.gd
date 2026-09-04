@@ -25,12 +25,10 @@ func before_all() -> void:
 	# off the real profile.
 	SaveTestHelpers.redirect(TEST_PATH)
 	CarFixtures.install()
-	UpgradeFixtures.install()
 
 
 func after_all() -> void:
 	CarFixtures.restore()
-	UpgradeFixtures.restore()
 	SaveTestHelpers.cleanup(TEST_PATH)
 
 

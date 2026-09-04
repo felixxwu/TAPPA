@@ -186,8 +186,6 @@ const BREADCRUMB_BASELINE := [
 	"track_surface.gd",
 	"tree_fall.gd",
 	"tree_silhouette.gd",
-	"upgrade_icons.gd",
-	"upgrade_reveal.gd",
 	"username_popup.gd",
 	"weather_library.gd",
 	"web_fullscreen.gd",

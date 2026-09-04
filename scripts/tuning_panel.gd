@@ -4,16 +4,14 @@ extends VBoxContainer
 # Tests: tests/headless/test_drivetrain.gd, tests/headless/test_menu_flow.gd, tests/headless/test_tuning_panel.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningPanel' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Reusable per-car TUNING slider panel — the three handling axes (grip balance,
 # brake bias, aero balance). Owns its sliders and Save persistence; reports edits
-# via on_change so the host can re-field the car. Used by the HQ lift (hq.gd) and
-# the start-line pre-event grid (start_line.gd). Engine detune is a power (p/w)
-# knob, so its slider lives in the upgrades grid's tune tile (UpgradesGrid), not here. See
-# features/tuning.md.
+# via on_change so the host can re-field the car. Used by the start-line pre-event menu
+# (start_line.gd). Engine detune is a power (p/w) knob, so its slider lives wherever the
+# host draws one, not here. See features/tuning.md.
 
 var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
 var _on_wheels: Callable = Callable()
 var _sliders: Dictionary = {}        # axis -> HSlider
-var _slider_rows: Dictionary = {}    # axis -> row PanelContainer (greyed when locked)
 var _slider_values: Dictionary = {}  # axis -> value Label
 var _built := false
 # The two action buttons. Built here, PLACED BY THE HOST in its bottom action row —
@@ -97,7 +95,7 @@ func _on_wheels_pressed() -> void:
 # Build one handling-axis row via the shared SliderRow builder, then bind the axis-
 # specific bits (value persistence + the axis's slider/value/panel handles refresh()
 # and _reset() reach for). The layout + focus-highlight live in SliderRow so this row
-# can't drift from the detune slider in UpgradeSlotPopup.
+# can't drift from the detune slider in UpgradeSlotPopup (the shared modal picker).
 func _make_slider_row(spec: Dictionary) -> Control:
 	var axis := String(spec["axis"])
 	var handles := SliderRow.build(spec)
@@ -105,26 +103,21 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	slider.value_changed.connect(_on_slider_changed.bind(axis))
 	_sliders[axis] = slider
 	_slider_values[axis] = handles["value_label"]
-	_slider_rows[axis] = handles["panel"]
 	return handles["panel"]
 
 
-# Reflect the stored tuning + each axis's unlock state onto the sliders.
+# Reflect the stored tuning onto the sliders. EVERY AXIS IS EDITABLE: the aero-part gate
+# that used to grey out aero_balance went with the parts model
+# (todo/roguelike-pivot.md decision 24 — "tuning survives, ungated").
 func refresh() -> void:
 	var tuning: Dictionary = _owned.get("tuning", {})
 	for axis in TuningLibrary.AXES:
 		var slider: HSlider = _sliders[axis]
 		var value: Label = _slider_values[axis]
-		var row: Control = _slider_rows[axis]
-		var unlocked := TuningLibrary.axis_unlocked(_owned, axis)
-		slider.editable = unlocked
-		row.modulate = Color(1, 1, 1, 1.0 if unlocked else 0.4)
+		slider.editable = true
 		# set_value_no_signal so syncing the UI doesn't re-save the value.
 		slider.set_value_no_signal(clampf(float(tuning.get(axis, 0.0)), -1.0, 1.0))
-		if unlocked:
-			value.text = "%+.2f" % slider.value
-		else:
-			value.text = "needs Aero Kit"
+		value.text = "%+.2f" % slider.value
 
 
 func _on_slider_changed(value: float, axis: String) -> void:

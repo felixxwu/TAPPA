@@ -2,8 +2,7 @@ extends Node
 # C1 — benchmark fidelity. Does the CarPerformance benchmark lap RANK cars the same
 # way real generated stages do?
 #
-# For a roster spanning the performance range (every catalogue car, stock AND at max
-# potential, so the sample covers the whole power band) this computes:
+# For a roster spanning the performance range (every catalogue car) this computes:
 #   (a) the benchmark time  — BenchmarkTrack + LapTimeModel, frozen conditions
 #   (b) the mean optimum_ms across a sample of REAL GENERATED stages
 # and reports the SPEARMAN RANK CORRELATION between them. Absolute agreement is
@@ -33,7 +32,7 @@ extends Node
 #   --seed=N       base seed for stage generation (default 90001)
 #   --straight=... benchmark_straight_m values to sweep (default: the live config's)
 #   --sweeper=...  benchmark_sweeper_radius_m values to sweep (default: live config's)
-#   --stock-only   roster is stock cars only (default also includes max-potential builds)
+#   --stock-only   accepted and ignored — every car has exactly one build now (see _roster)
 #
 # Design: docs/superpowers/specs/2026-08-15-car-performance-rating-design.md > Calibration.
 
@@ -60,9 +59,11 @@ func _ready() -> void:
 	var base_seed := int(args.get("seed", 90001))
 	var straights := _floats(String(args.get("straight", "")), cfg.benchmark_straight_m)
 	var sweepers := _floats(String(args.get("sweeper", "")), cfg.benchmark_sweeper_radius_m)
-	var include_tuned := not args.has("stock-only")
-
-	var roster := _roster(include_tuned)
+	# `stock-only` used to drop a second "(maxed)" row per car — the same car with the best
+	# part in every slot, via UpgradeLibrary.max_potential_meta. Parts are deleted
+	# (todo/roguelike-pivot.md), so every car has exactly one build and the flag has nothing
+	# left to switch off. Accepted and ignored so an existing invocation still runs.
+	var roster := _roster()
 	print("=== C1 benchmark fidelity ===")
 	print("roster: %d builds   stages: %d   base seed: %d" % [roster.size(), stage_count, base_seed])
 	print("frozen benchmark conditions: mu = %.2f x tire_compound   hairpin r=%.1fm  sweepers=%d" % [
@@ -169,10 +170,9 @@ func _print_outlier(roster: Array, bench_rank: Array, real_rank: Array, row: Dic
 		roster[i]["label"], bench_rank[i], real_rank[i], float(row["delta"])])
 
 
-# Every catalogue car as a solver meta, stock and (unless --stock-only) at max
-# potential. The tuned builds are here to WIDEN the performance range the correlation
-# is measured over, not to represent a real save.
-func _roster(include_tuned: bool) -> Array:
+# Every catalogue car as a solver meta. One build per car: the "(maxed)" second row died
+# with the parts model, which is what used to widen the sampled performance range.
+func _roster() -> Array:
 	var out: Array = []
 	# CarLibrary.CARS, not all(): in a bare tool run the Registry seam behind all() is
 	# not initialised yet (the same reason report_eligibility.gd reads CARS directly),
@@ -180,8 +180,6 @@ func _roster(include_tuned: bool) -> Array:
 	for car in CarLibrary.CARS:
 		var cid := String(car.get("id", "?"))
 		out.append({"label": "%s (stock)" % cid, "meta": car})
-		if include_tuned:
-			out.append({"label": "%s (maxed)" % cid, "meta": UpgradeLibrary.max_potential_meta(car, car)})
 	return out
 
 

@@ -14,7 +14,6 @@ var _save: Node
 func before_each() -> void:
 	_save = get_node("/root/Save")
 	CarFixtures.install()
-	UpgradeFixtures.install()
 	_clean()
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -26,7 +25,6 @@ func after_each() -> void:
 	# Restore the real path so we don't leak the test redirect into other files.
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	CarFixtures.restore()
-	UpgradeFixtures.restore()
 
 
 func _clean() -> void:
@@ -168,12 +166,9 @@ func test_a_worse_replay_keeps_the_best_placement_record() -> void:
 
 
 
-func test_damage_past_zero_keeps_the_car_its_upgrades_and_its_bent_wheels() -> void:
+func test_damage_past_zero_keeps_the_car_and_its_bent_wheels() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
-	# Upgrades are CAR-BOUND — install_upgrade fits the won part straight to the car
-	# (no shared inventory pool for slottable parts).
-	assert_true(_save.install_upgrade(id, "fx_turbo_small"), "upgrade installed")
 	_save.set_wheel_toe(id, [0.05, -0.03, 0.0, 0.0])
 
 	_save.apply_damage(id, 999999.0)  # far past zero
@@ -183,111 +178,8 @@ func test_damage_past_zero_keeps_the_car_its_upgrades_and_its_bent_wheels() -> v
 	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP clamps at exactly zero, never negative")
 	# car_needs_repair() was asserted here too; it is deleted with the paid garage repair
 	# (todo/roguelike-pivot.md decision 21) — see the "Star sinks" block comment further down.
-	# Its upgrades ride along with the car (bound to it; never moved or returned).
-	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
-		"the upgrade is still installed on the 0-HP car")
 	assert_eq(_save.get_car(id)["wheel_toe"], [0.05, -0.03, 0.0, 0.0],
 		"and its stored wheel_toe is untouched — no hidden restore")
-
-
-func test_install_disables_same_slot_incumbent() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_small"), "first engine kit fitted")
-	# Applying a second engine upgrade keeps both on the car but switches the
-	# incumbent off — at most one ENABLED part per slot.
-	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_big"), "second engine kit fitted")
-	var fitted_car: Dictionary = _save.get_car(car["instance_id"])
-	var fitted: Array = fitted_car["installed_upgrades"]
-	assert_true(fitted.has("fx_turbo_small") and fitted.has("fx_turbo_big"),
-		"both engine kits stay applied to the car")
-	assert_true(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_big"), "the newly-applied kit is enabled")
-	assert_false(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_small"),
-		"the same-slot incumbent is disabled, not scrapped")
-
-
-func test_no_slot_is_hidden_so_every_part_installs_as_asked() -> void:
-	# The hidden-slot rule (Save.install_upgrade -> UpgradeLibrary.installs_enabled) forces a
-	# part in a slot with NO GARAGE ROW to install enabled, since installing it disabled
-	# would leave it permanently dead. `nitrous` was the only slot that ever claimed it and
-	# now has a row of its own, so UpgradeLibrary.HIDDEN_SLOTS is empty and the rule is
-	# DORMANT — every part installs exactly as the caller asked.
-	#
-	# Asserted rather than deleted so the dormancy is visible: if a slot is hidden again the
-	# rule wakes up, and this test is where that shows.
-	assert_true(UpgradeLibrary.HIDDEN_SLOTS.is_empty(), "no slot is hidden from the garage")
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	assert_true(_save.install_upgrade(car["instance_id"], "fx_hidden", false),
-		"the part is fitted")
-	var fitted: Dictionary = _save.get_car(car["instance_id"])
-	assert_false(UpgradeLibrary.is_enabled(fitted, "fx_hidden"),
-		"and stays DISABLED, as the caller asked")
-
-
-func test_install_disabled_parks_the_part_without_enabling() -> void:
-	# The reward loop fits every won part disabled (enabled=false); the podium's
-	# Apply enables the player's pick. A disabled fit lands parked, not live.
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	assert_true(_save.install_upgrade(id, "fx_turbo_small", false), "part fitted disabled")
-	var fitted_car: Dictionary = _save.get_car(id)
-	assert_true((fitted_car["installed_upgrades"] as Array).has("fx_turbo_small"), "part is on the car")
-	assert_false(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_small"), "but it is not enabled")
-	# The podium Apply flow (set_upgrade_enabled true) turns it on.
-	assert_true(_save.set_upgrade_enabled(id, "fx_turbo_small", true), "it can be enabled later")
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_small"), "now live")
-
-
-func test_install_rejects_a_part_already_on_the_car() -> void:
-	# Per-car dedup: a car can never hold the same upgrade twice.
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_small"), "first copy fitted")
-	assert_false(_save.install_upgrade(car["instance_id"], "fx_turbo_small"),
-		"a part already on the car can't be applied again")
-	assert_eq((_save.get_car(car["instance_id"])["installed_upgrades"] as Array).count("fx_turbo_small"), 1,
-		"the car still carries exactly one copy")
-
-
-func test_same_part_fits_on_two_different_cars_independently() -> void:
-	# Dedup is PER CAR — two different cars may each own their own copy of a part.
-	var a: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var b: Dictionary = _save.grant_car("fx_light_rwd")
-	assert_true(_save.install_upgrade(a["instance_id"], "fx_turbo_small"), "car A gets a copy")
-	assert_true(_save.install_upgrade(b["instance_id"], "fx_turbo_small"), "car B gets its own copy")
-	assert_true((_save.get_car(a["instance_id"])["installed_upgrades"] as Array).has("fx_turbo_small"),
-		"car A carries it")
-	assert_true((_save.get_car(b["instance_id"])["installed_upgrades"] as Array).has("fx_turbo_small"),
-		"car B carries it")
-
-
-func test_toggle_upgrade_enabled_is_exclusive_per_slot() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.install_upgrade(id, "fx_turbo_small")
-	_save.install_upgrade(id, "fx_turbo_big")
-	# Disabling the enabled part leaves the slot with nothing live.
-	assert_true(_save.set_upgrade_enabled(id, "fx_turbo_big", false), "the enabled part can be disabled")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_big"), "the part is now off")
-	# Re-enabling the older part works, and enabling its sibling swaps them.
-	assert_true(_save.set_upgrade_enabled(id, "fx_turbo_small", true), "a parked part can be re-enabled")
-	assert_true(_save.set_upgrade_enabled(id, "fx_turbo_big", true), "enabling the sibling succeeds")
-	var fitted_car: Dictionary = _save.get_car(id)
-	assert_true(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_big"), "the sibling is enabled")
-	assert_false(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_small"),
-		"enabling one part disables the same-slot other")
-	# A part that isn't on the car can't be toggled.
-	assert_false(_save.set_upgrade_enabled(id, "fx_aero", true), "toggling an unapplied part is rejected")
-
-
-func test_install_rejects_consumables_and_unknown_items() -> void:
-	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	# The SYNTHETIC consumable: nothing shipped is one any more, but the refusal is still
-	# real code and still has to hold for whatever claims the flag next.
-	_save.add_item("fx_consumable", 1)
-	assert_false(_save.install_upgrade(car["instance_id"], "fx_consumable"),
-		"a consumable can't be slotted")
-	assert_false(_save.install_upgrade(car["instance_id"], "bogus"), "unknown item can't be installed")
-	assert_eq(int(_save.profile["inventory"]["fx_consumable"]), 1,
-		"rejected install leaves inventory intact")
 
 
 func test_damage_is_one_way_apart_from_the_field_repair() -> void:
@@ -413,30 +305,6 @@ func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	assert_eq(_save.profile["cars"][0]["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "backfilled straight")
 
 
-func test_sanitise_drops_parts_retired_from_the_catalogue() -> void:
-	# A part removed from UpgradeLibrary leaves stale ids on old saves; load must
-	# prune them from both lists so the id can't occupy a phantom slot in the menu.
-	_save.profile["cars"] = [{
-		"instance_id": 9, "model_id": "fx_light_rwd", "hp": 500.0,
-		"installed_upgrades": ["fx_aero", "retired_part"],
-		"disabled_upgrades": ["retired_part"], "tuning": {},
-	}]
-	_save.profile = _save._sanitise(_save.profile)
-	var car: Dictionary = _save.profile["cars"][0]
-	assert_eq(car["installed_upgrades"], ["fx_aero"], "the retired part is dropped, the real one kept")
-	assert_eq(car["disabled_upgrades"], [], "the retired part is dropped from the toggles too")
-
-
-# --- Damage never wrecks (features/damage.md) --------------------------------
-# Damage only ever weakens: HP floors at 0 and stays there. There is no write-off,
-# no wreck record, no terminal state — so the whole scaffolding terminal wrecking
-# needed (an all-cars-wrecked check, a free rescue box) is gone with it.
-
-# test_a_zero_hp_car_can_be_repaired_back_into_service DELETED: repair_car / car_needs_repair
-# / award_stars are all gone with the paid garage repair and the star ledger
-# (todo/roguelike-pivot.md decision 21).
-
-
 func test_the_starter_bottoms_out_and_recovers_like_any_car() -> void:
 	# The starter is not invulnerable and not special-cased: heavy damage floors it, and
 	# it stays owned exactly as any other car does.
@@ -476,16 +344,6 @@ func test_consume_item_respects_counts() -> void:
 	assert_eq(int(_save.profile["inventory"][item]), 1, "count decremented")
 	assert_false(_save.consume_item(item, 5), "consume fails when stock insufficient")
 	assert_eq(int(_save.profile["inventory"][item]), 1, "failed consume leaves count untouched")
-
-
-# Every non-consumable, non-free part in the real catalogue, up to MAX_TIER —
-# derived from the live catalogue so a retune doesn't break the test.
-func _all_real_parts() -> Array:
-	var parts := []
-	for item in UpgradeLibrary.UPGRADES:
-		if not item["consumable"] and not bool(item.get("free", false)):
-			parts.append(String(item["id"]))
-	return parts
 
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
@@ -910,103 +768,25 @@ func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
 		"a restored career's already-open rally is seeded as seen, not paraded")
 	RallyLibrary.reset()
 
-# --- Star sinks: repair + part copies -- DELETED (todo/roguelike-pivot.md decision 21) --
+# --- Star sinks: DELETED (todo/roguelike-pivot.md decisions 21 and the parts model) ---
 # The paid garage repair (repair_car / repair_price / car_needs_repair / car_handles_badly)
-# is RETIRED outright, not stubbed -- see the "Spending stars: DELETED" block comment in
-# save_manager.gd above can_buy_part. Buying a part or a drivetrain conversion is a
-# DIFFERENT case -- the star economy and the parts model INTERLEAVING -- so can_buy_part /
-# buy_part / can_buy_drive_mode / buy_drive_mode / part_price / drive_mode_price keep their
-# signatures (upgrade_options.gd / upgrades_grid.gd still call them by name) but are left
-# DANGLING: every purchase predicate now always refuses. These two tests are the regression
-# guard for that dangling state -- when the economy stage wires real money into these, they
-# are the tests to replace.
+# and the whole part-purchase surface (can_buy_part / buy_part / can_buy_drive_mode /
+# buy_drive_mode / part_price / drive_mode_price / install_upgrade / set_upgrade_enabled)
+# are RETIRED OUTRIGHT. An earlier wave left the purchase predicates dangling -- signatures
+# kept, always refusing -- because upgrade_options.gd and upgrades_grid.gd still called them
+# by name; both of those files are now deleted too, so the stubs went with them.
+#
+# What replaces them: money (economy stage) buys CARS and BOOST LEVELS, not slottable parts.
+# There is no persistent parts model to buy into any more -- see the pivot spec's
+# "Upgrades -- RR's two-tier model".
 
-func test_buying_a_part_always_refuses_with_no_money_wired() -> void:
-	var item_id := String(UpgradeFixtures.upgrades()[0]["id"])
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	var id: int = int(car["instance_id"])
-	assert_false(_save.can_buy_part(id, item_id),
-		"no star ledger left to check a price against -- always refuses")
-	assert_false(_save.buy_part(id, item_id), "so the purchase never goes through")
-	assert_eq((_save.get_car(id)["installed_upgrades"] as Array).size(), 0, "nothing fitted")
-
-
-func test_buying_a_drive_mode_always_refuses_with_no_money_wired() -> void:
-	var car: Dictionary = _save.grant_car(String(CarFixtures.cars()[0]["id"]))
-	var id: int = int(car["instance_id"])
-	var stock: int = UpgradeLibrary.stock_drive_mode(car)
-	var non_stock := 0 if stock != 0 else 1
-	assert_false(_save.can_buy_drive_mode(id, non_stock),
-		"no star ledger left to check a price against -- always refuses")
-	assert_false(_save.buy_drive_mode(id, non_stock), "so the purchase never goes through")
-	assert_eq((_save.get_car(id)["drivetrain_modes_bought"] as Array).size(), 0,
-		"nothing recorded as bought")
-
-
-# repair_car / repair_price / car_needs_repair / car_handles_badly are all DELETED
-# (see the block comment above) -- the paid garage repair had no callers left once the
-# star ledger was gone, and between-run resets leave it nothing to do once the run loop
-# lands. Their tests (a repair restoring health and charging the price, straightening
-# wheels, an undamaged car refusing a charge, a short balance refusing the repair, and
-# the two "handling warning vs needs-repair" distinctions) are deleted with them.
-
-
-
-
-# --- Legacy NOS migration -----------------------------------------------------
-
-# NOS was four chained rungs sharing one slot, of which only the highest was ever ENABLED —
-# the rest sat in disabled_upgrades. Collapsing the ladder deletes the higher rungs, so the
-# survivor would load in fitted but switched OFF, and the player would never know.
-func test_a_legacy_nitrous_save_loads_with_nitrous_enabled() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var live: Dictionary = _save.get_car(id)
-	# The shape an old save had: a lower rung parked, the higher rung (now retired) live.
-	live["installed_upgrades"] = ["fx_hidden", "fx_retired_rung"]
-	live["disabled_upgrades"] = ["fx_hidden"]
-	_save.save_now()
-	_save.load_or_new()
-
-	var loaded: Dictionary = _save.get_car(id)
-	assert_false((loaded["installed_upgrades"] as Array).has("fx_retired_rung"),
-		"the retired rung is pruned")
-	assert_true((loaded["installed_upgrades"] as Array).has("fx_hidden"),
-		"the surviving nitrous part is still fitted")
-	assert_true(UpgradeLibrary.is_enabled(loaded, "fx_hidden"),
-		"and comes back ENABLED rather than silently parked")
-
-
-# The migration must not override a deliberate choice: a player who has switched nitrous
-# off keeps it off.
-func test_the_migration_leaves_a_live_nitrous_choice_alone() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var live: Dictionary = _save.get_car(id)
-	live["installed_upgrades"] = ["fx_hidden"]
-	live["disabled_upgrades"] = []
-	_save.save_now()
-	_save.load_or_new()
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_hidden"),
-		"an already-enabled part is untouched")
-
-
-# A car with no nitrous at all must not be handed one.
-func test_the_migration_never_installs_nitrous_a_car_lacks() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.save_now()
-	_save.load_or_new()
-	var loaded: Dictionary = _save.get_car(id)
-	# The sweep below is vacuous on an empty list, so assert the shape first — otherwise a
-	# migration that dropped installed_upgraded entirely would pass this test by having
-	# nothing to iterate.
-	var installed: Array = loaded["installed_upgrades"]
-	assert_true(installed.is_empty(), "a freshly granted car carries no upgrades at all")
-	for item_id in installed:
-		assert_ne(UpgradeLibrary.slot_of(String(item_id)), "nitrous",
-			"no nitrous is invented for a car that had none")
-
+# --- Legacy nitrous migration tests: DELETED (decisions 34 and the parts model) --------
+# Three tests lived here covering a v-something save whose nitrous part came back parked,
+# and the migration's duty not to override a deliberate off-switch or invent nitrous for a
+# car that never had it. All three drove installed_upgrades / disabled_upgrades /
+# UpgradeLibrary.is_enabled -- the persistent parts model -- through the migration ladder.
+# Both are deleted: there is no ladder (SCHEMA_VERSION now refuses a non-matching profile
+# outright) and no per-car part lists for it to repair.
 
 # --- v4 -> v5 / v5 -> v6 migration tests: DELETED (todo/roguelike-pivot.md decision 34) --
 # test_migration_v4_grants_parts_whose_unlock_rally_moved,
@@ -1038,27 +818,6 @@ func test_engine_swaps_unlock_by_winning_the_current_rally() -> void:
 # (todo/roguelike-pivot.md decision 34 -- see that dict's own comment), so indexing
 # either off a fresh profile now errors instead of reading a default.
 
-
-
-func test_the_legacy_set_satisfies_the_rally_gate() -> void:
-	# The mechanism itself: an id in the set passes rally_gate_met even though its
-	# unlock rally has not been completed.
-	#
-	# Against a SYNTHETIC catalogue, not the shipped one — both because CLAUDE.md says
-	# not to lean on a real entry, and because another test in this file may have left a
-	# fixture installed, under which a real part id resolves to no gate at all and this
-	# would pass vacuously.
-	UpgradeLibrary.override_for_test([
-		{"id": "test_part", "name": "Test Part", "slot": "tires",
-		 "unlocked_by_rally": "test_rally"},
-	] as Array[Dictionary])
-	var profile: Dictionary = _save._default_profile()
-	assert_false(UpgradeLibrary.rally_gate_met("test_part", profile),
-		"setup: the part is gated with an empty profile")
-	profile[_save.KEY_LEGACY_PART_UNLOCKS] = ["test_part"]
-	assert_true(UpgradeLibrary.rally_gate_met("test_part", profile),
-		"a legacy grant opens the gate without the rally")
-	UpgradeLibrary.reset()
 
 
 # --- Every persisted key is DECLARED, not conjured (ratchet) --------------------

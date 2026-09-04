@@ -18,7 +18,15 @@ on the car for good (not on swap, and not when the car is wrecked). Tuning
 (`features/tuning.md`, the lift) is free, reversible per-car config nudges. This
 is the upgrades half.
 
-**Tests:** `tests/headless/test_upgrade_library.gd`, `tests/headless/test_auto_build.gd`, `tests/headless/test_upgrades_grid.gd`, `tests/headless/test_car_stat_bounds.gd`
+**Tests:** `tests/headless/test_upgrade_library.gd`, `tests/headless/test_car_stat_bounds.gd`
+
+> **STALE — the persistent parts model is DELETED.** `todo/roguelike-pivot.md` removes the
+> upgrade catalogue, slots, install/buy, the auto-build solver and the upgrades grid. What
+> survives is the EFFECTS FUNNEL — `UpgradeLibrary.EFFECTS` / `_cfg_set` / `apply` /
+> `effective_meta` / `grip_meta`, driven by `active_effects`, which reads a car's `boosts`
+> list — and it becomes the in-run boost applier in stage 5. Everything below describing
+> the catalogue, tiers, gating, slots or purchase is history until the stage 9 docs audit
+> rewrites this file around the funnel.
 
 ## Catalogue
 

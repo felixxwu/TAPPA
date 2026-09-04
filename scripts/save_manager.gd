@@ -41,13 +41,13 @@ signal flushed()
 #
 #   - Decision 34 says "a pre-pivot profile resets whatever its version" — the pivot
 #     replaces the whole economy (stars -> money) and the whole reward model (prize
-#     rallies -> a shop), so a v6 profile's `stars_earned`, `KEY_LEGACY_PART_UNLOCKS` /
-#     `KEY_LEGACY_ENGINE_SWAP` (both now gone) and rally-completion-as-currency shape do
-#     not describe anything this build still understands well enough to interpret safely.
+#     rallies -> a shop), so a v6 profile's `stars_earned`, its legacy part-unlock /
+#     engine-swap backfill keys (all now gone) and its rally-completion-as-currency shape
+#     do not describe anything this build still understands well enough to interpret safely.
 #   - Writing a transform between two economies that never coexist (decision 20's "no
 #     dual code paths") is the thing decision 20 explicitly rejects as not worth the
 #     complexity, so there is no migration to write even for the parts of the schema
-#     (owned cars, upgrades, tuning) that DID survive this particular wave unchanged.
+#     (owned cars, tuning) that DID survive this particular wave unchanged.
 #   - This wave (the save/economy demolition) is where SCHEMA_VERSION bumps for the pivot:
 #     it is the one wave that owns this file, and it is what makes "a pre-pivot profile"
 #     concrete rather than aspirational — an old profile stops parsing as current from
@@ -80,17 +80,6 @@ const KEY_RALLIES := "rallies"
 # The ids are LITERALS, deliberately: the catalogue entries they name have been deleted,
 # so there is no constant left to reference, and an old profile still spells them this way.
 const RETIRED_ITEM_IDS := ["repair_kit", "mystery_box", "engine_swap_token"]
-# VESTIGIAL (todo/roguelike-pivot.md decision 34): used to be written by the 4 -> 5
-# migration step, granting a re-sited part directly to a player who won it at its old
-# location. The whole migration chain is deleted and nothing writes this key any more —
-# no profile that loads under the current SCHEMA_VERSION can ever carry it (see that
-# const's own comment: an older profile is refused wholesale, not migrated). The
-# CONSTANT survives only because `scripts/upgrade_library.gd` (the parts model — a later
-# wave's file, not touched by this one) still reads `Save.KEY_LEGACY_PART_UNLOCKS` by
-# name in `rally_gate_met`; deleting it would break that forbidden-to-touch file's
-# compile. It is deliberately NOT declared in `_default_profile()` any more, so
-# `profile.get(KEY_LEGACY_PART_UNLOCKS, [])` always reads its own `[]` default.
-const KEY_LEGACY_PART_UNLOCKS := "legacy_part_unlocks"
 
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
@@ -351,9 +340,8 @@ func _read_file(path: String) -> Dictionary:
 	return json.data
 
 
-# Drop entries that no longer resolve against the current catalogues (a car removed
-# from CarLibrary, a part removed from UpgradeLibrary) so old saves stay loadable as
-# the content evolves.
+# Drop entries that no longer resolve against the current catalogues (a car removed from
+# CarLibrary) so old saves stay loadable as the content evolves.
 func _sanitise(p: Dictionary) -> Dictionary:
 	var kept: Array = []
 	for car in p.get(KEY_CARS, []):
@@ -361,9 +349,8 @@ func _sanitise(p: Dictionary) -> Dictionary:
 			# Backfill per-wheel damage misalignment on saves that predate it (straight).
 			if not car.has("wheel_toe"):
 				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
-			_prune_unknown_upgrades(car)
-			_revive_orphaned_nitrous(car)
-			_grandfather_drive_mode(car)
+			if not car.has("drivetrain_modes_bought"):
+				car["drivetrain_modes_bought"] = []
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
@@ -379,80 +366,6 @@ func _sanitise(p: Dictionary) -> Dictionary:
 			inv.erase(dead_id)
 			p["inventory"] = inv
 	return p
-
-
-# Drop fitted / toggled-off part ids that no longer exist in UpgradeLibrary (a part
-# retired from the catalogue). An unknown id is already inert everywhere — by_id
-# returns {} so it has no effect and no slot — but leaving it on the car would let it
-# occupy a phantom slot in the upgrades menu, so clear it out on load.
-func _prune_unknown_upgrades(car: Dictionary) -> void:
-	for key in ["installed_upgrades", "disabled_upgrades"]:
-		var kept: Array = []
-		for item_id in car.get(key, []):
-			if UpgradeLibrary.index_of(String(item_id)) >= 0:
-				kept.append(item_id)
-			else:
-				push_warning("Save: dropping unknown upgrade '%s'" % item_id)
-		car[key] = kept
-
-
-# Backfill the paid-for drive-mode list, and GRANDFATHER whatever a car is already
-# converted to.
-#
-# Drivetrain conversion used to be a per-car PART: winning the special fitted the kit to one
-# car, and that car could then switch layout freely. It is now a global unlock with a
-# per-mode star price (features/upgrade-catalogue.md). A car carrying an override from the
-# old rules has therefore already "bought" that mode as far as the player is concerned, and
-# silently reverting it to stock on load — which is what resolve_drive_override would do
-# with an empty list — would take away a conversion they earned.
-#
-# Done in the tolerant sanitise pass rather than as a schema migration, for the same reason
-# the retired-consumable cleanup is: a SCHEMA_VERSION bump makes every older build refuse
-# the profile, which is far too high a price with cloud save moving profiles between builds.
-func _grandfather_drive_mode(car: Dictionary) -> void:
-	if not car.has("drivetrain_modes_bought"):
-		car["drivetrain_modes_bought"] = []
-	var override := int(car.get("drivetrain_override", -1))
-	if override >= 0 and not (car["drivetrain_modes_bought"] as Array).has(override):
-		(car["drivetrain_modes_bought"] as Array).append(override)
-
-
-# Re-enable a nitrous part that the NOS ladder's retirement left parked.
-#
-# NOS used to be four chained rungs sharing one slot, and only the HIGHEST was ever enabled
-# — the lower ones sat in `disabled_upgrades` (one enabled part per slot,
-# _enable_exclusive). Collapsing the ladder to a single part deletes those higher rungs, so
-# _prune_unknown_upgrades above drops them and leaves the survivor — plain `nitrous` —
-# disabled. A player past stage 1 would load in with NOS owned, fitted and switched OFF,
-# with no clue it happened.
-#
-# Only ever re-enables: it never installs a part the car did not have, and it does nothing
-# to a car that has nitrous enabled already or has none at all. So it is safe to run on
-# every load, which is why it lives here rather than behind a SCHEMA_VERSION bump — the
-# rung ids are gone from the catalogue, so there is no version to key off.
-func _revive_orphaned_nitrous(car: Dictionary) -> void:
-	var disabled: Array = car.get("disabled_upgrades", [])
-	var installed: Array = car.get("installed_upgrades", [])
-	for item_id in disabled.duplicate():
-		if UpgradeLibrary.slot_of(String(item_id)) != "nitrous":
-			continue
-		# Another nitrous part is already live — leave the player's own choice alone.
-		if _has_enabled_in_slot(car, "nitrous"):
-			return
-		disabled.erase(item_id)
-		if not installed.has(item_id):
-			installed.append(item_id)
-	car["disabled_upgrades"] = disabled
-	car["installed_upgrades"] = installed
-
-
-# Is any installed-and-enabled part occupying `slot` on this car?
-func _has_enabled_in_slot(car: Dictionary, slot: String) -> bool:
-	for item_id in car.get("installed_upgrades", []):
-		if UpgradeLibrary.slot_of(String(item_id)) == slot \
-				and not (car.get("disabled_upgrades", []) as Array).has(item_id):
-			return true
-	return false
 
 
 func has_save() -> bool:
@@ -611,11 +524,6 @@ func _default_profile() -> Dictionary:
 		"selected_instance_id": -1,
 		"inventory": {},
 		KEY_RALLIES: {},
-		# KEY_LEGACY_PART_UNLOCKS / KEY_LEGACY_ENGINE_SWAP deliberately NOT declared here any
-		# more (todo/roguelike-pivot.md decision 34) — the migration chain that ever wrote
-		# them is deleted, so nothing except a pre-pivot on-disk profile could carry either,
-		# and such a profile is refused wholesale by SCHEMA_VERSION now, not backfilled from
-		# this dict. See KEY_LEGACY_PART_UNLOCKS's own comment for why the constant survives.
 		"reward_history": [],
 		"settings": {},
 		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
@@ -710,14 +618,12 @@ func grant_car(model_id: String) -> Dictionary:
 		"instance_id": int(profile["next_instance_id"]),
 		"model_id": model_id,
 		"hp": max_hp,
-		"installed_upgrades": [],
-		"disabled_upgrades": [],
 		"tuning": {},
 		"wheel_toe": [0.0, 0.0, 0.0, 0.0],
 		"drivetrain_override": -1,
 		# Drive modes this car has PAID for (ints, CarLibrary.RWD/AWD/FWD). Its authored
-		# stock mode is never in here — reverting to stock is always free. See
-		# buy_drive_mode and features/upgrade-catalogue.md.
+		# stock mode is never in here — reverting to stock is always free. Nothing sells one
+		# right now: see the MONEY SEAM note above drive_mode_available.
 		"drivetrain_modes_bought": [],
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
@@ -979,71 +885,15 @@ func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 	return true
 
 
-# Fit a won part to a car. Upgrades are CAR-BOUND: a part belongs to the car it
-# was won for (rally_session installs it on the driven car) and never moves to
-# another car or into a shared pool — so this takes no inventory, it just records
-# the fit on the OwnedCar. It STAYS ON THE CAR permanently and can be
-# enabled/disabled from the upgrades menu (set_upgrade_enabled). A car holds any
-# number of fitted parts but at most one ENABLED per slot. `enabled` controls the
-# freshly-fitted state: true -> enabled, switching off any same-slot incumbent
-# (used for a direct fit); false -> parked disabled (the reward loop fits every
-# won part disabled, then the podium's Apply enables the player's pick). Fitting
-# the same part to the same car twice is rejected (per-car dedup). Consumables
-# and unknown ids can't be slotted — use add_item() for those. Returns true on success.
-func install_upgrade(instance_id: int, item_id: String, enabled := true) -> bool:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return false
-	var slot := UpgradeLibrary.slot_of(item_id)
-	if slot.is_empty() or UpgradeLibrary.is_consumable(item_id):
-		return false  # not a slottable upgrade
-	if (car["installed_upgrades"] as Array).has(item_id):
-		return false  # already fitted to this car (per-car dedup)
-	car["installed_upgrades"].append(item_id)
-	# A part in a HIDDEN slot is always fitted enabled, whatever the caller asked for: it has
-	# no garage row, so installing it disabled would leave it permanently dead AND block the
-	# slot from ever being re-awarded (the dedup above). Enforced here so it holds for every
-	# route a part arrives by — winning it at its prize rally, or buying a copy with stars.
-	if enabled or UpgradeLibrary.installs_enabled(item_id):
-		_enable_exclusive(car, item_id, slot)
-	else:
-		_disable(car, item_id)
-	save()
-	return true
+# THE PERSISTENT PARTS MODEL IS DELETED (todo/roguelike-pivot.md -> "What gets deleted").
+# `install_upgrade` / `set_upgrade_enabled` and their `_enable_exclusive` / `_disable`
+# helpers lived here, alongside `installed_upgrades` / `disabled_upgrades` on each OwnedCar.
+# Nothing is fitted to a car any more: upgrades are RR-style boosts, temporary and
+# run-scoped, picked between stages and wiped on run end (decision 8, and the pivot doc's
+# "Upgrades -- RR's two-tier model"). They reach the live config through the surviving
+# effects funnel, UpgradeLibrary.apply -- see that file's `active_effects` seam, which is
+# the ONE place stage 5 has to fill in.
 
-
-# Toggle an applied upgrade on/off (the upgrades-menu switch). Enabling a part
-# disables any same-slot enabled sibling (one enabled per slot); disabling just
-# parks it — the part stays fitted either way. Returns false for a car/part that
-# isn't there.
-func set_upgrade_enabled(instance_id: int, item_id: String, enabled: bool) -> bool:
-	var car := get_car(instance_id)
-	if car.is_empty() or not (car.get("installed_upgrades", []) as Array).has(item_id):
-		return false
-	if enabled:
-		_enable_exclusive(car, item_id, UpgradeLibrary.slot_of(item_id))
-	else:
-		_disable(car, item_id)
-	save()
-	return true
-
-
-# Mark `item_id` enabled on `car` and every other applied part in `slot` disabled.
-func _enable_exclusive(car: Dictionary, item_id: String, slot: String) -> void:
-	var disabled: Array = car.get("disabled_upgrades", [])
-	for existing in car.get("installed_upgrades", []):
-		if existing != item_id and UpgradeLibrary.slot_of(existing) == slot and not disabled.has(existing):
-			disabled.append(existing)
-	disabled.erase(item_id)
-	car["disabled_upgrades"] = disabled
-
-
-# Park `item_id` in the car's disabled list (the part stays fitted, just off).
-func _disable(car: Dictionary, item_id: String) -> void:
-	var disabled: Array = car.get("disabled_upgrades", [])
-	if not disabled.has(item_id):
-		disabled.append(item_id)
-	car["disabled_upgrades"] = disabled
 
 
 # In-run HP is one-way: nothing here restores it mid-run. It climbs back only between
@@ -1122,8 +972,9 @@ func apply_field_repair_to(instance_id: int) -> Dictionary:
 # into profile["stars_earned"] -- that whole ledger is deleted (see the "Star ledger:
 # DELETED" note on _default_profile()) and this now does ONLY the completion/placement
 # bookkeeping below. That bookkeeping is NOT part of the star economy and stays: it is
-# what UpgradeLibrary.rally_gate_met (and everything else that reads a rally's
-# `completed` / `best_placed` / `best_combined_ms`) depends on. Returns nothing any
+# what everything that reads a rally's `completed` / `best_placed` / `best_combined_ms`
+# depends on. (The parts model's `rally_gate_met` was its last real consumer and is deleted
+# too, so this is now bookkeeping ahead of stage 3's RunSession.) Returns nothing any
 # more -- it used to return the stars gained.
 #
 # NAMED FOR ITS GATE, AND THE NAME IS THE WARNING. Was `complete_rally()` until round 016,
@@ -1177,126 +1028,31 @@ func record_podium_rally(rally_id: String, combined_ms: int, placed: int = 0) ->
 # see the pivot doc's Repair section). They had no callers left in the parts model, so
 # there is nothing to strand.
 #
-# BUYING A PART OR A DRIVETRAIN CONVERSION IS A DIFFERENT CASE -- this is the star economy
-# and the parts model INTERLEAVING. upgrade_options.gd and upgrades_grid.gd (the parts
-# model -- a later wave's files, not touched here) still call can_buy_part / buy_part /
-# can_buy_drive_mode / buy_drive_mode / part_price / drive_mode_price by name, so those six
-# keep their signatures. Only the star side is gone: every purchase predicate below now
-# always refuses (there is no ledger left to check a price against) and every purchase
-# always fails. This is deliberately left DANGLING rather than repaired -- decision 21 says
-# not to invent a money system here, so wiring these to real money is the parts-model
-# wave's job, not this one's.
-
-
-# What a copy of `item_id` costs. Unchanged by the star deletion -- still just a
-# GameConfig lookup (auto_build_plan reads it to size a plan's cost), and pricing is not
-# itself the star ledger. What is gone is anything that could ever be CHARGED this price.
-func part_price(_item_id: String) -> int:
-	return int(Config.data.star_cost_per_part)
-
-
-# DANGLING (see the block comment above): always refuses. Kept only because
-# upgrade_options.gd calls it by name -- a part can never be bought until the
-# parts-model wave repoints this at money.
-func can_buy_part(_instance_id: int, _item_id: String) -> bool:
-	return false
-
-
-# DANGLING (see the block comment above): always refuses, so nothing is ever fitted or
-# charged. Kept only because upgrades_grid.gd calls it by name.
-func buy_part(_instance_id: int, _item_id: String) -> bool:
-	return false
-
-
-# --- Drivetrain conversion ----------------------------------------------------
+# BUYING A PART IS GONE WITH THE PARTS MODEL. part_price / can_buy_part / buy_part were
+# left refusing by the star-economy wave purely so upgrade_options.gd and upgrades_grid.gd
+# kept compiling; both files are now deleted, so all three are deleted too rather than
+# stubbed. Same for drive_mode_price / can_buy_drive_mode / buy_drive_mode and
+# apply_build_plan (UpgradeLibrary.auto_build_plan, the solver it committed, is deleted).
 #
-# Unlike a part, a drive mode is not something a car HOLDS -- it is one of three layouts the
-# car can be set to. So the purchase records the MODE, per car, and switching between modes
-# the car has already paid for is free thereafter (exactly as toggling a bought part between
-# Stock and fitted is free). Reverting to the car's authored stock layout is always free and
-# never recorded.
-#
-# The capability itself is GLOBAL: won once, on the rally that gates `drivetrain_swap`, and
-# available to every car in the garage from then on. What is per-car is the bill.
-
-
-# What converting one car to one non-stock layout costs. Unchanged by the star deletion --
-# see part_price above for why a price function survives with nothing left to charge it to.
-func drive_mode_price() -> int:
-	return int(Config.data.star_cost_per_drive_mode)
-
-
-# DANGLING (star ledger gone -- see the block comment above `part_price`): always refuses.
-# Kept only because upgrade_options.gd calls it by name.
-func can_buy_drive_mode(_instance_id: int, _mode: int) -> bool:
-	return false
-
-
-# DANGLING: always refuses, so no mode is ever bought or recorded. Kept only because
-# upgrades_grid.gd calls it by name.
-func buy_drive_mode(_instance_id: int, _mode: int) -> bool:
-	return false
+# MONEY SEAM -- drivetrain conversion. `drivetrain_modes_bought` and the resolver that
+# reads it (UpgradeLibrary.resolve_drive_override, via drive_mode_available below) SURVIVE:
+# they are how a converted car keeps its layout, and car.gd reads them every fielding. What
+# is gone is the way a mode was ever BOUGHT. Nothing writes that list today, so in practice
+# every car runs its authored stock layout. When money lands (stage 6, alongside the
+# engine-swap unlock of decision 17), sell a conversion here: append the mode to the car's
+# `drivetrain_modes_bought` and this whole path lights up unchanged.
 
 
 # Whether this car may currently be SET to `mode` without paying: its own stock layout, or
-# one it has already bought. The single rule shared by the picker, the apply path and
-# resolve_drive_override. Unaffected by the star deletion -- reads the car's own bought-modes
-# record and the drivetrain-swap unlock, neither of which is star-ledger state.
+# one it has already bought. The single rule shared by any picker, the apply path and
+# UpgradeLibrary.resolve_drive_override.
 func drive_mode_available(car: Dictionary, mode: int) -> bool:
 	if car.is_empty():
 		return false
 	if mode == UpgradeLibrary.stock_drive_mode(car):
 		return true
-	if not UpgradeLibrary.drivetrain_swap_unlocked(profile):
-		return false
 	return (car.get("drivetrain_modes_bought", []) as Array).has(mode)
 
-
-# --- Auto-Upgrade plans -------------------------------------------------------
-#
-# Commit a plan from UpgradeLibrary.auto_build_plan to a car: buy, switch on, park,
-# then write the detune and any drivetrain override. The solver decides WHAT, this
-# decides nothing -- which is what lets the Auto-Upgrade button, the free restore at
-# the Start gate and the tests all share one rule.
-#
-# DANGLING, LIKE THE FUNCTIONS IT CALLS: buy_part / buy_drive_mode above always refuse now
-# (no star ledger to charge), so the "buy" and "drivetrain" halves of a plan silently never
-# apply -- only "enable" / "strip" / detune go through, since those cost nothing. Left this
-# way rather than special-cased, for the same reason: repointing it at real money is the
-# parts-model wave's job.
-#
-# Order matters: buys land before enables (a bought part arrives parked, like every
-# other award), and strips run last so a slot's outgoing part cannot re-park the
-# incoming one through _enable_exclusive. Returns false when nothing was applied.
-func apply_build_plan(instance_id: int, plan: Dictionary) -> bool:
-	if get_car(instance_id).is_empty() or not bool(plan.get("changed", false)):
-		return false
-	for item_id in plan.get("buy", []):
-		if buy_part(instance_id, item_id):
-			set_upgrade_enabled(instance_id, item_id, true)
-	for item_id in plan.get("enable", []):
-		set_upgrade_enabled(instance_id, item_id, true)
-	for item_id in plan.get("strip", []):
-		set_upgrade_enabled(instance_id, item_id, false)
-	if int(plan.get("drivetrain", -1)) >= 0:
-		# Buy the layout first if this car has not already paid for it -- the plan quoted the
-		# cost, so committing has to actually spend it rather than handing over a free
-		# conversion the picker charges for.
-		#
-		# Committed BEFORE the part buys would be wrong too (parts are the plan's main
-		# purpose), so instead the failure is REPORTED: the part buys above may have
-		# consumed a balance the plan budgeted for both, and silently skipping the
-		# conversion would return `true` having produced a car that does not satisfy the
-		# restriction the plan cleared. The caller gets false and can re-plan against the
-		# real balance.
-		var want_mode := int(plan["drivetrain"])
-		if not drive_mode_available(get_car(instance_id), want_mode) \
-				and not buy_drive_mode(instance_id, want_mode):
-			set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
-			return false
-		set_drivetrain_override(instance_id, want_mode)
-	set_engine_detune(instance_id, float(plan.get("detune", 1.0)))
-	return true
 
 # record_stage_result (adaptive difficulty) used to live here. Its only caller was
 # RallySession, deleted with the rival field it adapted (todo/roguelike-pivot.md
@@ -1437,9 +1193,12 @@ func dev_three_star_rally(rally_id: String, persist := true) -> void:
 # dev-completed career had every rally ticked off and an empty garage, which is useless for
 # testing anything downstream of owning the car or part a rally exists to give.
 #
-# Mirrors rally_session's award path rather than inventing a second one: same first-win-only
-# rule, same duplicate guard, same cascade for a part's missing prerequisites. It cannot
-# simply CALL that path, which is wound through a live session's result handling.
+# THE PART HALF IS GONE. This used to also hand over the part a special's unlock gated,
+# through RewardSystem.grant_special_unlock and UpgradeLibrary.unlocked_by — both deleted
+# with the persistent parts model (todo/roguelike-pivot.md -> "What gets deleted"). There is
+# no part to grant any more, so only the prize car is left, and RallyLibrary.prize_car_id is
+# itself a stub returning "" (see the prize-rally deletion), which makes this whole dev
+# helper a no-op until the money shop lands in stage 6.
 func _grant_rally_prizes(rally_id: String) -> void:
 	var rally := RallyLibrary.by_id(rally_id)
 	if rally.is_empty():
@@ -1447,17 +1206,6 @@ func _grant_rally_prizes(rally_id: String) -> void:
 	var prize_car := RallyLibrary.prize_car_id(rally)
 	if prize_car != "" and not owns_model(prize_car):
 		grant_car(prize_car)
-	# A part goes to the SELECTED car — the dev button is pressed from the map with no rally
-	# being driven, so there is no "car you just drove" to fit it to.
-	var recipient := selected_instance_id()
-	if recipient < 0:
-		return
-	var unlocked := UpgradeLibrary.unlocked_by(rally_id)
-	if not unlocked.is_empty():
-		RewardSystem.grant_special_unlock(recipient, String(unlocked.get("id", "")))
-	# The engine-swap capability special needs nothing handed over: winning it unlocks
-	# swapping outright, and swaps are free and unlimited from then on.
-	return
 
 
 # Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.

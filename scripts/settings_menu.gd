@@ -52,16 +52,6 @@ signal camera_changed(mode: int)
 signal scheme_changed(id: int)
 # Emitted on every page switch; is_root == the category list is showing.
 signal page_changed(is_root: bool)
-# Emitted whenever a Dev-page action fits or grants a part to the SELECTED car
-# (Save.selected_instance_id()) — a garage host (HQ) needs this to rebuild whatever
-# already-fielded car it has on screen (the tuning lift), since fitting an upgrade
-# through here changes Save's data without re-fielding anything: unlike the real
-# upgrades menu, which calls back into the lift itself, this dev tool has no
-# reference to a host's live car to refresh directly. NOT emitted by the in-run pause
-# host (pause_menu.gd) — there is no lift there, and refitting the car you're actively
-# driving mid-run is a separate concern nothing currently handles.
-signal dev_car_upgraded()
-
 # Fixed width for the key-binding buttons (and their column captions), wide enough
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
 const _BIND_BUTTON_W := 168.0 * UITheme.UI_SCALE
@@ -375,14 +365,10 @@ func _build_dev_page() -> void:
 		var car_id := String(car["id"])
 		var car_name := String(car["name"])
 		_dev_page.add_child(_make_action_button("Unlock %s" % car_name, _grant_car.bind(car_id, car_name)))
-	_dev_page.add_child(_make_sub("Fit an upgrade to the selected car:"))
-	# Every catalogue part is car-bound — the consumables that used to need an
-	# inventory route (mystery box, engine swap token) are gone — so there is one
-	# path here and no branch.
-	for up in UpgradeLibrary.UPGRADES:
-		var up_id := String(up["id"])
-		var up_name := String(up["name"])
-		_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
+	# "Fit an upgrade to the selected car" and its `dev_car_upgraded` signal went with the
+	# persistent parts model (todo/roguelike-pivot.md -> "What gets deleted"). There is no
+	# catalogue to list and nothing to fit; the equivalent dev tool for run boosts belongs
+	# with the boost system in stage 5.
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -862,20 +848,6 @@ func _grant_car(model_id: String, display_name: String) -> void:
 
 # _add_star() (Save.award_stars) was deleted with the star ledger
 # (todo/roguelike-pivot.md decision 21) — see the dev-page comment above.
-
-
-# Fit a slottable part straight onto the selected car — upgrades are car-bound, so
-# there's no inventory to stash them in; they live on the car that unlocks them.
-func _fit_upgrade(item_id: String, display_name: String) -> void:
-	var iid := Save.selected_instance_id()
-	if iid < 0:
-		_dev_status.text = "Own a car first — nothing to fit %s to." % display_name
-		return
-	if Save.install_upgrade(iid, item_id):
-		_dev_status.text = "Fitted %s to the selected car." % display_name
-		dev_car_upgraded.emit()
-	else:
-		_dev_status.text = "Couldn't fit %s (already fitted?)." % display_name
 
 
 # --- Row builders ------------------------------------------------------------

@@ -5,7 +5,7 @@ Spoilers and front splitters are the **visual** half of the `aero` upgrade slot
 aero-balance tuning ([tuning.md](tuning.md)) already exist; this is only the
 mesh reveal.
 
-**Tests:** `tests/headless/test_aero_visibility.gd`, `tests/headless/test_aero_visible_traversal.gd`
+**Tests:** `tests/headless/test_aero_visibility.gd`
 
 ## Authoring (Blender)
 

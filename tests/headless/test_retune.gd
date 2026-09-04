@@ -18,7 +18,6 @@ var _car: VehicleBody3D
 func before_all() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
-	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	_car = _scene.get_node("Car")
@@ -26,7 +25,6 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
 	Config.reset()
 

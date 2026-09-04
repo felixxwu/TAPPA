@@ -1,154 +1,86 @@
 class_name UpgradeFixtures
 extends RefCounted
-# A synthetic upgrade catalogue for tests, mirroring CarFixtures. Install it
-# (install()) to run against a stable, test-owned upgrade roster that never tracks
-# the shipped UPGRADES, so adding / renaming / retuning a real part can't break a
-# logic test. Always restore() in teardown.
+# Synthetic BOOST entries for tests, mirroring CarFixtures' role for cars.
 #
-# The fixture parts cover every EFFECT shape the apply / effective_meta / grip_meta pipeline
-# reads: install_turbo, install_supercharger, mass_mult (both a reduction < 1 and a `free` ballast > 1),
-# unlocks_aero_tuning + downforce, shift_time_set (the "set" op — an absolute value, not a
-# scaling), tire_grip_mult (the one row whose meta
-# field and live-config fields differ — see UpgradeLibrary._cfg_fields),
-# tire_snow_grip_mult / tire_tarmac_grip_mult (the surface-dependent compound), and
-# unlocks_drivetrain_swap. It also carries `fx_consumable`, a synthetic stand-in: the
-# shipped catalogue has no consumable left (the engine swap token and the mystery box are
-# both retired), but the consumable BRANCHES survive and still need an input to exercise.
+# This used to be a synthetic upgrade CATALOGUE, installed over UpgradeLibrary.UPGRADES
+# through the Registry seam. There is no catalogue any more: the persistent parts model is
+# deleted (todo/roguelike-pivot.md -> "What gets deleted") and what survives is the effects
+# FUNNEL — UpgradeLibrary.EFFECTS / _cfg_set / apply / effective_meta / grip_meta, driven by
+# `active_effects`, which reads a car's `boosts` list.
+#
+# So there is nothing to install and nothing to restore: a test that wants an effect in
+# force puts one of these entries on the owned-car dict it hands to the code under test.
+#   var owned := {"model_id": "...", "boosts": UpgradeFixtures.boosts(["fx_turbo_big"])}
+#
+# The entries cover every EFFECT SHAPE the funnel reads, which is the whole point of owning
+# them here rather than borrowing whatever the game currently ships: install_turbo,
+# install_supercharger, install_nitrous (write_fields), mass_mult (both a reduction < 1 and
+# an increase > 1), downforce_* (the "add" op, feeds_grip), shift_time_set (the "set" op —
+# an absolute value, not a scaling), tire_grip_mult (the one row whose meta field and live-
+# config fields differ — see UpgradeLibrary._cfg_fields) and tire_snow_grip_mult /
+# tire_tarmac_grip_mult (the surface-dependent compound, whose meta and config names agree).
 
-static func upgrades() -> Array[Dictionary]:
-	var list: Array[Dictionary] = [
-		# A turbo-slot PAIR (same slot, distinct menu_label) so exclusivity /
-		# Big-vs-Small selector UI has two mutually-exclusive parts to toggle.
-		{
-			"id": "fx_turbo_small", "name": "Fixture Small Turbo", "menu_label": "Small",
-			"slot": "turbo", "consumable": false,
-			"effect": {"install_turbo": {
-				"turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
-				"turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6, "turbo_parasitic_friction": 5.0,
-				"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
-			}},
-		},
-		{
-			"id": "fx_turbo_big", "name": "Fixture Big Turbo", "menu_label": "Big",
-			"slot": "turbo", "consumable": false,
-			"effect": {"install_turbo": {
-				"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
-				"turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
-				"engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
-			}},
-		},
-		{
-			# Third turbo-slot part, prerequisite-gated behind fx_turbo_big, covering the
-			# install_supercharger effect shape (belt boost + rpm-scaled drag).
-			"id": "fx_supercharger", "name": "Fixture Supercharger", "menu_label": "Supercharger",
-			"slot": "turbo", "consumable": false,
-			"requires_upgrade_id": "fx_turbo_big",
-			"effect": {"install_supercharger": {
-				"supercharger_boost_gain": 1.0, "supercharger_rpm_ref": 4200.0,
-				"supercharger_parasitic_coef": 9.0,
-				"engine_supercharger_whine_gain": 0.06,
-			}},
-		},
-		{
-			# Covers the "set" shape — an ABSOLUTE config value that replaces the baseline
-			# instead of scaling it — on a field that feeds neither power-to-weight nor grip,
-			# so a test can tell "apply wrote it" from "effective_meta/grip_meta mirrored it".
-			"id": "fx_gearbox", "name": "Fixture Sequential", "menu_label": "Sequential",
-			"slot": "gearbox", "consumable": false,
-			"effect": {"shift_time_set": 0.1},
-		},
-		{
-			"id": "fx_aero", "name": "Fixture Aero", "slot": "aero",
-			"consumable": false,
-			"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
-		},
-		{
-			# Covers the `cfg_fields` shape: ONE meta field (tire_compound) standing for TWO
-			# live-config fields (the per-axle wheel_friction_slip_*), and the only
-			# feeds_grip "mult" row — so grip_meta's multiply arm has something to walk.
-			"id": "fx_tires", "name": "Fixture Race Tires", "menu_label": "Race",
-			"slot": "tires", "consumable": false,
-			"effect": {"tire_grip_mult": 1.15},
-		},
-		{
-			# The SURFACE-DEPENDENT tyre shape: a second tyres-slot part carrying the two
-			# multipliers whose meta and config field names coincide, so the pipeline has a
-			# specialised compound to walk as well as a flat one. Deliberately trades in
-			# BOTH directions (a bonus above 1 and a penalty below it) — the point of the
-			# shape is the trade, and a fixture that only went one way would let a
-			# sign error through.
-			"id": "fx_snow_tires", "name": "Fixture Snow Tires", "menu_label": "Snow",
-			"slot": "tires", "consumable": false,
-			"effect": {
-				"tire_grip_mult": 1.08,
-				"tire_snow_grip_mult": 1.2,
-				"tire_tarmac_grip_mult": 0.8,
-			},
-		},
-		{
-			"id": "fx_lightweight", "name": "Fixture Lightweight", "slot": "weight",
-			"consumable": false, "effect": {"mass_mult": 0.80},
-		},
-		{
-			"id": "fx_ballast", "name": "Fixture Ballast", "slot": "weight",
-			"consumable": false, "free": true, "effect": {"mass_mult": 1.3},
-		},
-		{
-			# A CAPABILITY MARKER, not a fittable part — deliberately in NO slot, mirroring
-			# the shipped drivetrain_swap. What it grants is the garage-wide right to
-			# convert; the drivetrain slot's picker lists drive MODES, bought per car and
-			# per layout, so a part sitting in that slot could never be offered by it.
-			"id": "fx_drivetrain", "name": "Fixture Drivetrain", "slot": "",
-			"consumable": false, "effect": {"unlocks_drivetrain_swap": true},
-		},
-		{
-			# STAR-GATED: absent from the reward pool until FX_GATE_RALLY is won. The fixture
-			# roster needs one so a test can exercise a CLOSED gate without leaning on the
-			# shipped catalogue (and without any prerequisite muddying which gate rejected it).
-			# In the WEIGHT slot and strictly lighter than fx_lightweight, so it wins that slot
-			# outright once unlocked. That makes it visible to power-to-weight, which is what
-			# lets a test tell the aspirational ceiling (gates ignored) from the reachable one.
-			"id": "fx_gated", "name": "Fixture Gated Part", "slot": "weight",
-			"unlocked_by_rally": FX_GATE_RALLY, "consumable": false,
-			"effect": {"mass_mult": 0.6},
-		},
-		{
-			# In a HIDDEN slot (UpgradeLibrary.HIDDEN_SLOTS), so it must install ENABLED
-			# whatever the caller asks — it has no garage row to be switched on from. Lets a
-			# test exercise that rule without reaching into the shipped nitrous ladder.
-			"id": "fx_hidden", "name": "Fixture Hidden Part", "slot": "nitrous",
-			"consumable": false,
-			"effect": {"install_nitrous": {"nitrous_boost_gain": 0.3, "nitrous_tank_seconds": 2.0}},
-		},
-		{
-			# A SYNTHETIC consumable. The shipped catalogue no longer has one — the engine swap
-			# token and the mystery box are both retired — but "consumable" is still a real
-			# branch in the code (Save.install_upgrade refuses to slot one, UpgradeReveal sends
-			# one to the inventory rather than to a car), and a branch with no test input is a
-			# branch that quietly rots. Owning it here rather than borrowing a shipped id is
-			# also what these fixtures are for.
-			"id": "fx_consumable", "name": "Fixture Consumable", "slot": "",
-			"consumable": true, "effect": {},
-		},
-	]
-	return _deep_copy(list)
+# id -> the authored `effect` dict, exactly as UpgradeLibrary.EFFECTS keys it.
+const EFFECTS := {
+	# A turbo PAIR: same shape, two magnitudes, so a test can tell one from the other.
+	"fx_turbo_small": {"install_turbo": {
+		"turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
+		"turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6, "turbo_parasitic_friction": 5.0,
+		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
+	}},
+	"fx_turbo_big": {"install_turbo": {
+		"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
+		"turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
+		"engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
+	}},
+	# The OTHER induction shape (belt boost + rpm-scaled drag). apply() must clear whichever
+	# of the two it is not, which is the behaviour this pair exists to exercise.
+	"fx_supercharger": {"install_supercharger": {
+		"supercharger_boost_gain": 1.0, "supercharger_rpm_ref": 4200.0,
+		"supercharger_parasitic_coef": 9.0,
+		"engine_supercharger_whine_gain": 0.06,
+	}},
+	# The "set" shape — an ABSOLUTE config value replacing the baseline rather than scaling
+	# it — on a field that feeds neither power-to-weight nor grip, so a test can tell
+	# "apply wrote it" from "effective_meta / grip_meta mirrored it".
+	"fx_gearbox": {"shift_time_set": 0.1},
+	# The "add" shape, feeds_grip: downforce at both axles.
+	"fx_aero": {"downforce_front": 3, "downforce_rear": 3},
+	# The `cfg_fields` shape: ONE meta field (tire_compound) standing for TWO live-config
+	# fields (the per-axle wheel_friction_slip_*), and the only feeds_grip "mult" row — so
+	# grip_meta's multiply arm has something to walk.
+	"fx_tires": {"tire_grip_mult": 1.15},
+	# The SURFACE-DEPENDENT tyre shape, whose meta and config field names coincide.
+	# Deliberately trades in BOTH directions (a bonus above 1 and a penalty below it) — the
+	# trade is the point of the shape, and a one-way fixture would let a sign error through.
+	"fx_snow_tires": {
+		"tire_grip_mult": 1.08,
+		"tire_snow_grip_mult": 1.2,
+		"tire_tarmac_grip_mult": 0.8,
+	},
+	# mass_mult in both directions: feeds_pw, so effective_meta must mirror it.
+	"fx_lightweight": {"mass_mult": 0.80},
+	"fx_ballast": {"mass_mult": 1.3},
+	# The "write_fields" shape: a straight splat with no enable flag.
+	"fx_nitrous": {"install_nitrous": {"nitrous_boost_gain": 0.3, "nitrous_tank_seconds": 2.0}},
+}
 
 
-# The rally id fx_gated is gated on. Deliberately not a real roster id: a test opens the gate
-# by marking THIS id complete in its profile, so the fixture is self-contained.
-const FX_GATE_RALLY := "fx_gate_rally"
+# One boost entry, in the shape UpgradeLibrary.active_effects yields:
+# {"id": String, "effect": Dictionary}. Deep-copied, so a test that mutates what it gets
+# back cannot poison the next one. {} for an unknown id — deliberately not an error, so a
+# test can exercise the funnel's own unknown-input handling.
+static func boost(id: String) -> Dictionary:
+	if not EFFECTS.has(id):
+		return {}
+	return {"id": id, "effect": (EFFECTS[id] as Dictionary).duplicate(true)}
 
 
-static func install() -> void:
-	UpgradeLibrary.override_for_test(upgrades())
-
-
-static func restore() -> void:
-	UpgradeLibrary.reset()
-
-
-static func _deep_copy(list: Array[Dictionary]) -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	for d in list:
-		out.append(d.duplicate(true))
+# The boost entries for `ids`, ready to drop on an owned-car dict as its `boosts` key.
+static func boosts(ids: Array) -> Array:
+	var out: Array = []
+	for id in ids:
+		var b := boost(String(id))
+		if not b.is_empty():
+			out.append(b)
 	return out

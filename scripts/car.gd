@@ -13,9 +13,9 @@ const WHEEL_SHADER := preload("res://shaders/ps1_wheel_tire.gdshader")
 
 # Blender wing meshes (spoiler/splitter) authored inside a car body carry this
 # substring in their object name; the glb import preserves the name (sanitizing
-# `.`→`_`, so authored names must avoid `.`). They are hidden whenever a body is
-# revealed and re-shown only when the aero kit is fitted+enabled. See
-# features/aero-parts.md.
+# `.`→`_`, so authored names must avoid `.`). They are part of the body and are shown
+# with it — the only thing this tag still does is tell _apply_model_material to leave
+# their authored material alone. See features/aero-parts.md.
 const AERO_TAG := "_aero"
 
 var _wheel_mats: Dictionary = {}
@@ -111,10 +111,6 @@ var _owned_drive_override := -1
 # empty, so unowned cars always show stock wheels. Texture ONLY — wheel radius/width
 # always come from the car's own spec. See features/wheel-customization.md.
 var _owned_wheel_texture := ""
-# The last owned dict applied to this car (apply_owned / live re-derive). Empty
-# until fielded from an owned car. Used by set_body_hidden(false) to re-derive
-# aero-part visibility after the debug overlay restores the body.
-var _last_owned: Dictionary = {}
 var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount origin (scene rest pose)
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
@@ -1561,12 +1557,6 @@ func use_isolated_config() -> void:
 func apply_car(index: int, rebuild_audio := true) -> String:
 	var spec: Dictionary = CarLibrary.all()[index]
 	_car_index = index
-	# Clear any owned-car state from a prior fielding: a car fielded via apply_car
-	# is unowned (free-roam / prop / opponent), so it carries no aero upgrade. This
-	# keeps set_body_hidden(false) from re-revealing a wing off a stale _last_owned
-	# if this instance is ever re-fielded apply_owned→apply_car. apply_owned sets
-	# _last_owned afterwards via _apply_aero_visibility, so this is safe there too.
-	_last_owned = {}
 	_apply_physics_spec(spec)
 	_apply_body_meshes(spec)
 	_apply_model_visibility(spec)
@@ -1625,7 +1615,7 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# The surface-dependent half of the tyre model (features/drivetrain-and-tires.md)
 	# has no car-spec source — a car brings ONE compound coefficient, not a per-surface
 	# curve — so its neutral 1.0 is re-seeded HERE, with the axle μ, rather than being
-	# left to accumulate. UpgradeLibrary.apply multiplies the fitted tyre's figures in
+	# left to accumulate. UpgradeLibrary.apply multiplies any active tyre-grip effect in
 	# straight after; without this reset a re-field would compound them every time.
 	# Driven off GameConfig.TIRE_SURFACE_AXES, so a new axis is re-seeded here the moment
 	# it is registered — this site names no axis and needs no edit.
@@ -1635,7 +1625,7 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	cfg.wheel_width_rear = spec["wheel_width_rear"]
 	# Per-car aero downforce (N per (m/s)² at each axle). SET (not added) so a spec of
 	# 0 means 0 — no hidden global baseline — and so re-fielding can't accumulate the
-	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
+	# value. apply_owned adds any active downforce effect ON TOP of this afterwards.
 	cfg.downforce_front = spec.get("downforce_front", 0.0)
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
 	# Per-car steer-assist yaw torque (understeer aid). SET (not added) so a spec of
@@ -1733,7 +1723,6 @@ func _apply_model_visibility(spec: Dictionary) -> void:
 		var model_body := get_node_or_null(NodePath(active_node)) as Node3D
 		if model_body != null:
 			model_body.visible = true
-			_set_aero_visible(model_body, false)  # wings hidden by default; reveal is opt-in per upgrade
 			_apply_model_material(model_body, load(String(spec.get("model_texture", ""))))
 	else:
 		($Chassis as MeshInstance3D).visible = true
@@ -1778,7 +1767,6 @@ func set_body_hidden(hidden: bool) -> void:
 		_hide_all_bodies()
 	else:
 		_apply_model_visibility(CarLibrary.all()[_car_index])
-		_apply_aero_visibility(_last_owned)  # _apply_model_visibility hid the wing; restore its real state
 
 
 # Silence + stop this car's engine voice — used when the car becomes a static
@@ -1956,11 +1944,11 @@ func apply_owned(owned: Dictionary) -> String:
 	var idx := CarLibrary.index_of(model_id)
 	if idx < 0:
 		idx = 0
-	# Defer the audio rebuild: the engine swap and the upgrades below can both change
+	# Defer the audio rebuild: the engine swap and the effects below can both change
 	# the audio voicing, so the synth is rebuilt ONCE at the end (see below) rather
 	# than by apply_car here and again per step.
-	# Resolve the player's chosen drivetrain (gated by the swap kit) so both apply_car's
-	# baseline rebuild and the engine-swap rebuild adopt it. -1 = keep the stock layout.
+	# Resolve the player's chosen drivetrain (gated on the mode being paid for) so both
+	# apply_car's baseline rebuild and the engine-swap rebuild adopt it. -1 = stock layout.
 	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
 	# Cosmetic wheel style: resolved BEFORE apply_car so _relocate_wheels skins the
 	# wheels with the donor's texture in one pass. Texture only — no stat moves.
@@ -1968,7 +1956,7 @@ func apply_owned(owned: Dictionary) -> String:
 	var car_name := apply_car(idx, false)
 	# Step 1b: engine swap — if this car runs a non-stock engine, overwrite the
 	# engine profile + recompute mass / weight distribution BEFORE upgrades (so a
-	# weight-reduction kit scales the new total) and before the suspension re-sync
+	# weight-reduction effect scales the new total) and before the suspension re-sync
 	# at the end of this function (so the spring split re-derives from the new
 	# weight_front). See features/engine-swap.md.
 	_apply_engine_swap(owned)
@@ -1979,15 +1967,16 @@ func apply_owned(owned: Dictionary) -> String:
 	# whole pipeline (which would relocate the wheels and reset the pose on a live body,
 	# corrupting it — see _rederive_live_config()/respawn()).
 	_snapshot_live_baseline()
-	# Step 2: installed upgrades multiply/extend the live config. apply_car already
-	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
-	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
+	# Step 2: the effects funnel multiplies/extends the live config. apply_car already
+	# copied the baseline mass onto the RigidBody, so re-sync after a mass effect mutates
+	# cfg.mass (other written fields are read live each physics step). Currently a NO-OP on
+	# every car — UpgradeLibrary.active_effects reads `owned["boosts"]`, which nothing writes
+	# until stage 5 (todo/roguelike-pivot.md); the call stays because that is the seam.
 	UpgradeLibrary.apply(owned, config)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
-	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
-	# installed upgrades, so it must run after step 2.
+	# of that baseline (features/tuning.md). All three axes are ungated now (decision 24),
+	# but it still runs after step 2 so it shifts whatever the effects produced.
 	TuningLibrary.apply(owned, config)
-	_apply_aero_visibility(owned)  # reveal the wing iff the aero kit is fitted+enabled
 	_sync_suspension_to_wheels()
 	mass = config.mass
 	# The config is now final (baseline → swap → upgrades → tuning). Rebuild the engine
@@ -2078,7 +2067,6 @@ func _rederive_live_config(owned: Dictionary) -> void:
 	_restore_live_baseline()
 	UpgradeLibrary.apply(owned, config)
 	TuningLibrary.apply(owned, config)
-	_apply_aero_visibility(owned)  # keep the wing in sync when upgrades are re-fitted live
 	# Same reason as apply_owned: restoring the baseline zeroes the fitment fields and the
 	# upgrade layer re-writes them, so the engine's caches must be re-derived. refit_upgrades
 	# rebuilds the drivetrain after this anyway; retune does not, so it has to happen here.
@@ -2096,12 +2084,15 @@ func retune(owned: Dictionary) -> void:
 	_rederive_live_config(owned)
 
 
-# Re-apply a CHANGED upgrade set to the already-fielded live config WITHOUT reshaping the
+# Re-apply a CHANGED effect set to the already-fielded live config WITHOUT reshaping the
 # body (no apply_car / wheel relocate / pose reset, which would corrupt a live staged
 # body — see respawn()). Re-derives from the full baseline, then re-syncs mass / suspension /
-# engine audio and RECONFIGURES the existing drivetrain (a drivetrain-swap kit changes the
-# driven axle; a turbo or gearbox part changes the engine's derived caches). Used by the
-# start-line Upgrades menu.
+# engine audio and RECONFIGURES the existing drivetrain (a drivetrain conversion changes the
+# driven axle; a turbo or gearbox effect changes the engine's derived caches).
+#
+# ITS CALLER MOVED. It was the start-line Upgrades menu, deleted with the parts model; this
+# is the hook stage 5 applies a freshly-picked run boost through — write the boost onto the
+# car, then call this to make the live car reflect it without re-staging.
 #
 # It deliberately does NOT rebuild the drivetrain. A rebuild re-derives everything from the
 # live scene, which on a settled car meant re-capturing drifted wheel geometry (the ~60%
@@ -2443,31 +2434,21 @@ func _apply_model_material(model: Node3D, texture: Texture2D) -> void:
 			mi.set_surface_override_material(0, mat)
 
 
-# Set visibility on every *_aero-tagged MeshInstance3D under `body` (the wing
-# meshes). Static + body-parameterised so it is pure and testable; callers pass
-# the active glb body. No-op for a null body (a procedural/boxes car has none).
-static func _set_aero_visible(body: Node, shown: bool) -> void:
-	if body == null:
-		return
-	for n in body.find_children("*" + AERO_TAG + "*", "MeshInstance3D", true, false):
-		(n as MeshInstance3D).visible = shown
-
-
-# The glb body node currently revealed for this car (from the live _car_index
-# spec's model_node), or null for a procedural/boxes car (no wing to toggle).
-func _active_body() -> Node:
-	var spec: Dictionary = CarLibrary.all()[_car_index]
-	if not bool(spec.get("use_model", false)):
-		return null
-	return get_node_or_null(NodePath(String(spec.get("model_node", ""))))
-
-
-# Reveal the wing (spoiler/splitter) on the active body iff the aero kit is
-# fitted+enabled on `owned`; hide it otherwise. Caches `owned` so set_body_hidden
-# can restore the correct state. Call AFTER upgrades are applied.
-func _apply_aero_visibility(owned: Dictionary) -> void:
-	_last_owned = owned
-	_set_aero_visible(_active_body(), UpgradeLibrary.aero_tuning_unlocked(owned))
+# THE WING IS NO LONGER TOGGLED. `_set_aero_visible` / `_apply_aero_visibility` /
+# `_active_body` hid every *_aero-tagged mesh by default and revealed it only when the aero
+# PART was fitted and enabled. That part is deleted with the persistent parts model, and
+# decision 24 of todo/roguelike-pivot.md makes the rear wing "a plain per-car property
+# rather than a parts-derived one".
+#
+# THAT PROPERTY IS THE CAR'S OWN AUTHORED GEOMETRY. A car whose glb contains an `_aero`
+# mesh has a wing; one that does not, does not — which is already exactly how every other
+# piece of a body works, needs no second flag beside the model that could disagree with it,
+# and cannot be got wrong by a designer adding a car. So the body is simply revealed whole
+# in `_apply_model_visibility`, wing included, and nothing hides it again.
+#
+# `AERO_TAG` itself SURVIVES: `_apply_model_material` still uses it to skip the wing when
+# it skins the body, because an aero part keeps its own authored glb material and the body
+# texture atlas has no UVs for it (features/aero-parts.md).
 
 
 # The wheel texture this fielding should render: the cosmetic style fitted by

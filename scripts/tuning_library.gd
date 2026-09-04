@@ -6,23 +6,24 @@ extends RefCounted
 # garage tuning lift (features/tuning.md). This is step 3 of the field-the-car
 # pipeline (see car.gd.apply_owned):
 #   1. CarLibrary baseline   apply_car(index)          -> Config.data
-#   2. Installed upgrades    UpgradeLibrary.apply()      (changes the baseline)
+#   2. Active effects        UpgradeLibrary.apply()      (changes the baseline)
 #   3. Per-car tuning        TuningLibrary.apply()       (THIS — re-balances it)
 #   4. Damage multipliers    power/steer degraded by HP
 #
-# Distinguish from UPGRADES (upgrade_library.gd): upgrades are consumable items
-# that change the baseline; tuning is free, instant, reversible per-car deltas
-# stored on the OwnedCar (Save.set_tuning) and never written back to the .tres.
+# Distinguish from the EFFECTS FUNNEL (upgrade_library.gd): that applies whatever run
+# boosts are active, changing the baseline; tuning is free, instant, reversible per-car
+# deltas stored on the OwnedCar (Save.set_tuning) and never written back to the .tres.
 #
 # Each axis is a single normalized slider in [-1, +1], default 0 (the baseline,
 # neutral). apply() reads owned_car.tuning and re-balances the LIVE cfg
 # (Config.data) in place, scaled by the GameConfig authority knobs so a slider
 # can never zero or invert a value. Pure static; mutates only the passed-in cfg.
 
-# The three handling axes the tuning lift exposes. grip + brake_bias are always
-# available; aero is gated by the aero upgrade (UpgradeLibrary), matching the lift UI. engine_detune is NOT here — it's a power (p/w) knob, so
-# its slider lives in the upgrades grid's tune tile (UpgradesGrid); apply() still reads the
-# stored tuning.engine_detune below, wherever it was set from.
+# The three handling axes the tuning lift exposes. ALL THREE ARE UNGATED on every car
+# (todo/roguelike-pivot.md decision 24) — aero_balance used to need the aero part fitted,
+# and that gate went with the parts model, taking `axis_unlocked` with it.
+# engine_detune is NOT here — it's a power (p/w) knob with its own slider wherever the UI
+# puts one; apply() still reads the stored tuning.engine_detune below.
 const AXES := ["grip_balance", "brake_bias", "aero_balance"]
 
 
@@ -50,24 +51,14 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	cfg.brake_bias += b * cfg.tuning_brake_authority
 
 	# aero_balance: −1 front ↔ +1 rear downforce. Same shape as grip on the
-	# downforce pair. Gated by the aero upgrade; a no-op without it.
-	if UpgradeLibrary.aero_tuning_unlocked(owned_car):
-		var a := clampf(float(tuning.get("aero_balance", 0.0)), -1.0, 1.0)
-		var aspan := cfg.tuning_aero_authority
-		cfg.downforce_front *= (1.0 - a * aspan)
-		cfg.downforce_rear *= (1.0 + a * aspan)
+	# downforce pair; always available (decision 24 — no part gates it any more).
+	var a := clampf(float(tuning.get("aero_balance", 0.0)), -1.0, 1.0)
+	var aspan := cfg.tuning_aero_authority
+	cfg.downforce_front *= (1.0 - a * aspan)
+	cfg.downforce_rear *= (1.0 + a * aspan)
 
 	# engine_detune: a 0..1 direct torque scale (features/engine-swap.md). Applied
-	# LAST so it scales whatever torque the swapped engine + upgrade kits produced.
-	# Default 1.0 (full power); always available (no upgrade gate).
+	# LAST so it scales whatever torque the swapped engine + active effects produced.
+	# Default 1.0 (full power); always available.
 	cfg.peak_torque *= clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0)
 
-
-# Whether an axis is tunable for this car: grip + brake_bias always, aero only with
-# the aero upgrade installed. Used by the lift UI to enable/disable each slider.
-static func axis_unlocked(owned_car: Dictionary, axis: String) -> bool:
-	match axis:
-		"aero_balance":
-			return UpgradeLibrary.aero_tuning_unlocked(owned_car)
-		_:
-			return true

@@ -138,7 +138,6 @@ func _start_session_car() -> Dictionary:
 # A rally with a fielded player car (turbo/config-identity tests need a REAL Car node,
 # not StubPlayer — see CAR_SCENE above).
 func test_a_turbo_fitted_at_the_start_line_reaches_the_config_the_hud_reads() -> void:
-	UpgradeFixtures.install()
 	var owned := {"model_id": "fx_light_rwd", "installed_upgrades": [], "disabled_upgrades": [],
 		"tuning": {}, "instance_id": -1}
 	var car := CAR_SCENE.instantiate()

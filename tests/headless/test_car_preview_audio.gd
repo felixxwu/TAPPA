@@ -10,7 +10,6 @@ var _preview: CarPreviewAudio
 
 func before_each() -> void:
 	CarFixtures.install()
-	UpgradeFixtures.install()
 	# Not added to the tree: rev() then skips the audio-server reset, and _advance()
 	# runs the sim/envelope directly, so no audio device is needed.
 	_preview = CarPreviewAudio.new()
@@ -18,7 +17,6 @@ func before_each() -> void:
 
 func after_each() -> void:
 	_preview.free()
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 
@@ -70,14 +68,14 @@ func test_unknown_engine_id_is_a_no_op() -> void:
 
 
 func test_fitted_forced_induction_is_heard_in_the_preview() -> void:
-	# The preview must reflect the car's FITTED upgrades, not just the factory engine —
-	# otherwise a turbo or supercharger the player bolted on is silent in the lineup.
-	var blown := {"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": []}
+	# The preview must reflect the car's ACTIVE EFFECTS, not just the factory engine —
+	# otherwise an induction boost the player is running is silent in the lineup.
+	var blown := {"boosts": UpgradeFixtures.boosts(["fx_supercharger"])}
 	_preview.rev("fx_i4", blown)
 	assert_true(_preview._cfg.supercharger_enabled, "the fitted blower reaches the preview config")
 	assert_gt(_preview._cfg.supercharger_boost_gain, 0.0, "with its belt boost physics")
 	assert_gt(_preview._cfg.engine_supercharger_whine_gain, 0.0, "and its whine audio layer")
-	var turbo := {"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
+	var turbo := {"boosts": UpgradeFixtures.boosts(["fx_turbo_big"])}
 	_preview.rev("fx_i4", turbo)
 	assert_true(_preview._cfg.turbo_enabled, "a fitted turbo reaches the preview config too")
 

@@ -24,7 +24,6 @@ func after_each() -> void:
 	for entry in InputRemap.ACTIONS:
 		Input.action_release(String(entry["action"]))
 	CarFixtures.restore()
-	UpgradeLibrary.reset()
 
 
 func test_car_settles_on_ground() -> void:
@@ -492,11 +491,7 @@ func test_aero_kit_upgrade_adds_downforce() -> void:
 	# the additive downforce_front / downforce_rear effect keys, so this exercises
 	# the same delta logic without pinning any authored magnitude.
 	var aero := {"downforce_front": 2.5, "downforce_rear": 3.5}
-	UpgradeLibrary.override_for_test([{
-		"id": "fx_aero", "name": "Fx Aero", "slot": "aero", "tier": 1, "consumable": false,
-		"effect": aero,
-	}] as Array[Dictionary])
-	UpgradeLibrary.apply({"installed_upgrades": ["fx_aero"]}, cfg)
+	UpgradeLibrary.apply({"boosts": [{"id": "fx_aero", "effect": aero}]}, cfg)
 	assert_almost_eq(cfg.downforce_front, baseline_front + float(aero["downforce_front"]), 1e-6,
 		"aero_kit adds its front downforce on top of the spec baseline")
 	assert_almost_eq(cfg.downforce_rear, baseline_rear + float(aero["downforce_rear"]), 1e-6,

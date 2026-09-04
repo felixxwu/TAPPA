@@ -260,7 +260,7 @@ const RALLIES: Array[Dictionary] = [
 		# The gentlest special (a player is only ~3 wins in), pinned east where the forest
 		# climbs into the mountains' foothills — hence the relief, and the name.
 		#
-		# Awards SNOW TIRES (UpgradeLibrary snow_tires, gated the usual way round by
+		# Used to award SNOW TIRES, back when parts existed (gated the usual way round by
 		# unlocked_by_rally). The grip part belongs at the gateway to the grip corner: this
 		# pin is the only way into the Alps — sn_glacier_run sits inside ITS lit circle — so
 		# the player arrives in the frozen region with the rubber for it, and the stronger
@@ -604,7 +604,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		# Unlocks the SUPERCHARGER (UpgradeLibrary.unlocked_by_rally). Pinned on the arid
+		# Used to unlock the SUPERCHARGER, back when parts existed. Pinned on the arid
 		# fringe in the west, inland: despite the id there is no archipelago here, so no
 		# coastal waterline.
 		"id": "sp_archipelago_trial", "name": "Upgrade: Supercharger", "region": "greece", "difficulty": 3,
@@ -1367,6 +1367,21 @@ static func engine_swap_unlock_rally_name() -> String:
 	return String(by_id(ENGINE_SWAP_UNLOCK_RALLY).get("name", ""))
 
 
+# MONEY SEAM (todo/roguelike-pivot.md decision 17: "engine swap is re-gated as a meta shop
+# purchase" rather than retired). The MECHANISM is fully intact and untouched by the parts
+# deletion — EngineSwap's maths, Save.swap_engines, car.gd's _apply_engine_swap and
+# UpgradeLibrary.effective_meta's engine resolution all still work. What has to move is
+# THIS GATE: it reads a rally-completion flag, and the rally that sets it
+# (ENGINE_SWAP_UNLOCK_RALLY, below) is a career artefact — record_podium_rally now has no
+# gameplay caller at all, so in practice this returns false for every profile and swapping
+# is inert until the shop lands.
+#
+# WHEN THE META SHOP IS BUILT (stage 6): replace the body with a read of a purchased-unlock
+# flag on the profile, exactly as the parts model's `UpgradeLibrary.drivetrain_swap_unlocked`
+# would have been (that one is already deleted; its per-car counterpart survives as
+# Save.drive_mode_available, which carries the matching seam note). Do NOT delete this
+# function to "simplify" — a swap that is free from the first run is a decision the pivot
+# explicitly did not take.
 static func engine_swaps_unlocked(profile: Dictionary) -> bool:
 	# The Save.KEY_LEGACY_ENGINE_SWAP fallback (careers that won the capability where it USED
 	# to live, The Foothills Trial, carried directly by the 5 -> 6 migration) is deleted along
@@ -1378,13 +1393,10 @@ static func engine_swaps_unlocked(profile: Dictionary) -> bool:
 
 
 # The special whose win unlocks engine swapping. Authored here rather than on the rally so
-# the capability has one named owner (upgrades are gated the other way round, by
-# UpgradeLibrary.unlocked_by_rally).
-# Engine swapping is the FIRST thing the star ladder opens (the lowest rung), because it is
-# the mechanic that makes the rest of the garage interesting — a player who has it early can
-# experiment with every car they win, where a turbo is just a number going up. The part
-# unlocks shifted one rung later to make room; the turbo -> supercharger dependency order is
-# unchanged (see UpgradeLibrary's unlocked_by_rally fields).
+# the capability has one named owner. It is what engine_swaps_unlocked above reads, and it
+# goes when that gate becomes a purchase — see its MONEY SEAM comment. (The part unlocks
+# that used to be gated the other way round, by UpgradeLibrary.unlocked_by_rally, are
+# deleted with the parts model.)
 const ENGINE_SWAP_UNLOCK_RALLY := "front_runners"
 
 

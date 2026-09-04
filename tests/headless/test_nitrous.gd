@@ -198,7 +198,7 @@ func test_a_fitted_nitrous_survives_the_engine_reset() -> void:
 	# The other half: the reset must not defeat a car that legitimately has nitrous, since
 	# upgrades are applied after the engine. Mirrors car.gd's ordering.
 	var cfg := GameConfig.new()
-	var car := {"model_id": "x", "installed_upgrades": ["nitrous"], "disabled_upgrades": [],
+	var car := {"model_id": "x", "boosts": UpgradeFixtures.boosts(["fx_nitrous"]),
 		"tuning": {}}
 	for engine in EngineLibrary.all():
 		EngineLibrary.apply(engine, cfg)
@@ -236,20 +236,12 @@ func test_refresh_fitment_clears_nitrous_that_has_been_removed() -> void:
 	assert_false(e.nitrous_delivering, "and stops any delivery")
 
 
-# --- Awarding it ---------------------------------------------------------------
-
-func test_nitrous_has_a_garage_row_and_installs_like_any_other_part() -> void:
-	# CHANGED DELIBERATELY: nitrous used to be a HIDDEN slot, auto-fitted ENABLED on award,
-	# because a four-rung ladder that always installed its highest rung left the player
-	# nothing to decide. It is one part now, so it gets an ordinary garage row — and
-	# without one, a won NOS could only ever be fitted by the award path, never by the
-	# player.
-	assert_false(UpgradeLibrary.is_hidden_slot("nitrous"),
-		"the nitrous slot is shown in the garage")
-	assert_false(UpgradeLibrary.installs_enabled("nitrous"),
-		"so it installs DISABLED like every other part, for the player to switch on")
-	assert_false(UpgradeLibrary.installs_enabled("turbo_small"),
-		"same as a part that always had a row")
+# --- Awarding it: DELETED (the persistent parts model) ---------------------------
+# A test lived here pinning nitrous to an ordinary garage ROW that installs DISABLED, as
+# against the hidden auto-enabled slot it used to be. Both shapes are gone: there is no
+# garage part list, no slot model and no install path (todo/roguelike-pivot.md). Nitrous
+# survives as an EFFECT -- see test_upgrade_library.gd's write_fields coverage and the
+# per-stage physics below, which is what actually made it interesting.
 
 
 # --- Eligibility isolation ---------------------------------------------------
@@ -260,8 +252,8 @@ func test_nitrous_never_reaches_power_to_weight() -> void:
 	# power level everywhere a build is compared or displayed.
 	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
 		"drive_mode": CarLibrary.RWD}
-	var bare := {"model_id": "x", "installed_upgrades": [], "disabled_upgrades": [], "tuning": {}}
-	var nos := {"model_id": "x", "installed_upgrades": ["nitrous"], "disabled_upgrades": [],
+	var bare := {"model_id": "x", "tuning": {}}
+	var nos := {"model_id": "x", "boosts": UpgradeFixtures.boosts(["fx_nitrous"]),
 		"tuning": {}}
 	assert_eq(
 		CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(nos, meta.duplicate())),

@@ -30,11 +30,9 @@ var _car: VehicleBody3D
 func before_all() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
-	UpgradeFixtures.install()
 
 
 func after_all() -> void:
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
 	Config.reset()
 

@@ -6,7 +6,6 @@ func after_each() -> void:
 	CarLibrary.reset()
 	EngineLibrary.reset()
 	RallyLibrary.reset()
-	UpgradeLibrary.reset()
 	RegionLibrary.reset()
 
 func _fake_cars() -> Array[Dictionary]:
@@ -77,27 +76,11 @@ func test_rally_empty_override_falls_back_to_real() -> void:
 	RallyLibrary.override_for_test([] as Array[Dictionary])
 	assert_eq(RallyLibrary.all().size(), RallyLibrary.RALLIES.size(), "an empty override means no override")
 
-func _fake_upgrades() -> Array[Dictionary]:
-	return [
-		{"id": "seam_u", "name": "Seam Upgrade", "slot": "turbo",
-		 "consumable": false, "effect": {"mass_mult": 0.9}},
-	] as Array[Dictionary]
+# NOTE: three tests covering the UpgradeLibrary registry override lived here. The upgrade
+# CATALOGUE is deleted with the persistent parts model (todo/roguelike-pivot.md), so there
+# is no upgrade table left to override. The seam itself is unchanged and still covered by
+# the car / engine / rally / region cases in this file.
 
-func test_upgrade_override_replaces_the_active_catalogue() -> void:
-	UpgradeLibrary.override_for_test(_fake_upgrades())
-	assert_eq(UpgradeLibrary.all().size(), 1, "all() returns the override")
-	assert_eq(UpgradeLibrary.by_id("seam_u")["name"], "Seam Upgrade", "by_id resolves against the override")
-
-func test_upgrade_reset_restores_the_real_catalogue() -> void:
-	var real_size := UpgradeLibrary.UPGRADES.size()
-	UpgradeLibrary.override_for_test(_fake_upgrades())
-	UpgradeLibrary.reset()
-	assert_eq(UpgradeLibrary.all().size(), real_size, "reset restores the real UPGRADES")
-	assert_eq(UpgradeLibrary.by_id("seam_u"), {}, "override id no longer resolves after reset")
-
-func test_upgrade_empty_override_falls_back_to_real() -> void:
-	UpgradeLibrary.override_for_test([] as Array[Dictionary])
-	assert_eq(UpgradeLibrary.all().size(), UpgradeLibrary.UPGRADES.size(), "an empty override means no override")
 
 func _fake_regions() -> Array[Dictionary]:
 	return [

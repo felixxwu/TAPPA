@@ -1,877 +1,257 @@
 extends GutTest
-# The upgrade catalogue (UpgradeLibrary): the authored item list, the effect-
-# application pipeline (step 2: baseline → upgrades), and the tuning gates.
-# Slot-replacement behaviour (which needs the Save profile) lives in
-# test_save_manager.gd. See todo/upgrade-catalogue.md.
+# The EFFECTS FUNNEL (UpgradeLibrary), which is all that survives of the old upgrade
+# catalogue. The persistent parts model is deleted (todo/roguelike-pivot.md ->
+# "What gets deleted"); what stays is the pipeline that turns a car's ACTIVE EFFECTS
+# into live config and into the derived meta the UI compares builds with:
+#
+#   active_effects(owned)  ->  reads owned["boosts"]
+#   apply(owned, cfg)      ->  writes the live GameConfig (pipeline step 2)
+#   effective_meta(...)    ->  the power-to-weight view (feeds_pw rows)
+#   grip_meta(...)         ->  the grip view (feeds_grip rows)
+#
+# In the pivot this becomes the IN-RUN BOOST applier (spec -> "Upgrades — RR's two-tier
+# model"): stage 5 writes `boosts` onto the owned-car dict and every call site below is
+# already wired. Nothing writes it yet, so `apply` is a no-op on a real car today — which
+# is exactly why these tests build their own synthetic boosts through UpgradeFixtures
+# rather than reaching for authored data that no longer exists.
+#
+# Per CLAUDE.md these test the FUNNEL'S LOGIC, never a tuned magnitude: the fixtures'
+# numbers are arbitrary, and an assertion that pinned one would break the moment a
+# designer retuned a boost.
 
 
 func before_each() -> void:
 	CarFixtures.install()
-	UpgradeFixtures.install()
+	Config.reset()
 
 
 func after_each() -> void:
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
+	Config.reset()
 
 
-func test_catalogue_is_well_formed() -> void:
-	var ids := {}
-	for item in UpgradeLibrary.UPGRADES:
-		assert_false(ids.has(item["id"]), "item id '%s' is unique" % item["id"])
-		ids[item["id"]] = true
-		# Three shapes are well-formed: a consumable (no slot), a CAPABILITY MARKER (no slot
-		# either — it grants a garage-wide right rather than fitting anywhere, e.g. the
-		# drivetrain conversion), and an ordinary fittable part, which must name a real slot.
-		# A part naming a slot whose picker cannot offer it is the shape this rules out —
-		# that was the drivetrain kit's old state, and it made the kit unobtainable.
-		var effect: Dictionary = item.get("effect", {})
-		var is_marker := bool(effect.get("unlocks_drivetrain_swap", false))
-		if item["consumable"] or is_marker:
-			assert_eq(String(item["slot"]), "",
-				"%s grants a capability rather than filling a slot, so it names none" % item["id"])
-		else:
-			assert_true(UpgradeLibrary.SLOTS.has(item["slot"]),
-				"%s has a known slot" % item["id"])
+# A minimal owned-car dict: just the keys the funnel reads. Deliberately hand-built
+# rather than drawn from a catalogue — per CLAUDE.md a logic test must not lean on a
+# particular authored entry's identity or stats.
+func _car(boost_ids: Array = []) -> Dictionary:
+	var owned := {"instance_id": 1, "model_id": "fx_light_rwd"}
+	if not boost_ids.is_empty():
+		owned["boosts"] = UpgradeFixtures.boosts(boost_ids)
+	return owned
 
 
-func test_lookups() -> void:
-	# Mechanism, not authored values: slot_of/by_id resolve any real catalogue
-	# entry to its own slot, and degrade safely for unknown ids.
-	for item in UpgradeLibrary.all():
-		var expected_slot: String = "" if item["consumable"] else String(item["slot"])
-		assert_eq(UpgradeLibrary.slot_of(item["id"]), expected_slot,
-			"%s slots into its own authored slot" % item["id"])
-	assert_eq(UpgradeLibrary.slot_of("nonexistent"), "", "unknown id has no slot")
-	assert_true(UpgradeLibrary.by_id("nonexistent").is_empty(), "unknown id -> empty dict")
+# --- The EFFECTS table's own contract ----------------------------------------
 
-
-func test_effect_application_multiplies_and_adds_on_baseline() -> void:
+# The guard the EFFECTS header calls for by name. An effect whose target GameConfig
+# property does not exist is a SILENTLY dead effect: _cfg_set refuses the write, the boost
+# reads as active, and no gameplay test fails. Catch it here instead.
+func test_every_effect_target_names_a_real_config_property() -> void:
 	var cfg := GameConfig.new()
-	cfg.peak_torque = 100.0
-	cfg.mass = 1000.0
-	cfg.downforce_front = 0.0
-	cfg.downforce_rear = 0.0
-	var car := {"installed_upgrades": ["fx_turbo_big", "fx_lightweight", "fx_aero"]}
-	# Expected values are derived from each upgrade's configured effect, so this tests
-	# the apply PIPELINE (right field, multiply vs add) without pinning the tunable
-	# multipliers/amounts — retuning a kit's strength won't break the test.
-	var turbo: Dictionary = UpgradeLibrary.by_id("fx_turbo_big")["effect"]["install_turbo"]
-	var wgt: Dictionary = UpgradeLibrary.by_id("fx_lightweight")["effect"]
-	var aero: Dictionary = UpgradeLibrary.by_id("fx_aero")["effect"]
-	UpgradeLibrary.apply(car, cfg)
-	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
-	assert_almost_eq(cfg.turbo_boost_gain, float(turbo["turbo_boost_gain"]), 0.001, "turbo kit writes its boost gain")
-	assert_almost_eq(cfg.mass, 1000.0 * float(wgt["mass_mult"]), 0.001, "weight reduction multiplies mass")
-	assert_almost_eq(cfg.downforce_front, float(aero["downforce_front"]), 0.001, "aero kit adds front downforce")
-	assert_almost_eq(cfg.downforce_rear, float(aero["downforce_rear"]), 0.001, "aero kit adds rear downforce")
-
-
-func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
-	# A copy of a roster entry; effective_meta should lighten mass and lift torque
-	# so the derived power-to-weight rises (and never mutate the source entry).
-	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
-	var base_pw := CarLibrary.power_to_weight(entry)
-	var car := {"installed_upgrades": ["fx_turbo_big", "fx_lightweight"]}
-	var eff := UpgradeLibrary.effective_meta(car, entry)
-	var boost_gain: float = float(UpgradeLibrary.by_id("fx_turbo_big")["effect"]["install_turbo"]["turbo_boost_gain"])
-	var mass_mult: float = float(UpgradeLibrary.by_id("fx_lightweight")["effect"]["mass_mult"])
-	assert_almost_eq(float(eff["mass"]), 1000.0 * mass_mult, 0.001, "weight reduction lightens the meta mass")
-	assert_almost_eq(float(eff["peak_torque"]), 200.0 * (1.0 + boost_gain), 0.001, "turbo rates the meta torque at peak boost")
-	assert_gt(CarLibrary.power_to_weight(eff), base_pw, "upgrades raise the effective power-to-weight")
-	assert_almost_eq(float(entry["mass"]), 1000.0, 0.001, "source entry is left untouched")
-	# No upgrades is a faithful copy.
-	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": []}, entry)
-	assert_almost_eq(CarLibrary.power_to_weight(bare), base_pw, 0.001, "no upgrades -> baseline pw")
-
-
-func test_effective_meta_uses_swapped_engine_torque() -> void:
-	# A twingo running a V8: effective_meta seeds torque from the CURRENT
-	# engine, so the figure matches the swapped engine's library torque (mechanism,
-	# not a pinned number — derived from EngineLibrary).
-	var meta := CarLibrary.by_id("fx_light_rwd").duplicate()
-	var v8 := "fx_v8"
-	var owned := {"model_id": "fx_light_rwd", "swapped_engine": v8, "installed_upgrades": [], "tuning": {}}
-	var eff := UpgradeLibrary.effective_meta(owned, meta)
-	assert_almost_eq(float(eff["peak_torque"]), float(EngineLibrary.by_id(v8)["peak_torque"]), 0.001,
-		"torque seeded from the swapped engine")
-	# And total mass changed by the engine mass delta.
-	var expected_mass := EngineSwap.recompute_mass(
-		float(CarLibrary.by_id("fx_light_rwd")["mass"]),
-		float(EngineLibrary.by_id(CarLibrary.by_id("fx_light_rwd")["engine"])["mass"]),
-		float(EngineLibrary.by_id(v8)["mass"]))
-	assert_almost_eq(float(eff["mass"]), expected_mass, 0.001, "mass recomputed for the swapped engine")
-
-
-func test_effective_meta_applies_detune_to_torque() -> void:
-	var meta := CarLibrary.by_id("fx_light_rwd").duplicate()
-	var full := UpgradeLibrary.effective_meta({"model_id": "fx_light_rwd", "tuning": {}}, meta)
-	var half := UpgradeLibrary.effective_meta({"model_id": "fx_light_rwd", "tuning": {"engine_detune": 0.5}}, meta.duplicate())
-	assert_almost_eq(float(half["peak_torque"]), float(full["peak_torque"]) * 0.5, 0.001,
-		"detune halves the torque feeding power-to-weight")
-	assert_lt(CarLibrary.power_to_weight(half), CarLibrary.power_to_weight(full),
-		"a detuned car has lower power-to-weight")
-
-
-func test_max_potential_meta_undoes_detune_and_drops_ballast() -> void:
-	# max_potential_meta reports the car's BEST achievable power-to-weight: it undoes any
-	# engine detune AND removes mass-adding ballast (a free, always-removable part), so a
-	# currently-gimped car still reads at its true potential wherever a ceiling is wanted.
-	var meta := CarLibrary.by_id("fx_light_rwd")
-	var gimped := {"model_id": "fx_light_rwd", "tuning": {"engine_detune": 0.5},
-		"installed_upgrades": ["fx_ballast"], "disabled_upgrades": []}
-	var cur := UpgradeLibrary.effective_meta(gimped, meta.duplicate())
-	var maxed := UpgradeLibrary.max_potential_meta(gimped, meta.duplicate())
-	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(cur),
-		"max potential (full tune, no ballast) beats the current gimped power-to-weight")
-	# It reaches at least an un-gimped car (full tune, no ballast), and now goes FURTHER:
-	# the ceiling fits the best part in every slot from the whole catalogue, including parts
-	# the car doesn't own and parts still behind a star gate. That's the point — with the
-	# good parts gated, fitted hardware would badly understate what a car can become.
-	var clean := UpgradeLibrary.effective_meta(
-		{"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [], "disabled_upgrades": []},
-		meta.duplicate())
-	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(clean),
-		"the ceiling fits catalogue parts the car does not own, so it beats a bare clean car")
-
-
-func test_rally_gate_met_defaults_open_and_closes_only_on_an_authored_gate() -> void:
-	# The central new predicate, tested directly rather than through the draw. An ungated
-	# part is always available; a gated one flips on its rally being recorded complete.
-	var unwon := {"rallies": {}}
-	var won := {"rallies": {UpgradeFixtures.FX_GATE_RALLY: {"completed": true, "best_placed": 1}}}
-	assert_true(UpgradeLibrary.rally_gate_met("fx_lightweight", unwon),
-		"a part with no authored gate is always available")
-	assert_false(UpgradeLibrary.rally_gate_met("fx_gated", unwon),
-		"a gated part is withheld until its rally is won")
-	assert_true(UpgradeLibrary.rally_gate_met("fx_gated", won),
-		"and becomes available once it is")
-	assert_false(UpgradeLibrary.rally_gate_met("fx_gated",
-		{"rallies": {UpgradeFixtures.FX_GATE_RALLY: {"completed": false}}}),
-		"merely attempting the rally is not enough — completed means a top-3 finish")
-
-
-func test_a_fitted_part_keeps_applying_while_its_gate_is_closed() -> void:
-	# Pinned deliberately: the star gate governs EARNING a part, never keeping one. apply()
-	# walks installed_upgrades and never consults the gate, so a gate closing behind the
-	# player (or a profile that never opened it) must not retroactively uninstall anything.
-	var cfg := GameConfig.new()
-	var baseline := cfg.mass
-	var car := {"model_id": "fx_light_rwd", "tuning": {},
-		"installed_upgrades": ["fx_gated"], "disabled_upgrades": []}
-	assert_false(UpgradeLibrary.rally_gate_met("fx_gated", {"rallies": {}}),
-		"setup: the part's gate is shut")
-	UpgradeLibrary.apply(car, cfg)
-	assert_lt(cfg.mass, baseline, "an already-fitted part still takes effect")
-
-
-func test_max_potential_meta_fits_one_part_per_slot() -> void:
-	# Slot exclusivity must hold in the ceiling too: stacking two turbo-slot parts would
-	# report a power the car could never actually reach.
-	var meta := CarLibrary.by_id("fx_light_rwd")
-	var car := {"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [], "disabled_upgrades": []}
-	var seen := {}
-	for item_id in UpgradeLibrary._best_part_per_slot(car, meta.duplicate()):
-		var slot := UpgradeLibrary.slot_of(String(item_id))
-		assert_false(seen.has(slot), "at most one part per slot in the ceiling (%s)" % slot)
-		seen[slot] = true
-
-
-func test_no_upgrades_leaves_config_untouched() -> void:
-	var cfg := GameConfig.new()
-	cfg.peak_torque = 250.0
-	UpgradeLibrary.apply({"installed_upgrades": []}, cfg)
-	assert_almost_eq(cfg.peak_torque, 250.0, 0.001, "empty upgrade list is a no-op")
-
-
-func test_a_tire_part_multiplies_BOTH_axle_grips_on_the_live_config() -> void:
-	# The one effect row whose meta spelling and live-config spelling differ: `tire_compound`
-	# on a car's meta, the per-axle wheel_friction_slip_* PAIR on the config
-	# (UpgradeLibrary._cfg_fields). Both axles must move, or fitting tyres would silently
-	# re-balance the car front-to-rear as well as grip it up. Multiplied (not set) so the
-	# grip_balance tuning slider, which runs after, still shifts them about this baseline.
-	var cfg := GameConfig.new()
-	cfg.wheel_friction_slip_front = 0.9
-	cfg.wheel_friction_slip_rear = 0.7
-	var mult := float(UpgradeLibrary.by_id("fx_tires")["effect"]["tire_grip_mult"])
-	UpgradeLibrary.apply({"installed_upgrades": ["fx_tires"]}, cfg)
-	assert_almost_eq(cfg.wheel_friction_slip_front, 0.9 * mult, 0.001, "front axle grip multiplied")
-	assert_almost_eq(cfg.wheel_friction_slip_rear, 0.7 * mult, 0.001, "rear axle grip multiplied")
-
-
-func test_a_gearbox_part_sets_an_absolute_shift_time() -> void:
-	# The "set" op REPLACES the baseline rather than scaling it, so what the car brought to
-	# the slot must not survive. Asserted from two different baselines — one slower than the
-	# kit and one faster — because a multiplier would land on two different answers while a
-	# set lands on the same one. The expected figure is read from the catalogue, so retuning
-	# the kit can't break this.
-	var want := float(UpgradeLibrary.by_id("fx_gearbox")["effect"]["shift_time_set"])
-	for baseline in [0.4, want * 0.5]:
-		var cfg := GameConfig.new()
-		cfg.shift_time = baseline
-		UpgradeLibrary.apply({"installed_upgrades": ["fx_gearbox"]}, cfg)
-		assert_almost_eq(cfg.shift_time, want, 0.0001,
-			"the kit's own shift time replaces a %.2fs baseline outright" % baseline)
-
-
-func test_grip_parts_move_grip_meta_and_are_invisible_to_eligibility() -> void:
-	# THE safeguard that keeps grip_meta and effective_meta separate: a wing or a set of
-	# tyres must show up on a grip readout and must NOT move power-to-weight, because p/w is
-	# what a rally's band is judged on — otherwise fitting tyres could lock a car out of
-	# events it could previously enter. Derived from the fixtures' own effects, so retuning
-	# either part can't break it.
-	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0,
-		"weight_front": 0.5, "tire_compound": 0.9,
-		"wheel_width_front": 0.225, "wheel_width_rear": 0.225}
-	var car := {"installed_upgrades": ["fx_tires", "fx_aero"], "disabled_upgrades": [], "tuning": {}}
-	var eff := UpgradeLibrary.effective_meta(car, entry)
-	var grip := UpgradeLibrary.grip_meta(car, entry)
-	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": [], "tuning": {}}, entry)
-	assert_almost_eq(CarLibrary.power_to_weight(eff), CarLibrary.power_to_weight(bare), 0.001,
-		"grip parts leave power-to-weight — and therefore rally eligibility — alone")
-	assert_almost_eq(float(eff.get("tire_compound", 0.0)), float(entry["tire_compound"]), 0.001,
-		"effective_meta does not fold the compound multiplier in")
-	var tire_mult := float(UpgradeLibrary.by_id("fx_tires")["effect"]["tire_grip_mult"])
-	var aero: Dictionary = UpgradeLibrary.by_id("fx_aero")["effect"]
-	assert_almost_eq(float(grip["tire_compound"]), float(entry["tire_compound"]) * tire_mult, 0.001,
-		"grip_meta multiplies the compound (the mult arm)")
-	assert_almost_eq(float(grip["downforce_front"]), float(aero["downforce_front"]), 0.001,
-		"grip_meta still adds downforce (the add arm)")
-	# And the figure the Simple page's Grip row draws actually rises — at any speed for the
-	# tyres, and the downforce term needs a speed to exist at all.
-	assert_gt(CarLibrary.max_lateral_g(grip, Config.data, 50.0),
-		CarLibrary.max_lateral_g(bare, Config.data, 50.0),
-		"the grip figure rises once tyres and a wing are fitted")
-	assert_almost_eq(float(entry["tire_compound"]), 0.9, 0.001, "the source entry is left untouched")
-
-
-func test_aero_tuning_is_gated_by_the_aero_upgrade() -> void:
-	var bare := {"installed_upgrades": []}
-	assert_false(UpgradeLibrary.aero_tuning_unlocked(bare), "aero tuning locked with no aero kit")
-	var kitted := {"installed_upgrades": ["fx_aero"]}
-	assert_true(UpgradeLibrary.aero_tuning_unlocked(kitted), "aero kit unlocks aero tuning")
-
-
-func test_disabled_upgrades_are_inert_everywhere() -> void:
-	# A part toggled off in the upgrades menu stays fitted but contributes nothing:
-	# no config effect, no effective-meta shift, no tuning gate.
-	var car := {
-		"installed_upgrades": ["fx_turbo_big", "fx_aero", "fx_lightweight"],
-		"disabled_upgrades": ["fx_turbo_big", "fx_aero", "fx_lightweight"],
-	}
-	var cfg := GameConfig.new()
-	cfg.peak_torque = 100.0
-	UpgradeLibrary.apply(car, cfg)
-	assert_almost_eq(cfg.peak_torque, 100.0, 0.001, "a disabled turbo leaves the config untouched")
-	assert_false(cfg.turbo_enabled, "a disabled turbo doesn't enable itself on the config")
-	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
-	var eff := UpgradeLibrary.effective_meta(car, entry)
-	assert_almost_eq(float(eff["peak_torque"]), 200.0, 0.001, "a disabled part doesn't shift effective stats")
-	assert_false(UpgradeLibrary.aero_tuning_unlocked(car), "a disabled aero kit doesn't unlock aero tuning")
-	# enabled_upgrades reflects the toggle; re-enabling brings the part back.
-	assert_eq(UpgradeLibrary.enabled_upgrades(car).size(), 0, "everything disabled -> nothing enabled")
-	car["disabled_upgrades"] = []
-	assert_eq(UpgradeLibrary.enabled_upgrades(car).size(), 3, "clearing the toggles re-enables the parts")
-	assert_true(UpgradeLibrary.aero_tuning_unlocked(car), "a re-enabled aero kit unlocks aero tuning again")
-
-
-func test_install_supercharger_writes_blower_fields_and_clears_the_turbo() -> void:
-	var cfg := GameConfig.new()
-	# Start from a turbo'd baseline: the blower shares the slot, so fitting it must
-	# take the turbo sim OFF rather than stacking both forced-induction paths.
-	cfg.turbo_enabled = true
-	cfg.turbo_boost_gain = 0.5
-	var owned := {"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": []}
-	UpgradeLibrary.apply(owned, cfg)
-	assert_true(cfg.supercharger_enabled, "installing a blower enables it on the config")
-	assert_gt(cfg.supercharger_boost_gain, 0.0, "the blower upgrade sets a belt boost gain")
-	assert_gt(cfg.supercharger_parasitic_coef, 0.0, "and an rpm-scaled belt drag")
-	assert_false(cfg.turbo_enabled, "a blower replaces the turbo instead of stacking with it")
-
-
-func test_install_turbo_clears_the_blower_the_other_way_round() -> void:
-	# The exclusivity is SYMMETRIC (EFFECTS[*].clears), not just blower-clears-turbo:
-	# fitting a turbo onto a baseline that carries belt boost must cancel it, or the two
-	# torque multipliers would stack.
-	var cfg := GameConfig.new()
-	cfg.supercharger_enabled = true
-	cfg.supercharger_boost_gain = 0.9
-	var owned := {"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
-	UpgradeLibrary.apply(owned, cfg)
-	assert_true(cfg.turbo_enabled, "the turbo is fitted")
-	assert_eq(cfg.supercharger_boost_gain, 0.0, "and the blower's belt boost is cancelled")
-	assert_false(cfg.supercharger_enabled, "including its audio flag")
-
-
-func test_effective_meta_rates_the_blower_at_peak_boost() -> void:
-	var base := {"peak_torque": 300.0, "redline": 7000.0, "mass": 1200.0, "engine": ""}
-	var na := UpgradeLibrary.effective_meta({"installed_upgrades": [], "disabled_upgrades": []}, base)
-	var blown := UpgradeLibrary.effective_meta(
-		{"installed_upgrades": ["fx_supercharger"], "disabled_upgrades": []}, base)
-	assert_gt(float(blown["peak_torque"]), float(na["peak_torque"]),
-		"a fitted blower rates the car at a higher (boosted) peak torque")
-
-
-func test_install_turbo_writes_turbo_fields_onto_config() -> void:
-	var cfg := GameConfig.new()
-	assert_false(cfg.turbo_enabled, "config starts NA")
-	var owned := {"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
-	UpgradeLibrary.apply(owned, cfg)
-	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
-	assert_gt(cfg.turbo_boost_gain, 0.0, "the turbo upgrade sets a boost gain")
-
-
-func test_effective_meta_rates_turbo_at_peak_boost() -> void:
-	# Synthetic meta carrying its own peak_torque so we don't depend on the catalogue.
-	var base := {"peak_torque": 300.0, "redline": 7000.0, "mass": 1200.0, "engine": ""}
-	var na := UpgradeLibrary.effective_meta({"installed_upgrades": [], "disabled_upgrades": []}, base)
-	var turbo := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}, base)
-	assert_gt(float(turbo["peak_torque"]), float(na["peak_torque"]),
-		"a fitted turbo rates the car at a higher (boosted) peak torque")
-
-
-func test_drivetrain_slot_is_valid() -> void:
-	assert_true(UpgradeLibrary.SLOTS.has("drivetrain"), "drivetrain is a known slot")
-	var kit := UpgradeLibrary.by_id("fx_drivetrain")
-	# The kit deliberately occupies NO slot: it is a capability marker whose rally gate is
-	# the garage-wide unlock, while the drivetrain slot's picker lists drive MODES, bought
-	# per car and per layout. A marker sitting in that slot was a part the slot could never
-	# offer — so no second car could acquire it, by stars or otherwise.
-	assert_eq(UpgradeLibrary.slot_of("fx_drivetrain"), "",
-		"the conversion kit is a capability marker, not a part in the drivetrain slot")
-	assert_false(bool(kit.get("consumable", false)), "kit is not a consumable")
-	assert_true(bool(kit.get("effect", {}).get("unlocks_drivetrain_swap", false)), "kit carries the unlock flag")
-
-
-# The conversion capability is GARAGE-WIDE, keyed on the profile's rally record, not on any
-# one car's installed_upgrades. It used to be per-car, which was unreachable in practice:
-# the kit only ever reached the single car selected when its special was won, and the
-# drivetrain slot lists drive MODES rather than parts, so no other car could acquire it by
-# any means. What is charged per car now is the CONVERSION, not the capability.
-func test_drivetrain_swap_unlocked_is_a_profile_gate_not_a_per_car_one() -> void:
-	# The fixture catalogue's conversion part is authored ungated, so any profile passes —
-	# what this pins is that the answer does not depend on a CAR at all.
-	assert_true(UpgradeLibrary.drivetrain_swap_unlocked({}),
-		"an ungated conversion part is available garage-wide")
-
-
-# The gate is found by the EFFECT FLAG, never by a hard-coded part id. A gate keyed on a
-# literal id fails OPEN when that id is absent (rally_gate_met treats an unknown item as
-# ungated), so renaming the part would silently hand every car free conversion.
-func test_the_conversion_gate_follows_the_effect_flag() -> void:
-	var pid := UpgradeLibrary.drivetrain_swap_part_id()
-	assert_ne(pid, "", "the fixture catalogue authors a conversion part")
-	assert_true(bool(UpgradeLibrary.by_id(pid).get("effect", {}).get("unlocks_drivetrain_swap", false)),
-		"and it is found by its flag, so the id itself is free to change")
-
-
-# With NO part offering conversion the capability must read as LOCKED, not as ungated —
-# the fail-open direction is the dangerous one.
-func test_a_catalogue_with_no_conversion_part_is_locked() -> void:
-	UpgradeLibrary.override_for_test([])
-	assert_false(UpgradeLibrary.drivetrain_swap_unlocked({}),
-		"nothing offers conversion, so there is nothing to unlock")
-	UpgradeFixtures.install()  # restore the fixture roster for the rest of the file
-
-
-func test_resolve_drive_override() -> void:
-	var stock := {"installed_upgrades": [], "disabled_upgrades": []}
-	assert_eq(UpgradeLibrary.resolve_drive_override(stock), -1, "no override set -> -1 (use stock)")
-
-
-func test_effective_meta_reports_override_drive_mode() -> void:
-	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
-		"drive_mode": CarLibrary.FWD}
-	# AWD deliberately, not RWD: these synthetic dicts carry no model_id, so
-	# CarLibrary.for_owned returns {} and the car's "stock" layout defaults to RWD — an
-	# override of RWD would then be free-because-stock and prove nothing about paying.
-	var owned := {"installed_upgrades": [], "disabled_upgrades": [],
-		"drivetrain_override": CarLibrary.AWD,
-		"drivetrain_modes_bought": [CarLibrary.AWD]}
-	var out := UpgradeLibrary.effective_meta(owned, meta)
-	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.AWD, "reports the chosen mode when paid for")
-	assert_eq(int(meta["drive_mode"]), CarLibrary.FWD, "source meta is not mutated")
-
-
-# An override the car has not PAID for is inert, so nothing that writes the field directly
-# can bypass the price.
-func test_an_unpaid_override_is_inert() -> void:
-	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
-		"drive_mode": CarLibrary.FWD}
-	# AWD for the same reason as above — a model-less dict's stock layout is RWD.
-	var owned := {"installed_upgrades": [], "disabled_upgrades": [],
-		"drivetrain_override": CarLibrary.AWD, "drivetrain_modes_bought": []}
-	var out := UpgradeLibrary.effective_meta(owned, meta)
-	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.FWD, "an unbought layout does not apply")
-
-
-# --- Prerequisite gate (requires_upgrade_id) ----------------------------------
-# The mechanism that replaced Big Turbo's old difficulty/tier gate: an item can
-# name another item as a prerequisite, and is only reward-eligible for a car
-# that already has that prerequisite fitted (per-car, not garage-wide).
-# Synthetic entries throughout —
-# see CLAUDE.md: never pin logic tests to a specific catalogue id.
-
-func test_prerequisite_met_is_true_with_no_requirement() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_plain", "name": "Plain", "slot": "aero", "tier": 1, "consumable": false, "effect": {}},
-	])
-	assert_true(UpgradeLibrary.prerequisite_met("fx_plain", {}),
-		"an item with no requires_upgrade_id is always prerequisite-eligible")
-
-
-func test_prerequisite_met_requires_the_prereq_to_be_owned() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_small", "name": "Small", "slot": "turbo", "tier": 1, "consumable": false, "effect": {}},
-		{"id": "fx_big", "name": "Big", "slot": "turbo", "tier": 1, "consumable": false,
-			"requires_upgrade_id": "fx_small", "effect": {}},
-	])
-	var without_prereq := {"instance_id": 1, "model_id": "m", "installed_upgrades": []}
-	assert_false(UpgradeLibrary.prerequisite_met("fx_big", without_prereq),
-		"gated until the prerequisite is fitted to this car")
-	var with_prereq := {"instance_id": 1, "model_id": "m", "installed_upgrades": ["fx_small"]}
-	assert_true(UpgradeLibrary.prerequisite_met("fx_big", with_prereq),
-		"eligible once the prerequisite is fitted to this car")
-
-
-# The gate is per-car: another car in the garage owning the prerequisite does
-# NOT unlock the gated item for a car that lacks it.
-func test_prerequisite_is_not_satisfied_by_another_car_in_the_garage() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_small", "name": "Small", "slot": "turbo", "tier": 1, "consumable": false, "effect": {}},
-		{"id": "fx_big", "name": "Big", "slot": "turbo", "tier": 1, "consumable": false,
-			"requires_upgrade_id": "fx_small", "effect": {}},
-	])
-	var bare_car := {"instance_id": 2, "model_id": "m2", "installed_upgrades": []}
-	assert_false(UpgradeLibrary.prerequisite_met("fx_big", bare_car),
-		"a sibling car owning the prerequisite doesn't unlock it for this one")
-	assert_false(UpgradeLibrary.prerequisite_met("fx_big", {}),
-		"an empty car dict owns nothing")
-
-
-# --- fitted_nitrous_id (the HQ car-stats readout) -----------------------------
-# Synthetic entries throughout — see CLAUDE.md: never pin logic tests to a specific
-# catalogue id.
-
-func test_fitted_nitrous_id_is_empty_with_nothing_installed() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
-	])
-	assert_eq(UpgradeLibrary.fitted_nitrous_id({"installed_upgrades": []}), "",
-		"nothing installed -> no nitrous")
-	assert_eq(UpgradeLibrary.fitted_nitrous_id({}), "", "an empty car dict owns nothing")
-
-
-func test_fitted_nitrous_id_returns_the_installed_and_enabled_rung() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
-	])
-	var car := {"installed_upgrades": ["fx_nitrous"], "disabled_upgrades": []}
-	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "fx_nitrous",
-		"an installed, enabled nitrous-slot item is reported fitted")
-
-
-func test_fitted_nitrous_id_ignores_a_disabled_rung() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
-	])
-	var car := {"installed_upgrades": ["fx_nitrous"], "disabled_upgrades": ["fx_nitrous"]}
-	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "",
-		"installed but toggled off does not count as fitted")
-
-
-# The ladder shape (features/nitrous.md): several rungs can be INSTALLED on one car at
-# once (each grant keeps the one below it so the prerequisite chain holds), but only one
-# is ever ENABLED — the readout must name that one, not just the first installed.
-func test_fitted_nitrous_id_picks_the_enabled_rung_not_the_first_installed() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_nitrous", "name": "Fixture Nitrous", "slot": "nitrous", "consumable": false, "effect": {}},
-		{"id": "fx_nitrous_big", "name": "Fixture Big Nitrous", "slot": "nitrous",
-			"requires_upgrade_id": "fx_nitrous", "consumable": false, "effect": {}},
-	])
-	var car := {
-		"installed_upgrades": ["fx_nitrous", "fx_nitrous_big"],
-		"disabled_upgrades": ["fx_nitrous"],  # the ladder's older rung, parked
-	}
-	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "fx_nitrous_big",
-		"the enabled (highest) rung is reported, even though it was installed second")
-
-
-# A part in a DIFFERENT slot must never be mistaken for nitrous, however it's enabled.
-func test_fitted_nitrous_id_ignores_other_slots() -> void:
-	UpgradeLibrary.override_for_test([
-		{"id": "fx_turbo", "name": "Fixture Turbo", "slot": "turbo", "consumable": false, "effect": {}},
-	])
-	var car := {"installed_upgrades": ["fx_turbo"], "disabled_upgrades": []}
-	assert_eq(UpgradeLibrary.fitted_nitrous_id(car), "",
-		"a fitted part in another slot is not reported as nitrous")
-
-
-func test_a_surface_dependent_compound_reaches_both_the_config_and_the_grip_meta() -> void:
-	# The surface-dependent tyre rows (features/drivetrain-and-tires.md) have to land in
-	# TWO places to work: on the live config, which the driving physics reads, and on
-	# grip_meta, which is what the lap-time model is handed for the AI field. A part that
-	# reached only the first would give the player an advantage the rivals never see.
-	# Derived from the fixture's own effect, so retuning it can't break this.
-	var eff: Dictionary = UpgradeLibrary.by_id("fx_snow_tires")["effect"]
-	var car := {"installed_upgrades": ["fx_snow_tires"]}
-	var cfg := GameConfig.new()
-	UpgradeLibrary.apply(car, cfg)
-	assert_almost_eq(cfg.tire_snow_grip_mult, float(eff["tire_snow_grip_mult"]), 1e-6,
-		"the snow bonus lands on the live config")
-	assert_almost_eq(cfg.tire_tarmac_grip_mult, float(eff["tire_tarmac_grip_mult"]), 1e-6,
-		"the tarmac penalty lands on the live config")
-	var meta := UpgradeLibrary.grip_meta(car, {"tire_compound": 1.0, "mass": 1000.0})
-	assert_almost_eq(float(meta["tire_snow_grip_mult"]), float(eff["tire_snow_grip_mult"]), 1e-6,
-		"the snow bonus is mirrored onto grip_meta")
-	assert_almost_eq(float(meta["tire_tarmac_grip_mult"]), float(eff["tire_tarmac_grip_mult"]), 1e-6,
-		"the tarmac penalty is mirrored onto grip_meta")
-
-
-func test_a_surface_dependent_compound_never_moves_power_to_weight() -> void:
-	# Same rule the flat compound and the aero kit follow: rubber must never change
-	# which rallies a car may enter. effective_meta is what eligibility is judged on.
-	var plain := UpgradeLibrary.effective_meta({"installed_upgrades": []},
-		{"tire_compound": 1.0, "mass": 1000.0, "peak_torque": 200.0, "redline": 6000.0})
-	var shod := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_snow_tires"]},
-		{"tire_compound": 1.0, "mass": 1000.0, "peak_torque": 200.0, "redline": 6000.0})
-	assert_almost_eq(float(shod["mass"]), float(plain["mass"]), 1e-6, "mass is untouched")
-	assert_almost_eq(float(shod["peak_torque"]), float(plain["peak_torque"]), 1e-6,
-		"peak torque is untouched")
-
-
-func test_a_car_with_no_surface_compound_leaves_the_multipliers_neutral() -> void:
-	# 1.0 is the identity the whole mechanism rests on, and the reason no other part
-	# in the catalogue needed an entry. A flat-compound tyre must not disturb it.
-	var cfg := GameConfig.new()
-	UpgradeLibrary.apply({"installed_upgrades": ["fx_tires"]}, cfg)
-	assert_almost_eq(cfg.tire_snow_grip_mult, 1.0, 1e-6, "flat rubber leaves the snow term at 1")
-	assert_almost_eq(cfg.tire_tarmac_grip_mult, 1.0, 1e-6, "flat rubber leaves the tarmac term at 1")
-	var meta := UpgradeLibrary.grip_meta({"installed_upgrades": ["fx_tires"]},
-		{"tire_compound": 1.0, "mass": 1000.0})
-	assert_almost_eq(float(meta.get("tire_snow_grip_mult", 1.0)), 1.0, 1e-6,
-		"and reads as 1 off the meta, present or absent")
-
-
-# --- Contract: the gates FAIL CLOSED on an unknown id ------------------------------
-#
-# Both gates used to answer "yes" for an id that is not in the catalogue: the lookup
-# returned {}, the missing field defaulted to "", and "" means "no gate authored". That is
-# how a capability keyed on a hard-coded id got handed to everyone the moment the id was
-# absent. A gate asked about something that does not exist must DENY.
-
-
-func test_the_rally_gate_denies_an_unknown_item() -> void:
-	var open_profile := {"rallies": {}}
-	assert_false(UpgradeLibrary.rally_gate_met("no_such_part_exists", open_profile),
-		"an id not in the catalogue must not read as ungated")
-	# The genuine "no gate authored" case still passes — this is a fix to the not-found
-	# path, not a tightening of the rule itself.
-	assert_true(UpgradeLibrary.rally_gate_met("fx_lightweight", open_profile),
-		"a real part with no authored gate is still always available")
-
-
-func test_the_prerequisite_gate_denies_an_unknown_item() -> void:
-	var car := {"installed_upgrades": [], "disabled_upgrades": []}
-	assert_false(UpgradeLibrary.prerequisite_met("no_such_part_exists", car),
-		"an id not in the catalogue must not read as prerequisite-free")
-	assert_true(UpgradeLibrary.prerequisite_met("fx_lightweight", car),
-		"a real part with no prerequisite is still freely available")
-
-
-# The gate is derived from the EFFECT FLAG, so it survives the part being renamed — which
-# is the failure mode the hard-coded id had.
-func test_the_conversion_gate_denies_when_no_part_grants_it() -> void:
-	UpgradeLibrary.override_for_test([])
-	assert_false(UpgradeLibrary.drivetrain_swap_unlocked({"rallies": {}}),
-		"no part offers conversion, so there is nothing to unlock")
-	UpgradeFixtures.install()
-
-
-# Every name an EFFECTS entry writes to must actually exist. Nothing enforces this
-# at runtime: an effect naming a property nobody declares applies silently and does
-# nothing, so the part reads as fitted, the UI shows it, and no gameplay test fails —
-# the upgrade is simply inert.
-#
-# The two namespaces are deliberately different and BOTH are checked:
-#   `field`      — the CAR META spelling (e.g. `tire_compound`, `mass`), a key on the
-#                  car dict. May also be a GameConfig property; both are legitimate.
-#   `cfg_fields` / `clears` / `enable` — the LIVE CONFIG spelling, so these must be
-#                  GameConfig properties.
-#
-# This is a structural contract, not a tunable: it asserts names EXIST, never what
-# they are set to, so retuning any authored value leaves it green. It iterates the
-# whole CARS table as opaque input rather than naming any entry.
-#
-# Found by the small-model-readiness loop, round 001: a probe added a gravel-tyre part
-# whose effect wrote `tire_gravel_grip_mult`, which nothing declares. Every test its
-# change touched passed.
-func test_every_effect_target_name_exists() -> void:
-	var cfg := GameConfig.new()
-	var cfg_names := {}
-	for prop in cfg.get_property_list():
-		cfg_names[prop["name"]] = true
-	var meta_names := {}
-	for car in CarLibrary.CARS:
-		for key in car:
-			meta_names[str(key)] = true
-
-	for effect_key in UpgradeLibrary.EFFECTS:
-		var effect: Dictionary = UpgradeLibrary.EFFECTS[effect_key]
-
-		var field := str(effect.get("field", ""))
-		if field != "":  # structural ops (install_induction, write_fields) name no field
-			assert_true(cfg_names.has(field) or meta_names.has(field),
-				"effect '%s' writes '%s', which is neither a GameConfig property nor a car-meta key — the part would apply silently and do nothing" % [effect_key, field])
-
-		for cf in effect.get("cfg_fields", []):
-			assert_true(cfg_names.has(str(cf)),
-				"effect '%s' lists cfg_field GameConfig.%s, which does not exist" % [effect_key, cf])
-
-		for cleared in effect.get("clears", {}):
-			assert_true(cfg_names.has(str(cleared)),
-				"effect '%s' clears GameConfig.%s, which does not exist" % [effect_key, cleared])
-
-		var enable := str(effect.get("enable", ""))
-		if enable != "":
-			assert_true(cfg_names.has(enable),
-				"effect '%s' enables GameConfig.%s, which does not exist" % [effect_key, enable])
-
-
-# ROUND 002's companion to the guard above, and the reason the guard above was not
-# enough. Round 001 made "the effect writes a name nobody declares" go red. A round-002
-# probe, asked for the same gravel tyre, dutifully DECLARED `tire_gravel_grip_mult` as a
-# GameConfig @export — the guard above went green — and the part was still completely
-# inert, because the physics never reads that name. Existence is not consumption.
-#
-# So this asserts the other half: every grip-feeding effect field must actually be READ
-# somewhere in the code that turns grip into lap time. The three readers are the driven
-# car's per-contact resolver (drivetrain.gd), the rival/ghost solver (lap_time_model.gd)
-# and the meta bridge between them (car_performance.gd) — miss all three and the part
-# changes nothing for anyone.
-#
-# It is a source-text check because that is the only thing that can distinguish "read"
-# from "declared"; there is no runtime signal for a property nobody looks at. Crude, but
-# it fails loudly and names the fix, which is the whole point. It pins no value and names
-# no catalogue entry — it iterates EFFECTS as opaque input, so retuning stays green.
-#
-# If you are here because this test went red: you added a surface-dependent tyre term.
-# Those are consumed GENERICALLY, so no reader source mentions them by name — register
-# the field in GameConfig.TIRE_SURFACE_AXES (see the note on that table) and this test
-# accepts it. tests/headless/test_tire_surface_axes.gd then guards the registry itself.
-const GRIP_READER_SOURCES := [
-	"res://scripts/drivetrain.gd",
-	"res://scripts/lap_time_model.gd",
-	"res://scripts/car_performance.gd",
-]
-
-func test_every_grip_feeding_effect_field_is_read_by_the_physics() -> void:
-	var cfg := GameConfig.new()
-	var cfg_names := {}
-	for prop in cfg.get_property_list():
-		cfg_names[prop["name"]] = true
-
-	var sources := ""
-	for path in GRIP_READER_SOURCES:
-		var f := FileAccess.open(path, FileAccess.READ)
-		assert_not_null(f, "grip reader source missing: %s" % path)
-		if f != null:
-			sources += f.get_as_text()
-
-	for effect_key in UpgradeLibrary.EFFECTS:
-		var effect: Dictionary = UpgradeLibrary.EFFECTS[effect_key]
-		if not bool(effect.get("feeds_grip", false)):
-			continue
-		var field := str(effect.get("field", ""))
-		# Only config-side fields: a pure car-meta key is consumed by the meta merge,
-		# not by the physics source, and is covered by the existence guard above.
-		if field == "" or not cfg_names.has(field):
-			continue
-		# Two routes to being read, and both count. Either a reader mentions the field by
-		# name, or it is registered in GameConfig.TIRE_SURFACE_AXES — the surface axes are
-		# consumed by iterating that table, so the readers name none of them.
-		var registered := false
-		for axis in GameConfig.TIRE_SURFACE_AXES:
-			if String(axis["field"]) == field:
-				registered = true
-				break
-		assert_true(registered or sources.find(field) != -1,
-			("effect '%s' feeds grip via GameConfig.%s, but no grip reader (%s) ever " +
-			"mentions that name and it is not in GameConfig.TIRE_SURFACE_AXES — the part " +
-			"applies and changes nothing. Declaring the @export is not enough; something " +
-			"must READ it.")
-				% [effect_key, field, ", ".join(GRIP_READER_SOURCES)])
-
-
-# ---------------------------------------------------------------------------------------
-# DOCS MUST NOT ENUMERATE SLOT MEMBERSHIP COUNTS.
-#
-# Why this exists (readiness rounds 009 + 010): two probes added a tyre part and left
-# `features/drivetrain-and-tires.md` saying the slot "holds two parts" and
-# `features/upgrade-catalogue.md` saying "the two tyre compounds". A member count in prose
-# is a fact the next catalogue edit invalidates, and nothing was checking it — the same
-# shape as the region-count drift that `test_region_docs.gd` already guards.
-#
-# The rule this encodes is deliberately NOT "the docs must say three": that would pin a
-# product choice, which CLAUDE.md forbids. It is "a doc may not state a slot's part count
-# AT ALL", because the count is derivable from UPGRADES and belongs nowhere else.
-func test_no_feature_doc_states_a_slot_member_count() -> void:
-	var number_words := ["one", "two", "three", "four", "five", "six", "seven", "eight"]
-	var slot_words := ["tires", "tyres", "turbo", "aero", "gearbox", "nitrous", "weight"]
-	var docs := ["res://features/upgrade-catalogue.md", "res://features/drivetrain-and-tires.md"]
-	var offenders: Array[String] = []
-	for doc in docs:
-		var text := FileAccess.get_file_as_string(doc)
-		assert_false(text.is_empty(), "%s is readable" % doc)
-		var line_no := 0
-		for raw in text.split("\n"):
-			line_no += 1
-			var line := String(raw).to_lower()
-			var mentions_slot := false
-			for w in slot_words:
-				if line.contains(w):
-					mentions_slot = true
-					break
-			if not mentions_slot:
+	for key in UpgradeLibrary.EFFECTS:
+		var desc: Dictionary = UpgradeLibrary.EFFECTS[key]
+		for field in UpgradeLibrary._cfg_fields(desc):
+			# An empty `field` is not a bug: the install_* / write_fields ops take their
+			# targets from the boost's own authored value, not from the descriptor, so
+			# there is nothing to check here for those rows. _cfg_set guards them at
+			# write time instead.
+			if String(field) == "":
 				continue
-			for w in number_words:
-				# "holds two parts", "the two tyre compounds", "three tyre compounds", ...
-				# WIDENED round 042: the patterns above are word-ORDER shaped, so the same
-				# defect written the other way round walked straight through them. Round 040's
-				# probe wrote "and the tyre slot three — `Stock` / `Snow` / `Race` / `Gravel`"
-				# and this guard passed it; round 042's wrote "three tyre compounds" and it
-				# failed. Both are a count in prose. "slot <n>" and a bare "<n> compounds" are
-				# now caught too. If you find a fourth phrasing, widen this again rather than
-				# concluding the guard covers the concept — it covers PHRASINGS.
-				if line.contains(" " + w + " part") or line.contains(" " + w + " tyre") \
-						or line.contains(" " + w + " tire") \
-						or line.contains(" " + w + " compound") \
-						or line.contains("slot " + w + " ") or line.contains("slot " + w + "\u2014") \
-						or line.contains("slot " + w + " \u2014"):
-					offenders.append("%s:%d — %s" % [doc.get_file(), line_no, String(raw).strip_edges()])
-					break
-	assert_eq(offenders, [] as Array[String],
-		("a features/ doc states how many parts a slot holds. That count is derivable from "
-		+ "UpgradeLibrary.UPGRADES and goes stale on the next catalogue edit (it did, twice). "
-		+ "Rewrite the sentence WITHOUT the number — name the parts or say 'the parts in the "
-		+ "slot' — rather than updating the number.\nOffending lines:\n%s")
-		% "\n".join(offenders))
+			assert_true(field in cfg,
+				"EFFECTS['%s'] writes GameConfig.%s, which does not exist" % [key, field])
+		var enable := String(desc.get("enable", ""))
+		if enable != "":
+			assert_true(enable in cfg,
+				"EFFECTS['%s'].enable names GameConfig.%s, which does not exist" % [key, enable])
+		for cleared in (desc.get("clears", {}) as Dictionary):
+			assert_true(cleared in cfg,
+				"EFFECTS['%s'].clears names GameConfig.%s, which does not exist" % [key, cleared])
 
 
-# --- Guard: every tyre-slot part is named in features/drivetrain-and-tires.md -------------
-#
-# WHY (round 017). `features/drivetrain-and-tires.md` ENUMERATES the tyre slot's contents by id:
-# "the `tires` upgrade slot holds the tyre compounds — **Snow Tires** (`snow_tires`, …) and
-# **Race Tires** (…)". A third compound makes that sentence quietly incomplete, and round 009
-# recorded exactly that: a probe added a tyre part and the doc "still said the tyre slot holds
-# two parts and went unupdated".
-#
-# This replaces a NOTE that has now failed four separate interventions. The in-code checklist at
-# the table asks for both docs; round 017 measured it by moving that checklist to the exact
-# insertion point where a new part is appended, and the probe read it (it obeyed the checklist's
-# ungated-justification clause almost verbatim) and STILL updated neither doc. Splitting the doc
-# (round 012), making it necessary to read (013), and writing falsifiable statements (015) had all
-# failed on the same axis. Per SKILL.md §2.6, a note that has failed is not answered by another
-# note — so this is the executable version.
-#
-# It reads the AUTHORED table out of the source file rather than `UpgradeLibrary.UPGRADES`,
-# because this file's before_each installs UpgradeFixtures; the doc must describe what SHIPS.
-# Both current tyre ids are documented, so there are no exemptions and none should be added:
-# document the part instead.
-#
-# Deliberately scoped to the tyre slot. The catalogue's other parts are documented by display
-# NAME rather than id (`features/upgrade-catalogue.md` covers the aero kit as "Aero Kit" and
-# never writes `aero_kit`), so a repo-wide id-in-doc check would flag correct prose. Narrow and
-# true beats broad and noisy.
-func test_every_tyre_slot_part_is_documented_in_the_tyre_doc() -> void:
-	var src := FileAccess.get_file_as_string("res://scripts/upgrade_library.gd")
-	assert_ne(src, "", "could not read upgrade_library.gd")
-	# BOTH docs, not one (widened round 041). The tyre slot is enumerated BY ID in each, and each
-	# has been the forgotten one in a different round: drivetrain-and-tires.md in rounds 009/017,
-	# upgrade-catalogue.md in round 041, where a probe updated the first doc's axis TABLE, never
-	# added the part to its compound list, and left the second doc untouched entirely. Checking
-	# only one of them let "the docs are guarded" read as more coverage than it was.
-	var tyre_docs := [
-		"res://features/drivetrain-and-tires.md",
-		"res://features/upgrade-catalogue.md",
-	]
-	var doc_text := {}
-	for path in tyre_docs:
-		var text := FileAccess.get_file_as_string(path)
-		assert_ne(text, "", "could not read %s" % path)
-		doc_text[path] = text
-
-	var id_re := RegEx.new()
-	id_re.compile('"id":\\s*"([a-z0-9_]+)"')
-
-	# Walk the table: remember the most recent id seen, and claim it when a `"slot": "tires"`
-	# turns up. The authored style always writes `"id"` at or before `"slot"` within an entry.
-	var tyre_ids: Array[String] = []
-	var last_id := ""
-	for line in src.split("\n"):
-		var m := id_re.search(line)
-		if m != null:
-			last_id = m.get_string(1)
-		if line.contains('"slot": "%s"' % UpgradeLibrary.TIRE_SLOT) and last_id != "":
-			if not tyre_ids.has(last_id):
-				tyre_ids.append(last_id)
-
-	# If this drops to nothing the parse broke and the test would pass vacuously — say so instead.
-	assert_gte(tyre_ids.size(), 2,
-		"parsed %d tyre-slot parts out of upgrade_library.gd, expected at least 2 — the table's "
-		% tyre_ids.size()
-		+ "authored shape changed and THIS GUARD needs updating, it is not a catalogue failure")
-
-	var undocumented: Array[String] = []
-	for path in tyre_docs:
-		for id in tyre_ids:
-			if not String(doc_text[path]).contains(id):
-				undocumented.append("%s missing from %s" % [id, String(path).get_file()])
-
-	assert_eq(undocumented, ([] as Array[String]),
-		"tyre-slot parts missing from the docs that enumerate the slot BY ID: %s. "
-		% str(undocumented)
-		+ "The tyre slot is described by TWO docs — features/drivetrain-and-tires.md and "
-		+ "features/upgrade-catalogue.md — and BOTH name its compounds by id, so a new compound "
-		+ "leaves whichever one you skipped silently incomplete. Adding the axis to a table in "
-		+ "one of them is not the same as adding the part to its compound list. Add the part to "
-		+ "both; do not add an exemption here.")
+# Every effect key the fixtures author must have an EFFECTS row. A key with no row is the
+# other silent-death shape: apply() selects no arm and the value is never written at all.
+func test_every_fixture_effect_key_has_an_effects_row() -> void:
+	for id in UpgradeFixtures.EFFECTS:
+		for key in (UpgradeFixtures.EFFECTS[id] as Dictionary):
+			assert_true(UpgradeLibrary.EFFECTS.has(key),
+				"fixture '%s' authors effect key '%s' with no EFFECTS row" % [id, key])
 
 
-# An authored effect key with no `EFFECTS` row is a SILENTLY DEAD PART: UpgradeLibrary.apply()
-# looks the key up, gets {}, reads op "" , matches no arm, and never writes the value. The part
-# reads as fitted and does nothing. This is a DIFFERENT failure from the one `_cfg_set` guards —
-# that catches a write to a field GameConfig does not declare, and it cannot fire here because the
-# value never reaches it. It is also invisible to
-# test_every_grip_feeding_effect_field_is_read_by_the_physics, which iterates EFFECTS and so cannot
-# see a key that is absent from it.
-#
-# Found by the small-model-readiness loop, round 041: a wet-weather tyre shipped with the @export,
-# the TIRE_SURFACE_AXES row and the _channel_weight arm ALL correct, and no rain grip whatsoever,
-# with five test files green. Registering the field on GameConfig is not the same as registering the
-# EFFECT, and getting three edits right makes the fourth easy to believe done.
-#
-# This asserts a structural contract (every authored key is registered), not any authored value, so
-# retuning or re-authoring the catalogue cannot break it — a NEW effect key with no row breaks it,
-# which is the point.
-func test_every_authored_effect_key_is_registered_in_the_effects_table() -> void:
-	var offenders: Array[String] = []
-	var checked := 0
-	for item in UpgradeLibrary.UPGRADES:
-		var effect: Dictionary = (item as Dictionary).get("effect", {})
-		for key in effect:
-			checked += 1
-			if not UpgradeLibrary.EFFECTS.has(key):
-				offenders.append("%s authors '%s'" % [str((item as Dictionary).get("id", "?")), str(key)])
+# --- active_effects: the stage-5 seam ----------------------------------------
 
-	# A vacuous pass would be worse than a failure here, so prove we actually read something.
-	assert_gt(checked, 0,
-		"walked UpgradeLibrary.UPGRADES and found no authored effect keys at all — the table's shape "
-		+ "changed and THIS GUARD needs updating, it is not a catalogue failure")
+func test_a_car_with_no_boosts_has_no_active_effects() -> void:
+	assert_eq(UpgradeLibrary.active_effects(_car()), [],
+		"a car with no boosts key yields no effects, rather than erroring")
 
-	assert_eq(offenders, ([] as Array[String]),
-		"these parts author an effect key with no row in UpgradeLibrary.EFFECTS: %s. " % str(offenders)
-		+ "apply() looks the key up, gets an empty desc, matches no op arm, and NEVER WRITES THE "
-		+ "VALUE — the part reads as fitted and does nothing at all. Adding the field to GameConfig "
-		+ "(an @export, and for a tyre axis a TIRE_SURFACE_AXES row) does not register the EFFECT. "
-		+ "Add the EFFECTS row; do not add an exemption here.")
+
+func test_active_effects_reads_the_boosts_key() -> void:
+	var owned := _car(["fx_turbo_big", "fx_lightweight"])
+	var ids: Array = []
+	for e in UpgradeLibrary.active_effects(owned):
+		ids.append(String((e as Dictionary)["id"]))
+	assert_eq(ids, ["fx_turbo_big", "fx_lightweight"],
+		"active_effects hands back the boosts in the order they were granted")
+
+
+# --- apply(): boosts -> live config ------------------------------------------
+
+func test_apply_is_a_no_op_without_boosts() -> void:
+	var cfg := GameConfig.new()
+	var before: float = cfg.shift_time
+	UpgradeLibrary.apply(_car(), cfg)
+	assert_eq(cfg.shift_time, before, "an un-boosted car leaves the config untouched")
+
+
+func test_the_set_op_writes_an_absolute_value() -> void:
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_gearbox"]), cfg)
+	assert_eq(cfg.shift_time, float(UpgradeFixtures.EFFECTS["fx_gearbox"]["shift_time_set"]),
+		"a 'set' effect replaces the baseline outright rather than scaling it")
+
+
+func test_the_mult_op_scales_the_baseline() -> void:
+	var cfg := GameConfig.new()
+	var base: float = cfg.mass
+	UpgradeLibrary.apply(_car(["fx_lightweight"]), cfg)
+	assert_lt(cfg.mass, base, "a mass_mult below 1 makes the car lighter")
+
+	var heavier := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_ballast"]), heavier)
+	assert_gt(heavier.mass, base, "and one above 1 makes it heavier")
+
+
+func test_the_add_op_accumulates_over_the_baseline() -> void:
+	var cfg := GameConfig.new()
+	var base: int = cfg.downforce_front
+	UpgradeLibrary.apply(_car(["fx_aero"]), cfg)
+	assert_gt(cfg.downforce_front, base, "an 'add' effect stacks on top of the baseline")
+
+
+func test_two_boosts_of_the_same_op_compound() -> void:
+	var one := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_lightweight"]), one)
+	var both := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_lightweight", "fx_ballast"]), both)
+	assert_ne(one.mass, both.mass,
+		"a second mass effect compounds on the first rather than replacing it")
+
+
+func test_installing_an_induction_sets_its_enable_flag() -> void:
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_turbo_big"]), cfg)
+	assert_true(cfg.turbo_enabled, "installing a turbo switches its physics on")
+	assert_gt(cfg.turbo_boost_gain, 0.0, "and seats the gain the boost authored")
+
+
+# The pair of effects that must cancel each other. A car cannot be running a turbo AND a
+# blower: whichever is applied last has to clear the other's enable flag AND the belt gain
+# that switches its physics on, or the car quietly runs both.
+func test_an_induction_clears_the_one_it_replaces() -> void:
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_supercharger", "fx_turbo_big"]), cfg)
+	assert_true(cfg.turbo_enabled, "the turbo applied last is the one running")
+	assert_false(cfg.supercharger_enabled, "and the blower it replaced is switched off")
+	assert_eq(cfg.supercharger_boost_gain, 0.0,
+		"its belt gain is cleared too — the enable flag alone leaves the physics on")
+
+	var other := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_turbo_big", "fx_supercharger"]), other)
+	assert_true(other.supercharger_enabled, "and the cancellation works the other way round")
+	assert_false(other.turbo_enabled)
+
+
+func test_the_write_fields_op_splats_its_fields_with_no_enable_flag() -> void:
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply(_car(["fx_nitrous"]), cfg)
+	assert_gt(cfg.nitrous_boost_gain, 0.0, "nitrous writes its own config fields directly")
+	assert_gt(cfg.nitrous_tank_seconds, 0.0)
+
+
+# The one row whose META spelling and LIVE-CONFIG spelling differ: one tire_compound
+# coefficient standing for a per-axle pair. Both axles must move, or the tuning slider's
+# front/rear balance silently stops meaning anything.
+func test_a_cfg_fields_effect_writes_every_field_it_names() -> void:
+	var cfg := GameConfig.new()
+	var front: float = cfg.wheel_friction_slip_front
+	var rear: float = cfg.wheel_friction_slip_rear
+	UpgradeLibrary.apply(_car(["fx_tires"]), cfg)
+	assert_gt(cfg.wheel_friction_slip_front, front, "the front axle is scaled")
+	assert_gt(cfg.wheel_friction_slip_rear, rear, "and so is the rear")
+
+
+# --- effective_meta: the power-to-weight view --------------------------------
+
+func test_effective_meta_of_an_empty_meta_is_empty() -> void:
+	assert_eq(UpgradeLibrary.effective_meta(_car(), {}), {},
+		"no meta in, no meta out — callers pass {} for an unknown car")
+
+
+func test_effective_meta_mirrors_a_feeds_pw_effect() -> void:
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
+	var boosted := UpgradeLibrary.effective_meta(_car(["fx_lightweight"]), meta)
+	assert_lt(float(boosted["mass"]), float(meta["mass"]),
+		"a feeds_pw effect reaches the derived meta, not just the live config")
+	assert_eq(meta["mass"], 1200.0, "and the caller's dict is not mutated")
+
+
+# Nitrous is deliberately feeds_pw FALSE: it is a per-stage resource, not a permanent power
+# level, so a bottle the player empties in one stage must never read as a permanent gain
+# anywhere a build is compared or displayed.
+func test_a_non_feeds_pw_effect_stays_out_of_the_meta() -> void:
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
+	var boosted := UpgradeLibrary.effective_meta(_car(["fx_nitrous"]), meta)
+	assert_eq(boosted, meta, "nitrous changes the config but not the power-to-weight view")
+
+
+# --- grip_meta: the grip view ------------------------------------------------
+
+func test_grip_meta_mirrors_a_feeds_grip_effect() -> void:
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
+		"tire_compound": 1.0}
+	var boosted := UpgradeLibrary.grip_meta(_car(["fx_tires"]), meta)
+	assert_gt(float(boosted["tire_compound"]), float(meta["tire_compound"]),
+		"a feeds_grip effect reaches the grip view")
+
+
+# The surface-dependent compound trades in BOTH directions — better on snow, worse on
+# tarmac. A one-way assertion would let a sign error through.
+func test_a_surface_compound_trades_in_both_directions() -> void:
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
+		"tire_compound": 1.0, "tire_snow_grip_mult": 1.0, "tire_tarmac_grip_mult": 1.0}
+	var boosted := UpgradeLibrary.grip_meta(_car(["fx_snow_tires"]), meta)
+	assert_gt(float(boosted["tire_snow_grip_mult"]), 1.0, "snow grip goes up")
+	assert_lt(float(boosted["tire_tarmac_grip_mult"]), 1.0, "and tarmac grip pays for it")
+
+
+func test_a_non_feeds_grip_effect_stays_out_of_the_grip_view() -> void:
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
+		"tire_compound": 1.0}
+	var boosted := UpgradeLibrary.grip_meta(_car(["fx_gearbox"]), meta)
+	assert_eq(float(boosted["tire_compound"]), float(meta["tire_compound"]),
+		"a gearbox does not change the tyres")
+
+
+# --- Drive mode --------------------------------------------------------------
+
+func test_stock_drive_mode_comes_from_the_car() -> void:
+	var owned := _car()
+	assert_eq(UpgradeLibrary.stock_drive_mode(owned),
+		int(CarLibrary.for_owned(owned).get("drive_mode", CarLibrary.RWD)),
+		"the stock layout is the car's own authored drive_mode")
+
+
+func test_no_stored_override_resolves_to_stock() -> void:
+	assert_eq(UpgradeLibrary.resolve_drive_override(_car()), -1,
+		"-1 means 'use the car's authored layout'")
+
+
+# The gate that keeps a conversion from being free. Nothing sells one right now (the
+# purchase path is deleted and money lands in stage 6 — see the MONEY SEAM in
+# resolve_drive_override), so an override written directly must stay inert rather than
+# being honoured for nothing.
+func test_an_unpaid_stored_override_is_inert() -> void:
+	var owned := _car()
+	var stock := UpgradeLibrary.stock_drive_mode(owned)
+	var other := CarLibrary.AWD if stock != CarLibrary.AWD else CarLibrary.FWD
+	owned["drivetrain_override"] = other
+	assert_ne(UpgradeLibrary.resolve_drive_override(owned), other,
+		"a layout the player never paid for is not honoured")

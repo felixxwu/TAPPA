@@ -35,7 +35,6 @@ func after_each() -> void:
 	for entry in InputRemap.ACTIONS:
 		Input.action_release(String(entry["action"]))
 	CarFixtures.restore()
-	UpgradeLibrary.reset()
 
 
 # Load-weighted front-axle grip usage: how much of its peak the steering axle is using,

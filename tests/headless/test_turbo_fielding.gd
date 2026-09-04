@@ -16,13 +16,11 @@ var _scene: Node3D
 func before_each() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
-	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 
 
 func after_each() -> void:
-	UpgradeFixtures.restore()
 	CarFixtures.restore()
 	Config.reset()
 
@@ -31,7 +29,7 @@ func test_turbo_upgrade_on_na_car_reconfigures_audio() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var audio := car.get_node("EngineAudio")
 	# Field a fixture (NA) car with a big-turbo upgrade fitted.
-	var owned := {"model_id": "fx_light_rwd", "installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
+	var owned := {"model_id": "fx_light_rwd", "boosts": UpgradeFixtures.boosts(["fx_turbo_big"])}
 	car.apply_owned(owned)
 	# The upgrade path ran and enabled the turbo on the live config.
 	assert_true(Config.data.turbo_enabled, "the turbo upgrade enables the turbo on an NA car")

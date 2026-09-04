@@ -506,7 +506,8 @@ rally list or `data/track_cache.json`, so no cache can mask a generator change.
 Knob sweeping goes through `BenchmarkTrack.build_from`, never the live config:
 `-- --straight=350,500,750 --sweeper=70,90,120` sweeps the cartesian product and
 flags the best-correlating setting. Other args: `--stages=N` (generation is the
-entire cost), `--seed=N`, `--stock-only`. Anything it recommends is a
+entire cost), `--seed=N` (`--stock-only` is accepted and ignored — there is one build
+per car now that parts are gone). Anything it recommends is a
 `GameConfig` value — apply it in `config/game_config.tres`.
 
 **C2 — pace floor: `./calibrate_pace_floor.sh`**

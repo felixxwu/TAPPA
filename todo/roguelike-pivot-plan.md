@@ -414,6 +414,31 @@ and the migration chain. Four judgement calls worth knowing:
 > caught by `--headless --quit`, which does not deep-validate autoload calls.
 > `upgrades_grid.gd` is deleted by the parts wave, which resolves it.
 
+**Parts model deleted — stage 2's demolition is COMPLETE.** The catalogue, `SLOTS`,
+install/buy, `auto_build_plan`, `upgrade_options.gd`, `upgrades_grid.gd`,
+`upgrade_reveal.gd`, `upgrade_icons.gd`, `reward_system.gd` and every `Save` purchase
+function are gone.
+
+- **The effects funnel survives, as stage 2a decided.** `upgrade_library.gd` is gutted
+  from 1182 lines to `EFFECTS` / `_cfg_fields` / `_cfg_set` / `apply` / `active_effects` /
+  `effective_meta` / `grip_meta` / `stock_drive_mode` / `resolve_drive_override`. This is
+  the in-run boost applier stage 5 builds on — **do not delete it.**
+- **The seam changed key: `installed_upgrades` → `boosts`.** `active_effects` now reads
+  `owned_car["boosts"]`, a list of `{"id", "effect"}`. Stage 5's job is to WRITE that key,
+  not to re-plumb call sites. Deliberately NOT persisted by `Save` — a run's boosts are
+  wiped on run end (soft permadeath).
+- `tests/headless/upgrade_fixtures.gd` is now synthetic BOOST fixtures covering every
+  effect shape the funnel reads. `test_upgrade_library.gd` was rewritten around the funnel
+  (22 tests); the catalogue tests it replaced are gone.
+- **The agent running this hit a session rate limit partway through** and the parent
+  finished the test half by hand. If a wave dies mid-flight, `--headless --quit` plus
+  `--check-only --script <file>` per test file is the fastest way to find what it left.
+
+> **DEBT FOR THE ECONOMY STAGE (stage 6):** the engine swap survives but nothing sells a
+> drivetrain conversion — `resolve_drive_override` carries a MONEY SEAM comment and an
+> unpaid stored override stays inert. `features/upgrade-catalogue.md` carries a STALE
+> banner and wants rewriting around the funnel in the stage 9 audit.
+
 > **THE BIG ONE — `test_menu_flow.gd` is 5884 lines with ~1080 `hq.<member>`
 > references.** With `test_cloud_boot_gate.gd` and `test_wheel_customization.gd` it
 > drives real SURVIVING logic (start-line preflight, wheel swap, cloud boot gating,

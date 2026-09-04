@@ -38,7 +38,6 @@ func before_each() -> void:
 	# _dark_map_radius) so this default can't hide the behaviour it is standing in for.
 	Config.data.map_hq_reveal_radius = 10.0
 	CarFixtures.install()
-	UpgradeFixtures.install()
 	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
@@ -82,7 +81,6 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
-	UpgradeFixtures.restore()
 	RallyFixtures.restore()
 	RallyLibrary.reset()  # drop any synthetic rally roster a test installed
 	RegionLibrary.reset()  # drop any synthetic region roster a test installed
@@ -933,7 +931,6 @@ func test_car_stats_text_names_a_fitted_nitrous_rung_after_health() -> void:
 	var with_nitrous: String = hq._car_stats_text(owned, entry)
 	assert_true(with_nitrous.ends_with("Fixture Nitrous"),
 		"the fitted rung's name is appended last, after health")
-	UpgradeLibrary.reset()
 
 
 # Regression: the Upgrades page must seat keyboard/gamepad focus on a real control.
@@ -3268,7 +3265,6 @@ func test_podium_reveals_a_special_unlock_and_names_the_car() -> void:
 	# the black the inverted card used to paint back on over them.
 	assert_ne(pod._slot_label.get_theme_color("font_color"), Color(0, 0, 0, 1),
 		"and takes the house light ink, not the inverted card's black")
-	UpgradeLibrary.reset()
 
 
 # A special that gates a CAPABILITY rather than a part still gets a reveal. Engine swaps are

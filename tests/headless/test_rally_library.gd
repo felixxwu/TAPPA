@@ -26,7 +26,6 @@ func after_each() -> void:
 	# converted cases that install RallyFixtures/UpgradeFixtures at their top are
 	# cleaned up here even if an assertion fails mid-function.
 	RallyFixtures.restore()
-	UpgradeFixtures.restore()
 
 
 # --- Roster validity (anti-soft-lock) ---------------------------------------
@@ -87,46 +86,10 @@ func test_every_special_is_open_class() -> void:
 				"special %s is open-class" % rally.get("id", "?"))
 
 
-func test_every_authored_star_gate_names_a_real_special() -> void:
-	# The gates are plain id strings with no validation, so renaming or deleting a special
-	# would silently make the gated part permanently unwinnable (rally_gate_met would just
-	# return false forever, with no error). Pins no chosen id or threshold — it asserts the
-	# CONTRACT that every authored gate resolves.
-	for item in UpgradeLibrary.all():
-		var gate := UpgradeLibrary.unlocked_by_rally(String(item["id"]))
-		if gate == "":
-			continue
-		var rally := RallyLibrary.by_id(gate)
-		assert_false(rally.is_empty(),
-			"%s is gated on '%s', which must be a real rally" % [item["id"], gate])
-		assert_true(RallyLibrary.is_special(rally),
-			"%s is gated on '%s', which must be a SPECIAL event" % [item["id"], gate])
-	# Each special gates at most ONE part: UpgradeLibrary.unlocked_by returns the first match,
-	# so a second part on the same rally would be silently dropped from the map's teaser line.
-	var seen_gates := {}
-	for item in UpgradeLibrary.all():
-		var g := UpgradeLibrary.unlocked_by_rally(String(item["id"]))
-		if g == "":
-			continue
-		assert_false(seen_gates.has(g), "rally '%s' gates only one part" % g)
-		seen_gates[g] = true
-	var swap_rally := RallyLibrary.by_id(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
-	assert_false(swap_rally.is_empty(), "the engine-swap capability names a real rally")
-	assert_true(RallyLibrary.is_special(swap_rally),
-		"the engine-swap capability is gated on a SPECIAL event")
-
-
-# Opening rally / prize tests DELETED (todo/roguelike-pivot.md decisions 21 and 28): the
-# `prize_car` field is gone from every shipped RALLIES entry (car acquisition is a money
-# shop now, not a rally-win draw), which makes RallyLibrary.opening_rally_id_for /
-# reveal_depths / hq_map_pos's "opening rally" branch permanently empty against the real
-# roster -- there is no longer a starter's own rally to test reachability, admission,
-# uniqueness or non-overlap against. RallyLibrary.prize_car_id / opening_rally_id_for /
-# reveal_depths / hq_map_pos themselves are NOT deleted (see prize_car_id's own comment in
-# rally_library.gd for why) -- only the shipped-content contracts that exercised them
-# through real prize_car data are, since that data no longer exists. Synthetic-roster tests
-# further down (the "Map exploration" section) still exercise the underlying reveal
-# mechanics directly and are unaffected.
+# NOTE: a contract test lived here asserting every authored part gate names a real SPECIAL
+# rally, and that each special gates at most one part. Both the gates and the parts are
+# deleted with the persistent parts model (todo/roguelike-pivot.md), so there is nothing
+# left to resolve. Region unlock in the pivot is linear and carries no per-part gating.
 
 
 func test_map_pins_are_well_formed_and_never_stack() -> void:

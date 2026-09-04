@@ -8,7 +8,7 @@ extends Node3D
 # active (features/rally-challenge.md), while the car is held locked by the
 # StageManager's STAGING phase:
 #
-#   1. MENU     — black house-style panels offer Start / Upgrades / Tune Car under a
+#   1. MENU     — black house-style panels offer Start / Tune Car under a
 #      rally/event header, while an orbit camera idles on the player's car. The player
 #      launches with the Start button, menu_select or a tap (eligibility gates first).
 #   2. FADE     — Start fades the screen to black; at full black the camera hands back
@@ -49,11 +49,7 @@ var _overlay: CanvasLayer
 var _start_button: Button
 var _tune_button: Button
 var _tune_layer: CanvasLayer         # the pre-race tuning overlay (built lazily)
-var _tune_panel: TuningPanel         # the shared handling-axis tuning sliders (detune is in Upgrades)
-var _upgrades_button: Button
-var _upgrades_layer: CanvasLayer     # the pre-race upgrades overlay (built lazily)
-var _upgrades_menu: UpgradesGrid   # the shared upgrades page (same as the HQ garage)
-var _upgrades_back: Button           # the upgrades overlay's Back/Done button (p/w-gated)
+var _tune_panel: TuningPanel         # the shared handling-axis tuning sliders
 var _menu_last_back: Button          # back button _build_menu_overlay just created
 var _pause_menu: PauseMenu           # for the Exit button; pause itself is off while staged
 var _exit_button: Button
@@ -91,7 +87,7 @@ func _cfg() -> GameConfig:
 # car is on the line". A challenge run fields ChallengeSession's locked car
 # (spec §2) — the only session StartLine stages for now that RallySession is
 # deleted (todo/roguelike-pivot.md decision 5). Every consumer (the launch
-# eligibility gate, the Tune Car panel, the Upgrades menu and its live refit) goes
+# eligibility gate and the Tune Car panel) goes
 # through this rather than branching for itself, so there is a single answer.
 #
 # Free roam is deliberately NOT folded in here: it is session-less, never stages
@@ -217,7 +213,7 @@ func _advance_orbit(delta: float) -> void:
 	_update_orbit()
 
 
-# --- Overlay (MENU: Start / Upgrades / Tune Car) -----------------------------
+# --- Overlay (MENU: Start / Tune Car) ----------------------------------------
 
 # The MENU UI follows the design system (UITheme): pure-black, sharp-cornered panels,
 # the one house font size, uppercase text. It hugs the TOP (a rally/event header) and
@@ -257,10 +253,8 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	root.add_child(spacer)
 
 	# --- BOTTOM: one horizontal action row -----------------------------------
-	# Laid out across the bottom, exit-first-primary-last, the same shape the garage row
-	# (< Back / Drive / Garage / Mystery Box) and the lift hub (< Back / Upgrades /
-	# Tuning / Test Drive) use. Stacked vertically these four would eat most of a phone
-	# screen and cover the very car the staging shot exists to show.
+	# Laid out across the bottom, exit-first-primary-last. Stacked vertically these would
+	# eat most of a phone screen and cover the very car the staging shot exists to show.
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", UITheme.GAP)
@@ -273,9 +267,6 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	# benchmark/challenge/rally branching stay in exactly one place.
 	_exit_button = _row_button("< Exit", _on_exit_pressed)
 	actions.add_child(_exit_button)
-
-	_upgrades_button = _row_button("Upgrades", _open_upgrades)
-	actions.add_child(_upgrades_button)
 
 	_tune_button = _row_button("Tune Car", _open_tune)
 	actions.add_child(_tune_button)
@@ -371,14 +362,14 @@ func launch() -> void:
 		if not owned.is_empty():
 			var entry := CarLibrary.for_owned(owned)
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
-			# Entry is categorical (body / country / doors / engine / drive mode), so a
-			# mid-rally upgrade can only break eligibility by changing the KIND of car —
-			# an engine swap or a drivetrain conversion. Route those to the upgrades menu.
+			# Entry is categorical (body / country / doors / engine / drive mode). Nothing
+			# reachable from this screen can change the KIND of car any more — the Upgrades
+			# page went with the parts model (decision 29: the start line offers Tune Car
+			# only) — so an ineligible car is simply refused with no route to fix it here.
 			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
 			if reason != "":
 				ConfirmPopup.open(self, "Can't start", reason,
-					[ {"label": "Cancel", "callback": Callable()},
-					  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
+					[ {"label": "Cancel", "callback": Callable()} ], 0, 0)
 				return
 	_launched = true
 	if _overlay != null:
@@ -422,9 +413,9 @@ func _release_player() -> void:
 	_player_staged = false
 
 
-# --- Pre-race menus (Upgrades / Tune Car) ------------------------------------
+# --- Pre-race menu (Tune Car) ------------------------------------------------
 
-# The CarPerformance rating ceiling for the pre-race tune / upgrades menus (-1 = none).
+# The CarPerformance rating ceiling for the pre-race tune menu (-1 = none).
 # A thin wrapper over DrivingContext.rating_limit(), which answers for whichever session
 # is fielding the car — only a challenge period's rolled ceiling today, since career
 # entry is categorical — so this screen never has to branch.
@@ -432,9 +423,8 @@ func _rating_limit() -> float:
 	return DrivingContext.rating_limit()
 
 
-# Body width both pre-race menu overlays use. Sized for the narrow logical UI canvas rather
-# than the window (see features/menus.md -> "Upgrades / Tune panel width"); it was previously
-# a 520.0 default that no call site used, with the real 380.0 duplicated at both of them.
+# Body width the pre-race menu overlay uses. Sized for the narrow logical UI canvas rather
+# than the window (see features/menus.md -> "Upgrades / Tune panel width").
 const MENU_OVERLAY_WIDTH := 380.0
 
 # Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
@@ -506,9 +496,6 @@ func _close_tune() -> void:
 
 func _build_tune_overlay() -> void:
 	_tune_panel = TuningPanel.new()
-	# Same 380 as the Upgrades overlay (_build_upgrades_overlay): TuningPanel's rows are
-	# the same SliderRow shape as the detune row (180px label + an expand-fill slider), so
-	# the old shared 520 floor stretched this slider bar just as unnecessarily wide.
 	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune)
 
 
@@ -519,42 +506,12 @@ func _on_tune_changed(owned: Dictionary) -> void:
 		_player.retune(owned)
 
 
-func _open_upgrades() -> void:
-	if _seq != Seq.MENU:
-		return
-	if _upgrades_layer == null:
-		_build_upgrades_overlay()
-	var owned := _driven_car()
-	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _rating_limit())
-	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
-	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
-
-
-# Closing the Upgrades page used to be the commit point for re-drawing the rival grid
-# against the build the player was actually about to race — RallySession.
-# refield_opponents() re-matched the field and _restage_grid() re-spawned the grid
-# props. Both are deleted with the rival field and RallySession itself
-# (todo/roguelike-pivot.md decision 5); there is no grid left to re-stage.
-func _close_upgrades() -> void:
-	_close_menu(_upgrades_layer, _upgrades_button)
-
-
-func _build_upgrades_overlay() -> void:
-	_upgrades_menu = UpgradesGrid.new()
-	# Narrower than Tune Car's default 520: the 3x3 tile grid asks for far less room than
-	# the handling-axis sliders, and the shared 520 floor only stretched it across leftover
-	# width — reading as an oversized panel.
-	# No page title: UpgradesGrid draws its own heading, and that heading is what carries
-	# the star balance beside the prices its slot pickers quote (UpgradesGrid.build_title_row).
-	_upgrades_layer = _build_menu_overlay("", _upgrades_menu, _close_upgrades, false)
-	_upgrades_back = _menu_last_back
-
-
-# An upgrade edit. Re-field the live car's upgrade state WITHOUT reshaping the staged
-# body (refit_upgrades, NOT apply_owned).
-func _on_upgrade_changed() -> void:
-	if _player != null and _player.has_method("refit_upgrades"):
-		_player.refit_upgrades(_driven_car())
+# THE UPGRADES PAGE IS GONE (todo/roguelike-pivot.md decision 29: "the start line offers
+# Tune Car only"). `_open_upgrades` / `_close_upgrades` / `_build_upgrades_overlay` /
+# `_on_upgrade_changed` hosted an UpgradesGrid here; upgrades have nothing to show once
+# parts are deleted and boosts are picked between stages instead. Tune Car below survives
+# and is per-stage useful. Car.refit_upgrades — the live re-derive this page drove — is
+# kept for stage 5 to apply a picked boost through; see its comment.
 
 
 # --- Readouts (for tests) ----------------------------------------------------
