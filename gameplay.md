@@ -237,16 +237,22 @@ moved you forward.
 They're also **load-bearing**, because they gate **perks**. A perk is unlocked by
 crossing a lifetime threshold, *bought* separately with money, and only a few can
 be equipped at once. Their effects are the flavour layer the run loop otherwise
-lacks — a wider coin pickup radius, slow self-repair during a stage, money for
-near-misses with trees or crowds, money for drifting, a once-per-stage nitrous
-burst, reduced collision damage, a bigger fast-completion bonus.
+lacks. The shipped seven each bend one number the run already turns on: a wider
+coin pickup radius, slow self-repair while driving, softer impacts, more coins per
+stage, a bigger fast-completion bonus, a more generous stage target, and a bigger
+base payout per stage clear.
+
+RR's own set leans harder on *how* you drive — money for near-misses with trees or
+crowds, money for drifting, a once-per-stage nitrous burst. Those want detectors
+the driving sim does not have yet (a near-miss test, a sustained-drift test), so
+they are the obvious direction to grow the catalogue in rather than a gap in it.
 
 Two things follow from the unlock-then-buy shape. First, **playing unlocks perks
 and money buys them** — neither alone is enough, so the perk screen always has
 both a "keep playing" goal and a "keep earning" goal on it. Second, because the
-gates are lifetime counters, they reward *breadth of play*: the perk that pays for
-near-misses unlocks by having near-misses, which is a nudge to drive a particular
-way rather than a number to grind.
+gates are lifetime counters, they reward *breadth of play*: the coin-magnet perk
+unlocks by clearing stages, the self-repair one by taking damage, so each gate is a
+nudge toward a particular kind of play rather than a single number to grind.
 
 The three-equipped cap keeps a build legible. Perks are a loadout, not a list of
 everything you've ever bought.

@@ -22,14 +22,25 @@ extends RefCounted
 # PERK_MAX_EQUIPPED = 3) — an owned perk need not be equipped, and the cap is
 # enforced once, in Save.equip_perk, not re-checked by every caller.
 #
-# NO GAMEPLAY EFFECTS YET, AND THAT IS DELIBERATE FOR THIS STAGE. RR's perks each
-# carry real in-run behaviour (a coin-magnet radius, a heal rate, a damage-reduction
-# fraction); this stage builds the gate/purchase/equip STATE MACHINE only — every
-# perk here is inert once equipped, a plain id sitting in
-# Save.profile[Save.KEY_EQUIPPED_PERKS] that nothing currently reads for gameplay.
-# Wiring a real effect belongs through the SAME funnel BoostLibrary already uses
-# (UpgradeLibrary.EFFECTS + a car's "boosts" seam — see that file's own header)
-# rather than a second mechanism, when that lands.
+# EFFECTS ARE WIRED (decision 51). Each entry's `effect_fields` maps an
+# UpgradeLibrary.EFFECTS key onto the GameConfig field its magnitude is read from —
+# the SAME shape BoostLibrary.CATALOGUE uses, deliberately, because it walks the SAME
+# funnel: world.gd::_field_car merges `equipped_effects` into the fielded car's
+# `boosts` list, and UpgradeLibrary.apply does the rest. Decision 51 requires exactly
+# this ("the seam is UpgradeLibrary.EFFECTS + a car's boosts list; do not build a
+# parallel modifier path"), so a perk that wants a new kind of effect adds an EFFECTS
+# row + a GameConfig field, never a bespoke read at some call site.
+#
+# WHERE EACH PERK ACTUALLY LANDS — the field is the contract, the number is tunable:
+#   coin_magnet   coin_pickup_radius_m   CoinField reads it live every physics tick
+#   self_healing  damage_regen_hp_per_s  DamageModel.regen, on the damage tick
+#   rubber_body   impact_ref_hp_loss     DamageModel.hp_loss_for_speed's reference
+#   trail_blazer  run_fast_bonus_money   RegionRunMode.stage_money's time-saved bonus
+#   lucky_coins   coins_per_stage        CoinLayout.plan's count, via coin_layout_params
+#   iron_will     run_target_pace_base   RegionRunMode.target_pace, every stage
+#   road_scholar  run_stage_money_base   RegionRunMode.stage_money's completion term
+# All seven are GLOBAL config fields with no per-car re-seed, which is why each of
+# their EFFECTS rows carries `reseed` — see UpgradeLibrary._reseed_globals.
 #
 # `unlock.stat` NAMES A LifetimeStats ID — LifetimeStats.is_known(stat) is the
 # contract `test_perk_library.gd -> test_every_unlock_stat_is_a_real_lifetime_stat`
@@ -46,36 +57,51 @@ const PERKS: Array[Dictionary] = [
 		"id": "coin_magnet", "label": "Coin Magnet", "price": 5000,
 		"description": "Wider coin pickup radius.",
 		"unlock": {"stat": LifetimeStats.STAGES_CLEARED, "threshold": 8},
+		"effect_fields": {"coin_pickup_radius_mult": "perk_coin_radius_mult"},
 	},
 	{
 		"id": "self_healing", "label": "Self Healing", "price": 8000,
-		"description": "Slowly repairs damage during a stage.",
+		"description": "Slowly repairs damage while driving.",
 		"unlock": {"stat": LifetimeStats.DAMAGE_TAKEN, "threshold": 300},
+		"effect_fields": {"damage_regen_set": "perk_heal_hp_per_s"},
 	},
 	{
 		"id": "trail_blazer", "label": "Trail Blazer", "price": 6000,
 		"description": "Bigger fast-completion bonus.",
 		"unlock": {"stat": LifetimeStats.MONEY_EARNED, "threshold": 5000},
+		"effect_fields": {"fast_bonus_money_mult": "perk_fast_bonus_mult"},
 	},
 	{
 		"id": "lucky_coins", "label": "Lucky Coins", "price": 7000,
 		"description": "More coins spawn per stage.",
 		"unlock": {"stat": LifetimeStats.MONEY_SPENT, "threshold": 5000},
+		"effect_fields": {"coin_count_mult": "perk_coin_count_mult"},
 	},
 	{
 		"id": "rubber_body", "label": "Rubber Body", "price": 9000,
 		"description": "Takes less damage from impacts.",
 		"unlock": {"stat": LifetimeStats.RUNS_FAILED, "threshold": 3},
+		"effect_fields": {"impact_damage_mult": "perk_damage_mult"},
 	},
 	{
 		"id": "iron_will", "label": "Iron Will", "price": 12000,
-		"description": "Starts each run with a head start on the clock.",
+		# REWORDED with the wiring (it used to promise "a head start on the clock").
+		# There is no run-wide clock to start ahead of — the timer is a PER-STAGE target
+		# (decision 11, RegionRunMode.stage_target_ms), so the honest effect is a more
+		# generous target on every stage, which is what run_target_pace_base moves.
+		"description": "Every stage's target time is more generous.",
 		"unlock": {"stat": LifetimeStats.REGIONS_CLEARED_TOTAL, "threshold": 2},
+		"effect_fields": {"target_pace_add": "perk_target_pace_add"},
 	},
 	{
 		"id": "road_scholar", "label": "Road Scholar", "price": 4000,
-		"description": "A little extra money on every run's opening stage.",
+		# REWORDED with the wiring, same reason as iron_will: the payout it moves
+		# (run_stage_money_base) is the base of EVERY stage clear, not a first-stage
+		# special case — and singling out stage 1 would need a call-site branch, i.e.
+		# exactly the parallel modifier path decision 51 rules out.
+		"description": "Every stage clear pays a little more.",
 		"unlock": {"stat": LifetimeStats.RUNS_STARTED, "threshold": 10},
+		"effect_fields": {"stage_money_base_add": "perk_stage_money_add"},
 	},
 ]
 
@@ -139,3 +165,47 @@ static func unlock_label(id: String) -> String:
 	var unlock := unlock_of(id)
 	var stat := String(unlock.get("stat", ""))
 	return "%s: %d" % [LifetimeStats.label_for(stat), int(unlock.get("threshold", 0))]
+
+
+# --- The effects seam (decision 51) -------------------------------------------
+
+# The `effect` dict `id` resolves to RIGHT NOW, read live off Config.data field by
+# field — never cached, so an inspector retune lands on the next stage boot. {} for an
+# unknown id, and for an entry with no `effect_fields` (a catalogue entry may exist
+# before its effect does; a missing effect must degrade to "does nothing", not error).
+# Mirrors BoostLibrary.magnitude_for's shape exactly — same funnel, same contract.
+static func effect_for(id: String) -> Dictionary:
+	var fields: Dictionary = by_id(id).get("effect_fields", {})
+	if fields.is_empty():
+		return {}
+	var cfg: GameConfig = Config.data
+	var out := {}
+	for effect_key in fields:
+		out[effect_key] = float(cfg.get(String(fields[effect_key])))
+	return out
+
+
+# Every EQUIPPED perk's effect, in the exact shape UpgradeLibrary.active_effects reads
+# ({"id": String, "effect": Dictionary}) so world.gd can append it straight onto the
+# fielded car's `boosts` list.
+#
+# OWNED **AND** EQUIPPED. The cap (GameConfig.perk_max_equipped) is enforced once, in
+# Save.equip_perk, but the ownership cross-check is repeated here on purpose: an
+# equipped list that outlived its purchase (a hand-edited save, a schema migration, a
+# refund path added later) must not quietly hand out a free effect. A perk with no
+# `effect_fields` yet contributes nothing rather than an empty entry.
+#
+# Pure in `profile` — no Save read — so a synthetic profile exercises it with no
+# autoload state, the same way is_unlocked/is_purchasable do.
+static func equipped_effects(profile: Dictionary) -> Array:
+	var bought: Array = profile.get(Save.KEY_BOUGHT_PERKS, [])
+	var out: Array = []
+	for id in (profile.get(Save.KEY_EQUIPPED_PERKS, []) as Array):
+		var perk_id := String(id)
+		if not bought.has(perk_id):
+			continue
+		var effect := effect_for(perk_id)
+		if effect.is_empty():
+			continue
+		out.append({"id": perk_id, "effect": effect})
+	return out

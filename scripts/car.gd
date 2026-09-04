@@ -1262,6 +1262,15 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		var dv := (_approach_velocity - state.linear_velocity).length()
 		var contact_point := state.get_contact_local_position(0) if contacts > 0 else global_position
 		damage.register_deceleration(dv, state.step, contact_point, cfg)
+	# The self-heal trickle (features/damage.md), on the SAME step as the impact
+	# measurement above so heal and damage share one clock. Deliberately OUTSIDE the
+	# suppression branch: the reset/teleport countdown exists to stop a discontinuous
+	# velocity reading as a crash, which has nothing to do with healing — a car should
+	# not stop mending because it was just respawned. A no-op unless the effects funnel
+	# wrote cfg.damage_regen_hp_per_s (the "self_healing" perk).
+	if damage != null:
+		@warning_ignore("return_value_discarded")
+		damage.regen(state.step, cfg)
 
 
 # True when at least one wheel is not touching the ground — the trigger for the

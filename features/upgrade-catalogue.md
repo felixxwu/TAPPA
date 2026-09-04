@@ -514,6 +514,16 @@ audio-only (`features/forced-induction.md`).
 A fielded car's live `Config.data` is built in a fixed order so effects compose
 predictably:
 
+0. **Global reseed** — `UpgradeLibrary._reseed_globals(cfg)`, the first thing `apply`
+   does. Steps 1–4 below all concern PER-CAR fields, which step 1 re-seeds from the
+   model spec; the perk rows added by `todo/roguelike-pivot.md` decision 51 target
+   GLOBAL tunables (`coin_pickup_radius_m`, `coins_per_stage`, `run_fast_bonus_money`,
+   `run_target_pace_base`, `run_stage_money_base`, `impact_ref_hp_loss`,
+   `damage_regen_hp_per_s`) that nothing re-seeds — so every row flagged `reseed` has
+   its fields restored from the pristine authored baseline (`Config.authored_value`)
+   before anything is applied. Unconditional: "nothing equipped" is exactly the case
+   that has to hand the authored number back. Without it a `mult` on one of those
+   fields would compound on every stage boot. See [perks.md](perks.md).
 1. **CarLibrary baseline** — `apply_car` copies the model's spec into `Config.data`.
 2. **Enabled upgrades** — `UpgradeLibrary.apply(owned_car, cfg)` walks
    `enabled_upgrades(owned_car)` (installed minus the menu-disabled ones) and

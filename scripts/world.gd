@@ -1726,7 +1726,14 @@ func _field_car(instance_id: int) -> void:
 		# temporary picks straight into the profile, which must never happen (they are
 		# wiped when the run ends, win or lose; see RunSession._finish_locally).
 		owned = owned.duplicate(true)
-		owned["boosts"] = RunSession.boosts()
+		# PERKS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
+		# UpgradeLibrary.EFFECTS + a car's boosts list; do not build a parallel modifier
+		# path"). The two lists differ in LIFETIME, not in mechanism: a boost is run-scoped
+		# and wiped when the run ends, while an equipped perk is a permanent profile
+		# purchase — so perks are re-derived from the profile on every stage boot rather
+		# than carried on the run object. Both land on the same duplicated dict, which is
+		# what keeps either of them out of the saved profile.
+		owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
@@ -1787,7 +1794,10 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# _on_finish_reached), NOT here: this handler fires on the NEXT button, by which time
 	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
 	# that post-finish coast would be wrongly charged to the event's damage.
-	var hp_lost: float = maxf(0.0, _event_start_hp - _event_hp_at_finish)
+	# SIGNED, not clamped at 0: the "self_healing" perk (decision 51) can leave a stage
+	# with MORE HP than it started, and clamping here would silently throw that repair
+	# away at every stage boundary. RunSession.report_event_result reads the sign.
+	var hp_lost: float = _event_start_hp - _event_hp_at_finish
 	var iid: int = RunSession.car_instance_id()
 	if iid >= 0:
 		Save.set_wheel_toe(iid, _event_toe_at_finish)

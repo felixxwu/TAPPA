@@ -697,6 +697,26 @@ func apply_damage(instance_id: int, amount: float) -> void:
 	save()
 
 
+# The inverse of apply_damage: give `amount` HP back, capped at the car's authored
+# max_hp. Used by RunSession.report_event_result when a stage ends with a NET heal (the
+# "self_healing" perk, todo/roguelike-pivot.md decision 51) — without it the trickle
+# would be silently discarded at every stage boundary.
+#
+# Deliberately NOT a repair: it moves HP only, leaving `wheel_toe` bent. Straightening
+# wheels stays field_repair's job (the between-stage pick), so a self-healing car still
+# has a reason to take the repair.
+func heal_car(instance_id: int, amount: float) -> void:
+	if amount <= 0.0:
+		return
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var max_hp := float(entry.get("max_hp", car["hp"])) if not entry.is_empty() else float(car["hp"])
+	car["hp"] = minf(max_hp, float(car["hp"]) + amount)
+	save()
+
+
 # Persist a car's per-wheel damage misalignment (radians, ordered like
 # DamageModel.WHEEL_NAMES). Written at each event boundary alongside apply_damage so
 # a car carries its bent wheels between events (features/damage.md).

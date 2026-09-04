@@ -382,6 +382,27 @@ player's own route to it was removed. The `"WRECKED"` labels the UI shows (rally
 the overworld picker) key off `hp == 0` or a rival's `dnf` flag and still render correctly
 for both.
 
+## The self-heal trickle (`DamageModel.regen`)
+
+The SECOND way HP comes back, and the only continuous one: `regen(dt, cfg)` adds
+`cfg.damage_regen_hp_per_s * dt` to the pool (capped at `max_hp`) on the same physics
+step `register_deceleration` measures impacts on. `car.gd` calls it every tick,
+deliberately OUTSIDE the reset/teleport suppression branch — that countdown exists to
+stop a discontinuous velocity reading as a crash, which has nothing to do with mending.
+
+**`damage_regen_hp_per_s` is 0.0 on the authored baseline**, so this is a no-op for
+every car unless something writes it. The only writer is the effects funnel: the
+"Self Healing" perk's `EFFECTS` row (`damage_regen_set`) sets it from
+`perk_heal_hp_per_s`, and `UpgradeLibrary._reseed_globals` puts it back to 0.0 the
+moment the perk comes off. `DamageModel` itself knows nothing about perks — it reads a
+config knob like every other rule here. See [perks.md](perks.md).
+
+It heals HP **only**. `wheel_toe` stays bent (only `field_repair` straightens wheels),
+so a self-healing car still has a reason to take the between-stage repair. A stage that
+ends with MORE HP than it started persists through `Save.heal_car` — see
+`RunSession.report_event_result`, which reads the stage's HP delta signed for exactly
+that case.
+
 ## Between-event pit repairs (`Save.field_repair`)
 
 A rally is a campaign of `EVENTS_PER_RALLY` events run back-to-back on one fielded
@@ -489,7 +510,8 @@ sits to its left and a **nitrous gauge** to its right, built the same way — se
 
 `impact_threshold_g` (the braking-proof deceleration gate — the single sensitivity
 knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
-`impact_max_loss`, `damage_misfire_health_threshold` (where BOTH engine effects start —
+`impact_max_loss`, `damage_regen_hp_per_s` (a LIVE field, 0.0 as authored — see the
+self-heal trickle above), `damage_misfire_health_threshold` (where BOTH engine effects start —
 the shared `damage_ramp`), `damage_misfire_level_max` (worst misfire intensity at 0 HP —
 the "certain point" past which damage stops weakening the engine),
 `damage_rev_limit_min_fraction` (fraction of redline still usable at 0 HP),
@@ -502,8 +524,8 @@ the "certain point" past which damage stops weakening the engine),
 `wreck_recovery_hp_fraction` and `wreck_settle_max_seconds` were **removed** with the
 wreck flow. `config/game_config.tres` overrides neither of the two new knobs, so their
 `game_config.gd` defaults (0.8 and 0.6) are what ships. Per-car `max_hp` is CarLibrary
-metadata, **not** a `GameConfig` field. The between-event pit repair is the only heal there is, tuned by
-the two `field_repair_*` fractions.
+metadata, **not** a `GameConfig` field. The between-event pit repair and the perk-driven
+`damage_regen_hp_per_s` trickle are the only two heals there are.
 Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
 values are not).
 

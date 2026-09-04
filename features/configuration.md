@@ -67,6 +67,25 @@ Callers: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune(
 boot/debug paths that re-field the car afterwards. Guarded by
 `tests/headless/test_config_isolation.gd`.
 
+## The authored baseline (`Config.authored_value`)
+
+`Config` keeps a SECOND reference alongside `data`: `_authored`, the pristine `.tres` as
+loaded, which nothing ever mutates (`data` is a `duplicate(true)` of it precisely so the
+runtime is free to retune itself). `Config.authored_value(field, fallback)` reads a field
+off it.
+
+Its one caller is `UpgradeLibrary._reseed_globals`. A per-car field mutated by the effects
+funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the perk rows
+(`todo/roguelike-pivot.md` decision 51) target GLOBAL tunables — a coin radius, a money
+rate, a stage-target pace — that nothing re-seeds, on a `Config.data` that outlives every
+scene. Without a pristine copy to read there is no way back to the authored number, so a
+multiplier would compound stage after stage and un-equipping the perk would never undo it.
+See [perks.md](perks.md) → *Why every perk row carries `reseed`*.
+
+Note the difference from `snapshot_values()` above: that captures the LIVE config at a
+moment (including engine fields written at fielding time); this is the authored file, and
+only ever the authored file.
+
 ## Property groups
 
 `game_config.gd` exposes 50+ `@export` properties, grouped:

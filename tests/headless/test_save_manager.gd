@@ -298,6 +298,33 @@ func test_damage_past_zero_keeps_the_car_and_its_bent_wheels() -> void:
 		"and its stored wheel_toe is untouched — no hidden restore")
 
 
+# heal_car — the OTHER way HP climbs back (RunSession.report_event_result routes a stage
+# that ended with a net heal here; the "self_healing" perk, todo/roguelike-pivot.md
+# decision 51). Caps at the car's authored max_hp and refuses a non-positive amount.
+func test_heal_car_gives_hp_back_and_caps_at_max() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var max_hp := float(_save.get_car(id)["hp"])  # a fresh car is fielded at full HP
+	_save.apply_damage(id, 500.0)
+	var damaged := float(_save.get_car(id)["hp"])
+	_save.heal_car(id, 200.0)
+	assert_almost_eq(float(_save.get_car(id)["hp"]), damaged + 200.0, 0.001)
+	_save.heal_car(id, 999999.0)
+	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
+		"healing never pushes a car past its authored max_hp")
+
+
+func test_heal_car_ignores_a_non_positive_amount() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	_save.apply_damage(id, 500.0)
+	var damaged := float(_save.get_car(id)["hp"])
+	_save.heal_car(id, 0.0)
+	_save.heal_car(id, -100.0)
+	assert_eq(float(_save.get_car(id)["hp"]), damaged,
+		"heal_car is not a back door into apply_damage")
+
+
 func test_damage_is_one_way_apart_from_the_field_repair() -> void:
 	# There is no full restore any more (repair kits are gone), so HP only ever climbs
 	# back through the free between-event field repair — and never past max.

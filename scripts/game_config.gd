@@ -835,6 +835,12 @@ func has_nitrous() -> bool:
 ## self-limits; a real multi-bounce tumble racks up several capped hits, so a long fall
 ## down a drop can still empty it.
 @export_range(0.0, 2000.0) var impact_max_loss := 450.0
+## HP regained per second while driving. A LIVE field, not an authoring knob: it is 0.0 on
+## the authored baseline (nothing heals by default) and the effects funnel writes it — the
+## "Self Healing" perk's EFFECTS row sets it from perk_heal_hp_per_s, and UpgradeLibrary's
+## reseed pre-pass puts it back to 0.0 the moment the perk is unequipped. Applied by
+## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
+@export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
 ## power in stumbling bursts instead of a smooth derate — fully simulated (crank
 ## torque drops to friction) and audible (the synth ducks + crackles on the cut).
@@ -4097,3 +4103,32 @@ func spectator_params() -> Dictionary:
 # number (CLAUDE.md), only that equip_perk refuses past whatever it is currently set to.
 ## The most perks that may be equipped at once, whatever how many are owned.
 @export_range(1, 10) var perk_max_equipped := 3
+
+# --- Perk MAGNITUDES (decision 51: perks are wired through UpgradeLibrary.EFFECTS) ---
+#
+# One field per perk, exactly the way @export_group("Roguelike Run Boosts") does it for
+# BoostLibrary: PerkLibrary's catalogue entries name the FIELD, never the number, and
+# PerkLibrary.effect_for re-reads Config.data live, so an inspector retune lands on the
+# next stage boot with no code change. Nothing in tests/headless/ may pin one of these
+# (CLAUDE.md) — only "the perk reads this field" is testable.
+#
+# Every one of them is a GLOBAL tunable, not a per-car stat, which is why each perk's
+# EFFECTS row carries `reseed` — see that table's header for why that flag exists and
+# what goes wrong without it.
+## "Coin Magnet" — multiplier on coin_pickup_radius_m while the perk is equipped.
+@export_range(1.0, 8.0, 0.1) var perk_coin_radius_mult := 3.0
+## "Self Healing" — the HP/second trickle written onto damage_regen_hp_per_s.
+@export_range(0.0, 50.0, 0.5) var perk_heal_hp_per_s := 6.0
+## "Rubber Body" — multiplier on impact_ref_hp_loss (below 1.0 = softer hits).
+@export_range(0.1, 1.0, 0.05) var perk_damage_mult := 0.6
+## "Trail Blazer" — multiplier on run_fast_bonus_money (the time-saved payout).
+@export_range(1.0, 5.0, 0.1) var perk_fast_bonus_mult := 2.5
+## "Lucky Coins" — multiplier on coins_per_stage. Truncated to a whole coin count by the
+## int field it writes, so a fractional multiplier rounds DOWN.
+@export_range(1.0, 5.0, 0.5) var perk_coin_count_mult := 3.0
+## "Iron Will" — added to run_target_pace_base, so EVERY stage target in the run is that
+## much more generous against the reference-car optimum (see RegionRunMode.target_pace).
+@export_range(0.0, 1.0, 0.01) var perk_target_pace_add := 0.15
+## "Road Scholar" — added to run_stage_money_base, i.e. to the stage-clear payout BEFORE
+## the run's growth exponent and the region scale compound it.
+@export_range(0.0, 2000.0, 10.0) var perk_stage_money_add := 60.0

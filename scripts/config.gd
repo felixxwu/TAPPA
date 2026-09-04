@@ -7,6 +7,18 @@ const CONFIG_PATH := "res://config/game_config.tres"
 
 var data: GameConfig
 
+# The PRISTINE authored baseline — the .tres exactly as shipped, never mutated by the
+# game. `data` is a duplicate of this precisely so the runtime is free to retune itself
+# (car.gd's apply_car reshapes `data` per car), which means a field the runtime multiplies
+# has no way back to its authored number without a copy that nobody writes to.
+#
+# UpgradeLibrary.apply's RESEED pre-pass is that reader: an effect targeting a GLOBAL field
+# (a coin radius, a money rate) has no per-car re-seed to reset it the way a car field does,
+# so the funnel restores those fields from here before every apply — otherwise the same
+# multiplier would stack on itself on every stage boot, and un-equipping the perk would
+# never give the number back. See UpgradeLibrary.EFFECTS' `reseed` flag.
+var _authored: GameConfig
+
 
 func _init() -> void:
 	reset()
@@ -22,8 +34,10 @@ func reset() -> void:
 	if base == null:
 		push_error("Failed to load %s — using code defaults" % CONFIG_PATH)
 		data = GameConfig.new()
+		_authored = data
 	else:
 		data = base.duplicate(true)
+		_authored = base
 
 
 # HOT RELOAD: re-read game_config.tres FROM DISK and swap it in, so a value can be retuned in the
@@ -46,7 +60,18 @@ func reload_from_disk() -> bool:
 		push_error("Config.reload_from_disk: failed to re-read %s" % CONFIG_PATH)
 		return false
 	data = fresh.duplicate(true)
+	_authored = fresh
 	return true
+
+
+# The authored value of `field`, straight off the pristine baseline (see `_authored`).
+# Falls back to the live config's own value when the field is unknown, so a caller can
+# never be handed null — a typo'd name degrades to "leave it alone" rather than nulling a
+# live tunable mid-drive.
+func authored_value(field: String, fallback: Variant) -> Variant:
+	if _authored == null or not (field in _authored):
+		return fallback
+	return _authored.get(field)
 
 
 # --- Field lookups (the ONE place every call site reads a GameConfig field) -----------------

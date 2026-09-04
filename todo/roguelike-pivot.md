@@ -183,7 +183,13 @@ Settled with the user during the brainstorm that produced this file:
     The cost is stated plainly rather than glossed: on a first run a coin is a
     reaction, not a planned detour, and the "commit or decline" framing decision 35
     argued for does not survive. Accepted deliberately.
-51. **Perks are wired to real effects AFTER stage 8, not during stage 7.** Stage 7
+51. **Perks are wired to real effects AFTER stage 8, not during stage 7.** LANDED —
+    see `features/perks.md` for what each perk moves and why every perk `EFFECTS` row
+    carries `reseed`. Two descriptions (`iron_will`, `road_scholar`) were REWORDED to
+    match what the funnel can honestly express, rather than adding the call-site
+    branch this decision rules out. Original wording of the decision follows.
+
+    Stage 7
     shipped the gate/purchase/equip model with every perk INERT — an equipped perk
     changes nothing, while its authored description promises that it does. That is a
     visible defect, not merely an unimplemented feature, and it is fixed in one pass

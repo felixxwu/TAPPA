@@ -28,7 +28,21 @@ const FX_PERKS: Array[Dictionary] = [
 		"id": "fx_no_gate", "label": "No-Gate Fixture Perk", "price": 100,
 		"unlock": {"stat": "fx_never_written", "threshold": 0},
 	},
+	# Carries an EFFECT, for the equipped_effects/effect_for tests below. The EFFECTS
+	# key and the GameConfig field are CODE names (a contract), not authored catalogue
+	# data, so naming them here is fine; nothing below asserts the field's VALUE.
+	{
+		"id": "fx_effect", "label": "Effect Fixture Perk", "price": 100,
+		"unlock": {"stat": "fx_stat", "threshold": 5},
+		"effect_fields": {"coin_pickup_radius_mult": "perk_coin_radius_mult"},
+	},
 ]
+
+# The EFFECTS key / config field the fixture perk above uses, so a rename moves in one
+# place.
+const FX_EFFECT_KEY := "coin_pickup_radius_mult"
+const FX_EFFECT_CFG_FIELD := "perk_coin_radius_mult"
+const FX_EFFECT_TARGET := "coin_pickup_radius_m"
 
 var _save: Node
 var _prev_lifetime: Dictionary = {}
@@ -196,3 +210,121 @@ func test_every_unlock_stat_is_a_real_lifetime_stat() -> void:
 			"perk '%s' unlocks on stat '%s', which LifetimeStats does not declare"
 				% [(perk as Dictionary).get("id", "?"), stat])
 	# after_each() re-overrides with FX_PERKS regardless, so no restore needed here.
+
+
+# --- The effects seam (decision 51) --------------------------------------------------
+
+# The same guard test_boost_library.gd runs on the boost catalogue, for the same reason:
+# an effect key with no EFFECTS row is DROPPED by UpgradeLibrary.apply — the perk reads
+# as equipped, the config is untouched, and no gameplay test fails. Whole shipped table
+# as opaque input.
+func test_every_authored_effect_key_has_an_effects_row() -> void:
+	PerkLibrary.reset()
+	for perk in PerkLibrary.all():
+		var fields: Dictionary = (perk as Dictionary).get("effect_fields", {})
+		for effect_key in fields:
+			assert_true(UpgradeLibrary.EFFECTS.has(effect_key),
+				"perk '%s' authors effect '%s' with no EFFECTS row"
+					% [(perk as Dictionary).get("id", "?"), effect_key])
+
+
+# The other half of the same failure: a magnitude read from a GameConfig field that does
+# not exist resolves to null, which float() turns into 0.0 — a silently dead perk.
+func test_every_authored_magnitude_names_a_real_config_field() -> void:
+	PerkLibrary.reset()
+	var cfg := GameConfig.new()
+	for perk in PerkLibrary.all():
+		var fields: Dictionary = (perk as Dictionary).get("effect_fields", {})
+		for effect_key in fields:
+			var field := String(fields[effect_key])
+			assert_true(field in cfg,
+				"perk '%s' reads GameConfig.%s, which does not exist"
+					% [(perk as Dictionary).get("id", "?"), field])
+
+
+# DECISION 51'S OWN BAR: a perk whose description promises an effect it does not have is
+# a visible defect. Every shipped perk must carry one — the state machine shipping ahead
+# of the effects (stage 7) is exactly what this pass closed.
+func test_every_shipped_perk_carries_an_effect() -> void:
+	PerkLibrary.reset()
+	for perk in PerkLibrary.all():
+		var fields: Dictionary = (perk as Dictionary).get("effect_fields", {})
+		assert_false(fields.is_empty(),
+			"perk '%s' has no effect_fields — it would sit inert while its description promises otherwise"
+				% (perk as Dictionary).get("id", "?"))
+
+
+# effect_for re-reads Config.data every call rather than caching at load, so an inspector
+# retune lands on the next stage boot. Asserts the RELATIONSHIP (the returned magnitude
+# tracks the field), never a shipped number.
+func test_effect_for_reads_the_config_field_live() -> void:
+	var cfg: GameConfig = Config.data
+	var original: float = cfg.get(FX_EFFECT_CFG_FIELD)
+	cfg.set(FX_EFFECT_CFG_FIELD, 2.0)
+	assert_eq(PerkLibrary.effect_for("fx_effect"), {FX_EFFECT_KEY: 2.0})
+	cfg.set(FX_EFFECT_CFG_FIELD, 3.0)
+	assert_eq(PerkLibrary.effect_for("fx_effect"), {FX_EFFECT_KEY: 3.0},
+		"effect_for cached the magnitude instead of re-reading Config.data")
+	cfg.set(FX_EFFECT_CFG_FIELD, original)
+
+
+func test_effect_for_is_empty_for_an_unknown_id() -> void:
+	assert_eq(PerkLibrary.effect_for("fx_nonexistent"), {})
+
+
+# A perk with no effect_fields yet degrades to "does nothing" rather than erroring.
+func test_effect_for_is_empty_for_a_perk_with_no_effect() -> void:
+	assert_eq(PerkLibrary.effect_for("fx_cheap"), {})
+
+
+func test_owned_but_unequipped_contributes_no_effect() -> void:
+	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_effect"]
+	_save.profile[_save.KEY_EQUIPPED_PERKS] = []
+	assert_eq(PerkLibrary.equipped_effects(_save.profile), [])
+
+
+# The ownership cross-check equipped_effects repeats on purpose: an equipped list that
+# outlived its purchase (a hand-edited save, a future refund path) must not hand out a
+# free effect.
+func test_equipped_but_unowned_contributes_no_effect() -> void:
+	_save.profile[_save.KEY_BOUGHT_PERKS] = []
+	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_effect"]
+	assert_eq(PerkLibrary.equipped_effects(_save.profile), [])
+
+
+# The shape is the contract: UpgradeLibrary.active_effects reads {"id", "effect"} entries,
+# so this is what lets world.gd append perks straight onto the fielded car's boosts list.
+func test_equipped_and_owned_yields_an_active_effect_entry() -> void:
+	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_effect"]
+	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_effect"]
+	var effects := PerkLibrary.equipped_effects(_save.profile)
+	assert_eq(effects.size(), 1)
+	var entry: Dictionary = effects[0]
+	assert_eq(String(entry.get("id", "")), "fx_effect")
+	assert_eq((entry.get("effect", {}) as Dictionary).keys(), [FX_EFFECT_KEY])
+
+
+# THE END-TO-END SEAM, and the bug _reseed_globals exists to prevent. The perk's target is
+# a GLOBAL config field with no per-car re-seed, so applying the same effect set twice —
+# which is what a second stage boot does — must land on the SAME number, not compound.
+func test_applying_the_same_perk_twice_does_not_compound() -> void:
+	var cfg := GameConfig.new()
+	var owned := {"boosts": [{"id": "fx_effect", "effect": {FX_EFFECT_KEY: 2.0}}]}
+	UpgradeLibrary.apply(owned, cfg)
+	var once: float = cfg.get(FX_EFFECT_TARGET)
+	UpgradeLibrary.apply(owned, cfg)
+	assert_almost_eq(float(cfg.get(FX_EFFECT_TARGET)), once, 1e-4,
+		"a perk effect on a global field compounded across applies")
+	# ...and it did MOVE the field in the first place, or the assertion above is vacuous.
+	var authored := float(Config.authored_value(FX_EFFECT_TARGET, 0.0))
+	assert_almost_eq(once, authored * 2.0, 1e-4)
+
+
+# The other half of reseed: un-equipping gives the authored number back. Nothing else
+# re-seeds these fields, so without the pre-pass the last multiplier would stick forever.
+func test_unequipping_restores_the_authored_value() -> void:
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply({"boosts": [{"id": "fx_effect", "effect": {FX_EFFECT_KEY: 2.0}}]}, cfg)
+	UpgradeLibrary.apply({"boosts": []}, cfg)
+	assert_almost_eq(float(cfg.get(FX_EFFECT_TARGET)),
+		float(Config.authored_value(FX_EFFECT_TARGET, 0.0)), 1e-4)

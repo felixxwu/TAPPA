@@ -106,15 +106,13 @@ total_collected)`. **One-shot, permanently** — unlike a bush, a spent coin nev
 re-arms; `collected` only ever gains bits.
 
 **The pickup radius is read LIVE from `GameConfig.coin_pickup_radius_m` every
-tick — `CoinField` never caches it.** That is deliberate, not an oversight: this is
-the single findable value `PerkLibrary`'s `coin_magnet` perk ("wider coin pickup
-radius") needs to widen once its effect is wired. **That wiring is a SEPARATE pass**
-(decision 51 — every perk shipped in stage 7 is inert, and `coin_magnet` specifically
-could not be wired before this stage existed to give it something to modify).
-**This stage does not touch perk effects at all** — do not wire `coin_magnet` or
-`lucky_coins` here; only make sure the one number and the one count
-(`coins_per_stage`) stay easy to find, which they are (`GameConfig
-.coin_pickup_radius_m`, `GameConfig.coins_per_stage`).
+tick — `CoinField` never caches it.** That is what makes the `coin_magnet` perk
+possible: the perk multiplies that one field through the effects funnel (decision 51,
+wired in the pass after this stage — see `features/perks.md`), and a radius cached at
+`build()` would leave it nothing to reach. `lucky_coins` works the same way one level
+up, multiplying `GameConfig.coins_per_stage` before `coin_layout_params()` reads it —
+which is why the count is fetched at build time from the config rather than passed
+down from a caller. Neither perk is named anywhere in this file's code.
 
 ## HUD + audio
 
@@ -186,7 +184,8 @@ fields for `CoinField.build` (mirrors `sign_render_params()`/
 
 ## What this stage did not touch
 
-- **Perk effects** (`coin_magnet`, `lucky_coins`) — inert, per decision 51, wired in
-  the pass immediately after this one. `PerkLibrary`'s two coin-related entries
-  (`scripts/perk_library.gd`) already name what they'll do; nothing here reads them.
+- **Perk effects** (`coin_magnet`, `lucky_coins`) — wired in the pass immediately
+  after this one (decision 51, `features/perks.md`). Nothing in `coin_field.gd` or
+  `coin_layout.gd` mentions a perk even now: both perks land as multipliers on the two
+  `GameConfig` fields this stage made sure stayed findable.
 - **Signposting** — deliberately absent, not merely unbuilt. See decision 50 above.

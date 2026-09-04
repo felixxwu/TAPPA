@@ -591,7 +591,8 @@ brings its own tests and `features/` doc.
 
 | 6 | Meta shop — boost levels (with per-level effect ranges, decision 42), car purchasing, engine-swap unlock | Money buys each; boost level changes the magnitude of a drawn pick; nav test |
 | 7 | Lifetime stats, then perks (`PerkLibrary`, unlock thresholds, ≤3 equipped) | A perk below threshold is not offered; equip cap holds; nav test |
-| 8 | Collectables — prop, off-line placement, pacenote signposting, pickup trigger, HUD counter, audio, banked at stage clear | Coins bank on stage clear and survive a later run failure |
+| 8 | Collectables — prop, off-line placement, pickup trigger, HUD counter, audio, banked at stage clear (signposting DROPPED, decision 50) | Coins bank on stage clear and survive a later run failure |
+| 8b | Perk wiring (decision 51) — `effect_fields` on every `PerkLibrary` entry, the perk `EFFECTS` rows + `_reseed_globals`, merged into the fielded car's `boosts` | An equipped perk changes the number its description names; un-equipping gives the authored number back |
 
 The authoring pass in stage 4 is the one to schedule generously: three regions
 need real events written, and they are not playable until they have them.
@@ -620,7 +621,9 @@ no longer exists.
 
 - Everything depends on stage 2. Stages 4–8 all render on stage 3's shell.
 - Stage 7's perks depend on stage 7's stats. Stage 8 depends on stage 3 (it needs
-  a generated stage to place props along).
+  a generated stage to place props along). Stage 8b (the perk wiring) depends on
+  stage 8: `coin_magnet` and `lucky_coins` have nothing to modify until coins exist,
+  which is exactly why decision 51 split it out of stage 7.
 - Nothing depends on a save migration, because there isn't one.
 - **The window between stages 2 and 3 is the whole risk of this plan.** Do not
   start stage 2 without a green baseline from stage 0, and do not widen stage 3

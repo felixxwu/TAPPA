@@ -15,8 +15,8 @@ challenge, which is the spine's *other* caller, is documented in
 **Stages 3-6 are landed:** the spine, region select + linear unlock, in-run boosts,
 and now the meta shop (boost LEVELS, car purchasing, the Engine Swap unlock) — see
 "The meta tier" below. Lifetime stats + perks (stage 7) and coins (stage 8,
-[collectables.md](collectables.md)) are landed too — every stage of the pivot plan
-is now built.
+[collectables.md](collectables.md)) are landed too, as is the pass that wired the perks
+to real effects (decision 51) — every stage of the pivot plan is now built.
 
 ## The pieces
 
@@ -191,6 +191,9 @@ stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_sa
   the money is;
 - **fast bonus**, proportional to the time saved against the target — the reason to
   drive well rather than merely clear the clock;
+  Two perks move the terms above rather than adding a term of their own: "Trail Blazer"
+  multiplies `run_fast_bonus_money` and "Road Scholar" adds to `run_stage_money_base`,
+  both through the effects funnel before this function reads them ([perks.md](perks.md));
 - **the region scale** (decision 31), so grinding an early region pays worse per unit
   time than progressing. That is what stops "farm region 1 forever" without taking the
   repeatable-region grind valve away (decision 12);
@@ -255,9 +258,16 @@ silently, exactly as before.
 ```gdscript
 if RunSession.is_active():
     owned = owned.duplicate(true)
-    owned["boosts"] = RunSession.boosts()
+    owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
 $Car.apply_owned(owned)
 ```
+
+**Equipped perks ride the same list** (decision 51 — "do not build a parallel modifier
+path"; see [perks.md](perks.md)). The two differ in LIFETIME, not mechanism: a boost is
+run-scoped and wiped when the run ends, while a perk is a permanent profile purchase, so
+perks are re-derived from the profile on every stage boot rather than carried on the run
+object. Both land on the same duplicated dict, which is what keeps either of them out of
+the saved profile.
 
 so `UpgradeLibrary.active_effects` sees them (via `_field_car` → `apply_owned` →
 `UpgradeLibrary.apply`) without a single byte reaching `profile["cars"]`. They

@@ -14,16 +14,17 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 ## Deliberately plain, and deliberately temporary
 
 Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
-still holds — the shell is stacked pages of plain buttons, now six of them rather than
+still holds — the shell is stacked pages of plain buttons, now eight of them rather than
 four (stage 6 added `SHOP` / `BOOST_SHOP` in place, on this same script, rather than
-spinning off a dedicated one). Stages 7–8 still owe perks and lifetime stats. **Do not
+spinning off a dedicated one; stage 7 added `PERKS` and `STATS`). **Do not
 invest in its looks, and do not grow it past what a plain button list can hold** — give a
 future screen its own script if it needs anything richer than a row-of-buttons page. The
 whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The six pages
+## The eight pages
 
-`HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`. One page is
+`HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`, `PERKS`,
+`STATS`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
 
@@ -35,8 +36,11 @@ next, so a stale page can never sit under the tree still claiming input.
 | `SUMMARY` | Stages cleared, money earned, per-stage times |
 | `SHOP` | Boost levels (→ `BOOST_SHOP`), the Engine Swap unlock |
 | `BOOST_SHOP` | One row per `BoostLibrary.CATALOGUE` id: level, price of the next level, `BoostLibrary.effect_range_text` |
+| `PERKS` | One row per `PerkLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([perks.md](perks.md)) |
+| `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
 
-`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN` and `BOOST_SHOP → SHOP → MAIN`.
+`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`, `BOOST_SHOP → SHOP → MAIN`, and
+`PERKS`/`STATS → MAIN`.
 `MAIN` and `SUMMARY` are roots and absorb Back rather than dropping the player into a page
 they never opened.
 
@@ -54,7 +58,7 @@ actually does.
 new menu to ship with a nav test in the same piece of work. Every page here goes through
 `MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
 `MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all six views and asserts each
+and silently break the contract. `test_hub_shell.gd` walks all eight views and asserts each
 has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
 even when every purchasable row on them is disabled (unaffordable or at its level cap):
 `Back` is always a live `_action`, so the assertion holds regardless of the player's money.
@@ -108,8 +112,6 @@ a player loses a run they meant to finish.
 
 ## Known gaps, by design
 
-- **No perk or lifetime-stats pages.** Stage 7.
-- **No collectables HUD.** Stage 8.
 - **No challenge entry point.** The Daily/Weekly/Monthly challenge is retained (decision
   15) and `RunSession` already drives it through `ChallengeRunMode`, but its flat screen is
   still outstanding — see `todo/roguelike-pivot.md` → *Salvaged from `hq_challenge.gd`* for

@@ -69,5 +69,6 @@ having nothing to choose.
 ## Not yet done
 
 - `distance_driven_m` needs a stage-end hook to report `TrackProgress`'s odometer.
-- No perk currently reads these counters for anything but its own unlock gate — see
-  `features/perks.md` → "No gameplay effects yet".
+- These counters are read ONLY by the unlock gates. A perk's actual effect comes from
+  its `effect_fields` (`features/perks.md` → "What each perk actually does"), never
+  from a lifetime stat, so a counter that stops moving weakens no equipped perk.

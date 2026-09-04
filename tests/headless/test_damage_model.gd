@@ -400,3 +400,63 @@ func test_event_boundary_writeback_round_trips() -> void:
 	_save.load_or_new()
 	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp - 250.0, 1e-6,
 		"depleted HP persists and reloads unchanged")
+
+
+# --- The self-heal trickle (features/damage.md -> "The self-heal trickle") ----------
+#
+# regen() reads GameConfig.damage_regen_hp_per_s, which is 0.0 on the authored baseline
+# and written only by the effects funnel (the "self_healing" perk, todo/roguelike-pivot.md
+# decision 51). The rate is a tunable, so nothing below pins one: every assertion sets its
+# OWN rate and checks the relationship regen() must hold for any of them.
+
+func test_regen_is_a_no_op_at_the_authored_baseline() -> void:
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 400.0)
+	assert_eq(cfg.damage_regen_hp_per_s, 0.0,
+		"nothing should heal until an effect writes the rate")
+	assert_eq(dm.regen(1.0, cfg), 0.0)
+	assert_eq(dm.hp, 400.0)
+
+
+func test_regen_adds_rate_times_dt() -> void:
+	var cfg: GameConfig = Config.data
+	cfg.damage_regen_hp_per_s = 10.0
+	var dm := DamageModel.new()
+	dm.field(1000.0, 400.0)
+	assert_almost_eq(dm.regen(0.5, cfg), 5.0, 1e-4)
+	assert_almost_eq(dm.hp, 405.0, 1e-4)
+
+
+func test_regen_never_exceeds_max_hp() -> void:
+	var cfg: GameConfig = Config.data
+	cfg.damage_regen_hp_per_s = 10000.0
+	var dm := DamageModel.new()
+	dm.field(1000.0, 990.0)
+	assert_almost_eq(dm.regen(1.0, cfg), 10.0, 1e-4, "heals only the missing HP")
+	assert_eq(dm.hp, 1000.0)
+	assert_eq(dm.regen(1.0, cfg), 0.0, "a full car regains nothing more")
+
+
+func test_regen_is_a_no_op_while_disabled() -> void:
+	var cfg: GameConfig = Config.data
+	cfg.damage_regen_hp_per_s = 10.0
+	var dm := DamageModel.new()
+	dm.field(1000.0, 400.0)
+	dm.enabled = false
+	assert_eq(dm.regen(1.0, cfg), 0.0)
+	assert_eq(dm.hp, 400.0, "a disabled damage model neither loses nor gains HP")
+
+
+# Healing is HP only: a bent wheel stays bent, which is what keeps the between-stage
+# repair (Save.field_repair) worth taking on a self-healing car.
+func test_regen_does_not_straighten_wheels() -> void:
+	var cfg: GameConfig = Config.data
+	cfg.damage_regen_hp_per_s = 10.0
+	var dm := DamageModel.new()
+	dm.field(1000.0, 400.0)
+	dm.nudge_wheels(200.0, cfg)
+	var bent := dm.toe_array().duplicate()
+	@warning_ignore("return_value_discarded")
+	dm.regen(1.0, cfg)
+	assert_eq(dm.toe_array(), bent)
