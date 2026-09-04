@@ -3,7 +3,10 @@
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
 `main.tscn`, with `car` wired to the `Car`.
 
-**Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`
+**Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`,
+`tests/headless/test_hud_docs.gd` (a mechanical guard: parses `HUD.DEBUG_READOUT_NODES`
+straight from `scripts/hud.gd` and fails if this doc — or `features/debug-tools.md` —
+claims a documented label is/isn't H-gated in a way that disagrees with it)
 
 On-screen readout plus two interactive mode buttons.
 
@@ -228,19 +231,24 @@ keyboard/gamepad navigable via `MenuNav.attach` (attached in `_ready`, so it's
 `FOCUS_ALL` and re-grabs focus whenever the panel is shown — `ui_accept` triggers
 it); see [menus.md](menus.md).
 
-## Live standings readout — REMOVED
+## Live standings readout — DELETED
 
 There used to be a permanent `PositionLabel` / `PositionGapLabel` pair here,
 showing the player's live position in the rival field (`P3/12`) and the gap to
 the position that mattered. It was deleted along with the rival field
 (`todo/roguelike-pivot.md` decision 5): a run races the clock, not a grid, so
-there is no field to report a position in.
+there is no field to report a position in. `hud.gd` no longer has
+`show_position` / `hide_position` or either label — this is a real deletion,
+not a hidden/dormant pair.
 
-`scripts/live_standings.gd` (`LiveStandings`, the pure projection maths behind
-the old readout) and `StageManager.setup_splits` / `setup_live_standings` are
-left in place, unreached — see [stage.md](stage.md) → "In-stage live standings
-readout" for why they were not deleted outright and what a future readout
-should or should not build on.
+**`scripts/live_standings.gd` (`LiveStandings`) is also gone outright**,
+`StageManager.setup_live_standings` with it — this corrects an earlier version
+of this section, which claimed both were "left in place, unreached"; that was
+wrong the moment the file was actually deleted. **`StageManager.setup_splits`
+is the one piece that does survive**, but it is unwired today (no production
+caller) rather than feeding anything — see [stage.md](stage.md) → "In-stage
+live standings readout" for the corrected account of what it is and is not
+used for.
 
 ## Behavior
 

@@ -2,10 +2,21 @@
 
 The **`Save` autoload** (`scripts/save_manager.gd`, registered in
 `project.godot [autoload]` alongside `Config`) is the single source of truth for
-everything the meta-game mutates: owned cars (each with its own HP, installed
-upgrades and tuning), the uninstalled-item inventory, and rally completion. It
-persists as JSON at `user://profile.json` so progress survives a restart on both
-desktop and the web build.
+everything the meta-game mutates: owned cars (each with its own HP and tuning),
+money, the in-progress run, and lifetime/progression state. It persists as JSON
+at `user://profile.json` so progress survives a restart on both desktop and the
+web build.
+
+> **This file describes the save shape mid-pivot** (`todo/roguelike-pivot.md`).
+> The persistent parts model, the star ledger and their migration ladder are
+> gone outright — see "What's gone" below. The rally-reveal / map-pin state
+> (`KEY_RALLIES`'s `revealed` field, `RallyLibrary.rally_revealed`) is
+> **still live in code today** even though decision 1 retires the world map:
+> it is a deliberate stopgap kept until `todo/roguelike-pivot-plan.md` stage 4
+> lands region select and `regions_cleared` becomes the real unlock ledger — see
+> "Region unlock: transitional" below. Don't be surprised to find both a dead
+> ledger and a live-but-doomed one in the same schema; that's the state of the
+> pivot as of this writing.
 
 **Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_save_web_lifecycle.gd`, `tests/headless/test_save_sandbox.gd`, `tests/headless/test_cloud_sync.gd`
 

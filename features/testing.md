@@ -51,23 +51,25 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 
 ### Keeping the suite fast
 
-**Measured floor (2026-08-18): 359 s wall-clock, 3248 tests, warmup 7 s** (all
-green: 3245 passing, 3 fixture-conditional `pending()`, 159 597 asserts). That is
-*faster* than the 2026-08-13 floor of 406 s / 2683 tests despite 565 more tests, so
-the per-test cost has fallen — re-measure before assuming a slow run is a
-regression. It is still ~20 % over the ~5 min budget, and the gap is structural,
-not waste: see the table and "The irreducible sweeps". The
-`minimal_world()` lever below is **fully applied** — of the 24 files that
-instantiate `main.tscn`, only `test_smoke.gd` still pays full generation, and it
-does so because it asserts on the generated content. So there is no
-15-s-per-file conversion left to find, and the remaining cost decomposes as:
+**The table below predates the roguelike pivot and is STALE — re-measure, don't trust
+the numbers.** It was taken 2026-08-18, before the pivot's demolition stage deleted
+roughly **40,000 lines** across the codebase (the diegetic HQ, the rival field, the star
+economy, the persistent parts model, the overworld map, and every test that existed only
+to cover them — see `todo/roguelike-pivot.md` → "What gets deleted"). Test count, file
+count and per-file timings have all moved a lot since, in a direction nobody has measured:
+fewer files (dead ones removed), but also new ones (`RunSession`, region runs, the flat
+shell) that didn't exist in 2026-08. **Do not cite the figures below as current** — run
+`/optimise-test-suite` or a full `./run_tests.sh` to get a fresh baseline before reasoning
+about the budget from them. They are kept only because the *shape* of the cost model (what
+categories of cost exist, and which levers apply to which) is still correct; the numbers
+inside it are not.
 
-| Cost | Measured | Reducible? |
+| Cost (2026-08-18, PRE-PIVOT — do not cite as current) | Measured | Reducible? |
 |---|---|---|
-| Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly` 67.8 s, `test_smoke`'s two generation tests 9.3 s, `test_lakes_integration` 6.2 s, `test_track_gen_frame_consistency` 3.6 s) | ~87 s | **No** — see "The irreducible sweeps" below |
-| `test_menu_flow.gd` | 53.3 s (~0.2 s per test) | **No** — cost is test COUNT, not per-test waste; `hq_tree_count = 8` already trims each build, and a shared-`before_all` attempt leaked state (title-layer visibility, car-park focus indices) and was reverted |
-| The flat tail — ~195 further files at roughly 0.2–0.3 s per test (largest: `test_terrain_memory` 19.4 s / 21 tests, `test_start_line` 13.5 s / 49, `test_car_types` 12.7 s, `test_sim_career` 12.0 s, `test_retune` 11.0 s) | ~185 s | **No cheap lever found** (2026-08-18 sweep) — each is genuine CPU (terrain chunk rebuilds, career sweeps, per-car physics), with no single outlier inside any file and no §2a "cheap call would do" seam. `test_start_line` only *mentions* `main.tscn` in a comment; it never instantiates one |
-| `before_all` builds + loading the ~200 test scripts in `tests/headless/` | ~33 s (the gap between the 325.5 s per-test sum and wall-clock) | No — down from ~110 s; `minimal_world()` per file is already minimal |
+| Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly`, `test_smoke`'s two generation tests, `test_lakes_integration`, `test_track_gen_frame_consistency`) | ~87 s | **No** — see "The irreducible sweeps" below |
+| `test_menu_flow.gd` | 53.3 s (~0.2 s per test) | **No** — cost is test COUNT, not per-test waste. Note this file has since been salvaged and heavily cut down for the pivot (`todo/roguelike-pivot.md` decision 47) — its size and per-test cost are no longer what was measured here |
+| The flat tail — many further files at roughly 0.2–0.3 s per test, genuine CPU (terrain chunk rebuilds, per-car physics), no single outlier inside any file and no §2a "cheap call would do" seam | ~185 s | **No cheap lever found** as of 2026-08-18 — re-check post-pivot |
+| `before_all` builds + loading the test scripts in `tests/headless/` | ~33 s | No — `minimal_world()` per file is already minimal |
 
 **The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
 generates every authored rally event live (~0.7 s each). It is the regression guard

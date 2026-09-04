@@ -74,6 +74,7 @@ with them, and working toward the special-event finale.
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
+| [terrain-streaming.md](terrain-streaming.md) | The bounded-world streaming seam on `TerrainManager` — load radius, generate-on-miss, the duck-typed chunk/road/pad/region sources, and the LRU cap. Misleadingly named `overworld_*` in places; it is LIVE infrastructure, not overworld leftovers |
 | [terrain-chunk-modifiers.md](terrain-chunk-modifiers.md) | The five `compute_chunk_data` chunk-modifier passes, their shared `TerrainManager._chunk_view` preamble, and how `bake_track` splits its per-vertex work into `_bake_vertex_block`/`_emit_cliff_offsets` |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |

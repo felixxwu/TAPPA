@@ -326,9 +326,9 @@ func discard_run(unix_time: int) -> void:
 	var record: Dictionary = Save.profile.get(Save.KEY_RUN, {})
 	if record.is_empty():
 		return
-	var mode := _mode_from_record(record, unix_time)
-	if mode != null:
-		mode.record_outcome({"dnf": true, "completed": false,
+	var run_mode := _mode_from_record(record, unix_time)
+	if run_mode != null:
+		run_mode.record_outcome({"dnf": true, "completed": false,
 			"cumulative_ms": 0, "abandoned": true}, unix_time)
 	Save.clear_run()
 

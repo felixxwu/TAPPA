@@ -84,11 +84,25 @@ and `scripts/live_standings.gd` with its test file. `world.gd`'s
 `_setup_stage_splits`, `_solve_rival_pace` and `_wire_stage_splits` went with the
 rival ghost.
 
-**`StageManager.setup_splits` survives**, and this is the distinction that matters:
-the pace table it wires (`_turn_progress` / `_turn_time_frac` / `_p1_total_ms`) is
-per-turn pace data, not rival data. The pivot's fixed per-stage timer still needs
-it — see the spec's *The timer — the one fail state*, which sources the target from
-`LapTimeModel.optimum_ms()` against `CarPerformance.REFERENCE_CAR`.
+**`StageManager.setup_splits` survives as a method, but it is currently
+UNWIRED** — this corrects an earlier version of this note. The pace table it
+sets (`_turn_progress` / `_turn_time_frac` / `_p1_total_ms`) is per-turn pace
+data, not rival data, so it was right to keep rather than delete alongside the
+live-standings readout. But **the pivot's fixed per-stage timer does NOT go
+through it**: `world.gd` has no `setup_splits` call site any more (its old
+callers, `_setup_stage_splits` / `_solve_rival_pace` / `_wire_stage_splits`,
+went with the rival ghost — see above), and the target time is derived
+independently by `RegionRunMode.stage_target_ms()` (`scripts/region_run_mode.gd`),
+which calls `LapTimeModel.optimum_ms(track_result, CarPerformance.REFERENCE_CAR,
+event)` directly and scales it by `target_pace(stage_index)` — nothing routes
+through `StageManager`'s pace table to get there. `setup_splits` and its three
+backing fields are therefore genuinely dead in production today (set to empty
+defaults in `setup()` and never written again), kept as a plausible future feed
+for an in-run "ahead/behind pace" readout rather than because anything reads it
+now. The stale claim that "the fixed per-stage timer still needs it" also sits
+in a comment on `tests/headless/test_stage_manager.gd`'s `_wire_even_splits`
+helper — which is itself dead: nothing calls it, either. Both are real findings
+from this docs sweep, reported rather than fixed (this file is docs-only).
 
 ## Control lock (`Car.controls_locked`)
 
@@ -121,11 +135,13 @@ deceleration damage (the damage rule has **no** held-car exemption — see
   on its end.
 
 These are the hooks the run/menu layer attaches to. The **post-stage flow**
-(standings, rewards, back to the hub) is out of scope here — this feature only
-provides the signals, the finish panel, and the NEXT → `proceed_to_results()`
-gate. `RallySession`, the career-rally orchestrator this doc used to point at, is
-deleted (`todo/roguelike-pivot.md`); `RunSession` is the surviving session
-caller until the roguelike `RunSession` lands.
+(repair/boost pick, money payout, back to the hub) is out of scope here — this
+feature only provides the signals, the finish panel, and the NEXT →
+`proceed_to_results()` gate. `RallySession`, the career-rally orchestrator this
+doc used to point at, is deleted (`todo/roguelike-pivot.md`); `RunSession`
+(`scripts/run_session.gd`, generalised from the old `ChallengeSession` — see
+[region-runs.md](region-runs.md)) is the one session caller now, for both a
+Daily/Weekly/Monthly challenge and a region run.
 
 ## Wiring & lifecycle
 
@@ -152,9 +168,9 @@ shipped values, tunable for dev/debug.
 - `tests/headless/test_stage_manager.gd` — the state machine driven against stub
   car/HUD/progress (lock-at-start, countdown→run, timer accrual, GO flash,
   completion freeze/relock/signal, configured percent), plus a `main.tscn`
-  integration check that the car boots locked. `setup_splits` /
-  `setup_live_standings` are DORMANT (see above) and untested here beyond
-  compiling — nothing calls them.
+  integration check that the car boots locked. `setup_live_standings` is gone
+  entirely; `setup_splits` (and the file's own `_wire_even_splits` helper) are
+  UNUSED — see above — and exercised only incidentally, by nothing calling them.
 - `tests/headless/test_hud.gd` — the countdown/elapsed/complete widget formatting
   and the `hud_elapsed_enabled` gate.
 - `tests/headless/test_smoke.gd` — structural check that the scene wires a
