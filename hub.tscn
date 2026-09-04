@@ -1,14 +1,14 @@
-[gd_scene format=3]
+[gd_scene load_steps=2 format=3]
 
-; PLACEHOLDER MAIN SCENE — stage 3 of the roguelike pivot replaces this.
+; THE FLAT SHELL — the game's main scene, and the only way into a run.
 ;
-; The diegetic 3D hub (hq.tscn) and the overworld (overworld.tscn) were deleted in
-; stage 2b of todo/roguelike-pivot-plan.md. `project.godot` and every "return to
-; the hub" transition (Scenes.hub_path) still need a scene to point at, so this is
-; the smallest thing that boots: a Control with a label. It is deliberately NOT a
-; menu — stage 3 builds the flat shell (title -> car select -> run) on MenuPage +
-; MenuNav.attach and registers THAT as the main scene, at which point this file
-; goes away. Do not grow it in the meantime.
+; It replaces the diegetic 3D hub (hq.tscn) and the overworld, both deleted in stage 2b of
+; todo/roguelike-pivot-plan.md; decision 9 chose a flat 2D UI outright. All of the shell's
+; behaviour lives in scripts/hub_shell.gd — this scene is deliberately just a full-rect
+; Control for it to build pages under, because every page is created at runtime through
+; MenuPage.open_modal rather than authored here. Read hub_shell.gd, not this file.
+
+[ext_resource type="Script" path="res://scripts/hub_shell.gd" id="1_shell"]
 
 [node name="Hub" type="Control"]
 layout_mode = 3
@@ -17,16 +17,4 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="Title" type="Label" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "TAPPA
-
-Rebuilding: the flat UI arrives in stage 3."
-horizontal_alignment = 1
-vertical_alignment = 1
+script = ExtResource("1_shell")

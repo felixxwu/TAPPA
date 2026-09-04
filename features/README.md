@@ -95,6 +95,7 @@ with them, and working toward the special-event finale.
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the permanent live standings readout (`LiveStandings`) |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding, the pause menu, modals (vertical slice; full diegetic UI deferred) |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row, the diegetic-HQ spatial regime. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
+| [hub-shell.md](hub-shell.md) | The flat main scene (`HubShell` + `hub.tscn`) — main / region / car / run-summary pages on `MenuPage` + `MenuNav`, and decision 48's abandon-run confirm. Replaces the deleted diegetic 3D hub |
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, `MenuPage.open_modal`, and `MenuNav.input_blocked` |
 | [world-panel.md](world-panel.md) | `WorldPanel` — menus hosted in the 3D world, welded off-square to an anchor (4 HQ screens; shipped ON) |

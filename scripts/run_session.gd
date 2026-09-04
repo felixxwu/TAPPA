@@ -136,6 +136,17 @@ func last_result() -> Dictionary:
 	return _last_result
 
 
+# Drop the terminal result once a screen has SHOWN it. The hub shell reads last_result()
+# on boot to decide whether to open the run summary instead of the main menu, so a result
+# left standing traps the player on that summary every time they return to the hub.
+#
+# Deliberately NOT cleared by start()/begin(): a run's outcome has to outlive the run
+# object itself, because the scene change back to the hub happens after the session has
+# already gone idle. Only the screen that displayed it may clear it.
+func clear_last_result() -> void:
+	_last_result = {}
+
+
 # The current stage's target time in ms, or 0 when the run has no target. Valid only
 # after set_stage_track() has been handed the generated track for this stage.
 func stage_target_ms() -> int:
