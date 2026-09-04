@@ -40,7 +40,7 @@ static func cars() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
 			"name": "Fixture Roadster", "id": "fx_light_rwd", "country": "JP", "car_type": "roadster", "doors": 2,
-			"max_hp": 800.0, "reward_tier": 1, "mass": 1050.0, "engine": "fx_i4",
+			"max_hp": 800.0, "reward_tier": 1, "cost": 1000, "mass": 1050.0, "engine": "fx_i4",
 			"weight_front": 0.50, "engine_pos": 0.85, "tire_compound": 1.0,
 			"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
@@ -50,7 +50,7 @@ static func cars() -> Array[Dictionary]:
 		},
 		{
 			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "country": "US", "car_type": "hatch", "doors": 5,
-			"max_hp": 950.0, "reward_tier": 1, "mass": 900.0, "engine": "fx_i4",
+			"max_hp": 950.0, "reward_tier": 1, "cost": 1200, "mass": 900.0, "engine": "fx_i4",
 			"weight_front": 0.62, "engine_pos": 0.85, "tire_compound": 1.05,
 			"brake_bias": 0.62,  # the only fixture car that authors a default brake bias
 			"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
@@ -61,7 +61,7 @@ static func cars() -> Array[Dictionary]:
 		},
 		{
 			"name": "Fixture Coupe", "id": "fx_rwd_coupe", "country": "GB", "car_type": "coupe", "doors": 2,
-			"max_hp": 1100.0, "reward_tier": 3, "mass": 1600.0, "engine": "fx_v8",
+			"max_hp": 1100.0, "reward_tier": 3, "cost": 5000, "mass": 1600.0, "engine": "fx_v8",
 			"weight_front": 0.45, "engine_pos": 0.40, "tire_compound": 1.20,
 			"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.90, 0.46, 4.50), "cabin": Vector3(1.45, 0.44, 1.50),
@@ -71,7 +71,7 @@ static func cars() -> Array[Dictionary]:
 		},
 		{
 			"name": "Fixture AWD", "id": "fx_awd", "country": "IT", "car_type": "coupe", "doors": 2,
-			"max_hp": 1000.0, "reward_tier": 2, "mass": 1500.0, "engine": "fx_v8",
+			"max_hp": 1000.0, "reward_tier": 2, "cost": 3000, "mass": 1500.0, "engine": "fx_v8",
 			"weight_front": 0.55, "engine_pos": 0.60, "tire_compound": 1.15,
 			"drive_mode": AWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.85, 0.50, 4.40), "cabin": Vector3(1.45, 0.46, 1.55),

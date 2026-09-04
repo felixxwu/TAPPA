@@ -68,6 +68,7 @@ func test_each_spec_is_sane() -> void:
 		assert_true(spec["car_type"] is String and not spec["car_type"].is_empty(), who + " has a car_type tag")
 		assert_gt(spec["max_hp"], 0.0, who + " has positive max_hp")
 		assert_gt(spec["reward_tier"], 0, who + " has a reward_tier")
+		assert_gt(spec["cost"], 0, who + " has a positive money cost")
 
 
 func test_car_ids_are_unique_and_stable_lookups_work() -> void:

@@ -31,23 +31,28 @@ extends RefCounted
 # catalogue entry's effect draws its value from, so `effect_for` re-reads Config.data
 # live rather than baking a value in.
 #
-# THE META SEAM (stage 6, NOT this stage's job): a purchased "boost level" is meant to
-# scale these magnitudes before they are drawn. Nothing here reads a level — every pick
-# rolls at the single GameConfig-authored magnitude. The obvious hook for stage 6 is
-# `effect_for`: it is the one place a magnitude is resolved, so a level multiplier
-# belongs there, not spread across the catalogue or the draw.
+# THE META SEAM IS WIRED (stage 6): each entry also carries `level_direction` — +1 if a
+# purchased level should push the magnitude UP (grip, brakes, downforce: bigger is more
+# boost) or -1 if it should push it DOWN (mass, shift time, drag: smaller is more boost).
+# `magnitude_for(id, level)` is the one place that applies it, via
+# `GameConfig.boost_level_magnitude_step` ("Roguelike Meta Shop") — level 0 is always an
+# exact no-op, so a fresh id with no purchased level still rolls the bare GameConfig
+# number above unchanged.
 const CATALOGUE := {
 	"lightweight": {
 		"label": "Lightweight parts",
 		"effect_fields": {"mass_mult": "run_boost_mass_mult"},
+		"level_direction": -1,  # lower mass_mult = lighter = more boost
 	},
 	"grip": {
 		"label": "Sticky tyres",
 		"effect_fields": {"tire_grip_mult": "run_boost_grip_mult"},
+		"level_direction": 1,  # higher tire_grip_mult = more boost
 	},
 	"gearbox": {
 		"label": "Quick-shift gearbox",
 		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
+		"level_direction": -1,  # lower shift time = faster = more boost
 	},
 	"aero": {
 		"label": "Aero kit",
@@ -55,33 +60,78 @@ const CATALOGUE := {
 			"downforce_front": "run_boost_downforce_n",
 			"downforce_rear": "run_boost_downforce_n",
 		},
+		"level_direction": 1,  # more downforce = more boost
 	},
 	"brakes": {
 		"label": "Big brakes",
 		"effect_fields": {"brake_force_mult": "run_boost_brake_mult"},
+		"level_direction": 1,  # higher brake_force_mult = more boost
 	},
 	"streamline": {
 		"label": "Streamlined body",
 		"effect_fields": {"drag_mult": "run_boost_drag_mult"},
+		"level_direction": -1,  # lower drag_mult = less drag = more boost
 	},
 }
 
 
-# The `effect` dict a catalogue entry resolves to RIGHT NOW, read live off
-# `Config.data` field by field — never cached, so a designer's inspector edit is
-# reflected the instant the next pick is drawn. {} for an unknown id (mirrors
-# UpgradeFixtures.boost's "unknown id -> {}" contract, so a bad id degrades to
-# nothing rather than erroring).
-static func effect_for(id: String) -> Dictionary:
+# How far a purchased `level` pushes a magnitude from its unleveled (level 0) baseline, as
+# a plain multiplier — 1.0 at level 0, always. `direction` is a catalogue entry's own
+# `level_direction` (+1/-1). Floored well above 0 (never lets a magnitude cross zero or flip
+# sign, however high `boost_level_magnitude_step` or `boost_level_max` are retuned) — a
+# sanity guard, not a pinned value (CLAUDE.md).
+static func level_scale(level: int, direction: int) -> float:
+	var cfg: GameConfig = Config.data
+	var raw := 1.0 + float(direction) * float(maxi(0, level)) * cfg.boost_level_magnitude_step
+	return maxf(raw, 0.1)
+
+
+# The `effect` dict a catalogue entry resolves to at a GIVEN `level`, read live off
+# `Config.data` field by field and scaled by `level_scale` — never cached, so a designer's
+# inspector edit is reflected the instant the next pick is drawn. {} for an unknown id
+# (mirrors UpgradeFixtures.boost's "unknown id -> {}" contract, so a bad id degrades to
+# nothing rather than erroring). Pure in its two arguments — no Save read — so the
+# level-scaling relationship is testable without a profile.
+static func magnitude_for(id: String, level: int) -> Dictionary:
 	var entry: Dictionary = CATALOGUE.get(id, {})
 	if entry.is_empty():
 		return {}
 	var cfg: GameConfig = Config.data
+	var scale := level_scale(level, int(entry.get("level_direction", 1)))
 	var out := {}
 	for effect_key in (entry["effect_fields"] as Dictionary):
 		var cfg_field := String((entry["effect_fields"] as Dictionary)[effect_key])
-		out[effect_key] = cfg.get(cfg_field)
+		out[effect_key] = float(cfg.get(cfg_field)) * scale
 	return out
+
+
+# The effect a catalogue entry resolves to RIGHT NOW, at whatever level the player has
+# actually purchased (Save.boost_level) — what `draw`/`boost_for` hand to a live pick. {}
+# for an unknown id, same as `magnitude_for`.
+static func effect_for(id: String) -> Dictionary:
+	return magnitude_for(id, Save.boost_level(id))
+
+
+# Shop display text (decision 42): the % swing a boost's magnitude gets pushed by across the
+# WHOLE purchasable ladder (level 1 through GameConfig.boost_level_max), not a bare level
+# number or the raw GameConfig magnitude — a raw multiplier means nothing to a player without
+# knowing the car's own baseline stat, so this is expressed purely as "how far a level pushes
+# it", which reads the same regardless of the effect's op (mult/add/set). Always shown
+# ascending (the smaller-magnitude end first), signed so the direction of the swing is
+# visible. "" for an unknown id.
+static func effect_range_text(id: String) -> String:
+	var entry: Dictionary = CATALOGUE.get(id, {})
+	if entry.is_empty():
+		return ""
+	var direction := int(entry.get("level_direction", 1))
+	var cfg: GameConfig = Config.data
+	var lo := (level_scale(1, direction) - 1.0) * 100.0
+	var hi := (level_scale(cfg.boost_level_max, direction) - 1.0) * 100.0
+	if hi < lo:
+		var t := lo
+		lo = hi
+		hi = t
+	return "%+.0f%% to %+.0f%%" % [lo, hi]
 
 
 # One boost entry, in the exact shape UpgradeLibrary.active_effects reads:

@@ -28,6 +28,10 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
+	# A known baseline for the money tests below: decision 28 seeds a fresh profile from
+	# GameConfig.run_starting_money rather than 0, so "starts broke" is set explicitly here
+	# instead of assumed from a fresh profile's default.
+	_save.profile[Save.KEY_MONEY] = 0
 	RunSession.auto_load_scenes = false
 	_leave_run()
 
@@ -273,7 +277,7 @@ func test_a_challenge_stage_has_no_clock_and_can_never_be_failed() -> void:
 
 func test_money_banks_at_stage_clear_not_at_run_end() -> void:
 	_start()
-	assert_eq(_save.money(), 0, "setup: a fresh profile is broke")
+	assert_eq(_save.money(), 0, "setup: zeroed in before_each")
 	_drive(maxi(1, RunSession.stage_target_ms() - 1))
 	assert_true(RunSession.is_active(), "setup: the run is still going")
 	assert_gt(_save.money(), 0, "the cleared stage paid out immediately")

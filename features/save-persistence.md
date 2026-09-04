@@ -137,7 +137,21 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   unaffordable purchase rather than going negative. There is deliberately **no
   `lose_money`**: a failed run keeps every penny it earned (decision 14), and money is
   banked at each stage CLEAR rather than at run end (decision 36). Sources and sinks
-  are in [region-runs.md](region-runs.md).
+  are in [region-runs.md](region-runs.md). **A fresh profile is not broke** (decision
+  28): `_default_profile()` seeds `KEY_MONEY` from `GameConfig.run_starting_money`
+  rather than `0`, sized so the shop (`HubShell`'s CAR page) is reachable and has
+  something affordable in it from the very first boot — the old three-car starter
+  picker is gone; the shop is how a new player gets a car at all.
+- `boost_levels` (`Save.KEY_BOOST_LEVELS`, id -> level) — purchased **meta** boost
+  levels (`todo/roguelike-pivot.md` "Upgrades — RR's two-tier model", stage 6). A level
+  never touches the live car; it scales the magnitude `BoostLibrary.magnitude_for`
+  hands to a FUTURE in-run pick — see [region-runs.md](region-runs.md) → *The meta
+  tier*. `Save.boost_level(id)` / `boost_level_price(id)` / `buy_boost_level(id)`.
+- `engine_swap_unlocked` (`Save.KEY_ENGINE_SWAP_UNLOCKED`, bool) — the Engine Swap
+  capability's one-time purchased-unlock flag (decision 17). Read by
+  `RallyLibrary.engine_swaps_unlocked(profile)`; written by
+  `Save.buy_engine_swap_unlock()`. Replaced a rally-completion flag — see
+  [engine-swap.md](engine-swap.md) → *Capability gate*.
 - `run` (`Save.KEY_RUN`) — **the one run slot**, holding an in-progress run of either
   kind (a region run or a Daily/Weekly/Monthly challenge). `set_run` / `clear_run` are
   its only writers, `is_challenge_locked(instance_id)` is the car lock over it, and

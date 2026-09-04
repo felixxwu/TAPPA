@@ -1465,45 +1465,39 @@ static func nearest_locked_special_id(profile: Dictionary) -> String:
 	return best
 
 
-# Display name of the rally whose win unlocks engine swapping — what the locked swap row
-# and the car-park confirm popup send the player after. A NAME, not a count: with reveal
-# now geometric there is no counter to quote, and "go and win THIS event" is a destination
-# the player can actually find on the map. Empty when the rally doesn't resolve (a
-# synthetic test roster), so callers can fall back to a plain "not unlocked yet".
+# Display name of ENGINE_SWAP_UNLOCK_RALLY. NO LONGER LOAD-BEARING for the unlock itself —
+# winning this rally does nothing for engine_swaps_unlocked any more (see its own comment
+# below); this named the rally for the deleted diegetic-hub locked-swap row and car-park
+# confirm popup (both gone with hq.gd, todo/roguelike-pivot.md decision 9), and currently
+# has no caller. Left in place rather than deleted: harmless, and ENGINE_SWAP_UNLOCK_RALLY
+# itself still needs to resolve to a real rally (see test_the_engine_swap_unlock_rally_resolves).
 static func engine_swap_unlock_rally_name() -> String:
 	return String(by_id(ENGINE_SWAP_UNLOCK_RALLY).get("name", ""))
 
 
-# MONEY SEAM (todo/roguelike-pivot.md decision 17: "engine swap is re-gated as a meta shop
-# purchase" rather than retired). The MECHANISM is fully intact and untouched by the parts
-# deletion — EngineSwap's maths, Save.swap_engines, car.gd's _apply_engine_swap and
-# UpgradeLibrary.effective_meta's engine resolution all still work. What has to move is
-# THIS GATE: it reads a rally-completion flag, and the rally that sets it
-# (ENGINE_SWAP_UNLOCK_RALLY, below) is a career artefact — record_podium_rally now has no
-# gameplay caller at all, so in practice this returns false for every profile and swapping
-# is inert until the shop lands.
+# MONEY SEAM CLOSED (todo/roguelike-pivot.md decision 17: "engine swap is re-gated as a meta
+# shop purchase" rather than retired). This used to read a rally-completion flag off
+# ENGINE_SWAP_UNLOCK_RALLY below; that rally is now an ordinary one (winning it does nothing
+# for this gate — record_podium_rally has no gameplay caller at all any more) and the gate
+# reads a purchased-unlock flag instead: `Save.KEY_ENGINE_SWAP_UNLOCKED`, set by
+# `Save.buy_engine_swap_unlock()` (features/engine-swap.md). The MECHANISM this gate guards
+# is untouched by the parts deletion — EngineSwap's maths, Save.swap_engines, car.gd's
+# _apply_engine_swap and UpgradeLibrary.effective_meta's engine resolution all still work.
 #
-# WHEN THE META SHOP IS BUILT (stage 6): replace the body with a read of a purchased-unlock
-# flag on the profile, exactly as the parts model's `UpgradeLibrary.drivetrain_swap_unlocked`
-# would have been (that one is already deleted; its per-car counterpart survives as
-# Save.drive_mode_available, which carries the matching seam note). Do NOT delete this
-# function to "simplify" — a swap that is free from the first run is a decision the pivot
-# explicitly did not take.
+# Takes an explicit `profile` Dictionary, not `Save.profile`, so a synthetic test profile
+# keeps working without touching the real autoload — `Save.engine_swap_unlocked()` is the
+# convenience reader for live callers that already have `Save.profile` in hand.
 static func engine_swaps_unlocked(profile: Dictionary) -> bool:
-	# The Save.KEY_LEGACY_ENGINE_SWAP fallback (careers that won the capability where it USED
-	# to live, The Foothills Trial, carried directly by the 5 -> 6 migration) is deleted along
-	# with the whole migration chain (todo/roguelike-pivot.md decision 34) — no migration is
-	# written for the pivot, so a pre-pivot profile resets instead of carrying this flag
-	# forward. See Save.SCHEMA_VERSION's own comment.
-	return bool((profile.get(Save.KEY_RALLIES, {}) as Dictionary)
-		.get(ENGINE_SWAP_UNLOCK_RALLY, {}).get("completed", false))
+	return bool(profile.get(Save.KEY_ENGINE_SWAP_UNLOCKED, false))
 
 
-# The special whose win unlocks engine swapping. Authored here rather than on the rally so
-# the capability has one named owner. It is what engine_swaps_unlocked above reads, and it
-# goes when that gate becomes a purchase — see its MONEY SEAM comment. (The part unlocks
-# that used to be gated the other way round, by UpgradeLibrary.unlocked_by_rally, are
-# deleted with the parts model.)
+# The rally that USED TO gate engine swapping, before decision 17 re-gated it as a meta
+# shop purchase (see engine_swaps_unlocked's own comment — it no longer reads this at all).
+# Kept as a named id rather than deleted: it is still an ordinary roster entry (`special:
+# true` was left on it; see the "special must award..." note lower in this file) and
+# engine_swap_unlock_rally_name() still resolves it. (The part unlocks that used to be
+# gated the other way round, by UpgradeLibrary.unlocked_by_rally, are deleted with the
+# parts model.)
 const ENGINE_SWAP_UNLOCK_RALLY := "front_runners"
 
 

@@ -26,41 +26,29 @@ weight slot's free ballast parts, which added mass to drop p/w the other way, ar
 (see [upgrade-catalogue.md](upgrade-catalogue.md) → the `weight` slot). Otherwise the
 player sheds power by stripping parts.
 
-**Capability gate.** Swapping is unavailable until the engine-swap special is won
-(`RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY := "front_runners"`, "Upgrade: Engine Swap" — the
-difficulty-1 pin right beside HQ, revealed from the very first map view, so swapping is
-the first thing the ladder opens and a player can go and win the garage's most
-interesting mechanic immediately; predicate
-`RallyLibrary.engine_swaps_unlocked(profile)`). That rally is now the WHOLE gate:
-there is no currency alongside it, so winning it flips swapping from unavailable
-to permanently, freely available. The locked UI still LISTS the engines it won't
-let you fit, because the pull toward the gating event comes from seeing what's
-behind it.
+**Capability gate.** Swapping is unavailable until the Engine Swap unlock is BOUGHT in the
+meta shop (`todo/roguelike-pivot.md` decision 17 — re-gated as a purchase rather than
+retired, stage 6 of `todo/roguelike-pivot-plan.md`). `RallyLibrary.engine_swaps_unlocked(profile)`
+reads `Save.KEY_ENGINE_SWAP_UNLOCKED`, a plain persisted bool; `Save.buy_engine_swap_unlock()`
+spends `GameConfig.engine_swap_unlock_price` and sets it, once, for good — there is no way to
+lose the capability afterward, matching the old "rally win is permanent" shape. `HubShell`'s
+SHOP page (`_build_shop`) is the only current seller.
 
-The gate used to hang on `sp_woodland_trial` (now the Snow Tires special). A career that
-already won it keeps the capability outright through `Save.KEY_LEGACY_ENGINE_SWAP`, set
-by the **5 → 6** save migration and checked FIRST by `engine_swaps_unlocked` — the same
-shape as `KEY_LEGACY_PART_UNLOCKS` for the 4 → 5 part moves, and deliberately not done by
-marking the new rally completed, which would light its map circle and pay stars nobody
-earned. See [save-persistence.md](save-persistence.md).
+This REPLACED a rally-completion gate: `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY :=
+"front_runners"` ("Upgrade: Engine Swap") used to be the whole gate — winning it flipped
+swapping on. That rally is now an ordinary roster entry; winning it does nothing for this
+gate any more (`RallyLibrary.engine_swaps_unlocked`'s own comment). The constant survives
+only because `engine_swap_unlock_rally_name()` still resolves it, and nothing currently
+calls that either — see that function's own comment.
 
-Two consumers:
-
-- `UpgradeOptions.engine_swap_blocked_reason(owned_car)` — returns `"Locked"` while the
-  capability is unwon and `""` once it is won, and those are the only two states: the tile is
-  permanently accessible after the unlock. Note the `engine` tile does **not** list a
-  catalogue of engines — `UpgradeOptions.options_for` returns an EMPTY array for
-  `SLOT_ENGINE` (as it does for `SLOT_TUNE`) and the tile hands off to the car picker
-  instead, because a swap TRADES engines with another car you own rather than fitting one
-  off a shelf. (`UpgradeOptions._engine_options`, which used to build that catalogue list, is
-  gone.) The garage-wide gate is read straight off
-  `RallyLibrary.engine_swaps_unlocked(Save.profile)`.
-- `hq._show_swap_confirm` — the car-park station's confirm popup, which is
-  reachable independently of the garage grid, so it re-checks rather
-  than trusting the caller, and is where the locked explanation still lives. It is
-  now exactly two branches — locked, or allowed. Its OK button is disabled on
-  `_pending_swap.is_empty()`, which is set on exactly the one path where a swap can
-  proceed — so a locked popup can't present a live button that silently no-ops.
+**No current UI consumer re-displays "locked".** Both of the gate's old consumers —
+`UpgradeOptions.engine_swap_blocked_reason` and `hq._show_swap_confirm` — were deleted with
+the parts model and the diegetic hub (`hq.gd`) respectively, before the flat shell existed.
+The flat shell has no swap-picker screen yet at all (only the shop's *unlock* row), so
+today `Save.engine_swap_unlocked()` / `RallyLibrary.engine_swaps_unlocked(Save.profile)` has
+no reader besides tests. Building that picker — and re-checking the gate from it — is not
+stage 6's job; note this the next time a "Locked" swap UI is added, rather than assuming
+one of the two deleted consumers above still exists.
 
 `Save.swap_engines` itself does not check the gate; both entry points do, and it
 stays a pure mutator.

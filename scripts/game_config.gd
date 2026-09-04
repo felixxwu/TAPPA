@@ -3939,14 +3939,24 @@ func spectator_params() -> Dictionary:
 ## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
 ## no target time to be fast against, and its whole reward is the placement.
 @export_range(0.0, 20000.0, 25.0) var challenge_completion_money := 500.0
+## THE STARTING PURSE (todo/roguelike-pivot.md decision 28 — "a new player starts with money
+## and buys from the shop", replacing the old three-car starter picker outright).
+## Save._default_profile() seeds `KEY_MONEY` from this rather than 0, so a fresh profile can
+## reach the car shop (HubShell's CAR page) and actually buy something — a profile with money
+## but no cars must never be a dead end. Tune against CarLibrary.CARS' own cheapest `cost`
+## entries: this is deliberately sized to afford the cheapest tier of starter-grade cars (see
+## that field's own comment), not a mid-tier one.
+@export_range(0.0, 20000.0, 100.0) var run_starting_money := 2600.0
 
 
 @export_group("Roguelike Run Boosts")
 # The IN-RUN boost catalogue (BoostLibrary, scripts/boost_library.gd — todo/roguelike-pivot.md
 # -> "Upgrades — RR's two-tier model"). Every value here is a magnitude a designer retunes in
 # the inspector, so nothing in tests/headless/ may pin one (CLAUDE.md) — only the RELATIONSHIP
-# "the draw reads this field live" is fair game. Stage 6's boost-LEVEL shop scales these
-# further (BoostLibrary.effect_for is where that hook lands); nothing here reads a level yet.
+# "the draw reads this field live" is fair game. THE META SEAM IS NOW WIRED (stage 6): these
+# are the UNLEVELED base magnitudes — BoostLibrary.magnitude_for(id, level) scales them by
+# `boost_level_magnitude_step` below (@export_group("Roguelike Meta Shop")) before a pick is
+# drawn, so a level-0 boost (nothing purchased) still rolls exactly the number authored here.
 ## How many DISTINCT boosts are drawn for one between-stage pick, on top of the always-offered
 ## repair. Clamped to the catalogue's own size (BoostLibrary.draw) if this exceeds it.
 @export_range(1, 6) var run_boost_choices := 3
@@ -3962,3 +3972,32 @@ func spectator_params() -> Dictionary:
 @export_range(1.0, 1.5, 0.01) var run_boost_brake_mult := 1.12
 ## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
 @export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92
+
+
+@export_group("Roguelike Meta Shop")
+# THE META TIER (todo/roguelike-pivot.md -> "Upgrades — RR's two-tier model", stage 6 of
+# todo/roguelike-pivot-plan.md). Boost LEVELS, purchased with money and persisted on the
+# profile (Save.KEY_BOOST_LEVELS, id -> level), never wiped by a failed run. A level does not
+# touch the live car directly — it scales the MAGNITUDE `BoostLibrary.magnitude_for` hands to
+# the next in-run pick (see that file's own header). Same CLAUDE.md rule as the group above:
+# these are tunable numbers, no test may pin one.
+## The highest level any single boost id can reach. Shared across all six catalogue entries
+## rather than authored per-id (RR gives every BOOST_DEFINITIONS entry the same maxLevel too)
+## — one cap to retune, not six.
+@export_range(1, 10) var boost_level_max := 5
+## Price of a boost's FIRST level (level 0 -> 1). Every later level multiplies this by
+## `boost_level_price_growth` raised to the level being left, so the ladder gets steeper as it
+## climbs — Save.boost_level_price is the one place that math runs.
+@export_range(0.0, 50000.0, 100.0) var boost_level_price_base := 1500.0
+## Per-level price multiplier (RR's `priceMultiplierPerLevel`). 1.0 would make every level
+## cost the same; above 1.0 (the shipped default) each level costs more than the last.
+@export_range(1.0, 3.0, 0.05) var boost_level_price_growth := 1.7
+## How far ONE level pushes a boost's magnitude away from its unleveled baseline, as a
+## fraction (0.08 = 8%). `BoostLibrary.magnitude_for` multiplies this by the level and by the
+## catalogue entry's own `level_direction` (+1 strengthens upward, -1 downward — e.g. lighter
+## mass, faster shift), so level 0 is always an exact no-op on the base magnitude above.
+@export_range(0.0, 0.3, 0.01) var boost_level_magnitude_step := 0.08
+## Price of the one-time Engine Swap unlock (todo/roguelike-pivot.md decision 17 — re-gated as
+## a meta shop purchase, replacing the old rally-completion gate). Read by
+## Save.engine_swap_unlock_price / buy_engine_swap_unlock.
+@export_range(0.0, 50000.0, 100.0) var engine_swap_unlock_price := 6000.0

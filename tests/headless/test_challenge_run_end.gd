@@ -43,6 +43,10 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
+	# A known baseline for the money assertions below: decision 28 seeds a fresh profile
+	# from GameConfig.run_starting_money rather than 0, so "starts broke" is set explicitly
+	# here instead of assumed from a fresh profile's default.
+	_save.profile[Save.KEY_MONEY] = 0
 	RunSession.auto_load_scenes = false
 	if RunSession.is_active():
 		RunSession.pause_run()
@@ -166,7 +170,7 @@ func test_a_headless_clean_finish_resolves_the_reward_flow_with_no_popup_attempt
 	# finish banks GameConfig.challenge_completion_money; the AMOUNT is a tunable and is
 	# deliberately not asserted, only that a placing run is paid something.
 	assert_true(_scene._headless, "setup: this scene sees a headless runtime, same as real headless play")
-	assert_eq(_save.money(), 0, "setup: a fresh profile is broke")
+	assert_eq(_save.money(), 0, "setup: zeroed in before_each")
 	var car := _start_run(ChallengeLibrary.DAILY)
 	var stage_count: int = int(ChallengeLibrary.STAGE_COUNTS[ChallengeLibrary.DAILY])
 	_queue_qualifying_rank(stage_count)

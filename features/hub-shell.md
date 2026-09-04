@@ -13,28 +13,40 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 
 ## Deliberately plain, and deliberately temporary
 
-Stage 3's bar is *the loop runs start to finish*, not *the loop looks good*. The shell is
-four stacked pages of buttons. Stages 4–8 replace the region and car pages with real
-screens — a car shop, boost levels, perks, lifetime stats — and this file is expected to be
-rewritten around them. **Do not invest in its looks, and do not grow it into the place
-those features live**: give each its own script when it lands. The whole shell is smaller
-than any single one of the nine hub scripts it replaced, which is why it is one file.
+Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
+still holds — the shell is stacked pages of plain buttons, now six of them rather than
+four (stage 6 added `SHOP` / `BOOST_SHOP` in place, on this same script, rather than
+spinning off a dedicated one). Stages 7–8 still owe perks and lifetime stats. **Do not
+invest in its looks, and do not grow it past what a plain button list can hold** — give a
+future screen its own script if it needs anything richer than a row-of-buttons page. The
+whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The four pages
+## The six pages
 
-`HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`. One page is live at a time;
-`_show(view)` frees the previous page's `CanvasLayer` before building the next, so a stale
-page can never sit under the tree still claiming input.
+`HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`. One page is
+live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
+next, so a stale page can never sit under the tree still claiming input.
 
 | Page | Offers |
 | --- | --- |
-| `MAIN` | Money, **Resume run** (only when one is paused), New run, Quit |
+| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Quit |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones named with their gate |
-| `CAR` | Every owned car; a note when the profile has none |
+| `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
 | `SUMMARY` | Stages cleared, money earned, per-stage times |
+| `SHOP` | Boost levels (→ `BOOST_SHOP`), the Engine Swap unlock |
+| `BOOST_SHOP` | One row per `BoostLibrary.CATALOGUE` id: level, price of the next level, `BoostLibrary.effect_range_text` |
 
-`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`. `MAIN` and `SUMMARY` are roots and
-absorb Back rather than dropping the player into a page they never opened.
+`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN` and `BOOST_SHOP → SHOP → MAIN`.
+`MAIN` and `SUMMARY` are roots and absorb Back rather than dropping the player into a page
+they never opened.
+
+Car BUYING lives on the `CAR` page rather than a `SHOP` sub-page, per decision 28's own
+wording ("the car select screen offers a Buy action for unowned cars") — one list serves
+both picking and buying, since a player looking at "which car" is already looking at
+exactly the list a shop would show. Boost levels and the Engine Swap unlock are different:
+permanent purchases with no tie to picking a car for THIS run, so they hang off `MAIN`
+instead. See [region-runs.md](region-runs.md) → *The meta tier* for what each purchase
+actually does.
 
 ## Navigation is a hard requirement, not a nicety
 
@@ -42,12 +54,14 @@ absorb Back rather than dropping the player into a page they never opened.
 new menu to ship with a nav test in the same piece of work. Every page here goes through
 `MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
 `MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all four views and asserts each
-has a `MenuNav` and at least one focusable control.
+and silently break the contract. `test_hub_shell.gd` walks all six views and asserts each
+has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
+even when every purchasable row on them is disabled (unaffordable or at its level cap):
+`Back` is always a live `_action`, so the assertion holds regardless of the player's money.
 
 The test file pins the **screen graph and the navigation**, and deliberately nothing about
-looks, wording or button order — stages 4–8 rewrite all of that, and a layout assertion
-would break on each of those stages while proving nothing.
+looks, wording or button order — stages 7–8 still rewrite parts of it, and a layout
+assertion would break on those while proving nothing.
 
 ## Locked regions are shown, not hidden
 
@@ -94,11 +108,13 @@ a player loses a run they meant to finish.
 
 ## Known gaps, by design
 
-- **No car shop.** Decision 28 makes the shop the first screen carrying a decision for a
-  new player; it is stage 6. Until then a profile with no cars is a dead end, and the `CAR`
-  page says so rather than showing an empty list.
-- **No boost, perk or stats pages.** Stages 5, 7 and 8.
+- **No perk or lifetime-stats pages.** Stage 7.
+- **No collectables HUD.** Stage 8.
 - **No challenge entry point.** The Daily/Weekly/Monthly challenge is retained (decision
   15) and `RunSession` already drives it through `ChallengeRunMode`, but its flat screen is
-  stage 4 — see `todo/roguelike-pivot.md` → *Salvaged from `hq_challenge.gd`* for the
-  orchestration that screen must reproduce.
+  still outstanding — see `todo/roguelike-pivot.md` → *Salvaged from `hq_challenge.gd`* for
+  the orchestration that screen must reproduce.
+- **No re-displayed "locked" swap UI.** The Engine Swap unlock can be BOUGHT (the `SHOP`
+  page), but there is no picker screen yet that re-checks
+  `RallyLibrary.engine_swaps_unlocked` and shows a locked state — see
+  [engine-swap.md](engine-swap.md) for the two old consumers that used to and are gone.

@@ -60,7 +60,7 @@ func _press(text: String) -> bool:
 # failure this guards.
 func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SUMMARY]:
+			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP]:
 		_shell._show(view)
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
@@ -78,6 +78,14 @@ func test_back_walks_the_page_stack_and_stops_at_the_root() -> void:
 	_shell._back()
 	assert_eq(_shell._view, HubShell.View.MAIN,
 		"and the root absorbs Back rather than dropping the player somewhere they never went")
+
+
+func test_boost_shop_backs_out_to_the_shop_not_the_main_page() -> void:
+	_shell._show(HubShell.View.BOOST_SHOP)
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.SHOP, "boost shop backs out to the shop page")
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.MAIN, "and the shop backs out to the main page")
 
 
 # One page at a time. The shell frees the old page's CanvasLayer on every transition; a
@@ -234,3 +242,88 @@ func test_progression_reads_the_authored_order_not_array_position() -> void:
 	assert_eq(RegionRunMode.for_region("fx_late").region_index(), 1,
 		"and the run's difficulty/payout rank comes from the same field")
 	RegionLibrary.reset()
+
+
+# --- The meta shop (stage 6) ---------------------------------------------------
+
+# Decision 28: the CAR page is no longer a dead end for a car-less profile — a fresh
+# profile is seeded with money (GameConfig.run_starting_money) and the page lists
+# unowned cars with a Buy action.
+func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
+	assert_true((_save.profile.get(_save.KEY_CARS, []) as Array).is_empty(),
+		"setup: nothing owned yet")
+	assert_gt(_save.money(), 0, "setup: decision 28 seeds a starting purse")
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	var texts: Array[String] = []
+	for b in _page().find_children("*", "Button", true, false):
+		texts.append(String((b as Button).text).to_upper())
+	var joined := " | ".join(texts)
+	assert_true(joined.contains("BUY"), "the car page offers a Buy action, not a dead end")
+
+
+func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
+	var cheapest := ""
+	var cheapest_cost := -1
+	for spec in CarLibrary.all():
+		var cost := int(spec.get("cost", 0))
+		if cheapest_cost < 0 or cost < cheapest_cost:
+			cheapest = String(spec.get("id", ""))
+			cheapest_cost = cost
+	_save.profile[_save.KEY_MONEY] = cheapest_cost
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	assert_true(_press("Buy"), "setup: a buy row is on the page")
+	assert_true(_save.owns_model(cheapest), "the cheapest car is now owned")
+
+
+# An unaffordable row is disabled AND carries menu_nav_skip — the same rule the REGION
+# page's locked rows follow (see test_a_locked_region_is_shown_but_not_focusable).
+func test_an_unaffordable_car_row_is_shown_but_not_focusable() -> void:
+	_save.profile[_save.KEY_MONEY] = 0
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	for b in _buttons():
+		assert_false(String((b as Button).text).to_upper().begins_with("BUY"),
+			"with no money, no Buy row is focusable")
+
+
+func test_shop_reaches_boost_levels_and_engine_swap() -> void:
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	assert_true(_press("Boost levels"), "the shop opens the boost-level page")
+	assert_eq(_shell._view, HubShell.View.BOOST_SHOP)
+
+
+func test_buying_a_boost_level_raises_it_and_spends_money() -> void:
+	var id: String = BoostLibrary.CATALOGUE.keys()[0]
+	_save.profile[_save.KEY_MONEY] = _save.boost_level_price(id)
+	assert_eq(_save.boost_level(id), 0, "setup: level 0")
+	_shell._show(HubShell.View.BOOST_SHOP)
+	await get_tree().process_frame
+	assert_true(_press(BoostLibrary.label_for(id)), "setup: the boost's row is on the page")
+	assert_eq(_save.boost_level(id), 1, "the level went up by one")
+	assert_eq(_save.money(), 0, "and the price was spent")
+
+
+func test_buying_the_engine_swap_unlock_flips_the_flag() -> void:
+	_save.profile[_save.KEY_MONEY] = _save.engine_swap_unlock_price()
+	assert_false(_save.engine_swap_unlocked(), "setup: locked")
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	assert_true(_press("Unlock Engine Swap"), "setup: the unlock row is on the page")
+	assert_true(_save.engine_swap_unlocked(), "the flag is now set")
+
+
+func test_the_engine_swap_row_is_shown_but_not_focusable_once_bought() -> void:
+	_save.profile[_save.KEY_ENGINE_SWAP_UNLOCKED] = true
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	var all_texts: Array[String] = []
+	for b in _page().find_children("*", "Button", true, false):
+		all_texts.append(String((b as Button).text).to_upper())
+	assert_true(" | ".join(all_texts).contains("ENGINE SWAP"),
+		"the row is still shown, saying the capability is owned")
+	for b in _buttons():
+		assert_false(String((b as Button).text).to_upper().contains("ENGINE SWAP"),
+			"but it is not focusable — nothing left to buy")

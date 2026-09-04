@@ -575,6 +575,20 @@ brings its own tests and `features/` doc.
 
 | 4 | Region select + linear unlock (`order` field on `REGIONS`, `regions_cleared` ledger). **Plus the stage-pool authoring pass** to 16 events: `greece_coast` (3), `home_coast` (12), `taiga` (15). | Every region reachable in order; every region's pool ≥ 16; nav test |
 | 5 | In-run boosts + repair pick between stages, through the retained `UpgradeLibrary` effects funnel, wiped on run end | A run's boosts do not survive into the next; repair competes with a boost; nav test |
+> **Stage 6 DONE.** Money now has somewhere to go: cars carry a `cost`, boost LEVELS scale
+> the magnitude of future in-run picks (`BoostLibrary.magnitude_for`, resolved live off
+> `Save.boost_level` so a purchase changes the NEXT draw and not the car in hand), and the
+> engine swap is a one-time purchase. A fresh profile is seeded a starting purse from
+> `GameConfig.run_starting_money`, which affords the three cheapest cars — deliberately
+> mirroring the retired three-car starter picker (decision 28).
+>
+> **Two of the four MONEY SEAM markers stay open, correctly.** The engine-swap gate is
+> closed; the DRIVETRAIN CONVERSION seams in `save_manager.gd` and `upgrade_library.gd` are
+> not, because the spec's Economy section lists five sinks — cars, boost levels, perks, the
+> engine-swap unlock, wheels — and a conversion is not among them. Do not close them by
+> inventing a purchase the design does not call for; either the spec gains a sixth sink or
+> those seams become deletions.
+
 | 6 | Meta shop — boost levels (with per-level effect ranges, decision 42), car purchasing, engine-swap unlock | Money buys each; boost level changes the magnitude of a drawn pick; nav test |
 | 7 | Lifetime stats, then perks (`PerkLibrary`, unlock thresholds, ≤3 equipped) | A perk below threshold is not offered; equip cap holds; nav test |
 | 8 | Collectables — prop, off-line placement, pacenote signposting, pickup trigger, HUD counter, audio, banked at stage clear | Coins bank on stage clear and survive a later run failure |

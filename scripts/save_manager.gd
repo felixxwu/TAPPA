@@ -86,6 +86,10 @@ const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (met
 const KEY_BOUGHT_PERKS := "bought_perks"      # perk ids owned
 const KEY_EQUIPPED_PERKS := "equipped_perks"  # perk ids currently slotted (capped)
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
+# The Engine Swap capability's purchased-unlock flag (todo/roguelike-pivot.md decision 17 —
+# re-gated as a meta shop purchase). Read by RallyLibrary.engine_swaps_unlocked, which used
+# to read a rally-completion flag; see that function's own comment.
+const KEY_ENGINE_SWAP_UNLOCKED := "engine_swap_unlocked"
 
 # Consumables that no longer exist, erased from `inventory` on load (see _sanitise).
 # A LIST rather than a branch per id, because retiring a consumable is a recurring event
@@ -545,12 +549,20 @@ func _default_profile() -> Dictionary:
 		"reward_history": [],
 		# The run-meta block. Declared here because the ratchet test below requires every
 		# persisted key to be DECLARED rather than conjured at the write site.
-		KEY_MONEY: 0,
+		#
+		# MONEY IS SEEDED FROM GameConfig.run_starting_money, NOT 0 (todo/roguelike-pivot.md
+		# decision 28 — "a new player starts with money and buys from the shop", replacing the
+		# old three-car starter picker outright). Config is the autoload loaded immediately
+		# before this one (project.godot), so its data is ready by the time any profile —
+		# fresh or migrated — is built. A profile with money but zero cars must still be able
+		# to reach the shop; see HubShell's CAR page.
+		KEY_MONEY: int(Config.data.run_starting_money),
 		KEY_REGIONS_CLEARED: [],
 		KEY_BOOST_LEVELS: {},
 		KEY_BOUGHT_PERKS: [],
 		KEY_EQUIPPED_PERKS: [],
 		KEY_LIFETIME: {},
+		KEY_ENGINE_SWAP_UNLOCKED: false,
 		"settings": {},
 		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
 		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaces
@@ -1014,6 +1026,87 @@ func spend_money(amount: int) -> bool:
 	if amount <= 0 or money() < amount:
 		return amount <= 0
 	profile[KEY_MONEY] = money() - amount
+	save()
+	return true
+
+
+# --- The meta shop (todo/roguelike-pivot.md "Upgrades — RR's two-tier model" +
+# "Car acquisition — RR's shop", stage 6 of todo/roguelike-pivot-plan.md) -------------
+#
+# Three sinks, each a thin wrapper over spend_money so every refusal path shares its one
+# rule: a purchase that cannot be afforded (or is otherwise invalid — an unknown id, a car
+# already owned, a boost already at its cap, the unlock already bought) leaves the profile
+# BYTE-IDENTICAL. `spend_money` already refuses without mutating; every function below
+# checks its OWN precondition (ownership / cap / already-unlocked) BEFORE calling it, so a
+# caller never spends into a purchase that was going to be rejected anyway.
+
+# Buy an unowned car outright (decision 28). Refuses (no mutation) if `model_id` is not a
+# real CarLibrary entry, is already owned, or the player cannot afford its `cost`.
+func buy_car(model_id: String) -> bool:
+	if owns_model(model_id):
+		return false
+	var entry := CarLibrary.by_id(model_id)
+	if entry.is_empty():
+		return false
+	if not spend_money(int(entry.get("cost", 0))):
+		return false
+	grant_car(model_id)
+	return true
+
+
+# The purchased level of one BoostLibrary boost id (0 if never bought). This is what
+# BoostLibrary.effect_for reads to scale a future in-run pick's magnitude — see that
+# file's own header for the scaling relationship.
+func boost_level(id: String) -> int:
+	return int((profile.get(KEY_BOOST_LEVELS, {}) as Dictionary).get(id, 0))
+
+
+# The cost of this boost's NEXT level, given the level already owned — RR's
+# `basePrice * priceMultiplierPerLevel ** currentLevel`, both GameConfig tunables
+# (@export_group("Roguelike Meta Shop")).
+func boost_level_price(id: String) -> int:
+	var cfg: GameConfig = Config.data
+	return int(round(cfg.boost_level_price_base
+		* pow(cfg.boost_level_price_growth, float(boost_level(id)))))
+
+
+# Buy the next level of boost `id`. Refuses (no mutation) for an id BoostLibrary does not
+# catalogue, a level already at GameConfig.boost_level_max, or an unaffordable price.
+func buy_boost_level(id: String) -> bool:
+	if not BoostLibrary.CATALOGUE.has(id):
+		return false
+	var level := boost_level(id)
+	if level >= int(Config.data.boost_level_max):
+		return false
+	if not spend_money(boost_level_price(id)):
+		return false
+	var levels: Dictionary = profile.get(KEY_BOOST_LEVELS, {})
+	levels[id] = level + 1
+	profile[KEY_BOOST_LEVELS] = levels
+	save()
+	return true
+
+
+# Whether the Engine Swap capability has been purchased — what
+# RallyLibrary.engine_swaps_unlocked reads (that function takes an explicit profile
+# Dictionary rather than calling here, so synthetic-profile tests keep working; this is the
+# convenience reader for live callers that already have `Save.profile`).
+func engine_swap_unlocked() -> bool:
+	return bool(profile.get(KEY_ENGINE_SWAP_UNLOCKED, false))
+
+
+func engine_swap_unlock_price() -> int:
+	return int(round(Config.data.engine_swap_unlock_price))
+
+
+# Buy the Engine Swap unlock — a ONE-TIME purchase (decision 17), never sold twice. Refuses
+# (no mutation) if already unlocked or unaffordable.
+func buy_engine_swap_unlock() -> bool:
+	if engine_swap_unlocked():
+		return false
+	if not spend_money(engine_swap_unlock_price()):
+		return false
+	profile[KEY_ENGINE_SWAP_UNLOCKED] = true
 	save()
 	return true
 

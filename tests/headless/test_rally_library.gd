@@ -842,17 +842,17 @@ func test_every_shipped_stage_authors_a_forestiness_that_grows_something() -> vo
 # there is nothing left to assert until that design lands.
 
 
-# THE CAPABILITY'S NAMED OWNER MUST RESOLVE. `ENGINE_SWAP_UNLOCK_RALLY` is an id authored on the
-# library rather than a reference the roster carries, so a rally rename cannot break it loudly — and
-# if it stops resolving, `engine_swaps_unlocked` can never become true and engine swapping is
-# unreachable for the rest of the game. An anti-soft-lock check, not a content assertion: it names no
-# rally itself, it only insists the constant points at one.
-# Trimmed (todo/roguelike-pivot.md decisions 21 & 28): used to also assert the rally reads as
-# awarding the engine-swap CAPABILITY (RallyLibrary.prize_capability_id /
-# CAPABILITY_ENGINE_SWAP / has_prize) and that it is the only rally that does. Those three are
-# all deleted with the prize-rally system; ENGINE_SWAP_UNLOCK_RALLY and the resolution check
-# below are untouched — the constant still directly gates
-# RallyLibrary.engine_swaps_unlocked, independent of the deleted prize machinery.
+# THE CONSTANT MUST RESOLVE. `ENGINE_SWAP_UNLOCK_RALLY` is an id authored on the library
+# rather than a reference the roster carries, so a rally rename cannot break it loudly. A
+# content-existence check, not a gameplay one any more: since decision 17 (stage 6)
+# re-gated engine swapping as a purchased-unlock flag (`Save.KEY_ENGINE_SWAP_UNLOCKED`,
+# read by `RallyLibrary.engine_swaps_unlocked`), this constant no longer feeds that gate at
+# all — winning the rally it names does nothing for swapping. It survives only as the id
+# `engine_swap_unlock_rally_name()` displays, so this test now just guards THAT lookup.
+# Trimmed (todo/roguelike-pivot.md decisions 21 & 28): used to also assert the rally reads
+# as awarding the engine-swap CAPABILITY (RallyLibrary.prize_capability_id /
+# CAPABILITY_ENGINE_SWAP / has_prize) and that it is the only rally that does. Those three
+# are all deleted with the prize-rally system.
 func test_the_engine_swap_unlock_rally_resolves() -> void:
 	CarFixtures.restore()
 	var owner := RallyLibrary.by_id(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)

@@ -5,18 +5,16 @@ pick a car, and drive **8 stages back to back against a fixed clock**. Miss a
 stage's target time and the run is over on the spot — that is the only hard fail
 state in the game. Money is banked at every stage clear and never taken back.
 
-**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`
+**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_save_manager.gd` (the meta shop: `buy_car`/`buy_boost_level`/`buy_engine_swap_unlock`), `tests/headless/test_hub_shell.gd` (the SHOP/BOOST_SHOP screens + nav)
 
 This doc owns the **run spine** — the session, its strategy seam, the stage draw,
 the timer, the money and the between-stage pick. The Daily/Weekly/Monthly
 challenge, which is the spine's *other* caller, is documented in
 [rally-challenge.md](rally-challenge.md).
 
-**Stage 3 shipped the spine; stage 4 (region select + linear unlock) and stage 5
-(in-run boosts, this section) are landed.** The meta shop (boost LEVELS, car
-purchasing, engine-swap unlock) is stage 6; lifetime stats + perks are stage 7;
-coins are stage 8. Nothing here builds those — see "The meta seam" below for
-exactly where stage 6 hooks in.
+**Stages 3-6 are landed:** the spine, region select + linear unlock, in-run boosts,
+and now the meta shop (boost LEVELS, car purchasing, the Engine Swap unlock) — see
+"The meta tier" below. Lifetime stats + perks are stage 7; coins are stage 8.
 
 ## The pieces
 
@@ -200,6 +198,12 @@ this same stage-clear moment.
 `Save.money()` / `add_money()` / `spend_money()` are the whole currency surface.
 `RunSession.money_earned()` is the run's own running tally, for the run summary.
 
+**A fresh profile starts with money, not zero** (decision 28) —
+`GameConfig.run_starting_money` seeds `Save.KEY_MONEY` in `_default_profile()`, sized
+to afford the cheapest tier of `CarLibrary.CARS` so the shop is reachable (and has
+something in it) from the very first boot. See [save-persistence.md](save-persistence.md)
+and *The meta tier* below for where that money goes.
+
 ## Between-stage pick: repair or boost
 
 `report_event_result` used to apply the field repair **automatically** on every
@@ -298,12 +302,70 @@ if the run just ended, emits `run_interstitial_dismissed` so `_on_run_finished`
 (mode-agnostic — challenge and region both wait on it before returning to the
 hub) knows the player has seen the result.
 
-### The meta seam (stage 6 — not built here)
+### The meta tier — boost levels, car purchasing, the Engine Swap unlock
 
-`BoostLibrary.effect_for` is the one place a magnitude is resolved from
-`Config.data`. A purchased "boost level" (decision 42: the shop shows the effect
-range per level) belongs there — nothing here reads a level; every pick rolls at
-the single authored magnitude.
+Stage 6. Three sinks, all thin wrappers over `Save.spend_money` sharing one refusal
+rule: an invalid or unaffordable purchase leaves the profile **byte-identical** — no
+half-spend, no partial mutation. `HubShell`'s `SHOP` / `BOOST_SHOP` views
+(`features/hub-shell.md`) are the only sellers.
+
+**Boost levels.** `Save.KEY_BOOST_LEVELS` (id -> level, never wiped by a failed run —
+it's meta, not run state) is what a level does NOT do — touch the live car — vs. what
+it DOES: scale the magnitude a FUTURE in-run pick rolls. `BoostLibrary.magnitude_for(id,
+level)` is the one place that scaling happens (`effect_for(id)` is the live wrapper that
+reads `Save.boost_level(id)`), via three new `GameConfig` fields under
+`@export_group("Roguelike Meta Shop")`:
+
+- `boost_level_max` — the level cap, shared by all six catalogue entries (RR gives
+  every `BOOST_DEFINITIONS` row the same `maxLevel` too — one cap, not six).
+- `boost_level_price_base` / `boost_level_price_growth` — `Save.boost_level_price(id)`
+  is `base * growth ^ level_owned` (RR's `basePrice * priceMultiplierPerLevel **
+  currentLevel`), so each level costs more than the last.
+- `boost_level_magnitude_step` — how far ONE level pushes a magnitude away from its
+  unleveled (level 0) baseline, as a fraction. Each `BoostLibrary.CATALOGUE` entry
+  carries its own `level_direction` (+1 or -1) saying which way "more boost" moves that
+  field (e.g. `grip`'s `tire_grip_mult` goes UP, `lightweight`'s `mass_mult` goes DOWN)
+  — `BoostLibrary.level_scale(level, direction)` is `1.0 + direction * level * step`,
+  floored well above zero so no combination of step/level can flip a magnitude's sign.
+  **Level 0 is always an exact no-op**, which is what keeps every stage-5 boost-pick
+  assertion valid without knowing about levels at all.
+
+Decision 42's requirement — "the shop shows the effect range per level ... legible
+without a live car to compute against" — is `BoostLibrary.effect_range_text(id)`: the
+percent swing the WHOLE ladder covers (level 1's push through the cap's), not a bare
+level number or the raw `GameConfig` magnitude (which means nothing without knowing the
+car's own baseline stat, and reads the same way regardless of the effect's mult/add/set
+op).
+
+**Car purchasing.** `CarLibrary.CARS` gained a `cost` field per entry — authored
+catalogue data exactly like `reward_tier`, not a `GameConfig` value, so CLAUDE.md's
+no-pinning rule applies the same way (`test_car_stats.gd` only asserts every car HAS a
+positive cost). `Save.buy_car(model_id)` refuses (no mutation) if the model is unknown,
+already owned, or unaffordable; otherwise it spends `cost` and calls the existing
+`grant_car`. `HubShell`'s `CAR` page is BOTH the run's car-select screen and the shop —
+decision 28's own wording ("the car select screen offers a Buy action for unowned
+cars") — so owned cars start a run and unowned ones show `Buy <name> — <cost>`,
+disabled + `menu_nav_skip` (the same opt-out pattern the REGION page's locked rows use)
+when unaffordable. This is what retires the old dead end: a fresh profile owns nothing,
+but decision 28's starting purse means the very page that used to say "no cars yet" now
+lists something it can afford.
+
+**The Engine Swap unlock.** Re-gated as a one-time meta purchase (decision 17) —
+`RallyLibrary.engine_swaps_unlocked` now reads `Save.KEY_ENGINE_SWAP_UNLOCKED` instead of
+a rally-completion flag; see [engine-swap.md](engine-swap.md) → *Capability gate* for the
+full history. `Save.buy_engine_swap_unlock()` spends `GameConfig.engine_swap_unlock_price`
+and refuses a second purchase once bought.
+
+**Deliberately NOT sold here: the drivetrain-conversion `MONEY SEAM`s.** Two other seams
+name stage 6 as their owner — `Save.drive_mode_available` /
+`UpgradeLibrary.resolve_drive_override` (a paid-for drivetrain layout override, e.g.
+converting a car to a rally's required drive mode) — but `todo/roguelike-pivot.md`'s
+Economy section lists exactly five sinks (cars, boost levels, perks, the engine-swap
+unlock, cosmetic wheels) and a drivetrain conversion purchase is not one of them. Selling
+one would be inventing a feature the settled decision record does not call for, so those
+two seams are left open, still refusing every stored override as unpaid-for. If the
+design ever wants to sell conversions, that is a new decision to brainstorm with the
+user (per `CLAUDE.md`'s todo-spec rule), not an inference from "stage 6 sells things".
 
 ## Known placeholder — resolved
 

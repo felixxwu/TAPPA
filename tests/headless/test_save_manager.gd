@@ -103,7 +103,10 @@ func test_clear_run_empties_the_key() -> void:
 # pinned is the LEDGER's behaviour, which must hold whatever those numbers are.
 
 func test_money_accumulates_and_survives_a_reload() -> void:
-	assert_eq(_save.money(), 0, "a fresh profile is broke")
+	# A known baseline, set explicitly rather than assumed: a fresh profile is no longer
+	# broke (decision 28 — it starts with GameConfig.run_starting_money so the shop is
+	# reachable), so "starts at 0" is a setup step here, not an assertion about defaults.
+	_save.profile[_save.KEY_MONEY] = 0
 	assert_eq(_save.add_money(120), 120, "banking returns the new balance")
 	@warning_ignore("return_value_discarded")
 	_save.add_money(30)
@@ -114,18 +117,21 @@ func test_money_accumulates_and_survives_a_reload() -> void:
 
 
 func test_banking_a_non_positive_amount_never_moves_the_balance() -> void:
+	var before: int = _save.money()
 	@warning_ignore("return_value_discarded")
 	_save.add_money(50)
+	var after_deposit: int = _save.money()
+	assert_eq(after_deposit, before + 50, "setup: a positive deposit lands")
 	@warning_ignore("return_value_discarded")
 	_save.add_money(0)
 	@warning_ignore("return_value_discarded")
 	_save.add_money(-999)
-	assert_eq(_save.money(), 50, "add_money only ever adds — there is no lose_money")
+	assert_eq(_save.money(), after_deposit, "add_money only ever adds — there is no lose_money")
 
 
 func test_an_unaffordable_purchase_is_refused_rather_than_going_negative() -> void:
-	@warning_ignore("return_value_discarded")
-	_save.add_money(100)
+	# A known baseline (decision 28 means a fresh profile is no longer broke by default).
+	_save.profile[_save.KEY_MONEY] = 100
 	assert_false(_save.spend_money(101), "the purchase is refused")
 	assert_eq(_save.money(), 100, "and nothing is half-spent")
 	assert_true(_save.spend_money(100), "an affordable purchase goes through")
@@ -156,6 +162,83 @@ func test_grant_car_seeds_hp_from_library_max() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	assert_almost_eq(float(car["hp"]), float(CarLibrary.by_id("fx_awd")["max_hp"]), 0.001,
 		"new car starts at the library max_hp")
+
+
+# --- The meta shop: buying a car (todo/roguelike-pivot.md decision 28) -----------
+
+func test_buy_car_spends_its_listed_cost_and_grants_it() -> void:
+	var cost := int(CarLibrary.by_id("fx_awd")["cost"])
+	_save.profile[_save.KEY_MONEY] = cost
+	assert_false(_save.owns_model("fx_awd"), "setup: not owned yet")
+	assert_true(_save.buy_car("fx_awd"), "an affordable purchase goes through")
+	assert_true(_save.owns_model("fx_awd"), "the car is now owned")
+	assert_eq(_save.money(), 0, "exactly its listed cost was spent — no more, no less")
+
+
+func test_buy_car_refuses_when_unaffordable_and_changes_nothing() -> void:
+	var cost := int(CarLibrary.by_id("fx_awd")["cost"])
+	_save.profile[_save.KEY_MONEY] = cost - 1
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_car("fx_awd"), "one short of the price is refused")
+	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
+
+
+func test_buy_car_refuses_a_model_already_owned() -> void:
+	_save.grant_car("fx_awd")
+	_save.profile[_save.KEY_MONEY] = int(CarLibrary.by_id("fx_awd")["cost"]) * 10
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_car("fx_awd"), "buying a car already owned is refused")
+	assert_eq(_save.profile, before, "nothing changes — no duplicate grant, no money spent")
+
+
+func test_buy_car_refuses_an_unknown_model() -> void:
+	_save.profile[_save.KEY_MONEY] = 999999
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_car("not_a_real_car"), "an unknown model id is refused")
+	assert_eq(_save.profile, before, "nothing changes")
+
+
+# --- The meta shop: boost levels (todo/roguelike-pivot.md decision 42) -----------
+
+func test_buy_boost_level_spends_the_listed_price_and_raises_the_level() -> void:
+	_save.profile[_save.KEY_MONEY] = _save.boost_level_price("grip")
+	assert_eq(_save.boost_level("grip"), 0, "setup: level 0")
+	assert_true(_save.buy_boost_level("grip"), "an affordable purchase goes through")
+	assert_eq(_save.boost_level("grip"), 1, "the level increments by exactly one")
+	assert_eq(_save.money(), 0, "exactly the listed price was spent")
+
+
+func test_boost_level_price_rises_with_level() -> void:
+	# The relationship only (CLAUDE.md forbids pinning the growth curve's numbers): buying
+	# a level must never make the NEXT one cheaper or free.
+	var price_at_0: int = _save.boost_level_price("grip")
+	_save.profile[_save.KEY_MONEY] = price_at_0
+	assert_true(_save.buy_boost_level("grip"), "setup: level 1 bought")
+	var price_at_1: int = _save.boost_level_price("grip")
+	assert_gte(price_at_1, price_at_0, "the ladder never gets cheaper going up")
+
+
+func test_buy_boost_level_refuses_when_unaffordable_and_changes_nothing() -> void:
+	_save.profile[_save.KEY_MONEY] = _save.boost_level_price("grip") - 1
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_boost_level("grip"), "one short of the price is refused")
+	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
+
+
+func test_buy_boost_level_refuses_an_unknown_id() -> void:
+	_save.profile[_save.KEY_MONEY] = 999999
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_boost_level("not_a_real_boost"), "an unknown boost id is refused")
+	assert_eq(_save.profile, before, "nothing changes")
+
+
+func test_buy_boost_level_refuses_once_the_level_is_at_the_cap() -> void:
+	var max_level := int(Config.data.boost_level_max)
+	_save.profile[_save.KEY_BOOST_LEVELS] = {"grip": max_level}
+	_save.profile[_save.KEY_MONEY] = 999999999
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_boost_level("grip"), "a level already at the cap cannot be bought again")
+	assert_eq(_save.profile, before, "nothing changes — money included")
 
 
 func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
@@ -834,16 +917,43 @@ func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
 
 
 
-func test_engine_swaps_unlock_by_winning_the_current_rally() -> void:
-	# The ordinary path, independent of any legacy flag: completing the rally the constant
-	# names is what opens swapping.
+# The gate is a purchased flag now (todo/roguelike-pivot.md decision 17), not a rally
+# completion — winning ENGINE_SWAP_UNLOCK_RALLY does nothing for it any more.
+func test_engine_swaps_unlock_by_purchasing_the_shop_flag() -> void:
 	var profile: Dictionary = _save._default_profile()
-	assert_false(RallyLibrary.engine_swaps_unlocked(profile), "setup: locked on a fresh career")
+	assert_false(RallyLibrary.engine_swaps_unlocked(profile), "setup: locked on a fresh profile")
+	# Winning the OLD gating rally is explicitly NOT the unlock any more.
 	profile[_save.KEY_RALLIES] = {
 		RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY: {"completed": true, "best_placed": 1},
 	}
+	assert_false(RallyLibrary.engine_swaps_unlocked(profile),
+		"winning the old gating rally no longer opens engine swapping")
+	profile[_save.KEY_ENGINE_SWAP_UNLOCKED] = true
 	assert_true(RallyLibrary.engine_swaps_unlocked(profile),
-		"winning the unlock rally opens engine swapping")
+		"the purchased-unlock flag is the whole gate")
+
+
+func test_buy_engine_swap_unlock_spends_money_and_sets_the_flag() -> void:
+	_save.profile[_save.KEY_MONEY] = _save.engine_swap_unlock_price()
+	assert_false(_save.engine_swap_unlocked(), "setup: locked")
+	assert_true(_save.buy_engine_swap_unlock(), "an affordable purchase goes through")
+	assert_true(_save.engine_swap_unlocked(), "and the flag is now set")
+	assert_eq(_save.money(), 0, "the price is fully spent")
+
+
+func test_buy_engine_swap_unlock_refuses_when_unaffordable_and_changes_nothing() -> void:
+	_save.profile[_save.KEY_MONEY] = 0
+	var before: Dictionary = _save.profile.duplicate(true)
+	assert_false(_save.buy_engine_swap_unlock(), "an unaffordable purchase is refused")
+	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
+
+
+func test_buy_engine_swap_unlock_refuses_a_second_purchase() -> void:
+	_save.profile[_save.KEY_MONEY] = _save.engine_swap_unlock_price() * 5
+	assert_true(_save.buy_engine_swap_unlock(), "setup: first purchase succeeds")
+	var balance_after_first: int = _save.money()
+	assert_false(_save.buy_engine_swap_unlock(), "a second purchase is refused — one-time only")
+	assert_eq(_save.money(), balance_after_first, "and nothing more is spent")
 
 
 # test_a_fresh_profile_has_no_legacy_grants DELETED: KEY_LEGACY_ENGINE_SWAP /
