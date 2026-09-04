@@ -75,6 +75,12 @@ const KEY_RALLIES := "rallies"
 # That asymmetry is the whole progression design, so these live on the PROFILE and are
 # written outside the run, never inside it.
 const KEY_MONEY := "money"                    # the single currency (decision 21)
+# THE ONE RUN SLOT (decision 27). Holds an in-progress run of EITHER kind — the
+# roguelike region run or the Daily/Weekly/Monthly challenge — so starting one
+# discards a paused run of the other. Was `challenge_run` before RunSession was
+# generalised; renamed with the SCHEMA_VERSION 7 reset, which costs nothing because
+# every pre-pivot profile is refused rather than migrated.
+const KEY_RUN := "run"
 const KEY_REGIONS_CLEARED := "regions_cleared" # ids of regions whose 8 stages are done
 const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (meta tier)
 const KEY_BOUGHT_PERKS := "bought_perks"      # perk ids owned
@@ -573,18 +579,19 @@ func _default_profile() -> Dictionary:
 		# unsynced above, so no SCHEMA_VERSION bump — and it rides the existing
 		# cloud-save sync to the player's other devices for free.
 		"username": "",
-		# The in-progress Daily/Weekly/Monthly challenge run, if any (see
-		# features/rally-challenge.md). {} means no run active. When non-empty:
-		# {period_key, kind, car_instance_id, stage_index, stage_times_ms: [...],
-		# dnf: bool}. Backfilled by _migrate's key backfill like cloud_revision/
-		# unsynced/username above, so no SCHEMA_VERSION bump.
-		"challenge_run": {},
+		# THE ONE RUN SLOT (decision 27) — the in-progress run, of either kind, or {}
+		# when none is active. Always: {mode, car_instance_id, stage_index,
+		# stage_times_ms: [...], dnf, money_earned}, plus the mode's own half —
+		# {period_key, kind} for a challenge (features/rally-challenge.md),
+		# {region_id, run_seed, stage_count} for a region run
+		# (features/region-runs.md). RunSession._persist is its only writer.
+		KEY_RUN: {},
 		# Terminal outcomes per challenge period, keyed by period_key:
 		# {kind, dnf: bool, cumulative_ms: int}. A period present here is FINISHED —
 		# completed or DNF'd — and cannot be started again for the rest of that
 		# period (a challenge is one attempt; abandoning ends the run with no retry).
-		# Separate from challenge_run rather than folded into it because
-		# ChallengeSession.resumable_run keys on challenge_run being non-empty, so a
+		# Separate from the run slot rather than folded into it because
+		# RunSession.resumable_run keys on that slot being non-empty, so a
 		# terminal record stored there would make the game try to RESUME a finished
 		# run. Pruned to live periods on every write, so it can't grow without bound.
 		# Backfilled by _migrate's key backfill, so no SCHEMA_VERSION bump.
@@ -744,8 +751,8 @@ func swap_engines(id_a: int, id_b: int) -> bool:
 	return true
 
 
-# --- Challenge run car lock ---------------------------------------------------
-# Whether an active challenge run is COMMITTED to `instance_id`. The STORAGE-LEVEL
+# --- Run car lock -------------------------------------------------------------
+# Whether the active run (of EITHER kind) is COMMITTED to `instance_id`. The STORAGE-LEVEL
 # predicate; UI asks it through DrivingContext.is_car_locked.
 #
 # Scope is deliberately narrow: a challenge locks the RUN to a car, it does NOT
@@ -761,26 +768,26 @@ func swap_engines(id_a: int, id_b: int) -> bool:
 # is enforced by the close-button gate (UpgradesGrid.over_rating_limit).
 # See features/rally-challenge.md → "Car lock".
 func is_challenge_locked(instance_id: int) -> bool:
-	var run: Dictionary = profile.get("challenge_run", {})
+	var run: Dictionary = profile.get(KEY_RUN, {})
 	return not run.is_empty() and int(run.get("car_instance_id", -1)) == instance_id
 
 
-# Persist `run` as the in-progress challenge_run (ChallengeSession._persist /
-# pause_run), replacing whatever was there. The one writer of this key's shape —
-# ChallengeSession no longer reaches into profile["challenge_run"] directly.
-func set_challenge_run(run: Dictionary) -> void:
-	profile["challenge_run"] = run
+# Persist `run` into the ONE run slot (RunSession._persist / pause_run), replacing
+# whatever was there — including a paused run of the other kind (decision 27). The
+# one writer of this key's shape; RunSession never reaches into profile[KEY_RUN].
+func set_run(run: Dictionary) -> void:
+	profile[KEY_RUN] = run
 	save()
 
 
-# Clear the stored challenge_run (ChallengeSession.discard_stale_run /
-# _clear_persisted on finish/DNF) — no run stored, nothing to resume.
-func clear_challenge_run() -> void:
-	profile["challenge_run"] = {}
+# Clear the stored run (RunSession.discard_stale_run / _clear_persisted on finish) —
+# no run stored, nothing to resume.
+func clear_run() -> void:
+	profile[KEY_RUN] = {}
 	save()
 
 
-# Replace the challenge_results map (ChallengeSession._record_outcome, already
+# Replace the challenge_results map (ChallengeRunMode.record_outcome, already
 # pruned to the live period keys by the caller).
 func set_challenge_results(results: Dictionary) -> void:
 	profile["challenge_results"] = results
@@ -971,7 +978,7 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 # Folded here from RallySession, whose four lines already did nothing but read
 # those two config fields and delegate. Callers: RallySession._apply_field_repair
 # (stage-to-stage + the silent final-event repair) and
-# ChallengeSession.report_event_result (the same two beats for a challenge run).
+# RunSession.report_event_result (the same two beats for every kind of run).
 # `instance_id` < 0 (nothing fielded) is a no-op, not an error.
 func apply_field_repair_to(instance_id: int) -> Dictionary:
 	if instance_id < 0:
@@ -979,6 +986,36 @@ func apply_field_repair_to(instance_id: int) -> Dictionary:
 	var cfg := Config.data
 	return field_repair(instance_id,
 		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
+
+
+# --- Money (todo/roguelike-pivot.md decision 21) ------------------------------
+#
+# The single currency, and the whole of it: earned per stage CLEARED (decision 36 —
+# banked at the clear, never at run end, so a failed run keeps everything it made)
+# plus the challenge's placement lump sum, and spent in the meta shop. A failed run
+# never takes any of it back (decision 14), which is why there is no `lose_money`.
+
+func money() -> int:
+	return int(profile.get(KEY_MONEY, 0))
+
+
+# Bank `amount` (clamped at 0 — this only ever adds). Returns the new balance.
+func add_money(amount: int) -> int:
+	if amount <= 0:
+		return money()
+	profile[KEY_MONEY] = money() + amount
+	save()
+	return money()
+
+
+# Deduct `amount` if the player can afford it, else leave the balance untouched.
+# Returns whether the purchase went through, so a caller can never half-spend.
+func spend_money(amount: int) -> bool:
+	if amount <= 0 or money() < amount:
+		return amount <= 0
+	profile[KEY_MONEY] = money() - amount
+	save()
+	return true
 
 
 # --- Rally completion --------------------------------------------------------

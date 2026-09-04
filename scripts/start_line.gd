@@ -4,7 +4,7 @@ extends Node3D
 # Tests: tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change.
 # The pre-event start-line sequence (todo/menus.md location 2) — the cinematic
 # moment between picking a car in HQ and the 3·2·1·GO countdown. It runs inside the
-# live run scene (main.tscn) once the world is built and a ChallengeSession stage is
+# live run scene (main.tscn) once the world is built and a RunSession stage is
 # active (features/rally-challenge.md), while the car is held locked by the
 # StageManager's STAGING phase:
 #
@@ -84,7 +84,7 @@ func _cfg() -> GameConfig:
 
 
 # The OwnedCar being driven this stage — the ONE place this scene resolves "whose
-# car is on the line". A challenge run fields ChallengeSession's locked car
+# car is on the line". A challenge run fields RunSession's locked car
 # (spec §2) — the only session StartLine stages for now that RallySession is
 # deleted (todo/roguelike-pivot.md decision 5). Every consumer (the launch
 # eligibility gate and the Tune Car panel) goes
@@ -106,8 +106,8 @@ func _stage_total(rally: Dictionary) -> int:
 	var total: int = rally.get("events", []).size()
 	if total > 0:
 		return total
-	if ChallengeSession.is_active():
-		return ChallengeSession.stage_count()
+	if RunSession.is_active():
+		return RunSession.stage_count()
 	return 1
 
 

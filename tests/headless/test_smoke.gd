@@ -81,9 +81,9 @@ func test_entering_a_rally_event_generates_its_track() -> void:
 # nothing DNFs a challenge any more (todo/challenge-career-reuse-drift.md item 12) — so it
 # records no period outcome and a sibling test can start the same Daily afterwards. It
 # DOES leave the run persisted, so drop that too rather than leaking it into other files.
-func _leave_challenge_run() -> void:
-	ChallengeSession.pause_run()
-	Save.profile["challenge_run"] = {}
+func _leave_run() -> void:
+	RunSession.pause_run()
+	Save.profile[Save.KEY_RUN] = {}
 
 
 func test_entering_a_challenge_stage_generates_its_track() -> void:
@@ -91,8 +91,8 @@ func test_entering_a_challenge_stage_generates_its_track() -> void:
 	# the rally test above (which pokes Config.data.track_* directly, actually
 	# exercising the free-roam/no-session TrackGenParams.for_config fallback, NOT
 	# TrackGenParams.for_event), this drives it the way world.gd._generate_track
-	# actually resolves a challenge stage: ChallengeSession.is_active() ->
-	# ChallengeSession.current_stage_params() -> TrackGenParams.for_event(event, cfg).
+	# actually resolves a challenge stage: RunSession.is_active() ->
+	# RunSession.current_stage_params() -> TrackGenParams.for_event(event, cfg).
 	#
 	# Uses its OWN scene instance (not the file's shared _scene) — regenerating a
 	# challenge stage's track leaves the car/track in a different pose than the
@@ -101,14 +101,14 @@ func test_entering_a_challenge_stage_generates_its_track() -> void:
 	CarFixtures.install()
 	var owned: Dictionary = Save.grant_car("fx_light_rwd")
 	var t := int(Time.get_unix_time_from_system())
-	ChallengeSession.auto_load_scenes = false
+	RunSession.auto_load_scenes = false
 	# A period with a recorded outcome is spent (one attempt per period) and start()
 	# refuses it. Leaving a run no longer records one (item 12), but Save.profile is a
 	# live autoload shared with earlier test scripts that DO finish the same
 	# Daily, so clear the map to guarantee this test gets a fresh period.
 	Save.profile["challenge_results"] = {}
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned, t), "setup: run starts")
-	assert_false(ChallengeSession.current_stage_params().is_empty(),
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned, t), "setup: run starts")
+	assert_false(RunSession.current_stage_params().is_empty(),
 		"setup: the active run has a real stage 0 to generate")
 
 	var scene: Node3D = load("res://main.tscn").instantiate()
@@ -122,7 +122,7 @@ func test_entering_a_challenge_stage_generates_its_track() -> void:
 		"the generated track has real, non-empty length (not a degenerate/empty terrain)")
 
 	scene.free()
-	_leave_challenge_run()
+	_leave_run()
 	CarFixtures.restore()
 	Config.reset()  # don't leak the challenge seed into other tests
 
@@ -134,13 +134,13 @@ func test_a_challenge_stage_stages_the_start_line_like_a_rally_event() -> void:
 	# start_line_enabled toggle (features/rally-challenge.md).
 	CarFixtures.install()
 	var owned: Dictionary = Save.grant_car("fx_light_rwd")
-	ChallengeSession.auto_load_scenes = false
+	RunSession.auto_load_scenes = false
 	# A period with a recorded outcome is spent (one attempt per period) and start()
 	# refuses it. Leaving a run no longer records one (item 12), but Save.profile is a
 	# live autoload shared with earlier test scripts that DO finish the same
 	# Daily, so clear the map to guarantee this test gets a fresh period.
 	Save.profile["challenge_results"] = {}
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned,
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
 		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
 	var was_enabled: bool = Config.data.start_line_enabled
 
@@ -153,12 +153,14 @@ func test_a_challenge_stage_stages_the_start_line_like_a_rally_event() -> void:
 	# career fields — and no time to beat, since a challenge has no rival field.
 	var info: Dictionary = _scene._arch_event_info()
 	assert_ne(String(info["rally_name"]), "", "the banner names the challenge")
-	assert_eq(int(info["stage_count"]), ChallengeSession.stage_count(), "…over the run's own stage count")
-	assert_eq(int(info["stage_index"]), ChallengeSession.events_completed(), "…at the run's current stage")
-	assert_lt(int(info["target_ms"]), 0, "no rival time to beat is displayed for a challenge")
+	assert_eq(int(info["stage_count"]), RunSession.stage_count(), "…over the run's own stage count")
+	assert_eq(int(info["stage_index"]), RunSession.events_completed(), "…at the run's current stage")
+	# A challenge has no target time — only a region run carries a clock. The banner says
+	# so with a non-positive target_ms; FinishArch omits the row entirely on that.
+	assert_false(int(info["target_ms"]) > 0, "no time to beat is displayed for a challenge")
 
 	Config.data.start_line_enabled = was_enabled
-	_leave_challenge_run()
+	_leave_run()
 	CarFixtures.restore()
 
 

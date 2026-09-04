@@ -330,6 +330,29 @@ The frame cap held for the duration of world generation only, via
 > `tools/calibrate_pace_floor.gd` — still name them. Retuning one changes NOTHING on its
 > own: the authored value in `game_config.tres` is what the game reads.
 
+### Roguelike Run
+The region run's two levers — the TARGET TIME a stage must be beaten in, and the MONEY
+a cleared stage pays. Read by `RegionRunMode` (`scripts/region_run_mode.gd`); see
+[region-runs.md](region-runs.md) for the formulas and
+[rally-challenge.md](rally-challenge.md) for the challenge's own payout.
+
+| Property | Purpose |
+|----------|---------|
+| `run_target_pace_base` | Pace multiplier on the reference-car optimum for stage 1 of the first region — the loosest clock in the game. 1.0 = the point-mass optimum exactly. |
+| `run_target_pace_stage_step` | How much tighter the clock gets per stage within a run. |
+| `run_target_pace_region_step` | How much tighter per region in the unlock order — the whole of region difficulty (decision 22). |
+| `run_target_pace_min` | Floor no combination of the two steps may take the pace below. |
+| `run_stage_money_base` | Payout for clearing the first stage of a run, before the growth curve and the region scale. |
+| `run_stage_money_growth` | Multiplied in once per stage already cleared, so surviving deep into a run is where the money is. |
+| `run_fast_bonus_money` | The most a fast clear can add on top, paid in proportion to the fraction of the target saved. |
+| `run_money_region_step` | How much richer each region in the unlock order is, as a fraction added per index (decision 31). |
+| `challenge_completion_money` | The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays. |
+
+> **Tune the pace knobs against real driving, not against the model.** `LapTimeModel`'s
+> optimum is a point-mass centreline reference, not a physical bound — a real driver
+> beats it by straightening corners. The shipped values are deliberately generous
+> placeholders.
+
 ## Engine data
 
 `GameConfig` no longer owns an engine preset system — it has no

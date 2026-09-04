@@ -71,18 +71,18 @@ func test_round_trip_survives_save_and_reload() -> void:
 	assert_almost_eq(float(_save.profile["cars"][0]["tuning"]["brake_bias"]), 0.55, 0.001, "tuning reloaded")
 
 
-func test_set_challenge_run_persists_and_survives_reload() -> void:
-	# The three challenge-run methods (ChallengeSession's only writers of these
+func test_set_run_persists_and_survives_reload() -> void:
+	# The three challenge-run methods (RunSession's only writers of these
 	# keys) go through the same save/reload path as every other domain.
 	var run := {"period_key": "2026-W1", "kind": "weekly", "car_instance_id": 7,
 		"stage_index": 1, "stage_times_ms": [1000], "dnf": false}
-	_save.set_challenge_run(run)
+	_save.set_run(run)
 	_save.save_now()
 	_save.profile = {}
 	_save.load_or_new()
 	# Field-by-field with casts rather than a verbatim dict compare: the profile round-trips
 	# through JSON, which has no integer type, so every int comes back as a float (7 -> 7.0).
-	var back: Dictionary = _save.profile["challenge_run"]
+	var back: Dictionary = _save.profile[Save.KEY_RUN]
 	assert_eq(String(back["period_key"]), "2026-W1", "period key reloaded")
 	assert_eq(String(back["kind"]), "weekly", "kind reloaded")
 	assert_eq(int(back["car_instance_id"]), 7, "car instance id reloaded")
@@ -91,10 +91,45 @@ func test_set_challenge_run_persists_and_survives_reload() -> void:
 	assert_false(bool(back["dnf"]), "dnf flag reloaded")
 
 
-func test_clear_challenge_run_empties_the_key() -> void:
-	_save.set_challenge_run({"period_key": "x", "kind": "daily"})
-	_save.clear_challenge_run()
-	assert_eq(_save.profile["challenge_run"], {}, "cleared back to empty")
+func test_clear_run_empties_the_key() -> void:
+	_save.set_run({"period_key": "x", "kind": "daily"})
+	_save.clear_run()
+	assert_eq(_save.profile[Save.KEY_RUN], {}, "cleared back to empty")
+
+
+# --- Money (todo/roguelike-pivot.md decision 21) -------------------------------
+#
+# No amounts are asserted — every payout in the game is a GameConfig tunable. What is
+# pinned is the LEDGER's behaviour, which must hold whatever those numbers are.
+
+func test_money_accumulates_and_survives_a_reload() -> void:
+	assert_eq(_save.money(), 0, "a fresh profile is broke")
+	assert_eq(_save.add_money(120), 120, "banking returns the new balance")
+	@warning_ignore("return_value_discarded")
+	_save.add_money(30)
+	_save.save_now()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_eq(_save.money(), 150, "the balance round-trips through the save file")
+
+
+func test_banking_a_non_positive_amount_never_moves_the_balance() -> void:
+	@warning_ignore("return_value_discarded")
+	_save.add_money(50)
+	@warning_ignore("return_value_discarded")
+	_save.add_money(0)
+	@warning_ignore("return_value_discarded")
+	_save.add_money(-999)
+	assert_eq(_save.money(), 50, "add_money only ever adds — there is no lose_money")
+
+
+func test_an_unaffordable_purchase_is_refused_rather_than_going_negative() -> void:
+	@warning_ignore("return_value_discarded")
+	_save.add_money(100)
+	assert_false(_save.spend_money(101), "the purchase is refused")
+	assert_eq(_save.money(), 100, "and nothing is half-spent")
+	assert_true(_save.spend_money(100), "an affordable purchase goes through")
+	assert_eq(_save.money(), 0, "…debiting exactly its price")
 
 
 func test_set_challenge_results_replaces_the_whole_map() -> void:
@@ -103,7 +138,7 @@ func test_set_challenge_results_replaces_the_whole_map() -> void:
 	_save.profile = {}
 	_save.load_or_new()
 	assert_eq(_save.profile["challenge_results"].keys(), ["2026-D1"], "the map round-trips")
-	# A later call REPLACES rather than merges — this is how ChallengeSession's
+	# A later call REPLACES rather than merges — this is how RunSession's
 	# own pruning (dropping rolled-over periods) actually takes effect.
 	_save.set_challenge_results({"2026-D2": {"kind": "daily", "dnf": true, "cumulative_ms": 0}})
 	assert_false(_save.profile["challenge_results"].has("2026-D1"), "the old entry is gone")

@@ -299,7 +299,7 @@ So before driving anything that can change scene, switch the seam off or capture
 
 - `RallySession.auto_load_scenes = false` — `start_rally()` → `_enter_event()` ends in
   `change_scene_to_file("res://main.tscn")`, and the seam **defaults to `true`**.
-- `ChallengeSession.auto_load_scenes = false` — same for
+- `RunSession.auto_load_scenes = false` — same for
   `continue_to_next_stage()` and `hq_challenge.gd` → `_hand_off_to_challenge_scene`.
 - `world.gd` → `scene_change_hook` — capture the requested path instead of loading it.
 

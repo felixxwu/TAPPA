@@ -119,15 +119,18 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   See [rally-roster.md](rally-roster.md) for the ladder and
   [reward-system.md](reward-system.md) for where the gate is applied to the
   draw pool.
-- `stars_earned` / `stars_spent` — the **star ledger**, and the one part of the star
-  economy that IS persisted state. `Save.stars_available()` is the difference,
-  `award_stars()` credits, `spend_stars()` debits (refusing an unaffordable debit
-  rather than going negative). Two counters rather than one balance so the lifetime
-  earned figure survives spending. A derived total was deliberately abandoned here:
-  it could not see Rally Challenge income (an unrecoverable, non-rally source) and
-  it would shrink whenever a rally was renamed or retired — dropping the balance
-  below `stars_spent` and producing a negative. Missing keys read 0, so no
-  `SCHEMA_VERSION` bump was needed. See [star-economy.md](star-economy.md).
+- `money` (`Save.KEY_MONEY`) — the **single currency**, and the whole economy's
+  persisted state (`todo/roguelike-pivot.md` decision 21; it replaced the deleted
+  `stars_earned` / `stars_spent` star ledger outright, with no migration).
+  `Save.money()` reads it, `add_money()` banks, `spend_money()` debits and refuses an
+  unaffordable purchase rather than going negative. There is deliberately **no
+  `lose_money`**: a failed run keeps every penny it earned (decision 14), and money is
+  banked at each stage CLEAR rather than at run end (decision 36). Sources and sinks
+  are in [region-runs.md](region-runs.md).
+- `run` (`Save.KEY_RUN`) — **the one run slot**, holding an in-progress run of either
+  kind (a region run or a Daily/Weekly/Monthly challenge). `set_run` / `clear_run` are
+  its only writers, `is_challenge_locked(instance_id)` is the car lock over it, and
+  `RunSession` owns its shape. See [region-runs.md](region-runs.md).
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old

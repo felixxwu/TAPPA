@@ -133,7 +133,6 @@ const BREADCRUMB_BASELINE := [
 	"car_prop.gd",
 	"car_silhouettes.gd",
 	"car_stat_bounds.gd",
-	"challenge_session.gd",
 	"chunk_border_debug.gd",
 	"confirm_popup.gd",
 	"control_scheme_diagram.gd",

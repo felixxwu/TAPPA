@@ -2,7 +2,7 @@ extends GutTest
 # The END of a Rally Challenge run: world.gd._on_challenge_run_finished, which is
 # the challenge's counterpart to RallySession._resolve_results (spec §6).
 #
-#   clean finish -> ChallengeSession.try_grant_completion_reward (placement-gated)
+#   clean finish -> ChallengeRunMode.try_grant_completion_reward (placement-gated)
 #   DNF          -> Cloud.challenge_leaderboard.post_dnf (best-effort, not awaited)
 #
 # Both used to be dead code with no callers anywhere. The seam is the same one
@@ -43,9 +43,9 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	ChallengeSession.auto_load_scenes = false
-	if ChallengeSession.is_active():
-		ChallengeSession.abandon()
+	RunSession.auto_load_scenes = false
+	if RunSession.is_active():
+		RunSession.pause_run()
 
 	_rest = FakeRestClient.new()
 	add_child_autofree(_rest)
@@ -71,10 +71,10 @@ func before_each() -> void:
 func after_each() -> void:
 	_scene.scene_change_hook = Callable()
 	Cloud.challenge_leaderboard = _real_board
-	if ChallengeSession.is_active():
-		ChallengeSession.abandon()
-	ChallengeSession.auto_load_scenes = true
-	Save.profile["challenge_run"] = {}
+	if RunSession.is_active():
+		RunSession.pause_run()
+	RunSession.auto_load_scenes = true
+	Save.profile[Save.KEY_RUN] = {}
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	CarFixtures.restore()
@@ -88,7 +88,7 @@ func _clean() -> void:
 
 func _start_run(kind_str: String) -> Dictionary:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	assert_true(ChallengeSession.start(kind_str, car, int(Time.get_unix_time_from_system())),
+	assert_true(RunSession.start(kind_str, car, int(Time.get_unix_time_from_system())),
 		"the fixture run starts")
 	return car
 
@@ -139,8 +139,8 @@ func test_a_clean_finish_resolves_the_completion_reward_before_handing_off() -> 
 	_start_run(ChallengeLibrary.DAILY)
 	var result := {
 		"completed": true, "dnf": false, "kind": ChallengeLibrary.DAILY,
-		"period_key": ChallengeSession.period_key(),
-		"car_instance_id": ChallengeSession.car_instance_id(),
+		"period_key": RunSession.period_key(),
+		"car_instance_id": RunSession.car_instance_id(),
 	}
 	await _scene._on_challenge_run_finished(result)
 
@@ -161,33 +161,33 @@ func test_a_headless_clean_finish_resolves_the_reward_flow_with_no_popup_attempt
 	# put a ConfirmPopup on screen. _scene._headless mirrors real play here
 	# (Platform.is_headless() is true under the test runner).
 	#
-	# RENAMED, AND THE GRANT ASSERTION IS GONE (todo/roguelike-pivot.md decision 21): this
-	# used to assert Save.stars_available() > 0 — the challenge completion payout replaced
-	# the mystery-box grant. Both the star ledger AND that payout are deleted now (see
-	# ChallengeSession.try_grant_completion_reward's "MONEY SEAM" comment); a qualifying
-	# finish still resolves placement and hands off cleanly, it just has nothing to grant
-	# until the economy stage wires money in.
+	# The grant is MONEY now (todo/roguelike-pivot.md decision 21) — this used to assert
+	# Save.stars_available() > 0, and the star ledger it read is deleted. A qualifying
+	# finish banks GameConfig.challenge_completion_money; the AMOUNT is a tunable and is
+	# deliberately not asserted, only that a placing run is paid something.
 	assert_true(_scene._headless, "setup: this scene sees a headless runtime, same as real headless play")
+	assert_eq(_save.money(), 0, "setup: a fresh profile is broke")
 	var car := _start_run(ChallengeLibrary.DAILY)
 	var stage_count: int = int(ChallengeLibrary.STAGE_COUNTS[ChallengeLibrary.DAILY])
 	_queue_qualifying_rank(stage_count)
 
 	await _scene._on_challenge_run_finished({
 		"completed": true, "dnf": false, "kind": ChallengeLibrary.DAILY,
-		"period_key": ChallengeSession.period_key(),
+		"period_key": RunSession.period_key(),
 		"car_instance_id": int(car["instance_id"]),
 	})
 
 	assert_null(ConfirmPopup.any_open(get_tree()), "headless never opens a popup")
 	assert_eq(_scenes, [Scenes.hub_path()], "and the hand-off to HQ still happens")
+	assert_gt(_save.money(), 0, "a placing run is paid — the reward survived the star deletion")
 
 
 # --- The reward reveal must never be silently dropped ---------------------------
 #
 # try_grant_completion_reward is a ONE-SHOT, non-retryable call: by the time
-# run_finished fires, ChallengeSession._finish_locally has already recorded this
+# run_finished fires, RunSession._finish_locally has already recorded this
 # period's outcome and cleared challenge_run, so the period is terminal (see
-# ChallengeSession.start/resume, which both refuse once period_outcome is set) and
+# RunSession.start/resume, which both refuse once period_outcome is set) and
 # there is no "reward pending reveal" state to come back to. Gating the grant
 # itself on modal availability (the open_committing shape) would therefore not
 # defer the grant on refusal, it would silently keep a reward the player can never
@@ -196,15 +196,15 @@ func test_a_headless_clean_finish_resolves_the_reward_flow_with_no_popup_attempt
 # via ConfirmPopup's allow_stack escape hatch. This proves that guarantee: with
 # another modal already occupying the one modal slot, the reward card still opens
 # (stacked on top) rather than being refused.
-# DEBT FOR THE ECONOMY STAGE. A test lived here asserting the completion-reward card
-# STACKS over a modal already on screen rather than being dropped. It cannot run now:
-# the star payout is deleted and the money grant is not wired yet (see
-# ChallengeSession.try_grant_completion_reward's "MONEY SEAM"), so nothing is granted,
-# world.gd's won_something check reads false by design, and no card is ever shown.
-#
-# The stacking behaviour it guarded is REAL and still in world.gd — restore this test
-# the moment the money grant lands. Deleted rather than weakened: an assertion loosened
-# to "0 or 1 modals" would pass forever and guard nothing.
+# STILL OWED (and now unblocked). A test lived here asserting the completion-reward card
+# STACKS over a modal already on screen rather than being dropped. It could not run while
+# the payout was deleted and the money grant unwired — nothing was granted, so no card was
+# ever shown. The money grant HAS landed now
+# (ChallengeRunMode.try_grant_completion_reward), so the case is reachable again and this
+# test should be restored; it needs a non-headless scene to raise a popup in, which is
+# more setup than the run-spine stage carries, so it is left named here rather than
+# written badly. Deleted rather than weakened: an assertion loosened to "0 or 1 modals"
+# would pass forever and guard nothing.
 
 
 func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> void:
@@ -213,8 +213,8 @@ func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> voi
 	_rest.queue_error(500)
 	await _scene._on_challenge_run_finished({
 		"completed": true, "dnf": false, "kind": ChallengeLibrary.DAILY,
-		"period_key": ChallengeSession.period_key(),
-		"car_instance_id": ChallengeSession.car_instance_id(),
+		"period_key": RunSession.period_key(),
+		"car_instance_id": RunSession.car_instance_id(),
 	})
 	assert_eq(_scenes, [Scenes.hub_path()],
 		"a failed placement fetch never strands the player in the run scene")
@@ -224,8 +224,8 @@ func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> voi
 
 func test_a_dnf_posts_the_board_flip_without_delaying_the_hand_off() -> void:
 	_start_run(ChallengeLibrary.WEEKLY)
-	var period := ChallengeSession.period_key()
-	ChallengeSession.abandon()
+	var period := RunSession.period_key()
+	RunSession.pause_run()
 
 	_scene._on_challenge_run_finished({
 		"completed": false, "dnf": true, "kind": ChallengeLibrary.WEEKLY,

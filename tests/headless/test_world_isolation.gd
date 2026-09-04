@@ -3,7 +3,7 @@ extends GutTest
 #
 # WHY THIS FILE EXISTS. Several production paths end in
 # `get_tree().change_scene_to_file(...)` — RallySession._load_event_scene,
-# ChallengeSession.continue_to_next_stage, hq.gd, pause_menu.gd,
+# RunSession.continue_to_next_stage, hq.gd, pause_menu.gd,
 # benchmark_mode.gd. Under the headless runner that is not a no-op and it is not
 # scoped to the test that triggered it: the requested scene is instantiated and
 # added to /root, where NOTHING ever frees it, so it stays for the whole rest of
@@ -63,7 +63,7 @@ func test_no_game_scene_is_parked_under_root() -> void:
 	var leaked := _leaked_scene_names()
 	assert_eq(leaked, [],
 		"an earlier test left a whole game scene under /root — almost certainly a "
-		+ "change_scene_to_file that escaped, e.g. ChallengeSession.start() with "
+		+ "change_scene_to_file that escaped, e.g. RunSession.start() with "
 		+ "auto_load_scenes left true. Turn the seam off in that file's "
 		+ "before_all/before_each; do NOT relax this guard.")
 
@@ -74,10 +74,10 @@ func test_no_game_scene_is_parked_under_root() -> void:
 # has moved and this should be revisited rather than silently trusted.
 #
 # There used to be two seams here; RallySession's went with it (decision 5). When
-# stage 3 lands RunSession, add its seam back alongside ChallengeSession's.
+# stage 3 lands RunSession, add its seam back alongside RunSession's.
 func test_the_scene_change_seams_still_exist() -> void:
-	assert_true("auto_load_scenes" in ChallengeSession,
-		"ChallengeSession still exposes the auto_load_scenes seam tests switch off")
+	assert_true("auto_load_scenes" in RunSession,
+		"RunSession still exposes the auto_load_scenes seam tests switch off")
 
 
 # The run-scoped suppression is what makes the guard above pass by CONSTRUCTION rather

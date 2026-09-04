@@ -96,13 +96,12 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	if ChallengeSession.is_active():
-		ChallengeSession.abandon()
-	ChallengeSession.auto_load_scenes = true
+	if RunSession.is_active():
+		RunSession.pause_run()
+	RunSession.auto_load_scenes = true
 	Config.reset()
 	CarFixtures.restore()
 	RallyFixtures.restore()
-	UpgradeFixtures.restore()  # only one test installs it; restore() is a plain reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -129,8 +128,8 @@ func _make(event_index := 0) -> StartLine:
 func _start_session_car() -> Dictionary:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
-	ChallengeSession.auto_load_scenes = false
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned,
+	RunSession.auto_load_scenes = false
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
 		int(Time.get_unix_time_from_system())), "setup: the session car is fielded")
 	return owned
 
@@ -150,10 +149,13 @@ func test_a_turbo_fitted_at_the_start_line_reaches_the_config_the_hud_reads() ->
 	sl.setup(car, null, _stage, _rally(), 0, _cam_mgr, _hud)
 	assert_false(Config.data.has_forced_induction(), "setup: the fielded car starts unboosted")
 
-	owned["installed_upgrades"] = ["fx_turbo_small"]
+	# Granting a boost MID-RUN and refitting is exactly what stage 5's between-stage boost
+	# pick does, so this stays pinned — only the seam moved from installed_upgrades to
+	# `boosts` when the persistent parts model was deleted.
+	owned["boosts"] = UpgradeFixtures.boosts(["fx_turbo_small"])
 	car.refit_upgrades(owned)
 
-	assert_true(car.config.has_forced_induction(), "the refit fitted the part to the car's config")
+	assert_true(car.config.has_forced_induction(), "the refit applied the boost to the car's config")
 	assert_true(Config.data.has_forced_induction(),
 		"…and the HUD reads that same config, so the boost gauge appears without a new stage")
 
@@ -278,12 +280,10 @@ func test_launch_proceeds_when_the_car_is_eligible() -> void:
 
 # --- Pre-race menus (unchanged behaviour) ------------------------------------
 
-func test_start_overlay_has_focusable_tune_and_upgrades_buttons() -> void:
-	var sl := _make()
-	assert_eq(sl._tune_button.focus_mode, Control.FOCUS_ALL,
-		"the Tune Car button is keyboard/gamepad focusable (MenuNav attached)")
-	assert_eq(sl._upgrades_button.focus_mode, Control.FOCUS_ALL,
-		"the Upgrades button is keyboard/gamepad focusable (MenuNav attached)")
+# NOTE: five tests covering the start line's UPGRADES button lived here. Decision 29
+# leaves the start line offering Tune Car ONLY -- upgrades have nothing to show once the
+# persistent parts model is gone and boosts are picked between stages instead. The TUNE
+# half, the fade, and the challenge car-binding tests below are untouched.
 
 
 func test_tune_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
@@ -309,34 +309,6 @@ func test_start_line_tune_uses_retune_and_preserves_the_staged_pose() -> void:
 	assert_eq(_player.global_transform, pose_before, "the staged pose is preserved across a tune")
 
 
-func test_upgrades_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
-	_start_session_car()
-	var sl := _make()
-	sl._open_upgrades()
-	assert_true(sl._upgrades_layer.visible, "opening Upgrades shows the upgrades overlay")
-	assert_false(sl._overlay.visible, "the start overlay hides while upgrading")
-	sl._close_upgrades()
-	assert_true(sl._overlay.visible, "Back restores the start overlay")
-	assert_false(sl._upgrades_layer.visible, "Back hides the upgrades overlay")
-
-
-func test_upgrade_changed_refits_the_live_car() -> void:
-	_start_session_car()
-	var sl := _make()
-	sl._on_upgrade_changed()
-	assert_true(_player.refit_calls > 0, "an upgrade edit refits the live car's upgrade state")
-
-
-# --- Challenge runs stage exactly like a rally event (features/rally-challenge.md) ---
-#
-# A Daily/Weekly/Monthly challenge stage gets the SAME pre-countdown screen a career
-# rally event used to get — the same Upgrades / Tune Car overlays on the same shared
-# components. There is no rival field to stage against (spec §3 — decision 5), so it
-# always takes the plain launch-straight-to-fade path.
-
-# The synthetic event dict world.gd._build_start_line hands StartLine for a challenge:
-# a display name and nothing else. The performance ceiling is NOT smuggled in here as a
-# restriction key — restrictions are categorical — the screen asks DrivingContext for it.
 func _challenge_rally() -> Dictionary:
 	return {"name": "Daily Challenge", "restriction": {}}
 
@@ -344,8 +316,8 @@ func _challenge_rally() -> Dictionary:
 # Start a real Daily challenge run on a freshly granted fixture car and return it.
 func _start_challenge() -> Dictionary:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	ChallengeSession.auto_load_scenes = false
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned,
+	RunSession.auto_load_scenes = false
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
 		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
 	return owned
 
@@ -354,30 +326,23 @@ func _make_challenge() -> StartLine:
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)
-	sl.setup(_player, null, _stage, _challenge_rally(), ChallengeSession.events_completed(),
+	sl.setup(_player, null, _stage, _challenge_rally(), RunSession.events_completed(),
 		_cam_mgr, _hud)
 	return sl
 
 
+# The binding rule survives the Upgrades button's deletion: whatever the start line opens
+# must bind to the RUN's locked car, not to whatever the garage last selected. Tune is the
+# only such menu now (decision 29), so it carries the assertion.
 func test_challenge_menus_bind_to_the_challenge_car_not_the_rally_one() -> void:
 	var owned := _start_challenge()
 	var sl := _make_challenge()
 	sl._open_tune()
-	sl._open_upgrades()
 	var want := int(owned["instance_id"])
 	assert_eq(int(sl._tune_panel._owned.get("instance_id", -1)), want,
 		"the Tune Car panel is bound to the challenge's locked car")
-	assert_eq(int(sl._upgrades_menu._owned.get("instance_id", -1)), want,
-		"the Upgrades menu is bound to the challenge's locked car")
 	assert_eq(int(sl._driven_car().get("instance_id", -1)), want,
 		"the shared driven-car resolver answers with the challenge car")
-
-
-func test_challenge_upgrade_edit_refits_the_live_challenge_car() -> void:
-	_start_challenge()
-	var sl := _make_challenge()
-	sl._on_upgrade_changed()
-	assert_gt(_player.refit_calls, 0, "an upgrade edit refits the live car during a challenge too")
 
 
 func test_challenge_fades_straight_to_the_countdown() -> void:
@@ -396,9 +361,9 @@ func test_challenge_header_counts_the_runs_own_stages() -> void:
 	# the active run's stage count rather than a rally's fixed events-per-rally.
 	_start_challenge()
 	var sl := _make_challenge()
-	assert_eq(sl._stage_total(_challenge_rally()), ChallengeSession.stage_count(),
+	assert_eq(sl._stage_total(_challenge_rally()), RunSession.stage_count(),
 		"the stage total comes from the challenge run")
-	assert_string_contains(sl._subtitle_label.text.to_upper(), "STAGE 1 OF %d" % ChallengeSession.stage_count())
+	assert_string_contains(sl._subtitle_label.text.to_upper(), "STAGE 1 OF %d" % RunSession.stage_count())
 
 
 # --- The pre-race performance ceiling goes through DrivingContext ---------------
@@ -413,48 +378,24 @@ func test_challenge_rating_limit_comes_from_the_periods_ceiling() -> void:
 	var sl := _make_challenge()
 	# Derived from the same accessor chain the code under test uses — no band value
 	# is pinned (CEILING_BAND_HP_TONNE is authored/tunable).
-	assert_eq(sl._rating_limit(), ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
+	assert_eq(sl._rating_limit(), ChallengeLibrary.ceiling_for(RunSession.period_key()),
 		"a challenge's pre-race ceiling is its period's rolled cap")
 	assert_ne(sl._rating_limit(), DrivingContext.NO_LIMIT,
 		"a real ceiling applies during a challenge — not the silent 'no limit' fallback")
 
 
-func test_challenge_upgrades_close_button_gates_on_the_ceiling() -> void:
-	var owned := _start_challenge()
-	var id := int(owned["instance_id"])
-	var sl := _make_challenge()
-	# Force the car OVER the ceiling by running it at full power against a stand-in
-	# ceiling one point below its own rating — the same "derive the expectation from the
-	# car under test" trick test_upgrades_grid.gd uses, so nothing tunable is pinned.
-	_save.set_engine_detune(id, 1.0)
-	sl._open_upgrades()
-	var entry := CarLibrary.by_id(String(owned["model_id"]))
-	var full_rating := CarPerformance.rating(
-		CarPerformance.merged_meta(_save.get_car(id), entry))
-	# Re-bind the live menu to a ceiling this car provably busts at full power.
-	sl._upgrades_menu.setup(_save.get_car(id), Callable(), Callable(), float(full_rating - 1))
-	sl._upgrades_menu.bind_close_button(sl._upgrades_back, sl._close_upgrades)
-	assert_true(sl._upgrades_menu.over_rating_limit(), "setup: full power busts the stand-in ceiling")
-	assert_false(sl._upgrades_menu.can_close(), "the close button blocks while over the ceiling")
-	assert_true(String(sl._upgrades_back.text).begins_with("Over limit"),
-		"the close button paints as blocked")
-	# Detune under the cap: the gate clears with no challenge-specific mechanism.
-	sl._upgrades_menu._apply_detune(25.0, id)
-	assert_false(sl._upgrades_menu.over_rating_limit(), "detuning under the ceiling clears the gate")
-	assert_true(sl._upgrades_menu.can_close(), "proceeding is allowed once under the ceiling")
-	assert_false(String(sl._upgrades_back.text).begins_with("Over limit"),
-		"the close button returns to its plain label")
-
-
-# The pre-countdown menu lays its actions out in ONE horizontal row across the bottom,
-# the same shape the garage row and lift hub use — stacked vertically these four ate most
-# of a phone screen and covered the car the staging shot exists to show.
 func test_the_action_row_is_horizontal_and_offers_a_way_out() -> void:
 	var sl := _make()
+	# Find the row by what it CONTAINS (buttons), not by a child count — the count
+	# changed when decision 29 dropped the Upgrades action, and pinning it just makes
+	# this test break again the next time an action is added or removed.
 	var row: HBoxContainer = null
 	for node in sl.find_children("*", "HBoxContainer", true, false):
-		if (node as HBoxContainer).get_child_count() >= 4:
-			row = node
+		for child in (node as HBoxContainer).get_children():
+			if child is Button:
+				row = node
+				break
+		if row != null:
 			break
 	assert_not_null(row, "the actions live in a single horizontal row")
 
@@ -480,8 +421,11 @@ func test_the_action_row_fits_across_the_screen() -> void:
 	var sl := _make()
 	var row: HBoxContainer = null
 	for node in sl.find_children("*", "HBoxContainer", true, false):
-		if (node as HBoxContainer).get_child_count() >= 4:
-			row = node
+		for child in (node as HBoxContainer).get_children():
+			if child is Button:
+				row = node
+				break
+		if row != null:
 			break
 	assert_not_null(row, "setup: found the action row")
 	for child in row.get_children():

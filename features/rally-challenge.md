@@ -18,28 +18,40 @@ stages and damage carries over between them. Full design:
   same stages/ceiling for every player; a new period rolls new values the
   moment its date key changes. `CHALLENGE_EPOCH` lives inside the key itself
   (bump it when the seed roll's inputs change).
-- **`ChallengeSession`** (`scripts/challenge_session.gd`, autoload) — the
-  per-run state machine, parallel to `RallySession` rather than a reuse of it
-  (no rival field, no special-event unlock, no
-  `Save.record_podium_rally` — so no career star credit; its own star payout is
-  placement-based, see *Completion reward* below). Read surface: `is_active()`, `car_instance_id()`,
-  `kind()`, `stage_count()`, `events_completed()`, `current_stage_params()`.
-  Lifecycle: `start(kind, owned_car, unix_time)`, `resume(unix_time)`,
+- **`RunSession`** (`scripts/run_session.gd`, autoload) — the SHARED per-run state
+  machine. It is not challenge-specific any more: the roguelike region run is its
+  other caller, and which kind of run is live comes from a `RunMode` strategy. The
+  spine (the stage cursor, the persisted run slot, the field repair, the car lock)
+  and that seam are documented in **[region-runs.md](region-runs.md)**; only the
+  challenge's own half lives here. Read surface: `is_active()`,
+  `car_instance_id()`, `kind()`, `period_key()`, `stage_count()`,
+  `events_completed()`, `current_stage_params()`. Lifecycle:
+  `start(kind, owned_car, unix_time)` (the challenge's entry point — it builds a
+  `ChallengeRunMode` and hands it to the generic `begin()`), `resume(unix_time)`,
   `resumable_run(profile, unix_time)` / `has_stale_run` / `discard_stale_run`
-  (pure, testable with a synthetic profile), `eligible_cars(kind, profile,
-  unix_time)` (§2 below). Per-stage flow: `report_event_result(elapsed_ms,
-  hp_lost)`, `take_pending_repair()`, `pause_run()` (leave the run where it is,
-  resumable — `abandon()` survives only as a deprecated alias for it). Nothing
-  DNFs a run any more; `report_wreck()` is gone.
-  `profile["challenge_run"]` persists `{period_key, kind, car_instance_id,
-  stage_index, stage_times_ms, dnf}` after every stage so quitting mid-week
-  resumes at the next stage with damage intact.
+  (pure, testable with a synthetic profile). Per-stage flow:
+  `report_event_result(elapsed_ms, hp_lost)`, `take_pending_repair()`,
+  `pause_run()` (leave the run where it is, resumable). Nothing DNFs a run;
+  `report_wreck()` is gone, and the deprecated `abandon()` alias is retired —
+  call `pause_run()`.
+- **`ChallengeRunMode`** (`scripts/challenge_run_mode.gd`, a `RunMode`) — the
+  challenge's answers to the seam: rolled stages from `ChallengeLibrary`, **no
+  target time and therefore no fail state**, the one-attempt-per-period outcome
+  record, the car-eligibility rules (`eligible_cars` / `classify_cars` /
+  `classify_car` / `displayed_ceiling`, §2 below) and the placement-gated
+  completion reward.
+- **The run slot.** `profile["run"]` (`Save.KEY_RUN`) persists
+  `{mode, car_instance_id, stage_index, stage_times_ms, dnf, money_earned}` plus
+  the challenge's own `{period_key, kind}` after every stage, so quitting mid-week
+  resumes at the next stage with damage intact. It is ONE slot shared with the
+  region run (pivot decision 27): starting a region run discards a paused challenge
+  run and vice versa. It was `profile["challenge_run"]` before the generalisation.
 - **`world.gd` / `global_standings.gd` integration** — a small, explicit mode
   branch at the one signal-routing call site
-  (`StageManager.stage_completed` → `ChallengeSession.report_event_result`
+  (`StageManager.stage_completed` → `RunSession.report_event_result`
   instead of `RallySession.report_event_result` whenever
-  `ChallengeSession.is_active()`), and the per-stage interstitial
-  (`GlobalStandings.for_current_stage()`) reading from `ChallengeSession`
+  `RunSession.is_active()`), and the per-stage interstitial
+  (`GlobalStandings.for_current_stage()`) reading from `RunSession`
   instead of `RallySession` under the same condition. Every stage is still
   driven by the same `StageManager`/`TrackProgress`/countdown as a normal
   rally — nothing about *driving* a stage changes.
@@ -60,7 +72,7 @@ INCOMPLETE result (as few as zero corners placed) for a genuinely hard
 real bug: a Daily challenge with `turn_count` in the low-40s hit exactly this
 and produced a track with **zero baked length** (empty terrain).
 
-`world.gd._generate_track` guards against it: when `ChallengeSession.is_active()`
+`world.gd._generate_track` guards against it: when `RunSession.is_active()`
 and the primary `generate_cached` result comes back incomplete, it
 deterministically bumps the stage's seed by a large stride
 (`base_seed + attempt * 104729`) and retries `TrackGenerator.generate` a few
@@ -77,7 +89,7 @@ worth surfacing loudly, not silently routing around).
 
 See `tests/headless/test_smoke.gd`'s
 `test_entering_a_challenge_stage_generates_its_track` for the reproduction —
-it drives a REAL challenge stage through `ChallengeSession.current_stage_params()
+it drives a REAL challenge stage through `RunSession.current_stage_params()
 -> TrackGenParams.for_event` (unlike the adjacent rally test, which pokes
 `Config.data.track_*` directly and actually exercises the free-roam
 `TrackGenParams.for_config` fallback, not `for_event`, so it could never
@@ -92,7 +104,7 @@ That resolver asks whichever session is active (challenge first, then career) fo
 stage/event dict and forwards it to `StageConfig.apply_event_config`.
 
 There is deliberately **no per-producer call**. `rally_session._load_event_scene`,
-`challenge_session.continue_to_next_stage` and `hq._hand_off_to_challenge_scene` used
+`run_session.continue_to_next_stage` and `hq._hand_off_to_challenge_scene` used
 to each seat the config before loading the scene; those calls are gone. Pulling at
 consume time means "a new scene-entry site forgot to seat the config" is not
 expressible — which is what the original bug was.
@@ -138,7 +150,7 @@ section only records what differs for a challenge.
   challenge run always fell through to `staged == false` and dropped the player
   straight into driving with no start line and no pre-race menus. It now answers for
   whichever session is running: a challenge stages iff
-  `ChallengeSession.current_stage_params()` is non-empty (the same
+  `RunSession.current_stage_params()` is non-empty (the same
   "never strand the car in `STAGING` with nothing to launch it" guard the rally
   branch gets from `RallyLibrary.by_id`).
 - `world.gd._ready()`'s rally and challenge branches are now **one block** — the two
@@ -155,7 +167,7 @@ section only records what differs for a challenge.
   see "Car lock" below for why it's no longer frozen.)
 - **`world.gd._arch_event_info()`** is now the single source of the event framing for
   BOTH the arch banners and the start-line header, and answers for a challenge:
-  `"<Kind> Challenge"`, `ChallengeSession.events_completed()` /
+  `"<Kind> Challenge"`, `RunSession.events_completed()` /
   `stage_count()`. `target_ms` stays `-1` — no rival field, no time to beat, and
   therefore **no rival ghost** either ([rival-ghost.md](rival-ghost.md) is gated on a
   classified P1 row, which a challenge run never has) — which
@@ -163,14 +175,14 @@ section only records what differs for a challenge.
   a session-less dev boot gets).
 - **`start_line.gd` resolves the driven car through one helper**, `_driven_car()`
   — a thin wrapper over `DrivingContext.driven_car()` (see "Car lock" below),
-  which answers `ChallengeSession.car_instance_id()` when a challenge is active,
+  which answers `RunSession.car_instance_id()` when a challenge is active,
   else `RallySession`'s. All four consumers — the launch eligibility gate, the
   `TuningPanel`, the `UpgradesGrid`, and the live `refit_upgrades` on an edit — go
   through it, so there is exactly one answer to "whose car is on the line". The
   `TuningPanel`/`UpgradesGrid` components themselves are reused **unchanged**; they
   are per-car and were never rally-specific. `_stage_total()` is the same idea for
   "Stage N of M": the rally's authored `events` list, or the run's
-  `ChallengeSession.stage_count()` when there isn't one.
+  `RunSession.stage_count()` when there isn't one.
 - **The rival-times reveal is omitted, not faked.** `_build_start_line` passes an
   EMPTY leaders array for a challenge, which takes `start_line.gd`'s pre-existing
   empty-leaders path (`_grid_ahead_count() == 0`): no grid cars spawn, the reveal
@@ -192,7 +204,7 @@ restrictions are purely categorical (see
 `docs/superpowers/specs/2026-08-15-car-performance-rating-design.md`). The
 ceiling is a **`CarPerformance` rating**, not hp/tonne.
 
-`ChallengeSession.eligible_cars(kind, profile, unix_time)` lists the player's
+`ChallengeRunMode.eligible_cars(kind, profile, unix_time)` lists the player's
 owned cars whose *current build* rates at or under that period's ceiling **as
 the player sees it** — see "Rounding" below. The build's rating comes from
 `CarPerformance.rating(CarPerformance.merged_meta(owned, entry))`:
@@ -227,14 +239,14 @@ whole and `CarPerformance.rating` returns an `int`. Comparing an int rating
 against an unrounded ceiling would reject a car whose displayed rating exactly
 equals the displayed cap, so the challenge path rounds in exactly one place:
 
-- `ChallengeSession.displayed_ceiling(kind, unix_time) -> int` — the ceiling as
+- `ChallengeRunMode.displayed_ceiling(kind, unix_time) -> int` — the ceiling as
   printed, and the number eligibility is judged against. Every challenge label
   (`hq_challenge.gd`'s entry-screen subtitle and car-park banner) uses this
   rather than rounding locally.
-- `ChallengeSession.classify_car(raw_ceiling, owned, entry)` — the single
+- `ChallengeRunMode.classify_car(raw_ceiling, owned, entry)` — the single
   implementation of the comparison. Rounds `raw_ceiling`, then returns
   `{"state": READY | EXCLUDED}`.
-- `ChallengeSession.classify_cars(kind, profile, unix_time)` — runs that over
+- `ChallengeRunMode.classify_cars(kind, profile, unix_time)` — runs that over
   the profile and returns `{"ceiling": int, "eligible", "ready"}` (the two lists
   hold the same cars; the UI reads `eligible` as "what can enter" and `ready` as
   "what to name"). `eligible_cars` is just its `"eligible"` list, and the UI
@@ -251,7 +263,7 @@ own horizontal cursor row). **Challenge** opens
 once in `_ready` via `HqOverlays.build_challenge_overlay`, hidden until
 opened — a "modal layer, not a `View` enum entry" shape, the same one the
 since-removed title-screen Account overlay used). Opening it first discards any
-stale stored run (`ChallengeSession.has_stale_run` / `discard_stale_run`, so
+stale stored run (`RunSession.has_stale_run` / `discard_stale_run`, so
 a rolled-over period shows a fresh entry rather than a dead Resume button).
 
 **Visual design: a dark detail-card sibling to the rally map-pin detail
@@ -270,10 +282,10 @@ cost four lines, not eight:
 1. **Win condition** — `Top 50%`, plus the CURRENT time on that cut line
    appended to the same row when the board can answer it: `Top 50% - 1:52.24`.
    **The label is DERIVED, not typed:** `hq_challenge.gd._CHALLENGE_WIN_CONDITION`
-   is formatted (`"Top %d%%"`) from `ChallengeSession.CHALLENGE_TOP_FRACTION`, the
+   is formatted (`"Top %d%%"`) from `ChallengeRunMode.CHALLENGE_TOP_FRACTION`, the
    same const the placing rule in `try_grant_completion_reward` compares against
    (`rank > ceili(float(total) * CHALLENGE_TOP_FRACTION)`), so the rule and its
-   label cannot drift apart. That fraction is a const on `ChallengeSession`, not a
+   label cannot drift apart. That fraction is a const on `ChallengeRunMode`, not a
    `GameConfig` export — it decides who gets PAID, so it is a reward rule rather
    than a look/feel tunable.
    The time comes from `ChallengeLeaderboard.fetch_cutoff`, fired
@@ -345,17 +357,18 @@ cost four lines, not eight:
    a bare `COMPLETED` if the board can't be reached. Both placeholders are set
    only AFTER every "we are not going to ask" guard (signed out, no period, no
    board), so a row that will never gain a value never advertises one.
-2. **Win reward** — per-kind text (`hq_challenge.gd::_CHALLENGE_REWARD_TEXT`), a
-   plain-language mirror of `ChallengeSession._COMPLETION_REWARD`, which pays
-   **stars** (see *Completion reward* below). Keep both in step when the table is
-   retuned — the text quotes the amounts, so a retune that touches only the table
-   leaves the screen lying about the payout.
+2. **Win reward** — the payout is **money** now, a single flat
+   `GameConfig.challenge_completion_money` (see *Completion reward* below). The
+   entry screen that rendered this died with the hub; the flat rebuild should read
+   the config value rather than restating a number in prose, which is what the old
+   `_CHALLENGE_REWARD_TEXT` mirror did and what left the screen able to lie about
+   the payout after a retune.
 3. **Eligible cars** — NAMES them (not just a count), mirroring the rally
    pin detail panel's own eligibility read-out exactly:
    `_qualifying_cars_text` (capped at `MAX_QUALIFY_NAMES`, tailing off as
    `"+N more"`) over the ready-now names, plus a second line
    `"Needs tune: ..."` for any only reachable with a tune
-   (`ChallengeSession.eligible_cars`, which already folds those in — §2), or
+   (`ChallengeRunMode.eligible_cars`, which already folds those in — §2), or
    "No eligible car" with Start disabled.
    **While a run for this kind is in progress this row instead names the ONE
    locked car it was started with** (gold): the choice is already committed for
@@ -410,9 +423,9 @@ Above the tab row (via up/down) sit the ordinary Back/Start focus stops —
 switching kind re-derives the whole screen instantly, and Resume is only
 offered for the kind whose stored run matches (`_select_challenge_kind`).
 
-A **Start/Resume** button: "Resume" (calls `ChallengeSession.resume`
+A **Start/Resume** button: "Resume" (calls `RunSession.resume`
 directly — no car to pick, the locked car is already fixed) whenever
-`ChallengeSession.resumable_run(Save.profile, unix_time)` is non-empty *for
+`RunSession.resumable_run(Save.profile, unix_time)` is non-empty *for
 the currently-shown kind*; otherwise "Start" now **opens the real 3D car
 park** (`_enter_challenge_car_screen`, a new `CarparkMode.CHALLENGE`)
 restricted to this kind's eligible cars, instead of committing straight from
@@ -428,7 +441,7 @@ reads the wall clock the same way).
 for a normal rally: it sets `_carpark_mode = CarparkMode.CHALLENGE`, calls
 `_build_challenge_lineup(kind_str)`, frames the lot, and shows the "no
 eligible car" empty state if none qualify. `_build_challenge_lineup` parks
-exactly what `ChallengeSession.classify_cars(kind, Save.profile, unix_time)`
+exactly what `ChallengeRunMode.classify_cars(kind, Save.profile, unix_time)`
 reports as `"eligible"` (challenge-lock-excluded via `Save.is_challenge_locked`),
 — it does NOT redo the comparison itself (see "Rounding" above). A car either
 rates under the ceiling or is not parked at all: there is no
@@ -440,7 +453,7 @@ branch alongside `STARTER`/`SWAP`/`WHEELS`/`GARAGE`/`FREEROAM`: instead of
 falling through to the `RallySession.start_rally` path every other mode
 skips past, it checks `_detune_needed` (over-limit prompt if positive) and
 otherwise calls `_begin_challenge_start()`, which calls
-`ChallengeSession.start(kind, owned_car, unix_time)` and then the SAME
+`RunSession.start(kind, owned_car, unix_time)` and then the SAME
 loading-screen + `change_scene_to_file` hand-off `_on_challenge_start_pressed`
 already used for Resume — factored into a shared
 `_hand_off_to_challenge_scene()` so both paths (Resume, and committing the
@@ -466,8 +479,8 @@ every other special car-park job (`GARAGE`, `FREEROAM`, `SWAP`, `STARTER`,
 `WHEELS`) already gets its own value rather than overloading `RALLY`.
 
 Quitting mid-run (`pause_menu.gd.quit_to_hq`) checks
-`ChallengeSession.is_active()` before `RallySession.is_active()` and calls
-`ChallengeSession.abandon()` — which is now just an alias for `pause_run()`, so
+`RunSession.is_active()` before `RallySession.is_active()` and calls
+`RunSession.pause_run()` — the alias `abandon()` that used to sit in front of it is retired, so
 quitting to HQ leaves the run parked at its current stage rather than ending it.
 
 ## Car lock (§2) — the RUN is locked to a car, the CAR is not reserved
@@ -494,7 +507,7 @@ for "is this run committed to this car", and both carry comments saying not to u
 them to gate anything outside the run. The full "a challenge locks the RUN, not the car"
 rationale now lives in `hq.gd` → `_swap_targets` (the engine-swap partner list), which
 `_build_eligible_lineup` points at rather than restating. "You can't switch cars mid-run" needs no
-enforcement of its own — `ChallengeSession.start` already refuses while a run is
+enforcement of its own — `RunSession.start` already refuses while a run is
 active, and the entry screen shows Resume plus the single committed car rather than a
 picker.
 
@@ -508,7 +521,7 @@ to "protect" carry-over.
 ## One attempt per period
 
 A finished run is TERMINAL for its period — completed OR DNF'd — and cannot be started
-again until the period rolls over. `ChallengeSession` records the outcome in
+again until the period rolls over. `RunSession` records the outcome in
 `Save.profile["challenge_results"]`, keyed by period key, and `start()` refuses any
 period with an outcome. The entry screen reads `COMPLETED` (green) or `DNF` (red) and
 disables Start.
@@ -525,8 +538,8 @@ gated on the answer), re-checks that the player has not switched tabs before wri
 and on any failure (signed out, no username, board unreachable) simply leaves the row
 at a bare `COMPLETED` rather than rendering `0 of 0`.
 
-`challenge_results` is deliberately SEPARATE from `challenge_run` rather than folded
-into it: `resumable_run` keys on `challenge_run` being non-empty, so a terminal record
+`challenge_results` is deliberately SEPARATE from `profile["run"]` rather than folded
+into it: `resumable_run` keys on `profile["run"]` being non-empty, so a terminal record
 stored there would make the game try to RESUME a finished run. The map is pruned to
 the live periods on every write, so it holds at most three records rather than growing
 one entry per day forever.
@@ -536,7 +549,7 @@ one entry per day forever.
 is no live path that ends a run as a DNF: a run either completes every stage or is
 left with `pause_run()` / `abandon()` (see below), which record no outcome at all.
 The `dnf` shape SURVIVES either side of that, and is not dead code: `_dnf` is still
-read back from a persisted `challenge_run`, still written into the persisted run dict
+read back from a persisted `profile["run"]`, still written into the persisted run dict
 and the finished-run result, and the entry screen still renders a stored `DNF`
 outcome in red. The cloud half likewise stands —
 `ChallengeLeaderboard.post_dnf`, the `isDnfFlip()` rules branch, and
@@ -545,8 +558,8 @@ legacy/persisted runs, they simply never fire from a run started today.
 
 ## Leaving a run (pause, not abandon)
 
-`ChallengeSession.pause_run()` is the non-terminal exit: it clears `_active` /
-`_stage_running`, leaves `challenge_run` persisted at its current stage index and
+`RunSession.pause_run()` is the non-terminal exit: it clears `_active` /
+`_stage_running`, leaves `profile["run"]` persisted at its current stage index and
 banked times, records NO outcome, and deliberately does NOT emit `run_finished` (that
 signal is what makes `world.gd` post a DNF to the board). The entry screen's Resume
 picks it straight back up; the in-progress stage's partial time is discarded and that
@@ -589,7 +602,7 @@ failure collapses to `{"ok": false}` / a no-op, no retry loop:
   (reads the doc first; refuses out-of-order or post-DNF advances client-side
   before ever attempting the write) so a failed/skipped checkpoint simply
   **permanently strands that run's board entry at its last successful post**
-  (§5) — `ChallengeSession`/`GlobalStandings` never retries or attempts an
+  (§5) — `RunSession`/`GlobalStandings` never retries or attempts an
   out-of-order catch-up write.
 - `post_dnf(period_key)` — flips `dnf`; a silent no-op if no document exists
   yet (a DNF before the first successful checkpoint leaves no trace at all,
@@ -627,7 +640,7 @@ rules are untouched and still correct; they just have no caller until stage 3
 roguelike pivot (decision 30, `todo/roguelike-pivot.md`) along with the global
 per-stage leaderboards they were built to host a page for. `world.gd` no
 longer loads them. The section below is kept as-is because everything it
-documents on the **`ChallengeSession` side** — `continue_to_next_stage()`,
+documents on the **`RunSession` side** — `continue_to_next_stage()`,
 `current_stage_times_ms()` / `run_times_ms()`, `take_pending_repair()`, the
 `standings_ready` / `run_completed` signals, and the session-latching bug fix
 — is still live and still correct; only the UI that consumed it is gone. A
@@ -635,13 +648,13 @@ challenge run currently has **no working between-stage screen at all** until
 stage 3 (`todo/roguelike-pivot-plan.md`) gives it one, built on the new
 `RunSession`/run-summary screen that replaces `podium.tscn` (decision 19) —
 read this section for what that replacement has to reproduce on the
-`ChallengeSession` side, not for what currently renders.
+`RunSession` side, not for what currently renders.
 
 `world.gd` used to load `standings.tscn` after EVERY stage of a challenge,
 exactly as it did after a career rally event (both are driven by the same
 `StageManager` / `TrackProgress`), so `standings.gd` served both sessions.
 
-- **`ChallengeSession.continue_to_next_stage()`** is the counterpart to
+- **`RunSession.continue_to_next_stage()`** is the counterpart to
   `RallySession.continue_to_next_event()` and the interstitial's single exit when
   a challenge is active. `report_event_result` has already advanced
   `_stage_index` and parked the field repair in `_pending_repair`, so the whole
@@ -664,7 +677,7 @@ exactly as it did after a career rally event (both are driven by the same
 - **THE SESSION IS LATCHED, NEVER RE-ASKED.** `_finish_locally` clears `_active`
   BEFORE `standings_ready` is emitted, so on the final stage the interstitial builds
   against an already-inactive session. Every read in `standings.gd` used to be its own
-  `if ChallengeSession.is_active():`, and all six silently fell through to the idle
+  `if RunSession.is_active():`, and all six silently fell through to the idle
   career session: the header read "stage 0 of N", both boards rendered an empty field,
   Continue was a dead button, and `GlobalStandings` posted to the career `stage_times`
   board with a blank `stage_key`. Because `STAGE_COUNTS[DAILY] == 1`, a Daily's only
@@ -678,7 +691,7 @@ exactly as it did after a career rally event (both are driven by the same
   player's own row. The interstitial opens straight on the world board and tears down
   page 1, so Back never offers a page that was never shown. Keyed off the LATCHED mode,
   so it holds on the final stage too.
-- **`standings.gd` branches every session read** on `ChallengeSession.is_active()`,
+- **`standings.gd` branches every session read** on `RunSession.is_active()`,
   the same convention `GlobalStandings.for_current_stage()` uses: `_stages_done()`
   / `_stage_total()` / `_driven_instance_id()` are the helpers, and `_advance()`'s
   final step calls `continue_to_next_stage()` instead of `continue_to_next_event()`.
@@ -686,13 +699,13 @@ exactly as it did after a career rally event (both are driven by the same
   local standings → page 2 world board → resume. The old third rung, the reward
   reveal, went with the per-stage upgrade draw (`_collect_reward` /
   `_reward_pending` / `_stage_upgrade` / `_reveal` are all gone from `standings.gd`,
-  and `ChallengeSession._stage_upgrade` / `stage_upgrade()` with them) — see
+  and `RunSession._stage_upgrade` / `stage_upgrade()` with them) — see
   [reward-system.md](reward-system.md).
 - **A challenge has no local standings at all.** It has no rivals, so there is
   nothing to rank: `standings.gd` feeds page 1's two sections an EMPTY row list in
   challenge mode (and `_ready` frees the page outright, opening straight on the
   world board). What a challenge run reports instead are plain millisecond TIMES —
-  `ChallengeSession.current_stage_times_ms()` (the stage just driven, as a
+  `RunSession.current_stage_times_ms()` (the stage just driven, as a
   one-element list, `[]` before any stage completes) and `run_times_ms()` (every
   completed stage, in stage order, summing to `cumulative_ms()`). These two used to
   be `current_event_standings()` / `current_standings()`, which handed
@@ -714,7 +727,7 @@ the random per-event upgrade draw was deleted game-wide (see
 [reward-system.md](reward-system.md)), so `report_event_result` only accumulates
 the time and parks the field repair. One path remains:
 
-- **Per-challenge** (finishing every stage, no DNF): `ChallengeSession.
+- **Per-challenge** (finishing every stage, no DNF): `RunSession.
   try_grant_completion_reward(result)` awaits `Cloud.challenge_leaderboard.
   fetch_final_rank` and grants iff `rank <= ceil(total_entries / 2)` —
   checked against the board AS IT STANDS at that moment (an early finisher is
@@ -723,46 +736,34 @@ the time and parks the field repair. One path remains:
   rank is available at all (signed out, no username, or the final checkpoint
   never posted — same graceful skip). Reward per kind:
 
-  Reward table (`ChallengeSession._COMPLETION_REWARD` — **tunable, change the
-  numbers there**; `HqChallenge._CHALLENGE_REWARD_TEXT` is the player-facing summary and
-  has to be kept in step):
+  **The payout is MONEY** (`todo/roguelike-pivot.md` decision 21). It used to be a
+  flat per-kind star amount plus a placement bonus on
+  `RallyLibrary.stars_for_placement`; the whole star ledger is deleted, and the
+  reward — which decision 15 keeps, since the challenge survives — was re-pointed at
+  the new currency. It is a **single flat `GameConfig.challenge_completion_money`**,
+  banked through `Save.add_money`, rather than the per-stage/fast-bonus pair a region
+  run earns: a challenge has no target time to be fast against, and its whole reward
+  IS the placement, so a curve keyed to stage count would only re-price the same
+  single event. The amount is a tunable in `config/game_config.tres` — do not quote
+  it anywhere.
 
-  The table holds a **flat star amount per kind**, ordered Daily < Weekly <
-  Monthly — a longer commitment over a longer period is worth more. (Don't quote
-  the figures; they are authored tunables. It used to hold mystery-box counts, and
-  before that a `car_tier` as well; the box is gone
-  ([reward-system.md](reward-system.md)) and cars are won at the rally that
-  advertises them, so stars are what is left — which is fine, because stars are what
-  the boxes were a detour around.)
+  This income is **renewable over real time**, deliberately: a period rolls over and
+  the challenge can be entered again, so it is a money source that keeps flowing
+  independently of how deep the player is in the region ladder.
 
-  On top of that flat amount, a placing challenge pays **stars by placement**, on
-  the SAME `RallyLibrary.stars_for_placement` curve a career rally uses (winning
-  pays most, the rest of the podium next, any other finish still pays), credited
-  through `Save.award_stars` as well. The placement gate here (top HALF of the
-  board) is far more lenient than a podium, so a mid-table finish still banks the
-  smaller `STARS_FOR_FINISH` amount — it used to bank **0**, back when the curve
-  paid nothing off the podium. The flat amount is granted unconditionally to anyone
-  who makes the cut, so a player who placed never walks away with nothing.
-
-  Unlike career stars, this income is **renewable over real time** — deliberately,
-  since it is the only star source still flowing once every career rally is won at
-  P1 and `record_podium_rally` has no improvement left to credit.
-
-  Returns `{"placed", "rank", "total_entries", "item_id", "stars",
-  "placement_stars"}` (`item_id` always `""`, since nothing item-shaped is
-  granted) — the two star figures kept apart so the card can name the flat
-  completion award and the placement bonus separately rather than quoting one
-  unexplained total. `world.gd._completion_reward_body` renders whatever actually
-  landed, so nothing banked is ever silent.
+  Returns `{"placed", "rank", "total_entries", "item_id", "money"}` (`item_id`
+  always `""`, since nothing item-shaped is granted).
+  `world.gd._completion_reward_body` renders whatever actually landed, and
+  `won_something` gates the card on `money > 0`, so nothing banked is ever silent.
 
 ### Where the run's end is resolved (`world.gd._on_challenge_run_finished`)
 
 This handler is the challenge's counterpart to `RallySession._resolve_results` —
 the one place a finished run is turned into a reward. It fires from
-`ChallengeSession._finish_locally` — the only remaining path, now that `_end_as_dnf` is
+`RunSession._finish_locally` — the only remaining path, now that `_end_as_dnf` is
 gone — while the player is **still in the driving scene**, before the hand-off to HQ.
 
-- **Clean finish** → `await ChallengeSession.try_grant_completion_reward(result)`,
+- **Clean finish** → `await ChallengeRunMode.try_grant_completion_reward(result)`,
   then, on a grant, a plain `ConfirmPopup` card ("Challenge Complete!", placing +
   what was won) over the world — a plain card is the right shape for a reward
   moment that isn't mid-interstitial. Skipped headless (the grant still runs headless — see below). A
@@ -773,8 +774,8 @@ gone — while the player is **still in the driving scene**, before the hand-off
   modal slot FIRST and skips its `commit` callable entirely when the slot is
   refused — the right contract when "never happened" is a true, harmless
   fallback state. The challenge completion reward does not have that fallback:
-  by the time `run_finished` fires, `ChallengeSession._finish_locally` has
-  already recorded this period's outcome and cleared `challenge_run`
+  by the time `run_finished` fires, `RunSession._finish_locally` has
+  already recorded this period's outcome and cleared `profile["run"]`
   (`start`/`resume` both refuse once `period_outcome` is set), so the period is
   terminal — there is no "reward pending reveal" state to retry later, and
   `try_grant_completion_reward` itself can't be deferred behind a modal check
@@ -788,7 +789,7 @@ gone — while the player is **still in the driving scene**, before the hand-off
   same escape hatch `CloudBusy.report_failure` uses for its "must be seen even
   over another modal" failure notice, so modal contention can never refuse the
   card — at worst it stacks on top of whatever else is on screen.
-- **DNF** → `Cloud.challenge_leaderboard.post_dnf(ChallengeSession.period_key())`,
+- **DNF** → `Cloud.challenge_leaderboard.post_dnf(RunSession.period_key())`,
   fired **without `await`**: the house posture is that no cloud call ever costs
   the player anything, so the return to HQ must not wait on (or surface) the
   network. The coroutine resolves against the `Cloud` autoload's board, which
@@ -833,7 +834,7 @@ gone — while the player is **still in the driving scene**, before the hand-off
   rank/total/not-yet-complete assembly, `FirestoreCodec.bool_value`/`bool_field`
   round-trip.
 - `tests/headless/test_start_line.gd` — a challenge run's start line: both pre-race
-  menus bind to `ChallengeSession`'s locked car (not `RallySession`'s inactive -1),
+  menus bind to `RunSession`'s locked car (not `RallySession`'s inactive -1),
   an upgrade edit refits the live car, no rival card is shown and Start fades
   straight to the countdown, and the header counts the run's own stages.
 - `tests/headless/test_smoke.gd` — `_should_stage()` returns true for a challenge
@@ -842,7 +843,7 @@ gone — while the player is **still in the driving scene**, before the hand-off
 - `tests/headless/test_menu_flow.gd` — the Challenge entry point's nav
   (opens, navigable, `menu_back` closes it), instant kind-switching via
   `menu_left`/`menu_right` regardless of focus, the five sections reflecting
-  the current kind/ceiling (via `ChallengeSession.eligible_cars`), the
+  the current kind/ceiling (via `ChallengeRunMode.eligible_cars`), the
   no-eligible-car block disabling Start, Start opening the REAL car park
   (`CarparkMode.CHALLENGE`, asserted on `hq._eligible`/`hq._carpark_mode`)
   then Start↔Resume switching once a run is stored, and the

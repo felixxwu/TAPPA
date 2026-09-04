@@ -772,7 +772,7 @@ func has_nitrous() -> bool:
 ## deleted — todo/roguelike-pivot.md decision 44): on track load an
 ## orbit camera circles the car while a MENU offers Start / Upgrades / Tune Car;
 ## on launch the screen fades to black and back to the chase camera + driving UI
-## as the countdown starts. Runs inside an active ChallengeSession stage; a plain
+## as the countdown starts. Runs inside an active RunSession stage; a plain
 ## dev boot of main.tscn skips straight to the countdown. Off restores that old
 ## behaviour. The per-opponent reveal this sequence used to run between the MENU
 ## and the fade — a rival queue rolling up, launching one at a time — is deleted
@@ -3883,3 +3883,59 @@ func spectator_params() -> Dictionary:
 ## running a phone flat-out through a long load is the thermal/battery failure this exists to
 ## avoid, and a throttled phone then plays worse. 0 = uncapped.
 @export_range(0, 240) var loading_touch_max_fps := 60
+
+
+@export_group("Roguelike Run")
+# The region run's two levers (todo/roguelike-pivot.md decisions 11, 22, 31, 36) — the
+# TARGET TIME a stage must be beaten in, and the MONEY a cleared stage pays. Read by
+# RegionRunMode (scripts/region_run_mode.gd); nothing else may derive either number.
+#
+# The target is `LapTimeModel.optimum_ms(track, CarPerformance.REFERENCE_CAR, event) *
+# target_pace`, so a stage's clock is a property of the STAGE, identical for every
+# player and every car — which is what makes buying a faster car matter instead of
+# raising the bar to match it. `target_pace` is the ONLY difficulty dial: it tightens
+# with the stage's index within the run and with the region's index in the unlock
+# order, so a later region simply demands a faster time on the same kind of stage.
+#
+# TUNE THESE AGAINST REAL DRIVING, NOT AGAINST THE MODEL. LapTimeModel's optimum is a
+# point-mass centreline REFERENCE, not a physical bound — RallyLibrary.GHOST_SOLVABLE_PACE
+# says in as many words that a real driver beats it by straightening corners — so values
+# at or below 1.0 are viable but must be felt, never reasoned about. The shipped numbers
+# below are deliberately GENEROUS placeholders: stage 1 of region 1 gives 60% over the
+# optimum, which the starter car should clear comfortably. Decision 11's floor rule is
+# that stage 1 must be clearable in the WORST car a player can own; tune against that
+# car, not a mid-tier one.
+## Pace multiplier on stage 1 of the first region — the loosest clock in the game.
+## 1.0 = the point-mass optimum exactly; higher = more slack.
+@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.6
+## How much tighter the clock gets per stage WITHIN a run. Over an 8-stage run the last
+## stage is 7x this below the first, which is the run's own escalation curve.
+@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.03
+## How much tighter the clock gets per REGION in the unlock order (decision 22). This is
+## the whole of region difficulty — there are no re-authored per-region bands.
+@export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.05
+## The floor no combination of the two steps may take the pace below. Stops a deep region's
+## late stages from demanding a time under the optimum, which nothing could clear.
+@export_range(0.5, 2.0, 0.01) var run_target_pace_min := 1.05
+
+# MONEY. Banked at stage CLEAR (decision 36), so a run that dies on stage 6 keeps
+# everything stages 1-5 paid — soft permadeath destroys the run, never the wallet
+# (decision 14). Two of the three sources are here; coins (decision 13) arrive in the
+# collectables stage and bank through the same moment.
+## Payout for clearing the FIRST stage of a run, before the growth curve and the region
+## scale. The base unit the whole economy is priced against.
+@export_range(0.0, 5000.0, 5.0) var run_stage_money_base := 200.0
+## Multiplied in once per stage already cleared (RR's LEVEL_WINNINGS_MULTIPLIER), so
+## surviving deep into a run is where the money is. 1.0 = a flat payout per stage.
+@export_range(1.0, 2.0, 0.01) var run_stage_money_growth := 1.25
+## The MOST a fast clear can add on top, paid in proportion to the fraction of the target
+## saved — the reason to drive well rather than merely clear the clock. 0 removes the bonus.
+@export_range(0.0, 5000.0, 5.0) var run_fast_bonus_money := 150.0
+## How much richer each REGION in the unlock order is, as a fraction added per index
+## (decision 31). This is what stops "farm region 1 forever": the same effort pays more
+## deeper in, so progressing beats grinding without taking the repeatable-region valve away.
+@export_range(0.0, 2.0, 0.05) var run_money_region_step := 0.35
+## The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays
+## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
+## no target time to be fast against, and its whole reward is the placement.
+@export_range(0.0, 20000.0, 25.0) var challenge_completion_money := 500.0

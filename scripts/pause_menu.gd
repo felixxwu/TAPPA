@@ -6,7 +6,7 @@ extends CanvasLayer
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
 # controls). Quit to HQ returns to the hub; a CHALLENGE run is only PAUSED
-# (ChallengeSession.pause_run) — nothing DNFs a challenge. (The career-rally abandon
+# (RunSession.pause_run) — nothing DNFs a challenge. (The career-rally abandon
 # path this used to branch to is deleted with RallySession — todo/roguelike-pivot.md
 # decision 5.) The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
@@ -98,18 +98,17 @@ func _on_reset_to_track_pressed() -> void:
 	resume()
 
 
-# Pop the quit confirm; quit_to_hq() runs only if the player accepts. The body
-# differs by session: a challenge is only PAUSED — challenge_run stays persisted and
-# the entry screen offers Resume — so it must not claim the run is lost (item 12);
-# everything else (a plain dev boot, or the roguelike run session once it lands)
-# gets the plain "abandon" wording.
+# Pop the quit confirm; quit_to_hq() runs only if the player accepts. A run of EITHER
+# kind is only PAUSED — the run slot stays persisted and the entry screen offers
+# Resume — so the wording must not claim the run is lost; a session-less dev boot gets
+# the plain "abandon" wording.
 # Ask to quit, then quit. PUBLIC because the pre-countdown start line's Exit button
-# raises the same prompt — the wording branches on challenge-vs-not and the quit
-# branches on benchmark/challenge/plain, and neither belongs in two places.
+# raises the same prompt — the wording branches on run-vs-no-run and the quit branches
+# on benchmark/run/plain, and neither belongs in two places.
 func confirm_quit_to_hq() -> void:
 	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
-	if ChallengeSession.is_active():
-		body = "Pause this challenge and return to HQ?\n" \
+	if RunSession.is_active():
+		body = "Pause this run and return to HQ?\n" \
 			+ "Your run is saved — resume it any time.\nThe current stage starts over."
 	ConfirmPopup.open(self, "Quit to HQ?", body,
 		[ {"label": "Cancel", "callback": Callable()},
@@ -117,9 +116,9 @@ func confirm_quit_to_hq() -> void:
 		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
-# Leave the run for HQ: unfreeze, then leave the active challenge (if any). A
-# CHALLENGE is only PAUSED (item 12) — nothing DNFs a challenge run at all, so
-# quitting must not spend the period. pause_run() deliberately emits no
+# Leave the run for HQ: unfreeze, then leave the active run (if any). A run is only
+# PAUSED — nothing DNFs one, and quitting a challenge must not spend its period.
+# pause_run() deliberately emits no
 # run_finished (world.gd's handler would post a DNF to the board on it), so this
 # owns the transition itself, matching the garage-view landing of the other paths.
 # A benchmark run exits through Benchmark.exit_to_hq so its config overrides are
@@ -129,13 +128,13 @@ func quit_to_hq() -> void:
 	get_tree().paused = false
 	if Benchmark.active:
 		Benchmark.exit_to_hq()
-	elif ChallengeSession.is_active():
-		ChallengeSession.pause_run()
+	elif RunSession.is_active():
+		RunSession.pause_run()
 		Scenes.change_to(get_tree(), Scenes.hub_path())
 	else:
 		# The career-rally abandon that used to sit here (RallySession.abandon()) is
-		# deleted along with RallySession (todo/roguelike-pivot.md decision 5); a
-		# plain dev boot and the roguelike run session both fall through to here.
+		# deleted along with RallySession (todo/roguelike-pivot.md decision 5); only a
+		# session-less dev boot of main.tscn falls through to here now.
 		Scenes.change_to(get_tree(), Scenes.hub_path())
 
 

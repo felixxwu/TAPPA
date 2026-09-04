@@ -38,7 +38,7 @@ const COLLECTION_ID := "entries"
 # {"name", "car_name", "car_id"}. Per spec §5, a failed/skipped checkpoint
 # permanently strands the run's board entry at its last successful post — this
 # function does NOT retry or attempt to catch up out of order; the caller
-# (ChallengeSession) is expected to simply stop calling it again for the rest
+# (RunSession) is expected to simply stop calling it again for the rest
 # of the run once a post fails.
 func post_checkpoint(period_key: String, k: int, cum_ms: int, identity: Dictionary) -> Dictionary:
 	if not _signed_in():
@@ -172,7 +172,7 @@ func fetch_standings_at(period_key: String, k: int) -> Dictionary:
 
 # Rank + total_entries at the FINAL checkpoint, for the completion-reward
 # placement gate (spec §6: `rank <= ceil(total_entries / 2)`). Thin wrapper
-# over fetch_standings_at so ChallengeSession doesn't duplicate the query.
+# over fetch_standings_at so RunSession doesn't duplicate the query.
 func fetch_final_rank(period_key: String, stage_count: int) -> Dictionary:
 	var result := await fetch_standings_at(period_key, stage_count)
 	if not result.ok or int(result.get("player_rank", 0)) <= 0:

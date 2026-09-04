@@ -1,17 +1,13 @@
 class_name DrivingContext
 extends RefCounted
 # The ONE place the game answers "which session is fielding a car, and what
-# constraints does it impose right now". Rally Challenge (ChallengeSession) feeds
-# this — screens that read ChallengeSession directly for these questions are
+# constraints does it impose right now". `RunSession` feeds this — for EITHER kind
+# of run (the roguelike region run or the retained Daily/Weekly/Monthly challenge),
+# since which kind is live is a RunMode question inside the session rather than a
+# second autoload. Screens that read RunSession directly for these questions are
 # exactly how a past bug (a challenge car's detune slider got a redundant,
 # undocumented hard lock instead of reusing the existing rating_limit/close-button
-# gate) happened. Free roam is session-less and has no equivalent — it answers "no
-# context" (see world.gd's car-fielding chain for how free roam resolves its own
-# car).
-#
-# RallySession, the career-rally session this used to feed alongside
-# ChallengeSession, is deleted (todo/roguelike-pivot.md decision 5). The
-# roguelike run session (stage 3) is its eventual replacement here.
+# gate) happened. A dev boot / benchmark is session-less and answers "no context".
 #
 # Static-only, no autoload (same shape as RallyLibrary / ChallengeLibrary).
 
@@ -21,19 +17,19 @@ extends RefCounted
 const NO_LIMIT := -1.0
 
 
-# The instance id of the car actively being driven/fielded by ChallengeSession, if
+# The instance id of the car actively being driven/fielded by RunSession, if
 # it is running — else -1.
 # True when a session is fielding a run right now — the "is the player driving a
 # real event" question, as opposed to free roam / benchmark / dev boot. Use this
-# rather than reading ChallengeSession.is_active() inline at each call site, so a
+# rather than reading RunSession.is_active() inline at each call site, so a
 # future second session caller (the roguelike run) has one place to join.
 static func session_active() -> bool:
-	return ChallengeSession.is_active()
+	return RunSession.is_active()
 
 
 static func active_car_instance_id() -> int:
-	if ChallengeSession.is_active():
-		return ChallengeSession.car_instance_id()
+	if RunSession.is_active():
+		return RunSession.car_instance_id()
 	return -1
 
 
@@ -48,13 +44,13 @@ static func driven_car() -> Dictionary:
 # The CarPerformance RATING ceiling that applies to whichever session is currently
 # active, or NO_LIMIT if none.
 #
-# Only Rally Challenge has one. Career rallies dropped their performance ceiling with
-# the rating rework — entry there is categorical, so there is nothing to cap and
-# nothing to detune under. A Challenge keeps its ceiling because there the constraint
-# IS the content: "beat this stage in a car no quicker than X".
+# Only the Rally Challenge has one, and rating_limit() reads "" back from period_key()
+# for any other kind of run, so a region run resolves to NO_LIMIT for free. A region
+# run deliberately has no ceiling: its difficulty is the CLOCK (decision 11), and
+# capping the car as well would undo the whole point of buying a faster one.
 static func rating_limit() -> float:
-	if ChallengeSession.is_active():
-		var key := ChallengeSession.period_key()
+	if RunSession.is_active():
+		var key := RunSession.period_key()
 		if key == "":
 			return NO_LIMIT
 		return ChallengeLibrary.ceiling_for(key)
@@ -88,25 +84,24 @@ static func rating_limit_for_car(instance_id: int) -> float:
 # caller authored it; applying {} would reset every field to the baseline and wipe
 # those deliberate writes.
 static func apply_stage_config(cfg: GameConfig) -> void:
-	if ChallengeSession.is_active():
-		var stage := ChallengeSession.current_stage_params()
+	if RunSession.is_active():
+		var stage := RunSession.current_stage_params()
 		if not stage.is_empty():
 			StageConfig.apply_event_config(cfg, stage)
 
 
-# Whether `instance_id` is the car an active challenge run is COMMITTED to.
+# Whether `instance_id` is the car the stored run — of EITHER kind — is COMMITTED to.
 #
 # Scope, deliberately narrow: this answers "is this run fixed to this car", NOT
-# "is this car reserved". A challenge locks the RUN, not the CAR — the car stays
-# fully usable in career rallies, free roam, the garage, engine swaps and
-# upgrades while a run is in progress, and repairing it between stages is an
-# accepted consequence (a challenge is a time competition, not a survival one).
+# "is this car reserved". A run locks the RUN, not the CAR — the car stays fully
+# usable in the garage, in engine swaps and in tuning while a run is in progress, and
+# repairing it between stages is an accepted consequence.
 #
-# So do NOT use this to exclude a car from any picker or action outside the
-# challenge run itself. It previously gated the garage picker, the engine-swap
-# partner list, the career rally lineup and the mid-run repair-kit offer; all
-# four were removed as bugs, not features. "You can't switch cars mid-run" is
-# already enforced by ChallengeSession.start refusing while a run is active.
+# So do NOT use this to exclude a car from any picker or action outside the run
+# itself. It previously gated the garage picker, the engine-swap partner list, the
+# career rally lineup and the mid-run repair-kit offer; all four were removed as bugs,
+# not features. "You can't switch cars mid-run" is already enforced by
+# RunSession.begin refusing while a run is active.
 # Save.is_challenge_locked stays the storage-level predicate underneath.
 static func is_car_locked(instance_id: int) -> bool:
 	return Save.is_challenge_locked(instance_id)

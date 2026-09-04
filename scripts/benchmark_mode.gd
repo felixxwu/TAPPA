@@ -100,12 +100,12 @@ func set_option(key: String, on: bool) -> void:
 # frame rate, and load the run scene. world.gd sees `active` and wires the rest.
 func start() -> void:
 	get_tree().paused = false  # reachable from the pause menu's Settings
-	if ChallengeSession.is_active():
+	if RunSession.is_active():
 		# A challenge run is a session too — leaving it live would have world.gd boot the
 		# benchmark scene down the challenge path (its stage config, its result routing).
 		# PAUSED, never DNF'd (item 12): starting a dev benchmark must not spend the
 		# player's one attempt at this period — the run stays resumable from the HQ.
-		ChallengeSession.pause_run()
+		RunSession.pause_run()
 	# The career-rally abandon and free-roam handoff clear that used to sit here read
 	# RallySession, deleted along with the rival field it served
 	# (todo/roguelike-pivot.md decision 5).

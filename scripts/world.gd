@@ -70,8 +70,8 @@ func _ready() -> void:
 	# go back to tips.
 	# Tell the player which stage of the run is loading (no-op for a session-less drive).
 	# Replaced the weather tell that used to own this line.
-	if ChallengeSession.is_active():
-		loading.set_stage(ChallengeSession.events_completed(), ChallengeSession.stage_count())
+	if RunSession.is_active():
+		loading.set_stage(RunSession.events_completed(), RunSession.stage_count())
 	# Resolve the per-target render quality ONCE, before apply_terrain_lod() and any
 	# scatter run: a web TOUCH device (the low-end / 30fps target) gets the shorter
 	# foliage cull distance and tighter terrain LOD bands, every other target the
@@ -231,15 +231,15 @@ func _field_player_car() -> void:
 	# governs the loading window itself.
 	$Car.controls_locked = true
 
-	# Field the car. With an active ChallengeSession this event runs the player's
+	# Field the car. With an active RunSession this event runs the player's
 	# OwnedCar (baseline + upgrades + saved HP); a plain dev boot keeps the first
 	# library car (the Mazda MX-5). The career-rally session and free-roam handoff
 	# that used to field a car here were deleted with RallySession
 	# (todo/roguelike-pivot.md) — the roguelike run session (stage 3) is their
 	# replacement.
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
-	if ChallengeSession.is_active():
-		_field_car(ChallengeSession.car_instance_id())
+	if RunSession.is_active():
+		_field_car(RunSession.car_instance_id())
 	else:
 		$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
@@ -258,11 +258,11 @@ func _wire_session_and_stage(loading: LoadingScreen) -> void:
 	# Next returns to HQ instead (_on_session_event_completed's no-session branch).
 	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
 		_stage_manager.stage_completed.connect(_on_session_event_completed)
-	# A session run additionally routes the run's finish onward. Only ChallengeSession
+	# A session run additionally routes the run's finish onward. Only RunSession
 	# survives as a session caller now — the career RallySession that used to share
 	# this path is deleted (todo/roguelike-pivot.md); the roguelike RunSession (stage
 	# 3) is the eventual second caller.
-	if ChallengeSession.is_active():
+	if RunSession.is_active():
 		_wire_session_signals()
 		# Pre-event start-line scene: briefing + presence cars before the countdown
 		# (todo/menus.md location 2). Only when staged (start_line_enabled + a real
@@ -289,7 +289,7 @@ func _wire_session_and_stage(loading: LoadingScreen) -> void:
 		# Only pop up for a repair that moved health by at least the min threshold — a
 		# smaller touch-up (e.g. wheels-only on a near-full car) still applied to the
 		# save, it just doesn't interrupt the player (RepairReveal.worth_showing).
-		var repair: Dictionary = ChallengeSession.take_pending_repair()
+		var repair: Dictionary = RunSession.take_pending_repair()
 		if RepairReveal.worth_showing(repair) and not _headless:
 			await _show_repair_popup(repair)
 
@@ -593,7 +593,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	var on_progress := Callable()
 	if interactive:
 		on_progress = loading.update_track_preview
-	# Build the shape contract. A challenge stage uses ChallengeSession's rolled
+	# Build the shape contract. A challenge stage uses RunSession's rolled
 	# TrackGenParams-shaped stage dict (spec §1/§4 — the seed comes from the period
 	# hash, not a RallyLibrary event, but the dict shape TrackGenParams.for_event
 	# reads is identical); a session-less run (dev boot, free roam) uses the live
@@ -601,7 +601,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# ground if the start would be underwater. The career-rally arm that used to
 	# read RallySession.current_event() here is deleted (todo/roguelike-pivot.md);
 	# the roguelike run session (stage 3) is its replacement.
-	var event := ChallengeSession.current_stage_params() if ChallengeSession.is_active() \
+	var event := RunSession.current_stage_params() if RunSession.is_active() \
 		else {}
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
@@ -645,10 +645,11 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# failure on the exact same period key, so retrying with the SAME bumped-seed
 	# sequence keeps the "identical stage for every player" contract intact — it just
 	# means the odd unlucky roll silently becomes a different (still period-deterministic)
-	# seed instead of an unplayable stage. Rally events are excluded (their seeds are
-	# already lockfile-verified; a genuine live miss/incomplete there is a data bug worth
-	# surfacing loudly, not silently routing around).
-	if ChallengeSession.is_active() and not bool(result.get("complete", false)):
+	# seed instead of an unplayable stage. A REGION RUN's stages are excluded: they are
+	# AUTHORED events whose seeds are already lockfile-verified, so a genuine live
+	# miss/incomplete there is a data bug worth surfacing loudly, not routing around.
+	if RunSession.is_active() and RunSession.mode_id() == RunMode.CHALLENGE \
+			and not bool(result.get("complete", false)):
 		var retry_event := event.duplicate()
 		var base_seed := int(event.get("seed", params.seed))
 		for attempt in range(1, 4):
@@ -660,8 +661,8 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 				params = retry_params
 				break
 		if not bool(result.get("complete", false)):
-			push_error("ChallengeSession stage generation failed after retries (period=%s stage seed=%d turn_count=%d) — falling back to whatever partial track was found" \
-				% [ChallengeSession.period_key(), base_seed, params.turn_count])
+			push_error("Challenge stage generation failed after retries (period=%s stage seed=%d turn_count=%d) — falling back to whatever partial track was found" \
+				% [RunSession.period_key(), base_seed, params.turn_count])
 	# Same gradient profile the rival grid was solved against (RallySession
 	# ._generate_event_tracks). It must be attached HERE too, because this live result —
 	# not the one the grid used — is what feeds the "vs P1" split table and the rival
@@ -671,6 +672,15 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# Keyed off `cfg`, matching $Floor above (seeded from cfg.track_seed), so this is the
 	# terrain the player actually drives even on a challenge stage whose seed was bumped.
 	result["road_height"] = TerrainNoise.make_sampler(cfg.track_seed, cfg.terrain_layers())
+	# THE STAGE'S CLOCK (todo/roguelike-pivot.md decisions 4 and 11). The target is a
+	# LapTimeModel solve over the track that was ACTUALLY generated — including the
+	# gradient sampler attached on the line above, so the clock is set on the same hilly
+	# road the player drives — against CarPerformance.REFERENCE_CAR, so it is a property
+	# of the STAGE and identical for every player and every car. This is the only place
+	# it can be seated: the result dict exists nowhere else. A challenge stage gets 0
+	# back (no target, nothing to fail).
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(result)
 	# Reconcile the live config to the waterline generation ACTUALLY used. `params` is
 	# the single source of truth for water: TrackGenParams.recompute_origin can clamp
 	# water_level down (or switch water_enabled off entirely) when no dry start exists
@@ -1342,15 +1352,19 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 # here. When no session is active (a dev boot / direct play) the fields stay
 # empty/zero and the gate shows just its START / FINISH wordmark.
 #
-# A challenge has no rival field at all (spec §3), so `target_ms` stays -1 for it —
-# FinishArch already omits the time row for a non-positive target, the same graceful
-# empty state a session-less boot gets.
+# `target_ms` is whatever RunSession.stage_target_ms() holds for the stage being
+# driven — the fixed reference-car clock a region run must beat (decision 11), and 0
+# for a challenge stage, which has no target. FinishArch omits the time row for a
+# non-positive target, the same graceful empty state a session-less boot gets.
 func _arch_event_info() -> Dictionary:
 	var info := {"rally_name": "", "stage_index": 0, "stage_count": 0, "target_ms": -1}
-	if ChallengeSession.is_active():
-		info["rally_name"] = "%s Challenge" % ChallengeSession.kind().capitalize()
-		info["stage_index"] = ChallengeSession.events_completed()
-		info["stage_count"] = ChallengeSession.stage_count()
+	if RunSession.is_active():
+		info["rally_name"] = RunSession.display_name()
+		info["stage_index"] = RunSession.events_completed()
+		info["stage_count"] = RunSession.stage_count()
+		# The one clock in the game (decision 4/11). 0 for a challenge stage, which has
+		# no target — FinishArch already omits the time row for a non-positive target.
+		info["target_ms"] = RunSession.stage_target_ms()
 	return info
 
 
@@ -1513,8 +1527,8 @@ func _on_reset_to_track_requested() -> void:
 func _should_stage() -> bool:
 	if not Config.data.start_line_enabled:
 		return false
-	return ChallengeSession.is_active() \
-		and not ChallengeSession.current_stage_params().is_empty()
+	return RunSession.is_active() \
+		and not RunSession.current_stage_params().is_empty()
 
 
 # Show the between-event pit-repair popup and block until the player dismisses it.
@@ -1550,7 +1564,7 @@ func _build_start_line() -> void:
 	# The framing (name / stage index) comes from the same _arch_event_info() the
 	# arch banners read, so the header and the gate can never disagree.
 	#
-	# _should_stage() only stages a ChallengeSession run now (RallySession, the
+	# _should_stage() only stages a RunSession run now (RallySession, the
 	# career caller, is deleted — todo/roguelike-pivot.md decision 5 — and the
 	# roguelike run session has not landed yet), so this always runs against a
 	# challenge stage. A challenge has no authored rally, so synthesise just enough
@@ -1652,20 +1666,24 @@ func _field_car(instance_id: int) -> void:
 
 # Route this event's StageManager / damage signals to the session, and the run's
 # finish onward. Connections on the per-event scene's nodes are dropped
-# automatically when the scene reloads for the next event. ChallengeSession is the
-# sole session caller now — RallySession, the career caller this used to branch on,
-# is deleted (todo/roguelike-pivot.md decision 5); the roguelike run session is the
-# eventual second caller.
+# automatically when the scene reloads for the next event. RunSession is the sole
+# session — RallySession, the career caller this used to branch on, is deleted
+# (todo/roguelike-pivot.md decision 5); which KIND of run is live is a RunMode
+# question now, not a second autoload.
 func _wire_session_signals() -> void:
 	# stage_completed is already connected in _ready() (every mode wires it before
 	# this session-only pass runs), so it's intentionally not re-connected here.
-	if ChallengeSession.is_active():
-		if not ChallengeSession.run_finished.is_connected(_on_challenge_run_finished):
-			ChallengeSession.run_finished.connect(_on_challenge_run_finished)
-		# _present_standings_overlay reads nothing session-specific (just $Car / $HUD /
-		# the replay recorder), so it's reused verbatim for a challenge stage.
-		if not ChallengeSession.standings_ready.is_connected(_present_standings_overlay):
-			ChallengeSession.standings_ready.connect(_present_standings_overlay)
+	# _on_challenge_run_finished posts to the CHALLENGE cloud board, so it is wired
+	# only for a challenge run — a region run's end is the run summary's business
+	# (todo/roguelike-pivot.md decision 19), not the board's.
+	if RunSession.is_active() and RunSession.mode_id() == RunMode.CHALLENGE:
+		if not RunSession.run_finished.is_connected(_on_challenge_run_finished):
+			RunSession.run_finished.connect(_on_challenge_run_finished)
+	# _present_standings_overlay reads nothing session-specific (just $Car / $HUD /
+	# the replay recorder), so it serves every kind of run's between-stage beat.
+	if RunSession.is_active():
+		if not RunSession.standings_ready.is_connected(_present_standings_overlay):
+			RunSession.standings_ready.connect(_present_standings_overlay)
 
 	if _stage_manager != null and not _stage_manager.stage_started.is_connected(_on_stage_started):
 		_stage_manager.stage_started.connect(_on_stage_started)
@@ -1691,7 +1709,7 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# no session to report to (report_event_result would silently no-op, leaving the
 	# finish panel's Next doing nothing), so Next returns to the hub instead — the same
 	# destination as the pause menu's Quit with no session.
-	if not ChallengeSession.is_active():
+	if not RunSession.is_active():
 		_change_scene(Scenes.hub_path())
 		return
 	# HP lost + persisted wheel-toe are snapshotted at the FINISH CROSSING (see
@@ -1699,13 +1717,13 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
 	# that post-finish coast would be wrongly charged to the event's damage.
 	var hp_lost: float = maxf(0.0, _event_start_hp - _event_hp_at_finish)
-	var iid: int = ChallengeSession.car_instance_id()
+	var iid: int = RunSession.car_instance_id()
 	if iid >= 0:
 		Save.set_wheel_toe(iid, _event_toe_at_finish)
 	if _replay_recorder != null:
 		_replay_recorder.stop()
 	var elapsed_ms := int(round(elapsed_seconds * 1000.0))
-	ChallengeSession.report_event_result(elapsed_ms, hp_lost)
+	RunSession.report_event_result(elapsed_ms, hp_lost)
 
 
 func _on_stage_started() -> void:
@@ -1769,12 +1787,12 @@ func _present_standings_overlay(_event_index: int) -> void:
 	var panel: Control = load(Scenes.STANDINGS).instantiate()
 	panel.overlay_mode = true
 	# Pin the session BEFORE the panel enters the tree. On a challenge's final stage
-	# ChallengeSession clears itself between this signal and the panel's own _ready
+	# RunSession clears itself between this signal and the panel's own _ready
 	# latch running would still be fine (standings_ready is emitted while the run is
 	# active), but stating it here removes the ordering dependency entirely.
-	panel.set_challenge_mode(ChallengeSession.is_active())
+	panel.set_challenge_mode(RunSession.is_active())
 	panel.leaderboard_hidden_changed.connect(_on_leaderboard_hidden_changed)
-	if ChallengeSession.is_active():
+	if RunSession.is_active():
 		# THIS panel owns the end of a challenge run: _on_challenge_run_finished
 		# waits on its run_completed rather than ejecting the player to the HQ while
 		# they are still reading the final standings.
@@ -1817,7 +1835,7 @@ func _on_leaderboard_hidden_changed(hidden: bool) -> void:
 # run's END is resolved here first:
 #
 #   CLEAN FINISH — spec §6's placement-gated completion reward. This fires while
-#   the player is still IN the driving scene (ChallengeSession._finish_locally
+#   the player is still IN the driving scene (RunSession._finish_locally
 #   emits run_finished from report_event_result, before the hand-off to HQ), and
 #   the scene change below is what ends the run, so the grant is awaited here and
 #   shown on a plain ConfirmPopup card over the world — the same shape hq.gd's
@@ -1833,7 +1851,7 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 	if bool(result.get("dnf", false)):
 		if Cloud != null and Cloud.challenge_leaderboard != null:
 			@warning_ignore("return_value_discarded")
-			Cloud.challenge_leaderboard.post_dnf(ChallengeSession.period_key())
+			Cloud.challenge_leaderboard.post_dnf(RunSession.period_key())
 	else:
 		# ONE owner of "what happens after the last stage". The final stage's
 		# interstitial is already on screen (report_event_result emits
@@ -1849,15 +1867,16 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 		# real round-trip with nothing on screen, which read as the game hanging right
 		# at the moment the player is waiting to hear how they did. Cover it with the
 		# shared cloud-busy state (todo/challenge-career-reuse-drift.md item 11); this
-		# was the last unmigrated `await Cloud.*` site. ChallengeSession is an autoload
+		# was the last unmigrated `await Cloud.*` site. RunSession is an autoload
 		# with no screen of its own, so the covering host is this scene.
 		var busy := CloudBusy.cover(self, "Scoring your run…", "Checking the leaderboard…")
-		var grant: Dictionary = await ChallengeSession.try_grant_completion_reward(result)
+		var grant: Dictionary = await ChallengeRunMode.try_grant_completion_reward(result)
 		await busy.end()
 		var item_id := String(grant.get("item_id", ""))
-		# Stars alone are a reward worth showing — a placing run's whole payout is stars
-		# now, so gating the card on item_id would leave every challenge win silent.
-		var won_something := item_id != "" or int(grant.get("stars", 0)) > 0
+		# Money alone is a reward worth showing — a placing run's whole payout is money
+		# now (todo/roguelike-pivot.md decision 21), so gating the card on item_id would
+		# leave every challenge win silent.
+		var won_something := item_id != "" or int(grant.get("money", 0)) > 0
 		if won_something and not _headless:
 			# NOT open_committing. That helper's whole point is making a mutation
 			# unrepresentable without its reveal, by acquiring the modal slot BEFORE
@@ -1867,7 +1886,7 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 			# no such fallback: try_grant_completion_reward already ran above (it has
 			# to — fetch_final_rank is judged against THIS run's own posted time, so
 			# it can't be deferred behind a modal check), and
-			# ChallengeSession._finish_locally recorded this period's outcome and
+			# RunSession._finish_locally recorded this period's outcome and
 			# cleared challenge_run before run_finished even fired. There is no
 			# "reward pending reveal" state and no way back into a finished period
 			# (period_outcome is terminal — start()/resume() both refuse once it's
@@ -1891,26 +1910,26 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 
 
 # Body text for the completion-reward card: what was won and where it landed.
-# A placing run USED TO pay stars (ChallengeSession._COMPLETION_REWARD) — that ledger
-# and this table are both deleted (todo/roguelike-pivot.md decision 21; see
-# ChallengeSession.try_grant_completion_reward's "MONEY SEAM" comment). `grant` currently
-# never carries a nonzero "stars", so this path is effectively unreached until the money
-# grant lands there. A car on top is still possible in principle, so both parts are
-# optional and the card lists whatever actually landed.
+# A placing run pays MONEY (todo/roguelike-pivot.md decision 21 — the star ledger it
+# used to pay from is deleted); the amount is the flat
+# GameConfig.challenge_completion_money, already banked by
+# ChallengeRunMode.try_grant_completion_reward before this renders it. A car on top is
+# still possible in principle, so both parts are optional and the card lists whatever
+# actually landed.
 func _completion_reward_body(item_id: String, grant: Dictionary) -> String:
 	var rank := int(grant.get("rank", 0))
 	var total := int(grant.get("total_entries", 0))
 	var placing := "Finished %d of %d" % [rank, total] if total > 0 else "Finished"
 	var lines: Array[String] = []
-	var stars := int(grant.get("stars", 0))
-	if stars > 0:
-		lines.append(UITheme.count_noun(stars, "star"))
+	var money := int(grant.get("money", 0))
+	if money > 0:
+		lines.append("$%d" % money)
 	var car_entry := CarLibrary.by_id(item_id)
 	if not car_entry.is_empty():
 		lines.append(String(car_entry.get("name", item_id)))
 	if lines.is_empty():
 		return placing
-	var where := "Spend them at the present box." if car_entry.is_empty() \
+	var where := "Spend it in the shop." if car_entry.is_empty() \
 		else "Your new car is waiting in the car park."
 	return "%s\nReward: %s\n\n%s" % [placing, ", ".join(lines), where]
 

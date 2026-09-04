@@ -1,8 +1,13 @@
 extends GutTest
-# ChallengeSession: the Daily/Weekly/Monthly Rally Challenge orchestrator
-# (scripts/challenge_session.gd, spec §3-4-6). Driven directly against a
-# throwaway Save profile, mirroring test_rally_session.gd's pattern — no scene
-# loads, no real driving.
+# The CHALLENGE half of the run spine: `RunSession` (scripts/run_session.gd) driven
+# through `ChallengeRunMode` (scripts/challenge_run_mode.gd), spec §3-4-6. Driven
+# directly against a throwaway Save profile — no scene loads, no real driving.
+#
+# The session is shared with the roguelike region run now, so the SHARED machinery
+# (the one run slot, the stage cursor, the fail rule, money) is covered by
+# tests/headless/test_region_run.gd; what stays here is everything that is
+# challenge-specific — periods, staleness, eligibility, one attempt per period.
+# The file keeps its name so the challenge's coverage stays findable by it.
 
 const TEST_PATH := "user://test_challenge_session_profile.json"
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
@@ -18,13 +23,13 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	ChallengeSession.auto_load_scenes = false
+	RunSession.auto_load_scenes = false
 	_leave_run()
 
 
 func after_each() -> void:
 	_leave_run()
-	ChallengeSession.auto_load_scenes = true
+	RunSession.auto_load_scenes = true
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
@@ -35,9 +40,9 @@ func after_each() -> void:
 # wreck DNFs a challenge, item 12), then drop the persisted run so a paused run never
 # leaks into the next test.
 func _leave_run() -> void:
-	ChallengeSession.pause_run()
+	RunSession.pause_run()
 	if _save != null:
-		_save.profile["challenge_run"] = {}
+		_save.profile[Save.KEY_RUN] = {}
 
 
 func _clean() -> void:
@@ -73,7 +78,7 @@ func _fast_entry(id: String) -> Dictionary:
 
 
 # The rating the challenge path judges an owned car by (the same merged meta
-# ChallengeSession.classify_car uses, so the fixture can never drift from it).
+# ChallengeRunMode.classify_car uses, so the fixture can never drift from it).
 func _rating_of(owned: Dictionary, entry: Dictionary) -> int:
 	return CarPerformance.rating(CarPerformance.merged_meta(owned, entry))
 
@@ -83,19 +88,19 @@ func _rating_of(owned: Dictionary, entry: Dictionary) -> int:
 func test_start_fails_when_already_active() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, car, t))
-	assert_false(ChallengeSession.start(ChallengeLibrary.DAILY, car, t),
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, car, t))
+	assert_false(RunSession.start(ChallengeLibrary.DAILY, car, t),
 		"a second start is refused while a run is active")
 
 
 func test_start_succeeds_and_persists_immediately_at_stage_zero() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	assert_true(ChallengeSession.start(ChallengeLibrary.WEEKLY, car, t))
-	assert_true(ChallengeSession.is_active())
-	assert_eq(ChallengeSession.events_completed(), 0)
+	assert_true(RunSession.start(ChallengeLibrary.WEEKLY, car, t))
+	assert_true(RunSession.is_active())
+	assert_eq(RunSession.events_completed(), 0)
 
-	var run: Dictionary = _save.profile["challenge_run"]
+	var run: Dictionary = _save.profile[Save.KEY_RUN]
 	assert_false(run.is_empty(), "the run is persisted to the profile right away")
 	assert_eq(int(run["stage_index"]), 0)
 	assert_eq(int(run["car_instance_id"]), int(car["instance_id"]))
@@ -107,15 +112,15 @@ func test_start_succeeds_and_persists_immediately_at_stage_zero() -> void:
 func test_resumable_run_reads_stale_period_as_not_resumable() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var profile := {
-		"challenge_run": {
+		Save.KEY_RUN: {
 			"period_key": "daily:2000-01-01:e%d" % ChallengeLibrary.CHALLENGE_EPOCH,
 			"kind": ChallengeLibrary.DAILY, "car_instance_id": 1,
 			"stage_index": 0, "stage_times_ms": [], "dnf": false,
 		}
 	}
-	assert_true(ChallengeSession.resumable_run(profile, t).is_empty(),
+	assert_true(RunSession.resumable_run(profile, t).is_empty(),
 		"a run whose period has rolled over is not resumable")
-	assert_true(ChallengeSession.has_stale_run(profile, t),
+	assert_true(RunSession.has_stale_run(profile, t),
 		"and is flagged as stale")
 
 
@@ -123,7 +128,7 @@ func test_resumable_run_reads_current_period_as_resumable() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var period := ChallengeLibrary.current_period(ChallengeLibrary.DAILY, t)
 	var profile := {
-		"challenge_run": {
+		Save.KEY_RUN: {
 			"period_key": String(period["key"]), "kind": ChallengeLibrary.DAILY,
 			"car_instance_id": 1, "stage_index": 0, "stage_times_ms": [], "dnf": false,
 		}
@@ -136,24 +141,24 @@ func test_resumable_run_reads_current_period_as_resumable() -> void:
 		1, (int(period["ends_at"]) - int(period["starts_at"])) / 2)
 	assert_gt(later, int(period["starts_at"]) - 1, "setup: the probe is inside the period")
 	assert_lt(later, int(period["ends_at"]), "setup: …and before it rolls over")
-	assert_false(ChallengeSession.resumable_run(profile, later).is_empty(),
+	assert_false(RunSession.resumable_run(profile, later).is_empty(),
 		"a run whose period key still matches is resumable")
-	assert_false(ChallengeSession.has_stale_run(profile, later))
+	assert_false(RunSession.has_stale_run(profile, later))
 
 
 func test_has_stale_run_is_false_with_no_run_at_all() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	assert_false(ChallengeSession.has_stale_run({}, t))
-	assert_false(ChallengeSession.has_stale_run({"challenge_run": {}}, t))
+	assert_false(RunSession.has_stale_run({}, t))
+	assert_false(RunSession.has_stale_run({Save.KEY_RUN: {}}, t))
 
 
 func test_resume_fails_after_the_run_ended() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(ChallengeLibrary.DAILY, car, t)
-	while ChallengeSession.is_active():  # play it out — completion is the only terminal path
-		ChallengeSession.report_event_result(60_000, 0.0)
-	assert_false(ChallengeSession.resume(t), "an ended run leaves nothing stored to resume")
+	RunSession.start(ChallengeLibrary.DAILY, car, t)
+	while RunSession.is_active():  # play it out — completion is the only terminal path
+		RunSession.report_event_result(60_000, 0.0)
+	assert_false(RunSession.resume(t), "an ended run leaves nothing stored to resume")
 
 
 # Test D (todo/challenge-career-reuse-drift.md): the test that USED to carry the
@@ -163,35 +168,35 @@ func test_resume_fails_after_the_run_ended() -> void:
 func test_resume_restores_the_stage_and_banked_times_of_a_stored_run() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(_longest_kind(), car, t)
-	assert_gt(ChallengeSession.stage_count(), 1, "setup: a multi-stage kind")
-	ChallengeSession.report_event_result(51_000)
-	ChallengeSession.continue_to_next_stage()
-	var banked := ChallengeSession.stage_times_ms()
-	var stored: Dictionary = (_save.profile["challenge_run"] as Dictionary).duplicate(true)
+	RunSession.start(_longest_kind(), car, t)
+	assert_gt(RunSession.stage_count(), 1, "setup: a multi-stage kind")
+	RunSession.report_event_result(51_000)
+	RunSession.continue_to_next_stage()
+	var banked := RunSession.stage_times_ms()
+	var stored: Dictionary = (_save.profile[Save.KEY_RUN] as Dictionary).duplicate(true)
 	assert_eq(int(stored["stage_index"]), 1, "setup: the run persisted one stage in")
 
 	# Simulate quitting to the desktop and relaunching: the autoload comes back
 	# inert and the ONLY thing that survives is what was written to the profile.
-	ChallengeSession.pause_run()
-	_save.profile["challenge_run"] = stored
-	assert_false(ChallengeSession.is_active(), "setup: nothing in memory to fall back on")
+	RunSession.pause_run()
+	_save.profile[Save.KEY_RUN] = stored
+	assert_false(RunSession.is_active(), "setup: nothing in memory to fall back on")
 
-	assert_true(ChallengeSession.resume(t), "a stored run in the current period resumes")
-	assert_true(ChallengeSession.is_active())
-	assert_eq(ChallengeSession.events_completed(), 1,
+	assert_true(RunSession.resume(t), "a stored run in the current period resumes")
+	assert_true(RunSession.is_active())
+	assert_eq(RunSession.events_completed(), 1,
 		"it comes back ON the stage the run was left on, not at stage 0")
-	assert_eq(ChallengeSession.stage_times_ms(), banked, "with the banked times intact")
-	assert_eq(ChallengeSession.cumulative_ms(), 51_000)
-	assert_eq(ChallengeSession.car_instance_id(), int(car["instance_id"]),
+	assert_eq(RunSession.stage_times_ms(), banked, "with the banked times intact")
+	assert_eq(RunSession.cumulative_ms(), 51_000)
+	assert_eq(RunSession.car_instance_id(), int(car["instance_id"]),
 		"still locked to the car the run was started on")
-	assert_eq(ChallengeSession.period_key(), String(stored["period_key"]))
-	assert_false(ChallengeSession.current_stage_params().is_empty(),
+	assert_eq(RunSession.period_key(), String(stored["period_key"]))
+	assert_false(RunSession.current_stage_params().is_empty(),
 		"and the stage it landed on has a track to generate")
 
 	# A resumed run is DRIVEABLE, not just readable — the stage gate opened too.
-	ChallengeSession.report_event_result(52_000)
-	assert_eq(ChallengeSession.events_completed(), 2, "the resumed run advances")
+	RunSession.report_event_result(52_000)
+	assert_eq(RunSession.events_completed(), 2, "the resumed run advances")
 
 
 # NOTE: two tests lived here — "starting a challenge clears a pending free-roam pick"
@@ -230,7 +235,7 @@ func test_eligible_cars_admits_under_the_ceiling_and_excludes_over_it() -> void:
 		"fixture sanity: the fast car is over every ceiling the band can roll")
 
 	var ids: Array = []
-	for car in ChallengeSession.eligible_cars(ChallengeLibrary.WEEKLY, profile, t):
+	for car in ChallengeRunMode.eligible_cars(ChallengeLibrary.WEEKLY, profile, t):
 		ids.append(int(car["instance_id"]))
 	assert_eq(ids, [1], "only the car under the ceiling is eligible")
 
@@ -258,8 +263,8 @@ func test_car_at_the_displayed_ceiling_is_ready_even_though_the_raw_ceiling_is_l
 	var raw_ceiling: float = float(c["rating"]) - 0.4
 	assert_eq(roundi(raw_ceiling), int(c["rating"]),
 		"fixture sanity: this ceiling displays as the car's own rating")
-	var verdict := ChallengeSession.classify_car(raw_ceiling, c["owned"], c["entry"])
-	assert_eq(String(verdict["state"]), ChallengeSession.READY,
+	var verdict := ChallengeRunMode.classify_car(raw_ceiling, c["owned"], c["entry"])
+	assert_eq(String(verdict["state"]), ChallengeRunMode.READY,
 		"a car whose displayed rating equals the displayed ceiling is admitted")
 
 
@@ -270,8 +275,8 @@ func test_car_above_the_displayed_ceiling_is_excluded() -> void:
 	var raw_ceiling: float = float(c["rating"]) - 0.6
 	assert_eq(roundi(raw_ceiling), int(c["rating"]) - 1,
 		"fixture sanity: this ceiling displays BELOW the car's own rating")
-	var verdict := ChallengeSession.classify_car(raw_ceiling, c["owned"], c["entry"])
-	assert_eq(String(verdict["state"]), ChallengeSession.EXCLUDED,
+	var verdict := ChallengeRunMode.classify_car(raw_ceiling, c["owned"], c["entry"])
+	assert_eq(String(verdict["state"]), ChallengeRunMode.EXCLUDED,
 		"a car over the DISPLAYED ceiling is simply out — there is no detune escape")
 
 
@@ -280,7 +285,7 @@ func test_car_above_the_displayed_ceiling_is_excluded() -> void:
 func test_displayed_ceiling_is_the_rounded_rolled_ceiling() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	for kind in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
-		assert_eq(ChallengeSession.displayed_ceiling(kind, t),
+		assert_eq(ChallengeRunMode.displayed_ceiling(kind, t),
 			roundi(ChallengeLibrary.current_ceiling(kind, t)), "%s ceiling is rounded" % kind)
 
 
@@ -306,22 +311,22 @@ func test_classify_cars_reports_one_consistent_verdict_per_car() -> void:
 	assert_gt(float(_rating_of(profile["cars"][1], entry_over)), CEILING_BAND_MAX,
 		"fixture sanity: the fast car is over every ceiling the band can roll")
 
-	var classified := ChallengeSession.classify_cars(ChallengeLibrary.WEEKLY, profile, t)
+	var classified := ChallengeRunMode.classify_cars(ChallengeLibrary.WEEKLY, profile, t)
 	assert_eq(classified["ready"], classified["eligible"],
 		"ready and eligible hold the same cars — the two keys are for the UI's benefit")
 	assert_eq(classified["eligible"], [profile["cars"][0]],
 		"only the under-ceiling car is admitted")
 	assert_eq(classified["ceiling"],
-		ChallengeSession.displayed_ceiling(ChallengeLibrary.WEEKLY, t),
+		ChallengeRunMode.displayed_ceiling(ChallengeLibrary.WEEKLY, t),
 		"the reported ceiling is the displayed one")
-	assert_eq(ChallengeSession.eligible_cars(ChallengeLibrary.WEEKLY, profile, t),
+	assert_eq(ChallengeRunMode.eligible_cars(ChallengeLibrary.WEEKLY, profile, t),
 		classified["eligible"], "eligible_cars is the same list")
 
 
 func test_eligible_cars_ignores_cars_missing_from_the_catalogue() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var profile := {"cars": [{"instance_id": 1, "model_id": "no_such_model"}]}
-	var eligible := ChallengeSession.eligible_cars(ChallengeLibrary.DAILY, profile, t)
+	var eligible := ChallengeRunMode.eligible_cars(ChallengeLibrary.DAILY, profile, t)
 	assert_true(eligible.is_empty())
 
 
@@ -330,61 +335,50 @@ func test_eligible_cars_ignores_cars_missing_from_the_catalogue() -> void:
 func test_report_event_result_appends_to_stage_times() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(ChallengeLibrary.WEEKLY, car, t)  # stage_count 4
-	ChallengeSession.report_event_result(50000)
-	assert_eq(ChallengeSession.stage_times_ms(), [50000])
-	assert_eq(ChallengeSession.events_completed(), 1)
-	assert_eq(ChallengeSession.cumulative_ms(), 50000)
+	RunSession.start(ChallengeLibrary.WEEKLY, car, t)  # stage_count 4
+	RunSession.report_event_result(50000)
+	assert_eq(RunSession.stage_times_ms(), [50000])
+	assert_eq(RunSession.events_completed(), 1)
+	assert_eq(RunSession.cumulative_ms(), 50000)
 
 
-func test_non_final_stage_grants_a_per_stage_reward_and_a_field_repair() -> void:
+func test_a_non_final_stage_continues_the_run_and_leaves_a_field_repair() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
 	var driven_id := int(car["instance_id"])
-	ChallengeSession.start(ChallengeLibrary.WEEKLY, car, t)  # stage_count 4
+	RunSession.start(ChallengeLibrary.WEEKLY, car, t)  # stage_count 4
 
-	var upgrades_before: int = (_save.get_car(driven_id)["installed_upgrades"] as Array).size()
-	var items_before := 0
-	for item_id in _save.profile["inventory"]:
-		items_before += int(_save.profile["inventory"][item_id])
+	# The per-stage upgrade DRAW is gone with the persistent parts model; a stage no
+	# longer hands anything to the car. What survives, and is this test's real subject,
+	# is the between-stage field repair below.
+	RunSession.report_event_result(50000, 100.0)  # non-final: stage 1 of 4
 
-	ChallengeSession.report_event_result(50000, 100.0)  # non-final: stage 1 of 4
+	assert_true(RunSession.is_active(), "the run continues past a non-final stage")
 
-	assert_true(ChallengeSession.is_active(), "the run continues past a non-final stage")
-	var upgrades_after: int = (_save.get_car(driven_id)["installed_upgrades"] as Array).size()
-	var items_after := 0
-	for item_id in _save.profile["inventory"]:
-		items_after += int(_save.profile["inventory"][item_id])
-	# A stage DRAWS, but the draw is consumables-only now and both are rare, so paying
-	# nothing is the common outcome (features/star-economy.md). What must hold is that
-	# anything it does pay lands somewhere real — never a part fitted out of nowhere.
-	assert_gte(upgrades_after, upgrades_before, "a stage never removes a fitted part")
-	assert_gte(items_after, items_before, "nor spends an inventory item")
-
-	var repair := ChallengeSession.take_pending_repair()
+	var repair := RunSession.take_pending_repair()
 	assert_false(repair.is_empty(), "a non-final stage leaves a pending field repair")
-	assert_true(ChallengeSession.take_pending_repair().is_empty(),
+	assert_true(RunSession.take_pending_repair().is_empty(),
 		"the pending repair is consumed once (one-shot)")
 
 
 func test_final_stage_ends_the_run_and_clears_the_persisted_profile() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(ChallengeLibrary.DAILY, car, t)  # stage_count 1
+	RunSession.start(ChallengeLibrary.DAILY, car, t)  # stage_count 1
 
 	var finished: Array = []
-	ChallengeSession.run_finished.connect(
+	RunSession.run_finished.connect(
 		func(result: Dictionary) -> void: finished.append(result), CONNECT_ONE_SHOT)
 
-	ChallengeSession.report_event_result(40000)  # the only stage -> final
+	RunSession.report_event_result(40000)  # the only stage -> final
 
-	assert_false(ChallengeSession.is_active(), "the final stage ends the run")
+	assert_false(RunSession.is_active(), "the final stage ends the run")
 	assert_eq(finished.size(), 1, "run_finished emitted exactly once")
 	assert_true(bool(finished[0]["completed"]))
 	assert_false(bool(finished[0]["dnf"]))
-	assert_true(_save.profile["challenge_run"].is_empty(),
-		"the persisted challenge_run clears once the run is over")
-	assert_true(ChallengeSession.take_pending_repair().is_empty(),
+	assert_true(_save.profile[Save.KEY_RUN].is_empty(),
+		"the persisted run slot clears once the run is over")
+	assert_true(RunSession.take_pending_repair().is_empty(),
 		"the final stage leaves no pending repair (no next stage to cushion for)")
 
 
@@ -392,9 +386,9 @@ func test_final_stage_ends_the_run_and_clears_the_persisted_profile() -> void:
 # one. On a DAILY (one stage) this is a no-op and the very first stage is already
 # the final stage — which is exactly the case items 2 and 5 have to survive.
 func _run_up_to_the_final_stage() -> void:
-	while ChallengeSession.events_completed() < ChallengeSession.stage_count() - 1:
-		ChallengeSession.report_event_result(50_000)
-		ChallengeSession.continue_to_next_stage()
+	while RunSession.events_completed() < RunSession.stage_count() - 1:
+		RunSession.report_event_result(50_000)
+		RunSession.continue_to_next_stage()
 
 
 # --- Item 2: the FINAL stage's interstitial belongs to the CHALLENGE ------------
@@ -405,7 +399,7 @@ func _run_up_to_the_final_stage() -> void:
 # for_current_stage()`, which is deleted along with `global_standings.gd` /
 # `standings.gd`. Their subject — the `standings_ready`-before-`run_finished`
 # signal ORDER, and the session-latching fix (re-asking `is_active()` after the
-# run ends silently routes to the wrong board) — is still real ChallengeSession
+# run ends silently routes to the wrong board) — is still real RunSession
 # behaviour and still worth guarding once stage 3 (todo/roguelike-pivot-plan.md)
 # gives the challenge run a new interstitial/run-summary host: re-derive
 # equivalent coverage against whatever replaces `GlobalStandings.for_current_stage`
@@ -427,13 +421,13 @@ func test_the_final_stage_repairs_the_cars_damage_the_same_way_career_does() -> 
 	var control_id := int(_grant()["instance_id"])
 	var max_hp := float(_save.get_car(driven_id)["hp"])
 
-	ChallengeSession.start(ChallengeLibrary.DAILY, car, t)
+	RunSession.start(ChallengeLibrary.DAILY, car, t)
 	_run_up_to_the_final_stage()
 	var hp_before_final := float(_save.get_car(driven_id)["hp"])
 	var hp_lost := hp_before_final * 0.25
 	var damaged := hp_before_final - hp_lost
 
-	ChallengeSession.report_event_result(45_000, hp_lost)  # the FINAL stage
+	RunSession.report_event_result(45_000, hp_lost)  # the FINAL stage
 
 	var hp_after := float(_save.get_car(driven_id)["hp"])
 	assert_gt(hp_after, damaged,
@@ -449,7 +443,7 @@ func test_the_final_stage_repairs_the_cars_damage_the_same_way_career_does() -> 
 	assert_almost_eq(hp_after, float(_save.get_car(control_id)["hp"]), 0.001,
 		"a challenge's final repair is exactly the repair a career rally's final event applies")
 
-	assert_true(ChallengeSession.take_pending_repair().is_empty(),
+	assert_true(RunSession.take_pending_repair().is_empty(),
 		"applied SILENTLY — the run-end flow is left no repair popup to show")
 
 
@@ -469,7 +463,7 @@ func _longest_kind() -> String:
 
 
 # THE regression test for "a Weekly/Monthly challenge can't get past stage 1":
-# standings.gd's Continue had no ChallengeSession counterpart to
+# standings.gd's Continue had no RunSession counterpart to
 # RallySession.continue_to_next_event(), so the interstitial's only exit was a
 # no-op. Drives a multi-stage run end to end through the same two calls the
 # interstitial makes — report_event_result then continue_to_next_stage — and
@@ -479,28 +473,28 @@ func test_a_multi_stage_run_advances_through_every_stage_to_the_finish() -> void
 	var car := _grant()
 	# Whichever kind currently has the MOST stages — the point is "more than one",
 	# not any particular authored count.
-	ChallengeSession.start(_longest_kind(), car, t)
-	var total := ChallengeSession.stage_count()
+	RunSession.start(_longest_kind(), car, t)
+	var total := RunSession.stage_count()
 	assert_true(total > 1, "the longest kind is multi-stage (else this proves nothing)")
 
 	var finished: Array = []
-	ChallengeSession.run_finished.connect(
+	RunSession.run_finished.connect(
 		func(result: Dictionary) -> void: finished.append(result), CONNECT_ONE_SHOT)
 	var entered: Array = []
-	ChallengeSession.stage_started.connect(func(idx: int) -> void: entered.append(idx))
+	RunSession.stage_started.connect(func(idx: int) -> void: entered.append(idx))
 
 	for i in total:
-		assert_eq(ChallengeSession.events_completed(), i,
+		assert_eq(RunSession.events_completed(), i,
 			"stage %d is the one about to run" % (i + 1))
-		assert_false(ChallengeSession.current_stage_params().is_empty(),
+		assert_false(RunSession.current_stage_params().is_empty(),
 			"stage %d has a track to generate" % (i + 1))
-		ChallengeSession.report_event_result(50000 + i * 1000)
-		ChallengeSession.continue_to_next_stage()  # the interstitial's Continue
+		RunSession.report_event_result(50000 + i * 1000)
+		RunSession.continue_to_next_stage()  # the interstitial's Continue
 
-	assert_eq(ChallengeSession.events_completed(), total, "every stage was driven")
-	assert_false(ChallengeSession.is_active(), "the run finished rather than stalling")
+	assert_eq(RunSession.events_completed(), total, "every stage was driven")
+	assert_false(RunSession.is_active(), "the run finished rather than stalling")
 	assert_eq(finished.size(), 1, "run_finished fired exactly once, at the end")
-	assert_eq(ChallengeSession.stage_times_ms().size(), total, "every stage banked a time")
+	assert_eq(RunSession.stage_times_ms().size(), total, "every stage banked a time")
 	# One re-entry per NON-final stage; the final stage ends the run instead, so its
 	# continue is a no-op rather than a fifth scene load.
 	assert_eq(entered.size(), total - 1, "the run re-entered driving once per remaining stage")
@@ -509,14 +503,14 @@ func test_a_multi_stage_run_advances_through_every_stage_to_the_finish() -> void
 func test_continue_to_next_stage_is_a_no_op_once_the_run_is_over() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(ChallengeLibrary.DAILY, car, t)
+	RunSession.start(ChallengeLibrary.DAILY, car, t)
 	var entered: Array = []
-	ChallengeSession.stage_started.connect(func(idx: int) -> void: entered.append(idx))
-	while ChallengeSession.is_active():
-		ChallengeSession.report_event_result(40000)
-		ChallengeSession.continue_to_next_stage()
+	RunSession.stage_started.connect(func(idx: int) -> void: entered.append(idx))
+	while RunSession.is_active():
+		RunSession.report_event_result(40000)
+		RunSession.continue_to_next_stage()
 	var re_entries := entered.size()
-	ChallengeSession.continue_to_next_stage()  # must not error or re-enter driving
+	RunSession.continue_to_next_stage()  # must not error or re-enter driving
 	assert_eq(entered.size(), re_entries,
 		"a finished run never re-enters the driving scene")
 
@@ -532,28 +526,28 @@ func test_continue_to_next_stage_is_a_no_op_once_the_run_is_over() -> void:
 func test_run_times_are_the_stage_just_driven_and_the_run_so_far() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(_longest_kind(), car, t)
-	assert_eq(ChallengeSession.current_stage_times_ms(), [],
+	RunSession.start(_longest_kind(), car, t)
+	assert_eq(RunSession.current_stage_times_ms(), [],
 		"no stage time before any stage completes")
-	assert_eq(ChallengeSession.run_times_ms(), [],
+	assert_eq(RunSession.run_times_ms(), [],
 		"and no run breakdown either")
 
-	ChallengeSession.report_event_result(50000)
-	assert_eq(ChallengeSession.current_stage_times_ms(), [50000],
+	RunSession.report_event_result(50000)
+	assert_eq(RunSession.current_stage_times_ms(), [50000],
 		"the stage just finished reports its own time, alone")
-	assert_eq(ChallengeSession.run_times_ms(), [50000],
+	assert_eq(RunSession.run_times_ms(), [50000],
 		"and the run so far is that one stage")
 
-	ChallengeSession.continue_to_next_stage()
-	ChallengeSession.report_event_result(40000)
-	assert_eq(ChallengeSession.current_stage_times_ms(), [40000],
+	RunSession.continue_to_next_stage()
+	RunSession.report_event_result(40000)
+	assert_eq(RunSession.current_stage_times_ms(), [40000],
 		"the second stage reports ITS time, not the running total")
-	assert_eq(ChallengeSession.run_times_ms(), [50000, 40000],
+	assert_eq(RunSession.run_times_ms(), [50000, 40000],
 		"the run breakdown carries both stages, in stage order")
 	var summed := 0
-	for ms in ChallengeSession.run_times_ms():
+	for ms in RunSession.run_times_ms():
 		summed += ms
-	assert_eq(summed, ChallengeSession.cumulative_ms(),
+	assert_eq(summed, RunSession.cumulative_ms(),
 		"the breakdown sums to the run's cumulative time")
 
 
@@ -564,15 +558,15 @@ func test_run_times_are_the_stage_just_driven_and_the_run_so_far() -> void:
 func test_a_second_result_for_the_same_stage_is_ignored() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(_longest_kind(), car, t)
-	ChallengeSession.report_event_result(50_000)
-	var banked := ChallengeSession.stage_times_ms()
-	var done := ChallengeSession.events_completed()
+	RunSession.start(_longest_kind(), car, t)
+	RunSession.report_event_result(50_000)
+	var banked := RunSession.stage_times_ms()
+	var done := RunSession.events_completed()
 
-	ChallengeSession.report_event_result(1_000)
+	RunSession.report_event_result(1_000)
 
-	assert_eq(ChallengeSession.stage_times_ms(), banked, "no phantom time is banked")
-	assert_eq(ChallengeSession.events_completed(), done, "and the run does not skip a stage")
+	assert_eq(RunSession.stage_times_ms(), banked, "no phantom time is banked")
+	assert_eq(RunSession.events_completed(), done, "and the run does not skip a stage")
 
 
 # --- pause_run: leaving the run is NOT a DNF (item 12) ------------------------
@@ -585,41 +579,41 @@ func test_a_second_result_for_the_same_stage_is_ignored() -> void:
 func test_pause_run_leaves_the_run_resumable_with_no_outcome_recorded() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(_longest_kind(), car, t)
-	assert_gt(ChallengeSession.stage_count(), 1, "setup: a multi-stage kind")
-	ChallengeSession.report_event_result(50_000)
-	ChallengeSession.continue_to_next_stage()
-	var banked := ChallengeSession.stage_times_ms()
+	RunSession.start(_longest_kind(), car, t)
+	assert_gt(RunSession.stage_count(), 1, "setup: a multi-stage kind")
+	RunSession.report_event_result(50_000)
+	RunSession.continue_to_next_stage()
+	var banked := RunSession.stage_times_ms()
 
 	var finished: Array = []
-	ChallengeSession.run_finished.connect(
+	RunSession.run_finished.connect(
 		func(result: Dictionary) -> void: finished.append(result), CONNECT_ONE_SHOT)
 
-	ChallengeSession.pause_run()
+	RunSession.pause_run()
 
-	assert_false(ChallengeSession.is_active(), "the run stops being the active session")
-	assert_false(ChallengeSession.dnf(), "but it is NOT a DNF")
+	assert_false(RunSession.is_active(), "the run stops being the active session")
+	assert_false(RunSession.dnf(), "but it is NOT a DNF")
 	assert_eq(finished.size(), 0, "and the run has not finished — no run_finished")
-	assert_true(ChallengeSession.period_outcome(_save.profile,
+	assert_true(ChallengeRunMode.period_outcome(_save.profile,
 		String(ChallengeLibrary.current_period(_longest_kind(), t)["key"])).is_empty(),
 		"no terminal outcome is recorded, so the period is not spent")
 
-	var run := ChallengeSession.resumable_run(_save.profile, t)
+	var run := RunSession.resumable_run(_save.profile, t)
 	assert_false(run.is_empty(), "the stored run survives and is still resumable")
 	assert_eq(int(run["stage_index"]), 1, "left on the stage it was paused on")
 	assert_eq(run["stage_times_ms"], banked, "with its banked stage times intact")
 	assert_eq(int(run["car_instance_id"]), int(car["instance_id"]))
 
-	assert_true(ChallengeSession.resume(t), "and resume picks it straight back up")
-	assert_eq(ChallengeSession.events_completed(), 1,
+	assert_true(RunSession.resume(t), "and resume picks it straight back up")
+	assert_eq(RunSession.events_completed(), 1,
 		"landing on the stage the run was paused on")
-	assert_eq(ChallengeSession.stage_times_ms(), banked)
+	assert_eq(RunSession.stage_times_ms(), banked)
 
 
 func test_pause_run_is_a_no_op_when_not_active() -> void:
-	assert_false(ChallengeSession.is_active())
-	ChallengeSession.pause_run()  # must not error
-	assert_false(ChallengeSession.is_active())
+	assert_false(RunSession.is_active())
+	RunSession.pause_run()  # must not error
+	assert_false(RunSession.is_active())
 
 
 # Starting a dev benchmark clears whatever session is live so world.gd doesn't boot
@@ -631,15 +625,15 @@ func test_pause_run_is_a_no_op_when_not_active() -> void:
 func test_leaving_and_re_entering_a_run_repeatedly_never_spends_the_period() -> void:
 	var t := int(Time.get_unix_time_from_system())
 	var car := _grant()
-	ChallengeSession.start(ChallengeLibrary.DAILY, car, t)
+	RunSession.start(ChallengeLibrary.DAILY, car, t)
 	for _i in 3:
-		ChallengeSession.pause_run()
-		assert_false(ChallengeSession.is_active())
-		assert_true(ChallengeSession.resume(t), "each pause is followed by a clean resume")
-	assert_true(ChallengeSession.period_outcome(_save.profile,
+		RunSession.pause_run()
+		assert_false(RunSession.is_active())
+		assert_true(RunSession.resume(t), "each pause is followed by a clean resume")
+	assert_true(ChallengeRunMode.period_outcome(_save.profile,
 		String(ChallengeLibrary.current_period(ChallengeLibrary.DAILY, t)["key"])).is_empty(),
 		"no outcome recorded — the period survives leaving the run")
-	assert_false(ChallengeSession.dnf())
+	assert_false(RunSession.dnf())
 
 
 # --- try_grant_completion_reward: DNF short-circuit (local-only) ---------------
@@ -648,7 +642,7 @@ func test_try_grant_completion_reward_returns_empty_on_dnf_without_touching_clou
 	# Deliberately no Cloud/Cloud.challenge_leaderboard setup here: the
 	# completed:false branch must return before ever reading Cloud, so this
 	# call succeeding with no Cloud wired up IS the assertion.
-	var result: Dictionary = await ChallengeSession.try_grant_completion_reward(
+	var result: Dictionary = await ChallengeRunMode.try_grant_completion_reward(
 		{"completed": false, "kind": ChallengeLibrary.DAILY, "period_key": "x"})
 	assert_true(result.is_empty(), "a DNF result grants nothing and touches no cloud state")
 
@@ -668,8 +662,8 @@ func test_try_grant_completion_reward_returns_empty_on_dnf_without_touching_clou
 # every one of these is a rolled/tunable number.
 func test_apply_stage_config_writes_the_stages_rolled_params_into_the_config() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	var stage := ChallengeSession.current_stage_params()
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, _grant(), t))
+	var stage := RunSession.current_stage_params()
 	assert_false(stage.is_empty(), "setup: an active run exposes its current stage")
 
 	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
@@ -695,15 +689,15 @@ func test_apply_stage_config_writes_the_stages_rolled_params_into_the_config() -
 # the SAME consume-time resolve world.gd._ready performs, which is what this drives.
 func test_entering_the_next_stage_resolves_that_stages_config() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.MONTHLY, _grant(), t))
-	assert_gt(ChallengeSession.stage_count(), 1, "setup: a multi-stage kind")
+	assert_true(RunSession.start(ChallengeLibrary.MONTHLY, _grant(), t))
+	assert_gt(RunSession.stage_count(), 1, "setup: a multi-stage kind")
 
-	ChallengeSession.report_event_result(60_000, 0.0)
-	assert_eq(ChallengeSession.events_completed(), 1, "setup: advanced onto stage 2")
-	var stage_two := ChallengeSession.current_stage_params()
+	RunSession.report_event_result(60_000, 0.0)
+	assert_eq(RunSession.events_completed(), 1, "setup: advanced onto stage 2")
+	var stage_two := RunSession.current_stage_params()
 
 	Config.data.track_seed = -1  # a value no roll can produce, so the write is observable
-	ChallengeSession.continue_to_next_stage()
+	RunSession.continue_to_next_stage()
 	# What world.gd._ready does on boot, and the only place the config is seated.
 	DrivingContext.apply_stage_config(Config.data)
 	assert_eq(Config.data.track_seed, int(stage_two["seed"]),
@@ -719,8 +713,8 @@ func test_entering_the_next_stage_resolves_that_stages_config() -> void:
 # value is pinned (the two derivations are compared to each other).
 func test_a_stages_resolved_config_equals_the_canonical_event_config() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	var stage := ChallengeSession.current_stage_params()
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, _grant(), t))
+	var stage := RunSession.current_stage_params()
 	assert_false(stage.is_empty(), "setup: an active run exposes its current stage")
 
 	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
@@ -748,10 +742,10 @@ func test_session_active_is_true_during_a_challenge_run() -> void:
 	assert_false(DrivingContext.session_active(),
 		"setup: nothing is being driven before a run starts")
 	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, _grant(), t))
 	assert_true(DrivingContext.session_active(),
 		"a challenge run counts as an active driving session, same as a career rally")
-	ChallengeSession.pause_run()
+	RunSession.pause_run()
 	assert_false(DrivingContext.session_active(),
 		"and it stops counting once the run ends")
 
@@ -763,17 +757,17 @@ func test_session_active_is_true_during_a_challenge_run() -> void:
 # "Not started" again and the player could re-run the period and post a second time.
 func test_a_completed_period_cannot_be_started_again() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	while ChallengeSession.is_active():
-		ChallengeSession.report_event_result(60_000, 0.0)
-	assert_false(ChallengeSession.is_active(), "setup: the run played through to the end")
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, _grant(), t))
+	while RunSession.is_active():
+		RunSession.report_event_result(60_000, 0.0)
+	assert_false(RunSession.is_active(), "setup: the run played through to the end")
 
-	assert_true(ChallengeSession.is_period_finished(ChallengeLibrary.DAILY, _save.profile, t),
+	assert_true(ChallengeRunMode.is_period_finished(ChallengeLibrary.DAILY, _save.profile, t),
 		"the finished period is recorded as spent")
-	var outcome := ChallengeSession.period_outcome(_save.profile,
+	var outcome := ChallengeRunMode.period_outcome(_save.profile,
 		String(ChallengeLibrary.current_period(ChallengeLibrary.DAILY, t)["key"]))
 	assert_false(bool(outcome.get("dnf", true)), "it is recorded as a completion, not a DNF")
-	assert_false(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t),
+	assert_false(RunSession.start(ChallengeLibrary.DAILY, _grant(), t),
 		"starting the same period again is refused")
 
 
@@ -781,12 +775,12 @@ func test_a_completed_period_cannot_be_started_again() -> void:
 # independent runs, and only one can be active at a time.
 func test_finishing_one_kind_leaves_the_others_startable() -> void:
 	var t := int(Time.get_unix_time_from_system())
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	while ChallengeSession.is_active():
-		ChallengeSession.report_event_result(60_000, 0.0)
-	assert_false(ChallengeSession.is_period_finished(ChallengeLibrary.WEEKLY, _save.profile, t),
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, _grant(), t))
+	while RunSession.is_active():
+		RunSession.report_event_result(60_000, 0.0)
+	assert_false(ChallengeRunMode.is_period_finished(ChallengeLibrary.WEEKLY, _save.profile, t),
 		"the weekly period is untouched by the daily's outcome")
-	assert_true(ChallengeSession.start(ChallengeLibrary.WEEKLY, _grant(), t),
+	assert_true(RunSession.start(ChallengeLibrary.WEEKLY, _grant(), t),
 		"another kind can still be started")
 
 
@@ -797,9 +791,9 @@ func test_recording_an_outcome_prunes_periods_that_have_rolled_over() -> void:
 	_save.profile["challenge_results"] = {
 		"daily:1999-01-01:e1": {"kind": ChallengeLibrary.DAILY, "dnf": false, "cumulative_ms": 1},
 	}
-	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _grant(), t))
-	while ChallengeSession.is_active():
-		ChallengeSession.report_event_result(60_000, 0.0)
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, _grant(), t))
+	while RunSession.is_active():
+		RunSession.report_event_result(60_000, 0.0)
 
 	var results: Dictionary = _save.profile["challenge_results"]
 	assert_false(results.has("daily:1999-01-01:e1"),

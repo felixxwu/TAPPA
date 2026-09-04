@@ -304,7 +304,7 @@ func test_the_modals_own_nav_still_answers_back() -> void:
 	var popup := ConfirmPopup.open(host, "T", "B",
 		[{"label": "OK", "callback": func() -> void: flag[0] += 1}])
 	await get_tree().process_frame
-	var nav := _nav_of(popup.get_child(1))
+	var nav := MenuNav.of(popup.get_child(1) as Control)
 	assert_not_null(nav, "setup: the popup is MenuNav-wired")
 	nav._unhandled_input(_press("menu_back"))
 	assert_eq(flag[0], 1, "Back inside the modal still fires its action")
@@ -525,7 +525,7 @@ func test_username_popup_back_cancels_without_writing() -> void:
 
 	# The nav is attached to the popup's centring container, not the CanvasLayer.
 	var center := popup.get_child(1) as CenterContainer
-	var nav := _nav_of(center)
+	var nav := MenuNav.of(center as Control)
 	assert_not_null(nav, "the popup is wired to the MenuNav framework")
 	# Release the field first: while typing, Back means "stop typing"
 	# (MenuNav.is_text_editing), which is the behaviour a half-entered name wants.

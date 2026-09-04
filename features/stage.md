@@ -124,7 +124,7 @@ These are the hooks the run/menu layer attaches to. The **post-stage flow**
 (standings, rewards, back to the hub) is out of scope here — this feature only
 provides the signals, the finish panel, and the NEXT → `proceed_to_results()`
 gate. `RallySession`, the career-rally orchestrator this doc used to point at, is
-deleted (`todo/roguelike-pivot.md`); `ChallengeSession` is the surviving session
+deleted (`todo/roguelike-pivot.md`); `RunSession` is the surviving session
 caller until the roguelike `RunSession` lands.
 
 ## Wiring & lifecycle

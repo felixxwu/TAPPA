@@ -111,7 +111,7 @@ the slot cannot be had it returns `null` and **`commit` is never called** — th
 has mutated nothing and can just return.
 
 The body is **deferred**, not a return value, because `world.gd`'s challenge reward has
-to `await` its grant (`ChallengeSession.try_grant_completion_reward`) and a synchronous
+to `await` its grant (`ChallengeRunMode.try_grant_completion_reward`) and a synchronous
 `Callable -> String` contract cannot express that. So the popup is built with
 `placeholder`; `commit` may be a plain function *or* a coroutine (its result is awaited
 either way), and either returns a non-empty `String` to become the body or writes one

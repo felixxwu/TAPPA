@@ -24,7 +24,7 @@ tuning lift that restores full health and straightens the wheels for a flat star
 (`scripts/wreck_screen.gd`), and *Return to HQ* called `RallySession.report_wreck()` for a
 DNF. All of that is **deleted** — the signal, `_wreck()`, `car.gd`'s `wrecked` signal and
 `_on_wrecked()` handler, `world.gd`'s `_wreck_screen` / `_on_session_car_wrecked()`,
-`Save.record_wreck()`, `RallySession.report_wreck()`, `ChallengeSession.report_wreck()` /
+`Save.record_wreck()`, `RallySession.report_wreck()`, `RunSession.report_wreck()` /
 `_end_as_dnf()`, and the `wreck_screen.gd` file and its `WreckScreen` class. The config
 knobs that only served it (`wreck_recovery_hp_fraction`, `wreck_settle_max_seconds`) went
 too. `apply_loss()` is now one line: `hp = maxf(0.0, hp - amount)`.
@@ -373,7 +373,7 @@ all retired — see [reward-system.md](reward-system.md).
 
 ### Nothing DNFs the player any more
 
-`RallySession.report_wreck()` and `ChallengeSession.report_wreck()` / `_end_as_dnf()` are
+`RallySession.report_wreck()` and `RunSession.report_wreck()` / `_end_as_dnf()` are
 gone, so **the player cannot DNF a rally or a challenge through damage** — see
 [rally-session.md](rally-session.md) and [rally-challenge.md](rally-challenge.md). The
 `_dnf` flag survives in both: **rivals** still DNF an event, the standings/result contract
@@ -433,7 +433,7 @@ now use) for the just-finished car, with the identical `field_repair_hp_fraction
 the one entry point for that pairing** — it reads the two `GameConfig` fractions and
 calls `field_repair` with them, so no caller picks its own. Every between-stage and
 final-stage repair in the game goes through it: RallySession's two, and
-`ChallengeSession.report_event_result`'s two. (It lived on `RallySession` until the
+`RunSession.report_event_result`'s two. (It lived on `RallySession` until the
 roguelike pivot's extraction stage; it is four lines of config reads and belongs next
 to the `field_repair` it delegates to.) Unlike the between-event repair, this one is
 applied **silently** — the summary is discarded rather than stashed for
@@ -540,6 +540,6 @@ knockdown applies **soft drag** to the car), `test_car.gd` (contact monitor
 wiring, plus a **head-on collision costs HP** regression that drives the car into
 an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge).
 
-There is no wreck-screen test because there is no wreck screen; `test_wreck_site_gate.gd`
-is about the **roadside opponent wreck** prop ([opponent-wrecks.md](opponent-wrecks.md)),
-an unrelated feature that is untouched by any of the above.
+There is no wreck-screen test because there is no wreck screen. (There used to be a
+`test_wreck_site_gate.gd` covering the **roadside opponent wreck** prop; it went with the
+rival field — see `todo/roguelike-pivot.md`.)
