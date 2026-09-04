@@ -319,6 +319,52 @@ func test_the_run_reports_what_it_banked() -> void:
 		"the run's own tally agrees with what reached the profile")
 
 
+# --- Coins (decisions 13, 35, 36, 50) --------------------------------------------
+
+func test_coins_collected_never_pay_less_than_none() -> void:
+	# Relationship only (CLAUDE.md) — GameConfig.coin_money is a tunable a designer
+	# could zero out, which would make more coins pay the SAME, never less.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var none := mode.stage_money(0, 50_000, target, 0)
+	var some := mode.stage_money(0, 50_000, target, 3)
+	assert_true(some >= none, "collecting coins never pays worse than collecting none")
+
+
+func test_coin_money_banks_with_the_stage_that_cleared_it() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1), 0.0, 2)
+	if RunSession.pick_awaiting():
+		RunSession.choose_repair()
+	assert_gt(_save.money(), 0, "a cleared stage with coins pays out, coins included")
+
+
+func test_a_missed_stages_coins_pay_no_money() -> void:
+	# Decision 36 — the coin GAMBLE (leaving the line, decision 35) is lost along
+	# with everything else on a missed stage; only a CLEARED stage's coins bank.
+	_start()
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1, 0.0, 5)
+	assert_eq(_save.money(), 0, "no money banks for a stage that missed its target")
+
+
+func test_a_missed_stages_coins_still_count_toward_the_lifetime_ledger() -> void:
+	# The lifetime stat is a driving-skill record (a real detour was taken), separate
+	# from the money it would have paid — mirrors DAMAGE_TAKEN, written unconditionally.
+	_start()
+	var before: int = _save.lifetime_stat(LifetimeStats.COINS_COLLECTED)
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1, 0.0, 5)
+	assert_eq(_save.lifetime_stat(LifetimeStats.COINS_COLLECTED), before + 5,
+		"coins picked up before a missed target still count as collected")
+
+
+func test_zero_coins_collected_never_regresses_the_lifetime_ledger() -> void:
+	_start()
+	var before: int = _save.lifetime_stat(LifetimeStats.COINS_COLLECTED)
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(_save.lifetime_stat(LifetimeStats.COINS_COLLECTED), before,
+		"report_event_result's default coins_collected (0) writes nothing")
+
+
 # --- The between-stage pick: repair competes with a boost (stage 5) --------------
 
 func test_clearing_a_non_final_stage_offers_a_pick_instead_of_auto_repairing() -> void:

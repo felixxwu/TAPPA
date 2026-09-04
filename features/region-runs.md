@@ -14,7 +14,9 @@ challenge, which is the spine's *other* caller, is documented in
 
 **Stages 3-6 are landed:** the spine, region select + linear unlock, in-run boosts,
 and now the meta shop (boost LEVELS, car purchasing, the Engine Swap unlock) — see
-"The meta tier" below. Lifetime stats + perks are stage 7; coins are stage 8.
+"The meta tier" below. Lifetime stats + perks (stage 7) and coins (stage 8,
+[collectables.md](collectables.md)) are landed too — every stage of the pivot plan
+is now built.
 
 ## The pieces
 
@@ -55,7 +57,7 @@ inside the session:
 | Which stages? | `stages()` / `stage_count()` | rolled from the period key | drawn from the region's authored pool |
 | What must this stage be beaten in? | `stage_target_ms(i, track_result)` | `0` — no clock | reference-car optimum × `target_pace` |
 | Does this time end the run? | `stage_failed(i, elapsed, target)` | never | `elapsed > target` |
-| What does clearing it pay? | `stage_money(i, elapsed, target)` | `0` (paid once, at the end) | completion + fast bonus |
+| What does clearing it pay? | `stage_money(i, elapsed, target, coins)` | `0` (paid once, at the end) | completion + fast bonus + coin money |
 | What is persisted? | `to_record()` / `is_resumable(t)` | `{period_key, kind}`, stale once the period rolls | `{region_id, run_seed, stage_count}`, never stale |
 | What does a finished run record? | `record_outcome(result, t)` | the period's one-attempt outcome | the `regions_cleared` ledger (stage 4) |
 | Does clearing a stage offer a boost pick? | `offers_boost_pick()` / `boost_choices(i)` | never — repair stays automatic | always (unless it was the run's own final/failed stage) |
@@ -182,6 +184,7 @@ no `Save.lose_money`.
 ```
 stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_saved)
               * (1 + region_step * region_index)
+              + coins_collected * GameConfig.coin_money
 ```
 
 - **completion**, growing with stages cleared, so surviving deep into a run is where
@@ -190,10 +193,16 @@ stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_sa
   drive well rather than merely clear the clock;
 - **the region scale** (decision 31), so grinding an early region pays worse per unit
   time than progressing. That is what stops "farm region 1 forever" without taking the
-  repeatable-region grind valve away (decision 12).
-
-Coins (decision 13/35) are the third source and arrive in stage 8; they bank through
-this same stage-clear moment.
+  repeatable-region grind valve away (decision 12);
+- **coins** (decisions 13/35/36, stage 8 — see [collectables.md](collectables.md)),
+  added AFTER the region scale rather than inside it: a coin is worth a flat amount
+  everywhere, and the region scale's job is specifically to make progressing beat
+  grinding on the stage-clear reward, not on the collectable gamble sitting on top of
+  it. `RegionRunMode.stage_money(stage_index, elapsed_ms, target_ms, coins_collected)`
+  is where all four terms meet; `RunSession.report_event_result`'s third argument is
+  what carries `coins_collected` in from `CoinField.collected_count`, and only reaches
+  `stage_money` when the stage is NOT missed — a run that dies keeps its coin money
+  exactly like the rest of the stage's payout (decision 36).
 
 `Save.money()` / `add_money()` / `spend_money()` are the whole currency surface.
 `RunSession.money_earned()` is the run's own running tally, for the run summary.

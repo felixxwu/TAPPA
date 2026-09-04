@@ -1,6 +1,6 @@
 class_name RegionRunMode
 extends RunMode
-# Docs: features/region-runs.md, features/lifetime-stats.md — update in the same change as this file.
+# Docs: features/region-runs.md, features/lifetime-stats.md, features/collectables.md — update in the same change as this file.
 # Tests: tests/headless/test_region_run.gd, tests/headless/test_region_stage_pool.gd, tests/headless/test_boost_library.gd — extend in the same change.
 #
 # THE ROGUELIKE RUN (todo/roguelike-pivot.md) — caller TWO of `RunSession`. Eight
@@ -124,11 +124,14 @@ func stage_failed(_stage_index: int, elapsed_ms: int, target_ms: int) -> bool:
 
 
 # Banked the moment the stage is cleared (decision 36), so a run that dies on stage
-# 6 keeps everything stages 1-5 paid. Two of the pivot's three money sources live
-# here — a completion amount that grows with stages cleared, and a bonus
-# proportional to the time saved against the target. The third (coins) is stage 8's
-# and banks through the same stage-clear moment.
-func stage_money(stage_index: int, elapsed_ms: int, target_ms: int) -> int:
+# 6 keeps everything stages 1-5 paid. All three of the pivot's money sources live
+# here — a completion amount that grows with stages cleared, a bonus proportional to
+# the time saved against the target, and (stage 8) `coins_collected` * GameConfig
+# .coin_money. Coins are added AFTER the region scale, not inside it: a coin is
+# worth a flat amount everywhere — decision 31's "later region pays more" story is
+# about the stage-clear reward, not the collectable gamble on top of it.
+func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
+		coins_collected: int = 0) -> int:
 	var cfg: GameConfig = Config.data
 	var completion := cfg.run_stage_money_base \
 		* pow(cfg.run_stage_money_growth, float(maxi(0, stage_index)))
@@ -137,7 +140,8 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int) -> int:
 		var saved := clampf(float(target_ms - elapsed_ms) / float(target_ms), 0.0, 1.0)
 		bonus = cfg.run_fast_bonus_money * saved
 	var region_scale := 1.0 + cfg.run_money_region_step * float(region_index())
-	return maxi(0, int(round((completion + bonus) * region_scale)))
+	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money
+	return maxi(0, int(round((completion + bonus) * region_scale + coin_total)))
 
 
 # Record a CLEARED region on the profile. This is the ledger RegionLibrary.is_unlocked

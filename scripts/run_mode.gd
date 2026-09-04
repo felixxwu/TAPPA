@@ -72,8 +72,10 @@ func stage_failed(_stage_index: int, _elapsed_ms: int, _target_ms: int) -> bool:
 
 # Money banked the moment stage `stage_index` is CLEARED (decision 36 — at stage
 # clear, not at run end, so a run that dies later keeps it). Only called for a stage
-# that did NOT fail.
-func stage_money(_stage_index: int, _elapsed_ms: int, _target_ms: int) -> int:
+# that did NOT fail. `coins_collected` is that stage's coin pickups (0 for a mode
+# that never places any — the base implementation, and every challenge, ignore it).
+func stage_money(_stage_index: int, _elapsed_ms: int, _target_ms: int,
+		_coins_collected: int = 0) -> int:
 	return 0
 
 

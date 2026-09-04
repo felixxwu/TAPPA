@@ -57,11 +57,12 @@ func before_each() -> void:
 	var hud = _scene.get_node("HUD")
 	hud.hide_countdown()
 	hud.hide_off_road()  # also clears its change-gate, so the next show_off_road re-formats
-	for w in ["StageCompletePanel", "CutFlashLabel"]:
+	for w in ["StageCompletePanel", "CutFlashLabel", "CoinLabel"]:
 		var node := hud.get_node_or_null(w)
 		if node != null:
 			node.visible = false
 	hud._cut_flash_left = 0.0
+	hud._last_coin_count = -1  # so the next set_coin_count(0) re-formats
 	await get_tree().process_frame
 
 
@@ -238,6 +239,21 @@ func test_off_road_warning_shows_and_hides() -> void:
 	assert_true(label.visible, "and it does not fade out on its own")
 	hud.hide_off_road()
 	assert_false(label.visible, "hide_off_road takes it down")
+
+
+func test_coin_counter_starts_hidden_and_shows_on_first_call() -> void:
+	# A challenge (or a region stage whose layout rolled empty) never calls
+	# set_coin_count, so the readout must default to hidden — world.gd only reveals
+	# it on a region-run stage that actually placed coins.
+	var hud = _scene.get_node("HUD")
+	var label := hud.get_node("CoinLabel") as Label
+	assert_false(label.visible, "the coin counter starts hidden")
+	hud.set_coin_count(0)
+	assert_true(label.visible, "the first pickup call reveals it")
+	assert_eq(label.text, "Coins: 0", "and it can show zero collected so far")
+	hud.set_coin_count(2)
+	assert_eq(label.text, "Coins: 2", "a later call updates the count in place")
+	assert_true(label.visible, "and it stays up for the rest of the stage")
 
 
 func test_grip_text_formatting() -> void:

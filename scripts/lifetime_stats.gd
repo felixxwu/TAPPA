@@ -23,7 +23,8 @@ extends RefCounted
 # WHICH COUNTERS ARE ACTUALLY WRITTEN, AND WHERE (see each stat's own comment below
 # for the call site):
 #   wired    — STAGES_CLEARED, RUNS_STARTED, RUNS_FAILED, REGIONS_CLEARED_TOTAL,
-#              DAMAGE_TAKEN, MONEY_EARNED, MONEY_SPENT, BEST_REGION_ORDER
+#              DAMAGE_TAKEN, MONEY_EARNED, MONEY_SPENT, BEST_REGION_ORDER,
+#              COINS_COLLECTED
 #   declared but NOT YET WRITTEN — DISTANCE_DRIVEN_M (see its own comment: the
 #              odometer this would read, `TrackProgress.progress_offset()`, exists
 #              but nothing currently reports a stage's final distance to Save)
@@ -37,6 +38,7 @@ const MONEY_EARNED := "money_earned"
 const MONEY_SPENT := "money_spent"
 const DISTANCE_DRIVEN_M := "distance_driven_m"
 const BEST_REGION_ORDER := "best_region_order"
+const COINS_COLLECTED := "coins_collected"
 
 const STATS := {
 	STAGES_CLEARED: {
@@ -96,12 +98,20 @@ const STATS := {
 			"an earlier region must not count as progress. Written by " +
 			"RegionRunMode.record_outcome().",
 	},
+	COINS_COLLECTED: {
+		"label": "Coins collected",
+		"description": "Every coin picked up in any run, region stage cleared or " +
+			"missed alike (decision 35's off-line detour is scored even when the " +
+			"stage's own money doesn't bank — decision 36). Written by " +
+			"RunSession.report_event_result().",
+	},
 }
 
 # Every declared stat id, in table order — the STATS page's row order.
 const IDS: Array = [
 	STAGES_CLEARED, RUNS_STARTED, RUNS_FAILED, REGIONS_CLEARED_TOTAL,
 	DAMAGE_TAKEN, MONEY_EARNED, MONEY_SPENT, DISTANCE_DRIVEN_M, BEST_REGION_ORDER,
+	COINS_COLLECTED,
 ]
 
 

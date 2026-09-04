@@ -10,6 +10,11 @@ const BUSH_SEED_OFFSET := 1013
 # Distinct from BUSH_SEED_OFFSET for the same reason; the value is arbitrary, only its
 # difference matters.
 const ROCK_SEED_OFFSET := 2027
+# Coins get their own offset for the same reason — CoinLayout.plan is seeded off
+# `cfg.track_seed + COIN_SEED_OFFSET` (see _build_coins), so coin placement never
+# lands on the same RNG draws as trees/bushes/rocks despite sharing the one
+# per-stage seed. Arbitrary; only its difference from the others matters.
+const COIN_SEED_OFFSET := 3041
 
 # The two terrain shaders the floor material swaps between per stage, and the loading-window
 # frame caps, both now shared with overworld.gd via WorldRuntime (scripts/world_runtime.gd) —
@@ -873,6 +878,11 @@ func _place_world_props(cfg: GameConfig, result: Dictionary, road_centerline: Cu
 	if cfg.barriers_enabled:
 		_build_barriers(cfg, result)
 
+	# Stage coins (decisions 13, 35, 36, 50) — a REGION-RUN mechanic only. Placed
+	# off the road so a pickup costs time against the clock; see _build_coins.
+	if cfg.coins_enabled:
+		_build_coins(cfg, road_centerline, finish_len)
+
 	# Everything from here to the pre-warm used to be billed to the PREVIOUS stage
 	# label ("Placing signs"), because _stage() only closes a stage when the NEXT one
 	# opens and _end_load_timing() runs after _generate_track returns. That made signs
@@ -1186,6 +1196,41 @@ func _build_barriers(cfg: GameConfig, result: Dictionary) -> void:
 	field.build(layout, params, ground_at)
 
 
+# Stage coins (features/collectables.md, todo/roguelike-pivot.md decisions 13, 35,
+# 36, 50). A REGION-RUN mechanic only — mirrors the RunMode.CHALLENGE check above
+# (_generate_centerline) for the opposite case: a challenge has no per-stage money to
+# boost and no fail state to gamble against, so nothing is placed for it.
+#
+# Seeded off `cfg.track_seed + COIN_SEED_OFFSET` — the SAME per-stage seed every
+# other scattered prop derives from, which is what makes a resumed run reproduce the
+# identical layout (a resume redraws the same event from RegionStagePool, which
+# carries the same authored `seed`, which becomes track_seed again).
+func _build_coins(cfg: GameConfig, road_centerline: Curve2D, finish_len: float) -> void:
+	_coin_field = null
+	if not RunSession.is_active() or RunSession.mode_id() != RunMode.REGION:
+		return
+	var seed_value := cfg.track_seed + COIN_SEED_OFFSET
+	var layout := CoinLayout.plan(road_centerline, finish_len, cfg.track_width,
+		seed_value, cfg.coin_layout_params())
+	if layout.is_empty():
+		return
+	_replace_named_child("CoinField")
+	var field := CoinField.new()
+	field.name = "CoinField"
+	add_child(field)
+	field.build(layout, _floor(), $Car, cfg.coin_render_params())
+	field.coin_collected.connect(_on_coin_collected)
+	_coin_field = field
+	var hud_node := $HUD
+	hud_node.set_coin_count(0)
+
+
+# Live "coins taken this stage" HUD readout, on every pickup (CoinField.coin_collected).
+func _on_coin_collected(_index: int, total_collected: int) -> void:
+	var hud_node := $HUD
+	hud_node.set_coin_count(total_collected)
+
+
 # Finish + start arches: the inflatable gates straddling the road
 # (features/finish-arch.md). The FINISH gate sits at the END of the progress
 # centerline — i.e. exactly 100% track progress — so crossing it ends the stage
@@ -1421,6 +1466,12 @@ var _track_progress: TrackProgress
 # The rendered road/progress centerline from the latest generation (lead-in +
 # runoff included) — kept for the benchmark runner's pursuit line.
 var _road_centerline: Curve2D
+
+# This stage's coins (features/collectables.md), null when none were built — not a
+# region run (RunSession.mode_id() != RunMode.REGION), coins_enabled is off, or
+# coins_per_stage rolled an empty layout. Read at stage end for
+# RunSession.report_event_result's coins_collected argument.
+var _coin_field: CoinField = null
 
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).
@@ -1743,7 +1794,11 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	if _replay_recorder != null:
 		_replay_recorder.stop()
 	var elapsed_ms := int(round(elapsed_seconds * 1000.0))
-	RunSession.report_event_result(elapsed_ms, hp_lost)
+	# Coins collected THIS stage (0 when none were built — a challenge, or a region
+	# stage that rolled an empty layout). Banking is RunSession/RegionRunMode's call
+	# (decision 36 — only on a stage that isn't missed); this just reports the count.
+	var coins_collected := _coin_field.collected_count if _coin_field != null else 0
+	RunSession.report_event_result(elapsed_ms, hp_lost, coins_collected)
 
 
 func _on_stage_started() -> void:

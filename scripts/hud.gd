@@ -1,5 +1,5 @@
 extends CanvasLayer
-# Docs: features/hud.md, features/stage.md — update in the same change as this file.
+# Docs: features/hud.md, features/stage.md, features/collectables.md — update in the same change as this file.
 # Tests: tests/headless/test_hud.gd, tests/headless/test_hud_gauge.gd, tests/headless/test_start_line.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'hud' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # On-screen readout of the car's airspeed — the chassis velocity magnitude,
 # not wheel rotation, so wheelspin and lockup don't affect the number.
@@ -79,6 +79,14 @@ var _off_road_label: Label
 # Last countdown TENTH shown, so show_off_road only re-formats when the displayed
 # value moves (-1 = nothing shown yet), matching the run timer's discipline.
 var _last_off_road_tenths := -1
+# "Coins taken this stage" (features/collectables.md) — a live top-right counter,
+# the mirror image of the top-left speed/gear readout. Hidden until world.gd's
+# _build_coins actually places coins on a region-run stage (a challenge, or a stage
+# whose layout rolled empty, never calls set_coin_count and the label stays hidden).
+var _coin_label: Label
+# Last displayed count, so set_coin_count only re-formats on an actual change,
+# matching every other readout's discipline.
+var _last_coin_count := -1
 # Rally pacenote strip (features/hud.md): a row of turn boards along the top — the
 # current turn (arrow + grade, full opacity) with the upcoming turns queued, dimmer,
 # to its right. Reads left-to-right and slides left as corners are passed. Built in
@@ -231,6 +239,7 @@ func _ready() -> void:
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_cut_flash_label()
 	_build_off_road_label()
+	_build_coin_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
 	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
 	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
@@ -429,6 +438,37 @@ func show_off_road(seconds_left: float) -> void:
 func hide_off_road() -> void:
 	_off_road_label.visible = false
 	_last_off_road_tenths = -1
+
+
+# "Coins taken this stage" (features/collectables.md): top-right, mirroring the
+# top-left speed/gear stack. Starts hidden — world.gd only calls set_coin_count on a
+# region-run stage that actually placed coins, so a challenge (or a stage whose
+# layout rolled empty) never shows it.
+func _build_coin_label() -> void:
+	_coin_label = Label.new()
+	_coin_label.name = "CoinLabel"
+	_coin_label.anchor_left = 1.0
+	_coin_label.anchor_right = 1.0
+	_coin_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_coin_label.offset_left = -108.0
+	_coin_label.offset_top = 8.0
+	_coin_label.offset_right = -8.0
+	_coin_label.offset_bottom = 28.0
+	_coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_coin_label.add_theme_font_size_override("font_size", UITheme.px(14))
+	_coin_label.add_theme_color_override("font_color", UITheme.GOLD)
+	_coin_label.visible = false
+	add_child(_coin_label)
+
+
+# Show/update the coin counter, revealing it on first call. Change-gated on the
+# count itself, matching every other readout's discipline.
+func set_coin_count(count: int) -> void:
+	_coin_label.visible = true
+	if count == _last_coin_count:
+		return
+	_last_coin_count = count
+	_coin_label.text = "Coins: %d" % count
 
 
 # Corner-cut flash: a small top-centre tag, on its own row under the pacenote strip

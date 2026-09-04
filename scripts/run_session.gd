@@ -1,5 +1,5 @@
 extends Node
-# Docs: features/rally-challenge.md, features/region-runs.md, features/lifetime-stats.md — update in the same change as this file.
+# Docs: features/rally-challenge.md, features/region-runs.md, features/lifetime-stats.md, features/collectables.md — update in the same change as this file.
 # Tests: tests/headless/test_challenge_session.gd, tests/headless/test_region_run.gd, tests/headless/test_challenge_run_end.gd — extend in the same change.
 #
 # Autoload "RunSession" — the ONE session type in the game. A run is N sequential
@@ -425,7 +425,7 @@ func _clear_persisted() -> void:
 #
 # Does its OWN local bookkeeping only — it does not talk to the cloud board itself;
 # that happens in the interstitial page via Cloud.challenge_leaderboard.
-func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
+func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected: int = 0) -> void:
 	if not _active or not _stage_running:
 		return
 	_stage_running = false
@@ -435,6 +435,11 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 		# Rounded to the nearest whole point — the lifetime counter is an int ledger,
 		# same as money (todo/roguelike-pivot.md "Lifetime global stats").
 		Save.add_lifetime_stat(LifetimeStats.DAMAGE_TAKEN, int(round(hp_lost)))
+	if coins_collected > 0:
+		# Counted UNCONDITIONALLY, like DAMAGE_TAKEN above — a coin picked up on a
+		# missed stage was still a real detour the player drove (decision 35's
+		# gamble), even though decision 36 means the MONEY for it doesn't bank below.
+		Save.add_lifetime_stat(LifetimeStats.COINS_COLLECTED, coins_collected)
 	# THE ONE FAIL STATE (decision 4), asked of the mode BEFORE the cursor moves so
 	# the failing stage's own index is what is judged. A challenge always says no.
 	var driven_index := _stage_index
@@ -444,8 +449,9 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if not missed:
 		Save.add_lifetime_stat(LifetimeStats.STAGES_CLEARED)
 		# MONEY BANKS AT STAGE CLEAR, not at run end (decision 36), so a run that dies
-		# later keeps everything the earlier stages paid.
-		var earned := _mode.stage_money(driven_index, elapsed_ms, _stage_target_ms)
+		# later keeps everything the earlier stages paid — coins included: a missed
+		# stage's coins earn the lifetime credit above but pay nothing here.
+		var earned := _mode.stage_money(driven_index, elapsed_ms, _stage_target_ms, coins_collected)
 		if earned > 0:
 			_money_earned += earned
 			Save.add_money(earned)

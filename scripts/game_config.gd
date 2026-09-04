@@ -3424,6 +3424,35 @@ func barrier_render_params() -> Dictionary:
 	}
 
 
+# The scalar knobs CoinLayout.plan expects (features/collectables.md). Kept apart
+# from coin_render_params below exactly like tree_params/rock_params vs
+# sign_render_params/barrier_render_params — placement inputs vs. build/look inputs.
+func coin_layout_params() -> Dictionary:
+	return {
+		"count": coins_per_stage,
+		"offset_m": coin_offset_m,
+		"offset_jitter_m": coin_offset_jitter_m,
+		"start_margin_m": coin_start_margin_m,
+		"end_margin_m": coin_end_margin_m,
+	}
+
+
+# Everything CoinField.build needs to render + sound a stage's coins. Deliberately
+# does NOT include coin_pickup_radius_m — CoinField reads that live, every tick, so
+# the later coin_magnet perk pass has one number to widen (see that field's comment).
+func coin_render_params() -> Dictionary:
+	return {
+		"radius_m": coin_visual_radius_m,
+		"thickness_m": coin_visual_thickness_m,
+		"hover_m": coin_hover_m,
+		"color": coin_color,
+		"pickup_sfx_freq_hz": coin_pickup_sfx_freq_hz,
+		"pickup_sfx_duration_sec": coin_pickup_sfx_duration_sec,
+		"render_distance_m": tree_render_distance_m,
+		"render_fade_m": tree_render_fade_m,
+	}
+
+
 # Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
 # bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
 # the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
@@ -3947,6 +3976,62 @@ func spectator_params() -> Dictionary:
 ## entries: this is deliberately sized to afford the cheapest tier of starter-grade cars (see
 ## that field's own comment), not a mid-tier one.
 @export_range(0.0, 20000.0, 100.0) var run_starting_money := 2600.0
+
+
+@export_group("Roguelike Collectables")
+# Coins — RR's collectables (decisions 13, 35, 36, 50, stage 8 of
+# todo/roguelike-pivot-plan.md). Placed by CoinLayout.plan (scripts/coin_layout.gd),
+# built + policed by CoinField (scripts/coin_field.gd), wired in world.gd's
+# _build_coins — a REGION-RUN mechanic only (RunSession.mode_id() == RunMode.REGION);
+# a challenge run never spawns them. See features/collectables.md.
+#
+# OFF THE RACING LINE, ON PURPOSE (decision 35): coin_offset_m is a FLOOR beyond the
+# visible road edge, not a look-and-feel knob — 0 would let a coin sit reachable
+# without leaving the road, defeating the whole mechanic.
+#
+# NO SIGNPOSTING (decision 50, amending 35): there is deliberately no "warning
+# distance" field here, and none should be added — a coin is met by driving into it,
+# never flagged ahead on the pacenote strip or anywhere else.
+## Master switch, mirroring signs_enabled/rocks_enabled. Off places no coins at all.
+@export var coins_enabled := true
+## How many coins CoinLayout places on one stage, before any future perk multiplier.
+## PerkLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
+## (decision 51 wires perk effects after this stage) — nothing reads this through a
+## perk today.
+@export_range(0, 12) var coins_per_stage := 4
+## Minimum lateral distance (m) a coin's centre sits BEYOND the visible road edge
+## (track_width / 2). This is the gamble decision 35 wants: a coin is never
+## reachable without actually leaving the road.
+@export_range(0.0, 8.0) var coin_offset_m := 2.0
+## Extra random spread (m) added on top of coin_offset_m, so coins land anywhere in
+## [edge + coin_offset_m, edge + coin_offset_m + this] rather than all on one fixed
+## line parallel to the road.
+@export_range(0.0, 8.0) var coin_offset_jitter_m := 2.5
+## Arc-length (m) kept clear of the start line — no coin in the opening straight.
+@export_range(0.0, 200.0) var coin_start_margin_m := 40.0
+## Arc-length (m) kept clear of the finish — no coin in the closing straight.
+@export_range(0.0, 200.0) var coin_end_margin_m := 40.0
+## Pickup trigger radius (m). Read LIVE by CoinField every physics tick, never
+## cached — see that script's header. THE SINGLE FINDABLE VALUE the later
+## "coin_magnet" perk pass (decision 51, "wider coin pickup radius") widens.
+@export_range(0.1, 5.0) var coin_pickup_radius_m := 1.4
+## Money paid per coin collected, banked at STAGE CLEAR alongside the rest of that
+## stage's payout (decision 36) — see RegionRunMode.stage_money. A missed stage's
+## coins pay nothing, same as the rest of that stage's money.
+@export_range(0.0, 500.0) var coin_money := 40.0
+## Visual radius (m) of the coin disc mesh.
+@export_range(0.05, 1.5) var coin_visual_radius_m := 0.32
+## Visual thickness (m) of the coin disc mesh.
+@export_range(0.01, 0.5) var coin_visual_thickness_m := 0.08
+## Height (m) a coin hovers above the road-adjacent ground it's placed on.
+@export_range(0.0, 2.0) var coin_hover_m := 0.5
+## Coin disc colour.
+@export var coin_color := Color(0.97, 0.80, 0.13)
+## Pitch (Hz) of the pickup chime. Deliberately set apart from sfx_beep_frequency_hz
+## (the standard cue default) so a coin reads as its own distinct, brighter sound.
+@export var coin_pickup_sfx_freq_hz := 1600.0
+## Length (s) of the pickup chime.
+@export_range(0.02, 1.0) var coin_pickup_sfx_duration_sec := 0.1
 
 
 @export_group("Roguelike Run Boosts")

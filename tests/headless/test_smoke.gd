@@ -164,6 +164,68 @@ func test_a_challenge_stage_stages_the_start_line_like_a_rally_event() -> void:
 	CarFixtures.restore()
 
 
+func test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter() -> void:
+	# The real world.gd._build_coins wiring (features/collectables.md): a REGION run
+	# (not a challenge — see the two tests above, which cover that gate's other arm)
+	# builds a CoinField and reveals the HUD's coin counter. minimal_world() keeps this
+	# cheap (1-turn track, no trees) — coins don't need turns or foliage to place.
+	SceneTestHelpers.minimal_world()
+	# A 1-turn minimal track can be shorter than the default start/end margins, which
+	# would leave CoinLayout no usable arc length and place nothing — zero them so
+	# this test's outcome depends on the WIRING, not on how those two unrelated
+	# tunables (a full track's length vs. the margins) happen to interact today.
+	Config.data.coin_start_margin_m = 0.0
+	Config.data.coin_end_margin_m = 0.0
+	CarFixtures.install()
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	RunSession.auto_load_scenes = false
+	assert_true(RunSession.start_region("home", owned, 20260904), "setup: the run starts")
+	assert_false(RunSession.current_stage_params().is_empty(),
+		"setup: the active run has a real stage 0 to generate")
+
+	var scene: Node3D = load("res://main.tscn").instantiate()
+	add_child(scene)
+	await get_tree().physics_frame  # let world._ready() generate + apply + build
+
+	var coin_field: Node = scene.get_node_or_null("CoinField")
+	assert_not_null(coin_field, "a region-run stage builds a CoinField")
+	assert_eq(int(coin_field.get("coin_count")), int(Config.data.coins_per_stage),
+		"it places exactly coins_per_stage coins")
+	var hud: Node = scene.get_node("HUD")
+	var coin_label := hud.get_node("CoinLabel") as Label
+	assert_true(coin_label.visible, "the HUD counter is revealed once coins are placed")
+	assert_eq(coin_label.text, "Coins: 0", "and starts at zero collected")
+
+	scene.free()
+	_leave_run()
+	CarFixtures.restore()
+	Config.reset()  # undo minimal_world()'s 1-turn / no-foliage overrides
+
+
+func test_a_challenge_stage_builds_no_coin_field() -> void:
+	# The opposite arm of the gate above: a challenge has no per-stage money to boost
+	# and no fail state to gamble against (features/collectables.md), so nothing is
+	# placed for it even though coins_enabled stays on.
+	SceneTestHelpers.minimal_world()
+	CarFixtures.install()
+	var owned: Dictionary = Save.grant_car("fx_light_rwd")
+	RunSession.auto_load_scenes = false
+	Save.profile["challenge_results"] = {}
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
+		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
+
+	var scene: Node3D = load("res://main.tscn").instantiate()
+	add_child(scene)
+	await get_tree().physics_frame
+
+	assert_null(scene.get_node_or_null("CoinField"), "a challenge stage places no coins")
+
+	scene.free()
+	_leave_run()
+	CarFixtures.restore()
+	Config.reset()
+
+
 func test_spectator_groups_spawn_and_are_not_obstacles() -> void:
 	# The world places roadside spectator crowds (todo/roadside-spectators.md).
 	# At least one group should exist with standing members, and spectators must
