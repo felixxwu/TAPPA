@@ -118,10 +118,14 @@ Settled with the user during the brainstorm that produced this file:
     legacy backfill keys. No migration is written for the pivot, so a pre-pivot
     profile resets whatever its version.
 35. **Coins are placed OFF the racing line**, as a real gamble against the clock
-    rather than a reward for a good line. They must be **signposted far enough
-    ahead to commit or decline** — an unseen coin on a procedurally-drawn stage
-    is a memory test, not a decision. The existing pacenote strip
-    (`hud_pacenotes_enabled`, `features/hud.md`) is the natural place to flag one.
+    rather than a reward for a good line.
+
+    **AMENDED (decision 50): pacenote signposting is DROPPED.** This decision
+    originally required coins to be signposted far enough ahead to commit or
+    decline, on the grounds that an unseen coin on a procedurally-drawn stage is a
+    memory test rather than a decision. That reasoning still stands and the
+    consequence is accepted: a first run through a stage will not see a coin
+    coming. Off-line placement survives; only the warning goes.
 36. **Coin money banks at stage clear**, not at run end. This follows from
     decision 14 (a failed run keeps its money) rather than being a separate
     choice: with off-line placement the detour already risks the run, and losing
@@ -173,6 +177,20 @@ Settled with the user during the brainstorm that produced this file:
     "Gran Turismo, but with rally stages" and cited a "final showdown"). Every agent
     reads that file. `README.md` is deliberately NOT changed yet, and `main` stays
     parked until the loop is playable end to end.
+
+50. **Coin signposting is dropped** (amends decision 35). Coins are not flagged on
+    the pacenote strip or anywhere else; a player meets them by driving the stage.
+    The cost is stated plainly rather than glossed: on a first run a coin is a
+    reaction, not a planned detour, and the "commit or decline" framing decision 35
+    argued for does not survive. Accepted deliberately.
+51. **Perks are wired to real effects AFTER stage 8, not during stage 7.** Stage 7
+    shipped the gate/purchase/equip model with every perk INERT — an equipped perk
+    changes nothing, while its authored description promises that it does. That is a
+    visible defect, not merely an unimplemented feature, and it is fixed in one pass
+    once collectables exist: `coin_magnet` cannot work before there are coins, so
+    wiring the set twice would be the alternative. The seam is
+    `UpgradeLibrary.EFFECTS` + a car's `boosts` list; do not build a parallel
+    modifier path.
 
 ## The new loop, end to end
 
