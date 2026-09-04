@@ -37,10 +37,18 @@ const DEFAULT_TREE_MIX: Array = [
 	{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
 ]
 
-# The four authored corners of the world map. ORDER CARRIES NO MEANING — regions do not
-# unlock in sequence and there is no "final" region (credits fire once every special event
-# is won, see RallyLibrary.all_specials_completed), so do NOT re-introduce any ordering
-# dependency. Regions gate nothing: a region's only job is its LOOK and its waterline.
+# The authored regions. Each is a run's unit of content: you pick one, drive its eight
+# stages, and clearing it unlocks the next (todo/roguelike-pivot.md).
+#
+# ORDER IS AUTHORED, ON THE `order` FIELD — never on array position. This used to say
+# order carried no meaning at all, which was true of the old world map; the roguelike
+# pivot's linear unlock changed that, and the FIELD is how it changed. Array position
+# stays meaningless: reorder these entries freely, and read `order_of()` / `ordered()`
+# rather than `index_of()` anywhere progression, difficulty or payout depends on how far
+# through the game a region sits.
+#
+# `order` must be unique and contiguous from 0. Region 0 is the one a new player starts
+# with; every other region is gated on the one before it being cleared.
 #
 # NEVER INVENT AN ASSET FILENAME. Every res:// path authored here must be a file that
 # already exists — the -greece/-snow naming convention makes made-up names look right,
@@ -94,7 +102,7 @@ const REGIONS: Array[Dictionary] = [
 	# other look field inherits the scene (main.tscn / hq_environment) + GameConfig
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
-		"id": "home", "name": "Rally Country",
+		"id": "home", "order": 0, "name": "Rally Country",
 		"water_level": -12.0,
 		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
 		# authored card (7.5 -> 9.375 m). Done HERE, on the species, rather than by
@@ -117,7 +125,7 @@ const REGIONS: Array[Dictionary] = [
 	},
 	# The same forest look with the sea raised — a lakeland / forested shore.
 	{
-		"id": "home_coast", "name": "The Lakes",
+		"id": "home_coast", "order": 1, "name": "The Lakes",
 		"look_from": "home",
 		"water_level": -5.0,
 	},
@@ -146,7 +154,7 @@ const REGIONS: Array[Dictionary] = [
 	# of empty ground that wants filling — the opposite of Greece and the Alps, which
 	# both drop ground cover.
 	{
-		"id": "taiga", "name": "The Taiga",
+		"id": "taiga", "order": 2, "name": "The Taiga",
 		"look_from": "home",
 		"water_level": -12.0,
 		"tree_mix": [
@@ -166,7 +174,7 @@ const REGIONS: Array[Dictionary] = [
 	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
-		"id": "greece", "name": "Greece",
+		"id": "greece", "order": 3, "name": "Greece",
 		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
@@ -186,7 +194,7 @@ const REGIONS: Array[Dictionary] = [
 	},
 	# The same arid look with the sea raised — the Mediterranean shoreline.
 	{
-		"id": "greece_coast", "name": "The Coast",
+		"id": "greece_coast", "order": 4, "name": "The Coast",
 		"look_from": "greece",
 		"water_level": -5.0,
 	},
@@ -202,7 +210,7 @@ const REGIONS: Array[Dictionary] = [
 	# grass_particle_color turns the wheel spray white — the home green would read as
 	# grass blades flung off a snowfield.
 	{
-		"id": "snow", "name": "The Alps",
+		"id": "snow", "order": 5, "name": "The Alps",
 		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",
@@ -318,6 +326,59 @@ static func index_of(id: String) -> int:
 
 static func id_at(i: int) -> String:
 	return String(all()[i].get("id", ""))
+
+
+# --- Progression order (todo/roguelike-pivot.md) ------------------------------
+
+# How far through the game this region sits, from its AUTHORED `order` field. -1 for an
+# unknown id. Read this, never index_of(): array position is deliberately meaningless and
+# a reorder of the table above must not silently re-rank the game.
+static func order_of(id: String) -> int:
+	var region := by_id(id)
+	if region.is_empty():
+		return -1
+	return int(region.get("order", -1))
+
+
+# Every region sorted by `order`. The progression, in the order a player meets it.
+static func ordered() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for region in all():
+		out.append(region)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("order", 0)) < int(b.get("order", 0)))
+	return out
+
+
+# Whether `id` is open to the player. Region 0 always is — a new profile has to be able
+# to start somewhere. Every other region is gated on the region immediately before it in
+# `order` being in the profile's cleared ledger.
+#
+# Gated on the PREVIOUS region only, not on all of them: that keeps the rule "clear a
+# region, the next one opens" true even if the ledger is missing an older entry (a save
+# edited by hand, a region added between the two).
+static func is_unlocked(id: String, profile: Dictionary) -> bool:
+	var pos := order_of(id)
+	if pos <= 0:
+		return pos == 0
+	var cleared: Array = profile.get(Save.KEY_REGIONS_CLEARED, [])
+	for region in all():
+		if int(region.get("order", -1)) == pos - 1:
+			return cleared.has(String(region.get("id", "")))
+	return false
+
+
+# The region that must be cleared to open `id`, or "" when it is already open (or unknown).
+# The region page shows this next to a locked entry, so the gate is legible rather than a
+# row the player cannot press for reasons nobody explains.
+static func gate_for(id: String) -> String:
+	var pos := order_of(id)
+	if pos <= 0:
+		return ""
+	for region in all():
+		if int(region.get("order", -1)) == pos - 1:
+			return String(region.get("name", region.get("id", "")))
+	return ""
 
 # The region's authored waterline in metres, or 0.0 when it authors none — ALWAYS
 # pair a call with has_water_level(), because callers resolve

@@ -154,3 +154,83 @@ func test_starting_a_run_with_nothing_paused_does_not_ask() -> void:
 	assert_null(ConfirmPopup.any_open(get_tree()),
 		"nothing to lose, so nothing to confirm")
 	assert_true(RunSession.is_active(), "and the run starts")
+
+
+# --- Linear region unlock (stage 4) -------------------------------------------
+
+# A locked region is on the page, named, and says what opens it — but is not focusable, so
+# the keyboard cannot land on a row it can never press. Asserts the RULE against a
+# synthetic order rather than the shipped table: which region is second is authored data a
+# designer may reorder freely.
+func test_a_locked_region_is_shown_but_not_focusable() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_first", "order": 0, "name": "First"},
+		{"id": "fx_second", "order": 1, "name": "Second"},
+	] as Array[Dictionary])
+	_shell._show(HubShell.View.REGION)
+	await get_tree().process_frame
+
+	# UITheme.enforce uppercases button text, so compare case-insensitively rather than
+	# pinning the presentation.
+	var texts: Array[String] = []
+	for b in _page().find_children("*", "Button", true, false):
+		texts.append(String((b as Button).text).to_upper())
+	var joined := " | ".join(texts)
+	assert_true(joined.contains("SECOND"), "the locked region is still listed")
+	assert_true(joined.contains("FIRST"), "and it names what opens it")
+
+	for b in _buttons():
+		assert_false(String((b as Button).text).to_upper().contains("LOCKED"),
+			"a locked row is not focusable — the keyboard cannot land on it")
+	RegionLibrary.reset()
+
+
+func test_clearing_a_region_unlocks_the_next() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_first", "order": 0, "name": "First"},
+		{"id": "fx_second", "order": 1, "name": "Second"},
+	] as Array[Dictionary])
+	assert_false(RegionLibrary.is_unlocked("fx_second", _save.profile),
+		"setup: the second region starts locked")
+	assert_true(RegionLibrary.is_unlocked("fx_first", _save.profile),
+		"the first region is always open — a new profile must be able to start somewhere")
+
+	_save.profile[_save.KEY_REGIONS_CLEARED] = ["fx_first"]
+	assert_true(RegionLibrary.is_unlocked("fx_second", _save.profile),
+		"clearing the first opens the second")
+	RegionLibrary.reset()
+
+
+# The ledger is what unlock reads, so only a run that cleared EVERY stage may write it.
+func test_only_a_completed_run_records_the_region_as_cleared() -> void:
+	var mode := RegionRunMode.for_region("home")
+	mode.record_outcome({"completed": false, "stages_completed": 5}, 0)
+	assert_false((_save.profile[_save.KEY_REGIONS_CLEARED] as Array).has("home"),
+		"a run stopped by the clock has not cleared the region, however far it got")
+
+	mode.record_outcome({"completed": true}, 0)
+	assert_true((_save.profile[_save.KEY_REGIONS_CLEARED] as Array).has("home"),
+		"clearing every stage records it")
+
+	mode.record_outcome({"completed": true}, 0)
+	assert_eq((_save.profile[_save.KEY_REGIONS_CLEARED] as Array).count("home"), 1,
+		"a region stays replayable, so a second clear must not duplicate the entry")
+
+
+# The invariant RegionLibrary's own header states: array position carries no meaning, so
+# progression must read the authored `order` field. Reversing the table must not re-rank
+# the game.
+func test_progression_reads_the_authored_order_not_array_position() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_late", "order": 1, "name": "Late"},
+		{"id": "fx_early", "order": 0, "name": "Early"},
+	] as Array[Dictionary])
+	assert_eq(RegionLibrary.order_of("fx_early"), 0,
+		"the first region is the one authored order 0, not the one listed first")
+	assert_true(RegionLibrary.is_unlocked("fx_early", _save.profile))
+	assert_false(RegionLibrary.is_unlocked("fx_late", _save.profile))
+	assert_eq(String(RegionLibrary.ordered()[0].get("id", "")), "fx_early",
+		"ordered() sorts by the field, not by table position")
+	assert_eq(RegionRunMode.for_region("fx_late").region_index(), 1,
+		"and the run's difficulty/payout rank comes from the same field")
+	RegionLibrary.reset()

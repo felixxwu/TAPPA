@@ -135,13 +135,32 @@ func _resume_run() -> void:
 
 # --- REGION ------------------------------------------------------------------
 
+# Regions in AUTHORED order (RegionLibrary.ordered), not table order — the table's own
+# header says array position is meaningless, and the player meets these in progression
+# order or the list is nonsense.
+#
+# A locked region is SHOWN, named, and says what opens it. Hiding it would leave a new
+# player with one row and no idea the game continues; showing it unpressable with no
+# explanation is worse. Its button is disabled, so MenuNav skips it and the keyboard
+# cannot land on a dead row.
 func _build_region() -> void:
 	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
-	for region in RegionLibrary.all():
+	for region in RegionLibrary.ordered():
 		var id := String(region.get("id", ""))
 		if id == "":
 			continue
 		var region_name := String(region.get("name", id))
+		if not RegionLibrary.is_unlocked(id, Save.profile):
+			var gate := RegionLibrary.gate_for(id)
+			var locked := _row("%s — locked (clear %s)" % [region_name, gate],
+				func() -> void: pass)
+			locked.disabled = true
+			# The framework's own opt-out. Setting focus_mode here would be undone:
+			# MenuNav.attach runs AFTER this build and re-enables focus on every
+			# BaseButton it finds, skipping only those carrying this meta.
+			locked.set_meta("menu_nav_skip", true)
+			locked.focus_mode = Control.FOCUS_NONE
+			continue
 		var mark := " — cleared" if cleared.has(id) else ""
 		_row(region_name + mark, func() -> void:
 			_pending_region = id

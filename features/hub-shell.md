@@ -29,7 +29,7 @@ page can never sit under the tree still claiming input.
 | Page | Offers |
 | --- | --- |
 | `MAIN` | Money, **Resume run** (only when one is paused), New run, Quit |
-| `REGION` | Every region, marked when cleared |
+| `REGION` | Every region in AUTHORED order, marked when cleared; locked ones named with their gate |
 | `CAR` | Every owned car; a note when the profile has none |
 | `SUMMARY` | Stages cleared, money earned, per-stage times |
 
@@ -48,6 +48,21 @@ has a `MenuNav` and at least one focusable control.
 The test file pins the **screen graph and the navigation**, and deliberately nothing about
 looks, wording or button order — stages 4–8 rewrite all of that, and a layout assertion
 would break on each of those stages while proving nothing.
+
+## Locked regions are shown, not hidden
+
+Regions unlock linearly: region `order` 0 is always open, every other is gated on the one
+before it being in `Save.KEY_REGIONS_CLEARED`. The page lists them via
+`RegionLibrary.ordered()` — **never array position**, which that table's header states
+carries no meaning.
+
+A locked region stays on the page, named, saying what opens it. Hiding it leaves a new
+player with one row and no idea the game continues; showing it unpressable with no
+explanation is worse. Its button is `disabled` **and carries the `menu_nav_skip` meta** —
+that meta is the framework's own opt-out, and it is required rather than optional:
+`MenuNav.attach` runs *after* the page is built and re-enables focus on every `BaseButton`
+it finds, so setting `focus_mode` alone is silently undone and the keyboard lands on a dead
+row.
 
 ## The run summary is one-shot
 

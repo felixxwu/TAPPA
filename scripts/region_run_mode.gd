@@ -82,15 +82,13 @@ func to_record() -> Dictionary:
 	return {"region_id": region_id, "run_seed": run_seed, "stage_count": _stage_count}
 
 
-# The region's position in the unlock order, used by BOTH the pace ramp and the
-# money scale. Reads the catalogue's array index today. STAGE 4 REPLACES THIS with
-# the authored `order` field decision 2 needs — `RegionLibrary.REGIONS`'s own header
-# says array order carries no meaning, and `override_for_test` lets a test pass an
-# arbitrary array, so this is a placeholder that must not outlive the region-select
-# stage. Clamped at 0 so an unknown id (index_of -> -1) reads as the first region
-# rather than making an unknown region the EASIEST and best-paid one.
+# How far through the game this region sits — its AUTHORED `order`, not its position in
+# the REGIONS array. The array's order is deliberately meaningless (RegionLibrary's header
+# says so), so reading index_of() here made a table reorder silently re-rank difficulty
+# and payout. Clamped at 0 so an unknown id reads as the FIRST region rather than as the
+# hardest and best-paid one.
 func region_index() -> int:
-	return maxi(0, RegionLibrary.index_of(region_id))
+	return maxi(0, RegionLibrary.order_of(region_id))
 
 
 # The multiplier applied to the reference-car optimum to get this stage's target.
@@ -140,3 +138,21 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int) -> int:
 		bonus = cfg.run_fast_bonus_money * saved
 	var region_scale := 1.0 + cfg.run_money_region_step * float(region_index())
 	return maxi(0, int(round((completion + bonus) * region_scale)))
+
+
+# Record a CLEARED region on the profile. This is the ledger RegionLibrary.is_unlocked
+# reads, so it is what actually opens the next region.
+#
+# Only a run that cleared every stage counts: a run stopped by the clock has not cleared
+# the region, however far it got. Deliberately idempotent (a region is listed once), since
+# a region stays replayable after it is cleared — decision 45 leaves every region unlocked
+# and repeatable, so a second clear must not append a duplicate.
+func record_outcome(result: Dictionary, _unix_time: int) -> void:
+	if not bool(result.get("completed", false)):
+		return
+	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
+	if cleared.has(region_id):
+		return
+	cleared.append(region_id)
+	Save.profile[Save.KEY_REGIONS_CLEARED] = cleared
+	Save.save_now()

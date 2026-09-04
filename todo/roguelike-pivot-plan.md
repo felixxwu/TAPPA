@@ -557,6 +557,14 @@ brings its own tests and `features/` doc.
 
 | Stage | Work | Gate |
 | --- | --- | --- |
+> **Stage 4 is SPLIT.** Its code half is DONE: the authored `order` field on `REGIONS`,
+> `RegionLibrary.order_of` / `ordered()` / `is_unlocked()` / `gate_for()`, the ledger write
+> in `RegionRunMode.record_outcome`, and the region page's locked rows. The AUTHORING half
+> — writing real events for `greece_coast` (3), `home_coast` (12) and `taiga` (15) — is
+> still outstanding and is a design job, not an agent's: decision 46 chose authored events
+> over repeats precisely because a human verifies they route cleanly. `greece_coast` is
+> unplayable until it has 8.
+
 | 4 | Region select + linear unlock (`order` field on `REGIONS`, `regions_cleared` ledger). **Plus the stage-pool authoring pass** to 16 events: `greece_coast` (3), `home_coast` (12), `taiga` (15). | Every region reachable in order; every region's pool ≥ 16; nav test |
 | 5 | In-run boosts + repair pick between stages, through the retained `UpgradeLibrary` effects funnel, wiped on run end | A run's boosts do not survive into the next; repair competes with a boost; nav test |
 | 6 | Meta shop — boost levels (with per-level effect ranges, decision 42), car purchasing, engine-swap unlock | Money buys each; boost level changes the magnitude of a drawn pick; nav test |
