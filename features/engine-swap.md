@@ -6,10 +6,13 @@ the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 `effective_meta` feed-through in `scripts/upgrade_library.gd`, the
 `engine_detune` scaling read by `TuningLibrary.apply` in
 `scripts/tuning_library.gd` (detune is stored in the per-car `tuning` bag but is
-**not** a `TuningLibrary.AXES` entry), the `engine` and `tune` tiles on the upgrades grid
-(`scripts/upgrades_grid.gd` / `scripts/upgrade_options.gd` / `scripts/upgrade_slot_popup.gd`),
-and the car-park swap-mode UI in
-`scripts/hq.gd`.
+**not** a `TuningLibrary.AXES` entry), and the unlock purchase in
+`scripts/save_manager.gd` (`buy_engine_swap_unlock`).
+
+**There is no UI.** Every screen this doc used to describe — the upgrades grid's `engine`
+and `tune` tiles, the car-park swap mode with its two-way hp/tonne preview, the garage
+action row — went with the parts model and the diegetic hub. What remains is the whole
+mechanism plus the shop row that unlocks it.
 
 **Tests:** `tests/headless/test_engine_swap.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_upgrade_library.gd`
 
@@ -276,103 +279,33 @@ fielding time (step 3, after upgrades): `cfg.peak_torque *= clampf(detune, 0, 1)
 run last so it scales whatever torque the swapped engine + upgrade kits
 produced. See [tuning.md](tuning.md) for the full axis table.
 
-## UI
+## The UI is gone; here is what a rebuild owes
 
-- **Upgrades grid, the `engine` tile** (`UpgradeOptions.SLOT_ENGINE`, drawn by
-  `scripts/upgrades_grid.gd` like any other slot) — the tile reads the car's current
-  engine name (`EngineSwap.current_engine_id` → `EngineLibrary`), and its popup lists
-  **every roster engine**, the fitted one marked. Engines other than the fitted one are
-  greyed with `"Locked"` before the capability special is won, and freely pickable
-  ever after (`UpgradeOptions.engine_swap_blocked_reason` returns only `"Locked"` or
-  `""`, so the tile never re-locks once the rally is won). Health never affects it.
-  Picking an engine does not perform the swap: the tile calls the host's `on_swap`
-  callback (`UpgradesGrid._apply_option`) and the HOST runs the flow, because a swap needs
-  a partner car to be picked out in the car park. So the tile is effectively **lift-only** —
-  only `hq.gd` passes `on_swap`. For the same reason the tile does **not** grey itself for
-  "no other car to swap with": whether a partner exists is a fact about the swap flow, not
-  about this car's engine, and `hq.gd._enter_engine_swap` is the one place that knows.
-- **Garage action row** (`hq.gd._refresh_garage_row`) — a fixed four stops,
-  `< Back | Career | Garage | Online`, with no conditional entries, so its
-  keyboard/gamepad order is the same every time it's built.
-- **Car-park swap mode** (`hq._enter_engine_swap` / `_carpark_swap_mode`) —
-  pressing Swap Engine opens the car park listing **every** OTHER owned car (the
-  current car itself is excluded — no self-swap); no car is filtered out on
-  health. It reuses the car park's normal cycle-and-frame flow; the Start button
-  reads **"Swap Engine"**. Swap mode shows no repair/kit warning label (Start
-  stays enabled, warning hidden). Confirming (`hq._select_swap_target`) always
-  pops `_show_swap_confirm` — OK **"Swap"** — and OK
-  (`_on_swap_confirmed` → `_commit_engine_swap`) calls `Save.swap_engines`. It forces the lift prop to respawn with the new
-  engine, and returns to the lift's Upgrades page. **Back**
-  (`_car_back`) returns to the lift with no change (each car-park mode's Back returns
-  to its own origin — the starter picker to the exterior, the challenge picker to the
-  garage).
-  While picking a partner, `hq_carpark.gd._refresh_swap_preview()` (called from
-  `_focus_changed`) shows a two-way hp/tonne preview in a `RichTextLabel`
-  (`hq._swap_preview_label`) below the stats panel: since a swap EXCHANGES
-  engines, both the lift car (receiving the focused partner's engine) and the
-  focused partner (receiving the lift car's engine) get a row, each with a
-  coloured ↑/↓/— arrow for the resulting delta. The pure math is
-  `EngineSwap.pw_after_swap(owned, entry, donor_engine_id)` (returns kW/kg;
-  scaled by `CarLibrary.KW_KG_TO_HP_TONNE` for display). Hidden outside swap
-  mode.
-- **Upgrades grid, the `tune` tile** (`UpgradeOptions.SLOT_TUNE`) — the detune, sitting in
-  the grid beside the parts. It is NOT a
-  `TuningLibrary.AXES` row and no longer lives on the tuning page — detune is a
-  power / power-to-weight knob, so it belongs with upgrades. Always **available**
-  (no upgrade gate). The tile reads the live percentage, and it is the ONE tile whose
-  press opens a **slider** rather than a list (`UpgradeSlotPopup.open_slider`, `0%`–`100%`
-  step 5, built from the shared `SliderRow`): detune is continuous, and quantising it into
-  21 list rows would be a slider drawn badly. The slider writes live —
-  `frac = value / 100.0` through `Save.set_engine_detune` at `tuning.engine_detune`, with
-  no rebuild, since rebuilding mid-drag would free the popup out from under the grab — and
-  its value label reads the resulting live power-to-weight (`200 HP/T`,
-  `UpgradesGrid._detune_label_text`); the label does not flag the limit. A `rating_limit` ceiling is instead enforced by the
-  overlay's **gated Done button** (red, blocks closing and Esc while over — the
-  start-line Upgrades overlay and the car-park Change-Upgrades popup
-  both source one from `DrivingContext`, and only a Rally Challenge has one; the HQ lift
-  omits it, keeping a plain Back for free tuning).
-  The tuning panel's **Reset to neutral** (now a button in the Tuning page's bottom
-  action row, see [tuning.md](tuning.md)) no longer touches detune — it clears
-  only the handling axes and **preserves** `tuning.engine_detune`.
-- **Car-park detune-to-enter prompt** — an owned car OVER a rally's `pw_max`
-  cap still parks in the rally car-select lineup and LOOKS eligible there (no
-  warning label, plain Start — saves overlay space); pressing Start pops a
-  **"Too powerful" confirm** whose only route through is **Change Upgrades**
-  (the other button is Cancel). It opens the gated `UpgradesGrid` popup where the
-  player sheds power for themselves — the `tune` tile's detune slider, or stripping
-  parts — and the popup's gated **Done** button
-  refuses to close until the build is under the cap. That fix is an **ordinary
-  garage edit and permanent** (it persists after the rally); there is **no**
-  temporary, auto-reverted per-rally detune here any more. Once under the cap the
-  player closes the popup and re-presses Start to launch (close → re-press, no
-  auto-launch). The old one-press **Detune to N% & Start** agreement and its
-  `RallySession.register_detune_revert` revert flow have been removed. Rallies
-  have no hard power floor, so an underpowered car can still enter a higher
-  class — it just gets a non-blocking "Underpowered" warning at car selection in
-  the HQ car park.
-  (The `RallySession.register_detune_revert` API itself still exists and is
-  unit-tested; it is just no longer driven by this flow.) See
-  [menus.md](menus.md) → CARPARK.
+Nothing in the flat shell swaps an engine. The shop sells the *unlock*
+([hub-shell.md](hub-shell.md)); no screen spends it. These are the rules the deleted UI
+enforced, kept because a rebuild has to re-establish them and they are not obvious:
 
-### Navigation
+- **A swap needs a partner car**, so the screen that lists engines cannot perform the
+  swap on its own — the old `engine` tile called back to its host for exactly that reason.
+  List every OTHER owned car (no self-swap); filter none of them on health.
+- **Show both sides.** A swap EXCHANGES engines, so the preview showed a row for the
+  player's car AND for the donor, each with its resulting hp/tonne delta. The pure math is
+  still there: `EngineSwap.pw_after_swap(owned, entry, donor_engine_id)` returns kW/kg;
+  scale by `CarLibrary.KW_KG_TO_HP_TONNE` to display.
+- **Re-check the gate from the screen**, not from a stored flag on the car:
+  `RallyLibrary.engine_swaps_unlocked(Save.profile)`. `Save.swap_engines` is deliberately a
+  pure mutator that does NOT check it, so the entry point owns that.
+- **Locked means locked, not priced.** Every unavailable row in the old UI read `Locked`
+  rather than quoting a cost, so "the cursor skips this" and "here is what it costs" stayed
+  visually distinct.
 
-The `engine` tile is an ordinary `Control.FOCUS_ALL`
-button in the upgrades grid, and the engine rows in its popup are ordinary focusable rows
-(native-focus regime — see [menus.md](menus.md) → "Menu navigation"), so the swap is
-reachable by keyboard/gamepad exactly like every other tile, with no extra
-wiring. Once pressed, the car park it opens is the SAME diegetic 3D station
-used by the wheel view and the starter picker — it reuses that station's existing
-`menu_left`/`menu_right` (cycle the focused car), `menu_select` (confirm via
-`_on_start_pressed` → `_select_swap_target`), and `menu_back` (`_car_back`,
-which returns to the lift when `_carpark_swap_mode` is set) handlers in
-`hq.gd._unhandled_input`, so swap mode is fully keyboard/gamepad navigable by
-construction — it adds no new input surface, only a new car-park **mode flag**
-that changes what `_on_start_pressed`/`_car_back` do at the existing
-confirm/back actions. The detune slider lives in the `tune`
-tile's popup (`UpgradeSlotPopup.open_slider`, wherever `UpgradesGrid` is hosted), which
-opens with the slider focused and uses the same left/right-nudges-the-focused-slider
-handling as every other slider in the game (see [menus.md](menus.md) → "Menu
-navigation").
+### Navigation, when it is rebuilt
+
+CLAUDE.md requires every menu to be keyboard + gamepad navigable and to ship with a nav
+test in the same change. The old swap flow got that for free by reusing the car park's own
+input handlers with a mode flag — it added no new input surface. A flat rebuild gets it the
+same way, from `MenuNav.attach` on a `MenuPage` of ordinary focusable rows; see
+[menu-navigation.md](menu-navigation.md) and `HubShell`'s pages for the pattern.
 
 ## Tests
 
@@ -390,10 +323,10 @@ untouched), `set_engine_detune` persistence, and the stock-reversion clearing
 behaviour. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
-covers `TuningLibrary.apply`'s `engine_detune` torque scaling. `test_upgrades_grid.gd` covers the
-`engine` and `tune` tiles (their options, the locked-vs-allowed gate and the slider
-popup); `test_menu_flow.gd` covers car-park swap mode and the confirm flow.
-There is no detune-to-enter gate left to test: career entry is purely categorical
-(`RallyLibrary.ineligibility_reason`) and `RallyLibrary.qualifying_detune` is deleted, so the
-surviving "Too powerful" prompt (`hq_carpark._show_over_limit_prompt`) belongs to a Rally
-Challenge's rating ceiling — see [rally-challenge.md](rally-challenge.md).
+covers `TuningLibrary.apply`'s `engine_detune` torque scaling.
+
+**The UI tests are gone with the UI** (`test_upgrades_grid.gd` for the two tiles,
+the deleted `test_menu_flow.gd` for car-park swap mode and its confirm). There is no detune-to-enter
+gate left to test either: entry to a region run is ungated, and a Rally Challenge's rating
+ceiling is judged by `ChallengeRunMode.classify_cars`, which
+`tests/headless/test_challenge_session.gd` covers.

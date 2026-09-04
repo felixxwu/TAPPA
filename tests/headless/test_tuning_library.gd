@@ -2,7 +2,7 @@ extends GutTest
 # Per-car tuning (TuningLibrary): the pure effect-application of pipeline step 3
 # (baseline → upgrades → TUNING → damage), and the per-axis unlock gating. The
 # brake-split drivetrain change this drives is covered in test_drivetrain.gd; the
-# lift UI that sets these sliders is in test_menu_flow.gd. See features/tuning.md.
+# UI that sets these sliders is TuningPanel (test_tuning_panel.gd). See features/tuning.md.
 
 const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 

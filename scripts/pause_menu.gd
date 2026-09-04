@@ -1,7 +1,7 @@
 class_name PauseMenu
 extends CanvasLayer
 # Docs: features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_pause_menu.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_flow.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
+# Tests: tests/headless/test_pause_menu.gd, tests/headless/test_menu_nav.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # In-run pause menu. A top-right Pause button freezes the game
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile

@@ -234,7 +234,8 @@ car — see [hub-shell.md](hub-shell.md) for what its pages do offer. `Save.sele
 - `tests/headless/test_tuning_panel.gd` — the shared `TuningPanel` in isolation: a
   slider per axis, editing writes the axis + fires `on_change`, Reset clears the deltas,
   and a tune bakes into the config via `TuningLibrary.apply`. (The lift-hosted cases that
-  lived in `test_menu_flow.gd` went with the lift.)
+  lived in `test_menu_flow.gd` went with the lift; its slider-alignment case was salvaged
+  into this file.)
 - `tests/headless/test_start_line.gd` — the pre-event overlay offers a focusable
   **Tune Car** button; opening it shows the tuning overlay (hiding Start) and Back
   returns.

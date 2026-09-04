@@ -2,7 +2,7 @@ class_name SaveTestHelpers
 extends RefCounted
 # Setup/teardown helpers for the throwaway-profile pattern used across the
 # save-redirect tests (test_save_manager, test_damage_model, test_start_line,
-# test_pause_menu, test_menu_flow, test_camera_manager, test_rally_session,
+# test_pause_menu, test_camera_manager, test_username_popup,
 # test_menu_nav, test_input_remap, ...).
 #
 # Those files each hand-roll the same dance: point the Save autoload at a

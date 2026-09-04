@@ -17,7 +17,7 @@ extends GutTest
 #     (test_live_refit_suspension's tyre-load comparison);
 #   * a camera pick ray hits the leaked geometry before its intended target, so
 #     picking silently misses (hq.gd `_car_index_at`, exercised by
-#     test_menu_flow's HQ car-park tap).
+#     the deleted test_menu_flow's HQ car-park tap).
 # That is exactly what test_ghost_wiring.gd did: it called
 # RallySession.start_rally() with `auto_load_scenes` left at its default `true`.
 #

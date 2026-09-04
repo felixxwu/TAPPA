@@ -5,7 +5,7 @@
 `input_blocked`, `screen_claimer`) and `scripts/ui_theme.gd` (`focus_grab`,
 `focus_grab_first`, `first_focusable`, the focus stylebox that paints the cursor).
 
-**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_flow.gd`
+**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_hub_shell.gd`
 
 Every menu in the game is navigable with **up / down / left / right / enter / back**, on
 keyboard *and* controller, alongside mouse / touch. This doc is the framework; the screens

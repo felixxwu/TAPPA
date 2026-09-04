@@ -461,10 +461,11 @@ scene, before the hand-off to the hub.
 - `tests/headless/test_smoke.gd` — `_should_stage()` returns true for a
   challenge stage, and `_arch_event_info()` reports the challenge's
   name/stage/count with no time-to-beat.
-- `tests/headless/test_menu_flow.gd` — still carries Challenge-entry-point
-  coverage written against the deleted `hq_challenge.gd`/`hq.gd`. Per
-  `todo/roguelike-pivot.md` decision 47, this 5880-line file is salvaged, not
-  deleted, but only *after* the flat shell exists — it currently fails to parse
-  cleanly (146 parse errors, per that decision) because it drives a controller
-  that no longer exists. Do not trust anything this file currently claims to
-  cover for the Challenge screen; read decision 47 before touching it.
+- `tests/headless/test_hub_shell.gd` — the CHALLENGE page: it is reachable from MAIN,
+  it backs out to MAIN, picking a period opens the shared car page, and that page backs
+  out to the challenge rather than to region select.
+- The old entry screen's ~30 tests (board queries, kind tabs, the win-condition line, the
+  placing readout, the eligible-car gate) were in `test_menu_flow.gd` and are **gone with
+  it** — they drove `hq_challenge.gd`. The board-query logic they exercised lived in that
+  controller too, so there is nothing left to point them at; a fuller screen re-earns them
+  (decision 53).

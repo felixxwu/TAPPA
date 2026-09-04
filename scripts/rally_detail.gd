@@ -1,7 +1,7 @@
 class_name RallyDetail
 extends RefCounted
 # Docs: features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RallyDetail' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Tests: tests/headless/test_rally_detail.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RallyDetail' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # THE rally-detail panel: the card that names a rally, says which of your cars may enter it,
 # shows your best finish, and offers "Enter Rally — choose car". One implementation, hosted by
 # whoever is showing it.

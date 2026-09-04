@@ -4,7 +4,7 @@
 `RallyLibrary.RALLIES` (`scripts/rally_library.gd`), `world.gd._apply_region_look`
 (and `_current_region_look`), and `hq.gd` (`_refresh_map_pins`, `_make_pin`).
 
-**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_rally_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_flow.gd`
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_rally_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_hub_shell.gd`
 
 **Adding a region takes TWO edits.** An entry in `RegionLibrary.REGIONS` is inert on
 its own — the only thing that ever selects a region is a rally's `region` tag in
@@ -576,5 +576,5 @@ with synthetic values. The geometric reveal rule (`rally_revealed`,
 on every rally, are asserted in `tests/headless/test_rally_library.gd`. The
 map's pin set (every region's rallies pinned at once, locked pins
 non-pickable, keyboard + gamepad reachable) is covered in the HQ nav tests
-(`tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd`). The
+(`tests/headless/test_menu_nav.gd`, and the hub's own nav cases in `test_hub_shell.gd`). The
 reward system's region-aware draw-walk is covered in `test_reward_system.gd`.

@@ -37,14 +37,11 @@ defaults:
 4. **Menu backgrounds are pure black** — buttons and panels alike. **One documented
    exception, the ACCENT READOUT:** a floating 3D readout that must jump out of a map of
    otherwise-identical black panels is inverted (light-brown face, black ink — the same
-   board stock as the pacenote signs, [signs.md](signs.md)) — see `hq.gd`'s
-   `ACCENT_READOUT_BG` / `_build_readout_sprite`'s `accent` flag and [menus.md](menus.md).
-   Three surfaces take it, all on the HQ map table or the podium: a **SPECIAL event's**
-   pin readout (`hq_map_table._build_pin_label` via `RallyLibrary.is_special`), a locked special's
-   teaser (`hq_map_table._build_special_teaser_label`), and the **present box** that trades stars
-   for a car (`hq._make_present_pin` — the one non-rally target on the map, so it should
-   not read as another rally pin). The podium's `SPECIAL_UNLOCK` card
-   (`podium.gd` → `_show_special_unlock`) used to be a fourth, keeping its own **white**
+   board stock as the pacenote signs, [signs.md](signs.md)). Every surface that took it was
+   on the deleted HQ map table, so nothing renders one today; the rule is kept because it
+   is the one sanctioned way to break the black, and the next 3D readout should take this
+   treatment rather than inventing a colour. The podium's `SPECIAL_UNLOCK` card used to
+   keep its own **white**
    face on the argument that a full-screen celebration should sit at maximum contrast. It
    no longer does: at panel size white was the only such surface in the game, so instead
    of reading as the loudest of our own cards it read as another app's dialog dropped into
@@ -97,14 +94,12 @@ container sized by a literal — `MenuPage.set_body_width` / `set_body_fixed_hei
 a `custom_minimum_size`, a container `separation` — while the fonts within it go
 through `px`. The text then gets its genuinely larger point size and its container
 does not, so content clips into the body scroll and values wrap that used to fit on
-one line. The challenge entry screen (`hq_overlays.gd` → `build_challenge_overlay`)
-is the case that actually broke: it pinned a 480×210 body in raw logical pixels and
-went cramped the moment `UI_SCALE` stopped being 1. Both numbers are AUTHORED sizes
-and both belong multiplied by `UI_SCALE`, exactly like `hq_carpark.gd` already does
-for its column. The guard is
-`test_menu_flow.gd::test_hq_challenge_header_never_breaks_across_lines`, which asserts
-the relation (the headline strings still fit on one line on every kind tab) rather than
-either number, so it survives a retune of the box or the type scale.
+one line. The old (deleted) challenge entry screen is the case that actually broke: it
+pinned a 480×210 body in raw logical pixels and went cramped the moment `UI_SCALE` stopped
+being 1. Both numbers were AUTHORED sizes and both belonged multiplied by `UI_SCALE`. The
+guard that pinned it lived in the deleted `test_menu_flow.gd` — so **this trap
+is currently unguarded**; any new page that pins a pixel size owes its own version of that
+assertion (assert the RELATION — the string still fits on one line — never either number).
 
 **A heading that must not wrap is a WIDTH problem, not a text-flow one.** The
 tempting fixes are both wrong: `AUTOWRAP_OFF` alone makes the Label's minimum width
@@ -112,24 +107,22 @@ its entire string, which propagates up and widens the box past whatever
 `set_body_width` pinned (so the panel now resizes under content that changes length),
 and `clip_text` keeps the box still by throwing characters away. If a heading is
 wrapping, the honest answer is usually that something else in its row is eating the
-column. On the challenge screen the kind tabs sat *beside* the title, so the header
-demanded title-width **plus** tab-row-width and the titles got what was left; moving
-the tabs to their own row dropped the demand to the longer of the two and every string
-fits in full, unwrapped and unclipped, at one line of extra height. The guards are
-`test_hq_challenge_header_never_breaks_across_lines` (the strings stay on one line) and
-`test_hq_challenge_screen_keeps_one_size_across_the_kind_tabs` (the box does not resize
-as they change) — the pair is what pins the fix, since either one alone can be passed
-by a bad answer.
+column. On the old challenge screen the kind tabs sat *beside* the title, so the header
+demanded title-width **plus** tab-row-width and the titles got what was left; moving the
+tabs to their own row dropped the demand to the longer of the two and every string fitted
+in full, unwrapped and unclipped, at one line of extra height. Its two guards (the strings
+stay on one line; the box does not resize as they change) needed to be a PAIR — either one
+alone can be passed by a bad answer. Both went with the screen.
 
 Diegetic (in-world) UI scales its MEDIUM by the same factor, never its apparent
 size — the world already got the resolution increase, so content scaled twice
 would read bigger in-world. `WorldPanel.logical_size()` grows by `UI_SCALE`
 (cancelling the widgets' inflation exactly; `SUPERSAMPLE` was turned 4 → 3 to
-keep the per-panel pixel bill flat), and `hq.gd`'s pin readouts scale
-`PIN_LABEL_PX` + `PIN_LABEL_FONT_SIZE` by `UI_SCALE` while dividing
-`PIN_LABEL_PIXEL_SIZE` by it, so the box keeps its exact world-metre size and
-only gains texture resolution. Truly canvas-independent art (e.g.
-`overworld_marker.gd`'s meter-sized star textures) stays authored.
+keep the per-panel pixel bill flat). The deleted map-table pin readouts did the same by
+scaling their label pixel size and font size by `UI_SCALE` while dividing their
+`pixel_size` by it, so the box kept its exact world-metre size and only gained texture
+resolution — the pattern for any future in-world readout. Truly canvas-independent art
+stays authored.
 
 Tune the palette / type scale / spacing in **`scripts/ui_theme.gd`**, then
 regenerate the theme:
@@ -192,21 +185,19 @@ Use one of those for any new dimmer rather than picking a fresh alpha.
 The global theme covers HUD, mobile controls, the loading screen and every menu.
 Specific design-system touches:
 
-- **HQ** (`hq.gd`) — rally-detail, tuning-lift and info panels are black house
-  panels; the wrecked-car warning is red.
+- **The hub** (`hub_shell.gd`) — every page is a `MenuPage` of house buttons; a row the
+  player cannot take (a locked region, an unaffordable purchase, a period already run) is
+  `disabled` and carries `menu_nav_skip`, never a differently-coloured live row.
 - **Settings** (`settings_menu.gd`) — selected camera/scheme rows use
   `UITheme.mark_selected` (green underline) instead of the old blue tint.
 - **Pause** (`pause_menu.gd`) — `PAUSED` on a black title plate (button wording
   unchanged).
-- **Podium** (`podium.gd`) — the reward card is a black panel with a green accent
-  border; the player's leaderboard row is gold.
-- **Standings** (`standings.gd`) — black background; the player's row is gold.
 - **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
 
 ## A passive readout in a row of buttons (`UITheme.readout_box`)
 
-A read-only value that has to sit *inside* a row of buttons — the tuning lift's car
-nameplate between its `<` / `>` chevrons, and the stats row under it — wears
+A read-only value that has to sit *inside* a row of buttons — the deleted tuning lift's car
+nameplate between its `<` / `>` chevrons was the original case — wears
 `UITheme.readout_box()` rather than a hand-built panel. It returns the theme's own
 **Button "normal"** stylebox, so the readout cannot drift from the buttons beside it.
 Rebuilding one from `panel_box()` is NOT equivalent: a panel is fully padded (14px all
@@ -214,8 +205,7 @@ round) and may be translucent to float over the 3D world, while a button is pure
 with tight 4px vertical margins — so a hand-built readout came out visibly **taller** than
 its neighbours and a slightly different shade. Pair it with
 `custom_minimum_size.y = UITheme.MENU_ROW_H` so the heights match too (house rule 3 pins
-buttons to exactly that). See `hq_overlays.gd` → `build_lift_overlay` for the two-row
-example.
+buttons to exactly that).
 
 ## A page's actions go in ONE bottom row
 
@@ -228,9 +218,8 @@ kind of screen, so that shape is gone.
 The consequence for a reusable component: it **builds** its action buttons but does not
 parent them, and exposes them for the host to place. `TuningPanel`
 (`scripts/tuning_panel.gd` → `action_buttons()`) does exactly this with **Reset to
-neutral** and **Wheels**; its hosts —`hq_overlays.gd` → `build_lift_overlay` (into
-`_lift_page_actions`) and `start_line.gd` → `_build_menu_overlay` (which picks them up
-generically via `component.has_method("action_buttons")`) — add them beside their own
+neutral** and **Wheels**; its host — `start_line.gd` → `_build_menu_overlay`, which picks
+them up generically via `component.has_method("action_buttons")` — adds them beside its own
 Back. A host MUST add them to a container, or they are never shown and never freed.
 `< Back` on these pages is a compact `UITheme.row_button` with `focus_mode = FOCUS_ALL`,
 since sub-pages navigate by native focus (`MenuNav`).

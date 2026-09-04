@@ -397,7 +397,7 @@ fingers and the mouse pointer survive, no snapshot means no reconciliation, and 
 older regression — a stale drag that resurrects a lifted finger is reconciled away within
 the frame rather than left stuck). Plus the event-path guard that a re-press by a finger
 whose release was lost frees the slider. The Settings page + pre-rally gate
-are covered in `test_menu_flow.gd`; the saved-setting round-trip in
+were covered in the deleted `test_menu_flow.gd` (the gate was an HQ-title flow); the saved-setting round-trip in
 `test_save_manager.gd`.
 
 ## Touch events are processed once, not twice

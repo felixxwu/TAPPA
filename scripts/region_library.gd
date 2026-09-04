@@ -1,7 +1,7 @@
 class_name RegionLibrary
 extends RefCounted
 # Docs: features/regions.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_region_library.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RegionLibrary' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Tests: tests/headless/test_region_library.gd, tests/headless/test_menu_nav.gd, tests/headless/test_hub_shell.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RegionLibrary' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region is one
 # CORNER of the single world map: it groups rallies by their `region` tag and carries
 # optional look overrides for the driven world (grass/gravel/sky/fog/tints/layers) — a

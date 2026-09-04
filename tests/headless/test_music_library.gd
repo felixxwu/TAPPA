@@ -99,7 +99,10 @@ func test_is_hq_scene_only_true_for_the_hub_scene() -> void:
 	assert_true(MusicLibrary.is_hq_scene(MusicLibrary.HQ_SCENE), "the hub scene is the hub")
 	assert_true(MusicLibrary.is_hq_scene(Scenes.hub_path()),
 		"whatever hub_path() selects is a hub for music too")
-	for other in ["res://main.tscn", "res://standings.tscn", "res://podium.tscn", ""]:
+	# main.tscn and car.tscn are the two non-hub scenes that still exist; the empty
+	# string stands in for "no scene yet". (This listed standings.tscn and podium.tscn
+	# until both were deleted — a predicate test should name real paths.)
+	for other in ["res://main.tscn", "res://car.tscn", ""]:
 		assert_false(MusicLibrary.is_hq_scene(other), "non-hub scene '%s' is not the hub" % other)
 
 

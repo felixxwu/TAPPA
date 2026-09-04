@@ -145,7 +145,7 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_build_orbit_camera()
 	_build_overlay(rally, event_index)
 	_build_fade()
-	_stage_player(terrain)
+	_stage_player()
 	_update_orbit()
 
 
@@ -163,7 +163,12 @@ func grab_start_focus() -> void:
 # Stage the player at the start line, axis-locked so it can't drift during the MENU
 # orbit. Scripted like a grid car used to be; cleared at the hand-off so the run
 # drives normally. No-op for a non-Car player (test stubs).
-func _stage_player(terrain: Node) -> void:
+#
+# Takes no arguments: it used to accept the `terrain` its caller has and never read it
+# (the staged pose comes from `_start_xform`, which setup() already solved against the
+# ground), and an unused parameter is a GDScript warning the test runner treats as a
+# failure.
+func _stage_player() -> void:
 	if not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
 		return
 	# reset_to (pending teleport) so the staged pose survives the physics server; a bare

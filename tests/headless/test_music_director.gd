@@ -207,7 +207,10 @@ func test_scene_uses_the_locked_rally_song_across_frames() -> void:
 	md._current_rally_song = MusicLibrary.RALLY_SONGS[0]
 	md.update_for_scene("res://main.tscn")
 	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "uses the locked rally song")
-	md.update_for_scene("res://standings.tscn")
+	# Re-entering the SAME scene must not re-roll (this drove standings.tscn until that
+	# scene was deleted; the between-stage beat is an overlay on main.tscn now, so the
+	# director never sees a scene change there at all).
+	md.update_for_scene("res://main.tscn")
 	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "still the same rally song, no re-roll")
 
 

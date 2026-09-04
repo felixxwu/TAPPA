@@ -24,8 +24,8 @@ list (`hq.gd::_sync_panel` / `_car_panel_xform` / `_lift_panel_xform`, and
 `hq_overlays.gd`'s `_car_root` / `_lift_root` handles) is deleted.
 
 **Tests:** `tests/headless/test_world_panel.gd` — the panel and its input pump. The
-hosting / hot-reload tests this file used to name were in `test_menu_flow.gd`, which is
-quarantined (it drives the deleted hub — see [testing.md](testing.md)). None of them
+hosting / hot-reload tests this file used to name were in `test_menu_flow.gd`, deleted with
+the hub it drove (see [testing.md](testing.md)). None of them
 asserted a POSITION; placements are hand-tuned, see below.
 
 Design: [`docs/superpowers/specs/2026-08-10-world-space-menus-design.md`](../docs/superpowers/specs/2026-08-10-world-space-menus-design.md).
@@ -429,7 +429,7 @@ camera will start to cover the focused car. The right fix for "too small" is usu
 
 This distinction is the whole point and was learned the wrong way round first: shifting the
 **eye** recomposes the entire shot and moves the car within it, where shifting the **aim**
-brings the panel into frame from the same viewpoint. Guarded by `test_menu_flow.gd` →
+brings the panel into frame from the same viewpoint. Was guarded by the deleted `test_menu_flow.gd` →
 `test_hq_carpark_world_space_menu_hosts_backs_and_reframes`, which asserts **both** halves
 (origin unchanged, basis changed) precisely so a future "simplification" back to an eye
 offset fails.
@@ -496,7 +496,7 @@ That makes any "screen A hides while B is up" rule belong here too. **The garage
 the challenge modal is over it** (`_view == View.GARAGE and not _challenge_shown`). That used to be
 an ad-hoc `_garage_layer.visible = false` inside `_open_challenge_overlay`, and it broke the moment
 that function also had to call `_update_overlays` — which then re-showed the garage a line later.
-Caught by `test_menu_flow.gd` -> `test_hq_challenge_entry_opens_and_is_navigable`.
+Was caught by the deleted `test_menu_flow.gd` -> `test_hq_challenge_entry_opens_and_is_navigable`.
 
 Related: **the challenge screen's shown-ness is a flag (`_challenge_shown`), not its layer's
 visibility.** It is a modal rather than a `View`, and in world mode its layer is empty — so code
@@ -508,7 +508,7 @@ garage reacting to the same keypress) had to move to the flag.
 notice drew over a live title menu and both `MenuNav`s answered the same keypress. The title's
 shown-ness is now part of the rule here (`_view == View.EXTERIOR and _android_notice_layer == null`)
 and both handlers call `_update_overlays()`. Guarded by
-`test_menu_flow.gd` -> `test_android_notice_stands_down_a_world_hosted_title`.
+the deleted `test_menu_flow.gd` -> `test_android_notice_stands_down_a_world_hosted_title`.
 
 **And the mirror-image rule for runtime UI: a modal never goes ON a station's layer.** Adding a page
 to `_car_layer` puts it on the host that `sync` hides, so it renders nowhere. `MenuPage.open_modal`
@@ -566,7 +566,7 @@ any stray it finds, naming the node — the invalid state announces itself at th
 created instead of turning up as "that menu does nothing". A stray that genuinely means to go
 down with the layer sets `ALLOW_HIDDEN_META`; nothing does today.
 
-Guarded by `test_menu_flow.gd` -> `test_migratable_layers_gain_no_runtime_children`, which
+Was guarded by the deleted `test_menu_flow.gd` -> `test_migratable_layers_gain_no_runtime_children`, which
 drives every runtime-UI entry point over a station and asserts each managed layer still holds
 only its tree.
 

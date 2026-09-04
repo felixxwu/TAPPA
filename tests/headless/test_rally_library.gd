@@ -36,7 +36,7 @@ func test_roster_is_well_formed() -> void:
 	for rally in RallyLibrary.RALLIES:
 		assert_false(ids.has(rally["id"]), "rally id '%s' is unique" % rally["id"])
 		ids[rally["id"]] = true
-		# Stage COUNT is authored data a designer changes freely (test_menu_flow.gd
+		# Stage COUNT is authored data a designer changes freely (the deleted test_menu_flow.gd
 		# derives it rather than pinning it), so assert only that a rally HAS stages —
 		# which also stops the per-event loop below being vacuous.
 		assert_gt(rally["events"].size(), 0, "%s has at least one event" % rally["id"])

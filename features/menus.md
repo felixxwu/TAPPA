@@ -273,7 +273,8 @@ to hand off to is the run pick now, not a standings page — see
 - `tests/headless/test_text_field.gd` — the text input rules above.
 - `tests/headless/test_settings_menu.gd` — the shared settings page.
 
-`tests/headless/test_menu_flow.gd` was this file's biggest test and is **quarantined**:
-it drives `hq.gd`, `hq_carpark.gd`, `GlobalStandings` and `RallySession`, none of which
-exist, so it fails to parse and GUT skips it. Decision 47 says salvage rather than
-delete — see [testing.md](testing.md).
+`tests/headless/test_menu_flow.gd` was this file's biggest test — 5,880 lines, 207 tests
+— and is **deleted**. It drove `hq.gd`, `hq_carpark.gd`, `GlobalStandings` and
+`RallySession`, none of which exist, so it had stopped parsing entirely. Its host-free
+cases were salvaged first; see [testing.md](testing.md) → *The `test_menu_flow.gd`
+salvage* for what moved where and what was lost.

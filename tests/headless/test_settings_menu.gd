@@ -258,3 +258,42 @@ func test_confirming_the_modal_wipes_the_save() -> void:
 		"and the inventory with them")
 	assert_string_contains(menu._reset_status.text.to_lower(), "wiped",
 		"the page reports what happened")
+
+
+# --- Dev tooling is not offered to players -------------------------------------------
+#
+# SALVAGED from the deleted test_menu_flow.gd, where these lived because Settings was
+# reached through the HQ title. They never needed that host: SettingsMenu builds its own
+# category list, and `dev_tools_override` is the seam that decides what goes in it.
+
+func test_players_do_not_see_the_developer_settings_pages() -> void:
+	# Benchmark / Dev / Seed lab are dev tooling — a release build must not offer them.
+	# The pages still exist (show_* still works); only the way in is gone.
+	SettingsMenu.dev_tools_override = 0
+	var menu := SettingsMenu.new()
+	add_child_autofree(menu)
+	await get_tree().process_frame
+	# Scope to the CATEGORY LIST: the dev pages themselves are still built (only
+	# unreachable), and their own buttons would otherwise match.
+	var joined := _category_labels(menu)
+	SettingsMenu.dev_tools_override = -1
+
+	assert_false(joined.contains("BENCHMARK"), "no Benchmark entry for players")
+	assert_false(joined.contains("DEV"), "no Dev entry for players")
+	assert_false(joined.contains("SEED LAB"), "no Seed lab entry for players")
+	assert_true(joined.contains("AUDIO"), "the real settings are still there")
+	assert_true(joined.contains("ACCOUNT"), "and so is the account page")
+	assert_true(joined.contains("RESET PROGRESS"),
+		"starting over is a player setting, not dev tooling")
+
+
+func test_developer_builds_still_reach_the_dev_pages() -> void:
+	SettingsMenu.dev_tools_override = 1
+	var menu := SettingsMenu.new()
+	add_child_autofree(menu)
+	await get_tree().process_frame
+	var joined := _category_labels(menu)
+	SettingsMenu.dev_tools_override = -1
+
+	assert_true(joined.contains("BENCHMARK"))
+	assert_true(joined.contains("SEED LAB"))

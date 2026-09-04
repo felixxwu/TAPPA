@@ -1,7 +1,7 @@
 class_name TuningLibrary
 extends RefCounted
 # Docs: features/engine-swap.md, features/tuning.md — update in the same change as this file.
-# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_menu_flow.gd, tests/headless/test_tuning_library.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningLibrary' tests/headless/` and read the assertions that pin what you are about to change (7 test files touch this script).
+# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_tuning_library.gd, tests/headless/test_tuning_panel.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningLibrary' tests/headless/` and read the assertions that pin what you are about to change (7 test files touch this script).
 # Per-car TUNING — free, reversible handling nudges the player makes at the
 # garage tuning lift (features/tuning.md). This is step 3 of the field-the-car
 # pipeline (see car.gd.apply_owned):

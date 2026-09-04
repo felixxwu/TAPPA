@@ -1,12 +1,13 @@
 extends GutTest
 
-# TuningPanel is the reusable per-car tuning-slider UI shared by the HQ lift and the
-# start-line grid. These tests use synthetic owned-car dicts (no catalogue dependency)
-# and check the panel's LOGIC/behaviour, not any tuned value.
+# TuningPanel is the reusable per-car tuning-slider UI. Its only host today is the
+# start line (the HQ lift, its other one, is deleted with the diegetic hub). These tests
+# use synthetic owned-car dicts (no catalogue dependency) and check the panel's
+# LOGIC/behaviour, not any tuned value.
 
 const TuningPanelScript = preload("res://scripts/tuning_panel.gd")
 
-# A synthetic owned car — aero locked (no upgrades); grip + brake bias always tunable.
+# A synthetic owned car. Every axis is tunable: decision 24 ungated all three.
 func _owned() -> Dictionary:
 	return {"instance_id": 1, "model_id": "synthetic", "tuning": {}, "upgrades": {}}
 
@@ -30,11 +31,31 @@ func test_editing_grip_writes_axis_and_fires_callback() -> void:
 	assert_almost_eq(float(owned["tuning"]["grip_balance"]), 0.5, 0.001)
 	assert_gt(fired[0], 0, "on_change fired")
 
-func test_locked_axis_slider_not_editable() -> void:
+# EVERY axis is editable, on every car. This asserted the opposite — that aero_balance was
+# locked "without the aero kit" — until todo/roguelike-pivot.md decision 24 ungated tuning
+# outright and took TuningLibrary.axis_unlocked with the parts model that fed it. The
+# behaviour changed deliberately, so the test follows it.
+func test_every_axis_is_editable_on_every_car() -> void:
 	var p = _panel(_owned())
-	assert_false(p._sliders["aero_balance"].editable, "aero_balance locked without the aero kit")
-	assert_true(p._sliders["grip_balance"].editable, "grip always editable")
-	assert_true(p._sliders["brake_bias"].editable, "brake bias always editable")
+	for axis in TuningLibrary.AXES:
+		assert_true(p._sliders[axis].editable,
+			"%s is tunable with no gate — decision 24" % axis)
+
+
+# SALVAGED from the deleted test_menu_flow.gd, which drove this through the HQ lift's TUNE
+# page. It never needed a host: the rows are built by the panel, and the fixed label column
+# is what guarantees the alignment.
+func test_the_sliders_are_all_the_same_length() -> void:
+	var p = _panel(_owned())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var widths: Array = []
+	for axis in TuningLibrary.AXES:
+		widths.append((p._sliders[axis] as HSlider).size.x)
+	for w in widths:
+		assert_almost_eq(float(w), float(widths[0]), 0.5,
+			"every handling-axis slider lines up to the same width, however long its "
+			+ "value label is")
 
 func test_reset_clears_handling_axes() -> void:
 	var owned := _owned()

@@ -67,7 +67,7 @@ inside it are not.
 | Cost (2026-08-18, PRE-PIVOT — do not cite as current) | Measured | Reducible? |
 |---|---|---|
 | Full-library generation sweeps (`test_track_generator` → `test_every_rally_event_generates_a_complete_track_quickly`, `test_smoke`'s two generation tests, `test_lakes_integration`, `test_track_gen_frame_consistency`) | ~87 s | **No** — see "The irreducible sweeps" below |
-| `test_menu_flow.gd` | 53.3 s (~0.2 s per test) | **No** — cost is test COUNT, not per-test waste. Note this file has since been salvaged and heavily cut down for the pivot (`todo/roguelike-pivot.md` decision 47) — its size and per-test cost are no longer what was measured here |
+| `test_menu_flow.gd` | 53.3 s (~0.2 s per test) | **Deleted outright in stage 9** — 207 tests driving the diegetic hub, which no longer exists. Its salvageable cases were re-homed (see *The `test_menu_flow.gd` salvage* below); the ~53 s it cost is simply gone from the budget |
 | The flat tail — many further files at roughly 0.2–0.3 s per test, genuine CPU (terrain chunk rebuilds, per-car physics), no single outlier inside any file and no §2a "cheap call would do" seam | ~185 s | **No cheap lever found** as of 2026-08-18 — re-check post-pivot |
 | `before_all` builds + loading the test scripts in `tests/headless/` | ~33 s | No — `minimal_world()` per file is already minimal |
 
@@ -206,8 +206,8 @@ levers, in order of payoff:
 - **A `Platform.is_headless()` gate must skip only the ANIMATION, never the
   final visible state — the audio gate above is the safe shape, and it is
   safe specifically because "not played" is genuinely the correct end state
-  in both paths.** The global standings page (`GlobalStandings`, see
-  the deleted global leaderboards) got this wrong: it built
+  in both paths.** The deleted global standings page (`GlobalStandings`) got this
+  wrong: it built
   its body nodes hidden and relied on a `_reveal()` coroutine to un-hide them
   one at a time, with the coroutine itself skipped headless — so headless saw
   the nodes (never hidden in the first place) while a real player saw a
@@ -294,19 +294,20 @@ triggered it: the scene is instantiated into `/root`, nothing ever frees it, and
 shares the one `World3D` / physics space with every later test. A leaked `main.tscn`
 makes a settling car land on its terrain instead of the fixture ground (crooked
 attitude, asymmetric wheel loads, never at rest) and makes camera pick rays hit it
-first (`hq.gd` → `_car_index_at`) — silent, order-dependent failures that are green
-under `--fast <file>` and red in a full run.
+first — silent, order-dependent failures that are green under `--fast <file>` and red in
+a full run.
 
 So before driving anything that can change scene, switch the seam off or capture it:
 
-- `RallySession.auto_load_scenes = false` — `start_rally()` → `_enter_event()` ends in
+- `RunSession.auto_load_scenes = false` — `begin()` and `continue_to_next_stage()` end in
   `change_scene_to_file("res://main.tscn")`, and the seam **defaults to `true`**.
-- `RunSession.auto_load_scenes = false` — same for
-  `continue_to_next_stage()` and `hq_challenge.gd` → `_hand_off_to_challenge_scene`.
 - `world.gd` → `scene_change_hook` — capture the requested path instead of loading it.
+- `Scenes.block_real_changes` — the run-scoped backstop the pre-run hook arms, which
+  swallows every transition and records where it was headed
+  (`Scenes.last_blocked_path`).
 
-Restore the seam (and `RallySession.abandon()` any session you started) in
-`after_all`. `tests/headless/test_world_isolation.gd` is the backstop: it fails if any
+Restore the seam (and end any run you started — `RunSession.pause_run()` /
+`Save.clear_run()`) in `after_all`. `tests/headless/test_world_isolation.gd` is the backstop: it fails if any
 game scene is parked under `/root`, and it is named `world_*` so it sorts late enough
 to see almost every polluter.
 
@@ -323,27 +324,21 @@ same pattern for the rally and upgrade catalogues:
   resolves. Events use a very low `water_level` so track generation never has to
   route around lakes (fast, deterministic). Eligibility reads `CarLibrary`, so a
   test checking eligibility should `CarFixtures.install()` its cars too.
-- **UpgradeFixtures:** a turbo slot-pair (`fx_turbo_small`/`fx_turbo_big`,
-  distinct `menu_label`), `fx_aero`, `fx_lightweight` (`mass_mult < 1`),
-  `fx_ballast` (free, `mass_mult > 1`), `fx_drivetrain` — one part
-  per effect shape the apply/`effective_meta` pipeline reads, plus
-  **`fx_consumable`** — a synthetic entry with the `consumable` flag set. Nothing
-  in the shipped `UpgradeLibrary` is a consumable any more, but the code paths
-  that respect the flag are still live (`Save.install_upgrade` refuses to slot a
-  consumable; `UpgradeReveal` routes one to the inventory instead of a slot), so
-  the fixture is the only way to exercise them. It replaced an earlier re-export
-  of the real engine-swap-token id, which stopped existing when the token was
-  deleted — a good argument for the fixture owning its own ids rather than
-  borrowing catalogue constants.
-- Same `install()` / `restore()` contract and the same **mandatory-restore**
-  rule as `CarFixtures`. Two scoping styles are used, both fine: **global**
-  `install()` in `before_each` when the whole file is generic; **per-test**
-  `install()` at the top of only the converted tests when the file also has
-  contract/HQ-pin tests that need the real roster (see `test_rally_session.gd`
-  and `test_menu_flow.gd` — their showdown/region-progression tests deliberately
-  run on the real catalogue, opting out via a `restore()` or by never installing).
-  The seam mechanics for all five libraries are covered by
-  `test_catalogue_seam.gd`.
+- **UpgradeFixtures:** now an **effect** table, not a catalogue — `UpgradeLibrary` stopped
+  being a catalogue with the parts model (see
+  [upgrade-catalogue.md](upgrade-catalogue.md)). One synthetic entry per effect shape the
+  `apply` / `effective_meta` pipeline reads: the induction pair
+  (`fx_turbo_small`/`fx_turbo_big`), `fx_supercharger`, `fx_gearbox` (the `set` op),
+  `fx_aero` (`add`), `fx_tires` / `fx_snow_tires` (`mult`, one of them surface-dependent),
+  `fx_lightweight` (`mass_mult < 1`) and `fx_ballast` (`mass_mult > 1`).
+  `UpgradeFixtures.boosts([...])` builds the `boosts` list a test hands to a car dict, so a
+  logic test never reaches into the real catalogue for an effect shape.
+- The fixture owning its own ids, rather than re-exporting catalogue constants, is
+  load-bearing: an earlier version re-exported the real engine-swap-token id and broke when
+  that token was deleted.
+- The seam mechanics for the catalogue libraries are covered by `test_catalogue_seam.gd`;
+  `CarFixtures` keeps the `install()` / `restore()` contract and the **mandatory-restore**
+  rule.
 
 ### Shared DX helpers (`save_test_helpers.gd`, `node_query.gd`)
 
@@ -356,16 +351,14 @@ them (adoption is deferred), but new tests should reach for them:
   loads a fresh default) and `cleanup(path)` deletes it plus its `.bak`/`.tmp`
   siblings and restores `DEFAULT_PROFILE_PATH`. This is the same dance the nine
   save-redirect files (`test_save_manager.gd`, `test_damage_model.gd`,
-  `test_start_line.gd`, `test_pause_menu.gd`, `test_menu_flow.gd`,
-  `test_camera_manager.gd`, `test_rally_session.gd`, `test_menu_nav.gd`,
-  `test_input_remap.gd`) currently spell out inline.
+  `test_start_line.gd`, `test_pause_menu.gd`, `test_camera_manager.gd`,
+  `test_menu_nav.gd`, `test_input_remap.gd`) currently spell out inline.
 
 #### The profile sandbox (why a forgotten redirect is no longer fatal)
 
 A headless run once **overwrote the developer's real `user://profile.json`** with a
-blank default carrying synthetic fixture cars (`fx_light_rwd`): `test_smoke.gd` and
-`test_reward_system.gd` granted cars through the live `Save` autoload while it was
-still pointed at the real path, and `Save.save()` duly wrote it. Only the next
+blank default carrying synthetic fixture cars (`fx_light_rwd`): two test files granted
+cars through the live `Save` autoload while it was still pointed at the real path, and `Save.save()` duly wrote it. Only the next
 launch's cloud pull restored the career.
 
 Per-test redirects are therefore backed by a **run-scoped sandbox**:
@@ -399,6 +392,56 @@ full frame capture only works windowed (headless uses a dummy renderer that
 can't read back pixels) and was chronically flaky and slow to regenerate.
 `test_render_smoke.gd` covers the meaningful half — rendering setup integrity —
 without pixels.
+
+## The `test_menu_flow.gd` salvage
+
+`tests/headless/test_menu_flow.gd` — 5,880 lines, 207 tests, the single biggest file in
+the suite — is **deleted**. It drove the diegetic hub end to end (`hq.gd`, `hq_carpark.gd`,
+`hq_table.gd`, `hq_challenge.gd`, `GlobalStandings`, `podium.gd`, `standings.gd`,
+`RallySession`), all of which the pivot removed, so it had stopped parsing at all: 146
+parse errors, and GUT skipped the file wholesale. A test file that cannot load is worse
+than no file — it reads as coverage and provides none.
+
+`todo/roguelike-pivot.md` decision 47 called for salvage rather than deletion, and that is
+what happened: **everything host-free was re-homed first**, and only then was the husk
+removed.
+
+| Salvaged into | What moved |
+| --- | --- |
+| `test_username_popup.gd` (new) | The `UsernamePopup` sanitiser rules and the name's profile round-trip — `UsernamePopup` is live and had no other coverage |
+| `test_settings_menu.gd` | The two dev-tooling visibility tests (`dev_tools_override` gating Benchmark / Dev / Seed lab out of the category list) |
+| `test_tuning_panel.gd` | The slider-alignment case (every handling-axis slider is the same width) |
+| `test_world_fielding.gd` (new) | "the run scene fields the bound session car", ported off `RallySession` onto `RunSession` — and extended to cover the perk/boost merge at the same seam |
+
+**What was lost, and it is worth knowing.** Roughly 190 tests went with their subjects and
+could not be ported, because the thing they asserted no longer exists: the HQ's station
+routing and camera framing, the 3D map table (panning, clamping, pin rebuilds, the
+new-rally reveal parade), the car park (lineup building, eligibility marking, swap mode,
+the wheel view), the tuning lift, the upgrades grid, the starter picker, the podium's
+reward beats, the standings page's two leaderboards, and the challenge entry screen's
+board queries. Several were regression guards for real reported bugs; where the reasoning
+outlives the screen, it has been written into the relevant `features/` doc rather than
+lost with the test — see [world-panel.md](world-panel.md),
+[ui-design-system.md](ui-design-system.md) and
+[wheel-customization.md](wheel-customization.md), each of which now says which behaviours
+a rebuild owes.
+
+**Two other files were quietly broken the same way** and are fixed rather than deleted,
+because most of each was still live:
+
+- `test_cloud_boot_gate.gd` — 15 of its 20 tests booted `hq.tscn` and errored at runtime
+  (it PARSED, so nothing caught it until stage 9). The 5 `Cloud`-level gate tests remain.
+  Its header now records that the gate has **no consumer**: `HubShell` does not await the
+  initial sync, so the hazard those 15 tests guarded is real and currently unguarded.
+- `test_wheel_customization.gd` — 17 HQ wheel-view tests, same failure mode. The 20
+  host-free tests (catalogue, eligibility, resolution, save round-trip, cosmetic-only
+  guarantee) remain and are the whole feature minus its UI.
+
+The lesson worth keeping: **a test file that fails to PARSE is caught by the runner; one
+that parses and errors at runtime is not** — it just fails, and a suite nobody has run in
+full since a large deletion will be hiding several. Sweep with
+`godot --headless --check-only --script <file>` for the first class, and an actual run for
+the second.
 
 ## Commands
 

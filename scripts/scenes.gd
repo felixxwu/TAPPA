@@ -1,7 +1,7 @@
 class_name Scenes
 extends RefCounted
 # Docs: features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Scenes' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Tests: tests/headless/test_world_isolation.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Scenes' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # The canonical scene paths, and the ONE place that decides which scene is "the hub".
 #
 # WHY THIS SEAM EXISTS. The hub scene is both the project's main scene and the

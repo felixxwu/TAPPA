@@ -1,7 +1,7 @@
 class_name WorldPanelHost
 extends RefCounted
 # Docs: features/world-panel.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_flow.gd, tests/headless/test_world_panel.gd — extend in the same change.
+# Tests: tests/headless/test_world_panel.gd — extend in the same change.
 # ONE STATION'S WORLD-SPACE MENU, and the swap between its two hosts. See
 # features/world-panel.md.
 #

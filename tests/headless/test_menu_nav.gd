@@ -3,7 +3,7 @@ extends GutTest
 # menus drive a cursor with Godot's native focus (focus_mode = FOCUS_ALL + the
 # engine's ui_up/ui_down/ui_accept), so the theme's focus stylebox paints the cursor
 # and arrow keys / D-pad / left-stick all work for free; the diegetic HQ stations keep
-# their spatial menu_* handlers (covered in test_menu_flow.gd). This file checks the
+# their spatial menu_* handlers (covered by the deleted test_menu_flow.gd). This file checks the
 # shared pieces: the input actions exist, and the shared SettingsMenu focuses its rows
 # and steps back a level at a time.
 

@@ -1,7 +1,7 @@
 class_name TuningPanel
 extends VBoxContainer
 # Docs: features/tuning.md — update in the same change as this file.
-# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_menu_flow.gd, tests/headless/test_tuning_panel.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningPanel' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
+# Tests: tests/headless/test_drivetrain.gd, tests/headless/test_tuning_panel.gd, tests/headless/test_start_line.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningPanel' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Reusable per-car TUNING slider panel — the three handling axes (grip balance,
 # brake bias, aero balance). Owns its sliders and Save persistence; reports edits
 # via on_change so the host can re-field the car. Used by the start-line pre-event menu
@@ -22,8 +22,9 @@ var _wheels_button: Button  # cosmetic wheel styles — see _on_wheels_pressed
 
 # Build the rows once, then bind the owned car. on_change() is called (no args) after
 # each edit / reset so the host can re-apply tuning to the live car. on_wheels() (no
-# args) fires when the Wheels button is pressed — the host owns leaving the lift for
-# the wheel-swap flow (e.g. HqController._enter_wheel_swap).
+# args) fires when the Wheels button is pressed — the host owns the wheel-swap flow. NO
+# HOST WIRES IT TODAY (the HQ lift did, and is deleted), so the button is hidden
+# everywhere; see features/wheel-customization.md.
 func setup(owned_car: Dictionary, on_change := Callable(), on_wheels := Callable()) -> void:
 	_owned = owned_car
 	_on_change = on_change
@@ -31,9 +32,9 @@ func setup(owned_car: Dictionary, on_change := Callable(), on_wheels := Callable
 	if not _built:
 		_build()
 		_built = true
-	# Wheels only makes sense where the host actually wired somewhere to send it (the
-	# HQ lift); the start-line's pre-event grid passes no on_wheels, so hide it there
-	# rather than show a button that does nothing.
+	# Wheels only makes sense where the host actually wired somewhere to send it; the
+	# start line passes no on_wheels, so hide it rather than show a button that does
+	# nothing.
 	_wheels_button.visible = _on_wheels.is_valid()
 
 
@@ -60,17 +61,17 @@ func _build() -> void:
 	# The ACTIONS are built here but deliberately NOT added as children: the host lays
 	# them out along the bottom of its page, in one horizontal row gapped off this body,
 	# beside its own Back button (see action_buttons). Every menu in the game ends in that
-	# same row — the lift hub, the garage, the start line — so a page that stacked its
-	# actions full-width inside the body read as a different kind of screen.
+	# same row, so a page that stacked its actions full-width inside the body read as a
+	# different kind of screen.
 	_reset_button = Button.new()
 	_reset_button.text = "Reset to neutral"
 	_reset_button.focus_mode = Control.FOCUS_ALL
 	_reset_button.pressed.connect(_reset)
 
-	# Wheels: cosmetic wheel styles. Leaves the lift for the solo car-park view, where
-	# the car sits SETTLED on its suspension under a side-on camera (the lift holds it
-	# raised, and wheels are judged by stance). See features/wheel-customization.md.
-	# Reached from inside the Tuning menu rather than the lift hub row.
+	# Wheels: cosmetic wheel styles. The host it was built for opened a solo car-park view
+	# where the car sat SETTLED on its suspension under a side-on camera (wheels are judged
+	# by stance). That view is deleted; the button stays built and hidden until something
+	# wires on_wheels again. See features/wheel-customization.md.
 	_wheels_button = Button.new()
 	_wheels_button.text = "Wheels"
 	_wheels_button.focus_mode = Control.FOCUS_ALL
@@ -132,10 +133,10 @@ func _on_slider_changed(value: float, axis: String) -> void:
 		_on_change.call()
 
 
-# Zero the handling axes (free + instant) — the lift's Reset action (features/tuning.md).
+# Zero the handling axes (free + instant) — the Reset action (features/tuning.md).
 # Clears ONLY the TuningLibrary.AXES keys and leaves the rest of the tuning bag intact,
-# so non-axis knobs stored alongside (engine_detune, owned by the upgrades menu) survive
-# — this panel resets what it owns, not the whole bag.
+# so non-axis knobs stored alongside (engine_detune) survive — this panel resets what it
+# owns, not the whole bag.
 func _reset() -> void:
 	if _owned.is_empty():
 		return
