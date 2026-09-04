@@ -19,10 +19,12 @@ extends RefCounted
 # HEADROOM (the ghost segment) is measured on this same scale, so it still shows an early
 # car how much of the roster it can climb.
 #
-# CACHED, because the sweep walks every car against every upgrade slot. The cache is
-# invalidated by BOTH catalogue seams (CarLibrary and UpgradeLibrary override_for_test /
-# reset), since the bounds depend on both rosters — a test that installs synthetic cars
-# but keeps stale bounds would draw bars against a scale from a different game.
+# CACHED, because the sweep walks every car through effective_meta. It is invalidated by
+# CarLibrary.override_for_test / reset — a test that installs synthetic cars but keeps
+# stale bounds would draw bars against a scale from a different game. It used to be
+# invalidated by UpgradeLibrary's seam too, when the bounds depended on a second authored
+# roster (the parts catalogue); that catalogue is deleted (todo/roguelike-pivot.md), so
+# there is one roster and one invalidator.
 
 # Grip is speed-dependent (downforce grows with v²), so its bounds are rated at the same
 # reference speed the Grip readout quotes. Read from GameConfig.grip_reference_kmh — the

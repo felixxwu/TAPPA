@@ -1,22 +1,33 @@
 # World-space menus (`WorldPanel`)
 
+> **DORMANT: the class is live, nothing hosts it.** Every screen that used to be a world
+> panel — the car park, the tuning lift, the title and the garage — lived on `hq.gd`, and
+> the diegetic 3D hub was deleted outright by decision 9 (stage 2b of
+> `todo/roguelike-pivot-plan.md`). `scripts/world_panel.gd`, `scripts/world_panel_host.gd`,
+> their `GameConfig` block and `tests/headless/test_world_panel.gd` all survive and still
+> pass, but **no production code constructs a `WorldPanel` any more** — grep and see. The
+> flat shell ([hub-shell.md](hub-shell.md)) is `CanvasLayer` pages throughout.
+>
+> Read this file as the manual for re-hosting the mechanism, not as a description of what
+> is on screen today. Everything below about the panel's own behaviour (the `_frame`
+> Control, `ui_scale`, the input pump, `pixel_at`, the post-process interaction) is still
+> exactly true of the class. Everything about STATIONS — anchors, the car-park host swap,
+> the camera pan, the marker's flipped axes — describes `hq.gd` call sites that no longer
+> exist, and is kept because re-deriving it cost real hand-tuning.
+
 **Sources:** `scripts/world_panel.gd` (`class_name WorldPanel` — the panel itself, plus the
-`text_backing` / `apply_host_style` statics every host reuses),
-`scripts/world_panel_host.gd` (`class_name WorldPanelHost` — one station's swap between its
-flat layer and a panel), the two stations' wiring in `scripts/hq.gd`
-(`_sync_panel`, `_car_panel_xform`, `_lift_panel_xform`), the tree handles set in
-`scripts/hq_overlays.gd` (`build_car_overlay` → `_car_root`, `build_lift_overlay` →
-`_lift_root`), the `Node3D` clause in `scripts/menu_nav.gd` (`is_on_screen`), and the
-`world_space_menus` / `world_panel_*` fields in `scripts/game_config.gd`.
+`text_backing` / `apply_host_style` statics), `scripts/world_panel_host.gd`
+(`class_name WorldPanelHost` — one station's swap between its flat layer and a panel), the
+`Node3D` clause in `scripts/menu_nav.gd` (`is_on_screen`), and the `world_space_menus` /
+`world_panel_*` fields in `scripts/game_config.gd`. The station wiring this file used to
+list (`hq.gd::_sync_panel` / `_car_panel_xform` / `_lift_panel_xform`, and
+`hq_overlays.gd`'s `_car_root` / `_lift_root` handles) is deleted.
 
-**Tests:** `tests/headless/test_world_panel.gd`, `tests/headless/test_menu_flow.gd`
+**Tests:** `tests/headless/test_world_panel.gd` — the panel and its input pump. The
+hosting / hot-reload tests this file used to name were in `test_menu_flow.gd`, which is
+quarantined (it drives the deleted hub — see [testing.md](testing.md)). None of them
+asserted a POSITION; placements are hand-tuned, see below.
 
-Tests: `tests/headless/test_world_panel.gd` (the panel and its input pump), plus the hosting /
-hot-reload tests in `tests/headless/test_menu_flow.gd`
-(`test_hq_carpark_world_space_menu_hosts_backs_and_reframes`,
-`test_hq_lift_hosts_its_menu_on_a_world_panel`, `test_hq_hot_reload_keeps_the_world_menu_toggle`,
-`test_hq_panel_ui_scale_retune_reaches_the_panel`). None of them assert a POSITION — placements are
-hand-tuned, see below.
 Design: [`docs/superpowers/specs/2026-08-10-world-space-menus-design.md`](../docs/superpowers/specs/2026-08-10-world-space-menus-design.md).
 
 A `WorldPanel` is **a menu that exists in the 3D world**: it hosts an ordinary menu
@@ -29,49 +40,53 @@ camera-facing rotation blend, and no runtime re-orientation anywhere in the clas
 Foreshortening is the intended look. A panel has ONE mounting transform and the shot is
 composed around it. Don't "fix" `billboard = BILLBOARD_DISABLED`.
 
-## Status
+## Status — four screens migrated, then all four deleted
 
-**Four screens migrated** — car park, tuning lift, title and garage — behind
-`Config.data.world_space_menus`, which the SHIPPED `config/game_config.tres` sets **ON** (the code default
-in `game_config.gd` is off, so a test or tool that never loads the resource sees the flat path — do not
-mistake that for what players get). The flat `CanvasLayer` path stays fully wired for all four.
+**Four screens were migrated** — car park, tuning lift, title and garage — behind
+`Config.data.world_space_menus`, which the shipped `config/game_config.tres` still sets
+**ON** (the code default in `game_config.gd` is off). All four were `hq.gd` stations and
+went with it, so the flag now gates nothing: no host reads it.
 
-**Nothing further is planned.** The map table was considered and dropped — it reads well flat, and both
-screens at that station were tried on panels and reverted. Settings is not a task but a CONSTRAINT:
-`SettingsMenu` must stay host-neutral because the pause menu it shares is permanently flat.
+**Two screens were migrated and then deliberately REVERTED** to full-frame before the hub
+was deleted, and their reasons outlive the screens themselves:
 
-**TWO SCREENS WERE MIGRATED AND THEN DELIBERATELY REVERTED** to full-frame. Both are decisions, not
-omissions — don't re-migrate them as unfinished work:
+- **The rally detail page.** The densest page in the HQ (name, region, restriction, record,
+  star row, reward line), read at the map table — whose camera sat under 2 m from the table
+  looking steeply DOWN, so a panel there was read at a punishing angle and had to be small
+  to fit the shot.
+- **The online challenge screen.** Likewise dense (period, ceiling, eligible-car list,
+  leaderboard) and likewise better with the whole frame than welded to a panel.
 
-- **The rally detail page.** The densest page in the HQ (name, region, restriction, record, star row,
-  reward line), read at the map table — whose camera sits under 2 m from the table looking steeply DOWN,
-  so a panel there is read at a punishing angle and has to be small to fit the shot.
-- **The online challenge screen.** Likewise dense (period, ceiling, eligible-car list, leaderboard) and
-  likewise better with the whole frame than welded to a panel in the garage.
+The pattern worth keeping from both: **a diegetic panel suits a screen that is mostly a few
+controls attached to a thing you are looking at, and suits a dense information page badly.**
+The four that migrated were button rows and short readouts; the two that came back were
+tables of text. If world panels are ever re-hosted, that is the test to apply — and note
+the roguelike's own screens (a shop list, a perk list, a stats ledger) are all tables of
+text.
 
-The pattern worth taking from both: **a diegetic panel suits a screen that is mostly a few controls
-attached to a thing you are looking at, and suits a dense information page badly.** The four that
-migrated are button rows and short readouts; the two that came back are tables of text.
+**The lift was the screen that proved the input pump**, and that is the part worth
+remembering: the car park could only ever demonstrate taps and the look (its buttons were
+`FOCUS_NONE` with `_passthrough_overlay`, and it had no sliders, so nav there was `hq.gd`'s
+spatial handler rather than `MenuNav`). The lift's sub-pages were native-focus with real
+`HSlider`s, and drag and gamepad focus were confirmed working through the panel in the
+running game — which is what closed the design's spike gate. A re-host does not need to
+re-prove that.
 
-- **Toggle live (debug builds only):** **F7** (`toggle_world_menus`), handled in
-  `hq.gd::_unhandled_input`. Same shape as the wheel-force arrows' **H** — a config that starts
-  world menus on works in any build, but the live key is a dev affordance and release exports
-  ignore it.
-- **Toggle persistently:** `world_space_menus` in `config/game_config.tres`. Note the `.tres`
-  stores **no** `world_panel_*` overrides, so the values in `game_config.gd` are what's live and
-  **editing them needs a restart** — F7 only flips the mode, it does not reload config.
-
-**The lift is the screen that proved the input pump.** The car park could only ever demonstrate
-taps and the look: its buttons are `FOCUS_NONE` with `_passthrough_overlay`, and it has no
-sliders, so nav there is `hq.gd`'s spatial handler rather than `MenuNav`. The lift's sub-pages are
-native-focus with real `HSlider`s, and the user confirmed drag and gamepad focus work through the
-panel in the running game — which closed the design's spike gate.
+**The live toggles are gone with their host.** F7 (`toggle_world_menus`) was handled in
+`hq.gd::_unhandled_input`, and F8's live re-tune (next section) reached the panel through
+`hq.gd::_sync_panel`. Both are described below as they worked; neither has a key handler
+any more.
 
 ## Tuning it live — no restart (F8)
 
-**The loop:** open `config/game_config.tres` in the editor inspector, change a `world_panel_*` value
-(or a station camera field), then press **F8** in the running game. `Config.reload_from_disk()`
-re-reads the file and `hq.gd` re-applies it in place — you keep your position in the HQ.
+> The F8 handler lived in `hq.gd` and is deleted with it. `Config.reload_from_disk()` — the
+> half that does the work — is still live and still the only way to re-read the file (see
+> [configuration.md](configuration.md)); a re-host wires a key to it again.
+
+**The loop, as it worked:** open `config/game_config.tres` in the editor inspector, change a
+`world_panel_*` value (or a station camera field), then press **F8** in the running game.
+`Config.reload_from_disk()` re-reads the file and the host re-applies it in place — you keep
+your position in the HQ.
 
 **Why `Config.reset()` could not do this.** `load()` returns the **cached** resource — the copy the
 process read at boot — so reset() re-duplicates stale values however many times it is called.
@@ -130,9 +145,10 @@ the project's own rule against pinning tunable values.
 
 ## Relationship to the map-table pin labels
 
-`hq_map_table.gd::_build_readout_sprite` does the same `SubViewport` -> `Sprite3D` trick for pin labels. That
-path is **billboarded** and sets `gui_disable_input = true` (a label, not a menu); `WorldPanel`
-inverts both. Three lessons it already paid for are inherited and are not optional:
+`hq_map_table.gd::_build_readout_sprite` did the same `SubViewport` -> `Sprite3D` trick for the
+3D map table's pin labels. That path was **billboarded** and set `gui_disable_input = true`
+(a label, not a menu); `WorldPanel` inverts both. It is deleted with the map table, but the
+three lessons it paid for are baked into `WorldPanel` and are not optional:
 
 1. **`render_target_update_mode` follows visibility**, and is never `UPDATE_ALWAYS` while hidden — 32
    pin viewports re-compositing invisible UI once cost ~1.9 MP/frame. `_apply_visibility` is the
@@ -222,9 +238,9 @@ panel pumps events across. The pump therefore forwards **everything**, keyboard 
 
 **It is split across two input stages on purpose. It is not tidier to merge them.**
 
-- **Pointer -> `_input` (early).** A station's own tap handling (`hq.gd`'s `_unhandled_input`, which
-  picks cars out of the lineup) runs *before* its descendants, so forwarding at that stage would let
-  HQ act on a tap aimed at a button on the panel. Claiming it early and marking it handled is what
+- **Pointer -> `_input` (early).** A station's own tap handling (in the deleted hub, `hq.gd`'s
+  `_unhandled_input`, which picked cars out of the lineup) runs *before* its descendants, so
+  forwarding at that stage would let the host act on a tap aimed at a button on the panel. Claiming it early and marking it handled is what
   stops one tap doing two things. Guarded by `MenuNav.input_blocked` so it cannot pre-empt an open
   `ConfirmPopup` above it.
 - **Everything else -> `_unhandled_input` (late).** Native `ui_*` focus movement and a focused
@@ -275,6 +291,14 @@ overlay and the (permanently flat) pause menu, so it must work in either host wi
 Same for any future shared menu component.
 
 ## Station anchors — two conventions
+
+> **THE REST OF THIS SECTION, THROUGH *…and then vertical overflow*, DESCRIBES DELETED
+> CALL SITES.** Every station named below (car park, tuning lift, title, garage) was an
+> `hq.gd` station, and `hq.gd`/`hq_overlays.gd`/`hq_map_table.gd` are gone. It is kept
+> verbatim because the placements cost real hand-tuning at the machine and the reasoning —
+> which anchor convention to use, why the camera pans instead of moving, the flipped marker
+> axes, the label-backing clipping trap — is what a re-host would otherwise re-derive from
+> scratch. Nothing in it is true of the game as it stands.
 
 | Station | Anchor | Convention |
 |---|---|---|
@@ -461,6 +485,9 @@ NOS on one row).
 
 ## Visibility rules live in `_update_overlays`, not in the screens
 
+> `_update_overlays` was `hq.gd`'s. The RULE — that visibility is decided in one place by
+> the host, never by the screens themselves — is what to carry forward.
+
 `hq.gd::_update_overlays` drives every migrated screen through `_sync_panel`, which owns its
 layer's visibility — because whichever host is NOT holding the tree must be hidden, or an empty
 `CanvasLayer` (or an unfed panel) is left armed.
@@ -587,12 +614,21 @@ would agree with itself and pass.
 not the marker offset or yaw. Those are look values retuned by eye, so the tests assert the
 behaviour that must hold at any of them.
 
-## Deferred
+## Where this goes next
 
-- **Migration of the remaining HQ screens.** Order from the design doc: tuning lift →
-  rally detail + challenge → garage + title → map table (last; needs the pin-picking
-  question answered even though no collider is added) → settings (dual-host).
-- **Per-screen re-layout to panel-shaped viewports.** Trees are currently hosted verbatim
-  at 16:9. Individual screens can later be laid out for a physical aspect ratio without
-  touching `WorldPanel`; the car spec sheet is the strongest candidate.
+The migration backlog this section used to hold ("tuning lift → rally detail + challenge →
+garage + title → map table → settings") is **void**: every screen on it is deleted.
+
+What is actually open is one question, and it is the user's, not an implementation task:
+**`world_panel.gd` + `world_panel_host.gd` are now orphaned production code** — two scripts,
+a `GameConfig` block, and a passing test file that nothing in the game constructs. Either a
+future screen re-hosts them (a diegetic garage would be the natural candidate — and note the
+adoption rule above says the roguelike's current screens, all tables of text, are poor
+candidates), or they are deleted along with their config block and their test. Nothing in
+the pivot decided this either way, so do not delete it on your own initiative.
+
+Still true if it IS re-hosted:
+
+- **Per-screen re-layout to panel-shaped viewports.** Trees were hosted verbatim at 16:9;
+  a screen can be laid out for a physical aspect ratio without touching `WorldPanel`.
 - **Occlusion**, if a panel ever becomes walk-behind-able.

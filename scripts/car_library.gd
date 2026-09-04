@@ -327,7 +327,7 @@ static func all() -> Array[Dictionary]:
 
 static func override_for_test(cars: Array[Dictionary]) -> void:
 	_seam.override_for_test(cars)
-	CarStatBounds.invalidate()  # the roster-wide stat scale is derived from BOTH catalogues
+	CarStatBounds.invalidate()  # the roster-wide stat scale is derived from this roster
 
 static func reset() -> void:
 	_seam.reset()

@@ -23,13 +23,16 @@ extends RefCounted
 #                  table, so a display/rating figure cannot drift from physics
 #
 # `active_effects` is the SEAM where the input comes from: a car's `boosts` list.
-# Nothing writes that key yet, so every loop below runs zero times today — but the
-# funnel is live and complete, and stage 5's whole job is to put picked boosts on
-# the car dict. Nothing else here needs to change when they arrive.
+# TWO writers fill it, both in world.gd::_field_car, both on a DUPLICATED owned-car
+# dict so neither reaches the saved profile: the run's picked boosts
+# (RunSession.boosts, stage 5) and the player's equipped perks
+# (PerkLibrary.equipped_effects, decision 51). They differ in lifetime, not in
+# mechanism — see features/perks.md.
 #
 # Also still here: `stock_drive_mode` / `resolve_drive_override`, the drive-mode
 # resolver car.gd and effective_meta read. It never depended on the catalogue —
-# only on what Save records as paid for.
+# only on what Save records as paid for, which is now Save.buy_drive_mode (the
+# sixth money sink, decision 52).
 #
 # Distinguish from TUNING: tuning (features/tuning.md) is free, reversible per-car
 # config nudges, and is now UNGATED on every axis (decision 24) — the aero gate
@@ -190,17 +193,18 @@ static func _cfg_fields(desc: Dictionary) -> Array:
 # `{"id": String, "effect": Dictionary}` — the same `effect` sub-dict shape the authored
 # parts used, so every consumer below is unchanged.
 #
-# EMPTY ON EVERY CAR TODAY. Nothing writes `boosts` yet: the persistent parts model that
-# used to fill this list is deleted, and the in-run boost picks that replace it land in
-# stage 5. Until then `apply`, `effective_meta` and `grip_meta` all run their loops zero
-# times, which makes a car exactly its CarLibrary/EngineLibrary baseline plus tuning plus
-# damage.
+# FILLED AT FIELDING TIME by world.gd::_field_car, from two sources with different
+# LIFETIMES but one mechanism: `RunSession.boosts()` (run-scoped picks, wiped when the run
+# ends) and `PerkLibrary.equipped_effects(Save.profile)` (permanent purchases, re-derived
+# on every stage boot). Outside a run the list is empty and `apply`, `effective_meta` and
+# `grip_meta` all run their loops zero times, which makes a car exactly its
+# CarLibrary/EngineLibrary baseline plus tuning plus damage.
 #
 # WHY A PLAIN KEY ON THE CAR DICT rather than a query into a run object: it keeps the funnel
 # pure and testable with no session standing up, it is the same place `tuning` and
-# `swapped_engine` already live, and it means stage 5's job is to WRITE the key (on the
-# owned dict handed to Car.apply_owned / Car.refit_upgrades) rather than to re-plumb five
-# call sites. It is deliberately NOT persisted by Save: a run's boosts are wiped on run end
+# `swapped_engine` already live, and it means a new source of effects WRITES the key (on the
+# owned dict handed to Car.apply_owned / Car.refit_upgrades) rather than re-plumbing five
+# call sites — which is exactly how perks were added without touching this file's loops. It is deliberately NOT persisted by Save: a run's boosts are wiped on run end
 # (todo/roguelike-pivot.md, "Soft permadeath"), so they must not survive in the profile.
 static func active_effects(owned_car: Dictionary) -> Array:
 	return owned_car.get("boosts", [])
@@ -211,8 +215,7 @@ static func active_effects(owned_car: Dictionary) -> Array:
 # Apply every ACTIVE effect on top of the CarLibrary baseline that apply_car
 # already wrote into `cfg` (step 1). Pure: mutates the passed-in live `cfg` only,
 # never the authored .tres. Driven by the EFFECTS table above, off whatever
-# `active_effects` hands back — empty until stage 5 writes `boosts`, so this is
-# currently a no-op on every car.
+# `active_effects` hands back — a no-op outside a run, when nothing has written `boosts`.
 # Loud write for the apply path. `Object.set()` on a name the config does not
 # declare is a SILENT no-op — the part reads as fitted and does nothing, and no
 # gameplay test fails (see the EFFECTS header; found by the small-model-readiness
