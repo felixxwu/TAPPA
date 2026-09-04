@@ -604,11 +604,23 @@ need real events written, and they are not playable until they have them.
 > Haiku agents (one per doc-cluster); one Haiku agent per eval task to re-author.
 > Parent runs the single full suite at the end.
 
-1. Flesh out the flat shell beyond stage 3's spine.
-2. **Full `features/` audit** — all 76 docs, each fixed or deleted, index rebuilt
-   (decision 40).
-3. **Re-author the dead small-model eval tasks** against the new systems
-   (decision 41) — T001, T005, T008, T009, T014, T015, and reshape T003.
+1. ~~Flesh out the flat shell beyond stage 3's spine.~~ **DONE** — and further than planned: the
+   four questions put to the user at the start of the stage added a challenge entry point (decision
+   53), drivetrain conversions as a sixth money sink (52) and the distance-driven stat (54).
+2. ~~**Full `features/` audit** — all 76 docs, each fixed or deleted, index rebuilt
+   (decision 40).~~ **DONE** — 69 docs. Every reference to a deleted system is now either corrected
+   or explicitly marked as history; 48 broken cross-doc links delinked; `features/README.md`'s file
+   map rebuilt. Three docs were rewritten wholesale (`menus.md`, `upgrade-catalogue.md`,
+   `world-panel.md`) and one (`settings.md`) had ~135 lines of misfiled HQ-station description
+   removed. **The audit found four real defects, not just stale prose** — see the stage's own
+   commits: the region look was never wired to the run's region, `Scenes.PODIUM`/`STANDINGS`
+   pointed at deleted scenes, the cloud boot-pull gate lost its only consumer, and two test files
+   parsed-but-errored at runtime.
+3. ~~**Re-author the dead small-model eval tasks** against the new systems
+   (decision 41) — T001, T005, T008, T009, T014, T015, and reshape T003.~~ **DONE.** All six
+   re-authored and T003 reshaped in `evals/small-model/tasks.md`; counters reset;
+   `todo/small-model-readiness.md` now says which of its findings survive the pivot and which are
+   historical.
 4. One full `./run_tests.sh` against the ~5 minute budget. If it is over, invoke
    `/optimise-test-suite` rather than eyeballing it.
 5. **Merge to `main`** — the one time, once the gate below passes.

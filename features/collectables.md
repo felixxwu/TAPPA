@@ -108,7 +108,7 @@ re-arms; `collected` only ever gains bits.
 **The pickup radius is read LIVE from `GameConfig.coin_pickup_radius_m` every
 tick — `CoinField` never caches it.** That is what makes the `coin_magnet` perk
 possible: the perk multiplies that one field through the effects funnel (decision 51,
-wired in the pass after this stage — see `features/perks.md`), and a radius cached at
+wired in the pass after this stage — see [perks.md](perks.md)), and a radius cached at
 `build()` would leave it nothing to reach. `lucky_coins` works the same way one level
 up, multiplying `GameConfig.coins_per_stage` before `coin_layout_params()` reads it —
 which is why the count is fetched at build time from the config rather than passed

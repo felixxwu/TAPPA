@@ -71,9 +71,9 @@ know which of its widgets count as rows, misses ones added later, and has to re-
 hidden-sub-panel rule; one flag here covers every `MenuNav` menu. Covered by
 `tests/headless/test_menu_nav.gd` (the `test_remember_*` group). **No shipped screen opts
 into it today** — it's exercised directly by that test group, not by a live caller — so the
-first flat-shell screen that wants "reopen where I left it" (a strong candidate: the car
-shop, or the region-select grid once stage 4 builds it) can turn it on with no framework
-work of its own.
+first `HubShell` page that wants "reopen where I left it" can turn it on with no framework
+work of its own. (Every page passes `remember: false` today: each is rebuilt from scratch
+on entry, so the first action is always the right landing spot.)
 
 **One owner for opening focus.** A menu that attaches `MenuNav` must **not** also fire its
 own `UITheme.focus_grab` when it opens. Showing the root fires `visibility_changed`, which
@@ -190,7 +190,7 @@ single *Return to HQ* button ended a wrecked run — deleted when damage stopped
 end a run at all (see [damage.md](damage.md)). The pattern is kept written down because it
 is the right shape the next time a one-action screen appears (a plausible candidate: a
 future "run over — you missed the timer" beat, if that ever needs its own screen rather than
-folding into the run-summary screen stage 3 built), and because of two obligations that are
+folding into `HubShell`'s SUMMARY page, which serves both outcomes today), and because of two obligations that are
 easy to miss:
 
 - **Gate on the phase.** The wreck screen only accepted the input once its orbit had begun,

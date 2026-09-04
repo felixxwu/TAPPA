@@ -9,6 +9,21 @@ Design: `docs/superpowers/specs/2026-08-18-small-model-readiness-loop-design.md`
 
 ## Open
 
+> **THE ROGUELIKE PIVOT INVALIDATED PART OF THIS BACKLOG (stage 9, decision 41).** Six of the
+> fifteen task-bank entries targeted systems the pivot deleted — the star economy, the parts
+> catalogue, the career rally, the overworld map, the podium — and have been re-authored against the
+> systems that replaced them (`evals/small-model/tasks.md` says which, per entry); T003 was reshaped
+> and every affected `clean_solves` counter reset.
+>
+> **The FINDINGS below are a different matter and mostly survive**, because they are about how the
+> repo reads rather than what it contains: a fact stated in prose but absent from data, a registry
+> whose three sites give no feedback when one is skipped, a doc whose insertion point costs more to
+> find than the change. Read each one and ask whether its SHAPE still exists; several now point at
+> `BoostLibrary`/`PerkLibrary`/`LifetimeStats` instead of the tables they were written against.
+> Items naming `RewardSystem`, `RallySession`, `hq.gd`, the star ledger or `UpgradeLibrary`'s
+> catalogue are **historical** — the loop has not re-measured this codebase since the pivot, and
+> **round 044 is the last round whose numbers mean anything about the current tree.**
+
 **THE LOOP WAS RESTARTED AT ROUND 011, in DRILL mode** (`/small-model-readiness-drill`, its
 first ever execution). Round 010's handoff below still stands except where round 011 changed it.
 Items are ordered by what the evidence says is most valuable, not by age.

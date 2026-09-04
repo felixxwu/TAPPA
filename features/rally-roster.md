@@ -188,8 +188,8 @@ map/eligibility/prize/reward functions below for a real reason any more:
   rallies and are removed from this doc rather than kept and marked stale —
   see [snow-region.md](snow-region.md) for the Alps' still-live content
   (grip, deep snow, frozen lakes) and `todo/roguelike-pivot.md` decision 28 for
-  what replaced the starter-picker/opening-rally flow (a money-funded car shop,
-  not yet built).
+  what replaced the starter-picker/opening-rally flow: a money-funded car shop, built as
+  `HubShell`'s CAR page ([hub-shell.md](hub-shell.md)).
 
 None of this is yours to fix if you're a docs-only pass — it's tracked in
 `todo/roguelike-pivot.md`'s "What gets deleted" (the overworld map + prize

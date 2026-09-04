@@ -7,92 +7,59 @@ probe** — it sees only the quoted request line.
 Authored round 001; rubrics augmented round 002. See `.claude/skills/small-model-readiness/SKILL.md` §1 for the
 ratchet rules (retire after two consecutive clean solves; replenish harder).
 
+> **STAGE 9 OF THE ROGUELIKE PIVOT RE-AUTHORED SIX TASKS AND RESHAPED ONE**
+> (`todo/roguelike-pivot-plan.md`, decision 41). T001, T005, T008, T014 and T015 targeted the star
+> economy, the parts catalogue, the career rally, the overworld map and the podium — all deleted —
+> and were measuring nothing. T009 moved house (tyre compounds are boosts now) and T003 gained real
+> obligations (a linear unlock `order`, a 16-event pool floor). **Their clean_solve counters are
+> reset**, because a score against a deleted system says nothing about the current one. The rounds in
+> `evals/small-model/rounds/` are left exactly as they were: they are the record of what the loop
+> found, and several of their FINDINGS outlived their tasks — every re-authored entry says which.
+
 ---
 
-### T001 — "Add a gravel-spec tyre upgrade to the catalogue."
-- status: **live — RETIREMENT REVERSED in round 042 by §1's own ratchet.** Round 042 sampled it as the
-  confirming probe for round 040's provisional retirement and scored **3/3/2/3 — not clean** (it introduced
-  a slot member count into `upgrade-catalogue.md`, which `test_no_feature_doc_states_a_slot_member_count`
-  rejects). §1 resets `clean_solves` to 0 on any non-clean attempt, so the two-consecutive-clean-solves
-  condition is not met and the task returns to the live pool. This also DISPOSES of the round-041 doubt
-  about round 021 without needing to resolve it: T001 is live either way.
-- clean_solves: **0**  (round 040 clean, then round 042 non-clean -> reset. Earlier: rounds 001-003, 009
-  non-clean; round 017 A/B control 3/2/0/3 + treatment 3/3/0/3; round 019 3/2/3/3; round 020 3/2/3/3;
-  **round 021 3/3/3/3 — but see round 041: its `EFFECTS` row was never verified and cannot now be**)
-- **RUBRIC NOTE round 021 — CLEAN SOLVE (3/3/3/3).** The probe authored a NEW surface axis and made all
-  three round-004 registry edits (`@export tire_gravel_grip_mult`, the `TIRE_SURFACE_AXES` row, the
-  `_channel_weight` "gravel" arm matching its siblings' contract), added the row, and made six
-  substantive edits across BOTH docs — including the new axis's table row and the menu-label count.
-  Effective grip: gravel_tires 1.183 gravel / 1.160 snow / 1.044 tarmac, giving a clean three-way split
-  (gravel_tires wins gravel, snow_tires wins snow, race_tires wins tarmac) — **every row wins somewhere**,
-  so the symmetric invariant added in round 020 held. It reproduced that win-table in its own code
-  comment. `config/game_config.tres` correctly unchanged (new export's default = its authored value).
-  All six relevant test files green. **The fix chain that got here: round 018 form (prose -> numbered
-  procedure) -> round 019 mechanism -> invariant -> round 020 invariant stated symmetrically.**
-- **RUBRIC NOTE round 019 — the note-FORM experiment WORKED on docs, and exposed the next layer.**
-  Round 018 rebuilt this slot's note from a prose clause into a numbered procedure (parts 1-3, the
-  half-done failure named, the guard named by test name). Doc compliance went **0/2 -> 2/2**: the probe
-  updated `features/upgrade-catalogue.md` AND `features/drivetrain-and-tires.md` (three separate edits
-  in the latter, including the enumerated compound sentence). It also authored three surface terms and
-  gated on a REAL rally id (`sp_dust_trial`). **Remaining defect: the part is strictly dominated by
-  `race_tires` on every surface** — gravel 1.12 vs race's 1.15 flat, snow 1.008, tarmac 0.896, so it
-  wins nowhere and nobody would ever fit it. Round 009 recorded this same defect. Cause: the note
-  specified the MECHANISM ("author surface terms") not the INVARIANT ("must beat every sibling
-  somewhere") — three terms is satisfiable while still being a weaker rung. Round 019 rewrote part 1 to
-  state the invariant and show the arithmetic. **Grade down any answer whose part wins on no surface.**
-  Note also: a guard test for this is **forbidden** by CLAUDE.md (ordering relationships across
-  authored entries), so the note is the only lever.
-- **RUBRIC NOTE round 020 (3/2/3/3 — same score, DIFFERENT defect; the invariant fix WORKED).** The
-  probe read round 019's invariant, **worked the arithmetic through in its own code comment**, and
-  authored `1.20 / 0.88 snow / 0.98 tarmac` — winning on gravel (1.200) and tarmac (1.176). So
-  "the new part must win somewhere" is now reliably achievable and docs held at 2/2.
-  **The defect MIRRORED: `race_tires` now wins on NOTHING** (1.150 vs gravel's 1.200 and 1.176, vs
-  snow's 1.296). The slot still has a dead part, just a different one. Cause: round 019's invariant was
-  stated **one-directionally**; round 020 restated it symmetrically — (a) your part must win somewhere,
-  (b) it must not take the last surface from a sibling, so the test is "EVERY row in this slot wins
-  somewhere". **Grade down any answer that leaves any tyre row winning on no surface.**
-- RUBRIC NOTE round 009 (3/2/2/2, best result this task has had): the probe correctly
-  reused the EXISTING axes (flat + tarmac + snow terms, gravel as the neutral base) rather
-  than authoring a new one — under the round-004 registry that is the fully-correct answer,
-  so do NOT require three registry edits for a part that needs no new axis. Two real misses
-  remain: `features/drivetrain-and-tires.md` still said the tyre slot "holds two parts" and
-  went unupdated, and the new part is dominated everywhere by `race_tires` (a strictly-weaker
-  rung, which the slot was explicitly restructured to eliminate). CAUSE recorded for a later
-  round: the tyre-slot authoring checklist is attached to the `snow_tires` row, ABOVE the
-  point where a new part is appended, so it is positionally invisible. NOT fixed this round.
-- RUBRIC NOTE round 004 (**SUPERSEDES the round-002 and round-003 notes below — the
-  design they graded against no longer exists**): round 004 restructured the surface
-  axes into the `GameConfig.TIRE_SURFACE_AXES` registry. A new surface axis is now
-  THREE edits, all in `scripts/game_config.gd` and all adjacent: the `@export`, the
-  registry row, and the `_channel_weight` arm. Grade a new-axis answer as complete
-  only if all three are present; consumer files (`drivetrain.gd`, `lap_time_model.gd`,
-  `car.gd`, `car_performance.gd`) must NOT need editing, and editing them is a signal
-  the probe was working from the stale doc rather than the code. `tire_surface_mult`'s
-  4-arg shim still exists for test callers — widening it is unnecessary and touching
-  its signature is a defect, not a fix. A gravel part built from the EXISTING flat and
-  tarmac terms without a new axis remains a fully correct alternative answer.
-  Guards: `test_tire_surface_axes.gd` (both registry directions) and
-  `test_every_grip_feeding_effect_field_is_read_by_the_physics`.
-- ~~RUBRIC NOTE round 003~~ (historical): round 003's probe expanded every production
-  site correctly but broke test_drivetrain.gd's 6 direct tire_surface_mult calls at
-  compile time and left the "CLOSED PAIR" note stale. Both hazards are designed out as
-  of round 004. Still check `unlocked_by_rally` parity with sibling tyres.
-- ~~RUBRIC NOTE round 002~~ (historical): the blend used to be a CLOSED PAIR requiring
-  a 6-site edit across 5 files. Retained only to explain why the round-004 note
-  supersedes it; do not grade against it.
-- areas: catalogue, upgrades
-- expected_files: `scripts/upgrade_library.gd` (the `UPGRADES` table; slot must be
-  the existing `TIRE_SLOT` = `"tires"`)
-- expected_docs: `features/upgrade-catalogue.md`, `features/drivetrain-and-tires.md`
-- expected_tests: `upgrade_library`, `upgrades_grid`, and `tire_surface_axes` if the
-  answer registers a new surface axis (round 004)
-- test_conventions: must NOT pin the new part's stats or assert it exists by id
-  (catalogue entries are authored data); may assert catalogue-contract properties
-  that hold for any entry
-- conventions: any tunable it introduces belongs in `config/game_config.tres`, not
-  a script literal; `features/` updated AND indexed in `features/README.md`
-- why this task: catalogue tables are the easiest possible change — if a small
-  model fails HERE, the problem is navigation, not difficulty
+### T001 — "Add a new boost to the between-stage pick."
+- status: **live — RE-AUTHORED in stage 9 of the roguelike pivot.**
+- clean_solves: **0** (the counter resets: this is a different task against a different system)
+- **WHAT THIS REPLACED, AND WHY THE SCORES ARE GONE.** T001 was "Add a gravel-spec tyre upgrade to
+  the catalogue" and had a long history (rounds 001-042, one clean solve at 021, retirement reversed
+  at 042). `UpgradeLibrary`'s authored `UPGRADES` catalogue, its slots, its star purchase and its
+  per-car install are all **deleted** by the roguelike pivot (`todo/roguelike-pivot.md`), so the task
+  measured nothing. Its history is preserved in `evals/small-model/rounds/` and in
+  `todo/small-model-readiness.md`; do not read the old scores as applying here.
+- **WHAT IT MEASURES NOW — the same coupling, one system over.** `BoostLibrary.CATALOGUE`
+  (`scripts/boost_library.gd`) is the in-run boost pool, and every entry names an
+  `UpgradeLibrary.EFFECTS` key plus the `GameConfig` field its magnitude is read from. So a new boost
+  is a **three-site edit** with a silent-failure trap at each: the catalogue entry, the `EFFECTS` row
+  (if the effect key is new), and the `@export` on `GameConfig`. This is deliberately the SAME shape
+  as the retired task — one authored row that only works if two registries agree — against the
+  system that replaced it.
+- **THE TRAP TO GRADE ON (round 041's finding, still live).** An effect key with no `EFFECTS` row is
+  DROPPED by `UpgradeLibrary.apply`: the boost reads as active, the config is untouched, and the
+  feature simply does not happen. `apply` now `push_error`s on it and
+  `test_boost_library.gd` asserts every authored key has a row — so a probe that skips the row should
+  go red rather than pass silently. A probe that reuses an EXISTING effect key (`mass_mult`,
+  `tire_grip_mult`, …) has taken a legitimate shortcut and must not be marked down for it; the row is
+  only required for a NEW key.
+- **ALSO GRADE:** `level_direction` (+1 if a purchased level should push the magnitude UP, -1 if
+  down) — getting it backwards makes the meta shop weaken the boost, and no test catches it, so it is
+  a correctness call. And the magnitude belongs in `config/game_config.tres`, never as a const in the
+  catalogue.
+- areas: upgrades, config, run loop
+- expected_files: `scripts/boost_library.gd` (`CATALOGUE`), `scripts/game_config.gd` (the magnitude
+  `@export`, under `@export_group("Roguelike Run Boosts")`), `config/game_config.tres`, and
+  `scripts/upgrade_library.gd` (`EFFECTS`) only if the effect key is new
+- expected_docs: `features/region-runs.md` (the boost catalogue section),
+  `features/upgrade-catalogue.md` (only if an `EFFECTS` row was added)
+- expected_tests: `boost_library`, `upgrade_library`
+- test_conventions: no asserting a shipped magnitude, a catalogue size, or that a particular boost
+  exists — those are all authored data. Test the contract (every authored effect key has an `EFFECTS`
+  row; a drawn boost is a real catalogue entry; level 0 is an exact no-op)
+- conventions: values in `config/game_config.tres`
+- why this task: it is the narrowest real "one authored row, two registries must agree" change in the
+  repo, and both registries fail SILENTLY when they disagree
+
+---
 
 ### T011 — "Also show the gap to the car behind me, not just the one ahead." — RETIRED
 
@@ -300,135 +267,70 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   main, so they cannot be pre-adapted. **The reds are EXCUSED — score correctness on the implementation — and no
   future round should chase a clean solve here.**
 
-### T014 — "When I open the full map with M, show how many stars I've earned on the rally pin I've highlighted."
-- status: live  (**authored round 033; RE-AUTHORED round 045 — see below**)
-- clean_solves: 0  (round 033's dispatches VOID — see below; **round 034 = 3/3/2/3, first scored probe**;
-  **round 045 drill: two attempts 1/0/0/1 → 1/0/0/1, deliberate early stop at 2 — both probes concluded
-  FALSE ALREADY-DONE from the in-world markers**, which genuinely satisfy a plain reading of the old
-  wording)
-- **RE-AUTHORED round 045.** Old wording ("On the overworld map … when I look at its pin") is satisfiable
-  by the in-world marker star rows (`overworld_marker.gd::_apply_stars`), so two drill probes verified
-  that surface and reported no work needed — even after round 045 planted a three-surface disambiguation
-  note in `overworld_map.gd`, `overworld_marker.gd` and `features/map-exploration.md` (that note stays;
-  it is true and serves T015). New wording pins the surface by the ACTION that opens it (M / full map).
-  The re-authored task is unmeasured — probe it fresh before trusting any prior score. Round-033 rule
-  extended: if two surfaces both satisfy the wording, the wording is the bug.
-- **RETARGETED round 033, and the reason is an authoring rule.** The task first read "…when I look at its map
-  pin", which is ambiguous between the **overworld** map and the **HQ's diegetic 3D map table**. The probe chose
-  the HQ table — and `hq.gd::_build_readout_box(title, stars, unlock)` **already** builds a `StarRow` there, with
-  the "-1 = unreached event" case handled. So the task asked for a feature that exists, and the probe added a
-  redundant numeric label above the existing row rather than reporting it was already done.
-  **My error: I grepped `overworld_map.gd` (genuinely has no star data) and never checked the other surface.**
-  With round 017's T007 ("already half-implemented") that is two instances, so:
-  **before authoring, enumerate EVERY surface the wording could mean and check each — a grep of the file you are
-  thinking of proves nothing about the file you are not.**
-  Now names the overworld map explicitly, where the readout genuinely does not exist and the ONE-NAME-ONLY trap
-  lives. **Correctness/convention were VOID for that attempt** (the rubric assumed absence); navigation scored 3.
-- **RUBRIC NOTE round 034 (3/3/2/3, first scored probe).** Traps 1, 2 and 4 all held: stars went in the **footer**
-  (`_write_footer`) rather than on every pin, via `RallyLibrary.stars_for_placement(Save.best_placement(id))`, with
-  non-rally pins guarded and a `stars > 0` guard so nothing renders when nothing was earned. Docs 1 of 2
-  (`overworld.md` yes, `map-exploration.md` no); no test.
-  **Trap 3 held in CODE but failed in PROSE:** it wrote `if placement > 0:  # Only show if the rally has been
-  completed` — right code, wrong reason, since `best_placement` is podium-gated so `> 0` means PODIUMED. Round 034
-  found the cause: rounds 015/016 warned on `rally_podiumed`/`podium_count`/`podium_rally_count` but **never on
-  `best_placement()`**, the accessor a UI consumer actually reaches for. Warning added there.
-  **NOTE FOR A FUTURE ROUND: this task cannot settle the "does a documented rationale generalise" question** — the
-  footer is both the correct answer AND the obvious one, so the two explanations cannot separate. A real test needs
-  a readout with no existing single-pin home.
-- AUTHORED ROUND 033, applying round 032's authoring rule: **this task is ADDITIVE** (a new readout) rather than
-  a change to tested behaviour, which is what made T002, T008 and T013 unwinnable-clean.
-- **§2.5 FROZEN-ASSERTION CHECK RUN AT AUTHORING TIME (round 032's other lesson).** I grepped
-  `tests/headless/test_overworld_map.gd` (49 tests) for draw-call, label-count and pin-visual assertions: **there
-  are none.** Nothing pins what a pin draws, so an added readout cannot redden an existing test. The correctness
-  axis is therefore scoreable — unlike the three behaviour-changing tasks.
-- GROUNDED IN (read, not guessed):
-  - `overworld_map.gd:1493` `_paint_pins` draws a glyph/icon, a route ring, a selection ring, and exactly one name.
-  - `overworld_map.gd` references **no** star data today (`grep best_placement|stars_for_placement` -> nothing), so
-    the readout genuinely does not exist.
-  - `save_manager.gd:1667` `best_placement(rally_id)` and `RallyLibrary.stars_for_placement()` are the existing
-    seams — the latter is "THE one definition" per its own comment.
-- expected_files: `scripts/overworld_map.gd`
-- expected_docs: `features/map-exploration.md`, `features/overworld.md`
-- expected_tests: `overworld_map`, `overworld`
-- test_conventions: never assert a star COUNT for a rally, nor the authored placement->stars table (both are
-  tunable/authored — `CLAUDE.md` forbids pinning them). Test the LOGIC: an unplaced rally reads zero, and the
-  readout is drawn for the asked-about pin only.
-- conventions: any new offset/size is a `GameConfig` knob, not a literal (`overworld_map_*` is the existing
-  naming); `features/` updated
-- HIDDEN TRAPS:
-  1. **DO NOT DRAW IT ON EVERY PIN — and the reason is already in the file's header.**
-     `overworld_map.gd:62` explains that every pin used to carry its name and "turned the full map into a wall of
-     overlapping capitals with the roads invisible underneath — the map stopped answering 'where do the roads go',
-     which is the only reason it exists." The name is now drawn only for the pin the player is **asking about**
-     (hovered, else selected — `_named_id()`). A star readout on all pins repeats exactly the mistake that rule
-     records. **Grade down an answer that paints stars on every pin.**
-  2. **USE THE ONE DEFINITION.** `RallyLibrary.stars_for_placement(Save.best_placement(id))`. Re-deriving a
-     placement->stars mapping duplicates an authored table.
-  3. **`best_placement` IS PODIUM-GATED** (rounds 015/016). It returns 0 when the player never PLACED, which
-     includes finishing 5th — so "0 stars" does not mean "never attempted", and a readout that renders 0 as
-     "unattempted" is wrong. `save_manager.gd`'s `record_podium_rally` comment states the gate.
-  4. Non-rally pins (garage, parts, specials) have no placement at all; the readout must not claim zero stars for
-     a pin that cannot have any.
-- why this task: the `overworld`/map area is the largest surface with no bank task (`overworld_map.gd` is 1,755
-  lines), and the task is the first authored under round 032's additive rule with the frozen-assertion check done
-  up front. Its main trap is an anti-clutter rule whose RATIONALE is written down — a direct test of whether a
-  documented "why" reaches a small model, not merely a "what".
+### T014 — "On the region list, tell me how many stages each region can offer before it starts repeating."
+- status: **live — RE-AUTHORED in stage 9 of the roguelike pivot.**
+- clean_solves: **0**
+- **WHAT THIS REPLACED.** T014 was "When I open the full map with M, show how many stars I've earned
+  on the rally pin I've highlighted." The full map (`overworld_map.gd`), the pins and the star ledger
+  are all deleted. History in `evals/small-model/rounds/`.
+- **WHAT IT MEASURES NOW.** A read-only addition to `HubShell`'s REGION page, sourced from
+  `RegionStagePool.pool_size(region_id)` — which already exists and already answers exactly this. The
+  interesting part is not the arithmetic; it is that the probe must (a) find the existing query rather
+  than re-flattening `RallyLibrary` itself, (b) put the number on the row without breaking the page's
+  navigation contract, and (c) leave the LOCKED rows' `menu_nav_skip` intact.
+- **THE TRAP TO GRADE ON.** `MenuNav.attach` runs AFTER the page is built and re-enables focus on
+  every `BaseButton` it finds. A probe that turns a row into a `Label` to show a number, or that sets
+  `focus_mode` without the `menu_nav_skip` meta, breaks keyboard navigation — and CLAUDE.md makes that
+  a hard requirement with a nav test attached. `test_hub_shell.gd` walks every view and asserts each
+  has at least one focusable control, so a wholesale conversion should redden; a subtler break (a
+  locked row becoming focusable) may not, and is a correctness call.
+- **ALSO GRADE:** decision 32's pool floor is 16 events per region. A probe that discovers a region
+  under the floor while doing this should report it, not silently paper over it.
+- areas: menus, regions, run loop
+- expected_files: `scripts/hub_shell.gd` (`_build_region`)
+- expected_docs: `features/hub-shell.md`, `features/region-runs.md`
+- expected_tests: `hub_shell`
+- test_conventions: no asserting a particular region's pool size (authored data); assert the row
+  reports what `RegionStagePool.pool_size` returns, and that navigation still holds
+- conventions: no new persisted state — this is derived, not stored
+- why this task: the flat shell's pages are where a small model is most likely to break the
+  keyboard/gamepad contract, because the break is invisible without a controller
 
-### T015 — "On the overworld map, make it easy to see at a glance which rallies I've already won."
-- status: live  (**authored round 035**)
-- clean_solves: 0  (never probed)
-- AUTHORED ROUND 035 as the **deliberate redesign of round 034's experiment**, which was inconclusive because the
-  correct answer (the footer) was also the convenient one. This task is chosen so that **the cluttered
-  implementation is the path of least resistance** and only the documented rationale argues against it:
-  "at a glance" over the whole map inherently implies marking MANY pins, so text-on-every-pin is the obvious move.
-- **THE EXPERIMENT.** `overworld_map.gd:62` explains that every pin used to carry its name and that this "turned the
-  full map into a wall of overlapping capitals with the roads invisible underneath — the map stopped answering
-  'where do the roads go', which is the only reason it exists", and ends: **"The other pins still say what they are
-  by their glyph and colour."** So the file states both a prohibition (no text on every pin) AND the sanctioned
-  channel (glyph/colour). The rule's literal subject is *names*; this task is about *won-ness*.
-  - **rationale generalised** -> the won state is carried by **glyph and/or colour** (or another non-text per-pin
-    channel), leaving the map readable.
-  - **rationale did not generalise** -> text/stars/a tick drawn on every won pin, reproducing the exact failure the
-    header records.
-- **AUTHORING CHECKS RUN BEFORE WRITING THIS (rounds 032/033 rules), all three pass:**
-  - **(a) additive?** Yes — a new visual distinction; nothing existing changes meaning.
-  - **(b) already exists on ANY surface the wording could mean?** No. `_kind_color` (:1638) colours by KIND only
-    (car/part gold, special red, garage green, else INK) and `_draw_glyph` (:1557) switches on kind; there is no
-    won/unwon distinction. On the HQ map table, `hq_table.gd:427` reads `Save.rally_podiumed` only to pick a FOCUS
-    target, and `hq.gd:3472` puts "(done)" in the banner for the SELECTED rally — neither is an at-a-glance marker.
-  - **(c) would a correct implementation redden a test?** No. `test_overworld_map.gd` (49 tests) has no assertion on
-    pin colour; its two glyph-related comments concern every `Kind` having a glyph and the garage not taking a part
-    icon, neither of which a won-marker touches.
-- expected_files: `scripts/overworld_map.gd`
-- expected_docs: `features/map-exploration.md`, `features/overworld.md`
-- expected_tests: `overworld_map`, `overworld`
-- test_conventions: never assert a specific colour, alpha or glyph shape (all authored/tunable). Test the LOGIC: a
-  won rally is distinguished from an unwon one, and a non-rally pin is unaffected.
-- conventions: any new colour/alpha/size is a `GameConfig` knob or an existing `UITheme` constant, not a literal
-- HIDDEN TRAPS:
-  1. **NO TEXT ON EVERY PIN** — the central measurement, above.
-  2. **"Won" is `Save.rally_podiumed(id)`, not `best_placement(id) > 0` reasoning about completion.** Both happen to
-     agree today (both podium-gated), but the honest predicate is the named one, and round 034 caught a probe writing
-     "completed" for a podium-gated value. Either is acceptable in CODE; **grade down a comment that calls it
-     "completed" or "finished".**
-  3. **Non-rally pins have no won state.** Garage, car, part and special pins must not be marked won (a SPECIAL is a
-     rally and may legitimately be, but the garage cannot).
-  4. Colours must come from `UITheme`, whose existing meanings the file documents ("gold is reward, green is 'your
-     own thing', red is the showdown") — inventing a new colour with a new meaning fights that legend.
-- why this task: the loop's one clean instrument for its last open question — whether a documented **rationale**
-  transfers to a decision it does not literally cover — with the cluttered answer deliberately made the easy one.
-- **RUBRIC NOTE round 035 — THE TASK WORDING IS STILL AMBIGUOUS AND THE FEATURE ALREADY EXISTS ON THE OTHER READING.**
-  "On the overworld map" also reads as "in the overworld", and the probe took that: it edited `rally_flag.gd` /
-  `rally_trophy.gd` (the 3D markers at rally sites), **never opened `overworld_map.gd`**, and so never met the
-  clutter rationale this task exists to test. Worse, **that surface already distinguishes won rallies by glyph AND
-  colour** — `rally_flag.gd::pennant_kind()` switches the pennant at `stars >= 1` and `accent_color()` changes colour
-  at `STARS_FOR_WIN`. The probe added an emissive glow **on top of** it and reported it as newly making wins obvious.
-  **Correctness VOID for that attempt** (the rubric assumed absence); navigation 3, convention 2, completion 3.
-  **Also: this rubric's "colours belong in UITheme" line is MAP-SPECIFIC** — `rally_flag.gd` deliberately uses named
-  raw `Color` constants and no `UITheme`, so a probe following that style is correct. I graded it down before
-  checking and reversed it.
-  **BEFORE RE-USING THIS TASK: say "the map overlay (M / gamepad Back)" explicitly**, and re-check whether the
-  overlay still lacks the distinction.
+---
+
+### T015 — "Let me sell a car I don't want any more and get some money back."
+- status: **live — RE-AUTHORED in stage 9 of the roguelike pivot.**
+- clean_solves: **0**
+- **WHAT THIS REPLACED.** T015 was "On the overworld map, make it easy to see at a glance which
+  rallies I've already won." The overworld is deleted. History in `evals/small-model/rounds/`.
+- **WHAT IT MEASURES NOW — a real economy mutator, which is the shape the bank was missing.** Selling
+  is the inverse of `Save.buy_car`, and the repo has a written house rule for exactly this class of
+  change: **every meta-shop refusal leaves the profile byte-identical** — every precondition is
+  checked BEFORE `spend_money`/`add_money`, so a caller never half-mutates into a rejected purchase.
+  `buy_car`, `buy_boost_level`, `buy_engine_swap_unlock`, `buy_perk` and `buy_drive_mode` all follow
+  it; a `sell_car` that does not is wrong even if it "works".
+- **THE TRAPS TO GRADE ON**, none of which any test currently catches:
+  1. **Selling the car in an active run.** `RunSession.car_instance_id()` is the fielded car; selling
+     it mid-run strands the session. A correct answer refuses, or there must be no way to reach the
+     action during a run.
+  2. **Selling the LAST car.** A profile with no cars and not enough money to buy one is a dead end —
+     decision 28's whole point is that the shop is always reachable.
+  3. **`selected_instance_id`** points at the sold car afterwards.
+  4. **The refund price.** `CarLibrary`'s `cost` is authored data; a refund fraction is a tunable and
+     belongs in `config/game_config.tres`, not as a literal.
+- **A PROBE THAT ASKS RATHER THAN GUESSES** on the refund fraction, or that reports trap 2 instead of
+  silently allowing it, should score WELL on judgment even if it ships less code.
+- areas: save/profile, economy, menus
+- expected_files: `scripts/save_manager.gd` (the mutator), `scripts/hub_shell.gd` (the CAR page row),
+  `scripts/game_config.gd` + `config/game_config.tres` (the refund fraction)
+- expected_docs: `features/save-persistence.md`, `features/region-runs.md` (the meta tier),
+  `features/hub-shell.md`
+- expected_tests: `save_manager`, `hub_shell`
+- test_conventions: no asserting the refund fraction or any car's cost; assert the RULE (a refused
+  sale leaves the profile byte-identical; money goes up by the same amount the car left for)
+- conventions: values in `config/game_config.tres`; the byte-identical-refusal rule
+- why this task: it is the first task in the bank that ADDS money rather than spending it, and the
+  failure modes are all state-consistency ones that a passing test suite would not catch
 
 ### T002 — "Make the pause menu remember which row was selected when you reopen it."
 - status: **too_hard (round 011, 3 attempts)** — moved out of the live pool; see
@@ -478,9 +380,31 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   but is easy to miss under context pressure
 
 ### T003 — "Add a new region with its own skybox and scatter set."
-- status: live
-- clean_solves: 0  (rounds 002–003, 009, 010 non-clean; **round 018 = 3/2/3/3, the best ever — and
-  possibly a clean solve depending on the rubric ambiguity below**)
+- status: **live — RESHAPED in stage 9 of the roguelike pivot. The request is unchanged; the
+  obligations are not.**
+- **WHAT A CORRECT ANSWER NOW OWES, on top of everything in the notes below.** The region system
+  survived the pivot but gained a progression, so the old "two edits" answer is no longer complete:
+  1. **An `order` field** on the `REGIONS` entry. Regions unlock LINEARLY (decision 12) — order 0 is
+     always open, every other is gated on the one before it being cleared. Array position carries no
+     meaning; `RegionLibrary.ordered()` reads the field. A region with no `order`, or one colliding
+     with an existing region's, breaks the unlock chain.
+  2. **Sixteen authored events, not one rally.** Decision 32 sets a pool floor of 16 per region so a
+     run of 8 stages can be played twice without repeats (`RegionStagePool.pool_size`). The old
+     rubric's "add at least one rally tagged with the region" made it REACHABLE; it no longer makes
+     it PLAYABLE. A probe that authors a handful and says so is being honest about scope and should
+     be graded on that, not marked down to zero.
+  3. **The map is gone.** `map_pos` is still authored on every rally and is still guarded for
+     well-formedness, but nothing reads it — so `RallyLibrary.suggest_map_pos()` is still the way to
+     get a legal value, and it is no longer the interesting part of the task.
+- **THE ROUND-018 RUBRIC AMBIGUITY IS RESOLVED: option (a).** `look_from` + an own sky + own scatter
+  PARAMETERS satisfies "its own skybox and scatter set". `region_library.gd`'s documented idiom is to
+  author `look_from` and then only the keys that DIFFER, and grading a probe down for following the
+  codebase's own convention measures the rubric, not the repo. Round 018 therefore scores 3/3/3/3 in
+  retrospect — but it is not carried forward as a clean solve, because the obligations above did not
+  exist when it was graded.
+- clean_solves: **0** (reset by the reshape)
+- PRIOR SCORES (against the pre-pivot obligations): rounds 002-003, 009, 010 non-clean;
+  **round 018 = 3/2/3/3, the best ever** — see the resolution above.
 - **RUBRIC NOTE round 018 (3/2/3/3 — by far the best result this task has had; previous best
   3/1/1/2).** The probe did **all three mandatory sites unaided**: a `badlands` region with
   `look_from: "greece"` and **its own** `sky_panorama` (`sky-night.jpg` — the one unused sky in the
@@ -533,11 +457,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   `GameConfig.default_sky_panorama`, so reusing it is not "its own skybox". Guarded by
   `test_every_region_is_reachable_from_at_least_one_rally`.
 - areas: terrain, regions
-- expected_files: `scripts/region_library.gd` (the `REGIONS` table), `scripts/rally_library.gd`
-  (the `region` tag that makes it reachable), plus whatever the region's
-  surface/water/scatter hooks require
-- expected_docs: `features/regions.md`, `features/terrain.md`
-- expected_tests: `region_library`, `region_assets`, `terrain`
+- expected_files: `scripts/region_library.gd` (the `REGIONS` table, including `order`),
+  `scripts/rally_library.gd` (the `region` tag on enough events to fill the pool), plus whatever the
+  region's surface/water/scatter hooks require
+- expected_docs: `features/regions.md`, `features/terrain.md`, `features/region-runs.md`
+- expected_tests: `region_library`, `region_assets`, `region_docs`, `terrain`, `region_stage_pool`
 - test_conventions: no asserting a specific region exists or its authored values;
   test the contract (`by_id` round-trips, `count()` consistent, grip lookups finite)
 - conventions: values in `config/game_config.tres`
@@ -613,90 +537,42 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - why this task: `hud.gd` is 781 lines of many near-identical `_build_*` methods —
   tests whether the pattern is discoverable enough to copy correctly
 
-### T005 — "Track how many rallies the player has finished and show it on the profile."
-- status: live
-- clean_solves: 0  (round 003 non-clean; round 014 3/2/2/3; **round 015 drill 3 attempts:
-  3/1/1/3 -> 3/2/1/3 -> 3/3/1/3 — correctness SOLVED, convention the sole remaining blocker**)
-- **ROUND 016 SETTLEMENT: NOT harness-limited — T005 STAYS in the pool.** Round 015's
-  convention-only reading did not survive its own follow-up. A settlement probe on the SAME fixed
-  tree scored **3/1/1/3**: it declared `rallies_finished` correctly in `_default_profile()` but
-  incremented it **inside the podium-gated `complete_rally()`**, so the counter counts first
-  PODIUMS and the HUD read "Rallies Finished:". A THIRD route to the same wrong number, and
-  neither round 014's undeclared-key ratchet (the key WAS declared) nor round 015's read-side
-  guard caught it — 107 tests green. So correctness is still a live blocker and §2.4's
-  harness-limited rule does not apply.
-  **Round 015's "correctness solved" was n=1.** Across four probes on the fixed tree: declaring
-  the key succeeded 2/2 (after the rule was placed at the top of `save_manager.gd`), while
-  avoiding the podium gate failed 1/3. Round 016 renamed `complete_rally()` ->
-  `record_podium_rally()`, put the gate rule INSIDE that function, and added
-  `test_the_podium_gated_recorder_writes_no_finish_named_profile_key`.
-  **Grade down any answer whose finish counter is written inside `record_podium_rally()`.**
-- **RUBRIC NOTE round 037 (3/3/1/3 — all FOUR known routes avoided).** Declared `rallies_finished` in
-  `_default_profile()`, added a separate idempotent `record_finished_rally()`, called it from the **any-finish** gate
-  in `_resolve_results`, used `String(_rally.get("id",""))` (no bare `rally_id`), and the project compiles with 0
-  script errors. All six relevant test files green. Docs 0 of 2, no test.
-  **DO NOT read this as "T005 is solved."** Round 015's attempt 3 also scored 3/3/1/3 and round 016's settlement probe
-  then scored 3/1/1/3 on the same tree via an unanticipated route. Correctness across four probes: **3, 1, 0, 3**.
-  What IS established: three of the four routes are now machine-guarded (declared-key ratchet, recorder guard, shadow
-  guard) plus a runtime tripwire, so those failures are no longer silent.
-- **RUBRIC NOTE round 017 (3/0/1/2 — a FOURTH distinct route, and the first that does not compile).**
-  Round 016's rename + write-site rule appear to have WORKED: this probe went straight to the
-  any-finish gate, wrote a separate `record_rally_finish()`, touched no gated field and invented no
-  top-level key. **But it wrote a bare `rally_id` in `_resolve_results`, where no such local exists
-  — the name bound to `func rally_id() -> String`, and the whole project failed to compile** (every
-  autoload dead). It had copied the identifier from the neighbouring `_award_podium_rewards`, which
-  DID declare that local. Round 017 renamed all four method-shadowing locals in `scripts/` and added
-  `test_no_local_variable_shadows_a_method_of_the_same_class`. The T005 failure has now moved off
-  save-schema semantics entirely — three routes were wrong numbers, this one was a GDScript hazard.
-- RUBRIC NOTE round 014 (**3/2/2/3 — best result this task has had, and the first
-  completion-3 in the loop**): round 003's rename landed and WORKED. The probe did not
-  mislabel the podium count; it added a real `rallies_finished` counter, wired it in
-  `rally_session.gd` after `complete_rally()` so it counts every finish including DNF, put a
-  career-stat row on the map table, AND updated `features/save-persistence.md` — including
-  rewriting the "there is no finished-in-any-position counter" sentence its own change
-  falsified. One defect: it never declared `rallies_finished` in `_default_profile()`, so
-  `_migrate`'s key backfill never seeds it (silent; every test passed). **Round 014 added
-  `test_every_persisted_key_written_is_declared_in_the_default_profile` to catch exactly
-  that** — validated red against this probe's tree, green on main. Grade a future attempt
-  down if it writes a profile key it does not declare. `features/progress.md` still went
-  unupdated — **but that half of the round-014 penalty is WITHDRAWN (round 015): that doc is
-  `TrackProgress`, not career progression, so it was never the right file to update.**
-- RUBRIC NOTE round 003: Save.completed_rally_count() counts TOP-3 finishes, not
-  finishes — a correct attempt must either surface it honestly or use a true
-  finish count. Probe's hq_overlays.gd title-label approach was otherwise sound
-  (nav 3 / corr 3); failed on docs+tests+mislabel.
-- RUBRIC NOTE round 015 (**1st attempt 3/1/1/3; supersedes the round-001 correction
-  below**): the probe added `RallyLibrary.finished_count()` counting `best_placed > 0` and
-  labelled it "Rallies finished: N". That is the **podium count under a better name** —
-  `Save.complete_rally` has exactly one caller (`rally_session.gd`, inside
-  `_award_podium_rewards`, gated on `podium_or_opening`), so a 5th-place finish writes
-  NOTHING into the record and every field of it is podium-gated. Round 003's note was
-  seven lines above and did not stop it, because the note's reasoning named only the
-  `completed` flag. Round 015 renamed `Save.rally_completed()` -> `Save.rally_podiumed()`
-  (no wrapper), generalised the gate statement on all three read paths, and added
-  `test_no_finish_named_symbol_derives_from_the_podium_gated_rally_record`. **Grade any
-  answer that derives a finish count from the rally record as correctness <= 1.**
-- **RUBRIC CORRECTED round 001 is WITHDRAWN (round 015).** It read "this needs NO
-  migration; `Save.completed_rally_count()` already exists — do not penalise reuse of it."
-  That was written against a **lying name**: the function counts PODIUMS. Reusing it (or any
-  record-derived substitute) is now the primary failure mode, not the sanctioned answer.
-- areas: save, progress
-- expected_files: `scripts/save_manager.gd` (a new persisted counter **declared in
-  `_default_profile()`** so `_migrate`'s key backfill seeds existing saves), the any-finish
-  increment site (`rally_session.gd` — the `finished`/`_award_any_finish_*` seam, NOT the
-  podium seam), and a display site (e.g. `scripts/overworld_garage.gd`, `scripts/account_menu.gd`)
-- expected_docs: `features/save-persistence.md` (owns the profile/persistence API), and
-  `features/star-economy.md` where the change touches the ledger.
-  **`features/progress.md` REMOVED from this list (round 015): it documents `TrackProgress`
-  — distance along the road centerline and off-track reset — not career progression.** The
-  two senses of "progress" collided; round 014 marked a probe down for not updating a doc
-  that was never the right one. Career progression is `save-persistence.md` +
-  `star-economy.md`.
-- expected_tests: `save_manager`, `save_sandbox`
-- test_conventions: must use the save sandbox; `save_test_helpers.gd` exists
-- conventions: migrations are mandatory for new persisted fields
-- why this task: the migration requirement is real, load-bearing, and invisible
-  unless you read `save_manager.gd` carefully — a strong probe of "hidden coupling"
+### T005 — "Keep track of my best single-stage time and show it with my other stats."
+- status: **live — RE-AUTHORED in stage 9 of the roguelike pivot.**
+- clean_solves: **0**
+- **WHAT THIS REPLACED.** T005 was "Track how many rallies the player has finished and show it on the
+  profile", whose whole point (rounds 006-014) was that **"profile" had no UI referent** and that
+  `record_podium_rally` counted PODIUMS, not finishes. Both the career rally and the podium gate are
+  deleted. History in `evals/small-model/rounds/`.
+- **WHAT IT MEASURES NOW — the same "find the one registry" shape, with the referent now real.**
+  `LifetimeStats` (`scripts/lifetime_stats.gd`) is a single authored `STATS` dict, and its header
+  states the rule: adding a stat is a one-place change (a `const` id, a `label`, a `description`, an
+  entry in `IDS`) and **the writer must be wired in the same change** — a declared-but-unwritten stat
+  is a Stats-page row pinned at zero forever, which reads as a broken counter. `distance_driven_m`
+  shipped that way in stage 7 and was fixed in stage 9; the rule exists because of it.
+- **THE TRAP TO GRADE ON — this is a RATCHET, not a sum.** `Save.add_lifetime_stat` accumulates;
+  `Save.raise_lifetime_stat` takes `max(current, value)`. A best TIME is neither: it is a
+  **minimum**, and the ledger's own invariant is "only ever grows". A probe must notice the conflict
+  and resolve it (store a negated/derived value, or add a third mutator, or store it outside the
+  ledger) rather than calling `add_lifetime_stat` and producing a running total of every stage time —
+  which is what a fast reading gives. **This is the single thing to grade correctness on.**
+- **ALSO GRADE:** the write site. `RunSession.report_event_result` receives `elapsed_ms` and already
+  writes four lifetime stats; a probe that instead reaches into `world.gd` or the HUD has not found
+  the funnel. And the Stats page (`HubShell._build_stats`) iterates `LifetimeStats.IDS`, so it needs
+  NO edit — a probe that hand-adds a row there has missed the registry's point.
+- areas: save/profile, run loop, menus
+- expected_files: `scripts/lifetime_stats.gd`, `scripts/run_session.gd` (the writer),
+  `scripts/save_manager.gd` only if a new mutator is genuinely needed
+- expected_docs: `features/lifetime-stats.md`
+- expected_tests: `lifetime_stats`, `region_run`
+- test_conventions: no asserting a threshold or a shipped label; assert the RULE (the value moves the
+  right way, and never the wrong way, when a faster/slower stage is reported)
+- conventions: one registry, no parallel id list
+- why this task: `LifetimeStats` is the cleanest single-registry contract in the repo, and this
+  request quietly violates its central invariant — a probe that ships without noticing has told you
+  something specific about what it reads
+
+---
 
 ### T006 — "Make the engine braking stronger when you lift off the throttle."
 - status: live
@@ -821,171 +697,69 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - why this task: deliberately spans three areas (menu + render + save) — tests
   whether "what else must I update" is discoverable
 
-### T008 — "Give the player a star bonus for finishing a rally without any damage."
-- status: live
-- clean_solves: 0  (rounds 002, 005, 007, 008, 009, 010 non-clean; round 016 3/3/2/3;
-  **round 036 = 3/3/2/3 again, from an independent probe 20 rounds later — reproducible**)
-- **RUBRIC NOTE round 036 (3/3/2/3; all five predictions confirmed).** Every trap this task accumulated over six
-  rounds was avoided: the **any-finish** gate, the **latched `_took_damage_this_rally`** flag (not HP), an **int**
-  return through the seam, and a **`GameConfig` `@export`** (`clean_run_bonus_stars`, correctly with no `.tres` line
-  since the default is the authored value). **No test reddened — round 016's `assert_gte` unfreeze is durable after
-  20 rounds of change**, and the probe explicitly cited it ("tests … already use `>=` … for this exact reason") and
-  updated the seam comment's tense rather than deleting it. Remaining gap is the known tail: docs 1 of 3
-  (`reward-system.md` only) and no test. **Nothing left to fix here — do not re-drill.**
-- RUBRIC NOTE round 010 (3/2/2/1 — the typed seam WORKED): the probe called
-  `_award_any_finish_bonus_stars()`, returned an int, put the amount in a NEW
-  `@export_range(0,10) no_damage_bonus_stars` with a `.tres` value, and never touched
-  `RallyLibrary.STARS_FOR_*`. Its whole logic is two lines. After five failures this is the
-  first attempt whose mechanic AND value placement are both right, and the grader judges the
-  int seam (not variance) the credible reason — the invented-key failure is now
-  unrepresentable. Two pre-existing tests went red; the grader confirms that is the CORRECT
-  consequence (both assert `stars_gained == stars_for_placement(...)` on undamaged fixtures)
-  and an implementer should relax them — round 010 added a note at the seam naming both tests,
-  since they are green until the seam pays out and so cannot be discovered by running first.
-  REMAINING: no docs, no test. And see backlog — a grader argues `stars_gained` is overloaded
-  and the bonus deserves its own displayed key; that is a PRODUCT decision, not mine to take.
-- RUBRIC NOTE round 009 (3/1/0/1 — DOWN, and the fourth failure at this site): the core
-  mechanic was right for the second round running (any-finish gate, `took_damage_this_rally()`
-  not the HP oracle), but the bonus was returned under an invented key `clean_run_stars` that
-  nothing reads — round 008 did the identical thing under the name `stars_bonus`. Confirmed by
-  run: `test_a_rewin_pays_stars_again_but_never_another_car` went red. Round 009 removed the
-  cause structurally: the seam is now `_award_any_finish_bonus_stars() -> int`, so an invented
-  key is not expressible, and a separate dict seam is allowlist-checked with a `push_error`
-  that hands back the instruction. **Round 010 must re-probe this task**; if the int seam is
-  used, the remaining failure is amount-placement (see backlog item 0, still open).
-- RUBRIC NOTE round 002: `reward_system.gd` and `features/reward-system.md` both disclaim
-  owning WHEN a reward fires, so `rally_session.gd::_resolve_results` is a DEFENSIBLE home
-  — do not mark navigation down for choosing it. Mark down for: the bonus as a bare
-  literal instead of a `GameConfig` knob; an unrequested placement gate; using end-of-rally
-  `hp >= max_hp` as the damage signal (pit repairs restore HP between events, so a
-  crashed-then-repaired car reads pristine); and leaving `test_rally_session.gd:728`
-  (`the podium re-win pays its stars`) red, which any added star breaks.
-- RUBRIC NOTE round 005: two NEW traps confirmed. (a) The probe dropped its bonus inside
-  `_resolve_results`' `if record_completion:` block and silently inherited a TOP-3 GATE —
-  a player finishing 5th undamaged got nothing, so the literal request was unmet. That
-  local is now named `podium_or_opening` and carries a note saying where an any-finish
-  reward belongs. (b) It `+=`'d the bonus into `stars_gained`, which existing tests pin
-  as the PLACEMENT payout — hence the two reds. Also: tracking damage with a flag set in
-  `report_event_result` is BETTER than the `hp >= max_hp` end-state check and should be
-  credited, not penalised.
-- **RUBRIC NOTE round 016 — THE FROZEN ASSERTION IS GONE; the round-010 note above is obsolete
-  on this point.** For six rounds no correct implementation of T008 could reach a green suite:
-  `test_a_rewin_pays_stars_again_but_never_another_car` and
-  `test_the_opening_rally_completes_on_a_losing_finish` both asserted
-  `stars_gained == stars_for_placement(...)` on fixtures that finish UNDAMAGED, so any bonus
-  reddened them. Round 010 diagnosed this and answered it with a 22-line note telling a future
-  implementer to fix the tests — which probes, being barred from running tests, can never
-  discover. §2.5 makes finding these the PARENT's job. Round 016 relaxed both to `assert_gte`
-  (every other assertion intact) and deleted the note. **Do NOT mark a probe down for those two
-  tests any more, and if either reddens again it is a real regression.**
-- areas: rewards, star-economy, damage
-- expected_files: `scripts/reward_system.gd`, reading damage state from its
-  existing seam
-- expected_docs: `features/reward-system.md`, `features/star-economy.md`,
-  `features/damage.md`
-- expected_tests: `reward_system`, `star_row`
-- test_conventions: do NOT pin the bonus amount or a reward tier; test the logic
-  (a clean run earns strictly more than an identical damaged run)
-- conventions: the bonus amount is a `GameConfig` tunable
-- NOTE FOR GRADER: `test_reward_system` PASSES on the round-001 baseline. Older
-  notes calling it a standing failure are stale — do not excuse a red here
-- why this task: reward logic is where "don't test tunable values" is easiest to
-  violate; strong probe of the convention axis
+### T008 — "Pay a bonus for finishing a stage without taking any damage."
+- status: **live — RE-AUTHORED in stage 9 of the roguelike pivot.**
+- clean_solves: **0**
+- **WHAT THIS REPLACED, AND WHAT SURVIVED.** T008 was the same request paid in STARS. The star ledger
+  is deleted (decision 21) and money replaced it, so the task is re-pointed rather than replaced —
+  **and the trap that made it valuable is completely intact.** History in
+  `evals/small-model/rounds/`.
+- **THE TRAP, verbatim from `features/damage.md` and worth quoting to a grader.** *Never derive "did
+  the player take damage" from the car's HP.* It is wrong in BOTH directions: the between-stage
+  repair and the self-heal perk both raise HP after the fact, so a crashed car can read pristine; and
+  a car routinely STARTS a stage below `max_hp` carrying damage in from an earlier one, so
+  `hp < max_hp` at the finish may be none of this stage's doing and `hp >= max_hp` is simply
+  unreachable for it. **A probe that compares `hp` to `max_hp` has failed correctness**, however
+  clean the rest is. The deleted career session latched the fact instead
+  (`_took_damage_this_rally`); the signal available today is `hp_lost > 0` where
+  `RunSession.report_event_result` already sees it.
+- **ALSO GRADE:** where the money is added. `RegionRunMode.stage_money` is the one place a stage's
+  payout is computed and takes the arguments a bonus needs; adding money anywhere else bypasses the
+  region scale and the fast-completion bonus and will not appear in `RunSession.money_earned()`.
+  The amount is a tunable (`config/game_config.tres`), never a literal. And a challenge stage has no
+  `stage_money` of its own — decide whether the bonus applies there and say so.
+- areas: economy, damage, run loop
+- expected_files: `scripts/region_run_mode.gd` (`stage_money`), `scripts/run_session.gd` (carrying
+  the clean-stage signal to it), `scripts/game_config.gd` + `config/game_config.tres`
+- expected_docs: `features/region-runs.md` (the money sources), `features/damage.md`
+- expected_tests: `region_run`
+- test_conventions: no asserting the bonus amount; assert that a stage reported with damage pays
+  strictly less than the same stage reported without it
+- why this task: it is the bank's best measurement of whether a probe READS the doc for the system it
+  is touching — the trap is written down in plain words, in the file it would have to open anyway
 
-### T009 — "Add a wet-weather tyre compound that grips better in the rain."
-- status: **live — CAPPED at 3 attempts in round 041, deliberately NOT marked `too_hard`.** See the
-  round-041 note: the attempt curve CLIMBED monotonically on correctness (1 -> 2 -> 3) and ended at
-  3/3/2/3, the task's best ever, with all seven test files green. §D5's `too_hard` exists for a task
-  that outran the loop; this one is a single one-line convention miss from clean, so retiring it from
-  the live pool would discard the loop's most nearly-solved hard task. Recorded as an argued deviation.
-- clean_solves: 0  (rounds 006, 009, 010 non-clean; **round 024 = 3/1/2/3, a REGRESSION — invented gate id**; round 010 best yet at 3/3/2/2 — but see the round-006 rubric note: the design, not the probe, was at fault; round 009 was near-clean at 3/2/2/2)
-- **RUBRIC NOTE round 039 (3/1/2/3 — the invented gate id RECURRED).** All three registry edits again, reading
-  `ctx.get("is_wet", false)` so the axis fires in storm too; the symmetric invariant holds (race wins gravel+tarmac,
-  snow wins snow, wet wins wet) and **the probe quoted round 020's clause in its own rationale**. **Docs 2 of 3** —
-  `drivetrain-and-tires.md` AND `upgrade-catalogue.md`, this task's best. But it gated on **`sp_coastal_challenge`,
-  which does not exist** — a second invented id after round 024's `h_coast_qualifier`, on the same task fifteen rounds
-  apart, each a different plausible-sounding invention. Round 024 left the code alone because the defect was already
-  guarded; **two data points supersede one**, so round 039 stated the requirement at the field itself: consequence
-  first (permanently unwinnable, silent), the guard named by test file, a concrete `grep` to verify, and an explicit
-  "that is a test you may not be running, so do the grep".
-- **RUBRIC NOTE round 024 (3/1/2/3).** The three causes rounds 006/007/009 fixed are all **settled**: the
-  probe made all three registry edits in `game_config.gd`, touched no consumer, and read
-  **`ctx.get("is_wet", false)`** rather than comparing weather strings — so the axis fires in **storm** as
-  well as rain, the defect three consecutive rounds shipped. **The new failure is
-  `unlocked_by_rally: "h_coast_qualifier"`, a rally id that does not exist**, which makes the part
-  permanently unwinnable; `test_rally_library.gd` catches it exactly ("must be a real rally" / "must be a
-  SPECIAL event"). Docs: 1 of 3 (`drivetrain-and-tires.md` only). **Grade down any answer whose gate id
-  does not resolve**, and always run `rally_library` here.
-- RUBRIC NOTE round 010 (3/3/2/2 — FIRST CORRECTNESS 3, and the round-006/009 causes are
-  settled): the probe added the export, the registry row and a `_channel_weight` arm reading
-  `ctx["is_wet"]` — the bool round 009 seated in `fill_tire_context` — so the axis fires for
-  BOTH rain and storm, for player and AI, with no string comparison anywhere. The gate is real
-  in DATA this time (`unlocked_by_rally: "sp_lakeshore_trial"`, an id that exists). Grader
-  credits the seam over variance: three consecutive probes wrote at that exact site.
-  REMAINING (new): `features/upgrade-catalogue.md` is stale in three places after a tyre part
-  is added — round 010's `test_no_feature_doc_states_a_slot_member_count` now guards the count
-  half; the unlock-id list and menu-label list are still unguarded.
-- RUBRIC NOTE round 009 (3/2/2/2 — near-clean, and the round-006 note is now settled): the
-  probe made all three `TIRE_SURFACE_AXES` registry edits plus the `EFFECTS` row and BOTH tyre
-  docs, touched zero consumers, and the grader traced the axis firing end to end for player and
-  AI. The round-006 verdict that the DESIGN was at fault is confirmed — under the registry this
-  task is nearly solved. Two defects left: the arm was rain-only so wet tyres were dead in a
-  `storm` (third round running), and the row's comment claimed a rally gate it did not author.
-  Round 009 fixed the first cause — `WeatherLibrary.is_wet()` now exists, is guarded so no
-  condition can ship unclassified, and `fill_tire_context` seats `ctx["is_wet"]` at the exact
-  site where all three probes wrote their comparison. Grade round 010 on whether it reads that
-  bool. The `unlocked_by_rally`-claimed-in-prose-but-absent-in-data gap stays unguarded.
-- areas: catalogue, upgrades, physics, weather
-- DELIBERATELY HARDER than T001, and it is the direct measurement of round 004's
-  structural fix. T001 has a legitimate no-new-axis answer (build a gravel part from
-  the existing flat and tarmac terms). This one does NOT: "grips better in the rain"
-  is a condition no existing axis expresses, so a correct answer must either
-  (a) register a new axis in `GameConfig.TIRE_SURFACE_AXES` — the `@export`, the
-  registry row, the `_channel_weight` arm, all three, all in `game_config.gd` — or
-  (b) go through `WeatherLibrary`'s `rain_grip_mult` seam instead, and say why.
-  Both are correct; picking one and doing it completely is the bar.
-- expected_files: `scripts/game_config.gd` (registry + export + blend arm) OR
-  `scripts/weather_library.gd`; `scripts/upgrade_library.gd` (`UPGRADES`, existing
-  `TIRE_SLOT`)
-- expected_docs: `features/drivetrain-and-tires.md`, `features/upgrade-catalogue.md` — and
-  `features/weather.md` **ONLY for a route-(b) answer** (via `WeatherLibrary.rain_grip_mult`).
-  **CORRECTED round 041:** `weather.md` had never been updated by any probe in six samples, and no
-  route to discovering it exists — it does not enumerate tyre parts by id, so the doc guard cannot
-  cover it without becoming broad and noisy, and the loop has already falsified six wording
-  mechanisms for out-of-file doc obligations. A route-(a) answer's doc obligation is the two tyre
-  docs, both of which ARE now guarded (test_upgrade_library.gd, widened round 041).
-- expected_tests: `tire_surface_axes`, `upgrade_library`, `upgrades_grid`, **and `rally_library`**
-  (**added round 024**: a new `UPGRADES` row carries an `unlocked_by_rally` gate, and the guard that every
-  authored gate resolves to a real SPECIAL rally lives in `test_rally_library.gd`. Omitting it made round
-  024's first run green on a probe whose part was permanently unwinnable. A rubric's `expected_tests` is a
-  hint, never the blast radius.)
-- test_conventions: must NOT pin the part's stats, the multiplier value, or assert
-  the part exists by id; must not pin which axes are registered
-- conventions: authored figures live on the part in `UPGRADES`, not as script
-  literals; `features/` updated AND indexed
-- RUBRIC NOTE round 007: three-edits-in-one-file **confirmed genuinely satisfied**
-  (3/2/2/1). Remaining, and unfixed as of round 007: the arm hardcodes `"rain"` instead of
-  `RallyLibrary.WEATHER_RAIN` and misses `"storm"`, which is wetter. No
-  `WeatherLibrary.is_wet()` exists (backlog 17). Grade storm handling explicitly.
-- RUBRIC NOTE round 006 (**REWRITES the WATCH FOR list below — round 004's design
-  was at fault, not the probe**): probing this task exposed that the registry
-  hardcoded its context inputs, so a weather axis could NOT be added without widening
-  the resolver. Round 006 fixed that: `tire_surface_mult_for(source, ctx)` now takes a
-  stage context from `GameConfig.fill_tire_context`, which carries tarmac weight,
-  snowy AND weather. A correct answer is therefore three edits in `game_config.gd`
-  with NO consumer edits and NO signature change — and that is now actually true.
-  Also grade: does the arm use `RallyLibrary.WEATHER_RAIN` rather than the bare
-  string, and does it handle `"storm"` (also wet)? Round 006's probe hardcoded
-  `"rain"` and its wet tyre did nothing in a storm.
-- WATCH FOR (the failure modes round 004 designed out — if any recurs, the fix did
-  not reach the model): editing `drivetrain.gd` / `lap_time_model.gd` /
-  `car.gd::_apply_physics_spec` / `car_performance.gd::merged_meta` to teach them a
-  new axis (all four now derive from the registry and must NOT need edits); widening
-  `tire_surface_mult`'s 4-arg signature (the shim exists for test callers — touching
-  it breaks `test_drivetrain.gd` at compile time); adding the `@export` alone and
-  stopping (now caught by `test_tire_surface_axes.gd` in both directions).
-- why this task: the retirement candidate for the whole grip area. If a Haiku-class
-  model can do this in one file, four rounds of work on that area are done.
+---
+
+### T009 — "Add a wet-weather tyre boost that grips better in the rain."
+- status: **live — RE-POINTED in stage 9 of the roguelike pivot.**
+- clean_solves: **0**
+- **WHAT CHANGED.** The request is unchanged in substance; only its home moved. Tyre compounds were
+  authored `UpgradeLibrary` parts and are now `BoostLibrary` entries running through the same
+  `EFFECTS` funnel. Rounds 007-041's findings all still apply. History in
+  `evals/small-model/rounds/`.
+- **THE FOUR-SITE TRAP (round 041's finding — this task IS the reason `apply` push_errors).** A
+  surface-dependent tyre axis needs FOUR edits, and the failure mode of missing the last one is
+  invisible: (1) the `@export` on `GameConfig`, (2) a `TIRE_SURFACE_AXES` row so the blend knows
+  about it, (3) the `_channel_weight` arm matching its siblings' contract, and (4) **an
+  `UpgradeLibrary.EFFECTS` row for the effect key**. Round 041 shipped a wet tyre with (1), (2) and
+  (3) all correct and **no rain grip at all**, because `apply` silently drops an effect key with no
+  row. That is now a `push_error` plus a test — grade whether the probe's own run would have caught
+  it.
+- **ALSO GRADE:** there must be no `WeatherLibrary.is_wet()` predicate (round 007's finding, still
+  true) — the probe has to decide what "in the rain" keys off, and inventing a clear one is a good
+  answer, not a deviation.
+- areas: upgrades, tyres, weather
+- expected_files: `scripts/boost_library.gd` (`CATALOGUE`), `scripts/upgrade_library.gd` (`EFFECTS`),
+  `scripts/game_config.gd` (`TIRE_SURFACE_AXES` + the `@export`), `config/game_config.tres`
+- expected_docs: `features/drivetrain-and-tires.md`, `features/region-runs.md`
+- expected_tests: `boost_library`, `upgrade_library`, `drivetrain`
+- test_conventions: no asserting a grip magnitude; assert the axis behaves like its siblings (the
+  blend weight is finite and sums correctly, the effect key resolves)
+- conventions: values in `config/game_config.tres`
+- why this task: it is the deepest registry chain left in the repo, and three of its four sites give
+  no feedback when skipped
+
+---
 
 ### T010 — "Play a beep on each count of the 3-2-1-GO countdown."
 - status: live
