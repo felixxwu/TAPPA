@@ -11,21 +11,23 @@ out at 0 and the car keeps driving: at 0 HP the engine is stumbling and rev-capp
 dead. There is no wreck, no DNF-by-damage and no 0-HP event of any kind.
 
 **Crashing costs you SPEED, not the run and not the car.** The punishment is a slow,
-gutless car for the rest of the rally — a misfiring, rev-limited engine and bent wheels —
-plus a repair bill. HP climbs back two ways: the free **between-event pit repair** applied
-at the start of every rally event after the first (see below), and a **paid repair** at the
-tuning lift that restores full health and straightens the wheels for a flat star price
-(`Save.repair_car`, see the deleted star economy).
+gutless car for the rest of the run — a misfiring, rev-limited engine and bent wheels — and
+a clock that is now much harder to beat, which is the whole of the cost (decision 6:
+damage never wrecks; it makes the timer harder). HP climbs back two ways: the
+**between-stage pit repair**, which the player must CHOOSE over a boost
+([region-runs.md](region-runs.md)), and the **self-heal trickle** an equipped perk buys
+(below). The paid star repair at the tuning lift is deleted with the star economy and the
+lift (decision 21).
 
 ### Wrecking is gone entirely, and it took a lot of machinery with it
 
 0 HP used to be an **event**: `DamageModel` had a `wrecked` signal, `apply_loss` called
 `_wreck()`, `car.gd` re-emitted it, `world.gd` built a **"CAR WRECKED"** orbit-camera menu
-(`scripts/wreck_screen.gd`), and *Return to HQ* called `RallySession.report_wreck()` for a
-DNF. All of that is **deleted** — the signal, `_wreck()`, `car.gd`'s `wrecked` signal and
-`_on_wrecked()` handler, `world.gd`'s `_wreck_screen` / `_on_session_car_wrecked()`,
-`Save.record_wreck()`, `RallySession.report_wreck()`, `RunSession.report_wreck()` /
-`_end_as_dnf()`, and the `wreck_screen.gd` file and its `WreckScreen` class. The config
+(`scripts/wreck_screen.gd`), and *Return to HQ* reported a DNF. All of that is **deleted** —
+the signal, `_wreck()`, `car.gd`'s `wrecked` signal and `_on_wrecked()` handler,
+`world.gd`'s `_wreck_screen` / `_on_session_car_wrecked()`, `Save.record_wreck()`, both
+sessions' `report_wreck()` / `_end_as_dnf()`, and the `wreck_screen.gd` file and its
+`WreckScreen` class. The config
 knobs that only served it (`wreck_recovery_hp_fraction`, `wreck_settle_max_seconds`) went
 too. `apply_loss()` is now one line: `hp = maxf(0.0, hp - amount)`.
 
@@ -42,10 +44,11 @@ Three reasons the change was worth making:
 1. **One mistake could end a career**, and then merely a rally. Every rescue above existed
    to paper over that, and each one was a place the logic could be wrong. Now there is no
    failure state to rescue from, so there is no rescue code at all.
-2. **It makes the map's reachability guarantee sound.** Cars are won at specific rallies
-   now (the deleted prize rallies) and the roster is authored so exploring from
-   HQ reaches everything (the deleted map exploration). That closure is only a
-   real guarantee if the player cannot LOSE the car an authored route depends on.
+2. **It made the old map's reachability guarantee sound.** Cars were won at specific
+   rallies and the roster was authored so exploring from HQ reached everything — a closure
+   that only held if the player could not LOSE the car an authored route depended on. Both
+   halves are gone now (cars are bought with money, decision 28), but the reasoning is why
+   the wreck went first.
 3. **A terminal state is a worse punishment than a slow car.** Being sent to a menu ends
    the drive; limping the last two stages on a wounded engine is a consequence the player
    keeps *playing through*, and it is legible from the driver's seat (the engine sputters,
@@ -74,10 +77,9 @@ they are now different calls.
 | `wheel_toe` | permanent per-wheel toe misalignment (rad), keyed by `WHEEL_NAMES` — see *Wheel misalignment* below |
 
 `field(max_hp, hp, instance_id, wheel_toe)` configures all of the above for a run.
-`car.gd` calls it (unbound, full HP, straight wheels) from `apply_car`; the
-rally/Start-line layer (the deleted career rally session) re-fields it from the
-OwnedCar (stored HP + instance id + persisted `wheel_toe`) via `apply_owned` when a
-car is taken to the line.
+`car.gd` calls it (unbound, full HP, straight wheels) from `apply_car`; `apply_owned`
+re-fields it from the OwnedCar (stored HP + instance id + persisted `wheel_toe`) when a run
+takes the car to the line (`world.gd::_field_car`).
 
 ## Damage → HP loss (unified deceleration model)
 
@@ -369,17 +371,16 @@ lost. **There is no anti-soft-lock machinery, because nothing can strand a playe
 at 0 HP is still a drivable car, and HP climbs back via the free between-event field repair
 and the paid repair at the lift. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
 `ensure_wreck_safety_net` and the free rescue car that existed to dig the player out are
-all retired — see the deleted reward system.
+all retired.
 
 ### Nothing DNFs the player any more
 
-`RallySession.report_wreck()` and `RunSession.report_wreck()` / `_end_as_dnf()` are
-gone, so **the player cannot DNF a rally or a challenge through damage** — see
-the deleted career rally session and [rally-challenge.md](rally-challenge.md). The
-`_dnf` flag survives in both: **rivals** still DNF an event, the standings/result contract
-still carries a `dnf` field, and a persisted challenge run still reads one back. Only the
-player's own route to it was removed. The `"WRECKED"` labels the UI shows (rally detail,
-the overworld picker) key off `hp == 0` or a rival's `dnf` flag and still render correctly
+Both sessions' `report_wreck()` / `_end_as_dnf()` are gone, so **the player cannot DNF
+through damage** — see [region-runs.md](region-runs.md) and
+[rally-challenge.md](rally-challenge.md). `RunSession._dnf` survives as the challenge's
+legacy field (a persisted run from an older build can still read one back) and is distinct
+from `_failed`, the region run's one real fail state: missing the stage target. The
+`"WRECKED"` labels the old UI showed keyed off `hp == 0` and still render correctly
 for both.
 
 ## The self-heal trickle (`DamageModel.regen`)
@@ -405,61 +406,52 @@ that case.
 
 ## Between-event pit repairs (`Save.field_repair`)
 
-A rally is a campaign of `EVENTS_PER_RALLY` events run back-to-back on one fielded
-car (see the deleted career rally session). At the **start of every event after
-the first**, the engineers patch the car up a bit — a free, automatic partial
-repair, and the ONLY way HP is ever restored:
+A run is eight stages driven back to back on one fielded car
+([region-runs.md](region-runs.md)). Between stages the engineers patch the car up a
+bit — a partial repair the player **chooses over a boost**, rather than the automatic
+freebie this used to be (decision 8: repair has to compete, or it is not a decision):
 
 - **Health:** restore `field_repair_hp_fraction` (default `0.2`) of the HP **lost so
   far** — a car at 50% comes back to 60% (20% of the missing 50%), one at 90% to 92%.
   Never exceeds `max_hp`.
 - **Wheel alignment:** bend every wheel `field_repair_toe_fraction` (default `0.5`)
   back toward straight — a wheel bent 4° comes back to 2°. Deliberately more generous
-  than the HP patch so alignment recovers faster across a rally. Each wheel keeps its
-  sign; a fully-bent car straightens out over the events.
+  than the HP patch so alignment recovers faster across a run. Each wheel keeps its
+  sign; a fully-bent car straightens out over the stages.
 
-`RallySession._enter_event()` calls `Save.apply_field_repair_to(instance_id)` for
-`_event_index >= 1` **before the per-event scene reload**, so the
-freshly-loaded run scene fields the already-repaired car. `field_repair` returns a
-summary (`{repaired, hp_before, hp_after, max_hp, hp_gained}`) stashed on the session
-and read once via `take_pending_repair()`. It reports `repaired: false` — and writes
-nothing — for a pristine car (full HP, straight wheels), the only case where there is
-nothing to do. A car at **0 HP** is repaired like any other, and in fact gains the most:
-`lost` is the full pool, so it comes back off the floor and out of the worst of the
-misfire/rev cap without the player spending a star. The summary drives a **`RepairReveal`** popup (`scripts/
-repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health **+N HP**,
-Continue) that `world.gd._show_repair_popup()` shows once the
-loading overlay is gone (staged runs keep it up until the start-line queue is laid
-out, so the popup is shown AFTER `_build_start_line()` / `loading.finish()`, sitting
-over the ready start-line reveal rather than a frozen loading screen). The popup only
-appears when the repair moved health by **at least `RepairReveal.MIN_SHOW_GAIN_PCT`
-percentage points** (2, via `RepairReveal.worth_showing`) — a smaller touch-up (e.g.
-wheels-only on a near-full car) still applies to the save but doesn't interrupt the
-player. The card and the gate read the **same** number — `health_gain_pct`, percentage
-points of `max_hp` — so the figure on screen is the one that decided whether to show the
-popup at all. Proportional is the right unit: a repair's worth is how much of the car it
-fixed, and 20 HP means very different things on a fragile car and a heavy one; the rest of
-the UI already talks in health percent. (`health_gain_hp` still exists as a pure helper and
-is tested, but nothing displays it.) Headless runs drain the summary without building the
-popup.
+**The repair is a CHOICE, and applying it is deferred until it is made.**
+`RunSession.report_event_result` draws the pick; nothing is applied until
+`choose_repair()` calls `Save.apply_field_repair_to(_car_instance_id)` and stashes its
+summary in `_pending_repair`, read once via `take_pending_repair()` on the next stage's
+boot. Choosing a boost instead means the car simply stays as damaged as it finished.
 
-Without a stage AFTER it, the final event of a rally would never get this courtesy
-repair — `_enter_event()` only ever runs again for a NEXT event, and there is no
-next event after the last one, so damage taken on the final stage would otherwise
-carry forward untouched into whatever the player drives next (the next rally, free
-roam, etc.). `RallySession._resolve_results()` closes that gap: it also calls the
-same repair (`RallySession._apply_field_repair()`, the shared helper both call sites
-now use) for the just-finished car, with the identical `field_repair_hp_fraction`/
-`field_repair_toe_fraction` fractions. **`Save.apply_field_repair_to(instance_id)` is
-the one entry point for that pairing** — it reads the two `GameConfig` fractions and
-calls `field_repair` with them, so no caller picks its own. Every between-stage and
-final-stage repair in the game goes through it: RallySession's two, and
-`RunSession.report_event_result`'s two. (It lived on `RallySession` until the
-roguelike pivot's extraction stage; it is four lines of config reads and belongs next
-to the `field_repair` it delegates to.) Unlike the between-event repair, this one is
-applied **silently** — the summary is discarded rather than stashed for
-`take_pending_repair()`, so it never fights with the podium flow's own
-UI for the player's attention.
+`field_repair` returns `{repaired, hp_before, hp_after, max_hp, hp_gained}`. It reports
+`repaired: false` — and writes nothing — for a pristine car (full HP, straight wheels), the
+only case where there is nothing to do. A car at **0 HP** is repaired like any other, and
+in fact gains the most: `lost` is the full pool, so it comes back off the floor and out of
+the worst of the misfire/rev cap.
+
+The summary drives a **`RepairReveal`** popup (`scripts/repair_reveal.gd`): a dismissable
+modal ("Pit Repairs Complete", health **+N HP**, Continue) that
+`world.gd._show_repair_popup()` shows once the loading overlay is gone (a staged run keeps
+it up until the start-line queue is laid out, so the popup sits over the ready start-line
+reveal rather than a frozen loading screen). It appears only when the repair moved health
+by at least `RepairReveal.MIN_SHOW_GAIN_PCT` percentage points (2, via
+`RepairReveal.worth_showing`) — a smaller touch-up still applies to the save but does not
+interrupt the player. The card and the gate read the **same** number, `health_gain_pct`, so
+the figure on screen is the one that decided whether to show the popup at all. Proportional
+is the right unit: 20 HP means very different things on a fragile car and a heavy one.
+(`health_gain_hp` still exists as a pure helper and is tested, but nothing displays it.)
+Headless runs drain the summary without building the popup.
+
+**The final stage gets the repair too, silently.** There is no next stage to cushion for,
+so damage taken on the last stage would otherwise carry untouched into the next run;
+`report_event_result` applies it directly when the run is over and discards the summary
+rather than stashing it, since there is no scene left to show a popup in.
+**`Save.apply_field_repair_to(instance_id)` is the one entry point for that pairing** — it
+reads the two `GameConfig` fractions and calls `field_repair` with them, so no caller picks
+its own. (It lived on `RallySession` until the roguelike pivot's extraction stage; it is
+four lines of config reads and belongs next to the `field_repair` it delegates to.)
 
 ## HP is NOT a damage oracle (the rule outlived its API)
 
@@ -474,7 +466,7 @@ UI for the player's attention.
   be none of this stage's doing, and `hp >= max_hp` is simply unreachable for such a car
   however flawlessly it was driven.
 
-`RallySession` used to latch the fact instead (`_took_damage_this_rally`, read via
+The deleted `RallySession` latched the fact instead (`_took_damage_this_rally`, read via
 `took_damage_this_rally()` and carried on the `rally_finished` result as `took_damage`) —
 the clean-run signal its podium rewards keyed off. **That flag no longer exists**, because
 nothing needs it: rewards are money, and money is paid per stage on time and coins, never
@@ -547,9 +539,11 @@ the auto box's upshift speeds), `test_save_manager.gd` (`wheel_toe`
 round-trips through save/reload, a full-fraction field repair straightens the wheels,
 old saves backfill straight, **`field_repair`** restores the given fraction of lost HP, bends
 each wheel the given fraction back toward straight, and skips a pristine car;
-**`apply_damage` clamps at 0** rather than writing the car off), `test_rally_session.gd` (the **between-event pit repair**
-fires entering every event after the first, never the first, and its summary is
-consumed once), `test_car.gd` (bent front wheels **veer the car through the
+**`apply_damage` clamps at 0** rather than writing the car off, and **`heal_car`** gives HP
+back capped at `max_hp`), `test_region_run.gd` (the between-stage repair is offered as a
+PICK and applied only when chosen), `test_damage_model.gd` (the **self-heal trickle**:
+rate x dt, capped at max_hp, inert at the authored 0.0 rate, and it never straightens
+wheels), `test_car.gd` (bent front wheels **veer the car through the
 physics alone**, `engine.misfire_level` tracks the damage fraction), `test_bush_field.gd` (side-based `drag_torque` sign +
 scaling, enter/leave one-shot **soft drag**, min-speed gate), `test_spectator_damage.gd` (a
 knockdown applies **soft drag** to the car), `test_car.gd` (contact monitor

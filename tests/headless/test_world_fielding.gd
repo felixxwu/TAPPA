@@ -55,10 +55,10 @@ func after_each() -> void:
 
 
 # Start a region run on a freshly granted fixture car and boot the run scene.
-func _field(model_id: String) -> Dictionary:
+func _field(model_id: String, region_id := "") -> Dictionary:
 	var owned: Dictionary = _save.grant_car(model_id)
-	assert_true(RunSession.start_region(RegionLibrary.ordered()[0]["id"], owned),
-		"setup: the run started")
+	var region := region_id if region_id != "" else String(RegionLibrary.ordered()[0]["id"])
+	assert_true(RunSession.start_region(region, owned), "setup: the run started")
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 	await get_tree().process_frame
@@ -112,3 +112,36 @@ func test_fielding_writes_no_boosts_into_the_saved_profile() -> void:
 	var stored: Dictionary = _save.get_car(int(owned["instance_id"]))
 	assert_false(stored.has("boosts"),
 		"the effects were merged onto a duplicate, never onto the saved car")
+
+
+# --- The stage wears its REGION's look ------------------------------------------------
+#
+# world.gd::_current_region_look hardcoded `region_id := "home"` from the stage-2 deletion
+# (its comment said stage 4's region select would give it a real answer) until stage 9
+# wired it to RunSession.region_id() — so every region run was driven under the home
+# palette, sky and tree mix. The handling overrides were never affected: StageConfig reads
+# `event["region"]` off the drawn stage, which was always right.
+#
+# Asserts the RELATION (the world resolves the run's own region's look), never a look
+# VALUE — every field in a region's look block is authored data.
+
+func test_a_region_runs_stage_wears_that_regions_look() -> void:
+	# The LAST region in the unlock order, to be sure this is not the "home" default
+	# passing by coincidence.
+	var ordered := RegionLibrary.ordered()
+	var region := String(ordered[ordered.size() - 1]["id"])
+	await _field("fx_awd", region)
+	assert_eq(_scene._current_region_look(), RegionLibrary.look_of(region),
+		"the driven stage resolves the RUN's region, not the home default")
+
+
+func test_a_challenge_stage_falls_back_to_the_home_look() -> void:
+	# A challenge is rolled from the period hash and authors no region at all, so it must
+	# land on the plain home look rather than whatever the last region run left behind.
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
+		int(Time.get_unix_time_from_system())), "setup: the challenge started")
+	_scene = load("res://main.tscn").instantiate()
+	add_child_autofree(_scene)
+	await get_tree().process_frame
+	assert_eq(_scene._current_region_look(), RegionLibrary.look_of("home"))

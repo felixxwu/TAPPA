@@ -2083,12 +2083,18 @@ var _region_look_ready := false
 func _current_region_look() -> Dictionary:
 	if _region_look_ready:
 		return _region_look_cache
-	# A challenge stage is rolled from the period hash and authors no region, so it
-	# wears the plain home look. The career-rally and free-roam arms that used to
-	# pick a region here (off RallySession) are deleted along with it
-	# (todo/roguelike-pivot.md decision 5); the roguelike region-select system
-	# (stage 4) is what will give this a real region to read.
+	# THE REGION RUN'S OWN REGION (stage 4 of the pivot gave this a real answer;
+	# RunSession.region_id() returns "" for anything that is not a region run).
+	#
+	# A CHALLENGE stage is rolled from the period hash and authors no region, so it wears
+	# the plain home look — as does a dev boot of main.tscn with no session at all. The
+	# career-rally and free-roam arms that used to pick a region here are deleted with
+	# RallySession (decision 5).
 	var region_id := "home"
+	if RunSession.is_active():
+		var run_region := RunSession.region_id()
+		if run_region != "":
+			region_id = run_region
 	_region_look_cache = RegionLibrary.look_of(region_id)
 	_region_look_ready = true
 	return _region_look_cache

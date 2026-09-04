@@ -1,8 +1,9 @@
 # Regions
 
 **Source:** `scripts/region_library.gd` (`RegionLibrary`), the `region` tag on
-`RallyLibrary.RALLIES` (`scripts/rally_library.gd`), `world.gd._apply_region_look`
-(and `_current_region_look`), and `hq.gd` (`_refresh_map_pins`, `_make_pin`).
+`RallyLibrary.RALLIES` (`scripts/rally_library.gd`), `world.gd._apply_region_look` (and
+`_current_region_look`), `scripts/region_stage_pool.gd` (the run's stage draw) and
+`HubShell`'s REGION page.
 
 **Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_rally_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_hub_shell.gd`
 
@@ -63,14 +64,14 @@ at once, and **regions do not unlock in sequence**: there is no "next region"
 gate, and **no region-level gate of any kind** —
 a region's only job is its LOOK and its `water_level`
 (`RegionLibrary.REGIONS`'s header comment states this explicitly). Progression
-gating now lives entirely in `RallyLibrary`, and it is **geometric, not a
-counter**: a rally — ordinary or special, no distinction — becomes enterable
-once the player's lit map reaches its `map_pos` (`RallyLibrary.rally_revealed`
-/ `lit_sources`, one predicate for every rally — see
-the deleted map exploration). Specials used to gate on the
-roster-wide STAR TOTAL, then on a global completed-rally counter
-(`completions_required`); both were retired because a counter's unlocks had no
-visible relationship to the rally just won, whereas a pin's position does. The
+gating is the LINEAR REGION UNLOCK (decision 12) — see *Progression* below.
+`RegionLibrary.is_unlocked` reads `Save.KEY_REGIONS_CLEARED`, and a rally is simply part
+of whichever region's pool it is tagged into.
+
+The geometric rule this replaced is worth one line so nobody looks for it: a rally became
+enterable once the player's lit map reached its `map_pos` (`rally_revealed` /
+`lit_sources`), which was itself a replacement for a roster-wide star total and then a
+completed-rally counter. All three are deleted with the map. The
 credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
 [rally-roster.md](rally-roster.md).
@@ -196,8 +197,8 @@ as it is scattered. Two of the keys here therefore reach the ground shader twice
 region's `terrain_tint` and `tarmac_color` are uploaded together as a rank→look LUT
 (`Overworld.region_look_lut`, `_push_region_lut`) so distant ground of ANY region paints in its
 own colours, while `grass_texture` still cross-fades between only the two regions nearest the car
-(a texture sampler cannot live in a uniform array). See
-the deleted overworld → "Region blending" for the full split.
+(a texture sampler cannot live in a uniform array). Both belong to the deleted overworld;
+the split is recorded here because the LUT idea is the reusable half.
 
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
 are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
@@ -377,12 +378,11 @@ region lookup in the path.
 Non-special rallies reveal the same geometric way, and it is deliberately
 **cross-region**: `RallyLibrary.rally_revealed` compares a rally's `map_pos`
 against the lit circles of every completed rally on the WHOLE roster
-(`lit_sources`), not just its own region's. The one world map pins every
-region's rallies at once, so "complete a rally in one corner to reveal one in
-another corner" is the intended drip-feed — a reveal scoped to one region
-would have cut that off at each corner's border. See
-the deleted map exploration (the reveal rule itself) and
-[menus.md](menus.md) (the grey "coming up" pin).
+(`lit_sources`), not just its own region's — the one world map pinned every region's
+rallies at once, so "complete a rally in one corner to reveal one in another corner" was
+the intended drip-feed, and a reveal scoped to one region would have cut that off at each
+corner's border. **All of it is deleted** with the map; the roguelike unlocks whole
+regions in a line instead (below).
 
 ## Theming the driven world (`world.gd._apply_region_look`)
 
@@ -390,17 +390,17 @@ Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`
 (so it runs after the base environment is built, before the level otherwise
 settles):
 
-1. Resolve the driven rally's region — `region_id = "home"` if no
-   `RallySession` is active, else
-   `RegionLibrary.region_for_rally(RallySession.rally_id()).id`. Free roam has no
-   session but picks a random location: when a free-roam car is set
-   (`free_roam_instance_id >= 0` OR `free_roam_model_id != ""`) and
-   `RallySession.free_roam_region_id` is set (`hq._prepare_free_roam` draws a
-   uniform random id from the full `RegionLibrary.all()` roster — every
-   authored corner, no unlock gating to worry about since there is none), that
-   id is used. This resolution lives in `world.gd._current_region_look()`,
-   shared by `_apply_region_look` (materials/sky/fog) and the foliage spawn
-   (below).
+1. Resolve the driven stage's region — `RunSession.region_id()` when a REGION RUN is
+   active, else `"home"`. A challenge stage is rolled from the period hash and authors no
+   region, so it wears the plain home look; so does a dev boot of `main.tscn` with no
+   session. Cached per world (`_region_look_cache`), since it cannot change mid-stage.
+
+   > This hardcoded `"home"` from the stage-2 demolition until stage 9 — its comment said
+   > the region-select system would give it a real answer, and stage 4 built that system
+   > without coming back here — so **every region run was driven under the home palette,
+   > sky and tree mix**. The HANDLING overrides were never affected: `StageConfig` reads
+   > `event["region"]` off the drawn stage dict, which was always correct. Guarded now by
+   > `test_world_fielding.gd`.
 2. `var look := RegionLibrary.look_of(region_id)`; if empty (home, or an
    unrecognised id), return — no-op, leaving `main.tscn`'s baseline untouched.
 3. Apply only the keys present:
@@ -477,45 +477,22 @@ This is the single place the region look reaches the run scene; the rally
 already carries its `region`, so no extra plumbing was needed into
 `Config.data` or the scene tree.
 
-## One world map, no table swap (`hq.gd`)
+## The world map is DELETED
 
-There is a single world map texture, `textures/map_world.jpg`
-(`RegionLibrary.DEFAULT_MAP_IMAGE`), loaded once by `hq.gd._refresh_map_pins`
-and never swapped. Every rally on the whole roster — every region — gets a
-pin on it at the same time, positioned by its own `map_pos` (normalised 0..1,
-solved by `tools/fit_map_pins.py` against the progression graph — not confined
-to any region's patch of the image). `_make_pin` builds every
-pin's marker, readout label and hit targets the same way regardless of
-region; the only per-pin state is:
+There was a single world map texture (`textures/map_world.jpg`,
+`RegionLibrary.DEFAULT_MAP_IMAGE`) on the HQ's 3D table, with every rally on the roster
+pinned at its own `map_pos` and lit or greyed by a geometric reveal rule. The table, the
+pins, the reveal parade and the map image's consumers all went with the diegetic hub
+(decision 9).
 
-- **locked** (`not RallyLibrary.rally_revealed(rally, Save.profile)`) — the
-  rally's `map_pos` doesn't yet fall inside any lit circle (one geometric
-  predicate for every rally, special or not — see
-  the deleted map exploration). A locked pin renders grey,
-  carries no hit spheres (can't be clicked/entered), and drops its readout box
-  entirely — except a locked SPECIAL, which keeps a full-opacity non-pickable
-  teaser naming what it unlocks (`hq_map_table._build_special_teaser_label`). Either way
-  it's a "coming up" hint, not a hidden pin: locked rallies are still pinned
-  and visible; they are simply not enterable yet.
-- earned stars / eligible-car state, same as always (`RallyFlag.build`).
+What replaced it is a flat list: `HubShell`'s REGION page, showing every region in
+AUTHORED order (`RegionLibrary.ordered()`), each marked cleared or named with its gate
+([hub-shell.md](hub-shell.md)). **Regions unlock linearly now** (decision 12's
+progression), which is a different rule from the map's geometry entirely — see below.
 
-The table also carries **one non-rally target**: the **present box** that
-trades stars for a car (`hq._make_present_pin`, at `hq.PRESENT_MAP_POS`). It
-belongs to no region and needs none — it is deliberately parked near the
-map's CENTRE rather than in any corner, so it reads as a facility rather than
-another corner's content. See [menus.md](menus.md) → TABLE and
-the deleted star economy.
-
-None of the old per-region table state exists any more: there is no
-`_viewed_region_index`, no `_swap_region`, no `_furthest_unlocked_index`, and
-`hq_environment.gd` builds no arrow props (no `arrow_left`/`arrow_right`,
-no "CHANGE MAP" labels, no `_on_arrow_input`) — the whole diegetic
-region-swap mechanism described in older versions of this doc is deleted.
-Camera glide + nearest-to-centre selection (`_pan_table_step`,
-`_select_target_under_center`) is unchanged and now simply operates over the
-one map's full pin set instead of a per-region subset — see
-[menus.md](menus.md) → TABLE for the pan/select/enter flow, which this section
-no longer needs to distinguish from a "swap" mode.
+`map_pos` survives on every rally and is still authored, because the pin-fitting tool
+(`tools/fit_map_pins.py`) and its solved positions are expensive to reproduce and a future
+map screen would want them. Nothing reads it today.
 
 ## The snow corner (filled in)
 
@@ -530,39 +507,31 @@ The one thing it DID add is the handling axis described above — the first time
 influenced how a stage drives rather than only how it looks. See
 [snow-region.md](snow-region.md).
 
-## Progression: no sequence, no region gating, geometrically-gated specials
+## Progression: linear region unlock
 
-- **No unlock sequence.** There is no derived-or-stored "region unlocked"
-  concept any more — every authored region is reachable from the start.
-  `RegionLibrary.unlocked` no longer exists; do not reintroduce it.
-- **No region gating at all.** Regions used to gate their own showdown
-  (`RegionLibrary.showdown_unlocked` scoped per region) and the credits fired
-  once every region's showdown was won (`all_showdowns_completed`). Both of
-  those, plus `showdown_of` and `rally_showdown_gate_open`, are **deleted** —
-  `RegionLibrary` no longer has any gating API. A region's only remaining job
-  is `look_of` / `water_level_of`.
-- **Geometrically-gated specials.** `hq.gd` and `reward_system.gd` read
-  `RallyLibrary.rally_revealed`, which compares a special's `map_pos` against
-  the lit circles of every completed rally on the roster, exactly like any
-  ordinary rally — no region lookup anywhere in the path, and no completion
-  counter or star total either: `total_stars` / `max_total_stars` /
-  `special_gate_open` / `stars_required` / `stars_needed` are **deleted**, and
-  so is the completion-count ladder that briefly replaced them
-  (`completions_required` / `completions_needed`). Stars are now a spent
-  balance, and a gate reading a balance would close behind a player who had
-  already passed it — see the deleted star economy.
-- **Global-completion credits.** `rally_session.gd` emits `RallySession.game_won`
-  (renamed from `showdown_won`) when `RallyLibrary.all_specials_completed(profile)`
-  is true — every special on the roster completed, regardless of which region
-  it sits in. Region ORDER carries no meaning; there is no "final region." A
-  special win that still leaves another special outstanding just completes
-  like any other rally: it records completion/best-placement and pays the
-  placement's **stars** into the ledger (specials pay them too now — they used
-  to pay nothing, which made the prestige events the least rewarding on the
-  map). No rally hands over a car any more; cars are bought with those stars at
-  the map's present box. See the deleted star economy,
-  the deleted career rally session,
-  the deleted reward system and [rally-roster.md](rally-roster.md).
+- **Regions unlock in AUTHORED order.** Each `REGIONS` entry carries an `order` field;
+  order 0 is always open and every other region is gated on the one before it appearing in
+  `Save.KEY_REGIONS_CLEARED`. `RegionLibrary.order_of` / `ordered` / `is_unlocked` /
+  `gate_for` are the whole API, and the REGION page prints the gate on a locked row rather
+  than hiding it.
+- **Array position carries no meaning** — that table's header says so explicitly. Read the
+  `order` field; never the index.
+- **A cleared region stays open and repeatable** (decision 12's grind valve), which is why
+  `KEY_REGIONS_CLEARED` is a de-duplicated set of ids while
+  `LifetimeStats.REGIONS_CLEARED_TOTAL` counts every completed run including repeats.
+  Money scales with the region's order (decision 31), so grinding an early region pays
+  worse per unit time than progressing — that is what stops "farm region 1 forever"
+  without taking the valve away.
+
+**What this replaced, all deleted:** the geometric reveal rule (`rally_revealed`,
+`lit_sources`, comparing a rally's `map_pos` against the lit circles of every completed
+rally), `all_specials_completed` and the global-completion credits beat, the per-region
+showdown gates (`showdown_unlocked`, `all_showdowns_completed`, `showdown_of`,
+`rally_showdown_gate_open`), and the star-total gates before them (`total_stars`,
+`special_gate_open`, `stars_required`) plus the completion-count ladder that briefly
+replaced those. `RegionLibrary` has no gating API left beyond the linear unlock above; its
+other job is the LOOK (`look_of` / `water_level_of` / `surface_grip_of` / `deep_snow_of` /
+`frozen_water_of` / `tree_mix` / `rock_density`).
 
 ## Tests
 
@@ -571,10 +540,9 @@ influenced how a stage drives rather than only how it looks. See
 (never the shipped Greek roster or textures): `region_for_rally`/`rallies_in`
 round-trip, `look_of`'s override-vs-omit and
 `look_from` inheritance behaviour, and `has_water_level`/`water_level_of`
-with synthetic values. The geometric reveal rule (`rally_revealed`,
-`lit_sources`) and `all_specials_completed`, plus the `region` tag
-on every rally, are asserted in `tests/headless/test_rally_library.gd`. The
-map's pin set (every region's rallies pinned at once, locked pins
-non-pickable, keyboard + gamepad reachable) is covered in the HQ nav tests
-(`tests/headless/test_menu_nav.gd`, and the hub's own nav cases in `test_hub_shell.gd`). The
-reward system's region-aware draw-walk is covered in `test_reward_system.gd`.
+with synthetic values. The `region` tag on every rally is asserted in
+`tests/headless/test_rally_library.gd`. The linear unlock and its display (every region
+listed in authored order, a locked row shown with its gate and unfocusable) are covered in
+`tests/headless/test_hub_shell.gd`; the region-run draw that reads the tag is in
+`tests/headless/test_region_stage_pool.gd`. That a driven stage wears its own region's
+look is `tests/headless/test_world_fielding.gd`.
