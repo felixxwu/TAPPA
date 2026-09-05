@@ -171,17 +171,31 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    `TerrainManager` runs in during a stage; all six instances' chunks in-shot range
    must be resident up front.
 2. **No car** — pure scenery, no `kinematic_pose` work needed.
-3. **Weather/time DOES vary** — this is new work beyond a first `home`-only
-   prototype (see phase 1 below) and needs its own mini-design before it's built:
-   candidates are (a) each segment authors a fixed weather/time look, so the
-   variety comes from moving between segments (cheapest — reuses per-stage weather
-   application once per segment, no runtime cycling logic), or (b) a global
-   day/night and/or weather cycle running on a timer across the whole showcase
-   independent of which segment is on screen (more dynamic, more moving parts:
-   every segment's lighting must be re-derived live, and a weather transition
-   mid-shot must not itself look like a cut). **Revisit which of these before
-   building step 3 of the phased plan below** — it isn't decided yet, just that
-   "vary it" beats "always clear daytime".
+3. **Weather/time varies via a global running cycle**, independent of which segment
+   is on screen — decided over the per-segment-fixed-look alternative.
+
+   **What this actually means, given the scene shape settled above**: because all
+   six `TerrainManager` instances live in ONE scene, they share ONE
+   `WorldEnvironment`/sun — there is no "per-segment lighting" to separately
+   re-derive as first drafted; driving the shared environment/light is enough for
+   every segment to see the same time-of-day/weather at once. That part is
+   simpler than originally worried.
+
+   **What IS genuinely new work**: `WeatherLibrary.WEATHER` (`scripts/weather_library.gd`)
+   is a catalogue of DISCRETE, authored conditions (`"night"`, rain, sandstorm, …),
+   each a snapshot of fields — `sun_energy_mult`, `sky_color`,
+   `background_color`, `fog_density_mult`, `night_sky_panorama`, etc. — applied
+   WHOLESALE once per stage (see [weather.md](weather.md)). Nothing in the game
+   today INTERPOLATES between two conditions over time; every consumer snaps to
+   one authored dict. A "global running cycle" for the showcase therefore needs
+   NEW machinery: a timer-driven blend between two or more `WEATHER` entries (or a
+   dedicated showcase-only day/night rig), written each frame onto the shared
+   `WorldEnvironment`/`DirectionalLight3D`/sky the same fields the discrete system
+   already names. Reuse the FIELD NAMES and the region-then-weather layering order
+   `weather.md` documents; the interpolation loop itself is new.
+   **Revisit the exact blend design (which conditions to cycle through, cycle
+   period, whether it eases or holds+cuts) before building step 3 of the phased
+   plan below.**
 4. **Six separate materials**, not the LUT — see the `TerrainManager` consequence
    under decision 1. Simpler to reason about and debug.
 
@@ -211,12 +225,14 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    caps it at a known-affordable ceiling instead of the desktop tier. Revisit only
    if a profiled build later shows this is still too heavy even at that floor.
 
-## Open questions still outstanding
+## Open questions
 
-1. **Weather/time mechanism** — per-segment fixed look vs. a global running cycle,
-   per decision 3 above; needs picking before that piece is built.
+None outstanding — every open question from the first draft is now settled above
+(decisions 1-5). The only thing explicitly left for later is the exact blend design
+under decision 3 (which conditions to cycle, period, ease-vs-cut), called out there
+as a call to make when step 3 of the phased build below is actually started.
 
-## Suggested phased build (once the remaining open question is answered)
+## Suggested phased build
 
 1. Prototype: one fixed-seed track, ONE region's look applied over the whole thing,
    a `MenuShowcaseCamera` with a couple of fixed shots cutting on a timer — prove the
@@ -228,9 +244,13 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    (`test_menu_showcase_camera.gd` mirroring `test_replay_camera.gd`'s deterministic
    `_tick` coverage; a smoke test in `test_smoke.gd` that the scene builds and the
    camera is `current`).
-4. Wire into `hub_shell.gd`/`hub.tscn`, verify no regression to hub input/nav
+4. Build the global weather/time cycle (decision 3) — a timer-driven blend across
+   `WeatherLibrary.WEATHER` fields written onto the one shared
+   `WorldEnvironment`/light, once the exact blend design (which conditions, period,
+   ease-vs-cut) is picked.
+5. Wire into `hub_shell.gd`/`hub.tscn`, verify no regression to hub input/nav
    (`test_hub_shell.gd`, `test_menu_nav.gd`) and performance on the frame/quality
    budget decided above.
-5. Update [hub-shell.md](hub-shell.md) and add a new `features/menu-showcase.md`
+6. Update [hub-shell.md](hub-shell.md) and add a new `features/menu-showcase.md`
    (indexed in `features/README.md`) documenting the shipped mechanism, per CLAUDE.md's
    feature-docs rule.
