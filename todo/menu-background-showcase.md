@@ -186,16 +186,24 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    overhead) instead of one instance with a blend shader, which is why the mobile
    budget question below still matters.
 
+5. **Mobile budget: match the lowest in-run quality tier**, not a new dedicated
+   tier and not "measure later". Reuse the existing per-target quality resolution
+   `world.gd` already does before generation
+   (`cfg.terrain_lod_bands_m = cfg.terrain_lod_bands_for(_web, _touch)`, consumed by
+   `cfg.apply_terrain_lod(floor)`) — feed the showcase's six `TerrainManager`
+   instances whatever LOD bands that resolver returns for the lowest tier
+   (mobile/web), regardless of the device actually running it, rather than
+   resolving per-device the way a real stage does. This is decoration, not
+   gameplay the player needs full LOD to read, and it caps the six-instance cost at
+   a known-affordable ceiling instead of six copies of the desktop tier. Revisit
+   only if a profiled build later shows this is still too heavy even at that floor.
+
 ## Open questions still outstanding
 
-1. **Mobile budget**: what frame/quality cap is acceptable for a screen that is
-   *only* ever a background — should it degrade LOD further than an in-run stage
-   would? This matters more now that decision 4 means SIX resident `TerrainManager`
-   instances rather than one.
-2. **Weather/time mechanism** — per-segment fixed look vs. a global running cycle,
+1. **Weather/time mechanism** — per-segment fixed look vs. a global running cycle,
    per decision 3 above; needs picking before that piece is built.
 
-## Suggested phased build (once the remaining open questions are answered)
+## Suggested phased build (once the remaining open question is answered)
 
 1. Prototype: one fixed-seed track, ONE region's look applied over the whole thing,
    a `MenuShowcaseCamera` with a couple of fixed shots cutting on a timer — prove the
