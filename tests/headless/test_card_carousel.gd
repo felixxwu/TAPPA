@@ -21,6 +21,20 @@ func test_starts_selected_on_the_first_card() -> void:
 	assert_eq(_carousel.selected_index(), 0)
 
 
+# Regression: the carousel used to declare a minimum HEIGHT only, so a MenuPage body box
+# (which hugs its content's minimum WIDTH — menu_page.gd) squeezed it down to whatever its
+# narrowest sibling needed, clipping every card down to a sliver that read as "a list
+# scrolling inside one card" instead of cards sitting side by side. The carousel must
+# claim real width on its own, regardless of what it's placed inside.
+func test_declares_a_minimum_width_wide_enough_to_peek_neighbours() -> void:
+	var fresh := CardCarousel.new()
+	add_child_autofree(fresh)
+	var expected := Config.data.card_carousel_card_width * Config.data.card_carousel_visible_width_factor
+	assert_almost_eq(fresh.get_combined_minimum_size().x, expected, 0.01)
+	assert_gt(fresh.get_combined_minimum_size().x, Config.data.card_carousel_card_width,
+		"must be wider than a single card, or neighbours never peek into view")
+
+
 func test_menu_nav_handles_side_moves_selection_and_emits_changed() -> void:
 	var seen: Array = []
 	_carousel.selection_changed.connect(func(i): seen.append(i))

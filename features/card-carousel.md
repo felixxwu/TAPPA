@@ -66,8 +66,25 @@ Every carousel tunable lives on `GameConfig` (`scripts/game_config.gd` → `Card
 group), not hardcoded in the script: `card_carousel_aspect`, `card_carousel_card_width`,
 `card_carousel_unselected_alpha`, `card_carousel_snap_duration_s`,
 `card_carousel_drag_step_fraction` (reserved for a future drag-vs-tap threshold refinement
-— the shipped `end_drag_and_snap` already snaps to nearest regardless), and
-`card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed).
+— the shipped `end_drag_and_snap` already snaps to nearest regardless),
+`card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed), and
+`card_carousel_visible_width_factor` (below).
+
+## The carousel MUST claim its own minimum width
+
+`MenuPage`'s body box **hugs its content's minimum width** (`menu_page.gd`'s
+`_scroll.horizontal_scroll_mode = SCROLL_MODE_DISABLED` propagates the child's real
+minimum width up to the box). Cards are absolute-positioned children of `_strip`, a plain
+`Control` rather than a `Container`, so they never contribute to anyone's reported minimum
+size — the carousel itself has to declare one. Without it the body box shrinks to whatever
+its narrowest sibling (a "Money: N" label, say) needs, and the CardCarousel's own
+`clip_contents = true` then clips every card down to that sliver — which reads as "a list
+scrolling inside one small card" rather than a row of cards, since you never see more than
+a fragment of whichever card is centred. `CardCarousel._init` sets
+`custom_minimum_size.x = card_carousel_card_width * card_carousel_visible_width_factor`
+(default 2.6×) specifically so the box grows enough to show the selected card next to a
+peek of its neighbours. Don't reintroduce a bare `Vector2(0, height)` minimum size here —
+that is exactly the regression this section documents.
 
 ## The CAR page's spinning 3D preview
 

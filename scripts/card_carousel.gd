@@ -55,7 +55,16 @@ const _GAP := 24.0
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(0, _card_height() + 8.0)
+	# A REAL minimum width, not just height. Cards are absolute-positioned children of a
+	# plain (non-Container) `_strip`, so they never contribute to anyone's minimum size —
+	# and MenuPage's body box hugs its content's minimum width (menu_page.gd), so without
+	# this the box shrinks to whatever its narrowest sibling label needs and clips the
+	# carousel down to a sliver, which reads as "scrolling a list inside one card" rather
+	# than cards sitting side by side. Claiming enough width for the selected card plus a
+	# peek of its neighbours is what makes it read as a card LIST.
+	custom_minimum_size = Vector2(
+		Config.data.card_carousel_card_width * Config.data.card_carousel_visible_width_factor,
+		_card_height() + 8.0)
 	clip_contents = true
 	focus_mode = Control.FOCUS_ALL
 	mouse_filter = Control.MOUSE_FILTER_STOP
