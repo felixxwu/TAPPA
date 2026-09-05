@@ -23,6 +23,15 @@ extends Node3D
 # DELETED along with the rival field it dramatized (todo/roguelike-pivot.md decision
 # 5; decision 29 keeps this MENU, only the reveal goes). `setup()` no longer takes a
 # `leaders` argument.
+#
+# THE RIVAL GHOST (features/rival-ghost.md) took its place as of the roguelike run's
+# fixed-clock target: `world.gd` hands `setup()` a `RivalGhost` it owns (outliving
+# this node — the ghost keeps posing through RUNNING for the live HUD delta), and the
+# MENU phase loops it down the road (`RivalGhost.advance`, looping) so the idle orbit
+# shot reads as "the rival driving the stage" rather than a silent number. This node
+# only ever calls `advance()` from the MENU branch of `_timed_process`, so the loop
+# stops naturally at the fade; world.gd takes over posing it (`RivalGhost.pose_at`,
+# un-looped, off `StageManager.elapsed()`) once the countdown/run begins.
 
 ## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
 ## below since preload() cannot take that reference (needs a literal string).
@@ -42,6 +51,11 @@ var _stage_manager: Node
 var _camera_manager: CameraManager
 var _hud: CanvasLayer
 var _mobile: CanvasLayer
+# The rival ghost (features/rival-ghost.md), owned by world.gd and handed in so it
+# can keep posing after this node's own sequence is DONE. Null for a plain dev boot
+# or a degenerate track (RivalGhost.has_profile() false) — either way the MENU loop
+# below is just a no-op with no car to advance.
+var _ghost: RivalGhost
 
 # Nodes this scene owns.
 var _orbit_cam: Camera3D
@@ -118,11 +132,14 @@ func _stage_total(rally: Dictionary) -> int:
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
 		event_index: int, camera_manager: CameraManager = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null,
-		pause_menu: PauseMenu = null) -> void:
+		pause_menu: PauseMenu = null, ghost: RivalGhost = null) -> void:
 	active_instance = self
 	_pause_menu = pause_menu
 	_player = player
 	_terrain = terrain
+	_ghost = ghost
+	if is_instance_valid(_ghost) and _ghost.has_profile():
+		_ghost.reset(true)  # looping — see the MENU idle in _timed_process
 	_rally = rally  # kept so launch() can re-check eligibility after a pre-race edit
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
@@ -216,6 +233,8 @@ func _update_orbit() -> void:
 func _advance_orbit(delta: float) -> void:
 	_orbit_angle += delta * _cfg().start_orbit_speed
 	_update_orbit()
+	if is_instance_valid(_ghost):
+		_ghost.advance(delta)
 
 
 # --- Overlay (MENU: Start / Tune Car) ----------------------------------------

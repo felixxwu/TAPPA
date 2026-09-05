@@ -56,6 +56,10 @@ var _money_earned := 0
 # has actually been generated. 0 = no target (a challenge stage, or a track that
 # failed to solve) — the fail rule can never fire on it.
 var _stage_target_ms := 0
+# The pace-scaled profile behind _stage_target_ms (features/rival-ghost.md), seated
+# by the same set_stage_track() call. {} whenever _stage_target_ms is 0 (a
+# challenge run, or a degenerate track) — see stage_target_profile().
+var _stage_target_profile: Dictionary = {}
 var _pending_repair: Dictionary = {}
 var _last_result: Dictionary = {}
 # --- The between-stage pick (todo/roguelike-pivot.md "Between stages: repair or
@@ -188,6 +192,13 @@ func stage_target_ms() -> int:
 	return _stage_target_ms
 
 
+# The pace-scaled distance/time profile behind stage_target_ms — the rival ghost's
+# pace line for the stage now seated (features/rival-ghost.md). Valid only after
+# set_stage_track(); {} for a mode with no target (challenge) or a degenerate track.
+func stage_target_profile() -> Dictionary:
+	return _stage_target_profile
+
+
 # A human label for the run, for the arch banner and the run summary.
 func display_name() -> String:
 	return _mode.display_name() if _mode != null else ""
@@ -220,8 +231,10 @@ func current_stage_params() -> Dictionary:
 func set_stage_track(track_result: Dictionary) -> int:
 	if not _active or _mode == null:
 		_stage_target_ms = 0
+		_stage_target_profile = {}
 		return 0
 	_stage_target_ms = _mode.stage_target_ms(_stage_index, track_result)
+	_stage_target_profile = _mode.stage_target_profile(_stage_index, track_result)
 	return _stage_target_ms
 
 
@@ -295,6 +308,7 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_failed = false
 	_money_earned = 0
 	_stage_target_ms = 0
+	_stage_target_profile = {}
 	_pending_repair = {}
 	_last_result = {}
 	_pending_pick = []
@@ -357,6 +371,7 @@ func resume(unix_time: int) -> bool:
 	_failed = false
 	_money_earned = int(run.get("money_earned", 0))
 	_stage_target_ms = 0
+	_stage_target_profile = {}
 	_pending_repair = {}
 	_last_result = {}
 	_boosts = (run.get("boosts", []) as Array).duplicate(true)
@@ -470,6 +485,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 			_money_earned += earned
 			Save.add_money(earned)
 	_stage_target_ms = 0
+	_stage_target_profile = {}
 	var over := missed or is_final
 	Save.save()
 	# The same partial pit repair between stages via _pending_repair (the run scene
@@ -651,4 +667,5 @@ func pause_run() -> void:
 	_stage_running = false
 	_pending_repair = {}
 	_stage_target_ms = 0
+	_stage_target_profile = {}
 	_persist()

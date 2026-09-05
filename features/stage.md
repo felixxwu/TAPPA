@@ -69,7 +69,7 @@ the stage ends exactly as the car crosses the finish arch ([finish-arch.md](fini
 which `world.gd` places at the **finish offset** (the end of the timed track, before
 the runoff); `TrackProgress` reaches 100% at that offset ([progress.md](progress.md)).
 
-## In-stage live standings readout — DELETED (rivals deleted)
+## In-stage live standings readout — DELETED (rivals deleted; a ghost took its place)
 
 The roguelike pivot dropped the rival field entirely (`todo/roguelike-pivot.md`
 decision 5), and the in-stage position/gap readout went with it: it projected the
@@ -84,25 +84,27 @@ and `scripts/live_standings.gd` with its test file. `world.gd`'s
 `_setup_stage_splits`, `_solve_rival_pace` and `_wire_stage_splits` went with the
 rival ghost.
 
-**`StageManager.setup_splits` survives as a method, but it is currently
-UNWIRED** — this corrects an earlier version of this note. The pace table it
-sets (`_turn_progress` / `_turn_time_frac` / `_p1_total_ms`) is per-turn pace
-data, not rival data, so it was right to keep rather than delete alongside the
-live-standings readout. But **the pivot's fixed per-stage timer does NOT go
-through it**: `world.gd` has no `setup_splits` call site any more (its old
-callers, `_setup_stage_splits` / `_solve_rival_pace` / `_wire_stage_splits`,
-went with the rival ghost — see above), and the target time is derived
-independently by `RegionRunMode.stage_target_ms()` (`scripts/region_run_mode.gd`),
-which calls `LapTimeModel.optimum_ms(track_result, CarPerformance.REFERENCE_CAR,
-event)` directly and scales it by `target_pace(stage_index)` — nothing routes
-through `StageManager`'s pace table to get there. `setup_splits` and its three
-backing fields are therefore genuinely dead in production today (set to empty
-defaults in `setup()` and never written again), kept as a plausible future feed
-for an in-run "ahead/behind pace" readout rather than because anything reads it
-now. The stale claim that "the fixed per-stage timer still needs it" also sits
-in a comment on `tests/headless/test_stage_manager.gd`'s `_wire_even_splits`
-helper — which is itself dead: nothing calls it, either. Both are real findings
-from this docs sweep, reported rather than fixed (this file is docs-only).
+**`StageManager.setup_splits` is now GONE too** (this corrects the previous
+version of this note, which found it merely unwired). Its per-turn pace table
+(`_turn_progress` / `_turn_time_frac` / `_p1_total_ms`) never got a production
+caller after the rival field was deleted, and `tests/headless
+/test_stage_manager.gd`'s own `_wire_even_splits` helper — the only thing that
+still called it — was itself dead (nothing called *that* either). Both were
+removed together rather than left as a plausible future feed for nothing.
+
+**What replaced it: `StageManager.setup_target_profile(profile, ghost)`**
+([rival-ghost.md](rival-ghost.md)) — a real production caller this time,
+`world.gd._setup_rival_ghost`. `profile` is `RunSession.stage_target_profile()`,
+the pace-scaled distance/time curve seated alongside `stage_target_ms` at
+`RunSession.set_stage_track` (both come from `RegionRunMode.stage_target_profile`,
+which `stage_target_ms` is now itself built on — see
+[region-runs.md](region-runs.md)). `ghost` is the `RivalGhost` node `world.gd`
+built for the start-line reveal, kept posing through RUNNING. Every RUNNING
+tick, `StageManager._update_rival` reposes the ghost off this stage's own
+`_elapsed` and computes the live HUD delta — see [hud.md](hud.md) → "Rival
+delta". Unlike the old per-turn table this is continuous (any point along the
+track, not just turn boundaries) and it has an actual production caller from
+day one.
 
 ## Control lock (`Car.controls_locked`)
 
@@ -168,9 +170,10 @@ shipped values, tunable for dev/debug.
 - `tests/headless/test_stage_manager.gd` — the state machine driven against stub
   car/HUD/progress (lock-at-start, countdown→run, timer accrual, GO flash,
   completion freeze/relock/signal, configured percent), plus a `main.tscn`
-  integration check that the car boots locked. `setup_live_standings` is gone
-  entirely; `setup_splits` (and the file's own `_wire_even_splits` helper) are
-  UNUSED — see above — and exercised only incidentally, by nothing calling them.
+  integration check that the car boots locked. `setup_live_standings` and
+  `setup_splits` are both gone entirely (see above); `setup_target_profile`'s
+  HUD delta (behind/ahead sign, empty-profile hide) is covered here instead —
+  see [rival-ghost.md](rival-ghost.md) for the ghost's own pose/profile tests.
 - `tests/headless/test_hud.gd` — the countdown/elapsed/complete widget formatting
   and the `hud_elapsed_enabled` gate.
 - `tests/headless/test_smoke.gd` — structural check that the scene wires a

@@ -102,10 +102,41 @@ func target_pace(stage_index: int) -> float:
 	return maxf(pace, cfg.run_target_pace_min)
 
 
+# The pace-scaled distance/time profile behind `stage_target_ms` — the rival ghost's
+# pace line (features/rival-ghost.md: RivalGhost poses a second car along it, and the
+# HUD delta compares the player's live time-at-distance against it). `t` is
+# LapTimeModel's reference-car time profile, scaled by the SAME `target_pace()`
+# factor `stage_target_ms` applies to the total (uniformly, not just at the end) —
+# so `profile["t"][-1] * 1000.0` is within float rounding of
+# `stage_target_ms(stage_index, track_result)` for any solvable track (the two are
+# computed separately, each rounding once at its own single scalar, rather than one
+# building on the other's already-rounded output — chaining the roundings would drift
+# stage_target_ms's pinned "reference optimum x pace" value by a millisecond here and
+# there). Empty for a degenerate track, exactly like stage_target_ms returning 0.
+func stage_target_profile(stage_index: int, track_result: Dictionary) -> Dictionary:
+	if track_result.is_empty():
+		return {}
+	var all_stages := stages()
+	var event: Dictionary = all_stages[stage_index] if stage_index >= 0 \
+		and stage_index < all_stages.size() else {}
+	var profile := LapTimeModel.optimum_profile(track_result, CarPerformance.REFERENCE_CAR, event)
+	var t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	if t.is_empty() or t[t.size() - 1] <= 0.0:
+		return {}
+	var pace := target_pace(stage_index)
+	var scaled := PackedFloat32Array()
+	scaled.resize(t.size())
+	for i in t.size():
+		scaled[i] = t[i] * pace
+	return {"s": profile.get("s", PackedFloat32Array()), "t": scaled}
+
+
 # The fixed target for `stage_index` on the track that was actually generated for
 # it. `track_result` is TrackGenerator's own result dict; an empty/degenerate one
 # yields 0, i.e. NO TARGET — a stage whose track failed to solve must not be
-# unwinnable, it just cannot be failed.
+# unwinnable, it just cannot be failed. Computed the same way `stage_target_profile`
+# is (same LapTimeModel call, same `target_pace`), not by reading its last sample —
+# see that function's comment for why chaining the two would drift this pinned value.
 func stage_target_ms(stage_index: int, track_result: Dictionary) -> int:
 	if track_result.is_empty():
 		return 0

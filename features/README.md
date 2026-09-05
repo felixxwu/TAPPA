@@ -73,6 +73,7 @@ the perks.
 | [region-runs.md](region-runs.md) | The roguelike region run — `RunSession` + `RunMode`, `RegionStagePool`, `BoostLibrary` and the repair-vs-boost between-stage pick, the fixed reference-car timer, run-over on a missed target, money banked per stage clear |
 | [collectables.md](collectables.md) | Stage coins — `CoinLayout` (off-the-racing-line, seeded placement), `CoinField` (the disc mesh + pickup proximity query), the HUD counter, the pickup chime, and how coin money banks with the stage payout at stage clear |
 | [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
+| [rival-ghost.md](rival-ghost.md) | `RivalGhost` — a posed (not simulated) second car driving `RegionRunMode`'s pace-scaled clock, shown at the start line and kept posing through the run for a live "player vs rival pace" HUD delta |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, capped misfire + rev cap at 0 HP (never a wreck) |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
@@ -90,7 +91,7 @@ the perks.
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [corner-cutting.md](corner-cutting.md) | Corner-cutting time penalty — arc-gained-vs-driven cut detection in `TrackProgress`, snapshot at the finish, live HUD flash + finish-panel breakdown |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
-| [start-line.md](start-line.md) | `StartLine` — the pre-event start-line scene (diegetic briefing panel + atmosphere presence cars) before the countdown |
+| [start-line.md](start-line.md) | `StartLine` — the pre-event start-line MENU (briefing + Tune Car) and fade before the countdown; loops the rival ghost ([rival-ghost.md](rival-ghost.md)) down the road during the idle |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
 | [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
@@ -102,7 +103,7 @@ the perks.
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
 | [camera.md](camera.md) | Chase camera follow behavior |
-| [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the permanent live standings readout (`LiveStandings`) |
+| [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the live "player vs rival pace" delta ([rival-ghost.md](rival-ghost.md)); the old permanent live-standings readout (`LiveStandings`) is deleted |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding, the pause menu, modals (vertical slice; full diegetic UI deferred) |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row, the diegetic-HQ spatial regime. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
 | [hub-shell.md](hub-shell.md) | The flat main scene (`HubShell` + `hub.tscn`) — main / region / car / run-summary pages on `MenuPage` + `MenuNav`, and decision 48's abandon-run confirm. Replaces the deleted diegetic 3D hub |

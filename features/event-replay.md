@@ -263,8 +263,8 @@ keeps the run world alive and plays the replay behind the between-stage panel:
 The transform lesson above (a scripted `VehicleBody3D` pose only reaches the render
 transform when written in `_process`, plus the `process_priority` ordering trap) is no
 longer replay-only. `car.gd` now also has a **`kinematic_pose`** mode, used by the rival
-ghost (the deleted rival ghost) to pose a SECOND car from a synthesized pace
-profile while the player drives.
+ghost ([rival-ghost.md](rival-ghost.md)) to pose a SECOND car from RegionRunMode's
+pace-scaled profile while the player drives.
 
 It is deliberately a distinct flag rather than reusing `replay_playback`, for two reasons
 the ghost cannot work around:

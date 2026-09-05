@@ -57,6 +57,15 @@ const _GRIP_LIMIT_FRAC := 1.0
 # Last centisecond shown on the run timer, so show_elapsed only re-formats and
 # re-assigns the label when the DISPLAYED value moves (-1 = nothing shown yet).
 var _last_elapsed_cs := -1
+# Live "player vs rival pace" readout (features/rival-ghost.md), built in code (no
+# scene node) directly under the run timer — StageManager's show_delta/hide_delta,
+# driven every RUNNING frame off RivalGhost.time_at_distance. Positive = behind the
+# rival's pace at the player's own live distance; negative = ahead.
+var _delta_label: Label
+# Last displayed centisecond (SIGNED, unlike _last_elapsed_cs — a delta can be
+# negative), so show_delta only re-formats/re-colours on an actual change. A
+# sentinel well outside any real delta's range so the first call always shows.
+var _last_delta_cs := -999999
 @onready var _stage_complete_panel: Control = $StageCompletePanel
 @onready var _stage_complete_label: Label = $StageCompletePanel/Box/StageCompleteLabel
 # Finish-panel NEXT button (built in code, added to the panel's Box). Pressing it
@@ -240,6 +249,7 @@ func _ready() -> void:
 	_build_cut_flash_label()
 	_build_off_road_label()
 	_build_coin_label()
+	_build_delta_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
 	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
 	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
@@ -637,6 +647,50 @@ func _gear_text(gear: int) -> String:
 func show_countdown(seconds_left: float) -> void:
 	_countdown_label.visible = true
 	_countdown_label.text = str(ceili(seconds_left)) if seconds_left > 0.0 else "GO"
+
+
+# Live "player vs rival pace" delta (features/rival-ghost.md): sits directly under
+# the run timer, top-left, so it reads as "the timer, and how it compares" rather
+# than competing with the top-right coin counter or the top-centre pacenote strip /
+# cut-flash tag. Starts hidden; StageManager reveals it once a staged region run
+# actually wires a target profile (show_delta) and hides it again for a challenge
+# stage / degenerate track (hide_delta).
+func _build_delta_label() -> void:
+	_delta_label = Label.new()
+	_delta_label.name = "DeltaLabel"
+	_delta_label.offset_left = 8.0
+	_delta_label.offset_top = 34.0
+	_delta_label.offset_right = 108.0
+	_delta_label.offset_bottom = 54.0
+	_delta_label.add_theme_font_size_override("font_size", UITheme.px(16))
+	_delta_label.visible = false
+	add_child(_delta_label)
+
+
+# Format + colour a delta reading. Pure (no label writes) so it's unit-testable:
+# always signed ("+1.23" / "-0.40"), red when the player is BEHIND the rival's pace
+# (delta >= 0) and green when AHEAD (delta < 0) — the same red/green sense the health
+# gauge and stage-complete label use elsewhere in this file.
+static func delta_text(delta_seconds: float) -> String:
+	return "%+.2f" % delta_seconds
+
+
+# Show/update the delta readout, revealing it on first call. Change-gated on the
+# displayed CENTISECOND (signed), matching show_elapsed's discipline — StageManager
+# calls this every RUNNING frame.
+func show_delta(delta_seconds: float) -> void:
+	_delta_label.visible = true
+	var cs := roundi(delta_seconds * 100.0)
+	if cs == _last_delta_cs:
+		return
+	_last_delta_cs = cs
+	_delta_label.text = delta_text(cs / 100.0)
+	_delta_label.add_theme_color_override("font_color", UITheme.RED if cs >= 0 else UITheme.GREEN)
+
+
+func hide_delta() -> void:
+	_delta_label.visible = false
+	_last_delta_cs = -999999
 
 
 func hide_countdown() -> void:

@@ -174,6 +174,19 @@ RunSession.set_stage_track(result)   # -> RunSession.stage_target_ms()
 that failed to solve — get `0` back, which `FinishArch` renders as no time row, and
 which the fail rule treats as "cannot be failed".
 
+**The clock is no longer just a number** ([rival-ghost.md](rival-ghost.md)):
+`RegionRunMode.stage_target_profile(stage_index, track_result)` scales
+`LapTimeModel.optimum_profile`'s whole distance/time curve by the SAME
+`target_pace` factor `stage_target_ms` applies to the total (`stage_target_ms`
+is now built ON this — its last scaled sample, in ms — so the two can never
+disagree). `RunSession.set_stage_track` seats both in the same call
+(`RunSession.stage_target_profile()`), and `world.gd` hands the profile to a
+`RivalGhost` — a single posed `Car` driving it — for a start-line reveal and a
+live "player vs rival pace" HUD delta through the run. This is NOT the deleted
+rival field back (decision 5 still holds: no opponent to race position
+against) — it's the same fixed clock as always, made visible instead of
+silent.
+
 ## Money
 
 Banked **at stage clear** (decision 36), not at run end, so a run that dies on stage 6

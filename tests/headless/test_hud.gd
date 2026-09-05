@@ -256,6 +256,57 @@ func test_coin_counter_starts_hidden_and_shows_on_first_call() -> void:
 	assert_true(label.visible, "and it stays up for the rest of the stage")
 
 
+# --- Rival ghost delta (features/rival-ghost.md) -----------------------------
+
+func test_delta_starts_hidden_and_shows_on_first_call() -> void:
+	# A challenge stage / degenerate track never calls show_delta at all (StageManager
+	# only wires a target profile for a staged, solvable region run), so the readout
+	# must default to hidden.
+	var hud = _scene.get_node("HUD")
+	var label := hud.get_node("DeltaLabel") as Label
+	assert_false(label.visible, "the delta readout starts hidden")
+	hud.show_delta(1.23)
+	assert_true(label.visible, "the first call reveals it")
+
+
+func test_delta_text_is_always_signed() -> void:
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.delta_text(1.5), "+1.50", "a positive delta shows its sign")
+	assert_eq(Hud.delta_text(-0.4), "-0.40", "a negative delta shows its sign too")
+	assert_eq(Hud.delta_text(0.0), "+0.00", "exactly level reads as +0.00")
+
+
+func test_delta_colours_behind_red_ahead_green() -> void:
+	var hud = _scene.get_node("HUD")
+	var label := hud.get_node("DeltaLabel") as Label
+	hud.show_delta(2.0)   # behind the rival's pace
+	assert_eq(label.text, "+2.00", "positive delta formats with its sign")
+	assert_eq(label.get_theme_color("font_color"), UITheme.RED, "behind reads red")
+	hud.show_delta(-2.0)  # ahead of the rival's pace
+	assert_eq(label.text, "-2.00", "negative delta formats with its sign")
+	assert_eq(label.get_theme_color("font_color"), UITheme.GREEN, "ahead reads green")
+
+
+func test_delta_change_gated_on_the_displayed_centisecond() -> void:
+	var hud = _scene.get_node("HUD")
+	var label := hud.get_node("DeltaLabel") as Label
+	hud.show_delta(1.001)
+	var first_text := label.text
+	hud.show_delta(1.004)  # rounds to the same displayed centisecond
+	assert_eq(label.text, first_text, "no re-format when the displayed value hasn't moved")
+	hud.show_delta(1.5)
+	assert_ne(label.text, first_text, "a real change re-formats")
+
+
+func test_hide_delta_takes_it_down() -> void:
+	var hud = _scene.get_node("HUD")
+	var label := hud.get_node("DeltaLabel") as Label
+	hud.show_delta(0.5)
+	assert_true(label.visible, "setup: shown first")
+	hud.hide_delta()
+	assert_false(label.visible, "hide_delta takes it down")
+
+
 func test_grip_text_formatting() -> void:
 	# Pure formatter for one grip cell: the corner name plus how far up its grip curve the
 	# tire is, as a percentage, and a dash when there's no reading.

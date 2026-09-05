@@ -50,6 +50,14 @@ class StubHud:
 		off_road_shown.append(seconds_left)
 	func hide_off_road() -> void:
 		hide_off_road_calls += 1
+	var delta_shown := false
+	var delta_hidden := false
+	var last_delta := 0.0
+	func show_delta(delta_seconds: float) -> void:
+		delta_shown = true
+		last_delta = delta_seconds
+	func hide_delta() -> void:
+		delta_hidden = true
 
 
 # Stand-in for TrackProgress: progress_percent() returns a settable 0..1 fraction.
@@ -70,6 +78,14 @@ class StubProgress:
 		return off_road
 	func off_road_seconds_left() -> float:
 		return off_road_left
+	# Arc-length span the rival profile (features/rival-ghost.md) is measured
+	# against: origin 0, a 100 m stage — matches _RIVAL_PROFILE_LEN_M below, so
+	# `progress_percent() * (finish_offset - origin_offset)` reads as metres into
+	# the SAME synthetic profile the rival tests build.
+	func origin_offset() -> float:
+		return 0.0
+	func finish_offset() -> float:
+		return 100.0
 
 
 var _car: StubCar
@@ -291,24 +307,59 @@ func test_completion_uses_configured_percent() -> void:
 
 # --- Live standings readout (features/hud.md) --------------------------------
 
-# A leader whose pace is dead even: 12 turns at evenly-spaced progress AND time
-# fractions, total 120 s. So at progress p the leader has used 120 s × p, and a player
-# whose elapsed matches that is exactly level. Synthetic throughout — nothing here
-# depends on an authored car, rally or tunable.
-func _wire_even_splits(sm: StageManager) -> void:
-	var prog: Array[float] = []
-	var tfrac: Array[float] = []
-	for i in 12:
-		prog.append(float(i + 1) / 12.0)
-		tfrac.append(float(i + 1) / 12.0)
-	sm.setup_splits(prog, tfrac, 120000)
-
-
 # NOTE: the live standings readout (position, gap-to-leader, LiveStandings) and its
 # five tests are DELETED, not weakened. It projected the player's finish time into a
 # RIVAL FIELD, and there are no rivals (decision 5) — `setup_live_standings` had no
-# production caller left and `_field_times` was permanently empty. The pace table it
-# read (`setup_splits`) survives: the fixed per-stage timer still needs it.
+# production caller left and `_field_times` was permanently empty. The per-turn pace
+# table it read (`setup_splits`) is ALSO gone now — it never got a production caller
+# either (world.gd never called it) and is superseded by `setup_target_profile`'s
+# continuous rival profile (features/rival-ghost.md), tested below.
+
+
+# --- Rival ghost + HUD delta (features/rival-ghost.md) -----------------------
+
+# A synthetic pace-scaled profile: constant speed, so time and distance are exactly
+# proportional (t = s / SPEED) — no authored car/track involved, matching CLAUDE.md's
+# "don't pin a tunable" rule. 100 m at 10 m/s -> a flat 10 s target.
+const _RIVAL_PROFILE_LEN_M := 100.0
+const _RIVAL_PROFILE_SPEED := 10.0
+
+func _make_rival_profile() -> Dictionary:
+	var s := PackedFloat32Array()
+	var t := PackedFloat32Array()
+	var n := 11
+	for i in n:
+		var dist := _RIVAL_PROFILE_LEN_M * float(i) / float(n - 1)
+		s.append(dist)
+		t.append(dist / _RIVAL_PROFILE_SPEED)
+	return {"s": s, "t": t}
+
+
+func test_setup_target_profile_shows_delta_behind_and_ahead() -> void:
+	var sm := _make()
+	_to_running(sm)
+	sm.setup_target_profile(_make_rival_profile())
+	# Player at 50% progress (50 m into the 100 m stage StubProgress models) after
+	# 1 s of RUNNING: the rival reaches 50 m at 5 s (10 m/s), so the player is 4 s
+	# AHEAD of the rival's pace at that distance -> a negative delta.
+	_progress.pct = 0.5
+	sm._process(1.0)
+	assert_almost_eq(sm.elapsed(), 1.0, 0.0001, "sanity: one RUNNING second accrued")
+	assert_true(_hud.delta_shown, "show_delta called once a profile is wired")
+	assert_almost_eq(_hud.last_delta, -4.0, 0.01,
+		"delta = player's elapsed - rival's time at the player's own distance")
+
+
+func test_setup_target_profile_empty_hides_delta() -> void:
+	var sm := _make()
+	_to_running(sm)
+	sm.setup_target_profile(_make_rival_profile())
+	_progress.pct = 0.5
+	sm._process(1.0)
+	assert_true(_hud.delta_shown, "shown while a profile is wired")
+	sm.setup_target_profile({})  # a fresh arm with no target (e.g. a challenge stage)
+	sm._process(1.0)
+	assert_true(_hud.delta_hidden, "an empty profile hides the delta again")
 
 
 # --- Pacenote strip (features/hud.md) ----------------------------------------

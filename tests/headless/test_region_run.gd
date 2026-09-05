@@ -222,6 +222,65 @@ func test_a_track_that_did_not_solve_yields_no_target_rather_than_an_unwinnable_
 		"and a run with no clock can never be failed by one")
 
 
+# --- The rival ghost's pace-scaled profile (features/rival-ghost.md) ------------
+
+func test_stage_target_profile_last_sample_matches_stage_target_ms() -> void:
+	# stage_target_ms and stage_target_profile each round once at their own single
+	# scalar (see region_run_mode.gd's comment on why they don't chain), so this is a
+	# within-a-millisecond agreement check rather than an exact one: the rival ghost's
+	# pace line and the fixed clock it's shown visualising can never drift apart by
+	# more than a rounding step.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var track := _track()
+	var profile := mode.stage_target_profile(0, track)
+	var t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	assert_false(t.is_empty(), "setup: the fixture track solves to a real profile")
+	assert_almost_eq(int(round(float(t[t.size() - 1]) * 1000.0)), mode.stage_target_ms(0, track), 1,
+		"the profile's last (pace-scaled) sample IS the ms target, within a rounding step")
+
+
+func test_stage_target_profile_scales_every_sample_by_the_same_pace() -> void:
+	# Not just the total: RegionRunMode's whole point is that a rival driving this
+	# profile can be POSED along the track mid-stage, so every intermediate sample —
+	# not only the last one — must carry the same pace multiplier as the total.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var track := _track()
+	var event: Dictionary = mode.stages()[0]
+	var raw := LapTimeModel.optimum_profile(track, CarPerformance.REFERENCE_CAR, event)
+	var raw_t: PackedFloat32Array = raw.get("t", PackedFloat32Array())
+	var profile := mode.stage_target_profile(0, track)
+	var scaled_t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	assert_eq(scaled_t.size(), raw_t.size(), "setup: same sample count as the raw solve")
+	var pace := mode.target_pace(0)
+	for i in raw_t.size():
+		assert_almost_eq(float(scaled_t[i]), float(raw_t[i]) * pace, 0.01,
+			"sample %d scaled by the same target_pace() the total uses" % i)
+
+
+func test_stage_target_profile_empty_for_a_degenerate_track() -> void:
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	assert_eq(mode.stage_target_profile(0, {}), {}, "no track, no profile — matches stage_target_ms")
+
+
+func test_run_session_seats_the_profile_alongside_the_target() -> void:
+	_start()
+	var profile := RunSession.stage_target_profile()
+	var t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	assert_false(t.is_empty(), "set_stage_track seats a real profile for a solvable track")
+	assert_almost_eq(int(round(float(t[t.size() - 1]) * 1000.0)), RunSession.stage_target_ms(), 1,
+		"RunSession's seated profile agrees with its own seated ms target, within a rounding step")
+
+
+func test_challenge_run_mode_has_no_target_profile() -> void:
+	# ChallengeRunMode never overrides stage_target_profile (only RegionRunMode does),
+	# so it falls through to RunMode's base {} — matching its stage_target_ms's own 0,
+	# i.e. a challenge run has no rival to visualise, on top of having no clock.
+	var mode := ChallengeRunMode.for_kind(ChallengeLibrary.DAILY, 1_700_000_000)
+	assert_not_null(mode, "setup: a daily challenge mode builds")
+	assert_eq(mode.stage_target_profile(0, _track()), {},
+		"a challenge run has no target clock, so no rival profile either")
+
+
 # --- The one fail state (decision 4) --------------------------------------------
 
 func test_missing_the_target_ends_the_run_on_the_spot() -> void:
