@@ -1,5 +1,10 @@
 # rally — project rules for Claude
 
+**`PIVOT-CHANGES.md` is the orientation file — read it first.** This game was a
+rally career and is now a run-based roguelike; roughly half the old codebase was
+deleted in September 2026. That file is the two-minute map of what changed, which
+seams not to work around, and where the decision record lives.
+
 ## Feature documentation
 
 - The `features/` folder is the agent-oriented overview of how this project

@@ -5,10 +5,19 @@ documents one feature area: what it does, where it lives, how the pieces fit
 together, and which config knobs control it. Read this folder first to get
 oriented before diving into source.
 
-`rally` is a small PS1-aesthetic rally career game built in **Godot 4.6**
-(GL Compatibility renderer). You drive a garage of cars through a curated roster
-of rallies on one world map, earning stars for placement, buying/upgrading cars
-with them, and working toward the special-event finale.
+`rally` is a small PS1-aesthetic **rally roguelike** built in **Godot 4.6**
+(GL Compatibility renderer). You pick a region and drive eight stages back to back
+on one car; the per-stage target time is the only fail state. Money banked from
+stages you clear buys cars, permanent perks and boost levels between runs, and a
+failed run keeps none of its in-run boosts — only the lifetime counters that gate
+the perks.
+
+> **New to this codebase, or last saw it before September 2026?** Read
+> [`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) first. The game was a rally *career*
+> and is now a **run-based roguelike**; roughly half the old codebase (the diegetic
+> 3D HQ, the overworld, the rival field, the star economy, the persistent parts
+> model) was deleted. That file is the two-minute map of what changed and which
+> seams not to work around.
 
 ## How to use this folder
 
