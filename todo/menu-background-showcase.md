@@ -171,31 +171,43 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    `TerrainManager` runs in during a stage; all six instances' chunks in-shot range
    must be resident up front.
 2. **No car** — pure scenery, no `kinematic_pose` work needed.
-3. **Weather/time varies via a global running cycle**, independent of which segment
-   is on screen — decided over the per-segment-fixed-look alternative.
+3. **No day/night concept — the game only has discrete weather TYPES, and night is
+   one of them.** Correction from the user to the round-2 framing above (which
+   wrongly treated "weather/time" as one axis with a day/night sub-question): there
+   is no time-of-day system to speak of. `WeatherLibrary.WEATHER`
+   (`scripts/weather_library.gd`) is a flat catalogue of discrete conditions —
+   `"dry"`, `"rain"`, `"sandstorm"`, `"fog"`, `"storm"`, `"snow"`, `"night"` — each
+   one an authored, wholesale snapshot of fields (`sun_energy_mult`, `sky_color`,
+   `background_color`, `fog_density_mult`, `night_sky_panorama`, etc.), applied as a
+   single unit and never blended into another (see [weather.md](weather.md)).
+   "Night" is simply one entry in that same list, not a separate axis crossed with
+   the others.
 
-   **What this actually means, given the scene shape settled above**: because all
-   six `TerrainManager` instances live in ONE scene, they share ONE
-   `WorldEnvironment`/sun — there is no "per-segment lighting" to separately
-   re-derive as first drafted; driving the shared environment/light is enough for
-   every segment to see the same time-of-day/weather at once. That part is
-   simpler than originally worried.
+   **Decided mechanism: cycle which WEATHER entry is showing every now and then**,
+   snapping between conditions the same way a real stage picks one — no
+   interpolation, no new blend machinery. This is a much smaller lift than the
+   round-2 draft assumed: it reuses the existing discrete apply-a-condition path
+   almost verbatim, just re-invoked on a timer instead of once at stage boot.
 
-   **What IS genuinely new work**: `WeatherLibrary.WEATHER` (`scripts/weather_library.gd`)
-   is a catalogue of DISCRETE, authored conditions (`"night"`, rain, sandstorm, …),
-   each a snapshot of fields — `sun_energy_mult`, `sky_color`,
-   `background_color`, `fog_density_mult`, `night_sky_panorama`, etc. — applied
-   WHOLESALE once per stage (see [weather.md](weather.md)). Nothing in the game
-   today INTERPOLATES between two conditions over time; every consumer snaps to
-   one authored dict. A "global running cycle" for the showcase therefore needs
-   NEW machinery: a timer-driven blend between two or more `WEATHER` entries (or a
-   dedicated showcase-only day/night rig), written each frame onto the shared
-   `WorldEnvironment`/`DirectionalLight3D`/sky the same fields the discrete system
-   already names. Reuse the FIELD NAMES and the region-then-weather layering order
-   `weather.md` documents; the interpolation loop itself is new.
-   **Revisit the exact blend design (which conditions to cycle through, cycle
-   period, whether it eases or holds+cuts) before building step 3 of the phased
-   plan below.**
+   **Compatibility is per-region and MUST be enforced, per the user's explicit
+   instruction — no nonsense combinations (e.g. rain in the snow region instead of
+   snow).** This already has real precedent to copy, not invent: `RallyLibrary`
+   authors `"sandstorm"` ONLY onto `region == "greece"` stage dicts (never rolled
+   at random — see `scripts/rally_library.gd` lines ~33-36, ~910, and the
+   comment `region_library.gd`:96 — `"sandstorm" is desert-only, test-enforced"` via
+   `test_rally_library.gd::test_sandstorm_only_authored_on_greece_events`), and
+   `"snow"` is authored only onto `region == "snow"` stages. The showcase needs the
+   equivalent as an explicit **per-region eligible-weather table** (e.g.
+   `home`/`home_coast`/`taiga` → `dry`/`rain`/`fog`/`storm`/`night`; `greece`/
+   `greece_coast` → `dry`/`sandstorm`/`night`, no rain/snow; `snow` → `dry`/`snow`/
+   `night`, no rain/sandstorm) — since each segment is its own region, the cycle
+   must pick independently PER SEGMENT from that segment's eligible set, not one
+   global condition applied identically across all six (a single global roll can't
+   satisfy "greece never rains, snow never gets sandstorm" at the same time it's
+   showing the snow segment a different condition than greece). A new
+   `test_menu_showcase.gd` (or a case in it) should assert every segment's cycled
+   condition is always in its region's eligible set — mirroring
+   `test_sandstorm_only_authored_on_greece_events`'s shape for this new table.
 4. **Six separate materials**, not the LUT — see the `TerrainManager` consequence
    under decision 1. Simpler to reason about and debug.
 
@@ -244,10 +256,11 @@ as a call to make when step 3 of the phased build below is actually started.
    (`test_menu_showcase_camera.gd` mirroring `test_replay_camera.gd`'s deterministic
    `_tick` coverage; a smoke test in `test_smoke.gd` that the scene builds and the
    camera is `current`).
-4. Build the global weather/time cycle (decision 3) — a timer-driven blend across
-   `WeatherLibrary.WEATHER` fields written onto the one shared
-   `WorldEnvironment`/light, once the exact blend design (which conditions, period,
-   ease-vs-cut) is picked.
+4. Build the per-segment weather cycle (decision 3) — author the per-region
+   eligible-`WEATHER`-id table, then a timer that snaps each segment to a new
+   eligible condition every now and then, reusing the existing discrete
+   apply-a-condition path rather than any new blend/interpolation code. Add the
+   compatibility test alongside it.
 5. Wire into `hub_shell.gd`/`hub.tscn`, verify no regression to hub input/nav
    (`test_hub_shell.gd`, `test_menu_nav.gd`) and performance on the frame/quality
    budget decided above.
