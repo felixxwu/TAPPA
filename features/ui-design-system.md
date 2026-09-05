@@ -73,6 +73,17 @@ left alone (e.g. the big 3·2·1 countdown stays large).
    green underline + green text (`UITheme.mark_selected`) and the **▶ ◀** markers
    around the focused option (`UITheme.flank`).
 
+## The card carousel
+
+Five hub pages (MAIN/REGION/CAR/SHOP/PERKS) present their choices as a
+[`CardCarousel`](card-carousel.md) rather than a vertical row list — a horizontal,
+side-scrolling strip of playing-card-proportioned panels, the centred card opaque and the
+rest dimmed. It reuses the same house panel box (`UITheme.panel_box`) and label styling
+as every other menu — it's a different LAYOUT, not a different visual language — so rules
+1-4 above still apply unchanged inside a card. All of its own tunables (card size/aspect,
+dim alpha, snap timing) live on `GameConfig`, not here, since they're gameplay-feel
+tuning rather than the shared design-system palette.
+
 ## Single source of truth
 
 ## UI scale (`UITheme.UI_SCALE` / `UITheme.px`)

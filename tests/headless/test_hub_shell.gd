@@ -44,11 +44,60 @@ func _buttons() -> Array:
 	return out
 
 
+# MAIN/REGION/CAR/SHOP/PERKS present their rows as one CardCarousel (features/
+# card-carousel.md) rather than a Button per row now — CHALLENGE/BOOST_SHOP/STATS/
+# SETTINGS still don't. Null when the current page has no carousel.
+func _carousel() -> CardCarousel:
+	var found := _page().find_children("*", "CardCarousel", true, false)
+	return (found[0] as CardCarousel) if not found.is_empty() else null
+
+
+func _card_text(c: CardCarousel, i: int) -> String:
+	var t := ""
+	for child in c._cards[i].info.get_children():
+		if child is Label:
+			t += String((child as Label).text) + " "
+	return t.to_upper()
+
+
+# Uppercased text of every Label AND Button under the page — what's SHOWN, focusable
+# or not (a locked/disabled row is still shown, just not confirmable — see
+# _confirmable_texts).
+func _all_texts() -> String:
+	var texts: Array[String] = []
+	for label in _page().find_children("*", "Label", true, false):
+		texts.append(String((label as Label).text).to_upper())
+	for b in _page().find_children("*", "Button", true, false):
+		texts.append(String((b as Button).text).to_upper())
+	return " | ".join(texts)
+
+
+# Uppercased text of every row the keyboard/gamepad cursor can actually confirm right
+# now: enabled Buttons, plus non-disabled carousel cards (a disabled card is shown but
+# CardCarousel.confirmed never fires for it — see card_carousel.gd _confirm_selected).
+func _confirmable_texts() -> String:
+	var texts: Array[String] = []
+	for b in _buttons():
+		texts.append(String((b as Button).text).to_upper())
+	var c := _carousel()
+	if c != null:
+		for i in c.card_count():
+			if not c._cards[i].disabled:
+				texts.append(_card_text(c, i))
+	return " | ".join(texts)
+
+
 func _press(text: String) -> bool:
 	for b in _buttons():
 		if String((b as Button).text).to_upper().contains(text.to_upper()):
 			(b as Button).pressed.emit()
 			return true
+	var c := _carousel()
+	if c != null:
+		for i in c.card_count():
+			if not c._cards[i].disabled and _card_text(c, i).contains(text.to_upper()):
+				c.confirmed.emit(i)
+				return true
 	return false
 
 
@@ -67,7 +116,13 @@ func test_every_page_is_keyboard_navigable() -> void:
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
 			"view %d has a MenuNav attached" % view)
-		assert_gt(_buttons().size(), 0,
+		# A carousel counts as ONE focusable unit (it owns its own left/right — see
+		# menu_nav.gd menu_nav_handles_side), same as the Button rows the other pages
+		# still use.
+		var focusable_count := _buttons().size()
+		if _carousel() != null:
+			focusable_count += 1
+		assert_gt(focusable_count, 0,
 			"view %d offers at least one focusable control" % view)
 
 
@@ -230,18 +285,14 @@ func test_a_locked_region_is_shown_but_not_focusable() -> void:
 	_shell._show(HubShell.View.REGION)
 	await get_tree().process_frame
 
-	# UITheme.enforce uppercases button text, so compare case-insensitively rather than
-	# pinning the presentation.
-	var texts: Array[String] = []
-	for b in _page().find_children("*", "Button", true, false):
-		texts.append(String((b as Button).text).to_upper())
-	var joined := " | ".join(texts)
+	# UITheme.enforce uppercases label/button text, so compare case-insensitively
+	# rather than pinning the presentation.
+	var joined := _all_texts()
 	assert_true(joined.contains("SECOND"), "the locked region is still listed")
 	assert_true(joined.contains("FIRST"), "and it names what opens it")
 
-	for b in _buttons():
-		assert_false(String((b as Button).text).to_upper().contains("LOCKED"),
-			"a locked row is not focusable — the keyboard cannot land on it")
+	assert_false(_confirmable_texts().contains("LOCKED"),
+		"a locked card is not confirmable — the keyboard cannot land on it")
 	RegionLibrary.reset()
 
 
@@ -307,11 +358,7 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 	assert_gt(_save.money(), 0, "setup: decision 28 seeds a starting purse")
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
-	var texts: Array[String] = []
-	for b in _page().find_children("*", "Button", true, false):
-		texts.append(String((b as Button).text).to_upper())
-	var joined := " | ".join(texts)
-	assert_true(joined.contains("BUY"), "the car page offers a Buy action, not a dead end")
+	assert_true(_all_texts().contains("BUY"), "the car page offers a Buy action, not a dead end")
 
 
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
@@ -335,9 +382,8 @@ func test_an_unaffordable_car_row_is_shown_but_not_focusable() -> void:
 	_save.profile[_save.KEY_MONEY] = 0
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
-	for b in _buttons():
-		assert_false(String((b as Button).text).to_upper().begins_with("BUY"),
-			"with no money, no Buy row is focusable")
+	assert_false(_confirmable_texts().contains("BUY"),
+		"with no money, no Buy card is confirmable")
 
 
 func test_shop_reaches_boost_levels_and_engine_swap() -> void:
@@ -363,7 +409,7 @@ func test_buying_the_engine_swap_unlock_flips_the_flag() -> void:
 	assert_false(_save.engine_swap_unlocked(), "setup: locked")
 	_shell._show(HubShell.View.SHOP)
 	await get_tree().process_frame
-	assert_true(_press("Unlock Engine Swap"), "setup: the unlock row is on the page")
+	assert_true(_press("Engine Swap"), "setup: the unlock card is on the page")
 	assert_true(_save.engine_swap_unlocked(), "the flag is now set")
 
 
@@ -371,14 +417,10 @@ func test_the_engine_swap_row_is_shown_but_not_focusable_once_bought() -> void:
 	_save.profile[_save.KEY_ENGINE_SWAP_UNLOCKED] = true
 	_shell._show(HubShell.View.SHOP)
 	await get_tree().process_frame
-	var all_texts: Array[String] = []
-	for b in _page().find_children("*", "Button", true, false):
-		all_texts.append(String((b as Button).text).to_upper())
-	assert_true(" | ".join(all_texts).contains("ENGINE SWAP"),
-		"the row is still shown, saying the capability is owned")
-	for b in _buttons():
-		assert_false(String((b as Button).text).to_upper().contains("ENGINE SWAP"),
-			"but it is not focusable — nothing left to buy")
+	assert_true(_all_texts().contains("ENGINE SWAP"),
+		"the card is still shown, saying the capability is owned")
+	assert_false(_confirmable_texts().contains("ENGINE SWAP"),
+		"but it is not confirmable — nothing left to buy")
 
 
 # --- Perks + lifetime stats (stage 7) -------------------------------------------
@@ -402,13 +444,9 @@ func test_perks_page_shows_a_locked_perk_but_not_focusable() -> void:
 	PerkLibrary.override_for_test(FX_PERKS)
 	_shell._show(HubShell.View.PERKS)
 	await get_tree().process_frame
-	var texts: Array[String] = []
-	for b in _page().find_children("*", "Button", true, false):
-		texts.append(String((b as Button).text).to_upper())
-	assert_true(" | ".join(texts).contains("FIXTURE LOCKED PERK"), "the locked perk is still shown")
-	for b in _buttons():
-		assert_false(String((b as Button).text).to_upper().contains("FIXTURE LOCKED PERK"),
-			"but it is not focusable — its threshold has not been crossed")
+	assert_true(_all_texts().contains("FIXTURE LOCKED PERK"), "the locked perk is still shown")
+	assert_false(_confirmable_texts().contains("FIXTURE LOCKED PERK"),
+		"but it is not confirmable — its threshold has not been crossed")
 	PerkLibrary.reset()
 
 
@@ -417,7 +455,7 @@ func test_buying_an_unlocked_perk_from_the_page_moves_it_to_owned() -> void:
 	_save.profile[_save.KEY_MONEY] = 50
 	_shell._show(HubShell.View.PERKS)
 	await get_tree().process_frame
-	assert_true(_press("Buy Fixture Buyable Perk"), "setup: a buy row is on the page")
+	assert_true(_press("Fixture Buyable Perk"), "setup: a buy card is on the page")
 	assert_true(_save.owns_perk("fx_buyable"), "the perk is now owned")
 	PerkLibrary.reset()
 

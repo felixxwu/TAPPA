@@ -5,7 +5,7 @@
 `input_blocked`, `screen_claimer`) and `scripts/ui_theme.gd` (`focus_grab`,
 `focus_grab_first`, `first_focusable`, the focus stylebox that paints the cursor).
 
-**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_hub_shell.gd`
+**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_hub_shell.gd`, `tests/headless/test_card_carousel.gd` (the `menu_nav_handles_side` seam)
 
 Every menu in the game is navigable with **up / down / left / right / enter / back**, on
 keyboard *and* controller, alongside mouse / touch. This doc is the framework; the screens
@@ -47,7 +47,14 @@ forget) the per-widget setup.
    no fragile `project.godot` surgery. **On a slider** (any `Range`) left/right instead
    *adjusts the value* by its `step` rather than moving focus, so the cursor merely
    resting on a slider is enough to change it — up/down still move focus off to the next
-   row.
+   row. **A widget that owns its own left/right** gets first refusal before the slider
+   case: if `focused.has_method("menu_nav_handles_side")`, `MenuNav` calls it and stops —
+   the method returns `true` when it consumed the press, `false` to fall through to
+   normal focus-neighbour movement (so up/down can still leave the widget).
+   `CardCarousel` ([card-carousel.md](card-carousel.md)) is the first user: left/right
+   there move the selected card instead of moving focus to a sibling widget. Named
+   generically rather than special-casing `CardCarousel` here, so the next such widget
+   needs no framework change either.
 4. **Back** — routes **both** `ui_cancel` **and** `menu_back` to `on_back` (omit it and
    the host keeps its own back handling).
 5. **Scroll-follow** — switches every `ScrollContainer` under `root` to `follow_focus`,

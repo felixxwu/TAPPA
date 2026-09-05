@@ -4,6 +4,15 @@
 full-rect `Control` the shell builds pages under). Built on `MenuPage` + `MenuNav`
 ([menu-navigation.md](menu-navigation.md)).
 
+**`MAIN`, `REGION`, `CAR`, `SHOP` and `PERKS` present their choices as a
+`CardCarousel`** ([card-carousel.md](card-carousel.md)) — a horizontal, side-scrolling
+card list — rather than a vertical row-of-buttons list. `CHALLENGE`, `BOOST_SHOP`,
+`STATS` and `SETTINGS` were left as plain rows (not in scope for that conversion; STATS
+in particular is pure read-out with nothing to put on a card). Where this doc below
+still describes a page's choices as "one row per X", read that as "one CARD per X" for
+the five converted pages — the underlying data/eligibility logic every section describes
+is unchanged, only the presentation moved.
+
 **Tests:** `tests/headless/test_hub_shell.gd`
 
 The game's main scene and **the only way into a run**. It replaces the diegetic 3D hub
@@ -84,12 +93,16 @@ actually does.
 
 `CLAUDE.md` requires **every** menu in the game to be keyboard + gamepad navigable, and a
 new menu to ship with a nav test in the same piece of work. Every page here goes through
-`MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
-`MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all ten views and asserts each
-has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
-even when every purchasable row on them is disabled (unaffordable or at its level cap):
-`Back` is always a live `_action`, so the assertion holds regardless of the player's money.
+`MenuNav.attach`. On a still-row-based page, every body row is a `Button` rather than a
+`Label` **because `MenuNav` only walks focusable controls** — a label row would be
+invisible to the keyboard and silently break the contract. On the five carousel pages
+(`MAIN`/`REGION`/`CAR`/`SHOP`/`PERKS`), the `CardCarousel` itself is the one focusable
+unit MenuNav lands on instead — it sets its own `FOCUS_ALL`, so MenuNav needs no special
+case for it (see [card-carousel.md](card-carousel.md)). `test_hub_shell.gd` walks all ten
+views and asserts each has a `MenuNav` and at least one focusable control (a carousel
+counts as one) — including `SHOP` and `BOOST_SHOP` even when every purchasable row/card
+on them is disabled (unaffordable or at its level cap): `Back` is always a live `_action`,
+so the assertion holds regardless of the player's money.
 
 The test file pins the **screen graph and the navigation**, and deliberately nothing about
 looks, wording or button order — stages 7–8 still rewrite parts of it, and a layout

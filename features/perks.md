@@ -2,7 +2,7 @@
 
 **Source:** `scripts/perk_library.gd` (`PerkLibrary` — the authored catalogue + `equipped_effects`), `scripts/save_manager.gd` (`Save.buy_perk` / `equip_perk` / `unequip_perk` / `owns_perk` — the purchase/equip mutators; `Save.heal_car`), `scripts/hub_shell.gd` (`HubShell._build_perks` — the shop/equip page), `scripts/game_config.gd` (`perk_max_equipped`, `@export_group("Roguelike Perks")`), `scripts/upgrade_library.gd` (the `EFFECTS` perk rows + `_reseed_globals`), `scripts/world.gd` (`_field_car` — where an equipped perk reaches the car).
 
-**Tests:** `tests/headless/test_perk_library.gd`, `tests/headless/test_save_manager.gd` (perk purchase byte-identical-on-refusal), `tests/headless/test_hub_shell.gd` (the PERKS page + its nav)
+**Tests:** `tests/headless/test_perk_library.gd`, `tests/headless/test_save_manager.gd` (perk purchase byte-identical-on-refusal), `tests/headless/test_hub_shell.gd` (the PERKS page + its nav), `tests/headless/test_card_carousel.gd` (the carousel widget itself)
 
 A straight lift from RR (`todo/roguelike-pivot.md` "Perks — a straight lift from
 RR", stage 7 of `todo/roguelike-pivot-plan.md`): permanent, money-bought upgrades
@@ -13,12 +13,14 @@ to a cap. Additive to TAPPA — there is no earlier equivalent.
 
 1. **Locked** — `unlock.stat`'s lifetime counter hasn't crossed `unlock.threshold`
    yet. `PerkLibrary.is_unlocked(id, profile)` is false. Shown on the menu, named,
-   saying what opens it — never hidden — but its row is unfocusable (same idiom as a
-   locked region on `HubShell`'s REGION page).
+   saying what opens it — never hidden — but its card is disabled/unconfirmable (same
+   idiom as a locked region on `HubShell`'s REGION page — see
+   [card-carousel.md](card-carousel.md) for how a disabled `CardCarousel` card differs
+   from the old `disabled` + `menu_nav_skip` `Button`).
 2. **Purchasable** — the threshold IS crossed, but the perk is not yet bought.
    `PerkLibrary.is_purchasable(id, profile)` is true (implies `is_unlocked`). The
-   menu offers a Buy row, priced at `PerkLibrary.price_of(id)`, disabled +
-   `menu_nav_skip` when unaffordable — same idiom as the CAR page's Buy rows.
+   menu offers a Buy card, priced at `PerkLibrary.price_of(id)`, disabled when
+   unaffordable — same idiom as the CAR page's Buy cards.
 3. **Owned** — bought via `Save.buy_perk(id)`, recorded in
    `Save.profile[Save.KEY_BOUGHT_PERKS]`. `Save.owns_perk(id)` is true.
 
@@ -119,7 +121,10 @@ perk the player had already earned.
 
 ## The menu
 
-`HubShell.View.PERKS`, reached from `View.MAIN`'s "Perks" row. One row per
-`PerkLibrary.all()` entry: a locked row (unfocusable, names its gate via
-`PerkLibrary.unlock_label`), a Buy row, or an Equip/Unequip row depending on state.
-Keyboard + gamepad navigable via `MenuNav.attach`, per CLAUDE.md.
+`HubShell.View.PERKS`, reached from `View.MAIN`'s "Perks" card. One `CardCarousel` card
+per `PerkLibrary.all()` entry ([card-carousel.md](card-carousel.md)) — a locked card
+(disabled, names its gate via `PerkLibrary.unlock_label`), a Buy card, or an
+Equip/Unequip card depending on state. Keyboard + gamepad navigable via `MenuNav.attach`
+(the carousel is one focusable unit that owns its own left/right — see
+[menu-navigation.md](menu-navigation.md) → *A widget that owns its own left/right*), per
+CLAUDE.md.

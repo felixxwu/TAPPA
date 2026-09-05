@@ -165,11 +165,63 @@ func _row(text: String, on_press: Callable) -> Button:
 	return b
 
 
+# --- Card carousel plumbing ---------------------------------------------------
+#
+# Five screens (MAIN, REGION, CAR, SHOP, PERKS) present their choices as a
+# CardCarousel (features/card-carousel.md) instead of a vertical row list: one
+# carousel per page, added to the body ahead of any plain labels/rows that page
+# still wants (e.g. the "Money: N" readout). CHALLENGE / BOOST_SHOP / STATS keep
+# the plain row list — they were not in the set this conversion asked for, and
+# STATS in particular has nothing choosable to put on a card.
+
+# A simple text/colour placeholder for a card's visual slot, for screens with no
+# real art (region/perk/shop icons) — CAR cards get a real CarCardPreview instead.
+func _card_icon(letter: String, color: Color) -> Control:
+	var box := ColorRect.new()
+	box.color = color
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var lbl := UITheme.label(letter.left(1).to_upper())
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	box.add_child(lbl)
+	return box
+
+
+# Build a carousel and mount it as the page's whole selectable body (any plain,
+# non-choosable labels the caller wants above it — e.g. "Money: N" — should be
+# added to _page.body() BEFORE calling this).
+func _build_carousel() -> CardCarousel:
+	var carousel := CardCarousel.new()
+	_page.body().add_child(carousel)
+	return carousel
+
+
+# Append a text-card (icon placeholder + title/subtitle) to `carousel`. Mirrors the
+# old _row()'s disabled-and-unfocusable convention: a disabled card stays on screen
+# (shown, dimmed) but neither lands the cursor's confirm nor fires `on_confirm`
+# (CardCarousel.confirmed simply never emits for a disabled index).
+func _text_card(carousel: CardCarousel, title: String, subtitle: String,
+		disabled: bool, icon_color: Color) -> void:
+	var card := carousel.add_card(disabled)
+	card.visual.add_child(_card_icon(title, icon_color))
+	var title_label := UITheme.label(title)
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.info.add_child(title_label)
+	if subtitle != "":
+		var sub := UITheme.label(subtitle, "dim")
+		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.info.add_child(sub)
+
+
 # --- MAIN --------------------------------------------------------------------
 
 func _build_main() -> void:
 	var money := UITheme.label("Money: %d" % Save.money())
 	_page.body().add_child(money)
+
+	var carousel := _build_carousel()
+	var actions: Array[Callable] = []
 
 	# A paused run is offered FIRST, because the alternative — starting anything else —
 	# discards it and burns its attempt (decision 48). Putting Resume anywhere but the top
@@ -177,14 +229,23 @@ func _build_main() -> void:
 	var resumable: Dictionary = RunSessionScript.resumable_run(
 		Save.profile, int(Time.get_unix_time_from_system()))
 	if not resumable.is_empty():
-		_row("Resume run", _resume_run)
+		_text_card(carousel, "Resume run", "", false, UITheme.GREEN)
+		actions.append(_resume_run)
 
-	_row("New run", func() -> void: _show(View.REGION))
-	_row("Rally challenge", func() -> void: _show(View.CHALLENGE))
-	_row("Shop", func() -> void: _show(View.SHOP))
-	_row("Perks", func() -> void: _show(View.PERKS))
-	_row("Lifetime stats", func() -> void: _show(View.STATS))
-	_row("Settings", func() -> void: _show(View.SETTINGS))
+	_text_card(carousel, "New run", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.REGION))
+	_text_card(carousel, "Rally challenge", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.CHALLENGE))
+	_text_card(carousel, "Shop", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.SHOP))
+	_text_card(carousel, "Perks", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.PERKS))
+	_text_card(carousel, "Lifetime stats", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.STATS))
+	_text_card(carousel, "Settings", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.SETTINGS))
+	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
+
 	_action("Quit", func() -> void: get_tree().quit())
 
 
@@ -205,6 +266,8 @@ func _resume_run() -> void:
 # cannot land on a dead row.
 func _build_region() -> void:
 	_pending_challenge = ""
+	var carousel := _build_carousel()
+	var ids: Array[String] = []
 	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
 	for region in RegionLibrary.ordered():
 		var id := String(region.get("id", ""))
@@ -213,18 +276,15 @@ func _build_region() -> void:
 		var region_name := String(region.get("name", id))
 		if not RegionLibrary.is_unlocked(id, Save.profile):
 			var gate := RegionLibrary.gate_for(id)
-			var locked := _row("%s — locked (clear %s)" % [region_name, gate],
-				func() -> void: pass)
-			locked.disabled = true
-			# The framework's own opt-out. Setting focus_mode here would be undone:
-			# MenuNav.attach runs AFTER this build and re-enables focus on every
-			# BaseButton it finds, skipping only those carrying this meta.
-			locked.set_meta("menu_nav_skip", true)
-			locked.focus_mode = Control.FOCUS_NONE
+			_text_card(carousel, region_name, "Locked — clear %s" % gate, true, UITheme.MUTED)
+			ids.append("")
 			continue
-		var mark := " — cleared" if cleared.has(id) else ""
-		_row(region_name + mark, func() -> void:
-			_pending_region = id
+		var mark := "Cleared" if cleared.has(id) else ""
+		_text_card(carousel, region_name, mark, false, UITheme.GREEN)
+		ids.append(id)
+	carousel.confirmed.connect(func(i: int) -> void:
+		if ids[i] != "":
+			_pending_region = ids[i]
 			_show(View.CAR))
 	_action("Back", func() -> void: _show(View.MAIN))
 
@@ -253,6 +313,12 @@ func _build_car() -> void:
 			eligible_ids[int((car as Dictionary).get("instance_id", -1))] = true
 		_page.body().add_child(UITheme.label(
 			"Rating cap: %d" % int(classified["ceiling"])))
+
+	var carousel := _build_carousel()
+	# Parallel to the carousel's cards: either an owned-car Dictionary to start a run
+	# with, or a model id String to buy — whichever `confirmed` should act on.
+	var actions: Array = []
+
 	var owned: Array = Save.profile.get(Save.KEY_CARS, [])
 	for car in owned:
 		var entry: Dictionary = car
@@ -261,29 +327,37 @@ func _build_car() -> void:
 			continue
 		var spec: Dictionary = CarLibrary.for_owned(entry)
 		var label := String(spec.get("name", entry.get("model_id", "car")))
-		if _pending_challenge != "" and not eligible_ids.has(iid):
-			var over := _row(label + " — over the rating cap", func() -> void: pass)
-			over.disabled = true
-			over.set_meta("menu_nav_skip", true)
-			over.focus_mode = Control.FOCUS_NONE
-			continue
-		_row(label, func() -> void: _start_run(entry))
+		var over_cap := _pending_challenge != "" and not eligible_ids.has(iid)
+		var card := carousel.add_card(over_cap)
+		card.visual.add_child(CarCardPreview.new(entry))
+		card.info.add_child(UITheme.label(label))
+		if over_cap:
+			card.info.add_child(UITheme.label("Over the rating cap", "dim"))
+			actions.append(null)
+		else:
+			actions.append(entry)
 
-	for spec in CarLibrary.all():
+	var catalogue := CarLibrary.all()
+	for index in catalogue.size():
+		var spec: Dictionary = catalogue[index]
 		var model_id := String(spec.get("id", ""))
 		if model_id.is_empty() or Save.owns_model(model_id):
 			continue
 		var cost := int(spec.get("cost", 0))
 		var car_name := String(spec.get("name", model_id))
-		var buy_row := _row("Buy %s — %d" % [car_name, cost],
-			func() -> void: _buy_car(model_id))
-		if Save.money() < cost:
-			# The framework's own opt-out (see the REGION page's locked rows): setting
-			# focus_mode alone would be undone, since MenuNav.attach runs AFTER this build
-			# and re-enables focus on every BaseButton it finds.
-			buy_row.disabled = true
-			buy_row.set_meta("menu_nav_skip", true)
-			buy_row.focus_mode = Control.FOCUS_NONE
+		var cant_afford := Save.money() < cost
+		var card := carousel.add_card(cant_afford)
+		card.visual.add_child(CarCardPreview.new(index))
+		card.info.add_child(UITheme.label(car_name))
+		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
+		actions.append(null if cant_afford else model_id)
+
+	carousel.confirmed.connect(func(i: int) -> void:
+		var action = actions[i]
+		if action is Dictionary:
+			_start_run(action)
+		elif action is String:
+			_buy_car(action))
 
 	_action("Back", func() -> void:
 		_show(View.CHALLENGE if _pending_challenge != "" else View.REGION))
@@ -400,21 +474,21 @@ func _build_summary() -> void:
 
 func _build_shop() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
-	_row("Boost levels", func() -> void: _show(View.BOOST_SHOP))
+	var carousel := _build_carousel()
+	var actions: Array[Callable] = []
+
+	_text_card(carousel, "Boost levels", "", false, UITheme.GOLD)
+	actions.append(func() -> void: _show(View.BOOST_SHOP))
 
 	var unlocked := Save.engine_swap_unlocked()
 	var price := Save.engine_swap_unlock_price()
-	var swap_row := _row(
-		"Engine Swap — unlocked" if unlocked else "Unlock Engine Swap — %d" % price,
-		func() -> void: _buy_engine_swap_unlock())
-	if unlocked or Save.money() < price:
-		# Same opt-out as every other unpressable row on this shell: menu_nav_skip, not
-		# just focus_mode, because MenuNav.attach re-enables focus on every BaseButton
-		# after the page is built.
-		swap_row.disabled = true
-		swap_row.set_meta("menu_nav_skip", true)
-		swap_row.focus_mode = Control.FOCUS_NONE
+	var swap_disabled := unlocked or Save.money() < price
+	_text_card(carousel, "Engine Swap",
+		"Unlocked" if unlocked else "Unlock — %d" % price,
+		swap_disabled, UITheme.GOLD)
+	actions.append(_buy_engine_swap_unlock)
 
+	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 	_action("Back", func() -> void: _show(View.MAIN))
 
 
@@ -471,38 +545,35 @@ func _build_perks() -> void:
 	var equipped := Save.equipped_perks()
 	var cap := int(Config.data.perk_max_equipped)
 	_page.body().add_child(UITheme.label("Equipped: %d/%d" % [equipped.size(), cap]))
+
+	var carousel := _build_carousel()
+	var actions: Array[Callable] = []
+
 	for perk in PerkLibrary.all():
 		var id := String(perk.get("id", ""))
 		if id.is_empty():
 			continue
 		var label := PerkLibrary.label_for(id)
 		if not PerkLibrary.is_unlocked(id, Save.profile):
-			var locked := _row("%s — locked (%s)" % [label, PerkLibrary.unlock_label(id)],
-				func() -> void: pass)
-			# The framework's own opt-out (see the REGION page's locked rows):
-			# menu_nav_skip, not just focus_mode — MenuNav.attach runs AFTER this build
-			# and re-enables focus on every BaseButton it finds.
-			locked.disabled = true
-			locked.set_meta("menu_nav_skip", true)
-			locked.focus_mode = Control.FOCUS_NONE
+			_text_card(carousel, label, "Locked — %s" % PerkLibrary.unlock_label(id),
+				true, UITheme.MUTED)
+			actions.append(func() -> void: pass)
 			continue
 		if not Save.owns_perk(id):
 			var price := PerkLibrary.price_of(id)
-			var buy_row := _row("Buy %s — %d" % [label, price],
-				func() -> void: _buy_perk(id))
-			if Save.money() < price:
-				buy_row.disabled = true
-				buy_row.set_meta("menu_nav_skip", true)
-				buy_row.focus_mode = Control.FOCUS_NONE
+			_text_card(carousel, label, "Buy — %d" % price,
+				Save.money() < price, UITheme.GOLD)
+			actions.append(func() -> void: _buy_perk(id))
 			continue
 		if Save.perk_equipped(id):
-			_row("%s — equipped (unequip)" % label, func() -> void: _unequip_perk(id))
+			_text_card(carousel, label, "Equipped — tap to unequip", false, UITheme.GREEN)
+			actions.append(func() -> void: _unequip_perk(id))
 		else:
-			var equip_row := _row("%s — equip" % label, func() -> void: _equip_perk(id))
-			if equipped.size() >= cap:
-				equip_row.disabled = true
-				equip_row.set_meta("menu_nav_skip", true)
-				equip_row.focus_mode = Control.FOCUS_NONE
+			_text_card(carousel, label, "Tap to equip",
+				equipped.size() >= cap, UITheme.GOLD)
+			actions.append(func() -> void: _equip_perk(id))
+
+	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 	_action("Back", func() -> void: _show(View.MAIN))
 
 
