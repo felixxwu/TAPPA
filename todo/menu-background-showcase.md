@@ -162,7 +162,9 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    feature. Instead: **one `TerrainManager` instance per segment**, each covering
    only its own segment's chunk range and carrying its own single-region
    `chunk_material` (exactly like a normal stage's one `Floor.chunk_material`, just
-   six of them side by side). Each instance must be **pre-built to full readiness
+   six of them side by side — see the cost correction under decision 4: this is not
+   six times the terrain, just the same terrain split six ways). Each instance
+   must be **pre-built to full readiness
    before the camera ever cuts to it** — decision 4 in the "already made" list above
    (no load-on-cut) applies just as much to terrain chunks as to anything else, so
    this is NOT the normal "stream chunks in as the camera/car approaches" mode
@@ -181,22 +183,33 @@ plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`,
    building step 3 of the phased plan below** — it isn't decided yet, just that
    "vary it" beats "always clear daytime".
 4. **Six separate materials**, not the LUT — see the `TerrainManager` consequence
-   under decision 1. Simpler to reason about and debug; the trade-off is
-   `TerrainManager` running six times over (six instances' worth of chunk/collision
-   overhead) instead of one instance with a blend shader, which is why the mobile
-   budget question below still matters.
+   under decision 1. Simpler to reason about and debug.
 
+   **Correction to an earlier draft of this doc**: splitting into six
+   `TerrainManager` instances does **not** multiply the terrain cost the way an
+   earlier pass here implied. The total resident chunk/geometry count is the same
+   either way — one instance blending six regions' looks over N chunks, or six
+   instances each owning a disjoint 1/6th of the same N chunks, is the same amount
+   of terrain rendered, just split across objects instead of merged into one. The
+   only real per-instance overhead is a handful of extra script/node objects and
+   whatever fixed bookkeeping each `TerrainManager` does regardless of its owned
+   chunk count (ring iteration, its own `region_source` check, etc.) — additive and
+   small, not a 6x multiplier. This was in fact the whole point of the "one track,
+   all regions resident" design per the user's own framing: avoiding
+   load-on-cut, not avoiding rendering six regions' worth of terrain, which was
+   always going to be rendered regardless of how many `TerrainManager` objects it's
+   split across.
 5. **Mobile budget: match the lowest in-run quality tier**, not a new dedicated
    tier and not "measure later". Reuse the existing per-target quality resolution
    `world.gd` already does before generation
    (`cfg.terrain_lod_bands_m = cfg.terrain_lod_bands_for(_web, _touch)`, consumed by
-   `cfg.apply_terrain_lod(floor)`) — feed the showcase's six `TerrainManager`
-   instances whatever LOD bands that resolver returns for the lowest tier
-   (mobile/web), regardless of the device actually running it, rather than
-   resolving per-device the way a real stage does. This is decoration, not
-   gameplay the player needs full LOD to read, and it caps the six-instance cost at
-   a known-affordable ceiling instead of six copies of the desktop tier. Revisit
-   only if a profiled build later shows this is still too heavy even at that floor.
+   `cfg.apply_terrain_lod(floor)`) — feed every `TerrainManager` instance whatever
+   LOD bands that resolver returns for the lowest tier (mobile/web), regardless of
+   the device actually running it, rather than resolving per-device the way a real
+   stage does. The real cost driver is still six regions' worth of terrain resident
+   at once (a real cost, independent of the instance-count question above) — this
+   caps it at a known-affordable ceiling instead of the desktop tier. Revisit only
+   if a profiled build later shows this is still too heavy even at that floor.
 
 ## Open questions still outstanding
 
