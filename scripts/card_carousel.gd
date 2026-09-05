@@ -51,8 +51,6 @@ var _drag_active := false
 var _drag_start_x := 0.0
 var _drag_start_offset := 0.0
 
-const _GAP := 24.0
-
 
 func _init() -> void:
 	# A REAL minimum width, not just height. Cards are absolute-positioned children of a
@@ -73,12 +71,48 @@ func _init() -> void:
 	add_child(_strip)
 
 
+# Widen the carousel's minimum width to use `avail_width` — called by a host that wants
+# the carousel to run edge to edge instead of the default peek-a-couple-neighbours width
+# from _init(). Rounds DOWN to a whole, ODD number of visible cards (so the selected card
+# sits exactly centred with an equal number of whole cards either side) rather than
+# whatever fraction happens to fit avail_width — a fractional card at the strip's clipped
+# edge is a card sliced in half, which is exactly the "don't clip" case this exists to
+# avoid. Falls back to one bare card's width if avail_width can't fit even that.
+func fit_to_available_width(avail_width: float) -> void:
+	var unit := _card_width() + Config.data.card_carousel_gap
+	var count := int(floor((avail_width + Config.data.card_carousel_gap) / unit))
+	count = maxi(count, 1)
+	if count % 2 == 0:
+		count -= 1
+	count = maxi(count, 1)
+	custom_minimum_size.x = count * _card_width() + (count - 1) * Config.data.card_carousel_gap
+	_layout()
+
+
 func _card_width() -> float:
 	return Config.data.card_carousel_card_width
 
 
 func _card_height() -> float:
 	return _card_width() * Config.data.card_carousel_aspect
+
+
+# A card's own panel is solid black (like every other panel in the theme — UITheme's
+# "pure black, no border" rule), sitting on the ALSO-solid-black MenuPage body box behind
+# it. Without a border a card's edges are optically identical to both the gap beside it
+# AND the body box behind it, so modulate.a dimming (which just makes black-on-black more
+# transparent, i.e. no visible change at all) was the ONLY selection cue and the whole
+# strip read as one fused black slab with a few floating coloured icons — not a row of
+# cards. A border is the fix: reward_card_box() already sets this precedent (a black card
+# that must visibly pop against another black panel gets an accent border), generalised
+# here to every unselected card too so the CARD SHAPE itself is always visible, not just
+# the selected one.
+func _card_stylebox(selected: bool) -> StyleBoxFlat:
+	var box := UITheme.panel_box(1.0)
+	for side in ["left", "top", "right", "bottom"]:
+		box.set("border_width_" + side, 3 if selected else 1)
+	box.border_color = UITheme.GREEN if selected else UITheme.INK_DIM
+	return box
 
 
 # Add a new card and return its Card handle so the caller can populate visual/info.
@@ -89,7 +123,7 @@ func add_card(disabled: bool = false) -> Card:
 	card.disabled = disabled
 	card.root = PanelContainer.new()
 	card.root.custom_minimum_size = Vector2(_card_width(), _card_height())
-	card.root.add_theme_stylebox_override("panel", UITheme.panel_box(1.0))
+	card.root.add_theme_stylebox_override("panel", _card_stylebox(false))
 	card.root.mouse_filter = Control.MOUSE_FILTER_PASS
 
 	var col := VBoxContainer.new()
@@ -140,7 +174,7 @@ func select(index: int, animate: bool = true) -> void:
 
 
 func _target_offset_for(index: int) -> float:
-	return index * (_card_width() + _GAP)
+	return index * (_card_width() + Config.data.card_carousel_gap)
 
 
 func _snap_to(index: int, animate: bool) -> void:
@@ -164,10 +198,11 @@ func _layout() -> void:
 	var centre_x := size.x * 0.5
 	for i in _cards.size():
 		var card := _cards[i]
-		var x := centre_x - _card_width() * 0.5 + i * (_card_width() + _GAP) - _offset
+		var x := centre_x - _card_width() * 0.5 + i * (_card_width() + Config.data.card_carousel_gap) - _offset
 		card.root.position = Vector2(x, (size.y - _card_height()) * 0.5)
 		card.root.modulate.a = 1.0 if i == _selected \
 			else Config.data.card_carousel_unselected_alpha
+		card.root.add_theme_stylebox_override("panel", _card_stylebox(i == _selected))
 
 
 func _notification(what: int) -> void:
@@ -283,7 +318,7 @@ func end_drag_and_snap() -> void:
 	# CURRENTLY selected card, before it counts as a step — a short drag (a flick that
 	# barely moved) snaps back to where it started instead of jumping to whatever card
 	# is nearest by raw distance, which would make a small accidental drag re-pick.
-	var step := _card_width() + _GAP
+	var step := _card_width() + Config.data.card_carousel_gap
 	var from_selected := (_offset - _target_offset_for(_selected)) / step
 	var threshold: float = Config.data.card_carousel_drag_step_fraction
 	var moved := 0

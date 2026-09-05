@@ -35,6 +35,48 @@ func test_declares_a_minimum_width_wide_enough_to_peek_neighbours() -> void:
 		"must be wider than a single card, or neighbours never peek into view")
 
 
+# fit_to_available_width is what a host calls to make the carousel run edge to edge
+# instead of the default couple-of-peeks width — it must round DOWN to a whole, ODD
+# number of cards, never leave a fractional remainder that would clip a card in half at
+# the visible edge (the strip always centres the selected card, so only an odd visible
+# count keeps an equal number of whole cards on both sides).
+func test_fit_to_available_width_uses_a_whole_odd_number_of_cards() -> void:
+	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
+	# Exactly 4 units of room: only 3 cards (the next odd number down) may fit, not 4.
+	_carousel.fit_to_available_width(unit * 4.0)
+	var width := _carousel.custom_minimum_size.x
+	var shown := int(round((width + Config.data.card_carousel_gap) / unit))
+	assert_eq(shown % 2, 1, "an even visible count clips a card in half at one edge")
+	assert_true(width < unit * 4.0, "must not claim more than what was actually offered")
+
+
+func test_fit_to_available_width_never_returns_less_than_one_card() -> void:
+	_carousel.fit_to_available_width(1.0)
+	assert_almost_eq(_carousel.custom_minimum_size.x, Config.data.card_carousel_card_width, 0.01)
+
+
+# Regression: every UITheme panel (cards included) is solid black, sitting on the ALSO
+# solid black MenuPage body box — a card with no border is optically indistinguishable
+# from both the gap beside it and the body panel behind it, and modulate.a dimming does
+# nothing visible on black-on-black. Without an outline the whole strip reads as one fused
+# black slab ("all cards joined into one"), not a row of separate cards, regardless of how
+# wide the gap between them is. Every card must carry a real border, and the selected one
+# a distinctly different one, so cardhood and selection are both visible independent of
+# whatever else sits behind the carousel.
+func test_every_card_has_a_visible_border_and_selection_changes_it() -> void:
+	for card in _carousel._cards:
+		var box: StyleBox = card.root.get_theme_stylebox("panel")
+		assert_true(box is StyleBoxFlat, "a card needs a real stylebox to carry a border")
+		var flat := box as StyleBoxFlat
+		assert_gt(flat.border_width_left, 0, "an unbordered card is invisible against the black body box")
+
+	_carousel.select(1, false)
+	var selected_box: StyleBoxFlat = _carousel._cards[1].root.get_theme_stylebox("panel")
+	var other_box: StyleBoxFlat = _carousel._cards[0].root.get_theme_stylebox("panel")
+	assert_ne(selected_box.border_color, other_box.border_color,
+		"the centred card's border must read as distinct from an unselected one")
+
+
 func test_menu_nav_handles_side_moves_selection_and_emits_changed() -> void:
 	var seen: Array = []
 	_carousel.selection_changed.connect(func(i): seen.append(i))

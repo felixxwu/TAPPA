@@ -4149,3 +4149,5 @@ func spectator_params() -> Dictionary:
 ## card next to a peek of its neighbours, rather than the surrounding MenuPage body box
 ## (which hugs its content's minimum width) squeezing the carousel down to near nothing.
 @export_range(1.2, 5.0, 0.1) var card_carousel_visible_width_factor := 2.6
+## Gap between adjacent cards, in the same logical units as card_carousel_card_width.
+@export_range(0.0, 200.0, 2.0) var card_carousel_gap := 36.0

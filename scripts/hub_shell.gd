@@ -124,7 +124,7 @@ func _show(view: int) -> void:
 		_page = null
 	# The heading is a CONSTRUCTION option, not a settable property: MenuPage builds no
 	# label at all when "title" is absent, and title_label() is then null.
-	_page = MenuPage.open_modal(self, {"margin": 24.0, "title": _title_for(view)})
+	_page = MenuPage.open_modal(self, {"margin": _page_margin_for(view), "title": _title_for(view)})
 	match view:
 		View.MAIN: _build_main()
 		View.REGION: _build_region()
@@ -200,12 +200,36 @@ func _card_icon(letter: String, color: Color) -> Control:
 	return box
 
 
+# The five carousel pages want to run edge to edge, unlike every other MenuPage (whose
+# body box deliberately hugs its content with a wide gap to the screen edge — menu_page.gd
+# rule 1). A carousel's own clip_contents already keeps it from spilling into the 3D scene,
+# so it doesn't need that margin doing the same job twice, and a wide margin is exactly what
+# was squeezing it down to only 2-3 cards' worth of screen space.
+const _CAROUSEL_PAGE_MARGIN := 8.0
+const _DEFAULT_PAGE_MARGIN := 24.0
+
+func _page_margin_for(view: int) -> float:
+	return _CAROUSEL_PAGE_MARGIN if _is_carousel_view(view) else _DEFAULT_PAGE_MARGIN
+
+
+func _is_carousel_view(view: int) -> bool:
+	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.PERKS]
+
+
 # Build a carousel and mount it as the page's whole selectable body (any plain,
 # non-choosable labels the caller wants above it — e.g. "Money: N" — should be
 # added to _page.body() BEFORE calling this).
 func _build_carousel() -> CardCarousel:
 	var carousel := CardCarousel.new()
 	_page.body().add_child(carousel)
+	# Claim the full logical frame width, minus the page's own margin/padding chrome —
+	# `fit_to_available_width` then rounds DOWN to a whole number of cards so a card is
+	# never chopped in half at the visible edge, and set_body_width feeds that width to
+	# the (otherwise content-hugging) MenuPage box so it actually grows to it.
+	var avail := WorldPanel.layout_frame_size(_page, Vector2(480.0, 360.0)).x
+	var chrome := _CAROUSEL_PAGE_MARGIN * 2.0 + UITheme.PANEL_PAD * 2.0
+	carousel.fit_to_available_width(avail - chrome)
+	_page.set_body_width(carousel.custom_minimum_size.x)
 	return carousel
 
 
