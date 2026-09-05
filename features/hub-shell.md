@@ -86,7 +86,7 @@ actually does.
 new menu to ship with a nav test in the same piece of work. Every page here goes through
 `MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
 `MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all twelve views and asserts each
+and silently break the contract. `test_hub_shell.gd` walks all ten views and asserts each
 has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
 even when every purchasable row on them is disabled (unaffordable or at its level cap):
 `Back` is always a live `_action`, so the assertion holds regardless of the player's money.
