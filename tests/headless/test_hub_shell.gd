@@ -62,7 +62,7 @@ func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
 			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP,
 			HubShell.View.PERKS, HubShell.View.STATS, HubShell.View.CHALLENGE,
-			HubShell.View.DRIVETRAIN, HubShell.View.DRIVETRAIN_CAR]:
+			HubShell.View.DRIVETRAIN, HubShell.View.DRIVETRAIN_CAR, HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
@@ -80,6 +80,39 @@ func test_back_walks_the_page_stack_and_stops_at_the_root() -> void:
 	_shell._back()
 	assert_eq(_shell._view, HubShell.View.MAIN,
 		"and the root absorbs Back rather than dropping the player somewhere they never went")
+
+
+func test_the_main_page_reaches_settings() -> void:
+	_shell._show(HubShell.View.MAIN)
+	assert_true(_press("Settings"), "the main page offers a Settings row")
+	assert_eq(_shell._view, HubShell.View.SETTINGS, "pressing it opens the settings page")
+
+
+func test_settings_page_hosts_the_shared_settings_menu() -> void:
+	_shell._show(HubShell.View.SETTINGS)
+	await get_tree().process_frame
+	var found := _page().find_children("*", "SettingsMenu", true, false)
+	assert_eq(found.size(), 1, "the settings page mounts exactly one SettingsMenu")
+
+
+func test_settings_backs_out_to_the_main_page() -> void:
+	_shell._show(HubShell.View.SETTINGS)
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.MAIN,
+		"settings backs out to the main page once its own category list has nothing left to back out of")
+
+
+func test_settings_gives_its_own_sub_pages_first_refusal_backing_out() -> void:
+	_shell._show(HubShell.View.SETTINGS)
+	await get_tree().process_frame
+	_shell._settings_menu.show_audio()
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.SETTINGS,
+		"backing out of a settings sub-page returns to the settings category list, not the main page")
+	assert_true(_shell._settings_menu.at_root(), "the settings menu itself is back on its category list")
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.MAIN,
+		"a second back, now at the settings root, leaves the settings page entirely")
 
 
 func test_boost_shop_backs_out_to_the_shop_not_the_main_page() -> void:

@@ -14,24 +14,25 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 ## Deliberately plain, and deliberately temporary
 
 Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
-still holds — the shell is stacked pages of plain buttons, now eleven of them rather than
+still holds — the shell is stacked pages of plain buttons, now twelve of them rather than
 four (stage 6 added `SHOP` / `BOOST_SHOP` in place, on this same script, rather than
 spinning off a dedicated one; stage 7 added `PERKS` and `STATS`; stage 9 added
-`CHALLENGE` and the `DRIVETRAIN` pair). **Do not
+`CHALLENGE` and the `DRIVETRAIN` pair; `SETTINGS` was added afterwards — see below, it was
+missing entirely for a while). **Do not
 invest in its looks, and do not grow it past what a plain button list can hold** — give a
 future screen its own script if it needs anything richer than a row-of-buttons page. The
 whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The eleven pages
+## The twelve pages
 
 `HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`, `PERKS`,
-`STATS`, `CHALLENGE`, `DRIVETRAIN`, `DRIVETRAIN_CAR`. One page is
+`STATS`, `CHALLENGE`, `DRIVETRAIN`, `DRIVETRAIN_CAR`, `SETTINGS`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
 
 | Page | Offers |
 | --- | --- |
-| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Quit |
+| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Perks, Lifetime stats, Settings, Quit |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones named with their gate |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
 | `SUMMARY` | Stages cleared, money earned, per-stage times |
@@ -42,9 +43,21 @@ next, so a stale page can never sit under the tree still claiming input.
 | `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |
 | `DRIVETRAIN` | Owned cars, each showing the layout it runs |
 | `DRIVETRAIN_CAR` | That car's three layouts: running / owned (free switch) / priced |
+| `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, gearbox, key bindings, mobile controls, account/cloud save, Reset progress |
+
+**`SETTINGS` was missing entirely for a while**: the diegetic HQ used to offer it, the
+pivot's flat rebuild never added an equivalent row, and the only surviving route was
+`pause_menu.gd`'s in-run overlay — unreachable for a player with no run in progress
+(a fresh profile, or one sitting at the hub between runs). The hub's `MAIN` page now
+mounts the same `SettingsMenu` instance the pause menu does, so both hosts present
+identical options (per that script's own header comment) and neither route can drift.
 
 `_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`, `BOOST_SHOP → SHOP → MAIN`,
-`DRIVETRAIN_CAR → DRIVETRAIN → SHOP → MAIN`, and `PERKS`/`STATS`/`CHALLENGE → MAIN`.
+`DRIVETRAIN_CAR → DRIVETRAIN → SHOP → MAIN`, `PERKS`/`STATS`/`CHALLENGE → MAIN`, and
+`SETTINGS → MAIN` (via `_settings_back()`, which gives `SettingsMenu.go_back()` first
+refusal — its own sub-pages, and the Account page's sign-in sub-forms in turn, back out
+one level at a time before the shell backs out to `MAIN`; the same "first refusal" shape
+`pause_menu.gd::_on_settings_back` uses).
 **The `CAR` page serves two flows**, so its back destination is conditional: `CHALLENGE`
 when `_pending_challenge` is set, `REGION` otherwise — in `_back()` AND on the page's own
 Back button, which is a thing to get wrong once and only once (a test pins both).
@@ -72,7 +85,7 @@ actually does.
 new menu to ship with a nav test in the same piece of work. Every page here goes through
 `MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
 `MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all eleven views and asserts each
+and silently break the contract. `test_hub_shell.gd` walks all twelve views and asserts each
 has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
 even when every purchasable row on them is disabled (unaffordable or at its level cap):
 `Back` is always a live `_action`, so the assertion holds regardless of the player's money.

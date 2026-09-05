@@ -208,7 +208,8 @@ which runs inside `_physics_process`, always worked). Instead it wakes the body 
 **queues** the pose; `car.gd::_integrate_forces` applies it via `state.transform` — the
 authoritative physics-write point — so it lands regardless of when the reset was fired.
 Settings shows the **shared `SettingsMenu`** (camera
-angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
+angle + mobile controls, identical to the hub's own Settings page — see
+[hub-shell.md](hub-shell.md)), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops a confirm and, on accept (`quit_to_hq`), unfreezes and
 **PAUSES** the run (`RunSession.pause_run()`), then loads `Scenes.hub_path()` itself.
 Nothing is abandoned and nothing DNFs: the run slot stays persisted and the hub offers

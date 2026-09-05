@@ -47,7 +47,7 @@ extends Control
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
 enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS, CHALLENGE,
-	DRIVETRAIN, DRIVETRAIN_CAR }
+	DRIVETRAIN, DRIVETRAIN_CAR, SETTINGS }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
@@ -67,6 +67,11 @@ var _pending_challenge := ""
 # dict: a conversion writes through Save, so the page must re-read the car on every rebuild
 # rather than render a snapshot taken before the purchase.
 var _drivetrain_car_id := -1
+# The shared SettingsMenu instance while the SETTINGS page is live — null otherwise. Held so
+# _back()/the page's own Back button can give it first refusal (its own sub-pages back out
+# to its category list before this shell backs out to MAIN), mirroring pause_menu.gd's
+# AccountMenu/SettingsMenu "first refusal" pattern (see features/menus.md → Account page).
+var _settings_menu: SettingsMenu = null
 
 
 func _ready() -> void:
@@ -96,6 +101,7 @@ func _title_for(view: int) -> String:
 		View.CHALLENGE: return "Rally challenge"
 		View.DRIVETRAIN: return "Drivetrain conversions"
 		View.DRIVETRAIN_CAR: return "Drivetrain"
+		View.SETTINGS: return "Settings"
 		_: return "TAPPA"
 
 
@@ -105,6 +111,7 @@ func _title_for(view: int) -> String:
 # is exactly one place that can leave a stale page parked under the tree.
 func _show(view: int) -> void:
 	_view = view
+	_settings_menu = null
 	if is_instance_valid(_page):
 		var layer := _page.get_parent()
 		if is_instance_valid(layer):
@@ -125,6 +132,7 @@ func _show(view: int) -> void:
 		View.CHALLENGE: _build_challenge()
 		View.DRIVETRAIN: _build_drivetrain()
 		View.DRIVETRAIN_CAR: _build_drivetrain_car()
+		View.SETTINGS: _build_settings()
 	# `remember: false` — each page is rebuilt from scratch, so there is no earlier focus
 	# on it worth restoring; the first action is always the right landing spot.
 	MenuNav.attach(_page, {"on_back": _back})
@@ -146,6 +154,9 @@ func _back() -> void:
 		View.CHALLENGE: _show(View.MAIN)
 		View.DRIVETRAIN: _show(View.SHOP)
 		View.DRIVETRAIN_CAR: _show(View.DRIVETRAIN)
+		# Give the shared SettingsMenu first refusal: its own sub-pages (Audio, Account's
+		# sign-in form, …) back out to its category list before this shell backs out to MAIN.
+		View.SETTINGS: _settings_back()
 		_: pass
 
 
@@ -184,6 +195,7 @@ func _build_main() -> void:
 	_row("Shop", func() -> void: _show(View.SHOP))
 	_row("Perks", func() -> void: _show(View.PERKS))
 	_row("Lifetime stats", func() -> void: _show(View.STATS))
+	_row("Settings", func() -> void: _show(View.SETTINGS))
 	_action("Quit", func() -> void: get_tree().quit())
 
 
@@ -621,3 +633,32 @@ func _build_stats() -> void:
 		_page.body().add_child(UITheme.label(
 			"%s: %d" % [LifetimeStats.label_for(stat_id), Save.lifetime_stat(stat_id)]))
 	_action("Back", func() -> void: _show(View.MAIN))
+
+
+# --- SETTINGS ------------------------------------------------------------------
+
+# The shared SettingsMenu (also hosted by pause_menu.gd's in-run overlay) mounted as a
+# hub page — this is the only route to it OUTSIDE an active run (audio, display,
+# gearbox, key bindings, mobile controls, account/cloud save, and Reset progress all
+# live only here or in-run; a fresh player with no paused run had no way to reach any
+# of them before this page existed).
+func _build_settings() -> void:
+	var scroll := TouchScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_page.body().add_child(scroll)
+	_settings_menu = SettingsMenu.new()
+	_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_settings_menu)
+	# No camera_changed/scheme_changed hookup: the hub has no live CameraManager or
+	# MobileControls scene to apply to immediately (same reasoning as the HQ title-screen
+	# host in features/menus.md) — the choice is simply saved and takes effect next run.
+	_action("Back", _settings_back)
+
+
+# Give the shared menu's own sub-pages first refusal (Audio/Account/etc. back out to its
+# category list before this shell backs out to MAIN) — the same pattern pause_menu.gd's
+# _on_settings_back uses.
+func _settings_back() -> void:
+	if _settings_menu == null or not _settings_menu.go_back():
+		_show(View.MAIN)
