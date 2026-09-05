@@ -145,26 +145,57 @@ embedding 2D UI *into* a 3D scene at an angle. This is the reverse and simpler:
 plain child/sibling in `hub.tscn`, with its `MenuShowcaseCamera.current = true`, and
 `HubShell`'s existing UI just draws on top with no changes to it at all.
 
-## Open questions for the user (before implementation starts)
+## Decisions (round 2, with the user)
 
-1. **Full `TerrainManager` or a stripped-down ground?** `TerrainManager` is a large,
-   chunked LOD system built for a moving car (`chunk_coord_for`, streaming chunks
-   around a followed position). A static camera flying a small fixed loop may not
-   need chunk streaming at all — a single pre-baked static mesh per segment could be
-   far cheaper and simpler, at the cost of not reusing the terrain carve/noise
-   pipeline. Worth prototyping both before committing.
-2. **Any car/vehicle in shot for scale**, or pure empty scenery? The ask as phrased
-   ("showing off the landscape") reads as scenery-only; a driven or kinematically
-   posed car (`car.gd`'s existing `kinematic_pose` mode, built for the rival ghost —
-   [event-replay.md](event-replay.md) → "A second consumer") could add life for
-   free if wanted later, but is out of scope for a first pass unless asked for.
-3. **Weather/time-of-day**: static (always clear, daytime) for a first pass, or does
-   it need to vary?
-4. **Mobile budget**: what frame/quality cap is acceptable for a screen that is *only*
-   ever a background — should it degrade LOD further than an in-run stage would?
-5. **Per-segment ground approach** (six materials vs. reviving the LUT) — see above.
+1. **Full `TerrainManager`**, not a stripped-down static mesh — reuse the existing
+   chunked/carve/noise pipeline as-is rather than building a second ground system.
 
-## Suggested phased build (once the open questions are answered)
+   **Consequence this forces, found while checking the class**:
+   `TerrainManager` already carries an ORPHANED per-chunk region-blend hook —
+   `region_source` / `region_rank_at()` / `_apply_region_blend` (lines ~205-210,
+   ~1131-1154) — the exact rank→LUT mechanism `regions.md` describes as the deleted
+   `Overworld`'s "reusable half". It writes a blended rank into `UV2.y` per chunk
+   corner for a ground shader's `blend_region` uniform, and is a no-op everywhere
+   today (`region_source == null` on every stage) — nothing re-armed it since the
+   overworld was deleted. **Decision 4 below (six separate materials, not the LUT)
+   means this hook is deliberately NOT used** — do not wire `region_source` for this
+   feature. Instead: **one `TerrainManager` instance per segment**, each covering
+   only its own segment's chunk range and carrying its own single-region
+   `chunk_material` (exactly like a normal stage's one `Floor.chunk_material`, just
+   six of them side by side). Each instance must be **pre-built to full readiness
+   before the camera ever cuts to it** — decision 4 in the "already made" list above
+   (no load-on-cut) applies just as much to terrain chunks as to anything else, so
+   this is NOT the normal "stream chunks in as the camera/car approaches" mode
+   `TerrainManager` runs in during a stage; all six instances' chunks in-shot range
+   must be resident up front.
+2. **No car** — pure scenery, no `kinematic_pose` work needed.
+3. **Weather/time DOES vary** — this is new work beyond a first `home`-only
+   prototype (see phase 1 below) and needs its own mini-design before it's built:
+   candidates are (a) each segment authors a fixed weather/time look, so the
+   variety comes from moving between segments (cheapest — reuses per-stage weather
+   application once per segment, no runtime cycling logic), or (b) a global
+   day/night and/or weather cycle running on a timer across the whole showcase
+   independent of which segment is on screen (more dynamic, more moving parts:
+   every segment's lighting must be re-derived live, and a weather transition
+   mid-shot must not itself look like a cut). **Revisit which of these before
+   building step 3 of the phased plan below** — it isn't decided yet, just that
+   "vary it" beats "always clear daytime".
+4. **Six separate materials**, not the LUT — see the `TerrainManager` consequence
+   under decision 1. Simpler to reason about and debug; the trade-off is
+   `TerrainManager` running six times over (six instances' worth of chunk/collision
+   overhead) instead of one instance with a blend shader, which is why the mobile
+   budget question below still matters.
+
+## Open questions still outstanding
+
+1. **Mobile budget**: what frame/quality cap is acceptable for a screen that is
+   *only* ever a background — should it degrade LOD further than an in-run stage
+   would? This matters more now that decision 4 means SIX resident `TerrainManager`
+   instances rather than one.
+2. **Weather/time mechanism** — per-segment fixed look vs. a global running cycle,
+   per decision 3 above; needs picking before that piece is built.
+
+## Suggested phased build (once the remaining open questions are answered)
 
 1. Prototype: one fixed-seed track, ONE region's look applied over the whole thing,
    a `MenuShowcaseCamera` with a couple of fixed shots cutting on a timer — prove the
