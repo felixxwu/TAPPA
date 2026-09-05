@@ -360,6 +360,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			vp.set_input_as_handled()
 		return
 
+	# A WIDGET THAT OWNS ITS OWN LEFT/RIGHT (e.g. CardCarousel): ask it first, same seam
+	# as the slider special-case just below — a widget that wants left/right for itself
+	# implements `menu_nav_handles_side(side) -> bool` and returns true when it consumed
+	# the press, false to fall through to normal focus-neighbour movement (so up/down can
+	# still leave it). Generalised here rather than naming CardCarousel directly so the
+	# next such widget doesn't need framework changes either.
+	if (side == SIDE_LEFT or side == SIDE_RIGHT) and focused.has_method("menu_nav_handles_side"):
+		if focused.call("menu_nav_handles_side", side):
+			vp.set_input_as_handled()
+		return
+
 	# On a slider, left/right ADJUST the value rather than moving focus, so the cursor
 	# resting on a slider is enough to change it — no "select it first" step, and WASD
 	# (A/D) nudges it the same as the arrow keys do natively. Arrows / D-pad / stick

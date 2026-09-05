@@ -4132,3 +4132,15 @@ func spectator_params() -> Dictionary:
 ## "Road Scholar" — added to run_stage_money_base, i.e. to the stage-clear payout BEFORE
 ## the run's growth exponent and the region scale compound it.
 @export_range(0.0, 2000.0, 10.0) var perk_stage_money_add := 60.0
+
+@export_group("Card Carousel")
+## Height/width — a playing card is taller than it is wide (~3.5:2.5).
+@export_range(1.0, 2.0, 0.01) var card_carousel_aspect := 1.4
+@export_range(50.0, 600.0, 10.0) var card_carousel_card_width := 220.0
+## modulate.a applied to every card except the centred/selected one.
+@export_range(0.0, 1.0, 0.01) var card_carousel_unselected_alpha := 0.5
+@export_range(0.05, 1.0, 0.01) var card_carousel_snap_duration_s := 0.22
+## Fraction of a card's width a drag must cross before it counts as one step,
+## rather than snapping back to where it started.
+@export_range(0.05, 0.9, 0.01) var card_carousel_drag_step_fraction := 0.35
+@export_range(0.0, 720.0, 1.0) var card_carousel_car_spin_deg_per_s := 24.0
