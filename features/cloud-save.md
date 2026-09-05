@@ -5,7 +5,7 @@ continue it on another device. Signing in is never required: a player who
 ignores it sees no change at all, and every failure mode here degrades to "you
 keep playing locally".
 
-**Tests:** `tests/headless/test_cloud_auth.gd`, `tests/headless/test_cloud_sync.gd`, `tests/headless/test_cloud_boot_gate.gd`, `tests/headless/test_account_menu.gd`, `tests/headless/test_save_manager.gd`
+**Tests:** `tests/headless/test_cloud_auth.gd`, `tests/headless/test_cloud_sync.gd`, `tests/headless/test_cloud_boot_gate.gd`, `tests/headless/test_account_menu.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_firestore_rules.gd`
 
 `user://profile.json` remains the **source of truth for the running session**
 (see [save-persistence.md](save-persistence.md)). The cloud holds a copy.
@@ -28,7 +28,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page (and, as an inline overlay, by the standings page's sign-in prompt). |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see the deleted global leaderboards). |
-| `firestore.rules` | Security rules, kept in git rather than only in the console. **One collection, `stage_times`, is world-readable — see below and the deleted global leaderboards.** |
+| `firestore.rules` | Security rules, kept in git rather than only in the console, and deployed by CI. **One collection, `challenge_runs`, is world-readable** — a signed-out player has to be able to see the challenge board. `stage_times` (the per-stage global leaderboards) and the two `lobby_*` collections went with their features; the file grants them nothing now. Structurally guarded by `tests/headless/test_firestore_rules.gd` — see below. |
 | `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
 | `.github/workflows/deploy.yml` › `deploy-rules` | Deploys the rules on change (and on manual dispatch). |
 
@@ -565,6 +565,26 @@ Both client-id constants are **empty** until step 2/3 are done;
 Google button rather than offering an option that cannot work.
 
 ### Deploying the rules
+
+### The rules file is deployed by CI, and a broken one fails SILENTLY
+
+`firestore.rules` is deployed by the `Deploy Firestore rules` job on every push to `main`.
+Nothing in the game reads it, no test used to touch it, and a rejected deploy leaves the
+console **still serving the last good rules** — so a malformed file does not break
+anything visible. The game keeps working while the deployed policy quietly drifts from the
+committed one.
+
+That is not hypothetical. Deleting the multiplayer lobby removed its
+`match /lobby_state/{doc} {` header line and left the block's BODY behind — a
+`validState()` function and four `allow` lines with no `match` around them, and one extra
+`}`. The compiler rejected the file (`Unexpected '}'`) and the deploy job failed on every
+push from 2026-09-02 until someone read the log.
+
+`tests/headless/test_firestore_rules.gd` now guards the class of damage a deletion causes:
+the braces balance, no `allow`/`function` sits outside a `match` block, the deny-all
+catch-all is present, and no deleted collection still has a rule. It is deliberately
+STRUCTURAL — GDScript cannot evaluate the rules language, and real semantics need the
+Firebase emulator, which is CI's job.
 
 `firestore.rules` is deployed by CI, not by hand, so the committed file is the
 single source of truth for who can read a player's save rather than something
