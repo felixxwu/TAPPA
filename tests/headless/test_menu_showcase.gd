@@ -86,6 +86,15 @@ func test_road_tint_applies_and_reverts_on_reroll() -> void:
 	assert_almost_eq(reverted.r, dry_tarmac.r, 0.001, "reverting to dry is idempotent")
 
 
+func test_foliage_is_spawned_across_the_track() -> void:
+	var billboard_count := 0
+	for child in _scene.get_children():
+		if child is BillboardField:
+			billboard_count += 1
+	assert_gt(billboard_count, 0,
+		"at least one region spawned a tree billboard field over the whole track")
+
+
 func test_environment_swap_on_a_cut_does_not_crash_and_moves_the_environment() -> void:
 	var env: Environment = _scene._world_environment.environment
 	# _build()'s own initial reroll may have already left ANY eligible condition

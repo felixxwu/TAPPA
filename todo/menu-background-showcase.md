@@ -1,11 +1,11 @@
 # Menu background showcase
 
-**Status: phases 1-5 of the build below are implemented** — one fixed-seed track
-sliced into six region-themed segments, the border-safety camera rule, the
-per-region weather cycle, and hosting behind `hub.tscn`. See
+**Status: fully implemented.** One fixed-seed track sliced into six region-themed
+segments, the border-safety camera rule, per-segment foliage, the per-region
+weather cycle, the mobile LOD-tier cap, and hosting behind `hub.tscn`. See
 [features/menu-showcase.md](../features/menu-showcase.md) for what's actually
-shipped. **Still open: per-segment foliage and the mobile LOD-tier cap** (both
-scoped below, neither built). Keep this file in sync as they land.
+shipped. Nothing has been visually verified by a human yet — see the open
+questions raised with the user.
 
 ## The ask
 
@@ -302,16 +302,21 @@ as a call to make when step 3 of the phased build below is actually started.
 6. **DONE.** [features/menu-showcase.md](../features/menu-showcase.md) now
    documents the full shipped mechanism (indexed in `features/README.md`).
 
-## Still open
+## Status: nothing left open in the spec
 
-- **Per-segment foliage.** Trees/bushes matching each segment's region `tree_mix`/
-  `spawn_bush_mesh` (see [regions.md](regions.md) → "Tree species split") are not
-  spawned at all today — every segment is bare ground. Needs scatter POINTS
-  generated per segment (probably via the same `TreeScatter` machinery `world.gd`
-  uses) and `Foliage.spawn_trees`/`spawn_bushes` calls scoped to each segment's own
-  arc-length range, same idea as the ground-material split.
-- **The mobile LOD-tier cap** (decision 5): every `TerrainManager` instance should
-  be fed the LOD bands `cfg.terrain_lod_bands_for(true, true)`-equivalent (the
-  lowest/mobile tier) resolves, REGARDLESS of the device actually running it, per
-  the earlier decision. Not wired yet — every segment currently builds at whatever
-  the scene's default/unset LOD configuration is.
+Per-segment foliage and the mobile LOD-tier cap (previously listed here as open)
+are both **DONE** — see [features/menu-showcase.md](../features/menu-showcase.md)
+→ "Foliage and the mobile LOD-tier cap". Foliage reuses the exact
+`TreeScatter.scatter`/`Foliage.spawn_trees`/`spawn_bushes` calls
+`world.gd::_build_foliage` makes, scattered once over the whole track and split per
+segment the same way the terrain corridor is (`MenuShowcase._points_in_range`). The
+LOD cap forces every segment's `TerrainManager` to
+`cfg.terrain_lod_bands_web_touch_m`/`cfg.tree_render_distance_web_touch_m` (the
+lowest tier) regardless of device, without ever mutating the shared
+`Config.data.terrain_lod_bands_m` field a real stage relies on.
+
+Everything in this spec's original phased build is now implemented. Any further
+work (retuning shot timing/framing, the weather reroll interval, visually
+confirming the known arc-length-only border-safety limitation isn't hit on the
+shipped seed) is refinement against how it actually looks running, which nobody
+authoring this blind can verify — see the open questions raised with the user.

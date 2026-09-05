@@ -181,12 +181,31 @@ cycles dry/snow/night. Never rain in the snow segment, never snow outside it.
   `road_tint` are skipped — deliberately, as excessive for a decorative background
   that has no chase camera or car to hang them off, not an oversight.
 
-## What's still not built
+## Foliage and the mobile LOD-tier cap
 
-Per `todo/menu-background-showcase.md`'s phased plan: per-segment foliage (trees/
-bushes matching each region's `tree_mix`) and the mobile LOD-tier cap (feeding every
-`TerrainManager` instance the lowest in-run quality tier's LOD bands regardless of
-device). Both are scoped in the spec but not yet implemented.
+Both implemented. **Foliage** follows the same "compute once over the whole track,
+split by segment" shape as the corridor: `TreeScatter.scatter` runs ONCE against the
+full generated `result["pieces"]`/road-rejection cells (exactly
+`world.gd::_build_foliage`'s call, just fed this scene's own track), for both trees
+and the wider bush-footprint rejection, then `MenuShowcase._points_in_range` (the
+scatter-point equivalent of `_coords_in_range`, same `get_closest_offset` split)
+divides the results per segment. Each segment spawns its own
+`Foliage.spawn_trees`/`spawn_bushes` fields from its own filtered points and its own
+`RegionLibrary.tree_mix`/`spawns_bush_mesh(look)` — home's mixed-species split,
+Greece's 70/30 canopy, the Alps' sparse conifers and no bushes, exactly as a real
+stage would render that region. Trees are spawned with `with_collision = false`
+(nothing here ever collides with anything). One scatter, one shared RNG draw per
+species — a tree near a segment boundary is never double-placed or dropped, unlike
+re-scattering per segment would risk.
+
+**The mobile LOD-tier cap** forces every segment's `TerrainManager` to
+`cfg.terrain_lod_bands_web_touch_m` (and `cfg.tree_render_distance_web_touch_m` for
+foliage) — the lowest in-run quality tier — regardless of the device actually
+running it, per decision 5. `cfg.apply_terrain_lod(floor_tm)` still seats the
+authored baseline for every OTHER LOD field (skirt, collision ring, precompute
+pruning, etc.); only `lod_band_ends_m` is overridden afterward, and the shared
+`Config.data.terrain_lod_bands_m` field itself is never mutated — a real stage
+booted right after closing the hub still resolves its own tier correctly.
 
 ## Tests
 
@@ -195,7 +214,8 @@ device). Both are scoped in the spec but not yet implemented.
 its tests: the build completes and the camera is live; one `TerrainManager` per
 region with at least one built chunk each; the camera rotation covers every
 segment; no two segments ever share a material instance; road-tint application/
-reversion; the environment swap on a forced cut. `tests/headless/test_menu_showcase_geometry.gd`
+reversion; the environment swap on a forced cut; at least one region spawned a tree
+billboard field over the whole track. `tests/headless/test_menu_showcase_geometry.gd`
 — pure maths with no terrain: segment-boundary splitting, `safe_shot_arcs`'
 border-clearance and too-short-segment cases, and the weather-eligibility table's
 compatibility invariants (every id real, sandstorm/snow/rain restricted to the

@@ -32,8 +32,15 @@ extends Node3D
 #     anyway). The swap happens exactly at a camera CUT, never mid-shot, so the
 #     change is never seen happening.
 #
-# NOT YET BUILT (see the spec's phased plan): per-segment foliage and the mobile
-# LOD-tier cap.
+# FOLIAGE (phase 2's remaining piece) and the MOBILE LOD-TIER CAP (decision 5) are
+# both implemented too: trees/bushes are scattered ONCE over the whole track (same
+# "compute once, split by segment" shape as the corridor above) via the same
+# TreeScatter/Foliage machinery world.gd uses, then partitioned per segment by arc
+# length and spawned using that segment's own RegionLibrary.tree_mix. Every segment's
+# TerrainManager is forced to the lowest ("web touch") LOD/render-distance tier
+# regardless of the device actually running it — this is decoration, not gameplay a
+# player needs full LOD to read, and it caps six segments' worth of resident terrain
+# at a known-affordable ceiling rather than the desktop tier six times over.
 #
 # KNOWN LIMITATION: the border-safety rule below only guards ADJACENT segments along
 # the road's own arc length — it does not check whether a generated track loops back
@@ -81,6 +88,11 @@ const _REGION_WEATHER_IDS := {
 # allowance world.gd's own lightning-flash scheduler documents.
 const _WEATHER_REROLL_MIN_S := 20.0
 const _WEATHER_REROLL_MAX_S := 45.0
+
+# Distinct seed offsets so the tree and bush scatters interleave rather than landing
+# on the same grid points — mirrors world.gd's BUSH_SEED_OFFSET; the value itself is
+# arbitrary, only its difference from SHOWCASE_SEED matters.
+const _BUSH_SEED_OFFSET := 1013
 
 @onready var _template_floor: TerrainManager = $Floor
 @onready var _world_environment: WorldEnvironment = $WorldEnvironment
@@ -147,6 +159,27 @@ func _build() -> void:
 	# or gapping.
 	var full_corridor := _template_floor.corridor_coords(centerline, _CORRIDOR_LEASH_M)
 
+	# Foliage, same "compute once over the whole track, split by segment" shape as the
+	# corridor above — mirrors world.gd::_build_foliage's tree/bush scatter exactly
+	# (same TreeScatter.scatter call, same road-rejection cells), just fed this
+	# scene's own generated `result`/`centerline` instead of a driven stage's.
+	var road_poly := centerline.tessellate()
+	var road_cells := TrackGenerator.rasterize_cells(
+		road_poly, cfg.track_width + 2.0 * cfg.tree_road_margin_m)
+	var all_trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
+		SHOWCASE_SEED, cfg.track_forestiness, cfg.forest_wavelength_m)
+	# Bushes reject on a WIDER footprint than trees (the mesh's own xz radius on top
+	# of the road margin — world.gd's bush_road_cells) and are NOT forest-gated
+	# (default forestiness 1.0), same split as world.gd::_build_foliage.
+	var bush_radius := TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m)
+	var bush_road_cells := TrackGenerator.rasterize_cells(
+		road_poly, cfg.track_width + 2.0 * (cfg.tree_road_margin_m + bush_radius))
+	var all_bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
+		SHOWCASE_SEED + _BUSH_SEED_OFFSET)
+	# Lowest ("web touch") tier's render distance regardless of device — see decision
+	# 5, and the class comment on why every segment is capped this way.
+	var render_distance := cfg.tree_render_distance_web_touch_m
+
 	var shots: Array = []
 	for i in regions.size():
 		var region_id := String(regions[i].get("id", ""))
@@ -155,6 +188,12 @@ func _build() -> void:
 		var floor_tm := _floor_for_segment(i, region_id, cfg)
 		floor_tm.noise_seed = SHOWCASE_SEED
 		cfg.apply_cliffs(floor_tm)
+		cfg.apply_terrain_lod(floor_tm)
+		# Force the lowest tier's LOD bands specifically (apply_terrain_lod above
+		# seats the AUTHORED baseline, i.e. whichever tier a real stage most
+		# recently resolved into cfg.terrain_lod_bands_m — never mutate that shared
+		# field, just override this segment's own band ends after the fact).
+		floor_tm.lod_band_ends_m = cfg.terrain_lod_bands_web_touch_m
 		await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2], bake_args[3], bake_args[4])
 		var coords := _coords_in_range(full_corridor, centerline, lo, hi)
 		floor_tm.set_corridor(coords)
@@ -171,6 +210,12 @@ func _build() -> void:
 		_segment_weather_ids.append(WeatherLibrary.DEFAULT_ID)
 		_segment_reroll_timers.append(0.0)
 		_reroll_segment_weather(i)  # picks the initial id and sets the real reroll timer
+
+		var look := RegionLibrary.look_of(region_id)
+		_spawn_segment_trees(floor_tm, look, all_trees, centerline, lo, hi, render_distance, cfg)
+		if RegionLibrary.spawns_bush_mesh(look):
+			var segment_bushes := _points_in_range(all_bushes, centerline, lo, hi)
+			Foliage.spawn_bushes(self, segment_bushes, floor_tm, render_distance, cfg.tree_render_fade_m)
 
 	_camera = MenuShowcaseCamera.new()
 	add_child(_camera)
@@ -390,3 +435,38 @@ static func _coords_in_range(corridor: Array, centerline: Curve2D, lo: float, hi
 		if s >= lo and s <= hi:
 			out.append(c)
 	return out
+
+
+# The same arc-length split as _coords_in_range, for scatter POINTS instead of chunk
+# coords — used to divide one whole-track tree/bush scatter across the six segments
+# rather than re-scattering per segment (which would double-count trees near a
+# boundary and, worse, use a different RNG draw per segment for the same physical
+# ground). Inclusive on both ends for the same harmless-duplicate reason.
+static func _points_in_range(points: PackedVector2Array, centerline: Curve2D,
+		lo: float, hi: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in points:
+		var s := centerline.get_closest_offset(p)
+		if s >= lo and s <= hi:
+			out.append(p)
+	return out
+
+
+# Split segment `region_id`'s own slice of the whole-track tree scatter by species
+# (RegionLibrary.tree_mix) and spawn one Foliage.spawn_trees billboard field per
+# species, exactly as world.gd::_build_foliage does per stage — just fed this
+# segment's own filtered points and TerrainManager instead of a driven stage's.
+func _spawn_segment_trees(floor_tm: TerrainManager, look: Dictionary, all_trees: PackedVector2Array,
+		centerline: Curve2D, lo: float, hi: float, render_distance: float, cfg: GameConfig) -> void:
+	var segment_trees := _points_in_range(all_trees, centerline, lo, hi)
+	var mix := RegionLibrary.tree_mix(look)
+	var weights: Array = []
+	for entry in mix:
+		weights.append(entry.get("weight", 1.0))
+	var groups := TreeScatter.partition_by_weight(segment_trees, weights, SHOWCASE_SEED)
+	for i in mix.size():
+		var entry: Dictionary = mix[i]
+		Foliage.spawn_trees(self, groups[i], floor_tm, false,
+			render_distance, cfg.tree_render_fade_m,
+			load(entry["texture"]), String(entry.get("profile", "home")) == "region",
+			entry.get("size_scale", Vector2.ONE))
