@@ -621,14 +621,52 @@ need real events written, and they are not playable until they have them.
    re-authored and T003 reshaped in `evals/small-model/tasks.md`; counters reset;
    `todo/small-model-readiness.md` now says which of its findings survive the pivot and which are
    historical.
-4. One full `./run_tests.sh` against the ~5 minute budget. If it is over, invoke
-   `/optimise-test-suite` rather than eyeballing it.
-5. **Merge to `main`** — the one time, once the gate below passes.
-6. Ask whether `todo/roguelike-pivot.md` and this file should now be deleted
-   (`CLAUDE.md`: do not delete a completed spec without checking).
+4. ~~One full `./run_tests.sh` against the ~5 minute budget. If it is over, invoke
+   `/optimise-test-suite` rather than eyeballing it.~~ **DONE, and it found five reds** — the
+   suite had not been run in full since stage 2b, so nothing had caught them: two test files
+   (`test_retune.gd`, `test_live_refit_suspension.gd`) were building owned-car dicts with the
+   deleted `installed_upgrades`/`disabled_upgrades` keys, which applied NOTHING, leaving most
+   of their assertions comparing a value to itself; `test_rally_detail.gd` asserted its own
+   setup; and stage 4's 20 new events were never added to `data/track_cache.json`. All fixed.
+   `/optimise-test-suite` then took the run from 415 s to **350 s** (2553 tests, 161164
+   asserts, green).
 
-**Gate:** green suite inside budget; no `features/` doc describes a system that
-no longer exists.
+   **THE BUDGET IS STILL MISSED BY ~50 s, AND THE USER CHOSE TO LEAVE IT.** The gap is
+   structural: ~140 s of the 350 is full-library LIVE track generation (94 s of it the
+   seed-3002 regression guard, which grew when stage 4 authored 20 more events), against
+   ~210 s of ordinary test cost that sits comfortably under 300 s. The two ways out — a slow
+   CI/pre-release lane for the sweeps, or re-basing the budget — were put to the user and
+   **neither was taken**; the measured floor is recorded in `features/testing.md`. Do not
+   re-open this as if it were an oversight, and do not weaken the sweeps to close it.
+5. ~~**Merge to `main`** — the one time, once the gate below passes.~~ **DONE** —
+   fast-forward, 54 commits, `8cfae5f..69562e7`.
+6. ~~Ask whether `todo/roguelike-pivot.md` and this file should now be deleted.~~ **ASKED;
+   the user chose to KEEP BOTH.** The 54 numbered decisions are cited by name from ~30
+   `features/` docs and dozens of code comments ("decision 51", "decision 28"), so the spec is
+   a live reference, not a finished plan — deleting it would turn every one of those citations
+   into a dead pointer.
+
+**Gate:** green suite (met), no `features/` doc describing a system that no longer exists
+(met). The "inside budget" half is deliberately unmet — see item 4.
+
+---
+
+## The pivot is COMPLETE
+
+Every stage, 0 through 9, is implemented, tested and merged to `main`. This file stays as
+the execution record beside `roguelike-pivot.md`'s decision record; there is no outstanding
+work in it. Anything further is a new piece of work, not a stage of this one.
+
+**The known gaps, all deliberate and all documented where they live:**
+
+- The challenge's entry screen is minimal — no cloud board, standing or reward explainer
+  (decision 53, `features/rally-challenge.md`).
+- The cloud boot-pull gate has **no consumer**: `HubShell` does not await the initial sync, so
+  a returning player can act on a profile that is about to be replaced
+  (`features/cloud-save.md` leads with it).
+- Three finished systems have no host — `WorldPanel`, the garage model, and the wheel-fitting
+  view — each documented in its own file with what a rebuild owes.
+- `engine_detune` is stored, read and applied with no slider anywhere (`features/tuning.md`).
 
 ## Sequencing notes
 
