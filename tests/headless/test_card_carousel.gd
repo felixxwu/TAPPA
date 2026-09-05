@@ -139,6 +139,37 @@ func test_tapping_the_already_centred_card_confirms() -> void:
 
 # Drag-and-release snaps to the NEAREST card rather than leaving the strip parked
 # between two of them.
+# Regression: a touch press was recorded LOCAL TO THE PRESSED CARD (_on_card_gui_input is
+# bound to that card's own gui_input signal) while the drag handler reads
+# InputEventScreenDrag.position LOCAL TO THE CAROUSEL (_gui_input is the carousel's own
+# override) — comparing those two different local frames produced a bogus delta on the
+# very first drag sample, as large as the distance between the pressed card and the
+# carousel's own local origin. Reported symptom: starting a touch swipe on the peeking
+# card next to the first (selected) card made the whole strip jump immediately.
+func test_touch_drag_tracks_the_real_finger_delta_not_a_coordinate_mismatch() -> void:
+	_carousel.select(0, false)
+	await get_tree().process_frame
+	var card1: Control = _carousel._cards[1].root
+	var local_press := Vector2(10.0, 10.0)
+	var press := InputEventScreenTouch.new()
+	press.pressed = true
+	press.position = local_press
+	_carousel._on_card_gui_input(press, 1)
+
+	# The SAME physical point, moved 5px left in real (global) screen space — expressed,
+	# as Godot would actually deliver it, local to the CAROUSEL rather than to card1.
+	var real_delta := 5.0
+	var global_press: Vector2 = card1.get_global_transform() * local_press
+	var global_now := global_press - Vector2(real_delta, 0.0)
+	var carousel_local_now: Vector2 = _carousel.get_global_transform().affine_inverse() * global_now
+	var drag := InputEventScreenDrag.new()
+	drag.position = carousel_local_now
+	_carousel._gui_input(drag)
+
+	assert_almost_eq(_carousel._offset, real_delta, 0.5,
+		"a 5px finger movement must move the strip by about 5px, not jump")
+
+
 func test_drag_release_snaps_to_the_nearest_card() -> void:
 	var target := _carousel._target_offset_for(0)
 	var step := _carousel._target_offset_for(1) - target

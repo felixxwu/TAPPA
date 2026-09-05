@@ -126,6 +126,28 @@ func test_every_page_is_keyboard_navigable() -> void:
 			"view %d offers at least one focusable control" % view)
 
 
+# The carousel pages want the live 3D menu showcase (todo/menu-background-showcase.md)
+# visible through the gaps between cards, so their MenuPage body box must be fully
+# transparent — opaque would paint the showcase over with solid black everywhere except
+# the cards themselves (which carry their own opaque stylebox regardless — card_carousel.gd).
+# Every OTHER page keeps the normal opaque box (menu_page.gd rule 1: a page reads as a
+# panel resting over the world, not a wall of pure black either way, but a carousel page
+# specifically must let the world show in its own empty space, not just around its edges).
+func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
+	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
+			HubShell.View.SHOP, HubShell.View.PERKS]:
+		_shell._show(view)
+		await get_tree().process_frame
+		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
+		assert_almost_eq(box.bg_color.a, 0.0, 0.01, "view %d's body must be transparent" % view)
+
+	for view in [HubShell.View.STATS, HubShell.View.CHALLENGE, HubShell.View.SETTINGS]:
+		_shell._show(view)
+		await get_tree().process_frame
+		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
+		assert_almost_eq(box.bg_color.a, 1.0, 0.01, "view %d's body must stay opaque" % view)
+
+
 func test_back_walks_the_page_stack_and_stops_at_the_root() -> void:
 	_shell._show(HubShell.View.CAR)
 	_shell._back()

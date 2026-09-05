@@ -124,7 +124,15 @@ func _show(view: int) -> void:
 		_page = null
 	# The heading is a CONSTRUCTION option, not a settable property: MenuPage builds no
 	# label at all when "title" is absent, and title_label() is then null.
-	_page = MenuPage.open_modal(self, {"margin": _page_margin_for(view), "title": _title_for(view)})
+	# Carousel pages get a fully TRANSPARENT body box (alpha 0), not just a narrower margin
+	# (_page_margin_for) — the box's own opaque black background was painting over the 3D
+	# menu_showcase behind it everywhere the gap between cards should have shown it through.
+	# Cards stay opaque regardless (their own stylebox — card_carousel.gd's _card_stylebox
+	# — is independent of the page they sit on), so only the empty space around them opens up.
+	var page_opts := {"margin": _page_margin_for(view), "title": _title_for(view)}
+	if _is_carousel_view(view):
+		page_opts["alpha"] = 0.0
+	_page = MenuPage.open_modal(self, page_opts)
 	match view:
 		View.MAIN: _build_main()
 		View.REGION: _build_region()

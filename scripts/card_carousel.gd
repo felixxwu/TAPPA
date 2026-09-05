@@ -265,12 +265,23 @@ func _on_card_gui_input(event: InputEvent, index: int) -> void:
 					_tap_card(index)
 	elif event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
+		# InputEventScreenTouch has no global_position field (unlike mouse events), and
+		# this handler is bound to the PRESSED CARD's own gui_input signal, so t.position
+		# arrives local to THAT card — not to the carousel. _gui_input's drag handler below
+		# reads InputEventScreenDrag.position local to the CAROUSEL instead (it's the
+		# carousel's own override). Mixing those two local frames was the bug: the very
+		# first drag sample computed position-in-carousel minus position-in-card, a bogus
+		# delta as large as the distance between that card and the carousel's own origin —
+		# read by the player as the whole strip jumping the moment a touch started on any
+		# card that wasn't sitting exactly at the carousel's local (0,0). Converting through
+		# get_global_transform() puts both ends in the same frame.
+		var touch_x := (_cards[index].root.get_global_transform() * t.position).x
 		if t.pressed:
 			_drag_active = true
-			_drag_start_x = t.position.x
+			_drag_start_x = touch_x
 			_drag_start_offset = _offset
 		else:
-			var dragged2 := absf(t.position.x - _drag_start_x) > 4.0
+			var dragged2 := absf(touch_x - _drag_start_x) > 4.0
 			_drag_active = false
 			if not dragged2:
 				_tap_card(index)
@@ -307,7 +318,12 @@ func _gui_input(event: InputEvent) -> void:
 		_layout()
 	elif event is InputEventScreenDrag:
 		var d := event as InputEventScreenDrag
-		_offset = _drag_start_offset - (d.position.x - _drag_start_x)
+		# d.position arrives local to THIS control (the carousel), while _drag_start_x was
+		# recorded local to whichever CARD the touch started on — see the matching comment
+		# in _on_card_gui_input for why that mismatch has to be resolved through a common
+		# (global) frame rather than compared directly.
+		var drag_x := (get_global_transform() * d.position).x
+		_offset = _drag_start_offset - (drag_x - _drag_start_x)
 		_layout()
 
 

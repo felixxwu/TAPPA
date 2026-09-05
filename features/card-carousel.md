@@ -60,6 +60,25 @@ Signals: `selection_changed(index)`, `confirmed(index)`.
   `end_drag_and_snap()`, which rounds the drag offset to the nearest card index and
   animates back to it — the strip never sits parked between two cards.
 
+## Touch drag must convert through a common (global) coordinate frame
+
+`InputEventScreenTouch`/`InputEventScreenDrag` positions are LOCAL to whichever control
+actually receives them — and a drag gesture doesn't stay on one control. The press is
+caught by `_on_card_gui_input`, bound to the PRESSED CARD's own `gui_input` signal, so its
+`.position` is local to that card; the drag samples that follow are caught by
+`_gui_input`, the CAROUSEL's own override, so THEIR `.position` is local to the carousel
+instead. `InputEventScreenTouch`/`Drag` have no `global_position` field to fall back on
+(unlike mouse events, which is why the mouse-drag path never had this bug), so comparing
+the two raw `.position` values directly computed a bogus delta on the very first drag
+sample — as large as the distance between the pressed card and the carousel's own local
+origin. The reported symptom: touching the peeking card next to the first (selected) card
+and starting to drag made the whole strip jump immediately, before any real finger
+movement. Both `_on_card_gui_input`'s touch branch and `_gui_input`'s
+`InputEventScreenDrag` branch now convert through `get_global_transform() * event.position`
+before ever comparing an x-coordinate across the two handlers — see
+`test_touch_drag_tracks_the_real_finger_delta_not_a_coordinate_mismatch`. Don't reintroduce
+a bare `t.position.x`/`d.position.x` comparison here; that is exactly this regression.
+
 ## Config
 
 Every carousel tunable lives on `GameConfig` (`scripts/game_config.gd` → `Card Carousel`
@@ -115,7 +134,17 @@ half at the far edge, which is the exact "clipping" bug this method exists to ru
 count still needs to hide the far-off cards) — it's just that every card `clip_contents`
 ever cuts is either fully inside the strip or fully outside it, never straddling the edge.
 
-## The carousel MUST claim its own minimum width
+## The gaps show the live 3D showcase behind the page, not black
+
+`MenuPage`'s body box is opaque black by default (`panel_box(1.0)`), which is right for a
+page that should read as a solid panel — but wrong for a carousel, where the space between
+cards is supposed to be a window onto the live 3D menu showcase behind the shell
+(`todo/menu-background-showcase.md`), not more black. `HubShell._show` passes `"alpha":
+0.0` into `MenuPage.open_modal`'s opts for the five carousel views only (others keep the
+default opaque box), making the WHOLE body box transparent. Cards themselves are
+unaffected — `_card_stylebox`'s `panel_box(1.0)` is independent of the page they happen to
+sit on — so only the truly empty space (the gaps between cards, and around them) opens up
+onto the showcase; nothing about a card's own read as a solid surface changes.
 
 `MenuPage`'s body box **hugs its content's minimum width** (`menu_page.gd`'s
 `_scroll.horizontal_scroll_mode = SCROLL_MODE_DISABLED` propagates the child's real
