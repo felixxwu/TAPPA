@@ -1,7 +1,12 @@
-# Menu background showcase (spec, not yet built)
+# Menu background showcase
 
-**Status: drafted with the user, not implemented.** This is a spec for the `todo/`
-process (CLAUDE.md) — read it before starting, and keep it in sync as pieces land.
+**Status: phase 1 of the build below is implemented.** See
+[features/menu-showcase.md](../features/menu-showcase.md) for what's actually
+shipped (`MenuShowcase`/`MenuShowcaseCamera`, one fixed-seed track, one region's
+look, hosted behind `hub.tscn`). Everything else on this page — six-region
+segments, the border-safety camera rule, per-segment foliage, the per-region
+weather cycle, and the mobile LOD-tier cap — is still spec, not code. Keep this
+file in sync as later phases land.
 
 ## The ask
 
@@ -246,10 +251,20 @@ as a call to make when step 3 of the phased build below is actually started.
 
 ## Suggested phased build
 
-1. Prototype: one fixed-seed track, ONE region's look applied over the whole thing,
-   a `MenuShowcaseCamera` with a couple of fixed shots cutting on a timer — prove the
-   hosting-in-`hub.tscn` approach and the camera-choreography shape cheaply before
-   spending effort on multi-region theming.
+1. **DONE.** Prototype: one fixed-seed track, ONE region's look applied over the
+   whole thing, a `MenuShowcaseCamera` with a couple of fixed shots cutting on a
+   timer — proved the hosting-in-`hub.tscn` approach and the camera-choreography
+   shape. See [features/menu-showcase.md](../features/menu-showcase.md),
+   `scripts/menu_showcase.gd`, `scripts/menu_showcase_camera.gd`,
+   `menu_showcase.tscn`, and the two test files
+   (`tests/headless/test_menu_showcase.gd`,
+   `tests/headless/test_menu_showcase_camera.gd`). Notably: `TrackGenerator`/
+   `TerrainManager`'s track-and-terrain-build recipe DOES stand alone from
+   `world.gd`/`main.tscn` as hoped — `menu_showcase.tscn` duplicates
+   `main.tscn`'s `WorldEnvironment`/`Floor` sub-resources (same shader, same
+   textures, same terrain layers) rather than instantiating `main.tscn` itself,
+   since that scene's root script (`world.gd`) would otherwise run the whole
+   run-boot pipeline unintentionally.
 2. Slice into six segments, apply per-segment looks (ground + foliage), tune segment
    lengths so no camera position/FOV combination can see across a border.
 3. Add the full shot rotation across all six segments + tests
