@@ -328,22 +328,25 @@ property of the conditions the benchmark freezes.)
 | **FWD** | front spool | rear | understeer bias |
 | **AWD** | front+rear locked (no center diff) | — | most grip, least drama |
 
-Drivetrain is no longer switched live. Each car ships with an authored stock
-`drive_mode`; a car-bound **Drivetrain Swap** upgrade (a rally reward, `drivetrain`
-slot, carrying an `unlocks_drivetrain_swap` flag) unlocks a **FWD / RWD / AWD selector
-on that slot's row in the garage upgrades menu** — `UpgradeLibrary.drivetrain_swap_unlocked`
-gates it. The chosen mode is stored per car as `OwnedCar.drivetrain_override`
-(`-1` = stock) and resolved by `UpgradeLibrary.resolve_drive_override`, which
-`car.gd.apply_owned` threads through the drivetrain rebuild (member `_owned_drive_override`,
-honoured by `_rebuild_drivetrain`) and `UpgradeLibrary.effective_meta` reports for the
-stats panel + rally eligibility. **Entering no longer auto-switches it.** A car in the wrong `drive_mode` for a
-restricted rally is simply ineligible: `hq_carpark._build_eligible_lineup` judges the car AS
-BUILT, and the career session's `register_drivetrain_revert` / the switch-at-Start-then-revert flow
-(and the `_switch_target_for` / `_qualifying_drivetrain_for` helpers that fed it) are
-**deleted**. That switch was free, silent and reverted afterwards, which — now that a
-conversion carries a per-car star price — handed the player for nothing exactly what the
-garage charges for. Converting is a garage decision, made where the price is shown.
-(Its `register_detune_revert` sibling is deleted too.) The roster ships two stock **FWD** cars — the **Focus**
+Each car ships with an authored stock `drive_mode`. A layout switch is now a **run-scoped
+mid-run upgrade** — see [region-runs.md](region-runs.md) → *Drivetrain conversion* — picked
+in the between-stage repair-or-boost pick alongside the drawn boosts, free, and gone the
+moment the run ends. `RunSession.choose_drivetrain(mode)` records it on `_drivetrain_override`
+(`-1` = the fielded car's own stock/current layout); `world.gd::_field_car` writes it onto
+the DUPLICATED owned-car dict a car is fielded with (never `Save`'s persisted car — the
+same seam boosts and equipped perks use), and `UpgradeLibrary.resolve_drive_override` reads
+it there with a bare range check against `Drivetrain.DriveMode.values()` — no purchase
+gate. `car.gd.apply_owned` threads it through the drivetrain rebuild (member
+`_owned_drive_override`, honoured by `_rebuild_drivetrain`) and
+`UpgradeLibrary.effective_meta` reports it for the stats panel.
+
+This supersedes an EARLIER permanent-purchase model (decision 52: `Save.buy_drive_mode`, a
+per-car conversion bought once and kept forever) and, before that, an even older
+gate-by-upgrade-slot model (a `drivetrain`-slot part unlocking a selector). Both are
+deleted along with their gates. A car in the wrong `drive_mode` for a restricted rally
+(the pre-run entry screen, `rally_detail.gd`) is simply ineligible — there is no
+conversion to offer outside an active run, so `RallyDetail.convertible_for` always
+returns false. The roster ships two stock **FWD** cars — the **Focus**
 (`id: "focus"`) and the **Renault Twingo** (`id: "twingo"`), both home entrants of the
 Front Runners rally (see `features/rally-roster.md`); the MX-5/Viper/XJS are RWD; the
 Acty is AWD.

@@ -46,8 +46,7 @@ extends Control
 # pages. STATS is pure read-out (LifetimeStats.IDS, one row each) — CLAUDE.md's menu-nav
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
-enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS, CHALLENGE,
-	DRIVETRAIN, DRIVETRAIN_CAR, SETTINGS }
+enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS, CHALLENGE, SETTINGS }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
@@ -63,10 +62,6 @@ var _pending_region := ""
 # share that page, since "which of my cars" is the identical question. Cleared on every
 # entry to REGION so a back-and-forth cannot start a region run as a challenge.
 var _pending_challenge := ""
-# The owned car whose drivetrain the DRIVETRAIN_CAR page is showing. An INSTANCE ID, not a
-# dict: a conversion writes through Save, so the page must re-read the car on every rebuild
-# rather than render a snapshot taken before the purchase.
-var _drivetrain_car_id := -1
 # The shared SettingsMenu instance while the SETTINGS page is live — null otherwise. Held so
 # _back()/the page's own Back button can give it first refusal (its own sub-pages back out
 # to its category list before this shell backs out to MAIN), mirroring pause_menu.gd's
@@ -99,8 +94,6 @@ func _title_for(view: int) -> String:
 		View.PERKS: return "Perks"
 		View.STATS: return "Lifetime stats"
 		View.CHALLENGE: return "Rally challenge"
-		View.DRIVETRAIN: return "Drivetrain conversions"
-		View.DRIVETRAIN_CAR: return "Drivetrain"
 		View.SETTINGS: return "Settings"
 		_: return "TAPPA"
 
@@ -130,8 +123,6 @@ func _show(view: int) -> void:
 		View.PERKS: _build_perks()
 		View.STATS: _build_stats()
 		View.CHALLENGE: _build_challenge()
-		View.DRIVETRAIN: _build_drivetrain()
-		View.DRIVETRAIN_CAR: _build_drivetrain_car()
 		View.SETTINGS: _build_settings()
 	# `remember: false` — each page is rebuilt from scratch, so there is no earlier focus
 	# on it worth restoring; the first action is always the right landing spot.
@@ -152,8 +143,6 @@ func _back() -> void:
 		View.PERKS: _show(View.MAIN)
 		View.STATS: _show(View.MAIN)
 		View.CHALLENGE: _show(View.MAIN)
-		View.DRIVETRAIN: _show(View.SHOP)
-		View.DRIVETRAIN_CAR: _show(View.DRIVETRAIN)
 		# Give the shared SettingsMenu first refusal: its own sub-pages (Audio, Account's
 		# sign-in form, …) back out to its category list before this shell backs out to MAIN.
 		View.SETTINGS: _settings_back()
@@ -378,92 +367,6 @@ func _build_challenge() -> void:
 	_action("Back", func() -> void: _show(View.MAIN))
 
 
-# --- DRIVETRAIN (the sixth money sink) ---------------------------------------
-
-# Pick which owned car to convert, then which layout. Two pages rather than one flat
-# car x layout list because the second page has to say what each layout COSTS and which
-# one is running, which does not fit a row shared with a car name.
-#
-# It hangs off SHOP rather than the run's own CAR page for the same reason boost levels
-# do: it is a permanent purchase available any time, not part of picking a car for THIS
-# run (features/hub-shell.md).
-func _build_drivetrain() -> void:
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
-	for car in (Save.profile.get(Save.KEY_CARS, []) as Array):
-		var entry: Dictionary = car
-		var iid := int(entry.get("instance_id", -1))
-		if iid < 0:
-			continue
-		var spec: Dictionary = CarLibrary.for_owned(entry)
-		var car_name := String(spec.get("name", entry.get("model_id", "car")))
-		_row("%s — %s" % [car_name, _drive_mode_name(_running_drive_mode(entry))],
-			func() -> void:
-				_drivetrain_car_id = iid
-				_show(View.DRIVETRAIN_CAR))
-	_action("Back", func() -> void: _show(View.SHOP))
-
-
-# The layout this car actually RUNS: its paid-for override, or its stock layout when it has
-# none. UpgradeLibrary.resolve_drive_override is the one implementation of that rule (it
-# returns -1 for "stock"), so this page asks it rather than re-deriving the gate.
-func _running_drive_mode(owned_car: Dictionary) -> int:
-	var override_mode := UpgradeLibrary.resolve_drive_override(owned_car)
-	return override_mode if override_mode >= 0 else UpgradeLibrary.stock_drive_mode(owned_car)
-
-
-func _drive_mode_name(mode: int) -> String:
-	match mode:
-		Drivetrain.DriveMode.FWD: return "FWD"
-		Drivetrain.DriveMode.AWD: return "AWD"
-		_: return "RWD"
-
-
-# One row per layout. THREE states, and the row says which: the layout it is running now,
-# one it owns and can switch to for free (you buy the hardware once, then run whichever you
-# like), and one it has yet to buy, priced. Buying does NOT switch — the same
-# owning-vs-equipping split perks use — so a bought layout comes back as a switch row.
-func _build_drivetrain_car() -> void:
-	var owned: Dictionary = Save.get_car(_drivetrain_car_id)
-	if owned.is_empty():
-		# The car vanished from the profile between pages (nothing does this today, but a
-		# page that renders a stale id would look broken rather than empty).
-		_action("Back", func() -> void: _show(View.DRIVETRAIN))
-		return
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
-	var spec: Dictionary = CarLibrary.for_owned(owned)
-	_page.body().add_child(UITheme.label(String(spec.get("name", "car"))))
-	var running := _running_drive_mode(owned)
-	var stock := UpgradeLibrary.stock_drive_mode(owned)
-	var price := Save.drive_mode_price()
-	for mode in Drivetrain.DriveMode.values():
-		var mode_id := int(mode)
-		var mode_name := _drive_mode_name(mode_id)
-		var stock_mark := " (stock)" if mode_id == stock else ""
-		if mode_id == running:
-			var current := _row("%s%s — running" % [mode_name, stock_mark], func() -> void: pass)
-			current.disabled = true
-			current.set_meta("menu_nav_skip", true)
-			current.focus_mode = Control.FOCUS_NONE
-			continue
-		if Save.drive_mode_available(owned, mode_id):
-			_row("Switch to %s%s" % [mode_name, stock_mark], func() -> void:
-				# -1 means "stock" to the resolver, and writing the stock mode as an
-				# explicit override would work but leaves the profile saying something
-				# subtly different from a car that never converted. Normalise instead.
-				Save.set_drivetrain_override(_drivetrain_car_id,
-					-1 if mode_id == stock else mode_id)
-				_show(View.DRIVETRAIN_CAR))
-			continue
-		var buy := _row("Convert to %s — %d" % [mode_name, price], func() -> void:
-			if Save.buy_drive_mode(_drivetrain_car_id, mode_id):
-				_show(View.DRIVETRAIN_CAR))
-		if Save.money() < price:
-			buy.disabled = true
-			buy.set_meta("menu_nav_skip", true)
-			buy.focus_mode = Control.FOCUS_NONE
-	_action("Back", func() -> void: _show(View.DRIVETRAIN))
-
-
 # --- SUMMARY -----------------------------------------------------------------
 
 # One screen for BOTH outcomes — cleared the region, or stopped by the clock. A run that
@@ -498,7 +401,6 @@ func _build_summary() -> void:
 func _build_shop() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
 	_row("Boost levels", func() -> void: _show(View.BOOST_SHOP))
-	_row("Drivetrain conversions", func() -> void: _show(View.DRIVETRAIN))
 
 	var unlocked := Save.engine_swap_unlocked()
 	var price := Save.engine_swap_unlock_price()

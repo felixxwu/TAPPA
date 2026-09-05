@@ -14,19 +14,23 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 ## Deliberately plain, and deliberately temporary
 
 Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
-still holds — the shell is stacked pages of plain buttons, now twelve of them rather than
+still holds — the shell is stacked pages of plain buttons, now ten of them rather than
 four (stage 6 added `SHOP` / `BOOST_SHOP` in place, on this same script, rather than
 spinning off a dedicated one; stage 7 added `PERKS` and `STATS`; stage 9 added
-`CHALLENGE` and the `DRIVETRAIN` pair; `SETTINGS` was added afterwards — see below, it was
-missing entirely for a while). **Do not
+`CHALLENGE`; `SETTINGS` was added afterwards — see below, it was missing entirely for a
+while). A `DRIVETRAIN` / `DRIVETRAIN_CAR` pair sold drivetrain conversions here as a
+permanent purchase for a time (decision 52); that is superseded — a conversion is now a
+run-scoped mid-run upgrade offered in the between-stage pick instead
+([region-runs.md](region-runs.md) → *Drivetrain conversion*), so the pair is deleted along
+with the purchase path it sold. **Do not
 invest in its looks, and do not grow it past what a plain button list can hold** — give a
 future screen its own script if it needs anything richer than a row-of-buttons page. The
 whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The twelve pages
+## The ten pages
 
 `HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`, `PERKS`,
-`STATS`, `CHALLENGE`, `DRIVETRAIN`, `DRIVETRAIN_CAR`, `SETTINGS`. One page is
+`STATS`, `CHALLENGE`, `SETTINGS`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
 
@@ -41,8 +45,6 @@ next, so a stale page can never sit under the tree still claiming input.
 | `PERKS` | One row per `PerkLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([perks.md](perks.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
 | `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |
-| `DRIVETRAIN` | Owned cars, each showing the layout it runs |
-| `DRIVETRAIN_CAR` | That car's three layouts: running / owned (free switch) / priced |
 | `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, gearbox, key bindings, mobile controls, account/cloud save, Reset progress |
 
 **`SETTINGS` was missing entirely for a while**: the diegetic HQ used to offer it, the
@@ -53,11 +55,10 @@ mounts the same `SettingsMenu` instance the pause menu does, so both hosts prese
 identical options (per that script's own header comment) and neither route can drift.
 
 `_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`, `BOOST_SHOP → SHOP → MAIN`,
-`DRIVETRAIN_CAR → DRIVETRAIN → SHOP → MAIN`, `PERKS`/`STATS`/`CHALLENGE → MAIN`, and
-`SETTINGS → MAIN` (via `_settings_back()`, which gives `SettingsMenu.go_back()` first
-refusal — its own sub-pages, and the Account page's sign-in sub-forms in turn, back out
-one level at a time before the shell backs out to `MAIN`; the same "first refusal" shape
-`pause_menu.gd::_on_settings_back` uses).
+`PERKS`/`STATS`/`CHALLENGE → MAIN`, and `SETTINGS → MAIN` (via `_settings_back()`, which
+gives `SettingsMenu.go_back()` first refusal — its own sub-pages, and the Account page's
+sign-in sub-forms in turn, back out one level at a time before the shell backs out to
+`MAIN`; the same "first refusal" shape `pause_menu.gd::_on_settings_back` uses).
 **The `CAR` page serves two flows**, so its back destination is conditional: `CHALLENGE`
 when `_pending_challenge` is set, `REGION` otherwise — in `_back()` AND on the page's own
 Back button, which is a thing to get wrong once and only once (a test pins both).
@@ -148,5 +149,3 @@ a player loses a run they meant to finish.
   page), but there is no picker screen yet that re-checks
   `RallyLibrary.engine_swaps_unlocked` and shows a locked state — see
   [engine-swap.md](engine-swap.md) for the two old consumers that used to and are gone.
-  (The DRIVETRAIN pages are the pattern such a screen would follow: pick a car, then pick
-  what to do to it.)

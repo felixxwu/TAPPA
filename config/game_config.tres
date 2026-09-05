@@ -341,7 +341,6 @@ boost_level_price_base = 1500.0
 boost_level_price_growth = 1.7
 boost_level_magnitude_step = 0.08
 engine_swap_unlock_price = 6000.0
-drivetrain_conversion_price = 3500.0
 perk_max_equipped = 3
 perk_coin_radius_mult = 3.0
 perk_heal_hp_per_s = 6.0

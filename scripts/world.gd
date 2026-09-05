@@ -1335,6 +1335,12 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		# turn + the upcoming turns queued to its right. Wired on every run (no rival
 		# needed), so the strip reads the track whether or not a session is active.
 		_setup_pacenotes(result, staged, cfg)
+		# The rival ghost + live HUD delta (features/rival-ghost.md), staged region
+		# runs only — a challenge has no target (RunMode.stage_target_profile's base
+		# returns {}) and a plain dev boot has no session at all. A degenerate track's
+		# empty profile frees any ghost left over from a previous (solvable) stage
+		# rather than posing it on nothing.
+		_setup_rival_ghost(staged)
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -1476,6 +1482,12 @@ var _coin_field: CoinField = null
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).
 var _stage_manager: StageManager
+# The rival ghost (features/rival-ghost.md), for a staged region run whose track
+# actually solved a target. Owned here (not by StartLine, which is only up for the
+# pre-countdown sequence) because it keeps posing through RUNNING for the live HUD
+# delta — StartLine is just handed a reference to drive during its own MENU idle.
+# Null for a challenge stage, a dev boot, or a degenerate track.
+var _rival_ghost: RivalGhost
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
@@ -1543,6 +1555,32 @@ func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -
 	var ahead := cfg.start_lead_in_ahead_m if staged else 0.0
 	var span := ahead + centerline.get_baked_length()
 	_stage_manager.setup_pacenotes(Pacenotes.notes_to_fracs(notes, ahead, span))
+
+
+# Build/wire the rival ghost (features/rival-ghost.md) for a staged region run: the
+# pace-scaled profile RunSession.stage_target_profile() seated at set_stage_track()
+# is handed to a RivalGhost (posed in _track_progress's arc-length space, seated on
+# _floor()'s terrain) and into the StageManager, which keeps posing it through
+# RUNNING and drives the HUD delta off it. `_build_start_line` hands the same ghost
+# to StartLine for the pre-countdown reveal loop.
+#
+# _ensure_child (like every other persistent manager above) reuses the node across a
+# same-run stage regeneration rather than leaking a Car per stage. An unsolvable
+# stage's empty profile frees a ghost left over from an earlier, solvable one — a
+# stale rival posed on nothing is worse than no rival at all.
+func _setup_rival_ghost(staged: bool) -> void:
+	var profile: Dictionary = {}
+	if staged and RunSession.is_active():
+		profile = RunSession.stage_target_profile()
+	if profile.is_empty():
+		if is_instance_valid(_rival_ghost):
+			_rival_ghost.free_ghost()
+		_stage_manager.setup_target_profile({})
+		return
+	_rival_ghost = _ensure_child("RivalGhost",
+		func() -> Node: return RivalGhost.new()) as RivalGhost
+	_rival_ghost.setup(_track_progress, _floor(), profile)
+	_stage_manager.setup_target_profile(profile, _rival_ghost)
 
 
 # --- Session run-scene integration ------------------------------------------
@@ -1655,7 +1693,7 @@ func _build_start_line() -> void:
 			_start_line.sequence_finished.connect(_on_start_line_finished)
 	_start_line.setup($Car, $Floor, _stage_manager, rally, int(info["stage_index"]),
 		$CameraManager as CameraManager,
-		$HUD as CanvasLayer, $MobileControls as CanvasLayer, pause_menu)
+		$HUD as CanvasLayer, $MobileControls as CanvasLayer, pause_menu, _rival_ghost)
 
 
 # The staged window is over (camera, HUD and player control all handed back): pause is
@@ -1741,6 +1779,11 @@ func _field_car(instance_id: int) -> void:
 		# than carried on the run object. Both land on the same duplicated dict, which is
 		# what keeps either of them out of the saved profile.
 		owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
+		# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above —
+		# see RunSession.choose_drivetrain / drivetrain_override). Written onto this same
+		# duplicated dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override
+		# sees it for exactly as long as the run does.
+		owned["drivetrain_override"] = RunSession.drivetrain_override()
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
@@ -1864,10 +1907,10 @@ func _hide_driving_ui() -> void:
 #
 # What used to load here — standings.tscn, a per-stage GLOBAL LEADERBOARD — is deleted
 # (decision 30: no more per-stage boards). RunPickPanel replaces it: the drawn boosts +
-# repair when RunSession has a pick pending (a region run's non-final, non-missed
-# stage), or a bare Continue when it doesn't (the challenge, and this run's own
-# final/failed stage — see features/region-runs.md -> "Between-stage pick: repair or
-# boost").
+# repair + a drivetrain conversion option when RunSession has a pick pending (a region
+# run's non-final, non-missed stage), or a bare Continue when it doesn't (the challenge,
+# and this run's own final/failed stage — see features/region-runs.md -> "Between-stage
+# pick: repair, boost, or drivetrain conversion").
 func _present_standings_overlay(_event_index: int) -> void:
 	if _headless or _replay_recorder == null:
 		return
@@ -1885,18 +1928,21 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
-	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(), _on_interstitial_choice)
+	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
+		_on_interstitial_choice, RunSession.drivetrain_choices())
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
 
 
-# The interstitial's row was pressed — "repair", a boost id, or "" (plain Continue,
-# offered when RunSession had no pick to draw). Applies the choice, tears the overlay
-# down, then either carries the run into the next stage or — if this was the run's
-# final/failed stage, so RunSession is no longer active — signals that the player has
+# The interstitial's row was pressed — "repair", a boost id, "drivetrain:<mode>", or ""
+# (plain Continue, offered when RunSession had no pick to draw). Applies the choice, tears
+# the overlay down, then either carries the run into the next stage or — if this was the
+# run's final/failed stage, so RunSession is no longer active — signals that the player has
 # seen the result.
 func _on_interstitial_choice(choice: String) -> void:
 	if choice == "repair":
 		RunSession.choose_repair()
+	elif choice.begins_with("drivetrain:"):
+		RunSession.choose_drivetrain(int(choice.substr("drivetrain:".length())))
 	elif choice != "":
 		RunSession.choose_boost(choice)
 	_teardown_interstitial()

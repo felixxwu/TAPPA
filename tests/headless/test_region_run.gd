@@ -222,6 +222,65 @@ func test_a_track_that_did_not_solve_yields_no_target_rather_than_an_unwinnable_
 		"and a run with no clock can never be failed by one")
 
 
+# --- The rival ghost's pace-scaled profile (features/rival-ghost.md) ------------
+
+func test_stage_target_profile_last_sample_matches_stage_target_ms() -> void:
+	# stage_target_ms and stage_target_profile each round once at their own single
+	# scalar (see region_run_mode.gd's comment on why they don't chain), so this is a
+	# within-a-millisecond agreement check rather than an exact one: the rival ghost's
+	# pace line and the fixed clock it's shown visualising can never drift apart by
+	# more than a rounding step.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var track := _track()
+	var profile := mode.stage_target_profile(0, track)
+	var t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	assert_false(t.is_empty(), "setup: the fixture track solves to a real profile")
+	assert_almost_eq(int(round(float(t[t.size() - 1]) * 1000.0)), mode.stage_target_ms(0, track), 1,
+		"the profile's last (pace-scaled) sample IS the ms target, within a rounding step")
+
+
+func test_stage_target_profile_scales_every_sample_by_the_same_pace() -> void:
+	# Not just the total: RegionRunMode's whole point is that a rival driving this
+	# profile can be POSED along the track mid-stage, so every intermediate sample —
+	# not only the last one — must carry the same pace multiplier as the total.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var track := _track()
+	var event: Dictionary = mode.stages()[0]
+	var raw := LapTimeModel.optimum_profile(track, CarPerformance.REFERENCE_CAR, event)
+	var raw_t: PackedFloat32Array = raw.get("t", PackedFloat32Array())
+	var profile := mode.stage_target_profile(0, track)
+	var scaled_t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	assert_eq(scaled_t.size(), raw_t.size(), "setup: same sample count as the raw solve")
+	var pace := mode.target_pace(0)
+	for i in raw_t.size():
+		assert_almost_eq(float(scaled_t[i]), float(raw_t[i]) * pace, 0.01,
+			"sample %d scaled by the same target_pace() the total uses" % i)
+
+
+func test_stage_target_profile_empty_for_a_degenerate_track() -> void:
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	assert_eq(mode.stage_target_profile(0, {}), {}, "no track, no profile — matches stage_target_ms")
+
+
+func test_run_session_seats_the_profile_alongside_the_target() -> void:
+	_start()
+	var profile := RunSession.stage_target_profile()
+	var t: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+	assert_false(t.is_empty(), "set_stage_track seats a real profile for a solvable track")
+	assert_almost_eq(int(round(float(t[t.size() - 1]) * 1000.0)), RunSession.stage_target_ms(), 1,
+		"RunSession's seated profile agrees with its own seated ms target, within a rounding step")
+
+
+func test_challenge_run_mode_has_no_target_profile() -> void:
+	# ChallengeRunMode never overrides stage_target_profile (only RegionRunMode does),
+	# so it falls through to RunMode's base {} — matching its stage_target_ms's own 0,
+	# i.e. a challenge run has no rival to visualise, on top of having no clock.
+	var mode := ChallengeRunMode.for_kind(ChallengeLibrary.DAILY, 1_700_000_000)
+	assert_not_null(mode, "setup: a daily challenge mode builds")
+	assert_eq(mode.stage_target_profile(0, _track()), {},
+		"a challenge run has no target clock, so no rival profile either")
+
+
 # --- The one fail state (decision 4) --------------------------------------------
 
 func test_missing_the_target_ends_the_run_on_the_spot() -> void:
@@ -531,3 +590,96 @@ func test_a_fresh_run_starts_with_no_boosts_from_a_previous_one() -> void:
 	_start()
 
 	assert_true(RunSession.boosts().is_empty(), "a new run never inherits the last one's boosts")
+
+
+# --- The between-stage pick: a drivetrain conversion, superseding decision 52 ----------
+#
+# Decision 52 sold a drivetrain conversion as a permanent per-car purchase. That is
+# superseded: a conversion is now offered in the SAME between-stage pick as repair and the
+# drawn boosts — run-scoped, free, and gone when the run ends, exactly like a boost.
+
+func test_a_pending_pick_offers_every_non_current_drivetrain_layout() -> void:
+	var car := _start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.pick_awaiting(), "setup: a pick is outstanding")
+	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(int(car["instance_id"])))
+	var choices: Array = RunSession.drivetrain_choices()
+	assert_false(choices.has(stock), "the car's own current layout is not offered")
+	assert_eq(choices.size(), Drivetrain.DriveMode.values().size() - 1,
+		"every OTHER layout is offered")
+
+
+func test_choosing_a_drivetrain_conversion_resolves_the_pick_and_takes_no_repair() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var choices: Array = RunSession.drivetrain_choices()
+	var mode := int(choices[0])
+
+	RunSession.choose_drivetrain(mode)
+
+	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"taking a conversion costs the repair, not the other way round")
+	assert_eq(RunSession.drivetrain_override(), mode, "the chosen layout is recorded on the run")
+
+
+func test_a_drivetrain_conversion_never_reaches_the_persisted_car() -> void:
+	var car := _start()
+	var iid := int(car["instance_id"])
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var mode := int(RunSession.drivetrain_choices()[0])
+
+	RunSession.choose_drivetrain(mode)
+
+	assert_false(_save.get_car(iid).has("drivetrain_override"),
+		"a run's conversion is RUN state, never written to Save's persisted car")
+
+
+func test_a_later_conversion_replaces_the_earlier_one_rather_than_stacking() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var first := int(RunSession.drivetrain_choices()[0])
+	RunSession.choose_drivetrain(first)
+	assert_eq(RunSession.drivetrain_override(), first, "setup: the first pick is recorded")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var second := int(RunSession.drivetrain_choices()[0])
+	RunSession.choose_drivetrain(second)
+
+	assert_eq(RunSession.drivetrain_override(), second,
+		"the run only ever runs ONE layout at a time — the latest pick wins")
+
+
+func test_drivetrain_conversion_does_not_survive_a_completed_or_failed_run() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_drivetrain(int(RunSession.drivetrain_choices()[0]))
+	assert_ne(RunSession.drivetrain_override(), -1, "setup: a conversion was picked")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)  # fail the run
+
+	assert_false(RunSession.is_active(), "setup: the run failed")
+	assert_eq(RunSession.drivetrain_override(), -1,
+		"a failed run wipes its conversion too — soft permadeath, not just the loss")
+
+
+func test_a_resumed_run_keeps_its_picked_drivetrain_conversion() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var mode := int(RunSession.drivetrain_choices()[0])
+	RunSession.choose_drivetrain(mode)
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.pause_run()
+	assert_true(RunSession.resume(int(Time.get_unix_time_from_system())))
+
+	assert_eq(RunSession.drivetrain_override(), mode,
+		"the picked layout survives a pause/resume, same as boosts")

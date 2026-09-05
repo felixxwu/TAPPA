@@ -31,6 +31,17 @@ builds a `StartLine` and the countdown arms immediately.
 > identical rival-free path before the pivot (the empty-leaders branch), so this
 > is the shape every session now uses, not a new one.
 
+> **The rival is back, as a ghost, not a field** ([rival-ghost.md](rival-ghost.md)).
+> A staged region run's fixed clock (`RegionRunMode.stage_target_ms`) is now
+> visualised as a single posed `Car` — `RivalGhost` — driving `world.gd`'s
+> pace-scaled profile. The MENU idle loops it down the road for a few seconds
+> while the player reads the menu (`RivalGhost.advance`, looping); it keeps
+> driving through the countdown/run afterward for the live HUD delta
+> ([hud.md](hud.md)). This is a much lighter thing than the deleted field above —
+> ONE car, posed not simulated, with no grid/queue/roll-up machinery — so it does
+> not reopen decision 5 ("no rival field"): there is still no opponent to race
+> position against, only a pace line to read a delta off.
+
 ## Sequence (`StartLine.Seq`), driven in `_process`
 
 1. **MENU** — house-style black panels (`UITheme`): a top card reads
@@ -85,8 +96,12 @@ drive mode); there is no power-to-weight band or detune-to-qualify flow.
 
 **No leaders to reveal, by construction** — `_driven_car()` resolves to
 whichever car `RunSession`/`DrivingContext` has locked for the active run; there
-is no rival field for any run mode any more, so the old "empty leaders skip the
-reveal" branch is simply the only path there ever is now.
+is no rival FIELD for any run mode any more, so the old "empty leaders skip the
+reveal" branch is simply the only path there ever is now. The single rival
+GHOST ([rival-ghost.md](rival-ghost.md)) `world.gd` may hand `setup()` is not a
+reveal phase — it's driven silently in the background of the same MENU, with no
+sequence state of its own (`StartLine.Seq` is still just `{ MENU, FADE_OUT,
+FADE_IN, DONE }`).
 
 ## Staging the player (no grid any more)
 
@@ -108,8 +123,12 @@ sequence or despawn but the player.
 `world.gd._should_stage()` gates the whole sequence (see above). When true,
 `world.gd` sets up the `StageManager` `staged` and builds the `StartLine` after
 generation, handing it `$Car`, `$Floor`, `$CameraManager`, `$HUD`,
-`$MobileControls` and the pause menu. Each stage reloads `main.tscn`, so a fresh
-`StartLine` is built per stage. A between-stage repair popup (`RepairReveal`,
+`$MobileControls`, the pause menu, and — for a staged region run whose track
+actually solved a target — the `RivalGhost` it built in `_setup_rival_ghost`
+(see [rival-ghost.md](rival-ghost.md)). Each stage reloads `main.tscn`, so a
+fresh `StartLine` is built per stage; the `RivalGhost` node, like the other
+persistent managers `_build_persistent_managers` owns, is reused across a
+same-run stage change rather than rebuilt. A between-stage repair popup (`RepairReveal`,
 shown before the `StartLine` overlay exists) re-seats keyboard/gamepad focus on
 Start via `grab_start_focus()` once dismissed, since freeing its own focused
 button clears the viewport's focus owner outright and nothing else re-grabs it.
@@ -143,5 +162,9 @@ chase); the Tune Car overlay opens/closes and edits go through `retune`
 reaches the same live config the HUD reads (config-identity regression guard);
 a challenge stage's menus bind to the challenge's locked car, fade straight to
 the countdown, count the run's own stage total, and read the challenge period's
-rating ceiling. `tests/headless/test_stage_manager.gd` covers the `STAGING`
-phase holding until `begin_countdown()`, a no-op outside `STAGING`.
+rating ceiling; a wired rival ghost is advanced every MENU frame, and a `null`
+ghost (a challenge stage, or a degenerate track) is a harmless no-op. See
+[rival-ghost.md](rival-ghost.md) for the ghost's own maths/pose tests
+(`tests/headless/test_rival_ghost.gd`). `tests/headless/test_stage_manager.gd`
+covers the `STAGING` phase holding until `begin_countdown()`, a no-op outside
+`STAGING`.

@@ -245,10 +245,34 @@ not a hidden/dormant pair.
 `StageManager.setup_live_standings` with it — this corrects an earlier version
 of this section, which claimed both were "left in place, unreached"; that was
 wrong the moment the file was actually deleted. **`StageManager.setup_splits`
-is the one piece that does survive**, but it is unwired today (no production
-caller) rather than feeding anything — see [stage.md](stage.md) → "In-stage
-live standings readout" for the corrected account of what it is and is not
-used for.
+is gone too now** — it never got a production caller either, and is superseded
+by `setup_target_profile` below.
+
+## Rival delta — the fixed-clock target, made visible (`DeltaLabel`)
+
+A staged region run's one fail state — `RegionRunMode.stage_target_ms`'s fixed
+clock — has a live HUD readout as of [rival-ghost.md](rival-ghost.md): the
+**`DeltaLabel`**, built in code directly under the run timer (top-left, so it
+reads as "the timer, and how it compares" rather than competing with the
+top-right coin counter or the top-centre pacenote strip / cut-flash tag).
+
+`StageManager.setup_target_profile(profile, ghost)` wires the pace-scaled
+profile `RunSession.stage_target_profile()` seats alongside `stage_target_ms`,
+plus (optionally) the `RivalGhost` `world.gd` built for the start-line reveal.
+Every RUNNING tick, `StageManager._update_rival` reads the player's live
+distance (`TrackProgress.progress_percent() * (finish_offset - origin_offset)`),
+looks up the rival's time at that SAME distance
+(`RivalGhost.time_at_distance`), and calls `hud.show_delta(player_elapsed -
+rival_time)`. A challenge stage or a degenerate track never wires a profile at
+all, so `hide_delta()` (called from `StageManager.setup`'s reset, matching
+every other per-arm readout) leaves the label hidden for the whole event.
+
+`show_delta` change-gates on the displayed **signed centisecond** (matching
+`show_elapsed`'s discipline) and formats via the pure `Hud.delta_text` —
+always signed (`"+1.23"` / `"-0.40"`). **Positive = behind** the rival's pace at
+the player's own distance (red, `UITheme.RED`); **negative = ahead** (green,
+`UITheme.GREEN`) — the same red/green sense the health gauge and the
+stage-complete label use elsewhere in this file.
 
 ## Behavior
 

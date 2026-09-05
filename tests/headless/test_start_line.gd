@@ -56,6 +56,17 @@ class StubTerrain:
 		return GROUND_Y
 
 
+# Records advance() calls without touching RivalGhost's real Car/track machinery
+# (Scenes.car_scene().instantiate() is heavier than this file's stubs elsewhere want)
+# — enough to prove StartLine's MENU idle actually drives whatever ghost world.gd
+# hands it (features/rival-ghost.md).
+class StubGhost:
+	extends RivalGhost
+	var advance_calls := 0
+	func advance(_delta: float) -> void:
+		advance_calls += 1
+
+
 const TEST_PATH := "user://test_start_line_profile.json"
 # For the few tests that need a REAL fielded player car rather than StubPlayer — the
 # config-identity contract is about the object car.gd holds, which a stub has no notion of.
@@ -181,6 +192,27 @@ func test_menu_hides_hud_and_takes_the_camera() -> void:
 	assert_false(_hud.visible, "the driving HUD is hidden during the sequence")
 	assert_true(sl._orbit_cam.current, "the start-line camera takes over from the chase camera")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "it waits in the MENU phase")
+
+
+# --- Rival ghost (features/rival-ghost.md) -----------------------------------
+
+func test_menu_idle_advances_a_wired_ghost() -> void:
+	var ghost := StubGhost.new()
+	add_child_autofree(ghost)
+	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 1.0])}
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "setup: waiting in MENU")
+	sl._process(0.1)
+	assert_eq(ghost.advance_calls, 1, "the MENU idle drives the wired ghost every frame")
+
+
+func test_no_ghost_is_a_harmless_no_op() -> void:
+	var sl := _make()  # no ghost handed in (the default null) — a challenge stage, e.g.
+	sl._process(0.1)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the MENU idle runs fine with no ghost at all")
 
 
 func test_start_overlay_uses_the_house_button_row_height() -> void:

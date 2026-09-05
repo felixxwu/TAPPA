@@ -174,6 +174,19 @@ RunSession.set_stage_track(result)   # -> RunSession.stage_target_ms()
 that failed to solve — get `0` back, which `FinishArch` renders as no time row, and
 which the fail rule treats as "cannot be failed".
 
+**The clock is no longer just a number** ([rival-ghost.md](rival-ghost.md)):
+`RegionRunMode.stage_target_profile(stage_index, track_result)` scales
+`LapTimeModel.optimum_profile`'s whole distance/time curve by the SAME
+`target_pace` factor `stage_target_ms` applies to the total (`stage_target_ms`
+is now built ON this — its last scaled sample, in ms — so the two can never
+disagree). `RunSession.set_stage_track` seats both in the same call
+(`RunSession.stage_target_profile()`), and `world.gd` hands the profile to a
+`RivalGhost` — a single posed `Car` driving it — for a start-line reveal and a
+live "player vs rival pace" HUD delta through the run. This is NOT the deleted
+rival field back (decision 5 still holds: no opponent to race position
+against) — it's the same fixed clock as always, made visible instead of
+silent.
+
 ## Money
 
 Banked **at stage clear** (decision 36), not at run end, so a run that dies on stage 6
@@ -259,8 +272,13 @@ silently, exactly as before.
 if RunSession.is_active():
     owned = owned.duplicate(true)
     owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
+    owned["drivetrain_override"] = RunSession.drivetrain_override()
 $Car.apply_owned(owned)
 ```
+
+**The drivetrain conversion rides the same duplicated dict** (see *Drivetrain
+conversion* below) — same lifetime as a boost, written onto the same throwaway copy so
+neither ever reaches `profile["cars"]`.
 
 **Equipped perks ride the same list** (decision 51 — "do not build a parallel modifier
 path"; see [perks.md](perks.md)). The two differ in LIFETIME, not mechanism: a boost is
@@ -307,23 +325,51 @@ tie-break to reason about.
 
 ### The pick screen
 
-`RunPickPanel.open(host, pick, on_choice)` (`scripts/run_pick_panel.gd`) builds
-the modal — a repair button plus one per drawn boost, or a bare "Continue" when
-`pick` is empty — as a `MenuPage` wired through `MenuNav.attach`
-(`tests/headless/test_run_pick_panel.gd` is the nav test CLAUDE.md requires).
-It is deliberately decoupled from `world.gd`/`$Car`/the replay machinery so it
-can be tested without booting a world scene at all. `world.gd._present_standings_overlay`
-hosts it over the just-finished stage's cinematic replay — the same beat that
-used to load the now-deleted `standings.tscn` (decision 30: no more per-stage
-leaderboards) — and `_on_interstitial_choice` applies the pick, tears the modal
-down, then either continues the run (`RunSession.continue_to_next_stage()`) or,
-if the run just ended, emits `run_interstitial_dismissed` so `_on_run_finished`
-(mode-agnostic — challenge and region both wait on it before returning to the
-hub) knows the player has seen the result.
+`RunPickPanel.open(host, pick, on_choice, drivetrain_choices)`
+(`scripts/run_pick_panel.gd`) builds the modal — a repair button, one row per drawn
+boost, one row per offered drivetrain conversion (`drivetrain_choices`, from
+`RunSession.drivetrain_choices()` — every `Drivetrain.DriveMode` except whichever one the
+fielded car is currently running), or a bare "Continue" when `pick` is empty — as a
+`MenuPage` wired through `MenuNav.attach` (`tests/headless/test_run_pick_panel.gd` is the
+nav test CLAUDE.md requires). It is deliberately decoupled from `world.gd`/`$Car`/the
+replay machinery so it can be tested without booting a world scene at all.
+`world.gd._present_standings_overlay` hosts it over the just-finished stage's cinematic
+replay — the same beat that used to load the now-deleted `standings.tscn` (decision 30:
+no more per-stage leaderboards) — and `_on_interstitial_choice` applies the pick (routing
+a `"drivetrain:<mode>"` choice to `RunSession.choose_drivetrain`, same as `"repair"` and a
+boost id go to `choose_repair`/`choose_boost`), tears the modal down, then either
+continues the run (`RunSession.continue_to_next_stage()`) or, if the run just ended, emits
+`run_interstitial_dismissed` so `_on_run_finished` (mode-agnostic — challenge and region
+both wait on it before returning to the hub) knows the player has seen the result.
 
-### The meta tier — boost levels, car purchasing, the Engine Swap unlock, drivetrain conversions
+### Drivetrain conversion — the seventh option in the between-stage pick
 
-Stage 6 built the first three; stage 9 added the fourth. All four are thin wrappers over
+**Decision 52 is superseded.** It originally sold a drivetrain conversion as a
+permanent, per-car money sink (`Save.buy_drive_mode`) — that purchase surface is
+deleted outright. A conversion is now a **run-scoped mid-run upgrade**, offered in the
+same between-stage pick as repair and the drawn boosts: free, chosen exactly once per
+pick, and gone the moment the run ends, win or lose — the same lifetime as a boost.
+
+`RunSession._drivetrain_override` (-1 = "the fielded car's own stock/current layout")
+mirrors `_boosts` exactly: reset in `begin()`, restored from the run record in
+`resume()`, persisted in `_persist()`, wiped in `_finish_locally()`.
+`RunSession.drivetrain_choices()` returns every `Drivetrain.DriveMode` value except
+whichever one the car is currently running (its picked override if one is active, else
+`UpgradeLibrary.stock_drive_mode`) — [] when no pick is outstanding, mirroring
+`pending_pick()`'s own empty contract. `RunSession.choose_drivetrain(mode)` resolves the
+pick, same "the player picks exactly one" rule `choose_repair`/`choose_boost` follow —
+unlike boosts, a second conversion picked later in the run **replaces** the first rather
+than stacking (a car has one driveline at a time).
+
+`UpgradeLibrary.resolve_drive_override` no longer gates on a purchase — it is a bare
+range check against `Drivetrain.DriveMode.values()`, since `world.gd::_field_car` is now
+the only legitimate writer of `drivetrain_override` (onto the duplicated fielding dict,
+never `Save`'s persisted car — see *Where boosts live* above). `HubShell`'s old
+`DRIVETRAIN` / `DRIVETRAIN_CAR` shop pages are deleted along with the purchase path.
+
+### The meta tier — boost levels, car purchasing, the Engine Swap unlock
+
+Stage 6 built all three. They are thin wrappers over
 `Save.spend_money` sharing one refusal
 rule: an invalid or unaffordable purchase leaves the profile **byte-identical** — no
 half-spend, no partial mutation. `HubShell`'s `SHOP` / `BOOST_SHOP` views
@@ -375,35 +421,6 @@ lists something it can afford.
 a rally-completion flag; see [engine-swap.md](engine-swap.md) → *Capability gate* for the
 full history. `Save.buy_engine_swap_unlock()` spends `GameConfig.engine_swap_unlock_price`
 and refuses a second purchase once bought.
-
-**Drivetrain conversions — the sixth sink, sold in stage 9.** `Save.drive_mode_available`
-/ `UpgradeLibrary.resolve_drive_override` (a paid-for drivetrain layout override) survived
-the parts-model deletion with no way to BUY a layout: the resolver refused every stored
-override as unpaid-for, so in practice every car ran its authored stock layout. Stage 6
-deliberately left that alone — `todo/roguelike-pivot.md`'s Economy section listed five
-sinks and this was not one of them, so selling it then would have been inventing a feature
-the decision record did not call for. It was put to the user in stage 9 and they chose to
-sell it.
-
-`Save.drive_mode_price()` is a flat `GameConfig.drivetrain_conversion_price` — not scaled
-by the car, nor by how many layouts it already has, so the shop rule stays legible.
-`Save.buy_drive_mode(instance_id, mode)` appends the mode to that car's
-`drivetrain_modes_bought` and follows the identical refusal rule as every purchase above:
-an unknown car, a mode outside `Drivetrain.DriveMode`, a mode already available (its stock
-layout or one already bought — never charge twice), or an unaffordable price all leave the
-profile byte-identical.
-
-Two properties worth stating outright, both pinned by tests:
-
-- **Per car, not a global unlock** (unlike the Engine Swap capability): buying AWD on one
-  car says nothing about another, because the conversion is a physical change to that car.
-- **Buying is not running.** `buy_drive_mode` records the layout;
-  `set_drivetrain_override` switches to it, and switching between layouts the car already
-  owns is free. You buy the hardware once, then run whichever you like — the same
-  owning-vs-equipping split perks use.
-
-`HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` views are the seller
-([hub-shell.md](hub-shell.md)).
 
 ## Known placeholder — resolved
 

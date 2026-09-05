@@ -661,83 +661,12 @@ func test_set_engine_detune_clamps_and_persists() -> void:
 	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.0, 0.0001, "clamps below 0")
 
 
-# --- Drivetrain conversion: the sixth money sink (stage 9) --------------------------
+# --- Drivetrain conversion: no longer a money sink ---------------------------------
 #
-# The purchase rule, not the price (a GameConfig tunable — CLAUDE.md). Mirrors the other
-# meta-shop purchases: every refusal leaves the profile byte-identical.
-
-func test_buying_a_drive_mode_spends_money_and_records_it_on_that_car() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(id))
-	var other := _first_non_stock_mode(stock)
-	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
-	assert_true(_save.buy_drive_mode(id, other))
-	assert_eq(_save.money(), 0, "the price was spent")
-	assert_true(_save.drive_mode_available(_save.get_car(id), other),
-		"the bought layout is now available on that car")
-
-
-# PER CAR, not a global unlock: a second car of the same model gains nothing.
-func test_buying_a_drive_mode_does_not_convert_another_car() -> void:
-	var a: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(int(a["instance_id"])))
-	var other := _first_non_stock_mode(stock)
-	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
-	assert_true(_save.buy_drive_mode(int(a["instance_id"]), other))
-	assert_false(_save.drive_mode_available(_save.get_car(int(b["instance_id"])), other),
-		"the other car is untouched")
-
-
-func test_buy_drive_mode_refuses_and_changes_nothing() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(id))
-	var other := _first_non_stock_mode(stock)
-	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
-	var before := JSON.stringify(_save.profile)
-
-	assert_false(_save.buy_drive_mode(-999, other), "unknown car")
-	assert_false(_save.buy_drive_mode(id, 99), "a mode outside the enum")
-	assert_false(_save.buy_drive_mode(id, stock),
-		"its own stock layout is already available — never charge for it")
-	assert_eq(JSON.stringify(_save.profile), before,
-		"a refused purchase leaves the profile byte-identical")
-
-	_save.profile[_save.KEY_MONEY] = 0
-	var poor := JSON.stringify(_save.profile)
-	assert_false(_save.buy_drive_mode(id, other), "unaffordable")
-	assert_eq(JSON.stringify(_save.profile), poor, "and it spent nothing")
-
-
-func test_buy_drive_mode_refuses_a_second_purchase_of_the_same_layout() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var other := _first_non_stock_mode(UpgradeLibrary.stock_drive_mode(_save.get_car(id)))
-	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price() * 2
-	assert_true(_save.buy_drive_mode(id, other))
-	var after_first: int = _save.money()
-	assert_false(_save.buy_drive_mode(id, other), "already owned")
-	assert_eq(_save.money(), after_first, "and nothing more was spent")
-
-
-# Any layout the car was not built with. Derived rather than hardcoded, so this does not
-# depend on which layout the fixture car happens to ship with.
-func _first_non_stock_mode(stock: int) -> int:
-	for mode in Drivetrain.DriveMode.values():
-		if int(mode) != stock:
-			return int(mode)
-	return stock
-
-
-func test_set_drivetrain_override_persists() -> void:
-	var car: Dictionary = _save.grant_car(CarLibrary.all()[0]["id"])
-	var id := int(car["instance_id"])
-	assert_eq(int(_save.get_car(id).get("drivetrain_override", -99)), -1, "new car defaults to stock (-1)")
-	_save.set_drivetrain_override(id, CarLibrary.AWD)
-	assert_eq(int(_save.get_car(id).get("drivetrain_override", -99)), CarLibrary.AWD, "override stored")
-
+# Decision 52 (a per-car purchase, Save.buy_drive_mode) is superseded: a conversion is now
+# a run-scoped mid-run upgrade picked between stages (RunSession.choose_drivetrain), so
+# there is nothing left to buy or persist on the profile — see
+# tests/headless/test_run_session.gd for the coverage that replaces this block.
 
 func test_drivetrain_override_defaults_for_legacy_car() -> void:
 	# A car dict without the key (an older save) reads as stock via .get default.
