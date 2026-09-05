@@ -68,8 +68,20 @@ var _pending_challenge := ""
 # AccountMenu/SettingsMenu "first refusal" pattern (see features/menus.md → Account page).
 var _settings_menu: SettingsMenu = null
 
+# The live 3D background behind every page (todo/menu-background-showcase.md,
+# phase-1 prototype) — a Node3D can sit anywhere under this Control; 3D always
+# composites BEHIND this Control's CanvasItems in the same Viewport, so nothing
+# about the pages above needs to know it's there. Skipped under headless: it costs
+# a real (if small) track generation, which every hub test would otherwise pay for
+# no visual benefit — see test_menu_showcase.gd for the dedicated coverage of the
+# scene itself.
+var _showcase: Node3D = null
+
 
 func _ready() -> void:
+	if not Platform.is_headless():
+		_showcase = load("res://menu_showcase.tscn").instantiate()
+		add_child(_showcase)
 	# A run that ended hands control back here (world.gd -> Scenes.hub_path()). Show its
 	# summary rather than the main menu, or the player is dropped at a title screen with no
 	# idea whether they cleared the region — the run's outcome is the whole point of it.
