@@ -64,6 +64,16 @@ func stage_target_ms(_stage_index: int, _track_result: Dictionary) -> int:
 	return 0
 
 
+# The pace-scaled distance/time profile behind stage_target_ms
+# (features/rival-ghost.md) — {"s": PackedFloat32Array, "t": PackedFloat32Array}
+# with `t` scaled so `t[-1] * 1000.0 == stage_target_ms(...)`, or {} when there is
+# no target (a challenge run, or a degenerate track). Only RegionRunMode overrides
+# this; ChallengeRunMode has no target-clock concept, so its rival ghost is never
+# built (world.gd only builds one for a staged RegionRunMode run).
+func stage_target_profile(_stage_index: int, _track_result: Dictionary) -> Dictionary:
+	return {}
+
+
 # Does finishing stage `stage_index` in `elapsed_ms` END THE RUN? `target_ms` is
 # whatever stage_target_ms returned for this stage (0 when there is no target).
 func stage_failed(_stage_index: int, _elapsed_ms: int, _target_ms: int) -> bool:
