@@ -189,26 +189,30 @@ a second authored roster; there is one roster now, and one invalidator.
 ## Drivetrain conversion
 
 The one piece of the old slot model that survives whole, because it never depended on the
-catalogue — only on what `Save` records as paid for.
+catalogue.
 
 - `stock_drive_mode(owned_car)` — the layout the car was built with, always free to return
   to.
 - `resolve_drive_override(owned_car)` — the player's chosen layout (0/1/2), or `-1` for
-  "use stock". **Gated on the mode being PAID FOR** (`Save.drive_mode_available`), so
-  anything writing `drivetrain_override` directly cannot bypass the price. The single
-  resolver used by physics (`car.gd`) and display (`effective_meta`).
+  "use stock". A bare range check against `Drivetrain.DriveMode.values()`, no purchase
+  gate. The single resolver used by physics (`car.gd`) and display (`effective_meta`).
 
-**It is now SOLD** — the sixth money sink, decision 52. `Save.drive_mode_price()` /
-`buy_drive_mode()` append the mode to that car's `drivetrain_modes_bought`; the
-`MONEY SEAM` markers that used to sit here are closed. Per car rather than a global
-unlock, and buying is separate from running it, so switching between layouts a car already
-owns is free. See [region-runs.md](region-runs.md) → *The meta tier* and
-[hub-shell.md](hub-shell.md) → the `DRIVETRAIN` pages.
+**It is now a RUN-SCOPED MID-RUN UPGRADE, not a purchase.** Decision 52 sold it as the
+sixth money sink (`Save.drive_mode_price()` / `buy_drive_mode()`, per-car and kept
+forever); that is superseded. A conversion is picked in the between-stage repair-or-boost
+pick alongside the drawn boosts (`RunSession.choose_drivetrain`), free, and wiped the
+moment the run ends — the same lifetime as a boost. `world.gd::_field_car` writes
+`RunSession.drivetrain_override()` onto the duplicated owned-car dict a car is fielded
+with, never `Save`'s persisted car. See [region-runs.md](region-runs.md) → *Drivetrain
+conversion*. `Save.buy_drive_mode` / `drive_mode_price` / `drive_mode_available` /
+`set_drivetrain_override` and `HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` pages are
+deleted along with the purchase path.
 
-The old model's gating is gone with it: the global `drivetrain_swap_unlocked` capability,
-the `unlocks_drivetrain_swap` flag effect that opened it, and the star price per
-conversion. So is the car park's silent free auto-switch of a wrong-drivetrain car — it
-handed the player exactly what the garage charged for, and the car park itself is deleted.
+The old slot model's gating was gone even before decision 52: the global
+`drivetrain_swap_unlocked` capability, the `unlocks_drivetrain_swap` flag effect that
+opened it, and the star price per conversion. So is the car park's silent free
+auto-switch of a wrong-drivetrain car — it handed the player exactly what the garage
+charged for, and the car park itself is deleted.
 
 ## What is gone, so you stop looking for it
 

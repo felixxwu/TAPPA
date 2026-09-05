@@ -531,3 +531,96 @@ func test_a_fresh_run_starts_with_no_boosts_from_a_previous_one() -> void:
 	_start()
 
 	assert_true(RunSession.boosts().is_empty(), "a new run never inherits the last one's boosts")
+
+
+# --- The between-stage pick: a drivetrain conversion, superseding decision 52 ----------
+#
+# Decision 52 sold a drivetrain conversion as a permanent per-car purchase. That is
+# superseded: a conversion is now offered in the SAME between-stage pick as repair and the
+# drawn boosts — run-scoped, free, and gone when the run ends, exactly like a boost.
+
+func test_a_pending_pick_offers_every_non_current_drivetrain_layout() -> void:
+	var car := _start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.pick_awaiting(), "setup: a pick is outstanding")
+	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(int(car["instance_id"])))
+	var choices: Array = RunSession.drivetrain_choices()
+	assert_false(choices.has(stock), "the car's own current layout is not offered")
+	assert_eq(choices.size(), Drivetrain.DriveMode.values().size() - 1,
+		"every OTHER layout is offered")
+
+
+func test_choosing_a_drivetrain_conversion_resolves_the_pick_and_takes_no_repair() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var choices: Array = RunSession.drivetrain_choices()
+	var mode := int(choices[0])
+
+	RunSession.choose_drivetrain(mode)
+
+	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"taking a conversion costs the repair, not the other way round")
+	assert_eq(RunSession.drivetrain_override(), mode, "the chosen layout is recorded on the run")
+
+
+func test_a_drivetrain_conversion_never_reaches_the_persisted_car() -> void:
+	var car := _start()
+	var iid := int(car["instance_id"])
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var mode := int(RunSession.drivetrain_choices()[0])
+
+	RunSession.choose_drivetrain(mode)
+
+	assert_false(_save.get_car(iid).has("drivetrain_override"),
+		"a run's conversion is RUN state, never written to Save's persisted car")
+
+
+func test_a_later_conversion_replaces_the_earlier_one_rather_than_stacking() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var first := int(RunSession.drivetrain_choices()[0])
+	RunSession.choose_drivetrain(first)
+	assert_eq(RunSession.drivetrain_override(), first, "setup: the first pick is recorded")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var second := int(RunSession.drivetrain_choices()[0])
+	RunSession.choose_drivetrain(second)
+
+	assert_eq(RunSession.drivetrain_override(), second,
+		"the run only ever runs ONE layout at a time — the latest pick wins")
+
+
+func test_drivetrain_conversion_does_not_survive_a_completed_or_failed_run() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_drivetrain(int(RunSession.drivetrain_choices()[0]))
+	assert_ne(RunSession.drivetrain_override(), -1, "setup: a conversion was picked")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)  # fail the run
+
+	assert_false(RunSession.is_active(), "setup: the run failed")
+	assert_eq(RunSession.drivetrain_override(), -1,
+		"a failed run wipes its conversion too — soft permadeath, not just the loss")
+
+
+func test_a_resumed_run_keeps_its_picked_drivetrain_conversion() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var mode := int(RunSession.drivetrain_choices()[0])
+	RunSession.choose_drivetrain(mode)
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.pause_run()
+	assert_true(RunSession.resume(int(Time.get_unix_time_from_system())))
+
+	assert_eq(RunSession.drivetrain_override(), mode,
+		"the picked layout survives a pause/resume, same as boosts")

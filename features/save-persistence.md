@@ -50,12 +50,16 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   no `Save` dependency at all, and naming the key is not worth adding one.
 - `cars` — array of **instance-based** owned cars. Each is a unique instance
   (`instance_id`) referencing a `CarLibrary` model id (`model_id`), carrying its
-  own `hp`, `wheel_toe`, `tuning` deltas, `wheels` (cosmetic) and
-  `drivetrain_modes_bought`. Two cars of the same model can diverge. **`boosts` is NOT
-  stored here** — a run's picked boosts and the player's equipped perks are merged onto a
+  own `hp`, `wheel_toe`, `tuning` deltas and `wheels` (cosmetic).
+  Two cars of the same model can diverge. **`boosts` and `drivetrain_override` are NOT
+  stored here** — a run's picked boosts, its picked drivetrain conversion, and the
+  player's equipped perks are all merged onto a
   DUPLICATE at fielding time and must never reach the profile
-  ([perks.md](perks.md)). `installed_upgrades` / `disabled_upgrades` went with the parts
-  model. Two further fields support [engine-swap.md](engine-swap.md), both
+  ([perks.md](perks.md), [region-runs.md](region-runs.md) → *Drivetrain conversion*).
+  `installed_upgrades` / `disabled_upgrades` went with the parts
+  model, and `drivetrain_modes_bought` / the persisted `drivetrain_override` went with
+  the permanent-purchase drivetrain model decision 52 superseded. Two further fields
+  support [engine-swap.md](engine-swap.md), both
   defaulted on read so no `SCHEMA_VERSION` bump was needed for either:
   - **`swapped_engine`** (string, default `""`) — a non-stock `EngineLibrary` id
     currently fitted, written/cleared by `Save.swap_engines`; absent/empty means
@@ -66,8 +70,6 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
     ordered like `DamageModel.WHEEL_NAMES`) — per-wheel damage misalignment in
     radians, written by `Save.set_wheel_toe` and defaulted on read for old
     saves; see `features/damage.md`.
-  - **`drivetrain_override`** (int, default `-1`, meaning "no override — use the
-    car's stock drive mode") — written by `Save.set_drivetrain_override`.
   - **`wheels`** (string, default absent — absence means "stock wheels") — a
     non-stock wheel cosmetic id fitted to the car, written/erased by
     `Save.set_wheels`; purely visual, see `features/wheel-customization.md`.

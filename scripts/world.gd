@@ -1741,6 +1741,11 @@ func _field_car(instance_id: int) -> void:
 		# than carried on the run object. Both land on the same duplicated dict, which is
 		# what keeps either of them out of the saved profile.
 		owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
+		# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above —
+		# see RunSession.choose_drivetrain / drivetrain_override). Written onto this same
+		# duplicated dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override
+		# sees it for exactly as long as the run does.
+		owned["drivetrain_override"] = RunSession.drivetrain_override()
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
@@ -1864,10 +1869,10 @@ func _hide_driving_ui() -> void:
 #
 # What used to load here — standings.tscn, a per-stage GLOBAL LEADERBOARD — is deleted
 # (decision 30: no more per-stage boards). RunPickPanel replaces it: the drawn boosts +
-# repair when RunSession has a pick pending (a region run's non-final, non-missed
-# stage), or a bare Continue when it doesn't (the challenge, and this run's own
-# final/failed stage — see features/region-runs.md -> "Between-stage pick: repair or
-# boost").
+# repair + a drivetrain conversion option when RunSession has a pick pending (a region
+# run's non-final, non-missed stage), or a bare Continue when it doesn't (the challenge,
+# and this run's own final/failed stage — see features/region-runs.md -> "Between-stage
+# pick: repair, boost, or drivetrain conversion").
 func _present_standings_overlay(_event_index: int) -> void:
 	if _headless or _replay_recorder == null:
 		return
@@ -1885,18 +1890,21 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
-	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(), _on_interstitial_choice)
+	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
+		_on_interstitial_choice, RunSession.drivetrain_choices())
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
 
 
-# The interstitial's row was pressed — "repair", a boost id, or "" (plain Continue,
-# offered when RunSession had no pick to draw). Applies the choice, tears the overlay
-# down, then either carries the run into the next stage or — if this was the run's
-# final/failed stage, so RunSession is no longer active — signals that the player has
+# The interstitial's row was pressed — "repair", a boost id, "drivetrain:<mode>", or ""
+# (plain Continue, offered when RunSession had no pick to draw). Applies the choice, tears
+# the overlay down, then either carries the run into the next stage or — if this was the
+# run's final/failed stage, so RunSession is no longer active — signals that the player has
 # seen the result.
 func _on_interstitial_choice(choice: String) -> void:
 	if choice == "repair":
 		RunSession.choose_repair()
+	elif choice.begins_with("drivetrain:"):
+		RunSession.choose_drivetrain(int(choice.substr("drivetrain:".length())))
 	elif choice != "":
 		RunSession.choose_boost(choice)
 	_teardown_interstitial()

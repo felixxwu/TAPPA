@@ -198,7 +198,10 @@ Settled with the user during the brainstorm that produced this file:
     `UpgradeLibrary.EFFECTS` + a car's `boosts` list; do not build a parallel
     modifier path.
 
-52. **Drivetrain conversion is the SIXTH money sink, sold per car.** Put to the user in
+52. **Drivetrain conversion is the SIXTH money sink, sold per car.** SUPERSEDED — see
+    decision 55: it is now a run-scoped mid-run upgrade offered in the between-stage pick,
+    not a purchase. Original wording follows.
+    Put to the user in
     stage 9 alongside three other leftovers; they chose to sell it rather than delete the
     seam or leave it inert. `Save.drive_mode_price()` / `buy_drive_mode()` close the two
     surviving `MONEY SEAM` markers (`save_manager.gd`, `upgrade_library.gd`) that the
@@ -220,6 +223,22 @@ Settled with the user during the brainstorm that produced this file:
     feature — the Stats page showed a row pinned at zero. `world.gd` now snapshots
     `TrackProgress.progress_offset()` at the finish crossing and `RunSession
     .report_event_result` writes it. If you add an id, wire its writer in the same change.
+
+55. **Drivetrain conversion moves into the between-stage pick, superseding decision 52.**
+    A permanent per-car purchase didn't fit the run's own upgrade model: every other
+    mid-run choice (a boost, repair) is free, run-scoped, and dies with the run, while the
+    conversion alone was a meta-shop purchase kept forever. Put to the user again and they
+    chose to fold it into the boost tier rather than keep the two models side by side.
+    `Save.buy_drive_mode` / `drive_mode_price` / `drive_mode_available` /
+    `set_drivetrain_override` and `HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` pages are
+    deleted. `RunSession._drivetrain_override` mirrors `_boosts` exactly (reset/persisted/
+    resumed/wiped the same way); `RunSession.choose_drivetrain(mode)` resolves the
+    between-stage pick alongside `choose_repair`/`choose_boost`, and
+    `RunSession.drivetrain_choices()` offers every `Drivetrain.DriveMode` except the one the
+    fielded car is currently running. `UpgradeLibrary.resolve_drive_override` drops the
+    purchase gate — it is a bare range check now, since `world.gd::_field_car` writing the
+    duplicated fielding dict is the only legitimate source of the field. See
+    `features/region-runs.md` → *Drivetrain conversion*.
 
 ## The new loop, end to end
 
