@@ -1,12 +1,11 @@
 # Menu background showcase
 
-**Status: phase 1 of the build below is implemented.** See
+**Status: phases 1-5 of the build below are implemented** — one fixed-seed track
+sliced into six region-themed segments, the border-safety camera rule, the
+per-region weather cycle, and hosting behind `hub.tscn`. See
 [features/menu-showcase.md](../features/menu-showcase.md) for what's actually
-shipped (`MenuShowcase`/`MenuShowcaseCamera`, one fixed-seed track, one region's
-look, hosted behind `hub.tscn`). Everything else on this page — six-region
-segments, the border-safety camera rule, per-segment foliage, the per-region
-weather cycle, and the mobile LOD-tier cap — is still spec, not code. Keep this
-file in sync as later phases land.
+shipped. **Still open: per-segment foliage and the mobile LOD-tier cap** (both
+scoped below, neither built). Keep this file in sync as they land.
 
 ## The ask
 
@@ -265,20 +264,54 @@ as a call to make when step 3 of the phased build below is actually started.
    textures, same terrain layers) rather than instantiating `main.tscn` itself,
    since that scene's root script (`world.gd`) would otherwise run the whole
    run-boot pipeline unintentionally.
-2. Slice into six segments, apply per-segment looks (ground + foliage), tune segment
-   lengths so no camera position/FOV combination can see across a border.
-3. Add the full shot rotation across all six segments + tests
-   (`test_menu_showcase_camera.gd` mirroring `test_replay_camera.gd`'s deterministic
-   `_tick` coverage; a smoke test in `test_smoke.gd` that the scene builds and the
-   camera is `current`).
-4. Build the per-segment weather cycle (decision 3) — author the per-region
-   eligible-`WEATHER`-id table, then a timer that snaps each segment to a new
-   eligible condition every now and then, reusing the existing discrete
-   apply-a-condition path rather than any new blend/interpolation code. Add the
-   compatibility test alongside it.
-5. Wire into `hub_shell.gd`/`hub.tscn`, verify no regression to hub input/nav
-   (`test_hub_shell.gd`, `test_menu_nav.gd`) and performance on the frame/quality
-   budget decided above.
-6. Update [hub-shell.md](hub-shell.md) and add a new `features/menu-showcase.md`
-   (indexed in `features/README.md`) documenting the shipped mechanism, per CLAUDE.md's
-   feature-docs rule.
+2. **DONE.** Sliced into six arc-length segments (one `TerrainManager` per
+   `RegionLibrary` region, all baking the same centerline/seed so heights agree at
+   every seam), each wearing its own region's GROUND look
+   (`_apply_region_ground_look`). Border safety is `safe_shot_arcs` (pure, tested):
+   a shot's position AND its look-ahead point both stay `_BORDER_MARGIN_M` clear of
+   both segment boundaries; a segment too short for that gets no shots rather than
+   an unsafe one. **Foliage is NOT done** — see "Still open" below.
+3. **DONE.** Full shot rotation across all six segments, with tests
+   (`test_menu_showcase_camera.gd` mirrors `test_replay_camera.gd`'s deterministic
+   `_tick` coverage; `test_menu_showcase.gd::test_camera_rotation_covers_every_region_segment`
+   is the "smoke test that the scene builds and the camera is current" this item asked
+   for, folded into the dedicated integration file rather than `test_smoke.gd`, since
+   the showcase is skipped under headless in the real hub and needed its own
+   direct-build coverage anyway).
+4. **DONE**, with one scope correction found while implementing: the per-region
+   eligible-`WEATHER`-id table (`_REGION_WEATHER_IDS`) and the per-segment reroll
+   timer are exactly as planned, but the "apply the existing discrete
+   apply-a-condition path" turned out to need SPLITTING in two. The ground half
+   (`road_tint` on a segment's own material) applies continuously and cheaply to
+   every segment. The environment half (sky/fog/background) can only be shown for
+   ONE region at a time anyway (one shared `WorldEnvironment`) AND drops the
+   `TerrainManager.sun_color`/`sky_color` piece `world.gd::_apply_overcast_look`
+   also does, because that only takes effect on the terrain's next bake — six
+   already-spawned, never-rebuilt segments can't cheaply re-light like a real
+   stage. So it's applied only for whichever segment the camera currently frames,
+   swapped exactly at a camera cut. Particles/lightning/wind/headlights are
+   deliberately not built at all (see features/menu-showcase.md). The
+   compatibility test (`test_menu_showcase_geometry.gd`, mirroring
+   `test_sandstorm_only_authored_on_greece_events`'s shape) landed alongside it.
+5. **DONE.** Hosting was already wired in phase 1; this pass re-verified no
+   regression (`test_hub_shell.gd` 33/33, `test_menu_nav.gd` 34/34, both green with
+   the six-segment/weather-cycle version in place) — the headless gate means these
+   suites don't actually build the showcase, so they're confirming the HOST is
+   unaffected, not exercising the scene itself (that's `test_menu_showcase*.gd`).
+   **The mobile LOD-tier cap (decision 5) is NOT done** — see "Still open" below.
+6. **DONE.** [features/menu-showcase.md](../features/menu-showcase.md) now
+   documents the full shipped mechanism (indexed in `features/README.md`).
+
+## Still open
+
+- **Per-segment foliage.** Trees/bushes matching each segment's region `tree_mix`/
+  `spawn_bush_mesh` (see [regions.md](regions.md) → "Tree species split") are not
+  spawned at all today — every segment is bare ground. Needs scatter POINTS
+  generated per segment (probably via the same `TreeScatter` machinery `world.gd`
+  uses) and `Foliage.spawn_trees`/`spawn_bushes` calls scoped to each segment's own
+  arc-length range, same idea as the ground-material split.
+- **The mobile LOD-tier cap** (decision 5): every `TerrainManager` instance should
+  be fed the LOD bands `cfg.terrain_lod_bands_for(true, true)`-equivalent (the
+  lowest/mobile tier) resolves, REGARDLESS of the device actually running it, per
+  the earlier decision. Not wired yet — every segment currently builds at whatever
+  the scene's default/unset LOD configuration is.
