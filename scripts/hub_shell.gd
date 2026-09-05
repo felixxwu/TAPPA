@@ -643,13 +643,15 @@ func _build_stats() -> void:
 # live only here or in-run; a fresh player with no paused run had no way to reach any
 # of them before this page existed).
 func _build_settings() -> void:
-	var scroll := TouchScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_page.body().add_child(scroll)
+	# NOT wrapped in a second TouchScrollContainer: _page.body() is ALREADY the scrollable
+	# area (MenuPage's own _scroll). A ScrollContainer deliberately reports a near-zero
+	# minimum size (menu_page.gd::_sync_body_height's own comment on why that container isn't
+	# EXPAND_FILL) — nesting one here made body()'s measured content collapse to that
+	# near-zero size, so the whole page rendered as an almost-empty box with none of
+	# SettingsMenu's rows visible, even though the node was mounted.
 	_settings_menu = SettingsMenu.new()
 	_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_settings_menu)
+	_page.body().add_child(_settings_menu)
 	# No camera_changed/scheme_changed hookup: the hub has no live CameraManager or
 	# MobileControls scene to apply to immediately (same reasoning as the HQ title-screen
 	# host in features/menus.md) — the choice is simply saved and takes effect next run.

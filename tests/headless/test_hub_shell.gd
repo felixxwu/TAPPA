@@ -88,6 +88,23 @@ func test_the_main_page_reaches_settings() -> void:
 	assert_eq(_shell._view, HubShell.View.SETTINGS, "pressing it opens the settings page")
 
 
+# Regression: SettingsMenu was originally mounted inside a SECOND TouchScrollContainer,
+# nested inside MenuPage.body()'s OWN scroll. A ScrollContainer deliberately reports a
+# near-zero minimum size (menu_page.gd::_sync_body_height's own comment), so the outer
+# page measured that near-zero inner scroll as "the content" and collapsed its body to an
+# almost-empty box — every SettingsMenu row was still IN THE TREE (so test_settings_page_
+# hosts_the_shared_settings_menu above kept passing) but rendered with no visible height.
+# This asserts the actual measured height, not just node presence, so a reintroduced nested
+# scroll fails loudly instead of silently shipping an empty-looking page again.
+func test_settings_page_is_not_collapsed_by_a_nested_scroll_container() -> void:
+	_shell._show(HubShell.View.SETTINGS)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var measured_height: float = _page()._scroll.custom_minimum_size.y
+	assert_gt(measured_height, 200.0,
+		"the settings page's measured body height (%.1f) is near-zero — SettingsMenu is probably wrapped in a second scroll container that is defeating MenuPage's own height sync" % measured_height)
+
+
 func test_settings_page_hosts_the_shared_settings_menu() -> void:
 	_shell._show(HubShell.View.SETTINGS)
 	await get_tree().process_frame
