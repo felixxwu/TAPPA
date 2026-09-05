@@ -32,12 +32,9 @@ func after_all() -> void:
 	SaveTestHelpers.cleanup(TEST_PATH)
 
 
-# A minimal OwnedCar dict — just the fields effective_meta / entry_plan read. `bought` is
-# the car's `drivetrain_modes_bought` list: `convertible_for` gates on the target layout
-# being PAID FOR (Save.drive_mode_available), so a car with an empty list is never a
-# conversion candidate however wrong its stock layout is.
-func _owned(model_id: String, tuning := {}, bought := []) -> Dictionary:
-	return {"model_id": model_id, "tuning": tuning, "drivetrain_modes_bought": bought}
+# A minimal OwnedCar dict — just the fields effective_meta / entry_plan read.
+func _owned(model_id: String, tuning := {}) -> Dictionary:
+	return {"model_id": model_id, "tuning": tuning}
 
 
 func test_empty_roster_counts_nothing() -> void:
@@ -57,34 +54,20 @@ func test_unresolved_model_is_skipped_from_total() -> void:
 
 func test_drive_mode_restriction_counts_only_matching_cars() -> void:
 	# `qualify` counts cars that can enter AS BUILT. `adjust` counts cars that CANNOT, but
-	# would after a drivetrain conversion the player buys themselves — the two are DISJOINT.
-	# (`adjust` used to be a subset of `qualify`, because the car park silently switched such
-	# a car at the Start button and counted it as qualifying; that auto-switch is gone.)
+	# would after a drivetrain conversion — always 0 now that a conversion is a run-scoped
+	# mid-run upgrade (RunSession.choose_drivetrain), not something a car can be
+	# permanently fitted with outside a run: this pre-run entry screen has no conversion to
+	# offer, so a wrong-drivetrain car is simply ineligible (convertible_for is always false).
 	var rally := {"restriction": {"drive_mode": CarFixtures.RWD}}
-	# The two non-RWD cars have BOUGHT the RWD layout (decision 52 made conversions a real
-	# purchase — Save.buy_drive_mode). Without that they would not be convertible at all,
-	# which is the point `convertible_for` enforces and what this test would otherwise
-	# quietly stop measuring.
 	var roster := [
-		_owned("fx_light_rwd"), _owned("fx_fwd_hatch", {}, [CarFixtures.RWD]),
-		_owned("fx_rwd_coupe"), _owned("fx_awd", {}, [CarFixtures.RWD]),
+		_owned("fx_light_rwd"), _owned("fx_fwd_hatch"),
+		_owned("fx_rwd_coupe"), _owned("fx_awd"),
 	]
 	var summary: Dictionary = RallyDetail.eligibility_summary(rally, roster)
 	assert_eq(summary["total"], 4, "every resolvable car is counted in the roster size")
 	assert_eq(summary["qualify"], 2, "only the RWD cars can enter this class")
-	# Derived, not pinned: whatever the fixture roster holds, every car that is not eligible
-	# as built but whose only problem is the drive mode is a conversion candidate.
-	var convertible := 0
-	for car in roster:
-		var entry: Dictionary = CarLibrary.for_owned(car)
-		if entry.is_empty():
-			continue
-		if not RallyLibrary.is_eligible(rally, UpgradeLibrary.effective_meta(car, entry)) \
-				and RallyDetail.convertible_for(rally, car, entry):
-			convertible += 1
-	assert_eq(summary["adjust"], convertible,
-		"the non-RWD cars are counted as convertible, so the player is told what to fix")
-	assert_gt(convertible, 0, "setup: the roster has a car worth converting")
+	assert_eq(summary["adjust"], 0,
+		"no car is a conversion candidate — there is nothing left to convert to here")
 
 
 func test_summary_names_the_qualifying_cars() -> void:

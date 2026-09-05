@@ -62,7 +62,7 @@ func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
 			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP,
 			HubShell.View.PERKS, HubShell.View.STATS, HubShell.View.CHALLENGE,
-			HubShell.View.DRIVETRAIN, HubShell.View.DRIVETRAIN_CAR, HubShell.View.SETTINGS]:
+			HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
@@ -479,52 +479,10 @@ func test_opening_region_select_clears_a_pending_challenge() -> void:
 	assert_eq(_shell._pending_challenge, "", "region select drops the challenge intent")
 
 
-# --- Drivetrain conversions (stage 9, the sixth money sink) ---------------------------
-
-func test_the_shop_reaches_drivetrain_conversions() -> void:
-	_shell._show(HubShell.View.SHOP)
-	await get_tree().process_frame
-	assert_true(_press("Drivetrain"), "the shop offers drivetrain conversions")
-	assert_eq(_shell._view, HubShell.View.DRIVETRAIN)
-	_shell._back()
-	assert_eq(_shell._view, HubShell.View.SHOP, "and it backs out to the shop")
-
-
-func test_buying_a_conversion_spends_money_and_records_the_layout() -> void:
-	var car: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
-	var iid := int(car["instance_id"])
-	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
-	_shell._drivetrain_car_id = iid
-	_shell._show(HubShell.View.DRIVETRAIN_CAR)
-	await get_tree().process_frame
-	assert_true(_press("Convert to"), "a conversion is offered")
-	var bought: Array = _save.get_car(iid).get("drivetrain_modes_bought", [])
-	assert_eq(bought.size(), 1, "the layout is recorded on the car")
-	assert_eq(_save.money(), 0, "and it was paid for")
-
-
-# Buying is not switching — the same owning-vs-equipping split perks use. A bought layout
-# comes back as a free switch row.
-func test_a_bought_layout_becomes_a_free_switch() -> void:
-	var car: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
-	var iid := int(car["instance_id"])
-	_save.profile[_save.KEY_MONEY] = _save.drive_mode_price()
-	_shell._drivetrain_car_id = iid
-	_shell._show(HubShell.View.DRIVETRAIN_CAR)
-	await get_tree().process_frame
-	assert_true(_press("Convert to"))
-	await get_tree().process_frame
-	assert_eq(_save.money(), 0, "setup: the purse is empty, so nothing more can be bought")
-	assert_true(_press("Switch to"), "the bought layout is now a free switch")
-	assert_eq(_save.money(), 0, "switching costs nothing")
-
-
-func test_an_unaffordable_conversion_row_is_shown_but_not_focusable() -> void:
-	var car: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
-	_save.profile[_save.KEY_MONEY] = 0
-	_shell._drivetrain_car_id = int(car["instance_id"])
-	_shell._show(HubShell.View.DRIVETRAIN_CAR)
-	await get_tree().process_frame
-	for b in _buttons():
-		assert_false(String((b as Button).text).to_upper().begins_with("CONVERT"),
-			"with no money, no conversion row is focusable")
+# --- Drivetrain conversions: MOVED to the between-stage pick -----------------------
+#
+# Decision 52 (a per-car purchase sold from the SHOP page, DRIVETRAIN / DRIVETRAIN_CAR) is
+# superseded: a conversion is now a run-scoped mid-run upgrade picked between stages
+# (RunSession.choose_drivetrain, RunPickPanel), so the SHOP no longer hosts it — see
+# tests/headless/test_run_pick_panel.gd and test_run_session.gd for the coverage that
+# replaces this block.

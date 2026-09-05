@@ -389,20 +389,13 @@ static func entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 
 
 # Whether this car is ineligible ONLY on drive mode — i.e. switching it would let it in.
-# Asks Save.drive_mode_available, so the panel never suggests a layout this car cannot
-# actually run. The garage-wide "is conversion unlocked at all" capability it used to check
-# first was a parts-catalogue gate (UpgradeLibrary.drivetrain_swap_unlocked) and is deleted;
-# the per-car paid-for record is the whole rule now — see the MONEY SEAM note in
-# save_manager.gd, which is where a conversion will be sold.
-static func convertible_for(rally: Dictionary, car: Dictionary, entry: Dictionary) -> bool:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("drive_mode"):
-		return false
-	if not Save.drive_mode_available(car, int(r["drive_mode"])):
-		return false
-	var switched := UpgradeLibrary.effective_meta(car, entry).duplicate()
-	switched["drive_mode"] = int(r["drive_mode"])
-	return RallyLibrary.is_eligible(rally, switched)
+# ALWAYS FALSE now: a drivetrain conversion used to be a per-car purchase this could check
+# against (decision 52), but that is superseded — a conversion is a run-scoped mid-run
+# upgrade (RunSession.choose_drivetrain) picked between stages, not something a car can be
+# permanently fitted with outside a run. There is nothing left to convert to on this
+# pre-run entry screen, so a wrong-drivetrain car is simply ineligible, full stop.
+static func convertible_for(_rally: Dictionary, _car: Dictionary, _entry: Dictionary) -> bool:
+	return false
 
 
 # How many of the player's owned `cars` can enter `rally`, tallied on top of entry_plan so

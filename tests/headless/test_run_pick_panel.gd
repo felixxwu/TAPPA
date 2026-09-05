@@ -86,3 +86,28 @@ func test_pressing_continue_reports_an_empty_choice() -> void:
 		func(choice: String) -> void: choices.append(choice))
 	_buttons(page)[0].pressed.emit()
 	assert_eq(choices, [""])
+
+
+# --- Drivetrain conversion: a row alongside repair and the drawn boosts -----------
+
+func test_a_drivetrain_choice_adds_one_row_and_stays_navigable() -> void:
+	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass,
+		[Drivetrain.DriveMode.AWD])
+	assert_eq(_buttons(page).size(), 3, "1 boost + repair + 1 conversion row")
+	assert_not_null(MenuNav.of(page), "still keyboard/gamepad navigable with a conversion row")
+
+
+func test_pressing_a_drivetrain_row_reports_its_mode() -> void:
+	var choices: Array = []
+	var page := RunPickPanel.open(_host, _pick(["a"]),
+		func(choice: String) -> void: choices.append(choice),
+		[Drivetrain.DriveMode.AWD])
+	for b in _buttons(page):
+		if String((b as Button).text).to_lower().contains("convert"):
+			(b as Button).pressed.emit()
+	assert_eq(choices, ["drivetrain:%d" % Drivetrain.DriveMode.AWD])
+
+
+func test_no_drivetrain_choices_offers_no_conversion_row() -> void:
+	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
+	assert_eq(_buttons(page).size(), 2, "just the boost and repair — no conversion drawn")

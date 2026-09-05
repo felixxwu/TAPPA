@@ -112,10 +112,13 @@ Do not go looking for these — they are gone, not moved:
 **Three sources:** the per-stage payout (grows with stages cleared), the fast-completion
 bonus (proportional to time saved), and coins picked up mid-stage.
 
-**Five implemented sinks**, all thin wrappers over `Save.spend_money` sharing one refusal
+**Four implemented sinks**, all thin wrappers over `Save.spend_money` sharing one refusal
 rule — *an invalid or unaffordable purchase leaves the profile byte-identical*:
-`buy_car`, `buy_boost_level`, `buy_engine_swap_unlock`, `buy_perk`, `buy_drive_mode`
-(per-car drivetrain conversion, decision 52). The spec's sixth sink, cosmetic wheels
+`buy_car`, `buy_boost_level`, `buy_engine_swap_unlock`, `buy_perk`. Drivetrain
+conversion (decision 52) was briefly a fifth sink, `buy_drive_mode`; decision 55
+supersedes it — a conversion is now a free, run-scoped mid-run upgrade offered in the
+between-stage pick, not a purchase (`features/region-runs.md` → *Drivetrain
+conversion*). The spec's sixth sink, cosmetic wheels
 (decision 25), is still free and has no host screen.
 
 ## Save schema

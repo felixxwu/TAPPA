@@ -30,9 +30,10 @@ extends RefCounted
 # mechanism — see features/perks.md.
 #
 # Also still here: `stock_drive_mode` / `resolve_drive_override`, the drive-mode
-# resolver car.gd and effective_meta read. It never depended on the catalogue —
-# only on what Save records as paid for, which is now Save.buy_drive_mode (the
-# sixth money sink, decision 52).
+# resolver car.gd and effective_meta read. It never depended on the catalogue — and,
+# since decision 52 was superseded, no longer depends on a purchase either: the override
+# is a run-scoped mid-run upgrade sourced from RunSession.drivetrain_override(), the same
+# lifetime as a boost (see world.gd::_field_car).
 #
 # Distinguish from TUNING: tuning (features/tuning.md) is free, reversible per-car
 # config nudges, and is now UNGATED on every axis (decision 24) — the aero gate
@@ -423,18 +424,16 @@ static func stock_drive_mode(owned_car: Dictionary) -> int:
 
 
 # The drive mode the player chose for this car (0/1/2), or -1 meaning "use the car's
-# authored stock drive_mode". Gated on the mode being PAID FOR, so a stored override the
-# player never bought is inert. The single resolver used by physics (car.gd) and display
-# (effective_meta).
+# authored stock drive_mode". Unlike the pre-pivot money sink (decision 52, since
+# superseded), a conversion is no longer bought and persisted per car — it is a run-scoped
+# mid-run upgrade: world.gd::_field_car writes RunSession.drivetrain_override() onto the
+# DUPLICATED owned-car dict it fields the car with (never Save's persisted copy), so `owned`
+# here only ever carries a for-this-fielding override, never a stored one. The single
+# resolver used by physics (car.gd) and display (effective_meta) — just a range check, no
+# purchase gate.
 static func resolve_drive_override(owned_car: Dictionary) -> int:
 	var mode := int(owned_car.get("drivetrain_override", -1))
 	if mode < 0:
 		return -1
-	# Gated on the mode being PAID FOR (Save.drive_mode_available: the car's own stock
-	# layout, or one it has bought). A stored override the player has not paid for is inert
-	# rather than free, which keeps the price from being bypassed by anything that writes
-	# the field directly. MONEY SEAM: nothing sells a conversion right now (the parts-model
-	# purchase path is deleted and money lands in stage 6), so in practice only the car's
-	# stock layout is available — see Save.drive_mode_available.
-	return mode if Save.drive_mode_available(owned_car, mode) else -1
+	return mode if Drivetrain.DriveMode.values().has(mode) else -1
 

@@ -73,6 +73,14 @@ var _pick_awaiting := false
 # leak past the run it was picked in. Reset only by begin() (a fresh run) and
 # _finish_locally() (the run just ended, win or lose) — see boosts() below.
 var _boosts: Array = []
+# The drivetrain layout picked between stages, or -1 for "use the car's own stock/no
+# override" (the same shape UpgradeLibrary.resolve_drive_override reads). RUN-SCOPED like
+# _boosts above — a drivetrain conversion is the seventh upgrade offered in the
+# between-stage pick (features/region-runs.md), not a purchase: it dies with the run,
+# never touches Save's persisted car, and world.gd._field_car writes it onto the same
+# DUPLICATED owned-car dict _boosts is merged onto. Reset by begin() and
+# _finish_locally(), same as _boosts.
+var _drivetrain_override := -1
 
 
 # --- Read surface --------------------------------------------------------------
@@ -169,6 +177,32 @@ func pick_awaiting() -> bool:
 # merges this onto the fielded car; it is never written to Save.
 func boosts() -> Array:
 	return _boosts.duplicate(true)
+
+
+# The drivetrain layout picked for this run so far, or -1 for "no conversion picked" (the
+# fielded car keeps its own stock layout). world.gd merges this onto the fielded car via
+# UpgradeLibrary.resolve_drive_override; it is never written to Save.
+func drivetrain_override() -> int:
+	return _drivetrain_override
+
+
+# The non-current DriveMode values worth offering as a conversion in the pending pick —
+# i.e. every layout except whichever one the fielded car is ALREADY running (its picked
+# override if one is active, else its own authored stock layout). Empty when no pick is
+# outstanding, mirroring pending_pick()'s own contract, or when the run's car has vanished.
+func drivetrain_choices() -> Array:
+	if not _pick_awaiting:
+		return []
+	var owned: Dictionary = Save.get_car(_car_instance_id)
+	if owned.is_empty():
+		return []
+	var current := _drivetrain_override if _drivetrain_override >= 0 \
+			else UpgradeLibrary.stock_drive_mode(owned)
+	var out: Array = []
+	for mode in Drivetrain.DriveMode.values():
+		if int(mode) != current:
+			out.append(int(mode))
+	return out
 
 
 # Drop the terminal result once a screen has SHOWN it. The hub shell reads last_result()
@@ -300,6 +334,7 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_pending_pick = []
 	_pick_awaiting = false
 	_boosts = []
+	_drivetrain_override = -1
 	_active = true
 	_stage_running = true
 	# Written HERE, the one shared entry point BOTH callers (region + challenge) pass
@@ -360,6 +395,7 @@ func resume(unix_time: int) -> bool:
 	_pending_repair = {}
 	_last_result = {}
 	_boosts = (run.get("boosts", []) as Array).duplicate(true)
+	_drivetrain_override = int(run.get("drivetrain_override", -1))
 	# A pick that was still awaiting a choice when this run was last persisted
 	# RE-DERIVES rather than being stored verbatim — boost_choices is a pure function
 	# of (the mode's own seed, stage_index), so this always matches what was offered
@@ -408,6 +444,7 @@ func _persist() -> void:
 		"stage_index": _stage_index, "stage_times_ms": _stage_times_ms.duplicate(),
 		"dnf": _dnf, "money_earned": _money_earned,
 		"boosts": _boosts.duplicate(true), "pick_awaiting": _pick_awaiting,
+		"drivetrain_override": _drivetrain_override,
 	}
 	record.merge(_mode.to_record(), true)
 	Save.set_run(record)
@@ -603,6 +640,23 @@ func choose_boost(id: String) -> void:
 	_persist()
 
 
+# Resolve the pending pick by switching this run's fielded car to `mode` (a
+# Drivetrain.DriveMode) for the rest of the run — the seventh option alongside repair and
+# the drawn boosts. Unlike choose_boost, this doesn't add to a growing list: only the
+# LATEST conversion applies, so picking a second one later in the run simply replaces the
+# first rather than stacking (a car has one driveline at a time). An `mode` outside the
+# enum still resolves the pick — same "the player has made a choice" rule choose_boost
+# follows for a stale id — but changes nothing.
+func choose_drivetrain(mode: int) -> void:
+	if not _pick_awaiting:
+		return
+	if Drivetrain.DriveMode.values().has(mode):
+		_drivetrain_override = mode
+	_pending_pick = []
+	_pick_awaiting = false
+	_persist()
+
+
 func _finish_locally() -> void:
 	_last_result = {
 		"mode": mode_id(), "period_key": period_key(), "kind": kind(),
@@ -620,6 +674,7 @@ func _finish_locally() -> void:
 	# clear is belt-and-braces: the one place that answers "what wipes them", named
 	# explicitly rather than left to fall out of begin() resetting it for the NEXT run.
 	_boosts = []
+	_drivetrain_override = -1
 	_pending_pick = []
 	_pick_awaiting = false
 	if _mode != null:

@@ -16,25 +16,29 @@ extends RefCounted
 # tests/headless/test_run_pick_panel.gd, the nav test CLAUDE.md requires of every menu.
 #
 # Two shapes, driven entirely by whether `pick` is empty:
-#   * non-empty  — a row per drawn boost PLUS an always-present repair row (repair is
-#     never one of `pick`'s own entries — it doesn't go through the boost effects
-#     funnel, so it isn't a BoostLibrary id). Pressing any row is the whole
-#     interaction: it both CHOOSES and DISMISSES in one press ("the player picks
-#     exactly one" — there is nothing left to confirm).
+#   * non-empty  — a row per drawn boost, PLUS an always-present repair row, PLUS one row
+#     per available drivetrain conversion (repair and the conversions are never one of
+#     `pick`'s own entries — they don't go through the boost effects funnel, so neither is
+#     a BoostLibrary id). Pressing any row is the whole interaction: it both CHOOSES and
+#     DISMISSES in one press ("the player picks exactly one" — there is nothing left to
+#     confirm).
 #   * empty — every mode that doesn't offer a pick (the challenge) and this run's own
 #     final/failed stage (report_event_result never draws one then) get a bare
 #     Continue action instead.
 #
-# `on_choice` is called with "repair", a boost id, or "" (plain Continue) the instant a
-# row is pressed. This class does not know what happens next — RunSession.choose_repair
-# / choose_boost / continue_to_next_stage all live one level up, in world.gd, which owns
-# applying the pick and advancing (or ending) the run.
+# `on_choice` is called with "repair", a boost id, "drivetrain:<DriveMode int>", or ""
+# (plain Continue) the instant a row is pressed. This class does not know what happens
+# next — RunSession.choose_repair / choose_boost / choose_drivetrain / continue_to_next_stage
+# all live one level up, in world.gd, which owns applying the pick and advancing (or
+# ending) the run.
 
 
 # Build and return the modal, hosted on `host` via MenuPage.open_modal (see that
-# function's own doc for why a modal must always go through it). The caller owns
-# tearing it down — free `page.get_parent()` when the pick/Continue is done.
-static func open(host: Node, pick: Array, on_choice: Callable) -> MenuPage:
+# function's own doc for why a modal must always go through it). `drivetrain_choices` is
+# RunSession.drivetrain_choices() — the DriveMode ints worth offering as a conversion right
+# now, [] when none is drawn (mirrors `pick`'s own empty contract). The caller owns tearing
+# the panel down — free `page.get_parent()` when the pick/Continue is done.
+static func open(host: Node, pick: Array, on_choice: Callable, drivetrain_choices: Array = []) -> MenuPage:
 	var title := "Choose a boost" if not pick.is_empty() else "Stage complete"
 	var page := MenuPage.open_modal(host, {"margin": 24.0, "title": title})
 	if pick.is_empty():
@@ -52,5 +56,10 @@ static func open(host: Node, pick: Array, on_choice: Callable) -> MenuPage:
 			var boost_btn := UITheme.button(BoostLibrary.label_for(id))
 			boost_btn.pressed.connect(func() -> void: on_choice.call(id))
 			page.body().add_child(boost_btn)
+		for mode in drivetrain_choices:
+			var mode_int := int(mode)
+			var drive_btn := UITheme.button("Convert to %s" % Drivetrain.DriveMode.keys()[mode_int])
+			drive_btn.pressed.connect(func() -> void: on_choice.call("drivetrain:%d" % mode_int))
+			page.body().add_child(drive_btn)
 	MenuNav.attach(page, {})
 	return page

@@ -244,14 +244,20 @@ func test_no_stored_override_resolves_to_stock() -> void:
 		"-1 means 'use the car's authored layout'")
 
 
-# The gate that keeps a conversion from being free. Nothing sells one right now (the
-# purchase path is deleted and money lands in stage 6 — see the MONEY SEAM in
-# resolve_drive_override), so an override written directly must stay inert rather than
-# being honoured for nothing.
-func test_an_unpaid_stored_override_is_inert() -> void:
+# A conversion is a run-scoped mid-run upgrade now (RunSession.choose_drivetrain), not a
+# purchase — resolve_drive_override just range-checks the stored value, with no separate
+# gate, since world.gd::_field_car is the only legitimate writer of the field.
+func test_a_stored_override_is_honoured() -> void:
 	var owned := _car()
 	var stock := UpgradeLibrary.stock_drive_mode(owned)
 	var other := CarLibrary.AWD if stock != CarLibrary.AWD else CarLibrary.FWD
 	owned["drivetrain_override"] = other
-	assert_ne(UpgradeLibrary.resolve_drive_override(owned), other,
-		"a layout the player never paid for is not honoured")
+	assert_eq(UpgradeLibrary.resolve_drive_override(owned), other,
+		"a valid stored override is honoured")
+
+
+func test_an_out_of_range_override_is_inert() -> void:
+	var owned := _car()
+	owned["drivetrain_override"] = 99
+	assert_eq(UpgradeLibrary.resolve_drive_override(owned), -1,
+		"a value outside the DriveMode enum resolves to stock")

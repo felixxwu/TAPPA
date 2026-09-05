@@ -371,8 +371,6 @@ func _sanitise(p: Dictionary) -> Dictionary:
 			# Backfill per-wheel damage misalignment on saves that predate it (straight).
 			if not car.has("wheel_toe"):
 				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
-			if not car.has("drivetrain_modes_bought"):
-				car["drivetrain_modes_bought"] = []
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
@@ -657,11 +655,6 @@ func grant_car(model_id: String) -> Dictionary:
 		"hp": max_hp,
 		"tuning": {},
 		"wheel_toe": [0.0, 0.0, 0.0, 0.0],
-		"drivetrain_override": -1,
-		# Drive modes this car has PAID for (ints, CarLibrary.RWD/AWD/FWD). Its authored
-		# stock mode is never in here — reverting to stock is always free. Nothing sells one
-		# right now: see the MONEY SEAM note above drive_mode_available.
-		"drivetrain_modes_bought": [],
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
 	profile[KEY_CARS].append(car)
@@ -841,17 +834,6 @@ func set_engine_detune(instance_id: int, frac: float) -> void:
 	var tuning: Dictionary = car.get("tuning", {})
 	tuning["engine_detune"] = clampf(frac, 0.0, 1.0)
 	car["tuning"] = tuning
-	save()
-
-
-# Set a car's chosen drivetrain (0/1/2), or -1 to revert to the car's stock layout.
-# Stored per car; inert unless the drivetrain-swap kit is fitted+enabled (the gate lives
-# in UpgradeLibrary.resolve_drive_override, read by car.gd and effective_meta).
-func set_drivetrain_override(instance_id: int, mode: int) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	car["drivetrain_override"] = mode
 	save()
 
 
@@ -1323,67 +1305,16 @@ func record_podium_rally(rally_id: String, combined_ms: int, placed: int = 0) ->
 # BUYING A PART IS GONE WITH THE PARTS MODEL. part_price / can_buy_part / buy_part were
 # left refusing by the star-economy wave purely so upgrade_options.gd and upgrades_grid.gd
 # kept compiling; both files are now deleted, so all three are deleted too rather than
-# stubbed. Same for drive_mode_price / can_buy_drive_mode / buy_drive_mode and
-# apply_build_plan (UpgradeLibrary.auto_build_plan, the solver it committed, is deleted).
+# stubbed. Same for apply_build_plan (UpgradeLibrary.auto_build_plan, the solver it
+# committed, is deleted).
 #
-# THE MONEY SEAM IS NOW CLOSED -- drivetrain conversion is the SIXTH money sink
-# (stage 9; the five before it are cars, boost levels, perks, the engine-swap unlock and
-# the between-stage repair's opportunity cost). `drivetrain_modes_bought` and the resolver
-# that reads it (UpgradeLibrary.resolve_drive_override, via drive_mode_available below)
-# always survived the parts-model deletion — they are how a converted car keeps its layout,
-# and car.gd reads them every fielding. What was missing was the way a mode is BOUGHT, and
-# that is drive_mode_price / buy_drive_mode below.
-#
-# PER CAR, NOT A GLOBAL UNLOCK (unlike the engine swap of decision 17): buying AWD on one
-# car says nothing about another, because the conversion is a physical change to that car.
-# Bought layouts are kept forever and switching BETWEEN owned layouts is free — you buy the
-# hardware once, then run whichever you like.
-
-
-# Whether this car may currently be SET to `mode` without paying: its own stock layout, or
-# one it has already bought. The single rule shared by any picker, the apply path and
-# UpgradeLibrary.resolve_drive_override.
-func drive_mode_available(car: Dictionary, mode: int) -> bool:
-	if car.is_empty():
-		return false
-	if mode == UpgradeLibrary.stock_drive_mode(car):
-		return true
-	return (car.get("drivetrain_modes_bought", []) as Array).has(mode)
-
-
-# What one conversion costs. A flat GameConfig price, not scaled by the car or by how many
-# the car already has: the shop rule stays legible, and an expensive car is already
-# expensive to buy.
-func drive_mode_price() -> int:
-	return int(round(Config.data.drivetrain_conversion_price))
-
-
-# Buy `mode` (a Drivetrain.DriveMode) for the car `instance_id`. Refuses — leaving the
-# profile BYTE-IDENTICAL, the same rule every meta-shop purchase follows — for an unknown
-# car, a mode outside the enum, a mode already available (its stock layout or one already
-# bought: never charge twice for what the player has), or an unaffordable price. Every one
-# of those is checked BEFORE spend_money, so a refusal can never half-spend.
-#
-# Does NOT switch the car to the new layout: buying and running are separate, exactly like
-# owning and equipping a perk. set_drivetrain_override is the switch.
-func buy_drive_mode(instance_id: int, mode: int) -> bool:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return false
-	# Against the enum's VALUES, not a `0..max` range: Drivetrain.DriveMode is
-	# {RWD=0, AWD=1, FWD=2}, so "less than FWD" would be a lie about which ids are real
-	# the moment a layout is added or reordered.
-	if not Drivetrain.DriveMode.values().has(mode):
-		return false
-	if drive_mode_available(car, mode):
-		return false
-	if not spend_money(drive_mode_price()):
-		return false
-	var bought: Array = car.get("drivetrain_modes_bought", [])
-	bought.append(mode)
-	car["drivetrain_modes_bought"] = bought
-	save()
-	return true
+# DRIVETRAIN CONVERSION IS NO LONGER A MONEY SINK. Decision 52 made it the sixth money
+# sink (a per-car purchase, drive_mode_price / buy_drive_mode / drive_mode_available), but
+# that is superseded: a conversion is now a run-scoped mid-run upgrade, picked between
+# stages exactly like a boost (RunSession.choose_drivetrain / drivetrain_override) — it
+# dies with the run like everything else in the boost tier, so there is nothing to buy or
+# persist here. See features/region-runs.md -> "Between-stage pick: repair, boost, or
+# drivetrain conversion".
 
 
 # record_stage_result (adaptive difficulty) used to live here. Its only caller was
