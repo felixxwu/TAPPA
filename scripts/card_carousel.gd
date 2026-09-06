@@ -125,6 +125,16 @@ func add_card(disabled: bool = false) -> Card:
 	card.root.custom_minimum_size = Vector2(_card_width(), _card_height())
 	card.root.add_theme_stylebox_override("panel", _card_stylebox(false))
 	card.root.mouse_filter = Control.MOUSE_FILTER_PASS
+	# `card.root` is an absolute-positioned child of `_strip` (a plain Control, not a
+	# layout Container) — nothing ever assigns it a rect, so its actual size just grows to
+	# fit whatever its children's combined minimum size demands. A caller's long label (a
+	# region's "Locked — clear <gate>" subtitle, say) that doesn't wrap pushes the card
+	# wider than card_carousel_card_width, and since cards sit at FIXED index*unit offsets,
+	# a too-wide card visibly overlaps its neighbour. clip_contents is the safety net (a
+	# card can never bleed into a neighbour's space even if something still overflows);
+	# the actual fix is _wrap_incoming_label below, which stops the overflow at the
+	# source so text is legible (wrapped) rather than merely clipped.
+	card.root.clip_contents = true
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
@@ -141,6 +151,12 @@ func add_card(disabled: bool = false) -> Card:
 	card.info.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	card.info.mouse_filter = Control.MOUSE_FILTER_PASS
 	col.add_child(card.info)
+	# Any Label a caller adds to visual/info must wrap rather than report a wide minimum
+	# size, or it grows the card past card_width (see the comment on card.root above).
+	# Hooked here, once, so every current AND future caller is covered automatically —
+	# no caller has to remember to autowrap its own labels.
+	card.visual.child_entered_tree.connect(_wrap_incoming_label)
+	card.info.child_entered_tree.connect(_wrap_incoming_label)
 
 	_strip.add_child(card.root)
 	var index := _cards.size()
@@ -148,6 +164,17 @@ func add_card(disabled: bool = false) -> Card:
 	_cards.append(card)
 	_layout()
 	return card
+
+
+func _wrap_incoming_label(node: Node) -> void:
+	var lbl := node as Label
+	if lbl == null:
+		return
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# A Label with autowrap OFF reports the full unwrapped text width as its minimum size,
+	# which is exactly what pushed a card wider than card_width. Autowrap alone doesn't
+	# clear an explicit custom_minimum_size some caller might have set, so zero it too.
+	lbl.custom_minimum_size.x = 0
 
 
 func card_count() -> int:
@@ -250,14 +277,21 @@ func _confirm_selected() -> void:
 
 # --- Mouse / touch ------------------------------------------------------------
 
+# Shared by both the per-card press handler below AND _gui_input's own press handling
+# (for a press that lands on the carousel's own background, between/around cards, rather
+# than on any specific card — see _gui_input for why that needs its own arming path too).
+func _begin_drag(global_x: float) -> void:
+	_drag_active = true
+	_drag_start_x = global_x
+	_drag_start_offset = _offset
+
+
 func _on_card_gui_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				_drag_active = true
-				_drag_start_x = mb.global_position.x
-				_drag_start_offset = _offset
+				_begin_drag(mb.global_position.x)
 			else:
 				var dragged := absf(mb.global_position.x - _drag_start_x) > 4.0
 				_drag_active = false
@@ -277,9 +311,7 @@ func _on_card_gui_input(event: InputEvent, index: int) -> void:
 		# get_global_transform() puts both ends in the same frame.
 		var touch_x := (_cards[index].root.get_global_transform() * t.position).x
 		if t.pressed:
-			_drag_active = true
-			_drag_start_x = touch_x
-			_drag_start_offset = _offset
+			_begin_drag(touch_x)
 		else:
 			var dragged2 := absf(touch_x - _drag_start_x) > 4.0
 			_drag_active = false
@@ -312,11 +344,40 @@ func _gui_input(event: InputEvent) -> void:
 		_confirm_selected()
 		accept_event()
 		return
+	# A press that lands on the carousel's OWN background — the empty space between or
+	# around cards, now genuinely reachable since the page behind it is transparent
+	# (features/card-carousel.md → "the gaps show the live 3D showcase") — never reaches
+	# _on_card_gui_input at all, since that's bound to each CARD's gui_input signal. Without
+	# arming _drag_active here too, a drag started off any card silently did nothing:
+	# reported as "impossible to scroll starting from the background". A press that
+	# DID land on a card also reaches here (cards use MOUSE_FILTER_PASS, so the event
+	# bubbles up after the card's own handler runs) — re-arming with the same true global
+	# x is harmless, not a conflicting second gesture.
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				_begin_drag(mb.global_position.x)
+			else:
+				# Reset even though a card-originated release already does this too (that
+				# handler runs first — children process before ancestors — so this is a
+				# harmless no-op then): a release that never touched a card would otherwise
+				# leave _drag_active stuck true, and bare mouse motion with no button held
+				# would go on panning the strip.
+				_drag_active = false
+		return
+	if event is InputEventScreenTouch:
+		var ts := event as InputEventScreenTouch
+		if ts.pressed:
+			_begin_drag((get_global_transform() * ts.position).x)
+		else:
+			_drag_active = false
+		return
 	if event is InputEventMouseMotion and _drag_active:
 		var mm := event as InputEventMouseMotion
 		_offset = _drag_start_offset - (mm.global_position.x - _drag_start_x)
 		_layout()
-	elif event is InputEventScreenDrag:
+	elif event is InputEventScreenDrag and _drag_active:
 		var d := event as InputEventScreenDrag
 		# d.position arrives local to THIS control (the carousel), while _drag_start_x was
 		# recorded local to whichever CARD the touch started on — see the matching comment

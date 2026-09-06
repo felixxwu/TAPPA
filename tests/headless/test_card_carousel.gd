@@ -170,6 +170,36 @@ func test_touch_drag_tracks_the_real_finger_delta_not_a_coordinate_mismatch() ->
 		"a 5px finger movement must move the strip by about 5px, not jump")
 
 
+# Regression: _drag_active was only ever armed inside _on_card_gui_input, bound to each
+# CARD's own gui_input signal — a press/drag starting on the carousel's own background
+# (the space between/around cards, genuinely reachable now that the page behind it is
+# transparent) never reached that handler, so a drag started off any card silently did
+# nothing at all. _gui_input (the carousel's own override, which DOES receive a press
+# landing on empty space) must arm the same drag state.
+func test_dragging_from_the_background_between_cards_still_pans_the_strip() -> void:
+	_carousel.select(0, false)
+	await get_tree().process_frame
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.global_position = Vector2(50.0, 50.0)
+	_carousel._gui_input(press)
+	assert_true(_carousel._drag_active, "a background press must arm the drag")
+
+	var motion := InputEventMouseMotion.new()
+	motion.global_position = Vector2(45.0, 50.0)
+	_carousel._gui_input(motion)
+	assert_almost_eq(_carousel._offset, 5.0, 0.01,
+		"a background-started drag must pan the strip like a card-started one")
+
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.global_position = motion.global_position
+	_carousel._gui_input(release)
+	assert_false(_carousel._drag_active, "release must clear the drag even off any card")
+
+
 func test_drag_release_snaps_to_the_nearest_card() -> void:
 	var target := _carousel._target_offset_for(0)
 	var step := _carousel._target_offset_for(1) - target
@@ -191,3 +221,21 @@ func test_unselected_cards_are_dimmed_and_selected_is_opaque() -> void:
 	for i in _carousel.card_count():
 		var expected := 1.0 if i == 1 else Config.data.card_carousel_unselected_alpha
 		assert_almost_eq(_carousel._cards[i].root.modulate.a, expected, 0.001)
+
+
+# Regression: card.root is an absolute-positioned child of a plain (non-layout) Control,
+# so nothing caps its size — an unwrapped long label (a region's "Locked — clear <gate>"
+# subtitle was the real case) reports its full text width as its minimum size and grows
+# the card past card_carousel_card_width, overlapping the neighbour sitting at the next
+# fixed index*unit offset. A label added to visual/info must come out autowrapping so it
+# never forces the card wider, regardless of how long the caller's text is.
+func test_a_long_unwrapped_label_does_not_grow_the_card_past_card_width() -> void:
+	var card := _carousel.add_card()
+	var long_label := Label.new()
+	long_label.text = "Locked — clear a very long region name that would never fit on one line"
+	card.info.add_child(long_label)
+	await get_tree().process_frame
+	assert_eq(long_label.autowrap_mode, TextServer.AUTOWRAP_WORD_SMART,
+		"an incoming label must be forced to wrap")
+	assert_lte(card.root.get_combined_minimum_size().x, Config.data.card_carousel_card_width + 0.5,
+		"a long label must not push the card wider than card_width")

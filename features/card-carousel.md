@@ -79,6 +79,28 @@ before ever comparing an x-coordinate across the two handlers — see
 `test_touch_drag_tracks_the_real_finger_delta_not_a_coordinate_mismatch`. Don't reintroduce
 a bare `t.position.x`/`d.position.x` comparison here; that is exactly this regression.
 
+## A drag must arm from the carousel's own background too, not just from a card
+
+`_drag_active` used to be armed ONLY inside `_on_card_gui_input`, which is bound to each
+CARD's own `gui_input` signal. That was invisible while the page behind the carousel was
+opaque black (a press anywhere that mattered was, in practice, always on a card or right
+at its edge), but once the gaps became a window onto the live 3D showcase (see below),
+starting a drag from the genuinely empty space between or around cards is something a
+player will actually do — and that press never reached `_on_card_gui_input` at all, so the
+drag silently did nothing. `_gui_input` (the carousel's own override) DOES receive a press
+that lands on empty space (nothing else claims it), so it now arms `_drag_active` itself
+too, through the same shared `_begin_drag(global_x)` helper `_on_card_gui_input` uses — a
+press that started ON a card still also reaches here afterwards (cards use
+`MOUSE_FILTER_PASS`, so the event bubbles up once the card's own handler has already run),
+and re-arming with the same true global x is a harmless no-op, not a second gesture. The
+release side needed the same treatment: `_gui_input`'s new press branch also has to clear
+`_drag_active` on release, or a background-only gesture would leave it stuck true and bare
+mouse motion (no button held) would go on panning the strip. See
+`test_dragging_from_the_background_between_cards_still_pans_the_strip`. While fixing this,
+the `InputEventScreenDrag` branch also picked up the `_drag_active` guard the
+`InputEventMouseMotion` branch already had — without it, any screen-drag event reaching
+the carousel (even one that never had a matching press) moved the strip.
+
 ## Config
 
 Every carousel tunable lives on `GameConfig` (`scripts/game_config.gd` → `Card Carousel`
@@ -133,6 +155,28 @@ half at the far edge, which is the exact "clipping" bug this method exists to ru
 `clip_contents` on the carousel stays on regardless (a catalogue longer than the visible
 count still needs to hide the far-off cards) — it's just that every card `clip_contents`
 ever cuts is either fully inside the strip or fully outside it, never straddling the edge.
+
+## A card must never grow past card_width, or it overlaps its neighbour
+
+`card.root` (the card's `PanelContainer`) is an absolute-positioned child of `_strip`, a
+plain `Control` rather than a layout `Container` — nothing ever assigns it a rect, so
+Godot lets its actual size grow to fit whatever its children's combined minimum size
+demands, same as any unmanaged Control. A caller's label that doesn't wrap (a region's
+"Locked — clear `<gate>`" subtitle was the case that surfaced this) reports its full
+unwrapped text width as its minimum size, which can exceed `card_carousel_card_width` —
+and since cards sit at FIXED `index * (card_width + gap)` offsets rather than flowing
+around each other, a too-wide card visibly overlaps its neighbour instead of pushing it
+aside.
+
+Two things fix it, both inside `add_card` so no caller has to remember either: `card.root
+.clip_contents = true` is the safety net (a card can never visually bleed into a
+neighbour's space even if something still overflows), and `_wrap_incoming_label` — hooked
+onto `card.visual.child_entered_tree` / `card.info.child_entered_tree` — is the actual
+fix, forcing `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART` and clearing
+`custom_minimum_size.x` on every `Label` a caller adds, so text wraps to fit the card
+instead of forcing it wider. Because this is hooked at the carousel level rather than
+patched into `HubShell._text_card`, it covers every current AND future caller
+automatically — a new page that forgets to autowrap its own labels is covered anyway.
 
 ## The gaps show the live 3D showcase behind the page, not black
 
