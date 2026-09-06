@@ -485,36 +485,44 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 # reparented onto whichever card is currently selected — never rebuilt from scratch on a
 # selection change, and never more than one live at a time regardless of how many cards
 # the carousel can show at once.
-func test_car_page_keeps_exactly_one_reused_preview_on_the_selected_card() -> void:
+# Regression / feature coverage: every card the carousel actually shows on screen must
+# get its own live 3D preview (not just the selected one), while still reusing pool
+# members across a selection move rather than tearing one down and rebuilding it — the
+# latter is what caused the carousel-freezes-on-move bug this pool exists to avoid.
+func test_car_page_shows_a_live_preview_on_every_visible_card_reusing_pool_members() -> void:
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
 	var carousel := _carousel()
 	assert_not_null(carousel)
-	assert_gt(carousel.card_count(), 1,
-		"setup: CarFixtures ships more than one unowned car to buy")
+	assert_gte(carousel.card_count(), 4,
+		"setup: CarFixtures ships at least four unowned cars to buy")
 
-	var live_previews := func() -> Array:
-		var found: Array = []
+	# Force a KNOWN, non-trivial visible window (3 cards) regardless of the real viewport.
+	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
+	carousel.fit_to_available_width(unit * 3.0)
+	carousel.select(1, false)
+	await get_tree().process_frame
+	assert_eq(carousel.visible_card_count(), 3, "setup: window forced to 3 cards")
+
+	var live_nodes := func() -> Dictionary:
+		var found := {}
 		for i in carousel.card_count():
 			var card := carousel.get_card(i)
 			if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
-				found.append({"index": i, "node": card.visual.get_child(0)})
+				found[i] = card.visual.get_child(0)
 		return found
 
-	var before: Array = live_previews.call()
-	assert_eq(before.size(), 1, "exactly one live preview must exist")
-	assert_eq(before[0]["index"], carousel.selected_index(),
-		"the live preview must sit on the currently selected card")
+	var before: Dictionary = live_nodes.call()
+	assert_eq(before.keys(), [0, 1, 2],
+		"every card in the (selection-centred) visible window must have a live preview")
 
-	carousel.select(1 if carousel.selected_index() == 0 else 0, false)
+	carousel.select(2, false)
 	await get_tree().process_frame
 
-	var after: Array = live_previews.call()
-	assert_eq(after.size(), 1, "still exactly one live preview after moving the selection")
-	assert_eq(after[0]["index"], carousel.selected_index(),
-		"the live preview must have followed the selection to the new card")
-	assert_eq(after[0]["node"], before[0]["node"],
-		"the SAME CarCardPreview must be reused, not torn down and rebuilt")
+	var after: Dictionary = live_nodes.call()
+	assert_eq(after.keys(), [1, 2, 3], "the live window must follow the selection")
+	assert_eq(after[1], before[1], "a card that stayed in the window keeps its SAME preview node")
+	assert_eq(after[2], before[2], "same for the other card that stayed in the window")
 
 
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:

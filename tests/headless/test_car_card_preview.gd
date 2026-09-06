@@ -52,3 +52,39 @@ func test_swapping_to_a_different_car_recentres_it_as_well() -> void:
 	assert_true(aabb.size != Vector3.ZERO, "setup: the swapped-to car has visible geometry")
 	assert_almost_eq(aabb.get_center().length(), 0.0, 0.5,
 		"the newly shown car must also be centred on the pivot's own origin")
+
+
+# Regression: narrowing card_carousel_car_preview_fov_deg without also moving the camera
+# back makes the car look SMALLER, not just "less distorted" — a narrower lens is more
+# zoomed out per degree, not less. Camera distance must be derived from the fov so that
+# distance * tan(fov/2) — the quantity a fixed subject's apparent size actually scales
+# with — stays constant across whatever fov is currently configured, rather than
+# hardcoding both independently. Checked as an INVARIANT across two different fov values,
+# not against a specific number, so retuning either GameConfig's fov default or the
+# script's internal reference composition can't make this test pin a value nobody chose.
+func test_camera_distance_compensates_for_the_configured_fov() -> void:
+	var original_fov := Config.data.card_carousel_car_preview_fov_deg
+
+	Config.data.card_carousel_car_preview_fov_deg = 20.0
+	var wide := CarCardPreview.new(0)
+	add_child_autofree(wide)
+	await get_tree().process_frame
+	var wide_cam: Camera3D = wide.find_children("*", "Camera3D", true, false)[0]
+
+	Config.data.card_carousel_car_preview_fov_deg = 8.0
+	var narrow := CarCardPreview.new(1)
+	add_child_autofree(narrow)
+	await get_tree().process_frame
+	var narrow_cam: Camera3D = narrow.find_children("*", "Camera3D", true, false)[0]
+
+	Config.data.card_carousel_car_preview_fov_deg = original_fov
+
+	assert_almost_eq(wide_cam.fov, 20.0, 0.01, "the camera must actually use the configured fov")
+	assert_almost_eq(narrow_cam.fov, 8.0, 0.01)
+	assert_gt(narrow_cam.position.length(), wide_cam.position.length(),
+		"a narrower fov must move the camera further back")
+
+	var wide_product := wide_cam.position.length() * tan(deg_to_rad(wide_cam.fov * 0.5))
+	var narrow_product := narrow_cam.position.length() * tan(deg_to_rad(narrow_cam.fov * 0.5))
+	assert_almost_eq(wide_product, narrow_product, 0.01,
+		"distance * tan(fov/2) must stay constant across fov values, or apparent car size drifts with it")

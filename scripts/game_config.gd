@@ -4144,6 +4144,11 @@ func spectator_params() -> Dictionary:
 ## rather than snapping back to where it started.
 @export_range(0.05, 0.9, 0.01) var card_carousel_drag_step_fraction := 0.35
 @export_range(0.0, 720.0, 1.0) var card_carousel_car_spin_deg_per_s := 24.0
+## The CAR page's 3D preview camera's field of view. Narrow (telephoto-ish) on purpose —
+## camera distance is derived FROM this (car_card_preview.gd) to keep the car's apparent
+## size roughly constant as this changes, so a smaller value reads as "less perspective
+## distortion, camera further back", not "the car got smaller".
+@export_range(4.0, 60.0, 1.0) var card_carousel_car_preview_fov_deg := 12.0
 ## How many card-widths wide the carousel's own viewport is, as a multiple of
 ## card_carousel_card_width — this is what makes the strip actually show the selected
 ## card next to a peek of its neighbours, rather than the surrounding MenuPage body box

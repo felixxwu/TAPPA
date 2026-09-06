@@ -280,33 +280,63 @@ around the car's true visual middle instead of wobbling around wherever its unsh
 scene origin happened to sit. Runs on every spawn, including `show_car` swaps, so a
 different car mid-session gets recentred on ITS OWN geometry too, not the previous car's.
 
-## Exactly ONE live preview exists, reused, not rebuilt per selection
+## A narrow FOV needs the camera moved back to keep the car's apparent size
+
+`card_carousel_car_preview_fov_deg` (default 12°, `GameConfig`) is deliberately narrow —
+a telephoto-ish lens flattens perspective distortion, which reads as more "product shot",
+less "fisheye". A narrow FOV alone, camera left in place, makes the subject look SMALLER
+(the lens is more zoomed-out per degree, not less) — so `CarCardPreview._init` derives the
+camera's DISTANCE from the FOV rather than hardcoding both independently. Apparent size
+for a fixed subject scales with `distance * tan(fov / 2)`; holding that product constant
+against a fixed reference composition (`_REFERENCE_FOV_DEG = 40`, `_REFERENCE_EYE =
+Vector3(3.2, 1.8, 3.6)` — the original close-up framing, kept only as the size baseline,
+not the shipped look) is what moves the camera back by exactly enough that narrowing
+`card_carousel_car_preview_fov_deg` keeps the car roughly its old apparent size instead of
+shrinking it. Retune the fov value freely — the distance follows it automatically; don't
+reintroduce a second, independently-picked distance constant, or the two will drift apart
+the next time either changes.
+
+## A small pool of live previews, one per card ON SCREEN, reused across moves
 
 A `CarCardPreview` is a real `SubViewport` + camera + light + a full `car.tscn`
 instantiation (every embedded car glb body, before `car_prop.gd`'s pruning) — cheap once,
-expensive if paid for repeatedly. `HubShell._build_car` first built one for EVERY car up
-front (every owned car plus the whole unowned catalogue), which blocked the main thread
-long enough on a real roster to read as the game freezing the moment a region was picked
-(region select is what leads to this page). A first fix narrowed that to a WINDOW of
-cards around the current selection — better, but every card in that window still got torn
-down and rebuilt from scratch on every `selection_changed`, which is what surfaced next as
-the carousel visibly freezing the moment a player actually tried to MOVE the selection
-(unavoidable — that's the only way to pick a car).
+expensive if paid for repeatedly, and expensive again if torn down and rebuilt on every
+selection change. Three shapes were tried before landing on the one that holds:
 
-The fix that actually holds: every car card gets the cheap letter-icon placeholder
-(`_card_icon`) up front, and the page keeps exactly ONE `CarCardPreview` alive for its
-entire lifetime. `HubShell._sync_car_preview` reparents that SAME instance onto whichever
-card is currently selected and calls `CarCardPreview.show_car(new_ref)` to swap which car
-it shows — reusing the already-built `SubViewport`/camera/light rather than paying for
-that setup again on every move, and rebuilding only the (already-cached, after the first
-use) `CarProp` underneath it. The card the preview is LEAVING gets its placeholder icon
-back. `CardCarousel.get_card(index)` is the accessor this needs (reach back into a card's
-`visual` slot after `add_card` returned it). `_sync_car_preview`'s `state` argument is a
-mutable `Dictionary`, not local variables closed over by the connecting lambda — GDScript
-lambdas capture locals BY VALUE, so a plain `var preview = null` reassigned inside the
-lambda body would not be visible on the NEXT firing of that same lambda; a Dictionary's
-contents mutate in place instead, which does persist. Don't revert to building a
-`CarCardPreview` per card, windowed or not — that is exactly this regression.
+1. **Every car, up front** — `HubShell._build_car` built one for EVERY car (every owned
+   car plus the whole unowned catalogue). Blocked the main thread long enough on a real
+   roster to read as the game freezing the moment a region was picked.
+2. **A window of cards, rebuilt per move** — narrower, but every card in the window still
+   got torn down and rebuilt from scratch on every `selection_changed`, which surfaced as
+   the carousel visibly freezing the moment a player tried to MOVE the selection.
+3. **Exactly one, reused** — fixed the freeze, but only the selected card ever spun; every
+   other visible card sat there with a static placeholder, which read as broken rather
+   than deliberate once several cards are visible at once.
+
+The shape that actually holds combines the reuse of (3) with the full coverage of (1):
+every car card gets the cheap letter-icon placeholder (`_card_icon`) up front, and the
+page keeps a small POOL of `CarCardPreview` instances — sized to
+`CardCarousel.visible_card_count()`, i.e. exactly as many as the carousel can ever show at
+once, centred on the current selection. `HubShell._sync_car_previews` computes the
+`wanted` set of indices (selection ± half the visible window) on every call, frees pool
+members whose card fell OUT of that set (restoring the placeholder there), then hands a
+freed pool member to every card that entered the set and doesn't already have one — a
+card that STAYS in the window across a move is left untouched, so the same `CarCardPreview`
+node (and its already-built `SubViewport`/camera/light) keeps spinning uninterrupted;
+`CarProp.spawn` (the one genuinely per-car cost) only reruns for cards actually changing
+which car they show.
+
+`CardCarousel.get_card(index)` is the accessor this needs (reach back into a card's
+`visual` slot after `add_card` returned it). `_sync_car_previews`'s `state` argument is a
+mutable `Dictionary` (`{"pool": Array[CarCardPreview], "pool_index": Array[int]}`), not
+local variables closed over by the connecting lambda — GDScript lambdas capture locals BY
+VALUE, so a plain `var pool = []` reassigned inside the lambda body would not be visible
+on the NEXT firing of that same lambda; an Array/Dictionary's CONTENTS mutate in place
+instead, which does persist. When handing a freed pool member to a newly-entered card,
+reparent it (`card.visual.add_child(preview)`) BEFORE calling `show_car` — not after —
+since `CarProp.spawn` needs the node already inside the `SceneTree`. Don't revert to
+building a `CarCardPreview` per card on every move, and don't shrink back to only the
+selected card ever being live — both are exactly regressions this section documents.
 
 ## Known open decisions (unilateral — flag for design review)
 

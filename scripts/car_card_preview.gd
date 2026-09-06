@@ -44,16 +44,29 @@ func _init(car_ref) -> void:
 
 	var cam := Camera3D.new()
 	cam.current = true
-	cam.fov = 40.0
+	cam.fov = Config.data.card_carousel_car_preview_fov_deg
 	svp.add_child(cam)
 	# look_at() requires the camera to already be inside the tree; add_child above only
 	# enters the tree once this whole container does, so aim it from a plain transform.
 	# Targets the ORIGIN, not a guessed car-shaped offset — _center_on_pivot (below) is
 	# what makes that correct for every car, by moving the CAR to its own visual centre
 	# rather than moving the camera to wherever one particular car's centre happened to be.
-	const _EYE := Vector3(3.2, 1.8, 3.6)
-	cam.transform = Transform3D().looking_at(-_EYE, Vector3.UP)
-	cam.position = _EYE
+	#
+	# _REFERENCE_FOV_DEG/_REFERENCE_EYE describe the ORIGINAL 40°/close-up composition —
+	# not the shipped look any more, just the fixed baseline "this framing, at this fov,
+	# reads as this apparent car size" is measured against. Apparent size for a fixed
+	# subject scales with distance * tan(fov/2), so holding that product constant while
+	# card_carousel_car_preview_fov_deg narrows is what moves the camera BACK by exactly
+	# enough that a narrower lens still frames the car at roughly its old size — a smaller
+	# fov alone (camera left in place) would just make the car look smaller, and picking a
+	# new distance by feel would drift every time the fov tunable changes.
+	const _REFERENCE_FOV_DEG := 40.0
+	const _REFERENCE_EYE := Vector3(3.2, 1.8, 3.6)
+	var reference_product := _REFERENCE_EYE.length() * tan(deg_to_rad(_REFERENCE_FOV_DEG * 0.5))
+	var distance := reference_product / tan(deg_to_rad(cam.fov * 0.5))
+	var eye := _REFERENCE_EYE.normalized() * distance
+	cam.transform = Transform3D().looking_at(-eye, Vector3.UP)
+	cam.position = eye
 
 	_pivot = Node3D.new()
 	svp.add_child(_pivot)
