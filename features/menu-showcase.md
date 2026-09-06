@@ -37,6 +37,39 @@ costs a real (if small) multi-segment track generation, which every hub test wou
 otherwise pay for zero visual benefit. `test_menu_showcase.gd` is the dedicated
 coverage of the scene itself, built directly rather than through the hub.
 
+## Loading feedback — the same `LoadingScreen` a real stage uses
+
+Godot's own boot bar only covers engine + `.pck` load + script compile
+([loading.md](loading.md)) — six `TrackGenerator`/`TerrainManager` bakes plus
+foliage is exactly the class of heavy, synchronous-looking work
+`scripts/loading_screen.gd` (`class_name LoadingScreen`) exists to cover for a
+stage, and the hub background needed the identical thing: without it (and without
+yielding — see below), the hub sat COMPLETELY FROZEN from the moment Godot's own
+boot bar hit 100% until `_build()` finally returned. `MenuShowcase._build()` builds
+its own `LoadingScreen` instance and calls `set_title("Loading…")` — this is the
+"other callers build their OWN instance for a menu-transition wait" reuse
+`loading_screen.gd`'s own header comment already documents as intended (it used to
+name `hq.gd`/`hq_challenge.gd`, both deleted in the pivot; this is a second, live
+example of the same pattern). `.finish()` (a plain `queue_free()`) tears it down
+once `_built` flips true. Skipped entirely under headless, same gate as everywhere
+else in this file.
+
+**A loading screen alone doesn't fix a frozen frame — it still has to be allowed to
+PAINT.** The screen only becomes visible on a frame Godot actually renders, and
+nothing in `_build()`'s original version ever yielded back to the engine — every
+`await` inside it resolved same-frame (an empty `Callable()` passed as
+`should_yield`/`on_progress`), so the whole six-segment build ran inside what
+was, from the renderer's point of view, one giant frame. The fix mirrors
+`world.gd`'s own staged-loading idiom exactly, via the same shared helper:
+`WorldRuntime.yield_frame(get_tree(), headless)` (a plain `await
+tree.process_frame`, a no-op under headless so tests stay synchronous) — after
+every segment finishes entirely, and in batches of `_YIELD_BATCH` (8, matching
+`world.gd`'s own corridor-precompute batch size) inside the per-chunk
+cache/spawn loops (`_cache_segment_chunks`, `_spawn_segment`, both now
+coroutines). `TerrainManager.set_track` is also called with `should_yield = true`
+(interactive only) so even the single heaviest step — the bake itself — releases
+the main thread periodically rather than running to completion in one block.
+
 ## One track, six segments (`MenuShowcase._build`)
 
 Builds a track from a hardcoded seed (`SHOWCASE_SEED`, `TURN_COUNT`, `STRAIGHTNESS`
@@ -223,3 +256,13 @@ right regions). `tests/headless/test_menu_showcase_camera.gd` — mirrors
 `test_replay_camera.gd`'s deterministic-tick coverage for the fixed-shot case:
 faces the current shot's `look_at`, advances on the fixed dwell, wraps around,
 doesn't crash on an empty shot list.
+
+**The loading-screen/yield fix itself is untested**, the same way `world.gd`'s own
+staged-loading presentation is: `WorldRuntime.yield_frame` is a no-op under
+`--headless` by design (so tests stay synchronous), so there is nothing a headless
+test can observe about frame pacing or a frozen render — see
+[event-replay.md](event-replay.md)'s own "the presentation path is currently
+untested" note for the same shape of gap. What `test_menu_showcase.gd` DOES cover
+(the build completes and produces the right end state) is unaffected either way,
+since `_built`/the scene's final shape don't depend on how many frames the build
+took to get there.
