@@ -131,6 +131,21 @@ func segment_floors() -> Array[TerrainManager]:
 
 
 func _build() -> void:
+	# Godot's own boot bar only covers engine + .pck load + script compile — this
+	# build (six TrackGenerator/TerrainManager bakes plus foliage) is exactly the
+	# same class of heavy, synchronous-looking work world.gd's LoadingScreen exists
+	# for, just for the hub instead of a stage. Reused verbatim (its own header
+	# comment already documents this as the intended second use: "other callers
+	# build their OWN LoadingScreen instance for a menu-transition wait"). Without
+	# it, and without the yields below, the hub sat completely frozen from the
+	# moment Godot's boot bar hit 100% until this whole function returned.
+	var headless := Platform.is_headless()
+	var loading: LoadingScreen = null
+	if not headless:
+		loading = LoadingScreen.new()
+		add_child(loading)
+		loading.set_title("Loading…")
+
 	var cfg: GameConfig = Config.data
 	var env: Environment = _world_environment.environment
 	_baseline_env = {
@@ -194,12 +209,15 @@ func _build() -> void:
 		# recently resolved into cfg.terrain_lod_bands_m — never mutate that shared
 		# field, just override this segment's own band ends after the fact).
 		floor_tm.lod_band_ends_m = cfg.terrain_lod_bands_web_touch_m
-		await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2], bake_args[3], bake_args[4])
+		# should_yield=true (interactive only) releases the main thread periodically
+		# during the bake itself, the single heaviest step — see set_track's own
+		# docstring. Never changes the baked result, only the pacing.
+		await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2],
+			bake_args[3], bake_args[4], not headless)
 		var coords := _coords_in_range(full_corridor, centerline, lo, hi)
 		floor_tm.set_corridor(coords)
-		for coord in coords:
-			floor_tm.cache_chunk(coord)
-		_spawn_segment(floor_tm, coords)
+		await _cache_segment_chunks(floor_tm, coords, headless)
+		await _spawn_segment(floor_tm, coords, headless)
 		var segment_shots := _build_segment_shots(centerline, floor_tm, lo, hi)
 		shots.append_array(segment_shots)
 		for _s in segment_shots:
@@ -217,6 +235,11 @@ func _build() -> void:
 			var segment_bushes := _points_in_range(all_bushes, centerline, lo, hi)
 			Foliage.spawn_bushes(self, segment_bushes, floor_tm, render_distance, cfg.tree_render_fade_m)
 
+		# One segment down — yield so this frame actually paints (the loading
+		# overlay, mainly) before the next segment's bake/spawn/foliage blocks
+		# again. Collapses to a no-op under headless.
+		await WorldRuntime.yield_frame(get_tree(), headless)
+
 	_camera = MenuShowcaseCamera.new()
 	add_child(_camera)
 	_camera.setup(shots)
@@ -225,6 +248,8 @@ func _build() -> void:
 		_viewed_shot = 0
 		_apply_segment_environment(_shot_segments[0])
 	_built = true
+	if loading != null:
+		loading.finish()
 
 
 func _process(delta: float) -> void:
@@ -324,11 +349,29 @@ func _apply_segment_environment(i: int) -> void:
 # `_reconcile` itself calls per coord — reusing it directly, once per coord, with no
 # focus/eviction logic at all, is the correct one-shot equivalent for a scene that
 # never streams.
-func _spawn_segment(floor_tm: TerrainManager, coords: Array[Vector2i]) -> void:
+const _YIELD_BATCH := 8
+
+
+func _spawn_segment(floor_tm: TerrainManager, coords: Array[Vector2i], headless: bool) -> void:
 	floor_tm._initial_pending = false
+	var done := 0
 	for coord in coords:
 		floor_tm._spawn_one(coord)
+		done += 1
+		if done % _YIELD_BATCH == 0:
+			await WorldRuntime.yield_frame(get_tree(), headless)
 	floor_tm.flush_detail_queue()
+
+
+# Same batched-yield shape as world.gd's own corridor precompute loop, just against
+# one segment's slice of the shared corridor instead of a whole stage's.
+func _cache_segment_chunks(floor_tm: TerrainManager, coords: Array[Vector2i], headless: bool) -> void:
+	var done := 0
+	for coord in coords:
+		floor_tm.cache_chunk(coord)
+		done += 1
+		if done % _YIELD_BATCH == 0:
+			await WorldRuntime.yield_frame(get_tree(), headless)
 
 
 # Segment i (0-based) gets its own TerrainManager. Segment 0 reuses the scene's own
