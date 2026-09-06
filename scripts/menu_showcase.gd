@@ -161,7 +161,21 @@ func _build() -> void:
 	params.width = cfg.track_width
 	params.clearance = cfg.track_clearance
 
+	# PERF INSTRUMENTATION — see features/menu-showcase.md → "Build performance"
+	# for the measured numbers this produced and what they settled. Mirrors
+	# world.gd's own load-stage print style (features/loading.md). Sums per-phase
+	# across all six segments rather than printing once per segment, since the
+	# question is "how much does each PHASE cost in total", not a per-segment
+	# breakdown.
+	var _t0 := Time.get_ticks_msec()
+	var _t_track_gen := 0
+	var _t_bake := 0
+	var _t_corridor_cache := 0
+	var _t_spawn := 0
+	var _t_foliage := 0
+
 	var result: Dictionary = await TrackGenerator.generate(params)
+	_t_track_gen = Time.get_ticks_msec() - _t0
 	var centerline := result["centerline"] as Curve2D
 	var total_length := centerline.get_baked_length()
 
@@ -178,6 +192,7 @@ func _build() -> void:
 	# corridor above — mirrors world.gd::_build_foliage's tree/bush scatter exactly
 	# (same TreeScatter.scatter call, same road-rejection cells), just fed this
 	# scene's own generated `result`/`centerline` instead of a driven stage's.
+	var _t_scatter0 := Time.get_ticks_msec()
 	var road_poly := centerline.tessellate()
 	var road_cells := TrackGenerator.rasterize_cells(
 		road_poly, cfg.track_width + 2.0 * cfg.tree_road_margin_m)
@@ -194,6 +209,24 @@ func _build() -> void:
 	# Lowest ("web touch") tier's render distance regardless of device — see decision
 	# 5, and the class comment on why every segment is capped this way.
 	var render_distance := cfg.tree_render_distance_web_touch_m
+	_t_foliage += Time.get_ticks_msec() - _t_scatter0  # the once-over-the-whole-track scatter
+
+	# The bake (road_heights/road_blend/track_weights/track_surface/cliff_offsets)
+	# is a pure function of (centerline, bake_args, noise_seed, cliff params) — and
+	# EVERY segment shares the exact same four inputs (same whole-track centerline,
+	# same bake_args, same SHOWCASE_SEED, same cfg.apply_cliffs). Baking six times
+	# over computed six BYTE-IDENTICAL copies of the same five dictionaries — this
+	# was the single biggest cost in the profiled build (see
+	# todo/menu-background-showcase.md's timing measurement: bake was 77% of total
+	# build time). Bake ONCE on the first segment's TerrainManager, then SHARE those
+	# dictionary references onto every other segment's instance
+	# (`_share_baked_fields`) instead of re-baking — safe because nothing ever
+	# mutates them after a bake (every consumer — height_at, vertex_colors,
+	# surface_at, … — only reads them), and nothing in this scene ever calls
+	# `free_load_only_data()` (the one thing that WOULD clear them) — see that
+	# function's `host.has_signal("load_finished")` duck-type check, which this
+	# scene's root never satisfies.
+	var shared_bake: Dictionary = {}
 
 	var shots: Array = []
 	for i in regions.size():
@@ -209,15 +242,35 @@ func _build() -> void:
 		# recently resolved into cfg.terrain_lod_bands_m — never mutate that shared
 		# field, just override this segment's own band ends after the fact).
 		floor_tm.lod_band_ends_m = cfg.terrain_lod_bands_web_touch_m
-		# should_yield=true (interactive only) releases the main thread periodically
-		# during the bake itself, the single heaviest step — see set_track's own
-		# docstring. Never changes the baked result, only the pacing.
-		await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2],
-			bake_args[3], bake_args[4], not headless)
+		# No car, no player, nothing ever touches this ground — collision is pure
+		# overhead here. A negative collision_ring makes _collision_band_chunks'
+		# Chebyshev test (`<= band_chunks`) false for every coord (an absi() distance
+		# can never be <= a negative number), so cache_chunk's "actual expensive
+		# step" — committing a full SAMPLES×SAMPLES PhysicsServer3D heightfield per
+		# chunk (see its own comment) — never runs for any chunk in this scene. It
+		# also lets MORE chunks qualify for the cheap coarse/LOD-only path in
+		# cache_chunk (a chunk needs l_min==0 OR in_collision_band to be full-res;
+		# removing the second disjunct leaves only the distance-based one).
+		floor_tm.collision_ring = -1000
+		var _tb0 := Time.get_ticks_msec()
+		if shared_bake.is_empty():
+			# should_yield=true (interactive only) releases the main thread
+			# periodically during the bake itself — see set_track's own docstring.
+			# Never changes the baked result, only the pacing.
+			await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2],
+				bake_args[3], bake_args[4], not headless)
+			shared_bake = _capture_baked_fields(floor_tm)
+		else:
+			_share_baked_fields(floor_tm, shared_bake)
+		_t_bake += Time.get_ticks_msec() - _tb0
 		var coords := _coords_in_range(full_corridor, centerline, lo, hi)
 		floor_tm.set_corridor(coords)
+		var _tc0 := Time.get_ticks_msec()
 		await _cache_segment_chunks(floor_tm, coords, headless)
+		_t_corridor_cache += Time.get_ticks_msec() - _tc0
+		var _ts0 := Time.get_ticks_msec()
 		await _spawn_segment(floor_tm, coords, headless)
+		_t_spawn += Time.get_ticks_msec() - _ts0
 		var segment_shots := _build_segment_shots(centerline, floor_tm, lo, hi)
 		shots.append_array(segment_shots)
 		for _s in segment_shots:
@@ -229,11 +282,13 @@ func _build() -> void:
 		_segment_reroll_timers.append(0.0)
 		_reroll_segment_weather(i)  # picks the initial id and sets the real reroll timer
 
+		var _tf0 := Time.get_ticks_msec()
 		var look := RegionLibrary.look_of(region_id)
 		_spawn_segment_trees(floor_tm, look, all_trees, centerline, lo, hi, render_distance, cfg)
 		if RegionLibrary.spawns_bush_mesh(look):
 			var segment_bushes := _points_in_range(all_bushes, centerline, lo, hi)
 			Foliage.spawn_bushes(self, segment_bushes, floor_tm, render_distance, cfg.tree_render_fade_m)
+		_t_foliage += Time.get_ticks_msec() - _tf0
 
 		# One segment down — yield so this frame actually paints (the loading
 		# overlay, mainly) before the next segment's bake/spawn/foliage blocks
@@ -250,6 +305,9 @@ func _build() -> void:
 	_built = true
 	if loading != null:
 		loading.finish()
+	var _t_total := Time.get_ticks_msec() - _t0
+	print("menu showcase build: %d ms total — track_gen=%d bake=%d corridor+cache=%d spawn=%d foliage=%d"
+		% [_t_total, _t_track_gen, _t_bake, _t_corridor_cache, _t_spawn, _t_foliage])
 
 
 func _process(delta: float) -> void:
@@ -415,6 +473,29 @@ func _apply_region_ground_look(floor_tm: TerrainManager, region_id: String, cfg:
 	if look.has("gravel_texture"):
 		mat.set_shader_parameter("road_texture", load(look["gravel_texture"]))
 	mat.set_shader_parameter("tarmac_color", look.get("tarmac_color", cfg.tarmac_color))
+
+
+# The five dictionaries bake_track fills, read back off the segment that actually
+# baked — see the "bake once, share everywhere" note in _build().
+const _BAKED_FIELDS := ["road_heights", "road_blend", "track_weights", "track_surface", "cliff_offsets"]
+
+
+func _capture_baked_fields(floor_tm: TerrainManager) -> Dictionary:
+	var captured := {}
+	for field in _BAKED_FIELDS:
+		captured[field] = floor_tm.get(field)
+	return captured
+
+
+# Share the SAME dictionary objects (not a copy) onto `floor_tm` — GDScript
+# Dictionaries are reference types, so every segment's TerrainManager ends up
+# reading the one bake's results directly. Safe only because nothing downstream
+# ever mutates them (every consumer is read-only — height_at, vertex_colors,
+# surface_at, …) and this scene never frees them (see the class comment above).
+func _share_baked_fields(floor_tm: TerrainManager, shared: Dictionary) -> void:
+	for field in _BAKED_FIELDS:
+		floor_tm.set(field, shared[field])
+	floor_tm._bake_fields_freed = false
 
 
 # `segment_count` evenly spaced arc-length boundaries over [0, total_length] —
