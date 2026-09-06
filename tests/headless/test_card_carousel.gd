@@ -256,3 +256,45 @@ func test_a_long_unwrapped_label_does_not_grow_the_card_past_card_width() -> voi
 		"an incoming label must be forced to wrap")
 	assert_lte(card.root.get_combined_minimum_size().x, Config.data.card_carousel_card_width + 0.5,
 		"a long label must not push the card wider than card_width")
+
+
+# Regression: wrapping a long label (the fix above) trades width for height — several
+# SHORT lines instead of one LONG one. card.info used to be a plain VBoxContainer with no
+# height cap of its own, so that taller wrapped content could push col's, and so
+# card.root's, combined minimum height past card_carousel_aspect * card_width, growing
+# the whole card downward past its own border — reported as "the visual part pushes
+# everything else down past the bottom of the card".
+func test_many_wrapped_info_lines_do_not_grow_the_card_past_card_height() -> void:
+	var card := _carousel.add_card()
+	for i in 6:
+		var lbl := Label.new()
+		lbl.text = "A fairly long line of card info text number %d that wants to wrap" % i
+		card.info.add_child(lbl)
+	await get_tree().process_frame
+	var expected_h := Config.data.card_carousel_card_width * Config.data.card_carousel_aspect
+	assert_lte(card.root.get_combined_minimum_size().y, expected_h + 0.5,
+		"a long info section must not push the card taller than its own height")
+
+
+# Regression: every Control defaults to MOUSE_FILTER_STOP, so a caller's decorative
+# content in card.visual (an icon, a CarCardPreview) swallowed a tap before Godot's own
+# PASS-filter bubbling could ever carry it up to card.root's gui_input — reported as
+# "touch targets don't work for the visual upper half" (the bottom half worked, since
+# Label already defaults to MOUSE_FILTER_IGNORE). Godot's own input propagation isn't
+# something a headless unit test can drive directly, so this pins the actual mechanism the
+# fix relies on: nothing added to visual/info may capture input in its own right — and,
+# separately, that the real destination (card.root's gui_input, already exercised by the
+# tap/confirm tests above) is unaffected by that.
+func test_content_added_to_visual_or_info_never_captures_its_own_input() -> void:
+	var card := _carousel.add_card()
+	var icon := ColorRect.new()
+	card.visual.add_child(icon)
+	var readout := Label.new()
+	card.info.add_child(readout)
+	await get_tree().process_frame
+	assert_eq(icon.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+		"a card's own visual content must not capture the tap meant for the whole card")
+	assert_eq(readout.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+		"info content must stay transparent to input too, for the same reason")
+	assert_eq(card.visual.mouse_filter, Control.MOUSE_FILTER_PASS,
+		"the SLOT itself must still let the tap through to card.root")

@@ -143,7 +143,7 @@ func add_card(disabled: bool = false) -> Card:
 	# wider than card_carousel_card_width, and since cards sit at FIXED index*unit offsets,
 	# a too-wide card visibly overlaps its neighbour. clip_contents is the safety net (a
 	# card can never bleed into a neighbour's space even if something still overflows);
-	# the actual fix is _wrap_incoming_label below, which stops the overflow at the
+	# the actual fix is _prepare_incoming_child below, which stops the overflow at the
 	# source so text is legible (wrapped) rather than merely clipped.
 	card.root.clip_contents = true
 
@@ -152,22 +152,46 @@ func add_card(disabled: bool = false) -> Card:
 	col.mouse_filter = Control.MOUSE_FILTER_PASS
 	card.root.add_child(col)
 
+	# visual + info must sum to EXACTLY the space card.root's stylebox padding and col's
+	# separation leave inside _card_height() — not "half the card each" independently of
+	# that budget, which is what let a caller's info content (now often several WRAPPED
+	# lines — see _prepare_incoming_child below) push col's combined minimum height past
+	# _card_height() and grow the whole card downward past its own border. Both slots are
+	# plain Controls (not layout Containers), so — same trick as card.root's own
+	# clip_contents — their REPORTED minimum size to col is fixed at whatever we set here,
+	# never inflated by what a caller adds inside; clip_contents on each is what then
+	# happens to content that still doesn't fit, instead of growing the card.
+	var content_h := _card_height() - UITheme.GAP_TIGHT - 2.0 * UITheme.PANEL_PAD
+	var visual_h := content_h * 0.5
+	var info_h := content_h - visual_h
+
 	card.visual = Control.new()
-	card.visual.custom_minimum_size = Vector2(0, _card_height() * 0.5)
+	card.visual.custom_minimum_size = Vector2(0, visual_h)
+	card.visual.clip_contents = true
 	card.visual.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	card.visual.mouse_filter = Control.MOUSE_FILTER_PASS
 	col.add_child(card.visual)
 
+	var info_slot := Control.new()
+	info_slot.custom_minimum_size = Vector2(0, info_h)
+	info_slot.clip_contents = true
+	info_slot.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	info_slot.mouse_filter = Control.MOUSE_FILTER_PASS
+	col.add_child(info_slot)
+
 	card.info = VBoxContainer.new()
-	card.info.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	card.info.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.info.mouse_filter = Control.MOUSE_FILTER_PASS
-	col.add_child(card.info)
-	# Any Label a caller adds to visual/info must wrap rather than report a wide minimum
-	# size, or it grows the card past card_width (see the comment on card.root above).
-	# Hooked here, once, so every current AND future caller is covered automatically —
-	# no caller has to remember to autowrap its own labels.
-	card.visual.child_entered_tree.connect(_wrap_incoming_label)
-	card.info.child_entered_tree.connect(_wrap_incoming_label)
+	info_slot.add_child(card.info)
+	# Any child a caller adds to visual/info must (a) never capture input itself — every
+	# Control defaults to MOUSE_FILTER_STOP, which swallowed a tap on a card's own icon/3D
+	# preview before it could ever reach card.root's gui_input, reported as "touch targets
+	# don't work for the visual upper half" — and (b), if it's a Label, wrap rather than
+	# report a wide minimum size that would grow the card past card_width (see the comment
+	# on card.root above). Hooked here, once, so every current AND future caller is
+	# covered automatically — no caller has to remember either rule for its own children.
+	card.visual.child_entered_tree.connect(_prepare_incoming_child)
+	card.info.child_entered_tree.connect(_prepare_incoming_child)
 
 	_strip.add_child(card.root)
 	var index := _cards.size()
@@ -177,7 +201,15 @@ func add_card(disabled: bool = false) -> Card:
 	return card
 
 
-func _wrap_incoming_label(node: Node) -> void:
+func _prepare_incoming_child(node: Node) -> void:
+	var ctrl := node as Control
+	if ctrl != null:
+		# Purely decorative from the input system's POV — card.root (via _on_card_gui_input)
+		# is what owns tap-to-select/tap-to-confirm for the WHOLE card. Control defaults to
+		# MOUSE_FILTER_STOP, which swallows a touch/click before it can ever bubble up to
+		# card.root, so a caller's icon/CarCardPreview silently ate every tap that landed on
+		# it instead of letting the card itself see it.
+		ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var lbl := node as Label
 	if lbl == null:
 		return

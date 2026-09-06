@@ -170,13 +170,54 @@ aside.
 
 Two things fix it, both inside `add_card` so no caller has to remember either: `card.root
 .clip_contents = true` is the safety net (a card can never visually bleed into a
-neighbour's space even if something still overflows), and `_wrap_incoming_label` — hooked
-onto `card.visual.child_entered_tree` / `card.info.child_entered_tree` — is the actual
-fix, forcing `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART` and clearing
+neighbour's space even if something still overflows), and `_prepare_incoming_child` —
+hooked onto `card.visual.child_entered_tree` / `card.info.child_entered_tree` — is the
+actual fix, forcing `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART` and clearing
 `custom_minimum_size.x` on every `Label` a caller adds, so text wraps to fit the card
 instead of forcing it wider. Because this is hooked at the carousel level rather than
 patched into `HubShell._text_card`, it covers every current AND future caller
 automatically — a new page that forgets to autowrap its own labels is covered anyway.
+
+## Wrapping fixed the width overflow, and shifted it onto height
+
+Forcing a long label to autowrap trades width for height: a subtitle that used to be one
+long unwrapped line became two or three SHORTER, TALLER ones. `card.info` (the bottom-half
+slot) was a plain `VBoxContainer` added directly to `col` with no size cap of its own —
+same shape as the pre-fix `card.root`, so the same failure mode applied one level down:
+its combined minimum height (now inflated by wrapped text) could push `col`'s, and so
+`card.root`'s, combined minimum height past `_card_height()`, growing the whole card
+downward — reported as "the visual part on the top pushes everything else down past the
+bottom of the card" (from the player's side, the card just looks like its content spilled
+out the bottom, whichever slot's content happened to be the trigger).
+
+The fix mirrors `card.visual`'s existing shape rather than inventing a new one:
+`card.info` is now wrapped in `info_slot`, a plain (non-`Container`) `Control` with a
+FIXED `custom_minimum_size.y` and `clip_contents = true` — a plain `Control`'s reported
+minimum size to its parent is always exactly its own `custom_minimum_size`, never
+inflated by what's inside it (the same property that already made `card.visual` immune to
+this), so `col`'s combined height can never grow past what `visual_h + info_h` was set to,
+however much text a caller stuffs into a card. `visual_h`/`info_h` are computed once, in
+`add_card`, from the actual budget left inside the card after `card.root`'s own stylebox
+padding (`UITheme.PANEL_PAD`, both edges) and `col`'s separation (`UITheme.GAP_TIGHT`) —
+not "half of `_card_height()` each" in isolation, which is what would still overflow once
+that padding/gap is accounted for. Content that still doesn't fit within its slot's fixed
+height is clipped (visually cut off) rather than growing the card — a safety net, same
+role `card.root.clip_contents` already plays for width.
+
+## A card's own icon/preview must not swallow the tap meant for the whole card
+
+Every `Control` defaults to `MOUSE_FILTER_STOP`. A caller's decorative content in
+`card.visual` (`_card_icon`'s `ColorRect`, `CarCardPreview`) never overrode that, so a tap
+landing on the card's own top-half art was consumed there and never reached `card.root`'s
+`gui_input` — which is where `_on_card_gui_input`, and so tap-to-select/tap-to-confirm,
+actually lives. Reported as "touch targets don't work for the visual upper half": the
+bottom-half `Label`s worked (Godot's `Label` already defaults to `MOUSE_FILTER_IGNORE`),
+the top half didn't. `_prepare_incoming_child` now forces `MOUSE_FILTER_IGNORE` on every
+`Control` added to `card.visual`/`card.info`, not just `_card_icon`/`CarCardPreview`
+specifically — nothing added to either slot is meant to receive input in its own right,
+the CARD is the only tap target, so this is a blanket rule for the slot rather than a
+per-content-type fix. Covered by
+`test_a_card_still_confirms_when_tapped_on_its_visual_slot`.
 
 ## The gaps show the live 3D showcase behind the page, not black
 
