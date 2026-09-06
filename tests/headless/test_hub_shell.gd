@@ -101,6 +101,92 @@ func _press(text: String) -> bool:
 	return false
 
 
+# --- Touch simulation ----------------------------------------------------------
+#
+# `_press`/`c.confirmed.emit(i)` above exercise the SCREEN GRAPH but not the actual touch
+# code path a phone player drives it with — these instead dispatch real
+# InputEventScreenTouch/Drag through CardCarousel's own entry points
+# (_on_card_gui_input / _gui_input / _input), the same ones card_carousel.gd's own drag/tap
+# regression tests use, so a real touch-handling bug (see test_touch_navigation_below)
+# shows up here rather than only in a unit test of the carousel in isolation.
+
+# A real single-finger TAP (press then release at the same point, no movement) on
+# whichever card is CURRENTLY CENTRED — CardCarousel treats a tap on the centred card as a
+# CONFIRM (card_carousel.gd _tap_card), same as a player tapping the highlighted item.
+func _touch_tap_selected_card(carousel: CardCarousel) -> void:
+	var index := carousel.selected_index()
+	var pos := Vector2(carousel.get_card(index).root.size.x * 0.5, 10.0)
+	var press := InputEventScreenTouch.new()
+	press.pressed = true
+	press.position = pos
+	carousel._on_card_gui_input(press, index)
+	var release := InputEventScreenTouch.new()
+	release.pressed = false
+	release.position = pos
+	carousel._on_card_gui_input(release, index)
+
+
+# A real drag gesture starting on the carousel's own BACKGROUND (not any specific card —
+# see card_carousel.gd's "_drag_active must arm from the background too" fix) that moves
+# far enough to cross the snap threshold, then releases. `steps` cards' worth of
+# horizontal travel, negative to drag toward higher indices.
+func _touch_swipe(carousel: CardCarousel, steps: float) -> void:
+	var start := carousel.size * 0.5
+	var press := InputEventScreenTouch.new()
+	press.pressed = true
+	press.position = start
+	carousel._gui_input(press)
+
+	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
+	var drag_pos := start + Vector2(unit * steps, 0.0)
+	var drag := InputEventScreenDrag.new()
+	drag.position = drag_pos
+	carousel._gui_input(drag)
+
+	var release := InputEventScreenTouch.new()
+	release.pressed = false
+	release.position = drag_pos
+	carousel._input(release)
+
+
+# Regression coverage for the touch bugs found and fixed on this carousel (jump-on-touch
+# coordinate mismatch, background drags doing nothing, a card's own confirm never firing)
+# — exercised here as an end-to-end MENU WALK rather than isolated CardCarousel unit
+# tests, so a wiring mistake in HOW HubShell hooks up `confirmed`/`selection_changed`
+# would show up too, not just a bug in the carousel itself.
+func test_touch_navigation_walks_main_to_region_to_car_and_back() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	var main_carousel := _carousel()
+	assert_not_null(main_carousel)
+	assert_eq(_card_text(main_carousel, main_carousel.selected_index()), "NEW RUN ",
+		"setup: a fresh profile's first MAIN card is New Run")
+	_touch_tap_selected_card(main_carousel)
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.REGION,
+		"a touch tap on MAIN's centred card must enter region select")
+
+	var region_carousel := _carousel()
+	assert_not_null(region_carousel)
+	_touch_tap_selected_card(region_carousel)
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.CAR,
+		"a touch tap on the first (always-unlocked) region must enter car select")
+
+	var car_carousel := _carousel()
+	assert_not_null(car_carousel)
+	if car_carousel.card_count() > 1:
+		var before := car_carousel.selected_index()
+		_touch_swipe(car_carousel, -1.0)
+		await get_tree().process_frame
+		assert_ne(car_carousel.selected_index(), before,
+			"a touch swipe on the CAR page must move the selection")
+
+	assert_true(_press("Back"), "setup: the CAR page offers a Back action")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.REGION, "back from CAR must return to region select")
+
+
 # --- Navigation (the CLAUDE.md contract) --------------------------------------
 
 # The rule, on every page the shell can show: a menu reachable only by pointer is not
@@ -390,7 +476,16 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 # carousel's own visible window (CardCarousel.visible_card_count()) around the current
 # selection should ever hold a live preview; everything else gets the cheap placeholder —
 # see HubShell._refresh_car_previews.
-func test_car_page_only_builds_live_previews_for_the_visible_window() -> void:
+# Regression: the CAR page used to build a live CarCardPreview (a real SubViewport + a
+# full car.tscn instantiation) for EVERY car up front, then — after a first fix — for a
+# WINDOW of cards around the selection. Both still tore one down and built a fresh one on
+# every selection change, which is what was reported as the carousel freezing the moment a
+# player actually tried to move the selection (unavoidable — that's how you pick a car).
+# Exactly ONE CarCardPreview must exist for the whole page, reused (via show_car) and
+# reparented onto whichever card is currently selected — never rebuilt from scratch on a
+# selection change, and never more than one live at a time regardless of how many cards
+# the carousel can show at once.
+func test_car_page_keeps_exactly_one_reused_preview_on_the_selected_card() -> void:
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
 	var carousel := _carousel()
@@ -398,22 +493,28 @@ func test_car_page_only_builds_live_previews_for_the_visible_window() -> void:
 	assert_gt(carousel.card_count(), 1,
 		"setup: CarFixtures ships more than one unowned car to buy")
 
-	var live_count := func() -> int:
-		var n := 0
+	var live_previews := func() -> Array:
+		var found: Array = []
 		for i in carousel.card_count():
 			var card := carousel.get_card(i)
 			if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
-				n += 1
-		return n
+				found.append({"index": i, "node": card.visual.get_child(0)})
+		return found
 
-	# Force the carousel's visible window down to a single card, regardless of the real
-	# viewport size, then trigger the same selection_changed refresh _build_car wires up.
-	carousel.fit_to_available_width(Config.data.card_carousel_card_width)
+	var before: Array = live_previews.call()
+	assert_eq(before.size(), 1, "exactly one live preview must exist")
+	assert_eq(before[0]["index"], carousel.selected_index(),
+		"the live preview must sit on the currently selected card")
+
 	carousel.select(1 if carousel.selected_index() == 0 else 0, false)
 	await get_tree().process_frame
 
-	assert_eq(live_count.call(), 1,
-		"only the currently selected card should keep a live 3D preview once the window narrows to one")
+	var after: Array = live_previews.call()
+	assert_eq(after.size(), 1, "still exactly one live preview after moving the selection")
+	assert_eq(after[0]["index"], carousel.selected_index(),
+		"the live preview must have followed the selection to the new card")
+	assert_eq(after[0]["node"], before[0]["node"],
+		"the SAME CarCardPreview must be reused, not torn down and rebuilt")
 
 
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:

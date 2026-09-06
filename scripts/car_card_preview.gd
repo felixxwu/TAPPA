@@ -11,7 +11,10 @@ extends SubViewportContainer
 #
 # Usage: CarCardPreview.new(car_index_or_owned_dict) — pass either a CarLibrary index
 # (int, for an unowned catalogue car in the Buy list) or an owned-car Dictionary (for a
-# car the player already has, so its actual paint/wheels show).
+# car the player already has, so its actual paint/wheels show). ONE instance is meant to
+# be kept alive and REUSED across selections — hub_shell.gd reparents it into whichever
+# card is currently selected and calls show_car(new_ref) rather than freeing it and
+# building a new CarCardPreview per card (see show_car's own comment for why that matters).
 
 const _SIZE := 160
 
@@ -61,12 +64,33 @@ func _ready() -> void:
 	if _spawned:
 		return
 	_spawned = true
+	_spawn_now()
+
+
+func _spawn_now() -> void:
 	var opts := {"stop_physics": true, "disable_process": true}
 	if _car_ref is Dictionary:
 		opts["owned"] = _car_ref
 	else:
 		opts["index"] = int(_car_ref)
 	CarProp.spawn(_pivot, Scenes.car_scene(), opts)
+
+
+# Swap which car this SAME preview shows, reusing its SubViewport/camera/light rather than
+# building a whole new CarCardPreview. hub_shell.gd keeps exactly ONE of these alive for
+# the CAR page (reparenting it into whichever card is currently selected) instead of
+# tearing one down and building a fresh one on every selection change — recreating the
+# SubViewport + a full car.tscn instantiation on every swipe is what was reported as the
+# carousel freezing the moment a player tried to move the selection. Only the CarProp
+# under _pivot is rebuilt here; the expensive viewport/camera/light setup happens once.
+func show_car(car_ref) -> void:
+	_car_ref = car_ref
+	if not _spawned:
+		return  # _ready() will call _spawn_now() with the ref already updated above.
+	for child in _pivot.get_children():
+		_pivot.remove_child(child)
+		child.queue_free()
+	_spawn_now()
 
 
 func _process(delta: float) -> void:
