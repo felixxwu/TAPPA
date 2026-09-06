@@ -124,7 +124,15 @@ func _show(view: int) -> void:
 		_page = null
 	# The heading is a CONSTRUCTION option, not a settable property: MenuPage builds no
 	# label at all when "title" is absent, and title_label() is then null.
-	_page = MenuPage.open_modal(self, {"margin": 24.0, "title": _title_for(view)})
+	# Carousel pages get a fully TRANSPARENT body box (alpha 0), not just a narrower margin
+	# (_page_margin_for) — the box's own opaque black background was painting over the 3D
+	# menu_showcase behind it everywhere the gap between cards should have shown it through.
+	# Cards stay opaque regardless (their own stylebox — card_carousel.gd's _card_stylebox
+	# — is independent of the page they sit on), so only the empty space around them opens up.
+	var page_opts := {"margin": _page_margin_for(view), "title": _title_for(view)}
+	if _is_carousel_view(view):
+		page_opts["alpha"] = 0.0
+	_page = MenuPage.open_modal(self, page_opts)
 	match view:
 		View.MAIN: _build_main()
 		View.REGION: _build_region()
@@ -200,12 +208,36 @@ func _card_icon(letter: String, color: Color) -> Control:
 	return box
 
 
+# The five carousel pages want to run edge to edge, unlike every other MenuPage (whose
+# body box deliberately hugs its content with a wide gap to the screen edge — menu_page.gd
+# rule 1). A carousel's own clip_contents already keeps it from spilling into the 3D scene,
+# so it doesn't need that margin doing the same job twice, and a wide margin is exactly what
+# was squeezing it down to only 2-3 cards' worth of screen space.
+const _CAROUSEL_PAGE_MARGIN := 8.0
+const _DEFAULT_PAGE_MARGIN := 24.0
+
+func _page_margin_for(view: int) -> float:
+	return _CAROUSEL_PAGE_MARGIN if _is_carousel_view(view) else _DEFAULT_PAGE_MARGIN
+
+
+func _is_carousel_view(view: int) -> bool:
+	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.PERKS]
+
+
 # Build a carousel and mount it as the page's whole selectable body (any plain,
 # non-choosable labels the caller wants above it — e.g. "Money: N" — should be
 # added to _page.body() BEFORE calling this).
 func _build_carousel() -> CardCarousel:
 	var carousel := CardCarousel.new()
 	_page.body().add_child(carousel)
+	# Claim the full logical frame width, minus the page's own margin/padding chrome —
+	# `fit_to_available_width` then rounds DOWN to a whole number of cards so a card is
+	# never chopped in half at the visible edge, and set_body_width feeds that width to
+	# the (otherwise content-hugging) MenuPage box so it actually grows to it.
+	var avail := WorldPanel.layout_frame_size(_page, Vector2(480.0, 360.0)).x
+	var chrome := _CAROUSEL_PAGE_MARGIN * 2.0 + UITheme.PANEL_PAD * 2.0
+	carousel.fit_to_available_width(avail - chrome)
+	_page.set_body_width(carousel.custom_minimum_size.x)
 	return carousel
 
 
@@ -330,6 +362,13 @@ func _build_car() -> void:
 	# Parallel to the carousel's cards: either an owned-car Dictionary to start a run
 	# with, or a model id String to buy — whichever `confirmed` should act on.
 	var actions: Array = []
+	# Parallel to the carousel's cards too: the CarProp.spawn ref (an owned-car Dictionary
+	# or a catalogue index — see CarCardPreview._ready) each card's preview would show, so
+	# _refresh_car_previews can build one lazily. null for a card that doesn't get a live
+	# preview at all (there isn't one — every car card wants one — but keeping this as an
+	# Array of Variant rather than a typed Array[Dictionary] keeps the int/Dictionary mix
+	# CarCardPreview already accepts).
+	var car_refs: Array = []
 
 	var owned: Array = Save.profile.get(Save.KEY_CARS, [])
 	for car in owned:
@@ -341,13 +380,13 @@ func _build_car() -> void:
 		var label := String(spec.get("name", entry.get("model_id", "car")))
 		var over_cap := _pending_challenge != "" and not eligible_ids.has(iid)
 		var card := carousel.add_card(over_cap)
-		card.visual.add_child(CarCardPreview.new(entry))
 		card.info.add_child(UITheme.label(label))
 		if over_cap:
 			card.info.add_child(UITheme.label("Over the rating cap", "dim"))
 			actions.append(null)
 		else:
 			actions.append(entry)
+		car_refs.append(entry)
 
 	var catalogue := CarLibrary.all()
 	for index in catalogue.size():
@@ -359,10 +398,21 @@ func _build_car() -> void:
 		var car_name := String(spec.get("name", model_id))
 		var cant_afford := Save.money() < cost
 		var card := carousel.add_card(cant_afford)
-		card.visual.add_child(CarCardPreview.new(index))
 		card.info.add_child(UITheme.label(car_name))
 		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
 		actions.append(null if cant_afford else model_id)
+		car_refs.append(index)
+
+	# A live CarCardPreview is a real SubViewport + a full car.tscn instantiation (every
+	# embedded car glb body, before pruning) — building one for EVERY car up front, owned
+	# and the whole unowned catalogue, blocked the main thread for as long as it took to
+	# spawn all of them and was reported as the game freezing the moment a region was
+	# picked (region select is what leads here). Only the cards the carousel can actually
+	# show at once need to be live; _refresh_car_previews keeps just that window built,
+	# swapping in a cheap placeholder everywhere else and rebuilding the window on every
+	# selection change instead of paying for the whole roster at once.
+	_refresh_car_previews(carousel, car_refs)
+	carousel.selection_changed.connect(func(_i): _refresh_car_previews(carousel, car_refs))
 
 	carousel.confirmed.connect(func(i: int) -> void:
 		var action = actions[i]
@@ -373,6 +423,42 @@ func _build_car() -> void:
 
 	_action("Back", func() -> void:
 		_show(View.CHALLENGE if _pending_challenge != "" else View.REGION))
+
+
+# Keep a live CarCardPreview built only for cards within the carousel's own visible
+# window (visible_card_count(), always odd — see card_carousel.gd) around whichever card
+# is CURRENTLY selected; every other car card gets the cheap letter-icon placeholder. Safe
+# to call repeatedly (on every selection change) — a card already in the wanted state is
+# left untouched rather than torn down and rebuilt.
+func _refresh_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
+	var radius := carousel.visible_card_count() / 2
+	var selected := carousel.selected_index()
+	for i in car_refs.size():
+		var card := carousel.get_card(i)
+		var want_live := absi(i - selected) <= radius
+		var built := card.visual.get_child_count() > 0
+		var is_live := built and card.visual.get_child(0) is CarCardPreview
+		# `built` guards the very first call: a fresh card has NO visual yet, and
+		# `want_live == is_live` (false == false) would otherwise read as "already
+		# correct" and skip it, leaving it with no icon at all.
+		if built and want_live == is_live:
+			continue
+		for child in card.visual.get_children():
+			card.visual.remove_child(child)
+			child.queue_free()
+		if want_live:
+			card.visual.add_child(CarCardPreview.new(car_refs[i]))
+		else:
+			card.visual.add_child(_card_icon(_car_ref_name(car_refs[i]), UITheme.MUTED))
+
+
+# The letter a placeholder card icon shows for a car ref (see _refresh_car_previews) —
+# an owned-car Dictionary or a CarLibrary catalogue index, the same two shapes
+# CarCardPreview._ready already accepts.
+func _car_ref_name(car_ref) -> String:
+	if car_ref is Dictionary:
+		return String(CarLibrary.for_owned(car_ref).get("name", "car"))
+	return String(CarLibrary.all()[int(car_ref)].get("name", "car"))
 
 
 func _buy_car(model_id: String) -> void:

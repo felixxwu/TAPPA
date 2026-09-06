@@ -60,14 +60,149 @@ Signals: `selection_changed(index)`, `confirmed(index)`.
   `end_drag_and_snap()`, which rounds the drag offset to the nearest card index and
   animates back to it — the strip never sits parked between two cards.
 
+## Touch drag must convert through a common (global) coordinate frame
+
+`InputEventScreenTouch`/`InputEventScreenDrag` positions are LOCAL to whichever control
+actually receives them — and a drag gesture doesn't stay on one control. The press is
+caught by `_on_card_gui_input`, bound to the PRESSED CARD's own `gui_input` signal, so its
+`.position` is local to that card; the drag samples that follow are caught by
+`_gui_input`, the CAROUSEL's own override, so THEIR `.position` is local to the carousel
+instead. `InputEventScreenTouch`/`Drag` have no `global_position` field to fall back on
+(unlike mouse events, which is why the mouse-drag path never had this bug), so comparing
+the two raw `.position` values directly computed a bogus delta on the very first drag
+sample — as large as the distance between the pressed card and the carousel's own local
+origin. The reported symptom: touching the peeking card next to the first (selected) card
+and starting to drag made the whole strip jump immediately, before any real finger
+movement. Both `_on_card_gui_input`'s touch branch and `_gui_input`'s
+`InputEventScreenDrag` branch now convert through `get_global_transform() * event.position`
+before ever comparing an x-coordinate across the two handlers — see
+`test_touch_drag_tracks_the_real_finger_delta_not_a_coordinate_mismatch`. Don't reintroduce
+a bare `t.position.x`/`d.position.x` comparison here; that is exactly this regression.
+
+## A drag must arm from the carousel's own background too, not just from a card
+
+`_drag_active` used to be armed ONLY inside `_on_card_gui_input`, which is bound to each
+CARD's own `gui_input` signal. That was invisible while the page behind the carousel was
+opaque black (a press anywhere that mattered was, in practice, always on a card or right
+at its edge), but once the gaps became a window onto the live 3D showcase (see below),
+starting a drag from the genuinely empty space between or around cards is something a
+player will actually do — and that press never reached `_on_card_gui_input` at all, so the
+drag silently did nothing. `_gui_input` (the carousel's own override) DOES receive a press
+that lands on empty space (nothing else claims it), so it now arms `_drag_active` itself
+too, through the same shared `_begin_drag(global_x)` helper `_on_card_gui_input` uses — a
+press that started ON a card still also reaches here afterwards (cards use
+`MOUSE_FILTER_PASS`, so the event bubbles up once the card's own handler has already run),
+and re-arming with the same true global x is a harmless no-op, not a second gesture. The
+release side needed the same treatment: `_gui_input`'s new press branch also has to clear
+`_drag_active` on release, or a background-only gesture would leave it stuck true and bare
+mouse motion (no button held) would go on panning the strip. See
+`test_dragging_from_the_background_between_cards_still_pans_the_strip`. While fixing this,
+the `InputEventScreenDrag` branch also picked up the `_drag_active` guard the
+`InputEventMouseMotion` branch already had — without it, any screen-drag event reaching
+the carousel (even one that never had a matching press) moved the strip.
+
 ## Config
 
 Every carousel tunable lives on `GameConfig` (`scripts/game_config.gd` → `Card Carousel`
 group), not hardcoded in the script: `card_carousel_aspect`, `card_carousel_card_width`,
-`card_carousel_unselected_alpha`, `card_carousel_snap_duration_s`,
+`card_carousel_gap`, `card_carousel_unselected_alpha`, `card_carousel_snap_duration_s`,
 `card_carousel_drag_step_fraction` (reserved for a future drag-vs-tap threshold refinement
-— the shipped `end_drag_and_snap` already snaps to nearest regardless), and
-`card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed).
+— the shipped `end_drag_and_snap` already snaps to nearest regardless),
+`card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed), and
+`card_carousel_visible_width_factor` (below).
+
+## A card needs a visible edge, not just a gap
+
+Every panel in `UITheme` is solid black by design (`panel_box`'s "rule 4"), and a card
+sits directly on top of the ALSO-solid-black `MenuPage` body box. A pure-black card on a
+pure-black body is invisible as a shape: the true gap between two cards and the inside of
+a card read as the exact same colour, so widening `card_carousel_gap` alone cannot make
+the strip look like separate cards — it only makes the (equally invisible) space between
+two equally-invisible rectangles bigger. `modulate.a` dimming doesn't help either: 50%
+transparent black over black is still black, so the unselected/selected cue was carried
+entirely by the tiny icon rectangle inside each card, and the whole strip read as one
+fused black slab with a few floating coloured squares — exactly the "cards joined into
+one" bug report this section exists to prevent a repeat of.
+`CardCarousel._card_stylebox(selected)` fixes this the same way `UITheme.reward_card_box`
+already does for a black card that must pop against another black panel: an outline,
+1px `UITheme.INK_DIM` normally and 3px `UITheme.GREEN` (the theme's existing
+"active/selected" colour) on the centred card. `_layout()` reapplies it every card on
+every layout pass since it doubles as the selection indicator. Don't drop the border to
+"clean up" the stylebox — without it the carousel silently regresses to invisible cards
+regardless of how big the gap or how strong the dim/opaque contrast is.
+
+## Edge to edge, and never a clipped card
+
+`MenuPage`'s body box deliberately hugs its content and sits with a wide gap to the
+screen edge for every OTHER page (menu_page.gd rule 1) — right for a settings page or a
+row list, wrong for a carousel that is supposed to read as a strip of cards running the
+width of the screen. `HubShell._is_carousel_view` gives the five carousel pages
+(MAIN/REGION/CAR/SHOP/PERKS) their own small `_CAROUSEL_PAGE_MARGIN` (8.0, vs. every other
+page's 24.0) instead of that wide margin, and `_build_carousel` sizes the carousel to the
+current logical frame width via `WorldPanel.layout_frame_size(_page, ...).x` (the same
+"how much room do I actually have" call `RallyDetail.body_width` uses), then feeds that
+through `_page.set_body_width(...)` — otherwise the box would still hug back down to
+whatever narrow width the carousel used to default to.
+
+`CardCarousel.fit_to_available_width(avail_width)` is what turns that raw pixel budget
+into an actual card count: it rounds DOWN to a whole, ODD number of cards (`unit :=
+card_width + gap`; `count := floor((avail_width + gap) / unit)`, forced odd) rather than
+whatever fraction of a card happens to fit. Odd matters, not just whole: `_layout()`
+always centres the SELECTED card exactly on the carousel's own centre-x, so an odd visible
+count is the only way to get an equal number of whole cards peeking on both sides — an
+even count would show one more full card on one side than the other, i.e. a card sliced in
+half at the far edge, which is the exact "clipping" bug this method exists to rule out.
+`clip_contents` on the carousel stays on regardless (a catalogue longer than the visible
+count still needs to hide the far-off cards) — it's just that every card `clip_contents`
+ever cuts is either fully inside the strip or fully outside it, never straddling the edge.
+
+## A card must never grow past card_width, or it overlaps its neighbour
+
+`card.root` (the card's `PanelContainer`) is an absolute-positioned child of `_strip`, a
+plain `Control` rather than a layout `Container` — nothing ever assigns it a rect, so
+Godot lets its actual size grow to fit whatever its children's combined minimum size
+demands, same as any unmanaged Control. A caller's label that doesn't wrap (a region's
+"Locked — clear `<gate>`" subtitle was the case that surfaced this) reports its full
+unwrapped text width as its minimum size, which can exceed `card_carousel_card_width` —
+and since cards sit at FIXED `index * (card_width + gap)` offsets rather than flowing
+around each other, a too-wide card visibly overlaps its neighbour instead of pushing it
+aside.
+
+Two things fix it, both inside `add_card` so no caller has to remember either: `card.root
+.clip_contents = true` is the safety net (a card can never visually bleed into a
+neighbour's space even if something still overflows), and `_wrap_incoming_label` — hooked
+onto `card.visual.child_entered_tree` / `card.info.child_entered_tree` — is the actual
+fix, forcing `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART` and clearing
+`custom_minimum_size.x` on every `Label` a caller adds, so text wraps to fit the card
+instead of forcing it wider. Because this is hooked at the carousel level rather than
+patched into `HubShell._text_card`, it covers every current AND future caller
+automatically — a new page that forgets to autowrap its own labels is covered anyway.
+
+## The gaps show the live 3D showcase behind the page, not black
+
+`MenuPage`'s body box is opaque black by default (`panel_box(1.0)`), which is right for a
+page that should read as a solid panel — but wrong for a carousel, where the space between
+cards is supposed to be a window onto the live 3D menu showcase behind the shell
+(`todo/menu-background-showcase.md`), not more black. `HubShell._show` passes `"alpha":
+0.0` into `MenuPage.open_modal`'s opts for the five carousel views only (others keep the
+default opaque box), making the WHOLE body box transparent. Cards themselves are
+unaffected — `_card_stylebox`'s `panel_box(1.0)` is independent of the page they happen to
+sit on — so only the truly empty space (the gaps between cards, and around them) opens up
+onto the showcase; nothing about a card's own read as a solid surface changes.
+
+`MenuPage`'s body box **hugs its content's minimum width** (`menu_page.gd`'s
+`_scroll.horizontal_scroll_mode = SCROLL_MODE_DISABLED` propagates the child's real
+minimum width up to the box). Cards are absolute-positioned children of `_strip`, a plain
+`Control` rather than a `Container`, so they never contribute to anyone's reported minimum
+size — the carousel itself has to declare one. Without it the body box shrinks to whatever
+its narrowest sibling (a "Money: N" label, say) needs, and the CardCarousel's own
+`clip_contents = true` then clips every card down to that sliver — which reads as "a list
+scrolling inside one small card" rather than a row of cards, since you never see more than
+a fragment of whichever card is centred. `CardCarousel._init` sets
+`custom_minimum_size.x = card_carousel_card_width * card_carousel_visible_width_factor`
+(default 2.6×) specifically so the box grows enough to show the selected card next to a
+peek of its neighbours. Don't reintroduce a bare `Vector2(0, height)` minimum size here —
+that is exactly the regression this section documents.
 
 ## The CAR page's spinning 3D preview
 
@@ -85,6 +220,24 @@ render.
 `CarCardPreview.new(car_ref)` takes either an **owned-car Dictionary** (a car the player
 already has — shows its actual paint/wheels via `CarProp`'s `owned` opt) or a
 **`CarLibrary` index** (an unowned catalogue car in the Buy list, via the `index` opt).
+
+## Only the visible cars get a live preview
+
+One `CarCardPreview` is cheap; the whole CAR page's roster is not. `HubShell._build_car`
+used to build one for EVERY car up front — every owned car plus the entire unowned
+catalogue — which meant a full `car.tscn` instantiation (every embedded car glb body,
+before `car_prop.gd`'s pruning) and a brand new `SubViewport` for each, all synchronously
+in one call. With even a modest roster this blocked the main thread long enough to read as
+the game freezing the moment a region was picked (region select is what leads to this
+page). `CardCarousel.visible_card_count()` (set by `fit_to_available_width`, always odd)
+is what the carousel itself can actually show at once, so
+`HubShell._refresh_car_previews` keeps a live `CarCardPreview` built ONLY for cards within
+that many steps of the current selection, giving every other car card the cheap
+letter-icon placeholder (`_card_icon`) instead — and rebuilds that window on every
+`selection_changed` rather than up front for the whole list. `CardCarousel.get_card(index)`
+is the accessor this needs (reach back into a card's `visual` slot after `add_card`
+returned it, to swap the placeholder for the real thing or back). Don't revert to building
+every car's preview eagerly — that is exactly this regression.
 
 ## Known open decisions (unilateral — flag for design review)
 

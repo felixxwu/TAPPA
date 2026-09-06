@@ -50,18 +50,54 @@ var _tween: Tween
 var _drag_active := false
 var _drag_start_x := 0.0
 var _drag_start_offset := 0.0
-
-const _GAP := 24.0
+var _visible_count := 1
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(0, _card_height() + 8.0)
+	# A REAL minimum width, not just height. Cards are absolute-positioned children of a
+	# plain (non-Container) `_strip`, so they never contribute to anyone's minimum size —
+	# and MenuPage's body box hugs its content's minimum width (menu_page.gd), so without
+	# this the box shrinks to whatever its narrowest sibling label needs and clips the
+	# carousel down to a sliver, which reads as "scrolling a list inside one card" rather
+	# than cards sitting side by side. Claiming enough width for the selected card plus a
+	# peek of its neighbours is what makes it read as a card LIST.
+	custom_minimum_size = Vector2(
+		Config.data.card_carousel_card_width * Config.data.card_carousel_visible_width_factor,
+		_card_height() + 8.0)
 	clip_contents = true
 	focus_mode = Control.FOCUS_ALL
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_strip = Control.new()
 	_strip.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_strip)
+
+
+# Widen the carousel's minimum width to use `avail_width` — called by a host that wants
+# the carousel to run edge to edge instead of the default peek-a-couple-neighbours width
+# from _init(). Rounds DOWN to a whole, ODD number of visible cards (so the selected card
+# sits exactly centred with an equal number of whole cards either side) rather than
+# whatever fraction happens to fit avail_width — a fractional card at the strip's clipped
+# edge is a card sliced in half, which is exactly the "don't clip" case this exists to
+# avoid. Falls back to one bare card's width if avail_width can't fit even that.
+func fit_to_available_width(avail_width: float) -> void:
+	var unit := _card_width() + Config.data.card_carousel_gap
+	var count := int(floor((avail_width + Config.data.card_carousel_gap) / unit))
+	count = maxi(count, 1)
+	if count % 2 == 0:
+		count -= 1
+	count = maxi(count, 1)
+	_visible_count = count
+	custom_minimum_size.x = count * _card_width() + (count - 1) * Config.data.card_carousel_gap
+	_layout()
+
+
+# How many cards fit_to_available_width decided can be on screen at once (always odd —
+# see fit_to_available_width). A host with an expensive per-card visual (a live 3D
+# preview, say) can use this to only keep that many live around the current selection
+# instead of building one for every card up front — see CarCardPreview's caller in
+# hub_shell.gd for why that matters. 1 before fit_to_available_width has ever run.
+func visible_card_count() -> int:
+	return _visible_count
 
 
 func _card_width() -> float:
@@ -72,6 +108,24 @@ func _card_height() -> float:
 	return _card_width() * Config.data.card_carousel_aspect
 
 
+# A card's own panel is solid black (like every other panel in the theme — UITheme's
+# "pure black, no border" rule), sitting on the ALSO-solid-black MenuPage body box behind
+# it. Without a border a card's edges are optically identical to both the gap beside it
+# AND the body box behind it, so modulate.a dimming (which just makes black-on-black more
+# transparent, i.e. no visible change at all) was the ONLY selection cue and the whole
+# strip read as one fused black slab with a few floating coloured icons — not a row of
+# cards. A border is the fix: reward_card_box() already sets this precedent (a black card
+# that must visibly pop against another black panel gets an accent border), generalised
+# here to every unselected card too so the CARD SHAPE itself is always visible, not just
+# the selected one.
+func _card_stylebox(selected: bool) -> StyleBoxFlat:
+	var box := UITheme.panel_box(1.0)
+	for side in ["left", "top", "right", "bottom"]:
+		box.set("border_width_" + side, 3 if selected else 1)
+	box.border_color = UITheme.GREEN if selected else UITheme.INK_DIM
+	return box
+
+
 # Add a new card and return its Card handle so the caller can populate visual/info.
 # `disabled` cards are shown (dimmed, per the project's "locked rows stay visible"
 # convention) but skip both selection landing and confirm.
@@ -80,8 +134,18 @@ func add_card(disabled: bool = false) -> Card:
 	card.disabled = disabled
 	card.root = PanelContainer.new()
 	card.root.custom_minimum_size = Vector2(_card_width(), _card_height())
-	card.root.add_theme_stylebox_override("panel", UITheme.panel_box(1.0))
+	card.root.add_theme_stylebox_override("panel", _card_stylebox(false))
 	card.root.mouse_filter = Control.MOUSE_FILTER_PASS
+	# `card.root` is an absolute-positioned child of `_strip` (a plain Control, not a
+	# layout Container) — nothing ever assigns it a rect, so its actual size just grows to
+	# fit whatever its children's combined minimum size demands. A caller's long label (a
+	# region's "Locked — clear <gate>" subtitle, say) that doesn't wrap pushes the card
+	# wider than card_carousel_card_width, and since cards sit at FIXED index*unit offsets,
+	# a too-wide card visibly overlaps its neighbour. clip_contents is the safety net (a
+	# card can never bleed into a neighbour's space even if something still overflows);
+	# the actual fix is _wrap_incoming_label below, which stops the overflow at the
+	# source so text is legible (wrapped) rather than merely clipped.
+	card.root.clip_contents = true
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
@@ -98,6 +162,12 @@ func add_card(disabled: bool = false) -> Card:
 	card.info.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	card.info.mouse_filter = Control.MOUSE_FILTER_PASS
 	col.add_child(card.info)
+	# Any Label a caller adds to visual/info must wrap rather than report a wide minimum
+	# size, or it grows the card past card_width (see the comment on card.root above).
+	# Hooked here, once, so every current AND future caller is covered automatically —
+	# no caller has to remember to autowrap its own labels.
+	card.visual.child_entered_tree.connect(_wrap_incoming_label)
+	card.info.child_entered_tree.connect(_wrap_incoming_label)
 
 	_strip.add_child(card.root)
 	var index := _cards.size()
@@ -107,8 +177,27 @@ func add_card(disabled: bool = false) -> Card:
 	return card
 
 
+func _wrap_incoming_label(node: Node) -> void:
+	var lbl := node as Label
+	if lbl == null:
+		return
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# A Label with autowrap OFF reports the full unwrapped text width as its minimum size,
+	# which is exactly what pushed a card wider than card_width. Autowrap alone doesn't
+	# clear an explicit custom_minimum_size some caller might have set, so zero it too.
+	lbl.custom_minimum_size.x = 0
+
+
 func card_count() -> int:
 	return _cards.size()
+
+
+# The Card handle add_card returned for `index` — for a host that needs to reach back into
+# a card's visual/info slots after the fact (e.g. to rebuild an expensive visual lazily
+# around the current selection rather than for every card up front; see hub_shell.gd's
+# _refresh_car_previews).
+func get_card(index: int) -> Card:
+	return _cards[index]
 
 
 func selected_index() -> int:
@@ -131,7 +220,7 @@ func select(index: int, animate: bool = true) -> void:
 
 
 func _target_offset_for(index: int) -> float:
-	return index * (_card_width() + _GAP)
+	return index * (_card_width() + Config.data.card_carousel_gap)
 
 
 func _snap_to(index: int, animate: bool) -> void:
@@ -155,10 +244,11 @@ func _layout() -> void:
 	var centre_x := size.x * 0.5
 	for i in _cards.size():
 		var card := _cards[i]
-		var x := centre_x - _card_width() * 0.5 + i * (_card_width() + _GAP) - _offset
+		var x := centre_x - _card_width() * 0.5 + i * (_card_width() + Config.data.card_carousel_gap) - _offset
 		card.root.position = Vector2(x, (size.y - _card_height()) * 0.5)
 		card.root.modulate.a = 1.0 if i == _selected \
 			else Config.data.card_carousel_unselected_alpha
+		card.root.add_theme_stylebox_override("panel", _card_stylebox(i == _selected))
 
 
 func _notification(what: int) -> void:
@@ -206,14 +296,21 @@ func _confirm_selected() -> void:
 
 # --- Mouse / touch ------------------------------------------------------------
 
+# Shared by both the per-card press handler below AND _gui_input's own press handling
+# (for a press that lands on the carousel's own background, between/around cards, rather
+# than on any specific card — see _gui_input for why that needs its own arming path too).
+func _begin_drag(global_x: float) -> void:
+	_drag_active = true
+	_drag_start_x = global_x
+	_drag_start_offset = _offset
+
+
 func _on_card_gui_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				_drag_active = true
-				_drag_start_x = mb.global_position.x
-				_drag_start_offset = _offset
+				_begin_drag(mb.global_position.x)
 			else:
 				var dragged := absf(mb.global_position.x - _drag_start_x) > 4.0
 				_drag_active = false
@@ -221,12 +318,21 @@ func _on_card_gui_input(event: InputEvent, index: int) -> void:
 					_tap_card(index)
 	elif event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
+		# InputEventScreenTouch has no global_position field (unlike mouse events), and
+		# this handler is bound to the PRESSED CARD's own gui_input signal, so t.position
+		# arrives local to THAT card — not to the carousel. _gui_input's drag handler below
+		# reads InputEventScreenDrag.position local to the CAROUSEL instead (it's the
+		# carousel's own override). Mixing those two local frames was the bug: the very
+		# first drag sample computed position-in-carousel minus position-in-card, a bogus
+		# delta as large as the distance between that card and the carousel's own origin —
+		# read by the player as the whole strip jumping the moment a touch started on any
+		# card that wasn't sitting exactly at the carousel's local (0,0). Converting through
+		# get_global_transform() puts both ends in the same frame.
+		var touch_x := (_cards[index].root.get_global_transform() * t.position).x
 		if t.pressed:
-			_drag_active = true
-			_drag_start_x = t.position.x
-			_drag_start_offset = _offset
+			_begin_drag(touch_x)
 		else:
-			var dragged2 := absf(t.position.x - _drag_start_x) > 4.0
+			var dragged2 := absf(touch_x - _drag_start_x) > 4.0
 			_drag_active = false
 			if not dragged2:
 				_tap_card(index)
@@ -257,13 +363,47 @@ func _gui_input(event: InputEvent) -> void:
 		_confirm_selected()
 		accept_event()
 		return
+	# A press that lands on the carousel's OWN background — the empty space between or
+	# around cards, now genuinely reachable since the page behind it is transparent
+	# (features/card-carousel.md → "the gaps show the live 3D showcase") — never reaches
+	# _on_card_gui_input at all, since that's bound to each CARD's gui_input signal. Without
+	# arming _drag_active here too, a drag started off any card silently did nothing:
+	# reported as "impossible to scroll starting from the background". A press that
+	# DID land on a card also reaches here (cards use MOUSE_FILTER_PASS, so the event
+	# bubbles up after the card's own handler runs) — re-arming with the same true global
+	# x is harmless, not a conflicting second gesture.
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				_begin_drag(mb.global_position.x)
+			else:
+				# Reset even though a card-originated release already does this too (that
+				# handler runs first — children process before ancestors — so this is a
+				# harmless no-op then): a release that never touched a card would otherwise
+				# leave _drag_active stuck true, and bare mouse motion with no button held
+				# would go on panning the strip.
+				_drag_active = false
+		return
+	if event is InputEventScreenTouch:
+		var ts := event as InputEventScreenTouch
+		if ts.pressed:
+			_begin_drag((get_global_transform() * ts.position).x)
+		else:
+			_drag_active = false
+		return
 	if event is InputEventMouseMotion and _drag_active:
 		var mm := event as InputEventMouseMotion
 		_offset = _drag_start_offset - (mm.global_position.x - _drag_start_x)
 		_layout()
-	elif event is InputEventScreenDrag:
+	elif event is InputEventScreenDrag and _drag_active:
 		var d := event as InputEventScreenDrag
-		_offset = _drag_start_offset - (d.position.x - _drag_start_x)
+		# d.position arrives local to THIS control (the carousel), while _drag_start_x was
+		# recorded local to whichever CARD the touch started on — see the matching comment
+		# in _on_card_gui_input for why that mismatch has to be resolved through a common
+		# (global) frame rather than compared directly.
+		var drag_x := (get_global_transform() * d.position).x
+		_offset = _drag_start_offset - (drag_x - _drag_start_x)
 		_layout()
 
 
@@ -274,7 +414,7 @@ func end_drag_and_snap() -> void:
 	# CURRENTLY selected card, before it counts as a step — a short drag (a flick that
 	# barely moved) snaps back to where it started instead of jumping to whatever card
 	# is nearest by raw distance, which would make a small accidental drag re-pick.
-	var step := _card_width() + _GAP
+	var step := _card_width() + Config.data.card_carousel_gap
 	var from_selected := (_offset - _target_offset_for(_selected)) / step
 	var threshold: float = Config.data.card_carousel_drag_step_fraction
 	var moved := 0

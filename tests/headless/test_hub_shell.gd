@@ -126,6 +126,28 @@ func test_every_page_is_keyboard_navigable() -> void:
 			"view %d offers at least one focusable control" % view)
 
 
+# The carousel pages want the live 3D menu showcase (todo/menu-background-showcase.md)
+# visible through the gaps between cards, so their MenuPage body box must be fully
+# transparent — opaque would paint the showcase over with solid black everywhere except
+# the cards themselves (which carry their own opaque stylebox regardless — card_carousel.gd).
+# Every OTHER page keeps the normal opaque box (menu_page.gd rule 1: a page reads as a
+# panel resting over the world, not a wall of pure black either way, but a carousel page
+# specifically must let the world show in its own empty space, not just around its edges).
+func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
+	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
+			HubShell.View.SHOP, HubShell.View.PERKS]:
+		_shell._show(view)
+		await get_tree().process_frame
+		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
+		assert_almost_eq(box.bg_color.a, 0.0, 0.01, "view %d's body must be transparent" % view)
+
+	for view in [HubShell.View.STATS, HubShell.View.CHALLENGE, HubShell.View.SETTINGS]:
+		_shell._show(view)
+		await get_tree().process_frame
+		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
+		assert_almost_eq(box.bg_color.a, 1.0, 0.01, "view %d's body must stay opaque" % view)
+
+
 func test_back_walks_the_page_stack_and_stops_at_the_root() -> void:
 	_shell._show(HubShell.View.CAR)
 	_shell._back()
@@ -359,6 +381,39 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
 	assert_true(_all_texts().contains("BUY"), "the car page offers a Buy action, not a dead end")
+
+
+# Regression: the CAR page used to build a live CarCardPreview (a real SubViewport + a
+# full car.tscn instantiation) for EVERY car up front — every owned car plus the entire
+# unowned catalogue — synchronously in one call. Reported as the game freezing the moment
+# a region was picked (region select is what leads to this page). Only cards within the
+# carousel's own visible window (CardCarousel.visible_card_count()) around the current
+# selection should ever hold a live preview; everything else gets the cheap placeholder —
+# see HubShell._refresh_car_previews.
+func test_car_page_only_builds_live_previews_for_the_visible_window() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	var carousel := _carousel()
+	assert_not_null(carousel)
+	assert_gt(carousel.card_count(), 1,
+		"setup: CarFixtures ships more than one unowned car to buy")
+
+	var live_count := func() -> int:
+		var n := 0
+		for i in carousel.card_count():
+			var card := carousel.get_card(i)
+			if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
+				n += 1
+		return n
+
+	# Force the carousel's visible window down to a single card, regardless of the real
+	# viewport size, then trigger the same selection_changed refresh _build_car wires up.
+	carousel.fit_to_available_width(Config.data.card_carousel_card_width)
+	carousel.select(1 if carousel.selected_index() == 0 else 0, false)
+	await get_tree().process_frame
+
+	assert_eq(live_count.call(), 1,
+		"only the currently selected card should keep a live 3D preview once the window narrows to one")
 
 
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
