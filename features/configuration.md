@@ -364,7 +364,7 @@ a cleared stage pays. Read by `RegionRunMode` (`scripts/region_run_mode.gd`); se
 | `run_stage_money_base` | Payout for clearing the first stage of a run, before the growth curve and the region scale. |
 | `run_stage_money_growth` | Multiplied in once per stage already cleared, so surviving deep into a run is where the money is. |
 | `run_fast_bonus_money` | The most a fast clear can add on top, paid in proportion to the fraction of the target saved. |
-| `run_money_region_step` | How much richer each region in the unlock order is, as a fraction added per index (decision 31). |
+| `run_money_region_multiplier` | How much richer each region in the unlock order is, as a multiplier compounded per index — region N pays this raised to the Nth power (decision 31). 2.0 = every region pays double the one before it. |
 | `challenge_completion_money` | The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays. |
 
 > **Tune the pace knobs against real driving, not against the model.** `LapTimeModel`'s

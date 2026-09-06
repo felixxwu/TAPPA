@@ -91,6 +91,19 @@ func region_index() -> int:
 	return maxi(0, RegionLibrary.order_of(region_id))
 
 
+# The region-picker's "reward per stage" figure: the FIRST stage's base completion
+# payout at this region's scale (stage 0's growth exponent is 0, so this is exactly
+# `run_stage_money_base * region_scale` — no bonus, no coins, the flat floor every
+# stage in the region pays at least). Static and keyed on `region_id_str` directly
+# (not an instance) because the region picker shows this for every region, unlocked
+# or not, without starting a run for each one.
+static func base_stage_reward(region_id_str: String) -> int:
+	var cfg: GameConfig = Config.data
+	var order := maxi(0, RegionLibrary.order_of(region_id_str))
+	var scale := pow(cfg.run_money_region_multiplier, float(order))
+	return maxi(0, int(round(cfg.run_stage_money_base * scale)))
+
+
 # The multiplier applied to the reference-car optimum to get this stage's target.
 # > 1.0 is slower than the point-mass optimum, i.e. beatable. See
 # GameConfig.run_target_pace_base for why the shipped values sit where they do.
@@ -170,7 +183,7 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
 	if target_ms > 0 and elapsed_ms < target_ms:
 		var saved := clampf(float(target_ms - elapsed_ms) / float(target_ms), 0.0, 1.0)
 		bonus = cfg.run_fast_bonus_money * saved
-	var region_scale := 1.0 + cfg.run_money_region_step * float(region_index())
+	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
 	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money
 	return maxi(0, int(round((completion + bonus) * region_scale + coin_total)))
 
