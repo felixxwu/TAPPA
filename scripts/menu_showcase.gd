@@ -161,11 +161,12 @@ func _build() -> void:
 	params.width = cfg.track_width
 	params.clearance = cfg.track_clearance
 
-	# TEMPORARY PERF INSTRUMENTATION — see todo/menu-background-showcase.md's
-	# "loading time" measurement. Mirrors world.gd's own load-stage print style
-	# (features/loading.md). Sums per-phase across all six segments rather than
-	# printing once per segment, since the question is "how much does each PHASE
-	# cost in total", not a per-segment breakdown.
+	# PERF INSTRUMENTATION — see features/menu-showcase.md → "Build performance"
+	# for the measured numbers this produced and what they settled. Mirrors
+	# world.gd's own load-stage print style (features/loading.md). Sums per-phase
+	# across all six segments rather than printing once per segment, since the
+	# question is "how much does each PHASE cost in total", not a per-segment
+	# breakdown.
 	var _t0 := Time.get_ticks_msec()
 	var _t_track_gen := 0
 	var _t_bake := 0
@@ -210,6 +211,23 @@ func _build() -> void:
 	var render_distance := cfg.tree_render_distance_web_touch_m
 	_t_foliage += Time.get_ticks_msec() - _t_scatter0  # the once-over-the-whole-track scatter
 
+	# The bake (road_heights/road_blend/track_weights/track_surface/cliff_offsets)
+	# is a pure function of (centerline, bake_args, noise_seed, cliff params) — and
+	# EVERY segment shares the exact same four inputs (same whole-track centerline,
+	# same bake_args, same SHOWCASE_SEED, same cfg.apply_cliffs). Baking six times
+	# over computed six BYTE-IDENTICAL copies of the same five dictionaries — this
+	# was the single biggest cost in the profiled build (see
+	# todo/menu-background-showcase.md's timing measurement: bake was 77% of total
+	# build time). Bake ONCE on the first segment's TerrainManager, then SHARE those
+	# dictionary references onto every other segment's instance
+	# (`_share_baked_fields`) instead of re-baking — safe because nothing ever
+	# mutates them after a bake (every consumer — height_at, vertex_colors,
+	# surface_at, … — only reads them), and nothing in this scene ever calls
+	# `free_load_only_data()` (the one thing that WOULD clear them) — see that
+	# function's `host.has_signal("load_finished")` duck-type check, which this
+	# scene's root never satisfies.
+	var shared_bake: Dictionary = {}
+
 	var shots: Array = []
 	for i in regions.size():
 		var region_id := String(regions[i].get("id", ""))
@@ -224,12 +242,16 @@ func _build() -> void:
 		# recently resolved into cfg.terrain_lod_bands_m — never mutate that shared
 		# field, just override this segment's own band ends after the fact).
 		floor_tm.lod_band_ends_m = cfg.terrain_lod_bands_web_touch_m
-		# should_yield=true (interactive only) releases the main thread periodically
-		# during the bake itself, the single heaviest step — see set_track's own
-		# docstring. Never changes the baked result, only the pacing.
 		var _tb0 := Time.get_ticks_msec()
-		await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2],
-			bake_args[3], bake_args[4], not headless)
+		if shared_bake.is_empty():
+			# should_yield=true (interactive only) releases the main thread
+			# periodically during the bake itself — see set_track's own docstring.
+			# Never changes the baked result, only the pacing.
+			await floor_tm.set_track(centerline, bake_args[0], bake_args[1], bake_args[2],
+				bake_args[3], bake_args[4], not headless)
+			shared_bake = _capture_baked_fields(floor_tm)
+		else:
+			_share_baked_fields(floor_tm, shared_bake)
 		_t_bake += Time.get_ticks_msec() - _tb0
 		var coords := _coords_in_range(full_corridor, centerline, lo, hi)
 		floor_tm.set_corridor(coords)
@@ -441,6 +463,29 @@ func _apply_region_ground_look(floor_tm: TerrainManager, region_id: String, cfg:
 	if look.has("gravel_texture"):
 		mat.set_shader_parameter("road_texture", load(look["gravel_texture"]))
 	mat.set_shader_parameter("tarmac_color", look.get("tarmac_color", cfg.tarmac_color))
+
+
+# The five dictionaries bake_track fills, read back off the segment that actually
+# baked — see the "bake once, share everywhere" note in _build().
+const _BAKED_FIELDS := ["road_heights", "road_blend", "track_weights", "track_surface", "cliff_offsets"]
+
+
+func _capture_baked_fields(floor_tm: TerrainManager) -> Dictionary:
+	var captured := {}
+	for field in _BAKED_FIELDS:
+		captured[field] = floor_tm.get(field)
+	return captured
+
+
+# Share the SAME dictionary objects (not a copy) onto `floor_tm` — GDScript
+# Dictionaries are reference types, so every segment's TerrainManager ends up
+# reading the one bake's results directly. Safe only because nothing downstream
+# ever mutates them (every consumer is read-only — height_at, vertex_colors,
+# surface_at, …) and this scene never frees them (see the class comment above).
+func _share_baked_fields(floor_tm: TerrainManager, shared: Dictionary) -> void:
+	for field in _BAKED_FIELDS:
+		floor_tm.set(field, shared[field])
+	floor_tm._bake_fields_freed = false
 
 
 # `segment_count` evenly spaced arc-length boundaries over [0, total_length] —

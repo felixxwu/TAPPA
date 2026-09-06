@@ -320,3 +320,45 @@ work (retuning shot timing/framing, the weather reroll interval, visually
 confirming the known arc-length-only border-safety limitation isn't hit on the
 shipped seed) is refinement against how it actually looks running, which nobody
 authoring this blind can verify — see the open questions raised with the user.
+
+## Follow-up: the frozen-hub-load bug, and the build-time investigation it triggered
+
+After shipping the above, the user reported the hub sat COMPLETELY FROZEN from the
+moment Godot's own boot bar hit 100% until the showcase finished building — the
+build ran with no yield point at all, so it executed inside what the renderer saw
+as one giant frame. Fixed: a `LoadingScreen` instance (the same class a real stage
+uses) plus `WorldRuntime.yield_frame` calls throughout `_build()` — see
+[features/menu-showcase.md](../features/menu-showcase.md) → "Loading feedback".
+
+That fix only makes the freeze visible/broken-into-frames, not faster, which
+prompted the actual optimisation question: instrumented `_build()` with per-phase
+timing and measured a real 18.4s build (see → "Build performance" in the same
+doc). Two real findings from that measurement, both already acted on:
+
+1. **Chunk mesh/collision spawning was only 1% of the cost** — ruling OUT caching
+   precomputed chunk meshes (the "save the heightmap with the app" idea originally
+   discussed), which would have cost tens of MB of app size for negligible gain.
+2. **The bake was 77% of the cost, and turned out to be REDUNDANT six times over**
+   — every segment bakes the identical `(centerline, bake_args, noise_seed, cliff
+   params)`, so `TerrainManager.bake_track` was computing six byte-identical
+   copies of its five output dictionaries. **Fixed with no caching infrastructure
+   at all**: bake once, share the five Dictionary objects (reference types) onto
+   every other segment's `TerrainManager`
+   (`MenuShowcase._capture_baked_fields`/`_share_baked_fields`). Measured result:
+   **18,376 ms → 6,081 ms**, a 3x overall speedup (6.2x on the bake phase itself),
+   for zero app-size cost — strictly better than the CI-baked-array-cache idea this
+   was in the middle of being asked to implement, since it captures most of the
+   same win without any serialization format, lockfile, or build-tool script.
+
+**Still on the table, not yet decided or built**: a CI-time cache of the (now
+single) bake's five dictionaries would still shave the remaining ~2.3s per COLD
+start (this fix only shares the bake within one already-running build; it doesn't
+persist across separate game launches). Real sizing math from the actual measured
+entry counts (~12k-56k entries per dictionary) puts this in the **low single-digit
+MB** range as JSON text, smaller if stored as a binary Godot `Resource` instead
+(Dictionaries with `Vector2i` keys serialize natively and compactly in Godot's
+binary `.res` format — no custom flattening needed). `corridor_cache` (chunk-level
+LOD precompute reading those dictionaries) is now the largest remaining phase at
+~47% of the reduced total, and caching it would need the harder, not-yet-designed
+full chunk-data store discussed and set aside earlier (see decision 4's original
+"reuse `chunk_source`" tangent) — not a small follow-up.

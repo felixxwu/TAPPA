@@ -70,6 +70,40 @@ coroutines). `TerrainManager.set_track` is also called with `should_yield = true
 (interactive only) so even the single heaviest step — the bake itself — releases
 the main thread periodically rather than running to completion in one block.
 
+## Build performance
+
+`_build()` prints a per-phase timing breakdown on every build (`print("menu
+showcase build: …")`, headless included) — added to answer "where does the time
+actually go" with real numbers instead of guessing, and left in as ongoing perf
+visibility (the same instinct behind `TerrainManager`'s own
+`"terrain precompute: …"` print). Measured on the shipped `SHOWCASE_SEED`/
+`TURN_COUNT`:
+
+| Phase | Before sharing the bake | After |
+|---|---|---|
+| Track generation | 597 ms | 527 ms |
+| **Bake** | **14,209 ms (77%)** | **2,289 ms** |
+| Corridor + chunk cache | 3,049 ms | 2,866 ms |
+| Chunk spawn (mesh/collision) | 182 ms (1%) | 107 ms |
+| Foliage | 304 ms | 259 ms |
+| **Total** | **18,376 ms** | **6,081 ms** |
+
+The "before" column is what a naive six-independent-bakes implementation costs; see
+"The bake itself runs ONCE" above for the fix. Two things this measurement settled,
+worth keeping in mind before optimising further:
+
+- **Chunk mesh/collision spawning was never the bottleneck** (1% of the original
+  total) — ruling out caching precomputed chunk MESHES (a tens-of-MB app-size cost
+  that was on the table before this was measured) as not worth it.
+- **Corridor + chunk cache is now the largest single phase** (2,866 ms, ~47% of the
+  reduced total) — `TerrainManager.cache_chunk`'s own per-chunk LOD-mesh precompute,
+  reading the (now-shared) baked fields rather than the walk that produces them. A
+  CI-baked cache of the five bake dictionaries (small — see the sizing discussion in
+  `todo/menu-background-showcase.md`) would still shave the remaining ~2.3s bake
+  cost across a cold start (this scene doesn't persist it in memory between runs of
+  the game, only within one build), but corridor/cache is now the bigger target if
+  further work is wanted.
+
 ## One track, six segments (`MenuShowcase._build`)
 
 Builds a track from a hardcoded seed (`SHOWCASE_SEED`, `TURN_COUNT`, `STRAIGHTNESS`
@@ -93,6 +127,21 @@ being six separate objects. The total resident geometry is the same either way (
 instance blending six looks over N chunks vs. six instances each owning a disjoint
 1/6th of the same N chunks) — see `todo/menu-background-showcase.md`'s decision 4
 correction for the reasoning this avoided repeating.
+
+**The bake itself runs ONCE, not six times** (`MenuShowcase._capture_baked_fields`/
+`_share_baked_fields`). Found while profiling (see "Build performance" below): since
+every segment bakes the exact same `(centerline, bake_args, noise_seed, cliff
+params)`, `TerrainManager.bake_track` was computing six byte-identical copies of its
+five output dictionaries (`road_heights`, `road_blend`, `track_weights`,
+`track_surface`, `cliff_offsets`). The first segment bakes for real
+(`floor_tm.set_track(...)`); every other segment has those same five Dictionary
+OBJECTS assigned directly onto its own fields (GDScript dictionaries are reference
+types) instead of baking again. This is safe only because nothing downstream ever
+mutates them (every consumer — `height_at`, `vertex_colors`, `surface_at`, … — is
+read-only) and because nothing in this scene ever calls
+`TerrainManager.free_load_only_data()` — the one thing that WOULD clear them, and
+which auto-wires itself only onto a parent exposing a `load_finished` signal
+(`world.gd`'s), which `MenuShowcase` never does.
 
 **Splitting one shared corridor, not six independent ones**
 (`MenuShowcase._coords_in_range`): `corridor_coords()` is computed ONCE over the
