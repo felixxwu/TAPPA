@@ -72,26 +72,21 @@ func test_get_card_returns_the_same_handle_add_card_returned() -> void:
 	assert_eq(_carousel.get_card(_carousel.card_count() - 1), card)
 
 
-# Regression: every UITheme panel (cards included) is solid black, sitting on the ALSO
-# solid black MenuPage body box — a card with no border is optically indistinguishable
-# from both the gap beside it and the body panel behind it, and modulate.a dimming does
-# nothing visible on black-on-black. Without an outline the whole strip reads as one fused
-# black slab ("all cards joined into one"), not a row of separate cards, regardless of how
-# wide the gap between them is. Every card must carry a real border, and the selected one
-# a distinctly different one, so cardhood and selection are both visible independent of
-# whatever else sits behind the carousel.
-func test_every_card_has_a_visible_border_and_selection_changes_it() -> void:
+# Cards used to carry an accent border (selected vs. unselected) so a card would read as
+# a distinct shape against the ALSO-solid-black MenuPage body box behind it. That's no
+# longer needed now that the five carousel pages sit on a TRANSPARENT body box (the gaps
+# show the live 3D showcase) — a card's own opaque fill already reads as distinct against
+# that busier background — and the border was removed on request, for both states.
+func test_no_card_has_a_border_selected_or_not() -> void:
 	for card in _carousel._cards:
 		var box: StyleBox = card.root.get_theme_stylebox("panel")
-		assert_true(box is StyleBoxFlat, "a card needs a real stylebox to carry a border")
+		assert_true(box is StyleBoxFlat, "a card needs a real stylebox for its fill")
 		var flat := box as StyleBoxFlat
-		assert_gt(flat.border_width_left, 0, "an unbordered card is invisible against the black body box")
+		assert_eq(flat.border_width_left, 0, "no card should carry a border")
 
 	_carousel.select(1, false)
 	var selected_box: StyleBoxFlat = _carousel._cards[1].root.get_theme_stylebox("panel")
-	var other_box: StyleBoxFlat = _carousel._cards[0].root.get_theme_stylebox("panel")
-	assert_ne(selected_box.border_color, other_box.border_color,
-		"the centred card's border must read as distinct from an unselected one")
+	assert_eq(selected_box.border_width_left, 0, "the selected card must not grow a border either")
 
 
 func test_menu_nav_handles_side_moves_selection_and_emits_changed() -> void:

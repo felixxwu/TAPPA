@@ -113,25 +113,31 @@ group), not hardcoded in the script: `card_carousel_aspect`, `card_carousel_card
 `card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed), and
 `card_carousel_visible_width_factor` (below).
 
-## A card needs a visible edge, not just a gap
+## A card needs a visible edge, not just a gap — but not necessarily a border
 
 Every panel in `UITheme` is solid black by design (`panel_box`'s "rule 4"), and a card
-sits directly on top of the ALSO-solid-black `MenuPage` body box. A pure-black card on a
-pure-black body is invisible as a shape: the true gap between two cards and the inside of
-a card read as the exact same colour, so widening `card_carousel_gap` alone cannot make
-the strip look like separate cards — it only makes the (equally invisible) space between
-two equally-invisible rectangles bigger. `modulate.a` dimming doesn't help either: 50%
-transparent black over black is still black, so the unselected/selected cue was carried
-entirely by the tiny icon rectangle inside each card, and the whole strip read as one
-fused black slab with a few floating coloured squares — exactly the "cards joined into
-one" bug report this section exists to prevent a repeat of.
-`CardCarousel._card_stylebox(selected)` fixes this the same way `UITheme.reward_card_box`
-already does for a black card that must pop against another black panel: an outline,
-1px `UITheme.INK_DIM` normally and 3px `UITheme.GREEN` (the theme's existing
-"active/selected" colour) on the centred card. `_layout()` reapplies it every card on
-every layout pass since it doubles as the selection indicator. Don't drop the border to
-"clean up" the stylebox — without it the carousel silently regresses to invisible cards
-regardless of how big the gap or how strong the dim/opaque contrast is.
+used to sit directly on top of an ALSO-solid-black `MenuPage` body box. A pure-black card
+on a pure-black body was invisible as a shape: the true gap between two cards and the
+inside of a card read as the exact same colour, so widening `card_carousel_gap` alone
+couldn't make the strip look like separate cards — it only made the (equally invisible)
+space between two equally-invisible rectangles bigger. `modulate.a` dimming didn't help
+either: 50% transparent black over black is still black. The whole strip read as one
+fused black slab with a few floating coloured squares — the "cards joined into one" bug
+this section originally existed to fix, with an accent border (1px unselected, 3px on the
+centred card — `UITheme.reward_card_box`'s existing precedent for a black card that must
+pop against another black panel).
+
+That border is GONE now (removed on request, from both states) because the fix that
+actually holds arrived one layer up: the five carousel pages sit on a TRANSPARENT
+`MenuPage` body box (see "the gaps show the live 3D showcase" below), so a card's own
+opaque black fill already reads as a distinct shape against the busier background behind
+it — an explicit border on top of that was visual clutter, not a second safety net.
+`CardCarousel._card_stylebox()` (no longer selection-aware — it returns the SAME
+`panel_box` fill regardless) is applied once in `add_card`; `_layout()` no longer
+reapplies a stylebox every pass, since there is nothing left that varies by selection.
+Selection is carried by `modulate.a` alone now. If a future change ever puts a carousel
+back on an opaque body box, the invisible-cards failure mode above will return — that's
+the condition to watch for, not a reason to restore the border pre-emptively.
 
 ## Edge to edge, and never a clipped card
 

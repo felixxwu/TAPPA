@@ -109,21 +109,17 @@ func _card_height() -> float:
 
 
 # A card's own panel is solid black (like every other panel in the theme — UITheme's
-# "pure black, no border" rule), sitting on the ALSO-solid-black MenuPage body box behind
-# it. Without a border a card's edges are optically identical to both the gap beside it
-# AND the body box behind it, so modulate.a dimming (which just makes black-on-black more
-# transparent, i.e. no visible change at all) was the ONLY selection cue and the whole
-# strip read as one fused black slab with a few floating coloured icons — not a row of
-# cards. A border is the fix: reward_card_box() already sets this precedent (a black card
-# that must visibly pop against another black panel gets an accent border), generalised
-# here to every unselected card too so the CARD SHAPE itself is always visible, not just
-# the selected one.
-func _card_stylebox(selected: bool) -> StyleBoxFlat:
-	var box := UITheme.panel_box(1.0)
-	for side in ["left", "top", "right", "bottom"]:
-		box.set("border_width_" + side, 3 if selected else 1)
-	box.border_color = UITheme.GREEN if selected else UITheme.INK_DIM
-	return box
+# "pure black, no border" rule). This USED to need an accent border (reward_card_box()'s
+# precedent) to read as a distinct shape at all, back when the MenuPage body box behind
+# it was ALSO solid black — a black card on a black body was optically invisible, and
+# modulate.a dimming (transparent black over black is still black) did nothing to help.
+# That's no longer the case: the five carousel pages now sit on a TRANSPARENT body box
+# (see "the gaps show the live 3D showcase" below), so a card's own opaque black fill
+# already reads as a distinct shape against the busier background behind it, and an
+# explicit border on top of that read as visual clutter — removed on request, for both
+# the selected and unselected states.
+func _card_stylebox() -> StyleBoxFlat:
+	return UITheme.panel_box(1.0)
 
 
 # Add a new card and return its Card handle so the caller can populate visual/info.
@@ -134,7 +130,7 @@ func add_card(disabled: bool = false) -> Card:
 	card.disabled = disabled
 	card.root = PanelContainer.new()
 	card.root.custom_minimum_size = Vector2(_card_width(), _card_height())
-	card.root.add_theme_stylebox_override("panel", _card_stylebox(false))
+	card.root.add_theme_stylebox_override("panel", _card_stylebox())
 	card.root.mouse_filter = Control.MOUSE_FILTER_PASS
 	# `card.root` is an absolute-positioned child of `_strip` (a plain Control, not a
 	# layout Container) — nothing ever assigns it a rect, so its actual size just grows to
@@ -280,7 +276,6 @@ func _layout() -> void:
 		card.root.position = Vector2(x, (size.y - _card_height()) * 0.5)
 		card.root.modulate.a = 1.0 if i == _selected \
 			else Config.data.card_carousel_unselected_alpha
-		card.root.add_theme_stylebox_override("panel", _card_stylebox(i == _selected))
 
 
 func _notification(what: int) -> void:
