@@ -79,57 +79,99 @@ visibility (the same instinct behind `TerrainManager`'s own
 `"terrain precompute: …"` print). Measured on the shipped `SHOWCASE_SEED`/
 `TURN_COUNT`:
 
-| Phase | Naive (six independent bakes) | Shared bake | + collision disabled |
-|---|---|---|---|
-| Track generation | 597 ms | 527 ms | 405 ms |
-| **Bake** | **14,209 ms (77%)** | **2,289 ms** | 2,189 ms |
-| Corridor + chunk cache | 3,049 ms | 2,866 ms | 2,645 ms |
-| Chunk spawn (mesh/collision) | 182 ms (1%) | 107 ms | 143 ms |
-| Foliage | 304 ms | 259 ms | 311 ms |
-| **Total** | **18,376 ms** | **6,081 ms** | **5,725 ms** |
+| Phase | Naive (six bakes) | Shared bake | + no collision | + `MenuShowcaseCache` |
+|---|---|---|---|---|
+| Track generation | 597 ms | 527 ms | 405 ms | 407 ms* |
+| **Bake** | **14,209 ms (77%)** | **2,289 ms** | 2,189 ms | **0 ms** |
+| Corridor + chunk cache | 3,049 ms | 2,866 ms | 2,645 ms | 2,947 ms |
+| Chunk spawn (mesh/collision) | 182 ms (1%) | 107 ms | 143 ms | 98 ms |
+| Foliage | 304 ms | 259 ms | 311 ms | 63 ms |
+| **Total** | **18,376 ms** | **6,081 ms** | **5,725 ms** | **3,546 ms** |
 
-The first column is what a naive six-independent-bakes implementation costs; see
-"The bake itself runs ONCE" above for that fix. Things this measurement settled,
-worth keeping in mind before optimising further:
+\* Not really "track generation" any more on a cache hit — that bucket now
+measures `MenuShowcaseCache.load_if_valid()`'s file read/deserialize, the
+timer checkpoint just wasn't renamed for it.
+
+Things this measurement settled, worth keeping in mind before optimising further:
 
 - **Chunk mesh/collision spawning was never the bottleneck** (1% of the original
-  total) — ruling out caching precomputed chunk MESHES (a tens-of-MB app-size cost
-  that was on the table before this was measured) as not worth it.
-- **Collision is pure overhead here and is now disabled** (`floor_tm.collision_ring
-  = -1000`, set right after `apply_terrain_lod`): nothing in this scene has a body
-  to collide with the ground (no car, no player), so `cache_chunk`'s own
-  "actual expensive step" comment — committing a full `SAMPLES×SAMPLES`
-  `PhysicsServer3D` heightfield per chunk — never needs to run at all. A negative
-  `collision_ring` makes `_collision_band_chunks`' Chebyshev test false for every
-  coord (an `absi()` distance can never be `<=` a negative number), which also lets
-  more chunks qualify for the cheap coarse/LOD-only path in `cache_chunk` (a chunk
+  total) — this is what ruled out caching precomputed chunk MESHES, and a first
+  attempt at `MenuShowcaseCache` PROVED it the hard way: caching each segment's
+  whole `TerrainManager._chunk_cache` (heights + prebaked LOD meshes) verbatim
+  produced a **59 MB** file and made the build **slower** (3.6s vs 5.8s live) —
+  deserializing hundreds of prebaked `Mesh` resources back off disk cost nearly as
+  much as building them costs live. That result is now the reason
+  `MenuShowcaseCache` deliberately does NOT cache per-chunk data — see its own
+  header comment. `corridor + chunk cache` is therefore permanently a live phase.
+- **Collision is pure overhead here and is disabled** (`floor_tm.collision_ring =
+  -1000`, set right after `apply_terrain_lod`): nothing in this scene has a body to
+  collide with the ground (no car, no player), so `cache_chunk`'s own "actual
+  expensive step" comment — committing a full `SAMPLES×SAMPLES` `PhysicsServer3D`
+  heightfield per chunk — never needs to run at all. A negative `collision_ring`
+  makes `_collision_band_chunks`' Chebyshev test false for every coord (an
+  `absi()` distance can never be `<=` a negative number), which also lets more
+  chunks qualify for the cheap coarse/LOD-only path in `cache_chunk` (a chunk
   needs `l_min==0 OR in_collision_band` to be full-res; removing the second
   disjunct leaves only the distance-based one). Smaller win than hoped (~200ms) —
   most of `cache_chunk`'s remaining cost is evidently the per-vertex
   `compute_chunk_data` height/colour/UV2 fill and the LOD mesh build, not the
   collision shape.
-- **Corridor + chunk cache is now the largest single phase** (2,645 ms, ~46% of the
-  reduced total). Two paths remain, both flagged rather than applied blind because
-  both carry a real visual-quality tradeoff no one authoring this without eyes on
-  the running game should decide alone:
-  - **Shrink `_CORRIDOR_LEASH_M`** (currently 50m — sized like a real stage's
-    off-track leash, which this scene has no equivalent need for: the camera never
-    leaves a small fixed offset from the road, ~15m at most across every shot).
-    Directly cuts the chunk COUNT built, proportionally cutting this phase's cost —
-    but shrink it too far and a shot's far edge could show a hole/pop-in at the
-    frame boundary, which nobody blind can safely judge.
-  - **A CI-baked cache of the five bake dictionaries** (small — see the sizing
-    discussion in `todo/menu-background-showcase.md`) would still shave the
-    remaining ~2.2s bake cost on a COLD app launch (today's fix only shares the
-    bake within one already-running build, not across separate game sessions), but
-    doesn't touch this phase — it's the harder, not-yet-designed full chunk-data
-    store that would, and that's a real subsystem, not a small follow-up.
+- **`MenuShowcaseCache` (committed as `data/menu_showcase_cache.res`, 3.4 MB)
+  caches only what's cheap to store and expensive to compute** — the track shape
+  (`pieces`), the shared bake dictionaries, and the foliage scatter points. It
+  eliminates the bake entirely and cuts foliage from ~300ms to ~60ms (the scatter's
+  own grid search is skipped, not just re-run faster). See "One track, six
+  segments" below for how it's generated/consulted, and
+  `tools/generate_menu_showcase_cache.gd` / `cache_menu_showcase.sh` for the
+  regeneration tool (mirrors `tools/generate_track_cache.gd` / `cache_tracks.sh`).
+- **`corridor + chunk cache` is now the largest remaining phase** (2,947 ms, ~83%
+  of the cached total). The one lever left untried is shrinking
+  `_CORRIDOR_LEASH_M` (currently 50m — sized like a real stage's off-track leash,
+  which this scene has no equivalent need for: the camera never leaves a small
+  fixed offset from the road, ~15m at most across every shot) — directly cuts the
+  chunk COUNT built, but shrink it too far and a shot's far edge could show a
+  hole/pop-in at the frame boundary, which nobody authoring this blind can safely
+  judge. Left untouched for that reason.
+
+## `MenuShowcaseCache` — the committed build-time cache
+
+`scripts/menu_showcase_cache.gd` (`class_name MenuShowcaseCache extends Resource`),
+committed as `data/menu_showcase_cache.res`. `_build()` tries
+`MenuShowcaseCache.load_if_valid(cfg)` first; a hit supplies the track's `pieces`
+(rebuilt into a `Curve2D` via `TrackGenerator.rebuild_from_pieces` — the same
+no-search reconstruction `TrackCache.lookup()` uses), the five bake dictionaries
+(assigned onto every segment exactly like the live "bake once, share everywhere"
+path — see below), and the whole-track tree/bush scatter points. A miss (file
+absent, or `version_tag` doesn't match `MenuShowcaseCache.version_tag_for(cfg)` —
+folding in `TrackGenerator.constants_fingerprint()` and
+`TrackCache.terrain_fingerprint(cfg)`, both **reused directly** rather than
+re-derived) falls back to the exact live path that existed before this cache did,
+with **no error and no correctness dependency on the cache existing** — the same
+contract `TrackCache`'s own lockfile makes.
+
+**Regenerated by `tools/generate_menu_showcase_cache.gd`** (invoked via
+`cache_menu_showcase.sh`), mirroring `tools/generate_track_cache.gd` /
+`cache_tracks.sh` exactly: a scene-run (not `--script`) headless tool, since
+`Config` and the other autoloads only exist in a scene run. It instantiates
+`menu_showcase.tscn` with `skip_auto_build = true` (set BEFORE `add_child()`, so
+the normal `_ready()`-driven build never fires and races the explicit call), then
+calls the scene's `build_and_capture()` — `_build(force_live=true, capture)`, which
+populates the given `MenuShowcaseCache` as it computes everything live — and
+`ResourceSaver.save()`s the result.
+
+**Deliberately does NOT cache per-chunk data** (heights, prebaked LOD meshes, the
+coarse/full-res classification) — this WAS tried and measured, not assumed: see
+"Build performance" above for the 59 MB / build-got-SLOWER result that ruled it
+out. `MenuShowcaseCache` only ever holds cheap-to-store, expensive-to-**compute**
+data (a track shape, five small dictionaries, and two point arrays) — 3.4 MB
+committed, and every phase it touches (track generation, the bake, the foliage
+scatter) drops to at or near zero on a hit.
 
 ## One track, six segments (`MenuShowcase._build`)
 
 Builds a track from a hardcoded seed (`SHOWCASE_SEED`, `TURN_COUNT`, `STRAIGHTNESS`
 — authored/tunable by eye, not asserted in tests) using `TrackGenerator.generate()`
-directly — no lockfile, no `RunSession`, no car. `segment_bounds(total_length,
+directly on a cache miss — no `RunSession`, no car. `segment_bounds(total_length,
 segment_count)` (a pure, tested static function) splits the generated centerline
 into `segment_count` evenly-spaced arc-length ranges, one per
 `RegionLibrary.ordered()` entry **in that array order** — a deliberate, feature-local
@@ -313,13 +355,23 @@ booted right after closing the hub still resolves its own tier correctly.
 ## Tests
 
 `tests/headless/test_menu_showcase.gd` — built ONCE in `before_all` (six
-`TerrainManager` bakes over a real track is not cheap) and shared read-only across
-its tests: the build completes and the camera is live; one `TerrainManager` per
-region with at least one built chunk each; the camera rotation covers every
-segment; no two segments ever share a material instance; road-tint application/
-reversion; the environment swap on a forced cut; at least one region spawned a tree
-billboard field over the whole track. `tests/headless/test_menu_showcase_geometry.gd`
-— pure maths with no terrain: segment-boundary splitting, `safe_shot_arcs`'
+`TerrainManager` bakes/chunk-computes over a real track is not cheap — a cache hit
+in this checkout makes it cheaper still, but the test doesn't assume one) and
+shared read-only across its tests: the build completes and the camera is live; one
+`TerrainManager` per region with at least one built chunk each; the camera
+rotation covers every segment; no two segments ever share a material instance;
+road-tint application/reversion; the environment swap on a forced cut; at least
+one region spawned a tree billboard field over the whole track; which build path
+(cache/live) this run actually covers, printed rather than asserted since a fresh
+clone may have no committed cache yet; and a SEPARATE forced-`force_live=true`
+scene proving the live fallback still produces a fully correct build even when a
+valid cache exists (`MenuShowcaseCache` must never be a correctness dependency —
+see its own header). `tests/headless/test_menu_showcase_cache.gd` — pure
+`MenuShowcaseCache` logic with no terrain or disk I/O beyond checking whether the
+committed file happens to exist: `version_tag_for`'s determinism, `is_valid`'s
+accept/reject cases (matching tag, stale tag, null), and a clean miss when the
+committed file is absent. `tests/headless/test_menu_showcase_geometry.gd` — pure
+maths with no terrain: segment-boundary splitting, `safe_shot_arcs`'
 border-clearance and too-short-segment cases, and the weather-eligibility table's
 compatibility invariants (every id real, sandstorm/snow/rain restricted to the
 right regions). `tests/headless/test_menu_showcase_camera.gd` — mirrors
