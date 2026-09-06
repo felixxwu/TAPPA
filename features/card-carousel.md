@@ -221,23 +221,33 @@ render.
 already has — shows its actual paint/wheels via `CarProp`'s `owned` opt) or a
 **`CarLibrary` index** (an unowned catalogue car in the Buy list, via the `index` opt).
 
-## Only the visible cars get a live preview
+## Exactly ONE live preview exists, reused, not rebuilt per selection
 
-One `CarCardPreview` is cheap; the whole CAR page's roster is not. `HubShell._build_car`
-used to build one for EVERY car up front — every owned car plus the entire unowned
-catalogue — which meant a full `car.tscn` instantiation (every embedded car glb body,
-before `car_prop.gd`'s pruning) and a brand new `SubViewport` for each, all synchronously
-in one call. With even a modest roster this blocked the main thread long enough to read as
-the game freezing the moment a region was picked (region select is what leads to this
-page). `CardCarousel.visible_card_count()` (set by `fit_to_available_width`, always odd)
-is what the carousel itself can actually show at once, so
-`HubShell._refresh_car_previews` keeps a live `CarCardPreview` built ONLY for cards within
-that many steps of the current selection, giving every other car card the cheap
-letter-icon placeholder (`_card_icon`) instead — and rebuilds that window on every
-`selection_changed` rather than up front for the whole list. `CardCarousel.get_card(index)`
-is the accessor this needs (reach back into a card's `visual` slot after `add_card`
-returned it, to swap the placeholder for the real thing or back). Don't revert to building
-every car's preview eagerly — that is exactly this regression.
+A `CarCardPreview` is a real `SubViewport` + camera + light + a full `car.tscn`
+instantiation (every embedded car glb body, before `car_prop.gd`'s pruning) — cheap once,
+expensive if paid for repeatedly. `HubShell._build_car` first built one for EVERY car up
+front (every owned car plus the whole unowned catalogue), which blocked the main thread
+long enough on a real roster to read as the game freezing the moment a region was picked
+(region select is what leads to this page). A first fix narrowed that to a WINDOW of
+cards around the current selection — better, but every card in that window still got torn
+down and rebuilt from scratch on every `selection_changed`, which is what surfaced next as
+the carousel visibly freezing the moment a player actually tried to MOVE the selection
+(unavoidable — that's the only way to pick a car).
+
+The fix that actually holds: every car card gets the cheap letter-icon placeholder
+(`_card_icon`) up front, and the page keeps exactly ONE `CarCardPreview` alive for its
+entire lifetime. `HubShell._sync_car_preview` reparents that SAME instance onto whichever
+card is currently selected and calls `CarCardPreview.show_car(new_ref)` to swap which car
+it shows — reusing the already-built `SubViewport`/camera/light rather than paying for
+that setup again on every move, and rebuilding only the (already-cached, after the first
+use) `CarProp` underneath it. The card the preview is LEAVING gets its placeholder icon
+back. `CardCarousel.get_card(index)` is the accessor this needs (reach back into a card's
+`visual` slot after `add_card` returned it). `_sync_car_preview`'s `state` argument is a
+mutable `Dictionary`, not local variables closed over by the connecting lambda — GDScript
+lambdas capture locals BY VALUE, so a plain `var preview = null` reassigned inside the
+lambda body would not be visible on the NEXT firing of that same lambda; a Dictionary's
+contents mutate in place instead, which does persist. Don't revert to building a
+`CarCardPreview` per card, windowed or not — that is exactly this regression.
 
 ## Known open decisions (unilateral — flag for design review)
 
