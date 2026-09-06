@@ -221,6 +221,24 @@ render.
 already has — shows its actual paint/wheels via `CarProp`'s `owned` opt) or a
 **`CarLibrary` index** (an unowned catalogue car in the Buy list, via the `index` opt).
 
+## Only the visible cars get a live preview
+
+One `CarCardPreview` is cheap; the whole CAR page's roster is not. `HubShell._build_car`
+used to build one for EVERY car up front — every owned car plus the entire unowned
+catalogue — which meant a full `car.tscn` instantiation (every embedded car glb body,
+before `car_prop.gd`'s pruning) and a brand new `SubViewport` for each, all synchronously
+in one call. With even a modest roster this blocked the main thread long enough to read as
+the game freezing the moment a region was picked (region select is what leads to this
+page). `CardCarousel.visible_card_count()` (set by `fit_to_available_width`, always odd)
+is what the carousel itself can actually show at once, so
+`HubShell._refresh_car_previews` keeps a live `CarCardPreview` built ONLY for cards within
+that many steps of the current selection, giving every other car card the cheap
+letter-icon placeholder (`_card_icon`) instead — and rebuilds that window on every
+`selection_changed` rather than up front for the whole list. `CardCarousel.get_card(index)`
+is the accessor this needs (reach back into a card's `visual` slot after `add_card`
+returned it, to swap the placeholder for the real thing or back). Don't revert to building
+every car's preview eagerly — that is exactly this regression.
+
 ## Known open decisions (unilateral — flag for design review)
 
 - **Card width / aspect / dim alpha / snap duration** are all authored defaults in

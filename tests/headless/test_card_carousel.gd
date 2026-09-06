@@ -55,6 +55,23 @@ func test_fit_to_available_width_never_returns_less_than_one_card() -> void:
 	assert_almost_eq(_carousel.custom_minimum_size.x, Config.data.card_carousel_card_width, 0.01)
 
 
+# visible_card_count is what a host with an expensive per-card visual (a live 3D preview,
+# say — see hub_shell.gd's _refresh_car_previews) uses to decide how many it can afford to
+# keep built at once. It must reflect whatever fit_to_available_width actually decided,
+# not some independent guess.
+func test_visible_card_count_matches_what_fit_to_available_width_decided() -> void:
+	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
+	_carousel.fit_to_available_width(unit * 4.0)
+	var width := _carousel.custom_minimum_size.x
+	var expected := int(round((width + Config.data.card_carousel_gap) / unit))
+	assert_eq(_carousel.visible_card_count(), expected)
+
+
+func test_get_card_returns_the_same_handle_add_card_returned() -> void:
+	var card := _carousel.add_card()
+	assert_eq(_carousel.get_card(_carousel.card_count() - 1), card)
+
+
 # Regression: every UITheme panel (cards included) is solid black, sitting on the ALSO
 # solid black MenuPage body box — a card with no border is optically indistinguishable
 # from both the gap beside it and the body panel behind it, and modulate.a dimming does

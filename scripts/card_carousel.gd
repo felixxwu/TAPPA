@@ -50,6 +50,7 @@ var _tween: Tween
 var _drag_active := false
 var _drag_start_x := 0.0
 var _drag_start_offset := 0.0
+var _visible_count := 1
 
 
 func _init() -> void:
@@ -85,8 +86,18 @@ func fit_to_available_width(avail_width: float) -> void:
 	if count % 2 == 0:
 		count -= 1
 	count = maxi(count, 1)
+	_visible_count = count
 	custom_minimum_size.x = count * _card_width() + (count - 1) * Config.data.card_carousel_gap
 	_layout()
+
+
+# How many cards fit_to_available_width decided can be on screen at once (always odd —
+# see fit_to_available_width). A host with an expensive per-card visual (a live 3D
+# preview, say) can use this to only keep that many live around the current selection
+# instead of building one for every card up front — see CarCardPreview's caller in
+# hub_shell.gd for why that matters. 1 before fit_to_available_width has ever run.
+func visible_card_count() -> int:
+	return _visible_count
 
 
 func _card_width() -> float:
@@ -179,6 +190,14 @@ func _wrap_incoming_label(node: Node) -> void:
 
 func card_count() -> int:
 	return _cards.size()
+
+
+# The Card handle add_card returned for `index` — for a host that needs to reach back into
+# a card's visual/info slots after the fact (e.g. to rebuild an expensive visual lazily
+# around the current selection rather than for every card up front; see hub_shell.gd's
+# _refresh_car_previews).
+func get_card(index: int) -> Card:
+	return _cards[index]
 
 
 func selected_index() -> int:

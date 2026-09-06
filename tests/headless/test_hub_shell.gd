@@ -383,6 +383,39 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 	assert_true(_all_texts().contains("BUY"), "the car page offers a Buy action, not a dead end")
 
 
+# Regression: the CAR page used to build a live CarCardPreview (a real SubViewport + a
+# full car.tscn instantiation) for EVERY car up front — every owned car plus the entire
+# unowned catalogue — synchronously in one call. Reported as the game freezing the moment
+# a region was picked (region select is what leads to this page). Only cards within the
+# carousel's own visible window (CardCarousel.visible_card_count()) around the current
+# selection should ever hold a live preview; everything else gets the cheap placeholder —
+# see HubShell._refresh_car_previews.
+func test_car_page_only_builds_live_previews_for_the_visible_window() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	var carousel := _carousel()
+	assert_not_null(carousel)
+	assert_gt(carousel.card_count(), 1,
+		"setup: CarFixtures ships more than one unowned car to buy")
+
+	var live_count := func() -> int:
+		var n := 0
+		for i in carousel.card_count():
+			var card := carousel.get_card(i)
+			if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
+				n += 1
+		return n
+
+	# Force the carousel's visible window down to a single card, regardless of the real
+	# viewport size, then trigger the same selection_changed refresh _build_car wires up.
+	carousel.fit_to_available_width(Config.data.card_carousel_card_width)
+	carousel.select(1 if carousel.selected_index() == 0 else 0, false)
+	await get_tree().process_frame
+
+	assert_eq(live_count.call(), 1,
+		"only the currently selected card should keep a live 3D preview once the window narrows to one")
+
+
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
 	var cheapest := ""
 	var cheapest_cost := -1
