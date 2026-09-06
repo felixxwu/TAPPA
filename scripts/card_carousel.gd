@@ -17,7 +17,8 @@ extends Control
 #     shape it already special-cases Range/sliders through.
 #   - Mouse/touch: tapping a non-centred card selects it (moves toward centre by
 #     whatever number of steps separate it from centre); tapping the ALREADY-centred
-#     card confirms. Dragging pans the strip; releasing snaps to the nearest card.
+#     card confirms. Dragging pans the strip; releasing snaps to the nearest card,
+#     animating over card_carousel_snap_duration_s (see _snap_to).
 #
 # Signals: selection_changed(index), confirmed(index).
 #
@@ -251,19 +252,34 @@ func _target_offset_for(index: int) -> float:
 	return index * (_card_width() + Config.data.card_carousel_gap)
 
 
+# The snap animates over card_carousel_snap_duration_s, TRANS_CUBIC/EASE_OUT — every way
+# of landing on a card (drag release, tap-to-select, keyboard and gamepad movement)
+# funnels through select() into this one path. The tween drives BOTH the offset and the
+# visible layout: tween_method re-runs _apply_snap_offset every processing frame, so the
+# strip visibly travels from wherever it currently is to the target card. The old
+# tween_property form only re-ran _layout from a step_finished connection — and
+# step_finished fires when a step COMPLETES (once, after the full duration), never per
+# frame — so the cards sat frozen for the whole snap and teleported at the end
+# (reported as "the snap is immediate, no animation between where the list is and the
+# end of the snap").
 func _snap_to(index: int, animate: bool) -> void:
 	var target := _target_offset_for(index)
 	if _tween != null and _tween.is_valid():
 		_tween.kill()
 	if animate:
 		_tween = create_tween()
-		_tween.tween_property(self, "_offset", target, Config.data.card_carousel_snap_duration_s) \
+		_tween.tween_method(_apply_snap_offset, _offset, target, Config.data.card_carousel_snap_duration_s) \
 			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		_tween.tween_callback(_layout)
-		_tween.step_finished.connect(func(_i): _layout())
 	else:
 		_offset = target
 		_layout()
+
+
+# Per-frame write for the snap tween: the interpolated offset AND the matching layout in
+# one call, so the cards' positions never lag the offset the tween is reporting.
+func _apply_snap_offset(value: float) -> void:
+	_offset = value
+	_layout()
 
 
 func _layout() -> void:
@@ -327,6 +343,13 @@ func _confirm_selected() -> void:
 # (for a press that lands on the carousel's own background, between/around cards, rather
 # than on any specific card — see _gui_input for why that needs its own arming path too).
 func _begin_drag(global_x: float) -> void:
+	# A press mid-snap takes the strip back over from the snap tween: the tween writes
+	# _offset every frame, so letting it keep running under an active drag would have the
+	# two fighting for the same value — the strip pulling itself toward the old target
+	# while the finger pulls it elsewhere. Killing first means _drag_start_offset below
+	# captures exactly where the snap had reached, and the NEXT snap animates from there.
+	if _tween != null and _tween.is_valid():
+		_tween.kill()
 	_drag_active = true
 	_drag_start_x = global_x
 	_drag_start_offset = _offset

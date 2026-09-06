@@ -228,6 +228,59 @@ func test_drag_release_snaps_back_when_short_of_the_next_card() -> void:
 	assert_eq(_carousel.selected_index(), 0, "still closer to card 0")
 
 
+# The snap must VISIBLY travel. Regression: _snap_to animated _offset with
+# tween_property but only re-ran _layout from a step_finished connection — and
+# step_finished fires when a step COMPLETES (once, after the full duration), never
+# per frame — so the cards sat frozen for the whole snap and teleported at the end
+# (reported as "the snap is immediate, no animation between where the list is and the
+# end of the snap"). tween_method now drives offset AND layout every frame, so
+# mid-snap a card's real position must already sit between where the strip started and
+# where it lands. (--fixed-fps 60 in run_tests.sh makes frame counts deterministic:
+# 0.22s is ~13 frames, so two frames in is safely mid-flight.)
+func test_snap_travels_through_intermediate_positions_before_landing() -> void:
+	_carousel.select(0, false)
+	await get_tree().process_frame
+	var card1: Control = _carousel._cards[1].root
+	var start_x := card1.position.x
+
+	_carousel.select(1, true)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var mid_x := card1.position.x
+	assert_lt(mid_x, start_x, "mid-snap the card must already be travelling toward the centre")
+	assert_true(_carousel._tween != null and _carousel._tween.is_running(),
+			"the snap tween must still be in flight two frames into a 0.22s snap")
+
+	while _carousel._tween != null and _carousel._tween.is_running():
+		await get_tree().process_frame
+	assert_almost_eq(_carousel._offset, _carousel._target_offset_for(1), 0.5,
+			"the strip must land exactly on the selected card's offset")
+	assert_lt(card1.position.x, mid_x, "and it must still be travelling past the sampled frame")
+
+
+# A re-grab mid-snap must take the strip over from the tween: the snap now writes
+# _offset every frame, so a tween left running under an active drag would fight the
+# finger for the same value — the strip pulling itself toward the old target while the
+# drag pulls it elsewhere. _begin_drag kills the tween first, so the drag owns the
+# offset from exactly where the snap had reached (and the next snap animates from there).
+func test_starting_a_drag_mid_snap_kills_the_running_snap() -> void:
+	_carousel.select(0, false)
+	await get_tree().process_frame
+	_carousel.select(3, true)
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.global_position = Vector2(50.0, 50.0)
+	_carousel._gui_input(press)
+	assert_true(_carousel._tween == null or not _carousel._tween.is_valid(),
+			"a press must kill the running snap tween rather than fight the finger")
+	var motion := InputEventMouseMotion.new()
+	motion.global_position = Vector2(40.0, 50.0)
+	_carousel._gui_input(motion)
+	assert_almost_eq(_carousel._offset, 10.0, 0.01,
+			"the drag must own the offset from wherever the snap had reached")
+
+
 func test_unselected_cards_are_dimmed_and_selected_is_opaque() -> void:
 	_carousel.select(1, false)
 	for i in _carousel.card_count():

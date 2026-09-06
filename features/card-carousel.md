@@ -60,7 +60,14 @@ Signals: `selection_changed(index)`, `confirmed(index)`.
   tapping the **already-centred** card **confirms**. Dragging (`InputEventMouseMotion`
   while a button is held, or `InputEventScreenDrag`) pans the strip live; releasing calls
   `end_drag_and_snap()`, which rounds the drag offset to the nearest card index and
-  animates back to it — the strip never sits parked between two cards.
+  animates back to it — the strip never sits parked between two cards. The snap visibly
+  travels through the intermediate positions: the tween drives offset AND layout via
+  `tween_method`, re-running `_layout` every frame (the earlier `tween_property` form
+  re-layouted only on `step_finished`, which fires once when a step completes rather than
+  per frame, so the strip sat frozen for the whole snap and teleported at the end). A press
+  that starts a new drag mid-snap kills the running tween, so the finger takes the strip
+  over from exactly where the snap had reached. Drag release, tap-to-select and
+  keyboard/gamepad movement all share the same animated snap through `select()`.
 
 ## Touch drag must convert through a common (global) coordinate frame
 
