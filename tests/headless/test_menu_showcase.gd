@@ -23,6 +23,34 @@ func after_all() -> void:
 	_scene = null
 
 
+# Whether this run actually exercised the cache-hit path depends on whether
+# res://data/menu_showcase_cache.res is present and fresh in this checkout — not
+# something this test controls. Documents which one ran rather than asserting
+# either way, so a fresh clone (no cache yet) isn't a false failure.
+func test_reports_which_build_path_ran() -> void:
+	print("test_menu_showcase.gd's shared scene used the %s path"
+		% ("CACHE" if _scene.used_cache() else "LIVE"))
+	pass_test("no assertion — see the printed line for which path this run covers")
+
+
+func test_the_live_path_still_works_when_forced() -> void:
+	# Regression coverage for the fallback itself: force_live=true must produce a
+	# fully correct scene even when a valid cache exists (a stale cache is always
+	# possible in the field, and MenuShowcaseCache's whole contract is "never a
+	# correctness dependency" — see its header). A second scene, not the shared
+	# fixture, since force_live isn't the path _ready() takes.
+	var live_scene: MenuShowcase = load("res://menu_showcase.tscn").instantiate()
+	live_scene.skip_auto_build = true  # avoid double-building via the normal _ready() path
+	add_child(live_scene)
+	await live_scene._build(true)
+	assert_true(live_scene.is_built(), "the forced-live showcase finished building")
+	assert_false(live_scene.used_cache(), "force_live never reads the cache back")
+	assert_eq(live_scene.segment_floors().size(), RegionLibrary.ordered().size(),
+		"the live path still builds one segment per region")
+	assert_gt(live_scene.camera().shot_count(), 0, "the live path still authors shots")
+	live_scene.free()
+
+
 func test_builds_a_track_and_starts_the_camera() -> void:
 	assert_true(_scene.is_built(), "the showcase finished building")
 	var cam := _scene.camera()
