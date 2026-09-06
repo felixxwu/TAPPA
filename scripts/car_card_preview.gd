@@ -1,7 +1,7 @@
 class_name CarCardPreview
 extends SubViewportContainer
 # Docs: features/card-carousel.md — update in the same change as this file.
-# Tests: tests/headless/test_card_carousel.gd — extend in the same change.
+# Tests: tests/headless/test_car_card_preview.gd, tests/headless/test_card_carousel.gd — extend in the same change.
 #
 # ONE lightweight SubViewport per car-choice card: a frozen CarProp (see car_prop.gd)
 # turntable-rotated by a Node3D pivot, not a whole reinstantiated scene per frame — the
@@ -48,8 +48,12 @@ func _init(car_ref) -> void:
 	svp.add_child(cam)
 	# look_at() requires the camera to already be inside the tree; add_child above only
 	# enters the tree once this whole container does, so aim it from a plain transform.
-	cam.transform = Transform3D().looking_at(Vector3(0.0, 0.6, 0.0) - Vector3(3.2, 1.8, 3.6), Vector3.UP)
-	cam.position = Vector3(3.2, 1.8, 3.6)
+	# Targets the ORIGIN, not a guessed car-shaped offset — _center_on_pivot (below) is
+	# what makes that correct for every car, by moving the CAR to its own visual centre
+	# rather than moving the camera to wherever one particular car's centre happened to be.
+	const _EYE := Vector3(3.2, 1.8, 3.6)
+	cam.transform = Transform3D().looking_at(-_EYE, Vector3.UP)
+	cam.position = _EYE
 
 	_pivot = Node3D.new()
 	svp.add_child(_pivot)
@@ -73,7 +77,41 @@ func _spawn_now() -> void:
 		opts["owned"] = _car_ref
 	else:
 		opts["index"] = int(_car_ref)
-	CarProp.spawn(_pivot, Scenes.car_scene(), opts)
+	var car := CarProp.spawn(_pivot, Scenes.car_scene(), opts)
+	_center_on_pivot(car)
+
+
+# Cars are authored in car.tscn around whatever origin convention each source model
+# happened to use — not necessarily its own visual centre — so aiming the camera at a
+# single fixed point (the OLD Vector3(0, 0.6, 0) guess) landed dead-on for some cars and
+# "not quite centred" for others. Measuring the ACTUAL spawned mesh geometry and shifting
+# the CAR (not the camera or pivot) so that geometry's centre sits at the pivot's own
+# local origin fixes it for every car uniformly, and — since the turntable spin rotates
+# _pivot around its own origin — also keeps the spin centred on the car's true visual
+# middle instead of orbiting off-axis around wherever its unshifted origin was.
+func _center_on_pivot(car: Node3D) -> void:
+	var aabb := _visible_mesh_aabb(car, _pivot)
+	if aabb.size == Vector3.ZERO:
+		return
+	car.position -= aabb.get_center()
+
+
+# Union of every VISIBLE MeshInstance3D's AABB under `root`, transformed into
+# `relative_to`'s local space. CarProp.spawn already pruned every inactive embedded car
+# body (car_prop.gd's prune_bodies) before this runs, so this only ever measures the one
+# model actually being shown.
+static func _visible_mesh_aabb(root: Node3D, relative_to: Node3D) -> AABB:
+	var out := AABB()
+	var first := true
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null or not mi.visible:
+			continue
+		var xform := relative_to.global_transform.affine_inverse() * mi.global_transform
+		var box: AABB = xform * mi.mesh.get_aabb()
+		out = box if first else out.merge(box)
+		first = false
+	return out
 
 
 # Swap which car this SAME preview shows, reusing its SubViewport/camera/light rather than

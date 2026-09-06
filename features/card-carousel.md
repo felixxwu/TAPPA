@@ -3,7 +3,8 @@
 **Source:** `scripts/card_carousel.gd` (`CardCarousel`), `scripts/car_card_preview.gd`
 (`CarCardPreview`, the CAR page's spinning 3D thumbnail).
 
-**Tests:** `tests/headless/test_card_carousel.gd`; the five converted pages' keyboard
+**Tests:** `tests/headless/test_card_carousel.gd`, `tests/headless/test_car_card_preview.gd`
+(the CAR page's 3D thumbnail specifically); the five converted pages' keyboard
 reachability is still pinned by `tests/headless/test_hub_shell.gd`
 (`test_every_page_is_keyboard_navigable`).
 
@@ -261,6 +262,23 @@ render.
 `CarCardPreview.new(car_ref)` takes either an **owned-car Dictionary** (a car the player
 already has — shows its actual paint/wheels via `CarProp`'s `owned` opt) or a
 **`CarLibrary` index** (an unowned catalogue car in the Buy list, via the `index` opt).
+
+## The car is centred on its OWN geometry, not a guessed camera offset
+
+Cars in `car.tscn` are authored around whatever origin convention each source model
+happened to use — not necessarily its own visual centre. Aiming the camera at a single
+fixed point (a first-draft `Vector3(0, 0.6, 0)` guess) landed fine for some cars and
+"not quite centred" for others, since that guess only matched one car's actual geometry.
+`CarCardPreview._center_on_pivot` fixes this per-car instead of per-guess: right after
+`CarProp.spawn` returns, it measures the union of every VISIBLE `MeshInstance3D`'s AABB
+under the spawned car (`_visible_mesh_aabb` — pruning already dropped every OTHER
+embedded car body, so this only ever measures the one model actually showing) and shifts
+the CAR (not the camera, not the pivot) so that AABB's centre lands exactly on `_pivot`'s
+own local origin. The camera then simply targets `Vector3.ZERO` — correct for every car
+uniformly — and since `_pivot` is what `_process` spins, the turntable rotation orbits
+around the car's true visual middle instead of wobbling around wherever its unshifted
+scene origin happened to sit. Runs on every spawn, including `show_car` swaps, so a
+different car mid-session gets recentred on ITS OWN geometry too, not the previous car's.
 
 ## Exactly ONE live preview exists, reused, not rebuilt per selection
 
