@@ -318,12 +318,16 @@ func _build_region() -> void:
 		if id == "":
 			continue
 		var region_name := String(region.get("name", id))
+		var reward := RegionRunMode.base_stage_reward(id)
 		if not RegionLibrary.is_unlocked(id, Save.profile):
 			var gate := RegionLibrary.gate_for(id)
-			_text_card(carousel, region_name, "Locked — clear %s" % gate, true, UITheme.MUTED)
+			_text_card(carousel, region_name, "Locked — clear %s (pays $%d/stage)" % [gate, reward],
+				true, UITheme.MUTED)
 			ids.append("")
 			continue
-		var mark := "Cleared" if cleared.has(id) else ""
+		var mark := "$%d/stage" % reward
+		if cleared.has(id):
+			mark += " — Cleared"
 		_text_card(carousel, region_name, mark, false, UITheme.GREEN)
 		ids.append(id)
 	carousel.confirmed.connect(func(i: int) -> void:

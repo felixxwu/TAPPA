@@ -3966,10 +3966,13 @@ func spectator_params() -> Dictionary:
 ## The MOST a fast clear can add on top, paid in proportion to the fraction of the target
 ## saved — the reason to drive well rather than merely clear the clock. 0 removes the bonus.
 @export_range(0.0, 5000.0, 5.0) var run_fast_bonus_money := 150.0
-## How much richer each REGION in the unlock order is, as a fraction added per index
-## (decision 31). This is what stops "farm region 1 forever": the same effort pays more
-## deeper in, so progressing beats grinding without taking the repeatable-region valve away.
-@export_range(0.0, 2.0, 0.05) var run_money_region_step := 0.35
+## How much richer each REGION in the unlock order is, as a MULTIPLIER compounded per
+## index — region N's payout is this raised to the Nth power (decision 31). 2.0 means
+## every region pays double the one before it: clearing a region's own reward is only
+## the next region unlocking, and that next region is what actually pays more. This is
+## what stops "farm region 1 forever": the same effort pays more deeper in, so
+## progressing beats grinding without taking the repeatable-region valve away.
+@export_range(1.0, 4.0, 0.05) var run_money_region_multiplier := 2.0
 ## The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays
 ## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
 ## no target time to be fast against, and its whole reward is the placement.

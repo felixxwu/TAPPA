@@ -196,7 +196,7 @@ no `Save.lose_money`.
 
 ```
 stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_saved)
-              * (1 + region_step * region_index)
+              * region_multiplier^region_index
               + coins_collected * GameConfig.coin_money
 ```
 
@@ -207,9 +207,15 @@ stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_sa
   Two perks move the terms above rather than adding a term of their own: "Trail Blazer"
   multiplies `run_fast_bonus_money` and "Road Scholar" adds to `run_stage_money_base`,
   both through the effects funnel before this function reads them ([perks.md](perks.md));
-- **the region scale** (decision 31), so grinding an early region pays worse per unit
-  time than progressing. That is what stops "farm region 1 forever" without taking the
-  repeatable-region grind valve away (decision 12);
+- **the region scale** (decision 31) — `run_money_region_multiplier` (2.0) COMPOUNDED
+  per region index, so each region in the unlock order pays flat-out DOUBLE the one
+  before it (1x, 2x, 4x, 8x, ...). Clearing a region pays no money of its own — the
+  only reward `record_outcome` grants is the next region unlocking — and that next
+  region is what actually pays more, per stage, immediately. That is what stops "farm
+  region 1 forever" without taking the repeatable-region grind valve away (decision 12).
+  `RegionRunMode.base_stage_reward(region_id)` is the region picker's read of this same
+  scale (stage 0, no bonus, no coins) — the "$X/stage" figure shown against every
+  region, locked or not;
 - **coins** (decisions 13/35/36, stage 8 — see [collectables.md](collectables.md)),
   added AFTER the region scale rather than inside it: a coin is worth a flat amount
   everywhere, and the region scale's job is specifically to make progressing beat
