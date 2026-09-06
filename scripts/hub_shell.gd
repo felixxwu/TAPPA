@@ -89,6 +89,11 @@ func _ready() -> void:
 		_show(View.SUMMARY)
 	else:
 		_show(View.MAIN)
+	# Warms CarPreviewCache in the background (spread across frames — see its own file)
+	# so by the time a player actually reaches the CAR page, every car's preview is
+	# already built and the selection can move between them with no per-car lag at all.
+	# Idempotent: cheap to call on every hub visit, since a car already cached is skipped.
+	CarPreviewCache.warm_all()
 
 
 # The heading each view carries. The SUMMARY heading is the one that says something the
@@ -112,12 +117,33 @@ func _title_for(view: int) -> String:
 
 # --- Page plumbing -----------------------------------------------------------
 
+# A CarCardPreview actively shown on a card (i.e. never parked, because its card was
+# still in the carousel's visible window) is about to be freed as a normal side effect of
+# freeing whatever page hosts it — but CarPreviewCache still references it by car ref, and
+# the NEXT request for that car would hand back a dangling node. Rescuing it into the
+# cache's own (page-, and HubShell-, independent) graveyard first is what avoids that;
+# called from BOTH _show (an ordinary page change) and _exit_tree (HubShell itself being
+# torn down — a run starting, or just this test's own teardown — which frees the CURRENT
+# page WITHOUT ever going through _show). Harmless no-op on every non-CAR page
+# (find_children just finds nothing).
+func _park_live_car_previews() -> void:
+	if not is_instance_valid(_page):
+		return
+	for preview in _page.find_children("*", "CarCardPreview", true, false):
+		CarPreviewCache.park(preview as CarCardPreview)
+
+
+func _exit_tree() -> void:
+	_park_live_car_previews()
+
+
 # Tear the current page down and build the next. Every screen goes through here, so there
 # is exactly one place that can leave a stale page parked under the tree.
 func _show(view: int) -> void:
 	_view = view
 	_settings_menu = null
 	if is_instance_valid(_page):
+		_park_live_car_previews()
 		var layer := _page.get_parent()
 		if is_instance_valid(layer):
 			layer.queue_free()
@@ -410,19 +436,15 @@ func _build_car() -> void:
 		car_refs.append(index)
 
 	# A live CarCardPreview is a real SubViewport + a full car.tscn instantiation (every
-	# embedded car glb body, before pruning). Building/tearing one down PER CARD on every
-	# selection change is what was reported as the carousel freezing the moment a player
-	# tried to move the selection. Every card gets the cheap letter-icon placeholder up
-	# front instead, and a small POOL of CarCardPreview instances — sized to
-	# CardCarousel.visible_card_count(), i.e. exactly as many as can ever be on screen at
-	# once — is kept alive for the whole page. _sync_car_previews reassigns pool members
-	# between cards as the visible window slides (via show_car, reusing each instance's
-	# already-built SubViewport/camera/light) rather than building or freeing one per move,
-	# so every car actually on screen gets its spinning 3D preview, not just the selected
-	# card, without paying the per-move cost that caused the freeze.
-	var preview_state := {"pool": [], "pool_index": []}
-	_sync_car_previews(carousel, car_refs, preview_state)
-	carousel.selection_changed.connect(func(_i): _sync_car_previews(carousel, car_refs, preview_state))
+	# embedded car glb body, before pruning) — genuinely expensive PER CAR, not just per
+	# viewport. Every car card gets the cheap letter-icon placeholder up front, and
+	# _sync_car_previews asks the CarPreviewCache autoload (car_preview_cache.gd) for a
+	# preview per car in the visible window rather than building one itself — the cache is
+	# warmed in the background from HubShell._ready(), so by the time a player reaches
+	# this page every car is normally already built, and even a cache miss only costs one
+	# car's spawn, never a whole burst.
+	_sync_car_previews(carousel, car_refs)
+	carousel.selection_changed.connect(func(_i): _sync_car_previews(carousel, car_refs))
 
 	carousel.confirmed.connect(func(i: int) -> void:
 		var action = actions[i]
@@ -436,70 +458,46 @@ func _build_car() -> void:
 
 
 # Keep a live CarCardPreview on every card the carousel can ACTUALLY show at once
-# (CardCarousel.visible_card_count(), centred on the current selection), reassigning pool
-# members between cards as that window slides rather than building/freeing one per move —
-# see the comment where this is wired up in _build_car for why that matters. `state` is a
-# small mutable Dictionary ({"pool": Array[CarCardPreview], "pool_index": Array[int]})
-# rather than local variables closed over by the caller's lambda: GDScript lambdas capture
-# locals by VALUE, so a reassignment inside the lambda body would NOT be visible on the
-# next call to that same lambda — a Dictionary's/Array's CONTENTS mutate in place instead,
-# so this persists correctly across every selection_changed firing.
-func _sync_car_previews(carousel: CardCarousel, car_refs: Array, state: Dictionary) -> void:
+# (CardCarousel.visible_card_count(), centred on the current selection). Previews come
+# from CarPreviewCache (car_preview_cache.gd), a SESSION-lifetime autoload cache keyed by
+# car ref — not something this page owns itself, since HubShell is rebuilt from scratch
+# on every hub visit and a page-scoped cache would forget every car each time. A card
+# that stays in the visible window across a selection move is left untouched entirely.
+func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 	var radius := carousel.visible_card_count() / 2
 	var selected := carousel.selected_index()
-	var wanted: Array = []
+	var wanted := {}
 	for i in range(maxi(0, selected - radius), mini(car_refs.size(), selected + radius + 1)):
-		wanted.append(i)
+		wanted[i] = true
 
-	var pool: Array = state["pool"]
-	var pool_index: Array = state["pool_index"]
-	while pool.size() < wanted.size():
-		pool.append(null)
-		pool_index.append(-1)
-
-	# Free every pool member whose card fell OUT of the window, restoring that card's
-	# placeholder — these are the instances the entering cards below get reassigned.
-	for slot in pool.size():
-		var idx: int = pool_index[slot]
-		if idx < 0 or wanted.has(idx):
+	# Park every card that fell OUT of the window's preview back in the cache's own
+	# graveyard — NOT freed, so revisiting this car later (a swipe back, say) is a plain
+	# reparent rather than a fresh CarProp.spawn.
+	for i in car_refs.size():
+		if wanted.has(i):
 			continue
-		var old_card := carousel.get_card(idx)
-		var preview: CarCardPreview = pool[slot]
-		if preview != null and preview.get_parent() == old_card.visual:
-			old_card.visual.remove_child(preview)
-		old_card.visual.add_child(_card_icon(_car_ref_name(car_refs[idx]), UITheme.MUTED))
-		pool_index[slot] = -1
+		var card := carousel.get_card(i)
+		if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
+			var preview: CarCardPreview = card.visual.get_child(0)
+			card.visual.remove_child(preview)
+			CarPreviewCache.park(preview)
+			card.visual.add_child(_card_icon(_car_ref_name(car_refs[i]), UITheme.MUTED))
 
-	# Give every card that entered the window (and doesn't already have a live preview —
-	# one that stayed in the window across this call needs no change at all) a pool member.
-	for idx in wanted:
-		var card := carousel.get_card(idx)
-		var already_live := card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview
-		if already_live:
+	# Give every card that entered the window its car's preview — cached already (a car
+	# seen earlier this visit, or warmed in the background) or built fresh otherwise. A
+	# card that STAYED in the window across this call already shows the right thing and
+	# is left untouched.
+	for i in wanted:
+		var card := carousel.get_card(i)
+		if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
 			continue
-		var slot: int = pool_index.find(-1)
-		if slot < 0:
-			continue  # pool sized to wanted.size(), so this should never actually happen
 		for child in card.visual.get_children():
 			card.visual.remove_child(child)
 			child.queue_free()
-		var preview: CarCardPreview = pool[slot]
-		if preview == null:
-			preview = CarCardPreview.new(car_refs[idx])
-			pool[slot] = preview
-			card.visual.add_child(preview)
-		else:
-			# Reparent BEFORE show_car, not after: show_car's _spawn_now (car_card_preview.gd)
-			# needs _pivot already inside the SceneTree (apply_car reads wheel mounts car.gd
-			# only records in _ready) the same way the very first spawn does. `preview` was
-			# just removed from its OLD card above, so calling show_car while it's still
-			# detached hits that exact "not ready yet" failure again.
-			card.visual.add_child(preview)
-			preview.show_car(car_refs[idx])
-		pool_index[slot] = idx
+		card.visual.add_child(CarPreviewCache.get_or_build(car_refs[i]))
 
 
-# The letter a placeholder card icon shows for a car ref (see _sync_car_preview) — an
+# The letter a placeholder card icon shows for a car ref (see _sync_car_previews) — an
 # owned-car Dictionary or a CarLibrary catalogue index, the same two shapes
 # CarCardPreview._ready already accepts.
 func _car_ref_name(car_ref) -> String:

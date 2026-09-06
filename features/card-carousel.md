@@ -1,12 +1,13 @@
 # Card carousel
 
 **Source:** `scripts/card_carousel.gd` (`CardCarousel`), `scripts/car_card_preview.gd`
-(`CarCardPreview`, the CAR page's spinning 3D thumbnail).
+(`CarCardPreview`, the CAR page's spinning 3D thumbnail), `scripts/car_preview_cache.gd`
+(`CarPreviewCache` autoload — the session-lifetime cache of built previews, keyed by car).
 
 **Tests:** `tests/headless/test_card_carousel.gd`, `tests/headless/test_car_card_preview.gd`
-(the CAR page's 3D thumbnail specifically); the five converted pages' keyboard
-reachability is still pinned by `tests/headless/test_hub_shell.gd`
-(`test_every_page_is_keyboard_navigable`).
+(the CAR page's 3D thumbnail specifically), `tests/headless/test_car_preview_cache.gd`
+(the cache/warm-up autoload); the five converted pages' keyboard reachability is still
+pinned by `tests/headless/test_hub_shell.gd` (`test_every_page_is_keyboard_navigable`).
 
 The shared horizontal, side-scrolling card widget that replaced the vertical
 row-of-buttons list on the hub's **MAIN**, **REGION**, **CAR**, **SHOP** and **PERKS**
@@ -296,12 +297,12 @@ shrinking it. Retune the fov value freely — the distance follows it automatica
 reintroduce a second, independently-picked distance constant, or the two will drift apart
 the next time either changes.
 
-## A small pool of live previews, one per card ON SCREEN, reused across moves
+## A preview is CACHED per car, not rebuilt per screen slot
 
-A `CarCardPreview` is a real `SubViewport` + camera + light + a full `car.tscn`
-instantiation (every embedded car glb body, before `car_prop.gd`'s pruning) — cheap once,
-expensive if paid for repeatedly, and expensive again if torn down and rebuilt on every
-selection change. Three shapes were tried before landing on the one that holds:
+A `CarCardPreview` costs two separate things: the `SubViewport`/camera/light setup, and
+`CarProp.spawn`'s `car.tscn` instantiation (every embedded car glb body, before
+`car_prop.gd`'s pruning) — the SECOND one is genuinely per-car expensive, not just
+per-viewport. Four shapes were tried before landing on the one that holds:
 
 1. **Every car, up front** — `HubShell._build_car` built one for EVERY car (every owned
    car plus the whole unowned catalogue). Blocked the main thread long enough on a real
@@ -310,33 +311,57 @@ selection change. Three shapes were tried before landing on the one that holds:
    got torn down and rebuilt from scratch on every `selection_changed`, which surfaced as
    the carousel visibly freezing the moment a player tried to MOVE the selection.
 3. **Exactly one, reused** — fixed the freeze, but only the selected card ever spun; every
-   other visible card sat there with a static placeholder, which read as broken rather
-   than deliberate once several cards are visible at once.
+   other visible card sat there with a static placeholder, which read as broken once
+   several cards are visible at once.
+4. **A pool of N reused instances, one per SCREEN SLOT, scoped to the page** — every
+   visible card finally got its own spinning preview, but a pool slot is tied to a
+   POSITION on screen, not to a car: sliding the window still called `CarProp.spawn`
+   again for whichever car newly occupied a slot, even a car the player had scrolled past
+   and back to moments earlier. Reported as considerable lag on every selection move.
 
-The shape that actually holds combines the reuse of (3) with the full coverage of (1):
-every car card gets the cheap letter-icon placeholder (`_card_icon`) up front, and the
-page keeps a small POOL of `CarCardPreview` instances — sized to
-`CardCarousel.visible_card_count()`, i.e. exactly as many as the carousel can ever show at
-once, centred on the current selection. `HubShell._sync_car_previews` computes the
-`wanted` set of indices (selection ± half the visible window) on every call, frees pool
-members whose card fell OUT of that set (restoring the placeholder there), then hands a
-freed pool member to every card that entered the set and doesn't already have one — a
-card that STAYS in the window across a move is left untouched, so the same `CarCardPreview`
-node (and its already-built `SubViewport`/camera/light) keeps spinning uninterrupted;
-`CarProp.spawn` (the one genuinely per-car cost) only reruns for cards actually changing
-which car they show.
+The shape that actually holds ties the expensive half — the spawned `CarProp` — to the
+CAR, not the slot, AND makes the cache outlive the page: `CarPreviewCache`
+(`car_preview_cache.gd`) is an AUTOLOAD, not a `HubShell`-owned `Dictionary` — `HubShell`
+itself is torn down and rebuilt from scratch on every hub visit (a run always ends by
+returning to it fresh via `Scenes.change_to`), so anything page-scoped forgets every car
+each time, which a session-lifetime cache exists specifically to avoid. Every car card
+still gets the cheap letter-icon placeholder (`_card_icon`) up front; `HubShell.
+_sync_car_previews` asks `CarPreviewCache.get_or_build(car_ref)` for a preview whenever a
+card enters the visible window (`CardCarousel.visible_card_count()`, centred on the
+selection) and gets back either an ALREADY-BUILT instance (a cache hit — this car was
+warmed or seen earlier) or a freshly spawned one (cached from here on). A card that
+scrolls OUT of the window calls `CarPreviewCache.park(preview)` instead of freeing it —
+parked previews sit in the cache's own hidden `graveyard` Control (a child of the
+autoload, so it survives exactly as long as the game session does); `visible = false` on
+an ancestor stops a `SubViewport` costing render time while parked, the same way it stops
+any other `CanvasItem`. A card that STAYS in the window across a move is left untouched
+entirely.
 
-`CardCarousel.get_card(index)` is the accessor this needs (reach back into a card's
-`visual` slot after `add_card` returned it). `_sync_car_previews`'s `state` argument is a
-mutable `Dictionary` (`{"pool": Array[CarCardPreview], "pool_index": Array[int]}`), not
-local variables closed over by the connecting lambda — GDScript lambdas capture locals BY
-VALUE, so a plain `var pool = []` reassigned inside the lambda body would not be visible
-on the NEXT firing of that same lambda; an Array/Dictionary's CONTENTS mutate in place
-instead, which does persist. When handing a freed pool member to a newly-entered card,
-reparent it (`card.visual.add_child(preview)`) BEFORE calling `show_car` — not after —
-since `CarProp.spawn` needs the node already inside the `SceneTree`. Don't revert to
-building a `CarCardPreview` per card on every move, and don't shrink back to only the
-selected card ever being live — both are exactly regressions this section documents.
+**Warmed in the background, not built on demand.** `HubShell._ready()` fires
+`CarPreviewCache.warm_all()` (fire-and-forget — it's a coroutine, not awaited) every time
+the hub loads, which walks every owned + unowned-catalogue car and builds (then parks)
+whichever aren't cached yet, yielding a frame every `_WARM_PER_FRAME` cars rather than
+doing it all in one synchronous burst — building every car's preview synchronously in one
+call is the ORIGINAL freeze bug (shape 1 above), just moved to hub-load instead of
+removed, so the spread-out yielding is the part that actually matters. Idempotent and
+cheap on every later hub visit: a car already cached is skipped instantly, so only a
+genuinely new one (just bought, say) costs anything. By the time a player has navigated
+MAIN → REGION → CAR, warming has usually had several frames' head start, so most or all
+cars are already built when the page opens.
+
+`CardCarousel.get_card(index)` is the accessor `_sync_car_previews` needs (reach back
+into a card's `visual` slot after `add_card` returned it). Don't revert to a page-scoped
+cache or to rebuilding a car's `CarProp` on every re-entry into view — both are exactly
+the regressions this section documents. `CarCardPreview.show_car` still exists for a
+caller that genuinely wants "this same viewport, a different car" (an existing, tested
+capability of the class), but `CarPreviewCache` doesn't use it — a cache hit needs no
+respawn at all.
+
+**Known caveat, not yet handled:** the cache is keyed by car ref, not re-validated against
+the car's current cosmetic state — an owned car's cached preview could go stale if its
+paint/wheels/engine change via another menu (wheel customisation, engine swap) mid-session
+without anything invalidating that cache entry. Not addressed here; flagged for whoever
+next touches those flows.
 
 ## Known open decisions (unilateral — flag for design review)
 

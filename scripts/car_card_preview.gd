@@ -11,10 +11,12 @@ extends SubViewportContainer
 #
 # Usage: CarCardPreview.new(car_index_or_owned_dict) — pass either a CarLibrary index
 # (int, for an unowned catalogue car in the Buy list) or an owned-car Dictionary (for a
-# car the player already has, so its actual paint/wheels show). ONE instance is meant to
-# be kept alive and REUSED across selections — hub_shell.gd reparents it into whichever
-# card is currently selected and calls show_car(new_ref) rather than freeing it and
-# building a new CarCardPreview per card (see show_car's own comment for why that matters).
+# car the player already has, so its actual paint/wheels show). ONE instance PER CAR is
+# meant to be built once and kept alive for as long as that car might be shown again —
+# hub_shell.gd caches instances by car ref and reparents a cached one back into a card
+# rather than rebuilding a CarCardPreview (or re-spawning the CarProp inside an existing
+# one) every time a car re-enters view; see show_car's own comment for the narrower case
+# it still covers (an existing instance made to show a DIFFERENT car outright).
 
 const _SIZE := 160
 
@@ -127,13 +129,13 @@ static func _visible_mesh_aabb(root: Node3D, relative_to: Node3D) -> AABB:
 	return out
 
 
-# Swap which car this SAME preview shows, reusing its SubViewport/camera/light rather than
-# building a whole new CarCardPreview. hub_shell.gd keeps exactly ONE of these alive for
-# the CAR page (reparenting it into whichever card is currently selected) instead of
-# tearing one down and building a fresh one on every selection change — recreating the
-# SubViewport + a full car.tscn instantiation on every swipe is what was reported as the
-# carousel freezing the moment a player tried to move the selection. Only the CarProp
-# under _pivot is rebuilt here; the expensive viewport/camera/light setup happens once.
+# Swap which car THIS SAME instance shows outright, reusing its SubViewport/camera/light
+# rather than building a whole new CarCardPreview. hub_shell.gd's own CAR page keeps one
+# instance PER CAR instead (cached by car ref, reparented between a card and a hidden
+# holding pen as it enters/leaves view — see _sync_car_previews) since a cache hit needs
+# no respawn at all, but a caller that genuinely wants "this same viewport, a different
+# car" — rather than "this same car, wherever it's shown" — still has this. Only the
+# CarProp under _pivot is rebuilt; the expensive viewport/camera/light setup stays put.
 func show_car(car_ref) -> void:
 	_car_ref = car_ref
 	if not _spawned:

@@ -469,27 +469,15 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 	assert_true(_all_texts().contains("BUY"), "the car page offers a Buy action, not a dead end")
 
 
-# Regression: the CAR page used to build a live CarCardPreview (a real SubViewport + a
-# full car.tscn instantiation) for EVERY car up front — every owned car plus the entire
-# unowned catalogue — synchronously in one call. Reported as the game freezing the moment
-# a region was picked (region select is what leads to this page). Only cards within the
-# carousel's own visible window (CardCarousel.visible_card_count()) around the current
-# selection should ever hold a live preview; everything else gets the cheap placeholder —
-# see HubShell._refresh_car_previews.
-# Regression: the CAR page used to build a live CarCardPreview (a real SubViewport + a
-# full car.tscn instantiation) for EVERY car up front, then — after a first fix — for a
-# WINDOW of cards around the selection. Both still tore one down and built a fresh one on
-# every selection change, which is what was reported as the carousel freezing the moment a
-# player actually tried to move the selection (unavoidable — that's how you pick a car).
-# Exactly ONE CarCardPreview must exist for the whole page, reused (via show_car) and
-# reparented onto whichever card is currently selected — never rebuilt from scratch on a
-# selection change, and never more than one live at a time regardless of how many cards
-# the carousel can show at once.
-# Regression / feature coverage: every card the carousel actually shows on screen must
-# get its own live 3D preview (not just the selected one), while still reusing pool
-# members across a selection move rather than tearing one down and rebuilding it — the
-# latter is what caused the carousel-freezes-on-move bug this pool exists to avoid.
-func test_car_page_shows_a_live_preview_on_every_visible_card_reusing_pool_members() -> void:
+# A live CarCardPreview is a real SubViewport + a full car.tscn instantiation — three
+# designs were tried before this one (every car up front; a window rebuilt per move; a
+# single reused instance) and each traded one problem for another — see
+# features/card-carousel.md → "A small pool of live previews..." for the history. The
+# shape that holds: every card the carousel can ACTUALLY show at once
+# (CardCarousel.visible_card_count(), centred on the selection) gets its own live preview,
+# and a card that stays in the window across a selection move keeps its SAME preview node
+# untouched rather than being rebuilt.
+func test_car_page_shows_a_live_preview_on_every_visible_card() -> void:
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
 	var carousel := _carousel()
@@ -523,6 +511,41 @@ func test_car_page_shows_a_live_preview_on_every_visible_card_reusing_pool_membe
 	assert_eq(after.keys(), [1, 2, 3], "the live window must follow the selection")
 	assert_eq(after[1], before[1], "a card that stayed in the window keeps its SAME preview node")
 	assert_eq(after[2], before[2], "same for the other card that stayed in the window")
+
+
+# Regression: the pool-by-screen-slot design (a prior fix) reassigned instances to
+# whichever card entered the window, re-spawning the CarProp inside even for a car the
+# player had already scrolled past moments earlier — reported as considerable lag every
+# time the selection moved. A car's preview must be CACHED by car ref and simply
+# reparented back when that car re-enters view, not rebuilt.
+func test_a_previously_seen_car_reuses_its_cached_preview_without_respawning() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	var carousel := _carousel()
+	assert_not_null(carousel)
+	assert_gte(carousel.card_count(), 4,
+		"setup: CarFixtures ships at least four unowned cars to buy")
+
+	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
+	carousel.fit_to_available_width(unit * 3.0)
+	carousel.select(1, false)
+	await get_tree().process_frame
+
+	var card0 := carousel.get_card(0)
+	var is_live := func() -> bool:
+		return card0.visual.get_child_count() > 0 and card0.visual.get_child(0) is CarCardPreview
+	assert_true(is_live.call(), "setup: card 0 starts inside the visible window")
+	var original_preview: CarCardPreview = card0.visual.get_child(0)
+
+	carousel.select(2, false)  # window becomes [1, 2, 3] — card 0 scrolls out of view
+	await get_tree().process_frame
+	assert_false(is_live.call(), "setup: card 0 lost its live preview once it left the window")
+
+	carousel.select(0, false)  # window includes 0 again
+	await get_tree().process_frame
+	assert_true(is_live.call(), "card 0 must show a live preview again once it re-enters the window")
+	assert_eq(card0.visual.get_child(0), original_preview,
+		"a car seen earlier this visit must reuse its CACHED preview, not spawn a new one")
 
 
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
