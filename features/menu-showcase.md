@@ -79,30 +79,51 @@ visibility (the same instinct behind `TerrainManager`'s own
 `"terrain precompute: …"` print). Measured on the shipped `SHOWCASE_SEED`/
 `TURN_COUNT`:
 
-| Phase | Before sharing the bake | After |
-|---|---|---|
-| Track generation | 597 ms | 527 ms |
-| **Bake** | **14,209 ms (77%)** | **2,289 ms** |
-| Corridor + chunk cache | 3,049 ms | 2,866 ms |
-| Chunk spawn (mesh/collision) | 182 ms (1%) | 107 ms |
-| Foliage | 304 ms | 259 ms |
-| **Total** | **18,376 ms** | **6,081 ms** |
+| Phase | Naive (six independent bakes) | Shared bake | + collision disabled |
+|---|---|---|---|
+| Track generation | 597 ms | 527 ms | 405 ms |
+| **Bake** | **14,209 ms (77%)** | **2,289 ms** | 2,189 ms |
+| Corridor + chunk cache | 3,049 ms | 2,866 ms | 2,645 ms |
+| Chunk spawn (mesh/collision) | 182 ms (1%) | 107 ms | 143 ms |
+| Foliage | 304 ms | 259 ms | 311 ms |
+| **Total** | **18,376 ms** | **6,081 ms** | **5,725 ms** |
 
-The "before" column is what a naive six-independent-bakes implementation costs; see
-"The bake itself runs ONCE" above for the fix. Two things this measurement settled,
+The first column is what a naive six-independent-bakes implementation costs; see
+"The bake itself runs ONCE" above for that fix. Things this measurement settled,
 worth keeping in mind before optimising further:
 
 - **Chunk mesh/collision spawning was never the bottleneck** (1% of the original
   total) — ruling out caching precomputed chunk MESHES (a tens-of-MB app-size cost
   that was on the table before this was measured) as not worth it.
-- **Corridor + chunk cache is now the largest single phase** (2,866 ms, ~47% of the
-  reduced total) — `TerrainManager.cache_chunk`'s own per-chunk LOD-mesh precompute,
-  reading the (now-shared) baked fields rather than the walk that produces them. A
-  CI-baked cache of the five bake dictionaries (small — see the sizing discussion in
-  `todo/menu-background-showcase.md`) would still shave the remaining ~2.3s bake
-  cost across a cold start (this scene doesn't persist it in memory between runs of
-  the game, only within one build), but corridor/cache is now the bigger target if
-  further work is wanted.
+- **Collision is pure overhead here and is now disabled** (`floor_tm.collision_ring
+  = -1000`, set right after `apply_terrain_lod`): nothing in this scene has a body
+  to collide with the ground (no car, no player), so `cache_chunk`'s own
+  "actual expensive step" comment — committing a full `SAMPLES×SAMPLES`
+  `PhysicsServer3D` heightfield per chunk — never needs to run at all. A negative
+  `collision_ring` makes `_collision_band_chunks`' Chebyshev test false for every
+  coord (an `absi()` distance can never be `<=` a negative number), which also lets
+  more chunks qualify for the cheap coarse/LOD-only path in `cache_chunk` (a chunk
+  needs `l_min==0 OR in_collision_band` to be full-res; removing the second
+  disjunct leaves only the distance-based one). Smaller win than hoped (~200ms) —
+  most of `cache_chunk`'s remaining cost is evidently the per-vertex
+  `compute_chunk_data` height/colour/UV2 fill and the LOD mesh build, not the
+  collision shape.
+- **Corridor + chunk cache is now the largest single phase** (2,645 ms, ~46% of the
+  reduced total). Two paths remain, both flagged rather than applied blind because
+  both carry a real visual-quality tradeoff no one authoring this without eyes on
+  the running game should decide alone:
+  - **Shrink `_CORRIDOR_LEASH_M`** (currently 50m — sized like a real stage's
+    off-track leash, which this scene has no equivalent need for: the camera never
+    leaves a small fixed offset from the road, ~15m at most across every shot).
+    Directly cuts the chunk COUNT built, proportionally cutting this phase's cost —
+    but shrink it too far and a shot's far edge could show a hole/pop-in at the
+    frame boundary, which nobody blind can safely judge.
+  - **A CI-baked cache of the five bake dictionaries** (small — see the sizing
+    discussion in `todo/menu-background-showcase.md`) would still shave the
+    remaining ~2.2s bake cost on a COLD app launch (today's fix only shares the
+    bake within one already-running build, not across separate game sessions), but
+    doesn't touch this phase — it's the harder, not-yet-designed full chunk-data
+    store that would, and that's a real subsystem, not a small follow-up.
 
 ## One track, six segments (`MenuShowcase._build`)
 

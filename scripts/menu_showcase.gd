@@ -242,6 +242,16 @@ func _build() -> void:
 		# recently resolved into cfg.terrain_lod_bands_m — never mutate that shared
 		# field, just override this segment's own band ends after the fact).
 		floor_tm.lod_band_ends_m = cfg.terrain_lod_bands_web_touch_m
+		# No car, no player, nothing ever touches this ground — collision is pure
+		# overhead here. A negative collision_ring makes _collision_band_chunks'
+		# Chebyshev test (`<= band_chunks`) false for every coord (an absi() distance
+		# can never be <= a negative number), so cache_chunk's "actual expensive
+		# step" — committing a full SAMPLES×SAMPLES PhysicsServer3D heightfield per
+		# chunk (see its own comment) — never runs for any chunk in this scene. It
+		# also lets MORE chunks qualify for the cheap coarse/LOD-only path in
+		# cache_chunk (a chunk needs l_min==0 OR in_collision_band to be full-res;
+		# removing the second disjunct leaves only the distance-based one).
+		floor_tm.collision_ring = -1000
 		var _tb0 := Time.get_ticks_msec()
 		if shared_bake.is_empty():
 			# should_yield=true (interactive only) releases the main thread
