@@ -84,7 +84,7 @@ func test_has_profile_false_when_empty_or_zero_duration() -> void:
 
 
 # A dead-straight +X road: sample_at(s) = (s, 0), so the pose's along-track
-# component is exactly the distance asked for and the lateral nudge is lateral.
+# component is exactly the distance asked for and the lateral component is zero.
 class StubTrack:
 	extends Node
 	func origin_offset() -> float:
@@ -106,8 +106,8 @@ func test_pose_at_distance_poses_the_raw_track_distance() -> void:
 	assert_almost_eq(car.global_position.x, 7.0, 0.001, "posed at the raw distance asked")
 	assert_almost_eq(car.global_position.y, Config.data.start_spawn_clearance, 0.001,
 			"seated on the (absent) terrain at the spawn clearance")
-	assert_almost_eq(absf(car.global_position.z), RivalGhost.GHOST_LATERAL_OFFSET_M, 0.001,
-			"in its cosmetic lane, off the centerline")
+	assert_almost_eq(car.global_position.z, 0.0, 0.001,
+			"dead on the centerline, in the player's wheel tracks")
 
 
 func test_pose_at_distance_without_a_track_is_harmless() -> void:

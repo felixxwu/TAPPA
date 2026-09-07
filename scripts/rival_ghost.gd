@@ -25,11 +25,6 @@ extends Node
 # so a plain lerp between neighbours is exact for "s" and a good approximation for the
 # (non-linear) "t" — the same accuracy the profile is sampled at everywhere else.
 
-# Lateral offset (m) the ghost is nudged by at spawn, so it doesn't sit exactly on
-# top of the player at t=0/s=0 during the start-line reveal (both begin at the same
-# point on the centerline). Purely cosmetic — the ghost's own along-track pose is
-# otherwise identical to the profile.
-const GHOST_LATERAL_OFFSET_M := 2.5
 # How far ahead along the centerline the tangent sample is taken, for facing.
 const TANGENT_EPS_M := 0.5
 
@@ -301,10 +296,6 @@ func _pose_car_at_distance(s: float) -> void:
 		fwd = -_car.global_transform.basis.z
 	var basis := Basis.looking_at(fwd, Vector3.UP)
 	var pos := Vector3(here.x, _ground_y(here.x, here.y), here.y)
-	# Nudge sideways off the centerline, purely cosmetic (see GHOST_LATERAL_OFFSET_M) —
-	# applied in the car's own right vector so it stays a consistent lane-width offset
-	# through corners rather than a fixed world-space nudge.
-	pos += basis.x * GHOST_LATERAL_OFFSET_M
 	_car.global_transform = Transform3D(basis, pos)
 
 

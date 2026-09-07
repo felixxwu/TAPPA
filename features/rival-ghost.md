@@ -94,8 +94,8 @@ Posing (`_pose_car_at_distance`): sample the position on the SAME centerline
 `_track_progress.sample_at(origin_offset() + s)` — take a second sample a
 short distance ahead for the facing tangent, seat the Y on the terrain the same
 way `start_line.gd` seats the player (`height_at(x, z) + start_spawn_clearance`),
-and nudge it sideways by a small, purely cosmetic lateral offset (so it doesn't
-sit exactly on the player at `s = 0`). `origin_offset()` /
+with no lateral offset of any kind — the ghost drives the same line the player
+does, wheel track for wheel track. `origin_offset()` /
 `sample_at()` are `TrackProgress` methods that already existed and were already
 commented as being *for* this consumer (see [progress.md](progress.md)) — the
 ghost is posed in `TrackProgress`'s arc-length space (which already accounts

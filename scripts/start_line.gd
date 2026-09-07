@@ -171,7 +171,7 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	if is_instance_valid(_ghost) and _ghost.has_profile():
 		# Park the rival ON THE GRID: one gap down the lead-in ahead of the player, posed
 		# BY THE TRACK (pose_at_distance walks the centerline sample), so it sits on the
-		# road whatever the geometry does, in its usual cosmetic lane offset. It holds
+		# road whatever the geometry does, dead in the player's wheel tracks. It holds
 		# there, scripted-solid, through MENU/FLY_IN/REVEAL — nothing re-poses it until
 		# the hand-off, which (under the fade) snaps it back to the line where the
 		# profile's s=0 puts it for the run.

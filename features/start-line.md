@@ -137,7 +137,7 @@ axis locks cleared, gearbox-auto restored, snapped back onto the line via
 
 What parks on the grid today is the ONE ghost: `setup()` calls
 `RivalGhost.pose_at_distance(start_queue_gap)` — a raw track distance one gap
-down the lead-in, in the ghost's usual cosmetic lane offset — and nothing
+down the lead-in, dead ahead of the player on the same line — and nothing
 re-poses it until the hand-off, which snaps it back to the line (where the
 profile's s=0 puts it for the run) under cover of the fade. The **roll-up and
 per-car proximity attenuation staging** that kept three extra cars alive
