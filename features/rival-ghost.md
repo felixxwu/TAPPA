@@ -2,12 +2,13 @@
 
 **Source:** `scripts/rival_ghost.gd` (`class_name RivalGhost extends Node`),
 `scripts/region_run_mode.gd` (`stage_target_profile`), `scripts/run_mode.gd`
-(the base no-op), `scripts/run_session.gd` (`stage_target_profile`), plus the
-`kinematic_pose` seam on `scripts/car.gd` ([car-physics.md](car-physics.md),
-[event-replay.md](event-replay.md)). Wired by `scripts/world.gd`
-(`_setup_rival_ghost`, `_build_start_line`), `scripts/start_line.gd` (the MENU
-idle loop) and `scripts/stage_manager.gd` (`setup_target_profile`,
-`_update_rival`, the HUD delta).
+(the base no-op), `scripts/run_session.gd` (`stage_target_profile`,
+`stage_target_pace`), plus the `kinematic_pose` seam on `scripts/car.gd`
+([car-physics.md](car-physics.md), [event-replay.md](event-replay.md)). Wired
+by `scripts/world.gd` (`_setup_rival_ghost`, `_build_start_line`),
+`scripts/start_line.gd` (the MENU idle loop + the rival card) and
+`scripts/stage_manager.gd` (`setup_target_profile`, `_update_rival`, the HUD
+delta).
 
 **Tests:** `tests/headless/test_rival_ghost.gd`, `tests/headless/test_region_run.gd`,
 `tests/headless/test_stage_manager.gd`, `tests/headless/test_start_line.gd`,
@@ -113,6 +114,51 @@ Wheel spin is NOT filled in (`drivetrain.replay_omega` stays empty) — a static
 idle roll on the ghost's wheels was accepted as a v1 trade-off rather than
 deriving an approximate omega from `ds/dt`; see the file for where that would
 plug in if it's ever worth doing.
+
+## The rival's car and name
+
+The ghost's body used to be the car scene's neutral baseline — the shape of no
+car at all, which read as a placeholder box driving the stage. It now wears a
+REAL car from the CarLibrary roster, chosen to make the clock believable:
+
+- **The pick** — `RivalGhost.pick_rival(pace, seed) -> {"car_index", "name"}`
+  is a pure static `world.gd._setup_rival_ghost` calls once per stage boot.
+  `pace` is `RunSession.stage_target_pace()` — the mode's own
+  `target_pace(stage_index)` multiplier (read off the MODE, never
+  reverse-engineered from the seated profile, so it cannot disagree with the
+  target; 0.0 for a mode with no target concept). A car "as fast as the target"
+  is one whose benchmark time sits the same multiplier from the reference's:
+  `benchmark_ms(car) / benchmark_ms(REFERENCE_CAR) ≈ pace`. Both sides are
+  `CarPerformance.benchmark_ms` solves on the SAME frozen benchmark track
+  (cached per car), so the ratio carries over to a real stage closely enough
+  for a believable body — catalogue entries are fed through
+  `CarPerformance.merged_meta({}, entry)` so the solver sees each car's RESOLVED
+  engine, and an entry that fails to solve is never picked. The winner is the
+  nearest neighbour of `pace` (argmin of the absolute gap), which is monotonic
+  in pace: a slower target never picks a faster car.
+- **The costume, not the physics** — the ghost still drives the target PROFILE
+  exactly, per the class contract above: the clock is the fail state, the body
+  is presentation. A car that "could not actually" run the target time in a
+  player's hands still races it here, because the profile — not the car — is
+  what the HUD delta is measured against. The pick only has to look right.
+- **The application** — `setup()` takes the pick as its `rival` argument and
+  reshapes the ghost's Car via the same path the old start-line grid props
+  used: `use_isolated_config()` so `apply_car`'s config writes cannot clobber
+  the fielded player car, a `Config.data` value snapshot/restore around it as
+  the belt-and-braces net, and `rebuild_audio = false` since a kinematic ghost
+  never fires its engine. `apply_car` relocating wheels and resetting the pose
+  is destructive to a LIVE body but harmless here — the body is frozen,
+  zero-collision, and `_pose_car_at_distance` writes its transform every frame.
+- **The name** — an authored pool (`RIVAL_NAMES`, twelve parody-adjacent driver
+  names), picked by `posmod(seed, pool)` where the seed is the run's own
+  `run_seed` offset by the stage index (`world.gd._rival_seed`, the same
+  determinism convention as the boost draw's stride): the same stage of the
+  same run always names the same rival, while runs and stages differ.
+- **On the start line** — `start_line.gd`'s rival card reads the identity back
+  off the ghost (`rival_name()` / `rival_car_name()` / `target_ms()`); see
+  [start-line.md](start-line.md). With no pick (`{}` — no target, or a roster
+  with no solvable car) the ghost keeps the neutral baseline and the card shows
+  the time alone, or nothing at all with no ghost.
 
 ## Start-line reveal
 

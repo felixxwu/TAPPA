@@ -215,6 +215,50 @@ func test_no_ghost_is_a_harmless_no_op() -> void:
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the MENU idle runs fine with no ghost at all")
 
 
+# --- Rival card (features/start-line.md, features/rival-ghost.md) -------------
+# The deleted per-opponent reveal card's revival, trimmed to the one ghost rival:
+# driver name, worn car, gold time to beat — or no card at all with no ghost.
+
+func test_the_rival_card_names_the_driver_car_and_time_to_beat() -> void:
+	var ghost := StubGhost.new()
+	add_child_autofree(ghost)
+	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 9.5])}
+	ghost._car_index = 0
+	ghost._rival_name = "R. Ostmeyer"
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	assert_true(sl.rival_card_visible(), "a profiled ghost shows the rival card")
+	# The house enforce pass uppercases every Label's text (rules §1), so the card
+	# shows the caps form — compare against UITheme.caps, not the raw source string.
+	assert_eq(sl.rival_card_name(), UITheme.caps("R. Ostmeyer"), "the driver's name is on the card")
+	assert_eq(sl.rival_card_car(), UITheme.caps(String(CarLibrary.all()[0].get("name", ""))),
+			"the card names the car the rival wears")
+	assert_eq(sl.rival_card_time(), UITheme.format_time(9500, "\u2014"),
+			"the gold row shows the profile's own total, formatted like the HUD clock")
+
+
+func test_the_rival_card_hides_without_a_ghost() -> void:
+	var sl := _make()  # no ghost handed in — a challenge stage, e.g.
+	assert_false(sl.rival_card_visible(), "no ghost, no rival card")
+	assert_eq(sl.rival_card_time(), "", "and no time to beat either")
+
+
+func test_the_rival_card_hides_the_car_line_for_the_neutral_baseline() -> void:
+	# A ghost with a target but no pickable car (car_index -1) shows the time but no
+	# bogus model name — the baseline body is not a car in the roster.
+	var ghost := StubGhost.new()
+	add_child_autofree(ghost)
+	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 9.5])}
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	assert_true(sl.rival_card_visible(), "the time to beat still shows")
+	assert_eq(sl.rival_card_car(), "", "no roster car, no car line")
+
+
 func test_start_overlay_uses_the_house_button_row_height() -> void:
 	var sl := _make()
 	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),

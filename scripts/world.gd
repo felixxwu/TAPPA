@@ -1577,10 +1577,29 @@ func _setup_rival_ghost(staged: bool) -> void:
 			_rival_ghost.free_ghost()
 		_stage_manager.setup_target_profile({})
 		return
+	# The rival's identity for THIS stage: a real CarLibrary car whose benchmark pace
+	# best matches the target clock, plus a driver name seeded from the run so it is
+	# stable for a given stage of a given run (features/rival-ghost.md). The ghost's
+	# DRIVING stays the target profile exactly — the car is the body the clock wears.
+	var rival: Dictionary = RivalGhost.pick_rival(RunSession.stage_target_pace(), _rival_seed())
 	_rival_ghost = _ensure_child("RivalGhost",
 		func() -> Node: return RivalGhost.new()) as RivalGhost
-	_rival_ghost.setup(_track_progress, _floor(), profile)
+	_rival_ghost.setup(_track_progress, _floor(), profile, rival)
 	_stage_manager.setup_target_profile(profile, _rival_ghost)
+
+
+# The rival driver-name seed: the run's own seed (RegionRunMode.run_seed; 0 for a
+# mode without one) offset by the stage index, so a stage names the same rival every
+# replay of the same run while stages and runs differ — the same determinism
+# convention as RegionRunMode's _boost_seed, without colliding with its stride.
+func _rival_seed() -> int:
+	var m := RunSession.mode()
+	var run_seed := 0
+	if m != null:
+		var value: Variant = m.get("run_seed")
+		if value != null:
+			run_seed = int(value)
+	return run_seed + RunSession.events_completed() * 31
 
 
 # --- Session run-scene integration ------------------------------------------

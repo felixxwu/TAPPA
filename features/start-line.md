@@ -53,6 +53,18 @@ builds a `StartLine` and the countdown arms immediately.
    in the clear band between the two cards. The HUD and mobile controls are
    hidden. All three buttons and the Tune Car overlay are keyboard/gamepad
    navigable via `MenuNav`.
+   - **The rival card** — the deleted per-opponent reveal card, trimmed to the
+     one rival the pivot kept and shown under the stage header for the whole
+     MENU phase: the ghost's **driver name** (`RivalGhost.rival_name()`), the
+     **car they wear** (`rival_car_name()` — a real CarLibrary entry picked to
+     match the target's pace, see [rival-ghost.md](rival-ghost.md)), and a gold
+     **"Time to beat"** stat row with the target clock itself
+     (`RivalGhost.target_ms()`, formatted exactly like the HUD's timer via
+     `UITheme.format_time`). It is filled once at overlay build
+     (`_refresh_rival_card`) and hides entirely when there is no ghost or no
+     target (challenge stages, degenerate tracks, plain dev boots), restoring
+     the header + clear-band shape. Test readouts: `rival_card_visible()` /
+     `rival_card_name()` / `rival_card_car()` / `rival_card_time()`.
    - **Only Start launches.** Pressing it runs the eligibility gate (below);
      only on passing does the sequence advance to the fade.
    - **`< Exit`** routes through the pause menu's `confirm_quit_to_hq()` (a
@@ -101,7 +113,9 @@ reveal" branch is simply the only path there ever is now. The single rival
 GHOST ([rival-ghost.md](rival-ghost.md)) `world.gd` may hand `setup()` is not a
 reveal phase — it's driven silently in the background of the same MENU, with no
 sequence state of its own (`StartLine.Seq` is still just `{ MENU, FADE_OUT,
-FADE_IN, DONE }`).
+FADE_IN, DONE }`). Its IDENTITY, though, is now on show: the rival card above
+names the driver, the real car the ghost wears, and the time to beat — the old
+card's information, minus the championship rows that died with the rival field.
 
 ## Staging the player (no grid any more)
 
