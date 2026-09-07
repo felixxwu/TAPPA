@@ -384,6 +384,12 @@ func _refresh_rival_card() -> void:
 	_rival_car_label.text = _rival_car_name_text()
 	_rival_car_label.visible = _rival_car_label.text != ""
 	_rival_time_label.text = UITheme.format_time(_ghost.target_ms(), "—")
+	# This refresh can run after the page's own UITheme.enforce pass (the profile
+	# is wired before build today, but nothing guarantees that forever), so
+	# re-uppercase the freshly-set text the way the deleted per-opponent reveal
+	# card did — enforce is idempotent and cheap, per its doc.
+	if _overlay != null:
+		UITheme.enforce(_overlay)
 
 
 # The rival's car line: the car's display name, or — when the ghost wears the neutral

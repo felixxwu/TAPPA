@@ -230,8 +230,10 @@ func test_the_rival_card_names_the_driver_car_and_time_to_beat() -> void:
 	sl.set_process(false)
 	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
 	assert_true(sl.rival_card_visible(), "a profiled ghost shows the rival card")
-	assert_eq(sl.rival_card_name(), "R. Ostmeyer", "the driver's name is on the card")
-	assert_eq(sl.rival_card_car(), String(CarLibrary.all()[0].get("name", "")),
+	# The house enforce pass uppercases every Label's text (rules §1), so the card
+	# shows the caps form — compare against UITheme.caps, not the raw source string.
+	assert_eq(sl.rival_card_name(), UITheme.caps("R. Ostmeyer"), "the driver's name is on the card")
+	assert_eq(sl.rival_card_car(), UITheme.caps(String(CarLibrary.all()[0].get("name", ""))),
 			"the card names the car the rival wears")
 	assert_eq(sl.rival_card_time(), UITheme.format_time(9500, "\u2014"),
 			"the gold row shows the profile's own total, formatted like the HUD clock")
