@@ -95,8 +95,6 @@ var _rival_name := ""    # the driver name the start-line card shows (pick_rival
 var _track_progress: Node = null
 var _terrain: Node = null
 var _profile: Dictionary = {}   # {"s","t"} pace-scaled, from RunSession.stage_target_profile()
-var _t := 0.0
-var _looping := false
 
 
 # --- Pure profile maths (testable with a synthetic {"s","t"} dict) ----------------
@@ -260,12 +258,14 @@ func has_profile() -> bool:
 	return not _profile.is_empty() and profile_duration(_profile) > 0.0
 
 
-# Reset the ghost's own clock to the start of the profile. `looping` selects the
-# start-line reveal's fmod(t, duration) idle (advance()); a live run instead drives
-# the ghost from an EXTERNAL clock via pose_at(), which ignores this entirely.
-func reset(looping := false) -> void:
-	_t = 0.0
-	_looping = looping
+# Pose the ghost at a raw track distance (m from the origin sample) instead of a
+# profile race time — the start-line grid slot (start_queue_gap down the lead-in,
+# ahead of the player) is a DISTANCE, not a time on the profile. Same posing path
+# and guards as pose_at().
+func pose_at_distance(s_m: float) -> void:
+	if not is_instance_valid(_car) or not has_profile() or _track_progress == null:
+		return
+	_pose_car_at_distance(s_m)
 
 
 func hide_ghost() -> void:
@@ -279,22 +279,11 @@ func free_ghost() -> void:
 	_car = null
 
 
-# Advance the ghost's OWN clock by `delta` and repose it — the start-line idle
-# (looping) and, if a caller chooses to keep driving it that way, a live run
-# (un-looped: it holds at the finish once `t` passes the profile's duration, rather
-# than looping mid-run). No-op with no car or nothing to show.
-func advance(delta: float) -> void:
-	if not is_instance_valid(_car) or not has_profile():
-		return
-	_t += delta
-	if _looping:
-		_t = fmod(_t, profile_duration(_profile))
-	pose_at(_t)
-
 
 # Pose the ghost at an EXTERNAL race time (StageManager.elapsed(), during RUNNING) —
-# the counterpart to advance()'s self-driven clock. No-op with no car, no profile,
-# or no track_progress (a bare test/dev harness with no live track).
+# the counterpart to pose_at_distance()'s raw-distance form (the start-line grid
+# slot). No-op with no car, no profile, or no track_progress (a bare test/dev
+# harness with no live track).
 func pose_at(t: float) -> void:
 	if not is_instance_valid(_car) or not has_profile() or _track_progress == null:
 		return

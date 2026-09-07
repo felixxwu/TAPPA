@@ -6,7 +6,7 @@
 `stage_target_pace`), plus the `kinematic_pose` seam on `scripts/car.gd`
 ([car-physics.md](car-physics.md), [event-replay.md](event-replay.md)). Wired
 by `scripts/world.gd` (`_setup_rival_ghost`, `_build_start_line`),
-`scripts/start_line.gd` (the MENU idle loop + the rival card) and
+`scripts/start_line.gd` (the start-line reveal + the rival card) and
 `scripts/stage_manager.gd` (`setup_target_profile`, `_update_rival`, the HUD
 delta).
 
@@ -103,12 +103,19 @@ for the start-line lead-in and re-anchors at `mark_start()`), not the raw
 generated centerline's, so the ghost and the player's own progress percentage
 agree on where "0%" and "100%" are.
 
-Two drive modes on the same `Car`, selected by which caller drives the clock:
+Two posing entry points on the same `Car`, selected by what the caller has:
 
-- **`advance(delta)`** — the ghost's OWN clock, optionally looping
-  (`reset(looping)`): the start-line MENU idle.
-- **`pose_at(t)`** — an EXTERNAL race time, un-looped: `StageManager` drives this
-  off its own `_elapsed` during RUNNING.
+- **`pose_at(t)`** — a race time: `StageManager` drives this off its own
+  `_elapsed` during RUNNING, un-looped (it holds at the finish once the
+  profile's duration passes).
+- **`pose_at_distance(s)`** — a raw track distance (m from the origin sample):
+  the start line's grid slot (`start_queue_gap` down the lead-in) is a
+  DISTANCE, not a time on the profile, so `start_line.gd` poses the parked
+  rival with this once at setup. Same posing path and guards as `pose_at`.
+
+(The ghost's own-clock `advance`/`reset` pair — the looping MENU idle an
+earlier start line drove — is gone: the rival parks on the grid instead of
+driving laps in the background.)
 
 Wheel spin is NOT filled in (`drivetrain.replay_omega` stays empty) — a static
 idle roll on the ghost's wheels was accepted as a v1 trade-off rather than
@@ -172,11 +179,11 @@ nothing.
 
 `world.gd._build_start_line` hands that same `RivalGhost` into
 `StartLine.setup(..., ghost)`. `StartLine` does not own the ghost's lifecycle —
-it outlives this node, kept driving through RUNNING — it only calls
-`ghost.reset(true)` (looping) at setup and `ghost.advance(delta)` from the MENU
-branch of `_timed_process` (the same branch that already drives the orbit
-camera idle), so the loop stops naturally the moment the sequence leaves MENU
-for the fade. See [start-line.md](start-line.md).
+it outlives this node, kept posing through RUNNING — it poses the ghost ONCE,
+on the grid (`pose_at_distance`, one `start_queue_gap` down the lead-in), and
+leaves it there scripted-solid through MENU/FLY_IN/REVEAL; the hand-off snap
+back to the line (the profile's s=0) happens under the fade, after which
+`StageManager` poses it per-frame again. See [start-line.md](start-line.md).
 
 ## Live HUD delta
 

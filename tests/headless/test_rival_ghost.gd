@@ -83,14 +83,40 @@ func test_has_profile_false_when_empty_or_zero_duration() -> void:
 	assert_true(ghost.has_profile(), "a real, positive-duration profile has something to show")
 
 
-func test_reset_seeds_the_clock_and_looping_flag() -> void:
+# A dead-straight +X road: sample_at(s) = (s, 0), so the pose's along-track
+# component is exactly the distance asked for and the lateral nudge is lateral.
+class StubTrack:
+	extends Node
+	func origin_offset() -> float:
+		return 0.0
+	func sample_at(s: float) -> Vector2:
+		return Vector2(s, 0.0)
+
+
+func test_pose_at_distance_poses_the_raw_track_distance() -> void:
+	# The start-line grid slot is a DISTANCE (one gap down the lead-in), not a time
+	# on the profile — pose_at_distance takes it directly.
 	var ghost := RivalGhost.new()
 	add_child_autofree(ghost)
-	ghost.reset(true)
-	assert_eq(ghost._t, 0.0, "reset zeroes the ghost's own clock")
-	assert_true(ghost._looping, "reset(true) selects the start-line's looping idle")
-	ghost.reset(false)
-	assert_false(ghost._looping, "reset(false) selects the live run's un-looped clock")
+	var track := StubTrack.new()
+	add_child_autofree(track)
+	ghost.setup(track, null, _constant_speed_profile(), {})
+	ghost.pose_at_distance(7.0)
+	var car := ghost.car()
+	assert_almost_eq(car.global_position.x, 7.0, 0.001, "posed at the raw distance asked")
+	assert_almost_eq(car.global_position.y, Config.data.start_spawn_clearance, 0.001,
+			"seated on the (absent) terrain at the spawn clearance")
+	assert_almost_eq(absf(car.global_position.z), RivalGhost.GHOST_LATERAL_OFFSET_M, 0.001,
+			"in its cosmetic lane, off the centerline")
+
+
+func test_pose_at_distance_without_a_track_is_harmless() -> void:
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	ghost.setup(null, null, _constant_speed_profile(), {})
+	var before := ghost.car().global_position
+	ghost.pose_at_distance(7.0)  # no track_progress to pose against: no-op, no crash
+	assert_eq(ghost.car().global_position, before, "the pose call was a no-op")
 
 
 # --- Rival identity: pick_rival (features/rival-ghost.md) ---------------------

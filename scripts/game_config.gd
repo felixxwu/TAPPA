@@ -775,9 +775,9 @@ func has_nitrous() -> bool:
 ## as the countdown starts. Runs inside an active RunSession stage; a plain
 ## dev boot of main.tscn skips straight to the countdown. Off restores that old
 ## behaviour. The per-opponent reveal this sequence used to run between the MENU
-## and the fade — a rival queue rolling up, launching one at a time — is deleted
-## along with the rival field (todo/roguelike-pivot.md decision 5; decision 29
-## keeps the MENU).
+## and the fade — a rival queue rolling up, launching one at a time — died with the
+## rival field (todo/roguelike-pivot.md decision 5); what runs today is its
+## one-rival revival: the ghost parked on the grid, one automatic fly, then the card.
 @export var start_line_enabled := true
 ## Orbit camera angular speed (rad/s) around the car during the start reveal.
 @export var start_orbit_speed := 0.5
@@ -800,6 +800,26 @@ func has_nitrous() -> bool:
 @export var start_spawn_clearance := 0.5
 ## Field of view (degrees) of the start-line orbit camera during the reveal.
 @export_range(30.0, 120.0) var start_orbit_fov := 70.0
+## Grid gap (m) the rival ghost parks AHEAD of the player on the start line — one
+## car-plus slot down the lead-in, so the reveal camera frames it separately from
+## the player. (The pre-pivot grid queued its rivals BEHIND the line at this same
+## spacing; the one-rival revival parks ahead instead.)
+@export var start_queue_gap := 7.0
+## Seconds the orbit camera idles on the player before the reveal fly begins. The
+## reveal plays by itself — this beat is what makes the fly read as a move.
+@export var start_reveal_idle_seconds := 0.8
+## Seconds the fly from the orbit pose to the reveal shot takes.
+@export var start_reveal_fly_seconds := 1.2
+## The reveal shot: a low 3/4 in front of the rival on its grid slot — the eye sits
+## front (front_m), to its right (side_m) and above (height_m) in the rival's own
+## heading, looking back at it at look_height_m. Defaults carried over from the
+## deleted per-opponent reveal, whose shot this revives for the one ghost.
+@export var start_reveal_cam_front_m := 6.0
+@export var start_reveal_cam_side_m := 4.0
+@export var start_reveal_cam_height_m := 1.0
+@export var start_reveal_cam_look_height_m := 0.8
+## Field of view (degrees) the reveal shot settles on.
+@export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata

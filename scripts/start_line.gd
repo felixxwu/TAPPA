@@ -9,46 +9,63 @@ extends Node3D
 # StageManager's STAGING phase:
 #
 #   1. MENU     — black house-style panels offer Start / Tune Car under a
-#      rally/event header, while an orbit camera idles on the player's car. The player
-#      launches with the Start button, menu_select or a tap (eligibility gates first).
-#   2. FADE     — Start fades the screen to black; at full black the camera hands back
+#      rally/event header, while an orbit camera idles on the player's car. The rival
+#      ghost is parked ON THE GRID, one gap down the lead-in ahead of the player.
+#   2. FLY_IN   — after a short orbit beat (no press needed — the reveal is the
+#      intro, not a reward for starting) the camera flies from the orbit pose to a
+#      fixed low 3/4 shot in front of the rival on the grid, and holds there.
+#   3. REVEAL   — arrived at the rival, the rival card appears: the driver's name,
+#      the car they wear, and the gold time to beat. The menu row stays live, so the
+#      target is on screen while the player tunes against it. Start (button only)
+#      fades to the countdown.
+#   4. FADE     — Start fades the screen to black; at full black the camera hands back
 #      to the player's SELECTED camera (via the CameraManager), the driving UI returns
 #      and StageManager.begin_countdown() starts the countdown; then it fades back in.
 #
 # Created and wired by world.gd (session runs only). A plain dev boot of main.tscn
 # never builds a StartLine and the StageManager goes straight to the countdown.
 #
-# THE RIVAL REVEAL — a per-opponent FLY_IN + REVEAL phase between MENU and the fade,
-# showing the three real top-three rivals lined up ahead in their actual cars — is
-# DELETED along with the rival field it dramatized (todo/roguelike-pivot.md decision
-# 5; decision 29 keeps this MENU, only the reveal goes). `setup()` no longer takes a
-# `leaders` argument.
+# THE RIVAL REVEAL — the per-opponent FLY_IN + REVEAL the pivot deleted with the
+# rival field it dramatized (todo/roguelike-pivot.md decision 5) — the three real
+# top-three rivals queued behind the line, walked through one Next press at a time —
+# is REVIVED here in the pivot's own terms: ONE rival, the ghost, parked on the grid
+# ahead of the player, a single automatic fly, and the card arriving when the camera
+# does. Nothing queues, rolls up or drives off; the ghost never moves until the run
+# itself poses it.
 #
-# THE RIVAL GHOST (features/rival-ghost.md) took its place as of the roguelike run's
-# fixed-clock target: `world.gd` hands `setup()` a `RivalGhost` it owns (outliving
-# this node — the ghost keeps posing through RUNNING for the live HUD delta), and the
-# MENU phase loops it down the road (`RivalGhost.advance`, looping) so the idle orbit
-# shot reads as "the rival driving the stage" rather than a silent number. This node
-# only ever calls `advance()` from the MENU branch of `_timed_process`, so the loop
-# stops naturally at the fade; world.gd takes over posing it (`RivalGhost.pose_at`,
-# un-looped, off `StageManager.elapsed()`) once the countdown/run begins.
+# THE RIVAL GHOST (features/rival-ghost.md) is that one rival: `world.gd` hands
+# `setup()` a `RivalGhost` it owns (outliving this node — the ghost keeps posing
+# through RUNNING for the live HUD delta). This node poses it ONCE, on the grid
+# (`RivalGhost.pose_at_distance`), and never re-poses it: it sits scripted-solid
+# through the sequence, and world.gd/StageManager take over (`RivalGhost.pose_at`,
+# off `StageManager.elapsed()`) once the countdown/run begins — the hand-off snap
+# from the grid slot back to the line, where the profile's s=0 puts it, happens
+# under the fade.
 #
 # THE RIVAL CARD — the deleted per-opponent reveal card (driver, car, gold time),
-# trimmed to the ONE rival the pivot kept and shown for the whole MENU phase: the
-# ghost now wears a real CarLibrary car whose benchmark pace matches the target
-# (RivalGhost.pick_rival), so the card can honestly name WHO you're racing, WHAT
-# they drive, and the exact time to beat. Hidden entirely when there is no ghost.
+# trimmed to the ONE rival the pivot kept and revealed when the fly lands (not for
+# the whole MENU any more): the ghost wears a real CarLibrary car whose benchmark
+# pace matches the target (RivalGhost.pick_rival), so the card can honestly name WHO
+# you're racing, WHAT they drive, and the exact time to beat. Hidden entirely when
+# there is no ghost.
 
 ## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
 ## below since preload() cannot take that reference (needs a literal string).
 
-# Sequence phases. MENU waits for a press; the rest are time-driven in _process.
-enum Seq { MENU, FADE_OUT, FADE_IN, DONE }
+# Sequence phases. REVEAL waits for Start; MENU auto-advances to the reveal when a
+# rival is on the grid; the rest are time-driven in _process.
+enum Seq { MENU, FLY_IN, REVEAL, FADE_OUT, FADE_IN, DONE }
 
 var _seq: int = Seq.MENU
 var _seq_t := 0.0          # seconds into the current timed phase
 var _orbit_angle := 0.0    # accumulated orbit camera angle (rad), the MENU idle
 var _launched := false     # Start pressed (past the eligibility gates)
+
+# The reveal fly: the orbit pose it departs from (transform + fov), and the shot it
+# lands on — a low 3/4 in front of the rival on its grid slot (_compute_anchor).
+var _fly_from := Transform3D.IDENTITY
+var _fly_from_fov := 70.0
+var _anchor_xform := Transform3D.IDENTITY
 
 # Refs handed in by world.gd (camera/HUD optional so tests can omit them).
 var _player: Node3D
@@ -59,8 +76,8 @@ var _hud: CanvasLayer
 var _mobile: CanvasLayer
 # The rival ghost (features/rival-ghost.md), owned by world.gd and handed in so it
 # can keep posing after this node's own sequence is DONE. Null for a plain dev boot
-# or a degenerate track (RivalGhost.has_profile() false) — either way the MENU loop
-# below is just a no-op with no car to advance.
+# or a degenerate track (RivalGhost.has_profile() false) — either way the reveal
+# below is skipped and the MENU simply never auto-flies.
 var _ghost: RivalGhost
 
 # Nodes this scene owns.
@@ -152,7 +169,13 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_terrain = terrain
 	_ghost = ghost
 	if is_instance_valid(_ghost) and _ghost.has_profile():
-		_ghost.reset(true)  # looping — see the MENU idle in _timed_process
+		# Park the rival ON THE GRID: one gap down the lead-in ahead of the player, posed
+		# BY THE TRACK (pose_at_distance walks the centerline sample), so it sits on the
+		# road whatever the geometry does, in its usual cosmetic lane offset. It holds
+		# there, scripted-solid, through MENU/FLY_IN/REVEAL — nothing re-poses it until
+		# the hand-off, which (under the fade) snaps it back to the line where the
+		# profile's s=0 puts it for the run.
+		_ghost.pose_at_distance(_cfg().start_queue_gap)
 	_rally = rally  # kept so launch() can re-check eligibility after a pre-race edit
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
@@ -243,11 +266,12 @@ func _update_orbit() -> void:
 	_orbit_cam.look_at_from_position(eye, center, Vector3.UP)
 
 
+# Place the orbit camera on its idle circle around the car (the MENU phase only). The
+# ghost is deliberately NOT driven here — it parks on its grid slot for the whole
+# sequence (see setup); only the run's own clock moves it.
 func _advance_orbit(delta: float) -> void:
 	_orbit_angle += delta * _cfg().start_orbit_speed
 	_update_orbit()
-	if is_instance_valid(_ghost):
-		_ghost.advance(delta)
 
 
 # --- Overlay (MENU: Start / Tune Car) ----------------------------------------
@@ -310,6 +334,10 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	rival_box.add_child(time_row["row"])
 
 	_refresh_rival_card()
+	# The CARD itself is the REVEAL phase's to show: hidden through MENU and the fly,
+	# visible only once the camera has arrived at the rival (_enter_reveal). The
+	# content above is filled now and re-filled on entry.
+	_rival_card.visible = false
 
 	# --- Clear band: lets the orbiting car show between the cards -------------
 	var spacer := Control.new()
@@ -369,14 +397,15 @@ func _stat_row(caption: String, role: String) -> Dictionary:
 # Fill the rival card from the wired ghost: the driver's name, the car they wear
 # (RivalGhost.pick_rival's real CarLibrary entry), and the gold time to beat — the
 # profile's own total, i.e. exactly the clock the HUD delta races. Empty lines are
-# hidden rather than left blank; the whole card hides when there is no ghost or no
-# target (challenge stages, degenerate tracks, plain dev boots), restoring the old
-# header + clear-band MENU shape.
+# hidden rather than left blank. With no ghost or no target (challenge stages,
+# degenerate tracks, plain dev boots) there is nothing to fill and the card never
+# shows — the reveal itself is skipped and the old header + clear-band MENU shape
+# is what the player sees. The CARD's overall visibility belongs to the phase
+# (built hidden, shown by _enter_reveal); this only fills the content.
 func _refresh_rival_card() -> void:
 	if _rival_card == null:
 		return
 	var show: bool = is_instance_valid(_ghost) and _ghost.has_profile() and _ghost.target_ms() > 0
-	_rival_card.visible = show
 	if not show:
 		return
 	_rival_name_label.text = _ghost.rival_name()
@@ -441,6 +470,30 @@ func _timed_process(delta: float) -> void:
 	match _seq:
 		Seq.MENU:
 			_advance_orbit(delta)
+			# The reveal is the intro, not a reward for pressing Start: with a rival
+			# worth flying to on the grid, it begins by itself once the orbit beat is
+			# out. A profiled ghost with no car (unsolvable roster — nothing to
+			# frame) skips the fly and reveals the time where the menu idles.
+			if _rival_car_ready():
+				_seq_t += delta
+				if _seq_t >= _cfg().start_reveal_idle_seconds:
+					_begin_reveal_fly()
+			elif _rival_ready():
+				_enter_reveal()
+		Seq.FLY_IN:
+			_seq_t += delta
+			var fly := maxf(_cfg().start_reveal_fly_seconds, 0.0001)
+			var s := smoothstep(0.0, 1.0, clampf(_seq_t / fly, 0.0, 1.0))
+			_orbit_cam.global_transform = Transform3D(
+				_fly_from.basis.slerp(_anchor_xform.basis, s),
+				_fly_from.origin.lerp(_anchor_xform.origin, s))
+			_orbit_cam.fov = lerpf(_fly_from_fov, _cfg().start_reveal_cam_fov, s)
+			if _seq_t >= fly:
+				_orbit_cam.global_transform = _anchor_xform
+				_orbit_cam.fov = _cfg().start_reveal_cam_fov
+				_enter_reveal()
+		Seq.REVEAL:
+			pass  # holds on the rival shot; Start (launch) or < Exit moves on
 		Seq.FADE_OUT:
 			_seq_t += delta
 			var fade := maxf(_cfg().start_fade_seconds, 0.0001)
@@ -463,13 +516,53 @@ func _timed_process(delta: float) -> void:
 			pass
 
 
+# --- Rival reveal (the deleted per-opponent sequence's phases, one rival wide) --
+
+# A profiled ghost is revealable at all — there is card content to show.
+func _rival_ready() -> bool:
+	return is_instance_valid(_ghost) and _ghost.has_profile()
+
+# ...and has a body worth flying the camera to. The neutral-baseline ghost (no
+# pickable roster car) reveals the time without the fly: nothing to frame.
+func _rival_car_ready() -> bool:
+	return _rival_ready() and is_instance_valid(_ghost.car())
+
+# Capture the orbit pose and fly to the rival's reveal shot.
+func _begin_reveal_fly() -> void:
+	_fly_from = _orbit_cam.global_transform
+	_fly_from_fov = _orbit_cam.fov
+	_anchor_xform = _compute_anchor()
+	_seq = Seq.FLY_IN
+	_seq_t = 0.0
+
+# Arrive at the rival: the card appears (only now — "what time do I need?" lands
+# with the car it belongs to, exactly as the deleted per-opponent reveal staged it).
+func _enter_reveal() -> void:
+	_seq = Seq.REVEAL
+	_seq_t = 0.0
+	_refresh_rival_card()  # fresh content in case the ghost was rewired post-build
+	if _rival_ready() and _rival_card != null:
+		_rival_card.visible = true
+
+# The reveal shot: a low 3/4 in FRONT of the rival on its grid slot — the deleted
+# per-opponent anchor re-framed on the one ghost. The eye sits front-right-up of
+# the rival (its own heading), looking back at it just above wheel height.
+func _compute_anchor() -> Transform3D:
+	var cfg := _cfg()
+	var rival := _ghost.car().global_transform
+	var eye := rival * Vector3(cfg.start_reveal_cam_side_m, cfg.start_reveal_cam_height_m,
+		-cfg.start_reveal_cam_front_m)
+	var look := rival.origin + Vector3.UP * cfg.start_reveal_cam_look_height_m
+	return Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
+
 # Begin the launch: run the eligibility gates, then fade to the countdown. Idempotent
-# — only fires from the waiting MENU phase, so a second tap during the sequence is
-# ignored. Used to fly the camera to a per-opponent reveal shot first; that phase is
-# deleted with the rival field it revealed (todo/roguelike-pivot.md decision 5), so
-# launch now goes straight to the fade.
+# — only fires from the waiting MENU or REVEAL phase, so a second press during the
+# sequence is ignored. The reveal is NOT what Start launches any more (it plays by
+# itself — see _timed_process's MENU branch); Start from REVEAL goes straight to the
+# fade, and a press mid-fly is ignored for the fly's second or so, the way the
+# deleted sequence treated input between its phases.
 func launch() -> void:
-	if _launched or _seq != Seq.MENU:
+	if _launched or not (_seq == Seq.MENU or _seq == Seq.REVEAL):
 		return
 	if not _rally.is_empty():
 		var owned := _driven_car()
@@ -594,7 +687,9 @@ func _close_menu(layer: CanvasLayer, return_button: Button) -> void:
 
 
 func _open_tune() -> void:
-	if _seq != Seq.MENU:
+	# Reachable from REVEAL too: the time to beat on the card is what the player is
+	# tuning against, so the panel must open while it's up.
+	if _seq != Seq.MENU and _seq != Seq.REVEAL:
 		return
 	if _tune_layer == null:
 		_build_tune_overlay()

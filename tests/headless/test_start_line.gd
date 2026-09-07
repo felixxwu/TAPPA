@@ -5,11 +5,14 @@ extends GutTest
 # car/stage/camera stubs, so the sequence is tested without booting the run scene.
 # See features/start-line.md.
 #
-# A per-opponent FLY_IN + REVEAL phase (the three real top rivals lined up ahead in
-# their actual cars) used to sit between MENU and the fade. Deleted along with the
-# rival field it dramatized (todo/roguelike-pivot.md decision 5) — decision 29 keeps
-# this MENU, only the reveal goes. `setup()` no longer takes a `leaders` argument, and
-# `Seq` is just MENU / FADE_OUT / FADE_IN / DONE.
+# The per-opponent FLY_IN + REVEAL (the three real top rivals queued ahead in their
+# actual cars, one Next press each) died with the rival field in the pivot, but its
+# SHAPE is revived for the one rival the roguelike kept: the ghost parks ON THE GRID
+# ahead of the player, the menu auto-flies to a low 3/4 shot in front of it after a
+# short orbit beat (Seq is MENU / FLY_IN / REVEAL / FADE_OUT / FADE_IN / DONE again),
+# and the rival card — driver, car, time to beat — appears only when the fly lands.
+# `setup()` still takes no `leaders` argument; the grid is one parked ghost, not a
+# field.
 
 
 # Records the launch hand-off (StartLine -> StageManager.begin_countdown()).
@@ -56,15 +59,49 @@ class StubTerrain:
 		return GROUND_Y
 
 
-# Records advance() calls without touching RivalGhost's real Car/track machinery
-# (Scenes.car_scene().instantiate() is heavier than this file's stubs elsewhere want)
-# — enough to prove StartLine's MENU idle actually drives whatever ghost world.gd
-# hands it (features/rival-ghost.md).
+# Records pose_at_distance() calls without touching RivalGhost's real track machinery
+# (TrackProgress sampling is heavier than this file's stubs elsewhere want) — enough
+# to prove StartLine parks whatever ghost world.gd hands it ON THE GRID and then
+# leaves it alone (features/rival-ghost.md). car() hands back a bare Node3D so the
+# reveal's camera anchor has a transform to frame; give_car = false models the
+# neutral-baseline ghost (no pickable roster car), whose reveal has no fly.
 class StubGhost:
 	extends RivalGhost
-	var advance_calls := 0
-	func advance(_delta: float) -> void:
-		advance_calls += 1
+	var pose_distance_calls: Array = []
+	var give_car := true
+	var _stub_car: Node3D = null
+	func pose_at_distance(s_m: float) -> void:
+		pose_distance_calls.append(s_m)
+	func car() -> Node3D:
+		if give_car and _stub_car == null:
+			_stub_car = Node3D.new()
+			add_child(_stub_car)
+		return _stub_car
+
+
+# A profiled ghost ready for the reveal path, with the driver name the card tests pin.
+func _ghost_for_reveal(with_car := true) -> StubGhost:
+	var ghost := StubGhost.new()
+	add_child_autofree(ghost)
+	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 9.5])}
+	ghost._car_index = 0 if with_car else -1
+	ghost._rival_name = "R. Ostmeyer"
+	ghost.give_car = with_car
+	return ghost
+
+
+# Wire a StartLine around a pre-built ghost and drive it from setup through the
+# (shrunk) idle + fly into REVEAL — the "camera arrives at the rival" moment.
+func _revealed_sl(ghost: StubGhost) -> StartLine:
+	Config.data.start_reveal_idle_seconds = 0.01
+	Config.data.start_reveal_fly_seconds = 0.01
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	sl._process(0.1)  # past the idle beat -> FLY_IN (or straight to REVEAL with no car)
+	sl._process(0.1)  # past the (shrunk) fly -> REVEAL
+	return sl
 
 
 const TEST_PATH := "user://test_start_line_profile.json"
@@ -194,19 +231,22 @@ func test_menu_hides_hud_and_takes_the_camera() -> void:
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "it waits in the MENU phase")
 
 
-# --- Rival ghost (features/rival-ghost.md) -----------------------------------
+# --- Rival ghost + the revived reveal (features/rival-ghost.md) ---------------
 
-func test_menu_idle_advances_a_wired_ghost() -> void:
-	var ghost := StubGhost.new()
-	add_child_autofree(ghost)
-	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 1.0])}
+func test_setup_parks_the_rival_on_the_grid_and_leaves_it_there() -> void:
+	var ghost := _ghost_for_reveal()
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)
 	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "setup: waiting in MENU")
-	sl._process(0.1)
-	assert_eq(ghost.advance_calls, 1, "the MENU idle drives the wired ghost every frame")
+	assert_eq(ghost.pose_distance_calls, [Config.data.start_queue_gap],
+			"setup poses the ghost exactly one grid gap down the lead-in")
+	for i in 12:
+		sl._process(0.1)
+	assert_eq(ghost.pose_distance_calls.size(), 1,
+			"the sequence never re-poses the ghost — it holds its grid slot")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FLY_IN,
+			"past the idle beat, the menu has auto-flown to the rival")
 
 
 func test_no_ghost_is_a_harmless_no_op() -> void:
@@ -215,21 +255,25 @@ func test_no_ghost_is_a_harmless_no_op() -> void:
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the MENU idle runs fine with no ghost at all")
 
 
-# --- Rival card (features/start-line.md, features/rival-ghost.md) -------------
+# --- Rival card + the reveal that shows it (features/start-line.md, rival-ghost.md)
 # The deleted per-opponent reveal card's revival, trimmed to the one ghost rival:
-# driver name, worn car, gold time to beat — or no card at all with no ghost.
+# driver name, worn car, gold time to beat — shown only when the fly lands, never
+# during the menu idle, and no card at all with no ghost.
 
 func test_the_rival_card_names_the_driver_car_and_time_to_beat() -> void:
-	var ghost := StubGhost.new()
-	add_child_autofree(ghost)
-	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 9.5])}
-	ghost._car_index = 0
-	ghost._rival_name = "R. Ostmeyer"
+	var ghost := _ghost_for_reveal()
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)
+	Config.data.start_reveal_idle_seconds = 0.01
+	Config.data.start_reveal_fly_seconds = 0.01
 	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
-	assert_true(sl.rival_card_visible(), "a profiled ghost shows the rival card")
+	assert_false(sl.rival_card_visible(), "the card waits for the reveal — not the whole menu")
+	sl._process(0.1)  # past the idle beat
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FLY_IN, "the menu auto-flies to the rival")
+	sl._process(0.1)  # past the (shrunk) fly
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "the fly lands in the reveal")
+	assert_true(sl.rival_card_visible(), "only now does the card show")
 	# The house enforce pass uppercases every Label's text (rules §1), so the card
 	# shows the caps form — compare against UITheme.caps, not the raw source string.
 	assert_eq(sl.rival_card_name(), UITheme.caps("R. Ostmeyer"), "the driver's name is on the card")
@@ -243,20 +287,50 @@ func test_the_rival_card_hides_without_a_ghost() -> void:
 	var sl := _make()  # no ghost handed in — a challenge stage, e.g.
 	assert_false(sl.rival_card_visible(), "no ghost, no rival card")
 	assert_eq(sl.rival_card_time(), "", "and no time to beat either")
+	for i in 20:
+		sl._process(0.1)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "no rival, no auto-fly — the menu just idles")
+	assert_false(sl.rival_card_visible(), "and no card ever appears")
 
 
 func test_the_rival_card_hides_the_car_line_for_the_neutral_baseline() -> void:
-	# A ghost with a target but no pickable car (car_index -1) shows the time but no
-	# bogus model name — the baseline body is not a car in the roster.
-	var ghost := StubGhost.new()
-	add_child_autofree(ghost)
-	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 9.5])}
+	# A ghost with a target but no pickable car (car_index -1, car() invalid) shows
+	# the time but no bogus model name — the baseline body is not a car in the
+	# roster, and there is nothing to fly the camera to either.
+	var ghost := _ghost_for_reveal(false)
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	Config.data.start_reveal_idle_seconds = 0.01
+	Config.data.start_reveal_fly_seconds = 0.01
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	sl._process(0.1)  # past the idle beat — straight past any fly
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL,
+			"no car to frame: the card shows without the fly")
+	assert_true(sl.rival_card_visible(), "the time to beat still shows")
+	assert_eq(sl.rival_card_car(), "", "no roster car, no car line")
+
+
+func test_the_menu_idles_out_the_beat_before_the_fly_starts() -> void:
+	var ghost := _ghost_for_reveal()
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)
 	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
-	assert_true(sl.rival_card_visible(), "the time to beat still shows")
-	assert_eq(sl.rival_card_car(), "", "no roster car, no car line")
+	sl._process(0.1)  # well inside the default 0.8s beat
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the fly waits out the idle beat")
+	assert_false(sl.rival_card_visible(), "and the card stays hidden while it waits")
+
+
+func test_start_from_the_reveal_fades_straight_to_the_countdown() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "setup: parked on the rival")
+	sl.launch()
+	assert_true(sl.has_launched(), "Start from the reveal passes the gates")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "and goes straight to the fade")
+	sl._process(Config.data.start_fade_seconds)
+	assert_eq(_stage.begin_calls, 1, "the countdown begins once the fade is out")
 
 
 func test_start_overlay_uses_the_house_button_row_height() -> void:
