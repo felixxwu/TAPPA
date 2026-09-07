@@ -10,19 +10,50 @@ extends CanvasLayer
 # stage boundary so the screen actually paints, and calls `finish()` when the
 # world is ready.
 #
-# The step line shows a random gameplay TIP (LoadingTips), not the generation
-# stage — the player doesn't need to know the game is "Placing signs…", and
-# world.gd::_stage still print()s the stage name for perf debugging regardless.
-# Other callers (hq.gd, hq_challenge.gd) build their OWN LoadingScreen instance
-# for a menu-transition wait and call `set_step()` on it directly with their own
-# short status text — that is unrelated and unaffected.
+# The step line shows a gameplay TIP (LoadingTips), not the generation stage —
+# the player doesn't need to know the game is "Placing signs…", and world.gd
+# ::_stage still print()s the stage name for perf debugging regardless. The tip
+# CYCLES to a fresh draw every _TIP_CYCLE_SEC so a long load doesn't sit on one
+# line for its whole duration. Other callers (hq.gd, hq_challenge.gd) build
+# their OWN LoadingScreen instance for a menu-transition wait and call
+# `set_step()` on it directly with their own short status text — that path
+# locks the step line (see `_step_locked`) and is unaffected by the cycle.
+#
+# The headline's trailing ellipsis is ANIMATED (0 → 1 → 2 → 3 dots, looping)
+# rather than a static "…". Because the headline is center-aligned the dots
+# live in a SIBLING label whose width is pinned to 3 monospace glyph slots, so
+# adding/removing visible dots never shifts the centered base text.
 
 # Drawn above the HUD (layer 2) and mobile controls (layer 3).
 const _LAYER := 100
 
-var _title: Label
+# A new tip is drawn this often while the overlay is up. Long loads (the world
+# build, the menu showcase) used to show one tip for their entire duration; a
+# slow first load could sit on the same sentence for 15+ seconds.
+const _TIP_CYCLE_SEC := 7.0
+
+# One ellipsis step every this many seconds: 0 → 1 → 2 → 3 → 0. Fast enough to
+# read as "working", slow enough not to flicker.
+const _DOT_STEP_SEC := 0.4
+
+# The dot field is always this wide (in characters). The monospace UI font
+# guarantees a slot is the same width whether the slot holds a "." or a space,
+# so the headline's center never moves as the visible count changes.
+const _MAX_DOTS := 3
+
+var _title: Label       # base headline, e.g. "LOADING STAGE 2 OF 8" (no ellipsis)
+var _dots: Label        # animated trailing dots — always _MAX_DOTS chars wide
 var _step: Label
 var _preview: TrackPreview
+
+var _tip_timer := 0.0
+var _dot_timer := 0.0
+var _dot_count := 0
+# True once set_step() is called — a caller that supplied its own status text
+# ("Uploading…", "Preparing the garage…") owns the step line, and the tip
+# cycle must not overwrite it. world.gd's own generation never calls set_step,
+# so its tip keeps cycling for the whole load.
+var _step_locked := false
 
 
 func _init() -> void:
@@ -42,11 +73,30 @@ func _init() -> void:
 	_preview = TrackPreview.new()
 	box.add_child(_preview)
 
+	# Headline = base label + animated-dots label, side by side in a centered
+	# HBox. The dots label always holds _MAX_DOTS character slots (visible "."
+	# plus padding spaces), so cycling the dot count changes which slots are
+	# lit without changing the pair's total width — the center-aligned base
+	# text stays put.
+	var headline := HBoxContainer.new()
+	headline.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(headline)
+
 	_title = Label.new()
-	_title.text = UITheme.caps("Loading stage…")
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_title.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
-	box.add_child(_title)
+	headline.add_child(_title)
+
+	_dots = Label.new()
+	_dots.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_dots.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
+	headline.add_child(_dots)
+
+	# Defaults — set_title() strips the trailing "…" (the animated dots
+	# replace it) and _refresh_dots() seeds the initial 0-dot field.
+	set_title("Loading stage…")
+	_refresh_dots()
 
 	_step = Label.new()
 	# A random tip for the whole load — see the header comment and LoadingTips. A caller
@@ -63,10 +113,42 @@ func _init() -> void:
 	box.add_child(_step)
 
 
+func _process(delta: float) -> void:
+	# Cycle the tip unless a caller has claimed the step line with set_step().
+	if not _step_locked:
+		_tip_timer += delta
+		if _tip_timer >= _TIP_CYCLE_SEC:
+			_tip_timer -= _TIP_CYCLE_SEC
+			_step.text = UITheme.caps(LoadingTips.random())
+
+	# Animate the trailing ellipsis: 0 → 1 → 2 → 3 → 0. The dots label is
+	# always _MAX_DOTS chars wide, so this never moves the base headline.
+	_dot_timer += delta
+	if _dot_timer >= _DOT_STEP_SEC:
+		_dot_timer -= _DOT_STEP_SEC
+		_dot_count = (_dot_count + 1) % (_MAX_DOTS + 1)
+		_refresh_dots()
+
+
+# Rewrite the dots label so the first _dot_count slots are "." and the rest are
+# spaces. The Syne Mono UI font is monospace, so "." and " " occupy the same
+# glyph advance — the label's width (and thus the headline pair's centered
+# position) is invariant under this change.
+func _refresh_dots() -> void:
+	if _dots == null:
+		return
+	_dots.text = ".".repeat(_dot_count) + " ".repeat(_MAX_DOTS - _dot_count)
+
+
 # Set the headline (defaults to "Loading stage…"; the HQ uses its own wording).
+# A trailing "…" is stripped — the animated dots label replaces it, and leaving
+# both would stack ("……").
 func set_title(text: String) -> void:
 	if _title != null:
-		_title.text = UITheme.caps(text)
+		var capped := UITheme.caps(text)
+		if capped.ends_with("…"):
+			capped = capped.substr(0, capped.length() - 1)
+		_title.text = capped
 
 
 # Announce WHICH stage is loading — "Loading stage 2 of 3…" — so a multi-stage rally tells
@@ -91,10 +173,13 @@ func set_stage(index: int, total: int) -> void:
 # Overwrite the step line with `text` (e.g. "Preparing the garage…"), replacing whatever
 # random tip _init() picked. world.gd's own generation stages do NOT call this any more —
 # see the header comment — but a caller wanting a short, specific status line on its own
-# LoadingScreen instance still can (hq.gd, hq_challenge.gd).
+# LoadingScreen instance still can (hq.gd, hq_challenge.gd). Calling this LOCKS the step
+# line: the tip cycle is stopped so a caller's own status text is never overwritten by a
+# random tip on the next 7-second tick.
 func set_step(text: String) -> void:
 	if _step != null:
 		_step.text = UITheme.caps(text)
+		_step_locked = true
 
 
 # Update the live track drawing (the on_progress callback from TrackGenerator,

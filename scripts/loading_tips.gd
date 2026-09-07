@@ -3,8 +3,9 @@ extends RefCounted
 # Flavor text for the loading screen (features/loading.md), shown in place of the
 # generation-stage name that used to sit there ("Placing signs…", "Generating track…").
 # world.gd::_stage still print()s the stage name for perf debugging — that is unchanged —
-# it just no longer forwards it to the visible label. One tip is drawn per load and shown
-# for its whole duration.
+# it just no longer forwards it to the visible label. A fresh tip is drawn every
+# LoadingScreen._TIP_CYCLE_SEC for as long as the overlay is up (a long load no longer
+# sits on one sentence), and random() never repeats the previous draw.
 #
 # Each tip is read in ISOLATION: the player only ever sees one, never its neighbors, so
 # every entry must stand alone. No "instead", "also", "the other way", "as above", or any
@@ -37,9 +38,10 @@ const TIPS: Array[String] = [
 ]
 
 
-# The last tip handed out, so consecutive draws don't repeat — a fresh LoadingScreen
-# instance is built per load (world.gd, hq.gd, hq_challenge.gd all `LoadingScreen.new()`),
-# so this has to live here, at the class level, rather than on the instance.
+# The last tip handed out, so consecutive draws don't repeat — both across loads
+# (a fresh LoadingScreen is built per load) AND within one, since the tip now
+# cycles every _TIP_CYCLE_SEC. This has to live at the class level rather than
+# on the instance.
 static var _last := ""
 
 

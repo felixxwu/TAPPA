@@ -39,17 +39,29 @@ is the single definition of "an overlay is up AND we're not headless", shared by
 **These stage labels are perf-log-only.** `_stage(label)` still `print()`s each one (with
 timing) for the "load stage: … ms" log — that's what the table above documents — but it no
 longer reaches the player. `LoadingScreen`'s visible line is a random pick from
-`LoadingTips.TIPS` (`scripts/loading_tips.gd`), drawn once in `_init()` and shown for the
-whole load; the player doesn't need to know the game is "Placing signs…". Each tip is a
-short, standalone gameplay fact (aero balance, turbo lag, engine swaps, …) verified against
-the mechanic it names — every entry must read correctly in ISOLATION, since the player only
-ever sees one. `_build_lakes` / `_build_foliage` / `_build_signs` dropped their now-unused
-`loading: LoadingScreen` parameters when the forwarding call was removed.
+`LoadingTips.TIPS` (`scripts/loading_tips.gd`), drawn once in `_init()` and then **cycled
+to a fresh draw every 7 seconds** (`LoadingScreen._TIP_CYCLE_SEC`) for as long as the
+overlay is up, so a long load doesn't sit on one sentence for its whole duration. Each tip
+is a short, standalone gameplay fact (aero balance, turbo lag, engine swaps, …) verified
+against the mechanic it names — every entry must read correctly in ISOLATION, since the
+player only ever sees one at a time. `_build_lakes` / `_build_foliage` / `_build_signs`
+dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was
+removed.
 
 The other `LoadingScreen` users (the deleted `hq.gd` / `hq_challenge.gd`) built their own instance for a
 menu-transition wait and call `set_step()` on it directly with their own short status text
 ("Preparing the garage…") — that path is unrelated and unchanged; only world.gd's
-generation stages stopped forwarding to the label.
+generation stages stopped forwarding to the label. `set_step()` **locks** the step line
+(`_step_locked`) so the 7-second tip cycle never overwrites a caller's own status text.
+
+The headline's trailing ellipsis is **animated** (0 → 1 → 2 → 3 dots, looping on
+`LoadingScreen._DOT_STEP_SEC`) rather than a static "…". Because the headline is
+center-aligned, the dots live in a **sibling label** (`_dots`) whose text is always
+`_MAX_DOTS` characters wide (visible "." plus padding spaces); the Syne Mono UI font is
+monospace, so every slot is the same glyph advance, and the label's width — and thus the
+centered base text's position — never shifts as the visible dot count changes. `set_title()`
+strips a trailing "…" from the supplied text so the static character and the animated dots
+don't stack.
 
 ## The stage counter
 
