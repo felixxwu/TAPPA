@@ -457,7 +457,14 @@ func _build_car() -> void:
 		card.visual.add_child(_card_icon(car_name, UITheme.MUTED))
 		card.info.add_child(UITheme.label(car_name))
 		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
-		actions.append(null if cant_afford else model_id)
+		# Appended in a branch rather than a ternary: a null/String ternary is an
+		# INCOMPATIBLE_TERNARY warning, which the strict-error tests treat as a failure.
+		# The list is deliberately mixed (Dictionary = start the run, String = buy, null =
+		# can't afford it right now) — confirmed's handler below dispatches on exactly that.
+		var action = null
+		if not cant_afford:
+			action = model_id
+		actions.append(action)
 		car_refs.append(index)
 
 	# A live CarCardPreview is a real SubViewport + a full car.tscn instantiation (every
@@ -489,6 +496,7 @@ func _build_car() -> void:
 # on every hub visit and a page-scoped cache would forget every car each time. A card
 # that stays in the visible window across a selection move is left untouched entirely.
 func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
+	@warning_ignore("integer_division")  # floor division is intentional: the visible window's radius in whole card units
 	var radius := carousel.visible_card_count() / 2
 	var selected := carousel.selected_index()
 	var wanted := {}
