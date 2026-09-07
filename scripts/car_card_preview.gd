@@ -54,19 +54,21 @@ func _init(car_ref) -> void:
 	# what makes that correct for every car, by moving the CAR to its own visual centre
 	# rather than moving the camera to wherever one particular car's centre happened to be.
 	#
-	# _REFERENCE_FOV_DEG/_REFERENCE_EYE describe the ORIGINAL 40°/close-up composition —
-	# not the shipped look any more, just the fixed baseline "this framing, at this fov,
-	# reads as this apparent car size" is measured against. Apparent size for a fixed
-	# subject scales with distance * tan(fov/2), so holding that product constant while
-	# card_carousel_car_preview_fov_deg narrows is what moves the camera BACK by exactly
-	# enough that a narrower lens still frames the car at roughly its old size — a smaller
-	# fov alone (camera left in place) would just make the car look smaller, and picking a
-	# new distance by feel would drift every time the fov tunable changes.
-	const _REFERENCE_FOV_DEG := 40.0
-	const _REFERENCE_EYE := Vector3(3.2, 1.8, 3.6)
-	var reference_product := _REFERENCE_EYE.length() * tan(deg_to_rad(_REFERENCE_FOV_DEG * 0.5))
-	var distance := reference_product / tan(deg_to_rad(cam.fov * 0.5))
-	var eye := _REFERENCE_EYE.normalized() * distance
+	# Distance is DERIVED, never picked: CarLibrary.max_car_bounds() is the box containing
+	# every car on the roster (the same source the car park sizes its reveal box from),
+	# and half that box's diagonal is the radius of the sphere that contains a car at ANY
+	# turntable heading — which _process spins through, so the sphere, not one flattering
+	# angle's silhouette, is what must fit inside the square viewport. Holding
+	# distance * tan(fov/2) equal to that radius times card_carousel_car_preview_frame_margin
+	# frames the largest roster car inside the card for ANY fov (a fixed reference
+	# composition sized by eye was the old approach; it clipped the longest cars, and any
+	# hand-retuned replacement would silently stop fitting the day a longer car joins).
+	# _EYE contributes only the DIRECTION — magnitude comes from the derivation below.
+	const _EYE := Vector3(3.2, 1.8, 3.6)
+	var fit_radius := CarLibrary.max_car_bounds().length() * 0.5
+	var product := fit_radius * Config.data.card_carousel_car_preview_frame_margin
+	var distance := product / tan(deg_to_rad(cam.fov * 0.5))
+	var eye := _EYE.normalized() * distance
 	cam.transform = Transform3D().looking_at(-eye, Vector3.UP)
 	cam.position = eye
 

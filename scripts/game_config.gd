@@ -4172,6 +4172,12 @@ func spectator_params() -> Dictionary:
 ## size roughly constant as this changes, so a smaller value reads as "less perspective
 ## distortion, camera further back", not "the car got smaller".
 @export_range(4.0, 60.0, 1.0) var card_carousel_car_preview_fov_deg := 12.0
+## Headroom around the LARGEST roster car in the card previews (car_card_preview.gd):
+## 1.0 frames its bounding sphere exactly to the viewport edge, larger values pull the
+## camera back for more clearance. Every car scales TOGETHER with this, preserving which
+## cars read bigger than which; camera distance is derived from it (and the fov above),
+## so it is the single knob for "the preview cars feel too big / too small".
+@export_range(1.0, 3.0, 0.05) var card_carousel_car_preview_frame_margin := 1.2
 ## How many card-widths wide the carousel's own viewport is, as a multiple of
 ## card_carousel_card_width — this is what makes the strip actually show the selected
 ## card next to a peek of its neighbours, rather than the surrounding MenuPage body box

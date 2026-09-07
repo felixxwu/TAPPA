@@ -301,14 +301,19 @@ a telephoto-ish lens flattens perspective distortion, which reads as more "produ
 less "fisheye". A narrow FOV alone, camera left in place, makes the subject look SMALLER
 (the lens is more zoomed-out per degree, not less) — so `CarCardPreview._init` derives the
 camera's DISTANCE from the FOV rather than hardcoding both independently. Apparent size
-for a fixed subject scales with `distance * tan(fov / 2)`; holding that product constant
-against a fixed reference composition (`_REFERENCE_FOV_DEG = 40`, `_REFERENCE_EYE =
-Vector3(3.2, 1.8, 3.6)` — the original close-up framing, kept only as the size baseline,
-not the shipped look) is what moves the camera back by exactly enough that narrowing
-`card_carousel_car_preview_fov_deg` keeps the car roughly its old apparent size instead of
-shrinking it. Retune the fov value freely — the distance follows it automatically; don't
-reintroduce a second, independently-picked distance constant, or the two will drift apart
-the next time either changes.
+for a fixed subject scales with `distance * tan(fov / 2)`; holding that product equal to
+the bounding-sphere radius of the roster's largest car — half the diagonal of
+`CarLibrary.max_car_bounds()`, the same source the car park sizes its reveal box from —
+times `card_carousel_car_preview_frame_margin` (default 1.2, `GameConfig`) makes the
+derivation SIZE the frame as well: that sphere is what contains a car at ANY turntable
+heading, so framing it (with margin) is what keeps the longest/widest roster car inside
+the square viewport instead of clipping out of the card. The original fixed reference
+composition (`_REFERENCE_FOV_DEG = 40`, `_REFERENCE_EYE = Vector3(3.2, 1.8, 3.6)` — an
+eye-tuned close-up) DID clip the longest cars, and any hand-retuned replacement would
+silently stop fitting the day a longer car joins, which is why the frame now follows the
+roster instead. Retune the fov or the margin freely — the distance follows them
+automatically; don't reintroduce a second, independently-picked distance constant, or the
+two will drift apart the next time either changes.
 
 ## A preview is CACHED per car, not rebuilt per screen slot
 

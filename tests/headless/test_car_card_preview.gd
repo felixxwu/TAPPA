@@ -88,3 +88,28 @@ func test_camera_distance_compensates_for_the_configured_fov() -> void:
 	var narrow_product := narrow_cam.position.length() * tan(deg_to_rad(narrow_cam.fov * 0.5))
 	assert_almost_eq(wide_product, narrow_product, 0.01,
 		"distance * tan(fov/2) must stay constant across fov values, or apparent car size drifts with it")
+
+
+# Regression: the preview camera used to sit at a fixed, eye-tuned distance that framed
+# the cars of the day edge-to-edge — the longest roster cars clipped straight out of the
+# square viewport. Distance must now be derived from the ROSTER-WIDE max bounds, so the
+# bounding sphere of the largest possible car (half the max-bounds diagonal — the radius
+# that contains a car at ANY turntable heading) fits inside the frame. Checked as an
+# INVARIANT at several fov values rather than against a specific distance, and it holds
+# for every margin the config's export_range allows (>= 1.0), so retuning the margin
+# can't break it.
+func test_camera_distance_fits_the_largest_roster_car() -> void:
+	var original_fov := Config.data.card_carousel_car_preview_fov_deg
+	var fit_radius := CarLibrary.max_car_bounds().length() * 0.5
+
+	for fov: float in [8.0, 12.0, 20.0]:
+		Config.data.card_carousel_car_preview_fov_deg = fov
+		var preview := CarCardPreview.new(0)
+		add_child_autofree(preview)
+		await get_tree().process_frame
+		var cam: Camera3D = preview.find_children("*", "Camera3D", true, false)[0]
+		var frame_half_extent := cam.position.length() * tan(deg_to_rad(cam.fov * 0.5))
+		assert_gte(frame_half_extent, fit_radius,
+			"the largest roster car's bounding sphere must fit inside the viewport at fov %s" % fov)
+
+	Config.data.card_carousel_car_preview_fov_deg = original_fov
