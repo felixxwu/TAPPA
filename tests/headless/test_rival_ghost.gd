@@ -91,3 +91,102 @@ func test_reset_seeds_the_clock_and_looping_flag() -> void:
 	assert_true(ghost._looping, "reset(true) selects the start-line's looping idle")
 	ghost.reset(false)
 	assert_false(ghost._looping, "reset(false) selects the live run's un-looped clock")
+
+
+# --- Rival identity: pick_rival (features/rival-ghost.md) ---------------------
+# The real roster + real CarPerformance benchmark solves — the pick's whole point is
+# matching the shipped cars' measured pace, so a synthetic roster would test nothing.
+
+func test_pick_rival_without_a_target_is_empty() -> void:
+	assert_eq(RivalGhost.pick_rival(0.0, 1), {}, "no target pace, no rival identity")
+	assert_eq(RivalGhost.pick_rival(-1.0, 1), {}, "a negative pace is no target either")
+
+
+func test_pick_rival_names_a_real_roster_car() -> void:
+	var rival := RivalGhost.pick_rival(1.0, 0)
+	var cars := CarLibrary.all()
+	assert_gt(int(rival.get("car_index", -1)), -1, "a real target pace picks a rival")
+	var idx := int(rival.get("car_index"))
+	assert_true(idx >= 0 and idx < cars.size(), "the picked index is a live roster entry")
+	assert_true(String(rival.get("name", "")) in RivalGhost.RIVAL_NAMES,
+		"the driver name comes from the authored pool")
+
+
+func test_pick_rival_takes_the_closest_benchmark_ratio() -> void:
+	# The contract the start-line card's believability rests on: no roster car sits
+	# closer to the requested pace than the pick. Recomputed here from the same
+	# public CarPerformance APIs, so the test pins the argmin rather than an
+	# authored index that a roster edit would silently invalidate.
+	var pace := 1.35
+	var rival := RivalGhost.pick_rival(pace, 3)
+	assert_gt(int(rival.get("car_index", -1)), -1, "the pace picked a car")
+	var ref_ms := CarPerformance.benchmark_ms(CarPerformance.REFERENCE_CAR)
+	var best := INF
+	for entry in CarLibrary.all():
+		var ms := CarPerformance.benchmark_ms(CarPerformance.merged_meta({}, entry))
+		if ms <= 0:
+			continue
+		best = minf(best, absf(float(ms) / float(ref_ms) - pace))
+	var picked := CarLibrary.all()[int(rival.get("car_index"))]
+	var picked_ms := CarPerformance.benchmark_ms(CarPerformance.merged_meta({}, picked))
+	assert_almost_eq(absf(float(picked_ms) / float(ref_ms) - pace), best, 0.0001,
+		"the pick is a nearest neighbour of the target pace")
+
+
+func test_pick_rival_is_monotonic_across_the_pace_range() -> void:
+	# A slower target (bigger pace) must pick a car no FASTER than a quicker
+	# target's pick — the roster-shaped reading of "the rival gets quicker as the
+	# regions tighten". Nearest-neighbour over fixed points is monotonic by
+	# construction; this pins it against accidental tie-break or filter regressions.
+	var last_ratio := -INF
+	for pace: float in [0.8, 1.0, 1.25, 1.6, 2.0]:
+		var rival := RivalGhost.pick_rival(pace, 0)
+		assert_gt(int(rival.get("car_index", -1)), -1, "pace %s picked a car" % pace)
+		var picked := CarLibrary.all()[int(rival.get("car_index"))]
+		var ms := CarPerformance.benchmark_ms(CarPerformance.merged_meta({}, picked))
+		var ratio := float(ms) / float(CarPerformance.benchmark_ms(CarPerformance.REFERENCE_CAR))
+		assert_true(ratio >= last_ratio - 0.0001,
+			"the picked car's pace ratio never decreases as the target slows")
+		last_ratio = ratio
+
+
+func test_pick_rival_name_is_stable_per_seed() -> void:
+	assert_eq(RivalGhost.pick_rival(1.0, 7).get("name"),
+		RivalGhost.pick_rival(1.3, 7).get("name"),
+		"the same seed names the same driver regardless of pace")
+	assert_eq(RivalGhost.pick_rival(1.0, -5).get("name"),
+		RivalGhost.pick_rival(1.0, posmod(-5, RivalGhost.RIVAL_NAMES.size())).get("name"),
+		"negative seeds wrap like their positive equivalents")
+
+
+# --- Rival identity: the live instance's card data ----------------------------
+
+func test_setup_applies_the_picked_car_to_the_ghosts_body() -> void:
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	ghost.setup(null, null, _constant_speed_profile(), {"car_index": 0, "name": "Test Driver"})
+	assert_true(ghost.has_car(), "setup built the ghost's car")
+	assert_eq(ghost.rival_name(), "Test Driver", "the card reads back the driver name")
+	assert_eq(ghost.rival_car_index(), 0, "the picked roster index is remembered")
+	assert_eq(ghost.rival_car_name(), String(CarLibrary.all()[0].get("name", "")),
+		"the car line resolves the roster entry's display name")
+	assert_eq((ghost.car() as Node).get("_car_index"), 0,
+		"the body itself was reshaped to the picked entry")
+	ghost.free_ghost()
+
+
+func test_setup_without_a_rival_keeps_the_neutral_baseline() -> void:
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	ghost.setup(null, null, _constant_speed_profile())
+	assert_eq(ghost.rival_car_index(), -1, "no rival dict, no car applied")
+	assert_eq(ghost.rival_car_name(), "", "the baseline body has no car name")
+	assert_eq(ghost.rival_name(), "", "and no driver name")
+
+
+func test_target_ms_is_the_profile_duration_in_whole_ms() -> void:
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	ghost._profile = _constant_speed_profile()  # duration 10.0 s
+	assert_eq(ghost.target_ms(), 10000, "the card's time to beat is the profile's own total")
+	assert_eq(ghost.profile(), ghost._profile, "the profile accessor hands back what was set")

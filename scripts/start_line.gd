@@ -32,6 +32,12 @@ extends Node3D
 # only ever calls `advance()` from the MENU branch of `_timed_process`, so the loop
 # stops naturally at the fade; world.gd takes over posing it (`RivalGhost.pose_at`,
 # un-looped, off `StageManager.elapsed()`) once the countdown/run begins.
+#
+# THE RIVAL CARD — the deleted per-opponent reveal card (driver, car, gold time),
+# trimmed to the ONE rival the pivot kept and shown for the whole MENU phase: the
+# ghost now wears a real CarLibrary car whose benchmark pace matches the target
+# (RivalGhost.pick_rival), so the card can honestly name WHO you're racing, WHAT
+# they drive, and the exact time to beat. Hidden entirely when there is no ghost.
 
 ## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
 ## below since preload() cannot take that reference (needs a literal string).
@@ -71,6 +77,13 @@ var _rally: Dictionary = {}          # this event's rally (its restriction gates
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
+
+# The rival card (MENU only): who you're racing, what they drive, the time to beat.
+# Filled by _refresh_rival_card() from the wired ghost; hidden with no ghost.
+var _rival_card: PanelContainer = null
+var _rival_name_label: Label
+var _rival_car_label: Label
+var _rival_time_label: Label
 
 # This event's index (0-based), for the header's "Stage X of N".
 var _event_index := 0
@@ -270,6 +283,34 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	var total := _stage_total(rally)
 	_subtitle_label = UITheme.title("%s — Stage %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
 	top_box.add_child(_subtitle_label)
+
+	# --- Rival card: the target clock, worn by a real car --------------------
+	# The deleted per-opponent reveal card's shape (name / car / gold stat row),
+	# trimmed to the single surviving rival — the target-clock ghost. Sits under
+	# the stage header so the orbit shot keeps its clear band below.
+	_rival_card = UITheme.panel(UITheme.PANEL.a)
+	_rival_card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	root.add_child(_rival_card)
+
+	var rival_box := VBoxContainer.new()
+	rival_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	rival_box.custom_minimum_size = Vector2(UITheme.px(300), 0)  # width for the stat row to lay caption|value
+	_rival_card.add_child(rival_box)
+
+	_rival_name_label = UITheme.label("", "ink")
+	_rival_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rival_box.add_child(_rival_name_label)
+
+	_rival_car_label = UITheme.label("", "dim")
+	_rival_car_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rival_box.add_child(_rival_car_label)
+
+	var time_row := _stat_row("Time to beat", "gold")
+	_rival_time_label = time_row["value"]
+	rival_box.add_child(time_row["row"])
+
+	_refresh_rival_card()
+
 	# --- Clear band: lets the orbiting car show between the cards -------------
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -308,6 +349,49 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 # both now go through the shared helper.
 func _row_button(text: String, on_press: Callable) -> Button:
 	return UITheme.row_button(text, on_press)
+
+
+# A labelled stat row for the rival card: a left-aligned caption (dim) and a
+# right-aligned value tinted by `role`. Returns { row, value } so the card can point
+# a label at the value. Revived verbatim from the deleted per-opponent reveal card.
+func _stat_row(caption: String, role: String) -> Dictionary:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", UITheme.GAP_WIDE)
+	var cap := UITheme.label(caption, "dim")
+	cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var value := UITheme.label("", role)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(cap)
+	row.add_child(value)
+	return {"row": row, "value": value}
+
+
+# Fill the rival card from the wired ghost: the driver's name, the car they wear
+# (RivalGhost.pick_rival's real CarLibrary entry), and the gold time to beat — the
+# profile's own total, i.e. exactly the clock the HUD delta races. Empty lines are
+# hidden rather than left blank; the whole card hides when there is no ghost or no
+# target (challenge stages, degenerate tracks, plain dev boots), restoring the old
+# header + clear-band MENU shape.
+func _refresh_rival_card() -> void:
+	if _rival_card == null:
+		return
+	var show: bool = is_instance_valid(_ghost) and _ghost.has_profile() and _ghost.target_ms() > 0
+	_rival_card.visible = show
+	if not show:
+		return
+	_rival_name_label.text = _ghost.rival_name()
+	_rival_name_label.visible = _rival_name_label.text != ""
+	_rival_car_label.text = _rival_car_name_text()
+	_rival_car_label.visible = _rival_car_label.text != ""
+	_rival_time_label.text = UITheme.format_time(_ghost.target_ms(), "—")
+
+
+# The rival's car line: the car's display name, or — when the ghost wears the neutral
+# baseline (no pickable car) — nothing at all rather than a bogus model name.
+func _rival_car_name_text() -> String:
+	if not is_instance_valid(_ghost) or _ghost.rival_car_index() < 0:
+		return ""
+	return _ghost.rival_car_name()
 
 
 # Leave the stage before it starts. Delegates to the pause menu's confirm-then-quit so
@@ -546,6 +630,24 @@ func sequence_phase() -> int:
 
 func has_launched() -> bool:
 	return _launched
+
+
+# --- Rival card readouts (for tests) -----------------------------------------
+
+func rival_card_visible() -> bool:
+	return _rival_card != null and _rival_card.visible
+
+
+func rival_card_name() -> String:
+	return _rival_name_label.text if _rival_name_label != null else ""
+
+
+func rival_card_car() -> String:
+	return _rival_car_label.text if _rival_car_label != null else ""
+
+
+func rival_card_time() -> String:
+	return _rival_time_label.text if _rival_time_label != null else ""
 
 
 # queue_count(), queue_car_ids(), reveal_index() and reveal_focus_car() — test/audio

@@ -233,6 +233,21 @@ func stage_target_profile() -> Dictionary:
 	return _stage_target_profile
 
 
+# The multiplier between the reference car's optimum and this stage's target — the
+# same `target_pace` the mode used to scale stage_target_profile's every sample.
+# The rival ghost's CAR pick reads it (RivalGhost.pick_rival matches a real car's
+# benchmark ratio to this pace), not the ghost's DRIVING, which stays pinned to the
+# profile exactly as the clock does. 0.0 for a mode with no target concept (the base
+# RunMode and ChallengeRunMode declare no target_pace) — no ghost exists then anyway.
+# Read off the MODE rather than reverse-engineered from the seated profile (whose
+# reference-side total would cost a second LapTimeModel solve to recover), so it can
+# never disagree with the pace the target itself was built from.
+func stage_target_pace() -> float:
+	if _mode == null or not _mode.has_method("target_pace"):
+		return 0.0
+	return _mode.call("target_pace", _stage_index)
+
+
 # A human label for the run, for the arch banner and the run summary.
 func display_name() -> String:
 	return _mode.display_name() if _mode != null else ""

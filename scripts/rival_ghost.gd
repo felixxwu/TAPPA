@@ -6,8 +6,12 @@ extends Node
 # Makes the run's one fail state — the fixed clock in RegionRunMode.stage_target_ms
 # (todo/roguelike-pivot.md decision 4/11) — visible as a "rival": a second, posed-not-
 # simulated Car driving the pace-scaled profile RegionRunMode.stage_target_profile()
-# produces. See features/rival-ghost.md for the full picture (start-line reveal +
-# live HUD delta); this file is just the maths + the Car it drives.
+# produces, wearing a REAL car from the CarLibrary roster (pick_rival) whose benchmark
+# pace best matches the target clock — so the start-line reveal names and shows a car
+# that plausibly drives that time. The ghost still drives the PROFILE regardless of
+# what the car could actually do (the profile IS the fail state; the body is costume).
+# See features/rival-ghost.md for the full picture (start-line reveal + live HUD
+# delta); this file is the maths, the rival's identity, and the Car it drives.
 #
 # The maths is two pure inversions of the profile's parallel {"s","t"} arrays (no
 # live Car needed, so they're tested without instancing one):
@@ -29,7 +33,61 @@ const GHOST_LATERAL_OFFSET_M := 2.5
 # How far ahead along the centerline the tangent sample is taken, for facing.
 const TANGENT_EPS_M := 0.5
 
+# Driver names for the rival reveal card (start_line.gd), picked deterministically
+# per stage. Authored, not generated: the pool is small enough that a fixed cast
+# reads as a roster the player recognises, and parody-adjacent to the car names.
+const RIVAL_NAMES: Array[String] = [
+	"K. Vaati", "R. Ostmeyer", "T. Beaumont", "S. Kervinen",
+	"M. Doss", "H. Yagami", "P. Lindqvist", "D. Okonkwo",
+	"V. Salteri", "J. Rourke", "A. Petrov", "N. Castellan",
+]
+
+
+# Pick the rival's identity for a stage: a REAL CarLibrary car whose benchmark pace
+# best matches the stage's target clock, plus a driver name. Pure + static so tests
+# can pin the contract without instancing a Car.
+#
+# `pace` is RegionRunMode.target_pace(stage_index) — the multiplier from the
+# REFERENCE car's optimum to the target time. A car "as fast as the target" is one
+# whose own benchmark time sits the same multiplier away from the reference's:
+# benchmark_ms(car) / benchmark_ms(reference) ≈ pace. Both are solved on the SAME
+# frozen benchmark track (CarPerformance caches each solve), so the ratio carries
+# over to a real stage closely enough for a believable body — the ghost drives the
+# target profile exactly regardless (see the class header), so the pick is costume,
+# not physics. <=0 pace (no target) or an unsolvable roster returns {} — the caller
+# spawns no ghost anyway when there is no profile, and the ghost then keeps the
+# neutral baseline body.
+#
+# `name_seed` picks the driver name (posmod, so any int is safe) — world.gd derives it
+# from the run's seed + stage index, making the name stable for a given stage of a
+# given run while varying across runs and stages.
+static func pick_rival(pace: float, name_seed: int) -> Dictionary:
+	if pace <= 0.0:
+		return {}
+	var ref_ms := CarPerformance.benchmark_ms(CarPerformance.REFERENCE_CAR)
+	if ref_ms <= 0:
+		return {}
+	var best_index := -1
+	var best_gap := INF
+	var cars := CarLibrary.all()
+	for i in cars.size():
+		# merged_meta({}, entry) resolves the entry's ENGINE id into the torque/redline
+		# keys the solver reads — the raw entry carries only the engine's id (see
+		# CarLibrary's header). Same shape CarStatBounds rates catalogue cars with.
+		var ms := CarPerformance.benchmark_ms(CarPerformance.merged_meta({}, cars[i]))
+		if ms <= 0:
+			continue  # unsolvable spec — never pick it, however well it would match
+		var gap := absf(float(ms) / float(ref_ms) - pace)
+		if gap < best_gap:
+			best_gap = gap
+			best_index = i
+	if best_index < 0:
+		return {}
+	return {"car_index": best_index, "name": RIVAL_NAMES[posmod(name_seed, RIVAL_NAMES.size())]}
+
 var _car: Node3D = null  # a Car (VehicleBody3D + car.gd), Node3D-typed like start_line.gd's _player -- ungualified so script-only members (kinematic_pose, freeze) resolve dynamically
+var _car_index := -1     # the CarLibrary entry the rival wears (pick_rival), -1 = neutral baseline
+var _rival_name := ""    # the driver name the start-line card shows (pick_rival), "" = unnamed
 # TrackProgress — read via origin_offset()/sample_at() only (duck-typed so a bare
 # test double works), never written. See features/rival-ghost.md for why the ghost
 # is posed in TrackProgress's arc-length space rather than the raw generated
@@ -108,9 +166,12 @@ static func profile_duration(profile: Dictionary) -> float:
 
 # Build (once) and wire the ghost's Car. `track_progress` supplies the arc-length
 # space (origin_offset/sample_at) the ghost is posed in; `terrain` seats it on the
-# ground the same way start_line.gd seats the player. Safe to call again with a new
-# `profile` on a stage change — the Car is reused, not rebuilt.
-func setup(track_progress: Node, terrain: Node, profile: Dictionary) -> void:
+# ground the same way start_line.gd seats the player. `rival` (optional) is
+# pick_rival()'s output — the CarLibrary entry the rival wears and the driver name
+# the start-line card shows; omitted/empty keeps the neutral baseline body.
+# Safe to call again with a new `profile` on a stage change — the Car is reused,
+# not rebuilt, and re-wears the new stage's rival car if it differs.
+func setup(track_progress: Node, terrain: Node, profile: Dictionary, rival: Dictionary = {}) -> void:
 	_track_progress = track_progress
 	_terrain = terrain
 	_profile = profile
@@ -129,7 +190,27 @@ func setup(track_progress: Node, terrain: Node, profile: Dictionary) -> void:
 		_car.collision_layer = 0
 		_car.collision_mask = 0
 		add_child(_car)
+	_apply_rival_car(rival)
 	_car.visible = true
+
+
+# Reshape the ghost's body to a real CarLibrary entry (pick_rival's car_index) —
+# the same path the old start-line grid props used: isolate the config FIRST (apply_car
+# mutates a GameConfig; without isolation it would clobber the player car's engine/
+# gearbox in the shared Config.data), snapshot the live config VALUES around it as the
+# belt-and-braces net for any path that bypasses isolation, and skip the engine-voice
+# rebuild (a kinematic ghost never fires its engine). apply_car also relocates wheels
+# and resets the pose — destructive to a LIVE body, harmless here: the body is frozen,
+# zero-collision, and _pose_car_at_distance writes its transform every frame anyway.
+func _apply_rival_car(rival: Dictionary) -> void:
+	_car_index = int(rival.get("car_index", -1))
+	_rival_name = String(rival.get("name", ""))
+	if _car_index < 0 or not (_car is Node and _car.has_method("apply_car")):
+		return
+	var snapshot: Dictionary = Config.data.snapshot_values()
+	_car.use_isolated_config()
+	_car.apply_car(_car_index, false)
+	Config.data.restore_values(snapshot)
 
 
 func has_car() -> bool:
@@ -138,6 +219,38 @@ func has_car() -> bool:
 
 func car() -> Node3D:
 	return _car
+
+
+# --- Rival identity (the start-line reveal card reads these) --------------------
+
+# The profile as handed to setup(), for callers that need the target clock itself
+# (start_line.gd formats profile_duration as the time to beat).
+func profile() -> Dictionary:
+	return _profile
+
+
+# The stage target in whole ms — the profile's own last sample, which by construction
+# sits within float rounding of RegionRunMode.stage_target_ms (see its comment for why
+# the two are computed separately rather than one chaining the other's rounding).
+func target_ms() -> int:
+	return int(round(profile_duration(_profile) * 1000.0))
+
+
+# The rival's driver name from pick_rival, or "" when unnamed (no target / test stub).
+func rival_name() -> String:
+	return _rival_name
+
+
+# The CarLibrary entry index the rival wears (-1 = neutral baseline), and its display
+# name for the card — resolved fresh from the roster so a renamed entry shows renamed.
+func rival_car_index() -> int:
+	return _car_index
+
+
+func rival_car_name() -> String:
+	if _car_index < 0 or _car_index >= CarLibrary.all().size():
+		return ""
+	return String(CarLibrary.all()[_car_index].get("name", ""))
 
 
 # Whether this ghost has anything to show — an empty profile means the stage's
