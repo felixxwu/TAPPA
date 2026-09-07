@@ -216,3 +216,142 @@ func test_target_ms_is_the_profile_duration_in_whole_ms() -> void:
 	ghost._profile = _constant_speed_profile()  # duration 10.0 s
 	assert_eq(ghost.target_ms(), 10000, "the card's time to beat is the profile's own total")
 	assert_eq(ghost.profile(), ghost._profile, "the profile accessor hands back what was set")
+
+
+# --- The display layer (transparency, slope, fade — features/rival-ghost.md) ----
+# Restored with the pre-pivot ghost_car.gd display stack; these re-pin the three
+# properties that made the rewrite's omission visible: not translucent, not on the
+# road's slope, and no proximity behaviour.
+
+# A terrain rising `slope` per metre along the road's own +X direction.
+class StubTerrain:
+	extends Node
+	var slope := 0.0
+	func height_at(x: float, _z: float) -> float:
+		return slope * x
+
+
+func _display_ghost(terrain: Node = null) -> RivalGhost:
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	var track := StubTrack.new()
+	add_child_autofree(track)
+	ghost.setup(track, terrain, _constant_speed_profile(),
+		{"car_index": 0, "name": "Test Driver"})
+	return ghost
+
+
+func test_the_ghost_car_is_actually_translucent() -> void:
+	# GeometryInstance3D.transparency was a no-op on the car's opaque shader — assert
+	# the thing that actually makes it see-through: a material with alpha below 1.
+	# Posed by pose_at (the RUN path); the start-line park is deliberately solid.
+	Config.data.rival_ghost_opacity = 0.5
+	var ghost := _display_ghost()
+	ghost.pose_at(0.3)
+	var checked := 0
+	for mesh in ghost._mesh_instances(ghost.car()):
+		var mat: Material = mesh.material_override
+		if mat == null:
+			continue
+		checked += 1
+		assert_true(mat is BaseMaterial3D, "the override is a real material")
+		var bm := mat as BaseMaterial3D
+		assert_lt(bm.albedo_color.a, 1.0, "its alpha is below opaque")
+		assert_eq(bm.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA,
+			"and it is in the alpha-blended pass")
+	assert_gt(checked, 0, "at least one mesh got a translucent override")
+	Config.data.rival_ghost_opacity = 0.4
+
+
+func test_the_rival_is_solid_at_the_start_line() -> void:
+	# The grid park (pose_at_distance) renders the rival OPAQUE: it is the subject
+	# of the start-line shot, and translucency there would read as broken.
+	var ghost := _display_ghost()
+	ghost.pose_at_distance(0.0)
+	for mat in ghost._ghost_materials:
+		assert_almost_eq(mat.albedo_color.a, 1.0, 0.001,
+			"the parked rival wears full opacity")
+
+
+func test_the_ghost_tilts_onto_a_sloped_road() -> void:
+	# It used to stand perfectly level on every slope, so on a climb it visibly
+	# floated at the nose and dug in at the tail instead of looking driven on the road.
+	var hill := StubTerrain.new()
+	hill.slope = 0.25          # a 25% climb along the road's +X
+	add_child_autofree(hill)
+	var ghost := _display_ghost(hill)
+	ghost.pose_at_distance(7.0)
+	var up: Vector3 = ghost.car().global_transform.basis.y
+	assert_lt(up.dot(Vector3.UP), 0.995, "on a slope the ghost's up leaves world up")
+	# The surface normal of a plane rising 0.25 per metre tips by atan(0.25).
+	var expected := atan(0.25)
+	var actual := acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))
+	assert_almost_eq(actual, expected, 0.12,
+		"and it tilts by the slope angle, not some arbitrary amount")
+	# Still orthonormal, or the car renders sheared.
+	var b: Basis = ghost.car().global_transform.basis
+	assert_almost_eq(b.x.dot(b.y), 0.0, 0.01, "basis stays orthogonal (x.y)")
+	assert_almost_eq(b.y.dot(b.z), 0.0, 0.01, "basis stays orthogonal (y.z)")
+
+
+func test_the_ghost_fades_out_as_the_player_closes_in() -> void:
+	Config.data.rival_ghost_fade_near_m = 14.0
+	Config.data.rival_ghost_visible_m = 100.0
+	var ghost := _display_ghost()
+	var player := Node3D.new()
+	add_child_autofree(player)
+	ghost.set_player(player)
+
+	# Far away (but inside the cull): visible, full configured opacity.
+	player.global_position = Vector3(60.0, 0.0, 0.0)
+	ghost.pose_at(2.0)
+	assert_true(ghost.car().visible, "inside the cull range the ghost renders")
+	assert_almost_eq(ghost._ghost_materials[0].albedo_color.a, 0.4, 0.01,
+		"at range it wears the full configured opacity")
+
+	# Overlapping the player: faded to (near) nothing but not culled.
+	player.global_position = Vector3(ghost.car().global_position)
+	ghost.pose_at(2.0)
+	assert_almost_eq(ghost._ghost_materials[0].albedo_color.a, 0.0, 0.01,
+		"at zero separation the proximity fade erases it")
+
+	# Past the cull: not rendered at all.
+	player.global_position = Vector3(300.0, 0.0, 0.0)
+	ghost.pose_at(2.0)
+	assert_false(ghost.car().visible, "past rival_ghost_visible_m it is culled")
+	Config.data.rival_ghost_fade_near_m = 14.0
+	Config.data.rival_ghost_visible_m = 400.0
+
+
+func test_departure_speed_reads_the_profile_pace() -> void:
+	var ghost := _display_ghost()
+	# The constant-speed profile runs at exactly _SPEED m/s.
+	assert_almost_eq(ghost.departure_speed(7.0), _SPEED, 0.5,
+		"the drive-off runs at the profile's own pace")
+
+
+func test_the_departed_ghost_stays_hidden_until_the_clock_catches_up() -> void:
+	# After the start-line drive-off, the ghost must not pop back onto the line the
+	# moment StageManager starts posing it at elapsed() — it stays hidden until the
+	# profile's own distance passes where the drive-off left it.
+	var ghost := _display_ghost()
+	ghost.pose_at_distance(29.0)          # mid-departure, visible on the grid
+	assert_true(ghost.car().visible, "while posing by distance it shows")
+	ghost.mark_departed_at(29.0)
+	ghost.pose_at(0.5)                    # 20 m/s * 0.5 s = 10 m: well short of 29
+	assert_false(ghost.car().visible, "before the clock catches up it stays hidden")
+	ghost.pose_at(2.0)                    # 40 m: past the departure point
+	assert_true(ghost.car().visible, "once caught up it re-enters normally")
+
+
+func test_the_nametag_rides_and_fades_with_the_car() -> void:
+	Config.data.rival_ghost_nametag_enabled = true
+	var ghost := _display_ghost()
+	var tag: Label3D = ghost._nametag
+	assert_not_null(tag, "a named rival gets a driver tag")
+	assert_eq(tag.text, "Test Driver", "naming the driver the card names")
+	assert_eq(tag.get_parent(), ghost.car(), "it rides on the car so the pose carries it")
+	ghost._set_alpha(0.25)
+	assert_almost_eq(tag.modulate.a, 0.25, 0.01, "the tag fades WITH the car")
+	ghost.free_ghost()
+	Config.data.rival_ghost_nametag_enabled = true

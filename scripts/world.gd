@@ -1585,6 +1585,9 @@ func _setup_rival_ghost(staged: bool) -> void:
 	_rival_ghost = _ensure_child("RivalGhost",
 		func() -> Node: return RivalGhost.new()) as RivalGhost
 	_rival_ghost.setup(_track_progress, _floor(), profile, rival)
+	# The player's car drives the ghost's proximity fade/cull (features/rival-ghost.md).
+	if has_node("Car"):
+		_rival_ghost.set_player($Car as Node3D)
 	_stage_manager.setup_target_profile(profile, _rival_ghost)
 
 

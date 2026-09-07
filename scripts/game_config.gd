@@ -805,9 +805,6 @@ func has_nitrous() -> bool:
 ## the player. (The pre-pivot grid queued its rivals BEHIND the line at this same
 ## spacing; the one-rival revival parks ahead instead.)
 @export var start_queue_gap := 7.0
-## Seconds the orbit camera idles on the player before the reveal fly begins. The
-## reveal plays by itself — this beat is what makes the fly read as a move.
-@export var start_reveal_idle_seconds := 0.8
 ## Seconds the fly from the orbit pose to the reveal shot takes.
 @export var start_reveal_fly_seconds := 1.2
 ## The reveal shot: a low 3/4 in front of the rival on its grid slot — the eye sits
@@ -820,6 +817,30 @@ func has_nitrous() -> bool:
 @export var start_reveal_cam_look_height_m := 0.8
 ## Field of view (degrees) the reveal shot settles on.
 @export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
+
+@export_group("Rival ghost")
+# The rival ghost's DISPLAY layer (features/rival-ghost.md) — the target-clock car
+# posed along the pace profile through the run. Restored with the pre-pivot
+# ghost_car.gd display stack; the pace itself is the profile, not config.
+## Base opacity of the rival ghost's translucent material overrides (0.1–1.0).
+@export_range(0.05, 1.0) var rival_ghost_opacity := 0.4
+## Distance (m) beyond which the ghost is culled entirely — a rendering budget, the
+## pose stays valid at any range.
+@export_range(50.0, 2000.0) var rival_ghost_visible_m := 400.0
+## Distance (m) at which the proximity fade reaches full opacity; inside it the
+## ghost fades toward invisible as the player closes in, so an overlapped ghost
+## can't fill the screen and hide the road. 0 disables the fade.
+@export_range(0.0, 60.0) var rival_ghost_fade_near_m := 14.0
+## Show the driver-name Label3D over the ghost.
+@export var rival_ghost_nametag_enabled := true
+## Height (m) of the nametag above the ghost's car.
+@export_range(0.5, 8.0) var rival_ghost_nametag_height_m := 2.2
+## Text size (m) of the nametag.
+@export_range(0.1, 3.0) var rival_ghost_nametag_size_m := 0.55
+## Multiplier on the curvature-derived slip yaw the ghost wears in corners.
+@export_range(0.0, 3.0) var rival_ghost_slip_scale := 1.0
+## Cap (degrees) on the ghost's slip yaw, so hairpins can't spin it sideways.
+@export_range(0.0, 90.0) var rival_ghost_max_slip_deg := 45.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata

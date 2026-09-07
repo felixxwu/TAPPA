@@ -107,20 +107,68 @@ Two posing entry points on the same `Car`, selected by what the caller has:
 
 - **`pose_at(t)`** — a race time: `StageManager` drives this off its own
   `_elapsed` during RUNNING, un-looped (it holds at the finish once the
-  profile's duration passes).
+  profile's duration passes). Also applies the proximity fade/cull below.
 - **`pose_at_distance(s)`** — a raw track distance (m from the origin sample):
-  the start line's grid slot (`start_queue_gap` down the lead-in) is a
-  DISTANCE, not a time on the profile, so `start_line.gd` poses the parked
-  rival with this once at setup. Same posing path and guards as `pose_at`.
+  the start line's grid slot (ON the line, `s = 0`) and the DEPART drive-off are
+  DISTANCES, not times on the profile, so `start_line.gd` poses the
+  parked/departing rival with this. Renders the car **SOLID** — the rival is the
+  subject of the start-line shot, and a see-through car on the grid reads as
+  broken; translucency is the run-time reading aid. Same posing path and guards
+  as `pose_at`.
 
 (The ghost's own-clock `advance`/`reset` pair — the looping MENU idle an
 earlier start line drove — is gone: the rival parks on the grid instead of
 driving laps in the background.)
 
-Wheel spin is NOT filled in (`drivetrain.replay_omega` stays empty) — a static
-idle roll on the ghost's wheels was accepted as a v1 trade-off rather than
-deriving an approximate omega from `ds/dt`; see the file for where that would
-plug in if it's ever worth doing.
+## The display layer (transparency, slope, slip, wheels, fade)
+
+The pre-pivot `ghost_car.gd`'s whole display stack rides along on every pose:
+
+- **Transparency** — `_make_translucent` gives every `MeshInstance3D` under the
+  car a translucent `StandardMaterial3D` override (`TRANSPARENCY_ALPHA`,
+  unshaded, `DEPTH_DRAW_DISABLED` so overlapping panels don't punch holes in
+  each other, nearest-filtered to keep the PS1 look, texture/tint carried over
+  from the source material). A material override — not
+  `GeometryInstance3D.transparency` — is the only thing that works: the car's
+  own shader is unshaded and never writes ALPHA. Run after `_apply_rival_car`
+  (which reshapes the meshes) in `setup()`, so a stage's fresh body is always
+  re-ghosted. Base alpha is `rival_ghost_opacity`.
+- **Slope** — `_basis_from` builds the body basis from the road's own surface
+  normal (`_surface_normal`, finite-difference height probes `NORMAL_PROBE_M`
+  apart) with the travel direction projected onto that plane, so the ghost
+  pitches and rolls with the road instead of floating nose-level on climbs.
+- **Slip yaw** — `_slip_at` reads the centerline's curvature around `s` and the
+  profile's own speed there, and wears the centripetal demand
+  (`atan(v²·κ/g)`, scaled by `rival_ghost_slip_scale`, capped by
+  `rival_ghost_max_slip_deg`) as a yaw about the SURFACE normal — negated,
+  because the 2D curve space's angles run opposite to `Basis` yaw (a rally car
+  slides nose-INSIDE the corner; the wrong sign makes it counter-steer out of
+  every bend).
+- **Wheels** — `settle_wheels_to_ground` droops the wheel Visuals onto the road
+  the body was just seated against (a frozen body's solver never runs), and
+  `_drive_wheels` fills `drivetrain.replay_omega` from `speed / wheel_radius`
+  so car.gd's `kinematic_pose` branch spins them — without it the ghost slides
+  down the road on four dead wheels.
+- **Proximity fade + cull** — `_apply_visibility` (run by `pose_at`, with the
+  player car wired in via `set_player`) hides the ghost past
+  `rival_ghost_visible_m` and fades its alpha (and the nametag's) toward zero
+  as the player closes inside `rival_ghost_fade_near_m` — a solid-looking car
+  you're overlapping fills the screen and hides the road. Deliberately not
+  gated on headless so the tests can assert it.
+- **Nametag** — a `Label3D` over the car (`rival_ghost_nametag_*` keys)
+  naming the driver, fading with the car.
+
+## The start-line send-off and the re-entry gate
+
+The start line doesn't just park the ghost — after the reveal, Start sends it
+off (`start_line.gd`'s DEPART phase) driving forward from the line (the parked
+grid slot, `s = 0`) at the
+profile's own pace (`departure_speed(s)`, the profile's `ds/dt`). When it is
+`start_lead_in_ahead_m` past the line, `mark_departed_at(s)` hides it and arms
+`_reentry_s`: through the early run, `pose_at` keeps the ghost hidden until
+the profile's own distance at `StageManager.elapsed()` passes that point — the
+player's clock "catches up" to where the drive-off left the rival — so it
+never pops back onto the start line the moment the run starts posing it.
 
 ## The rival's car and name
 
@@ -179,11 +227,13 @@ nothing.
 
 `world.gd._build_start_line` hands that same `RivalGhost` into
 `StartLine.setup(..., ghost)`. `StartLine` does not own the ghost's lifecycle —
-it outlives this node, kept posing through RUNNING — it poses the ghost ONCE,
-on the grid (`pose_at_distance`, one `start_queue_gap` down the lead-in), and
-leaves it there scripted-solid through MENU/FLY_IN/REVEAL; the hand-off snap
-back to the line (the profile's s=0) happens under the fade, after which
-`StageManager` poses it per-frame again. See [start-line.md](start-line.md).
+it outlives this node, kept posing through RUNNING — it parks the ghost ON the
+line (`pose_at_distance(0.0)`, solid — the pre-pivot grid's front slot, with the
+player staged one `start_queue_gap` behind it) through
+MENU/FLY_IN/REVEAL, then drives it off down the lead-in in the DEPART phase at
+the profile's own pace, hiding it (with the re-entry gate above) once it is
+properly away; `StageManager` poses it per-frame again from the countdown on.
+See [start-line.md](start-line.md).
 
 ## Live HUD delta
 
@@ -210,10 +260,7 @@ sense elsewhere in the HUD.
 
 - **No collision, no overtaking, no position.** The ghost is a visual/HUD aid,
   not an opponent — `todo/roguelike-pivot.md` decision 5 stays in force.
-- **No wheel-spin fidelity.** Static idle roll, accepted as a v1 trade-off (see
-  above).
-- **No RUNNING-phase camera/LOD concern.** The ghost keeps posing at whatever
-  distance the pace profile puts it, however far that drifts from the player's
-  own camera framing — there's no attempt to keep it in shot after the
-  start-line reveal, since the HUD delta (not the visual) is the must-have for
-  RUNNING.
+- **No RUNNING-phase LOD concern.** The ghost keeps posing at whatever distance
+  the pace profile puts it (culled past `rival_ghost_visible_m`) — there's no
+  attempt to keep it in shot after the start-line reveal, since the HUD delta
+  (not the visual) is the must-have for RUNNING.

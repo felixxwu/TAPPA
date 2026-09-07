@@ -11,14 +11,17 @@ extends Node3D
 #   1. MENU     — black house-style panels offer Start / Tune Car under a
 #      rally/event header, while an orbit camera idles on the player's car. The rival
 #      ghost is parked ON THE GRID, one gap down the lead-in ahead of the player.
-#   2. FLY_IN   — after a short orbit beat (no press needed — the reveal is the
-#      intro, not a reward for starting) the camera flies from the orbit pose to a
-#      fixed low 3/4 shot in front of the rival on the grid, and holds there.
+#      The orbit runs until Start is pressed — nothing auto-advances.
+#   2. FLY_IN   — on Start, the camera flies from the (now frozen) orbit pose to a
+#      fixed low 3/4 shot in front of the rival on the grid. The menu row stays
+#      live so Start remains reachable for the send-off.
 #   3. REVEAL   — arrived at the rival, the rival card appears: the driver's name,
-#      the car they wear, and the gold time to beat. The menu row stays live, so the
-#      target is on screen while the player tunes against it. Start (button only)
-#      fades to the countdown.
-#   4. FADE     — Start fades the screen to black; at full black the camera hands back
+#      the car they wear, and the gold time to beat. Start (button only) sends the
+#      rival off.
+#   4. DEPART   — the rival drives off down the lead-in at its profile pace. Only
+#      once it is properly away (start_lead_in_ahead_m past the line) does the
+#      fade begin — the player never sees the countdown before the rival has left.
+#   5. FADE     — the screen fades to black; at full black the camera hands back
 #      to the player's SELECTED camera (via the CameraManager), the driving UI returns
 #      and StageManager.begin_countdown() starts the countdown; then it fades back in.
 #
@@ -29,18 +32,19 @@ extends Node3D
 # rival field it dramatized (todo/roguelike-pivot.md decision 5) — the three real
 # top-three rivals queued behind the line, walked through one Next press at a time —
 # is REVIVED here in the pivot's own terms: ONE rival, the ghost, parked on the grid
-# ahead of the player, a single automatic fly, and the card arriving when the camera
-# does. Nothing queues, rolls up or drives off; the ghost never moves until the run
-# itself poses it.
+# ahead of the player, ONE fly on Start, the card arriving when the camera does,
+# and — as before — the rival actually DRIVES OFF (DEPART) before the countdown
+# runs, rather than waiting frozen for the run to pose it.
 #
 # THE RIVAL GHOST (features/rival-ghost.md) is that one rival: `world.gd` hands
 # `setup()` a `RivalGhost` it owns (outliving this node — the ghost keeps posing
-# through RUNNING for the live HUD delta). This node poses it ONCE, on the grid
-# (`RivalGhost.pose_at_distance`), and never re-poses it: it sits scripted-solid
-# through the sequence, and world.gd/StageManager take over (`RivalGhost.pose_at`,
-# off `StageManager.elapsed()`) once the countdown/run begins — the hand-off snap
-# from the grid slot back to the line, where the profile's s=0 puts it, happens
-# under the fade.
+# through RUNNING for the live HUD delta). This node parks it ON the grid
+# (`RivalGhost.pose_at_distance`) for MENU/FLY_IN/REVEAL, then drives it off in
+# DEPART (posed along the track at its profile speed). At the end of the departure
+# it is hidden and gated (`mark_departed_at`) until the run's own clock catches up
+# to where the drive-off left it — so it never pops back onto the line, and
+# world.gd/StageManager take over (`RivalGhost.pose_at`, off `StageManager.elapsed()`)
+# seamlessly once it re-enters.
 #
 # THE RIVAL CARD — the deleted per-opponent reveal card (driver, car, gold time),
 # trimmed to the ONE rival the pivot kept and revealed when the fly lands (not for
@@ -52,14 +56,21 @@ extends Node3D
 ## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
 ## below since preload() cannot take that reference (needs a literal string).
 
-# Sequence phases. REVEAL waits for Start; MENU auto-advances to the reveal when a
-# rival is on the grid; the rest are time-driven in _process.
-enum Seq { MENU, FLY_IN, REVEAL, FADE_OUT, FADE_IN, DONE }
+# Sequence phases. MENU orbits the player until Start is pressed; Start flies to
+# the rival's reveal, and a second press sends the rival off — the countdown only
+# begins once it has driven away; the rest are time-driven in _process.
+enum Seq { MENU, FLY_IN, REVEAL, DEPART, FADE_OUT, FADE_IN, DONE }
 
 var _seq: int = Seq.MENU
 var _seq_t := 0.0          # seconds into the current timed phase
 var _orbit_angle := 0.0    # accumulated orbit camera angle (rad), the MENU idle
 var _launched := false     # Start pressed (past the eligibility gates)
+
+# The rival's drive-off (DEPART): the track distance it has reached (it starts ON
+# the line, s=0), advancing at the profile's own speed, and the distance at which
+# it's far enough down the lead-in for the fade to take over (start_lead_in_ahead_m).
+var _depart_s := 0.0
+var _depart_target := 0.0
 
 # The reveal fly: the orbit pose it departs from (transform + fov), and the shot it
 # lands on — a low 3/4 in front of the rival on its grid slot (_compute_anchor).
@@ -105,9 +116,11 @@ var _rival_time_label: Label
 # This event's index (0-based), for the header's "Stage X of N".
 var _event_index := 0
 
-# The player's start pose, captured at setup. The player is staged at this pose,
-# axis-locked so it can't drift during the MENU orbit, and released at hand-off.
+# The player's start pose, captured at setup. The player is staged one grid gap
+# BEHIND this (see setup — the rival owns the line), axis-locked so it can't drift
+# during the MENU orbit, and snapped UP ONTO the line by reset_to at hand-off.
 var _start_xform: Transform3D
+var _stage_xform: Transform3D  # the staged (one-gap-back) pose the MENU orbits
 var _player_staged := false   # true once the player is scripted for staging
 var _player_auto_was := false # the player's gearbox auto flag, restored at hand-off
 
@@ -169,13 +182,13 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_terrain = terrain
 	_ghost = ghost
 	if is_instance_valid(_ghost) and _ghost.has_profile():
-		# Park the rival ON THE GRID: one gap down the lead-in ahead of the player, posed
-		# BY THE TRACK (pose_at_distance walks the centerline sample), so it sits on the
-		# road whatever the geometry does, dead in the player's wheel tracks. It holds
-		# there, scripted-solid, through MENU/FLY_IN/REVEAL — nothing re-poses it until
-		# the hand-off, which (under the fade) snaps it back to the line where the
-		# profile's s=0 puts it for the run.
-		_ghost.pose_at_distance(_cfg().start_queue_gap)
+		# The rival sits ON THE LINE — the pre-pivot grid's front slot — posed BY THE
+		# TRACK (pose_at_distance walks the centerline sample), so it sits on the road
+		# whatever the geometry does, dead in the player's wheel tracks. It holds
+		# there, scripted-solid, through MENU/FLY_IN/REVEAL — nothing re-poses it
+		# until DEPART drives it off. The PLAYER stages one queue gap BEHIND it (see
+		# _stage_xform), the pre-pivot grid order: rival on the line, player queued.
+		_ghost.pose_at_distance(0.0)
 	_rally = rally  # kept so launch() can re-check eligibility after a pre-race edit
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
@@ -183,13 +196,18 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_mobile = mobile
 	_event_index = event_index
 	_start_xform = player.global_transform
-	# Seat the start-line car a small clearance ABOVE the road at spawn so it settles
-	# onto its wheels instead of spawning clipped into the ground. Anchoring it on
-	# _start_xform here cascades everywhere: the staged player reads its ride height
-	# off it (via _ground), and the countdown pose is reset_to it at the hand-off —
-	# so the player is clear before AND during the countdown.
+	# Seat the start-line pose a small clearance ABOVE the road at spawn so the car
+	# settles onto its wheels instead of spawning clipped into the ground. The
+	# countdown pose is reset_to it at the hand-off, so the player is clear during
+	# the countdown.
 	if terrain != null and terrain.has_method("height_at"):
 		_start_xform.origin.y = terrain.height_at(_start_xform.origin.x, _start_xform.origin.z) + _cfg().start_spawn_clearance
+	# The staged pose — one grid gap BEHIND the line, behind the parked rival, the
+	# pre-pivot grid order. The hand-off (under the fade) snaps the player up onto
+	# the line itself via reset_to(_start_xform).
+	_stage_xform = _start_xform.translated_local(Vector3(0.0, 0.0, _cfg().start_queue_gap))
+	if terrain != null and terrain.has_method("height_at"):
+		_stage_xform.origin.y = terrain.height_at(_stage_xform.origin.x, _stage_xform.origin.z) + _cfg().start_spawn_clearance
 	# Hide the driving UI; the menu is camera-only until the fade hands it back.
 	if _hud != null:
 		_hud.visible = false
@@ -218,7 +236,7 @@ func grab_start_focus() -> void:
 # drives normally. No-op for a non-Car player (test stubs).
 #
 # Takes no arguments: it used to accept the `terrain` its caller has and never read it
-# (the staged pose comes from `_start_xform`, which setup() already solved against the
+# (the staged pose comes from `_stage_xform`, which setup() already solved against the
 # ground), and an unused parameter is a GDScript warning the test runner treats as a
 # failure.
 func _stage_player() -> void:
@@ -228,9 +246,9 @@ func _stage_player() -> void:
 	# global_transform write on a VehicleBody3D is discarded (see car.gd reset_to). The
 	# test stub has no reset_to, so fall back to the bare write there.
 	if _player.has_method("reset_to"):
-		_player.reset_to(_start_xform)
+		_player.reset_to(_stage_xform)
 	else:
-		_player.global_transform = _start_xform
+		_player.global_transform = _stage_xform
 	_player.ai_controlled = true
 	_player.ai_throttle = 0.0
 	_player.ai_steer = 0.0
@@ -469,17 +487,10 @@ func _process(delta: float) -> void:
 func _timed_process(delta: float) -> void:
 	match _seq:
 		Seq.MENU:
+			# The orbit is the whole MENU: it idles on the player's car until Start is
+			# pressed (launch flies to the rival). Nothing auto-advances here — the
+			# reveal is a reward for pressing Start, not an intro that plays itself.
 			_advance_orbit(delta)
-			# The reveal is the intro, not a reward for pressing Start: with a rival
-			# worth flying to on the grid, it begins by itself once the orbit beat is
-			# out. A profiled ghost with no car (unsolvable roster — nothing to
-			# frame) skips the fly and reveals the time where the menu idles.
-			if _rival_car_ready():
-				_seq_t += delta
-				if _seq_t >= _cfg().start_reveal_idle_seconds:
-					_begin_reveal_fly()
-			elif _rival_ready():
-				_enter_reveal()
 		Seq.FLY_IN:
 			_seq_t += delta
 			var fly := maxf(_cfg().start_reveal_fly_seconds, 0.0001)
@@ -493,7 +504,21 @@ func _timed_process(delta: float) -> void:
 				_orbit_cam.fov = _cfg().start_reveal_cam_fov
 				_enter_reveal()
 		Seq.REVEAL:
-			pass  # holds on the rival shot; Start (launch) or < Exit moves on
+			pass  # holds on the rival shot; Start (launch) sends the rival off
+		Seq.DEPART:
+			# The rival drives off down the lead-in at its profile pace. Only once it
+			# is properly away does the fade begin — the player never sees the
+			# countdown until the rival has left (the whole point of the send-off).
+			_seq_t += delta
+			if is_instance_valid(_ghost):
+				_depart_s += _ghost.departure_speed(_depart_s) * delta
+				_ghost.pose_at_distance(_depart_s)
+			if _depart_s >= _depart_target or not is_instance_valid(_ghost):
+				if is_instance_valid(_ghost):
+					# Hidden under the coming fade, and gated off until the run's own
+					# clock reaches this far (see RivalGhost.mark_departed_at).
+					_ghost.mark_departed_at(_depart_s)
+				_begin_fade()
 		Seq.FADE_OUT:
 			_seq_t += delta
 			var fade := maxf(_cfg().start_fade_seconds, 0.0001)
@@ -555,14 +580,17 @@ func _compute_anchor() -> Transform3D:
 	var look := rival.origin + Vector3.UP * cfg.start_reveal_cam_look_height_m
 	return Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
 
-# Begin the launch: run the eligibility gates, then fade to the countdown. Idempotent
-# — only fires from the waiting MENU or REVEAL phase, so a second press during the
-# sequence is ignored. The reveal is NOT what Start launches any more (it plays by
-# itself — see _timed_process's MENU branch); Start from REVEAL goes straight to the
-# fade, and a press mid-fly is ignored for the fly's second or so, the way the
-# deleted sequence treated input between its phases.
+# Begin the launch: run the eligibility gates, then fly the camera to the rival's
+# reveal shot (or, with no rival to reveal, straight to the fade). Idempotent —
+# only fires from the waiting MENU or REVEAL phase, so a second press during the
+# fly/departure is ignored. From REVEAL the press sends the rival off (DEPART):
+# the countdown waits until it has driven away.
 func launch() -> void:
-	if _launched or not (_seq == Seq.MENU or _seq == Seq.REVEAL):
+	if not (_seq == Seq.MENU or _seq == Seq.REVEAL):
+		return
+	if _seq == Seq.REVEAL:
+		# The commitment press already happened (MENU); this one sends the rival off.
+		_begin_departure()
 		return
 	if not _rally.is_empty():
 		var owned := _driven_car()
@@ -578,9 +606,41 @@ func launch() -> void:
 				ConfirmPopup.open(self, "Can't start", reason,
 					[ {"label": "Cancel", "callback": Callable()} ], 0, 0)
 				return
+	if _seq == Seq.REVEAL:
+		_begin_departure()
+		return
+	_launched = true
+	if _rival_car_ready():
+		# Start means go: fly the camera from the (now frozen) orbit pose to the
+		# rival's reveal shot. The overlay stays up through FLY_IN/REVEAL so Start
+		# remains reachable for the send-off press; _begin_departure hides it.
+		_begin_reveal_fly()
+	elif _rival_ready():
+		_enter_reveal()
+	else:
+		# No rival to reveal — the player is already on the line. Straight to the fade.
+		if _overlay != null:
+			_overlay.visible = false
+		_begin_fade()
+
+
+# Send the rival off the line (DEPART): it drives off down the lead-in at its
+# profile pace while the camera holds on the player, and the fade (then the
+# countdown) only begins once it is properly away. The overlay goes now — the
+# player has committed; the remaining beats are cinematic.
+func _begin_departure() -> void:
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false
+	if _rival_card != null:
+		_rival_card.visible = false
+	_depart_s = 0.0
+	_depart_target = _cfg().start_lead_in_ahead_m
+	_seq = Seq.DEPART
+	_seq_t = 0.0
+
+
+func _begin_fade() -> void:
 	_seq = Seq.FADE_OUT
 	_seq_t = 0.0
 
