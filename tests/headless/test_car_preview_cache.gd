@@ -90,3 +90,32 @@ func test_warm_all_builds_a_preview_for_every_owned_and_unowned_car() -> void:
 			"catalogue car %d must be warmed" % index)
 
 	Save.profile[Save.KEY_CARS] = []
+
+
+# A second warm_all() must WAIT for a pass that is already running, not return "done"
+# while cars are still building — HubShell._ready holds its loading screen until the
+# awaited call returns, so an early return would lift the screen with the cache
+# half-built and reintroduce exactly the interactive trickle this cache exists to
+# remove (features/card-carousel.md → the warming section).
+func test_warm_all_awaits_an_inflight_pass() -> void:
+	# A not-in-catalogue owned car guarantees the pass has REAL work left no matter what
+	# earlier tests left cached, so it deterministically suspends mid-pass with _warming
+	# still true. It is first in warm_all's refs (owned cars are collected before
+	# catalogue indices), so the fire-and-forget call below always yields inside it.
+	var owned := {"instance_id": 777, "model_id": "zzz_warm_wait"}
+	Save.profile[Save.KEY_CARS] = [owned]
+	_track(owned)
+	for index in CarLibrary.all().size():
+		_track(index)
+
+	CarPreviewCache.warm_all()  # fire-and-forget: runs to its first yield, then continues alone
+	assert_true(CarPreviewCache._warming, "setup: a warming pass is in flight")
+
+	await CarPreviewCache.warm_all()
+
+	assert_false(CarPreviewCache._warming,
+		"returning from an awaited warm_all must mean no pass is still running")
+	assert_true(CarPreviewCache._cache.has(CarPreviewCache.key_for(owned)),
+		"the in-flight pass must have completed, not been abandoned")
+
+	Save.profile[Save.KEY_CARS] = []

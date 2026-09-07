@@ -2,7 +2,7 @@ extends GutTest
 # The flat shell (scripts/hub_shell.gd) — the game's main scene and the only way into a
 # run, replacing the deleted diegetic 3D hub.
 #
-# Two things are pinned here and nothing else:
+# Three things are pinned here and nothing else:
 #   1. NAVIGATION. CLAUDE.md requires every menu in the game to be keyboard + gamepad
 #      navigable, and says a new menu ships with a nav test in the same piece of work.
 #      That is the rule this file exists for.
@@ -10,6 +10,8 @@ extends GutTest
 #      state. Deliberately NOT the page's looks, wording or button order: stage 3's shell
 #      is explicitly a placeholder that stages 4-8 rewrite, and a test that pinned its
 #      layout would break on every one of those stages while proving nothing.
+#   3. The INTERACTIVE LOAD contract (features/card-carousel.md's warming section): the
+#      hub's loading screen stays up until every car preview is cached.
 
 var _save: Node
 var _shell: HubShell
@@ -728,3 +730,47 @@ func test_opening_region_select_clears_a_pending_challenge() -> void:
 # (RunSession.choose_drivetrain, RunPickPanel), so the SHOP no longer hosts it — see
 # tests/headless/test_run_pick_panel.gd and test_run_session.gd for the coverage that
 # replaces this block.
+
+
+# --- Interactive load: cars warm behind the loading screen ------------------------
+#
+# features/card-carousel.md's warming section: on an interactive load, _ready() holds a
+# LoadingScreen over the pages until CarPreviewCache has EVERY car cached, so the CAR
+# page opens on pure cache hits instead of paying CarProp.spawn's synchronous cost the
+# first time each car scrolls in (the original first-visit lag). Headless runs keep the
+# fire-and-forget trickle, so this test flips _warm_behind_loading_screen BEFORE the
+# shell enters the tree to exercise the interactive path deterministically.
+func test_interactive_load_holds_a_loading_screen_until_every_car_is_cached() -> void:
+	var shell := HubShell.new()
+	shell._warm_behind_loading_screen = true
+	add_child_autofree(shell)
+
+	# The overlay is up from the moment _ready starts warming (it is added before the
+	# awaited warm_all, in the same call).
+	assert_false(shell.find_children("*", "LoadingScreen", true, false).is_empty(),
+		"a loading screen must cover the pages while warming runs")
+
+	# An awaited warm_all joins whatever pass the shells started and returns only when
+	# the whole cache is built — one extra frame lets the overlay's finish() queue_free
+	# land before the tree is searched again.
+	await CarPreviewCache.warm_all()
+	await get_tree().process_frame
+
+	assert_true(shell.find_children("*", "LoadingScreen", true, false).is_empty(),
+		"the loading screen must be gone once every car is cached")
+	for index in CarLibrary.all().size():
+		assert_true(CarPreviewCache._cache.has(CarPreviewCache.key_for(index)),
+			"catalogue car %d must be cached by the time the loading screen lifts" % index)
+
+	# The warmed previews live under the CarPreviewCache AUTOLOAD (its graveyard), not
+	# under this test's tree, so add_child_autofree never reaches them — free and erase
+	# them the way test_car_preview_cache.gd's after_each does, or GUT's orphan monitor
+	# flags them at run end. Fetched untyped first: a stale entry must not crash the
+	# typed assignment below it guards.
+	for key in CarPreviewCache._cache.keys():
+		var cached = CarPreviewCache._cache[key]
+		if cached != null and is_instance_valid(cached):
+			if (cached as Node).get_parent() != null:
+				(cached as Node).get_parent().remove_child(cached as Node)
+			(cached as CarCardPreview).free()
+		CarPreviewCache._cache.erase(key)

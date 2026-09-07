@@ -48,11 +48,14 @@ player only ever sees one at a time. `_build_lakes` / `_build_foliage` / `_build
 dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was
 removed.
 
-The other `LoadingScreen` users (the deleted `hq.gd` / `hq_challenge.gd`) built their own instance for a
-menu-transition wait and call `set_step()` on it directly with their own short status text
-("Preparing the garage…") — that path is unrelated and unchanged; only world.gd's
-generation stages stopped forwarding to the label. `set_step()` **locks** the step line
-(`_step_locked`) so the 7-second tip cycle never overwrites a caller's own status text.
+The other `LoadingScreen` users cover HUB startup rather than a stage: `menu_showcase.gd`'s
+build holds one while the background track visual loads (committed-cache hit or live
+generate), and `hub_shell.gd` holds one while `CarPreviewCache.warm_all()` builds every
+car-selection preview — on a cold boot the two overlap and present as one continuous
+"Loading…" stage (features/card-carousel.md → the warming section). Neither claims the
+step line, so their tips keep cycling; only world.gd's generation stages stopped
+forwarding to the label. `set_step()` **locks** the step line (`_step_locked`) so the
+7-second tip cycle never overwrites a caller's own status text.
 
 The headline's trailing ellipsis is **animated** (0 → 1 → 2 → 3 dots, looping on
 `LoadingScreen._DOT_STEP_SEC`) rather than a static "…". Because the headline is

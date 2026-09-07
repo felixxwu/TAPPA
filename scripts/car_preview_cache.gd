@@ -92,10 +92,14 @@ func park(preview: CarCardPreview) -> void:
 # Build (and park) every current owned + unowned-catalogue car's preview, a few at a time
 # across separate frames. Idempotent and safe to call from every HubShell._ready() — a
 # car already cached is skipped in the same frame, so a second/third call (every later
-# hub visit) is cheap regardless of how many cars exist.
+# hub visit) is cheap regardless of how many cars exist. Awaiting the call means waiting
+# for the WHOLE cache: a call that arrives while a pass is already running WAITS for that
+# pass (and then runs its own, instant one) rather than returning "done" with cars still
+# building — which is what lets HubShell._ready hold its loading screen until warming has
+# genuinely finished.
 func warm_all() -> void:
-	if _warming:
-		return
+	while _warming:
+		await get_tree().process_frame
 	_warming = true
 	var refs: Array = []
 	for car in Save.profile.get(Save.KEY_CARS, []):

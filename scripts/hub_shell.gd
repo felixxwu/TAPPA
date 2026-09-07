@@ -77,6 +77,12 @@ var _settings_menu: SettingsMenu = null
 # scene itself.
 var _showcase: Node3D = null
 
+# True whenever there is a screen to paint on (false under headless, where there is
+# nothing to show and tests must not pay a per-frame warming wait). While true, _ready()
+# holds a LoadingScreen over the pages until CarPreviewCache has EVERY car cached — see
+# the call site. Tests set it true explicitly to cover that path headlessly.
+var _warm_behind_loading_screen := not Platform.is_headless()
+
 
 func _ready() -> void:
 	if not Platform.is_headless():
@@ -89,11 +95,30 @@ func _ready() -> void:
 		_show(View.SUMMARY)
 	else:
 		_show(View.MAIN)
-	# Warms CarPreviewCache in the background (spread across frames — see its own file)
-	# so by the time a player actually reaches the CAR page, every car's preview is
-	# already built and the selection can move between them with no per-car lag at all.
-	# Idempotent: cheap to call on every hub visit, since a car already cached is skipped.
-	CarPreviewCache.warm_all()
+	# Warms CarPreviewCache so that by the time a player reaches the CAR page, every car's
+	# preview is already built and the selection can move between them with no per-car lag
+	# at all. Idempotent: cheap to call on every hub visit, since a car already cached is
+	# skipped.
+	#
+	# INTERACTIVE loads hold the hub's loading stage up until warming has genuinely
+	# finished: MenuShowcase._build() already shows its own LoadingScreen for the
+	# background-track half of hub startup, and this one covers the CAR half — the pages
+	# exist beneath it the whole time, but nothing is clickable through the black overlay,
+	# so the per-car CarProp.spawn cost lands where the player reads it as loading instead
+	# of as a stuttering menu. The old fire-and-forget trickle ran those same synchronous
+	# build chunks INSIDE interactive frames — the hub hitched for its first seconds, and a
+	# player who reached the CAR page before the trickle got there paid synchronous builds
+	# on page open. Headless keeps the trickle (there is no screen to hold, and tests must
+	# not block on warming).
+	if _warm_behind_loading_screen:
+		var loading := LoadingScreen.new()
+		add_child(loading)
+		loading.set_title("Loading…")
+		await CarPreviewCache.warm_all()
+		if is_instance_valid(loading):
+			loading.finish()
+	else:
+		CarPreviewCache.warm_all()
 
 
 # The heading each view carries. The SUMMARY heading is the one that says something the

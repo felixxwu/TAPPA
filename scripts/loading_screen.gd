@@ -14,10 +14,11 @@ extends CanvasLayer
 # the player doesn't need to know the game is "Placing signs…", and world.gd
 # ::_stage still print()s the stage name for perf debugging regardless. The tip
 # CYCLES to a fresh draw every _TIP_CYCLE_SEC so a long load doesn't sit on one
-# line for its whole duration. Other callers (hq.gd, hq_challenge.gd) build
-# their OWN LoadingScreen instance for a menu-transition wait and call
-# `set_step()` on it directly with their own short status text — that path
-# locks the step line (see `_step_locked`) and is unaffected by the cycle.
+# line for its whole duration. Other callers (menu_showcase.gd's build,
+# hub_shell.gd's car-preview warming — both covering hub startup rather than a
+# stage) build their OWN LoadingScreen instance and set_title() it; the step
+# line keeps cycling its tips under them, and only a set_step() call locks it
+# (see `_step_locked`).
 #
 # The headline's trailing ellipsis is ANIMATED (0 → 1 → 2 → 3 dots, looping)
 # rather than a static "…". Because the headline is center-aligned the dots
@@ -99,9 +100,9 @@ func _init() -> void:
 	_refresh_dots()
 
 	_step = Label.new()
-	# A random tip for the whole load — see the header comment and LoadingTips. A caller
-	# that wants its OWN status text instead (hq.gd, hq_challenge.gd) overwrites this via
-	# set_step() on its own instance immediately after construction.
+	# The FIRST tip draw — _process redraws it every _TIP_CYCLE_SEC unless the step
+	# line is locked. A caller that wants its OWN status text instead overwrites this
+	# via set_step() on its own instance immediately after construction.
 	_step.text = UITheme.caps(LoadingTips.random())
 	_step.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# Word-wrap rather than overflow: unlike the short status lines set_step() carries
@@ -173,9 +174,9 @@ func set_stage(index: int, total: int) -> void:
 # Overwrite the step line with `text` (e.g. "Preparing the garage…"), replacing whatever
 # random tip _init() picked. world.gd's own generation stages do NOT call this any more —
 # see the header comment — but a caller wanting a short, specific status line on its own
-# LoadingScreen instance still can (hq.gd, hq_challenge.gd). Calling this LOCKS the step
-# line: the tip cycle is stopped so a caller's own status text is never overwritten by a
-# random tip on the next 7-second tick.
+# LoadingScreen instance still can. Calling this LOCKS the step line: the tip cycle is
+# stopped so a caller's own status text is never overwritten by a random tip on the next
+# 7-second tick.
 func set_step(text: String) -> void:
 	if _step != null:
 		_step.text = UITheme.caps(text)

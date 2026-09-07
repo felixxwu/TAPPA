@@ -355,17 +355,25 @@ an ancestor stops a `SubViewport` costing render time while parked, the same way
 any other `CanvasItem`. A card that STAYS in the window across a move is left untouched
 entirely.
 
-**Warmed in the background, not built on demand.** `HubShell._ready()` fires
-`CarPreviewCache.warm_all()` (fire-and-forget — it's a coroutine, not awaited) every time
-the hub loads, which walks every owned + unowned-catalogue car and builds (then parks)
-whichever aren't cached yet, yielding a frame every `_WARM_PER_FRAME` cars rather than
-doing it all in one synchronous burst — building every car's preview synchronously in one
-call is the ORIGINAL freeze bug (shape 1 above), just moved to hub-load instead of
-removed, so the spread-out yielding is the part that actually matters. Idempotent and
-cheap on every later hub visit: a car already cached is skipped instantly, so only a
-genuinely new one (just bought, say) costs anything. By the time a player has navigated
-MAIN → REGION → CAR, warming has usually had several frames' head start, so most or all
-cars are already built when the page opens.
+**Warmed behind the hub's loading screen, not built on demand.** `HubShell._ready()`
+fires `CarPreviewCache.warm_all()` every time the hub loads, which walks every owned +
+unowned-catalogue car and builds (then parks) whichever aren't cached yet, yielding a
+frame every `_WARM_PER_FRAME` cars rather than doing it all in one synchronous burst —
+building every car's preview synchronously in one call is the ORIGINAL freeze bug (shape
+1 above), just moved to hub-load instead of removed, so the spread-out yielding is the
+part that actually matters. On an INTERACTIVE load HubShell AWAITS the call while holding
+its own `LoadingScreen` over the pages (MenuShowcase's build shows its own for the
+background-track half of hub startup — same overlay pattern, second owner), so the
+per-car build chunks land behind a loading screen the player reads as startup rather
+than as a menu stuttering through its first seconds, and the CAR page afterwards opens on
+pure cache hits. The original fire-and-forget form is retained for HEADLESS loads only
+(tests/tools: no screen to hold, and suites must not block on warming). Awaiting
+`warm_all()` means waiting for the whole cache even when a pass is already running — a
+second call WAITS for the in-flight pass instead of returning "done" early, which is the
+guarantee HubShell's loading screen relies on. Idempotent and cheap on every later hub
+visit: a car already cached is skipped instantly, so only a genuinely new one (just
+bought, say) costs anything — a post-run return to the hub holds its overlay for barely a
+frame.
 
 `CardCarousel.get_card(index)` is the accessor `_sync_car_previews` needs (reach back
 into a card's `visual` slot after `add_card` returned it). Don't revert to a page-scoped
