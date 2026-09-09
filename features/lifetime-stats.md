@@ -6,17 +6,24 @@
 
 Persistent counters that track a player's career across every run, region and
 challenge — never reset by a failed run (`todo/roguelike-pivot.md`, "Lifetime global
-stats"). They are what `features/perks.md`'s unlock gates read: a perk stays
+stats"). They are what `features/skills.md`'s unlock gates read: a skill stays
 locked until one of these counters crosses an authored threshold.
+
+Each entry carries a `goal` — the IMPERATIVE phrase a skill's unlock gate renders as
+(`LifetimeStats.goal_for(DAMAGE_TAKEN, 300)` → "take 300 damage"), distinct from the
+`label`, which is the STATS page's read-out name ("Damage taken"). A stat declared
+without a `goal` makes every skill gating on it fall back to the read-out form —
+`test_skill_library.gd -> test_every_unlock_stat_has_an_imperative_goal_phrase`
+catches that at the table level.
 
 ## The registry
 
 One authored dict, `LifetimeStats.STATS`, mirroring the RR original's
 `GLOBAL_STAT_DEFINITIONS` (`roguelike-rally/src/game/constants.ts`) and the "one
 registry, not parallel lists" rule that project's own `CLAUDE.md` states. Adding a
-stat is a one-place change: a new key in `STATS` (with a `const` id, a `label` and a
-`description`), added to `IDS`. Nothing else — the menu, the perk gates, and the save
-backfill all read this one table, never a duplicated id list.
+stat is a one-place change: a new key in `STATS` (with a `const` id, a `label`, a
+`goal` and a `description`), added to `IDS`. Nothing else — the menu, the skill gates,
+and the save backfill all read this one table, never a duplicated id list.
 
 Every stat is persisted on `Save.profile[Save.KEY_LIFETIME]` (a `{stat_id: int}`
 dict), and **only ever grows**. Soft permadeath destroys a run — its stage progress,
@@ -47,7 +54,7 @@ asymmetry is the whole point (mirrors the money/regions-cleared/boost-levels blo
 | `regions_cleared_total` | yes | `RegionRunMode.record_outcome()`, on every COMPLETED region run — repeats included (decision 12's grind valve), unlike the unique `Save.KEY_REGIONS_CLEARED` unlock ledger it sits beside |
 | `damage_taken` | yes | `RunSession.report_event_result`, alongside `Save.apply_damage`, rounded to the nearest whole HP |
 | `money_earned` | yes | `Save.add_money` — the ONE funnel every money source (stage payout, fast-completion bonus, a future challenge reward) already goes through |
-| `money_spent` | yes | `Save.spend_money` — the ONE funnel every purchase (car, boost level, engine-swap unlock, perk, drivetrain conversion) already goes through |
+| `money_spent` | yes | `Save.spend_money` — the ONE funnel every purchase (car, boost level, engine-swap unlock, skill, drivetrain conversion) already goes through |
 | `best_region_order` | yes | `RegionRunMode.record_outcome()`, ratcheted via `raise_lifetime_stat` against `region_index()` |
 | `distance_driven_m` | yes | `RunSession.report_event_result`, from the offset `world.gd` snapshots at the finish crossing (`_event_distance_at_finish`). The odometer is `TrackProgress.progress_offset()` — a BEST-offset reading, so forward progress down the centreline counts and a reverse or a wander off it does not. Missed stages count too: the metres were driven either way |
 
@@ -58,7 +65,7 @@ covered automatically, with nothing to remember to wire.
 ## The menu
 
 `HubShell.View.STATS`, reached from `View.MAIN`'s "Lifetime stats" row. Pure
-read-out — one `UITheme.label` row per `LifetimeStats.IDS`, in table order. **The
+read-out — `LifetimeStats.IDS` in table order, laid out TWO per row (a 2-wide `GridContainer`) so ten stats do not run the page too tall. **The
 menu-nav trap this page exists to avoid:** a page of nothing but read-only rows has
 nothing focusable at all if every row is a `Label` — `MenuNav` only walks focusable
 controls (`features/menu-navigation.md`). The page's Back action (a real `Button`,
@@ -75,6 +82,6 @@ broken counter rather than an unfinished feature.
 
 ## Notes
 
-- These counters are read ONLY by the unlock gates. A perk's actual effect comes from
-  its `effect_fields` (`features/perks.md` → "What each perk actually does"), never
-  from a lifetime stat, so a counter that stops moving weakens no equipped perk.
+- These counters are read ONLY by the unlock gates. A skill's actual effect comes from
+  its `effect_fields` (`features/skills.md` → "What each skill actually does"), never
+  from a lifetime stat, so a counter that stops moving weakens no equipped skill.

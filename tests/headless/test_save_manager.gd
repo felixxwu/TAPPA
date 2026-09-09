@@ -299,7 +299,7 @@ func test_damage_past_zero_keeps_the_car_and_its_bent_wheels() -> void:
 
 
 # heal_car — the OTHER way HP climbs back (RunSession.report_event_result routes a stage
-# that ended with a net heal here; the "self_healing" perk, todo/roguelike-pivot.md
+# that ended with a net heal here; the "self_healing" skill, todo/roguelike-pivot.md
 # decision 51). Caps at the car's authored max_hp and refuses a non-positive amount.
 func test_heal_car_gives_hp_back_and_caps_at_max() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
@@ -1000,8 +1000,8 @@ func test_a_fresh_profile_declares_the_run_meta_block() -> void:
 	assert_true(p.has(_save.KEY_MONEY), "money is declared")
 	assert_typeof(p[_save.KEY_REGIONS_CLEARED], TYPE_ARRAY, "regions_cleared is a list of ids")
 	assert_typeof(p[_save.KEY_BOOST_LEVELS], TYPE_DICTIONARY, "boost_levels maps id -> level")
-	assert_typeof(p[_save.KEY_BOUGHT_PERKS], TYPE_ARRAY, "bought_perks is a list of ids")
-	assert_typeof(p[_save.KEY_EQUIPPED_PERKS], TYPE_ARRAY, "equipped_perks is a list of ids")
+	assert_typeof(p[_save.KEY_BOUGHT_SKILLS], TYPE_ARRAY, "bought_skills is a list of ids")
+	assert_typeof(p[_save.KEY_EQUIPPED_SKILLS], TYPE_ARRAY, "equipped_skills is a list of ids")
 	assert_typeof(p[_save.KEY_LIFETIME], TYPE_DICTIONARY, "lifetime maps stat -> total")
 
 
@@ -1011,8 +1011,8 @@ func test_the_run_meta_block_round_trips_through_a_save_and_load() -> void:
 	_save.profile[_save.KEY_MONEY] = 1234
 	_save.profile[_save.KEY_REGIONS_CLEARED] = ["home"]
 	_save.profile[_save.KEY_BOOST_LEVELS] = {"engine": 2}
-	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_perk"]
-	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_perk"]
+	_save.profile[_save.KEY_BOUGHT_SKILLS] = ["fx_skill"]
+	_save.profile[_save.KEY_EQUIPPED_SKILLS] = ["fx_skill"]
 	_save.profile[_save.KEY_LIFETIME] = {"stages_cleared": 7}
 	_save.save_now()
 	_save.load_or_new()
@@ -1021,63 +1021,63 @@ func test_the_run_meta_block_round_trips_through_a_save_and_load() -> void:
 	assert_eq(_save.profile[_save.KEY_REGIONS_CLEARED], ["home"], "cleared regions survive")
 	assert_eq(int((_save.profile[_save.KEY_BOOST_LEVELS] as Dictionary)["engine"]), 2,
 		"purchased boost levels survive")
-	assert_eq(_save.profile[_save.KEY_BOUGHT_PERKS], ["fx_perk"], "bought perks survive")
-	assert_eq(_save.profile[_save.KEY_EQUIPPED_PERKS], ["fx_perk"], "equipped perks survive")
+	assert_eq(_save.profile[_save.KEY_BOUGHT_SKILLS], ["fx_skill"], "bought skills survive")
+	assert_eq(_save.profile[_save.KEY_EQUIPPED_SKILLS], ["fx_skill"], "equipped skills survive")
 	assert_eq(int((_save.profile[_save.KEY_LIFETIME] as Dictionary)["stages_cleared"]), 7,
 		"lifetime stats survive")
 
 
-# --- Perks (todo/roguelike-pivot.md "Perks — a straight lift from RR") ----------
+# --- Skills (todo/roguelike-pivot.md "Skills — a straight lift from RR") ----------
 # Save-level purchase/equip mutators. The state-machine contract (locked/purchasable/
-# owned, the equip cap) belongs to test_perk_library.gd; this file only pins the
+# owned, the equip cap) belongs to test_skill_library.gd; this file only pins the
 # "a refused purchase leaves the profile byte-identical" rule every meta-shop
 # purchase shares (see the engine-swap-unlock tests just above).
 
-const _FX_PERK_ID := "fx_save_manager_perk"
-const _FX_PERKS: Array[Dictionary] = [
+const _FX_PERK_ID := "fx_save_manager_skill"
+const _FX_SKILLS: Array[Dictionary] = [
 	{
-		"id": _FX_PERK_ID, "label": "Fixture Perk", "price": 500,
+		"id": _FX_PERK_ID, "label": "Fixture Skill", "price": 500,
 		"unlock": {"stat": "fx_stat", "threshold": 3},
 	},
 ]
 
 
-func test_buy_perk_refuses_while_locked_and_changes_nothing() -> void:
-	PerkLibrary.override_for_test(_FX_PERKS)
+func test_buy_skill_refuses_while_locked_and_changes_nothing() -> void:
+	SkillLibrary.override_for_test(_FX_SKILLS)
 	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 0}
 	_save.profile[_save.KEY_MONEY] = 999999
 	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_perk(_FX_PERK_ID), "below its threshold — refused")
+	assert_false(_save.buy_skill(_FX_PERK_ID), "below its threshold — refused")
 	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
-	PerkLibrary.reset()
+	SkillLibrary.reset()
 
 
-func test_buy_perk_succeeds_once_unlocked_and_affordable() -> void:
-	PerkLibrary.override_for_test(_FX_PERKS)
+func test_buy_skill_succeeds_once_unlocked_and_affordable() -> void:
+	SkillLibrary.override_for_test(_FX_SKILLS)
 	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 3}
 	_save.profile[_save.KEY_MONEY] = 500
-	assert_true(_save.buy_perk(_FX_PERK_ID), "unlocked and affordable")
-	assert_true(_save.owns_perk(_FX_PERK_ID))
+	assert_true(_save.buy_skill(_FX_PERK_ID), "unlocked and affordable")
+	assert_true(_save.owns_skill(_FX_PERK_ID))
 	assert_eq(_save.money(), 0, "the price is fully spent")
-	PerkLibrary.reset()
+	SkillLibrary.reset()
 
 
-func test_equip_perk_refuses_past_the_config_cap_and_changes_nothing() -> void:
-	var cap := int(Config.data.perk_max_equipped)
+func test_equip_skill_refuses_past_the_config_cap_and_changes_nothing() -> void:
+	var cap := int(Config.data.skill_max_equipped)
 	var extra: Array[Dictionary] = []
 	for i in cap + 1:
 		extra.append({"id": "fx_cap_%d" % i, "label": "Fixture %d" % i, "price": 0,
 			"unlock": {"stat": "fx_stat", "threshold": 0}})
-	PerkLibrary.override_for_test(extra)
+	SkillLibrary.override_for_test(extra)
 	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 1}
 	for i in cap:
-		_save.buy_perk("fx_cap_%d" % i)
-		assert_true(_save.equip_perk("fx_cap_%d" % i), "setup: filling the cap")
-	_save.buy_perk("fx_cap_%d" % cap)
+		_save.buy_skill("fx_cap_%d" % i)
+		assert_true(_save.equip_skill("fx_cap_%d" % i), "setup: filling the cap")
+	_save.buy_skill("fx_cap_%d" % cap)
 	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.equip_perk("fx_cap_%d" % cap), "the cap refuses one more")
+	assert_false(_save.equip_skill("fx_cap_%d" % cap), "the cap refuses one more")
 	assert_eq(_save.profile, before, "a refused equip leaves the profile untouched")
-	PerkLibrary.reset()
+	SkillLibrary.reset()
 
 
 # --- Every persisted key is DECLARED, not conjured (ratchet) --------------------

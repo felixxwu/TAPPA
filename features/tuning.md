@@ -15,7 +15,7 @@ Player state lives on each `OwnedCar` (`Save`,
 before a stage. It used to be the free half of *Tuning & upgrades*, opposite the
 persistent parts model — that model is deleted, and what
 [upgrade-catalogue.md](upgrade-catalogue.md) documents now is the effects funnel run
-boosts and perks share. Tuning is **ungated on every axis** (decision 24); the "needs X
+boosts and skills share. Tuning is **ungated on every axis** (decision 24); the "needs X
 kit" locks below are gone with the parts that set them. A third, purely
 **cosmetic** system — swapping any car's wheels onto this one — shares tuning's
 free-and-reversible character but touches no stat at all; see

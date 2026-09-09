@@ -11,7 +11,7 @@ extends Node3D
 # unlike BushField's bushes — a spent coin stays spent for the rest of the stage).
 #
 # THE PICKUP RADIUS IS READ LIVE FROM GameConfig EVERY TICK, never cached at build()
-# — see _timed_physics_process. That is deliberate: PerkLibrary's "coin_magnet"
+# — see _timed_physics_process. That is deliberate: SkillLibrary's "coin_magnet"
 # ("wider coin pickup radius") is wired in a LATER pass (decision 51) and its whole
 # job is to widen GameConfig.coin_pickup_radius_m before this reads it; caching the
 # radius here would give that pass nothing to reach.
@@ -98,7 +98,7 @@ func _timed_physics_process(_delta: float) -> void:
 		return
 	var xf: Transform3D = _car.global_transform
 	var car_xz := Vector2(xf.origin.x, xf.origin.z)
-	# Live read (see header) — the coin_magnet perk pass widens this, not this script.
+	# Live read (see header) — the coin_magnet skill pass widens this, not this script.
 	var radius := Config.data.coin_pickup_radius_m
 	for idx in find_pickups(car_xz, _points, _collected, radius):
 		_collect(idx)

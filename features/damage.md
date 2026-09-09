@@ -15,7 +15,7 @@ gutless car for the rest of the run — a misfiring, rev-limited engine and bent
 a clock that is now much harder to beat, which is the whole of the cost (decision 6:
 damage never wrecks; it makes the timer harder). HP climbs back two ways: the
 **between-stage pit repair**, which the player must CHOOSE over a boost
-([region-runs.md](region-runs.md)), and the **self-heal trickle** an equipped perk buys
+([region-runs.md](region-runs.md)), and the **self-heal trickle** an equipped skill buys
 (below). The paid star repair at the tuning lift is deleted with the star economy and the
 lift (decision 21).
 
@@ -393,10 +393,10 @@ stop a discontinuous velocity reading as a crash, which has nothing to do with m
 
 **`damage_regen_hp_per_s` is 0.0 on the authored baseline**, so this is a no-op for
 every car unless something writes it. The only writer is the effects funnel: the
-"Self Healing" perk's `EFFECTS` row (`damage_regen_set`) sets it from
-`perk_heal_hp_per_s`, and `UpgradeLibrary._reseed_globals` puts it back to 0.0 the
-moment the perk comes off. `DamageModel` itself knows nothing about perks — it reads a
-config knob like every other rule here. See [perks.md](perks.md).
+"Self Healing" skill's `EFFECTS` row (`damage_regen_set`) sets it from
+`skill_heal_hp_per_s`, and `UpgradeLibrary._reseed_globals` puts it back to 0.0 the
+moment the skill comes off. `DamageModel` itself knows nothing about skills — it reads a
+config knob like every other rule here. See [skills.md](skills.md).
 
 It heals HP **only**. `wheel_toe` stays bent (only `field_repair` straightens wheels),
 so a self-healing car still has a reason to take the between-stage repair. A stage that
@@ -510,7 +510,7 @@ the "certain point" past which damage stops weakening the engine),
 `wreck_recovery_hp_fraction` and `wreck_settle_max_seconds` were **removed** with the
 wreck flow. `config/game_config.tres` overrides neither of the two new knobs, so their
 `game_config.gd` defaults (0.8 and 0.6) are what ships. Per-car `max_hp` is CarLibrary
-metadata, **not** a `GameConfig` field. The between-event pit repair and the perk-driven
+metadata, **not** a `GameConfig` field. The between-event pit repair and the skill-driven
 `damage_regen_hp_per_s` trickle are the only two heals there are.
 Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
 values are not).

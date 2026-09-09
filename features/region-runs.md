@@ -5,7 +5,7 @@ pick a car, and drive **8 stages back to back against a fixed clock**. Miss a
 stage's target time and the run is over on the spot — that is the only hard fail
 state in the game. Money is banked at every stage clear and never taken back.
 
-**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_save_manager.gd` (the meta shop: `buy_car`/`buy_boost_level`/`buy_engine_swap_unlock`), `tests/headless/test_hub_shell.gd` (the SHOP/BOOST_SHOP screens + nav)
+**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_save_manager.gd` (the meta shop: `buy_car`/`buy_boost_level`/`buy_engine_swap_unlock`), `tests/headless/test_hub_shell.gd` (the SHOP screen + nav)
 
 This doc owns the **run spine** — the session, its strategy seam, the stage draw,
 the timer, the money and the between-stage pick. The Daily/Weekly/Monthly
@@ -14,8 +14,8 @@ challenge, which is the spine's *other* caller, is documented in
 
 **Stages 3-6 are landed:** the spine, region select + linear unlock, in-run boosts,
 and now the meta shop (boost LEVELS, car purchasing, the Engine Swap unlock) — see
-"The meta tier" below. Lifetime stats + perks (stage 7) and coins (stage 8,
-[collectables.md](collectables.md)) are landed too, as is the pass that wired the perks
+"The meta tier" below. Lifetime stats + skills (stage 7) and coins (stage 8,
+[collectables.md](collectables.md)) are landed too, as is the pass that wired the skills
 to real effects (decision 51) — every stage of the pivot plan is now built.
 
 ## The pieces
@@ -204,9 +204,9 @@ stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_sa
   the money is;
 - **fast bonus**, proportional to the time saved against the target — the reason to
   drive well rather than merely clear the clock;
-  Two perks move the terms above rather than adding a term of their own: "Trail Blazer"
+  Two skills move the terms above rather than adding a term of their own: "Trail Blazer"
   multiplies `run_fast_bonus_money` and "Road Scholar" adds to `run_stage_money_base`,
-  both through the effects funnel before this function reads them ([perks.md](perks.md));
+  both through the effects funnel before this function reads them ([skills.md](skills.md));
 - **the region scale** (decision 31) — `run_money_region_multiplier` (2.0) COMPOUNDED
   per region index, so each region in the unlock order pays flat-out DOUBLE the one
   before it (1x, 2x, 4x, 8x, ...). Clearing a region pays no money of its own — the
@@ -277,7 +277,7 @@ silently, exactly as before.
 ```gdscript
 if RunSession.is_active():
     owned = owned.duplicate(true)
-    owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
+    owned["boosts"] = RunSession.boosts() + SkillLibrary.equipped_effects(Save.profile)
     owned["drivetrain_override"] = RunSession.drivetrain_override()
 $Car.apply_owned(owned)
 ```
@@ -286,10 +286,10 @@ $Car.apply_owned(owned)
 conversion* below) — same lifetime as a boost, written onto the same throwaway copy so
 neither ever reaches `profile["cars"]`.
 
-**Equipped perks ride the same list** (decision 51 — "do not build a parallel modifier
-path"; see [perks.md](perks.md)). The two differ in LIFETIME, not mechanism: a boost is
-run-scoped and wiped when the run ends, while a perk is a permanent profile purchase, so
-perks are re-derived from the profile on every stage boot rather than carried on the run
+**Equipped skills ride the same list** (decision 51 — "do not build a parallel modifier
+path"; see [skills.md](skills.md)). The two differ in LIFETIME, not mechanism: a boost is
+run-scoped and wiped when the run ends, while a skill is a permanent profile purchase, so
+skills are re-derived from the profile on every stage boot rather than carried on the run
 object. Both land on the same duplicated dict, which is what keeps either of them out of
 the saved profile.
 
@@ -378,7 +378,7 @@ never `Save`'s persisted car — see *Where boosts live* above). `HubShell`'s ol
 Stage 6 built all three. They are thin wrappers over
 `Save.spend_money` sharing one refusal
 rule: an invalid or unaffordable purchase leaves the profile **byte-identical** — no
-half-spend, no partial mutation. `HubShell`'s `SHOP` / `BOOST_SHOP` views
+half-spend, no partial mutation. `HubShell`'s `SHOP` view
 (`features/hub-shell.md`) are the only sellers.
 
 **Boost levels.** `Save.KEY_BOOST_LEVELS` (id -> level, never wiped by a failed run —

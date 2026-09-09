@@ -1793,14 +1793,14 @@ func _field_car(instance_id: int) -> void:
 		# temporary picks straight into the profile, which must never happen (they are
 		# wiped when the run ends, win or lose; see RunSession._finish_locally).
 		owned = owned.duplicate(true)
-		# PERKS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
+		# SKILLS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
 		# UpgradeLibrary.EFFECTS + a car's boosts list; do not build a parallel modifier
 		# path"). The two lists differ in LIFETIME, not in mechanism: a boost is run-scoped
-		# and wiped when the run ends, while an equipped perk is a permanent profile
-		# purchase — so perks are re-derived from the profile on every stage boot rather
+		# and wiped when the run ends, while an equipped skill is a permanent profile
+		# purchase — so skills are re-derived from the profile on every stage boot rather
 		# than carried on the run object. Both land on the same duplicated dict, which is
 		# what keeps either of them out of the saved profile.
-		owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
+		owned["boosts"] = RunSession.boosts() + SkillLibrary.equipped_effects(Save.profile)
 		# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above —
 		# see RunSession.choose_drivetrain / drivetrain_override). Written onto this same
 		# duplicated dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override
@@ -1867,7 +1867,7 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# _on_finish_reached), NOT here: this handler fires on the NEXT button, by which time
 	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
 	# that post-finish coast would be wrongly charged to the event's damage.
-	# SIGNED, not clamped at 0: the "self_healing" perk (decision 51) can leave a stage
+	# SIGNED, not clamped at 0: the "self_healing" skill (decision 51) can leave a stage
 	# with MORE HP than it started, and clamping here would silently throw that repair
 	# away at every stage boundary. RunSession.report_event_result reads the sign.
 	var hp_lost: float = _event_start_hp - _event_hp_at_finish

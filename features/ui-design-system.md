@@ -75,7 +75,7 @@ left alone (e.g. the big 3·2·1 countdown stays large).
 
 ## The card carousel
 
-Five hub pages (MAIN/REGION/CAR/SHOP/PERKS) present their choices as a
+Five hub pages (MAIN/REGION/CAR/SHOP/SKILLS) present their choices as a
 [`CardCarousel`](card-carousel.md) rather than a vertical row list — a horizontal,
 side-scrolling strip of playing-card-proportioned panels, the centred card opaque and the
 rest dimmed. It reuses the same house panel box (`UITheme.panel_box`) and label styling
@@ -316,3 +316,22 @@ There is no longer a caption-on-fill widget to guard, so the drop-shadow half of
 is documentation only. The tint half is still live and still guarded, by
 `test_hud.gd::test_health_grading_recolours_the_fill_only` — the health grade must move
 the fill without dragging the icon's ink with it.
+## Card icons
+
+Every card's visual slot (`CardCarousel` cards — `features/card-carousel.md`) draws one
+SVG from `icons/cards/`, named by what the card is: a boost/skill's catalogue id
+(`grip.svg`, `coin_magnet.svg`, …) or a fixed name (`car`, `region`, `region_locked`,
+`engine_swap`, `shop`, `skills`, `stats`, `settings`, `new_run`, `resume_run`,
+`rally_challenge`, `generic`).
+
+**Style rules — keep every new icon inside them:**
+
+- **White only.** No other colour, no gradients; `stroke="#FFFFFF"`.
+- **Uniform line weight:** `stroke-width="6"` on a `0 0 96 96` viewBox, everywhere.
+- **`stroke-linecap="round"` and `stroke-linejoin="round"`** — never butt/mitre.
+- **Outline, not fill** (`fill="none"`); the one exception is a solid-white accent cell
+  (the checkered flag's squares, a gauge's hub dot).
+
+`hub_shell.gd::_card_icon` falls back to `generic.svg` for an id with no authored icon
+(a test fixture's `fx_*` id); a SHIPPED catalogue entry missing its icon is caught by
+`test_hub_shell.gd -> test_every_catalogued_boost_and_skill_has_a_card_icon`.

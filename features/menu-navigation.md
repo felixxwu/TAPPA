@@ -125,7 +125,7 @@ the pre-stage **start line**'s MENU row and its **Tune Car** overlay
 attaches `MenuNav` too, but has **no live caller left** since the persistent parts model
 that hosted it was deleted (`todo/roguelike-pivot.md` — the upgrades grid it used to pop out
 of, `upgrades_grid.gd`, is gone) — it's orphaned code, not a reachable menu, until something
-(the stage-5/6 boost shop, most likely) re-hosts it or it's deleted outright.
+(the shop, most likely) re-hosts it or it's deleted outright.
 
 > **When you add or change a menu, wire its navigation in the same piece of work.** Call
 > **`MenuNav.attach(root, {first = <button>, on_back = <Callable>})`** once after building

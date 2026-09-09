@@ -1,6 +1,6 @@
 extends GutTest
 # CardCarousel (scripts/card_carousel.gd) — the shared horizontal card-list widget
-# used by the hub's MAIN/REGION/CAR/SHOP/PERKS pages. Covers selection/confirm signals,
+# used by the hub's MAIN/REGION/CAR/SHOP/SKILLS pages. Covers selection/confirm signals,
 # tap-to-select vs tap-to-confirm, and the nearest-card snap the drag path uses — NOT
 # any page's wording/content, which belongs to test_hub_shell.gd instead.
 

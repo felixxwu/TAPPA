@@ -91,7 +91,7 @@ Declared in `project.godot` `[autoload]`:
   reading the clobbered values — snapshot + restore `Config.data` around any
   secondary `apply_car()` (as `_spawn_queue` does). See [configuration.md](configuration.md).
 - **`Save`** → `scripts/save_manager.gd`. Loads the player profile (owned cars, HP, money,
-  boost levels, perks, lifetime stats, the paused-run slot) from `user://profile.json` at
+  boost levels, skills, lifetime stats, the paused-run slot) from `user://profile.json` at
   boot and
   autosaves on every meaningful change. Per-player *mutable progress*, kept
   distinct from `Config`'s authored baseline. See

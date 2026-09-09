@@ -8,9 +8,9 @@ oriented before diving into source.
 `rally` is a small PS1-aesthetic **rally roguelike** built in **Godot 4.6**
 (GL Compatibility renderer). You pick a region and drive eight stages back to back
 on one car; the per-stage target time is the only fail state. Money banked from
-stages you clear buys cars, permanent perks and boost levels between runs, and a
+stages you clear buys cars, permanent skills and boost levels between runs, and a
 failed run keeps none of its in-run boosts — only the lifetime counters that gate
-the perks.
+the skills.
 
 > **New to this codebase, or last saw it before September 2026?** Read
 > [`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) first. The game was a rally *career*
@@ -106,11 +106,11 @@ the perks.
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the live "player vs rival pace" delta ([rival-ghost.md](rival-ghost.md)); the old permanent live-standings readout (`LiveStandings`) is deleted |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding, the pause menu, modals (vertical slice; full diegetic UI deferred) |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row, the diegetic-HQ spatial regime. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
-| [card-carousel.md](card-carousel.md) | **`CardCarousel`** — the horizontal, side-scrolling card widget that replaced the vertical row list on the hub's MAIN/REGION/CAR/SHOP/PERKS pages. Cards, drag/snap, tap-to-select-vs-confirm, and the `menu_nav_handles_side` seam into `MenuNav` |
+| [card-carousel.md](card-carousel.md) | **`CardCarousel`** — the horizontal, side-scrolling card widget that replaced the vertical row list on the hub's MAIN/REGION/CAR/SHOP/SKILLS pages. Cards, drag/snap, tap-to-select-vs-confirm, and the `menu_nav_handles_side` seam into `MenuNav` |
 | [hub-shell.md](hub-shell.md) | The flat main scene (`HubShell` + `hub.tscn`) — main / region / car / run-summary pages on `MenuPage` + `MenuNav`, and decision 48's abandon-run confirm. Replaces the deleted diegetic 3D hub |
 | [menu-showcase.md](menu-showcase.md) | **`MenuShowcase`/`MenuShowcaseCamera`** — the live 3D scenic background behind the hub's pages: one fixed-seed track sliced into six region-themed segments, a border-safe camera rotation, and a per-region weather cycle. Foliage and the mobile LOD-tier cap are still open — see `todo/menu-background-showcase.md` |
-| [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure; the ledger perk unlock gates read |
-| [perks.md](perks.md) | The perk catalogue (`PerkLibrary`) and its locked → purchasable → owned → equipped state machine — money-bought, gated on lifetime stats, capped by `GameConfig.perk_max_equipped`; effects ride the `UpgradeLibrary.EFFECTS` funnel via the fielded car's `boosts` list |
+| [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure; the ledger skill unlock gates read |
+| [skills.md](skills.md) | The skill catalogue (`SkillLibrary`) and its locked → purchasable → owned → equipped state machine — money-bought, gated on lifetime stats, capped by `GameConfig.skill_max_equipped`; effects ride the `UpgradeLibrary.EFFECTS` funnel via the fielded car's `boosts` list |
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, `MenuPage.open_modal`, and `MenuNav.input_blocked` |
 | [world-panel.md](world-panel.md) | `WorldPanel` — menus hosted in the 3D world, welded off-square to an anchor (4 HQ screens; shipped ON) |
@@ -159,7 +159,7 @@ the perks.
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
 | Car performance rating | `scripts/car_performance.gd` (`CarPerformance` — rating, benchmark time, `merged_meta`), `scripts/benchmark_track.gd` (`BenchmarkTrack` — the fixed test track) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the linear unlock order) |
-| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts), `scripts/perk_library.gd` (`PerkLibrary` — the permanent perks) |
+| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts), `scripts/skill_library.gd` (`SkillLibrary` — the permanent skills) |
 | Roster-wide stat scale | `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max), `scripts/stat_bar.gd` (`StatBar` — segmented bar widget drawn against it) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the start line) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |

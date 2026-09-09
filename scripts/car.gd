@@ -1267,7 +1267,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# suppression branch: the reset/teleport countdown exists to stop a discontinuous
 	# velocity reading as a crash, which has nothing to do with healing — a car should
 	# not stop mending because it was just respawned. A no-op unless the effects funnel
-	# wrote cfg.damage_regen_hp_per_s (the "self_healing" perk).
+	# wrote cfg.damage_regen_hp_per_s (the "self_healing" skill).
 	if damage != null:
 		@warning_ignore("return_value_discarded")
 		damage.regen(state.step, cfg)

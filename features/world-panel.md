@@ -61,7 +61,7 @@ The pattern worth keeping from both: **a diegetic panel suits a screen that is m
 controls attached to a thing you are looking at, and suits a dense information page badly.**
 The four that migrated were button rows and short readouts; the two that came back were
 tables of text. If world panels are ever re-hosted, that is the test to apply — and note
-the roguelike's own screens (a shop list, a perk list, a stats ledger) are all tables of
+the roguelike's own screens (a shop list, a skill list, a stats ledger) are all tables of
 text.
 
 **The lift was the screen that proved the input pump**, and that is the part worth

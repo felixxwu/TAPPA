@@ -878,8 +878,8 @@ func has_nitrous() -> bool:
 @export_range(0.0, 2000.0) var impact_max_loss := 450.0
 ## HP regained per second while driving. A LIVE field, not an authoring knob: it is 0.0 on
 ## the authored baseline (nothing heals by default) and the effects funnel writes it — the
-## "Self Healing" perk's EFFECTS row sets it from perk_heal_hp_per_s, and UpgradeLibrary's
-## reseed pre-pass puts it back to 0.0 the moment the perk is unequipped. Applied by
+## "Self Healing" skill's EFFECTS row sets it from skill_heal_hp_per_s, and UpgradeLibrary's
+## reseed pre-pass puts it back to 0.0 the moment the skill is unequipped. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
@@ -3486,7 +3486,7 @@ func coin_layout_params() -> Dictionary:
 
 # Everything CoinField.build needs to render + sound a stage's coins. Deliberately
 # does NOT include coin_pickup_radius_m — CoinField reads that live, every tick, so
-# the later coin_magnet perk pass has one number to widen (see that field's comment).
+# the later coin_magnet skill pass has one number to widen (see that field's comment).
 func coin_render_params() -> Dictionary:
 	return {
 		"radius_m": coin_visual_radius_m,
@@ -4044,10 +4044,10 @@ func spectator_params() -> Dictionary:
 # never flagged ahead on the pacenote strip or anywhere else.
 ## Master switch, mirroring signs_enabled/rocks_enabled. Off places no coins at all.
 @export var coins_enabled := true
-## How many coins CoinLayout places on one stage, before any future perk multiplier.
-## PerkLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
-## (decision 51 wires perk effects after this stage) — nothing reads this through a
-## perk today.
+## How many coins CoinLayout places on one stage, before any future skill multiplier.
+## SkillLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
+## (decision 51 wires skill effects after this stage) — nothing reads this through a
+## skill today.
 @export_range(0, 12) var coins_per_stage := 4
 ## Minimum lateral distance (m) a coin's centre sits BEYOND the visible road edge
 ## (track_width / 2). This is the gamble decision 35 wants: a coin is never
@@ -4063,7 +4063,7 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 200.0) var coin_end_margin_m := 40.0
 ## Pickup trigger radius (m). Read LIVE by CoinField every physics tick, never
 ## cached — see that script's header. THE SINGLE FINDABLE VALUE the later
-## "coin_magnet" perk pass (decision 51, "wider coin pickup radius") widens.
+## "coin_magnet" skill pass (decision 51, "wider coin pickup radius") widens.
 @export_range(0.1, 5.0) var coin_pickup_radius_m := 1.4
 ## Money paid per coin collected, banked at STAGE CLEAR alongside the rest of that
 ## stage's payout (decision 36) — see RegionRunMode.stage_money. A missed stage's
@@ -4138,44 +4138,44 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 50000.0, 100.0) var engine_swap_unlock_price := 6000.0
 
 
-@export_group("Roguelike Perks")
-# THE PERK CAP (todo/roguelike-pivot.md "Perks — a straight lift from RR", stage 7 of
-# todo/roguelike-pivot-plan.md). Owning a perk (Save.KEY_BOUGHT_PERKS) and EQUIPPING it
-# (Save.KEY_EQUIPPED_PERKS) are separate — this is the ceiling on the second list, read
-# by Save.equip_perk. RR's own constant is PERK_MAX_EQUIPPED = 3; a shipped default here
+@export_group("Roguelike Skills")
+# THE PERK CAP (todo/roguelike-pivot.md "Skills — a straight lift from RR", stage 7 of
+# todo/roguelike-pivot-plan.md). Owning a skill (Save.KEY_BOUGHT_SKILLS) and EQUIPPING it
+# (Save.KEY_EQUIPPED_SKILLS) are separate — this is the ceiling on the second list, read
+# by Save.equip_skill. RR's own constant is PERK_MAX_EQUIPPED = 3; a shipped default here
 # matching it is a starting point, not a pinned value — no test may assert this exact
-# number (CLAUDE.md), only that equip_perk refuses past whatever it is currently set to.
-## The most perks that may be equipped at once, whatever how many are owned.
-@export_range(1, 10) var perk_max_equipped := 3
+# number (CLAUDE.md), only that equip_skill refuses past whatever it is currently set to.
+## The most skills that may be equipped at once, whatever how many are owned.
+@export_range(1, 10) var skill_max_equipped := 3
 
-# --- Perk MAGNITUDES (decision 51: perks are wired through UpgradeLibrary.EFFECTS) ---
+# --- Skill MAGNITUDES (decision 51: skills are wired through UpgradeLibrary.EFFECTS) ---
 #
-# One field per perk, exactly the way @export_group("Roguelike Run Boosts") does it for
-# BoostLibrary: PerkLibrary's catalogue entries name the FIELD, never the number, and
-# PerkLibrary.effect_for re-reads Config.data live, so an inspector retune lands on the
+# One field per skill, exactly the way @export_group("Roguelike Run Boosts") does it for
+# BoostLibrary: SkillLibrary's catalogue entries name the FIELD, never the number, and
+# SkillLibrary.effect_for re-reads Config.data live, so an inspector retune lands on the
 # next stage boot with no code change. Nothing in tests/headless/ may pin one of these
-# (CLAUDE.md) — only "the perk reads this field" is testable.
+# (CLAUDE.md) — only "the skill reads this field" is testable.
 #
-# Every one of them is a GLOBAL tunable, not a per-car stat, which is why each perk's
+# Every one of them is a GLOBAL tunable, not a per-car stat, which is why each skill's
 # EFFECTS row carries `reseed` — see that table's header for why that flag exists and
 # what goes wrong without it.
-## "Coin Magnet" — multiplier on coin_pickup_radius_m while the perk is equipped.
-@export_range(1.0, 8.0, 0.1) var perk_coin_radius_mult := 3.0
+## "Coin Magnet" — multiplier on coin_pickup_radius_m while the skill is equipped.
+@export_range(1.0, 8.0, 0.1) var skill_coin_radius_mult := 3.0
 ## "Self Healing" — the HP/second trickle written onto damage_regen_hp_per_s.
-@export_range(0.0, 50.0, 0.5) var perk_heal_hp_per_s := 6.0
+@export_range(0.0, 50.0, 0.5) var skill_heal_hp_per_s := 6.0
 ## "Rubber Body" — multiplier on impact_ref_hp_loss (below 1.0 = softer hits).
-@export_range(0.1, 1.0, 0.05) var perk_damage_mult := 0.6
+@export_range(0.1, 1.0, 0.05) var skill_damage_mult := 0.6
 ## "Trail Blazer" — multiplier on run_fast_bonus_money (the time-saved payout).
-@export_range(1.0, 5.0, 0.1) var perk_fast_bonus_mult := 2.5
+@export_range(1.0, 5.0, 0.1) var skill_fast_bonus_mult := 2.5
 ## "Lucky Coins" — multiplier on coins_per_stage. Truncated to a whole coin count by the
 ## int field it writes, so a fractional multiplier rounds DOWN.
-@export_range(1.0, 5.0, 0.5) var perk_coin_count_mult := 3.0
+@export_range(1.0, 5.0, 0.5) var skill_coin_count_mult := 3.0
 ## "Iron Will" — added to run_target_pace_base, so EVERY stage target in the run is that
 ## much more generous against the reference-car optimum (see RegionRunMode.target_pace).
-@export_range(0.0, 1.0, 0.01) var perk_target_pace_add := 0.15
+@export_range(0.0, 1.0, 0.01) var skill_target_pace_add := 0.15
 ## "Road Scholar" — added to run_stage_money_base, i.e. to the stage-clear payout BEFORE
 ## the run's growth exponent and the region scale compound it.
-@export_range(0.0, 2000.0, 10.0) var perk_stage_money_add := 60.0
+@export_range(0.0, 2000.0, 10.0) var skill_stage_money_add := 60.0
 
 @export_group("Card Carousel")
 ## Height/width — a playing card is taller than it is wide (~3.5:2.5).

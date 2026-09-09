@@ -46,9 +46,9 @@ func _buttons() -> Array:
 	return out
 
 
-# MAIN/REGION/CAR/SHOP/PERKS present their rows as one CardCarousel (features/
-# card-carousel.md) rather than a Button per row now — CHALLENGE/BOOST_SHOP/STATS/
-# SETTINGS still don't. Null when the current page has no carousel.
+# MAIN/REGION/CAR/SHOP/SKILLS present their rows as one CardCarousel (features/
+# card-carousel.md) rather than a Button per row now — CHALLENGE/STATS/SETTINGS
+# still don't. Null when the current page has no carousel.
 func _carousel() -> CardCarousel:
 	var found := _page().find_children("*", "CardCarousel", true, false)
 	return (found[0] as CardCarousel) if not found.is_empty() else null
@@ -197,8 +197,8 @@ func test_touch_navigation_walks_main_to_region_to_car_and_back() -> void:
 # failure this guards.
 func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SUMMARY, HubShell.View.SHOP, HubShell.View.BOOST_SHOP,
-			HubShell.View.PERKS, HubShell.View.STATS, HubShell.View.CHALLENGE,
+			HubShell.View.SUMMARY, HubShell.View.SHOP,
+			HubShell.View.SKILLS, HubShell.View.STATS, HubShell.View.CHALLENGE,
 			HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame
@@ -223,7 +223,7 @@ func test_every_page_is_keyboard_navigable() -> void:
 # specifically must let the world show in its own empty space, not just around its edges).
 func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SHOP, HubShell.View.PERKS]:
+			HubShell.View.SHOP, HubShell.View.SKILLS]:
 		_shell._show(view)
 		await get_tree().process_frame
 		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
@@ -297,12 +297,10 @@ func test_settings_gives_its_own_sub_pages_first_refusal_backing_out() -> void:
 		"a second back, now at the settings root, leaves the settings page entirely")
 
 
-func test_boost_shop_backs_out_to_the_shop_not_the_main_page() -> void:
-	_shell._show(HubShell.View.BOOST_SHOP)
+func test_shop_backs_out_to_the_main_page() -> void:
+	_shell._show(HubShell.View.SHOP)
 	_shell._back()
-	assert_eq(_shell._view, HubShell.View.SHOP, "boost shop backs out to the shop page")
-	_shell._back()
-	assert_eq(_shell._view, HubShell.View.MAIN, "and the shop backs out to the main page")
+	assert_eq(_shell._view, HubShell.View.MAIN, "the shop backs out to the main page")
 
 
 # One page at a time. The shell frees the old page's CanvasLayer on every transition; a
@@ -383,8 +381,9 @@ func test_starting_a_run_with_nothing_paused_does_not_ask() -> void:
 
 # --- Linear region unlock (stage 4) -------------------------------------------
 
-# A locked region is on the page, named, and says what opens it — but is not focusable, so
-# the keyboard cannot land on a row it can never press. Asserts the RULE against a
+# A locked region is on the page, named (its card says just "Locked" + the pay rate —
+# NOT the gate it hides behind), but is not focusable, so the keyboard cannot land on a
+# card it can never press. Asserts the RULE against a
 # synthetic order rather than the shipped table: which region is second is authored data a
 # designer may reorder freely.
 func test_a_locked_region_is_shown_but_not_focusable() -> void:
@@ -399,7 +398,7 @@ func test_a_locked_region_is_shown_but_not_focusable() -> void:
 	# rather than pinning the presentation.
 	var joined := _all_texts()
 	assert_true(joined.contains("SECOND"), "the locked region is still listed")
-	assert_true(joined.contains("FIRST"), "and it names what opens it")
+	assert_true(joined.contains("FIRST"), "and the gate region is listed alongside it")
 
 	assert_false(_confirmable_texts().contains("LOCKED"),
 		"a locked card is not confirmable — the keyboard cannot land on it")
@@ -575,20 +574,40 @@ func test_an_unaffordable_car_row_is_shown_but_not_focusable() -> void:
 		"with no money, no Buy card is confirmable")
 
 
-func test_shop_reaches_boost_levels_and_engine_swap() -> void:
+# Every id the SHOP/SKILLS carousels key an icon by must have a real icons/cards/<id>.svg
+# — a new catalogue entry without its icon would silently fall back to the generic
+# sparkle in _card_icon, which is fine for a test fixture's fx_* id but a shipped
+# wording-quality bug this catches at the table level.
+func test_every_catalogued_boost_and_skill_has_a_card_icon() -> void:
+	for id in BoostLibrary.CATALOGUE.keys():
+		assert_true(ResourceLoader.exists("res://icons/cards/%s.svg" % id),
+			"boost '%s' has no icon in icons/cards/" % id)
+	for skill in SkillLibrary.all():
+		var id := String((skill as Dictionary).get("id", ""))
+		if id.is_empty():
+			continue
+		assert_true(ResourceLoader.exists("res://icons/cards/%s.svg" % id),
+			"skill '%s' has no icon in icons/cards/" % id)
+
+
+func test_shop_lists_boosts_and_engine_swap_in_one_carousel() -> void:
 	_shell._show(HubShell.View.SHOP)
 	await get_tree().process_frame
-	assert_true(_press("Boost levels"), "the shop opens the boost-level page")
-	assert_eq(_shell._view, HubShell.View.BOOST_SHOP)
+	assert_not_null(_carousel(), "the shop presents its wares as a carousel")
+	for id in BoostLibrary.CATALOGUE:
+		assert_true(_all_texts().contains(BoostLibrary.label_for(String(id)).to_upper()),
+			"boost %s is on the shop page itself" % id)
+	assert_true(_all_texts().contains("ENGINE SWAP"),
+		"the Engine Swap unlock is in the same list — no sub-page hop")
 
 
 func test_buying_a_boost_level_raises_it_and_spends_money() -> void:
 	var id: String = BoostLibrary.CATALOGUE.keys()[0]
 	_save.profile[_save.KEY_MONEY] = _save.boost_level_price(id)
 	assert_eq(_save.boost_level(id), 0, "setup: level 0")
-	_shell._show(HubShell.View.BOOST_SHOP)
+	_shell._show(HubShell.View.SHOP)
 	await get_tree().process_frame
-	assert_true(_press(BoostLibrary.label_for(id)), "setup: the boost's row is on the page")
+	assert_true(_press(BoostLibrary.label_for(id)), "setup: the boost's card is on the page")
 	assert_eq(_save.boost_level(id), 1, "the level went up by one")
 	assert_eq(_save.money(), 0, "and the price was spent")
 
@@ -612,52 +631,52 @@ func test_the_engine_swap_row_is_shown_but_not_focusable_once_bought() -> void:
 		"but it is not confirmable — nothing left to buy")
 
 
-# --- Perks + lifetime stats (stage 7) -------------------------------------------
-# Synthetic perks throughout (PerkLibrary.override_for_test), never the shipped
-# PERKS table — per CLAUDE.md, a perk's price/threshold/existence is authored data
+# --- Skills + lifetime stats (stage 7) -------------------------------------------
+# Synthetic skills throughout (SkillLibrary.override_for_test), never the shipped
+# SKILLS table — per CLAUDE.md, a skill's price/threshold/existence is authored data
 # and must not be pinned by a test.
 
-const FX_PERKS: Array[Dictionary] = [
+const FX_SKILLS: Array[Dictionary] = [
 	{
-		"id": "fx_locked", "label": "Fixture Locked Perk", "price": 100,
+		"id": "fx_locked", "label": "Fixture Locked Skill", "price": 100,
 		"unlock": {"stat": "fx_stat", "threshold": 999},
 	},
 	{
-		"id": "fx_buyable", "label": "Fixture Buyable Perk", "price": 50,
+		"id": "fx_buyable", "label": "Fixture Buyable Skill", "price": 50,
 		"unlock": {"stat": "fx_stat", "threshold": 0},
 	},
 ]
 
 
-func test_perks_page_shows_a_locked_perk_but_not_focusable() -> void:
-	PerkLibrary.override_for_test(FX_PERKS)
-	_shell._show(HubShell.View.PERKS)
+func test_skills_page_shows_a_locked_skill_but_not_focusable() -> void:
+	SkillLibrary.override_for_test(FX_SKILLS)
+	_shell._show(HubShell.View.SKILLS)
 	await get_tree().process_frame
-	assert_true(_all_texts().contains("FIXTURE LOCKED PERK"), "the locked perk is still shown")
-	assert_false(_confirmable_texts().contains("FIXTURE LOCKED PERK"),
+	assert_true(_all_texts().contains("FIXTURE LOCKED SKILL"), "the locked skill is still shown")
+	assert_false(_confirmable_texts().contains("FIXTURE LOCKED SKILL"),
 		"but it is not confirmable — its threshold has not been crossed")
-	PerkLibrary.reset()
+	SkillLibrary.reset()
 
 
-func test_buying_an_unlocked_perk_from_the_page_moves_it_to_owned() -> void:
-	PerkLibrary.override_for_test(FX_PERKS)
+func test_buying_an_unlocked_skill_from_the_page_moves_it_to_owned() -> void:
+	SkillLibrary.override_for_test(FX_SKILLS)
 	_save.profile[_save.KEY_MONEY] = 50
-	_shell._show(HubShell.View.PERKS)
+	_shell._show(HubShell.View.SKILLS)
 	await get_tree().process_frame
-	assert_true(_press("Fixture Buyable Perk"), "setup: a buy card is on the page")
-	assert_true(_save.owns_perk("fx_buyable"), "the perk is now owned")
-	PerkLibrary.reset()
+	assert_true(_press("Fixture Buyable Skill"), "setup: a buy card is on the page")
+	assert_true(_save.owns_skill("fx_buyable"), "the skill is now owned")
+	SkillLibrary.reset()
 
 
-func test_equipping_an_owned_perk_from_the_page_marks_it_equipped() -> void:
-	PerkLibrary.override_for_test(FX_PERKS)
+func test_equipping_an_owned_skill_from_the_page_marks_it_equipped() -> void:
+	SkillLibrary.override_for_test(FX_SKILLS)
 	_save.profile[_save.KEY_MONEY] = 50
-	_save.buy_perk("fx_buyable")
-	_shell._show(HubShell.View.PERKS)
+	_save.buy_skill("fx_buyable")
+	_shell._show(HubShell.View.SKILLS)
 	await get_tree().process_frame
 	assert_true(_press("Equip"), "setup: an equip row is on the page")
-	assert_true(_save.perk_equipped("fx_buyable"))
-	PerkLibrary.reset()
+	assert_true(_save.skill_equipped("fx_buyable"))
+	SkillLibrary.reset()
 
 
 func test_stats_page_lists_every_lifetime_stat_and_still_backs_out() -> void:

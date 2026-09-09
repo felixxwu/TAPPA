@@ -6,9 +6,9 @@ extends GutTest
 #   1. the run's CAR — the bound OwnedCar, not the default library car, with its damage
 #      model bound to that instance id so the stage's damage lands on the right car;
 #   2. the run's EFFECTS — `RunSession.boosts()` (run-scoped picks) merged with
-#      `PerkLibrary.equipped_effects(Save.profile)` (permanent purchases) onto a
+#      `SkillLibrary.equipped_effects(Save.profile)` (permanent purchases) onto a
 #      DUPLICATED owned dict, so the effects funnel sees them and the saved profile
-#      never does (todo/roguelike-pivot.md decision 51, features/perks.md).
+#      never does (todo/roguelike-pivot.md decision 51, features/skills.md).
 #
 # Test 1 is salvaged from the deleted test_menu_flow.gd
 # (`test_run_scene_fields_the_bound_session_car`), ported off RallySession.
@@ -19,13 +19,13 @@ extends GutTest
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
-const FX_PERKS: Array[Dictionary] = [
+const FX_SKILLS: Array[Dictionary] = [
 	{
 		"id": "fx_magnet", "label": "Fixture Magnet", "price": 1,
 		"unlock": {"stat": LifetimeStats.STAGES_CLEARED, "threshold": 0},
 		# A real EFFECTS key and a real GameConfig magnitude field (both code names, not
 		# authored catalogue data), so the funnel is exercised end to end.
-		"effect_fields": {"coin_pickup_radius_mult": "perk_coin_radius_mult"},
+		"effect_fields": {"coin_pickup_radius_mult": "skill_coin_radius_mult"},
 	},
 ]
 
@@ -36,7 +36,7 @@ var _scene: Node3D
 func before_each() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
-	PerkLibrary.override_for_test(FX_PERKS)
+	SkillLibrary.override_for_test(FX_SKILLS)
 	_save = Save
 	_save.profile = _save._default_profile()
 	# No scene loads from the session itself — this file instantiates main.tscn directly.
@@ -49,7 +49,7 @@ func after_each() -> void:
 	_save.clear_run()
 	RunSession.clear_last_result()
 	RunSession.auto_load_scenes = true
-	PerkLibrary.reset()
+	SkillLibrary.reset()
 	CarFixtures.restore()
 	Config.reset()
 
@@ -75,33 +75,33 @@ func test_the_run_scene_fields_the_bound_session_car() -> void:
 		"the owned car's model is fielded, not the default library car")
 
 
-# THE DECISION-51 SEAM, end to end: an equipped perk reaches the live config through the
+# THE DECISION-51 SEAM, end to end: an equipped skill reaches the live config through the
 # same `boosts` list a run's picks use. Asserts the RELATION (the field moved by the
-# multiplier the perk names), never a shipped number — both are tunables.
-func test_an_equipped_perk_reaches_the_car_without_reaching_the_profile() -> void:
+# multiplier the skill names), never a shipped number — both are tunables.
+func test_an_equipped_skill_reaches_the_car_without_reaching_the_profile() -> void:
 	# THE DECISION-51 SEAM, end to end, and its safety property — one world build for both
 	# because they are two halves of the same merge: the effect must land on the live
 	# config AND must not be written back onto the saved car (a run's picks are wiped when
-	# it ends; a perk lives on the profile, not on one car).
+	# it ends; a skill lives on the profile, not on one car).
 	#
-	# Asserts the RELATION (the field moved by the multiplier the perk names), never a
+	# Asserts the RELATION (the field moved by the multiplier the skill names), never a
 	# shipped number — both are tunables.
-	_save.profile[_save.KEY_BOUGHT_PERKS] = ["fx_magnet"]
-	_save.profile[_save.KEY_EQUIPPED_PERKS] = ["fx_magnet"]
+	_save.profile[_save.KEY_BOUGHT_SKILLS] = ["fx_magnet"]
+	_save.profile[_save.KEY_EQUIPPED_SKILLS] = ["fx_magnet"]
 	var authored := float(Config.authored_value("coin_pickup_radius_m", 0.0))
-	var mult: float = Config.data.perk_coin_radius_mult
+	var mult: float = Config.data.skill_coin_radius_mult
 
 	var owned := await _field("fx_awd")
 
 	assert_almost_eq(Config.data.coin_pickup_radius_m, authored * mult, 0.001,
-		"the equipped perk's effect landed on the live config at fielding time")
+		"the equipped skill's effect landed on the live config at fielding time")
 	var stored: Dictionary = _save.get_car(int(owned["instance_id"]))
 	assert_false(stored.has("boosts"),
 		"and it was merged onto a duplicate, never onto the saved car")
 
 
 # The UNEQUIPPED half of the reseed contract is deliberately NOT here: it needs no world,
-# and test_perk_library.gd::test_unequipping_restores_the_authored_value already pins it
+# and test_skill_library.gd::test_unequipping_restores_the_authored_value already pins it
 # against UpgradeLibrary.apply directly, for free. A world build to re-assert it would buy
 # ~6 s of runtime and no coverage.
 

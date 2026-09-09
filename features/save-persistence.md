@@ -53,9 +53,9 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   own `hp`, `wheel_toe`, `tuning` deltas and `wheels` (cosmetic).
   Two cars of the same model can diverge. **`boosts` and `drivetrain_override` are NOT
   stored here** — a run's picked boosts, its picked drivetrain conversion, and the
-  player's equipped perks are all merged onto a
+  player's equipped skills are all merged onto a
   DUPLICATE at fielding time and must never reach the profile
-  ([perks.md](perks.md), [region-runs.md](region-runs.md) → *Drivetrain conversion*).
+  ([skills.md](skills.md), [region-runs.md](region-runs.md) → *Drivetrain conversion*).
   `installed_upgrades` / `disabled_upgrades` went with the parts
   model, and `drivetrain_modes_bought` / the persisted `drivetrain_override` went with
   the permanent-purchase drivetrain model decision 52 superseded. Two further fields

@@ -10,10 +10,10 @@
 pinned by `tests/headless/test_hub_shell.gd` (`test_every_page_is_keyboard_navigable`).
 
 The shared horizontal, side-scrolling card widget that replaced the vertical
-row-of-buttons list on the hub's **MAIN**, **REGION**, **CAR**, **SHOP** and **PERKS**
-pages ([hub-shell.md](hub-shell.md)). **CHALLENGE, BOOST_SHOP, STATS and SETTINGS were
+row-of-buttons list on the hub's **MAIN**, **REGION**, **CAR**, **SHOP** and **SKILLS**
+pages ([hub-shell.md](hub-shell.md)). **CHALLENGE, STATS and SETTINGS were
 NOT converted** — those weren't in the set this asked for (STATS in particular has
-nothing choosable to put on a card; CHALLENGE/BOOST_SHOP stayed plain rows).
+nothing choosable to put on a card; CHALLENGE stayed plain rows).
 
 ## Shape
 
@@ -23,16 +23,17 @@ fully opaque and every other card dimmed to
 `Config.data.card_carousel_unselected_alpha`. Each card is a `PanelContainer` split into:
 
 - **`card.visual`** (top half) — an empty `Control` the caller populates: a
-  `CarCardPreview` (car choice), or a plain `ColorRect` + letter `Label` placeholder
-  (`hub_shell.gd::_card_icon` — region/perk/shop icons; no new art was commissioned for
-  this, per the task's own "a simple colored/text placeholder is fine").
+  `CarCardPreview` (car choice), or a white-outline SVG icon from `icons/cards/`
+  (`hub_shell.gd::_card_icon`, named by boost/skill id or a fixed name like
+  "region_locked" — see `features/ui-design-system.md` → *Card icons* for the set's
+  style rules).
 - **`card.info`** (bottom half) — a `VBoxContainer` the caller fills with whatever the
   screen wants to say: name, price, locked/owned state.
 
 `CardCarousel.add_card(disabled: bool) -> Card` returns the `{root, visual, info,
 disabled}` handle. A `disabled` card is **shown, dimmed, but never confirmable** — the
 same "locked rows stay visible, just unfocusable" convention `hub_shell.gd` already used
-for locked regions/perks, now expressed as a card rather than a `disabled` `Button` with
+for locked regions/skills, now expressed as a card rather than a `disabled` `Button` with
 `menu_nav_skip` (a plain `Control` card has no such meta to set; the disabled flag lives
 on the `Card` struct instead and `_confirm_selected()` reads it directly).
 
@@ -152,7 +153,7 @@ the condition to watch for, not a reason to restore the border pre-emptively.
 screen edge for every OTHER page (menu_page.gd rule 1) — right for a settings page or a
 row list, wrong for a carousel that is supposed to read as a strip of cards running the
 width of the screen. `HubShell._is_carousel_view` gives the five carousel pages
-(MAIN/REGION/CAR/SHOP/PERKS) their own small `_CAROUSEL_PAGE_MARGIN` (8.0, vs. every other
+(MAIN/REGION/CAR/SHOP/SKILLS) their own small `_CAROUSEL_PAGE_MARGIN` (8.0, vs. every other
 page's 24.0) instead of that wide margin, and `_build_carousel` sizes the carousel to the
 current logical frame width via `WorldPanel.layout_frame_size(_page, ...).x` (the same
 "how much room do I actually have" call `RallyDetail.body_width` uses), then feeds that
@@ -343,7 +344,7 @@ CAR, not the slot, AND makes the cache outlive the page: `CarPreviewCache`
 itself is torn down and rebuilt from scratch on every hub visit (a run always ends by
 returning to it fresh via `Scenes.change_to`), so anything page-scoped forgets every car
 each time, which a session-lifetime cache exists specifically to avoid. Every car card
-still gets the cheap letter-icon placeholder (`_card_icon`) up front; `HubShell.
+still gets the cheap car-outline placeholder (`_card_icon("car")`) up front; `HubShell.
 _sync_car_previews` asks `CarPreviewCache.get_or_build(car_ref)` for a preview whenever a
 card enters the visible window (`CardCarousel.visible_card_count()`, centred on the
 selection) and gets back either an ALREADY-BUILT instance (a cache hit — this car was
@@ -401,6 +402,6 @@ next touches those flows.
   which would let a small accidental drag re-pick. A drag can still cross several cards
   at once if it goes far enough (`end_drag_and_snap` uses `ceili`/`floori`, not a
   one-card cap), which reads as sensible for a fast flick across a wide carousel.
-- **Card icon placeholders for region/perk/shop are a solid-colour box + first letter**,
-  not real art — the task said this was fine, but it is a visibly rough placeholder a
-  future pass should replace with real icons per catalogue entry.
+- **Card icons are real SVGs now** (`icons/cards/*.svg`) — white only, uniform 6px
+  stroke, round caps/joins, one shape vocabulary across the set; see
+  `features/ui-design-system.md` → *Card icons* before adding one.

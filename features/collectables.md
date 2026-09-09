@@ -106,13 +106,13 @@ total_collected)`. **One-shot, permanently** — unlike a bush, a spent coin nev
 re-arms; `collected` only ever gains bits.
 
 **The pickup radius is read LIVE from `GameConfig.coin_pickup_radius_m` every
-tick — `CoinField` never caches it.** That is what makes the `coin_magnet` perk
-possible: the perk multiplies that one field through the effects funnel (decision 51,
-wired in the pass after this stage — see [perks.md](perks.md)), and a radius cached at
+tick — `CoinField` never caches it.** That is what makes the `coin_magnet` skill
+possible: the skill multiplies that one field through the effects funnel (decision 51,
+wired in the pass after this stage — see [skills.md](skills.md)), and a radius cached at
 `build()` would leave it nothing to reach. `lucky_coins` works the same way one level
 up, multiplying `GameConfig.coins_per_stage` before `coin_layout_params()` reads it —
 which is why the count is fetched at build time from the config rather than passed
-down from a caller. Neither perk is named anywhere in this file's code.
+down from a caller. Neither skill is named anywhere in this file's code.
 
 ## HUD + audio
 
@@ -184,8 +184,8 @@ fields for `CoinField.build` (mirrors `sign_render_params()`/
 
 ## What this stage did not touch
 
-- **Perk effects** (`coin_magnet`, `lucky_coins`) — wired in the pass immediately
-  after this one (decision 51, `features/perks.md`). Nothing in `coin_field.gd` or
-  `coin_layout.gd` mentions a perk even now: both perks land as multipliers on the two
+- **Skill effects** (`coin_magnet`, `lucky_coins`) — wired in the pass immediately
+  after this one (decision 51, `features/skills.md`). Nothing in `coin_field.gd` or
+  `coin_layout.gd` mentions a skill even now: both skills land as multipliers on the two
   `GameConfig` fields this stage made sure stayed findable.
 - **Signposting** — deliberately absent, not merely unbuilt. See decision 50 above.

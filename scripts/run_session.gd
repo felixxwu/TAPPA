@@ -504,12 +504,12 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		# same as money (todo/roguelike-pivot.md "Lifetime global stats").
 		Save.add_lifetime_stat(LifetimeStats.DAMAGE_TAKEN, int(round(hp_lost)))
 	elif _car_instance_id >= 0 and hp_lost < 0.0:
-		# A NEGATIVE loss is a NET HEAL — the "self_healing" perk (decision 51) mended
+		# A NEGATIVE loss is a NET HEAL — the "self_healing" skill (decision 51) mended
 		# more than the stage cost. world.gd passes the delta signed for exactly this
 		# case; persisting it is what lets the trickle repair damage carried in from an
 		# EARLIER stage rather than only cancelling this one's. No lifetime stat: nothing
-		# was taken, and DAMAGE_TAKEN is a monotonic ledger (it gates a perk unlock, so
-		# letting it run backwards would un-unlock a perk the player had earned).
+		# was taken, and DAMAGE_TAKEN is a monotonic ledger (it gates a skill unlock, so
+		# letting it run backwards would un-unlock a skill the player had earned).
 		Save.heal_car(_car_instance_id, -hp_lost)
 	# METRES DRIVEN, counted on every stage whether or not it was missed — the distance
 	# was driven either way. world.gd snapshots it at the finish crossing off

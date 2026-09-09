@@ -10,8 +10,8 @@ auto-build solver, an upgrades grid, a reveal animation and the install/buy path
 `Save` that fed them. All of that is deleted by the roguelike pivot
 (`todo/roguelike-pivot.md` → "What gets deleted" → the persistent parts model). Parts are
 replaced by RR-style **boosts**: temporary, run-scoped, picked between stages
-([region-runs.md](region-runs.md)) — and by **perks**: permanent, bought with money
-([perks.md](perks.md)).
+([region-runs.md](region-runs.md)) — and by **skills**: permanent, bought with money
+([skills.md](skills.md)).
 
 What survives is the MECHANISM those parts drove, kept deliberately so the replacement
 had somewhere to land:
@@ -44,13 +44,13 @@ dict** so neither reaches the saved profile:
 
 - `RunSession.boosts()` — the run's picked boosts. Run-scoped: wiped when the run ends,
   win or lose (soft permadeath).
-- `PerkLibrary.equipped_effects(Save.profile)` — the player's equipped perks. Permanent
+- `SkillLibrary.equipped_effects(Save.profile)` — the player's equipped skills. Permanent
   purchases, so they are re-derived from the profile on every stage boot rather than
   carried on the run object.
 
 They differ in **lifetime, not mechanism** — decision 51 requires exactly that ("the seam
 is `UpgradeLibrary.EFFECTS` + a car's `boosts` list; do not build a parallel modifier
-path"), and it is why adding perks touched none of the loops in this file.
+path"), and it is why adding skills touched none of the loops in this file.
 
 **Why a plain key on the car dict** rather than a query into a run object: it keeps the
 funnel pure and testable with no session standing up, it is where `tuning` and
@@ -89,7 +89,7 @@ no gameplay test fails. Two guards catch it instead:
   of the same failure, and the one `_cfg_set` cannot catch because the value never reaches
   it. Found by the small-model-readiness loop (round 041), where a wet-weather tyre shipped
   with the `@export`, the registry row and the blend arm all correct and no rain grip at
-  all. `test_boost_library.gd` and `test_perk_library.gd` each assert their own catalogue
+  all. `test_boost_library.gd` and `test_skill_library.gd` each assert their own catalogue
   against the table for the same reason.
 
 ## Effect-application pipeline
@@ -124,14 +124,14 @@ time, brakes, drag), and step 1 re-seeds those from the CarLibrary baseline befo
 runs. That re-seed is what makes a `mult` row safe: however many times a car is fielded,
 the multiplier lands on a fresh baseline.
 
-**The perk rows have no such re-seed.** `coin_pickup_radius_m`, `coins_per_stage`,
+**The skill rows have no such re-seed.** `coin_pickup_radius_m`, `coins_per_stage`,
 `run_fast_bonus_money`, `run_target_pace_base`, `run_stage_money_base`,
 `impact_ref_hp_loss` and `damage_regen_hp_per_s` are GLOBAL tunables on the shared,
 long-lived `Config.data` (nothing calls `Config.reset()` between stages). Without help, a
 coin radius multiplied on stage 1 would be multiplied AGAIN on stage 2, and un-equipping
-the perk would never give the authored number back at all.
+the skill would never give the authored number back at all.
 
-So every perk row is flagged `reseed`, and `_reseed_globals` restores those fields from the
+So every skill row is flagged `reseed`, and `_reseed_globals` restores those fields from the
 PRISTINE authored baseline (`Config.authored_value` — see
 [configuration.md](configuration.md)) before anything is applied. **Unconditional**, because
 "nothing equipped" is precisely the case that has to hand the authored number back. The
@@ -240,10 +240,10 @@ gate, went with the gates. The engine-swap capability's equivalent survives one 
 a real `GameConfig` property; every fixture-authored effect key has a row), each `op` arm
 against a synthetic effect set, the `effective_meta` / `grip_meta` split (a grip effect
 must NOT move power-to-weight), and the drive-mode resolver's paid-for gate.
-`test_perk_library.gd` owns the reseed contracts (applying twice does not compound;
-un-equipping restores the authored value) because the rows that need them are perks'.
+`test_skill_library.gd` owns the reseed contracts (applying twice does not compound;
+un-equipping restores the authored value) because the rows that need them are skills'.
 `test_car_stat_bounds.gd` covers the roster scale.
 
 Per CLAUDE.md, none of them pin a magnitude: the fixtures author their own effect values
 (`tests/headless/upgrade_fixtures.gd`), and the shipped `GameConfig` numbers the real
-boosts and perks read are tunables no test may assert.
+boosts and skills read are tunables no test may assert.

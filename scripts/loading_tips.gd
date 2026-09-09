@@ -14,6 +14,8 @@ extends RefCounted
 # the same rule CLAUDE.md applies to code comments.
 
 const TIPS: Array[String] = [
+	# --- Tuning / parts (all still live post-pivot: tuning_library + start-line Tune Car,
+	#     engine swaps, detune sliders, drivetrain conversions) ---
 	"Aero balance helps tune understeer and oversteer at speed.",
 	"Grip balance helps tune oversteer against understeer.",
 	"Brake bias helps tune understeer and oversteer during braking.",
@@ -24,17 +26,20 @@ const TIPS: Array[String] = [
 	"An engine swap brings its own gearbox and shift feel with it.",
 	"An engine swap shifts a car's front-to-rear weight balance.",
 	"Detuning an engine lowers its torque, and with it the car's performance rating.",
-	"Ballast adds weight, which lowers a car's performance rating.",
 	"Once engine swapping is unlocked, swapping is free and you can do it as often as you like.",
+	"Wheel styles are purely cosmetic and free to swap.",
+	# --- Damage / weather (damage_model, weather_library — all verified live) ---
 	"Damage depends on how hard you decelerate, not how fast you were going.",
-	"The pit repair between events is free, but only a paid repair restores a car fully.",
 	"A hard impact can bend a wheel out of alignment until it's repaired.",
 	"Heavy damage makes an engine misfire long before the car gives up.",
 	"Rain lowers tire grip across the whole stage.",
 	"Cutting across a corner triggers an automatic time penalty.",
-	"A Special Event's upgrade reward unlocks for any car in your garage.",
-	"Rival cars can be running their own engine swaps.",
-	"Wheel styles are purely cosmetic and free to swap.",
+	# --- The run loop (post-pivot: region runs, the per-stage clock, the meta tier) ---
+	"A region run is eight stages against the clock — miss one target time and the run is over.",
+	"Between stages you choose: a free field repair, or a boost for the road ahead. Not both.",
+	"Run boosts vanish when the run ends — permanent power lives in the shop.",
+	"Failing a run costs the run, never your garage: money, cars and skills are yours to keep.",
+	"Clearing a region unlocks the next one — and replaying a cleared region still pays.",
 ]
 
 

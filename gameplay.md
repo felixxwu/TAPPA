@@ -21,7 +21,7 @@ is no rival field, no championship table, no placing — there is the clock, the
 you brought, and how much of that car is still working by stage six.
 
 The pull is the roguelike ratchet. A **run** is disposable and always will be. The
-**meta** is not: money, owned cars, purchased perks, purchased boost levels and
+**meta** is not: money, owned cars, purchased skills, purchased boost levels and
 lifetime stat counters all survive a failed run untouched. You lose runs, and you
 get stronger anyway. Every failure ends with a number to spend and a stat that
 ticked up, so the next attempt starts from a better place than the last one.
@@ -36,7 +36,7 @@ driving, damage, tuning, cars — are the ones that were always the point.
 
 ```
 title
-  └─ hub (Run · Cars · Shop · Perks · Stats · Settings)
+  └─ hub (Run · Cars · Shop · Skills · Stats · Settings)
        └─ region select (linear unlock; locked regions shown, with their gate)
             └─ car select (owned cars; buy new ones with money)
                  └─ RUN START — stage 1 of 8
@@ -58,7 +58,7 @@ earned, boosts taken) is worth reading either way.
 
 A failed run destroys **the run and only the run**: stage progress, every
 temporary boost picked up during it, and the damage the car accumulated. It does
-**not** touch money, owned cars, perks, boost levels or lifetime stats. You keep
+**not** touch money, owned cars, skills, boost levels or lifetime stats. You keep
 **100% of the money you earned before you died**, and you never lose the car.
 
 That combination is the whole design in one line. The stakes are real *within* an
@@ -227,14 +227,14 @@ winning specific rallies. Boosts replace it, and they're better suited to a
 run-based game: a part you fit forever is a decision you make once, while a boost
 you draw under pressure is a decision you make every stage.
 
-## Perks & lifetime stats
+## Skills & lifetime stats
 
 **Lifetime stats** are counters that only ever grow and never reset: stages
 cleared, runs started and failed, damage taken, money earned and spent, distance
 driven, deepest region reached. They're the visible proof that a failed run still
 moved you forward.
 
-They're also **load-bearing**, because they gate **perks**. A perk is unlocked by
+They're also **load-bearing**, because they gate **skills**. A skill is unlocked by
 crossing a lifetime threshold, *bought* separately with money, and only a few can
 be equipped at once. Their effects are the flavour layer the run loop otherwise
 lacks. The shipped seven each bend one number the run already turns on: a wider
@@ -247,14 +247,14 @@ crowds, money for drifting, a once-per-stage nitrous burst. Those want detectors
 the driving sim does not have yet (a near-miss test, a sustained-drift test), so
 they are the obvious direction to grow the catalogue in rather than a gap in it.
 
-Two things follow from the unlock-then-buy shape. First, **playing unlocks perks
-and money buys them** — neither alone is enough, so the perk screen always has
+Two things follow from the unlock-then-buy shape. First, **playing unlocks skills
+and money buys them** — neither alone is enough, so the skill screen always has
 both a "keep playing" goal and a "keep earning" goal on it. Second, because the
-gates are lifetime counters, they reward *breadth of play*: the coin-magnet perk
+gates are lifetime counters, they reward *breadth of play*: the coin-magnet skill
 unlocks by clearing stages, the self-repair one by taking damage, so each gate is a
 nudge toward a particular kind of play rather than a single number to grind.
 
-The three-equipped cap keeps a build legible. Perks are a loadout, not a list of
+The three-equipped cap keeps a build legible. Skills are a loadout, not a list of
 everything you've ever bought.
 
 ## Collectables
@@ -311,7 +311,7 @@ gone — a placement-shaped economy makes no sense in a game with no placements.
    reason to drive well rather than merely clear.
 3. **Coins**, banked at stage clear.
 
-**Six sinks:** cars, boost levels, perks, the engine-swap unlock, per-car drivetrain
+**Six sinks:** cars, boost levels, skills, the engine-swap unlock, per-car drivetrain
 conversions, and cosmetic wheels. Against the career's single source and two sinks, that's an economy with
 somewhere to go — and every sink competes with every other, which is what makes
 "what do I buy?" a question worth asking after a failed run.
@@ -322,7 +322,7 @@ One number, always going up, always spendable.
 ## The hub — flat, not diegetic
 
 The hub is **ordinary menu screens**: title, hub, region select, car select and
-buy, boost shop, perks, stats, between-stage pick, run summary, settings. Every one
+buy, shop, skills, stats, between-stage pick, run summary, settings. Every one
 of them keyboard- and gamepad-navigable, with a nav test — that rule doesn't bend
 for a flat UI.
 
@@ -362,7 +362,7 @@ ladder — accepted deliberately rather than overlooked. The old design's final
 showdown and its star-gated special-event ladder are both gone with the career
 that framed them.
 
-If an endgame is wanted later, the meta ratchet (perks, boost levels, lifetime
+If an endgame is wanted later, the meta ratchet (skills, boost levels, lifetime
 stats) is the natural surface to build it on, and a repeatable region set is a
 better foundation for one than a finite map that could be exhausted.
 
@@ -376,7 +376,7 @@ it for the *why* behind anything above; read
 `todo/roguelike-pivot-plan.md` for the order the work happens in.
 
 What remains genuinely open is **tuning, not design**: the pace values that set
-the difficulty curve, per-car HP and impact costs, boost and perk pricing, coin
+the difficulty curve, per-car HP and impact costs, boost and skill pricing, coin
 placement density, and how fast the payout grows with depth. Those are numbers to
 find by playing, and they all live in `config/game_config.tres` and the authored
 content tables.

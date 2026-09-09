@@ -334,7 +334,7 @@ in the between-stage repair-or-boost pick alongside the drawn boosts, free, and 
 moment the run ends. `RunSession.choose_drivetrain(mode)` records it on `_drivetrain_override`
 (`-1` = the fielded car's own stock/current layout); `world.gd::_field_car` writes it onto
 the DUPLICATED owned-car dict a car is fielded with (never `Save`'s persisted car — the
-same seam boosts and equipped perks use), and `UpgradeLibrary.resolve_drive_override` reads
+same seam boosts and equipped skills use), and `UpgradeLibrary.resolve_drive_override` reads
 it there with a bare range check against `Drivetrain.DriveMode.values()` — no purchase
 gate. `car.gd.apply_owned` threads it through the drivetrain rebuild (member
 `_owned_drive_override`, honoured by `_rebuild_drivetrain`) and

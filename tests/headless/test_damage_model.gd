@@ -405,7 +405,7 @@ func test_event_boundary_writeback_round_trips() -> void:
 # --- The self-heal trickle (features/damage.md -> "The self-heal trickle") ----------
 #
 # regen() reads GameConfig.damage_regen_hp_per_s, which is 0.0 on the authored baseline
-# and written only by the effects funnel (the "self_healing" perk, todo/roguelike-pivot.md
+# and written only by the effects funnel (the "self_healing" skill, todo/roguelike-pivot.md
 # decision 51). The rate is a tunable, so nothing below pins one: every assertion sets its
 # OWN rate and checks the relationship regen() must hold for any of them.
 

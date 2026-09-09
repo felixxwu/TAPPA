@@ -40,7 +40,7 @@ Do not go looking for a "hub station", a `CarparkMode`, a camera pose, or an
 hub.tscn (HubShell)
   ├─ New run ─▶ region select ─▶ car select ─▶ RunSession.start_region
   ├─ Rally challenge ─▶ period ─▶ car select ─▶ RunSession.start
-  ├─ Shop / Perks / Lifetime stats            (all flat pages on the same script)
+  ├─ Shop / Skills / Lifetime stats            (all flat pages on the same script)
   └─ Resume run ─▶ RunSession.resume
        └─ main.tscn (one stage) ─ start line ─▶ countdown ─▶ RUN
             ├─ StageManager.stage_completed ─▶ RunSession.report_event_result
@@ -167,10 +167,10 @@ is no `features/hq.md` — the doc this section used to point at went with the c
 
 With a `RunSession` active, `world._ready` fields the player's OwnedCar through
 `Car.apply_owned` (the CarLibrary baseline, then the effects funnel carrying the run's
-picked boosts and the player's equipped perks, then tuning, then the damage bound from
+picked boosts and the player's equipped skills, then tuning, then the damage bound from
 the saved HP) instead of the default `apply_car(0)`, and wires this stage's
 `StageManager.stage_completed` into `RunSession.report_event_result`. See
-[region-runs.md](region-runs.md) and [perks.md](perks.md).
+[region-runs.md](region-runs.md) and [skills.md](skills.md).
 
 There is **no second exit** from the run: `world.gd` has no wreck screen and nothing
 listens for a car reaching 0 HP, because nothing is signalled when it does. With no

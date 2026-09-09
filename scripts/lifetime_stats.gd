@@ -16,8 +16,8 @@ extends RefCounted
 # high-water mark) and the reader (`lifetime_stat`); this file is pure content plus
 # lookup, exactly the CarLibrary/RallyLibrary/BoostLibrary split.
 #
-# unlock.stat ON A PerkLibrary ENTRY NAMES AN ID FROM THIS TABLE — `is_known()` is
-# the contract `test_perk_library.gd -> test_every_unlock_stat_is_a_real_lifetime_stat`
+# unlock.stat ON A SkillLibrary ENTRY NAMES AN ID FROM THIS TABLE — `is_known()` is
+# the contract `test_skill_library.gd -> test_every_unlock_stat_is_a_real_lifetime_stat`
 # checks.
 #
 # WHICH COUNTERS ARE ACTUALLY WRITTEN, AND WHERE (see each stat's own comment below
@@ -42,22 +42,34 @@ const COINS_COLLECTED := "coins_collected"
 const STATS := {
 	STAGES_CLEARED: {
 		"label": "Stages cleared",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "clear %d stages",
 		"description": "Every stage cleared, in any run — region or challenge. " +
 			"Written by RunSession.report_event_result on every stage that is not missed.",
 	},
 	RUNS_STARTED: {
 		"label": "Runs started",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "start %d runs",
 		"description": "Every run begun, whatever kind, however it ends. " +
 			"Written by RunSession.begin().",
 	},
 	RUNS_FAILED: {
 		"label": "Runs failed",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "fail %d runs",
 		"description": "Runs that ended on a missed stage timer — decision 4's one " +
 			"hard fail state. A challenge run never sets this (its mode always " +
 			"reports stage_failed() as false). Written by RunSession._finish_locally().",
 	},
 	REGIONS_CLEARED_TOTAL: {
 		"label": "Regions cleared",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "clear %d regions",
 		"description": "Every completed 8-stage region run, REPEATS INCLUDED " +
 			"(decision 12's grind valve keeps a cleared region replayable) — " +
 			"distinct from the unique Save.KEY_REGIONS_CLEARED unlock ledger, which " +
@@ -65,24 +77,36 @@ const STATS := {
 	},
 	DAMAGE_TAKEN: {
 		"label": "Damage taken",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "take %d damage",
 		"description": "Total HP lost to impacts across every run, rounded to the " +
 			"nearest whole point per stage. Written by RunSession.report_event_result " +
 			"alongside Save.apply_damage.",
 	},
 	MONEY_EARNED: {
 		"label": "Money earned",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "earn $%d",
 		"description": "Every dollar ever banked — stage payouts, fast-completion " +
 			"bonuses, challenge rewards. Written once, in Save.add_money, so every " +
 			"present and future money source is covered without a second call site.",
 	},
 	MONEY_SPENT: {
 		"label": "Money spent",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "spend $%d",
 		"description": "Every dollar ever spent in the meta shop. Written once, in " +
-			"Save.spend_money, so cars/boost levels/the engine-swap unlock/perks all " +
+			"Save.spend_money, so cars/boost levels/the engine-swap unlock/skills all " +
 			"feed it through the one funnel every purchase already goes through.",
 	},
 	DISTANCE_DRIVEN_M: {
 		"label": "Distance driven",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "drive %d m",
 		"description": "Metres driven across every stage, missed stages included — " +
 			"the distance was driven either way. world.gd snapshots " +
 			"TrackProgress.progress_offset() at the finish crossing (a BEST-offset " +
@@ -92,6 +116,9 @@ const STATS := {
 	},
 	BEST_REGION_ORDER: {
 		"label": "Deepest region reached",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "reach region order %d",
 		"description": "The highest region `order` (RegionLibrary.order_of) ever " +
 			"CLEARED. A HIGH-WATER MARK, not a running sum — ratcheted with " +
 			"Save.raise_lifetime_stat rather than added to, since a repeat clear of " +
@@ -100,6 +127,9 @@ const STATS := {
 	},
 	COINS_COLLECTED: {
 		"label": "Coins collected",
+		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
+		# an instruction, not the stats page's read-out label ("Damage taken: 300").
+		"goal": "collect %d coins",
 		"description": "Every coin picked up in any run, region stage cleared or " +
 			"missed alike (decision 35's off-line detour is scored even when the " +
 			"stage's own money doesn't bank — decision 36). Written by " +
@@ -117,6 +147,19 @@ const IDS: Array = [
 
 static func label_for(id: String) -> String:
 	return String(STATS.get(id, {}).get("label", id))
+
+
+# The IMPERATIVE phrase a skill's unlock gate renders as — goal_for(DAMAGE_TAKEN, 300)
+# is "take 300 damage", an instruction to the player rather than the stats page's
+# "Damage taken" read-out name. `threshold` lands wherever the entry's "goal" template
+# puts its %d. Falls back to "Stat label: N" for a stat with no goal template (or an
+# unknown id — same visible-ugliness-not-crash rule as label_for).
+static func goal_for(id: String, threshold: int) -> String:
+	var entry: Dictionary = STATS.get(id, {})
+	var template := String(entry.get("goal", ""))
+	if template.is_empty():
+		return "%s: %d" % [label_for(id), threshold]
+	return template % threshold
 
 
 static func is_known(id: String) -> bool:

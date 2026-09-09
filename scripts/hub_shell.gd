@@ -1,6 +1,6 @@
 class_name HubShell
 extends Control
-# Docs: features/hub-shell.md, features/perks.md, features/lifetime-stats.md — update in the same change as this file.
+# Docs: features/hub-shell.md, features/skills.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_hub_shell.gd — extend in the same change. Before you change
 # behaviour here, `grep -rn 'HubShell' tests/headless/` and read what is pinned.
 #
@@ -14,7 +14,7 @@ extends Control
 #
 # DELIBERATELY PLAIN. Stage 3's bar is "the loop runs start to finish", not "the loop looks
 # good": this is four stacked pages of buttons. Stages 4-8 replace the region and car pages
-# with real screens (a shop, boost levels, perks, lifetime stats) and this file is expected
+# with real screens (a shop, boost levels, skills, lifetime stats) and this file is expected
 # to be rewritten around them. Do not invest in its looks now, and do not grow it into the
 # place those features live — give each its own script when it lands.
 #
@@ -26,13 +26,13 @@ extends Control
 # is showing, so `_back()` knows where to go and the tests can assert a screen without
 # reading button text.
 #
-# SHOP / BOOST_SHOP are stage 6's meta shop (todo/roguelike-pivot.md "Upgrades — RR's
-# two-tier model" + "Car acquisition — RR's shop"): boost levels and the Engine Swap
-# unlock, both reached from MAIN rather than from the run's own car-select flow, since
-# they are permanent purchases available any time, not something tied to picking a car
-# for THIS run. Car BUYING, per decision 28's wording ("the car select screen offers a
-# Buy action for unowned cars"), is folded into the existing CAR page instead of a fifth
-# view — see _build_car().
+# SHOP is stage 6's meta shop (todo/roguelike-pivot.md "Upgrades — RR's two-tier
+# model" + "Car acquisition — RR's shop"): every boost ladder and the Engine Swap
+# unlock in one flat list, reached from MAIN rather than from the run's own car-select
+# flow, since they are permanent purchases available any time, not something tied to
+# picking a car for THIS run. Car BUYING, per decision 28's wording ("the car select
+# screen offers a Buy action for unowned cars"), is folded into the existing CAR page
+# instead of living here — see _build_car().
 #
 # CHALLENGE is stage 9's MINIMAL entry point for the Daily/Weekly/Monthly challenge
 # (decision 15 keeps the mode; RunSession has always been able to drive it through
@@ -41,12 +41,12 @@ extends Control
 # placement table and no ceiling explainer here — those were `hq_challenge.gd`'s and are
 # not rebuilt; see features/rally-challenge.md for what a full screen would owe.
 #
-# PERKS / STATS are stage 7 (todo/roguelike-pivot.md "Perks — a straight lift from RR" +
+# SKILLS / STATS are stage 7 (todo/roguelike-pivot.md "Skills — a straight lift from RR" +
 # "Lifetime global stats"), both reached from MAIN like SHOP: permanent, run-independent
 # pages. STATS is pure read-out (LifetimeStats.IDS, one row each) — CLAUDE.md's menu-nav
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
-enum View { MAIN, REGION, CAR, SUMMARY, SHOP, BOOST_SHOP, PERKS, STATS, CHALLENGE, SETTINGS }
+enum View { MAIN, REGION, CAR, SUMMARY, SHOP, SKILLS, STATS, CHALLENGE, SETTINGS }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
@@ -123,7 +123,9 @@ func _ready() -> void:
 
 # The heading each view carries. The SUMMARY heading is the one that says something the
 # player cannot get anywhere else on that page: whether the run ended by clearing the
-# region or by missing a target.
+# region or by missing a target. MAIN deliberately gets NO heading (the "" default) —
+# it is the game's front door and the only page a player can't mistake for another, so
+# a "TAPPA" title there said nothing the page's own content didn't.
 func _title_for(view: int) -> String:
 	match view:
 		View.REGION: return "Pick a region"
@@ -132,12 +134,11 @@ func _title_for(view: int) -> String:
 			var completed := bool(RunSession.last_result().get("completed", false))
 			return "Region cleared" if completed else "Run over"
 		View.SHOP: return "Shop"
-		View.BOOST_SHOP: return "Boost levels"
-		View.PERKS: return "Perks"
+		View.SKILLS: return "Skills"
 		View.STATS: return "Lifetime stats"
 		View.CHALLENGE: return "Rally challenge"
 		View.SETTINGS: return "Settings"
-		_: return "TAPPA"
+		_: return ""
 
 
 # --- Page plumbing -----------------------------------------------------------
@@ -190,8 +191,7 @@ func _show(view: int) -> void:
 		View.CAR: _build_car()
 		View.SUMMARY: _build_summary()
 		View.SHOP: _build_shop()
-		View.BOOST_SHOP: _build_boost_shop()
-		View.PERKS: _build_perks()
+		View.SKILLS: _build_skills()
 		View.STATS: _build_stats()
 		View.CHALLENGE: _build_challenge()
 		View.SETTINGS: _build_settings()
@@ -210,8 +210,7 @@ func _back() -> void:
 		# select would drop a challenge picker into a flow they never opened.
 		View.CAR: _show(View.CHALLENGE if _pending_challenge != "" else View.REGION)
 		View.SHOP: _show(View.MAIN)
-		View.BOOST_SHOP: _show(View.SHOP)
-		View.PERKS: _show(View.MAIN)
+		View.SKILLS: _show(View.MAIN)
 		View.STATS: _show(View.MAIN)
 		View.CHALLENGE: _show(View.MAIN)
 		# Give the shared SettingsMenu first refusal: its own sub-pages (Audio, Account's
@@ -238,25 +237,31 @@ func _row(text: String, on_press: Callable) -> Button:
 
 # --- Card carousel plumbing ---------------------------------------------------
 #
-# Five screens (MAIN, REGION, CAR, SHOP, PERKS) present their choices as a
-# CardCarousel (features/card-carousel.md) instead of a vertical row list: one
+# Five screens (MAIN, REGION, CAR, SHOP, SKILLS) present their choices
+# as a CardCarousel (features/card-carousel.md) instead of a vertical row list: one
 # carousel per page, added to the body ahead of any plain labels/rows that page
-# still wants (e.g. the "Money: N" readout). CHALLENGE / BOOST_SHOP / STATS keep
-# the plain row list — they were not in the set this conversion asked for, and
-# STATS in particular has nothing choosable to put on a card.
+# still wants (e.g. the "Money: N" readout). CHALLENGE / STATS keep the plain row
+# list — they were not in the set this conversion asked for, and STATS in
+# particular has nothing choosable to put on a card.
 
-# A simple text/colour placeholder for a card's visual slot, for screens with no
-# real art (region/perk/shop icons) — CAR cards get a real CarCardPreview instead.
-func _card_icon(letter: String, color: Color) -> Control:
-	var box := ColorRect.new()
-	box.color = color
-	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var lbl := UITheme.label(letter.left(1).to_upper())
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.add_child(lbl)
-	return box
+# A card's visual-slot icon — one white-outline SVG from icons/cards/, named by what
+# the card IS (a boost/skill id, "car", "region", …). The whole set shares one style:
+# white only, uniform 6px stroke, round caps/joins — so the carousels read as one
+# system rather than a mix of clip-art. CAR cards swap this out for a real
+# CarCardPreview once it is built (see _sync_car_previews).
+func _card_icon(icon: String) -> Control:
+	var path := "res://icons/cards/%s.svg" % icon
+	# A fallback for ids with no authored icon (a test fixture's fx_* id, say) rather
+	# than an empty slot — but a MISSING SHIPPED icon stays loud, caught by
+	# test_hub_shell's every-catalogue-icon-exists guard instead of degrading here.
+	if not ResourceLoader.exists(path):
+		path = "res://icons/cards/generic.svg"
+	var tex := TextureRect.new()
+	tex.texture = load(path)
+	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+	return tex
 
 
 # The five carousel pages want to run edge to edge, unlike every other MenuPage (whose
@@ -272,7 +277,7 @@ func _page_margin_for(view: int) -> float:
 
 
 func _is_carousel_view(view: int) -> bool:
-	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.PERKS]
+	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.SKILLS]
 
 
 # Build a carousel and mount it as the page's whole selectable body (any plain,
@@ -297,9 +302,9 @@ func _build_carousel() -> CardCarousel:
 # (shown, dimmed) but neither lands the cursor's confirm nor fires `on_confirm`
 # (CardCarousel.confirmed simply never emits for a disabled index).
 func _text_card(carousel: CardCarousel, title: String, subtitle: String,
-		disabled: bool, icon_color: Color) -> void:
+		disabled: bool, icon: String) -> void:
 	var card := carousel.add_card(disabled)
-	card.visual.add_child(_card_icon(title, icon_color))
+	card.visual.add_child(_card_icon(icon))
 	var title_label := UITheme.label(title)
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.info.add_child(title_label)
@@ -324,20 +329,23 @@ func _build_main() -> void:
 	var resumable: Dictionary = RunSessionScript.resumable_run(
 		Save.profile, int(Time.get_unix_time_from_system()))
 	if not resumable.is_empty():
-		_text_card(carousel, "Resume run", "", false, UITheme.GREEN)
+		_text_card(carousel, "Resume run", "", false, "resume_run")
 		actions.append(_resume_run)
 
-	_text_card(carousel, "New run", "", false, UITheme.GOLD)
+	_text_card(carousel, "New run", "", false, "new_run")
 	actions.append(func() -> void: _show(View.REGION))
-	_text_card(carousel, "Rally challenge", "", false, UITheme.GOLD)
-	actions.append(func() -> void: _show(View.CHALLENGE))
-	_text_card(carousel, "Shop", "", false, UITheme.GOLD)
+	_text_card(carousel, "Shop", "", false, "shop")
 	actions.append(func() -> void: _show(View.SHOP))
-	_text_card(carousel, "Perks", "", false, UITheme.GOLD)
-	actions.append(func() -> void: _show(View.PERKS))
-	_text_card(carousel, "Lifetime stats", "", false, UITheme.GOLD)
+	_text_card(carousel, "Skills", "", false, "skills")
+	actions.append(func() -> void: _show(View.SKILLS))
+	# Rally challenge sits AFTER Shop/Skills: it is a secondary way to start a run, so
+	# it follows the primary one (New run) and its menu-alternatives, rather than
+	# splitting them.
+	_text_card(carousel, "Rally challenge", "", false, "rally_challenge")
+	actions.append(func() -> void: _show(View.CHALLENGE))
+	_text_card(carousel, "Lifetime stats", "", false, "stats")
 	actions.append(func() -> void: _show(View.STATS))
-	_text_card(carousel, "Settings", "", false, UITheme.GOLD)
+	_text_card(carousel, "Settings", "", false, "settings")
 	actions.append(func() -> void: _show(View.SETTINGS))
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 
@@ -371,15 +379,18 @@ func _build_region() -> void:
 		var region_name := String(region.get("name", id))
 		var reward := RegionRunMode.base_stage_reward(id)
 		if not RegionLibrary.is_unlocked(id, Save.profile):
-			var gate := RegionLibrary.gate_for(id)
-			_text_card(carousel, region_name, "Locked — clear %s (pays $%d/stage)" % [gate, reward],
-				true, UITheme.MUTED)
+			# Just "Locked" + the pay rate — NOT the gate ("clear <region>") it hides
+			# behind: the locked card is one glance wide, and the gate region's own card
+			# sitting a swipe away already answers "what unlocks this" better than a
+			# second-hand name on a locked card does.
+			_text_card(carousel, region_name, "Locked — pays $%d/stage" % reward,
+				true, "region_locked")
 			ids.append("")
 			continue
 		var mark := "$%d/stage" % reward
 		if cleared.has(id):
 			mark += " — Cleared"
-		_text_card(carousel, region_name, mark, false, UITheme.GREEN)
+		_text_card(carousel, region_name, mark, false, "region")
 		ids.append(id)
 	carousel.confirmed.connect(func(i: int) -> void:
 		if ids[i] != "":
@@ -435,7 +446,7 @@ func _build_car() -> void:
 		var label := String(spec.get("name", entry.get("model_id", "car")))
 		var over_cap := _pending_challenge != "" and not eligible_ids.has(iid)
 		var card := carousel.add_card(over_cap)
-		card.visual.add_child(_card_icon(label, UITheme.MUTED))
+		card.visual.add_child(_card_icon("car"))
 		card.info.add_child(UITheme.label(label))
 		if over_cap:
 			card.info.add_child(UITheme.label("Over the rating cap", "dim"))
@@ -454,7 +465,7 @@ func _build_car() -> void:
 		var car_name := String(spec.get("name", model_id))
 		var cant_afford := Save.money() < cost
 		var card := carousel.add_card(cant_afford)
-		card.visual.add_child(_card_icon(car_name, UITheme.MUTED))
+		card.visual.add_child(_card_icon("car"))
 		card.info.add_child(UITheme.label(car_name))
 		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
 		# Appended in a branch rather than a ternary: a null/String ternary is an
@@ -514,7 +525,7 @@ func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 			var preview: CarCardPreview = card.visual.get_child(0)
 			card.visual.remove_child(preview)
 			CarPreviewCache.park(preview)
-			card.visual.add_child(_card_icon(_car_ref_name(car_refs[i]), UITheme.MUTED))
+			card.visual.add_child(_card_icon("car"))
 
 	# Give every card that entered the window its car's preview — cached already (a car
 	# seen earlier this visit, or warmed in the background) or built fresh otherwise. A
@@ -647,21 +658,58 @@ func _build_summary() -> void:
 # acquisition — RR's shop"). Reached from MAIN, not from the run-starting flow: boost
 # levels and the Engine Swap unlock are permanent purchases available any time, unlike car
 # buying, which decision 28 keeps on the CAR page above (see that function's own comment).
-
+#
+# ONE flat list — every purchasable sits side by side in the same carousel, no
+# boost-levels sub-page: these are all permanent money sinks a player comparison-shops
+# between, so burying half of them a click deeper hid them from the exact screen where
+# the money gets spent.
+#
+# One card per BoostLibrary.CATALOGUE id: its level (out of GameConfig.boost_level_max),
+# the price of the NEXT level, and the effect range the whole ladder covers (decision 42
+# — "the shop shows the effect range per level ... so the purchase is legible without a
+# live car to compute against"; BoostLibrary.effect_range_text is that formatting), then
+# the Engine Swap unlock card. Confirming a card makes the purchase; a card at its cap,
+# already bought, or the player cannot afford is disabled (shown, dimmed — CardCarousel's
+# own disabled convention, same as a locked region card), so the cursor's confirm can
+# never land on a dead purchase.
 func _build_shop() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	var max_level := int(Config.data.boost_level_max)
 	var carousel := _build_carousel()
 	var actions: Array[Callable] = []
 
-	_text_card(carousel, "Boost levels", "", false, UITheme.GOLD)
-	actions.append(func() -> void: _show(View.BOOST_SHOP))
+	for id in BoostLibrary.CATALOGUE:
+		var boost_id := String(id)
+		var level := Save.boost_level(boost_id)
+		var label := BoostLibrary.label_for(boost_id)
+		var at_cap := level >= max_level
+		var price := Save.boost_level_price(boost_id)
+		var card := carousel.add_card(at_cap or Save.money() < price)
+		card.visual.add_child(_card_icon(boost_id))
+		var title := UITheme.label(label)
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.info.add_child(title)
+		var sub := UITheme.label("Lv %d/%d, rolls %s" % [level, max_level,
+			BoostLibrary.effect_range_text(boost_id)], "dim")
+		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.info.add_child(sub)
+		# Appended in a branch rather than a ternary: the two strings' intent differs
+		# (a state vs a price) and each wants its own theme colour, not just its own text.
+		if at_cap:
+			var max_lbl := UITheme.label("MAX")
+			max_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			card.info.add_child(max_lbl)
+		else:
+			var price_lbl := UITheme.label("Next — %d" % price, "gold")
+			price_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			card.info.add_child(price_lbl)
+		actions.append(func() -> void: _buy_boost_level(boost_id))
 
 	var unlocked := Save.engine_swap_unlocked()
-	var price := Save.engine_swap_unlock_price()
-	var swap_disabled := unlocked or Save.money() < price
+	var swap_price := Save.engine_swap_unlock_price()
 	_text_card(carousel, "Engine Swap",
-		"Unlocked" if unlocked else "Unlock — %d" % price,
-		swap_disabled, UITheme.GOLD)
+		"Unlocked" if unlocked else "Unlock — %d" % swap_price,
+		unlocked or Save.money() < swap_price, "engine_swap")
 	actions.append(_buy_engine_swap_unlock)
 
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
@@ -673,113 +721,94 @@ func _buy_engine_swap_unlock() -> void:
 		_show(View.SHOP)
 
 
-# --- BOOST_SHOP ------------------------------------------------------------------
-# One row per BoostLibrary.CATALOGUE id: its level (out of GameConfig.boost_level_max), the
-# price of the NEXT level, and the effect range the whole ladder covers (decision 42 — "the
-# shop shows the effect range per level ... so the purchase is legible without a live car to
-# compute against"; BoostLibrary.effect_range_text is that formatting). Pressing a row buys
-# the next level; a row at the cap or the player cannot afford is disabled + menu_nav_skip,
-# same pattern as every other unpressable row on this shell.
-func _build_boost_shop() -> void:
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
-	var max_level := int(Config.data.boost_level_max)
-	for id in BoostLibrary.CATALOGUE:
-		var boost_id := String(id)
-		var level := Save.boost_level(boost_id)
-		var label := BoostLibrary.label_for(boost_id)
-		var range_text := BoostLibrary.effect_range_text(boost_id)
-		var at_cap := level >= max_level
-		var row_text: String
-		if at_cap:
-			row_text = "%s — MAX (Lv %d/%d, rolls %s)" % [label, level, max_level, range_text]
-		else:
-			var price := Save.boost_level_price(boost_id)
-			row_text = "%s — Lv %d/%d, rolls %s — %d" % [label, level, max_level, range_text, price]
-		var row := _row(row_text, func() -> void: _buy_boost_level(boost_id))
-		if at_cap or Save.money() < Save.boost_level_price(boost_id):
-			row.disabled = true
-			row.set_meta("menu_nav_skip", true)
-			row.focus_mode = Control.FOCUS_NONE
-	_action("Back", func() -> void: _show(View.SHOP))
-
-
 func _buy_boost_level(id: String) -> void:
 	if Save.buy_boost_level(id):
-		_show(View.BOOST_SHOP)
+		_show(View.SHOP)
 
 
-# --- PERKS -----------------------------------------------------------------------
-# Stage 7's perks (todo/roguelike-pivot.md "Perks — a straight lift from RR"). One row
-# per PerkLibrary.all() entry, in ONE of three states — locked (unlock stat below its
+# --- SKILLS -----------------------------------------------------------------------
+# Stage 7's skills (todo/roguelike-pivot.md "Skills — a straight lift from RR"). One row
+# per SkillLibrary.all() entry, in ONE of three states — locked (unlock stat below its
 # threshold, shown but not focusable, same idiom as a locked region), purchasable (a Buy
-# row), or owned (an Equip/Unequip row, gated on GameConfig.perk_max_equipped once
-# every owned slot is full). NO GAMEPLAY EFFECT YET — see PerkLibrary's own header —
+# row), or owned (an Equip/Unequip row, gated on GameConfig.skill_max_equipped once
+# every owned slot is full). NO GAMEPLAY EFFECT YET — see SkillLibrary's own header —
 # this page is the gate/purchase/equip state machine, not a stat-boosting one.
 
-func _build_perks() -> void:
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
-	var equipped := Save.equipped_perks()
-	var cap := int(Config.data.perk_max_equipped)
+func _build_skills() -> void:
+	# The equipped count is the page's ONE header line, deliberately not joined by a
+	# "Money: N" readout: the header must occupy the same height on every visit so the
+	# carousel below doesn't jump, and the money a Buy card needs is already on the
+	# card itself ("Buy — 5000", dimmed when unaffordable).
+	var equipped := Save.equipped_skills()
+	var cap := int(Config.data.skill_max_equipped)
 	_page.body().add_child(UITheme.label("Equipped: %d/%d" % [equipped.size(), cap]))
 
 	var carousel := _build_carousel()
 	var actions: Array[Callable] = []
 
-	for perk in PerkLibrary.all():
-		var id := String(perk.get("id", ""))
+	for skill in SkillLibrary.all():
+		var id := String(skill.get("id", ""))
 		if id.is_empty():
 			continue
-		var label := PerkLibrary.label_for(id)
-		if not PerkLibrary.is_unlocked(id, Save.profile):
-			_text_card(carousel, label, "Locked — %s" % PerkLibrary.unlock_label(id),
-				true, UITheme.MUTED)
+		var label := SkillLibrary.label_for(id)
+		if not SkillLibrary.is_unlocked(id, Save.profile):
+			_text_card(carousel, label, "Locked — %s" % SkillLibrary.unlock_label(id),
+				true, id)
 			actions.append(func() -> void: pass)
 			continue
-		if not Save.owns_perk(id):
-			var price := PerkLibrary.price_of(id)
+		if not Save.owns_skill(id):
+			var price := SkillLibrary.price_of(id)
 			_text_card(carousel, label, "Buy — %d" % price,
-				Save.money() < price, UITheme.GOLD)
-			actions.append(func() -> void: _buy_perk(id))
+				Save.money() < price, id)
+			actions.append(func() -> void: _buy_skill(id))
 			continue
-		if Save.perk_equipped(id):
-			_text_card(carousel, label, "Equipped — tap to unequip", false, UITheme.GREEN)
-			actions.append(func() -> void: _unequip_perk(id))
+		if Save.skill_equipped(id):
+			_text_card(carousel, label, "Equipped — tap to unequip", false, id)
+			actions.append(func() -> void: _unequip_skill(id))
 		else:
 			_text_card(carousel, label, "Tap to equip",
-				equipped.size() >= cap, UITheme.GOLD)
-			actions.append(func() -> void: _equip_perk(id))
+				equipped.size() >= cap, id)
+			actions.append(func() -> void: _equip_skill(id))
 
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 	_action("Back", func() -> void: _show(View.MAIN))
 
 
-func _buy_perk(id: String) -> void:
-	if Save.buy_perk(id):
-		_show(View.PERKS)
+func _buy_skill(id: String) -> void:
+	if Save.buy_skill(id):
+		_show(View.SKILLS)
 
 
-func _equip_perk(id: String) -> void:
-	if Save.equip_perk(id):
-		_show(View.PERKS)
+func _equip_skill(id: String) -> void:
+	if Save.equip_skill(id):
+		_show(View.SKILLS)
 
 
-func _unequip_perk(id: String) -> void:
-	if Save.unequip_perk(id):
-		_show(View.PERKS)
+func _unequip_skill(id: String) -> void:
+	if Save.unequip_skill(id):
+		_show(View.SKILLS)
 
 
 # --- STATS -------------------------------------------------------------------------
 # Stage 7's lifetime stats (todo/roguelike-pivot.md "Lifetime global stats"). Pure
-# read-out, one row per LifetimeStats.IDS — THE TRAP HERE, per CLAUDE.md, is that a
-# wall of read-only rows has nothing focusable at all if every row is a Label; every
-# row here IS a Label (nothing on this page is chooseable), so Back — a real Button —
-# is deliberately the page's ONLY focusable control, same as MenuNav requires of
-# every menu in the game.
+# read-out, one row per PAIR of LifetimeStats.IDS — THE TRAP HERE, per CLAUDE.md, is
+# that a wall of read-only rows has nothing focusable at all if every row is a Label;
+# every row here IS a Label (nothing on this page is chooseable), so Back — a real
+# Button — is deliberately the page's ONLY focusable control, same as MenuNav requires
+# of every menu in the game.
+#
+# TWO COLUMNS (a 2-wide GridContainer, ids in table order reading left-to-right then
+# down): ten stats as ten single-column rows ran the page too tall for the screen, and
+# each row is short enough that two sit comfortably side by side.
 
 func _build_stats() -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", UITheme.GAP)
+	_page.body().add_child(grid)
 	for id in LifetimeStats.IDS:
 		var stat_id := String(id)
-		_page.body().add_child(UITheme.label(
+		grid.add_child(UITheme.label(
 			"%s: %d" % [LifetimeStats.label_for(stat_id), Save.lifetime_stat(stat_id)]))
 	_action("Back", func() -> void: _show(View.MAIN))
 

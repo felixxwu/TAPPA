@@ -75,12 +75,12 @@ runtime is free to retune itself). `Config.authored_value(field, fallback)` read
 off it.
 
 Its one caller is `UpgradeLibrary._reseed_globals`. A per-car field mutated by the effects
-funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the perk rows
+funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the skill rows
 (`todo/roguelike-pivot.md` decision 51) target GLOBAL tunables — a coin radius, a money
 rate, a stage-target pace — that nothing re-seeds, on a `Config.data` that outlives every
 scene. Without a pristine copy to read there is no way back to the authored number, so a
-multiplier would compound stage after stage and un-equipping the perk would never undo it.
-See [perks.md](perks.md) → *Why every perk row carries `reseed`*.
+multiplier would compound stage after stage and un-equipping the skill would never undo it.
+See [skills.md](skills.md) → *Why every skill row carries `reseed`*.
 
 Note the difference from `snapshot_values()` above: that captures the LIVE config at a
 moment (including engine fields written at fielding time); this is the authored file, and

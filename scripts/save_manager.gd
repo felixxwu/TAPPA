@@ -1,5 +1,5 @@
 extends Node
-# Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md, features/perks.md — update in the same change as this file.
+# Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md, features/skills.md — update in the same change as this file.
 # Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /
@@ -83,8 +83,13 @@ const KEY_MONEY := "money"                    # the single currency (decision 21
 const KEY_RUN := "run"
 const KEY_REGIONS_CLEARED := "regions_cleared" # ids of regions whose 8 stages are done
 const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (meta tier)
-const KEY_BOUGHT_PERKS := "bought_perks"      # perk ids owned
-const KEY_EQUIPPED_PERKS := "equipped_perks"  # perk ids currently slotted (capped)
+# Persisted key STRINGS keep their historical "perks" names on purpose: they are what
+# existing saves carry on disk, and this save format refuses (rather than migrates) any
+# profile whose schema_version doesn't match exactly — renaming them would brick every
+# current save for a cosmetic code rename. The constants say "skills"; the disk says
+# "perks". A future SCHEMA_VERSION reset is the moment to align them.
+const KEY_BOUGHT_SKILLS := "bought_perks"      # skill ids owned
+const KEY_EQUIPPED_SKILLS := "equipped_perks"  # skill ids currently slotted (capped)
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
 # The Engine Swap capability's purchased-unlock flag (todo/roguelike-pivot.md decision 17 —
 # re-gated as a meta shop purchase). Read by RallyLibrary.engine_swaps_unlocked, which used
@@ -557,8 +562,8 @@ func _default_profile() -> Dictionary:
 		KEY_MONEY: int(Config.data.run_starting_money),
 		KEY_REGIONS_CLEARED: [],
 		KEY_BOOST_LEVELS: {},
-		KEY_BOUGHT_PERKS: [],
-		KEY_EQUIPPED_PERKS: [],
+		KEY_BOUGHT_SKILLS: [],
+		KEY_EQUIPPED_SKILLS: [],
 		KEY_LIFETIME: {},
 		KEY_ENGINE_SWAP_UNLOCKED: false,
 		"settings": {},
@@ -690,7 +695,7 @@ func apply_damage(instance_id: int, amount: float) -> void:
 
 # The inverse of apply_damage: give `amount` HP back, capped at the car's authored
 # max_hp. Used by RunSession.report_event_result when a stage ends with a NET heal (the
-# "self_healing" perk, todo/roguelike-pivot.md decision 51) — without it the trickle
+# "self_healing" skill, todo/roguelike-pivot.md decision 51) — without it the trickle
 # would be silently discarded at every stage boundary.
 #
 # Deliberately NOT a repair: it moves HP only, leaving `wheel_toe` bent. Straightening
@@ -1030,7 +1035,7 @@ func add_money(amount: int) -> int:
 # Returns whether the purchase went through, so a caller can never half-spend.
 #
 # THE ONE FUNNEL every purchase goes through (buy_car, buy_boost_level,
-# buy_engine_swap_unlock, buy_perk) — LifetimeStats.MONEY_SPENT is written HERE so it
+# buy_engine_swap_unlock, buy_skill) — LifetimeStats.MONEY_SPENT is written HERE so it
 # covers every sink automatically, the same reasoning as add_money's own comment.
 # Never called on a refused purchase (every buy_* checks its own precondition first),
 # so a rejected buy never inflates this counter.
@@ -1165,72 +1170,72 @@ func raise_lifetime_stat(id: String, value: int) -> void:
 	save()
 
 
-# --- Perks (todo/roguelike-pivot.md "Perks — a straight lift from RR") -----------
+# --- Skills (todo/roguelike-pivot.md "Skills — a straight lift from RR") -----------
 #
-# Three states, kept apart by PerkLibrary.is_unlocked / is_purchasable (both pure,
-# reading a profile dict) and owns_perk below: LOCKED (unlock stat below its
+# Three states, kept apart by SkillLibrary.is_unlocked / is_purchasable (both pure,
+# reading a profile dict) and owns_skill below: LOCKED (unlock stat below its
 # threshold), PURCHASABLE (threshold crossed, not yet bought), OWNED (bought).
-# Equipping is a SEPARATE step from owning — perk_equipped / equip_perk /
-# unequip_perk — capped at GameConfig.perk_max_equipped (RR's PERK_MAX_EQUIPPED = 3).
+# Equipping is a SEPARATE step from owning — skill_equipped / equip_skill /
+# unequip_skill — capped at GameConfig.skill_max_equipped (RR's PERK_MAX_EQUIPPED = 3).
 #
-# NO GAMEPLAY EFFECT YET (see PerkLibrary's own header) — buy_perk/equip_perk only
-# move an id between these three lists; nothing currently reads KEY_EQUIPPED_PERKS
+# NO GAMEPLAY EFFECT YET (see SkillLibrary's own header) — buy_skill/equip_skill only
+# move an id between these three lists; nothing currently reads KEY_EQUIPPED_SKILLS
 # for anything but display.
 
-func owns_perk(id: String) -> bool:
-	return (profile.get(KEY_BOUGHT_PERKS, []) as Array).has(id)
+func owns_skill(id: String) -> bool:
+	return (profile.get(KEY_BOUGHT_SKILLS, []) as Array).has(id)
 
 
-func equipped_perks() -> Array:
-	return (profile.get(KEY_EQUIPPED_PERKS, []) as Array).duplicate()
+func equipped_skills() -> Array:
+	return (profile.get(KEY_EQUIPPED_SKILLS, []) as Array).duplicate()
 
 
-func perk_equipped(id: String) -> bool:
-	return equipped_perks().has(id)
+func skill_equipped(id: String) -> bool:
+	return equipped_skills().has(id)
 
 
-# Buy `id` outright. Refuses (no mutation) for an id PerkLibrary does not catalogue,
+# Buy `id` outright. Refuses (no mutation) for an id SkillLibrary does not catalogue,
 # one already owned, one not yet PURCHASABLE (its unlock stat hasn't crossed its
-# threshold — PerkLibrary.is_purchasable), or one the player cannot afford. Same
+# threshold — SkillLibrary.is_purchasable), or one the player cannot afford. Same
 # "byte-identical on refusal" rule as buy_car / buy_boost_level: every precondition
 # is checked BEFORE spend_money, so a caller never half-spends into a purchase that
 # was going to be rejected anyway.
-func buy_perk(id: String) -> bool:
-	if owns_perk(id):
+func buy_skill(id: String) -> bool:
+	if owns_skill(id):
 		return false
-	if not PerkLibrary.is_purchasable(id, profile):
+	if not SkillLibrary.is_purchasable(id, profile):
 		return false
-	if not spend_money(PerkLibrary.price_of(id)):
+	if not spend_money(SkillLibrary.price_of(id)):
 		return false
-	var bought: Array = profile.get(KEY_BOUGHT_PERKS, [])
+	var bought: Array = profile.get(KEY_BOUGHT_SKILLS, [])
 	bought.append(id)
-	profile[KEY_BOUGHT_PERKS] = bought
+	profile[KEY_BOUGHT_SKILLS] = bought
 	save()
 	return true
 
 
-# Equip an OWNED perk. Refuses (no mutation) if not owned, already equipped, or the
-# cap (GameConfig.perk_max_equipped) is already full.
-func equip_perk(id: String) -> bool:
-	if not owns_perk(id) or perk_equipped(id):
+# Equip an OWNED skill. Refuses (no mutation) if not owned, already equipped, or the
+# cap (GameConfig.skill_max_equipped) is already full.
+func equip_skill(id: String) -> bool:
+	if not owns_skill(id) or skill_equipped(id):
 		return false
-	var equipped: Array = profile.get(KEY_EQUIPPED_PERKS, [])
-	if equipped.size() >= int(Config.data.perk_max_equipped):
+	var equipped: Array = profile.get(KEY_EQUIPPED_SKILLS, [])
+	if equipped.size() >= int(Config.data.skill_max_equipped):
 		return false
 	equipped.append(id)
-	profile[KEY_EQUIPPED_PERKS] = equipped
+	profile[KEY_EQUIPPED_SKILLS] = equipped
 	save()
 	return true
 
 
-# Unequip a perk. Refuses (no mutation) if it wasn't equipped — still owned either
-# way, this only ever changes which SLOTTED perks are in force.
-func unequip_perk(id: String) -> bool:
-	var equipped: Array = profile.get(KEY_EQUIPPED_PERKS, [])
+# Unequip a skill. Refuses (no mutation) if it wasn't equipped — still owned either
+# way, this only ever changes which SLOTTED skills are in force.
+func unequip_skill(id: String) -> bool:
+	var equipped: Array = profile.get(KEY_EQUIPPED_SKILLS, [])
 	if not equipped.has(id):
 		return false
 	equipped.erase(id)
-	profile[KEY_EQUIPPED_PERKS] = equipped
+	profile[KEY_EQUIPPED_SKILLS] = equipped
 	save()
 	return true
 

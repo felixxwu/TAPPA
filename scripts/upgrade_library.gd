@@ -25,9 +25,9 @@ extends RefCounted
 # `active_effects` is the SEAM where the input comes from: a car's `boosts` list.
 # TWO writers fill it, both in world.gd::_field_car, both on a DUPLICATED owned-car
 # dict so neither reaches the saved profile: the run's picked boosts
-# (RunSession.boosts, stage 5) and the player's equipped perks
-# (PerkLibrary.equipped_effects, decision 51). They differ in lifetime, not in
-# mechanism — see features/perks.md.
+# (RunSession.boosts, stage 5) and the player's equipped skills
+# (SkillLibrary.equipped_effects, decision 51). They differ in lifetime, not in
+# mechanism — see features/skills.md.
 #
 # Also still here: `stock_drive_mode` / `resolve_drive_override`, the drive-mode
 # resolver car.gd and effective_meta read. It never depended on the catalogue — and,
@@ -141,8 +141,8 @@ const EFFECTS := {
 	"brake_force_mult": {"field": "brake_torque", "op": "mult", "feeds_pw": false},
 	"drag_mult":         {"field": "drag_coefficient", "op": "mult", "feeds_pw": false},
 	# --- THE PERK ROWS (todo/roguelike-pivot.md decision 51) ----------------------
-	# Perks reach gameplay through THIS table and a car's `boosts` list, exactly as the
-	# decision requires ("do not build a parallel modifier path") — PerkLibrary authors
+	# Skills reach gameplay through THIS table and a car's `boosts` list, exactly as the
+	# decision requires ("do not build a parallel modifier path") — SkillLibrary authors
 	# entries, world.gd merges them alongside the run's boosts, and everything below is
 	# already written.
 	#
@@ -196,7 +196,7 @@ static func _cfg_fields(desc: Dictionary) -> Array:
 #
 # FILLED AT FIELDING TIME by world.gd::_field_car, from two sources with different
 # LIFETIMES but one mechanism: `RunSession.boosts()` (run-scoped picks, wiped when the run
-# ends) and `PerkLibrary.equipped_effects(Save.profile)` (permanent purchases, re-derived
+# ends) and `SkillLibrary.equipped_effects(Save.profile)` (permanent purchases, re-derived
 # on every stage boot). Outside a run the list is empty and `apply`, `effective_meta` and
 # `grip_meta` all run their loops zero times, which makes a car exactly its
 # CarLibrary/EngineLibrary baseline plus tuning plus damage.
@@ -205,7 +205,7 @@ static func _cfg_fields(desc: Dictionary) -> Array:
 # pure and testable with no session standing up, it is the same place `tuning` and
 # `swapped_engine` already live, and it means a new source of effects WRITES the key (on the
 # owned dict handed to Car.apply_owned / Car.refit_upgrades) rather than re-plumbing five
-# call sites — which is exactly how perks were added without touching this file's loops. It is deliberately NOT persisted by Save: a run's boosts are wiped on run end
+# call sites — which is exactly how skills were added without touching this file's loops. It is deliberately NOT persisted by Save: a run's boosts are wiped on run end
 # (todo/roguelike-pivot.md, "Soft permadeath"), so they must not survive in the profile.
 static func active_effects(owned_car: Dictionary) -> Array:
 	return owned_car.get("boosts", [])
@@ -236,12 +236,12 @@ static func _cfg_set(cfg: GameConfig, field: String, value: Variant) -> void:
 # apply() runs. That re-seed is what makes a "mult" row safe: however many times a car is
 # fielded, the multiplier lands on a fresh baseline.
 #
-# The PERK rows have no such re-seed. `coin_pickup_radius_m`, `coins_per_stage`,
+# The SKILL rows have no such re-seed. `coin_pickup_radius_m`, `coins_per_stage`,
 # `run_fast_bonus_money` and friends are GLOBAL tunables on the shared, long-lived
 # Config.data (nothing calls Config.reset() between stages — see world.gd's _exit_tree,
 # which resets weather_sun_mult for the very same reason). Without this pre-pass a coin
 # radius multiplied on stage 1 would be multiplied AGAIN on stage 2, and un-equipping the
-# perk would never give the authored number back at all.
+# skill would never give the authored number back at all.
 #
 # So: before any effect is applied, every `reseed` row's config fields are restored from
 # the PRISTINE authored baseline (Config.authored_value). Unconditional — it must run even
