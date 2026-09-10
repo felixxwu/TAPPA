@@ -45,7 +45,7 @@ next, so a stale page can never sit under the tree still claiming input.
 
 | Page | Offers |
 | --- | --- |
-| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit |
+| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop (**disabled while the profile owns no car** — reads "Buy a car first"; every shop ladder is a permanent sink, so spending there before owning a car can leave a player unable to afford one, and money only comes from running stages), Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
 | `SUMMARY` | Stages cleared, money earned, per-stage times |

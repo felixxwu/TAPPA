@@ -552,6 +552,26 @@ func test_progression_reads_the_authored_order_not_array_position() -> void:
 
 # --- The meta shop (stage 6) ---------------------------------------------------
 
+# The shop is a permanent money sink and money only comes from running stages, which needs
+# a car — so spending there before owning one can leave a player unable to afford any car
+# at all. The MAIN page's Shop row is disabled until the profile owns a car.
+func test_the_shop_is_not_confirmable_while_the_profile_owns_no_car() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_all_texts().contains("SHOP"),
+		"the shop row is still SHOWN with no car, so the player can see why it is gated")
+	assert_false(_confirmable_texts().contains("SHOP"),
+		"with no car owned, the shop row is not confirmable")
+
+
+func test_owning_a_car_re_enables_the_shop() -> void:
+	_save.grant_car(String((CarLibrary.all()[0] as Dictionary).get("id", "")))
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_confirmable_texts().contains("SHOP"),
+		"once a car is owned the shop row is confirmable again")
+
+
 # Decision 28: the CAR page is no longer a dead end for a car-less profile — a fresh
 # profile is seeded with money (GameConfig.run_starting_money) and the page lists
 # unowned cars with a Buy action.
