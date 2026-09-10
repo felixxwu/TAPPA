@@ -124,23 +124,28 @@ driving laps in the background.)
 
 The pre-pivot `ghost_car.gd`'s whole display stack rides along on every pose:
 
-- **Transparency** — `_make_translucent` gives every `MeshInstance3D` under the
-  car a translucent `StandardMaterial3D` override (`TRANSPARENCY_ALPHA`,
-  unshaded, `DEPTH_DRAW_DISABLED` so overlapping panels don't punch holes in
-  each other, nearest-filtered to keep the PS1 look, texture/tint carried over
-  from the source material). A material override — not
-  `GeometryInstance3D.transparency` — is the only thing that works: the car's
-  own shader is unshaded and never writes ALPHA. Run after `_apply_rival_car`
-  (which reshapes the meshes) in `setup()`, so a stage's fresh body is always
-  re-ghosted. Base alpha is `rival_ghost_opacity`.
+- **Transparency** — `_make_translucent` builds, for every `MeshInstance3D` under
+  the car, a `ShaderMaterial` override running
+  `shaders/ps1_models_ghost.gdshader`: the same fake per-vertex sun/ambient maths
+  as the car's own `ps1_models_lit.gdshader` (uniform block copied straight off
+  the source material, so it inherits whatever weather-dimmed values car.gd last
+  pushed), plus a blended `ghost_alpha` and `depth_draw_never` so overlapping
+  panels don't punch holes in each other. A material override — not
+  `GeometryInstance3D.transparency` — is the only thing that works: the car's own
+  shader never writes ALPHA. Carrying the lighting across is not cosmetic detail:
+  the earlier plain unshaded `StandardMaterial3D` threw the fake sun away, and the
+  rival read as a flat, visibly LIGHTER car than the player's beside it on the
+  line. Run after `_apply_rival_car` (which reshapes the meshes) in `setup()`, so
+  a stage's fresh body is always re-ghosted. Base alpha is `rival_ghost_opacity`.
 - **Full alpha means OPAQUE, not "blended at 1.0"** — `_write_alpha` (the one
-  funnel both the start-line park and the proximity fade write through) flips
-  the materials to `TRANSPARENCY_DISABLED` + depth writes when the effective
-  alpha reaches 1, and back to the blended mode below it. Without the flip, a
-  fully-"opaque" ghost still drew in the transparent queue with no depth
-  writes, so a single-mesh body whose cab overlaps its own bed (the Acty)
-  rendered the truck bed through the cab — reading exactly like inverted
-  normals. The mode changes only on the crossing, not per frame.
+  funnel both the start-line park and the proximity fade write through) takes the
+  overrides OFF entirely when the effective alpha reaches 1, so the body renders
+  with its own materials: opaque, depth-writing, lit by the same shader the
+  player's car wears. Below 1 the overrides go back on. Without that, a
+  fully-"opaque" ghost still drew in the transparent queue with no depth writes,
+  so a single-mesh body whose cab overlaps its own bed (the Acty) rendered the
+  truck bed through the cab — reading exactly like inverted normals. The
+  attach/detach happens only on the crossing, not per frame.
 - **Slope** — `_basis_from` builds the body basis from the road's own surface
   normal (`_surface_normal`, finite-difference height probes `NORMAL_PROBE_M`
   apart) with the travel direction projected onto that plane, so the ghost

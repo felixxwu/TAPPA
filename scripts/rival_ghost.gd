@@ -98,7 +98,10 @@ var _terrain: Node = null
 var _profile: Dictionary = {}   # {"s","t"} pace-scaled, from RunSession.stage_target_profile()
 # Translucent material overrides for every mesh under the ghost's car — retained so
 # the proximity fade can drive alpha per frame without re-walking the mesh tree.
-var _ghost_materials: Array[StandardMaterial3D] = []
+# Parallel to _ghost_meshes: _ghost_materials[i] is the override for _ghost_meshes[i],
+# which _write_alpha attaches and detaches as the alpha crosses full opacity.
+var _ghost_materials: Array[ShaderMaterial] = []
+var _ghost_meshes: Array[MeshInstance3D] = []
 # The driver-name Label3D floating over the ghost (fades with the car via _set_alpha).
 var _nametag: Label3D = null
 # The player's car, for the proximity fade/cull (set_player). Null in bare harnesses.
@@ -332,6 +335,7 @@ func free_ghost() -> void:
 	_car = null
 	_nametag = null  # a child of the car; freed with it
 	_ghost_materials.clear()
+	_ghost_meshes.clear()
 	_reentry_s = -1.0
 
 
@@ -386,19 +390,23 @@ func _ground_y(x: float, z: float) -> float:
 
 # --- Ghost display (transparency, slope, slip, wheels — features/rival-ghost.md) ---
 
-# Give every mesh under the ghost's car a translucent override. The car's own shader
-# (ps1_models_lit.gdshader) is unshaded and never writes ALPHA, so
+# Build the translucent override for every mesh under the ghost's car (and let
+# _write_alpha decide whether it is worn — at full alpha it is not). The car's own
+# shader (ps1_models_lit.gdshader) never writes ALPHA, so
 # GeometryInstance3D.transparency is a no-op on it — a real material override is the
 # only thing that makes the ghost see-through.
 func _make_translucent(c: Node) -> void:
 	var alpha: float = clampf(Config.data.rival_ghost_opacity, 0.0, 1.0)
 	_ghost_materials.clear()
+	_ghost_meshes.clear()
 	for mesh in _mesh_instances(c):
-		var mat := _ghost_material(mesh.get_active_material(0), alpha)
-		mesh.material_override = mat
+		var mat := _ghost_material(mesh.get_active_material(0))
 		# Retained so the proximity fade can drive alpha per frame without re-walking
-		# the mesh tree or rebuilding materials.
+		# the mesh tree or rebuilding materials. _write_alpha does the attaching:
+		# at full alpha the override comes OFF entirely (see there).
 		_ghost_materials.append(mat)
+		_ghost_meshes.append(mesh)
+	_write_alpha(alpha)
 
 
 func _mesh_instances(node: Node) -> Array:
@@ -410,55 +418,60 @@ func _mesh_instances(node: Node) -> Array:
 	return out
 
 
-# A translucent, unshaded stand-in for `source`, carrying its texture/tint across.
-func _ghost_material(source: Material, alpha: float) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# Don't write depth: overlapping ghost panels (body over wheel arch) otherwise
-	# punch holes in each other at the same alpha.
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.albedo_color = Color(1.0, 1.0, 1.0, alpha)
+# A translucent stand-in for `source`, carrying its texture/tint AND its fake
+# lighting across (shaders/ps1_models_ghost.gdshader). Carrying the light block over
+# is the point: with a plain unshaded material the rival lost the car's fake sun and
+# read as a flat, much lighter car than the player's parked beside it.
+func _ghost_material(source: Material) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/ps1_models_ghost.gdshader")
+	mat.set_shader_parameter("albedo_color", Color(1.0, 1.0, 1.0, 1.0))
 	if source is ShaderMaterial:
 		var sm := source as ShaderMaterial
-		var tex = sm.get_shader_parameter("albedo_texture")
-		if tex != null:
-			mat.albedo_texture = tex
-		var tint = sm.get_shader_parameter("albedo_color")
-		if tint != null:
-			var c3: Color = tint
-			mat.albedo_color = Color(c3.r, c3.g, c3.b, alpha)
+		# Surface, then the fake-lighting block — copied from the SOURCE rather than
+		# re-derived from Config, so the ghost inherits whatever weather-dimmed values
+		# car.gd last pushed onto the real body.
+		for key in ["albedo_texture", "albedo_color", "texture_tile",
+				"light_amount", "light_dir", "sun_color", "sky_color", "ground_color"]:
+			var v = sm.get_shader_parameter(key)
+			if v != null:
+				mat.set_shader_parameter(key, v)
 	elif source is BaseMaterial3D:
+		# No shader to copy a light block from (a plain material somewhere under the
+		# body) — light it from the live config, same values apply_car_light pushes.
 		var bm := source as BaseMaterial3D
-		mat.albedo_texture = bm.albedo_texture
-		mat.albedo_color = Color(bm.albedo_color.r, bm.albedo_color.g, bm.albedo_color.b, alpha)
-	# Nearest-neighbour, to match the PS1 look of the source shader.
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		if bm.albedo_texture != null:
+			mat.set_shader_parameter("albedo_texture", bm.albedo_texture)
+		mat.set_shader_parameter("albedo_color", bm.albedo_color)
+		Config.data.apply_car_light(mat)
+	else:
+		Config.data.apply_car_light(mat)
 	return mat
 
 
-# Write the ghost materials' effective alpha AND the render mode that alpha needs.
-# The subtlety this exists for: an alpha of 1.0 on a TRANSPARENCY_ALPHA material with
-# DEPTH_DRAW_DISABLED is still a TRANSPARENT-queue draw — no depth writes, so a
-# single-mesh body whose cab overlaps its own truck bed (the Acty) rendered the bed
-# THROUGH the cab on the start line, exactly as if its normals were inverted. At
-# full alpha the materials therefore flip to true OPAQUE (transparency disabled,
-# depth writes on) and self-occlusion comes back; below it they return to the
-# blended, depth-write-free ghost look (the overlapping-panels tradeoff that mode
-# was chosen for). The mode only changes when the value crosses the boundary — the
-# proximity fade writes the float every frame, this toggles at most on the crossing.
+# Write the ghost materials' effective alpha AND decide whether the ghost wears them
+# at all. The subtlety this exists for: a blended material at alpha 1.0 with no depth
+# writes is still a TRANSPARENT-queue draw, so a single-mesh body whose cab overlaps
+# its own truck bed (the Acty) rendered the bed THROUGH the cab on the start line,
+# exactly as if its normals were inverted. At full alpha the overrides therefore come
+# OFF and the body renders with its OWN materials — opaque, depth-writing, and lit by
+# the car's own ps1_models_lit shader, which is exactly what the player's car wears.
+# Below full alpha the overrides go back on: the blended, depth-write-free ghost look
+# (the overlapping-panels tradeoff that mode was chosen for), still fake-lit by
+# ps1_models_ghost so the rival sits in the same light as the player. The overrides
+# only change when the value crosses the boundary — the proximity fade writes the
+# float every frame, this attaches/detaches at most on the crossing.
 func _write_alpha(a: float) -> void:
 	var opaque := a >= 0.999
-	for mat in _ghost_materials:
-		mat.albedo_color.a = a
-		var want := BaseMaterial3D.TRANSPARENCY_DISABLED if opaque \
-			else BaseMaterial3D.TRANSPARENCY_ALPHA
-		if mat.transparency != want:
-			mat.transparency = want
-		var depth := BaseMaterial3D.DEPTH_DRAW_ALWAYS if opaque \
-			else BaseMaterial3D.DEPTH_DRAW_DISABLED
-		if mat.depth_draw_mode != depth:
-			mat.depth_draw_mode = depth
+	for i in _ghost_materials.size():
+		var mat: ShaderMaterial = _ghost_materials[i]
+		mat.set_shader_parameter("ghost_alpha", a)
+		var mesh: MeshInstance3D = _ghost_meshes[i] if i < _ghost_meshes.size() else null
+		if mesh == null or not is_instance_valid(mesh):
+			continue
+		var want: Material = null if opaque else mat
+		if mesh.material_override != want:
+			mesh.material_override = want
 
 
 # Scale every ghost material's alpha by `factor` (0 = invisible, 1 = configured

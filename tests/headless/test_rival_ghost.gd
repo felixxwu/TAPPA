@@ -243,8 +243,8 @@ func _display_ghost(terrain: Node = null) -> RivalGhost:
 
 func test_the_ghost_car_is_actually_translucent() -> void:
 	# GeometryInstance3D.transparency was a no-op on the car's opaque shader — assert
-	# the thing that actually makes it see-through: a material with alpha below 1.
-	# Posed by pose_at (the RUN path); the start-line park is deliberately solid.
+	# the thing that actually makes it see-through: an override whose ghost_alpha is
+	# below 1. Posed by pose_at (the RUN path); the start-line park is deliberately solid.
 	Config.data.rival_ghost_opacity = 0.5
 	var ghost := _display_ghost()
 	ghost.pose_at(0.3)
@@ -254,12 +254,35 @@ func test_the_ghost_car_is_actually_translucent() -> void:
 		if mat == null:
 			continue
 		checked += 1
-		assert_true(mat is BaseMaterial3D, "the override is a real material")
-		var bm := mat as BaseMaterial3D
-		assert_lt(bm.albedo_color.a, 1.0, "its alpha is below opaque")
-		assert_eq(bm.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA,
-			"and it is in the alpha-blended pass")
+		assert_true(mat is ShaderMaterial, "the override is a shader material")
+		var sm := mat as ShaderMaterial
+		assert_lt(float(sm.get_shader_parameter("ghost_alpha")), 1.0,
+			"its alpha is below opaque")
 	assert_gt(checked, 0, "at least one mesh got a translucent override")
+	Config.data.rival_ghost_opacity = 0.4
+
+
+func test_the_translucent_ghost_keeps_the_cars_fake_lighting() -> void:
+	# The rival used to wear a plain unshaded material, throwing the car's fake
+	# sun/ambient away — so it read as a flat, much LIGHTER car than the player's.
+	# The override must carry the same lighting block the real body wears.
+	Config.data.rival_ghost_opacity = 0.5
+	var ghost := _display_ghost()
+	ghost.pose_at(0.3)
+	var checked := 0
+	for i in ghost._ghost_materials.size():
+		var mat: ShaderMaterial = ghost._ghost_materials[i]
+		var source := ghost._ghost_meshes[i].get_active_material(0)
+		if not (source is ShaderMaterial):
+			continue
+		var src := source as ShaderMaterial
+		if src.get_shader_parameter("light_dir") == null:
+			continue
+		checked += 1
+		for key in ["light_amount", "light_dir", "sun_color", "sky_color", "ground_color"]:
+			assert_eq(mat.get_shader_parameter(key), src.get_shader_parameter(key),
+				"the ghost inherits the body's %s" % key)
+	assert_gt(checked, 0, "at least one lit mesh was compared")
 	Config.data.rival_ghost_opacity = 0.4
 
 
@@ -268,31 +291,38 @@ func test_the_rival_is_solid_at_the_start_line() -> void:
 	# of the start-line shot, and translucency there would read as broken. "Opaque"
 	# means the OPAQUE render path, not merely alpha 1.0 — a blended material at
 	# full alpha still draws in the transparent queue with no depth writes, which
-	# is how the Acty's truck bed used to show through its own cab body.
+	# is how the Acty's truck bed used to show through its own cab body. So at full
+	# alpha the override comes OFF and the body wears its own (lit, depth-writing)
+	# materials.
 	var ghost := _display_ghost()
 	ghost.pose_at_distance(0.0)
 	assert_false(ghost._ghost_materials.is_empty(), "setup: the ghost has materials")
 	for mat in ghost._ghost_materials:
-		assert_almost_eq(mat.albedo_color.a, 1.0, 0.001,
+		assert_almost_eq(float(mat.get_shader_parameter("ghost_alpha")), 1.0, 0.001,
 			"the parked rival wears full opacity")
-		assert_eq(mat.transparency, BaseMaterial3D.TRANSPARENCY_DISABLED,
-			"it draws through the OPAQUE path (depth writes on)")
-		assert_eq(mat.depth_draw_mode, BaseMaterial3D.DEPTH_DRAW_ALWAYS,
-			"so its own body occludes itself — cab hides the truck bed")
+	var meshes := ghost._mesh_instances(ghost.car())
+	assert_gt(meshes.size(), 0, "setup: the ghost car has meshes")
+	for mesh in meshes:
+		assert_null(mesh.material_override,
+			"no override, so it draws through its own opaque, lit materials")
 
 
 func test_a_faded_ghost_returns_to_the_blended_pass() -> void:
 	# The mode flip cuts both ways: park solid, then fade (the proximity path), and
-	# the materials must return to alpha blending — otherwise the first fade after
-	# a start-line departure would leave an unblended, hard-edged ghost.
+	# the overrides must come back — otherwise the first fade after a start-line
+	# departure would leave a solid, unfaded ghost.
 	Config.data.rival_ghost_opacity = 0.5
 	var ghost := _display_ghost()
 	ghost.pose_at_distance(0.0)
 	ghost._set_alpha(1.0)  # the run-time path: factor 1 = the configured 0.5 base
 	for mat in ghost._ghost_materials:
-		assert_eq(mat.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA,
-			"below full alpha the ghost blends again")
-		assert_almost_eq(mat.albedo_color.a, 0.5, 0.001, "at the configured opacity")
+		assert_almost_eq(float(mat.get_shader_parameter("ghost_alpha")), 0.5, 0.001,
+			"at the configured opacity")
+	var overridden := 0
+	for mesh in ghost._mesh_instances(ghost.car()):
+		if mesh.material_override != null:
+			overridden += 1
+	assert_gt(overridden, 0, "below full alpha the ghost blends again")
 	Config.data.rival_ghost_opacity = 0.4
 
 
@@ -329,14 +359,14 @@ func test_the_ghost_fades_out_as_the_player_closes_in() -> void:
 	player.global_position = Vector3(60.0, 0.0, 0.0)
 	ghost.pose_at(2.0)
 	assert_true(ghost.car().visible, "inside the cull range the ghost renders")
-	assert_almost_eq(ghost._ghost_materials[0].albedo_color.a, 0.4, 0.01,
-		"at range it wears the full configured opacity")
+	assert_almost_eq(float(ghost._ghost_materials[0].get_shader_parameter("ghost_alpha")),
+		0.4, 0.01, "at range it wears the full configured opacity")
 
 	# Overlapping the player: faded to (near) nothing but not culled.
 	player.global_position = Vector3(ghost.car().global_position)
 	ghost.pose_at(2.0)
-	assert_almost_eq(ghost._ghost_materials[0].albedo_color.a, 0.0, 0.01,
-		"at zero separation the proximity fade erases it")
+	assert_almost_eq(float(ghost._ghost_materials[0].get_shader_parameter("ghost_alpha")),
+		0.0, 0.01, "at zero separation the proximity fade erases it")
 
 	# Past the cull: not rendered at all.
 	player.global_position = Vector3(300.0, 0.0, 0.0)
