@@ -258,6 +258,32 @@ static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 	return p
 
 
+# --- Card drop shadow --------------------------------------------------------
+
+# A SHARP (zero-blur) drop shadow cast down-right by a card, so cards read as physical
+# objects sitting above the page rather than flat black rectangles. Authored as CSS would
+# put it: offset 5px 5px, no blur, black at 20% alpha.
+#
+# NOT StyleBoxFlat's own shadow_* properties: those expand the shadow rect by
+# `shadow_size` on ALL sides before offsetting it, so a zero-blur, purely-diagonal
+# offset is unreachable (size 0 draws nothing at all, and any size > 0 leaks the shadow
+# out of the top-left edge too). A plain offset quad drawn BEHIND the card is the exact
+# shape, so that is what card_shadow_offset()/card_shadow_box() are for — see
+# CardCarousel.add_card, which positions the quad in _layout.
+const CARD_SHADOW_AUTHORED := 5.0
+
+# The shadow's pixel offset (x == y), scaled from the 400px authoring canvas.
+static func card_shadow_offset() -> float:
+	return float(px(CARD_SHADOW_AUTHORED))
+
+
+# The shadow quad's fill: flat black at 20% alpha, sharp corners, no padding.
+static func card_shadow_box() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.0, 0.0, 0.0, 0.2)
+	return box
+
+
 # A solid black, sharp-cornered reward-card stylebox with a green accent border (a
 # reward is a positive event — GREEN is the design system's "positive" colour).
 # Shared by the upgrade reveal and the podium car-reveal cards.

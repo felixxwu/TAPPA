@@ -37,6 +37,12 @@ signal confirmed(index: int)
 
 class Card:
 	var root: PanelContainer
+	# The sharp drop-shadow quad drawn BEHIND `root`, offset down-right by
+	# UITheme.card_shadow_offset(). A sibling of `root` under `_strip` (not a child of it)
+	# because `root` clips its contents and paints its own opaque black fill over anything
+	# underneath — a shadow has to live outside the card to be seen at all. `_layout` keeps
+	# it glued to the card's rect and matches its dimming.
+	var shadow: Panel
 	var visual: Control
 	var info: VBoxContainer
 	var disabled := false
@@ -129,6 +135,13 @@ func _card_stylebox() -> StyleBoxFlat:
 func add_card(disabled: bool = false) -> Card:
 	var card := Card.new()
 	card.disabled = disabled
+	# Added to _strip BEFORE card.root so it draws underneath it (siblings paint in tree
+	# order), and mouse-ignoring so it never eats a tap meant for a card.
+	card.shadow = Panel.new()
+	card.shadow.add_theme_stylebox_override("panel", UITheme.card_shadow_box())
+	card.shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_strip.add_child(card.shadow)
+
 	card.root = PanelContainer.new()
 	card.root.custom_minimum_size = Vector2(_card_width(), _card_height())
 	card.root.add_theme_stylebox_override("panel", _card_stylebox())
@@ -292,6 +305,16 @@ func _layout() -> void:
 		card.root.position = Vector2(x, (size.y - _card_height()) * 0.5)
 		card.root.modulate.a = 1.0 if i == _selected \
 			else Config.data.card_carousel_unselected_alpha
+		# The shadow tracks the card's ACTUAL rect (a card can be taller than
+		# _card_height() if a caller's content pushed it) and dims with it, so an
+		# unselected card's shadow fades exactly as far as the card does.
+		var shadow_off := UITheme.card_shadow_offset()
+		card.shadow.position = card.root.position + Vector2(shadow_off, shadow_off)
+		# Before the card's first layout pass its size can still be zero — fall back to the
+		# nominal card rect so the shadow is never a degenerate sliver on the first frame.
+		card.shadow.size = card.root.size if card.root.size.x > 0.0 \
+			else Vector2(_card_width(), _card_height())
+		card.shadow.modulate.a = card.root.modulate.a
 
 
 func _notification(what: int) -> void:

@@ -84,6 +84,15 @@ as every other menu — it's a different LAYOUT, not a different visual language
 dim alpha, snap timing) live on `GameConfig`, not here, since they're gameplay-feel
 tuning rather than the shared design-system palette.
 
+### Card drop shadow
+
+`UITheme.card_shadow_box()` (flat black, 20% alpha, sharp corners) and
+`UITheme.card_shadow_offset()` (`CARD_SHADOW_AUTHORED = 5` authored px, scaled by
+`UITheme.px`) define the hard down-right shadow every carousel card casts. The shadow is
+drawn as a separate quad behind the card rather than through `StyleBoxFlat.shadow_*` —
+see [card-carousel.md](card-carousel.md) → *Cards cast a sharp drop shadow* for why, and
+for how `CardCarousel._layout` positions and dims it.
+
 ## Single source of truth
 
 ## UI scale (`UITheme.UI_SCALE` / `UITheme.px`)
