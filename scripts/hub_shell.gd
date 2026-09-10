@@ -109,6 +109,18 @@ func _ready() -> void:
 	# interactive while the GET is in flight, and every failure inside is a silent
 	# no-op by design.
 	_check_for_update()
+	# THE BOOT PULL LANDS AFTER THIS PAGE IS BUILT. A signed-in player's cloud profile
+	# is downloaded asynchronously just after boot (Cloud._kick_off_initial_pull), so a
+	# run paused on another device — or on this one, before a re-install — only enters
+	# Save.profile once MAIN has already decided whether to offer "Resume run". Without
+	# this, the front door showed no Resume card on first load and only grew one after
+	# the player navigated somewhere and came back. Rebuild MAIN in place when the
+	# profile is swapped underneath us; other views are left alone (the player is
+	# mid-interaction on them, and every one of them re-reads the profile when next
+	# opened anyway).
+	if Cloud.has_signal("profile_replaced"):
+		Cloud.profile_replaced.connect(_on_profile_replaced)
+
 	# Warms CarPreviewCache so that by the time a player reaches the CAR page, every car's
 	# preview is already built and the selection can move between them with no per-car lag
 	# at all. Idempotent: cheap to call on every hub visit, since a car already cached is
@@ -133,6 +145,13 @@ func _ready() -> void:
 			loading.finish()
 	else:
 		CarPreviewCache.warm_all()
+
+
+# The cloud pull replaced the local profile (see the connect in _ready). Only MAIN is
+# rebuilt: it is the page whose contents depend on the profile the moment it is shown.
+func _on_profile_replaced() -> void:
+	if _view == View.MAIN and is_instance_valid(_page):
+		_show(View.MAIN)
 
 
 # The heading each view carries. The SUMMARY heading is the one that says something the
@@ -308,8 +327,16 @@ func _build_main() -> void:
 
 	CardUI.text_card(carousel, "New run", "", false, "new_run")
 	actions.append(func() -> void: _show(View.REGION))
-	CardUI.text_card(carousel, "Shop", "", false, "shop")
-	actions.append(func() -> void: _show(View.SHOP))
+	# The shop is GATED on owning a car. Every shop ladder is a permanent money sink, so a
+	# carless player who spends down there can end up unable to afford ANY car — a dead end
+	# with no way back, since money only comes from running stages and a run needs a car.
+	# Buying the first car (the CAR page) has to come first.
+	var has_car := not (Save.profile.get(Save.KEY_CARS, []) as Array).is_empty()
+	CardUI.text_card(carousel, "Shop", "Buy a car first" if not has_car else "",
+		not has_car, "shop")
+	actions.append(func() -> void:
+		if has_car:
+			_show(View.SHOP))
 	CardUI.text_card(carousel, "Skills", "", false, "skills")
 	actions.append(func() -> void: _show(View.SKILLS))
 	# Rally challenge sits AFTER Shop/Skills: it is a secondary way to start a run, so

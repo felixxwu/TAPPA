@@ -552,6 +552,26 @@ func test_progression_reads_the_authored_order_not_array_position() -> void:
 
 # --- The meta shop (stage 6) ---------------------------------------------------
 
+# The shop is a permanent money sink and money only comes from running stages, which needs
+# a car — so spending there before owning one can leave a player unable to afford any car
+# at all. The MAIN page's Shop row is disabled until the profile owns a car.
+func test_the_shop_is_not_confirmable_while_the_profile_owns_no_car() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_all_texts().contains("SHOP"),
+		"the shop row is still SHOWN with no car, so the player can see why it is gated")
+	assert_false(_confirmable_texts().contains("SHOP"),
+		"with no car owned, the shop row is not confirmable")
+
+
+func test_owning_a_car_re_enables_the_shop() -> void:
+	_save.grant_car(String((CarLibrary.all()[0] as Dictionary).get("id", "")))
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_confirmable_texts().contains("SHOP"),
+		"once a car is owned the shop row is confirmable again")
+
+
 # Decision 28: the CAR page is no longer a dead end for a car-less profile — a fresh
 # profile is seeded with money (GameConfig.run_starting_money) and the page lists
 # unowned cars with a Buy action.
@@ -930,3 +950,55 @@ func test_interactive_load_holds_a_loading_screen_until_every_car_is_cached() ->
 				(cached as Node).get_parent().remove_child(cached as Node)
 			(cached as CarCardPreview).free()
 		CarPreviewCache._cache.erase(key)
+
+
+# --- The Resume card and the boot-time cloud pull ------------------------------
+#
+# The paused run lives in the profile, and the profile can be REPLACED under a live
+# MAIN page: a signed-in player's cloud copy is downloaded asynchronously just after
+# boot (Cloud._kick_off_initial_pull -> CloudSync.apply_remote -> profile_replaced),
+# which is after HubShell._ready has already built MAIN and decided whether to offer
+# "Resume run". The bug this pins: on first load the front door showed no Resume card
+# for a run that WAS resumable, and only grew one once the player navigated away and
+# came back.
+
+# A minimal region-run record — the shape RunSession._persist writes, with only the
+# keys resumable_run() reads. Synthetic on purpose (CLAUDE.md: no catalogue lookups).
+func _paused_region_run() -> Dictionary:
+	return {"mode": "region", "region_id": "anywhere", "run_seed": 7, "stage_count": 8,
+		"car_instance_id": 0, "stage_index": 2, "stage_times_ms": [1000, 1000],
+		"dnf": false, "money_earned": 0}
+
+
+func test_main_offers_resume_for_a_stored_run() -> void:
+	_save.profile[Save.KEY_RUN] = _paused_region_run()
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_string_contains(_confirmable_texts(), "RESUME",
+		"MAIN must offer the paused run when the profile holds a resumable one")
+
+
+func test_profile_replaced_by_the_cloud_pull_rebuilds_main() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_false(_confirmable_texts().contains("RESUME"),
+		"setup: a fresh profile has no run to resume")
+
+	# What the boot pull does: swap the profile, then say so.
+	_save.profile[Save.KEY_RUN] = _paused_region_run()
+	Cloud.profile_replaced.emit()
+	await get_tree().process_frame
+
+	assert_eq(_shell._view, HubShell.View.MAIN, "the shell stays on MAIN")
+	assert_string_contains(_confirmable_texts(), "RESUME",
+		"a run that arrived with the cloud pull must show as resumable without leaving MAIN")
+
+
+func test_profile_replaced_does_not_yank_the_player_off_another_page() -> void:
+	_shell._show(HubShell.View.SETTINGS)
+	await get_tree().process_frame
+	_save.profile[Save.KEY_RUN] = _paused_region_run()
+	Cloud.profile_replaced.emit()
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.SETTINGS,
+		"a mid-interaction page is left alone; only MAIN rebuilds itself")
