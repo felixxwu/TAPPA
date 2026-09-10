@@ -8,7 +8,7 @@ ordered cycle list `[CHASE, BONNET]` and makes exactly one camera `current` at a
 time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
 cycle.
 
-**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`
+**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`, `tests/headless/test_photo_mode.gd`
 
 ## Persistence & the settings page
 
@@ -280,3 +280,46 @@ the fixed-offset shots just use `replay_fov`.
 See [event-replay.md](event-replay.md) for the full shot list. It goes away with the
 overlay once the standings screen closes (the player's chosen `CameraManager` mode
 resumes on the next event / return to HQ).
+
+## Photo Mode camera
+
+**Source:** `scripts/photo_mode.gd` (`class_name PhotoModeCamera`, extends `Camera3D`).
+Not part of the `CameraManager` cycle — it's a **standalone free-fly camera created on
+demand** by `world.gd` when the player picks "Photo Mode" from the in-run pause menu (see
+[menus.md](menus.md) → "Pause menu"). The whole world stays **frozen** (`get_tree().paused`
+remains `true`); only the camera moves, seating itself on the transform and FOV of the
+gameplay camera that was active when the player paused, so the shot doesn't jump.
+
+Controls are **deliberately raw physical keys**, not `InputMap` actions, because WASD are the
+rebindable driving keys and Ctrl/Shift have no actions: **W/A/S/D** move the camera
+**laterally** in the horizontal plane (diagonals normalised so two keys are no faster than
+one), **Shift** raises altitude and **Ctrl** lowers it on the **world Y axis** (so looking
+straight up doesn't hijack vertical movement), the **mouse looks** around (yaw and pitch,
+pitch clamped to ±89 degrees to prevent singularities; no roll — the free camera starts
+level), and **Esc** (the `ui_cancel` action, or gamepad **Start** / the `pause` action)
+leaves. While photo mode is active, the pause menu is **disarmed** — Esc and the Pause
+button talk to the photo camera, not the menu — and the HUD / `MobileControls` / `SpeedLines`
+are hidden. Exiting frees the camera, restores the chrome, calls `CameraManager.activate_current()`
+to re-seat the gameplay camera, and opens the pause menu again via `PauseMenu.return_from_photo_mode()`.
+
+The camera owns the mouse pointer (captured in `enter()`, released on `exit()` or if
+`_exit_tree` fires without an explicit exit — a defensive safety so a host that frees the
+camera can't strand a captured mouse). The lifetime is owned by `world.gd` (`_on_photo_mode_requested`),
+which creates one, calls `enter(from)` to seat it on the current gameplay camera, and frees it
+when the `exited` signal fires.
+
+**Movement speed and mouse sensitivity** are read from `GameConfig`:
+
+- `photo_move_speed` (m/s) — how fast the camera travels in any direction (WASD movement
+  and Ctrl/Shift altitude change use the same speed, travel direction is normalised so diagonal
+  movement is no faster than cardinal).
+- `photo_look_sensitivity` — **radians of turn per pixel** of mouse motion (applied to
+  `InputEventMouseMotion.relative`).
+
+One non-obvious piece of the takeover: `world.gd` (`_set_photo_mode_chrome`) also flips the
+`PostProcess` `SubViewportContainer` to `PROCESS_MODE_ALWAYS` for the duration. Its `_process`
+is what mirrors the current camera into the `SubViewport` that actually renders the world (see
+[rendering.md](rendering.md) and `post_process_view.gd`); left `PAUSABLE` it freezes with
+everything else and the photo camera would fly around with nothing on screen changing. It goes
+back to `PROCESS_MODE_INHERIT` on the way out, in the same one writer, so the overlays can
+never come back with the mirror left running.

@@ -1,7 +1,7 @@
 class_name PauseMenu
 extends CanvasLayer
 # Docs: features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_pause_menu.gd, tests/headless/test_menu_nav.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
+# Tests: tests/headless/test_pause_menu.gd, tests/headless/test_photo_mode.gd, tests/headless/test_menu_nav.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # In-run pause menu. A top-right Pause button freezes the game
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
@@ -19,6 +19,11 @@ extends CanvasLayer
 # the centerline beside its current position (TrackProgress.manual_reset_pose) and the
 # menu resumes. The menu itself has no car reference, so it delegates the reset upward.
 signal reset_to_track_requested
+# Emitted when the player picks "Photo Mode". world.gd owns the free-fly camera (it
+# owns the scene's cameras and overlays); this menu only hides itself and disarms so
+# the frozen shot is unobstructed. The tree stays PAUSED throughout — leaving photo
+# mode comes back to this menu, still frozen, via return_from_photo_mode().
+signal photo_mode_requested
 
 @export var camera_manager: CameraManager
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
@@ -32,6 +37,7 @@ var _settings_panel: Control   # the shared SettingsMenu + Back
 var _resume_button: Button     # default keyboard/gamepad focus when the menu opens
 var _reset_button: Button      # "Reset to track" — snaps the car back onto the road
 var _settings_button: Button   # focus returns here when backing out of Settings
+var _photo_button: Button      # "Photo Mode" — focus returns here when photo mode ends
 var _quit_button: Button       # "Quit to HQ" — abandons the rally
 
 var settings_menu: SettingsMenu
@@ -96,6 +102,24 @@ func resume() -> void:
 func _on_reset_to_track_pressed() -> void:
 	reset_to_track_requested.emit()
 	resume()
+
+
+# Photo Mode: hide this overlay and DISARM the menu (so Esc / the Pause button belong
+# to the photo camera, and can't stack an overlay over the shot), but do NOT unpause —
+# the frozen world is the whole feature. The host answers on photo_mode_requested.
+func _on_photo_mode_pressed() -> void:
+	set_input_enabled(false)
+	_set_open(false)
+	photo_mode_requested.emit()
+
+
+# Photo mode is over: re-arm and show this menu again, with the cursor back on the
+# Photo Mode row. The tree was never unpaused, so the world is still exactly as frozen
+# as when the player left it.
+func return_from_photo_mode() -> void:
+	set_input_enabled(true)
+	open()
+	UITheme.focus_grab.bind(_photo_button).call_deferred()
 
 
 # Pop the quit confirm; quit_to_hq() runs only if the player accepts. A run of EITHER
@@ -247,6 +271,12 @@ func _build_menu_panel() -> Control:
 	_reset_button = _make_menu_button("Reset to track")
 	_reset_button.pressed.connect(_on_reset_to_track_pressed)
 	col.add_child(_reset_button)
+
+	# Photo Mode — hand the screen to world.gd's free-fly camera with the tree still
+	# frozen. Esc there comes back to this menu (return_from_photo_mode).
+	_photo_button = _make_menu_button("Photo Mode")
+	_photo_button.pressed.connect(_on_photo_mode_pressed)
+	col.add_child(_photo_button)
 
 	_settings_button = _make_menu_button("Settings")
 	_settings_button.pressed.connect(_show_settings.bind(true))

@@ -316,6 +316,11 @@ func _build_overlays_and_benchmark() -> void:
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
 			pause_menu.reset_to_track_requested.connect(_on_reset_to_track_requested)
+		# Pause-menu "Photo Mode" hands the frozen screen up here too — the free-fly
+		# camera has to take over the viewport and hide the HUD, both of which this
+		# scene owns. See features/camera.md.
+		if not pause_menu.photo_mode_requested.is_connected(_on_photo_mode_requested):
+			pause_menu.photo_mode_requested.connect(_on_photo_mode_requested)
 		# Arm the pause menu now the world is generated — it's default-inert
 		# (fail-closed) so the Pause button / Esc can't open it during the awaited
 		# generation above, where pausing would freeze the tree mid-build and let the
@@ -1520,6 +1525,9 @@ var _distant_terrain: DistantTerrain
 # session runs and freed with the scene on the next event reload.
 var _start_line: StartLine
 
+# The free-fly PHOTO MODE camera while it's up, else null (see _on_photo_mode_requested).
+var _photo_camera: PhotoModeCamera
+
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
@@ -1645,6 +1653,60 @@ func _on_reset_to_track_requested() -> void:
 	if _track_progress == null or not has_node("Car"):
 		return
 	$Car.reset_to(_track_progress.manual_reset_pose())
+
+
+# Pause-menu Photo Mode: hand the screen to a free-fly PhotoModeCamera with the tree
+# still paused (the pause menu deliberately does not unpause on the way in), so the
+# world is frozen and only the viewpoint moves. This scene owns the pieces the camera
+# needs taken care of:
+#
+#  - the HUD / touch controls / speed lines are hidden, so the shot is unobstructed;
+#  - PostProcess is switched to PROCESS_MODE_ALWAYS. Its _process mirrors the current
+#    camera into the SubViewport that actually renders the world (see
+#    post_process_view.gd) — left PAUSABLE it freezes with everything else and the
+#    photo camera would move with nothing on screen changing.
+#
+# Every one of those is put back in _on_photo_mode_finished.
+func _on_photo_mode_requested() -> void:
+	if is_instance_valid(_photo_camera):
+		return  # already flying (a double-press); nothing to do
+	_photo_camera = PhotoModeCamera.new()
+	_photo_camera.name = "PhotoModeCamera"
+	_photo_camera.exited.connect(_on_photo_mode_finished)
+	add_child(_photo_camera)
+	_photo_camera.enter(get_viewport().get_camera_3d())
+	_set_photo_mode_chrome(false)
+
+
+# Esc in photo mode: drop the camera, restore the chrome, re-assert the player's chosen
+# gameplay camera and give the (still frozen) pause menu back.
+func _on_photo_mode_finished() -> void:
+	if is_instance_valid(_photo_camera):
+		# Detach BEFORE queue_free: the free lands at the end of the frame, so a photo
+		# mode re-opened in the same frame would otherwise collide with the dying node's
+		# name and land as "PhotoModeCamera2".
+		remove_child(_photo_camera)
+		_photo_camera.queue_free()
+	_photo_camera = null
+	_set_photo_mode_chrome(true)
+	if has_node("CameraManager"):
+		($CameraManager as CameraManager).activate_current()
+	var pause_menu := _pause_menu()
+	if pause_menu != null:
+		pause_menu.return_from_photo_mode()
+
+
+# Show (`on = true`) or hide the in-run screen furniture around the photo camera, and
+# flip the post-process mirror between PAUSABLE and ALWAYS with it. One writer for both
+# halves so an early return can never restore the overlays but leave the mirror running.
+func _set_photo_mode_chrome(on: bool) -> void:
+	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
+		var layer := get_node_or_null(node_name) as CanvasLayer
+		if layer != null:
+			layer.visible = on
+	var post := get_node_or_null("PostProcess") as Node
+	if post != null:
+		post.process_mode = (Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_ALWAYS)
 
 
 # Whether this run should open with the pre-event start-line scene: a session run

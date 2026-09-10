@@ -1139,6 +1139,14 @@ func has_nitrous() -> bool:
 ## roadside re-plant) always snaps, never eases. 0 disables easing entirely (snap always).
 @export_range(0.0, 20.0) var replay_fov_smoothing := 5.0
 
+## PHOTO MODE (features/camera.md) — the free-fly camera the pause menu opens with the
+## world frozen. Fly speed in metres/second (WASD laterally, Ctrl/Shift for altitude);
+## the camera has no acceleration, so this is simply how fast it travels while a key is
+## held.
+@export_range(1.0, 200.0) var photo_move_speed := 25.0
+## Mouse look sensitivity — RADIANS of turn per pixel of mouse motion.
+@export_range(0.0005, 0.02) var photo_look_sensitivity := 0.003
+
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
 ## (todo/diegetic-hq.md). 0 snaps instantly.

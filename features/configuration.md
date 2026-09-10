@@ -169,6 +169,8 @@ servo measures the grip limit instead of predicting it. See
 | `replay_frame_screen_fraction` | 0.32 | …and the share of viewport height it should span. Higher = tighter framing |
 | `replay_frame_fov_min` / `_max` | 14.0 / 75.0 | Long / wide ends of that framed zoom (degrees) |
 | `replay_fov_smoothing` | 5.0 | Easing rate for replay FOV changes (cuts always snap) |
+| `photo_move_speed` | 25.0 | Photo mode free-fly camera lateral/vertical movement speed (m/s) |
+| `photo_look_sensitivity` | 0.003 | Photo mode mouse look sensitivity (multiplier on mouse delta per frame) |
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |
 
