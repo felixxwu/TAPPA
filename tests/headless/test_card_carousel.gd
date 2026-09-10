@@ -346,3 +346,33 @@ func test_content_added_to_visual_or_info_never_captures_its_own_input() -> void
 		"info content must stay transparent to input too, for the same reason")
 	assert_eq(card.visual.mouse_filter, Control.MOUSE_FILTER_PASS,
 		"the SLOT itself must still let the tap through to card.root")
+
+
+# Every card casts a SHARP drop shadow down-right, so the cards read as objects sitting
+# above the page rather than flat rectangles. The shadow is a sibling quad drawn BEFORE
+# the card (a card's own panel is opaque black and clips its contents, so a shadow drawn
+# inside it could never be seen), glued to the card's rect and offset by exactly
+# UITheme.card_shadow_offset() on both axes.
+func test_each_card_casts_an_offset_shadow_behind_it() -> void:
+	var off := UITheme.card_shadow_offset()
+	assert_gt(off, 0.0, "a zero offset would hide the shadow entirely behind the card")
+	for i in _carousel.card_count():
+		var card := _carousel.get_card(i)
+		assert_not_null(card.shadow, "card %d has no shadow" % i)
+		assert_almost_eq(card.shadow.position, card.root.position + Vector2(off, off),
+			Vector2(0.01, 0.01), "card %d's shadow is not offset down-right of the card" % i)
+		assert_almost_eq(card.shadow.size, card.root.size, Vector2(0.01, 0.01),
+			"card %d's shadow must match the card's own rect" % i)
+		assert_lt(card.shadow.get_index(), card.root.get_index(),
+			"card %d's shadow must be drawn BEHIND the card, not over it" % i)
+		assert_eq(card.shadow.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+			"a shadow must never swallow a tap meant for a card")
+
+
+# The shadow dims with its card, so an unselected card doesn't keep a full-strength
+# shadow that reads brighter than the card casting it.
+func test_shadow_dims_with_its_card() -> void:
+	for i in _carousel.card_count():
+		var card := _carousel.get_card(i)
+		assert_almost_eq(card.shadow.modulate.a, card.root.modulate.a, 0.001,
+			"card %d's shadow alpha must track the card's" % i)

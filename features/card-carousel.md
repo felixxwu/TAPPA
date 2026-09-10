@@ -149,6 +149,31 @@ Selection is carried by `modulate.a` alone now. If a future change ever puts a c
 back on an opaque body box, the invisible-cards failure mode above will return — that's
 the condition to watch for, not a reason to restore the border pre-emptively.
 
+## Cards cast a sharp drop shadow, not a blurred one
+
+Each card is drawn with a **hard, zero-blur black shadow offset down-right** — the CSS
+equivalent of `box-shadow: 5px 5px 0 rgba(0,0,0,0.2)`. Without it a black card on a busy
+3D background read flat; the offset quad gives it a sense of sitting *above* the page,
+in keeping with the PS1-era, no-soft-edges look (blurred shadows would fight it).
+
+Mechanically the shadow is **a sibling `Panel` under `_strip`, added immediately BEFORE
+its card's `root`** (siblings paint in tree order, so it lands underneath), stored on the
+`Card` handle as `card.shadow`. It cannot be a child of the card: `card.root` paints an
+opaque black fill and sets `clip_contents`, so anything inside it is both covered and
+clipped. `_layout` glues the quad to the card's actual rect (`card.root.size`, not the
+nominal `_card_height()` — a card whose content grew is still fully shadowed), offsets it
+by `UITheme.card_shadow_offset()` on both axes, and copies `card.root.modulate.a` so an
+unselected card's shadow fades exactly as far as the card does. It is
+`MOUSE_FILTER_IGNORE`, so it never swallows a tap meant for a card.
+
+**Not `StyleBoxFlat`'s own `shadow_*` properties.** That shadow rect is the box *expanded
+by `shadow_size` on all sides* and then offset: `shadow_size = 0` draws nothing at all,
+and any size > 0 leaks shadow out of the top-left edge too — so a purely diagonal,
+zero-blur offset is unreachable through it. The fill and offset live in
+`UITheme.card_shadow_box()` / `UITheme.card_shadow_offset()`
+(`CARD_SHADOW_AUTHORED`, scaled through `UITheme.px`) so any future card surface can wear
+the same shadow.
+
 ## Edge to edge, and never a clipped card
 
 `MenuPage`'s body box deliberately hugs its content and sits with a wide gap to the
