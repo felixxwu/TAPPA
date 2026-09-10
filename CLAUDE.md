@@ -240,6 +240,34 @@ seams not to work around, and where the decision record lives.
   model fail, not the model.
 - The testing rules still bind them: subagents implement, the parent runs the
   tests.
+- **Default to delegating, not judgment-calling it.** Don't decide per-task
+  whether something is "small enough to just do yourself" — if a task
+  involves writing/editing code, searching more than a couple of files, or
+  reading more than one file's worth of implementation detail, spawn a
+  Sonnet subagent for it rather than doing it inline. Reserve doing it
+  yourself for genuinely trivial single-line edits where spawning would cost
+  more than it saves, and for the planning/review work this section already
+  reserves for the top-level agent.
+- **Don't explore before you delegate.** If a task needs figuring out where
+  something lives or how it works before it can be implemented, hand the
+  whole thing — investigation and implementation — to the subagent. Don't
+  have the top-level agent Glob/Grep/Read its way to an understanding first
+  "to write a better brief"; a good brief states the goal and constraints,
+  not the answer. Exploring it yourself just duplicates the tokens the
+  subagent is about to spend anyway.
+- **Subagents report back terse.** A subagent's final report should be a
+  summary: what changed, which files, what tests should cover it — not
+  pasted file contents, full diffs, or command output. Tell them this
+  explicitly in the brief when it isn't already implied. If you need to
+  verify their work, open the specific file yourself rather than asking them
+  to paste it back to you.
+- **Escalation is a last resort, not a default response to friction.** Only
+  escalate a task to a larger model after a Sonnet subagent has been wrong
+  twice on it, or the task is unambiguously architectural (a design decision
+  with no settled plan yet) from the outset. A confusing result, an
+  unfamiliar area of the codebase, or a subagent asking a clarifying
+  question are not by themselves grounds to escalate — send back a sharper
+  brief and let Sonnet retry first.
 
 ## Parallel agents share this checkout
 
